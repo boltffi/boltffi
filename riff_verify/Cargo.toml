@@ -4,6 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-thiserror = "1.0"
-tree-sitter = "0.25"
+thiserror = "2.0"
+tree-sitter = "0.26"
 tree-sitter-swift = "0.7"

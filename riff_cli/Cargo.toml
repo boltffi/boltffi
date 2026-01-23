@@ -13,12 +13,12 @@ riff_bindgen = { path = "../riff_bindgen" }
 riff_verify = { path = "../riff_verify" }
 clap = { version = "4.4", features = ["derive"] }
 serde = { version = "1.0", features = ["derive"] }
-toml = "0.8"
+toml = "0.9"
 thiserror = "2.0"
-which = "7.0"
+which = "8.0"
 sha2 = "0.10"
 hex = "0.4"
-zip = "2.2"
+zip = "7.2"
 walkdir = "2.4"
 
 [lints]
