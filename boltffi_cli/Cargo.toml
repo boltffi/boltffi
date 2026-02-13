@@ -13,7 +13,7 @@ boltffi_bindgen = { path = "../boltffi_bindgen" }
 boltffi_verify = { path = "../boltffi_verify" }
 clap = { version = "4.4", features = ["derive"] }
 serde = { version = "1.0", features = ["derive"] }
-toml = "0.9"
+toml = "1.0"
 thiserror = "2.0"
 which = "8.0"
 sha2 = "0.10"
