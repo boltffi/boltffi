@@ -27,11 +27,7 @@ pub fn encode_blittable_slice<T: Blittable>(slice: &[T], buf: &mut [u8]) -> usiz
 
     let byte_count = std::mem::size_of_val(slice);
     unsafe {
-        std::ptr::copy_nonoverlapping(
-            slice.as_ptr() as *const u8,
-            buf.as_mut_ptr().add(VEC_COUNT_SIZE),
-            byte_count,
-        );
+        std::ptr::copy_nonoverlapping(slice.as_ptr() as *const u8, buf.as_mut_ptr().add(VEC_COUNT_SIZE), byte_count);
     }
     VEC_COUNT_SIZE + byte_count
 }
@@ -60,11 +56,7 @@ pub fn decode_blittable_slice<T: Blittable>(buf: &[u8]) -> Option<Vec<T>> {
 
     let mut result = Vec::<T>::with_capacity(count);
     unsafe {
-        std::ptr::copy_nonoverlapping(
-            buf.as_ptr().add(VEC_COUNT_SIZE),
-            result.as_mut_ptr() as *mut u8,
-            byte_count,
-        );
+        std::ptr::copy_nonoverlapping(buf.as_ptr().add(VEC_COUNT_SIZE), result.as_mut_ptr() as *mut u8, byte_count);
         result.set_len(count);
     }
     Some(result)

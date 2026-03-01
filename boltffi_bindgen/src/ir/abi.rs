@@ -1,16 +1,12 @@
-use boltffi_ffi_rules::naming::{
-    CreateFn, GlobalSymbol, Name, RegisterFn, VtableField, VtableType,
+use crate::ir::{
+    contract::PackageInfo,
+    definitions::StreamMode,
+    ids::{AsyncIteratorId, CallbackId, ClassId, EnumId, FieldName, FunctionId, MethodId, ParamName, RecordId, StreamId, VariantName},
+    ops::{ReadOp, ReadSeq, WriteOp, WriteSeq},
+    plan::{AbiType, CallbackStyle, Mutability},
+    types::TypeExpr,
 };
-
-use crate::ir::contract::PackageInfo;
-use crate::ir::definitions::StreamMode;
-use crate::ir::ids::{
-    CallbackId, ClassId, EnumId, FieldName, FunctionId, MethodId, ParamName, RecordId, StreamId,
-    VariantName,
-};
-use crate::ir::ops::{ReadOp, ReadSeq, WriteOp, WriteSeq};
-use crate::ir::plan::{AbiType, CallbackStyle, Mutability};
-use crate::ir::types::TypeExpr;
+use boltffi_ffi_rules::naming::{CreateFn, GlobalSymbol, Name, RegisterFn, VtableField, VtableType};
 
 /// The resolved FFI boundary for the whole crate.
 ///
@@ -24,6 +20,7 @@ pub struct AbiContract {
     pub calls: Vec<AbiCall>,
     pub callbacks: Vec<AbiCallbackInvocation>,
     pub streams: Vec<AbiStream>,
+    pub async_iterators: Vec<AbiAsyncIterator>,
     pub records: Vec<AbiRecord>,
     pub enums: Vec<AbiEnum>,
     pub free_buf: Name<GlobalSymbol>,
@@ -71,6 +68,27 @@ pub struct AbiEnumField {
 }
 
 #[derive(Debug, Clone)]
+pub struct AbiAsyncIterator {
+    pub class_id: ClassId,
+    pub iterator_id: AsyncIteratorId,
+    pub item: StreamItemTransport,
+    /// Creates the iterator handle: `{class}_{method}(handle) -> IteratorHandle`
+    pub entry: Name<GlobalSymbol>,
+    /// Starts one `next()` future: `{class}_{method}_next(iter) -> RustFutureHandle`
+    pub next: Name<GlobalSymbol>,
+    /// Polls the future
+    pub next_poll: Name<GlobalSymbol>,
+    /// Completes the future, returns wire-encoded `Option<T>`
+    pub next_complete: Name<GlobalSymbol>,
+    /// Cancels the future
+    pub next_cancel: Name<GlobalSymbol>,
+    /// Frees the future handle
+    pub next_free: Name<GlobalSymbol>,
+    /// Drops the iterator handle
+    pub free: Name<GlobalSymbol>,
+}
+
+#[derive(Debug, Clone)]
 pub enum StreamItemTransport {
     WireEncoded { decode_ops: ReadSeq },
 }
@@ -92,14 +110,8 @@ pub struct AbiStream {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum CallId {
     Function(FunctionId),
-    Method {
-        class_id: ClassId,
-        method_id: MethodId,
-    },
-    Constructor {
-        class_id: ClassId,
-        index: usize,
-    },
+    Method { class_id: ClassId, method_id: MethodId },
+    Constructor { class_id: ClassId, index: usize },
 }
 
 #[derive(Debug, Clone)]
@@ -131,32 +143,11 @@ pub struct AsyncCall {
 #[derive(Debug, Clone)]
 pub enum ValueShape {
     Scalar(AbiType),
-    OptionScalar {
-        abi: AbiType,
-        read: ReadSeq,
-        write: WriteSeq,
-    },
-    ResultScalar {
-        ok: AbiType,
-        err: AbiType,
-        read: ReadSeq,
-        write: WriteSeq,
-    },
-    PrimitiveVec {
-        element_abi: AbiType,
-        read: ReadSeq,
-        write: WriteSeq,
-    },
-    BlittableRecord {
-        id: RecordId,
-        size: u32,
-        read: ReadSeq,
-        write: WriteSeq,
-    },
-    WireEncoded {
-        read: ReadSeq,
-        write: WriteSeq,
-    },
+    OptionScalar { abi: AbiType, read: ReadSeq, write: WriteSeq },
+    ResultScalar { ok: AbiType, err: AbiType, read: ReadSeq, write: WriteSeq },
+    PrimitiveVec { element_abi: AbiType, read: ReadSeq, write: WriteSeq },
+    BlittableRecord { id: RecordId, size: u32, read: ReadSeq, write: WriteSeq },
+    WireEncoded { read: ReadSeq, write: WriteSeq },
 }
 
 #[derive(Debug, Clone)]
@@ -201,14 +192,8 @@ pub enum InputShape {
 pub enum OutputShape {
     Unit,
     Value(ValueShape),
-    Handle {
-        class_id: ClassId,
-        nullable: bool,
-    },
-    Callback {
-        callback_id: CallbackId,
-        nullable: bool,
-    },
+    Handle { class_id: ClassId, nullable: bool },
+    Callback { callback_id: CallbackId, nullable: bool },
 }
 
 #[derive(Debug, Clone)]
@@ -222,10 +207,7 @@ pub struct AbiParam {
 pub enum ErrorTransport {
     None,
     StatusCode,
-    Encoded {
-        decode_ops: ReadSeq,
-        encode_ops: Option<WriteSeq>,
-    },
+    Encoded { decode_ops: ReadSeq, encode_ops: Option<WriteSeq> },
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -307,20 +289,18 @@ impl FastOutputBinding<'_> {
     pub fn decode_ops(&self) -> Option<&ReadSeq> {
         match self {
             Self::Scalar { .. } => None,
-            Self::OptionScalar { decode_ops, .. }
-            | Self::ResultScalar { decode_ops, .. }
-            | Self::PrimitiveVec { decode_ops, .. }
-            | Self::BlittableRecord { decode_ops, .. } => Some(decode_ops),
+            Self::OptionScalar { decode_ops, .. } | Self::ResultScalar { decode_ops, .. } | Self::PrimitiveVec { decode_ops, .. } | Self::BlittableRecord { decode_ops, .. } => {
+                Some(decode_ops)
+            }
         }
     }
 
     pub fn encode_ops(&self) -> Option<&WriteSeq> {
         match self {
             Self::Scalar { .. } => None,
-            Self::OptionScalar { encode_ops, .. }
-            | Self::ResultScalar { encode_ops, .. }
-            | Self::PrimitiveVec { encode_ops, .. }
-            | Self::BlittableRecord { encode_ops, .. } => Some(encode_ops),
+            Self::OptionScalar { encode_ops, .. } | Self::ResultScalar { encode_ops, .. } | Self::PrimitiveVec { encode_ops, .. } | Self::BlittableRecord { encode_ops, .. } => {
+                Some(encode_ops)
+            }
         }
     }
 }
@@ -343,14 +323,8 @@ pub enum OutputBinding<'a> {
     Unit,
     Fast(FastOutputBinding<'a>),
     Wire(WireOutputBinding<'a>),
-    Handle {
-        class_id: &'a ClassId,
-        nullable: bool,
-    },
-    CallbackHandle {
-        callback_id: &'a CallbackId,
-        nullable: bool,
-    },
+    Handle { class_id: &'a ClassId, nullable: bool },
+    CallbackHandle { callback_id: &'a CallbackId, nullable: bool },
 }
 
 impl OutputBinding<'_> {
@@ -406,9 +380,7 @@ impl AbiParam {
     pub fn param_binding(&self) -> ParamBinding<'_> {
         match &self.input_shape {
             InputShape::Value(ValueShape::Scalar(_)) => ParamBinding::Input(InputBinding::Scalar),
-            InputShape::Utf8Slice { len_param } => {
-                ParamBinding::Input(InputBinding::Utf8Slice { len_param })
-            }
+            InputShape::Utf8Slice { len_param } => ParamBinding::Input(InputBinding::Utf8Slice { len_param }),
             InputShape::PrimitiveSlice {
                 len_param,
                 mutability,
@@ -418,55 +390,29 @@ impl AbiParam {
                 mutability: *mutability,
                 element_abi: *element_abi,
             }),
-            InputShape::WirePacket { len_param, value } => {
-                ParamBinding::Input(InputBinding::WirePacket {
-                    len_param,
-                    decode_ops: value.read_ops().unwrap_or_else(|| {
-                        panic!(
-                            "wire packet input shape missing decode ops for param {}",
-                            self.name.as_str()
-                        )
-                    }),
-                    encode_ops: value.write_ops().unwrap_or_else(|| {
-                        panic!(
-                            "wire packet input shape missing encode ops for param {}",
-                            self.name.as_str()
-                        )
-                    }),
-                })
-            }
-            InputShape::OutputBuffer { len_param, value } => {
-                ParamBinding::Input(InputBinding::OutputBuffer {
-                    len_param,
-                    decode_ops: value.read_ops().unwrap_or_else(|| {
-                        panic!(
-                            "output buffer input shape missing decode ops for param {}",
-                            self.name.as_str()
-                        )
-                    }),
-                })
-            }
-            InputShape::Handle { class_id, nullable } => {
-                ParamBinding::Input(InputBinding::Handle {
-                    class_id,
-                    nullable: *nullable,
-                })
-            }
-            InputShape::Callback {
-                callback_id,
-                nullable,
-                style,
-            } => ParamBinding::Input(InputBinding::CallbackHandle {
+            InputShape::WirePacket { len_param, value } => ParamBinding::Input(InputBinding::WirePacket {
+                len_param,
+                decode_ops: value
+                    .read_ops()
+                    .unwrap_or_else(|| panic!("wire packet input shape missing decode ops for param {}", self.name.as_str())),
+                encode_ops: value
+                    .write_ops()
+                    .unwrap_or_else(|| panic!("wire packet input shape missing encode ops for param {}", self.name.as_str())),
+            }),
+            InputShape::OutputBuffer { len_param, value } => ParamBinding::Input(InputBinding::OutputBuffer {
+                len_param,
+                decode_ops: value
+                    .read_ops()
+                    .unwrap_or_else(|| panic!("output buffer input shape missing decode ops for param {}", self.name.as_str())),
+            }),
+            InputShape::Handle { class_id, nullable } => ParamBinding::Input(InputBinding::Handle { class_id, nullable: *nullable }),
+            InputShape::Callback { callback_id, nullable, style } => ParamBinding::Input(InputBinding::CallbackHandle {
                 callback_id,
                 nullable: *nullable,
                 style: *style,
             }),
-            InputShape::HiddenSyntheticLen { for_param } => {
-                ParamBinding::Hidden(HiddenInputBinding::SyntheticLen { for_param })
-            }
-            InputShape::HiddenOutLen { for_param } => {
-                ParamBinding::Hidden(HiddenInputBinding::OutLen { for_param })
-            }
+            InputShape::HiddenSyntheticLen { for_param } => ParamBinding::Hidden(HiddenInputBinding::SyntheticLen { for_param }),
+            InputShape::HiddenOutLen { for_param } => ParamBinding::Hidden(HiddenInputBinding::OutLen { for_param }),
             InputShape::HiddenOutDirect => ParamBinding::Hidden(HiddenInputBinding::OutDirect),
             InputShape::HiddenStatusOut => ParamBinding::Hidden(HiddenInputBinding::StatusOut),
             InputShape::Value(_) => ParamBinding::UnsupportedValue,
@@ -485,65 +431,34 @@ impl OutputShape {
     pub fn output_binding(&self) -> OutputBinding<'_> {
         match self {
             OutputShape::Unit => OutputBinding::Unit,
-            OutputShape::Value(ValueShape::Scalar(abi_type)) => {
-                OutputBinding::Fast(FastOutputBinding::Scalar {
-                    abi_type: *abi_type,
-                })
-            }
-            OutputShape::Value(ValueShape::OptionScalar { abi, read, write }) => {
-                OutputBinding::Fast(FastOutputBinding::OptionScalar {
-                    abi_type: *abi,
-                    decode_ops: read,
-                    encode_ops: write,
-                })
-            }
-            OutputShape::Value(ValueShape::ResultScalar {
-                ok,
-                err,
-                read,
-                write,
-            }) => OutputBinding::Fast(FastOutputBinding::ResultScalar {
+            OutputShape::Value(ValueShape::Scalar(abi_type)) => OutputBinding::Fast(FastOutputBinding::Scalar { abi_type: *abi_type }),
+            OutputShape::Value(ValueShape::OptionScalar { abi, read, write }) => OutputBinding::Fast(FastOutputBinding::OptionScalar {
+                abi_type: *abi,
+                decode_ops: read,
+                encode_ops: write,
+            }),
+            OutputShape::Value(ValueShape::ResultScalar { ok, err, read, write }) => OutputBinding::Fast(FastOutputBinding::ResultScalar {
                 ok_abi: *ok,
                 err_abi: *err,
                 decode_ops: read,
                 encode_ops: write,
             }),
-            OutputShape::Value(ValueShape::PrimitiveVec {
-                element_abi,
-                read,
-                write,
-            }) => OutputBinding::Fast(FastOutputBinding::PrimitiveVec {
+            OutputShape::Value(ValueShape::PrimitiveVec { element_abi, read, write }) => OutputBinding::Fast(FastOutputBinding::PrimitiveVec {
                 element_abi: *element_abi,
                 decode_ops: read,
                 encode_ops: write,
             }),
-            OutputShape::Value(ValueShape::BlittableRecord {
-                id,
-                size,
-                read,
-                write,
-            }) => OutputBinding::Fast(FastOutputBinding::BlittableRecord {
+            OutputShape::Value(ValueShape::BlittableRecord { id, size, read, write }) => OutputBinding::Fast(FastOutputBinding::BlittableRecord {
                 record_id: id,
                 size: *size,
                 decode_ops: read,
                 encode_ops: write,
             }),
-            OutputShape::Handle { class_id, nullable } => OutputBinding::Handle {
-                class_id,
-                nullable: *nullable,
-            },
-            OutputShape::Callback {
-                callback_id,
-                nullable,
-            } => OutputBinding::CallbackHandle {
-                callback_id,
-                nullable: *nullable,
-            },
+            OutputShape::Handle { class_id, nullable } => OutputBinding::Handle { class_id, nullable: *nullable },
+            OutputShape::Callback { callback_id, nullable } => OutputBinding::CallbackHandle { callback_id, nullable: *nullable },
             OutputShape::Value(ValueShape::WireEncoded { read, write }) => {
                 let wire_shape = match (read.ops.first(), write.ops.first()) {
-                    (Some(ReadOp::String { .. }), Some(WriteOp::String { .. })) => {
-                        WireOutputKind::Utf8String
-                    }
+                    (Some(ReadOp::String { .. }), Some(WriteOp::String { .. })) => WireOutputKind::Utf8String,
                     _ => WireOutputKind::Encoded,
                 };
                 OutputBinding::Wire(WireOutputBinding {
@@ -595,6 +510,7 @@ mod tests {
             calls: vec![call],
             callbacks: Vec::new(),
             streams: Vec::new(),
+            async_iterators: Vec::new(),
             records: Vec::new(),
             enums: Vec::new(),
             free_buf: naming::free_buf_u8(),
@@ -661,10 +577,7 @@ mod tests {
         });
         contract.callbacks.iter().for_each(|callback| {
             callback.methods.iter().for_each(|method| {
-                method
-                    .params
-                    .iter()
-                    .for_each(assert_param_shape_consistency);
+                method.params.iter().for_each(assert_param_shape_consistency);
                 if let OutputShape::Value(value_shape) = &method.output_shape {
                     assert_value_shape_consistency(value_shape);
                 }

@@ -1,13 +1,13 @@
-use std::collections::HashMap;
-use std::fs;
-use std::path::{Path, PathBuf};
-use std::sync::{Mutex, OnceLock};
-
 use boltffi_ffi_rules::naming;
 use proc_macro2::Span;
 use quote::{format_ident, quote};
-use syn::parse::Parse;
-use syn::{GenericArgument, PathArguments, Type};
+use std::{
+    collections::HashMap,
+    fs,
+    path::{Path, PathBuf},
+    sync::{Mutex, OnceLock},
+};
+use syn::{GenericArgument, PathArguments, Type, parse::Parse};
 
 #[derive(Clone)]
 pub struct CustomTypeEntry {
@@ -27,22 +27,14 @@ impl CustomTypeEntry {
     pub fn to_fn_path(&self) -> proc_macro2::TokenStream {
         let snake = naming::to_snake_case(&self.name);
         let fn_name = format_ident!("__boltffi_custom_type_{}_into_ffi", snake);
-        let module_path = self
-            .module_path
-            .iter()
-            .map(|segment| syn::Ident::new(segment, Span::call_site()))
-            .collect::<Vec<_>>();
+        let module_path = self.module_path.iter().map(|segment| syn::Ident::new(segment, Span::call_site())).collect::<Vec<_>>();
         quote! { crate::#(#module_path::)*#fn_name }
     }
 
     pub fn try_from_fn_path(&self) -> proc_macro2::TokenStream {
         let snake = naming::to_snake_case(&self.name);
         let fn_name = format_ident!("__boltffi_custom_type_{}_try_from_ffi", snake);
-        let module_path = self
-            .module_path
-            .iter()
-            .map(|segment| syn::Ident::new(segment, Span::call_site()))
-            .collect::<Vec<_>>();
+        let module_path = self.module_path.iter().map(|segment| syn::Ident::new(segment, Span::call_site())).collect::<Vec<_>>();
         quote! { crate::#(#module_path::)*#fn_name }
     }
 }
@@ -74,11 +66,7 @@ fn qualify_type_for_module(ty: Type, module_path: &[String]) -> Type {
             ..slice
         }),
         Type::Tuple(tuple) => Type::Tuple(syn::TypeTuple {
-            elems: tuple
-                .elems
-                .into_iter()
-                .map(|elem| qualify_type_for_module(elem, module_path))
-                .collect(),
+            elems: tuple.elems.into_iter().map(|elem| qualify_type_for_module(elem, module_path)).collect(),
             ..tuple
         }),
         Type::Path(type_path) => Type::Path(qualify_type_path_for_module(type_path, module_path)),
@@ -108,8 +96,7 @@ fn qualify_type_path_for_module(type_path: syn::TypePath, module_path: &[String]
     };
 
     let ident = segment.ident.to_string();
-    let should_qualify =
-        ident.chars().next().is_some_and(|ch| ch.is_uppercase()) && !is_std_global_ident(&ident);
+    let should_qualify = ident.chars().next().is_some_and(|ch| ch.is_uppercase()) && !is_std_global_ident(&ident);
 
     if should_qualify {
         {
@@ -119,23 +106,14 @@ fn qualify_type_path_for_module(type_path: syn::TypePath, module_path: &[String]
                 .map(syn::PathSegment::from)
                 .collect::<syn::punctuated::Punctuated<_, syn::Token![::]>>();
 
-            let mut segments =
-                syn::punctuated::Punctuated::<syn::PathSegment, syn::Token![::]>::new();
-            segments.push(syn::PathSegment::from(syn::Ident::new(
-                "crate",
-                Span::call_site(),
-            )));
-            module_segments
-                .into_iter()
-                .for_each(|segment| segments.push(segment));
+            let mut segments = syn::punctuated::Punctuated::<syn::PathSegment, syn::Token![::]>::new();
+            segments.push(syn::PathSegment::from(syn::Ident::new("crate", Span::call_site())));
+            module_segments.into_iter().for_each(|segment| segments.push(segment));
             segments.push(segment.clone());
 
             syn::TypePath {
                 qself: None,
-                path: syn::Path {
-                    leading_colon: None,
-                    segments,
-                },
+                path: syn::Path { leading_colon: None, segments },
             }
         }
     } else {
@@ -155,26 +133,19 @@ fn qualify_path_segments_for_module(path: syn::Path, module_path: &[String]) -> 
     }
 }
 
-fn qualify_path_segment_for_module(
-    mut segment: syn::PathSegment,
-    module_path: &[String],
-) -> syn::PathSegment {
+fn qualify_path_segment_for_module(mut segment: syn::PathSegment, module_path: &[String]) -> syn::PathSegment {
     segment.arguments = match segment.arguments {
-        PathArguments::AngleBracketed(args) => {
-            PathArguments::AngleBracketed(syn::AngleBracketedGenericArguments {
-                args: args
-                    .args
-                    .into_iter()
-                    .map(|arg| match arg {
-                        GenericArgument::Type(inner_ty) => {
-                            GenericArgument::Type(qualify_type_for_module(inner_ty, module_path))
-                        }
-                        other => other,
-                    })
-                    .collect(),
-                ..args
-            })
-        }
+        PathArguments::AngleBracketed(args) => PathArguments::AngleBracketed(syn::AngleBracketedGenericArguments {
+            args: args
+                .args
+                .into_iter()
+                .map(|arg| match arg {
+                    GenericArgument::Type(inner_ty) => GenericArgument::Type(qualify_type_for_module(inner_ty, module_path)),
+                    other => other,
+                })
+                .collect(),
+            ..args
+        }),
         other => other,
     };
     segment
@@ -185,10 +156,7 @@ fn is_single_segment_path(path: &syn::Path) -> bool {
 }
 
 fn is_std_global_ident(ident: &str) -> bool {
-    matches!(
-        ident,
-        "String" | "Vec" | "Option" | "Result" | "Box" | "Arc" | "Rc" | "Cow"
-    )
+    matches!(ident, "String" | "Vec" | "Option" | "Result" | "Box" | "Arc" | "Rc" | "Cow")
 }
 
 #[derive(Default, Clone)]
@@ -206,9 +174,7 @@ impl CustomTypeRegistry {
             .and_then(|name| self.by_name.get(name))
             .or_else(|| {
                 let shape = type_shape_key(ty);
-                self.by_remote_shape
-                    .get(&shape)
-                    .and_then(|name| self.by_name.get(name))
+                self.by_remote_shape.get(&shape).and_then(|name| self.by_name.get(name))
             })
             .or_else(|| type_last_segment(ty).and_then(|name| self.by_name.get(&name)))
     }
@@ -217,10 +183,7 @@ impl CustomTypeRegistry {
         match self.by_name.get(&entry.name) {
             None => {}
             Some(_) => {
-                return Err(syn::Error::new(
-                    Span::call_site(),
-                    format!("custom_type!: duplicate definition for `{}`", entry.name),
-                ));
+                return Err(syn::Error::new(Span::call_site(), format!("custom_type!: duplicate definition for `{}`", entry.name)));
             }
         }
 
@@ -229,10 +192,7 @@ impl CustomTypeRegistry {
             Some(existing) => {
                 return Err(syn::Error::new(
                     Span::call_site(),
-                    format!(
-                        "custom_type!: remote type already registered by `{}`",
-                        existing
-                    ),
+                    format!("custom_type!: remote type already registered by `{}`", existing),
                 ));
             }
         }
@@ -248,8 +208,7 @@ impl CustomTypeRegistry {
         let remote_shape = entry.remote_shape.clone();
 
         self.by_name.insert(name.clone(), entry);
-        self.by_remote_normalized
-            .insert(remote_normalized, name.clone());
+        self.by_remote_normalized.insert(remote_normalized, name.clone());
         self.by_remote_shape.entry(remote_shape).or_insert(name);
         Ok(())
     }
@@ -303,7 +262,6 @@ impl Parse for CustomTypeMacroSpec {
         })
     }
 }
-
 struct CustomTypeCollector<'a> {
     module_path: Vec<syn::Ident>,
     custom_types: &'a mut CustomTypeRegistry,
@@ -334,12 +292,7 @@ impl<'a> CustomTypeCollector<'a> {
     }
 
     fn collect_item_macro(&mut self, item_macro: &syn::ItemMacro) -> syn::Result<()> {
-        let is_custom_type = item_macro
-            .mac
-            .path
-            .segments
-            .last()
-            .is_some_and(|segment| segment.ident == "custom_type");
+        let is_custom_type = item_macro.mac.path.segments.last().is_some_and(|segment| segment.ident == "custom_type");
 
         if !is_custom_type {
             return Ok(());
@@ -367,8 +320,7 @@ impl<'a> CustomTypeCollector<'a> {
 static REGISTRY_CACHE: OnceLock<Mutex<HashMap<PathBuf, CustomTypeRegistry>>> = OnceLock::new();
 
 pub fn registry_for_current_crate() -> syn::Result<CustomTypeRegistry> {
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
-        .map_err(|_| syn::Error::new(Span::call_site(), "CARGO_MANIFEST_DIR not set"))?;
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").map_err(|_| syn::Error::new(Span::call_site(), "CARGO_MANIFEST_DIR not set"))?;
     let manifest_dir = PathBuf::from(manifest_dir);
 
     let cache = REGISTRY_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
@@ -382,9 +334,7 @@ pub fn registry_for_current_crate() -> syn::Result<CustomTypeRegistry> {
     }
 
     let registry = build_registry(&manifest_dir)?;
-    let mut guard = cache
-        .lock()
-        .map_err(|_| syn::Error::new(Span::call_site(), "custom type registry lock poisoned"))?;
+    let mut guard = cache.lock().map_err(|_| syn::Error::new(Span::call_site(), "custom type registry lock poisoned"))?;
     guard.insert(manifest_dir, registry.clone());
     Ok(registry)
 }
@@ -396,12 +346,7 @@ fn build_registry(manifest_dir: &Path) -> syn::Result<CustomTypeRegistry> {
     let mut registry = CustomTypeRegistry::default();
     files.iter().try_for_each(|file_path| {
         let module_path = module_path_for_rs_file(&src_root, file_path)?;
-        let content = fs::read_to_string(file_path).map_err(|e| {
-            syn::Error::new(
-                Span::call_site(),
-                format!("read {}: {}", file_path.display(), e),
-            )
-        })?;
+        let content = fs::read_to_string(file_path).map_err(|e| syn::Error::new(Span::call_site(), format!("read {}: {}", file_path.display(), e)))?;
         let syntax = syn::parse_file(&content)?;
 
         let mut collector = CustomTypeCollector {
@@ -409,10 +354,7 @@ fn build_registry(manifest_dir: &Path) -> syn::Result<CustomTypeRegistry> {
             custom_types: &mut registry,
         };
 
-        syntax
-            .items
-            .iter()
-            .try_for_each(|item| collector.collect_item(item))
+        syntax.items.iter().try_for_each(|item| collector.collect_item(item))
     })?;
 
     Ok(registry)
@@ -425,35 +367,22 @@ fn list_rs_files(src_root: &Path) -> syn::Result<Vec<PathBuf>> {
 }
 
 fn collect_rs_files(dir: &Path, out: &mut Vec<PathBuf>) -> syn::Result<()> {
-    let entries = fs::read_dir(dir).map_err(|e| {
-        syn::Error::new(
-            Span::call_site(),
-            format!("read_dir {}: {}", dir.display(), e),
-        )
-    })?;
+    let entries = fs::read_dir(dir).map_err(|e| syn::Error::new(Span::call_site(), format!("read_dir {}: {}", dir.display(), e)))?;
 
-    entries
-        .filter_map(|entry| entry.ok())
-        .map(|entry| entry.path())
-        .try_for_each(|path| {
-            if path.is_dir() {
-                return collect_rs_files(&path, out);
-            }
-            if path.extension().is_some_and(|ext| ext == "rs") {
-                out.push(path);
-            }
-            Ok(())
-        })
+    entries.filter_map(|entry| entry.ok()).map(|entry| entry.path()).try_for_each(|path| {
+        if path.is_dir() {
+            return collect_rs_files(&path, out);
+        }
+        if path.extension().is_some_and(|ext| ext == "rs") {
+            out.push(path);
+        }
+        Ok(())
+    })
 }
 
 fn module_path_for_rs_file(src_root: &Path, file_path: &Path) -> syn::Result<Vec<syn::Ident>> {
-    let relative = file_path
-        .strip_prefix(src_root)
-        .map_err(|_| syn::Error::new(Span::call_site(), "path not under src"))?;
-    let mut parts = relative
-        .components()
-        .map(|c| c.as_os_str().to_string_lossy().to_string())
-        .collect::<Vec<_>>();
+    let relative = file_path.strip_prefix(src_root).map_err(|_| syn::Error::new(Span::call_site(), "path not under src"))?;
+    let mut parts = relative.components().map(|c| c.as_os_str().to_string_lossy().to_string()).collect::<Vec<_>>();
 
     let file_name = parts.pop().unwrap_or_default();
     let mut module_parts = parts;
@@ -468,11 +397,7 @@ fn module_path_for_rs_file(src_root: &Path, file_path: &Path) -> syn::Result<Vec
         _ => {}
     }
 
-    Ok(module_parts
-        .into_iter()
-        .filter(|p| !p.is_empty())
-        .map(|p| syn::Ident::new(&p, Span::call_site()))
-        .collect())
+    Ok(module_parts.into_iter().filter(|p| !p.is_empty()).map(|p| syn::Ident::new(&p, Span::call_site())).collect())
 }
 
 pub fn contains_custom_types(ty: &syn::Type, registry: &CustomTypeRegistry) -> bool {
@@ -494,11 +419,7 @@ pub fn contains_custom_types(ty: &syn::Type, registry: &CustomTypeRegistry) -> b
                     .is_some_and(|inner| contains_custom_types(inner, registry)),
                 "Result" => {
                     let mut args = angle_arg_types(&segment.arguments).into_iter();
-                    args.next()
-                        .is_some_and(|ok| contains_custom_types(ok, registry))
-                        || args
-                            .next()
-                            .is_some_and(|err| contains_custom_types(err, registry))
+                    args.next().is_some_and(|ok| contains_custom_types(ok, registry)) || args.next().is_some_and(|err| contains_custom_types(err, registry))
                 }
                 _ => false,
             }
@@ -564,11 +485,7 @@ fn type_arg(arg: &syn::GenericArgument) -> Option<&syn::Type> {
     }
 }
 
-pub fn to_wire_expr_owned(
-    ty: &syn::Type,
-    registry: &CustomTypeRegistry,
-    value_ident: &syn::Ident,
-) -> proc_macro2::TokenStream {
+pub fn to_wire_expr_owned(ty: &syn::Type, registry: &CustomTypeRegistry, value_ident: &syn::Ident) -> proc_macro2::TokenStream {
     if let Some(entry) = registry.lookup(ty) {
         let into_fn = entry.to_fn_path();
         return quote! { #into_fn(&#value_ident) };
@@ -629,11 +546,7 @@ pub fn to_wire_expr_owned(
     }
 }
 
-pub fn from_wire_expr_owned(
-    ty: &syn::Type,
-    registry: &CustomTypeRegistry,
-    value_ident: &syn::Ident,
-) -> proc_macro2::TokenStream {
+pub fn from_wire_expr_owned(ty: &syn::Type, registry: &CustomTypeRegistry, value_ident: &syn::Ident) -> proc_macro2::TokenStream {
     if let Some(entry) = registry.lookup(ty) {
         let try_from_fn = entry.try_from_fn_path();
         let error_message = format!("{}: custom type conversion failed", entry.name);
@@ -703,22 +616,13 @@ fn type_last_segment(ty: &syn::Type) -> Option<String> {
     let syn::Type::Path(type_path) = ty else {
         return None;
     };
-    type_path
-        .path
-        .segments
-        .last()
-        .map(|segment| segment.ident.to_string())
+    type_path.path.segments.last().map(|segment| segment.ident.to_string())
 }
 
 fn type_shape_key(ty: &syn::Type) -> String {
     match ty {
         syn::Type::Reference(reference) => type_shape_key(reference.elem.as_ref()),
-        syn::Type::Path(type_path) => type_path
-            .path
-            .segments
-            .last()
-            .map(shape_key_for_segment)
-            .unwrap_or_else(|| normalize_type(ty)),
+        syn::Type::Path(type_path) => type_path.path.segments.last().map(shape_key_for_segment).unwrap_or_else(|| normalize_type(ty)),
         _ => normalize_type(ty),
     }
 }
@@ -737,9 +641,5 @@ fn shape_key_for_segment(segment: &syn::PathSegment) -> String {
         _ => Vec::new(),
     };
 
-    if args.is_empty() {
-        ident.clone()
-    } else {
-        format!("{}<{}>", ident, args.join(","))
-    }
+    if args.is_empty() { ident.clone() } else { format!("{}<{}>", ident, args.join(",")) }
 }

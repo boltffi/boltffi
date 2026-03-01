@@ -1,5 +1,4 @@
-use std::ffi::c_void;
-use std::sync::Arc;
+use std::{ffi::c_void, sync::Arc};
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -64,10 +63,7 @@ impl Default for CallbackHandle {
 
 impl std::fmt::Debug for CallbackHandle {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("CallbackHandle")
-            .field("handle", &self.handle)
-            .field("vtable", &self.vtable)
-            .finish()
+        f.debug_struct("CallbackHandle").field("handle", &self.handle).field("vtable", &self.vtable).finish()
     }
 }
 

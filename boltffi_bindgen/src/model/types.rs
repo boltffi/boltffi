@@ -13,11 +13,7 @@ pub enum ReturnType {
 
 impl ReturnType {
     pub fn value(ty: Type) -> Self {
-        if ty.is_void() {
-            Self::Void
-        } else {
-            Self::Value(ty)
-        }
+        if ty.is_void() { Self::Void } else { Self::Value(ty) }
     }
 
     pub fn fallible(ok: Type, err: Type) -> Self {
@@ -26,10 +22,7 @@ impl ReturnType {
 
     pub fn from_output(ty: Type) -> Self {
         match ty.result_types() {
-            Some((ok, err)) => Self::Fallible {
-                ok: ok.clone(),
-                err: err.clone(),
-            },
+            Some((ok, err)) => Self::Fallible { ok: ok.clone(), err: err.clone() },
             None => Self::value(ty),
         }
     }
@@ -177,31 +170,15 @@ impl Primitive {
     }
 
     pub fn is_signed(self) -> bool {
-        matches!(
-            self,
-            Self::I8 | Self::I16 | Self::I32 | Self::I64 | Self::Isize
-        )
+        matches!(self, Self::I8 | Self::I16 | Self::I32 | Self::I64 | Self::Isize)
     }
 
     pub fn is_unsigned(self) -> bool {
-        matches!(
-            self,
-            Self::U8 | Self::U16 | Self::U32 | Self::U64 | Self::Usize
-        )
+        matches!(self, Self::U8 | Self::U16 | Self::U32 | Self::U64 | Self::Usize)
     }
 
     pub fn fits_in_32_bits(self) -> bool {
-        matches!(
-            self,
-            Self::Bool
-                | Self::I8
-                | Self::U8
-                | Self::I16
-                | Self::U16
-                | Self::I32
-                | Self::U32
-                | Self::F32
-        )
+        matches!(self, Self::Bool | Self::I8 | Self::U8 | Self::I16 | Self::U16 | Self::I32 | Self::U32 | Self::F32)
     }
 
     pub fn size_bytes(self) -> usize {
@@ -271,19 +248,10 @@ impl ClosureSignature {
     }
 
     pub fn signature_id(&self) -> String {
-        let params_id = self
-            .params
-            .iter()
-            .map(|p| p.type_id())
-            .collect::<Vec<_>>()
-            .join("_");
+        let params_id = self.params.iter().map(|p| p.type_id()).collect::<Vec<_>>().join("_");
         let ret_id = self.returns.type_id();
         if self.is_void_return() {
-            if params_id.is_empty() {
-                "Void".to_string()
-            } else {
-                params_id
-            }
+            if params_id.is_empty() { "Void".to_string() } else { params_id }
         } else if params_id.is_empty() {
             format!("To{}", ret_id)
         } else {
@@ -328,9 +296,7 @@ const BUILTIN_SPECS: &[BuiltinSpec] = &[
 impl BuiltinId {
     pub fn from_rust_path(path: &str) -> Option<Self> {
         let trimmed = path.trim();
-        BUILTIN_SPECS
-            .iter()
-            .find_map(|spec| spec.rust_paths.contains(&trimmed).then_some(spec.id))
+        BUILTIN_SPECS.iter().find_map(|spec| spec.rust_paths.contains(&trimmed).then_some(spec.id))
     }
 
     pub fn type_id(self) -> &'static str {
@@ -405,10 +371,7 @@ impl Type {
 
     pub fn named_type(&self) -> Option<&str> {
         match self {
-            Self::Custom { name, .. }
-            | Self::Object(name)
-            | Self::Record(name)
-            | Self::Enum(name) => Some(name),
+            Self::Custom { name, .. } | Self::Object(name) | Self::Record(name) | Self::Enum(name) => Some(name),
             _ => None,
         }
     }
@@ -507,19 +470,12 @@ impl CLayout for Type {
     fn c_layout(&self) -> Layout {
         match self {
             Self::Primitive(primitive) => primitive.c_layout(),
-            Self::String | Self::Bytes | Self::Vec(_) | Self::Slice(_) | Self::MutSlice(_) => {
-                Layout::new(24, 8)
-            }
+            Self::String | Self::Bytes | Self::Vec(_) | Self::Slice(_) | Self::MutSlice(_) => Layout::new(24, 8),
             Self::Object(_) | Self::BoxedTrait(_) | Self::Closure(_) => Layout::new(8, 8),
-            Self::Builtin(_) | Self::Record(_) | Self::Enum(_) | Self::Custom { .. } => {
-                Layout::new(8, 8)
-            }
+            Self::Builtin(_) | Self::Record(_) | Self::Enum(_) | Self::Custom { .. } => Layout::new(8, 8),
             Self::Option(inner) => {
                 let inner_layout = inner.c_layout();
-                Layout::new(
-                    inner_layout.size.as_usize() + inner_layout.alignment.as_usize(),
-                    inner_layout.alignment.as_usize(),
-                )
+                Layout::new(inner_layout.size.as_usize() + inner_layout.alignment.as_usize(), inner_layout.alignment.as_usize())
             }
             Self::Result { ok, .. } => ok.c_layout(),
             Self::Void => Layout::new(0, 1),

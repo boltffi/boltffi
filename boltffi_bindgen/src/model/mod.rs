@@ -23,5 +23,5 @@ pub use method::{Method, Parameter};
 pub use module::Module;
 pub use option_info::OptionInfo;
 pub use record::{Record, RecordField};
-pub use stream::{StreamMethod, StreamMode};
+pub use stream::{AsyncIteratorMethod, StreamMethod, StreamMode};
 pub use types::{BuiltinId, ClosureSignature, Deprecation, Primitive, Receiver, ReturnType, Type};

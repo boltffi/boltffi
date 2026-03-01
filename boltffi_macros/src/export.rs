@@ -1,14 +1,13 @@
-use boltffi_ffi_rules::naming;
-use boltffi_ffi_rules::transport::EncodedReturnStrategy;
+use crate::{
+    callback_registry, custom_types,
+    params::{FfiParams, transform_params, transform_params_async},
+    returns::{ReturnAbi, classify_return, encoded_return_body, lower_return_abi},
+    safety,
+};
+use boltffi_ffi_rules::{naming, transport::EncodedReturnStrategy};
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::ItemFn;
-
-use crate::callback_registry;
-use crate::custom_types;
-use crate::params::{FfiParams, transform_params, transform_params_async};
-use crate::returns::{ReturnAbi, classify_return, encoded_return_body, lower_return_abi};
-use crate::safety;
 
 fn build_encoded_return_exports(
     input: &ItemFn,
@@ -288,10 +287,7 @@ pub fn ffi_export_impl(item: TokenStream) -> TokenStream {
                     }
             }
         }
-        ReturnAbi::Encoded {
-            rust_type: inner_ty,
-            strategy,
-        } => {
+        ReturnAbi::Encoded { rust_type: inner_ty, strategy } => {
             let result_ident = syn::Ident::new("result", fn_name.span());
 
             if matches!(strategy, EncodedReturnStrategy::OptionScalar) {
@@ -319,14 +315,7 @@ pub fn ffi_export_impl(item: TokenStream) -> TokenStream {
                     ::boltffi::__private::FfiBuf::wire_encode(&#result_ident)
                 };
 
-                return build_f64_wasm_return_exports(
-                    &input,
-                    fn_vis,
-                    &export_ident,
-                    &ffi_params,
-                    wasm_body,
-                    native_body,
-                );
+                return build_f64_wasm_return_exports(&input, fn_vis, &export_ident, &ffi_params, wasm_body, native_body);
             }
 
             if matches!(strategy, EncodedReturnStrategy::PrimitiveVec) {
@@ -354,43 +343,19 @@ pub fn ffi_export_impl(item: TokenStream) -> TokenStream {
                     ::boltffi::__private::FfiBuf::wire_encode(&#result_ident)
                 };
 
-                return build_void_wasm_return_exports(
-                    &input,
-                    fn_vis,
-                    &export_ident,
-                    &ffi_params,
-                    wasm_body,
-                    native_body,
-                );
+                return build_void_wasm_return_exports(&input, fn_vis, &export_ident, &ffi_params, wasm_body, native_body);
             }
 
-            let encode_body = encoded_return_body(
-                &inner_ty,
-                strategy,
-                &result_ident,
-                quote! { #fn_name(#(#call_args),*) },
-                &conversions,
-                &custom_types,
-            );
+            let encode_body = encoded_return_body(&inner_ty, strategy, &result_ident, quote! { #fn_name(#(#call_args),*) }, &conversions, &custom_types);
 
-            return build_encoded_return_exports(
-                &input,
-                fn_vis,
-                &export_ident,
-                &ffi_params,
-                encode_body,
-            );
+            return build_encoded_return_exports(&input, fn_vis, &export_ident, &ffi_params, encode_body);
         }
     };
 
     TokenStream::from(expanded)
 }
 
-fn generate_async_export(
-    input: &ItemFn,
-    custom_types: &custom_types::CustomTypeRegistry,
-    callback_registry: &callback_registry::CallbackTraitRegistry,
-) -> TokenStream {
+fn generate_async_export(input: &ItemFn, custom_types: &custom_types::CustomTypeRegistry, callback_registry: &callback_registry::CallbackTraitRegistry) -> TokenStream {
     let fn_name = &input.sig.ident;
     let fn_inputs = &input.sig.inputs;
     let fn_output = &input.sig.output;
@@ -402,8 +367,7 @@ fn generate_async_export(
     let poll_ident = syn::Ident::new(&format!("{}_poll", base_name), fn_name.span());
     let poll_sync_ident = syn::Ident::new(&format!("{}_poll_sync", base_name), fn_name.span());
     let complete_ident = syn::Ident::new(&format!("{}_complete", base_name), fn_name.span());
-    let panic_message_ident =
-        syn::Ident::new(&format!("{}_panic_message", base_name), fn_name.span());
+    let panic_message_ident = syn::Ident::new(&format!("{}_panic_message", base_name), fn_name.span());
     let cancel_ident = syn::Ident::new(&format!("{}_cancel", base_name), fn_name.span());
     let free_ident = syn::Ident::new(&format!("{}_free", base_name), fn_name.span());
 

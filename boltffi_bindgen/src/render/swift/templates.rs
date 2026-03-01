@@ -1,22 +1,12 @@
+use super::plan::{SwiftCallMode, SwiftCallback, SwiftClass, SwiftEnum, SwiftField, SwiftFunction, SwiftRecord, SwiftStreamMode, SwiftVariant};
 use askama::Template;
-
-use super::plan::{
-    SwiftCallMode, SwiftCallback, SwiftClass, SwiftEnum, SwiftField, SwiftFunction, SwiftRecord,
-    SwiftStreamMode, SwiftVariant,
-};
 
 pub fn swift_doc_block(doc: &Option<String>, indent: &str) -> String {
     match doc {
         Some(text) => {
             let lines: String = text
                 .lines()
-                .map(|line| {
-                    if line.is_empty() {
-                        format!("{indent}///\n")
-                    } else {
-                        format!("{indent}/// {line}\n")
-                    }
-                })
+                .map(|line| if line.is_empty() { format!("{indent}///\n") } else { format!("{indent}/// {line}\n") })
                 .collect();
             lines
         }
@@ -36,17 +26,19 @@ pub struct PreambleFooterTemplate<'a> {
     pub prefix: &'a str,
     pub has_async: bool,
     pub has_streams: bool,
+    pub has_async_iterators: bool,
 }
 
 pub fn render_preamble_header(ffi_module_name: Option<&str>) -> String {
     PreambleHeaderTemplate { ffi_module_name }.render().unwrap()
 }
 
-pub fn render_preamble_footer(prefix: &str, has_async: bool, has_streams: bool) -> String {
+pub fn render_preamble_footer(prefix: &str, has_async: bool, has_streams: bool, has_async_iterators: bool) -> String {
     PreambleFooterTemplate {
         prefix,
         has_async,
         has_streams,
+        has_async_iterators,
     }
     .render()
     .unwrap()
@@ -211,17 +203,10 @@ impl SwiftEmitter {
 
         module.custom_types.iter().for_each(|ct| {
             if ct.native_mapping.is_none() {
-                output.push_str(&format!(
-                    "public typealias {} = {}\n",
-                    ct.alias_name, ct.target_type
-                ));
+                output.push_str(&format!("public typealias {} = {}\n", ct.alias_name, ct.target_type));
             }
         });
-        if module
-            .custom_types
-            .iter()
-            .any(|ct| ct.native_mapping.is_none())
-        {
+        if module.custom_types.iter().any(|ct| ct.native_mapping.is_none()) {
             output.push('\n');
         }
 
@@ -254,6 +239,7 @@ impl SwiftEmitter {
             &self.prefix,
             module.has_async(),
             module.has_streams(),
+            module.has_async_iterators(),
         ));
         output.push('\n');
 
@@ -270,16 +256,17 @@ impl Default for SwiftEmitter {
 #[cfg(all(test, not(miri)))]
 mod tests {
     use super::*;
-    use crate::ir::codec::VecLayout;
-    use crate::ir::ids::RecordId;
-    use crate::ir::ops::{
-        OffsetExpr, ReadOp, ReadSeq, SizeExpr, ValueExpr, WireShape, WriteOp, WriteSeq,
-    };
-    use crate::ir::types::{PrimitiveType, TypeExpr};
-    use crate::render::swift::plan::{
-        SwiftAsyncResult, SwiftCallback, SwiftCallbackMethod, SwiftCallbackParam, SwiftClass,
-        SwiftConstructor, SwiftConversion, SwiftEnumStyle, SwiftFunction, SwiftMethod, SwiftParam,
-        SwiftReturn, SwiftStream, SwiftStreamMode, SwiftVariantPayload,
+    use crate::{
+        ir::{
+            codec::VecLayout,
+            ids::RecordId,
+            ops::{OffsetExpr, ReadOp, ReadSeq, SizeExpr, ValueExpr, WireShape, WriteOp, WriteSeq},
+            types::{PrimitiveType, TypeExpr},
+        },
+        render::swift::plan::{
+            SwiftAsyncIterator, SwiftAsyncResult, SwiftCallback, SwiftCallbackMethod, SwiftCallbackParam, SwiftClass, SwiftConstructor, SwiftConversion, SwiftEnumStyle,
+            SwiftFunction, SwiftMethod, SwiftParam, SwiftReturn, SwiftStream, SwiftStreamMode, SwiftVariantPayload,
+        },
     };
 
     fn val(name: &str) -> ValueExpr {
@@ -301,10 +288,7 @@ mod tests {
     fn read_primitive(primitive: PrimitiveType, offset_expr: OffsetExpr) -> ReadSeq {
         ReadSeq {
             size: SizeExpr::Fixed(primitive.wire_size_bytes()),
-            ops: vec![ReadOp::Primitive {
-                primitive,
-                offset: offset_expr,
-            }],
+            ops: vec![ReadOp::Primitive { primitive, offset: offset_expr }],
             shape: WireShape::Value,
         }
     }
@@ -320,10 +304,7 @@ mod tests {
     fn write_primitive(primitive: PrimitiveType, value: &str) -> WriteSeq {
         WriteSeq {
             size: SizeExpr::Fixed(primitive.wire_size_bytes()),
-            ops: vec![WriteOp::Primitive {
-                primitive,
-                value: val(value),
-            }],
+            ops: vec![WriteOp::Primitive { primitive, value: val(value) }],
             shape: WireShape::Value,
         }
     }
@@ -331,9 +312,7 @@ mod tests {
     fn read_string(offset_expr: OffsetExpr) -> ReadSeq {
         ReadSeq {
             size: SizeExpr::Runtime,
-            ops: vec![ReadOp::String {
-                offset: offset_expr,
-            }],
+            ops: vec![ReadOp::String { offset: offset_expr }],
             shape: WireShape::Value,
         }
     }
@@ -349,9 +328,7 @@ mod tests {
     fn read_bytes(offset_expr: OffsetExpr) -> ReadSeq {
         ReadSeq {
             size: SizeExpr::Runtime,
-            ops: vec![ReadOp::Bytes {
-                offset: offset_expr,
-            }],
+            ops: vec![ReadOp::Bytes { offset: offset_expr }],
             shape: WireShape::Value,
         }
     }
@@ -389,12 +366,7 @@ mod tests {
         }
     }
 
-    fn read_vec(
-        offset_expr: OffsetExpr,
-        element_type: TypeExpr,
-        element: ReadSeq,
-        layout: VecLayout,
-    ) -> ReadSeq {
+    fn read_vec(offset_expr: OffsetExpr, element_type: TypeExpr, element: ReadSeq, layout: VecLayout) -> ReadSeq {
         ReadSeq {
             size: SizeExpr::Runtime,
             ops: vec![ReadOp::Vec {
@@ -407,12 +379,7 @@ mod tests {
         }
     }
 
-    fn write_vec(
-        value: &str,
-        element: WriteSeq,
-        element_type: &TypeExpr,
-        layout: VecLayout,
-    ) -> WriteSeq {
+    fn write_vec(value: &str, element: WriteSeq, element_type: &TypeExpr, layout: VecLayout) -> WriteSeq {
         let size = if matches!(element_type, TypeExpr::Primitive(PrimitiveType::U8)) {
             SizeExpr::Sum(vec![SizeExpr::Fixed(4), SizeExpr::BytesLen(val(value))])
         } else {
@@ -458,14 +425,7 @@ mod tests {
         }
     }
 
-    fn field(
-        name: &str,
-        swift_type: &str,
-        decode: ReadSeq,
-        encode: WriteSeq,
-        c_offset: Option<usize>,
-        default_expr: Option<&str>,
-    ) -> SwiftField {
+    fn field(name: &str, swift_type: &str, decode: ReadSeq, encode: WriteSeq, c_offset: Option<usize>, default_expr: Option<&str>) -> SwiftField {
         SwiftField {
             swift_name: name.to_string(),
             swift_type: swift_type.to_string(),
@@ -557,14 +517,7 @@ mod tests {
                     None,
                     None,
                 ),
-                field(
-                    "name",
-                    "String",
-                    read_string(offset("pos")),
-                    write_string("name"),
-                    None,
-                    None,
-                ),
+                field("name", "String", read_string(offset("pos")), write_string("name"), None, None),
             ],
             is_blittable: false,
             blittable_size: None,
@@ -742,14 +695,7 @@ mod tests {
                 SwiftVariant {
                     swift_name: "text".to_string(),
                     discriminant: 1,
-                    payload: SwiftVariantPayload::Tuple(vec![field(
-                        "value",
-                        "String",
-                        read_string(offset("pos")),
-                        write_string("value"),
-                        None,
-                        None,
-                    )]),
+                    payload: SwiftVariantPayload::Tuple(vec![field("value", "String", read_string(offset("pos")), write_string("value"), None, None)]),
                     doc: None,
                 },
                 SwiftVariant {
@@ -841,9 +787,7 @@ mod tests {
                     conversion: SwiftConversion::Direct,
                 },
             ],
-            returns: SwiftReturn::Direct {
-                swift_type: "Int32".to_string(),
-            },
+            returns: SwiftReturn::Direct { swift_type: "Int32".to_string() },
             doc: None,
         };
         insta::assert_snapshot!(render_function(&func, "boltffi"));
@@ -946,9 +890,7 @@ mod tests {
                     swift_type: "Data".to_string(),
                     call_arg: "data".to_string(),
                     ffi_args: vec!["dataPtr".to_string(), "dataLen".to_string()],
-                    decode_prelude: Some(
-                        "let data = Data(bytes: dataPtr!, count: Int(dataLen))".to_string(),
-                    ),
+                    decode_prelude: Some("let data = Data(bytes: dataPtr!, count: Int(dataLen))".to_string()),
                 }],
                 returns: SwiftReturn::Void,
                 is_async: false,
@@ -978,13 +920,9 @@ mod tests {
                     swift_type: "String".to_string(),
                     call_arg: "input".to_string(),
                     ffi_args: vec!["inputPtr".to_string(), "inputLen".to_string()],
-                    decode_prelude: Some(
-                        "let input = String(decoding: UnsafeBufferPointer(start: inputPtr, count: Int(inputLen)), as: UTF8.self)".to_string(),
-                    ),
+                    decode_prelude: Some("let input = String(decoding: UnsafeBufferPointer(start: inputPtr, count: Int(inputLen)), as: UTF8.self)".to_string()),
                 }],
-                returns: SwiftReturn::Direct {
-                    swift_type: "Bool".to_string(),
-                },
+                returns: SwiftReturn::Direct { swift_type: "Bool".to_string() },
                 is_async: false,
                 has_out_param: true,
                 doc: None,
@@ -1034,6 +972,7 @@ mod tests {
                 doc: Some("Inserts a value into the store by key.".to_string()),
             }],
             streams: vec![],
+            async_iterators: vec![],
             doc: Some("A persistent key-value data store.".to_string()),
         };
         insta::assert_snapshot!(render_class(&cls, "boltffi"));
@@ -1075,6 +1014,7 @@ mod tests {
                 doc: None,
             }],
             streams: vec![],
+            async_iterators: vec![],
             doc: None,
         };
         insta::assert_snapshot!(render_class(&cls, "boltffi"));
@@ -1100,6 +1040,34 @@ mod tests {
                 free: "boltffi_event_source_events_free".to_string(),
                 free_buf: "boltffi_free_buf_u8".to_string(),
                 atomic_cas: "boltffi_atomic_u8_cas".to_string(),
+            }],
+            async_iterators: vec![],
+            doc: None,
+        };
+        insta::assert_snapshot!(render_class(&cls, "boltffi"));
+    }
+
+    #[test]
+    fn snapshot_class_with_async_iterator() {
+        let item_decode = read_primitive(PrimitiveType::I32, OffsetExpr::Var("pos".to_string()));
+        let option_decode = read_option(OffsetExpr::Var("pos".to_string()), item_decode);
+        let cls = SwiftClass {
+            name: "NumberIterator".to_string(),
+            ffi_free: "boltffi_number_iterator_free".to_string(),
+            constructors: vec![],
+            methods: vec![],
+            streams: vec![],
+            async_iterators: vec![SwiftAsyncIterator {
+                name: "countToThree".to_string(),
+                item_type: "Int32".to_string(),
+                item_decode: option_decode,
+                entry: "boltffi_number_iterator_count_to_three".to_string(),
+                next: "boltffi_number_iterator_count_to_three_next".to_string(),
+                next_poll: "boltffi_number_iterator_count_to_three_next_poll".to_string(),
+                next_complete: "boltffi_number_iterator_count_to_three_next_complete".to_string(),
+                next_cancel: "boltffi_number_iterator_count_to_three_next_cancel".to_string(),
+                next_free: "boltffi_number_iterator_count_to_three_next_free".to_string(),
+                free: "boltffi_number_iterator_count_to_three_free".to_string(),
             }],
             doc: None,
         };
@@ -1140,6 +1108,7 @@ mod tests {
                 doc: None,
             }],
             streams: vec![],
+            async_iterators: vec![],
             doc: None,
         };
         insta::assert_snapshot!(render_class(&cls, "boltffi"));
@@ -1163,6 +1132,7 @@ mod tests {
             }],
             methods: vec![],
             streams: vec![],
+            async_iterators: vec![],
             doc: None,
         };
         insta::assert_snapshot!(render_class(&cls, "boltffi"));
@@ -1219,6 +1189,7 @@ mod tests {
                 doc: None,
             }],
             streams: vec![],
+            async_iterators: vec![],
             doc: None,
         };
         insta::assert_snapshot!(render_class(&cls, "boltffi"));
@@ -1242,9 +1213,7 @@ mod tests {
                     swift_type: "String".to_string(),
                     call_arg: "result".to_string(),
                     ffi_args: vec!["resultPtr".to_string(), "resultLen".to_string()],
-                    decode_prelude: Some(
-                        "let result = String(decoding: UnsafeBufferPointer(start: resultPtr, count: Int(resultLen)), as: UTF8.self)".to_string(),
-                    ),
+                    decode_prelude: Some("let result = String(decoding: UnsafeBufferPointer(start: resultPtr, count: Int(resultLen)), as: UTF8.self)".to_string()),
                 }],
                 returns: SwiftReturn::Void,
                 is_async: true,
@@ -1261,14 +1230,7 @@ mod tests {
         let record = SwiftRecord {
             class_name: "UserProfile".to_string(),
             fields: vec![
-                field(
-                    "name",
-                    "String",
-                    read_string(offset("pos")),
-                    write_string("name"),
-                    None,
-                    None,
-                ),
+                field("name", "String", read_string(offset("pos")), write_string("name"), None, None),
                 field(
                     "bio",
                     "String?",
@@ -1290,29 +1252,12 @@ mod tests {
         let record = SwiftRecord {
             class_name: "Team".to_string(),
             fields: vec![
-                field(
-                    "name",
-                    "String",
-                    read_string(offset("pos")),
-                    write_string("name"),
-                    None,
-                    None,
-                ),
+                field("name", "String", read_string(offset("pos")), write_string("name"), None, None),
                 field(
                     "members",
                     "[String]",
-                    read_vec(
-                        offset("pos"),
-                        TypeExpr::String,
-                        read_string(offset("pos")),
-                        VecLayout::Encoded,
-                    ),
-                    write_vec(
-                        "members",
-                        write_string("item"),
-                        &TypeExpr::String,
-                        VecLayout::Encoded,
-                    ),
+                    read_vec(offset("pos"), TypeExpr::String, read_string(offset("pos")), VecLayout::Encoded),
+                    write_vec("members", write_string("item"), &TypeExpr::String, VecLayout::Encoded),
                     None,
                     None,
                 ),
@@ -1372,6 +1317,7 @@ mod tests {
                 doc: None,
             }],
             streams: vec![],
+            async_iterators: vec![],
             doc: None,
         };
         insta::assert_snapshot!(render_class(&cls, "boltffi"));
@@ -1385,14 +1331,7 @@ mod tests {
                 SwiftVariant {
                     swift_name: "found".to_string(),
                     discriminant: 0,
-                    payload: SwiftVariantPayload::Tuple(vec![field(
-                        "0",
-                        "String",
-                        read_string(offset("pos")),
-                        write_string("0"),
-                        None,
-                        None,
-                    )]),
+                    payload: SwiftVariantPayload::Tuple(vec![field("0", "String", read_string(offset("pos")), write_string("0"), None, None)]),
                     doc: None,
                 },
                 SwiftVariant {

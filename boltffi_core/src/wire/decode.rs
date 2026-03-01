@@ -1,15 +1,11 @@
 use crate::wire::constants::*;
-
 #[cfg(feature = "chrono")]
 use chrono::{DateTime, Utc};
-
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-
-#[cfg(feature = "uuid")]
-use uuid::Uuid;
-
 #[cfg(feature = "url")]
 use url::Url;
+#[cfg(feature = "uuid")]
+use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DecodeError {
@@ -74,11 +70,7 @@ impl WireDecode for bool {
 impl WireDecode for isize {
     #[inline]
     fn decode_from(buf: &[u8]) -> DecodeResult<Self> {
-        let bytes: [u8; 8] = buf
-            .get(..8)
-            .ok_or(DecodeError::BufferTooSmall)?
-            .try_into()
-            .map_err(|_| DecodeError::BufferTooSmall)?;
+        let bytes: [u8; 8] = buf.get(..8).ok_or(DecodeError::BufferTooSmall)?.try_into().map_err(|_| DecodeError::BufferTooSmall)?;
         let value = i64::from_le_bytes(bytes) as isize;
         Ok((value, 8))
     }
@@ -87,11 +79,7 @@ impl WireDecode for isize {
 impl WireDecode for usize {
     #[inline]
     fn decode_from(buf: &[u8]) -> DecodeResult<Self> {
-        let bytes: [u8; 8] = buf
-            .get(..8)
-            .ok_or(DecodeError::BufferTooSmall)?
-            .try_into()
-            .map_err(|_| DecodeError::BufferTooSmall)?;
+        let bytes: [u8; 8] = buf.get(..8).ok_or(DecodeError::BufferTooSmall)?.try_into().map_err(|_| DecodeError::BufferTooSmall)?;
         let value = u64::from_le_bytes(bytes) as usize;
         Ok((value, 8))
     }
@@ -100,12 +88,7 @@ impl WireDecode for usize {
 impl WireDecode for String {
     #[inline]
     fn decode_from(buf: &[u8]) -> DecodeResult<Self> {
-        let len = u32::from_le_bytes(
-            buf.get(..4)
-                .ok_or(DecodeError::BufferTooSmall)?
-                .try_into()
-                .unwrap(),
-        ) as usize;
+        let len = u32::from_le_bytes(buf.get(..4).ok_or(DecodeError::BufferTooSmall)?.try_into().unwrap()) as usize;
         let total_size = 4 + len;
         let string_bytes = buf.get(4..total_size).ok_or(DecodeError::BufferTooSmall)?;
         let string = unsafe { core::str::from_utf8_unchecked(string_bytes) }.to_owned();
@@ -117,8 +100,7 @@ impl WireDecode for Duration {
     #[inline]
     fn decode_from(buf: &[u8]) -> DecodeResult<Self> {
         let (seconds, seconds_used) = u64::decode_from(buf)?;
-        let (nanos, nanos_used) =
-            u32::decode_from(buf.get(seconds_used..).ok_or(DecodeError::BufferTooSmall)?)?;
+        let (nanos, nanos_used) = u32::decode_from(buf.get(seconds_used..).ok_or(DecodeError::BufferTooSmall)?)?;
         if nanos >= 1_000_000_000 {
             return Err(DecodeError::InvalidValue);
         }
@@ -130,8 +112,7 @@ impl WireDecode for SystemTime {
     #[inline]
     fn decode_from(buf: &[u8]) -> DecodeResult<Self> {
         let (seconds, seconds_used) = i64::decode_from(buf)?;
-        let (nanos, nanos_used) =
-            u32::decode_from(buf.get(seconds_used..).ok_or(DecodeError::BufferTooSmall)?)?;
+        let (nanos, nanos_used) = u32::decode_from(buf.get(seconds_used..).ok_or(DecodeError::BufferTooSmall)?)?;
         if nanos >= 1_000_000_000 {
             return Err(DecodeError::InvalidValue);
         }
@@ -140,10 +121,7 @@ impl WireDecode for SystemTime {
         let total_nanos = (seconds as i128) * nanos_per_second + (nanos as i128);
 
         let system_time = if total_nanos >= 0 {
-            let duration = Duration::new(
-                (total_nanos / nanos_per_second) as u64,
-                (total_nanos % nanos_per_second) as u32,
-            );
+            let duration = Duration::new((total_nanos / nanos_per_second) as u64, (total_nanos % nanos_per_second) as u32);
             UNIX_EPOCH + duration
         } else {
             let abs_total_nanos = (-total_nanos) as u128;
@@ -161,8 +139,7 @@ impl WireDecode for Uuid {
     #[inline]
     fn decode_from(buf: &[u8]) -> DecodeResult<Self> {
         let (hi, hi_used) = u64::decode_from(buf)?;
-        let (lo, lo_used) =
-            u64::decode_from(buf.get(hi_used..).ok_or(DecodeError::BufferTooSmall)?)?;
+        let (lo, lo_used) = u64::decode_from(buf.get(hi_used..).ok_or(DecodeError::BufferTooSmall)?)?;
         let mut bytes = [0u8; 16];
         bytes[..8].copy_from_slice(&hi.to_be_bytes());
         bytes[8..].copy_from_slice(&lo.to_be_bytes());
@@ -185,10 +162,8 @@ impl WireDecode for DateTime<Utc> {
     #[inline]
     fn decode_from(buf: &[u8]) -> DecodeResult<Self> {
         let (seconds, seconds_used) = i64::decode_from(buf)?;
-        let (nanos, nanos_used) =
-            u32::decode_from(buf.get(seconds_used..).ok_or(DecodeError::BufferTooSmall)?)?;
-        let date_time =
-            DateTime::from_timestamp(seconds, nanos).ok_or(DecodeError::InvalidValue)?;
+        let (nanos, nanos_used) = u32::decode_from(buf.get(seconds_used..).ok_or(DecodeError::BufferTooSmall)?)?;
+        let date_time = DateTime::from_timestamp(seconds, nanos).ok_or(DecodeError::InvalidValue)?;
         Ok((date_time, seconds_used + nanos_used))
     }
 }
@@ -277,11 +252,7 @@ impl FixedSizeWireDecode for isize {
 
     #[inline]
     fn decode_fixed(buf: &[u8]) -> Result<Self, DecodeError> {
-        let bytes: [u8; 8] = buf
-            .get(..8)
-            .ok_or(DecodeError::BufferTooSmall)?
-            .try_into()
-            .map_err(|_| DecodeError::BufferTooSmall)?;
+        let bytes: [u8; 8] = buf.get(..8).ok_or(DecodeError::BufferTooSmall)?.try_into().map_err(|_| DecodeError::BufferTooSmall)?;
         Ok(i64::from_le_bytes(bytes) as isize)
     }
 }
@@ -291,11 +262,7 @@ impl FixedSizeWireDecode for usize {
 
     #[inline]
     fn decode_fixed(buf: &[u8]) -> Result<Self, DecodeError> {
-        let bytes: [u8; 8] = buf
-            .get(..8)
-            .ok_or(DecodeError::BufferTooSmall)?
-            .try_into()
-            .map_err(|_| DecodeError::BufferTooSmall)?;
+        let bytes: [u8; 8] = buf.get(..8).ok_or(DecodeError::BufferTooSmall)?.try_into().map_err(|_| DecodeError::BufferTooSmall)?;
         Ok(u64::from_le_bytes(bytes) as usize)
     }
 }
@@ -421,8 +388,7 @@ mod tests {
     fn roundtrip_complex() {
         let mut buf = [0u8; 128];
 
-        let original: Vec<Option<String>> =
-            vec![Some("hello".to_string()), None, Some("world".to_string())];
+        let original: Vec<Option<String>> = vec![Some("hello".to_string()), None, Some("world".to_string())];
 
         let written = original.encode_to(&mut buf);
         let (decoded, size) = Vec::<Option<String>>::decode_from(&buf).unwrap();
@@ -606,12 +572,7 @@ mod tests {
 
         #[test]
         fn vec_of_unicode_strings_roundtrip() {
-            let original: Vec<String> = vec![
-                "Hello".to_string(),
-                "你好".to_string(),
-                "مرحبا".to_string(),
-                "👋🌍".to_string(),
-            ];
+            let original: Vec<String> = vec!["Hello".to_string(), "你好".to_string(), "مرحبا".to_string(), "👋🌍".to_string()];
 
             let mut buf = vec![0u8; original.wire_size()];
             original.encode_to(&mut buf);
@@ -660,18 +621,9 @@ mod tests {
         fn empty_buffer() {
             let buf: [u8; 0] = [];
 
-            assert!(matches!(
-                String::decode_from(&buf),
-                Err(DecodeError::BufferTooSmall)
-            ));
-            assert!(matches!(
-                Vec::<i32>::decode_from(&buf),
-                Err(DecodeError::BufferTooSmall)
-            ));
-            assert!(matches!(
-                i32::decode_from(&buf),
-                Err(DecodeError::BufferTooSmall)
-            ));
+            assert!(matches!(String::decode_from(&buf), Err(DecodeError::BufferTooSmall)));
+            assert!(matches!(Vec::<i32>::decode_from(&buf), Err(DecodeError::BufferTooSmall)));
+            assert!(matches!(i32::decode_from(&buf), Err(DecodeError::BufferTooSmall)));
         }
     }
 }

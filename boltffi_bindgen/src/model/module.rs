@@ -1,15 +1,15 @@
-use std::collections::{HashMap, HashSet};
-
+use super::{
+    callback_trait::CallbackTrait,
+    class::Class,
+    custom_type::CustomType,
+    enum_layout::DataEnumLayout,
+    enumeration::Enumeration,
+    function::Function,
+    record::Record,
+    types::{BuiltinId, ClosureSignature, ReturnType, Type},
+};
 use serde::{Deserialize, Serialize};
-
-use super::callback_trait::CallbackTrait;
-use super::class::Class;
-use super::custom_type::CustomType;
-use super::enum_layout::DataEnumLayout;
-use super::enumeration::Enumeration;
-use super::function::Function;
-use super::record::Record;
-use super::types::{BuiltinId, ClosureSignature, ReturnType, Type};
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Module {
@@ -71,9 +71,7 @@ impl Module {
     }
 
     pub fn find_enum(&self, name: &str) -> Option<&Enumeration> {
-        self.enums
-            .iter()
-            .find(|enumeration| enumeration.name == name)
+        self.enums.iter().find(|enumeration| enumeration.name == name)
     }
 
     pub fn with_callback_trait(mut self, callback_trait: CallbackTrait) -> Self {
@@ -87,31 +85,23 @@ impl Module {
     }
 
     pub fn find_callback_trait(&self, name: &str) -> Option<&CallbackTrait> {
-        self.callback_traits
-            .iter()
-            .find(|callback_trait| callback_trait.name == name)
+        self.callback_traits.iter().find(|callback_trait| callback_trait.name == name)
     }
 
     pub fn find_custom_type(&self, name: &str) -> Option<&CustomType> {
-        self.custom_types
-            .iter()
-            .find(|custom_type| custom_type.name == name)
+        self.custom_types.iter().find(|custom_type| custom_type.name == name)
     }
 
     pub fn has_exports(&self) -> bool {
-        !self.classes.is_empty()
-            || !self.functions.is_empty()
-            || !self.enums.is_empty()
-            || !self.callback_traits.is_empty()
-            || !self.custom_types.is_empty()
+        !self.classes.is_empty() || !self.functions.is_empty() || !self.enums.is_empty() || !self.callback_traits.is_empty() || !self.custom_types.is_empty()
     }
 
     pub fn has_async(&self) -> bool {
-        self.functions.iter().any(|f| f.is_async)
-            || self
-                .classes
-                .iter()
-                .any(|c| c.methods.iter().any(|m| m.is_async))
+        self.functions.iter().any(|f| f.is_async) || self.classes.iter().any(|c| c.methods.iter().any(|m| m.is_async)) || self.has_async_iterators()
+    }
+
+    pub fn has_async_iterators(&self) -> bool {
+        self.classes.iter().any(|c| !c.async_iterators.is_empty())
     }
 
     pub fn has_streams(&self) -> bool {
@@ -134,19 +124,13 @@ impl Module {
     }
 
     pub fn is_data_enum(&self, name: &str) -> bool {
-        self.enums
-            .iter()
-            .find(|e| e.name == name)
-            .is_some_and(|e| e.is_data_enum())
+        self.enums.iter().find(|e| e.name == name).is_some_and(|e| e.is_data_enum())
     }
 
     pub fn collect_derived_types(&mut self) {
         let mut collector = DerivedTypeCollector::new();
 
-        self.records
-            .iter()
-            .flat_map(|r| r.fields.iter().map(|f| &f.field_type))
-            .for_each(|ty| collector.visit(ty));
+        self.records.iter().flat_map(|r| r.fields.iter().map(|f| &f.field_type)).for_each(|ty| collector.visit(ty));
 
         self.enums
             .iter()
@@ -155,25 +139,16 @@ impl Module {
             .for_each(|ty| collector.visit(ty));
 
         self.functions.iter().for_each(|f| {
-            f.inputs
-                .iter()
-                .map(|p| &p.param_type)
-                .for_each(|ty| collector.visit(ty));
+            f.inputs.iter().map(|p| &p.param_type).for_each(|ty| collector.visit(ty));
             collector.visit_return_type(&f.returns);
         });
 
         self.classes.iter().for_each(|c| {
             c.constructors.iter().for_each(|ctor| {
-                ctor.inputs
-                    .iter()
-                    .map(|p| &p.param_type)
-                    .for_each(|ty| collector.visit(ty));
+                ctor.inputs.iter().map(|p| &p.param_type).for_each(|ty| collector.visit(ty));
             });
             c.methods.iter().for_each(|m| {
-                m.inputs
-                    .iter()
-                    .map(|p| &p.param_type)
-                    .for_each(|ty| collector.visit(ty));
+                m.inputs.iter().map(|p| &p.param_type).for_each(|ty| collector.visit(ty));
                 collector.visit_return_type(&m.returns);
             });
             c.streams.iter().for_each(|s| collector.visit(&s.item_type));
@@ -181,18 +156,12 @@ impl Module {
 
         self.callback_traits.iter().for_each(|cb| {
             cb.methods.iter().for_each(|m| {
-                m.inputs
-                    .iter()
-                    .map(|p| &p.param_type)
-                    .for_each(|ty| collector.visit(ty));
+                m.inputs.iter().map(|p| &p.param_type).for_each(|ty| collector.visit(ty));
                 collector.visit_return_type(&m.returns);
             });
         });
 
-        self.custom_types
-            .iter()
-            .map(|ct| &ct.repr)
-            .for_each(|ty| collector.visit(ty));
+        self.custom_types.iter().map(|ct| &ct.repr).for_each(|ty| collector.visit(ty));
 
         self.used_builtins = collector.builtins;
         self.closures = collector.closures;
@@ -233,14 +202,7 @@ impl DerivedTypeCollector {
             Type::Custom { repr, .. } => {
                 self.visit(repr);
             }
-            Type::Primitive(_)
-            | Type::String
-            | Type::Bytes
-            | Type::Record(_)
-            | Type::Enum(_)
-            | Type::Object(_)
-            | Type::BoxedTrait(_)
-            | Type::Void => {}
+            Type::Primitive(_) | Type::String | Type::Bytes | Type::Record(_) | Type::Enum(_) | Type::Object(_) | Type::BoxedTrait(_) | Type::Void => {}
         }
     }
 

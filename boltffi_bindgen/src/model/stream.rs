@@ -1,6 +1,29 @@
+use super::types::{Deprecation, Type};
 use serde::{Deserialize, Serialize};
 
-use super::types::{Deprecation, Type};
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AsyncIteratorMethod {
+    pub name: String,
+    pub item_type: Type,
+    pub doc: Option<String>,
+    pub deprecated: Option<Deprecation>,
+}
+
+impl AsyncIteratorMethod {
+    pub fn new(name: impl Into<String>, item_type: Type) -> Self {
+        Self {
+            name: name.into(),
+            item_type,
+            doc: None,
+            deprecated: None,
+        }
+    }
+
+    pub fn maybe_doc(mut self, doc: Option<String>) -> Self {
+        self.doc = doc;
+        self
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum StreamMode {

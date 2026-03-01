@@ -2,8 +2,7 @@ pub const FFI_PREFIX: &str = "boltffi";
 
 pub mod naming {
     use super::FFI_PREFIX;
-    use std::fmt;
-    use std::marker::PhantomData;
+    use std::{fmt, marker::PhantomData};
 
     #[derive(Clone, Debug, Eq, Hash, PartialEq)]
     pub struct Name<K>(String, PhantomData<K>);
@@ -56,18 +55,12 @@ pub mod naming {
     pub struct ClassPrefix;
 
     const C_KEYWORDS: &[&str] = &[
-        "auto", "break", "case", "char", "const", "continue", "default", "do", "double", "else",
-        "enum", "extern", "float", "for", "goto", "if", "int", "long", "register", "return",
-        "short", "signed", "sizeof", "static", "struct", "switch", "typedef", "union", "unsigned",
-        "void", "volatile", "while",
+        "auto", "break", "case", "char", "const", "continue", "default", "do", "double", "else", "enum", "extern", "float", "for", "goto", "if", "int", "long", "register",
+        "return", "short", "signed", "sizeof", "static", "struct", "switch", "typedef", "union", "unsigned", "void", "volatile", "while",
     ];
 
     pub fn escape_c_keyword(name: &str) -> String {
-        if C_KEYWORDS.contains(&name) {
-            format!("{}_", name)
-        } else {
-            name.to_string()
-        }
+        if C_KEYWORDS.contains(&name) { format!("{}_", name) } else { name.to_string() }
     }
 
     pub fn ffi_prefix() -> &'static str {
@@ -142,17 +135,11 @@ pub mod naming {
     }
 
     pub fn method_ffi_complete(class_name: &str, method_name: &str) -> Name<GlobalSymbol> {
-        Name::new(format!(
-            "{}_complete",
-            method_ffi_name(class_name, method_name)
-        ))
+        Name::new(format!("{}_complete", method_ffi_name(class_name, method_name)))
     }
 
     pub fn method_ffi_cancel(class_name: &str, method_name: &str) -> Name<GlobalSymbol> {
-        Name::new(format!(
-            "{}_cancel",
-            method_ffi_name(class_name, method_name)
-        ))
+        Name::new(format!("{}_cancel", method_ffi_name(class_name, method_name)))
     }
 
     pub fn method_ffi_free(class_name: &str, method_name: &str) -> Name<GlobalSymbol> {
@@ -180,19 +167,23 @@ pub mod naming {
     }
 
     pub fn function_ffi_vec_len(func_name: &str) -> Name<GlobalSymbol> {
-        Name::new(format!(
-            "{}{}",
-            function_ffi_name(func_name),
-            vec_len_suffix()
-        ))
+        Name::new(format!("{}{}", function_ffi_name(func_name), vec_len_suffix()))
     }
 
     pub fn function_ffi_vec_copy_into(func_name: &str) -> Name<GlobalSymbol> {
-        Name::new(format!(
-            "{}{}",
-            function_ffi_name(func_name),
-            vec_copy_into_suffix()
-        ))
+        Name::new(format!("{}{}", function_ffi_name(func_name), vec_copy_into_suffix()))
+    }
+
+    pub fn iterator_ffi_new(class_name: &str, method_name: &str) -> Name<GlobalSymbol> {
+        method_ffi_name(class_name, method_name)
+    }
+
+    pub fn iterator_ffi_next(class_name: &str, method_name: &str) -> Name<GlobalSymbol> {
+        Name::new(format!("{}_next", method_ffi_name(class_name, method_name)))
+    }
+
+    pub fn iterator_ffi_free(class_name: &str, method_name: &str) -> Name<GlobalSymbol> {
+        Name::new(format!("{}_free", method_ffi_name(class_name, method_name)))
     }
 
     pub fn stream_ffi_subscribe(class_name: &str, stream_name: &str) -> Name<GlobalSymbol> {
@@ -200,10 +191,7 @@ pub mod naming {
     }
 
     pub fn stream_ffi_pop_batch(class_name: &str, stream_name: &str) -> Name<GlobalSymbol> {
-        Name::new(format!(
-            "{}_pop_batch",
-            method_ffi_name(class_name, stream_name)
-        ))
+        Name::new(format!("{}_pop_batch", method_ffi_name(class_name, stream_name)))
     }
 
     pub fn stream_ffi_wait(class_name: &str, stream_name: &str) -> Name<GlobalSymbol> {
@@ -215,10 +203,7 @@ pub mod naming {
     }
 
     pub fn stream_ffi_unsubscribe(class_name: &str, stream_name: &str) -> Name<GlobalSymbol> {
-        Name::new(format!(
-            "{}_unsubscribe",
-            method_ffi_name(class_name, stream_name)
-        ))
+        Name::new(format!("{}_unsubscribe", method_ffi_name(class_name, stream_name)))
     }
 
     pub fn stream_ffi_free(class_name: &str, stream_name: &str) -> Name<GlobalSymbol> {
@@ -246,19 +231,11 @@ pub mod naming {
     }
 
     pub fn callback_register_fn(trait_name: &str) -> Name<RegisterFn> {
-        Name::new(format!(
-            "{}_register_{}_vtable",
-            FFI_PREFIX,
-            to_snake_case(trait_name)
-        ))
+        Name::new(format!("{}_register_{}_vtable", FFI_PREFIX, to_snake_case(trait_name)))
     }
 
     pub fn callback_create_fn(trait_name: &str) -> Name<CreateFn> {
-        Name::new(format!(
-            "{}_create_{}_handle",
-            FFI_PREFIX,
-            to_snake_case(trait_name)
-        ))
+        Name::new(format!("{}_create_{}_handle", FFI_PREFIX, to_snake_case(trait_name)))
     }
 
     pub fn vtable_field_name(method_name: &str) -> Name<VtableField> {
@@ -395,8 +372,7 @@ pub mod transforms {
 }
 
 pub mod signatures {
-    use super::c_types;
-    use super::naming;
+    use super::{c_types, naming};
 
     #[derive(Clone)]
     pub struct FfiParam {
@@ -425,11 +401,7 @@ pub mod signatures {
     }
 
     pub fn slice_param(param_name: &str, inner_c_type: &str, mutable: bool) -> Vec<FfiParam> {
-        let ptr_type = if mutable {
-            format!("{}*", inner_c_type)
-        } else {
-            format!("const {}*", inner_c_type)
-        };
+        let ptr_type = if mutable { format!("{}*", inner_c_type) } else { format!("const {}*", inner_c_type) };
         vec![
             FfiParam {
                 name: format!("{}{}", param_name, naming::param_ptr_suffix()),
@@ -446,11 +418,7 @@ pub mod signatures {
         slice_param(param_name, inner_c_type, false)
     }
 
-    pub fn vec_return_signatures(
-        base_name: &str,
-        inner_c_type: &str,
-        input_params: &[FfiParam],
-    ) -> Vec<FfiSignature> {
+    pub fn vec_return_signatures(base_name: &str, inner_c_type: &str, input_params: &[FfiParam]) -> Vec<FfiSignature> {
         let len_name = format!("{}{}", base_name, naming::vec_len_suffix());
         let copy_name = format!("{}{}", base_name, naming::vec_copy_into_suffix());
 
@@ -567,21 +535,13 @@ pub mod callback {
     }
 
     pub fn closure_signature_id(params: &[TypeId], returns: &TypeId) -> String {
-        let params_part = params
-            .iter()
-            .map(|p| p.as_signature_part())
-            .collect::<Vec<_>>()
-            .join("_");
+        let params_part = params.iter().map(|p| p.as_signature_part()).collect::<Vec<_>>().join("_");
 
         let is_void_return = matches!(returns, TypeId::Void);
         let ret_part = returns.as_signature_part();
 
         if is_void_return {
-            if params_part.is_empty() {
-                "Void".to_string()
-            } else {
-                params_part
-            }
+            if params_part.is_empty() { "Void".to_string() } else { params_part }
         } else if params_part.is_empty() {
             format!("To{}", ret_part)
         } else {
@@ -647,14 +607,8 @@ pub mod callback {
 
         #[test]
         fn type_id_from_rust_custom() {
-            assert_eq!(
-                TypeId::from_rust_type_str("Point"),
-                TypeId::Named("Point".into())
-            );
-            assert_eq!(
-                TypeId::from_rust_type_str("MyCustomType"),
-                TypeId::Named("MyCustomType".into())
-            );
+            assert_eq!(TypeId::from_rust_type_str("Point"), TypeId::Named("Point".into()));
+            assert_eq!(TypeId::from_rust_type_str("MyCustomType"), TypeId::Named("MyCustomType".into()));
         }
 
         #[test]
@@ -672,10 +626,7 @@ pub mod callback {
             let returns = TypeId::I32;
             assert_eq!(closure_signature_id(&params, &returns), "I32ToI32");
             assert_eq!(closure_callback_id(&params, &returns), "__Closure_I32ToI32");
-            assert_eq!(
-                closure_callback_id_snake(&params, &returns),
-                "___closure__i32_to_i32"
-            );
+            assert_eq!(closure_callback_id_snake(&params, &returns), "___closure__i32_to_i32");
         }
 
         #[test]
@@ -683,10 +634,7 @@ pub mod callback {
             let params = vec![TypeId::Named("Point".into())];
             let returns = TypeId::Named("Point".into());
             assert_eq!(closure_signature_id(&params, &returns), "PointToPoint");
-            assert_eq!(
-                closure_callback_id(&params, &returns),
-                "__Closure_PointToPoint"
-            );
+            assert_eq!(closure_callback_id(&params, &returns), "__Closure_PointToPoint");
         }
 
         #[test]
@@ -718,10 +666,7 @@ pub mod callback {
             let params = vec![TypeId::I32, TypeId::String];
             let returns = TypeId::Bool;
             assert_eq!(closure_signature_id(&params, &returns), "I32_StringToBool");
-            assert_eq!(
-                closure_callback_id(&params, &returns),
-                "__Closure_I32_StringToBool"
-            );
+            assert_eq!(closure_callback_id(&params, &returns), "__Closure_I32_StringToBool");
         }
 
         #[test]
@@ -747,18 +692,9 @@ pub mod callback {
         #[test]
         fn wasm_import_names() {
             let id_snake = "___closure__i32_to_i32";
-            assert_eq!(
-                callback_wasm_import_call(id_snake),
-                "__boltffi_callback____closure__i32_to_i32_call"
-            );
-            assert_eq!(
-                callback_wasm_import_free(id_snake),
-                "__boltffi_callback____closure__i32_to_i32_free"
-            );
-            assert_eq!(
-                callback_wasm_import_clone(id_snake),
-                "__boltffi_callback____closure__i32_to_i32_clone"
-            );
+            assert_eq!(callback_wasm_import_call(id_snake), "__boltffi_callback____closure__i32_to_i32_call");
+            assert_eq!(callback_wasm_import_free(id_snake), "__boltffi_callback____closure__i32_to_i32_free");
+            assert_eq!(callback_wasm_import_clone(id_snake), "__boltffi_callback____closure__i32_to_i32_clone");
         }
 
         #[test]
@@ -766,22 +702,13 @@ pub mod callback {
             let params = vec![];
             let returns = TypeId::Void;
             let id_snake = closure_callback_id_snake(&params, &returns);
-            assert_eq!(
-                callback_wasm_import_call(&id_snake),
-                "__boltffi_callback____closure__void_call"
-            );
-            assert_eq!(
-                callback_wasm_import_free(&id_snake),
-                "__boltffi_callback____closure__void_free"
-            );
+            assert_eq!(callback_wasm_import_call(&id_snake), "__boltffi_callback____closure__void_call");
+            assert_eq!(callback_wasm_import_free(&id_snake), "__boltffi_callback____closure__void_free");
         }
 
         #[test]
         fn global_create_handle_name() {
-            assert_eq!(
-                callback_create_handle_global(),
-                "boltffi_create_callback_handle"
-            );
+            assert_eq!(callback_create_handle_global(), "boltffi_create_callback_handle");
         }
 
         #[test]
@@ -854,34 +781,16 @@ pub mod transport {
 
         #[test]
         fn wasm_targets_use_packed() {
-            assert_eq!(
-                BufferTransport::for_target("wasm32"),
-                BufferTransport::Packed
-            );
-            assert_eq!(
-                BufferTransport::for_target("wasm32-unknown-unknown"),
-                BufferTransport::Packed
-            );
-            assert_eq!(
-                BufferTransport::for_target("wasm32-wasi"),
-                BufferTransport::Packed
-            );
+            assert_eq!(BufferTransport::for_target("wasm32"), BufferTransport::Packed);
+            assert_eq!(BufferTransport::for_target("wasm32-unknown-unknown"), BufferTransport::Packed);
+            assert_eq!(BufferTransport::for_target("wasm32-wasi"), BufferTransport::Packed);
         }
 
         #[test]
         fn native_targets_use_descriptor() {
-            assert_eq!(
-                BufferTransport::for_target("aarch64-apple-darwin"),
-                BufferTransport::Descriptor
-            );
-            assert_eq!(
-                BufferTransport::for_target("x86_64-unknown-linux-gnu"),
-                BufferTransport::Descriptor
-            );
-            assert_eq!(
-                BufferTransport::for_target("aarch64-linux-android"),
-                BufferTransport::Descriptor
-            );
+            assert_eq!(BufferTransport::for_target("aarch64-apple-darwin"), BufferTransport::Descriptor);
+            assert_eq!(BufferTransport::for_target("x86_64-unknown-linux-gnu"), BufferTransport::Descriptor);
+            assert_eq!(BufferTransport::for_target("aarch64-linux-android"), BufferTransport::Descriptor);
         }
     }
 }

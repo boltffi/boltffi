@@ -1,15 +1,11 @@
 use crate::wire::constants::*;
-
 #[cfg(feature = "chrono")]
 use chrono::{DateTime, Utc};
-
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-
-#[cfg(feature = "uuid")]
-use uuid::Uuid;
-
 #[cfg(feature = "url")]
 use url::Url;
+#[cfg(feature = "uuid")]
+use uuid::Uuid;
 
 pub trait WireSize {
     fn is_fixed_size() -> bool
@@ -232,13 +228,10 @@ impl WireEncode for SystemTime {
     fn encode_to(&self, buf: &mut [u8]) -> usize {
         let nanos_per_second = 1_000_000_000i128;
         let total_nanos: i128 = match self.duration_since(UNIX_EPOCH) {
-            Ok(duration) => {
-                (duration.as_secs() as i128) * nanos_per_second + (duration.subsec_nanos() as i128)
-            }
+            Ok(duration) => (duration.as_secs() as i128) * nanos_per_second + (duration.subsec_nanos() as i128),
             Err(error) => {
                 let duration = error.duration();
-                -((duration.as_secs() as i128) * nanos_per_second
-                    + (duration.subsec_nanos() as i128))
+                -((duration.as_secs() as i128) * nanos_per_second + (duration.subsec_nanos() as i128))
             }
         };
 
@@ -380,11 +373,7 @@ impl<T: WireEncode> WireSize for Vec<T> {
         if T::IS_BLITTABLE {
             VEC_COUNT_SIZE + self.len() * core::mem::size_of::<T>()
         } else {
-            VEC_COUNT_SIZE
-                + self
-                    .iter()
-                    .map(|element| element.wire_size())
-                    .sum::<usize>()
+            VEC_COUNT_SIZE + self.iter().map(|element| element.wire_size()).sum::<usize>()
         }
     }
 }
@@ -402,11 +391,7 @@ impl<T: WireEncode> WireEncode for Vec<T> {
         if T::IS_BLITTABLE {
             let byte_count = self.len() * core::mem::size_of::<T>();
             unsafe {
-                core::ptr::copy_nonoverlapping(
-                    self.as_ptr() as *const u8,
-                    buf.as_mut_ptr().add(VEC_COUNT_SIZE),
-                    byte_count,
-                );
+                core::ptr::copy_nonoverlapping(self.as_ptr() as *const u8, buf.as_mut_ptr().add(VEC_COUNT_SIZE), byte_count);
             }
             VEC_COUNT_SIZE + byte_count
         } else {
@@ -425,11 +410,7 @@ impl<T: WireEncode> WireSize for [T] {
         if T::IS_BLITTABLE {
             VEC_COUNT_SIZE + core::mem::size_of_val(self)
         } else {
-            VEC_COUNT_SIZE
-                + self
-                    .iter()
-                    .map(|element| element.wire_size())
-                    .sum::<usize>()
+            VEC_COUNT_SIZE + self.iter().map(|element| element.wire_size()).sum::<usize>()
         }
     }
 }
@@ -447,11 +428,7 @@ impl<T: WireEncode> WireEncode for [T] {
         if T::IS_BLITTABLE {
             let byte_count = core::mem::size_of_val(self);
             unsafe {
-                core::ptr::copy_nonoverlapping(
-                    self.as_ptr() as *const u8,
-                    buf.as_mut_ptr().add(VEC_COUNT_SIZE),
-                    byte_count,
-                );
+                core::ptr::copy_nonoverlapping(self.as_ptr() as *const u8, buf.as_mut_ptr().add(VEC_COUNT_SIZE), byte_count);
             }
             VEC_COUNT_SIZE + byte_count
         } else {
@@ -717,9 +694,7 @@ mod tests {
             let inner_count: usize = 1000;
             let outer_count: usize = 100;
 
-            let nested: Vec<Vec<i32>> = (0..outer_count)
-                .map(|_| (0..inner_count as i32).collect())
-                .collect();
+            let nested: Vec<Vec<i32>> = (0..outer_count).map(|_| (0..inner_count as i32).collect()).collect();
 
             let inner_size = 4 + inner_count * 4;
             let expected_size = 4 + outer_count * inner_size;

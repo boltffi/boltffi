@@ -1,6 +1,8 @@
-use std::cell::UnsafeCell;
-use std::mem::MaybeUninit;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::{
+    cell::UnsafeCell,
+    mem::MaybeUninit,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 
 #[repr(align(64))]
 struct CacheLinePadded<T>(T);
@@ -29,10 +31,7 @@ unsafe impl<T: Send> Sync for SpscRingBuffer<T> {}
 impl<T> SpscRingBuffer<T> {
     pub fn new(capacity: usize) -> Self {
         let capacity = capacity.next_power_of_two();
-        let buffer = (0..capacity)
-            .map(|_| UnsafeCell::new(MaybeUninit::uninit()))
-            .collect::<Vec<_>>()
-            .into_boxed_slice();
+        let buffer = (0..capacity).map(|_| UnsafeCell::new(MaybeUninit::uninit())).collect::<Vec<_>>().into_boxed_slice();
 
         Self {
             buffer,
@@ -62,9 +61,7 @@ impl<T> SpscRingBuffer<T> {
             (*self.buffer[slot_index].get()).write(value);
         }
 
-        self.producer_index
-            .get()
-            .store(producer_position + 1, Ordering::Release);
+        self.producer_index.get().store(producer_position + 1, Ordering::Release);
 
         Ok(())
     }
@@ -80,9 +77,7 @@ impl<T> SpscRingBuffer<T> {
         let slot_index = self.slot_index(consumer_position);
         let value = unsafe { (*self.buffer[slot_index].get()).assume_init_read() };
 
-        self.consumer_index
-            .get()
-            .store(consumer_position + 1, Ordering::Release);
+        self.consumer_index.get().store(consumer_position + 1, Ordering::Release);
 
         Some(value)
     }
@@ -98,19 +93,13 @@ impl<T> SpscRingBuffer<T> {
             return 0;
         }
 
-        output_buffer
-            .iter_mut()
-            .take(batch_size)
-            .enumerate()
-            .for_each(|(offset, output_slot)| {
-                let slot_index = self.slot_index(consumer_position + offset);
-                let value = unsafe { (*self.buffer[slot_index].get()).assume_init_read() };
-                output_slot.write(value);
-            });
+        output_buffer.iter_mut().take(batch_size).enumerate().for_each(|(offset, output_slot)| {
+            let slot_index = self.slot_index(consumer_position + offset);
+            let value = unsafe { (*self.buffer[slot_index].get()).assume_init_read() };
+            output_slot.write(value);
+        });
 
-        self.consumer_index
-            .get()
-            .store(consumer_position + batch_size, Ordering::Release);
+        self.consumer_index.get().store(consumer_position + batch_size, Ordering::Release);
 
         batch_size
     }
@@ -184,18 +173,13 @@ mod tests {
             ring_buffer.push(index).unwrap();
         });
 
-        let mut batch_buffer: [MaybeUninit<i32>; 4] =
-            unsafe { MaybeUninit::uninit().assume_init() };
+        let mut batch_buffer: [MaybeUninit<i32>; 4] = unsafe { MaybeUninit::uninit().assume_init() };
         let popped_count = ring_buffer.pop_batch_into(&mut batch_buffer);
         assert_eq!(popped_count, 4);
 
-        batch_buffer
-            .iter()
-            .take(popped_count)
-            .enumerate()
-            .for_each(|(index, slot)| {
-                assert_eq!(unsafe { slot.assume_init() }, index as i32);
-            });
+        batch_buffer.iter().take(popped_count).enumerate().for_each(|(index, slot)| {
+            assert_eq!(unsafe { slot.assume_init() }, index as i32);
+        });
 
         assert_eq!(ring_buffer.available_count(), 6);
     }

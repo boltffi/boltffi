@@ -1,8 +1,9 @@
+use super::{
+    method::Method,
+    stream::{AsyncIteratorMethod, StreamMethod},
+    types::Deprecation,
+};
 use serde::{Deserialize, Serialize};
-
-use super::method::Method;
-use super::stream::StreamMethod;
-use super::types::Deprecation;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Class {
@@ -12,6 +13,7 @@ pub struct Class {
     pub constructors: Vec<Constructor>,
     pub methods: Vec<Method>,
     pub streams: Vec<StreamMethod>,
+    pub async_iterators: Vec<AsyncIteratorMethod>,
 }
 
 impl Class {
@@ -23,6 +25,7 @@ impl Class {
             constructors: Vec::new(),
             methods: Vec::new(),
             streams: Vec::new(),
+            async_iterators: Vec::new(),
         }
     }
 
@@ -55,6 +58,11 @@ impl Class {
 
     pub fn with_stream(mut self, stream: StreamMethod) -> Self {
         self.streams.push(stream);
+        self
+    }
+
+    pub fn with_async_iterator(mut self, iter: AsyncIteratorMethod) -> Self {
+        self.async_iterators.push(iter);
         self
     }
 
@@ -136,9 +144,6 @@ pub struct ConstructorParam {
 
 impl ConstructorParam {
     pub fn new(name: impl Into<String>, param_type: super::types::Type) -> Self {
-        Self {
-            name: name.into(),
-            param_type,
-        }
+        Self { name: name.into(), param_type }
     }
 }

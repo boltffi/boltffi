@@ -6,12 +6,9 @@ pub fn custom_ffi_impl(item: TokenStream) -> TokenStream {
     let item_impl = parse_macro_input!(item as ItemImpl);
 
     if !item_impl.generics.params.is_empty() {
-        return syn::Error::new_spanned(
-            &item_impl.generics,
-            "custom_ffi does not support generics",
-        )
-        .to_compile_error()
-        .into();
+        return syn::Error::new_spanned(&item_impl.generics, "custom_ffi does not support generics")
+            .to_compile_error()
+            .into();
     }
 
     let trait_ident_ok = item_impl
@@ -21,12 +18,9 @@ pub fn custom_ffi_impl(item: TokenStream) -> TokenStream {
         .is_some_and(|seg| seg.ident == "CustomFfiConvertible");
 
     if !trait_ident_ok {
-        return syn::Error::new_spanned(
-            &item_impl,
-            "custom_ffi must annotate an impl of CustomFfiConvertible",
-        )
-        .to_compile_error()
-        .into();
+        return syn::Error::new_spanned(&item_impl, "custom_ffi must annotate an impl of CustomFfiConvertible")
+            .to_compile_error()
+            .into();
     }
 
     let self_ty = item_impl.self_ty.as_ref();
@@ -41,12 +35,9 @@ pub fn custom_ffi_impl(item: TokenStream) -> TokenStream {
         .next();
 
     let Some(ffi_repr) = ffi_repr else {
-        return syn::Error::new_spanned(
-            &item_impl,
-            "custom_ffi requires `type FfiRepr = ...;` in the impl block",
-        )
-        .to_compile_error()
-        .into();
+        return syn::Error::new_spanned(&item_impl, "custom_ffi requires `type FfiRepr = ...;` in the impl block")
+            .to_compile_error()
+            .into();
     };
 
     let self_ty_no_group = match self_ty {

@@ -1,6 +1,4 @@
-use std::cell::RefCell;
-use std::collections::HashMap;
-use std::task::Waker;
+use std::{cell::RefCell, collections::HashMap, task::Waker};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
@@ -70,13 +68,7 @@ impl RequestRegistry {
         if self.next_id == 0 {
             self.next_id = 1;
         }
-        self.pending.insert(
-            id,
-            PendingRequest {
-                waker: None,
-                result: None,
-            },
-        );
+        self.pending.insert(id, PendingRequest { waker: None, result: None });
         CallbackRequestId(id)
     }
 
@@ -86,12 +78,7 @@ impl RequestRegistry {
         }
     }
 
-    fn complete(
-        &mut self,
-        id: CallbackRequestId,
-        code: AsyncCallbackCompletionCode,
-        data: Vec<u8>,
-    ) -> CompleteResult {
+    fn complete(&mut self, id: CallbackRequestId, code: AsyncCallbackCompletionCode, data: Vec<u8>) -> CompleteResult {
         let Some(request) = self.pending.get_mut(&id.0) else {
             return CompleteResult::UnknownOrAlreadyCompleted;
         };
@@ -151,11 +138,7 @@ pub fn set_request_waker(id: CallbackRequestId, waker: Waker) {
     REGISTRY.with(|r| r.borrow_mut().set_waker(id, waker));
 }
 
-pub fn complete_request(
-    id: CallbackRequestId,
-    code: AsyncCallbackCompletionCode,
-    data: Vec<u8>,
-) -> CompleteResult {
+pub fn complete_request(id: CallbackRequestId, code: AsyncCallbackCompletionCode, data: Vec<u8>) -> CompleteResult {
     REGISTRY.with(|r| r.borrow_mut().complete(id, code, data))
 }
 
@@ -180,13 +163,7 @@ impl Drop for RequestGuard {
 }
 
 #[cfg(target_arch = "wasm32")]
-pub unsafe fn complete_request_from_ffi(
-    request_id: u32,
-    completion_code: i32,
-    data_ptr: u32,
-    data_len: u32,
-    data_cap: u32,
-) -> i32 {
+pub unsafe fn complete_request_from_ffi(request_id: u32, completion_code: i32, data_ptr: u32, data_len: u32, data_cap: u32) -> i32 {
     let id = CallbackRequestId(request_id);
     let code = AsyncCallbackCompletionCode::from_i32(completion_code);
 
@@ -200,7 +177,7 @@ pub unsafe fn complete_request_from_ffi(
     };
 
     if data_ptr != 0 && data_cap > 0 {
-        crate::wasm::boltffi_wasm_free_impl(data_ptr as usize, data_cap as usize);
+        crate::wasm::boltffi_wasm_free_impl(data_ptr as *mut u8, data_cap as usize);
     }
 
     complete_request(id, code, data) as i32

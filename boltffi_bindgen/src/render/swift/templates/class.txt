@@ -295,6 +295,22 @@
     }
 {%- endmatch %}
 {%- endfor %}
+{%- for iter in cls.async_iterators %}
+
+    public func {{ iter.name }}() -> BoltFFIAsyncSequence<{{ iter.item_type }}> {
+        let iterHandle = {{ iter.entry }}(self.handle)!
+        return BoltFFIAsyncSequence<{{ iter.item_type }}>(
+            iterHandle: iterHandle,
+            nextFn: {{ iter.next }},
+            pollFn: {{ iter.next_poll }},
+            completeFn: {{ iter.next_complete }},
+            cancelFn: {{ iter.next_cancel }},
+            freeFutureFn: {{ iter.next_free }},
+            freeIterFn: {{ iter.free }},
+            decode: { reader in {{ iter.option_reader_decode_expr() }} }
+        )
+    }
+{%- endfor %}
 }
 {%- for stream in cls.streams %}
 {%- match stream.mode %}

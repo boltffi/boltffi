@@ -1,8 +1,11 @@
-use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicU8, AtomicU64, Ordering};
-use std::sync::{Arc, Condvar, Mutex, Weak};
-use std::time::Duration;
-
 use crate::ringbuffer::SpscRingBuffer;
+use std::{
+    sync::{
+        Arc, Condvar, Mutex, Weak,
+        atomic::{AtomicBool, AtomicPtr, AtomicU8, AtomicU64, Ordering},
+    },
+    time::Duration,
+};
 
 #[repr(i8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -118,9 +121,7 @@ impl StreamContinuationScheduler {
     }
 
     fn try_transition(&self, from: ContinuationState, to: ContinuationState) -> bool {
-        self.state
-            .compare_exchange(from as u8, to as u8, Ordering::AcqRel, Ordering::Acquire)
-            .is_ok()
+        self.state.compare_exchange(from as u8, to as u8, Ordering::AcqRel, Ordering::Acquire).is_ok()
     }
 
     fn store_continuation(&self, callback: StreamContinuationCallback, callback_data: u64) {
@@ -128,8 +129,7 @@ impl StreamContinuationScheduler {
             match self.current_state() {
                 ContinuationState::Empty => {
                     self.callback_data.store(callback_data, Ordering::Release);
-                    self.callback_ptr
-                        .store(callback as *mut (), Ordering::Release);
+                    self.callback_ptr.store(callback as *mut (), Ordering::Release);
                     if self.try_transition(ContinuationState::Empty, ContinuationState::Stored) {
                         return;
                     }
@@ -143,8 +143,7 @@ impl StreamContinuationScheduler {
                 ContinuationState::Stored => {
                     self.invoke_stored(StreamPollResult::Ready);
                     self.callback_data.store(callback_data, Ordering::Release);
-                    self.callback_ptr
-                        .store(callback as *mut (), Ordering::Release);
+                    self.callback_ptr.store(callback as *mut (), Ordering::Release);
                     return;
                 }
                 ContinuationState::Cancelled => {
@@ -178,8 +177,7 @@ impl StreamContinuationScheduler {
         loop {
             match self.current_state() {
                 ContinuationState::Stored => {
-                    if self.try_transition(ContinuationState::Stored, ContinuationState::Cancelled)
-                    {
+                    if self.try_transition(ContinuationState::Stored, ContinuationState::Cancelled) {
                         self.invoke_stored(StreamPollResult::Closed);
                         return;
                     }
@@ -270,11 +268,9 @@ impl<T: Send + 'static> EventSubscription<T> {
         let notification_guard = self.notification_mutex.lock().unwrap();
         let timeout_duration = Duration::from_millis(timeout_milliseconds as u64);
 
-        let wait_result = self.notification_condvar.wait_timeout_while(
-            notification_guard,
-            timeout_duration,
-            |_| self.is_active() && self.ring_buffer.is_empty(),
-        );
+        let wait_result = self
+            .notification_condvar
+            .wait_timeout_while(notification_guard, timeout_duration, |_| self.is_active() && self.ring_buffer.is_empty());
 
         if !self.is_active() {
             return WaitResult::Unsubscribed;
@@ -303,8 +299,7 @@ impl<T: Send + 'static> EventSubscription<T> {
             return;
         }
 
-        self.continuation_scheduler
-            .store_continuation(callback, callback_data);
+        self.continuation_scheduler.store_continuation(callback, callback_data);
     }
 
     pub fn unsubscribe(&self) {
@@ -339,27 +334,18 @@ pub unsafe fn subscription_push<T: Send + 'static>(handle: SubscriptionHandle, e
     subscription.push_event(event)
 }
 
-pub unsafe fn subscription_pop_batch<T: Send + Copy + 'static>(
-    handle: SubscriptionHandle,
-    output_ptr: *mut T,
-    output_capacity: usize,
-) -> usize {
+pub unsafe fn subscription_pop_batch<T: Send + Copy + 'static>(handle: SubscriptionHandle, output_ptr: *mut T, output_capacity: usize) -> usize {
     if handle.is_null() || output_ptr.is_null() || output_capacity == 0 {
         return 0;
     }
 
     let subscription = unsafe { &*(handle as *const EventSubscription<T>) };
-    let output_slice = unsafe {
-        std::slice::from_raw_parts_mut(output_ptr as *mut std::mem::MaybeUninit<T>, output_capacity)
-    };
+    let output_slice = unsafe { std::slice::from_raw_parts_mut(output_ptr as *mut std::mem::MaybeUninit<T>, output_capacity) };
 
     subscription.pop_batch_into(output_slice)
 }
 
-pub unsafe fn subscription_wait<T: Send + 'static>(
-    handle: SubscriptionHandle,
-    timeout_milliseconds: u32,
-) -> i32 {
+pub unsafe fn subscription_wait<T: Send + 'static>(handle: SubscriptionHandle, timeout_milliseconds: u32) -> i32 {
     if handle.is_null() {
         return WaitResult::Unsubscribed as i32;
     }
@@ -368,11 +354,7 @@ pub unsafe fn subscription_wait<T: Send + 'static>(
     subscription.wait_for_events(timeout_milliseconds) as i32
 }
 
-pub unsafe fn subscription_poll<T: Send + 'static>(
-    handle: SubscriptionHandle,
-    callback_data: u64,
-    callback: StreamContinuationCallback,
-) {
+pub unsafe fn subscription_poll<T: Send + 'static>(handle: SubscriptionHandle, callback_data: u64, callback: StreamContinuationCallback) {
     if handle.is_null() {
         callback(callback_data, StreamPollResult::Closed);
         return;
@@ -417,12 +399,7 @@ impl<T: Send + 'static> SubscriberSlot<T> {
         let weak = Arc::downgrade(subscription);
         let raw_ptr = Weak::into_raw(weak) as *mut ();
 
-        match self.weak_ptr.compare_exchange(
-            std::ptr::null_mut(),
-            raw_ptr,
-            Ordering::AcqRel,
-            Ordering::Acquire,
-        ) {
+        match self.weak_ptr.compare_exchange(std::ptr::null_mut(), raw_ptr, Ordering::AcqRel, Ordering::Acquire) {
             Ok(_) => true,
             Err(_) => {
                 unsafe { Weak::from_raw(raw_ptr as *const EventSubscription<T>) };
@@ -453,16 +430,7 @@ impl<T: Send + 'static> SubscriberSlot<T> {
         let is_dead = weak.strong_count() == 0;
         std::mem::forget(weak);
 
-        let successfully_cleared = is_dead
-            && self
-                .weak_ptr
-                .compare_exchange(
-                    ptr,
-                    std::ptr::null_mut(),
-                    Ordering::AcqRel,
-                    Ordering::Acquire,
-                )
-                .is_ok();
+        let successfully_cleared = is_dead && self.weak_ptr.compare_exchange(ptr, std::ptr::null_mut(), Ordering::AcqRel, Ordering::Acquire).is_ok();
 
         if successfully_cleared {
             unsafe { Weak::from_raw(ptr as *const EventSubscription<T>) };
@@ -503,20 +471,12 @@ impl<T: Send + Copy + 'static, const MAX_SUBSCRIBERS: usize> StreamProducer<T, M
     pub fn subscribe_with_capacity(&self, capacity: usize) -> Arc<EventSubscription<T>> {
         let subscription = Arc::new(EventSubscription::new(capacity));
 
-        self.subscriber_slots
-            .iter()
-            .for_each(|slot| slot.clear_if_dead());
+        self.subscriber_slots.iter().for_each(|slot| slot.clear_if_dead());
 
-        let slot_claimed = self
-            .subscriber_slots
-            .iter()
-            .any(|slot| slot.try_claim(&subscription));
+        let slot_claimed = self.subscriber_slots.iter().any(|slot| slot.try_claim(&subscription));
 
         if !slot_claimed {
-            eprintln!(
-                "StreamProducer: all {} subscriber slots full",
-                MAX_SUBSCRIBERS
-            );
+            eprintln!("StreamProducer: all {} subscriber slots full", MAX_SUBSCRIBERS);
         }
 
         subscription
@@ -531,29 +491,18 @@ impl<T: Send + Copy + 'static, const MAX_SUBSCRIBERS: usize> StreamProducer<T, M
     }
 
     pub fn subscriber_count(&self) -> usize {
-        self.subscriber_slots
-            .iter()
-            .filter(|slot| slot.is_alive())
-            .count()
+        self.subscriber_slots.iter().filter(|slot| slot.is_alive()).count()
     }
 }
 
-impl<T: Send + Copy + 'static, const MAX_SUBSCRIBERS: usize> Default
-    for StreamProducer<T, MAX_SUBSCRIBERS>
-{
+impl<T: Send + Copy + 'static, const MAX_SUBSCRIBERS: usize> Default for StreamProducer<T, MAX_SUBSCRIBERS> {
     fn default() -> Self {
         Self::new(256)
     }
 }
 
-unsafe impl<T: Send + Copy + 'static, const MAX_SUBSCRIBERS: usize> Send
-    for StreamProducer<T, MAX_SUBSCRIBERS>
-{
-}
-unsafe impl<T: Send + Copy + 'static, const MAX_SUBSCRIBERS: usize> Sync
-    for StreamProducer<T, MAX_SUBSCRIBERS>
-{
-}
+unsafe impl<T: Send + Copy + 'static, const MAX_SUBSCRIBERS: usize> Send for StreamProducer<T, MAX_SUBSCRIBERS> {}
+unsafe impl<T: Send + Copy + 'static, const MAX_SUBSCRIBERS: usize> Sync for StreamProducer<T, MAX_SUBSCRIBERS> {}
 
 #[cfg(test)]
 mod tests {
@@ -583,10 +532,7 @@ mod tests {
     fn test_subscription_wait_immediate_return() {
         let subscription = EventSubscription::<i32>::new(16);
         subscription.push_event(42);
-        assert_eq!(
-            subscription.wait_for_events(1000),
-            WaitResult::EventsAvailable
-        );
+        assert_eq!(subscription.wait_for_events(1000), WaitResult::EventsAvailable);
     }
 
     #[test]
@@ -623,11 +569,6 @@ mod tests {
 
         producer_thread.join().unwrap();
         assert_eq!(received_events.len(), 100);
-        assert!(
-            received_events
-                .iter()
-                .enumerate()
-                .all(|(index, &value)| value == index as i32)
-        );
+        assert!(received_events.iter().enumerate().all(|(index, &value)| value == index as i32));
     }
 }

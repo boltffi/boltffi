@@ -104,18 +104,13 @@ impl StructLayout {
     where
         I: IntoIterator<Item = Layout>,
     {
-        let (fields, final_offset, max_alignment) = layouts.into_iter().fold(
-            (Vec::new(), Offset::ZERO, Alignment::new(1)),
-            |(mut fields, offset, max_align), layout| {
+        let (fields, final_offset, max_alignment) = layouts
+            .into_iter()
+            .fold((Vec::new(), Offset::ZERO, Alignment::new(1)), |(mut fields, offset, max_align), layout| {
                 let aligned_offset = offset.aligned_to(layout.alignment);
                 fields.push(FieldLayout::new(aligned_offset, layout));
-                (
-                    fields,
-                    aligned_offset + layout.size,
-                    max_align.max(layout.alignment),
-                )
-            },
-        );
+                (fields, aligned_offset + layout.size, max_align.max(layout.alignment))
+            });
 
         let total_size = Size::new(final_offset.as_usize()).padded_to(max_alignment);
 

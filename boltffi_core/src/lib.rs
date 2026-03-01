@@ -6,6 +6,7 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 #[cfg(target_arch = "wasm32")]
 pub mod async_callback;
+pub mod async_iterator;
 pub mod callback;
 pub mod custom_ffi;
 pub mod handle;
@@ -21,14 +22,11 @@ pub mod wire;
 
 #[cfg(target_arch = "wasm32")]
 pub use async_callback::{
-    AsyncCallbackCompletionCode, CallbackRequestId, CompleteResult, CompletionPayload,
-    RequestGuard, allocate_request, cancel_request, complete_request, complete_request_from_ffi,
+    AsyncCallbackCompletionCode, CallbackRequestId, CompleteResult, CompletionPayload, RequestGuard, allocate_request, cancel_request, complete_request, complete_request_from_ffi,
     remove_request, set_request_waker, take_request_result,
 };
-pub use boltffi_macros::{
-    Data, FfiType, custom_ffi, custom_type, data, default, error, export, ffi_class, ffi_export,
-    ffi_stream, ffi_trait, name, skip,
-};
+pub use async_iterator::{IteratorHandle, Stream as FfiStream, iterator_free, iterator_new, iterator_next};
+pub use boltffi_macros::{Data, FfiType, custom_ffi, custom_type, data, default, error, export, ffi_async_iter, ffi_class, ffi_export, ffi_stream, ffi_trait, name, skip};
 #[cfg(target_arch = "wasm32")]
 pub use callback::WasmCallbackOwner;
 pub use callback::{CallbackForeignType, CallbackHandle, FromCallbackHandle};
@@ -36,17 +34,12 @@ pub use custom_ffi::CustomFfiConvertible;
 pub use handle::HandleBox;
 pub use pending::{CancellationToken, PendingHandle};
 pub use ringbuffer::SpscRingBuffer;
-pub use rustfuture::{
-    RustFuture, RustFutureContinuationCallback, RustFutureHandle, RustFuturePoll,
-};
+pub use rustfuture::{RustFuture, RustFutureContinuationCallback, RustFutureHandle, RustFuturePoll};
 #[cfg(target_arch = "wasm32")]
 pub use rustfuture::{WasmPollStatus, rust_future_panic_message, rust_future_poll_sync};
 pub use safety::catch_ffi_panic;
 pub use status::{FfiStatus, clear_last_error, set_last_error, take_last_error};
-pub use subscription::{
-    EventSubscription, StreamContinuationCallback, StreamPollResult, StreamProducer,
-    SubscriptionHandle, WaitResult,
-};
+pub use subscription::{EventSubscription, StreamContinuationCallback, StreamPollResult, StreamProducer, SubscriptionHandle, WaitResult};
 pub use types::{FfiBuf, FfiError, FfiOption, FfiSlice, FfiString};
 pub use wasm::WASM_ABI_VERSION;
 #[cfg(target_arch = "wasm32")]

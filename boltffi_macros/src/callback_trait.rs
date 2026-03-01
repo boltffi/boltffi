@@ -1,15 +1,12 @@
+use crate::custom_types;
 use boltffi_ffi_rules::naming;
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use syn::{FnArg, Pat, ReturnType, Type};
 
-use crate::custom_types;
-
 pub fn ffi_trait_impl(item: TokenStream) -> TokenStream {
     let item_trait = syn::parse_macro_input!(item as syn::ItemTrait);
-    expand_ffi_trait(item_trait)
-        .unwrap_or_else(|error| error.to_compile_error())
-        .into()
+    expand_ffi_trait(item_trait).unwrap_or_else(|error| error.to_compile_error()).into()
 }
 
 fn expand_ffi_trait(item_trait: syn::ItemTrait) -> Result<proc_macro2::TokenStream, syn::Error> {
@@ -18,49 +15,19 @@ fn expand_ffi_trait(item_trait: syn::ItemTrait) -> Result<proc_macro2::TokenStre
     let trait_name_snake = to_snake_case_ident(&trait_name.to_string());
     let vtable_name = syn::Ident::new(&format!("{}VTable", trait_name), trait_name.span());
     let foreign_name = syn::Ident::new(&format!("Foreign{}", trait_name), trait_name.span());
-    let vtable_static = syn::Ident::new(
-        &format!("{}_VTABLE", trait_name_snake.to_string().to_uppercase()),
-        trait_name.span(),
-    );
-    let register_fn = syn::Ident::new(
-        &format!(
-            "{}_register_{}_vtable",
-            naming::ffi_prefix(),
-            trait_name_snake
-        ),
-        trait_name.span(),
-    );
-    let create_fn = syn::Ident::new(
-        &format!(
-            "{}_create_{}_handle",
-            naming::ffi_prefix(),
-            trait_name_snake
-        ),
-        trait_name.span(),
-    );
+    let vtable_static = syn::Ident::new(&format!("{}_VTABLE", trait_name_snake.to_string().to_uppercase()), trait_name.span());
+    let register_fn = syn::Ident::new(&format!("{}_register_{}_vtable", naming::ffi_prefix(), trait_name_snake), trait_name.span());
+    let create_fn = syn::Ident::new(&format!("{}_create_{}_handle", naming::ffi_prefix(), trait_name_snake), trait_name.span());
 
-    let has_async_trait_attr = item_trait.attrs.iter().any(|attr| {
-        attr.path()
-            .segments
-            .last()
-            .is_some_and(|s| s.ident == "async_trait")
-    });
+    let has_async_trait_attr = item_trait.attrs.iter().any(|attr| attr.path().segments.last().is_some_and(|s| s.ident == "async_trait"));
 
     let async_trait_attr = item_trait
         .attrs
         .iter()
-        .find(|attr| {
-            attr.path()
-                .segments
-                .last()
-                .is_some_and(|s| s.ident == "async_trait")
-        })
+        .find(|attr| attr.path().segments.last().is_some_and(|s| s.ident == "async_trait"))
         .cloned();
 
-    let mut vtable_fields = vec![
-        quote! { pub free: extern "C" fn(handle: u64) },
-        quote! { pub clone: extern "C" fn(handle: u64) -> u64 },
-    ];
+    let mut vtable_fields = vec![quote! { pub free: extern "C" fn(handle: u64) }, quote! { pub clone: extern "C" fn(handle: u64) -> u64 }];
 
     let has_async_methods = item_trait
         .items
@@ -91,18 +58,11 @@ fn expand_ffi_trait(item_trait: syn::ItemTrait) -> Result<proc_macro2::TokenStre
 
     let wasm_extern_imports: Vec<_> = wasm_expansions.iter().map(|e| &e.extern_import).collect();
     let wasm_impl_bodies: Vec<_> = wasm_expansions.iter().map(|e| &e.impl_body).collect();
-    let wasm_complete_exports: Vec<_> = wasm_expansions
-        .iter()
-        .filter_map(|e| e.complete_export.as_ref())
-        .collect();
+    let wasm_complete_exports: Vec<_> = wasm_expansions.iter().filter_map(|e| e.complete_export.as_ref()).collect();
 
     let wasm_free_import = format_ident!("__boltffi_callback_{}_free", trait_name_snake);
     let wasm_clone_import = format_ident!("__boltffi_callback_{}_clone", trait_name_snake);
-    let wasm_create_fn = format_ident!(
-        "{}_create_{}_handle",
-        naming::ffi_prefix(),
-        trait_name_snake
-    );
+    let wasm_create_fn = format_ident!("{}_create_{}_handle", naming::ffi_prefix(), trait_name_snake);
 
     let expanded = quote! {
         #item_trait
@@ -333,22 +293,14 @@ fn expand_method(
             },
             FnArg::Receiver(_) => None,
         })
-        .map(|(param_name, param_type)| {
-            lower_callback_param(&param_name, &param_type, custom_types)
-        })
-        .fold(
-            (Vec::new(), Vec::new(), Vec::new(), Vec::new()),
-            |(mut ffi, mut rust, mut call, mut preludes), lowering| {
-                ffi.push(lowering.ffi_param);
-                rust.push(lowering.rust_param);
-                call.push(lowering.call_arg);
-                lowering
-                    .prelude
-                    .into_iter()
-                    .for_each(|stmt| preludes.push(stmt));
-                (ffi, rust, call, preludes)
-            },
-        );
+        .map(|(param_name, param_type)| lower_callback_param(&param_name, &param_type, custom_types))
+        .fold((Vec::new(), Vec::new(), Vec::new(), Vec::new()), |(mut ffi, mut rust, mut call, mut preludes), lowering| {
+            ffi.push(lowering.ffi_param);
+            rust.push(lowering.rust_param);
+            call.push(lowering.call_arg);
+            lowering.prelude.into_iter().for_each(|stmt| preludes.push(stmt));
+            (ffi, rust, call, preludes)
+        });
 
     let return_type = match &method.sig.output {
         ReturnType::Default => None,
@@ -356,10 +308,7 @@ fn expand_method(
     };
 
     if is_async {
-        let async_wire_return = return_type
-            .as_deref()
-            .map(needs_wire_return)
-            .unwrap_or(false);
+        let async_wire_return = return_type.as_deref().map(needs_wire_return).unwrap_or(false);
 
         let callback_type = if let Some(ref ret_ty) = return_type {
             if async_wire_return {
@@ -381,21 +330,17 @@ fn expand_method(
             )
         });
 
-        let output_type = return_type
-            .as_ref()
-            .map(|t| quote! { -> #t })
-            .unwrap_or_default();
+        let output_type = return_type.as_ref().map(|t| quote! { -> #t }).unwrap_or_default();
 
         let impl_body = match return_type.as_deref() {
             Some(ret_ty) => {
-                let error_expr = parse_result_type(ret_ty)
-                    .map(|(_, err_ty)| {
-                        quote! {
-                            Err(<#err_ty as ::core::convert::From<::boltffi::UnexpectedFfiCallbackError>>::from(
-                                ::boltffi::UnexpectedFfiCallbackError::new(error_msg)
-                            ))
-                        }
-                    });
+                let error_expr = parse_result_type(ret_ty).map(|(_, err_ty)| {
+                    quote! {
+                        Err(<#err_ty as ::core::convert::From<::boltffi::UnexpectedFfiCallbackError>>::from(
+                            ::boltffi::UnexpectedFfiCallbackError::new(error_msg)
+                        ))
+                    }
+                });
 
                 let (callback_body, poll_body) = if async_wire_return {
                     let poll_error_branch = error_expr
@@ -627,10 +572,7 @@ fn expand_method(
             }
         })
     } else {
-        let wire_return = return_type
-            .as_deref()
-            .map(needs_wire_return)
-            .unwrap_or(false);
+        let wire_return = return_type.as_deref().map(needs_wire_return).unwrap_or(false);
 
         let out_params = if let Some(ref ret_ty) = return_type {
             if wire_return {
@@ -652,10 +594,7 @@ fn expand_method(
             )
         });
 
-        let output_type = return_type
-            .as_ref()
-            .map(|t| quote! { -> #t })
-            .unwrap_or_default();
+        let output_type = return_type.as_ref().map(|t| quote! { -> #t }).unwrap_or_default();
 
         let impl_body = match return_type.as_deref() {
             Some(ret_ty) => {
@@ -737,8 +676,7 @@ fn to_snake_case_ident(name: &str) -> syn::Ident {
 fn rust_type_to_ffi_param_type(ty: &syn::Type) -> proc_macro2::TokenStream {
     let type_str = quote!(#ty).to_string().replace(' ', "");
     match type_str.as_str() {
-        "i8" | "i16" | "i32" | "i64" | "u8" | "u16" | "u32" | "u64" | "f32" | "f64" | "bool"
-        | "usize" | "isize" => quote!(#ty),
+        "i8" | "i16" | "i32" | "i64" | "u8" | "u16" | "u32" | "u64" | "f32" | "f64" | "bool" | "usize" | "isize" => quote!(#ty),
         "&str" => quote!(*const std::os::raw::c_char),
         "String" => quote!(*const std::os::raw::c_char),
         _ => quote!(#ty),
@@ -752,11 +690,7 @@ struct CallbackParamLowering {
     prelude: Option<proc_macro2::TokenStream>,
 }
 
-fn lower_callback_param(
-    param_name: &syn::Ident,
-    param_type: &syn::Type,
-    custom_types: &custom_types::CustomTypeRegistry,
-) -> CallbackParamLowering {
+fn lower_callback_param(param_name: &syn::Ident, param_type: &syn::Type, custom_types: &custom_types::CustomTypeRegistry) -> CallbackParamLowering {
     let rust_param = quote! { #param_name: #param_type };
 
     let type_str = quote!(#param_type).to_string().replace(' ', "");
@@ -796,18 +730,7 @@ fn lower_callback_param(
 fn is_ffi_primitive(type_str: &str) -> bool {
     matches!(
         type_str,
-        "i8" | "i16"
-            | "i32"
-            | "i64"
-            | "u8"
-            | "u16"
-            | "u32"
-            | "u64"
-            | "f32"
-            | "f64"
-            | "bool"
-            | "usize"
-            | "isize"
+        "i8" | "i16" | "i32" | "i64" | "u8" | "u16" | "u32" | "u64" | "f32" | "f64" | "bool" | "usize" | "isize"
     )
 }
 
@@ -842,11 +765,7 @@ struct WasmMethodExpansion {
     complete_export: Option<proc_macro2::TokenStream>,
 }
 
-fn expand_method_wasm(
-    method: &syn::TraitItemFn,
-    trait_name_snake: &syn::Ident,
-    custom_types: &custom_types::CustomTypeRegistry,
-) -> Result<WasmMethodExpansion, syn::Error> {
+fn expand_method_wasm(method: &syn::TraitItemFn, trait_name_snake: &syn::Ident, custom_types: &custom_types::CustomTypeRegistry) -> Result<WasmMethodExpansion, syn::Error> {
     let method_name = &method.sig.ident;
     let method_name_snake = to_snake_case_ident(&method_name.to_string());
 
@@ -855,53 +774,40 @@ fn expand_method_wasm(
         return expand_method_wasm_async(method, trait_name_snake, custom_types);
     }
 
-    let import_name = format_ident!(
-        "__boltffi_callback_{}_{}",
-        trait_name_snake,
-        method_name_snake
-    );
+    let import_name = format_ident!("__boltffi_callback_{}_{}", trait_name_snake, method_name_snake);
 
-    let (ffi_param_types, param_names, call_args, prelude_stmts): (Vec<_>, Vec<_>, Vec<_>, Vec<_>) =
-        method
-            .sig
-            .inputs
-            .iter()
-            .filter_map(|input| match input {
-                FnArg::Typed(pat_type) => match pat_type.pat.as_ref() {
-                    Pat::Ident(pat_ident) => Some((pat_ident.ident.clone(), pat_type.ty.clone())),
-                    _ => None,
-                },
-                FnArg::Receiver(_) => None,
-            })
-            .map(|(param_name, param_type)| {
-                lower_callback_param_wasm(&param_name, &param_type, custom_types)
-            })
-            .fold(
-                (Vec::new(), Vec::new(), Vec::new(), Vec::new()),
-                |(mut ffi, mut rust, mut call, mut preludes), lowering| {
-                    for p in lowering.ffi_params {
-                        ffi.push(p);
-                    }
-                    rust.push(lowering.rust_param);
-                    for a in lowering.call_args {
-                        call.push(a);
-                    }
-                    if let Some(stmt) = lowering.prelude {
-                        preludes.push(stmt);
-                    }
-                    (ffi, rust, call, preludes)
-                },
-            );
+    let (ffi_param_types, param_names, call_args, prelude_stmts): (Vec<_>, Vec<_>, Vec<_>, Vec<_>) = method
+        .sig
+        .inputs
+        .iter()
+        .filter_map(|input| match input {
+            FnArg::Typed(pat_type) => match pat_type.pat.as_ref() {
+                Pat::Ident(pat_ident) => Some((pat_ident.ident.clone(), pat_type.ty.clone())),
+                _ => None,
+            },
+            FnArg::Receiver(_) => None,
+        })
+        .map(|(param_name, param_type)| lower_callback_param_wasm(&param_name, &param_type, custom_types))
+        .fold((Vec::new(), Vec::new(), Vec::new(), Vec::new()), |(mut ffi, mut rust, mut call, mut preludes), lowering| {
+            for p in lowering.ffi_params {
+                ffi.push(p);
+            }
+            rust.push(lowering.rust_param);
+            for a in lowering.call_args {
+                call.push(a);
+            }
+            if let Some(stmt) = lowering.prelude {
+                preludes.push(stmt);
+            }
+            (ffi, rust, call, preludes)
+        });
 
     let return_type = match &method.sig.output {
         ReturnType::Default => None,
         ReturnType::Type(_, ty) => Some(ty.clone()),
     };
 
-    let wire_return = return_type
-        .as_deref()
-        .map(needs_wire_return)
-        .unwrap_or(false);
+    let wire_return = return_type.as_deref().map(needs_wire_return).unwrap_or(false);
 
     let (extern_import, impl_body) = if let Some(ref ret_ty) = return_type {
         if wire_return {
@@ -952,10 +858,7 @@ fn expand_method_wasm(
         )
     };
 
-    let output_type = return_type
-        .as_ref()
-        .map(|t| quote! { -> #t })
-        .unwrap_or_default();
+    let output_type = return_type.as_ref().map(|t| quote! { -> #t }).unwrap_or_default();
 
     Ok(WasmMethodExpansion {
         extern_import,
@@ -968,56 +871,38 @@ fn expand_method_wasm(
     })
 }
 
-fn expand_method_wasm_async(
-    method: &syn::TraitItemFn,
-    trait_name_snake: &syn::Ident,
-    custom_types: &custom_types::CustomTypeRegistry,
-) -> Result<WasmMethodExpansion, syn::Error> {
+fn expand_method_wasm_async(method: &syn::TraitItemFn, trait_name_snake: &syn::Ident, custom_types: &custom_types::CustomTypeRegistry) -> Result<WasmMethodExpansion, syn::Error> {
     let method_name = &method.sig.ident;
     let method_name_snake = to_snake_case_ident(&method_name.to_string());
 
-    let start_import_name = format_ident!(
-        "__boltffi_callback_{}_{}_start",
-        trait_name_snake,
-        method_name_snake
-    );
-    let complete_export_name = format_ident!(
-        "boltffi_callback_{}_{}_complete",
-        trait_name_snake,
-        method_name_snake
-    );
+    let start_import_name = format_ident!("__boltffi_callback_{}_{}_start", trait_name_snake, method_name_snake);
+    let complete_export_name = format_ident!("boltffi_callback_{}_{}_complete", trait_name_snake, method_name_snake);
 
-    let (ffi_param_types, param_names, call_args, prelude_stmts): (Vec<_>, Vec<_>, Vec<_>, Vec<_>) =
-        method
-            .sig
-            .inputs
-            .iter()
-            .filter_map(|input| match input {
-                FnArg::Typed(pat_type) => match pat_type.pat.as_ref() {
-                    Pat::Ident(pat_ident) => Some((pat_ident.ident.clone(), pat_type.ty.clone())),
-                    _ => None,
-                },
-                FnArg::Receiver(_) => None,
-            })
-            .map(|(param_name, param_type)| {
-                lower_callback_param_wasm(&param_name, &param_type, custom_types)
-            })
-            .fold(
-                (Vec::new(), Vec::new(), Vec::new(), Vec::new()),
-                |(mut ffi, mut rust, mut call, mut preludes), lowering| {
-                    for p in lowering.ffi_params {
-                        ffi.push(p);
-                    }
-                    rust.push(lowering.rust_param);
-                    for a in lowering.call_args {
-                        call.push(a);
-                    }
-                    if let Some(stmt) = lowering.prelude {
-                        preludes.push(stmt);
-                    }
-                    (ffi, rust, call, preludes)
-                },
-            );
+    let (ffi_param_types, param_names, call_args, prelude_stmts): (Vec<_>, Vec<_>, Vec<_>, Vec<_>) = method
+        .sig
+        .inputs
+        .iter()
+        .filter_map(|input| match input {
+            FnArg::Typed(pat_type) => match pat_type.pat.as_ref() {
+                Pat::Ident(pat_ident) => Some((pat_ident.ident.clone(), pat_type.ty.clone())),
+                _ => None,
+            },
+            FnArg::Receiver(_) => None,
+        })
+        .map(|(param_name, param_type)| lower_callback_param_wasm(&param_name, &param_type, custom_types))
+        .fold((Vec::new(), Vec::new(), Vec::new(), Vec::new()), |(mut ffi, mut rust, mut call, mut preludes), lowering| {
+            for p in lowering.ffi_params {
+                ffi.push(p);
+            }
+            rust.push(lowering.rust_param);
+            for a in lowering.call_args {
+                call.push(a);
+            }
+            if let Some(stmt) = lowering.prelude {
+                preludes.push(stmt);
+            }
+            (ffi, rust, call, preludes)
+        });
 
     let return_type = match &method.sig.output {
         ReturnType::Default => None,
@@ -1048,10 +933,7 @@ fn expand_method_wasm_async(
         }
     };
 
-    let output_type = return_type
-        .as_ref()
-        .map(|t| quote! { -> #t })
-        .unwrap_or_default();
+    let output_type = return_type.as_ref().map(|t| quote! { -> #t }).unwrap_or_default();
 
     let poll_body = match return_type.as_deref() {
         Some(ret_ty) => {
@@ -1165,11 +1047,7 @@ struct WasmCallbackParamLowering {
     prelude: Option<proc_macro2::TokenStream>,
 }
 
-fn lower_callback_param_wasm(
-    param_name: &syn::Ident,
-    param_type: &syn::Type,
-    custom_types: &custom_types::CustomTypeRegistry,
-) -> WasmCallbackParamLowering {
+fn lower_callback_param_wasm(param_name: &syn::Ident, param_type: &syn::Type, custom_types: &custom_types::CustomTypeRegistry) -> WasmCallbackParamLowering {
     let rust_param = quote! { #param_name: #param_type };
     let type_str = quote!(#param_type).to_string().replace(' ', "");
 
@@ -1201,10 +1079,7 @@ fn lower_callback_param_wasm(
     WasmCallbackParamLowering {
         ffi_params: vec![quote! { #ptr_name: *const u8 }, quote! { #len_name: u32 }],
         rust_param,
-        call_args: vec![
-            quote! { #wire_name.as_ptr() },
-            quote! { #wire_name.len() as u32 },
-        ],
+        call_args: vec![quote! { #wire_name.as_ptr() }, quote! { #wire_name.len() as u32 }],
         prelude: Some(prelude),
     }
 }

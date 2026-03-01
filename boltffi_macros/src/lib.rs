@@ -20,18 +20,13 @@ mod wire_gen;
 pub fn derive_ffi_type(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
 
-    let has_repr_c = input.attrs.iter().any(|attr| {
-        attr.path().is_ident("repr")
-            && attr
-                .parse_args::<syn::Ident>()
-                .map(|id| id == "C")
-                .unwrap_or(false)
-    });
+    let has_repr_c = input
+        .attrs
+        .iter()
+        .any(|attr| attr.path().is_ident("repr") && attr.parse_args::<syn::Ident>().map(|id| id == "C").unwrap_or(false));
 
     if !has_repr_c {
-        return syn::Error::new_spanned(&input, "FfiType requires #[repr(C)]")
-            .to_compile_error()
-            .into();
+        return syn::Error::new_spanned(&input, "FfiType requires #[repr(C)]").to_compile_error().into();
     }
 
     TokenStream::from(quote! {})
@@ -40,6 +35,11 @@ pub fn derive_ffi_type(input: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn ffi_export(_attr: TokenStream, item: TokenStream) -> TokenStream {
     export::ffi_export_impl(item)
+}
+
+#[proc_macro_attribute]
+pub fn ffi_async_iter(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    item
 }
 
 #[proc_macro_attribute]
@@ -98,12 +98,9 @@ pub fn export(attr: TokenStream, item: TokenStream) -> TokenStream {
         return ffi_trait(attr, TokenStream::from(quote!(#item_trait)));
     }
 
-    syn::Error::new_spanned(
-        proc_macro2::TokenStream::from(item),
-        "export can only be applied to fn, impl, or trait",
-    )
-    .to_compile_error()
-    .into()
+    syn::Error::new_spanned(proc_macro2::TokenStream::from(item), "export can only be applied to fn, impl, or trait")
+        .to_compile_error()
+        .into()
 }
 
 #[proc_macro_attribute]

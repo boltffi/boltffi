@@ -1,9 +1,8 @@
+use crate::custom_types;
 pub use boltffi_ffi_rules::transport::EncodedReturnStrategy;
 use proc_macro2::Span;
 use quote::quote;
 use syn::{ReturnType, Type};
-
-use crate::custom_types;
 
 pub enum OptionReturnAbi {
     OutValue { inner: syn::Type },
@@ -26,13 +25,8 @@ pub enum ReturnKind {
 
 pub enum ReturnAbi {
     Unit,
-    Scalar {
-        rust_type: syn::Type,
-    },
-    Encoded {
-        rust_type: syn::Type,
-        strategy: EncodedReturnStrategy,
-    },
+    Scalar { rust_type: syn::Type },
+    Encoded { rust_type: syn::Type, strategy: EncodedReturnStrategy },
 }
 
 pub fn extract_vec_inner(ty: &Type) -> Option<syn::Type> {
@@ -49,11 +43,7 @@ pub fn extract_vec_inner(ty: &Type) -> Option<syn::Type> {
 
 fn is_string_like_type(ty: &Type) -> bool {
     match ty {
-        Type::Path(path) => path
-            .path
-            .segments
-            .last()
-            .is_some_and(|s| s.ident == "String"),
+        Type::Path(path) => path.path.segments.last().is_some_and(|s| s.ident == "String"),
         Type::Reference(reference) => match reference.elem.as_ref() {
             Type::Path(path) => path.path.segments.last().is_some_and(|s| s.ident == "str"),
             _ => false,
@@ -65,19 +55,7 @@ fn is_string_like_type(ty: &Type) -> bool {
 pub fn is_primitive_type(s: &str) -> bool {
     matches!(
         s,
-        "i8" | "i16"
-            | "i32"
-            | "i64"
-            | "u8"
-            | "u16"
-            | "u32"
-            | "u64"
-            | "f32"
-            | "f64"
-            | "bool"
-            | "usize"
-            | "isize"
-            | "()"
+        "i8" | "i16" | "i32" | "i64" | "u8" | "u16" | "u32" | "u64" | "f32" | "f64" | "bool" | "usize" | "isize" | "()"
     )
 }
 
@@ -106,13 +84,9 @@ pub fn classify_return(output: &ReturnType) -> ReturnKind {
                 {
                     let ok_str = quote!(#ok_ty).to_string().replace(' ', "");
                     if ok_str == "String" || ok_str == "std::string::String" {
-                        return ReturnKind::ResultString {
-                            err: err_ty.clone(),
-                        };
+                        return ReturnKind::ResultString { err: err_ty.clone() };
                     } else if ok_str == "()" {
-                        return ReturnKind::ResultUnit {
-                            err: err_ty.clone(),
-                        };
+                        return ReturnKind::ResultUnit { err: err_ty.clone() };
                     } else {
                         return ReturnKind::ResultPrimitive {
                             ok: ok_ty.clone(),
@@ -132,9 +106,7 @@ pub fn classify_return(output: &ReturnType) -> ReturnKind {
                         return ReturnKind::Option(OptionReturnAbi::OutFfiString);
                     }
 
-                    return ReturnKind::Option(OptionReturnAbi::OutValue {
-                        inner: inner_ty.clone(),
-                    });
+                    return ReturnKind::Option(OptionReturnAbi::OutValue { inner: inner_ty.clone() });
                 }
             }
 
@@ -181,12 +153,10 @@ pub fn lower_return_abi(kind: ReturnKind) -> ReturnAbi {
             },
         },
         ReturnKind::Option(abi) => match abi {
-            OptionReturnAbi::OutValue { inner } if type_is_primitive(&inner) => {
-                ReturnAbi::Encoded {
-                    rust_type: syn::parse_quote!(Option<#inner>),
-                    strategy: EncodedReturnStrategy::OptionScalar,
-                }
-            }
+            OptionReturnAbi::OutValue { inner } if type_is_primitive(&inner) => ReturnAbi::Encoded {
+                rust_type: syn::parse_quote!(Option<#inner>),
+                strategy: EncodedReturnStrategy::OptionScalar,
+            },
             other => ReturnAbi::Encoded {
                 rust_type: option_rust_type(other),
                 strategy: EncodedReturnStrategy::WireEncoded,
@@ -252,18 +222,10 @@ impl ReturnAbi {
                 if !out_status.is_null() { *out_status = ::boltffi::__private::FfiStatus::OK; }
                 result
             },
-            Self::Encoded {
-                rust_type,
-                strategy,
-            } => {
+            Self::Encoded { rust_type, strategy } => {
                 let registry = custom_types::registry_for_current_crate().ok();
                 let result_ident = syn::Ident::new("result", Span::call_site());
-                let encode_expression = encoded_return_buffer_expression(
-                    rust_type,
-                    *strategy,
-                    &result_ident,
-                    registry.as_ref(),
-                );
+                let encode_expression = encoded_return_buffer_expression(rust_type, *strategy, &result_ident, registry.as_ref());
                 quote! {
                     if !out_status.is_null() { *out_status = ::boltffi::__private::FfiStatus::OK; }
                     #encode_expression
@@ -289,12 +251,7 @@ pub fn encoded_return_body(
     conversions: &[proc_macro2::TokenStream],
     custom_type_registry: &custom_types::CustomTypeRegistry,
 ) -> proc_macro2::TokenStream {
-    let encode_expression = encoded_return_buffer_expression(
-        rust_type,
-        strategy,
-        result_ident,
-        Some(custom_type_registry),
-    );
+    let encode_expression = encoded_return_buffer_expression(rust_type, strategy, result_ident, Some(custom_type_registry));
 
     quote! {
         #(#conversions)*
@@ -326,17 +283,11 @@ fn encoded_return_buffer_expression(
         EncodedReturnStrategy::OptionScalar | EncodedReturnStrategy::ResultScalar => quote! {
             ::boltffi::__private::FfiBuf::wire_encode(&#result_ident)
         },
-        EncodedReturnStrategy::WireEncoded => {
-            wire_encode_expression(rust_type, result_ident, custom_type_registry)
-        }
+        EncodedReturnStrategy::WireEncoded => wire_encode_expression(rust_type, result_ident, custom_type_registry),
     }
 }
 
-fn wire_encode_expression(
-    rust_type: &syn::Type,
-    result_ident: &syn::Ident,
-    custom_type_registry: Option<&custom_types::CustomTypeRegistry>,
-) -> proc_macro2::TokenStream {
+fn wire_encode_expression(rust_type: &syn::Type, result_ident: &syn::Ident, custom_type_registry: Option<&custom_types::CustomTypeRegistry>) -> proc_macro2::TokenStream {
     match custom_type_registry {
         Some(registry) if custom_types::contains_custom_types(rust_type, registry) => {
             let wire_ty = custom_types::wire_type_for(rust_type, registry);

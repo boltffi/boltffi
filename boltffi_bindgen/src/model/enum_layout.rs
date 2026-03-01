@@ -44,12 +44,7 @@ impl DataEnumLayout {
                         payload_layout: Layout::new(0, 1),
                     }
                 } else {
-                    let struct_layout = StructLayout::from_layouts(
-                        variant
-                            .fields
-                            .iter()
-                            .map(|field| field.field_type.c_layout()),
-                    );
+                    let struct_layout = StructLayout::from_layouts(variant.fields.iter().map(|field| field.field_type.c_layout()));
 
                     DataEnumVariantLayout {
                         field_offsets: struct_layout.offsets().collect(),
@@ -67,17 +62,12 @@ impl DataEnumLayout {
             .map(|variant| variant.payload_layout.alignment)
             .fold(Alignment::new(1), |current, next| current.max(next));
 
-        let union_size_unpadded = variants
-            .iter()
-            .map(|variant| variant.payload_layout.size.as_usize())
-            .max()
-            .unwrap_or(0);
+        let union_size_unpadded = variants.iter().map(|variant| variant.payload_layout.size.as_usize()).max().unwrap_or(0);
 
         let union_size = Size::new(union_size_unpadded).padded_to(union_alignment);
         let payload_offset = (Offset::ZERO + tag_layout.size).aligned_to(union_alignment);
         let struct_alignment = tag_layout.alignment.max(union_alignment);
-        let struct_size = Size::new(payload_offset.as_usize() + union_size.as_usize())
-            .padded_to(struct_alignment);
+        let struct_size = Size::new(payload_offset.as_usize() + union_size.as_usize()).padded_to(struct_alignment);
 
         Some(Self {
             struct_size,
@@ -95,9 +85,6 @@ impl DataEnumLayout {
     }
 
     pub fn field_offset(&self, variant_index: usize, field_index: usize) -> Option<Offset> {
-        self.variants
-            .get(variant_index)
-            .and_then(|variant| variant.field_offsets.get(field_index))
-            .copied()
+        self.variants.get(variant_index).and_then(|variant| variant.field_offsets.get(field_index)).copied()
     }
 }

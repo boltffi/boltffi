@@ -1,35 +1,27 @@
-use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
-
+use crate::ir::{
+    abi::{
+        AbiAsyncIterator, AbiCall, AbiCallbackInvocation, AbiCallbackMethod, AbiContract, AbiEnum, AbiEnumField, AbiEnumPayload, AbiEnumVariant, AbiParam, AbiRecord, AbiStream,
+        AsyncCall, CallId, CallMode, ErrorTransport, InputShape, OutputShape, StreamItemTransport, ValueShape,
+    },
+    codec::{BlittableField, CodecPlan, EncodedField, EnumLayout, RecordLayout, VariantLayout, VariantPayloadLayout, VecLayout},
+    contract::FfiContract,
+    definitions::{
+        AsyncIteratorDef, CallbackMethodDef, CallbackTraitDef, ClassDef, ConstructorDef, EnumDef, EnumRepr, FunctionDef, MethodDef, ParamDef, ParamPassing, Receiver, RecordDef,
+        ReturnDef, StreamDef, VariantPayload,
+    },
+    ids::{AsyncIteratorId, BuiltinId, ClassId, EnumId, FieldName, FunctionId, MethodId, ParamName, RecordId},
+    ops::{FieldReadOp, FieldWriteOp, OffsetExpr, ReadOp, ReadSeq, SizeExpr, ValueExpr, WireShape, WriteOp, WriteSeq},
+    plan::{
+        AbiType, AsyncPlan, AsyncResult, CallPlan, CallPlanKind, CallTarget, CallbackStyle, CompletionCallback, DirectPlan, Mutability, ParamPlan, ParamStrategy, ReturnPlan,
+        ReturnValuePlan,
+    },
+    types::{PrimitiveType, TypeExpr},
+};
 use boltffi_ffi_rules::naming;
-
-use crate::ir::abi::{
-    AbiCall, AbiCallbackInvocation, AbiCallbackMethod, AbiContract, AbiEnum, AbiEnumField,
-    AbiEnumPayload, AbiEnumVariant, AbiParam, AbiRecord, AbiStream, AsyncCall, CallId, CallMode,
-    ErrorTransport, InputShape, OutputShape, StreamItemTransport, ValueShape,
+use std::{
+    cell::RefCell,
+    collections::{HashMap, HashSet},
 };
-use crate::ir::codec::{
-    BlittableField, CodecPlan, EncodedField, EnumLayout, RecordLayout, VariantLayout,
-    VariantPayloadLayout, VecLayout,
-};
-use crate::ir::contract::FfiContract;
-use crate::ir::definitions::{
-    CallbackMethodDef, CallbackTraitDef, ClassDef, ConstructorDef, EnumDef, EnumRepr, FunctionDef,
-    MethodDef, ParamDef, ParamPassing, Receiver, RecordDef, ReturnDef, StreamDef, VariantPayload,
-};
-use crate::ir::ids::{
-    BuiltinId, ClassId, EnumId, FieldName, FunctionId, MethodId, ParamName, RecordId,
-};
-use crate::ir::ops::{
-    FieldReadOp, FieldWriteOp, OffsetExpr, ReadOp, ReadSeq, SizeExpr, ValueExpr, WireShape,
-    WriteOp, WriteSeq,
-};
-use crate::ir::plan::{
-    AbiType, AsyncPlan, AsyncResult, CallPlan, CallPlanKind, CallTarget, CallbackStyle,
-    CompletionCallback, DirectPlan, Mutability, ParamPlan, ParamStrategy, ReturnPlan,
-    ReturnValuePlan,
-};
-use crate::ir::types::{PrimitiveType, TypeExpr};
 
 #[derive(Debug, Clone)]
 struct AbiCallbackParamPlan {
@@ -90,58 +82,34 @@ impl<'c> Lowerer<'c> {
 
 impl<'c> Lowerer<'c> {
     pub fn to_abi_contract(&self) -> AbiContract {
-        let function_calls = self
-            .contract
-            .functions
-            .iter()
-            .map(|func| self.abi_call_for_function(func));
+        let function_calls = self.contract.functions.iter().map(|func| self.abi_call_for_function(func));
 
         let class_calls = self.contract.catalog.all_classes().flat_map(|class| {
-            let ctor_calls = class
-                .constructors
-                .iter()
-                .enumerate()
-                .map(|(index, ctor)| self.abi_call_for_constructor(class, ctor, index));
-            let method_calls = class
-                .methods
-                .iter()
-                .map(|method| self.abi_call_for_method(class, method));
+            let ctor_calls = class.constructors.iter().enumerate().map(|(index, ctor)| self.abi_call_for_constructor(class, ctor, index));
+            let method_calls = class.methods.iter().map(|method| self.abi_call_for_method(class, method));
             ctor_calls.chain(method_calls)
         });
 
         let calls = function_calls.chain(class_calls).collect();
 
-        let callbacks = self
-            .contract
-            .catalog
-            .all_callbacks()
-            .map(|callback| self.abi_callback_invocation(callback))
-            .collect();
+        let callbacks = self.contract.catalog.all_callbacks().map(|callback| self.abi_callback_invocation(callback)).collect();
 
-        let records = self
-            .contract
-            .catalog
-            .all_records()
-            .map(|record| self.abi_record(record))
-            .collect();
+        let records = self.contract.catalog.all_records().map(|record| self.abi_record(record)).collect();
 
-        let enums = self
-            .contract
-            .catalog
-            .all_enums()
-            .map(|enumeration| self.abi_enum(enumeration))
-            .collect();
+        let enums = self.contract.catalog.all_enums().map(|enumeration| self.abi_enum(enumeration)).collect();
 
         let streams = self
             .contract
             .catalog
             .all_classes()
-            .flat_map(|class| {
-                class
-                    .streams
-                    .iter()
-                    .map(|stream| self.abi_stream(&class.id, stream))
-            })
+            .flat_map(|class| class.streams.iter().map(|stream| self.abi_stream(&class.id, stream)))
+            .collect();
+
+        let async_iterators = self
+            .contract
+            .catalog
+            .all_classes()
+            .flat_map(|class| class.async_iterators.iter().map(|iter| self.abi_async_iterator(&class.id, iter)))
             .collect();
 
         AbiContract {
@@ -149,6 +117,7 @@ impl<'c> Lowerer<'c> {
             calls,
             callbacks,
             streams,
+            async_iterators,
             records,
             enums,
             free_buf: naming::free_buf_u8(),
@@ -160,8 +129,7 @@ impl<'c> Lowerer<'c> {
         let plan = self.lower_function(func);
         let symbol = self.call_symbol(&plan);
         let params = self.abi_params_from_plan(&plan.params);
-        let (mode, output_shape, error) =
-            self.abi_mode_output_shape_error_for_function(func, &plan.kind);
+        let (mode, output_shape, error) = self.abi_mode_output_shape_error_for_function(func, &plan.kind);
 
         AbiCall {
             id: CallId::Function(func.id.clone()),
@@ -177,8 +145,7 @@ impl<'c> Lowerer<'c> {
         let plan = self.lower_method(class, method);
         let symbol = self.call_symbol(&plan);
         let params = self.abi_params_from_plan(&plan.params);
-        let (mode, output_shape, error) =
-            self.abi_mode_output_shape_error_for_method(class, method, &plan.kind);
+        let (mode, output_shape, error) = self.abi_mode_output_shape_error_for_method(class, method, &plan.kind);
 
         AbiCall {
             id: CallId::Method {
@@ -193,12 +160,7 @@ impl<'c> Lowerer<'c> {
         }
     }
 
-    fn abi_call_for_constructor(
-        &self,
-        class: &ClassDef,
-        ctor: &ConstructorDef,
-        index: usize,
-    ) -> AbiCall {
+    fn abi_call_for_constructor(&self, class: &ClassDef, ctor: &ConstructorDef, index: usize) -> AbiCall {
         let plan = self.lower_constructor(class, ctor);
         let symbol = self.call_symbol(&plan);
         let params = self.abi_params_from_plan(&plan.params);
@@ -268,6 +230,40 @@ impl<'c> Lowerer<'c> {
         }
     }
 
+    fn abi_async_iterator(&self, class_id: &ClassId, iter: &AsyncIteratorDef) -> AbiAsyncIterator {
+        let class_name = class_id.as_str();
+        let method_name = iter.id.as_str();
+
+        // The `_next_complete` returns wire-encoded `Option<T>`.
+        let option_codec = self.build_codec(&crate::ir::types::TypeExpr::Option(Box::new(iter.item_type.clone())));
+        let option_decode_ops = self.expand_decode(&option_codec);
+
+        AbiAsyncIterator {
+            class_id: class_id.clone(),
+            iterator_id: AsyncIteratorId::new(method_name),
+            item: StreamItemTransport::WireEncoded { decode_ops: option_decode_ops },
+            entry: naming::iterator_ffi_new(class_name, method_name),
+            next: naming::iterator_ffi_next(class_name, method_name),
+            next_poll: {
+                use boltffi_ffi_rules::naming::Name;
+                Name::new(format!("{}_poll", naming::iterator_ffi_next(class_name, method_name)))
+            },
+            next_complete: {
+                use boltffi_ffi_rules::naming::Name;
+                Name::new(format!("{}_complete", naming::iterator_ffi_next(class_name, method_name)))
+            },
+            next_cancel: {
+                use boltffi_ffi_rules::naming::Name;
+                Name::new(format!("{}_cancel", naming::iterator_ffi_next(class_name, method_name)))
+            },
+            next_free: {
+                use boltffi_ffi_rules::naming::Name;
+                Name::new(format!("{}_free", naming::iterator_ffi_next(class_name, method_name)))
+            },
+            free: naming::iterator_ffi_free(class_name, method_name),
+        }
+    }
+
     fn abi_record(&self, record: &RecordDef) -> AbiRecord {
         let codec = self.build_codec(&TypeExpr::Record(record.id.clone()));
         let decode_ops = self.expand_decode(&codec);
@@ -317,19 +313,13 @@ impl<'c> Lowerer<'c> {
             } => (
                 false,
                 match &enumeration.repr {
-                    EnumRepr::Data {
-                        variants: data_variants,
-                        ..
-                    } => {
+                    EnumRepr::Data { variants: data_variants, .. } => {
                         let layout_fields = variants
                             .iter()
                             .map(|variant| {
                                 let fields = match &variant.payload {
                                     VariantPayloadLayout::Unit => Vec::new(),
-                                    VariantPayloadLayout::Fields(fields) => fields
-                                        .iter()
-                                        .map(|field| self.abi_enum_field(field))
-                                        .collect(),
+                                    VariantPayloadLayout::Fields(fields) => fields.iter().map(|field| self.abi_enum_field(field)).collect(),
                                 };
                                 (variant.name.clone(), fields)
                             })
@@ -338,10 +328,7 @@ impl<'c> Lowerer<'c> {
                         data_variants
                             .iter()
                             .map(|variant| {
-                                let fields = layout_fields
-                                    .get(&variant.name)
-                                    .cloned()
-                                    .unwrap_or_default();
+                                let fields = layout_fields.get(&variant.name).cloned().unwrap_or_default();
                                 let payload = match &variant.payload {
                                     VariantPayload::Unit => AbiEnumPayload::Unit,
                                     VariantPayload::Tuple(_) => AbiEnumPayload::Tuple(fields),
@@ -372,10 +359,7 @@ impl<'c> Lowerer<'c> {
 
     fn abi_enum_field(&self, field: &EncodedField) -> AbiEnumField {
         let decode = self.expand_decode(&field.codec);
-        let encode = self.expand_encode(
-            &field.codec,
-            ValueExpr::Named(field.name.as_str().to_string()),
-        );
+        let encode = self.expand_encode(&field.codec, ValueExpr::Named(field.name.as_str().to_string()));
         AbiEnumField {
             name: field.name.clone(),
             type_expr: TypeExpr::from(&field.codec),
@@ -384,48 +368,28 @@ impl<'c> Lowerer<'c> {
         }
     }
 
-    fn abi_mode_output_shape_error_for_function(
-        &self,
-        func: &FunctionDef,
-        kind: &CallPlanKind,
-    ) -> (CallMode, OutputShape, ErrorTransport) {
+    fn abi_mode_output_shape_error_for_function(&self, func: &FunctionDef, kind: &CallPlanKind) -> (CallMode, OutputShape, ErrorTransport) {
         match kind {
             CallPlanKind::Sync { returns } => {
                 let (output_shape, error) = self.sync_output_shape_and_error(returns);
                 (CallMode::Sync, output_shape, error)
             }
             CallPlanKind::Async { async_plan } => {
-                let mode =
-                    CallMode::Async(Box::new(self.async_call_for_function(func, async_plan)));
-                (
-                    mode,
-                    OutputShape::Value(ValueShape::Scalar(AbiType::Pointer)),
-                    ErrorTransport::None,
-                )
+                let mode = CallMode::Async(Box::new(self.async_call_for_function(func, async_plan)));
+                (mode, OutputShape::Value(ValueShape::Scalar(AbiType::Pointer)), ErrorTransport::None)
             }
         }
     }
 
-    fn abi_mode_output_shape_error_for_method(
-        &self,
-        class: &ClassDef,
-        method: &MethodDef,
-        kind: &CallPlanKind,
-    ) -> (CallMode, OutputShape, ErrorTransport) {
+    fn abi_mode_output_shape_error_for_method(&self, class: &ClassDef, method: &MethodDef, kind: &CallPlanKind) -> (CallMode, OutputShape, ErrorTransport) {
         match kind {
             CallPlanKind::Sync { returns } => {
                 let (output_shape, error) = self.sync_output_shape_and_error(returns);
                 (CallMode::Sync, output_shape, error)
             }
             CallPlanKind::Async { async_plan } => {
-                let mode = CallMode::Async(Box::new(
-                    self.async_call_for_method(class, method, async_plan),
-                ));
-                (
-                    mode,
-                    OutputShape::Value(ValueShape::Scalar(AbiType::Pointer)),
-                    ErrorTransport::None,
-                )
+                let mode = CallMode::Async(Box::new(self.async_call_for_method(class, method, async_plan)));
+                (mode, OutputShape::Value(ValueShape::Scalar(AbiType::Pointer)), ErrorTransport::None)
             }
         }
     }
@@ -441,12 +405,7 @@ impl<'c> Lowerer<'c> {
         }
     }
 
-    fn async_call_for_method(
-        &self,
-        class: &ClassDef,
-        method: &MethodDef,
-        plan: &AsyncPlan,
-    ) -> AsyncCall {
+    fn async_call_for_method(&self, class: &ClassDef, method: &MethodDef, plan: &AsyncPlan) -> AsyncCall {
         AsyncCall {
             poll: naming::method_ffi_poll(class.id.as_str(), method.id.as_str()),
             complete: naming::method_ffi_complete(class.id.as_str(), method.id.as_str()),
@@ -525,10 +484,7 @@ impl<'c> Lowerer<'c> {
                 class_id: class_id.clone(),
                 nullable: *nullable,
             },
-            ReturnValuePlan::Callback {
-                callback_id,
-                nullable,
-            } => OutputShape::Callback {
+            ReturnValuePlan::Callback { callback_id, nullable } => OutputShape::Callback {
                 callback_id: callback_id.clone(),
                 nullable: *nullable,
             },
@@ -556,66 +512,29 @@ impl<'c> Lowerer<'c> {
         }
     }
 
-    fn merge_value_shape_classes(
-        &self,
-        read_class: ValueShapeClass,
-        write_class: ValueShapeClass,
-    ) -> ValueShapeClass {
+    fn merge_value_shape_classes(&self, read_class: ValueShapeClass, write_class: ValueShapeClass) -> ValueShapeClass {
         match (read_class, write_class) {
-            (ValueShapeClass::Scalar(read), ValueShapeClass::Scalar(write)) if read == write => {
-                ValueShapeClass::Scalar(read)
-            }
-            (ValueShapeClass::OptionScalar(read), ValueShapeClass::OptionScalar(write))
-                if read == write =>
+            (ValueShapeClass::Scalar(read), ValueShapeClass::Scalar(write)) if read == write => ValueShapeClass::Scalar(read),
+            (ValueShapeClass::OptionScalar(read), ValueShapeClass::OptionScalar(write)) if read == write => ValueShapeClass::OptionScalar(read),
+            (ValueShapeClass::ResultScalar { ok: read_ok, err: read_err }, ValueShapeClass::ResultScalar { ok: write_ok, err: write_err })
+                if read_ok == write_ok && read_err == write_err =>
             {
-                ValueShapeClass::OptionScalar(read)
+                ValueShapeClass::ResultScalar { ok: read_ok, err: read_err }
             }
-            (
-                ValueShapeClass::ResultScalar {
-                    ok: read_ok,
-                    err: read_err,
-                },
-                ValueShapeClass::ResultScalar {
-                    ok: write_ok,
-                    err: write_err,
-                },
-            ) if read_ok == write_ok && read_err == write_err => ValueShapeClass::ResultScalar {
-                ok: read_ok,
-                err: read_err,
-            },
-            (ValueShapeClass::PrimitiveVec(read), ValueShapeClass::PrimitiveVec(write))
-                if read == write =>
+            (ValueShapeClass::PrimitiveVec(read), ValueShapeClass::PrimitiveVec(write)) if read == write => ValueShapeClass::PrimitiveVec(read),
+            (ValueShapeClass::BlittableRecord { id: read_id, size: read_size }, ValueShapeClass::BlittableRecord { id: write_id, size: write_size })
+                if read_id == write_id && read_size == write_size =>
             {
-                ValueShapeClass::PrimitiveVec(read)
-            }
-            (
-                ValueShapeClass::BlittableRecord {
-                    id: read_id,
-                    size: read_size,
-                },
-                ValueShapeClass::BlittableRecord {
-                    id: write_id,
-                    size: write_size,
-                },
-            ) if read_id == write_id && read_size == write_size => {
-                ValueShapeClass::BlittableRecord {
-                    id: read_id,
-                    size: read_size,
-                }
+                ValueShapeClass::BlittableRecord { id: read_id, size: read_size }
             }
             (ValueShapeClass::Encoded, ValueShapeClass::Encoded) => ValueShapeClass::Encoded,
-            (read, write) => panic!(
-                "read/write value shape mismatch: read={:?}, write={:?}",
-                read, write
-            ),
+            (read, write) => panic!("read/write value shape mismatch: read={:?}, write={:?}", read, write),
         }
     }
 
     fn classify_value_shape_from_read_op(&self, op: &ReadOp) -> ValueShapeClass {
         match op {
-            ReadOp::Primitive { primitive, .. } => {
-                ValueShapeClass::Scalar(primitive_to_abi(*primitive))
-            }
+            ReadOp::Primitive { primitive, .. } => ValueShapeClass::Scalar(primitive_to_abi(*primitive)),
             ReadOp::Option { some, .. } => some
                 .ops
                 .first()
@@ -626,11 +545,7 @@ impl<'c> Lowerer<'c> {
                 .ops
                 .first()
                 .and_then(|ok_op| self.primitive_abi_from_read_op(ok_op))
-                .zip(
-                    err.ops
-                        .first()
-                        .and_then(|err_op| self.primitive_abi_from_read_op(err_op)),
-                )
+                .zip(err.ops.first().and_then(|err_op| self.primitive_abi_from_read_op(err_op)))
                 .map(|(ok, err)| ValueShapeClass::ResultScalar { ok, err })
                 .unwrap_or(ValueShapeClass::Encoded),
             ReadOp::Vec {
@@ -640,10 +555,7 @@ impl<'c> Lowerer<'c> {
             ReadOp::Vec { .. } => ValueShapeClass::Encoded,
             ReadOp::Record { id, .. } => self
                 .blittable_record_size_by_id(id)
-                .map(|size| ValueShapeClass::BlittableRecord {
-                    id: id.clone(),
-                    size,
-                })
+                .map(|size| ValueShapeClass::BlittableRecord { id: id.clone(), size })
                 .unwrap_or(ValueShapeClass::Encoded),
             _ => ValueShapeClass::Encoded,
         }
@@ -651,9 +563,7 @@ impl<'c> Lowerer<'c> {
 
     fn classify_value_shape_from_write_op(&self, op: &WriteOp) -> ValueShapeClass {
         match op {
-            WriteOp::Primitive { primitive, .. } => {
-                ValueShapeClass::Scalar(primitive_to_abi(*primitive))
-            }
+            WriteOp::Primitive { primitive, .. } => ValueShapeClass::Scalar(primitive_to_abi(*primitive)),
             WriteOp::Option { some, .. } => some
                 .ops
                 .first()
@@ -664,11 +574,7 @@ impl<'c> Lowerer<'c> {
                 .ops
                 .first()
                 .and_then(|ok_op| self.primitive_abi_from_write_op(ok_op))
-                .zip(
-                    err.ops
-                        .first()
-                        .and_then(|err_op| self.primitive_abi_from_write_op(err_op)),
-                )
+                .zip(err.ops.first().and_then(|err_op| self.primitive_abi_from_write_op(err_op)))
                 .map(|(ok, err)| ValueShapeClass::ResultScalar { ok, err })
                 .unwrap_or(ValueShapeClass::Encoded),
             WriteOp::Vec {
@@ -678,21 +584,13 @@ impl<'c> Lowerer<'c> {
             WriteOp::Vec { .. } => ValueShapeClass::Encoded,
             WriteOp::Record { id, .. } => self
                 .blittable_record_size_by_id(id)
-                .map(|size| ValueShapeClass::BlittableRecord {
-                    id: id.clone(),
-                    size,
-                })
+                .map(|size| ValueShapeClass::BlittableRecord { id: id.clone(), size })
                 .unwrap_or(ValueShapeClass::Encoded),
             _ => ValueShapeClass::Encoded,
         }
     }
 
-    fn materialize_value_shape(
-        &self,
-        shape_class: ValueShapeClass,
-        read: &ReadSeq,
-        write: &WriteSeq,
-    ) -> ValueShape {
+    fn materialize_value_shape(&self, shape_class: ValueShapeClass, read: &ReadSeq, write: &WriteSeq) -> ValueShape {
         match shape_class {
             ValueShapeClass::Scalar(abi) => ValueShape::Scalar(abi),
             ValueShapeClass::OptionScalar(abi) => ValueShape::OptionScalar {
@@ -797,10 +695,7 @@ impl<'c> Lowerer<'c> {
             },
             CodecPlan::Primitive(primitive) => ReadSeq {
                 size: SizeExpr::Fixed(primitive.wire_size_bytes()),
-                ops: vec![ReadOp::Primitive {
-                    primitive: *primitive,
-                    offset,
-                }],
+                ops: vec![ReadOp::Primitive { primitive: *primitive, offset }],
                 shape: WireShape::Value,
             },
             CodecPlan::String => ReadSeq {
@@ -814,16 +709,10 @@ impl<'c> Lowerer<'c> {
                 shape: WireShape::Value,
             },
             CodecPlan::Builtin(id) => {
-                let size = self
-                    .builtin_fixed_size(id)
-                    .map(SizeExpr::Fixed)
-                    .unwrap_or(SizeExpr::Runtime);
+                let size = self.builtin_fixed_size(id).map(SizeExpr::Fixed).unwrap_or(SizeExpr::Runtime);
                 ReadSeq {
                     size,
-                    ops: vec![ReadOp::Builtin {
-                        id: id.clone(),
-                        offset,
-                    }],
+                    ops: vec![ReadOp::Builtin { id: id.clone(), offset }],
                     shape: WireShape::Value,
                 }
             }
@@ -860,11 +749,7 @@ impl<'c> Lowerer<'c> {
                         fields
                             .iter()
                             .map(|field| {
-                                let offset_expr = if field.offset == 0 {
-                                    OffsetExpr::Base
-                                } else {
-                                    OffsetExpr::BasePlus(field.offset)
-                                };
+                                let offset_expr = if field.offset == 0 { OffsetExpr::Base } else { OffsetExpr::BasePlus(field.offset) };
                                 FieldReadOp {
                                     name: field.name.clone(),
                                     seq: ReadSeq {
@@ -894,11 +779,7 @@ impl<'c> Lowerer<'c> {
                 };
                 ReadSeq {
                     size,
-                    ops: vec![ReadOp::Record {
-                        id: id.clone(),
-                        offset,
-                        fields,
-                    }],
+                    ops: vec![ReadOp::Record { id: id.clone(), offset, fields }],
                     shape: WireShape::Value,
                 }
             }
@@ -945,38 +826,31 @@ impl<'c> Lowerer<'c> {
             },
             CodecPlan::String => WriteSeq {
                 size: SizeExpr::Sum(vec![SizeExpr::Fixed(4), SizeExpr::StringLen(value.clone())]),
-                ops: vec![WriteOp::String {
-                    value: value.clone(),
-                }],
+                ops: vec![WriteOp::String { value: value.clone() }],
                 shape: WireShape::Value,
             },
             CodecPlan::Bytes => WriteSeq {
                 size: SizeExpr::Sum(vec![SizeExpr::Fixed(4), SizeExpr::BytesLen(value.clone())]),
-                ops: vec![WriteOp::Bytes {
-                    value: value.clone(),
-                }],
+                ops: vec![WriteOp::Bytes { value: value.clone() }],
                 shape: WireShape::Value,
             },
             CodecPlan::Builtin(id) => WriteSeq {
-                size: self
-                    .builtin_fixed_size(id)
-                    .map(SizeExpr::Fixed)
-                    .unwrap_or_else(|| {
-                        if id.as_str() == "Url" {
-                            SizeExpr::Sum(vec![
-                                SizeExpr::Fixed(4),
-                                SizeExpr::BuiltinSize {
-                                    id: id.clone(),
-                                    value: value.clone(),
-                                },
-                            ])
-                        } else {
-                            SizeExpr::WireSize {
+                size: self.builtin_fixed_size(id).map(SizeExpr::Fixed).unwrap_or_else(|| {
+                    if id.as_str() == "Url" {
+                        SizeExpr::Sum(vec![
+                            SizeExpr::Fixed(4),
+                            SizeExpr::BuiltinSize {
+                                id: id.clone(),
                                 value: value.clone(),
-                                record_id: None,
-                            }
+                            },
+                        ])
+                    } else {
+                        SizeExpr::WireSize {
+                            value: value.clone(),
+                            record_id: None,
                         }
-                    }),
+                    }
+                }),
                 ops: vec![WriteOp::Builtin {
                     id: id.clone(),
                     value: value.clone(),
@@ -999,16 +873,15 @@ impl<'c> Lowerer<'c> {
             }
             CodecPlan::Vec { element, layout } => {
                 let element_seq = self.expand_encode(element, ValueExpr::Var("item".into()));
-                let size_expr =
-                    if matches!(element.as_ref(), CodecPlan::Primitive(PrimitiveType::U8)) {
-                        SizeExpr::Sum(vec![SizeExpr::Fixed(4), SizeExpr::BytesLen(value.clone())])
-                    } else {
-                        SizeExpr::VecSize {
-                            value: value.clone(),
-                            inner: Box::new(element_seq.size.clone()),
-                            layout: layout.clone(),
-                        }
-                    };
+                let size_expr = if matches!(element.as_ref(), CodecPlan::Primitive(PrimitiveType::U8)) {
+                    SizeExpr::Sum(vec![SizeExpr::Fixed(4), SizeExpr::BytesLen(value.clone())])
+                } else {
+                    SizeExpr::VecSize {
+                        value: value.clone(),
+                        inner: Box::new(element_seq.size.clone()),
+                        layout: layout.clone(),
+                    }
+                };
                 WriteSeq {
                     size: size_expr,
                     ops: vec![WriteOp::Vec {
@@ -1046,10 +919,7 @@ impl<'c> Lowerer<'c> {
                             FieldWriteOp {
                                 name: field.name.clone(),
                                 accessor: field_value.clone(),
-                                seq: self.expand_encode(
-                                    &CodecPlan::Primitive(field.primitive),
-                                    field_value,
-                                ),
+                                seq: self.expand_encode(&CodecPlan::Primitive(field.primitive), field_value),
                             }
                         })
                         .collect(),
@@ -1125,10 +995,7 @@ impl<'c> Lowerer<'c> {
     }
 
     fn abi_params_from_plan(&self, params: &[ParamPlan]) -> Vec<AbiParam> {
-        params
-            .iter()
-            .flat_map(|param| self.abi_param_from_plan(param))
-            .collect()
+        params.iter().flat_map(|param| self.abi_param_from_plan(param)).collect()
     }
 
     fn abi_param_from_plan(&self, param: &ParamPlan) -> Vec<AbiParam> {
@@ -1141,10 +1008,7 @@ impl<'c> Lowerer<'c> {
                 ffi_type: d.abi_type,
                 input_shape: InputShape::Value(ValueShape::Scalar(d.abi_type)),
             }],
-            ParamStrategy::Buffer {
-                mutability,
-                element_abi,
-            } => vec![
+            ParamStrategy::Buffer { mutability, element_abi } => vec![
                 AbiParam {
                     name: param.name.clone(),
                     ffi_type: AbiType::Pointer,
@@ -1157,31 +1021,24 @@ impl<'c> Lowerer<'c> {
                 AbiParam {
                     name: len_name,
                     ffi_type: AbiType::U64,
-                    input_shape: InputShape::HiddenSyntheticLen {
-                        for_param: param.name.clone(),
-                    },
+                    input_shape: InputShape::HiddenSyntheticLen { for_param: param.name.clone() },
                 },
             ],
             ParamStrategy::String { .. } => vec![
                 AbiParam {
                     name: param.name.clone(),
                     ffi_type: AbiType::Pointer,
-                    input_shape: InputShape::Utf8Slice {
-                        len_param: len_name.clone(),
-                    },
+                    input_shape: InputShape::Utf8Slice { len_param: len_name.clone() },
                 },
                 AbiParam {
                     name: len_name,
                     ffi_type: AbiType::U64,
-                    input_shape: InputShape::HiddenSyntheticLen {
-                        for_param: param.name.clone(),
-                    },
+                    input_shape: InputShape::HiddenSyntheticLen { for_param: param.name.clone() },
                 },
             ],
             ParamStrategy::Encoded { codec, mutability } => {
                 let decode_ops = self.expand_decode(codec);
-                let encode_ops =
-                    self.expand_encode(codec, ValueExpr::Named(param.name.as_str().to_string()));
+                let encode_ops = self.expand_encode(codec, ValueExpr::Named(param.name.as_str().to_string()));
                 let value_shape = self.value_shape_from_read_write(&decode_ops, &encode_ops);
                 let input_shape = match mutability {
                     Mutability::Mutable => InputShape::OutputBuffer {
@@ -1202,9 +1059,7 @@ impl<'c> Lowerer<'c> {
                     AbiParam {
                         name: len_name,
                         ffi_type: AbiType::U64,
-                        input_shape: InputShape::HiddenSyntheticLen {
-                            for_param: param.name.clone(),
-                        },
+                        input_shape: InputShape::HiddenSyntheticLen { for_param: param.name.clone() },
                     },
                 ]
             }
@@ -1216,11 +1071,7 @@ impl<'c> Lowerer<'c> {
                     nullable: *nullable,
                 },
             }],
-            ParamStrategy::Callback {
-                callback_id,
-                nullable,
-                style,
-            } => vec![AbiParam {
+            ParamStrategy::Callback { callback_id, nullable, style } => vec![AbiParam {
                 name: param.name.clone(),
                 ffi_type: AbiType::Pointer,
                 input_shape: InputShape::Callback {
@@ -1232,18 +1083,12 @@ impl<'c> Lowerer<'c> {
         }
     }
 
-    fn callback_output_shape_and_error(
-        &self,
-        returns: &ReturnDef,
-    ) -> (OutputShape, ErrorTransport) {
+    fn callback_output_shape_and_error(&self, returns: &ReturnDef) -> (OutputShape, ErrorTransport) {
         match returns {
             ReturnDef::Void => (OutputShape::Unit, ErrorTransport::None),
             ReturnDef::Value(ty) => {
                 let plan = self.lower_value_type(ty);
-                (
-                    self.output_shape_from_return_value(&plan),
-                    ErrorTransport::None,
-                )
+                (self.output_shape_from_return_value(&plan), ErrorTransport::None)
             }
             ReturnDef::Result { ok, err } => {
                 let ok_codec = self.build_codec(ok);
@@ -1258,20 +1103,14 @@ impl<'c> Lowerer<'c> {
                     OutputShape::Value(self.value_shape_from_read_write(&decode_ops, &encode_ops)),
                     ErrorTransport::Encoded {
                         decode_ops: self.expand_decode(&err_codec),
-                        encode_ops: Some(
-                            self.expand_encode(&err_codec, ValueExpr::Var("error".into())),
-                        ),
+                        encode_ops: Some(self.expand_encode(&err_codec, ValueExpr::Var("error".into()))),
                     },
                 )
             }
         }
     }
 
-    fn abi_callback_params<'a>(
-        &'a self,
-        callback: &'a CallbackTraitDef,
-        method: &'a CallbackMethodDef,
-    ) -> impl Iterator<Item = AbiParam> + 'a {
+    fn abi_callback_params<'a>(&'a self, callback: &'a CallbackTraitDef, method: &'a CallbackMethodDef) -> impl Iterator<Item = AbiParam> + 'a {
         let handle_param = AbiParam {
             name: ParamName::new("handle"),
             ffi_type: AbiType::Pointer,
@@ -1290,9 +1129,7 @@ impl<'c> Lowerer<'c> {
 
         let out_params = self.abi_callback_out_params(&method.returns, method.is_async);
 
-        std::iter::once(handle_param)
-            .chain(method_params)
-            .chain(out_params)
+        std::iter::once(handle_param).chain(method_params).chain(out_params)
     }
 
     fn abi_callback_param_from_plan(&self, param: AbiCallbackParamPlan) -> Vec<AbiParam> {
@@ -1307,8 +1144,7 @@ impl<'c> Lowerer<'c> {
             }],
             AbiCallbackParamStrategy::Encoded { codec } => {
                 let decode_ops = self.expand_decode(&codec);
-                let encode_ops =
-                    self.expand_encode(&codec, ValueExpr::Named(param.name.as_str().to_string()));
+                let encode_ops = self.expand_encode(&codec, ValueExpr::Named(param.name.as_str().to_string()));
                 let value_shape = self.value_shape_from_read_write(&decode_ops, &encode_ops);
                 vec![
                     AbiParam {
@@ -1322,9 +1158,7 @@ impl<'c> Lowerer<'c> {
                     AbiParam {
                         name: len_name,
                         ffi_type: AbiType::U64,
-                        input_shape: InputShape::HiddenSyntheticLen {
-                            for_param: param.name.clone(),
-                        },
+                        input_shape: InputShape::HiddenSyntheticLen { for_param: param.name.clone() },
                     },
                 ]
             }
@@ -1362,20 +1196,16 @@ impl<'c> Lowerer<'c> {
                     AbiParam {
                         name: out_len_name,
                         ffi_type: AbiType::U64,
-                        input_shape: InputShape::HiddenOutLen {
-                            for_param: out_ptr_name,
-                        },
+                        input_shape: InputShape::HiddenOutLen { for_param: out_ptr_name },
                     },
                 ]
             }
-            OutputShape::Handle { .. } | OutputShape::Callback { .. } | OutputShape::Unit => {
-                std::iter::once(AbiParam {
-                    name: out_ptr_name,
-                    ffi_type: AbiType::Pointer,
-                    input_shape: InputShape::HiddenOutDirect,
-                })
-                .collect()
-            }
+            OutputShape::Handle { .. } | OutputShape::Callback { .. } | OutputShape::Unit => std::iter::once(AbiParam {
+                name: out_ptr_name,
+                ffi_type: AbiType::Pointer,
+                input_shape: InputShape::HiddenOutDirect,
+            })
+            .collect(),
         }
     }
 }
@@ -1402,8 +1232,7 @@ impl<'c> Lowerer<'c> {
     }
 
     fn lower_method(&self, class: &ClassDef, method: &MethodDef) -> CallPlan {
-        let mut params: Vec<ParamPlan> =
-            method.params.iter().map(|p| self.lower_param(p)).collect();
+        let mut params: Vec<ParamPlan> = method.params.iter().map(|p| self.lower_param(p)).collect();
 
         if method.receiver != Receiver::Static {
             params.insert(
@@ -1436,11 +1265,7 @@ impl<'c> Lowerer<'c> {
     }
 
     fn lower_constructor(&self, class: &ClassDef, ctor: &ConstructorDef) -> CallPlan {
-        let params = ctor
-            .params()
-            .into_iter()
-            .map(|p| self.lower_param(p))
-            .collect();
+        let params = ctor.params().into_iter().map(|p| self.lower_param(p)).collect();
 
         let returns = if ctor.is_fallible() {
             ReturnPlan::Fallible {
@@ -1469,8 +1294,7 @@ impl<'c> Lowerer<'c> {
             .methods
             .iter()
             .map(|method| {
-                let mut params: Vec<ParamPlan> =
-                    method.params.iter().map(|p| self.lower_param(p)).collect();
+                let mut params: Vec<ParamPlan> = method.params.iter().map(|p| self.lower_param(p)).collect();
 
                 params.insert(
                     0,
@@ -1517,9 +1341,7 @@ impl<'c> Lowerer<'c> {
     }
 
     fn param_strategy(&self, type_expr: &TypeExpr, passing: &ParamPassing) -> ParamStrategy {
-        if let (ParamPassing::ImplTrait | ParamPassing::BoxedDyn, TypeExpr::Callback(id)) =
-            (passing, type_expr)
-        {
+        if let (ParamPassing::ImplTrait | ParamPassing::BoxedDyn, TypeExpr::Callback(id)) = (passing, type_expr) {
             let style = match passing {
                 ParamPassing::ImplTrait => CallbackStyle::ImplTrait,
                 ParamPassing::BoxedDyn => CallbackStyle::BoxedDyn,
@@ -1538,13 +1360,9 @@ impl<'c> Lowerer<'c> {
         };
 
         match type_expr {
-            TypeExpr::Void => ParamStrategy::Direct(DirectPlan {
-                abi_type: AbiType::Void,
-            }),
+            TypeExpr::Void => ParamStrategy::Direct(DirectPlan { abi_type: AbiType::Void }),
 
-            TypeExpr::Primitive(p) => ParamStrategy::Direct(DirectPlan {
-                abi_type: primitive_to_abi(*p),
-            }),
+            TypeExpr::Primitive(p) => ParamStrategy::Direct(DirectPlan { abi_type: primitive_to_abi(*p) }),
 
             TypeExpr::String => ParamStrategy::String { mutability },
 
@@ -1613,9 +1431,7 @@ impl<'c> Lowerer<'c> {
         match ty {
             TypeExpr::Void => ReturnValuePlan::Void,
 
-            TypeExpr::Primitive(p) => ReturnValuePlan::Direct(DirectPlan {
-                abi_type: primitive_to_abi(*p),
-            }),
+            TypeExpr::Primitive(p) => ReturnValuePlan::Direct(DirectPlan { abi_type: primitive_to_abi(*p) }),
 
             TypeExpr::Handle(class_id) => ReturnValuePlan::Handle {
                 class_id: class_id.clone(),
@@ -1636,14 +1452,10 @@ impl<'c> Lowerer<'c> {
                     callback_id: callback_id.clone(),
                     nullable: true,
                 },
-                _ => ReturnValuePlan::Encoded {
-                    codec: self.build_codec(ty),
-                },
+                _ => ReturnValuePlan::Encoded { codec: self.build_codec(ty) },
             },
 
-            _ => ReturnValuePlan::Encoded {
-                codec: self.build_codec(ty),
-            },
+            _ => ReturnValuePlan::Encoded { codec: self.build_codec(ty) },
         }
     }
 
@@ -1670,9 +1482,7 @@ impl<'c> Lowerer<'c> {
 impl<'c> Lowerer<'c> {
     fn lower_callback_param(&self, param: &ParamDef) -> AbiCallbackParamPlan {
         let strategy = match &param.type_expr {
-            TypeExpr::Primitive(p) => AbiCallbackParamStrategy::Direct(DirectPlan {
-                abi_type: primitive_to_abi(*p),
-            }),
+            TypeExpr::Primitive(p) => AbiCallbackParamStrategy::Direct(DirectPlan { abi_type: primitive_to_abi(*p) }),
             _ => AbiCallbackParamStrategy::Encoded {
                 codec: self.build_codec(&param.type_expr),
             },
@@ -1721,11 +1531,7 @@ impl<'c> Lowerer<'c> {
             },
 
             TypeExpr::Custom(id) => {
-                let def = self
-                    .contract
-                    .catalog
-                    .resolve_custom(id)
-                    .expect("custom type should be resolved");
+                let def = self.contract.catalog.resolve_custom(id).expect("custom type should be resolved");
                 CodecPlan::Custom {
                     id: id.clone(),
                     underlying: Box::new(self.build_codec(&def.repr)),
@@ -1745,11 +1551,7 @@ impl<'c> Lowerer<'c> {
 
         self.record_stack.borrow_mut().insert(id.clone());
 
-        let def = self
-            .contract
-            .catalog
-            .resolve_record(id)
-            .expect("record should be resolved");
+        let def = self.contract.catalog.resolve_record(id).expect("record should be resolved");
 
         let layout = if self.is_blittable_record(def) {
             self.build_blittable_record_layout(def)
@@ -1793,11 +1595,7 @@ impl<'c> Lowerer<'c> {
 
         self.enum_stack.borrow_mut().insert(id.clone());
 
-        let def = self
-            .contract
-            .catalog
-            .resolve_enum(id)
-            .expect("enum should be resolved");
+        let def = self.contract.catalog.resolve_enum(id).expect("enum should be resolved");
 
         let layout = match &def.repr {
             EnumRepr::CStyle { tag_type, .. } => EnumLayout::CStyle {
@@ -1883,19 +1681,11 @@ impl<'c> Lowerer<'c> {
         naming::function_ffi_name(id.as_str())
     }
 
-    fn method_symbol(
-        &self,
-        class_id: &ClassId,
-        method_id: &MethodId,
-    ) -> naming::Name<naming::GlobalSymbol> {
+    fn method_symbol(&self, class_id: &ClassId, method_id: &MethodId) -> naming::Name<naming::GlobalSymbol> {
         naming::method_ffi_name(class_id.as_str(), method_id.as_str())
     }
 
-    fn constructor_symbol(
-        &self,
-        class_id: &ClassId,
-        name: Option<&MethodId>,
-    ) -> naming::Name<naming::GlobalSymbol> {
+    fn constructor_symbol(&self, class_id: &ClassId, name: Option<&MethodId>) -> naming::Name<naming::GlobalSymbol> {
         match name {
             Some(n) => naming::method_ffi_name(class_id.as_str(), n.as_str()),
             None => naming::class_ffi_new(class_id.as_str()),
@@ -1937,30 +1727,23 @@ fn align_up(offset: usize, alignment: usize) -> usize {
 }
 
 fn compute_blittable_layout(def: &RecordDef) -> (usize, Vec<BlittableField>) {
-    let (final_offset, fields) =
-        def.fields
-            .iter()
-            .fold((0usize, Vec::new()), |(offset, mut fields), field| {
-                let TypeExpr::Primitive(p) = &field.type_expr else {
-                    panic!("blittable record should only have primitive fields");
-                };
+    let (final_offset, fields) = def.fields.iter().fold((0usize, Vec::new()), |(offset, mut fields), field| {
+        let TypeExpr::Primitive(p) = &field.type_expr else {
+            panic!("blittable record should only have primitive fields");
+        };
 
-                let alignment = p
-                    .alignment()
-                    .expect("blittable field must have fixed-size alignment");
-                let size = p
-                    .size_bytes()
-                    .expect("blittable field must have fixed size");
-                let aligned_offset = align_up(offset, alignment);
+        let alignment = p.alignment().expect("blittable field must have fixed-size alignment");
+        let size = p.size_bytes().expect("blittable field must have fixed size");
+        let aligned_offset = align_up(offset, alignment);
 
-                fields.push(BlittableField {
-                    name: field.name.clone(),
-                    offset: aligned_offset,
-                    primitive: *p,
-                });
+        fields.push(BlittableField {
+            name: field.name.clone(),
+            offset: aligned_offset,
+            primitive: *p,
+        });
 
-                (aligned_offset + size, fields)
-            });
+        (aligned_offset + size, fields)
+    });
 
     let max_align = def
         .fields
@@ -1983,15 +1766,12 @@ fn compute_blittable_layout(def: &RecordDef) -> (usize, Vec<BlittableField>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ir::contract::{FfiContract, PackageInfo, TypeCatalog};
-    use crate::ir::definitions::{
-        CallbackKind, CallbackMethodDef, ClassDef, ConstructorDef, FieldDef, FunctionDef,
-        MethodDef, ParamDef, ParamPassing, Receiver, RecordDef, ReturnDef,
+    use crate::ir::{
+        contract::{FfiContract, PackageInfo, TypeCatalog},
+        definitions::{CallbackKind, CallbackMethodDef, ClassDef, ConstructorDef, FieldDef, FunctionDef, MethodDef, ParamDef, ParamPassing, Receiver, RecordDef, ReturnDef},
+        ids::{CallbackId, ClassId, FieldName, FunctionId, MethodId, ParamName, RecordId},
+        types::{PrimitiveType, TypeExpr},
     };
-    use crate::ir::ids::{
-        CallbackId, ClassId, FieldName, FunctionId, MethodId, ParamName, RecordId,
-    };
-    use crate::ir::types::{PrimitiveType, TypeExpr};
     use boltffi_ffi_rules::naming;
 
     fn test_contract() -> FfiContract {
@@ -2014,17 +1794,9 @@ mod tests {
         let contract = test_contract();
         let lowerer = lowerer_for_contract(&contract);
 
-        let strategy = lowerer.param_strategy(
-            &TypeExpr::Primitive(PrimitiveType::I32),
-            &ParamPassing::Value,
-        );
+        let strategy = lowerer.param_strategy(&TypeExpr::Primitive(PrimitiveType::I32), &ParamPassing::Value);
 
-        assert!(matches!(
-            strategy,
-            ParamStrategy::Direct(DirectPlan {
-                abi_type: AbiType::I32
-            })
-        ));
+        assert!(matches!(strategy, ParamStrategy::Direct(DirectPlan { abi_type: AbiType::I32 })));
     }
 
     #[test]
@@ -2034,12 +1806,7 @@ mod tests {
 
         let strategy = lowerer.param_strategy(&TypeExpr::String, &ParamPassing::Ref);
 
-        assert!(matches!(
-            strategy,
-            ParamStrategy::String {
-                mutability: Mutability::Shared
-            }
-        ));
+        assert!(matches!(strategy, ParamStrategy::String { mutability: Mutability::Shared }));
     }
 
     #[test]
@@ -2047,10 +1814,7 @@ mod tests {
         let contract = test_contract();
         let lowerer = lowerer_for_contract(&contract);
 
-        let strategy = lowerer.param_strategy(
-            &TypeExpr::Vec(Box::new(TypeExpr::Primitive(PrimitiveType::F32))),
-            &ParamPassing::Ref,
-        );
+        let strategy = lowerer.param_strategy(&TypeExpr::Vec(Box::new(TypeExpr::Primitive(PrimitiveType::F32))), &ParamPassing::Ref);
 
         assert!(matches!(
             strategy,
@@ -2067,8 +1831,7 @@ mod tests {
         let lowerer = lowerer_for_contract(&contract);
 
         let class_id = ClassId::new("MyClass");
-        let strategy =
-            lowerer.param_strategy(&TypeExpr::Handle(class_id.clone()), &ParamPassing::Value);
+        let strategy = lowerer.param_strategy(&TypeExpr::Handle(class_id.clone()), &ParamPassing::Value);
 
         assert!(matches!(
             strategy,
@@ -2082,10 +1845,7 @@ mod tests {
         let lowerer = lowerer_for_contract(&contract);
 
         let class_id = ClassId::new("MyClass");
-        let strategy = lowerer.param_strategy(
-            &TypeExpr::Option(Box::new(TypeExpr::Handle(class_id.clone()))),
-            &ParamPassing::Value,
-        );
+        let strategy = lowerer.param_strategy(&TypeExpr::Option(Box::new(TypeExpr::Handle(class_id.clone()))), &ParamPassing::Value);
 
         assert!(matches!(
             strategy,
@@ -2099,10 +1859,7 @@ mod tests {
         let lowerer = lowerer_for_contract(&contract);
 
         let callback_id = CallbackId::new("OnComplete");
-        let strategy = lowerer.param_strategy(
-            &TypeExpr::Callback(callback_id.clone()),
-            &ParamPassing::ImplTrait,
-        );
+        let strategy = lowerer.param_strategy(&TypeExpr::Callback(callback_id.clone()), &ParamPassing::ImplTrait);
 
         assert!(matches!(
             strategy,
@@ -2120,10 +1877,7 @@ mod tests {
         let lowerer = lowerer_for_contract(&contract);
 
         let callback_id = CallbackId::new("OnComplete");
-        let strategy = lowerer.param_strategy(
-            &TypeExpr::Option(Box::new(TypeExpr::Callback(callback_id.clone()))),
-            &ParamPassing::Value,
-        );
+        let strategy = lowerer.param_strategy(&TypeExpr::Option(Box::new(TypeExpr::Callback(callback_id.clone()))), &ParamPassing::Value);
 
         assert!(matches!(
             strategy,
@@ -2150,15 +1904,9 @@ mod tests {
         let contract = test_contract();
         let lowerer = lowerer_for_contract(&contract);
 
-        let plan =
-            lowerer.lower_return(&ReturnDef::Value(TypeExpr::Primitive(PrimitiveType::Bool)));
+        let plan = lowerer.lower_return(&ReturnDef::Value(TypeExpr::Primitive(PrimitiveType::Bool)));
 
-        assert!(matches!(
-            plan,
-            ReturnPlan::Value(ReturnValuePlan::Direct(DirectPlan {
-                abi_type: AbiType::Bool
-            }))
-        ));
+        assert!(matches!(plan, ReturnPlan::Value(ReturnValuePlan::Direct(DirectPlan { abi_type: AbiType::Bool }))));
     }
 
     #[test]
@@ -2169,13 +1917,7 @@ mod tests {
         let class_id = ClassId::new("Connection");
         let plan = lowerer.lower_return(&ReturnDef::Value(TypeExpr::Handle(class_id)));
 
-        assert!(matches!(
-            plan,
-            ReturnPlan::Value(ReturnValuePlan::Handle {
-                nullable: false,
-                ..
-            })
-        ));
+        assert!(matches!(plan, ReturnPlan::Value(ReturnValuePlan::Handle { nullable: false, .. })));
     }
 
     #[test]
@@ -2184,14 +1926,9 @@ mod tests {
         let lowerer = lowerer_for_contract(&contract);
 
         let class_id = ClassId::new("Connection");
-        let plan = lowerer.lower_return(&ReturnDef::Value(TypeExpr::Option(Box::new(
-            TypeExpr::Handle(class_id),
-        ))));
+        let plan = lowerer.lower_return(&ReturnDef::Value(TypeExpr::Option(Box::new(TypeExpr::Handle(class_id)))));
 
-        assert!(matches!(
-            plan,
-            ReturnPlan::Value(ReturnValuePlan::Handle { nullable: true, .. })
-        ));
+        assert!(matches!(plan, ReturnPlan::Value(ReturnValuePlan::Handle { nullable: true, .. })));
     }
 
     #[test]
@@ -2208,10 +1945,7 @@ mod tests {
         assert!(matches!(
             plan,
             ReturnPlan::Fallible {
-                ok: ReturnValuePlan::Handle {
-                    nullable: false,
-                    ..
-                },
+                ok: ReturnValuePlan::Handle { nullable: false, .. },
                 ..
             }
         ));
@@ -2231,10 +1965,7 @@ mod tests {
         assert!(matches!(
             plan,
             ReturnPlan::Fallible {
-                ok: ReturnValuePlan::Callback {
-                    nullable: false,
-                    ..
-                },
+                ok: ReturnValuePlan::Callback { nullable: false, .. },
                 ..
             }
         ));
@@ -2275,9 +2006,7 @@ mod tests {
         let contract = test_contract();
         let lowerer = lowerer_for_contract(&contract);
 
-        let codec = lowerer.build_codec(&TypeExpr::Vec(Box::new(TypeExpr::Primitive(
-            PrimitiveType::I32,
-        ))));
+        let codec = lowerer.build_codec(&TypeExpr::Vec(Box::new(TypeExpr::Primitive(PrimitiveType::I32))));
 
         assert!(matches!(
             codec,
@@ -2295,13 +2024,7 @@ mod tests {
 
         let codec = lowerer.build_codec(&TypeExpr::Vec(Box::new(TypeExpr::String)));
 
-        assert!(matches!(
-            codec,
-            CodecPlan::Vec {
-                layout: VecLayout::Encoded,
-                ..
-            }
-        ));
+        assert!(matches!(codec, CodecPlan::Vec { layout: VecLayout::Encoded, .. }));
     }
 
     #[test]
@@ -2379,6 +2102,7 @@ mod tests {
             constructors: vec![],
             methods: vec![],
             streams: vec![],
+            async_iterators: vec![],
             doc: None,
             deprecated: None,
         });
@@ -2399,13 +2123,7 @@ mod tests {
         let plan = lowerer.lower_method(class, &method);
 
         assert_eq!(plan.params.len(), 1);
-        assert!(matches!(
-            &plan.params[0].strategy,
-            ParamStrategy::Handle {
-                nullable: false,
-                ..
-            }
-        ));
+        assert!(matches!(&plan.params[0].strategy, ParamStrategy::Handle { nullable: false, .. }));
         assert_eq!(plan.params[0].name.as_str(), "self");
     }
 
@@ -2418,6 +2136,7 @@ mod tests {
             constructors: vec![],
             methods: vec![],
             streams: vec![],
+            async_iterators: vec![],
             doc: None,
             deprecated: None,
         });
@@ -2449,6 +2168,7 @@ mod tests {
             constructors: vec![],
             methods: vec![],
             streams: vec![],
+            async_iterators: vec![],
             doc: None,
             deprecated: None,
         });
@@ -2468,10 +2188,7 @@ mod tests {
         assert!(matches!(
             plan.kind,
             CallPlanKind::Sync {
-                returns: ReturnPlan::Value(ReturnValuePlan::Handle {
-                    nullable: false,
-                    ..
-                })
+                returns: ReturnPlan::Value(ReturnValuePlan::Handle { nullable: false, .. })
             }
         ));
     }
@@ -2485,6 +2202,7 @@ mod tests {
             constructors: vec![],
             methods: vec![],
             streams: vec![],
+            async_iterators: vec![],
             doc: None,
             deprecated: None,
         });
@@ -2563,13 +2281,7 @@ mod tests {
 
         assert_eq!(plans[0].params.len(), 2);
         assert_eq!(plans[0].params[0].name.as_str(), "callback");
-        assert!(matches!(
-            &plans[0].params[0].strategy,
-            ParamStrategy::Callback {
-                nullable: false,
-                ..
-            }
-        ));
+        assert!(matches!(&plans[0].params[0].strategy, ParamStrategy::Callback { nullable: false, .. }));
     }
 
     #[test]
@@ -2646,10 +2358,7 @@ mod tests {
         match async_plan.result {
             AsyncResult::Fallible { ok, err_codec } => {
                 match ok {
-                    ReturnValuePlan::Handle {
-                        class_id: id,
-                        nullable,
-                    } => {
+                    ReturnValuePlan::Handle { class_id: id, nullable } => {
                         assert_eq!(id.as_str(), "Session");
                         assert!(!nullable);
                     }
@@ -2666,16 +2375,10 @@ mod tests {
         let contract = test_contract();
         let lowerer = lowerer_for_contract(&contract);
 
-        let strategy = lowerer.param_strategy(
-            &TypeExpr::Vec(Box::new(TypeExpr::Primitive(PrimitiveType::U8))),
-            &ParamPassing::Value,
-        );
+        let strategy = lowerer.param_strategy(&TypeExpr::Vec(Box::new(TypeExpr::Primitive(PrimitiveType::U8))), &ParamPassing::Value);
 
         match strategy {
-            ParamStrategy::Buffer {
-                element_abi,
-                mutability,
-            } => {
+            ParamStrategy::Buffer { element_abi, mutability } => {
                 assert_eq!(element_abi, AbiType::U8);
                 assert_eq!(mutability, Mutability::Shared);
             }
@@ -2706,10 +2409,7 @@ mod tests {
         let strategy = lowerer.param_strategy(&TypeExpr::Bytes, &ParamPassing::Ref);
 
         match strategy {
-            ParamStrategy::Buffer {
-                element_abi,
-                mutability,
-            } => {
+            ParamStrategy::Buffer { element_abi, mutability } => {
                 assert_eq!(element_abi, AbiType::U8);
                 assert_eq!(mutability, Mutability::Shared);
             }
@@ -2726,6 +2426,7 @@ mod tests {
             constructors: vec![],
             methods: vec![],
             streams: vec![],
+            async_iterators: vec![],
             doc: None,
             deprecated: None,
         });
@@ -2746,10 +2447,7 @@ mod tests {
                 returns: ReturnPlan::Fallible { ok, err_codec },
             } => {
                 match ok {
-                    ReturnValuePlan::Handle {
-                        class_id: id,
-                        nullable,
-                    } => {
+                    ReturnValuePlan::Handle { class_id: id, nullable } => {
                         assert_eq!(id.as_str(), "Connection");
                         assert!(!nullable);
                     }
@@ -2905,11 +2603,7 @@ mod tests {
         let plans = lowerer.lower_callback(&callback);
 
         match &plans[0].params[0].strategy {
-            ParamStrategy::Callback {
-                callback_id,
-                style,
-                nullable,
-            } => {
+            ParamStrategy::Callback { callback_id, style, nullable } => {
                 assert_eq!(callback_id.as_str(), "MyCallback");
                 assert_eq!(*style, CallbackStyle::BoxedDyn);
                 assert!(!nullable);
@@ -2924,17 +2618,10 @@ mod tests {
         let lowerer = lowerer_for_contract(&contract);
 
         let callback_id = CallbackId::new("Handler");
-        let strategy = lowerer.param_strategy(
-            &TypeExpr::Callback(callback_id.clone()),
-            &ParamPassing::BoxedDyn,
-        );
+        let strategy = lowerer.param_strategy(&TypeExpr::Callback(callback_id.clone()), &ParamPassing::BoxedDyn);
 
         match strategy {
-            ParamStrategy::Callback {
-                callback_id: id,
-                style,
-                nullable,
-            } => {
+            ParamStrategy::Callback { callback_id: id, style, nullable } => {
                 assert_eq!(id.as_str(), "Handler");
                 assert_eq!(style, CallbackStyle::BoxedDyn);
                 assert!(!nullable);
@@ -2952,6 +2639,7 @@ mod tests {
             constructors: vec![],
             methods: vec![],
             streams: vec![],
+            async_iterators: vec![],
             doc: None,
             deprecated: None,
         });
@@ -2972,10 +2660,7 @@ mod tests {
 
         match &plan.target {
             CallTarget::GlobalSymbol(s) => {
-                assert_eq!(
-                    s.as_str(),
-                    naming::method_ffi_name("Service", "start").as_str()
-                );
+                assert_eq!(s.as_str(), naming::method_ffi_name("Service", "start").as_str());
             }
             _ => panic!("expected GlobalSymbol"),
         }
@@ -2990,6 +2675,7 @@ mod tests {
             constructors: vec![],
             methods: vec![],
             streams: vec![],
+            async_iterators: vec![],
             doc: None,
             deprecated: None,
         });
@@ -3020,10 +2706,7 @@ mod tests {
         let plan = lowerer.lower_constructor(class, &named_ctor);
         match &plan.target {
             CallTarget::GlobalSymbol(s) => {
-                assert_eq!(
-                    s.as_str(),
-                    naming::method_ffi_name("Factory", "with_config").as_str()
-                )
+                assert_eq!(s.as_str(), naming::method_ffi_name("Factory", "with_config").as_str())
             }
             _ => panic!("expected GlobalSymbol"),
         }
@@ -3066,10 +2749,7 @@ mod tests {
             RecordLayout::Encoded { fields } => {
                 assert_eq!(fields.len(), 3);
                 assert_eq!(fields[0].name.as_str(), "id");
-                assert!(matches!(
-                    fields[0].codec,
-                    CodecPlan::Primitive(PrimitiveType::U64)
-                ));
+                assert!(matches!(fields[0].codec, CodecPlan::Primitive(PrimitiveType::U64)));
                 assert_eq!(fields[1].name.as_str(), "body");
                 assert!(matches!(fields[1].codec, CodecPlan::String));
                 assert_eq!(fields[2].name.as_str(), "tags");
@@ -3101,10 +2781,7 @@ mod tests {
         let abi = lowerer.abi_call_for_function(&func);
 
         assert_eq!(abi.params.len(), 2);
-        assert!(matches!(
-            abi.params[0].input_shape,
-            InputShape::Utf8Slice { .. }
-        ));
+        assert!(matches!(abi.params[0].input_shape, InputShape::Utf8Slice { .. }));
         assert_eq!(abi.params[0].name.as_str(), "name");
         match &abi.params[1].input_shape {
             InputShape::HiddenSyntheticLen { for_param } => {
@@ -3157,10 +2834,7 @@ mod tests {
         let abi = lowerer.abi_call_for_function(&func);
 
         assert_eq!(abi.params.len(), 2);
-        assert!(matches!(
-            abi.params[0].input_shape,
-            InputShape::WirePacket { .. }
-        ));
+        assert!(matches!(abi.params[0].input_shape, InputShape::WirePacket { .. }));
         assert_eq!(abi.params[0].name.as_str(), "point");
         match &abi.params[1].input_shape {
             InputShape::HiddenSyntheticLen { for_param } => {
@@ -3189,6 +2863,7 @@ mod tests {
             }],
             methods: vec![],
             streams: vec![],
+            async_iterators: vec![],
             doc: None,
             deprecated: None,
         });
@@ -3197,10 +2872,7 @@ mod tests {
         let class = contract.catalog.resolve_class(&class_id).unwrap();
         let abi = lowerer.abi_call_for_constructor(class, &class.constructors[0], 0);
 
-        assert!(matches!(
-            abi.output_shape,
-            OutputShape::Handle { nullable: true, .. }
-        ));
+        assert!(matches!(abi.output_shape, OutputShape::Handle { nullable: true, .. }));
         assert!(matches!(abi.error, ErrorTransport::Encoded { .. }));
     }
 }

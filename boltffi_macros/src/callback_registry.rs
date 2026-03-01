@@ -1,8 +1,9 @@
 use proc_macro2::Span;
-use std::cell::RefCell;
-use std::env;
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::{
+    cell::RefCell,
+    env, fs,
+    path::{Path, PathBuf},
+};
 use syn::{Item, ItemMod, ItemTrait};
 
 #[derive(Clone)]
@@ -33,8 +34,7 @@ pub fn registry_for_current_crate() -> syn::Result<CallbackTraitRegistry> {
             return Ok(registry);
         }
 
-        let manifest_dir = env::var("CARGO_MANIFEST_DIR")
-            .map_err(|_| syn::Error::new(Span::call_site(), "CARGO_MANIFEST_DIR not set"))?;
+        let manifest_dir = env::var("CARGO_MANIFEST_DIR").map_err(|_| syn::Error::new(Span::call_site(), "CARGO_MANIFEST_DIR not set"))?;
         let registry = build_registry(Path::new(&manifest_dir))?;
         *cell.borrow_mut() = Some(registry.clone());
         Ok(registry)
@@ -69,21 +69,13 @@ fn build_registry(manifest_dir: &Path) -> syn::Result<CallbackTraitRegistry> {
 
     files.iter().try_for_each(|file_path| {
         let module_path = module_path_for_rs_file(&src_root, file_path)?;
-        let content = fs::read_to_string(file_path).map_err(|e| {
-            syn::Error::new(
-                Span::call_site(),
-                format!("read {}: {}", file_path.display(), e),
-            )
-        })?;
+        let content = fs::read_to_string(file_path).map_err(|e| syn::Error::new(Span::call_site(), format!("read {}: {}", file_path.display(), e)))?;
         let syntax = syn::parse_file(&content)?;
         let mut collector = CallbackTraitCollector {
             module_path,
             entries: &mut entries,
         };
-        syntax
-            .items
-            .iter()
-            .try_for_each(|item| collector.collect_item(item))
+        syntax.items.iter().try_for_each(|item| collector.collect_item(item))
     })?;
 
     Ok(CallbackTraitRegistry { entries })
@@ -132,12 +124,10 @@ impl<'a> CallbackTraitCollector<'a> {
 }
 
 fn is_callback_trait(item_trait: &ItemTrait) -> bool {
-    item_trait.attrs.iter().any(|attr| {
-        attr.path()
-            .segments
-            .last()
-            .is_some_and(|segment| segment.ident == "export" || segment.ident == "ffi_trait")
-    })
+    item_trait
+        .attrs
+        .iter()
+        .any(|attr| attr.path().segments.last().is_some_and(|segment| segment.ident == "export" || segment.ident == "ffi_trait"))
 }
 
 fn is_object_safe(item_trait: &ItemTrait) -> bool {
@@ -147,21 +137,15 @@ fn is_object_safe(item_trait: &ItemTrait) -> bool {
             syn::TraitItem::Fn(method) if method.sig.asyncness.is_some()
         )
     });
-    let has_async_trait_attr = item_trait.attrs.iter().any(|attr| {
-        attr.path()
-            .segments
-            .last()
-            .is_some_and(|segment| segment.ident == "async_trait")
-    });
+    let has_async_trait_attr = item_trait
+        .attrs
+        .iter()
+        .any(|attr| attr.path().segments.last().is_some_and(|segment| segment.ident == "async_trait"));
     !has_async_methods || has_async_trait_attr
 }
 
 fn normalize_segments(path: &syn::Path) -> Vec<String> {
-    let mut segments = path
-        .segments
-        .iter()
-        .map(|segment| segment.ident.to_string())
-        .collect::<Vec<_>>();
+    let mut segments = path.segments.iter().map(|segment| segment.ident.to_string()).collect::<Vec<_>>();
     if let Some(first) = segments.first()
         && matches!(first.as_str(), "crate" | "self" | "super")
     {
@@ -177,35 +161,22 @@ fn list_rs_files(src_root: &Path) -> syn::Result<Vec<PathBuf>> {
 }
 
 fn collect_rs_files(dir: &Path, out: &mut Vec<PathBuf>) -> syn::Result<()> {
-    let entries = fs::read_dir(dir).map_err(|e| {
-        syn::Error::new(
-            Span::call_site(),
-            format!("read_dir {}: {}", dir.display(), e),
-        )
-    })?;
+    let entries = fs::read_dir(dir).map_err(|e| syn::Error::new(Span::call_site(), format!("read_dir {}: {}", dir.display(), e)))?;
 
-    entries
-        .filter_map(|entry| entry.ok())
-        .map(|entry| entry.path())
-        .try_for_each(|path| {
-            if path.is_dir() {
-                return collect_rs_files(&path, out);
-            }
-            if path.extension().is_some_and(|ext| ext == "rs") {
-                out.push(path);
-            }
-            Ok(())
-        })
+    entries.filter_map(|entry| entry.ok()).map(|entry| entry.path()).try_for_each(|path| {
+        if path.is_dir() {
+            return collect_rs_files(&path, out);
+        }
+        if path.extension().is_some_and(|ext| ext == "rs") {
+            out.push(path);
+        }
+        Ok(())
+    })
 }
 
 fn module_path_for_rs_file(src_root: &Path, file_path: &Path) -> syn::Result<Vec<String>> {
-    let relative = file_path
-        .strip_prefix(src_root)
-        .map_err(|_| syn::Error::new(Span::call_site(), "path not under src"))?;
-    let mut parts = relative
-        .components()
-        .map(|c| c.as_os_str().to_string_lossy().to_string())
-        .collect::<Vec<_>>();
+    let relative = file_path.strip_prefix(src_root).map_err(|_| syn::Error::new(Span::call_site(), "path not under src"))?;
+    let mut parts = relative.components().map(|c| c.as_os_str().to_string_lossy().to_string()).collect::<Vec<_>>();
 
     let file_name = parts.pop().unwrap_or_default();
     let mut module_parts = parts;

@@ -1,3 +1,5 @@
+#![cfg(not(miri))]
+
 use boltffi_verify::{Reporter, VerificationResult, Verifier, ViolationKind};
 use std::path::Path;
 

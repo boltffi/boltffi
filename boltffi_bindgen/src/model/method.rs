@@ -1,6 +1,5 @@
-use serde::{Deserialize, Serialize};
-
 use super::types::{Deprecation, Receiver, ReturnType, Type};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Method {
@@ -95,21 +94,15 @@ impl Method {
     }
 
     pub fn has_callbacks(&self) -> bool {
-        self.inputs
-            .iter()
-            .any(|p| matches!(p.param_type, Type::Closure(_)))
+        self.inputs.iter().any(|p| matches!(p.param_type, Type::Closure(_)))
     }
 
     pub fn callback_params(&self) -> impl Iterator<Item = &Parameter> {
-        self.inputs
-            .iter()
-            .filter(|p| matches!(p.param_type, Type::Closure(_)))
+        self.inputs.iter().filter(|p| matches!(p.param_type, Type::Closure(_)))
     }
 
     pub fn non_callback_params(&self) -> impl Iterator<Item = &Parameter> {
-        self.inputs
-            .iter()
-            .filter(|p| !matches!(p.param_type, Type::Closure(_)))
+        self.inputs.iter().filter(|p| !matches!(p.param_type, Type::Closure(_)))
     }
 }
 
@@ -121,9 +114,6 @@ pub struct Parameter {
 
 impl Parameter {
     pub fn new(name: impl Into<String>, param_type: Type) -> Self {
-        Self {
-            name: name.into(),
-            param_type,
-        }
+        Self { name: name.into(), param_type }
     }
 }

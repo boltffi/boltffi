@@ -1,0 +1,30 @@
+---
+source: boltffi_bindgen/src/render/swift/templates.rs
+expression: "render_class(&cls, \"boltffi\")"
+---
+public final class NumberIterator {
+    let handle: OpaquePointer
+
+    init(handle: OpaquePointer) {
+        self.handle = handle
+    }
+
+    deinit {
+        boltffi_number_iterator_free(handle)
+    }
+
+
+    public func countToThree() -> BoltFFIAsyncSequence<Int32> {
+        let iterHandle = boltffi_number_iterator_count_to_three(self.handle)!
+        return BoltFFIAsyncSequence<Int32>(
+            iterHandle: iterHandle,
+            nextFn: boltffi_number_iterator_count_to_three_next,
+            pollFn: boltffi_number_iterator_count_to_three_next_poll,
+            completeFn: boltffi_number_iterator_count_to_three_next_complete,
+            cancelFn: boltffi_number_iterator_count_to_three_next_cancel,
+            freeFutureFn: boltffi_number_iterator_count_to_three_next_free,
+            freeIterFn: boltffi_number_iterator_count_to_three_free,
+            decode: { reader in reader.readOptional { reader in reader.readI32() } }
+        )
+    }
+}

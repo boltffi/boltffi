@@ -7,12 +7,12 @@ pub struct FfiStatus {
 }
 
 impl FfiStatus {
-    pub const OK: Self = Self { code: 0 };
-    pub const NULL_POINTER: Self = Self { code: 1 };
     pub const BUFFER_TOO_SMALL: Self = Self { code: 2 };
-    pub const INVALID_ARG: Self = Self { code: 3 };
     pub const CANCELLED: Self = Self { code: 4 };
     pub const INTERNAL_ERROR: Self = Self { code: 100 };
+    pub const INVALID_ARG: Self = Self { code: 3 };
+    pub const NULL_POINTER: Self = Self { code: 1 };
+    pub const OK: Self = Self { code: 0 };
 
     pub const fn new(code: i32) -> Self {
         Self { code }

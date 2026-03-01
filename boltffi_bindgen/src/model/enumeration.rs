@@ -1,7 +1,5 @@
+use super::{record::RecordField, types::Deprecation};
 use serde::{Deserialize, Serialize};
-
-use super::record::RecordField;
-use super::types::Deprecation;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Enumeration {

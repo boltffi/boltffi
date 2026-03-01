@@ -6,10 +6,8 @@ publish = false
 
 [dependencies]
 boltffi = { path = "../boltffi" }
-tokio = { version = "1", features = ["rt", "rt-multi-thread", "time", "macros"] }
-
-[dev-dependencies]
 boltffi_core = { path = "../boltffi_core" }
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "time", "macros"] }
 
 [lints]
 workspace = true

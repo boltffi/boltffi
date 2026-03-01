@@ -50,11 +50,7 @@ impl OptionInfo {
     }
 
     pub fn effective_inner(&self) -> &Type {
-        if self.is_vec {
-            self.inner.vec_inner().unwrap_or(&self.inner)
-        } else {
-            &self.inner
-        }
+        if self.is_vec { self.inner.vec_inner().unwrap_or(&self.inner) } else { &self.inner }
     }
 
     pub fn inner_name(&self) -> Option<&str> {
@@ -62,14 +58,10 @@ impl OptionInfo {
     }
 
     pub fn struct_size(&self, module: &Module) -> usize {
-        self.inner_name()
-            .map(|name| module.struct_size(name))
-            .unwrap_or(0)
+        self.inner_name().map(|name| module.struct_size(name)).unwrap_or(0)
     }
 
     pub fn is_data_enum(&self, module: &Module) -> bool {
-        self.inner_name()
-            .map(|name| module.is_data_enum(name))
-            .unwrap_or(false)
+        self.inner_name().map(|name| module.is_data_enum(name)).unwrap_or(false)
     }
 }

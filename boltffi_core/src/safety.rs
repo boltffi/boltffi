@@ -1,6 +1,5 @@
-use std::panic::catch_unwind;
-
 use crate::status::FfiStatus;
+use std::panic::catch_unwind;
 
 pub const PANIC_STATUS: FfiStatus = FfiStatus { code: 10 };
 

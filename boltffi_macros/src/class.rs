@@ -1,13 +1,12 @@
-use boltffi_ffi_rules::naming;
+use crate::{
+    callback_registry, custom_types,
+    params::{FfiParams, transform_method_params, transform_method_params_async},
+    returns::{ReturnAbi, classify_return, encoded_return_body, lower_return_abi},
+};
+use boltffi_ffi_rules::{naming, transport::EncodedReturnStrategy};
 use proc_macro::TokenStream;
 use quote::{quote, quote_spanned};
 use syn::{FnArg, ReturnType, Type};
-
-use crate::callback_registry;
-use crate::custom_types;
-use crate::params::{FfiParams, transform_method_params, transform_method_params_async};
-use crate::returns::{ReturnAbi, classify_return, encoded_return_body, lower_return_abi};
-use boltffi_ffi_rules::transport::EncodedReturnStrategy;
 
 fn has_mut_self_methods(input: &syn::ItemImpl) -> bool {
     input.items.iter().any(|item| {
@@ -27,10 +26,7 @@ fn parse_single_threaded_attr(attr: &TokenStream) -> bool {
     let parser = syn::punctuated::Punctuated::<syn::Ident, syn::Token![,]>::parse_terminated;
     parser
         .parse(attr.clone())
-        .map(|args| {
-            args.iter()
-                .any(|id| id == "single_threaded" || id == "thread_unsafe")
-        })
+        .map(|args| args.iter().any(|id| id == "single_threaded" || id == "thread_unsafe"))
         .unwrap_or(false)
 }
 
@@ -69,17 +65,12 @@ pub fn ffi_class_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
     let type_name = match self_ty {
         Some(name) => name,
         None => {
-            return syn::Error::new_spanned(&input, "ffi_class requires a named type")
-                .to_compile_error()
-                .into();
+            return syn::Error::new_spanned(&input, "ffi_class requires a named type").to_compile_error().into();
         }
     };
 
     let type_name_str = type_name.to_string();
-    let free_ident = syn::Ident::new(
-        naming::class_ffi_free(&type_name_str).as_str(),
-        type_name.span(),
-    );
+    let free_ident = syn::Ident::new(naming::class_ffi_free(&type_name_str).as_str(), type_name.span());
 
     let method_exports: Vec<_> = input
         .items
@@ -90,30 +81,16 @@ pub fn ffi_class_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
                     return None;
                 }
                 if matches!(method.vis, syn::Visibility::Public(_)) {
+                    if let Some(item_type) = extract_ffi_iterator_item(&method.attrs) {
+                        return Some(generate_iterator_exports(&type_name, &type_name_str, method, &item_type));
+                    }
                     if let Some(item_type) = extract_ffi_stream_item(&method.attrs) {
-                        return Some(generate_stream_exports(
-                            &type_name,
-                            &type_name_str,
-                            method,
-                            &item_type,
-                        ));
+                        return Some(generate_stream_exports(&type_name, &type_name_str, method, &item_type));
                     }
                     if method.sig.asyncness.is_some() {
-                        return generate_async_method_export(
-                            &type_name,
-                            &type_name_str,
-                            method,
-                            &custom_types,
-                            &callback_registry,
-                        );
+                        return generate_async_method_export(&type_name, &type_name_str, method, &custom_types, &callback_registry);
                     }
-                    return generate_method_export(
-                        &type_name,
-                        &type_name_str,
-                        method,
-                        &custom_types,
-                        &callback_registry,
-                    );
+                    return generate_method_export(&type_name, &type_name_str, method, &custom_types, &callback_registry);
                 }
             }
             None
@@ -206,11 +183,7 @@ fn build_instance_encoded_return_exports(
     }
 }
 
-fn build_static_encoded_return_exports(
-    export_name: &syn::Ident,
-    ffi_params: &[proc_macro2::TokenStream],
-    encode_body: proc_macro2::TokenStream,
-) -> proc_macro2::TokenStream {
+fn build_static_encoded_return_exports(export_name: &syn::Ident, ffi_params: &[proc_macro2::TokenStream], encode_body: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
     match ffi_params.is_empty() {
         true => quote! {
             #[cfg(target_arch = "wasm32")]
@@ -335,12 +308,7 @@ fn build_static_f64_wasm_exports(
 }
 
 fn is_factory_constructor(method: &syn::ImplItemFn, type_name: &syn::Ident) -> bool {
-    let has_self = method
-        .sig
-        .inputs
-        .first()
-        .map(|arg| matches!(arg, FnArg::Receiver(_)))
-        .unwrap_or(false);
+    let has_self = method.sig.inputs.first().map(|arg| matches!(arg, FnArg::Receiver(_))).unwrap_or(false);
 
     if has_self {
         return false;
@@ -353,19 +321,14 @@ fn is_factory_return(output: &ReturnType, type_name: &syn::Ident) -> bool {
     match output {
         ReturnType::Default => false,
         ReturnType::Type(_, ty) => match ty.as_ref() {
-            Type::Path(type_path) => {
-                is_self_type_path(&type_path.path, type_name)
-                    || is_result_of_self_type_path(&type_path.path, type_name)
-            }
+            Type::Path(type_path) => is_self_type_path(&type_path.path, type_name) || is_result_of_self_type_path(&type_path.path, type_name),
             _ => false,
         },
     }
 }
 
 fn is_self_type_path(path: &syn::Path, type_name: &syn::Ident) -> bool {
-    path.segments
-        .last()
-        .is_some_and(|segment| segment.ident == "Self" || segment.ident == *type_name)
+    path.segments.last().is_some_and(|segment| segment.ident == "Self" || segment.ident == *type_name)
 }
 
 fn is_result_of_self_type_path(path: &syn::Path, type_name: &syn::Ident) -> bool {
@@ -474,35 +437,15 @@ fn generate_method_export(
     callback_registry: &callback_registry::CallbackTraitRegistry,
 ) -> Option<proc_macro2::TokenStream> {
     let method_name = &method.sig.ident;
-    let export_name = syn::Ident::new(
-        naming::method_ffi_name(class_name, &method_name.to_string()).as_str(),
-        method_name.span(),
-    );
+    let export_name = syn::Ident::new(naming::method_ffi_name(class_name, &method_name.to_string()).as_str(), method_name.span());
 
-    let has_self = method
-        .sig
-        .inputs
-        .first()
-        .map(|arg| matches!(arg, FnArg::Receiver(_)))
-        .unwrap_or(false);
+    let has_self = method.sig.inputs.first().map(|arg| matches!(arg, FnArg::Receiver(_))).unwrap_or(false);
 
     if !has_self {
         if is_factory_constructor(method, type_name) {
-            return generate_factory_constructor_export(
-                type_name,
-                class_name,
-                method,
-                custom_types,
-                callback_registry,
-            );
+            return generate_factory_constructor_export(type_name, class_name, method, custom_types, callback_registry);
         }
-        return generate_static_method_export(
-            type_name,
-            class_name,
-            method,
-            custom_types,
-            callback_registry,
-        );
+        return generate_static_method_export(type_name, class_name, method, custom_types, callback_registry);
     }
 
     let other_inputs = method.sig.inputs.iter().skip(1).cloned();
@@ -546,10 +489,7 @@ fn generate_method_export(
             };
             (body, quote! { #fn_output }, false)
         }
-        ReturnAbi::Encoded {
-            rust_type: inner_ty,
-            strategy,
-        } => {
+        ReturnAbi::Encoded { rust_type: inner_ty, strategy } => {
             let result_ident = syn::Ident::new("result", method_name.span());
 
             if matches!(strategy, EncodedReturnStrategy::OptionScalar) {
@@ -577,34 +517,16 @@ fn generate_method_export(
                     ::boltffi::__private::FfiBuf::wire_encode(&#result_ident)
                 };
 
-                return Some(build_instance_f64_wasm_exports(
-                    &export_name,
-                    type_name,
-                    &ffi_params,
-                    wasm_body,
-                    native_body,
-                ));
+                return Some(build_instance_f64_wasm_exports(&export_name, type_name, &ffi_params, wasm_body, native_body));
             }
 
-            let body = encoded_return_body(
-                &inner_ty,
-                strategy,
-                &result_ident,
-                quote! { #call_expr },
-                &conversions,
-                custom_types,
-            );
+            let body = encoded_return_body(&inner_ty, strategy, &result_ident, quote! { #call_expr }, &conversions, custom_types);
             (body, quote! { -> ::boltffi::__private::FfiBuf<u8> }, true)
         }
     };
 
     if is_wire_encoded {
-        return Some(build_instance_encoded_return_exports(
-            &export_name,
-            type_name,
-            &ffi_params,
-            body,
-        ));
+        return Some(build_instance_encoded_return_exports(&export_name, type_name, &ffi_params, body));
     }
 
     if ffi_params.is_empty() {
@@ -637,10 +559,7 @@ fn generate_static_method_export(
     callback_registry: &callback_registry::CallbackTraitRegistry,
 ) -> Option<proc_macro2::TokenStream> {
     let method_name = &method.sig.ident;
-    let export_name = syn::Ident::new(
-        naming::method_ffi_name(class_name, &method_name.to_string()).as_str(),
-        method_name.span(),
-    );
+    let export_name = syn::Ident::new(naming::method_ffi_name(class_name, &method_name.to_string()).as_str(), method_name.span());
 
     let all_inputs = method.sig.inputs.iter().cloned();
     let FfiParams {
@@ -682,10 +601,7 @@ fn generate_static_method_export(
             };
             (body, quote! { #fn_output }, false)
         }
-        ReturnAbi::Encoded {
-            rust_type: inner_ty,
-            strategy,
-        } => {
+        ReturnAbi::Encoded { rust_type: inner_ty, strategy } => {
             let result_ident = syn::Ident::new("result", method_name.span());
 
             if matches!(strategy, EncodedReturnStrategy::OptionScalar) {
@@ -713,32 +629,16 @@ fn generate_static_method_export(
                     ::boltffi::__private::FfiBuf::wire_encode(&#result_ident)
                 };
 
-                return Some(build_static_f64_wasm_exports(
-                    &export_name,
-                    &ffi_params,
-                    wasm_body,
-                    native_body,
-                ));
+                return Some(build_static_f64_wasm_exports(&export_name, &ffi_params, wasm_body, native_body));
             }
 
-            let body = encoded_return_body(
-                &inner_ty,
-                strategy,
-                &result_ident,
-                quote! { #call_expr },
-                &conversions,
-                custom_types,
-            );
+            let body = encoded_return_body(&inner_ty, strategy, &result_ident, quote! { #call_expr }, &conversions, custom_types);
             (body, quote! { -> ::boltffi::__private::FfiBuf<u8> }, true)
         }
     };
 
     if is_wire_encoded {
-        return Some(build_static_encoded_return_exports(
-            &export_name,
-            &ffi_params,
-            body,
-        ));
+        return Some(build_static_encoded_return_exports(&export_name, &ffi_params, body));
     }
 
     if ffi_params.is_empty() {
@@ -780,14 +680,12 @@ fn generate_async_method_export(
     let poll_ident = syn::Ident::new(&format!("{}_poll", base_name), method_name.span());
     let poll_sync_ident = syn::Ident::new(&format!("{}_poll_sync", base_name), method_name.span());
     let complete_ident = syn::Ident::new(&format!("{}_complete", base_name), method_name.span());
-    let panic_message_ident =
-        syn::Ident::new(&format!("{}_panic_message", base_name), method_name.span());
+    let panic_message_ident = syn::Ident::new(&format!("{}_panic_message", base_name), method_name.span());
     let cancel_ident = syn::Ident::new(&format!("{}_cancel", base_name), method_name.span());
     let free_ident = syn::Ident::new(&format!("{}_free", base_name), method_name.span());
 
     let other_inputs = method.sig.inputs.iter().skip(1).cloned();
-    let params = match transform_method_params_async(other_inputs, custom_types, callback_registry)
-    {
+    let params = match transform_method_params_async(other_inputs, custom_types, callback_registry) {
         Ok(params) => params,
         Err(error) => return Some(error.to_compile_error()),
     };
@@ -958,39 +856,16 @@ fn extract_ffi_stream_item(attrs: &[syn::Attribute]) -> Option<syn::Type> {
     })
 }
 
-fn generate_stream_exports(
-    type_name: &syn::Ident,
-    class_name: &str,
-    method: &syn::ImplItemFn,
-    item_type: &syn::Type,
-) -> proc_macro2::TokenStream {
+fn generate_stream_exports(type_name: &syn::Ident, class_name: &str, method: &syn::ImplItemFn, item_type: &syn::Type) -> proc_macro2::TokenStream {
     let method_name = &method.sig.ident;
     let stream_name = method_name.to_string();
 
-    let subscribe_ident = syn::Ident::new(
-        naming::stream_ffi_subscribe(class_name, &stream_name).as_str(),
-        method_name.span(),
-    );
-    let pop_batch_ident = syn::Ident::new(
-        naming::stream_ffi_pop_batch(class_name, &stream_name).as_str(),
-        method_name.span(),
-    );
-    let wait_ident = syn::Ident::new(
-        naming::stream_ffi_wait(class_name, &stream_name).as_str(),
-        method_name.span(),
-    );
-    let poll_ident = syn::Ident::new(
-        naming::stream_ffi_poll(class_name, &stream_name).as_str(),
-        method_name.span(),
-    );
-    let unsubscribe_ident = syn::Ident::new(
-        naming::stream_ffi_unsubscribe(class_name, &stream_name).as_str(),
-        method_name.span(),
-    );
-    let free_ident = syn::Ident::new(
-        naming::stream_ffi_free(class_name, &stream_name).as_str(),
-        method_name.span(),
-    );
+    let subscribe_ident = syn::Ident::new(naming::stream_ffi_subscribe(class_name, &stream_name).as_str(), method_name.span());
+    let pop_batch_ident = syn::Ident::new(naming::stream_ffi_pop_batch(class_name, &stream_name).as_str(), method_name.span());
+    let wait_ident = syn::Ident::new(naming::stream_ffi_wait(class_name, &stream_name).as_str(), method_name.span());
+    let poll_ident = syn::Ident::new(naming::stream_ffi_poll(class_name, &stream_name).as_str(), method_name.span());
+    let unsubscribe_ident = syn::Ident::new(naming::stream_ffi_unsubscribe(class_name, &stream_name).as_str(), method_name.span());
+    let free_ident = syn::Ident::new(naming::stream_ffi_free(class_name, &stream_name).as_str(), method_name.span());
 
     quote! {
         #[unsafe(no_mangle)]
@@ -1081,6 +956,118 @@ fn generate_stream_exports(
                     subscription_handle as *const ::boltffi::__private::EventSubscription<#item_type>
                 )
             });
+        }
+    }
+}
+
+fn extract_ffi_iterator_item(attrs: &[syn::Attribute]) -> Option<syn::Type> {
+    attrs.iter().find_map(|attr| {
+        if !attr.path().is_ident("ffi_async_iter") {
+            return None;
+        }
+
+        let mut item_type: Option<syn::Type> = None;
+        let _ = attr.parse_nested_meta(|meta| {
+            if meta.path.is_ident("item") {
+                let value: syn::Type = meta.value()?.parse()?;
+                item_type = Some(value);
+            }
+            Ok(())
+        });
+
+        item_type
+    })
+}
+
+fn generate_iterator_exports(type_name: &syn::Ident, class_name: &str, method: &syn::ImplItemFn, item_type: &syn::Type) -> proc_macro2::TokenStream {
+    let method_name = &method.sig.ident;
+    let method_name_str = method_name.to_string();
+
+    let new_ident = syn::Ident::new(naming::iterator_ffi_new(class_name, &method_name_str).as_str(), method_name.span());
+    let next_ident = syn::Ident::new(naming::iterator_ffi_next(class_name, &method_name_str).as_str(), method_name.span());
+    let next_poll_ident = syn::Ident::new(&format!("{}_poll", next_ident), method_name.span());
+    let next_complete_ident = syn::Ident::new(&format!("{}_complete", next_ident), method_name.span());
+    let next_cancel_ident = syn::Ident::new(&format!("{}_cancel", next_ident), method_name.span());
+    let next_free_ident = syn::Ident::new(&format!("{}_free", next_ident), method_name.span());
+    let free_ident = syn::Ident::new(naming::iterator_ffi_free(class_name, &method_name_str).as_str(), method_name.span());
+
+    quote! {
+        // Creates the iterator and returns an opaque IteratorHandle.
+        #[unsafe(no_mangle)]
+        pub unsafe extern "C" fn #new_ident(
+            handle: *const #type_name,
+        ) -> ::boltffi::__private::IteratorHandle {
+            if handle.is_null() {
+                return std::ptr::null_mut();
+            }
+            let instance = unsafe { &*handle };
+            let iterator = instance.#method_name();
+            ::boltffi::__private::iterator_new::<#item_type, _>(iterator)
+        }
+
+        // Drives one `next()` call and returns a RustFutureHandle for `Option<item_type>`.
+        #[unsafe(no_mangle)]
+        pub unsafe extern "C" fn #next_ident(
+            iterator_handle: ::boltffi::__private::IteratorHandle,
+        ) -> ::boltffi::__private::RustFutureHandle {
+            ::boltffi::__private::rustfuture::rust_future_new(
+                unsafe { ::boltffi::__private::iterator_next::<#item_type>(iterator_handle) }
+            )
+        }
+
+        // Standard async future suite for the next() future.
+        #[cfg(not(target_arch = "wasm32"))]
+        #[unsafe(no_mangle)]
+        pub unsafe extern "C" fn #next_poll_ident(
+            handle: ::boltffi::__private::RustFutureHandle,
+            callback_data: u64,
+            callback: ::boltffi::__private::RustFutureContinuationCallback,
+        ) {
+            ::boltffi::__private::rustfuture::rust_future_poll::<Option<#item_type>>(handle, callback, callback_data)
+        }
+
+        #[cfg(not(target_arch = "wasm32"))]
+        #[unsafe(no_mangle)]
+        pub unsafe extern "C" fn #next_complete_ident(
+            handle: ::boltffi::__private::RustFutureHandle,
+            out_status: *mut ::boltffi::__private::FfiStatus,
+        ) -> ::boltffi::__private::FfiBuf<u8> {
+            match ::boltffi::__private::rustfuture::rust_future_complete::<Option<#item_type>>(handle) {
+                Some(result) => {
+                    if !out_status.is_null() {
+                        unsafe { *out_status = ::boltffi::__private::FfiStatus::OK; }
+                    }
+                    ::boltffi::__private::FfiBuf::wire_encode(&result)
+                }
+                None => {
+                    if !out_status.is_null() {
+                        unsafe { *out_status = ::boltffi::__private::FfiStatus::CANCELLED; }
+                    }
+                    ::boltffi::__private::FfiBuf::default()
+                }
+            }
+        }
+
+        #[unsafe(no_mangle)]
+        pub unsafe extern "C" fn #next_cancel_ident(
+            handle: ::boltffi::__private::RustFutureHandle,
+        ) {
+            ::boltffi::__private::rustfuture::rust_future_cancel::<Option<#item_type>>(handle)
+        }
+
+        #[unsafe(no_mangle)]
+        pub unsafe extern "C" fn #next_free_ident(
+            handle: ::boltffi::__private::RustFutureHandle,
+        ) {
+            ::boltffi::__private::rustfuture::rust_future_free::<Option<#item_type>>(handle)
+        }
+
+        // Drops the iterator, freeing all resources.
+        #[unsafe(no_mangle)]
+        pub unsafe extern "C" fn #free_ident(
+            iterator_handle: ::boltffi::__private::IteratorHandle,
+        ) {
+            unsafe { ::boltffi::__private::iterator_free::<#item_type>(iterator_handle) }
         }
     }
 }

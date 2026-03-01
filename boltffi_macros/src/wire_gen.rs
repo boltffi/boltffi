@@ -1,8 +1,7 @@
+use crate::custom_types::{CustomTypeRegistry, contains_custom_types};
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{Fields, ItemEnum, ItemStruct, Type};
-
-use crate::custom_types::{CustomTypeRegistry, contains_custom_types};
 
 pub fn is_primitive_type(ty: &Type) -> bool {
     match ty {
@@ -11,19 +10,7 @@ pub fn is_primitive_type(ty: &Type) -> bool {
                 let name = ident.to_string();
                 matches!(
                     name.as_str(),
-                    "bool"
-                        | "i8"
-                        | "u8"
-                        | "i16"
-                        | "u16"
-                        | "i32"
-                        | "u32"
-                        | "i64"
-                        | "u64"
-                        | "f32"
-                        | "f64"
-                        | "isize"
-                        | "usize"
+                    "bool" | "i8" | "u8" | "i16" | "u16" | "i32" | "u32" | "i64" | "u64" | "f32" | "f64" | "isize" | "usize"
                 )
             } else {
                 false
@@ -37,10 +24,7 @@ pub fn is_struct_blittable(field_types: &[&Type]) -> bool {
     field_types.iter().all(|ty| is_primitive_type(ty))
 }
 
-pub fn generate_wire_impls(
-    item_struct: &ItemStruct,
-    custom_types: &CustomTypeRegistry,
-) -> TokenStream {
+pub fn generate_wire_impls(item_struct: &ItemStruct, custom_types: &CustomTypeRegistry) -> TokenStream {
     let struct_name = &item_struct.ident;
     let (impl_generics, ty_generics, where_clause) = item_struct.generics.split_for_impl();
 
@@ -229,22 +213,14 @@ fn generate_wire_encode_impl(
         };
     }
 
-    let encode_fields = field_names
-        .iter()
-        .zip(field_types.iter())
-        .map(|(name, ty)| {
-            let field_buf = syn::Ident::new(&format!("__boltffi_buf_{}", name), name.span());
-            let encode_expr = encode_to_expr(
-                ty,
-                custom_types,
-                quote! { &self.#name },
-                quote! { #field_buf },
-            );
-            quote! {
-                let #field_buf = &mut buf[written..];
-                written += #encode_expr;
-            }
-        });
+    let encode_fields = field_names.iter().zip(field_types.iter()).map(|(name, ty)| {
+        let field_buf = syn::Ident::new(&format!("__boltffi_buf_{}", name), name.span());
+        let encode_expr = encode_to_expr(ty, custom_types, quote! { &self.#name }, quote! { #field_buf });
+        quote! {
+            let #field_buf = &mut buf[written..];
+            written += #encode_expr;
+        }
+    });
 
     quote! {
         impl #impl_generics ::boltffi::__private::wire::WireEncode for #struct_name #ty_generics #where_clause {
@@ -288,22 +264,19 @@ fn generate_wire_decode_impl(
     }
 
     let struct_name_str = struct_name.to_string();
-    let decode_fields = field_names
-        .iter()
-        .zip(field_types.iter())
-        .map(|(name, ty)| {
-            let decode_expr = decode_from_expr(ty, custom_types, quote! { &buf[position..] });
-            let field_name_str = name.to_string();
-            let struct_name_lit = &struct_name_str;
-            quote! {
-                let (#name, size) = #decode_expr.map_err(|e| {
-                    eprintln!("[boltffi] wire decode error in {}.{} at position {} (buf_len={}): {:?}",
-                        #struct_name_lit, #field_name_str, position, buf.len(), e);
-                    e
-                })?;
-                position += size;
-            }
-        });
+    let decode_fields = field_names.iter().zip(field_types.iter()).map(|(name, ty)| {
+        let decode_expr = decode_from_expr(ty, custom_types, quote! { &buf[position..] });
+        let field_name_str = name.to_string();
+        let struct_name_lit = &struct_name_str;
+        quote! {
+            let (#name, size) = #decode_expr.map_err(|e| {
+                eprintln!("[boltffi] wire decode error in {}.{} at position {} (buf_len={}): {:?}",
+                    #struct_name_lit, #field_name_str, position, buf.len(), e);
+                e
+            })?;
+            position += size;
+        }
+    });
 
     quote! {
         impl #impl_generics ::boltffi::__private::wire::WireDecode for #struct_name #ty_generics #where_clause {
@@ -377,11 +350,7 @@ fn type_arg(arg: &syn::GenericArgument) -> Option<&Type> {
     }
 }
 
-fn wire_size_expr(
-    ty: &Type,
-    custom_types: &CustomTypeRegistry,
-    value_expr: TokenStream,
-) -> TokenStream {
+fn wire_size_expr(ty: &Type, custom_types: &CustomTypeRegistry, value_expr: TokenStream) -> TokenStream {
     if let Some(entry) = custom_types.lookup(ty) {
         let into_fn = entry.to_fn_path();
         return quote! { ::boltffi::__private::wire::WireSize::wire_size(&#into_fn(#value_expr)) };
@@ -415,9 +384,7 @@ fn wire_size_expr(
                             .sum::<usize>()
                 }
             })
-            .unwrap_or_else(
-                || quote! { ::boltffi::__private::wire::WireSize::wire_size(#value_expr) },
-            ),
+            .unwrap_or_else(|| quote! { ::boltffi::__private::wire::WireSize::wire_size(#value_expr) }),
         "Option" => args
             .args
             .first()
@@ -432,18 +399,13 @@ fn wire_size_expr(
                     }
                 }
             })
-            .unwrap_or_else(
-                || quote! { ::boltffi::__private::wire::WireSize::wire_size(#value_expr) },
-            ),
+            .unwrap_or_else(|| quote! { ::boltffi::__private::wire::WireSize::wire_size(#value_expr) }),
         "Result" => {
             let ok = args.args.first().and_then(type_arg);
             let err = args.args.iter().nth(1).and_then(type_arg);
 
             match (ok, err) {
-                (Some(ok), Some(err))
-                    if contains_custom_types(ok, custom_types)
-                        || contains_custom_types(err, custom_types) =>
-                {
+                (Some(ok), Some(err)) if contains_custom_types(ok, custom_types) || contains_custom_types(err, custom_types) => {
                     let ok_size = wire_size_expr(ok, custom_types, quote! { ok_value });
                     let err_size = wire_size_expr(err, custom_types, quote! { err_value });
                     quote! {
@@ -460,12 +422,7 @@ fn wire_size_expr(
     }
 }
 
-fn encode_to_expr(
-    ty: &Type,
-    custom_types: &CustomTypeRegistry,
-    value_expr: TokenStream,
-    buf_expr: TokenStream,
-) -> TokenStream {
+fn encode_to_expr(ty: &Type, custom_types: &CustomTypeRegistry, value_expr: TokenStream, buf_expr: TokenStream) -> TokenStream {
     if let Some(entry) = custom_types.lookup(ty) {
         let into_fn = entry.to_fn_path();
         return quote! {
@@ -495,7 +452,12 @@ fn encode_to_expr(
             .and_then(type_arg)
             .filter(|inner| contains_custom_types(inner, custom_types))
             .map(|inner| {
-                let inner_encode = encode_to_expr(inner, custom_types, quote! { element }, quote! { &mut #buf_expr[::boltffi::__private::wire::VEC_COUNT_SIZE + offset..] });
+                let inner_encode = encode_to_expr(
+                    inner,
+                    custom_types,
+                    quote! { element },
+                    quote! { &mut #buf_expr[::boltffi::__private::wire::VEC_COUNT_SIZE + offset..] },
+                );
                 quote! {
                     {
                         let count = (#value_expr).len() as u32;
@@ -514,7 +476,12 @@ fn encode_to_expr(
             .and_then(type_arg)
             .filter(|inner| contains_custom_types(inner, custom_types))
             .map(|inner| {
-                let inner_encode = encode_to_expr(inner, custom_types, quote! { value }, quote! { &mut #buf_expr[::boltffi::__private::wire::OPTION_FLAG_SIZE..] });
+                let inner_encode = encode_to_expr(
+                    inner,
+                    custom_types,
+                    quote! { value },
+                    quote! { &mut #buf_expr[::boltffi::__private::wire::OPTION_FLAG_SIZE..] },
+                );
                 quote! {
                     match #value_expr {
                         Some(value) => {
@@ -534,11 +501,19 @@ fn encode_to_expr(
             let err = args.args.iter().nth(1).and_then(type_arg);
 
             match (ok, err) {
-                (Some(ok), Some(err))
-                    if contains_custom_types(ok, custom_types) || contains_custom_types(err, custom_types) =>
-                {
-                    let ok_encode = encode_to_expr(ok, custom_types, quote! { ok_value }, quote! { &mut #buf_expr[::boltffi::__private::wire::RESULT_TAG_SIZE..] });
-                    let err_encode = encode_to_expr(err, custom_types, quote! { err_value }, quote! { &mut #buf_expr[::boltffi::__private::wire::RESULT_TAG_SIZE..] });
+                (Some(ok), Some(err)) if contains_custom_types(ok, custom_types) || contains_custom_types(err, custom_types) => {
+                    let ok_encode = encode_to_expr(
+                        ok,
+                        custom_types,
+                        quote! { ok_value },
+                        quote! { &mut #buf_expr[::boltffi::__private::wire::RESULT_TAG_SIZE..] },
+                    );
+                    let err_encode = encode_to_expr(
+                        err,
+                        custom_types,
+                        quote! { err_value },
+                        quote! { &mut #buf_expr[::boltffi::__private::wire::RESULT_TAG_SIZE..] },
+                    );
                     quote! {
                         match #value_expr {
                             Ok(ok_value) => {
@@ -559,11 +534,7 @@ fn encode_to_expr(
     }
 }
 
-fn decode_from_expr(
-    ty: &Type,
-    custom_types: &CustomTypeRegistry,
-    buf_expr: TokenStream,
-) -> TokenStream {
+fn decode_from_expr(ty: &Type, custom_types: &CustomTypeRegistry, buf_expr: TokenStream) -> TokenStream {
     if let Some(entry) = custom_types.lookup(ty) {
         let repr_ty = entry.repr_type().unwrap_or_else(|_| syn::parse_quote!(()));
         let try_from_fn = entry.try_from_fn_path();
@@ -649,9 +620,7 @@ fn decode_from_expr(
             let err = args.args.iter().nth(1).and_then(type_arg);
 
             match (ok, err) {
-                (Some(ok), Some(err))
-                    if contains_custom_types(ok, custom_types) || contains_custom_types(err, custom_types) =>
-                {
+                (Some(ok), Some(err)) if contains_custom_types(ok, custom_types) || contains_custom_types(err, custom_types) => {
                     let ok_decode = decode_from_expr(ok, custom_types, quote! { inner_buf });
                     let err_decode = decode_from_expr(err, custom_types, quote! { inner_buf });
                     quote! {
@@ -684,10 +653,7 @@ fn decode_from_expr(
     }
 }
 
-pub fn generate_enum_wire_impls(
-    item_enum: &ItemEnum,
-    custom_types: &CustomTypeRegistry,
-) -> TokenStream {
+pub fn generate_enum_wire_impls(item_enum: &ItemEnum, custom_types: &CustomTypeRegistry) -> TokenStream {
     let enum_name = &item_enum.ident;
     let (impl_generics, ty_generics, where_clause) = item_enum.generics.split_for_impl();
 
@@ -697,32 +663,11 @@ pub fn generate_enum_wire_impls(
         return quote! {};
     }
 
-    let wire_size_impl = generate_enum_wire_size_impl(
-        enum_name,
-        &impl_generics,
-        &ty_generics,
-        where_clause,
-        &variants,
-        custom_types,
-    );
+    let wire_size_impl = generate_enum_wire_size_impl(enum_name, &impl_generics, &ty_generics, where_clause, &variants, custom_types);
 
-    let wire_encode_impl = generate_enum_wire_encode_impl(
-        enum_name,
-        &impl_generics,
-        &ty_generics,
-        where_clause,
-        &variants,
-        custom_types,
-    );
+    let wire_encode_impl = generate_enum_wire_encode_impl(enum_name, &impl_generics, &ty_generics, where_clause, &variants, custom_types);
 
-    let wire_decode_impl = generate_enum_wire_decode_impl(
-        enum_name,
-        &impl_generics,
-        &ty_generics,
-        where_clause,
-        &variants,
-        custom_types,
-    );
+    let wire_decode_impl = generate_enum_wire_decode_impl(enum_name, &impl_generics, &ty_generics, where_clause, &variants, custom_types);
 
     quote! {
         #wire_size_impl
@@ -749,9 +694,7 @@ fn generate_enum_wire_size_impl(
             }
             Fields::Unnamed(fields) => {
                 let field_types: Vec<_> = fields.unnamed.iter().map(|f| &f.ty).collect();
-                let field_bindings: Vec<_> = (0..fields.unnamed.len())
-                    .map(|i| quote::format_ident!("f{}", i))
-                    .collect();
+                let field_bindings: Vec<_> = (0..fields.unnamed.len()).map(|i| quote::format_ident!("f{}", i)).collect();
                 let field_wire_sizes = field_bindings
                     .iter()
                     .zip(field_types.iter())
@@ -763,11 +706,7 @@ fn generate_enum_wire_size_impl(
                 }
             }
             Fields::Named(fields) => {
-                let field_names: Vec<_> = fields
-                    .named
-                    .iter()
-                    .filter_map(|f| f.ident.as_ref())
-                    .collect();
+                let field_names: Vec<_> = fields.named.iter().filter_map(|f| f.ident.as_ref()).collect();
                 let field_types: Vec<_> = fields.named.iter().map(|f| &f.ty).collect();
                 let field_wire_sizes = field_names
                     .iter()
@@ -828,26 +767,15 @@ fn generate_enum_wire_encode_impl(
             }
             Fields::Unnamed(fields) => {
                 let field_types: Vec<_> = fields.unnamed.iter().map(|f| &f.ty).collect();
-                let field_bindings: Vec<_> = (0..fields.unnamed.len())
-                    .map(|i| quote::format_ident!("f{}", i))
-                    .collect();
-                let encode_fields =
-                    field_bindings
-                        .iter()
-                        .zip(field_types.iter())
-                        .map(|(binding, ty)| {
-                            let field_buf = quote::format_ident!("__boltffi_buf_{}", binding);
-                            let encode_expr = encode_to_expr(
-                                ty,
-                                custom_types,
-                                quote! { #binding },
-                                quote! { #field_buf },
-                            );
-                            quote! {
-                                let #field_buf = &mut buf[written..];
-                                written += #encode_expr;
-                            }
-                        });
+                let field_bindings: Vec<_> = (0..fields.unnamed.len()).map(|i| quote::format_ident!("f{}", i)).collect();
+                let encode_fields = field_bindings.iter().zip(field_types.iter()).map(|(binding, ty)| {
+                    let field_buf = quote::format_ident!("__boltffi_buf_{}", binding);
+                    let encode_expr = encode_to_expr(ty, custom_types, quote! { #binding }, quote! { #field_buf });
+                    quote! {
+                        let #field_buf = &mut buf[written..];
+                        written += #encode_expr;
+                    }
+                });
                 quote! {
                     Self::#variant_name(#(#field_bindings),*) => {
                         buf[0..4].copy_from_slice(&(#discriminant_i32 as i32).to_le_bytes());
@@ -858,29 +786,16 @@ fn generate_enum_wire_encode_impl(
                 }
             }
             Fields::Named(fields) => {
-                let field_names: Vec<_> = fields
-                    .named
-                    .iter()
-                    .filter_map(|f| f.ident.as_ref())
-                    .collect();
+                let field_names: Vec<_> = fields.named.iter().filter_map(|f| f.ident.as_ref()).collect();
                 let field_types: Vec<_> = fields.named.iter().map(|f| &f.ty).collect();
-                let encode_fields =
-                    field_names
-                        .iter()
-                        .zip(field_types.iter())
-                        .map(|(binding, ty)| {
-                            let field_buf = quote::format_ident!("__boltffi_buf_{}", binding);
-                            let encode_expr = encode_to_expr(
-                                ty,
-                                custom_types,
-                                quote! { #binding },
-                                quote! { #field_buf },
-                            );
-                            quote! {
-                                let #field_buf = &mut buf[written..];
-                                written += #encode_expr;
-                            }
-                        });
+                let encode_fields = field_names.iter().zip(field_types.iter()).map(|(binding, ty)| {
+                    let field_buf = quote::format_ident!("__boltffi_buf_{}", binding);
+                    let encode_expr = encode_to_expr(ty, custom_types, quote! { #binding }, quote! { #field_buf });
+                    quote! {
+                        let #field_buf = &mut buf[written..];
+                        written += #encode_expr;
+                    }
+                });
                 quote! {
                     Self::#variant_name { #(#field_names),* } => {
                         buf[0..4].copy_from_slice(&(#discriminant_i32 as i32).to_le_bytes());
@@ -924,21 +839,14 @@ fn generate_enum_wire_decode_impl(
             }
             Fields::Unnamed(fields) => {
                 let field_types: Vec<_> = fields.unnamed.iter().map(|f| &f.ty).collect();
-                let field_bindings: Vec<_> = (0..fields.unnamed.len())
-                    .map(|i| quote::format_ident!("f{}", i))
-                    .collect();
-                let decode_fields =
-                    field_bindings
-                        .iter()
-                        .zip(field_types.iter())
-                        .map(|(binding, ty)| {
-                            let decode_expr =
-                                decode_from_expr(ty, custom_types, quote! { &buf[position..] });
-                            quote! {
-                                let (#binding, size) = #decode_expr?;
-                                position += size;
-                            }
-                        });
+                let field_bindings: Vec<_> = (0..fields.unnamed.len()).map(|i| quote::format_ident!("f{}", i)).collect();
+                let decode_fields = field_bindings.iter().zip(field_types.iter()).map(|(binding, ty)| {
+                    let decode_expr = decode_from_expr(ty, custom_types, quote! { &buf[position..] });
+                    quote! {
+                        let (#binding, size) = #decode_expr?;
+                        position += size;
+                    }
+                });
                 quote! {
                     #discriminant_i32 => {
                         let mut position = 4usize;
@@ -948,23 +856,15 @@ fn generate_enum_wire_decode_impl(
                 }
             }
             Fields::Named(fields) => {
-                let field_names: Vec<_> = fields
-                    .named
-                    .iter()
-                    .filter_map(|f| f.ident.as_ref())
-                    .collect();
+                let field_names: Vec<_> = fields.named.iter().filter_map(|f| f.ident.as_ref()).collect();
                 let field_types: Vec<_> = fields.named.iter().map(|f| &f.ty).collect();
-                let decode_fields = field_names
-                    .iter()
-                    .zip(field_types.iter())
-                    .map(|(name, ty)| {
-                        let decode_expr =
-                            decode_from_expr(ty, custom_types, quote! { &buf[position..] });
-                        quote! {
-                            let (#name, size) = #decode_expr?;
-                            position += size;
-                        }
-                    });
+                let decode_fields = field_names.iter().zip(field_types.iter()).map(|(name, ty)| {
+                    let decode_expr = decode_from_expr(ty, custom_types, quote! { &buf[position..] });
+                    quote! {
+                        let (#name, size) = #decode_expr?;
+                        position += size;
+                    }
+                });
                 quote! {
                     #discriminant_i32 => {
                         let mut position = 4usize;

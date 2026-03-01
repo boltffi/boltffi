@@ -27,7 +27,7 @@ private func ensureOk(_ status: FfiStatus, context: StaticString = #function) {
 }
 {%- if has_async %}
 
-final class FfiFutureState<T>: @unchecked Sendable {
+final class FfiFutureState<T: Sendable>: @unchecked Sendable {
     typealias Continuation = CheckedContinuation<T, Error>
 
     enum FinishDecision {
@@ -307,14 +307,14 @@ final class FfiFutureState<T>: @unchecked Sendable {
 private final class BoltFFIAsyncPollDriver: @unchecked Sendable {
     let futureHandle: RustFutureHandle?
     let pollFn: (RustFutureHandle?, UInt64, (@convention(c) (UInt64, Int8) -> Void)?) -> Void
-    let onReady: () -> Void
-    let canContinuePolling: () -> Bool
+    let onReady: @Sendable () -> Void
+    let canContinuePolling: @Sendable () -> Bool
 
     init(
         futureHandle: RustFutureHandle?,
         pollFn: @escaping (RustFutureHandle?, UInt64, (@convention(c) (UInt64, Int8) -> Void)?) -> Void,
-        onReady: @escaping () -> Void,
-        canContinuePolling: @escaping () -> Bool
+        onReady: @escaping @Sendable () -> Void,
+        canContinuePolling: @escaping @Sendable () -> Bool
     ) {
         self.futureHandle = futureHandle; self.pollFn = pollFn
         self.onReady = onReady; self.canContinuePolling = canContinuePolling
@@ -343,14 +343,15 @@ private let boltffiAsyncPollCallback: @convention(c) (UInt64, Int8) -> Void = { 
     Unmanaged<BoltFFIAsyncPollDriver>.fromOpaque(UnsafeRawPointer(bitPattern: UInt(callbackData))!).takeRetainedValue().handlePollResult(pollResult)
 }
 
-func boltffiAsyncCall<T>(
+func boltffiAsyncCall<T: Sendable>(
     futureHandle: RustFutureHandle?,
-    pollFn: @escaping (RustFutureHandle?, UInt64, (@convention(c) (UInt64, Int8) -> Void)?) -> Void,
-    completeFn: @escaping (RustFutureHandle?, UnsafeMutablePointer<FfiStatus>?) -> FfiBuf_u8,
-    cancelFn: @escaping (RustFutureHandle?) -> Void,
-    freeFn: @escaping (RustFutureHandle?) -> Void,
-    transform: @escaping (FfiBuf_u8, FfiStatus) throws -> T
+    pollFn: @escaping @Sendable (RustFutureHandle?, UInt64, (@convention(c) (UInt64, Int8) -> Void)?) -> Void,
+    completeFn: @escaping @Sendable (RustFutureHandle?, UnsafeMutablePointer<FfiStatus>?) -> FfiBuf_u8,
+    cancelFn: @escaping @Sendable (RustFutureHandle?) -> Void,
+    freeFn: @escaping @Sendable (RustFutureHandle?) -> Void,
+    transform: @escaping @Sendable (FfiBuf_u8, FfiStatus) throws -> T
 ) async throws -> T {
+    nonisolated(unsafe) let futureHandle = futureHandle
     typealias Ctx = FfiFutureState<T>
     let state = Ctx(handle: futureHandle)
 
@@ -404,13 +405,14 @@ func boltffiAsyncCall<T>(
     }
 }
 
-func boltffiAsyncCallDirect<T>(
+func boltffiAsyncCallDirect<T: Sendable>(
     futureHandle: RustFutureHandle?,
-    pollFn: @escaping (RustFutureHandle?, UInt64, (@convention(c) (UInt64, Int8) -> Void)?) -> Void,
-    completeFn: @escaping (RustFutureHandle?, UnsafeMutablePointer<FfiStatus>?) -> T,
-    cancelFn: @escaping (RustFutureHandle?) -> Void,
-    freeFn: @escaping (RustFutureHandle?) -> Void
+    pollFn: @escaping @Sendable (RustFutureHandle?, UInt64, (@convention(c) (UInt64, Int8) -> Void)?) -> Void,
+    completeFn: @escaping @Sendable (RustFutureHandle?, UnsafeMutablePointer<FfiStatus>?) -> T,
+    cancelFn: @escaping @Sendable (RustFutureHandle?) -> Void,
+    freeFn: @escaping @Sendable (RustFutureHandle?) -> Void
 ) async throws -> T {
+    nonisolated(unsafe) let futureHandle = futureHandle
     typealias Ctx = FfiFutureState<T>
     let state = Ctx(handle: futureHandle)
 
@@ -457,6 +459,121 @@ func boltffiAsyncCallDirect<T>(
             cancelFn(state.handle)
             freeFn(state.handle)
             continuation.resume(throwing: CancellationError())
+        }
+    }
+}
+{%- endif %}
+{%- if has_async_iterators %}
+
+/// A lazy pull-based async sequence wrapping a BoltFFI async iterator.
+///
+/// Each element is produced by calling `next()` on the Rust side via the
+/// standard `RustFutureHandle` poll/complete machinery. No background `Task`
+/// is spawned — iteration is driven entirely by Swift's `for await` loop.
+public struct BoltFFIAsyncSequence<T: Sendable>: AsyncSequence, Sendable {
+    public typealias Element = T
+
+    private let iterHandle: OpaquePointer
+    private let nextFn: @Sendable (OpaquePointer?) -> RustFutureHandle?
+    private let pollFn: @Sendable (RustFutureHandle?, UInt64, (@convention(c) (UInt64, Int8) -> Void)?) -> Void
+    private let completeFn: @Sendable (RustFutureHandle?, UnsafeMutablePointer<FfiStatus>?) -> FfiBuf_u8
+    private let cancelFn: @Sendable (RustFutureHandle?) -> Void
+    private let freeFutureFn: @Sendable (RustFutureHandle?) -> Void
+    private let freeIterFn: @Sendable (OpaquePointer?) -> Void
+    private let decode: @Sendable (inout WireReader) -> T?
+
+    init(
+        iterHandle: OpaquePointer,
+        nextFn: @escaping @Sendable (OpaquePointer?) -> RustFutureHandle?,
+        pollFn: @escaping @Sendable (RustFutureHandle?, UInt64, (@convention(c) (UInt64, Int8) -> Void)?) -> Void,
+        completeFn: @escaping @Sendable (RustFutureHandle?, UnsafeMutablePointer<FfiStatus>?) -> FfiBuf_u8,
+        cancelFn: @escaping @Sendable (RustFutureHandle?) -> Void,
+        freeFutureFn: @escaping @Sendable (RustFutureHandle?) -> Void,
+        freeIterFn: @escaping @Sendable (OpaquePointer?) -> Void,
+        decode: @escaping @Sendable (inout WireReader) -> T?
+    ) {
+        self.iterHandle = iterHandle
+        self.nextFn = nextFn
+        self.pollFn = pollFn
+        self.completeFn = completeFn
+        self.cancelFn = cancelFn
+        self.freeFutureFn = freeFutureFn
+        self.freeIterFn = freeIterFn
+        self.decode = decode
+    }
+
+    public func makeAsyncIterator() -> AsyncIterator {
+        AsyncIterator(
+            iterHandle: iterHandle,
+            nextFn: nextFn,
+            pollFn: pollFn,
+            completeFn: completeFn,
+            cancelFn: cancelFn,
+            freeFutureFn: freeFutureFn,
+            freeIterFn: freeIterFn,
+            decode: decode
+        )
+    }
+
+    public final class AsyncIterator: AsyncIteratorProtocol, @unchecked Sendable {
+        private let iterHandle: OpaquePointer
+        private let nextFn: @Sendable (OpaquePointer?) -> RustFutureHandle?
+        private let pollFn: @Sendable (RustFutureHandle?, UInt64, (@convention(c) (UInt64, Int8) -> Void)?) -> Void
+        private let completeFn: @Sendable (RustFutureHandle?, UnsafeMutablePointer<FfiStatus>?) -> FfiBuf_u8
+        private let cancelFn: @Sendable (RustFutureHandle?) -> Void
+        private let freeFutureFn: @Sendable (RustFutureHandle?) -> Void
+        private let freeIterFn: @Sendable (OpaquePointer?) -> Void
+        private let decode: @Sendable (inout WireReader) -> T?
+        private var done = false
+
+        fileprivate init(
+            iterHandle: OpaquePointer,
+            nextFn: @escaping @Sendable (OpaquePointer?) -> RustFutureHandle?,
+            pollFn: @escaping @Sendable (RustFutureHandle?, UInt64, (@convention(c) (UInt64, Int8) -> Void)?) -> Void,
+            completeFn: @escaping @Sendable (RustFutureHandle?, UnsafeMutablePointer<FfiStatus>?) -> FfiBuf_u8,
+            cancelFn: @escaping @Sendable (RustFutureHandle?) -> Void,
+            freeFutureFn: @escaping @Sendable (RustFutureHandle?) -> Void,
+            freeIterFn: @escaping @Sendable (OpaquePointer?) -> Void,
+            decode: @escaping @Sendable (inout WireReader) -> T?
+        ) {
+            self.iterHandle = iterHandle
+            self.nextFn = nextFn
+            self.pollFn = pollFn
+            self.completeFn = completeFn
+            self.cancelFn = cancelFn
+            self.freeFutureFn = freeFutureFn
+            self.freeIterFn = freeIterFn
+            self.decode = decode
+        }
+
+        deinit {
+            freeIterFn(iterHandle)
+        }
+
+        public func next() async -> T? {
+            guard !done else { return nil }
+            let futureHandle = nextFn(iterHandle)
+            do {
+                return try await boltffiAsyncCall(
+                    futureHandle: futureHandle,
+                    pollFn: pollFn,
+                    completeFn: completeFn,
+                    cancelFn: cancelFn,
+                    freeFn: freeFutureFn
+                ) { [self] buf, status in
+                    guard status.code == 0 else {
+                        {{ prefix }}_free_buf_u8(buf)
+                        throw FfiError(message: "iterator next failed")
+                    }
+                    defer { {{ prefix }}_free_buf_u8(buf) }
+                    return boltffiDecodeOwnedBuf(buf.ptr, Int(buf.len)) { reader in
+                        self.decode(&reader)
+                    }
+                }
+            } catch {
+                done = true
+                return nil
+            }
         }
     }
 }

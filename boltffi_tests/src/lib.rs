@@ -2,9 +2,8 @@
 #![allow(clippy::unused_unit)]
 #![allow(clippy::too_many_arguments)]
 
-use std::sync::Mutex;
-
 use boltffi::*;
+use std::sync::Mutex;
 
 #[data]
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
@@ -120,10 +119,7 @@ pub fn invoke_vec_impl(callback: impl SyncVecCallback, values: Vec<i32>) -> Vec<
 }
 
 #[export]
-pub fn invoke_struct_boxed(
-    callback: Box<dyn SyncStructCallback>,
-    point: FixturePoint,
-) -> FixturePoint {
+pub fn invoke_struct_boxed(callback: Box<dyn SyncStructCallback>, point: FixturePoint) -> FixturePoint {
     callback.on_struct(point)
 }
 
@@ -153,11 +149,7 @@ pub fn invoke_enum_impl(callback: impl SyncEnumCallback, id: i32) -> FixtureStat
 }
 
 #[export]
-pub fn invoke_multi_method_boxed(
-    callback: Box<dyn SyncMultiMethodCallback>,
-    x: i32,
-    y: i32,
-) -> i32 {
+pub fn invoke_multi_method_boxed(callback: Box<dyn SyncMultiMethodCallback>, x: i32, y: i32) -> i32 {
     callback.method_a(x) + callback.method_b(x, y) + callback.method_c()
 }
 
@@ -167,30 +159,17 @@ pub fn invoke_multi_method_impl(callback: impl SyncMultiMethodCallback, x: i32, 
 }
 
 #[export]
-pub fn invoke_two_sync_impl(
-    first: impl SyncValueCallback,
-    second: impl SyncValueCallback,
-    value: i32,
-) -> i32 {
+pub fn invoke_two_sync_impl(first: impl SyncValueCallback, second: impl SyncValueCallback, value: i32) -> i32 {
     first.on_value(value) + second.on_value(value)
 }
 
 #[export]
-pub fn invoke_three_sync_impl(
-    first: impl SyncValueCallback,
-    second: impl SyncValueCallback,
-    third: impl SyncValueCallback,
-    value: i32,
-) -> i32 {
+pub fn invoke_three_sync_impl(first: impl SyncValueCallback, second: impl SyncValueCallback, third: impl SyncValueCallback, value: i32) -> i32 {
     first.on_value(value) + second.on_value(value) + third.on_value(value)
 }
 
 #[export]
-pub fn invoke_mixed_sync(
-    boxed: Box<dyn SyncValueCallback>,
-    impl_cb: impl SyncValueCallback,
-    value: i32,
-) -> i32 {
+pub fn invoke_mixed_sync(boxed: Box<dyn SyncValueCallback>, impl_cb: impl SyncValueCallback, value: i32) -> i32 {
     boxed.on_value(value) * impl_cb.on_value(value)
 }
 
@@ -205,12 +184,7 @@ pub fn simple_try_divide(a: i32, b: i32) -> Result<i32, i32> {
 }
 
 #[export]
-pub fn invoke_mixed_three(
-    boxed: Box<dyn SyncValueCallback>,
-    impl1: impl SyncValueCallback,
-    impl2: impl SyncValueCallback,
-    value: i32,
-) -> i32 {
+pub fn invoke_mixed_three(boxed: Box<dyn SyncValueCallback>, impl1: impl SyncValueCallback, impl2: impl SyncValueCallback, value: i32) -> i32 {
     boxed.on_value(value) + impl1.on_value(value) + impl2.on_value(value)
 }
 
@@ -220,21 +194,12 @@ pub async fn invoke_async_impl(fetcher: impl AsyncFetcher, key: u32) -> u64 {
 }
 
 #[export]
-pub async fn invoke_two_async_impl(
-    first: impl AsyncFetcher,
-    second: impl AsyncFetcher,
-    key: u32,
-) -> u64 {
+pub async fn invoke_two_async_impl(first: impl AsyncFetcher, second: impl AsyncFetcher, key: u32) -> u64 {
     first.fetch(key).await.wrapping_mul(second.fetch(key).await)
 }
 
 #[export]
-pub async fn invoke_three_async_impl(
-    first: impl AsyncFetcher,
-    second: impl AsyncFetcher,
-    third: impl AsyncFetcher,
-    key: u32,
-) -> u64 {
+pub async fn invoke_three_async_impl(first: impl AsyncFetcher, second: impl AsyncFetcher, third: impl AsyncFetcher, key: u32) -> u64 {
     first.fetch(key).await + second.fetch(key).await + third.fetch(key).await
 }
 
@@ -244,12 +209,7 @@ pub async fn invoke_async_option_impl(fetcher: impl AsyncOptionFetcher, key: i32
 }
 
 #[export]
-pub async fn invoke_async_multi_impl(
-    callback: impl AsyncMultiMethod,
-    id: i64,
-    a: i32,
-    b: i32,
-) -> i64 {
+pub async fn invoke_async_multi_impl(callback: impl AsyncMultiMethod, id: i64, a: i32, b: i32) -> i64 {
     callback.load(id).await + callback.compute(a, b).await
 }
 
@@ -271,11 +231,7 @@ impl SyncProcessor {
         callback.on_value(value * self.multiplier)
     }
 
-    pub fn apply_struct_impl(
-        &self,
-        callback: impl SyncStructCallback,
-        point: FixturePoint,
-    ) -> FixturePoint {
+    pub fn apply_struct_impl(&self, callback: impl SyncStructCallback, point: FixturePoint) -> FixturePoint {
         let scaled = FixturePoint {
             x: point.x * self.multiplier as f64,
             y: point.y * self.multiplier as f64,
@@ -302,21 +258,21 @@ impl AsyncProcessor {
         fetcher.fetch(key).await.wrapping_add(self.offset)
     }
 
-    pub async fn find_with_offset(
-        &self,
-        fetcher: impl AsyncOptionFetcher,
-        key: i32,
-    ) -> Option<i64> {
+    pub async fn find_with_offset(&self, fetcher: impl AsyncOptionFetcher, key: i32) -> Option<i64> {
         fetcher.find(key).await.map(|v| v + self.offset as i64)
     }
 }
 
-use std::future::Future;
-use std::pin::Pin;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::task::{Context, Poll};
-use std::time::Duration;
+use std::{
+    future::Future,
+    pin::Pin,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicU32, Ordering},
+    },
+    task::{Context, Poll},
+    time::Duration,
+};
 
 struct YieldOnce(bool);
 
@@ -363,11 +319,7 @@ impl std::error::Error for FixtureError {}
 
 #[export]
 pub fn fallible_divide(a: i32, b: i32) -> Result<i32, FixtureError> {
-    if b == 0 {
-        Err(FixtureError::InvalidInput)
-    } else {
-        Ok(a / b)
-    }
+    if b == 0 { Err(FixtureError::InvalidInput) } else { Ok(a / b) }
 }
 
 #[export]
@@ -560,6 +512,51 @@ impl PointStream {
     }
 }
 
+// --- async iterator fixtures ---
+
+use boltffi_core::async_iterator::Stream as FfiIterStream;
+use std::collections::VecDeque;
+
+/// A simple stream that yields items from a Vec, one per poll.
+pub struct VecStream<T> {
+    items: VecDeque<T>,
+}
+
+impl<T> VecStream<T> {
+    pub fn new(items: impl IntoIterator<Item = T>) -> Self {
+        Self {
+            items: items.into_iter().collect(),
+        }
+    }
+}
+
+impl<T: Send + Unpin + 'static> FfiIterStream for VecStream<T> {
+    type Item = T;
+
+    fn poll_next(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<T>> {
+        Poll::Ready(self.items.pop_front())
+    }
+}
+
+pub struct NumberIterator;
+
+#[export]
+impl NumberIterator {
+    pub fn new() -> Self {
+        Self
+    }
+
+    #[ffi_async_iter(item = i32)]
+    pub fn count_to_three(&self) -> VecStream<i32> {
+        VecStream::new([1, 2, 3])
+    }
+
+    #[ffi_async_iter(item = i32)]
+    pub fn empty(&self) -> VecStream<i32> {
+        VecStream::new([])
+    }
+}
+
 pub struct TestCounter {
     value: i32,
 }
@@ -600,9 +597,7 @@ pub struct ThreadSafeCounter {
 #[export]
 impl ThreadSafeCounter {
     pub fn new(initial: i32) -> Self {
-        Self {
-            value: Mutex::new(initial),
-        }
+        Self { value: Mutex::new(initial) }
     }
 
     pub fn get(&self) -> i32 {
@@ -782,10 +777,7 @@ impl ClassTestFixture {
     }
 
     pub fn find_value(&self, target: i32) -> Option<i32> {
-        self.values
-            .iter()
-            .position(|&v| v == target)
-            .map(|i| i as i32)
+        self.values.iter().position(|&v| v == target).map(|i| i as i32)
     }
 
     pub fn static_add(a: i32, b: i32) -> i32 {
@@ -846,33 +838,11 @@ impl ClassTestFixture {
     }
 
     pub async fn async_find(&self, target: i32) -> Option<i32> {
-        self.values
-            .iter()
-            .position(|&v| v == target)
-            .map(|i| i as i32)
+        self.values.iter().position(|&v| v == target).map(|i| i as i32)
     }
 
-    pub fn with_primitives(
-        &self,
-        a: i8,
-        b: u8,
-        c: i16,
-        d: u16,
-        e: i64,
-        f: u64,
-        g: f32,
-        h: f64,
-        i: bool,
-    ) -> i64 {
-        (a as i64)
-            + (b as i64)
-            + (c as i64)
-            + (d as i64)
-            + e
-            + (f as i64)
-            + (g as i64)
-            + (h as i64)
-            + (if i { 1 } else { 0 })
+    pub fn with_primitives(&self, a: i8, b: u8, c: i16, d: u16, e: i64, f: u64, g: f32, h: f64, i: bool) -> i64 {
+        (a as i64) + (b as i64) + (c as i64) + (d as i64) + e + (f as i64) + (g as i64) + (h as i64) + (if i { 1 } else { 0 })
     }
 
     pub fn echo_bytes(&self, data: Vec<u8>) -> Vec<u8> {

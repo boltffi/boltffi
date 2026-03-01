@@ -1,27 +1,21 @@
+use crate::{
+    ir::{
+        FastOutputBinding, InputBinding, OutputBinding,
+        abi::{AbiCall, AbiCallbackInvocation, AbiContract, AbiEnum, AbiEnumPayload, AbiParam, AbiRecord, CallId, CallMode, ErrorTransport, OutputShape},
+        contract::FfiContract,
+        definitions::{CallbackKind, CallbackTraitDef, ClassDef, ConstructorDef, EnumDef, FunctionDef, MethodDef, ParamDef, Receiver, RecordDef, ReturnDef},
+        ids::{CallbackId, EnumId, FieldName, RecordId},
+        ops::{FieldWriteOp, ReadOp, ReadSeq, SizeExpr, ValueExpr, WireShape, WriteOp, WriteSeq},
+        plan::AbiType,
+        types::{PrimitiveType, TypeExpr},
+    },
+    render::typescript::{emit, plan::*},
+};
+use boltffi_ffi_rules::{
+    callback as cb_naming,
+    naming::{self, ffi_prefix, snake_to_camel as camel_case},
+};
 use std::collections::{HashMap, HashSet};
-
-use boltffi_ffi_rules::callback as cb_naming;
-use boltffi_ffi_rules::naming::{self, snake_to_camel as camel_case};
-
-use crate::ir::abi::{
-    AbiCall, AbiCallbackInvocation, AbiContract, AbiEnum, AbiEnumPayload, AbiParam, AbiRecord,
-    CallId, CallMode, ErrorTransport, OutputShape,
-};
-use crate::ir::contract::FfiContract;
-use crate::ir::definitions::{
-    CallbackKind, CallbackTraitDef, ClassDef, ConstructorDef, EnumDef, FunctionDef, MethodDef,
-    ParamDef, Receiver, RecordDef, ReturnDef,
-};
-use crate::ir::ids::{CallbackId, EnumId, FieldName, RecordId};
-use crate::ir::ops::{
-    FieldWriteOp, ReadOp, ReadSeq, SizeExpr, ValueExpr, WireShape, WriteOp, WriteSeq,
-};
-use crate::ir::plan::AbiType;
-use crate::ir::types::{PrimitiveType, TypeExpr};
-use crate::ir::{FastOutputBinding, InputBinding, OutputBinding};
-use crate::render::typescript::emit;
-use crate::render::typescript::plan::*;
-use boltffi_ffi_rules::naming::ffi_prefix;
 
 struct AbiIndex {
     calls: HashMap<CallId, usize>,
@@ -32,44 +26,15 @@ struct AbiIndex {
 
 impl AbiIndex {
     fn new(contract: &AbiContract) -> Self {
-        let calls = contract
-            .calls
-            .iter()
-            .enumerate()
-            .map(|(index, call)| (call.id.clone(), index))
-            .collect();
-        let callbacks = contract
-            .callbacks
-            .iter()
-            .enumerate()
-            .map(|(index, cb)| (cb.callback_id.clone(), index))
-            .collect();
-        let records = contract
-            .records
-            .iter()
-            .enumerate()
-            .map(|(index, record)| (record.id.clone(), index))
-            .collect();
-        let enums = contract
-            .enums
-            .iter()
-            .enumerate()
-            .map(|(index, enumeration)| (enumeration.id.clone(), index))
-            .collect();
+        let calls = contract.calls.iter().enumerate().map(|(index, call)| (call.id.clone(), index)).collect();
+        let callbacks = contract.callbacks.iter().enumerate().map(|(index, cb)| (cb.callback_id.clone(), index)).collect();
+        let records = contract.records.iter().enumerate().map(|(index, record)| (record.id.clone(), index)).collect();
+        let enums = contract.enums.iter().enumerate().map(|(index, enumeration)| (enumeration.id.clone(), index)).collect();
 
-        Self {
-            calls,
-            callbacks,
-            records,
-            enums,
-        }
+        Self { calls, callbacks, records, enums }
     }
 
-    fn callback<'a>(
-        &self,
-        contract: &'a AbiContract,
-        id: &CallbackId,
-    ) -> &'a AbiCallbackInvocation {
+    fn callback<'a>(&self, contract: &'a AbiContract, id: &CallbackId) -> &'a AbiCallbackInvocation {
         &contract.callbacks[self.callbacks[id]]
     }
 
@@ -105,12 +70,7 @@ pub struct TypeScriptLowerer<'a> {
 }
 
 impl<'a> TypeScriptLowerer<'a> {
-    pub fn new(
-        contract: &'a FfiContract,
-        abi: &'a AbiContract,
-        module_name: String,
-        experimental: TypeScriptExperimental,
-    ) -> Self {
+    pub fn new(contract: &'a FfiContract, abi: &'a AbiContract, module_name: String, experimental: TypeScriptExperimental) -> Self {
         Self {
             contract,
             abi,
@@ -122,49 +82,19 @@ impl<'a> TypeScriptLowerer<'a> {
     pub fn lower(&self) -> TsModule {
         let index = AbiIndex::new(self.abi);
 
-        let records = self
-            .contract
-            .catalog
-            .all_records()
-            .map(|def| self.lower_record(def, &index))
-            .collect();
+        let records = self.contract.catalog.all_records().map(|def| self.lower_record(def, &index)).collect();
 
-        let enums = self
-            .contract
-            .catalog
-            .all_enums()
-            .map(|def| self.lower_enum(def, &index))
-            .collect();
+        let enums = self.contract.catalog.all_enums().map(|def| self.lower_enum(def, &index)).collect();
 
-        let functions: Vec<TsFunction> = self
-            .contract
-            .functions
-            .iter()
-            .filter_map(|def| self.lower_function(def, &index))
-            .collect();
+        let functions: Vec<TsFunction> = self.contract.functions.iter().filter_map(|def| self.lower_function(def, &index)).collect();
 
-        let async_functions: Vec<TsAsyncFunction> = self
-            .contract
-            .functions
-            .iter()
-            .filter_map(|def| self.lower_async_function(def, &index))
-            .collect();
+        let async_functions: Vec<TsAsyncFunction> = self.contract.functions.iter().filter_map(|def| self.lower_async_function(def, &index)).collect();
 
-        let classes = self
-            .contract
-            .catalog
-            .all_classes()
-            .map(|def| self.lower_class(def, &index))
-            .collect();
+        let classes = self.contract.catalog.all_classes().map(|def| self.lower_class(def, &index)).collect();
 
         let wasm_imports = self.collect_wasm_imports(&index);
 
-        let callbacks = self
-            .contract
-            .catalog
-            .all_callbacks()
-            .map(|def| self.lower_callback(def, &index))
-            .collect();
+        let callbacks = self.contract.catalog.all_callbacks().map(|def| self.lower_callback(def, &index)).collect();
 
         let error_exceptions = self.collect_error_exceptions(&functions, &async_functions, &index);
 
@@ -182,12 +112,7 @@ impl<'a> TypeScriptLowerer<'a> {
         }
     }
 
-    fn collect_error_exceptions(
-        &self,
-        functions: &[TsFunction],
-        async_functions: &[TsAsyncFunction],
-        index: &AbiIndex,
-    ) -> Vec<TsErrorException> {
+    fn collect_error_exceptions(&self, functions: &[TsFunction], async_functions: &[TsAsyncFunction], index: &AbiIndex) -> Vec<TsErrorException> {
         let mut error_types: HashSet<String> = HashSet::new();
 
         for func in functions {
@@ -239,22 +164,16 @@ impl<'a> TypeScriptLowerer<'a> {
                 let ts_type_str = emit::ts_type(&field.type_expr);
                 let field_name = camel_case(field.name.as_str());
 
-                let decode = decode_fields
-                    .get(&field.name)
-                    .cloned()
-                    .unwrap_or_else(|| ReadSeq {
-                        size: SizeExpr::Fixed(0),
-                        ops: vec![],
-                        shape: WireShape::Value,
-                    });
-                let encode = encode_fields
-                    .get(&field.name)
-                    .cloned()
-                    .unwrap_or_else(|| WriteSeq {
-                        size: SizeExpr::Fixed(0),
-                        ops: vec![],
-                        shape: WireShape::Value,
-                    });
+                let decode = decode_fields.get(&field.name).cloned().unwrap_or_else(|| ReadSeq {
+                    size: SizeExpr::Fixed(0),
+                    ops: vec![],
+                    shape: WireShape::Value,
+                });
+                let encode = encode_fields.get(&field.name).cloned().unwrap_or_else(|| WriteSeq {
+                    size: SizeExpr::Fixed(0),
+                    ops: vec![],
+                    shape: WireShape::Value,
+                });
 
                 TsField {
                     name: emit::escape_ts_keyword(&field_name),
@@ -293,11 +212,7 @@ impl<'a> TypeScriptLowerer<'a> {
         let abi_enum = index.enumeration(self.abi, &def.id);
         let name = naming::to_upper_camel_case(def.id.as_str());
 
-        let kind = if abi_enum.is_c_style {
-            TsEnumKind::CStyle
-        } else {
-            TsEnumKind::Data
-        };
+        let kind = if abi_enum.is_c_style { TsEnumKind::CStyle } else { TsEnumKind::Data };
 
         let variant_docs = def.variant_docs();
         let variants = abi_enum
@@ -343,16 +258,10 @@ impl<'a> TypeScriptLowerer<'a> {
             .constructors
             .iter()
             .enumerate()
-            .map(|(constructor_index, constructor)| {
-                self.lower_class_constructor(def, constructor, constructor_index, index)
-            })
+            .map(|(constructor_index, constructor)| self.lower_class_constructor(def, constructor, constructor_index, index))
             .collect();
 
-        let methods = def
-            .methods
-            .iter()
-            .map(|method| self.lower_class_method(def, method, index))
-            .collect();
+        let methods = def.methods.iter().map(|method| self.lower_class_method(def, method, index)).collect();
 
         TsClass {
             class_name,
@@ -363,13 +272,7 @@ impl<'a> TypeScriptLowerer<'a> {
         }
     }
 
-    fn lower_class_constructor(
-        &self,
-        class_def: &ClassDef,
-        constructor: &ConstructorDef,
-        constructor_index: usize,
-        index: &AbiIndex,
-    ) -> TsClassConstructor {
+    fn lower_class_constructor(&self, class_def: &ClassDef, constructor: &ConstructorDef, constructor_index: usize, index: &AbiIndex) -> TsClassConstructor {
         let call_id = CallId::Constructor {
             class_id: class_def.id.clone(),
             index: constructor_index,
@@ -381,11 +284,7 @@ impl<'a> TypeScriptLowerer<'a> {
             .map(|method_id| emit::escape_ts_keyword(&camel_case(method_id.as_str())))
             .unwrap_or_else(|| "new".to_string());
 
-        let param_defs: HashMap<&str, &ParamDef> = constructor
-            .params()
-            .into_iter()
-            .map(|param| (param.name.as_str(), param))
-            .collect();
+        let param_defs: HashMap<&str, &ParamDef> = constructor.params().into_iter().map(|param| (param.name.as_str(), param)).collect();
 
         let params = abi_call
             .params
@@ -402,20 +301,12 @@ impl<'a> TypeScriptLowerer<'a> {
             ffi_name: abi_call.symbol.as_str().to_string(),
             is_default: constructor.name().is_none(),
             params,
-            returns_nullable_handle: matches!(
-                abi_call.output_binding(),
-                OutputBinding::Handle { nullable: true, .. }
-            ),
+            returns_nullable_handle: matches!(abi_call.output_binding(), OutputBinding::Handle { nullable: true, .. }),
             doc: constructor.doc().map(String::from),
         }
     }
 
-    fn lower_class_method(
-        &self,
-        class_def: &ClassDef,
-        method_def: &MethodDef,
-        index: &AbiIndex,
-    ) -> TsClassMethod {
+    fn lower_class_method(&self, class_def: &ClassDef, method_def: &MethodDef, index: &AbiIndex) -> TsClassMethod {
         let call_id = CallId::Method {
             class_id: class_def.id.clone(),
             method_id: method_def.id.clone(),
@@ -423,11 +314,7 @@ impl<'a> TypeScriptLowerer<'a> {
         let abi_call = index.call(self.abi, &call_id);
         let is_static = method_def.receiver == Receiver::Static;
 
-        let param_defs: HashMap<&str, &ParamDef> = method_def
-            .params
-            .iter()
-            .map(|param| (param.name.as_str(), param))
-            .collect();
+        let param_defs: HashMap<&str, &ParamDef> = method_def.params.iter().map(|param| (param.name.as_str(), param)).collect();
 
         let params = abi_call
             .params
@@ -437,10 +324,7 @@ impl<'a> TypeScriptLowerer<'a> {
                 let Some(input_abi) = parameter.input_binding() else {
                     return false;
                 };
-                if !is_static
-                    && *param_index == 0
-                    && matches!(input_abi, InputBinding::Handle { .. })
-                {
+                if !is_static && *param_index == 0 && matches!(input_abi, InputBinding::Handle { .. }) {
                     return false;
                 }
                 true
@@ -453,8 +337,7 @@ impl<'a> TypeScriptLowerer<'a> {
 
         let (return_type, return_handle, mode) = match &abi_call.mode {
             CallMode::Sync => {
-                let (return_type, return_route) =
-                    self.select_output_route(&abi_call.output_shape, TsExecutionModel::Sync);
+                let (return_type, return_route) = self.select_output_route(&abi_call.output_shape, TsExecutionModel::Sync);
                 let return_handle = match abi_call.output_binding() {
                     OutputBinding::Handle { class_id, nullable } => Some(TsHandleReturn {
                         class_name: naming::to_upper_camel_case(class_id.as_str()),
@@ -462,16 +345,11 @@ impl<'a> TypeScriptLowerer<'a> {
                     }),
                     _ => None,
                 };
-                (
-                    return_type,
-                    return_handle,
-                    TsClassMethodMode::Sync(TsClassSyncMethod { return_route }),
-                )
+                (return_type, return_handle, TsClassMethodMode::Sync(TsClassSyncMethod { return_route }))
             }
             CallMode::Async(async_call) => {
                 let entry_ffi_name = abi_call.symbol.as_str().to_string();
-                let (return_type, return_route) =
-                    self.select_output_route(&async_call.result_shape, TsExecutionModel::Async);
+                let (return_type, return_route) = self.select_output_route(&async_call.result_shape, TsExecutionModel::Async);
                 let return_handle = match async_call.result_binding() {
                     OutputBinding::Handle { class_id, nullable } => Some(TsHandleReturn {
                         class_name: naming::to_upper_camel_case(class_id.as_str()),
@@ -517,16 +395,9 @@ impl<'a> TypeScriptLowerer<'a> {
             .iter()
             .filter(|m| !m.is_async)
             .filter_map(|method_def| {
-                let abi_method = abi_callback
-                    .methods
-                    .iter()
-                    .find(|am| am.id == method_def.id)?;
+                let abi_method = abi_callback.methods.iter().find(|am| am.id == method_def.id)?;
                 let ts_name = camel_case(method_def.id.as_str());
-                let import_name = format!(
-                    "__boltffi_callback_{}_{}",
-                    trait_name_snake,
-                    naming::to_snake_case(method_def.id.as_str())
-                );
+                let import_name = format!("__boltffi_callback_{}_{}", trait_name_snake, naming::to_snake_case(method_def.id.as_str()));
 
                 let params = method_def
                     .params
@@ -535,10 +406,7 @@ impl<'a> TypeScriptLowerer<'a> {
                         let ts_type = emit::ts_type(&p.type_expr);
                         let param_name = p.name.as_str();
                         let callback_param_name = camel_case(param_name);
-                        let abi_param = abi_method
-                            .params
-                            .iter()
-                            .find(|ap| ap.name.as_str() == param_name);
+                        let abi_param = abi_method.params.iter().find(|ap| ap.name.as_str() == param_name);
 
                         let kind = match abi_param {
                             Some(abi_param) => match abi_param.input_binding() {
@@ -546,14 +414,9 @@ impl<'a> TypeScriptLowerer<'a> {
                                     let decode_expr = emit::emit_reader_read(decode_ops);
                                     TsCallbackParamKind::WireEncoded { decode_expr }
                                 }
-                                _ => callback_primitive_param_kind(
-                                    callback_param_name.as_str(),
-                                    Some(abi_param.ffi_type),
-                                ),
+                                _ => callback_primitive_param_kind(callback_param_name.as_str(), Some(abi_param.ffi_type)),
                             },
-                            None => {
-                                callback_primitive_param_kind(callback_param_name.as_str(), None)
-                            }
+                            None => callback_primitive_param_kind(callback_param_name.as_str(), None),
                         };
 
                         TsCallbackParam {
@@ -582,17 +445,9 @@ impl<'a> TypeScriptLowerer<'a> {
                         let encode_ops = binding.encode_ops().expect("encoded callback return");
                         let encode_expr = emit::emit_writer_write(encode_ops, "writer", "result");
                         let size_expr = emit::emit_size_expr(&encode_ops.size, "result");
-                        TsCallbackReturnKind::WireEncoded {
-                            ts_type,
-                            encode_expr,
-                            size_expr,
-                        }
+                        TsCallbackReturnKind::WireEncoded { ts_type, encode_expr, size_expr }
                     }
-                    OutputBinding::Handle { .. } | OutputBinding::CallbackHandle { .. } => {
-                        TsCallbackReturnKind::Primitive {
-                            ts_type: "number".to_string(),
-                        }
-                    }
+                    OutputBinding::Handle { .. } | OutputBinding::CallbackHandle { .. } => TsCallbackReturnKind::Primitive { ts_type: "number".to_string() },
                 };
 
                 Some(TsCallbackMethod {
@@ -610,20 +465,11 @@ impl<'a> TypeScriptLowerer<'a> {
             .iter()
             .filter(|m| m.is_async)
             .filter_map(|method_def| {
-                let abi_method = abi_callback
-                    .methods
-                    .iter()
-                    .find(|am| am.id == method_def.id)?;
+                let abi_method = abi_callback.methods.iter().find(|am| am.id == method_def.id)?;
                 let ts_name = camel_case(method_def.id.as_str());
                 let method_name_snake = naming::to_snake_case(method_def.id.as_str());
-                let start_import_name = format!(
-                    "__boltffi_callback_{}_{}_start",
-                    trait_name_snake, method_name_snake
-                );
-                let complete_export_name = format!(
-                    "boltffi_callback_{}_{}_complete",
-                    trait_name_snake, method_name_snake
-                );
+                let start_import_name = format!("__boltffi_callback_{}_{}_start", trait_name_snake, method_name_snake);
+                let complete_export_name = format!("boltffi_callback_{}_{}_complete", trait_name_snake, method_name_snake);
 
                 let params = method_def
                     .params
@@ -632,10 +478,7 @@ impl<'a> TypeScriptLowerer<'a> {
                         let ts_type = emit::ts_type(&p.type_expr);
                         let param_name = p.name.as_str();
                         let callback_param_name = camel_case(param_name);
-                        let abi_param = abi_method
-                            .params
-                            .iter()
-                            .find(|ap| ap.name.as_str() == param_name);
+                        let abi_param = abi_method.params.iter().find(|ap| ap.name.as_str() == param_name);
 
                         let kind = match abi_param {
                             Some(abi_param) => match abi_param.input_binding() {
@@ -643,14 +486,9 @@ impl<'a> TypeScriptLowerer<'a> {
                                     let decode_expr = emit::emit_reader_read(decode_ops);
                                     TsCallbackParamKind::WireEncoded { decode_expr }
                                 }
-                                _ => callback_primitive_param_kind(
-                                    callback_param_name.as_str(),
-                                    Some(abi_param.ffi_type),
-                                ),
+                                _ => callback_primitive_param_kind(callback_param_name.as_str(), Some(abi_param.ffi_type)),
                             },
-                            None => {
-                                callback_primitive_param_kind(callback_param_name.as_str(), None)
-                            }
+                            None => callback_primitive_param_kind(callback_param_name.as_str(), None),
                         };
 
                         TsCallbackParam {
@@ -661,14 +499,7 @@ impl<'a> TypeScriptLowerer<'a> {
                     })
                     .collect();
 
-                let (
-                    return_type,
-                    encode_expr,
-                    size_expr,
-                    direct_write_method,
-                    direct_write_value_expr,
-                    direct_size,
-                ) = match abi_method.output_shape.output_binding() {
+                let (return_type, encode_expr, size_expr, direct_write_method, direct_write_value_expr, direct_size) = match abi_method.output_shape.output_binding() {
                     OutputBinding::Unit => (None, None, None, None, None, None),
                     OutputBinding::Fast(FastOutputBinding::Scalar { abi_type: abi }) => {
                         let ts_type = match &method_def.returns {
@@ -694,23 +525,11 @@ impl<'a> TypeScriptLowerer<'a> {
                         let encode_ops = binding.encode_ops().expect("encoded callback return");
                         let encode_expr = emit::emit_writer_write(encode_ops, "writer", "result");
                         let size_expr = emit::emit_size_expr(&encode_ops.size, "result");
-                        (
-                            Some(ts_type),
-                            Some(encode_expr),
-                            Some(size_expr),
-                            None,
-                            None,
-                            None,
-                        )
+                        (Some(ts_type), Some(encode_expr), Some(size_expr), None, None, None)
                     }
-                    OutputBinding::Handle { .. } | OutputBinding::CallbackHandle { .. } => (
-                        Some("number".to_string()),
-                        None,
-                        None,
-                        Some("writeU32".to_string()),
-                        Some("result".to_string()),
-                        Some(4),
-                    ),
+                    OutputBinding::Handle { .. } | OutputBinding::CallbackHandle { .. } => {
+                        (Some("number".to_string()), None, None, Some("writeU32".to_string()), Some("result".to_string()), Some(4))
+                    }
                 };
 
                 Some(TsAsyncCallbackMethod {
@@ -771,8 +590,7 @@ impl<'a> TypeScriptLowerer<'a> {
         let func_name = camel_case(def.id.as_str());
         let ffi_name = abi_call.symbol.as_str().to_string();
 
-        let param_defs: HashMap<&str, &ParamDef> =
-            def.params.iter().map(|p| (p.name.as_str(), p)).collect();
+        let param_defs: HashMap<&str, &ParamDef> = def.params.iter().map(|p| (p.name.as_str(), p)).collect();
 
         let params = abi_call
             .params
@@ -784,8 +602,7 @@ impl<'a> TypeScriptLowerer<'a> {
             })
             .collect();
 
-        let (return_type, return_route) =
-            self.select_output_route(&abi_call.output_shape, TsExecutionModel::Sync);
+        let (return_type, return_route) = self.select_output_route(&abi_call.output_shape, TsExecutionModel::Sync);
         let (throws, err_type) = self.lower_error(&abi_call.error);
 
         Some(TsFunction {
@@ -813,8 +630,7 @@ impl<'a> TypeScriptLowerer<'a> {
         let fn_name_snake = naming::to_snake_case(def.id.as_str());
         let base_ffi_name = format!("{}_{}", ffi_prefix(), fn_name_snake);
 
-        let param_defs: HashMap<&str, &ParamDef> =
-            def.params.iter().map(|p| (p.name.as_str(), p)).collect();
+        let param_defs: HashMap<&str, &ParamDef> = def.params.iter().map(|p| (p.name.as_str(), p)).collect();
 
         let params = abi_call
             .params
@@ -826,8 +642,7 @@ impl<'a> TypeScriptLowerer<'a> {
             })
             .collect();
 
-        let (return_type, return_route) =
-            self.select_output_route(&async_call.result_shape, TsExecutionModel::Async);
+        let (return_type, return_route) = self.select_output_route(&async_call.result_shape, TsExecutionModel::Async);
         let (throws, err_type) = self.lower_error(&async_call.error);
 
         Some(TsAsyncFunction {
@@ -864,9 +679,7 @@ impl<'a> TypeScriptLowerer<'a> {
                 let (ts_type, input_route) = match element_abi {
                     AbiType::U8 => ("Uint8Array".to_string(), TsInputRoute::Bytes),
                     _ => (
-                        param_def
-                            .map(|p| emit::ts_type(&p.type_expr))
-                            .unwrap_or_else(|| primitive_buffer_ts_type(element_abi)),
+                        param_def.map(|p| emit::ts_type(&p.type_expr)).unwrap_or_else(|| primitive_buffer_ts_type(element_abi)),
                         TsInputRoute::PrimitiveBuffer { element_abi },
                     ),
                 };
@@ -877,20 +690,12 @@ impl<'a> TypeScriptLowerer<'a> {
                 }
             }
             Some(InputBinding::WirePacket { encode_ops, .. }) => {
-                let ts_type = param_def
-                    .map(|p| emit::ts_type(&p.type_expr))
-                    .unwrap_or_else(|| "unknown".to_string());
-                let has_codec = param_def
-                    .map(|p| matches!(&p.type_expr, TypeExpr::Record(_) | TypeExpr::Enum(_)))
-                    .unwrap_or(false);
+                let ts_type = param_def.map(|p| emit::ts_type(&p.type_expr)).unwrap_or_else(|| "unknown".to_string());
+                let has_codec = param_def.map(|p| matches!(&p.type_expr, TypeExpr::Record(_) | TypeExpr::Enum(_))).unwrap_or(false);
                 let input_route = if has_codec {
-                    TsInputRoute::CodecEncoded {
-                        codec_name: ts_type.clone(),
-                    }
+                    TsInputRoute::CodecEncoded { codec_name: ts_type.clone() }
                 } else {
-                    TsInputRoute::OtherEncoded {
-                        encode: encode_ops.clone(),
-                    }
+                    TsInputRoute::OtherEncoded { encode: encode_ops.clone() }
                 };
                 TsParam {
                     name: emit::escape_ts_keyword(&name),
@@ -908,11 +713,7 @@ impl<'a> TypeScriptLowerer<'a> {
             }
             Some(InputBinding::Handle { class_id, nullable }) => {
                 let class_name = naming::to_upper_camel_case(class_id.as_str());
-                let ts_type = if nullable {
-                    format!("{class_name} | null")
-                } else {
-                    class_name
-                };
+                let ts_type = if nullable { format!("{class_name} | null") } else { class_name };
                 TsParam {
                     name: emit::escape_ts_keyword(&name),
                     ts_type,
@@ -932,26 +733,16 @@ impl<'a> TypeScriptLowerer<'a> {
         }
     }
 
-    fn select_output_route(
-        &self,
-        output_shape: &OutputShape,
-        execution_model: TsExecutionModel,
-    ) -> (Option<String>, TsOutputRoute) {
+    fn select_output_route(&self, output_shape: &OutputShape, execution_model: TsExecutionModel) -> (Option<String>, TsOutputRoute) {
         match output_shape.output_binding() {
             OutputBinding::Unit => (None, TsOutputRoute::void()),
-            OutputBinding::Fast(FastOutputBinding::Scalar { abi_type }) => {
-                self.scalar_output_route(abi_type, execution_model)
-            }
+            OutputBinding::Fast(FastOutputBinding::Scalar { abi_type }) => self.scalar_output_route(abi_type, execution_model),
             OutputBinding::Fast(fast) => {
                 let decode_ops = fast.decode_ops().expect("encoded fast return");
                 self.encoded_output_route(decode_ops, execution_model)
             }
-            OutputBinding::Wire(wire) => {
-                self.encoded_output_route(wire.decode_ops, execution_model)
-            }
-            OutputBinding::Handle { class_id, nullable } => {
-                self.handle_output_route(class_id.as_str(), nullable, execution_model)
-            }
+            OutputBinding::Wire(wire) => self.encoded_output_route(wire.decode_ops, execution_model),
+            OutputBinding::Handle { class_id, nullable } => self.handle_output_route(class_id.as_str(), nullable, execution_model),
             OutputBinding::CallbackHandle { .. } => match execution_model {
                 TsExecutionModel::Sync => (Some("unknown".to_string()), TsOutputRoute::void()),
                 TsExecutionModel::Async => (None, TsOutputRoute::void()),
@@ -970,50 +761,24 @@ impl<'a> TypeScriptLowerer<'a> {
         }
     }
 
-    fn scalar_output_route(
-        &self,
-        abi_type: AbiType,
-        execution_model: TsExecutionModel,
-    ) -> (Option<String>, TsOutputRoute) {
+    fn scalar_output_route(&self, abi_type: AbiType, execution_model: TsExecutionModel) -> (Option<String>, TsOutputRoute) {
         let ts_type = ts_abi_type(&abi_type);
         match execution_model {
-            TsExecutionModel::Sync => (
-                Some(ts_type),
-                TsOutputRoute::direct(ts_direct_cast(&abi_type)),
-            ),
-            TsExecutionModel::Async => (
-                Some(ts_type),
-                TsOutputRoute::async_scalar(ts_direct_cast(&abi_type)),
-            ),
+            TsExecutionModel::Sync => (Some(ts_type), TsOutputRoute::direct(ts_direct_cast(&abi_type))),
+            TsExecutionModel::Async => (Some(ts_type), TsOutputRoute::async_scalar(ts_direct_cast(&abi_type))),
         }
     }
 
-    fn handle_output_route(
-        &self,
-        class_id: &str,
-        nullable: bool,
-        execution_model: TsExecutionModel,
-    ) -> (Option<String>, TsOutputRoute) {
+    fn handle_output_route(&self, class_id: &str, nullable: bool, execution_model: TsExecutionModel) -> (Option<String>, TsOutputRoute) {
         let class_name = naming::to_upper_camel_case(class_id);
-        let ts_type = if nullable {
-            format!("{class_name} | null")
-        } else {
-            class_name
-        };
+        let ts_type = if nullable { format!("{class_name} | null") } else { class_name };
         match execution_model {
             TsExecutionModel::Sync => (Some(ts_type), TsOutputRoute::direct(String::new())),
-            TsExecutionModel::Async => (
-                Some(ts_type),
-                TsOutputRoute::packed("reader.readU32()".to_string()),
-            ),
+            TsExecutionModel::Async => (Some(ts_type), TsOutputRoute::packed("reader.readU32()".to_string())),
         }
     }
 
-    fn encoded_output_route(
-        &self,
-        decode_ops: &ReadSeq,
-        execution_model: TsExecutionModel,
-    ) -> (Option<String>, TsOutputRoute) {
+    fn encoded_output_route(&self, decode_ops: &ReadSeq, execution_model: TsExecutionModel) -> (Option<String>, TsOutputRoute) {
         match execution_model {
             TsExecutionModel::Sync => self.sync_encoded_output_route(decode_ops),
             TsExecutionModel::Async => self.async_encoded_output_route(decode_ops),
@@ -1023,10 +788,7 @@ impl<'a> TypeScriptLowerer<'a> {
     fn sync_encoded_output_route(&self, decode_ops: &ReadSeq) -> (Option<String>, TsOutputRoute) {
         let ts_type_str = infer_ts_type_from_read_ops(decode_ops);
         if let Some(optional_decode) = emit_raw_optional_primitive_read(decode_ops) {
-            return (
-                Some(ts_type_str),
-                TsOutputRoute::f64_optional(optional_decode),
-            );
+            return (Some(ts_type_str), TsOutputRoute::f64_optional(optional_decode));
         }
         match decode_ops.ops.first() {
             Some(ReadOp::Vec {
@@ -1043,10 +805,7 @@ impl<'a> TypeScriptLowerer<'a> {
                     _ => None,
                 };
                 if let Some(decode) = slot_decode {
-                    (
-                        Some(ts_type_str),
-                        TsOutputRoute::void_slot(decode.to_string()),
-                    )
+                    (Some(ts_type_str), TsOutputRoute::void_slot(decode.to_string()))
                 } else {
                     let decode = emit::emit_reader_read(decode_ops);
                     (Some(ts_type_str), TsOutputRoute::packed(decode))
@@ -1086,16 +845,13 @@ impl<'a> TypeScriptLowerer<'a> {
                 })
                 .collect();
 
-            let (_, return_route) =
-                self.select_output_route(&call.output_shape, TsExecutionModel::Sync);
+            let (_, return_route) = self.select_output_route(&call.output_shape, TsExecutionModel::Sync);
             let return_output = call.output_binding();
             let return_wasm_type = if return_route.is_void() {
                 None
             } else if return_route.is_direct() {
                 match return_output {
-                    OutputBinding::Fast(FastOutputBinding::Scalar { abi_type }) => {
-                        Some(abi_type_to_wasm(&abi_type))
-                    }
+                    OutputBinding::Fast(FastOutputBinding::Scalar { abi_type }) => Some(abi_type_to_wasm(&abi_type)),
                     OutputBinding::Handle { .. } => Some("number".to_string()),
                     _ => None,
                 }
@@ -1121,10 +877,7 @@ impl<'a> TypeScriptLowerer<'a> {
 }
 
 fn is_excluded_error_type(err_type: &str) -> bool {
-    matches!(
-        err_type,
-        "String" | "string" | "FfiError" | "Error" | "unknown"
-    )
+    matches!(err_type, "String" | "string" | "FfiError" | "Error" | "unknown")
 }
 
 fn ts_abi_type(abi_type: &AbiType) -> String {
@@ -1169,9 +922,7 @@ fn scalar_async_decode_expr(abi_type: &AbiType) -> String {
 fn abi_type_to_wasm(abi_type: &AbiType) -> String {
     match abi_type {
         AbiType::Void => "void".to_string(),
-        AbiType::Bool | AbiType::I8 | AbiType::U8 | AbiType::I16 | AbiType::U16 => {
-            "number".to_string()
-        }
+        AbiType::Bool | AbiType::I8 | AbiType::U8 | AbiType::I16 | AbiType::U16 => "number".to_string(),
         AbiType::I32 | AbiType::U32 | AbiType::ISize | AbiType::USize => "number".to_string(),
         AbiType::I64 | AbiType::U64 => "bigint".to_string(),
         AbiType::F32 | AbiType::F64 => "number".to_string(),
@@ -1179,23 +930,14 @@ fn abi_type_to_wasm(abi_type: &AbiType) -> String {
     }
 }
 
-fn callback_primitive_param_kind(
-    param_name: &str,
-    abi_type: Option<AbiType>,
-) -> TsCallbackParamKind {
-    let import_ts_type = abi_type
-        .as_ref()
-        .map(abi_type_to_wasm)
-        .unwrap_or_else(|| "number".to_string());
+fn callback_primitive_param_kind(param_name: &str, abi_type: Option<AbiType>) -> TsCallbackParamKind {
+    let import_ts_type = abi_type.as_ref().map(abi_type_to_wasm).unwrap_or_else(|| "number".to_string());
     let call_expr = match abi_type {
         Some(AbiType::Bool) => format!("{param_name} !== 0"),
         _ => param_name.to_string(),
     };
 
-    TsCallbackParamKind::Primitive {
-        import_ts_type,
-        call_expr,
-    }
+    TsCallbackParamKind::Primitive { import_ts_type, call_expr }
 }
 
 struct DirectWriteInfo {
@@ -1205,10 +947,7 @@ struct DirectWriteInfo {
 
 fn direct_write_info(abi_type: &AbiType) -> DirectWriteInfo {
     match abi_type {
-        AbiType::Void => DirectWriteInfo {
-            method_name: "",
-            byte_width: 0,
-        },
+        AbiType::Void => DirectWriteInfo { method_name: "", byte_width: 0 },
         AbiType::Bool => DirectWriteInfo {
             method_name: "writeBool",
             byte_width: 1,
@@ -1279,16 +1018,9 @@ fn primitive_buffer_ts_type(abi_type: AbiType) -> String {
     match abi_type {
         AbiType::Bool => "boolean[]".to_string(),
         AbiType::I64 | AbiType::U64 => "bigint[]".to_string(),
-        AbiType::I8
-        | AbiType::U8
-        | AbiType::I16
-        | AbiType::U16
-        | AbiType::I32
-        | AbiType::U32
-        | AbiType::ISize
-        | AbiType::USize
-        | AbiType::F32
-        | AbiType::F64 => "number[]".to_string(),
+        AbiType::I8 | AbiType::U8 | AbiType::I16 | AbiType::U16 | AbiType::I32 | AbiType::U32 | AbiType::ISize | AbiType::USize | AbiType::F32 | AbiType::F64 => {
+            "number[]".to_string()
+        }
         AbiType::Void | AbiType::Pointer => "unknown[]".to_string(),
     }
 }
@@ -1354,11 +1086,7 @@ fn record_decode_fields(record: &AbiRecord) -> HashMap<FieldName, ReadSeq> {
             _ => None,
         })
         .into_iter()
-        .flat_map(|fields| {
-            fields
-                .iter()
-                .map(|field| (field.name.clone(), field.seq.clone()))
-        })
+        .flat_map(|fields| fields.iter().map(|field| (field.name.clone(), field.seq.clone())))
         .collect()
 }
 
@@ -1372,11 +1100,7 @@ fn record_encode_fields(record: &AbiRecord) -> HashMap<FieldName, WriteSeq> {
             _ => None,
         })
         .into_iter()
-        .flat_map(|fields| {
-            fields
-                .iter()
-                .map(|field| (field.name.clone(), field.seq.clone()))
-        })
+        .flat_map(|fields| fields.iter().map(|field| (field.name.clone(), field.seq.clone())))
         .collect()
 }
 
@@ -1391,9 +1115,7 @@ fn remap_named_to_field(seq: &WriteSeq) -> WriteSeq {
 fn remap_named_in_value(expr: &ValueExpr) -> ValueExpr {
     match expr {
         ValueExpr::Named(name) => ValueExpr::Instance.field(FieldName::new(name)),
-        ValueExpr::Field(parent, field) => {
-            ValueExpr::Field(Box::new(remap_named_in_value(parent)), field.clone())
-        }
+        ValueExpr::Field(parent, field) => ValueExpr::Field(Box::new(remap_named_in_value(parent)), field.clone()),
         other => other.clone(),
     }
 }
@@ -1416,11 +1138,7 @@ fn remap_named_in_size(size: &SizeExpr) -> SizeExpr {
             value: remap_named_in_value(value),
             inner: Box::new(remap_named_in_size(inner)),
         },
-        SizeExpr::VecSize {
-            value,
-            inner,
-            layout,
-        } => SizeExpr::VecSize {
+        SizeExpr::VecSize { value, inner, layout } => SizeExpr::VecSize {
             value: remap_named_in_value(value),
             inner: Box::new(remap_named_in_size(inner)),
             layout: layout.clone(),
@@ -1487,11 +1205,7 @@ fn remap_named_in_write_op(op: &WriteOp) -> WriteOp {
             id: id.clone(),
             value: remap_named_in_value(value),
         },
-        WriteOp::Custom {
-            id,
-            value,
-            underlying,
-        } => WriteOp::Custom {
+        WriteOp::Custom { id, value, underlying } => WriteOp::Custom {
             id: id.clone(),
             value: remap_named_in_value(value),
             underlying: Box::new(remap_named_to_field(underlying)),
@@ -1502,13 +1216,12 @@ fn remap_named_in_write_op(op: &WriteOp) -> WriteOp {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ir::Lowerer as IrLowerer;
-    use crate::ir::contract::{FfiContract, PackageInfo};
-    use crate::ir::definitions::{
-        ClassDef, ConstructorDef, FunctionDef, MethodDef, ParamDef, ParamPassing, Receiver,
-        ReturnDef,
+    use crate::ir::{
+        Lowerer as IrLowerer,
+        contract::{FfiContract, PackageInfo},
+        definitions::{ClassDef, ConstructorDef, FunctionDef, MethodDef, ParamDef, ParamPassing, Receiver, ReturnDef},
+        ids::{ClassId, FunctionId, MethodId, ParamName},
     };
-    use crate::ir::ids::{ClassId, FunctionId, MethodId, ParamName};
 
     fn empty_contract() -> FfiContract {
         FfiContract {
@@ -1539,12 +1252,7 @@ mod tests {
         }
     }
 
-    fn function(
-        name: &str,
-        params: Vec<ParamDef>,
-        returns: ReturnDef,
-        is_async: bool,
-    ) -> FunctionDef {
+    fn function(name: &str, params: Vec<ParamDef>, returns: ReturnDef, is_async: bool) -> FunctionDef {
         FunctionDef {
             id: FunctionId::new(name),
             params,
@@ -1557,13 +1265,7 @@ mod tests {
 
     fn lower_contract(contract: &FfiContract) -> TsModule {
         let abi = IrLowerer::new(contract).to_abi_contract();
-        TypeScriptLowerer::new(
-            contract,
-            &abi,
-            "Test".to_string(),
-            TypeScriptExperimental::default(),
-        )
-        .lower()
+        TypeScriptLowerer::new(contract, &abi, "Test".to_string(), TypeScriptExperimental::default()).lower()
     }
 
     fn class_with_sync_and_async_methods() -> ClassDef {
@@ -1596,6 +1298,7 @@ mod tests {
                 },
             ],
             streams: vec![],
+            async_iterators: vec![],
             doc: None,
             deprecated: None,
         }
@@ -1629,10 +1332,7 @@ mod tests {
         let mut contract = empty_contract();
         contract.functions.push(function(
             "add",
-            vec![
-                primitive_param("left", PrimitiveType::I32),
-                primitive_param("right", PrimitiveType::I32),
-            ],
+            vec![primitive_param("left", PrimitiveType::I32), primitive_param("right", PrimitiveType::I32)],
             ReturnDef::Value(TypeExpr::Primitive(PrimitiveType::I32)),
             false,
         ));
@@ -1645,31 +1345,16 @@ mod tests {
             .expect("wasm import for direct return");
 
         assert_eq!(import.return_wasm_type.as_deref(), Some("number"));
-        assert_eq!(
-            import
-                .params
-                .iter()
-                .map(|param| param.name.as_str())
-                .collect::<Vec<_>>(),
-            vec!["left", "right"]
-        );
+        assert_eq!(import.params.iter().map(|param| param.name.as_str()).collect::<Vec<_>>(), vec!["left", "right"]);
     }
 
     #[test]
     fn wasm_imports_skip_async_calls() {
         let mut contract = empty_contract();
-        contract.functions.push(function(
-            "sync_value",
-            vec![],
-            ReturnDef::Value(TypeExpr::Primitive(PrimitiveType::I32)),
-            false,
-        ));
-        contract.functions.push(function(
-            "async_value",
-            vec![],
-            ReturnDef::Value(TypeExpr::String),
-            true,
-        ));
+        contract
+            .functions
+            .push(function("sync_value", vec![], ReturnDef::Value(TypeExpr::Primitive(PrimitiveType::I32)), false));
+        contract.functions.push(function("async_value", vec![], ReturnDef::Value(TypeExpr::String), true));
 
         let module = lower_contract(&contract);
 
@@ -1683,39 +1368,24 @@ mod tests {
         contract.functions.push(function(
             "find_even",
             vec![primitive_param("value", PrimitiveType::I32)],
-            ReturnDef::Value(TypeExpr::Option(Box::new(TypeExpr::Primitive(
-                PrimitiveType::I32,
-            )))),
+            ReturnDef::Value(TypeExpr::Option(Box::new(TypeExpr::Primitive(PrimitiveType::I32)))),
             false,
         ));
 
         let module = lower_contract(&contract);
-        let function = module
-            .functions
-            .iter()
-            .find(|function| function.name == "findEven")
-            .expect("findEven should be lowered");
+        let function = module.functions.iter().find(|function| function.name == "findEven").expect("findEven should be lowered");
 
         assert!(function.return_route.is_f64_optional());
-        assert_eq!(
-            function.return_route.decode_expr(),
-            "_module.unpackOptionI32(packed)"
-        );
+        assert_eq!(function.return_route.decode_expr(), "_module.unpackOptionI32(packed)");
     }
 
     #[test]
     fn class_instance_methods_exclude_receiver_from_public_params() {
         let mut contract = empty_contract();
-        contract
-            .catalog
-            .insert_class(class_with_sync_and_async_methods());
+        contract.catalog.insert_class(class_with_sync_and_async_methods());
 
         let module = lower_contract(&contract);
-        let class = module
-            .classes
-            .iter()
-            .find(|class| class.class_name == "Counter")
-            .expect("class should be lowered");
+        let class = module.classes.iter().find(|class| class.class_name == "Counter").expect("class should be lowered");
         let method = class
             .methods
             .iter()
@@ -1730,37 +1400,18 @@ mod tests {
     #[test]
     fn class_async_methods_generate_wasm_poll_sync_symbol_names() {
         let mut contract = empty_contract();
-        contract
-            .catalog
-            .insert_class(class_with_sync_and_async_methods());
+        contract.catalog.insert_class(class_with_sync_and_async_methods());
 
         let module = lower_contract(&contract);
-        let class = module
-            .classes
-            .iter()
-            .find(|class| class.class_name == "Counter")
-            .expect("class should be lowered");
-        let method = class
-            .methods
-            .iter()
-            .find(|method| method.ts_name == "nextValue")
-            .expect("async method should be lowered");
+        let class = module.classes.iter().find(|class| class.class_name == "Counter").expect("class should be lowered");
+        let method = class.methods.iter().find(|method| method.ts_name == "nextValue").expect("async method should be lowered");
 
         match &method.mode {
             TsClassMethodMode::Async(async_method) => {
                 assert_eq!(method.ffi_name, "boltffi_counter_next_value");
-                assert_eq!(
-                    async_method.poll_sync_ffi_name,
-                    "boltffi_counter_next_value_poll_sync"
-                );
-                assert_eq!(
-                    async_method.complete_ffi_name,
-                    "boltffi_counter_next_value_complete"
-                );
-                assert_eq!(
-                    async_method.panic_message_ffi_name,
-                    "boltffi_counter_next_value_panic_message"
-                );
+                assert_eq!(async_method.poll_sync_ffi_name, "boltffi_counter_next_value_poll_sync");
+                assert_eq!(async_method.complete_ffi_name, "boltffi_counter_next_value_complete");
+                assert_eq!(async_method.panic_message_ffi_name, "boltffi_counter_next_value_panic_message");
             }
             TsClassMethodMode::Sync(_) => panic!("expected async class method mode"),
         }
@@ -1769,12 +1420,9 @@ mod tests {
     #[test]
     fn vec_i32_param_uses_number_array_conversion() {
         let mut contract = empty_contract();
-        contract.functions.push(function(
-            "process_values",
-            vec![vec_param("values", PrimitiveType::I32)],
-            ReturnDef::Void,
-            false,
-        ));
+        contract
+            .functions
+            .push(function("process_values", vec![vec_param("values", PrimitiveType::I32)], ReturnDef::Void, false));
 
         let module = lower_contract(&contract);
         let function = module
@@ -1782,30 +1430,18 @@ mod tests {
             .iter()
             .find(|function| function.name == "processValues")
             .expect("function should be lowered");
-        let param = function
-            .params
-            .iter()
-            .find(|param| param.name == "values")
-            .expect("vec parameter should exist");
+        let param = function.params.iter().find(|param| param.name == "values").expect("vec parameter should exist");
 
         assert_eq!(param.ts_type, "number[]");
-        assert!(matches!(
-            param.input_route,
-            TsInputRoute::PrimitiveBuffer {
-                element_abi: AbiType::I32
-            }
-        ));
+        assert!(matches!(param.input_route, TsInputRoute::PrimitiveBuffer { element_abi: AbiType::I32 }));
     }
 
     #[test]
     fn vec_i32_param_builds_primitive_buffer_wrapper_sequence() {
         let mut contract = empty_contract();
-        contract.functions.push(function(
-            "process_values",
-            vec![vec_param("values", PrimitiveType::I32)],
-            ReturnDef::Void,
-            false,
-        ));
+        contract
+            .functions
+            .push(function("process_values", vec![vec_param("values", PrimitiveType::I32)], ReturnDef::Void, false));
 
         let module = lower_contract(&contract);
         let function = module
@@ -1813,38 +1449,19 @@ mod tests {
             .iter()
             .find(|function| function.name == "processValues")
             .expect("function should be lowered");
-        let param = function
-            .params
-            .iter()
-            .find(|param| param.name == "values")
-            .expect("vec parameter should exist");
+        let param = function.params.iter().find(|param| param.name == "values").expect("vec parameter should exist");
 
-        assert_eq!(
-            param.wrapper_code(),
-            Some("const values_alloc = _module.allocI32Array(values);".to_string())
-        );
-        assert_eq!(
-            param.ffi_args(),
-            vec![
-                "values_alloc.ptr".to_string(),
-                "values_alloc.len".to_string()
-            ]
-        );
-        assert_eq!(
-            param.cleanup_code(),
-            Some("_module.freePrimitiveBuffer(values_alloc);".to_string())
-        );
+        assert_eq!(param.wrapper_code(), Some("const values_alloc = _module.allocI32Array(values);".to_string()));
+        assert_eq!(param.ffi_args(), vec!["values_alloc.ptr".to_string(), "values_alloc.len".to_string()]);
+        assert_eq!(param.cleanup_code(), Some("_module.freePrimitiveBuffer(values_alloc);".to_string()));
     }
 
     #[test]
     fn vec_u8_param_remains_uint8_array() {
         let mut contract = empty_contract();
-        contract.functions.push(function(
-            "process_bytes",
-            vec![vec_param("values", PrimitiveType::U8)],
-            ReturnDef::Void,
-            false,
-        ));
+        contract
+            .functions
+            .push(function("process_bytes", vec![vec_param("values", PrimitiveType::U8)], ReturnDef::Void, false));
 
         let module = lower_contract(&contract);
         let function = module
@@ -1852,29 +1469,13 @@ mod tests {
             .iter()
             .find(|function| function.name == "processBytes")
             .expect("function should be lowered");
-        let param = function
-            .params
-            .iter()
-            .find(|param| param.name == "values")
-            .expect("vec parameter should exist");
+        let param = function.params.iter().find(|param| param.name == "values").expect("vec parameter should exist");
 
         assert_eq!(param.ts_type, "Uint8Array");
         assert!(matches!(param.input_route, TsInputRoute::Bytes));
-        assert_eq!(
-            param.wrapper_code(),
-            Some("const values_alloc = _module.allocBytes(values);".to_string())
-        );
-        assert_eq!(
-            param.ffi_args(),
-            vec![
-                "values_alloc.ptr".to_string(),
-                "values_alloc.len".to_string()
-            ]
-        );
-        assert_eq!(
-            param.cleanup_code(),
-            Some("_module.freeAlloc(values_alloc);".to_string())
-        );
+        assert_eq!(param.wrapper_code(), Some("const values_alloc = _module.allocBytes(values);".to_string()));
+        assert_eq!(param.ffi_args(), vec!["values_alloc.ptr".to_string(), "values_alloc.len".to_string()]);
+        assert_eq!(param.cleanup_code(), Some("_module.freeAlloc(values_alloc);".to_string()));
     }
 
     #[test]
@@ -1882,10 +1483,7 @@ mod tests {
         let info = direct_write_info(&AbiType::Bool);
         assert_eq!(info.method_name, "writeBool");
         assert_eq!(info.byte_width, 1);
-        assert_eq!(
-            direct_write_argument_expr(&AbiType::Bool, "result"),
-            "result"
-        );
+        assert_eq!(direct_write_argument_expr(&AbiType::Bool, "result"), "result");
     }
 
     #[test]
@@ -1900,24 +1498,15 @@ mod tests {
 
     #[test]
     fn direct_write_argument_expr_casts_pointer_sized_scalars_to_bigint() {
-        assert_eq!(
-            direct_write_argument_expr(&AbiType::ISize, "result"),
-            "BigInt(result)"
-        );
-        assert_eq!(
-            direct_write_argument_expr(&AbiType::USize, "result"),
-            "BigInt(result)"
-        );
+        assert_eq!(direct_write_argument_expr(&AbiType::ISize, "result"), "BigInt(result)");
+        assert_eq!(direct_write_argument_expr(&AbiType::USize, "result"), "BigInt(result)");
     }
 
     #[test]
     fn callback_primitive_param_kind_uses_bigint_for_i64() {
         let kind = callback_primitive_param_kind("count", Some(AbiType::I64));
         match kind {
-            TsCallbackParamKind::Primitive {
-                import_ts_type,
-                call_expr,
-            } => {
+            TsCallbackParamKind::Primitive { import_ts_type, call_expr } => {
                 assert_eq!(import_ts_type, "bigint");
                 assert_eq!(call_expr, "count");
             }
@@ -1931,10 +1520,7 @@ mod tests {
     fn callback_primitive_param_kind_coerces_bool_to_boolean_expression() {
         let kind = callback_primitive_param_kind("isActive", Some(AbiType::Bool));
         match kind {
-            TsCallbackParamKind::Primitive {
-                import_ts_type,
-                call_expr,
-            } => {
+            TsCallbackParamKind::Primitive { import_ts_type, call_expr } => {
                 assert_eq!(import_ts_type, "number");
                 assert_eq!(call_expr, "isActive !== 0");
             }
@@ -1957,16 +1543,13 @@ mod tests {
             }],
             methods: vec![],
             streams: vec![],
+            async_iterators: vec![],
             doc: None,
             deprecated: None,
         });
 
         let module = lower_contract(&contract);
-        let class = module
-            .classes
-            .iter()
-            .find(|c| c.class_name == "Counter")
-            .expect("class should be lowered");
+        let class = module.classes.iter().find(|c| c.class_name == "Counter").expect("class should be lowered");
 
         assert_eq!(class.constructors.len(), 1);
         let constructor = &class.constructors[0];
@@ -1996,16 +1579,13 @@ mod tests {
             ],
             methods: vec![],
             streams: vec![],
+            async_iterators: vec![],
             doc: None,
             deprecated: None,
         });
 
         let module = lower_contract(&contract);
-        let class = module
-            .classes
-            .iter()
-            .find(|c| c.class_name == "Connection")
-            .expect("class should be lowered");
+        let class = module.classes.iter().find(|c| c.class_name == "Connection").expect("class should be lowered");
 
         assert_eq!(class.constructors.len(), 2);
         assert_eq!(class.constructors[0].ffi_name, "boltffi_connection_new");
@@ -2030,16 +1610,13 @@ mod tests {
                 deprecated: None,
             }],
             streams: vec![],
+            async_iterators: vec![],
             doc: None,
             deprecated: None,
         });
 
         let module = lower_contract(&contract);
-        let class = module
-            .classes
-            .iter()
-            .find(|c| c.class_name == "Factory")
-            .expect("class should be lowered");
+        let class = module.classes.iter().find(|c| c.class_name == "Factory").expect("class should be lowered");
 
         let method = &class.methods[0];
         assert!(method.is_static);
@@ -2062,16 +1639,13 @@ mod tests {
                 deprecated: None,
             }],
             streams: vec![],
+            async_iterators: vec![],
             doc: None,
             deprecated: None,
         });
 
         let module = lower_contract(&contract);
-        let class = module
-            .classes
-            .iter()
-            .find(|c| c.class_name == "Buffer")
-            .expect("class should be lowered");
+        let class = module.classes.iter().find(|c| c.class_name == "Buffer").expect("class should be lowered");
 
         let method = &class.methods[0];
         assert!(!method.is_static);
@@ -2099,16 +1673,13 @@ mod tests {
                 deprecated: None,
             }],
             streams: vec![],
+            async_iterators: vec![],
             doc: None,
             deprecated: None,
         });
 
         let module = lower_contract(&contract);
-        let class = module
-            .classes
-            .iter()
-            .find(|c| c.class_name == "Database")
-            .expect("class should be lowered");
+        let class = module.classes.iter().find(|c| c.class_name == "Database").expect("class should be lowered");
 
         let method = &class.methods[0];
         assert_eq!(method.ffi_name, "boltffi_database_query");
@@ -2125,16 +1696,13 @@ mod tests {
             constructors: vec![],
             methods: vec![],
             streams: vec![],
+            async_iterators: vec![],
             doc: None,
             deprecated: None,
         });
 
         let module = lower_contract(&contract);
-        let class = module
-            .classes
-            .iter()
-            .find(|c| c.class_name == "Resource")
-            .expect("class should be lowered");
+        let class = module.classes.iter().find(|c| c.class_name == "Resource").expect("class should be lowered");
 
         assert_eq!(class.ffi_free, "boltffi_resource_free");
     }
@@ -2150,11 +1718,7 @@ mod tests {
         ));
 
         let module = lower_contract(&contract);
-        let import = module
-            .wasm_imports
-            .iter()
-            .find(|i| i.ffi_name == "boltffi_use_default")
-            .expect("wasm import should exist");
+        let import = module.wasm_imports.iter().find(|i| i.ffi_name == "boltffi_use_default").expect("wasm import should exist");
 
         assert_eq!(import.params[0].name, "default_");
     }
@@ -2175,16 +1739,13 @@ mod tests {
                 deprecated: None,
             }],
             streams: vec![],
+            async_iterators: vec![],
             doc: None,
             deprecated: None,
         });
 
         let module = lower_contract(&contract);
-        let class = module
-            .classes
-            .iter()
-            .find(|c| c.class_name == "Counter")
-            .expect("class should be lowered");
+        let class = module.classes.iter().find(|c| c.class_name == "Counter").expect("class should be lowered");
 
         let method = &class.methods[0];
         assert_eq!(method.ts_name, "incrementAsync");
@@ -2194,10 +1755,7 @@ mod tests {
 
         match &method.mode {
             TsClassMethodMode::Async(async_method) => {
-                assert_eq!(
-                    async_method.poll_sync_ffi_name,
-                    "boltffi_counter_increment_async_poll_sync"
-                );
+                assert_eq!(async_method.poll_sync_ffi_name, "boltffi_counter_increment_async_poll_sync");
             }
             TsClassMethodMode::Sync(_) => panic!("expected async method mode"),
         }
@@ -2211,6 +1769,7 @@ mod tests {
             constructors: vec![],
             methods: vec![],
             streams: vec![],
+            async_iterators: vec![],
             doc: None,
             deprecated: None,
         });
@@ -2246,16 +1805,13 @@ mod tests {
                 deprecated: None,
             }],
             streams: vec![],
+            async_iterators: vec![],
             doc: None,
             deprecated: None,
         });
 
         let module = lower_contract(&contract);
-        let class = module
-            .classes
-            .iter()
-            .find(|c| c.class_name == "Logger")
-            .expect("class should be lowered");
+        let class = module.classes.iter().find(|c| c.class_name == "Logger").expect("class should be lowered");
 
         let method = &class.methods[0];
         assert_eq!(method.params[0].name, "message");
@@ -2281,16 +1837,13 @@ mod tests {
             }],
             methods: vec![],
             streams: vec![],
+            async_iterators: vec![],
             doc: None,
             deprecated: None,
         });
 
         let module = lower_contract(&contract);
-        let class = module
-            .classes
-            .iter()
-            .find(|c| c.class_name == "Connection")
-            .expect("class should be lowered");
+        let class = module.classes.iter().find(|c| c.class_name == "Connection").expect("class should be lowered");
 
         let ctor = &class.constructors[0];
         assert_eq!(ctor.params[0].name, "url");
@@ -2314,16 +1867,13 @@ mod tests {
                 deprecated: None,
             }],
             streams: vec![],
+            async_iterators: vec![],
             doc: None,
             deprecated: None,
         });
 
         let module = lower_contract(&contract);
-        let class = module
-            .classes
-            .iter()
-            .find(|c| c.class_name == "Printer")
-            .expect("class should be lowered");
+        let class = module.classes.iter().find(|c| c.class_name == "Printer").expect("class should be lowered");
 
         let method = &class.methods[0];
         assert!(method.return_type.is_none());
@@ -2338,27 +1888,25 @@ mod tests {
     #[test]
     fn class_method_with_record_param_uses_codec_conversion() {
         let mut contract = empty_contract();
-        contract
-            .catalog
-            .insert_record(crate::ir::definitions::RecordDef {
-                id: crate::ir::ids::RecordId::new("Point"),
-                fields: vec![
-                    crate::ir::definitions::FieldDef {
-                        name: FieldName::new("x"),
-                        type_expr: TypeExpr::Primitive(PrimitiveType::F64),
-                        doc: None,
-                        default: None,
-                    },
-                    crate::ir::definitions::FieldDef {
-                        name: FieldName::new("y"),
-                        type_expr: TypeExpr::Primitive(PrimitiveType::F64),
-                        doc: None,
-                        default: None,
-                    },
-                ],
-                doc: None,
-                deprecated: None,
-            });
+        contract.catalog.insert_record(crate::ir::definitions::RecordDef {
+            id: crate::ir::ids::RecordId::new("Point"),
+            fields: vec![
+                crate::ir::definitions::FieldDef {
+                    name: FieldName::new("x"),
+                    type_expr: TypeExpr::Primitive(PrimitiveType::F64),
+                    doc: None,
+                    default: None,
+                },
+                crate::ir::definitions::FieldDef {
+                    name: FieldName::new("y"),
+                    type_expr: TypeExpr::Primitive(PrimitiveType::F64),
+                    doc: None,
+                    default: None,
+                },
+            ],
+            doc: None,
+            deprecated: None,
+        });
         contract.catalog.insert_class(ClassDef {
             id: ClassId::new("Canvas"),
             constructors: vec![],
@@ -2377,16 +1925,13 @@ mod tests {
                 deprecated: None,
             }],
             streams: vec![],
+            async_iterators: vec![],
             doc: None,
             deprecated: None,
         });
 
         let module = lower_contract(&contract);
-        let class = module
-            .classes
-            .iter()
-            .find(|c| c.class_name == "Canvas")
-            .expect("class should be lowered");
+        let class = module.classes.iter().find(|c| c.class_name == "Canvas").expect("class should be lowered");
 
         let method = &class.methods[0];
         assert_eq!(method.params[0].name, "point");
@@ -2415,16 +1960,13 @@ mod tests {
                 deprecated: None,
             }],
             streams: vec![],
+            async_iterators: vec![],
             doc: None,
             deprecated: None,
         });
 
         let module = lower_contract(&contract);
-        let class = module
-            .classes
-            .iter()
-            .find(|c| c.class_name == "Counter")
-            .expect("class should be lowered");
+        let class = module.classes.iter().find(|c| c.class_name == "Counter").expect("class should be lowered");
 
         let method = &class.methods[0];
         assert_eq!(method.return_type.as_deref(), Some("number"));
@@ -2452,16 +1994,13 @@ mod tests {
                 deprecated: None,
             }],
             streams: vec![],
+            async_iterators: vec![],
             doc: None,
             deprecated: None,
         });
 
         let module = lower_contract(&contract);
-        let class = module
-            .classes
-            .iter()
-            .find(|c| c.class_name == "Service")
-            .expect("class should be lowered");
+        let class = module.classes.iter().find(|c| c.class_name == "Service").expect("class should be lowered");
 
         let method = &class.methods[0];
         assert_eq!(method.ts_name, "getUserById");
@@ -2505,42 +2044,24 @@ mod tests {
                 deprecated: None,
             }],
             streams: vec![],
+            async_iterators: vec![],
             doc: None,
             deprecated: None,
         });
 
         let module = lower_contract(&contract);
-        let class = module
-            .classes
-            .iter()
-            .find(|c| c.class_name == "NetworkClient")
-            .expect("class should be lowered");
+        let class = module.classes.iter().find(|c| c.class_name == "NetworkClient").expect("class should be lowered");
 
         let method = &class.methods[0];
         assert_eq!(method.ffi_name, "boltffi_network_client_fetch_data");
 
         match &method.mode {
             TsClassMethodMode::Async(async_method) => {
-                assert_eq!(
-                    async_method.poll_sync_ffi_name,
-                    "boltffi_network_client_fetch_data_poll_sync"
-                );
-                assert_eq!(
-                    async_method.complete_ffi_name,
-                    "boltffi_network_client_fetch_data_complete"
-                );
-                assert_eq!(
-                    async_method.panic_message_ffi_name,
-                    "boltffi_network_client_fetch_data_panic_message"
-                );
-                assert_eq!(
-                    async_method.cancel_ffi_name,
-                    "boltffi_network_client_fetch_data_cancel"
-                );
-                assert_eq!(
-                    async_method.free_ffi_name,
-                    "boltffi_network_client_fetch_data_free"
-                );
+                assert_eq!(async_method.poll_sync_ffi_name, "boltffi_network_client_fetch_data_poll_sync");
+                assert_eq!(async_method.complete_ffi_name, "boltffi_network_client_fetch_data_complete");
+                assert_eq!(async_method.panic_message_ffi_name, "boltffi_network_client_fetch_data_panic_message");
+                assert_eq!(async_method.cancel_ffi_name, "boltffi_network_client_fetch_data_cancel");
+                assert_eq!(async_method.free_ffi_name, "boltffi_network_client_fetch_data_free");
             }
             _ => panic!("expected async method"),
         }

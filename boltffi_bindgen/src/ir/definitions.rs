@@ -1,8 +1,7 @@
-use crate::ir::ids::{
-    CallbackId, ClassId, ConverterPath, CustomTypeId, EnumId, FieldName, FunctionId, MethodId,
-    ParamName, QualifiedName, RecordId, StreamId, VariantName,
+use crate::ir::{
+    ids::{AsyncIteratorId, CallbackId, ClassId, ConverterPath, CustomTypeId, EnumId, FieldName, FunctionId, MethodId, ParamName, QualifiedName, RecordId, StreamId, VariantName},
+    types::{PrimitiveType, TypeExpr},
 };
-use crate::ir::types::{PrimitiveType, TypeExpr};
 
 #[derive(Debug, Clone)]
 pub struct DeprecationInfo {
@@ -20,9 +19,7 @@ pub struct RecordDef {
 
 impl RecordDef {
     pub fn is_blittable(&self) -> bool {
-        self.fields
-            .iter()
-            .all(|f| matches!(f.type_expr, TypeExpr::Primitive(_)))
+        self.fields.iter().all(|f| matches!(f.type_expr, TypeExpr::Primitive(_)))
     }
 }
 
@@ -40,10 +37,7 @@ pub enum DefaultValue {
     Integer(i64),
     Float(f64),
     String(String),
-    EnumVariant {
-        enum_name: String,
-        variant_name: String,
-    },
+    EnumVariant { enum_name: String, variant_name: String },
     Null,
 }
 
@@ -67,14 +61,8 @@ impl EnumDef {
 
 #[derive(Debug, Clone)]
 pub enum EnumRepr {
-    CStyle {
-        tag_type: PrimitiveType,
-        variants: Vec<CStyleVariant>,
-    },
-    Data {
-        tag_type: PrimitiveType,
-        variants: Vec<DataVariant>,
-    },
+    CStyle { tag_type: PrimitiveType, variants: Vec<CStyleVariant> },
+    Data { tag_type: PrimitiveType, variants: Vec<DataVariant> },
 }
 
 #[derive(Debug, Clone)]
@@ -150,11 +138,20 @@ pub struct StreamDef {
 }
 
 #[derive(Debug, Clone)]
+pub struct AsyncIteratorDef {
+    pub id: AsyncIteratorId,
+    pub item_type: TypeExpr,
+    pub doc: Option<String>,
+    pub deprecated: Option<DeprecationInfo>,
+}
+
+#[derive(Debug, Clone)]
 pub struct ClassDef {
     pub id: ClassId,
     pub constructors: Vec<ConstructorDef>,
     pub methods: Vec<MethodDef>,
     pub streams: Vec<StreamDef>,
+    pub async_iterators: Vec<AsyncIteratorDef>,
     pub doc: Option<String>,
     pub deprecated: Option<DeprecationInfo>,
 }
@@ -188,19 +185,13 @@ impl ConstructorDef {
         match self {
             Self::Default { params, .. } => params.iter().collect(),
             Self::NamedFactory { .. } => vec![],
-            Self::NamedInit {
-                first_param,
-                rest_params,
-                ..
-            } => std::iter::once(first_param).chain(rest_params).collect(),
+            Self::NamedInit { first_param, rest_params, .. } => std::iter::once(first_param).chain(rest_params).collect(),
         }
     }
 
     pub fn is_fallible(&self) -> bool {
         match self {
-            Self::Default { is_fallible, .. }
-            | Self::NamedFactory { is_fallible, .. }
-            | Self::NamedInit { is_fallible, .. } => *is_fallible,
+            Self::Default { is_fallible, .. } | Self::NamedFactory { is_fallible, .. } | Self::NamedInit { is_fallible, .. } => *is_fallible,
         }
     }
 
@@ -213,9 +204,7 @@ impl ConstructorDef {
 
     pub fn doc(&self) -> Option<&str> {
         match self {
-            Self::Default { doc, .. }
-            | Self::NamedFactory { doc, .. }
-            | Self::NamedInit { doc, .. } => doc.as_deref(),
+            Self::Default { doc, .. } | Self::NamedFactory { doc, .. } | Self::NamedInit { doc, .. } => doc.as_deref(),
         }
     }
 }

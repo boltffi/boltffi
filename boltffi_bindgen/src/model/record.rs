@@ -1,7 +1,8 @@
+use super::{
+    layout::{CLayout, Size, StructLayout},
+    types::{Deprecation, Type},
+};
 use serde::{Deserialize, Serialize};
-
-use super::layout::{CLayout, Size, StructLayout};
-use super::types::{Deprecation, Type};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Record {
@@ -52,9 +53,7 @@ impl Record {
     }
 
     pub fn is_blittable(&self) -> bool {
-        self.fields
-            .iter()
-            .all(|field| field.field_type.is_primitive())
+        self.fields.iter().all(|field| field.field_type.is_primitive())
     }
 
     pub fn layout(&self) -> StructLayout {
@@ -66,10 +65,7 @@ impl Record {
     }
 
     pub fn field_offsets(&self) -> Vec<usize> {
-        self.layout()
-            .offsets()
-            .map(|offset| offset.as_usize())
-            .collect()
+        self.layout().offsets().map(|offset| offset.as_usize()).collect()
     }
 }
 

@@ -1,17 +1,16 @@
-use std::collections::{HashMap, HashSet};
-use std::fs;
-use std::path::{Path, PathBuf};
-use std::process::Command;
-
 use proc_macro2::Span;
 use quote::quote;
 use serde::Deserialize;
+use std::{
+    collections::{HashMap, HashSet},
+    fs,
+    path::{Path, PathBuf},
+    process::Command,
+};
 use syn::{LitStr, Type};
 
 fn runner_dir(crate_path: &Path) -> PathBuf {
-    crate_path
-        .join("target")
-        .join("boltffi_bindgen_type_resolution")
+    crate_path.join("target").join("boltffi_bindgen_type_resolution")
 }
 
 fn write_if_changed(path: &Path, contents: &str) -> Result<(), String> {
@@ -23,9 +22,7 @@ fn write_if_changed(path: &Path, contents: &str) -> Result<(), String> {
 }
 
 fn rewrite_crate_prefix(spelling: &str) -> Option<String> {
-    spelling
-        .strip_prefix("crate::")
-        .map(|rest| format!("target_crate::{}", rest))
+    spelling.strip_prefix("crate::").map(|rest| format!("target_crate::{}", rest))
 }
 
 fn generate_main_rs(spellings: &[(String, Type)]) -> String {
@@ -82,29 +79,15 @@ fn load_cargo_metadata(crate_path: &Path) -> Result<CargoMetadataJson, String> {
     serde_json::from_slice(&output.stdout).map_err(|e| format!("parse cargo metadata: {}", e))
 }
 
-fn select_target_package(
-    crate_path: &Path,
-    package_hint: &str,
-    metadata: &CargoMetadataJson,
-) -> Result<CargoPackage, String> {
-    let canonical_manifest_path = crate_path
-        .join("Cargo.toml")
-        .canonicalize()
-        .ok()
-        .and_then(|path| path.to_str().map(str::to_string));
+fn select_target_package(crate_path: &Path, package_hint: &str, metadata: &CargoMetadataJson) -> Result<CargoPackage, String> {
+    let canonical_manifest_path = crate_path.join("Cargo.toml").canonicalize().ok().and_then(|path| path.to_str().map(str::to_string));
 
     metadata
         .packages
         .iter()
         .find(|package| Some(package.manifest_path.as_str()) == canonical_manifest_path.as_deref())
         .cloned()
-        .or_else(|| {
-            metadata
-                .packages
-                .iter()
-                .find(|package| package.name == package_hint)
-                .cloned()
-        })
+        .or_else(|| metadata.packages.iter().find(|package| package.name == package_hint).cloned())
         .ok_or_else(|| {
             let available = metadata
                 .packages
@@ -112,10 +95,7 @@ fn select_target_package(
                 .map(|package| format!("{} ({})", package.name, package.manifest_path))
                 .collect::<Vec<_>>()
                 .join(", ");
-            format!(
-                "could not select target package (hint: {}) from cargo metadata: {}",
-                package_hint, available
-            )
+            format!("could not select target package (hint: {}) from cargo metadata: {}", package_hint, available)
         })
 }
 
@@ -126,11 +106,7 @@ fn cargo_manifest_dir(manifest_path: &str) -> Result<PathBuf, String> {
         .ok_or_else(|| format!("invalid manifest path: {}", manifest_path))
 }
 
-pub fn resolve(
-    crate_path: &Path,
-    package_hint: &str,
-    spellings: impl IntoIterator<Item = String>,
-) -> Result<HashMap<String, String>, String> {
+pub fn resolve(crate_path: &Path, package_hint: &str, spellings: impl IntoIterator<Item = String>) -> Result<HashMap<String, String>, String> {
     let mut unique = HashSet::<String>::new();
     let mut targets = spellings
         .into_iter()

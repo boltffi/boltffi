@@ -1,8 +1,6 @@
+use crate::{custom_types, wire_gen};
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
-
-use crate::custom_types;
-use crate::wire_gen;
 
 pub fn data_impl(item: TokenStream) -> TokenStream {
     let item_clone = item.clone();
@@ -41,9 +39,7 @@ pub fn data_impl(item: TokenStream) -> TokenStream {
         if !has_repr {
             let has_data = item_enum.variants.iter().any(|v| !v.fields.is_empty());
             if has_data {
-                item_enum
-                    .attrs
-                    .insert(0, syn::parse_quote!(#[repr(C, i32)]));
+                item_enum.attrs.insert(0, syn::parse_quote!(#[repr(C, i32)]));
             } else {
                 item_enum.attrs.insert(0, syn::parse_quote!(#[repr(i32)]));
             }
@@ -61,19 +57,14 @@ pub fn data_impl(item: TokenStream) -> TokenStream {
         });
     }
 
-    syn::Error::new_spanned(
-        proc_macro2::TokenStream::from(item),
-        "data can only be applied to struct or enum",
-    )
-    .to_compile_error()
-    .into()
+    syn::Error::new_spanned(proc_macro2::TokenStream::from(item), "data can only be applied to struct or enum")
+        .to_compile_error()
+        .into()
 }
 
 fn is_boltffi_field_attr(attr: &syn::Attribute) -> bool {
     let path = attr.path();
-    path.segments.len() == 2
-        && path.segments[0].ident == "boltffi"
-        && path.segments[1].ident == "default"
+    path.segments.len() == 2 && path.segments[0].ident == "boltffi" && path.segments[1].ident == "default"
 }
 
 fn strip_boltffi_field_attrs(fields: &mut syn::Fields) {

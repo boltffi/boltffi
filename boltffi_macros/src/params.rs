@@ -1,17 +1,12 @@
+use crate::{
+    callback_registry::CallbackTraitRegistry,
+    custom_types::{CustomTypeRegistry, contains_custom_types, from_wire_expr_owned, to_wire_expr_owned, wire_type_for},
+    util::{ParamTransform, WireEncodedParam, WireEncodedParamKind, classify_param_transform, foreign_trait_path, is_primitive_vec_inner, len_ident, ptr_ident},
+};
+use boltffi_ffi_rules::callback as cb_naming;
 use proc_macro2::Span;
 use quote::quote;
 use syn::{FnArg, Pat};
-
-use crate::callback_registry::CallbackTraitRegistry;
-use crate::custom_types::{
-    CustomTypeRegistry, contains_custom_types, from_wire_expr_owned, to_wire_expr_owned,
-    wire_type_for,
-};
-use crate::util::{
-    ParamTransform, WireEncodedParam, WireEncodedParamKind, classify_param_transform,
-    foreign_trait_path, is_primitive_vec_inner, len_ident, ptr_ident,
-};
-use boltffi_ffi_rules::callback as cb_naming;
 
 fn generate_wasm_closure_codegen(
     name: &syn::Ident,
@@ -56,8 +51,7 @@ fn generate_wasm_closure_codegen(
                 let wire_name = syn::Ident::new(&format!("__wire{}", index), name.span());
                 let wire_var = if contains_custom_types(arg_ty, custom_types) {
                     let wire_ty = wire_type_for(arg_ty, custom_types);
-                    let wire_value_ident =
-                        syn::Ident::new(&format!("__wire_value{}", index), name.span());
+                    let wire_value_ident = syn::Ident::new(&format!("__wire_value{}", index), name.span());
                     let to_wire = to_wire_expr_owned(arg_ty, custom_types, &arg_name);
                     quote! {
                         let #wire_value_ident: #wire_ty = { #to_wire };
@@ -68,28 +62,17 @@ fn generate_wasm_closure_codegen(
                         let #wire_name = ::boltffi::__private::wire::encode(&#arg_name);
                     }
                 };
-                (
-                    arg_name,
-                    wire_var,
-                    quote! { #wire_name.as_ptr(), #wire_name.len() },
-                )
+                (arg_name, wire_var, quote! { #wire_name.as_ptr(), #wire_name.len() })
             }
         })
-        .fold(
-            (vec![], vec![], vec![]),
-            |(mut names, mut vars, mut args), (n, v, a)| {
-                names.push(n);
-                vars.push(v);
-                args.push(a);
-                (names, vars, args)
-            },
-        );
+        .fold((vec![], vec![], vec![]), |(mut names, mut vars, mut args), (n, v, a)| {
+            names.push(n);
+            vars.push(v);
+            args.push(a);
+            (names, vars, args)
+        });
 
-    let closure_params: Vec<proc_macro2::TokenStream> = arg_names
-        .iter()
-        .zip(arg_types.iter())
-        .map(|(n, t)| quote! { #n: #t })
-        .collect();
+    let closure_params: Vec<proc_macro2::TokenStream> = arg_names.iter().zip(arg_types.iter()).map(|(n, t)| quote! { #n: #t }).collect();
 
     let closure_params_tokens = if closure_params.is_empty() {
         quote! {}
@@ -148,8 +131,7 @@ fn generate_wasm_closure_codegen(
         let from_wire = if contains_custom_types(return_ty, custom_types) {
             let wire_ty = wire_type_for(return_ty, custom_types);
             let wire_result_ident = syn::Ident::new("__wire_result", name.span());
-            let from_wire_conversion =
-                from_wire_expr_owned(return_ty, custom_types, &wire_result_ident);
+            let from_wire_conversion = from_wire_expr_owned(return_ty, custom_types, &wire_result_ident);
             quote! {
                 let #wire_result_ident: #wire_ty = ::boltffi::__private::wire::decode(__result_bytes)
                     .expect("closure return: wire decode failed");
@@ -196,10 +178,7 @@ struct ImplTraitResolution {
     error: Option<proc_macro2::TokenStream>,
 }
 
-fn impl_trait_resolution(
-    trait_path: &syn::Path,
-    callback_registry: &CallbackTraitRegistry,
-) -> ImplTraitResolution {
+fn impl_trait_resolution(trait_path: &syn::Path, callback_registry: &CallbackTraitRegistry) -> ImplTraitResolution {
     if let Some(resolution) = callback_registry.resolve(trait_path) {
         let foreign_path = resolution.foreign_path;
         if resolution.is_object_safe {
@@ -229,11 +208,7 @@ fn impl_trait_resolution(
     }
 }
 
-fn wire_bytes_expression(
-    ptr_name: &syn::Ident,
-    len_name: &syn::Ident,
-    requires_unsafe: bool,
-) -> proc_macro2::TokenStream {
+fn wire_bytes_expression(ptr_name: &syn::Ident, len_name: &syn::Ident, requires_unsafe: bool) -> proc_macro2::TokenStream {
     if requires_unsafe {
         quote! { unsafe { ::core::slice::from_raw_parts(#ptr_name, #len_name) } }
     } else {
@@ -241,12 +216,7 @@ fn wire_bytes_expression(
     }
 }
 
-fn utf8_str_expression(
-    name: &syn::Ident,
-    ptr_name: &syn::Ident,
-    len_name: &syn::Ident,
-    requires_unsafe: bool,
-) -> proc_macro2::TokenStream {
+fn utf8_str_expression(name: &syn::Ident, ptr_name: &syn::Ident, len_name: &syn::Ident, requires_unsafe: bool) -> proc_macro2::TokenStream {
     let bytes_expr = wire_bytes_expression(ptr_name, len_name, requires_unsafe);
     quote! {
         match ::core::str::from_utf8(#bytes_expr) {
@@ -264,12 +234,7 @@ fn utf8_str_expression(
     }
 }
 
-fn utf8_string_expression(
-    name: &syn::Ident,
-    ptr_name: &syn::Ident,
-    len_name: &syn::Ident,
-    requires_unsafe: bool,
-) -> proc_macro2::TokenStream {
+fn utf8_string_expression(name: &syn::Ident, ptr_name: &syn::Ident, len_name: &syn::Ident, requires_unsafe: bool) -> proc_macro2::TokenStream {
     let bytes_expr = wire_bytes_expression(ptr_name, len_name, requires_unsafe);
     quote! {
         match ::core::str::from_utf8(#bytes_expr) {
@@ -417,14 +382,7 @@ fn push_wire_encoded_param(
     let len_name = len_ident(name);
     ffi_params.push(quote! { #ptr_name: *const u8 });
     ffi_params.push(quote! { #len_name: usize });
-    conversions.push(wire_decode_conversion(
-        name,
-        wire_param,
-        &ptr_name,
-        &len_name,
-        custom_types,
-        requires_unsafe,
-    ));
+    conversions.push(wire_decode_conversion(name, wire_param, &ptr_name, &len_name, custom_types, requires_unsafe));
 }
 
 pub struct AsyncFfiParams {
@@ -445,15 +403,9 @@ enum UnsupportedAsyncParam {
 impl UnsupportedAsyncParam {
     fn error_message(self) -> &'static str {
         match self {
-            Self::Callback => {
-                "boltffi: async exports do not support closure callback parameters yet"
-            }
-            Self::MutableSlice => {
-                "boltffi: async exports do not support mutable slice parameters (`&mut [T]`)"
-            }
-            Self::TraitObject => {
-                "boltffi: async exports do not support trait object callback parameters (`Box<dyn Trait>`, `Arc<dyn Trait>`, `Option<Arc<dyn Trait>>`) yet"
-            }
+            Self::Callback => "boltffi: async exports do not support closure callback parameters yet",
+            Self::MutableSlice => "boltffi: async exports do not support mutable slice parameters (`&mut [T]`)",
+            Self::TraitObject => "boltffi: async exports do not support trait object callback parameters (`Box<dyn Trait>`, `Arc<dyn Trait>`, `Option<Arc<dyn Trait>>`) yet",
         }
     }
 }
@@ -462,9 +414,7 @@ fn unsupported_async_param(transform: &ParamTransform) -> Option<UnsupportedAsyn
     match transform {
         ParamTransform::Callback { .. } => Some(UnsupportedAsyncParam::Callback),
         ParamTransform::SliceMut(_) => Some(UnsupportedAsyncParam::MutableSlice),
-        ParamTransform::BoxedDynTrait(_)
-        | ParamTransform::ArcDynTrait(_)
-        | ParamTransform::OptionArcDynTrait(_) => Some(UnsupportedAsyncParam::TraitObject),
+        ParamTransform::BoxedDynTrait(_) | ParamTransform::ArcDynTrait(_) | ParamTransform::OptionArcDynTrait(_) => Some(UnsupportedAsyncParam::TraitObject),
         ParamTransform::StrRef
         | ParamTransform::OwnedString
         | ParamTransform::SliceRef(_)
@@ -475,9 +425,7 @@ fn unsupported_async_param(transform: &ParamTransform) -> Option<UnsupportedAsyn
     }
 }
 
-fn validate_async_params(
-    inputs: &syn::punctuated::Punctuated<FnArg, syn::Token![,]>,
-) -> syn::Result<()> {
+fn validate_async_params(inputs: &syn::punctuated::Punctuated<FnArg, syn::Token![,]>) -> syn::Result<()> {
     inputs
         .iter()
         .filter_map(|arg| match arg {
@@ -486,9 +434,7 @@ fn validate_async_params(
         })
         .filter_map(|pat_type| {
             let param_transform = classify_param_transform(&pat_type.ty);
-            unsupported_async_param(&param_transform).map(|unsupported| {
-                syn::Error::new_spanned(&pat_type.ty, unsupported.error_message())
-            })
+            unsupported_async_param(&param_transform).map(|unsupported| syn::Error::new_spanned(&pat_type.ty, unsupported.error_message()))
         })
         .reduce(|mut left, right| {
             left.combine(right);
@@ -568,8 +514,7 @@ fn lower_callback_param_transform(
                         ffi_cb_args.push(quote! { usize });
                         let wire_vars_expr = if contains_custom_types(arg_ty, custom_types) {
                             let wire_ty = wire_type_for(arg_ty, custom_types);
-                            let wire_value_ident =
-                                syn::Ident::new(&format!("__wire_value{}", index), name.span());
+                            let wire_value_ident = syn::Ident::new(&format!("__wire_value{}", index), name.span());
                             let to_wire = to_wire_expr_owned(arg_ty, custom_types, &arg_name);
                             quote! {
                                 let #wire_value_ident: #wire_ty = { #to_wire };
@@ -590,20 +535,10 @@ fn lower_callback_param_transform(
                 },
             );
 
-            let ffi_return_type = returns
-                .as_ref()
-                .map(|ty| quote! { -> #ty })
-                .unwrap_or_default();
-            let closure_return_type = returns
-                .as_ref()
-                .map(|ty| quote! { -> #ty })
-                .unwrap_or_default();
+            let ffi_return_type = returns.as_ref().map(|ty| quote! { -> #ty }).unwrap_or_default();
+            let closure_return_type = returns.as_ref().map(|ty| quote! { -> #ty }).unwrap_or_default();
 
-            let closure_params: Vec<proc_macro2::TokenStream> = arg_names
-                .iter()
-                .zip(arg_types.iter())
-                .map(|(n, t)| quote! { #n: #t })
-                .collect();
+            let closure_params: Vec<proc_macro2::TokenStream> = arg_names.iter().zip(arg_types.iter()).map(|(n, t)| quote! { #n: #t }).collect();
 
             acc.ffi_params.push(quote! {
                 #[cfg(not(target_arch = "wasm32"))]
@@ -614,13 +549,7 @@ fn lower_callback_param_transform(
                 #name: u32
             });
 
-            let wasm_codegen = generate_wasm_closure_codegen(
-                name,
-                arg_types,
-                returns.as_ref(),
-                &ffi_cb_args,
-                custom_types,
-            );
+            let wasm_codegen = generate_wasm_closure_codegen(name, arg_types, returns.as_ref(), &ffi_cb_args, custom_types);
 
             acc.setup.push(quote! {
                 #[cfg(not(target_arch = "wasm32"))]
@@ -636,13 +565,7 @@ fn lower_callback_param_transform(
     }
 }
 
-fn lower_impl_trait_param_transform(
-    acc: &mut ParamLoweringState,
-    name: &syn::Ident,
-    trait_path: &syn::Path,
-    mode: ParamExecutionMode,
-    callback_registry: &CallbackTraitRegistry,
-) {
+fn lower_impl_trait_param_transform(acc: &mut ParamLoweringState, name: &syn::Ident, trait_path: &syn::Path, mode: ParamExecutionMode, callback_registry: &CallbackTraitRegistry) {
     let resolution = impl_trait_resolution(trait_path, callback_registry);
     let foreign_type = resolution.foreign_type;
 
@@ -689,11 +612,7 @@ fn lower_impl_trait_param_transform(
     }
 }
 
-fn lower_str_ref_param_transform(
-    acc: &mut ParamLoweringState,
-    name: &syn::Ident,
-    mode: ParamExecutionMode,
-) {
+fn lower_str_ref_param_transform(acc: &mut ParamLoweringState, name: &syn::Ident, mode: ParamExecutionMode) {
     let ptr_name = ptr_ident(name);
     let len_name = len_ident(name);
     let sync_str_expr = utf8_str_expression(name, &ptr_name, &len_name, false);
@@ -730,11 +649,7 @@ fn lower_str_ref_param_transform(
     acc.call_args.push(quote! { #name });
 }
 
-fn lower_owned_string_param_transform(
-    acc: &mut ParamLoweringState,
-    name: &syn::Ident,
-    mode: ParamExecutionMode,
-) {
+fn lower_owned_string_param_transform(acc: &mut ParamLoweringState, name: &syn::Ident, mode: ParamExecutionMode) {
     let ptr_name = ptr_ident(name);
     let len_name = len_ident(name);
     let sync_string_expr = utf8_string_expression(name, &ptr_name, &len_name, false);
@@ -767,12 +682,7 @@ fn lower_owned_string_param_transform(
     acc.call_args.push(quote! { #name });
 }
 
-fn lower_slice_ref_param_transform(
-    acc: &mut ParamLoweringState,
-    name: &syn::Ident,
-    inner_ty: &syn::Type,
-    mode: ParamExecutionMode,
-) {
+fn lower_slice_ref_param_transform(acc: &mut ParamLoweringState, name: &syn::Ident, inner_ty: &syn::Type, mode: ParamExecutionMode) {
     let ptr_name = ptr_ident(name);
     let len_name = len_ident(name);
     acc.ffi_params.push(quote! { #ptr_name: *const #inner_ty });
@@ -807,12 +717,7 @@ fn lower_slice_ref_param_transform(
     acc.call_args.push(quote! { #name });
 }
 
-fn lower_slice_mut_param_transform(
-    acc: &mut ParamLoweringState,
-    name: &syn::Ident,
-    inner_ty: &syn::Type,
-    mode: ParamExecutionMode,
-) {
+fn lower_slice_mut_param_transform(acc: &mut ParamLoweringState, name: &syn::Ident, inner_ty: &syn::Type, mode: ParamExecutionMode) {
     match mode {
         ParamExecutionMode::Sync => {
             let ptr_name = ptr_ident(name);
@@ -834,12 +739,7 @@ fn lower_slice_mut_param_transform(
     }
 }
 
-fn lower_vec_primitive_param_transform(
-    acc: &mut ParamLoweringState,
-    name: &syn::Ident,
-    inner_ty: &syn::Type,
-    mode: ParamExecutionMode,
-) {
+fn lower_vec_primitive_param_transform(acc: &mut ParamLoweringState, name: &syn::Ident, inner_ty: &syn::Type, mode: ParamExecutionMode) {
     let ptr_name = ptr_ident(name);
     let len_name = len_ident(name);
     acc.ffi_params.push(quote! { #ptr_name: *const #inner_ty });
@@ -870,21 +770,8 @@ fn lower_vec_primitive_param_transform(
     acc.call_args.push(quote! { #name });
 }
 
-fn lower_wire_encoded_param_transform(
-    acc: &mut ParamLoweringState,
-    name: &syn::Ident,
-    wire_param: &WireEncodedParam,
-    custom_types: &CustomTypeRegistry,
-    mode: ParamExecutionMode,
-) {
-    push_wire_encoded_param(
-        &mut acc.ffi_params,
-        &mut acc.setup,
-        name,
-        wire_param,
-        custom_types,
-        mode.requires_unsafe_wire_decode(),
-    );
+fn lower_wire_encoded_param_transform(acc: &mut ParamLoweringState, name: &syn::Ident, wire_param: &WireEncodedParam, custom_types: &CustomTypeRegistry, mode: ParamExecutionMode) {
+    push_wire_encoded_param(&mut acc.ffi_params, &mut acc.setup, name, wire_param, custom_types, mode.requires_unsafe_wire_decode());
     if matches!(mode, ParamExecutionMode::Async) {
         acc.move_vars.push(name.clone());
     }
@@ -898,13 +785,7 @@ enum TraitObjectParamKind {
     OptionArc,
 }
 
-fn lower_trait_object_param_transform(
-    acc: &mut ParamLoweringState,
-    name: &syn::Ident,
-    trait_path: &syn::Path,
-    mode: ParamExecutionMode,
-    kind: TraitObjectParamKind,
-) {
+fn lower_trait_object_param_transform(acc: &mut ParamLoweringState, name: &syn::Ident, trait_path: &syn::Path, mode: ParamExecutionMode, kind: TraitObjectParamKind) {
     match mode {
         ParamExecutionMode::Async => {
             unreachable!("async trait object params are rejected during macro validation");
@@ -953,12 +834,7 @@ fn lower_trait_object_param_transform(
     }
 }
 
-fn lower_pass_through_param_transform(
-    acc: &mut ParamLoweringState,
-    name: &syn::Ident,
-    ty: &syn::Type,
-    mode: ParamExecutionMode,
-) {
+fn lower_pass_through_param_transform(acc: &mut ParamLoweringState, name: &syn::Ident, ty: &syn::Type, mode: ParamExecutionMode) {
     acc.ffi_params.push(quote! { #name: #ty });
     if matches!(mode, ParamExecutionMode::Async) {
         acc.move_vars.push(name.clone());
@@ -996,73 +872,19 @@ fn transform_params_with_mode(
 
                 match classify_param_transform(&pat_type.ty) {
                     ParamTransform::StrRef => lower_str_ref_param_transform(&mut acc, &name, mode),
-                    ParamTransform::OwnedString => {
-                        lower_owned_string_param_transform(&mut acc, &name, mode)
-                    }
-                    ParamTransform::Callback {
-                        params: arg_types,
-                        returns,
-                    } => lower_callback_param_transform(
-                        &mut acc,
-                        &name,
-                        &arg_types,
-                        &returns,
-                        mode,
-                        custom_types,
-                    ),
-                    ParamTransform::SliceRef(inner_ty) => {
-                        lower_slice_ref_param_transform(&mut acc, &name, &inner_ty, mode)
-                    }
-                    ParamTransform::SliceMut(inner_ty) => {
-                        lower_slice_mut_param_transform(&mut acc, &name, &inner_ty, mode)
-                    }
-                    ParamTransform::BoxedDynTrait(trait_path) => {
-                        lower_trait_object_param_transform(
-                            &mut acc,
-                            &name,
-                            &trait_path,
-                            mode,
-                            TraitObjectParamKind::Boxed,
-                        )
-                    }
-                    ParamTransform::ArcDynTrait(trait_path) => lower_trait_object_param_transform(
-                        &mut acc,
-                        &name,
-                        &trait_path,
-                        mode,
-                        TraitObjectParamKind::Arc,
-                    ),
-                    ParamTransform::OptionArcDynTrait(trait_path) => {
-                        lower_trait_object_param_transform(
-                            &mut acc,
-                            &name,
-                            &trait_path,
-                            mode,
-                            TraitObjectParamKind::OptionArc,
-                        )
-                    }
-                    ParamTransform::VecPrimitive(inner_ty) => {
-                        lower_vec_primitive_param_transform(&mut acc, &name, &inner_ty, mode)
-                    }
-                    ParamTransform::WireEncoded(wire_param) => lower_wire_encoded_param_transform(
-                        &mut acc,
-                        &name,
-                        &wire_param,
-                        custom_types,
-                        mode,
-                    ),
+                    ParamTransform::OwnedString => lower_owned_string_param_transform(&mut acc, &name, mode),
+                    ParamTransform::Callback { params: arg_types, returns } => lower_callback_param_transform(&mut acc, &name, &arg_types, &returns, mode, custom_types),
+                    ParamTransform::SliceRef(inner_ty) => lower_slice_ref_param_transform(&mut acc, &name, &inner_ty, mode),
+                    ParamTransform::SliceMut(inner_ty) => lower_slice_mut_param_transform(&mut acc, &name, &inner_ty, mode),
+                    ParamTransform::BoxedDynTrait(trait_path) => lower_trait_object_param_transform(&mut acc, &name, &trait_path, mode, TraitObjectParamKind::Boxed),
+                    ParamTransform::ArcDynTrait(trait_path) => lower_trait_object_param_transform(&mut acc, &name, &trait_path, mode, TraitObjectParamKind::Arc),
+                    ParamTransform::OptionArcDynTrait(trait_path) => lower_trait_object_param_transform(&mut acc, &name, &trait_path, mode, TraitObjectParamKind::OptionArc),
+                    ParamTransform::VecPrimitive(inner_ty) => lower_vec_primitive_param_transform(&mut acc, &name, &inner_ty, mode),
+                    ParamTransform::WireEncoded(wire_param) => lower_wire_encoded_param_transform(&mut acc, &name, &wire_param, custom_types, mode),
                     ParamTransform::ImplTrait(trait_path) => {
-                        lower_impl_trait_param_transform(
-                            &mut acc,
-                            &name,
-                            &trait_path,
-                            mode,
-                            callback_registry,
-                        );
+                        lower_impl_trait_param_transform(&mut acc, &name, &trait_path, mode, callback_registry);
                     }
-                    ParamTransform::PassThrough => {
-                        lower_pass_through_param_transform(&mut acc, &name, &pat_type.ty, mode)
-                    }
+                    ParamTransform::PassThrough => lower_pass_through_param_transform(&mut acc, &name, &pat_type.ty, mode),
                 }
 
                 acc
@@ -1070,18 +892,8 @@ fn transform_params_with_mode(
         )
 }
 
-pub fn transform_params(
-    inputs: &syn::punctuated::Punctuated<FnArg, syn::Token![,]>,
-    custom_types: &CustomTypeRegistry,
-    callback_registry: &CallbackTraitRegistry,
-) -> FfiParams {
-    transform_params_with_mode(
-        inputs,
-        custom_types,
-        callback_registry,
-        ParamExecutionMode::Sync,
-    )
-    .into_sync()
+pub fn transform_params(inputs: &syn::punctuated::Punctuated<FnArg, syn::Token![,]>, custom_types: &CustomTypeRegistry, callback_registry: &CallbackTraitRegistry) -> FfiParams {
+    transform_params_with_mode(inputs, custom_types, callback_registry, ParamExecutionMode::Sync).into_sync()
 }
 
 pub fn transform_params_async(
@@ -1090,20 +902,10 @@ pub fn transform_params_async(
     callback_registry: &CallbackTraitRegistry,
 ) -> syn::Result<AsyncFfiParams> {
     validate_async_params(inputs)?;
-    Ok(transform_params_with_mode(
-        inputs,
-        custom_types,
-        callback_registry,
-        ParamExecutionMode::Async,
-    )
-    .into_async())
+    Ok(transform_params_with_mode(inputs, custom_types, callback_registry, ParamExecutionMode::Async).into_async())
 }
 
-pub fn transform_method_params(
-    inputs: impl Iterator<Item = syn::FnArg>,
-    custom_types: &CustomTypeRegistry,
-    callback_registry: &CallbackTraitRegistry,
-) -> FfiParams {
+pub fn transform_method_params(inputs: impl Iterator<Item = syn::FnArg>, custom_types: &CustomTypeRegistry, callback_registry: &CallbackTraitRegistry) -> FfiParams {
     let function_like_inputs: syn::punctuated::Punctuated<FnArg, syn::Token![,]> = inputs.collect();
     transform_params(&function_like_inputs, custom_types, callback_registry)
 }
@@ -1129,11 +931,7 @@ mod tests {
         };
 
         let error = validate_async_params(&function.sig.inputs).expect_err("expected rejection");
-        assert!(
-            error
-                .to_string()
-                .contains("do not support closure callback parameters yet")
-        );
+        assert!(error.to_string().contains("do not support closure callback parameters yet"));
     }
 
     #[test]
@@ -1143,11 +941,7 @@ mod tests {
         };
 
         let error = validate_async_params(&function.sig.inputs).expect_err("expected rejection");
-        assert!(
-            error
-                .to_string()
-                .contains("do not support mutable slice parameters")
-        );
+        assert!(error.to_string().contains("do not support mutable slice parameters"));
     }
 
     #[test]
@@ -1161,11 +955,7 @@ mod tests {
         };
 
         let error = validate_async_params(&function.sig.inputs).expect_err("expected rejection");
-        assert!(
-            error
-                .to_string()
-                .contains("do not support trait object callback parameters")
-        );
+        assert!(error.to_string().contains("do not support trait object callback parameters"));
     }
 
     #[test]

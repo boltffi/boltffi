@@ -1,7 +1,5 @@
 use proc_macro2::Span;
-use syn::spanned::Spanned;
-use syn::visit::Visit;
-use syn::{Expr, ExprPath, ExprUnsafe, ItemFn, Path, Type};
+use syn::{Expr, ExprPath, ExprUnsafe, ItemFn, Path, Type, spanned::Spanned, visit::Visit};
 
 #[derive(Debug)]
 pub struct SafetyViolation {
@@ -28,9 +26,7 @@ impl ViolationKind {
             Self::UnsafeBlock => "unsafe blocks are not allowed in #[boltffi::export] functions",
             Self::MemForget => "mem::forget is not allowed - it can violate ownership semantics",
             Self::MemTransmute => "mem::transmute is not allowed - it can violate type safety",
-            Self::RawPointerType => {
-                "raw pointer types (*const/*mut) are not allowed - use safe references"
-            }
+            Self::RawPointerType => "raw pointer types (*const/*mut) are not allowed - use safe references",
             Self::BoxIntoRaw => "Box::into_raw is not allowed - ownership must flow through return",
             Self::BoxLeak => "Box::leak is not allowed - it creates untracked references",
             Self::VecIntoRawParts => "Vec::into_raw_parts is not allowed - use normal Vec returns",
@@ -51,9 +47,7 @@ struct SafetyScanner {
 
 impl SafetyScanner {
     fn new() -> Self {
-        Self {
-            violations: Vec::new(),
-        }
+        Self { violations: Vec::new() }
     }
 
     fn add_violation(&mut self, span: Span, kind: ViolationKind) {
@@ -118,12 +112,7 @@ impl SafetyScanner {
                 self.add_violation(ptr.span(), ViolationKind::RawPointerType);
             }
             Type::Path(type_path) => {
-                let segments: Vec<_> = type_path
-                    .path
-                    .segments
-                    .iter()
-                    .map(|s| s.ident.to_string())
-                    .collect();
+                let segments: Vec<_> = type_path.path.segments.iter().map(|s| s.ident.to_string()).collect();
 
                 if segments.iter().any(|s| s == "ManuallyDrop") {
                     self.add_violation(type_path.span(), ViolationKind::ManuallyDrop);
@@ -183,10 +172,7 @@ pub fn scan_function(func: &ItemFn) -> Vec<SafetyViolation> {
 }
 
 pub fn violations_to_compile_errors(violations: &[SafetyViolation]) -> proc_macro2::TokenStream {
-    violations
-        .iter()
-        .map(|v| v.kind.to_compile_error(v.span))
-        .collect()
+    violations.iter().map(|v| v.kind.to_compile_error(v.span)).collect()
 }
 
 #[cfg(test)]
@@ -233,11 +219,7 @@ mod tests {
             }
         "#,
         );
-        assert!(
-            violations
-                .iter()
-                .any(|v| matches!(v.kind, ViolationKind::MemForget))
-        );
+        assert!(violations.iter().any(|v| matches!(v.kind, ViolationKind::MemForget)));
     }
 
     #[test]
@@ -249,11 +231,7 @@ mod tests {
             }
         "#,
         );
-        assert!(
-            violations
-                .iter()
-                .any(|v| matches!(v.kind, ViolationKind::RawPointerType))
-        );
+        assert!(violations.iter().any(|v| matches!(v.kind, ViolationKind::RawPointerType)));
     }
 
     #[test]
@@ -266,11 +244,7 @@ mod tests {
             }
         "#,
         );
-        assert!(
-            violations
-                .iter()
-                .any(|v| matches!(v.kind, ViolationKind::BoxIntoRaw))
-        );
+        assert!(violations.iter().any(|v| matches!(v.kind, ViolationKind::BoxIntoRaw)));
     }
 
     #[test]
@@ -295,10 +269,6 @@ mod tests {
             }
         "#,
         );
-        assert!(
-            violations
-                .iter()
-                .any(|v| matches!(v.kind, ViolationKind::ManuallyDrop))
-        );
+        assert!(violations.iter().any(|v| matches!(v.kind, ViolationKind::ManuallyDrop)));
     }
 }

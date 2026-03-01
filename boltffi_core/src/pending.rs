@@ -1,5 +1,7 @@
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 
 pub struct PendingHandle {
     cancelled: Arc<AtomicBool>,
@@ -58,12 +60,6 @@ pub unsafe extern "C" fn boltffi_pending_free(handle: *mut PendingHandle) {
     }
 }
 
-pub type AsyncCallback<T> =
-    extern "C" fn(user_data: *mut core::ffi::c_void, status: crate::FfiStatus, result: T);
-pub type AsyncCallbackVoid =
-    extern "C" fn(user_data: *mut core::ffi::c_void, status: crate::FfiStatus);
-pub type AsyncCallbackString = extern "C" fn(
-    user_data: *mut core::ffi::c_void,
-    status: crate::FfiStatus,
-    result: crate::FfiString,
-);
+pub type AsyncCallback<T> = extern "C" fn(user_data: *mut core::ffi::c_void, status: crate::FfiStatus, result: T);
+pub type AsyncCallbackVoid = extern "C" fn(user_data: *mut core::ffi::c_void, status: crate::FfiStatus);
+pub type AsyncCallbackString = extern "C" fn(user_data: *mut core::ffi::c_void, status: crate::FfiStatus, result: crate::FfiString);

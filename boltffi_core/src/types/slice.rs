@@ -1,5 +1,4 @@
-use core::marker::PhantomData;
-use core::slice;
+use core::{marker::PhantomData, slice};
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]

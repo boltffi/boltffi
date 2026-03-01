@@ -44,6 +44,7 @@ define_id!(CallbackId);
 define_id!(CustomTypeId);
 define_id!(BuiltinId);
 define_id!(StreamId);
+define_id!(AsyncIteratorId);
 define_id!(FieldName);
 define_id!(ParamName);
 define_id!(VariantName);

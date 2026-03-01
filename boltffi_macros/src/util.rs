@@ -1,35 +1,26 @@
 use boltffi_ffi_rules::naming;
 use proc_macro2::Span;
 use quote::quote;
-use std::collections::HashMap;
-use std::env;
-use std::fs;
-use std::path::{Path as FsPath, PathBuf};
-use syn::punctuated::Punctuated;
-use syn::{Item, Path, PathArguments, PathSegment, Type, UseTree};
+use std::{
+    collections::HashMap,
+    env, fs,
+    path::{Path as FsPath, PathBuf},
+};
+use syn::{Item, Path, PathArguments, PathSegment, Type, UseTree, punctuated::Punctuated};
 
 pub fn ptr_ident(base: &syn::Ident) -> syn::Ident {
-    syn::Ident::new(
-        &format!("{}{}", base, naming::param_ptr_suffix()),
-        base.span(),
-    )
+    syn::Ident::new(&format!("{}{}", base, naming::param_ptr_suffix()), base.span())
 }
 
 pub fn len_ident(base: &syn::Ident) -> syn::Ident {
-    syn::Ident::new(
-        &format!("{}{}", base, naming::param_len_suffix()),
-        base.span(),
-    )
+    syn::Ident::new(&format!("{}{}", base, naming::param_len_suffix()), base.span())
 }
 
 pub enum ParamTransform {
     PassThrough,
     StrRef,
     OwnedString,
-    Callback {
-        params: Vec<syn::Type>,
-        returns: Option<syn::Type>,
-    },
+    Callback { params: Vec<syn::Type>, returns: Option<syn::Type> },
     SliceRef(syn::Type),
     SliceMut(syn::Type),
     BoxedDynTrait(syn::Path),
@@ -74,8 +65,7 @@ pub fn extract_closure_signature(ty: &Type) -> Option<(Vec<syn::Type>, Option<sy
             .filter_map(|path| path.segments.last())
             .filter_map(|segment| {
                 let ident = segment.ident.to_string();
-                (ident == "Fn" || ident == "FnMut" || ident == "FnOnce")
-                    .then_some(&segment.arguments)
+                (ident == "Fn" || ident == "FnMut" || ident == "FnOnce").then_some(&segment.arguments)
             })
             .filter_map(|arguments| match arguments {
                 syn::PathArguments::Parenthesized(args) => Some(args),
@@ -111,17 +101,11 @@ pub fn extract_impl_callback_trait(ty: &Type) -> Option<syn::Path> {
             .bounds
             .iter()
             .filter_map(|bound| match bound {
-                syn::TypeParamBound::Trait(trait_bound) => {
-                    Some((trait_bound.modifier, &trait_bound.path))
-                }
+                syn::TypeParamBound::Trait(trait_bound) => Some((trait_bound.modifier, &trait_bound.path)),
                 _ => None,
             })
             .filter(|(modifier, path)| {
-                let trait_name = path
-                    .segments
-                    .last()
-                    .map(|s| s.ident.to_string())
-                    .unwrap_or_default();
+                let trait_name = path.segments.last().map(|s| s.ident.to_string()).unwrap_or_default();
                 !is_non_callback_bound(*modifier, &trait_name)
             })
             .map(|(_, path)| path.clone())
@@ -276,11 +260,7 @@ impl AliasResolver {
                 let rest = segments.iter().skip(1).cloned();
                 prefix.iter().cloned().chain(rest).collect::<Vec<_>>()
             })
-            .or_else(|| {
-                is_single
-                    .then(|| self.type_aliases.get(&first_name).cloned())
-                    .flatten()
-            })?;
+            .or_else(|| is_single.then(|| self.type_aliases.get(&first_name).cloned()).flatten())?;
 
         let original_args = first.arguments.clone();
         let mut adjusted = resolved;
@@ -308,10 +288,7 @@ impl AliasResolver {
                 target.push(path_segment(&rename.ident));
                 self.use_aliases.insert(rename.rename.to_string(), target);
             }
-            UseTree::Group(group) => group
-                .items
-                .iter()
-                .for_each(|item| self.collect_use_tree(prefix.clone(), item)),
+            UseTree::Group(group) => group.items.iter().for_each(|item| self.collect_use_tree(prefix.clone(), item)),
             UseTree::Glob(_) => {}
         }
     }
@@ -374,10 +351,7 @@ pub fn extract_option_param_inner(ty: &Type) -> Option<syn::Type> {
 }
 
 pub fn is_primitive_vec_inner(s: &str) -> bool {
-    matches!(
-        s,
-        "i8" | "i16" | "i32" | "i64" | "u8" | "u16" | "u32" | "u64" | "f32" | "f64" | "bool"
-    )
+    matches!(s, "i8" | "i16" | "i32" | "i64" | "u8" | "u16" | "u32" | "u64" | "f32" | "f64" | "bool")
 }
 
 pub fn classify_param_transform(ty: &Type) -> ParamTransform {
@@ -467,18 +441,6 @@ fn is_record_type(type_str: &str) -> bool {
 fn is_primitive_type(s: &str) -> bool {
     matches!(
         s,
-        "i8" | "i16"
-            | "i32"
-            | "i64"
-            | "u8"
-            | "u16"
-            | "u32"
-            | "u64"
-            | "f32"
-            | "f64"
-            | "bool"
-            | "isize"
-            | "usize"
-            | "()"
+        "i8" | "i16" | "i32" | "i64" | "u8" | "u16" | "u32" | "u64" | "f32" | "f64" | "bool" | "isize" | "usize" | "()"
     )
 }

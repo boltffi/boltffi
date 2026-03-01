@@ -1,5 +1,7 @@
-use crate::wire::decode::{DecodeError, WireDecode};
-use crate::wire::encode::WireEncode;
+use crate::wire::{
+    decode::{DecodeError, WireDecode},
+    encode::WireEncode,
+};
 
 pub struct WireBuffer {
     data: Vec<u8>,

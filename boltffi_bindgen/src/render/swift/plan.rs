@@ -1,5 +1,7 @@
-use crate::ir::ops::{OffsetExpr, ReadOp, ReadSeq, WriteSeq};
-use crate::render::swift::emit;
+use crate::{
+    ir::ops::{OffsetExpr, ReadOp, ReadSeq, WriteSeq},
+    render::swift::emit,
+};
 
 #[derive(Debug, Clone)]
 pub enum SwiftCallMode {
@@ -64,9 +66,7 @@ impl SwiftAsyncResult {
             Self::Void => None,
             Self::Direct { swift_type, .. } => Some(swift_type),
             Self::Encoded {
-                throws: true,
-                ok_type: Some(ok),
-                ..
+                throws: true, ok_type: Some(ok), ..
             } => Some(ok),
             Self::Encoded { swift_type, .. } => Some(swift_type),
         }
@@ -77,9 +77,7 @@ impl SwiftAsyncResult {
             Self::Void => "Void",
             Self::Direct { swift_type, .. } => swift_type,
             Self::Encoded {
-                throws: true,
-                ok_type: Some(ok),
-                ..
+                throws: true, ok_type: Some(ok), ..
             } => ok,
             Self::Encoded { swift_type, .. } => swift_type,
         }
@@ -98,9 +96,7 @@ impl SwiftAsyncResult {
                 err_is_string,
                 ..
             } => match decode.ops.first() {
-                Some(ReadOp::Result { ok, .. }) => {
-                    Some(emit::emit_result_ok_throw(ok, err_decode, *err_is_string))
-                }
+                Some(ReadOp::Result { ok, .. }) => Some(emit::emit_result_ok_throw(ok, err_decode, *err_is_string)),
                 _ => Some(emit::emit_read_value_at(decode, "0")),
             },
             Self::Encoded { decode, .. } => Some(emit::emit_read_value_at(decode, "0")),
@@ -119,11 +115,7 @@ impl SwiftAsyncResult {
                 Some(ReadOp::Result { ok, err, .. }) => {
                     let ok_read = emit::emit_reader_read(ok);
                     let err_read = emit::emit_reader_read(err);
-                    let err_body = if *err_is_string {
-                        format!("FfiError(message: {})", err_read)
-                    } else {
-                        err_read
-                    };
+                    let err_body = if *err_is_string { format!("FfiError(message: {})", err_read) } else { err_read };
                     Some(format!(
                         "try {{ let tag = reader.readU8(); if tag == 0 {{ return {} }} else {{ throw {} }} }}()",
                         ok_read, err_body
@@ -171,15 +163,15 @@ pub struct SwiftNativeMapping {
 
 impl SwiftModule {
     pub fn has_async(&self) -> bool {
-        self.functions.iter().any(|f| f.mode.is_async())
-            || self
-                .classes
-                .iter()
-                .any(|c| c.methods.iter().any(|m| m.mode.is_async()))
+        self.functions.iter().any(|f| f.mode.is_async()) || self.classes.iter().any(|c| c.methods.iter().any(|m| m.mode.is_async())) || self.has_async_iterators()
     }
 
     pub fn has_streams(&self) -> bool {
         self.classes.iter().any(|c| !c.streams.is_empty())
+    }
+
+    pub fn has_async_iterators(&self) -> bool {
+        self.classes.iter().any(|c| !c.async_iterators.is_empty())
     }
 }
 
@@ -251,9 +243,7 @@ impl SwiftField {
     pub fn wire_writer_encode(&self) -> String {
         match &self.native_conversion {
             Some(conv) => {
-                let converted_value = conv
-                    .encode_wrapper
-                    .replace("$0", &format!("self.{}", self.swift_name));
+                let converted_value = conv.encode_wrapper.replace("$0", &format!("self.{}", self.swift_name));
                 let base_encode = emit::emit_writer_write(&self.encode);
                 base_encode.replace(&format!("self.{}", self.swift_name), &converted_value)
             }
@@ -299,9 +289,7 @@ impl SwiftVariant {
     pub fn is_single_tuple(&self) -> bool {
         match &self.payload {
             SwiftVariantPayload::Tuple(fields) => fields.len() == 1,
-            SwiftVariantPayload::Struct(fields) => {
-                fields.len() == 1 && fields[0].swift_name.chars().all(|c| c.is_ascii_digit())
-            }
+            SwiftVariantPayload::Struct(fields) => fields.len() == 1 && fields[0].swift_name.chars().all(|c| c.is_ascii_digit()),
             _ => false,
         }
     }
@@ -316,50 +304,33 @@ impl SwiftVariant {
     fn single_tuple_field(&self) -> Option<&SwiftField> {
         match &self.payload {
             SwiftVariantPayload::Tuple(fields) if fields.len() == 1 => Some(&fields[0]),
-            SwiftVariantPayload::Struct(fields)
-                if fields.len() == 1
-                    && fields[0].swift_name.chars().all(|c| c.is_ascii_digit()) =>
-            {
-                Some(&fields[0])
-            }
+            SwiftVariantPayload::Struct(fields) if fields.len() == 1 && fields[0].swift_name.chars().all(|c| c.is_ascii_digit()) => Some(&fields[0]),
             _ => None,
         }
     }
 
     pub fn tuple_value_decode(&self) -> String {
-        self.single_tuple_field()
-            .map(|f| f.wire_decode_inline())
-            .unwrap_or_default()
+        self.single_tuple_field().map(|f| f.wire_decode_inline()).unwrap_or_default()
     }
 
     pub fn tuple_value_size(&self) -> String {
-        self.single_tuple_field()
-            .map(|f| f.wire_size_expr())
-            .unwrap_or_default()
+        self.single_tuple_field().map(|f| f.wire_size_expr()).unwrap_or_default()
     }
 
     pub fn tuple_value_encode(&self) -> String {
-        self.single_tuple_field()
-            .map(|f| f.wire_encode())
-            .unwrap_or_default()
+        self.single_tuple_field().map(|f| f.wire_encode()).unwrap_or_default()
     }
 
     pub fn tuple_value_encode_bytes(&self) -> String {
-        self.single_tuple_field()
-            .map(|f| f.wire_encode_bytes())
-            .unwrap_or_default()
+        self.single_tuple_field().map(|f| f.wire_encode_bytes()).unwrap_or_default()
     }
 
     pub fn tuple_value_reader_decode(&self) -> String {
-        self.single_tuple_field()
-            .map(|f| f.wire_reader_decode())
-            .unwrap_or_default()
+        self.single_tuple_field().map(|f| f.wire_reader_decode()).unwrap_or_default()
     }
 
     pub fn tuple_value_writer_encode(&self) -> String {
-        self.single_tuple_field()
-            .map(|f| f.wire_writer_encode())
-            .unwrap_or_default()
+        self.single_tuple_field().map(|f| f.wire_writer_encode()).unwrap_or_default()
     }
 
     pub fn all_fields_fixed_size(&self) -> bool {
@@ -367,9 +338,7 @@ impl SwiftVariant {
     }
 
     pub fn tuple_value_fixed_size(&self) -> bool {
-        self.single_tuple_field()
-            .map(|f| f.has_fixed_size())
-            .unwrap_or(true)
+        self.single_tuple_field().map(|f| f.has_fixed_size()).unwrap_or(true)
     }
 }
 
@@ -381,12 +350,39 @@ pub enum SwiftVariantPayload {
 }
 
 #[derive(Debug, Clone)]
+pub struct SwiftAsyncIterator {
+    pub name: String,
+    pub item_type: String,
+    /// Wire decode for `Option<T>` — same reader machinery as async results
+    pub item_decode: ReadSeq,
+    /// `{class}_{method}(handle) -> IteratorHandle`
+    pub entry: String,
+    /// `{class}_{method}_next(iter) -> RustFutureHandle`
+    pub next: String,
+    pub next_poll: String,
+    pub next_complete: String,
+    pub next_cancel: String,
+    pub next_free: String,
+    /// `{class}_{method}_free(iter)`
+    pub free: String,
+}
+
+impl SwiftAsyncIterator {
+    /// The Swift reader decode expression for `Option<T>` from the wire buffer.
+    pub fn option_reader_decode_expr(&self) -> String {
+        use crate::render::swift::emit;
+        emit::emit_reader_read(&self.item_decode)
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct SwiftClass {
     pub name: String,
     pub ffi_free: String,
     pub constructors: Vec<SwiftConstructor>,
     pub methods: Vec<SwiftMethod>,
     pub streams: Vec<SwiftStream>,
+    pub async_iterators: Vec<SwiftAsyncIterator>,
     pub doc: Option<String>,
 }
 
@@ -429,21 +425,11 @@ fn uses_offset_in_read_op(op: &ReadOp) -> bool {
         ReadOp::Primitive { offset, .. } => offset_uses(offset),
         ReadOp::String { offset } => offset_uses(offset),
         ReadOp::Bytes { offset } => offset_uses(offset),
-        ReadOp::Option { tag_offset, some } => {
-            offset_uses(tag_offset) || uses_offset_in_read_seq(some)
-        }
-        ReadOp::Vec {
-            len_offset,
-            element,
-            ..
-        } => offset_uses(len_offset) || uses_offset_in_read_seq(element),
+        ReadOp::Option { tag_offset, some } => offset_uses(tag_offset) || uses_offset_in_read_seq(some),
+        ReadOp::Vec { len_offset, element, .. } => offset_uses(len_offset) || uses_offset_in_read_seq(element),
         ReadOp::Record { offset, .. } => offset_uses(offset),
         ReadOp::Enum { offset, .. } => offset_uses(offset),
-        ReadOp::Result {
-            tag_offset,
-            ok,
-            err,
-        } => offset_uses(tag_offset) || uses_offset_in_read_seq(ok) || uses_offset_in_read_seq(err),
+        ReadOp::Result { tag_offset, ok, err } => offset_uses(tag_offset) || uses_offset_in_read_seq(ok) || uses_offset_in_read_seq(err),
         ReadOp::Builtin { offset, .. } => offset_uses(offset),
         ReadOp::Custom { underlying, .. } => uses_offset_in_read_seq(underlying),
     }
@@ -456,14 +442,8 @@ fn offset_uses(offset: &OffsetExpr) -> bool {
 #[derive(Debug, Clone)]
 pub enum SwiftStreamMode {
     Async,
-    Batch {
-        class_name: String,
-        method_name_pascal: String,
-    },
-    Callback {
-        class_name: String,
-        method_name_pascal: String,
-    },
+    Batch { class_name: String, method_name_pascal: String },
+    Callback { class_name: String, method_name_pascal: String },
 }
 
 #[derive(Debug, Clone)]
@@ -504,9 +484,7 @@ impl SwiftConstructor {
 
     pub fn ffi_symbol(&self) -> &str {
         match self {
-            Self::Designated { ffi_symbol, .. }
-            | Self::Factory { ffi_symbol, .. }
-            | Self::Convenience { ffi_symbol, .. } => ffi_symbol,
+            Self::Designated { ffi_symbol, .. } | Self::Factory { ffi_symbol, .. } | Self::Convenience { ffi_symbol, .. } => ffi_symbol,
         }
     }
 
@@ -519,9 +497,7 @@ impl SwiftConstructor {
 
     pub fn is_fallible(&self) -> bool {
         match self {
-            Self::Designated { is_fallible, .. }
-            | Self::Factory { is_fallible, .. }
-            | Self::Convenience { is_fallible, .. } => *is_fallible,
+            Self::Designated { is_fallible, .. } | Self::Factory { is_fallible, .. } | Self::Convenience { is_fallible, .. } => *is_fallible,
         }
     }
 
@@ -560,9 +536,7 @@ impl SwiftConstructor {
 
     pub fn doc(&self) -> &Option<String> {
         match self {
-            Self::Designated { doc, .. }
-            | Self::Factory { doc, .. }
-            | Self::Convenience { doc, .. } => doc,
+            Self::Designated { doc, .. } | Self::Factory { doc, .. } | Self::Convenience { doc, .. } => doc,
         }
     }
 }
@@ -595,36 +569,25 @@ impl SwiftMethod {
     }
 
     fn prefix_args(&self) -> Vec<&str> {
-        if self.needs_handle() {
-            vec!["handle"]
-        } else {
-            vec![]
-        }
+        if self.needs_handle() { vec!["handle"] } else { vec![] }
     }
 
     pub fn start_call_expr(&self) -> String {
         match &self.mode {
-            SwiftCallMode::Async { start, .. } => {
-                ffi_call_expr(start, &self.prefix_args(), &self.params)
-            }
+            SwiftCallMode::Async { start, .. } => ffi_call_expr(start, &self.prefix_args(), &self.params),
             SwiftCallMode::Sync { .. } => String::new(),
         }
     }
 
     pub fn sync_call_expr(&self) -> String {
         match &self.mode {
-            SwiftCallMode::Sync { symbol } => {
-                ffi_call_expr(symbol, &self.prefix_args(), &self.params)
-            }
+            SwiftCallMode::Sync { symbol } => ffi_call_expr(symbol, &self.prefix_args(), &self.params),
             SwiftCallMode::Async { .. } => String::new(),
         }
     }
 
     pub fn closure_depth(&self) -> usize {
-        self.params
-            .iter()
-            .filter(|p| p.needs_closure_wrap())
-            .count()
+        self.params.iter().filter(|p| p.needs_closure_wrap()).count()
     }
 
     pub fn method_body_indent(&self) -> String {
@@ -653,10 +616,7 @@ impl SwiftMethod {
 
     pub fn sync_closure_closes(&self) -> Vec<String> {
         let depth = self.closure_depth();
-        (0..depth)
-            .rev()
-            .map(|i| format!("{}}}", "    ".repeat(i + 2)))
-            .collect()
+        (0..depth).rev().map(|i| format!("{}}}", "    ".repeat(i + 2))).collect()
     }
 }
 
@@ -723,11 +683,7 @@ impl SwiftCallbackMethod {
     pub fn wire_return_encode(&self) -> Option<String> {
         self.encoded_return_encode().map(|encode| {
             let writer_body = emit::emit_writer_write(encode);
-            let discriminant = if self.throws() {
-                "writer.writeU8(0); "
-            } else {
-                ""
-            };
+            let discriminant = if self.throws() { "writer.writeU8(0); " } else { "" };
             format!(
                 "let encoded = ({{ var writer = WireWriter(); {}{}; return writer.finalize() }})()",
                 discriminant, writer_body
@@ -744,10 +700,7 @@ impl SwiftCallbackMethod {
 
     pub fn wire_err_encode(&self) -> Option<String> {
         match &self.returns {
-            SwiftReturn::Throws {
-                err_encode: Some(encode),
-                ..
-            } => {
+            SwiftReturn::Throws { err_encode: Some(encode), .. } => {
                 let writer_body = emit::emit_writer_write(encode);
                 Some(format!(
                     "let encoded = ({{ var writer = WireWriter(); writer.writeU8(1); {}; return writer.finalize() }})()",
@@ -780,18 +733,12 @@ pub struct SwiftFunction {
 }
 
 pub fn ffi_call_expr(symbol: &str, prefix_args: &[&str], params: &[SwiftParam]) -> String {
-    let args = prefix_args
-        .iter()
-        .map(|s| s.to_string())
-        .chain(params.iter().map(|p| p.ffi_arg()));
+    let args = prefix_args.iter().map(|s| s.to_string()).chain(params.iter().map(|p| p.ffi_arg()));
     format!("{}({})", symbol, args.collect::<Vec<_>>().join(", "))
 }
 
 pub fn closure_wrappers(params: &[SwiftParam]) -> Vec<String> {
-    params
-        .iter()
-        .filter_map(|p| p.closure_wrap_open())
-        .collect()
+    params.iter().filter_map(|p| p.closure_wrap_open()).collect()
 }
 
 impl SwiftFunction {
@@ -822,10 +769,7 @@ impl SwiftFunction {
     }
 
     pub fn closure_depth(&self) -> usize {
-        self.params
-            .iter()
-            .filter(|p| p.needs_closure_wrap())
-            .count()
+        self.params.iter().filter(|p| p.needs_closure_wrap()).count()
     }
 
     pub fn body_indent(&self) -> String {
@@ -854,10 +798,7 @@ impl SwiftFunction {
 
     pub fn sync_closure_closes(&self) -> Vec<String> {
         let depth = self.closure_depth();
-        (0..depth)
-            .rev()
-            .map(|i| format!("{}}}", "    ".repeat(i + 1)))
-            .collect()
+        (0..depth).rev().map(|i| format!("{}}}", "    ".repeat(i + 1))).collect()
     }
 }
 
@@ -878,10 +819,7 @@ impl SwiftParam {
         };
         match &self.label {
             Some(label) if label != &self.name => {
-                format!(
-                    "{} {}: {}{}",
-                    label, self.name, inout_prefix, self.swift_type
-                )
+                format!("{} {}: {}{}", label, self.name, inout_prefix, self.swift_type)
             }
             _ => format!("{}: {}{}", self.name, inout_prefix, self.swift_type),
         }
@@ -890,10 +828,7 @@ impl SwiftParam {
     pub fn ffi_arg(&self) -> String {
         match &self.conversion {
             SwiftConversion::Direct => self.name.clone(),
-            SwiftConversion::ToString => format!(
-                "{}Buf.baseAddress!, UInt({}Buf.count)",
-                self.name, self.name
-            ),
+            SwiftConversion::ToString => format!("{}Buf.baseAddress!, UInt({}Buf.count)", self.name, self.name),
             SwiftConversion::ToData => {
                 format!("{}Ptr.baseAddress, UInt({}Ptr.count)", self.name, self.name)
             }
@@ -908,10 +843,7 @@ impl SwiftParam {
             }
             SwiftConversion::WrapCallback { protocol, nullable } => {
                 if *nullable {
-                    format!(
-                        "{}.map {{ {}Bridge.create($0) }} ?? BoltFFICallbackHandle(handle: 0, vtable: nil)",
-                        self.name, protocol
-                    )
+                    format!("{}.map {{ {}Bridge.create($0) }} ?? BoltFFICallbackHandle(handle: 0, vtable: nil)", self.name, protocol)
                 } else {
                     format!("{}Bridge.create({})", protocol, self.name)
                 }
@@ -939,11 +871,7 @@ impl SwiftParam {
             SwiftConversion::InlineClosure { closure } => Some(closure.render()),
             SwiftConversion::ToWireBuffer { encode } => {
                 let writer_body = emit::emit_writer_write(encode);
-                Some(format!(
-                    "let {name}Bytes = boltffiEncode {{ writer in {body} }}",
-                    name = self.name,
-                    body = writer_body
-                ))
+                Some(format!("let {name}Bytes = boltffiEncode {{ writer in {body} }}", name = self.name, body = writer_body))
             }
             _ => None,
         }
@@ -952,28 +880,16 @@ impl SwiftParam {
     pub fn needs_closure_wrap(&self) -> bool {
         matches!(
             &self.conversion,
-            SwiftConversion::ToString
-                | SwiftConversion::ToData
-                | SwiftConversion::PrimitiveBuffer { .. }
-                | SwiftConversion::MutableBuffer { .. }
+            SwiftConversion::ToString | SwiftConversion::ToData | SwiftConversion::PrimitiveBuffer { .. } | SwiftConversion::MutableBuffer { .. }
         )
     }
 
     pub fn closure_wrap_open(&self) -> Option<String> {
         match &self.conversion {
             SwiftConversion::ToString => Some(format!("{n}.withUTF8 {{ {n}Buf in", n = self.name)),
-            SwiftConversion::ToData => Some(format!(
-                "{}.withUnsafeBytes {{ {}Ptr in",
-                self.name, self.name
-            )),
-            SwiftConversion::PrimitiveBuffer { .. } => Some(format!(
-                "{}.withUnsafeBufferPointer {{ {}Ptr in",
-                self.name, self.name
-            )),
-            SwiftConversion::MutableBuffer { .. } => Some(format!(
-                "{}.withUnsafeMutableBufferPointer {{ {}Ptr in",
-                self.name, self.name
-            )),
+            SwiftConversion::ToData => Some(format!("{}.withUnsafeBytes {{ {}Ptr in", self.name, self.name)),
+            SwiftConversion::PrimitiveBuffer { .. } => Some(format!("{}.withUnsafeBufferPointer {{ {}Ptr in", self.name, self.name)),
+            SwiftConversion::MutableBuffer { .. } => Some(format!("{}.withUnsafeMutableBufferPointer {{ {}Ptr in", self.name, self.name)),
             _ => None,
         }
     }
@@ -981,9 +897,7 @@ impl SwiftParam {
     pub fn closure_wrap_close(&self) -> Option<&'static str> {
         match &self.conversion {
             SwiftConversion::ToString | SwiftConversion::ToData => Some("}"),
-            SwiftConversion::PrimitiveBuffer { .. } | SwiftConversion::MutableBuffer { .. } => {
-                Some("}")
-            }
+            SwiftConversion::PrimitiveBuffer { .. } | SwiftConversion::MutableBuffer { .. } => Some("}"),
             _ => None,
         }
     }
@@ -991,26 +905,11 @@ impl SwiftParam {
 
 impl SwiftClosureTrampoline {
     pub fn render(&self) -> String {
-        let c_params: String = self
-            .trampoline_params
-            .iter()
-            .map(|p| p.c_type.as_str())
-            .collect::<Vec<_>>()
-            .join(", ");
+        let c_params: String = self.trampoline_params.iter().map(|p| p.c_type.as_str()).collect::<Vec<_>>().join(", ");
 
-        let param_names: String = self
-            .trampoline_params
-            .iter()
-            .map(|p| p.name.as_str())
-            .collect::<Vec<_>>()
-            .join(", ");
+        let param_names: String = self.trampoline_params.iter().map(|p| p.name.as_str()).collect::<Vec<_>>().join(", ");
 
-        let decode_args: String = self
-            .trampoline_params
-            .iter()
-            .map(|p| p.decode_expr.as_str())
-            .collect::<Vec<_>>()
-            .join(", ");
+        let decode_args: String = self.trampoline_params.iter().map(|p| p.decode_expr.as_str()).collect::<Vec<_>>().join(", ");
 
         format!(
             r#"typealias {type_alias} = {swift_type}
@@ -1097,10 +996,7 @@ impl SwiftReturn {
             SwiftReturn::Void => None,
             SwiftReturn::Direct { swift_type } => Some(swift_type.clone()),
             SwiftReturn::FromWireBuffer { swift_type, .. } => Some(swift_type.clone()),
-            SwiftReturn::Handle {
-                class_name,
-                nullable,
-            } => {
+            SwiftReturn::Handle { class_name, nullable } => {
                 if *nullable {
                     Some(format!("{}?", class_name))
                 } else {
@@ -1133,29 +1029,19 @@ impl SwiftReturn {
 
     pub fn handle_info(&self) -> Option<(&str, bool)> {
         match self {
-            SwiftReturn::Handle {
-                class_name,
-                nullable,
-            } => Some((class_name.as_str(), *nullable)),
+            SwiftReturn::Handle { class_name, nullable } => Some((class_name.as_str(), *nullable)),
             _ => None,
         }
     }
 
     pub fn decode_expr(&self) -> Option<String> {
         match self {
-            SwiftReturn::FromWireBuffer { decode, .. } => {
-                Some(emit::emit_read_value_at(decode, "0"))
-            }
+            SwiftReturn::FromWireBuffer { decode, .. } => Some(emit::emit_read_value_at(decode, "0")),
             SwiftReturn::Throws {
-                ok,
-                err_decode,
-                err_is_string,
-                ..
+                ok, err_decode, err_is_string, ..
             } => match ok.as_ref() {
                 SwiftReturn::FromWireBuffer { decode, .. } => match decode.ops.first() {
-                    Some(ReadOp::Result { ok, .. }) => {
-                        Some(emit::emit_result_ok_throw(ok, err_decode, *err_is_string))
-                    }
+                    Some(ReadOp::Result { ok, .. }) => Some(emit::emit_result_ok_throw(ok, err_decode, *err_is_string)),
                     _ => ok.decode_expr(),
                 },
                 _ => ok.decode_expr(),
@@ -1167,18 +1053,12 @@ impl SwiftReturn {
     pub fn reader_decode_expr(&self) -> Option<String> {
         match self {
             SwiftReturn::FromWireBuffer { decode, .. } => Some(emit::emit_reader_read(decode)),
-            SwiftReturn::Throws {
-                ok, err_is_string, ..
-            } => match ok.as_ref() {
+            SwiftReturn::Throws { ok, err_is_string, .. } => match ok.as_ref() {
                 SwiftReturn::FromWireBuffer { decode, .. } => match decode.ops.first() {
                     Some(ReadOp::Result { ok, err, .. }) => {
                         let ok_read = emit::emit_reader_read(ok);
                         let err_read = emit::emit_reader_read(err);
-                        let err_body = if *err_is_string {
-                            format!("FfiError(message: {})", err_read)
-                        } else {
-                            err_read
-                        };
+                        let err_body = if *err_is_string { format!("FfiError(message: {})", err_read) } else { err_read };
                         Some(format!(
                             "try {{ let tag = reader.readU8(); if tag == 0 {{ return {} }} else {{ throw {} }} }}()",
                             ok_read, err_body

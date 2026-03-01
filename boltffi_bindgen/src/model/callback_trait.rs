@@ -1,6 +1,5 @@
-use serde::{Deserialize, Serialize};
-
 use super::types::{Deprecation, ReturnType, Type};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CallbackTrait {
@@ -121,9 +120,6 @@ pub struct TraitMethodParam {
 
 impl TraitMethodParam {
     pub fn new(name: impl Into<String>, param_type: Type) -> Self {
-        Self {
-            name: name.into(),
-            param_type,
-        }
+        Self { name: name.into(), param_type }
     }
 }

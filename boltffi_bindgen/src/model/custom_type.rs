@@ -1,6 +1,5 @@
-use serde::{Deserialize, Serialize};
-
 use super::types::Type;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CustomType {
@@ -10,9 +9,6 @@ pub struct CustomType {
 
 impl CustomType {
     pub fn new(name: impl Into<String>, repr: Type) -> Self {
-        Self {
-            name: name.into(),
-            repr,
-        }
+        Self { name: name.into(), repr }
     }
 }
