@@ -18,6 +18,8 @@ pub struct PackExecutionOptions {
     pub regenerate: bool,
     pub no_build: bool,
     pub cargo_args: Vec<String>,
+    /// See [`crate::build::CargoBuildCommand::parse`] for accepted values.
+    pub cargo_build_cmd: Option<String>,
 }
 
 pub struct PackAllOptions {

@@ -32,6 +32,7 @@ pub(super) fn pack_all(
                 config,
                 options.execution.release,
                 &options.execution.cargo_args,
+                options.execution.cargo_build_cmd.as_deref(),
             )
         })
         .transpose()?;
