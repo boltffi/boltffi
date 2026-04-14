@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Arc, Mutex};
 
-use crate::build::{OutputCallback, run_command_streaming};
+use crate::build::{CargoBuildCommand, OutputCallback, run_command_streaming};
 use crate::cli::{CliError, Result};
 use crate::config::Config;
 use crate::pack::PackError;
@@ -251,14 +251,14 @@ pub(crate) fn build_jvm_native_library(
         command: format!("current_dir: {source}"),
         status: None,
     })?;
-    let (program, subcommand) = match &cargo_context.cargo_build_command {
-        Some(cmd) => (cmd.program.as_str(), cmd.subcommand.as_str()),
-        None => ("cargo", "build"),
-    };
+    let cmd = cargo_context.cargo_build_command.as_ref();
+    let program = cmd.map(CargoBuildCommand::program).unwrap_or("cargo");
+    let subcommand = cmd.map(CargoBuildCommand::subcommand).unwrap_or("build");
+    let is_cargo = cmd.map(CargoBuildCommand::is_cargo_program).unwrap_or(true);
     let mut command = Command::new(program);
     command.current_dir(crate_directory);
 
-    if program == "cargo" {
+    if is_cargo {
         if let Some(toolchain_selector) = cargo_context.toolchain_selector.as_deref() {
             command.arg(toolchain_selector);
         }

@@ -320,7 +320,7 @@ fn format_build_label(ctx: &JvmCargoContext) -> String {
         label.push_str(&format!(" (glibc {glibc})"));
     }
     if let Some(cmd) = &ctx.cargo_build_command {
-        label.push_str(&format!(" [{} {}]", cmd.program, cmd.subcommand));
+        label.push_str(&format!(" [{cmd}]"));
     }
     label
 }
@@ -331,11 +331,12 @@ fn print_validated_toolchains(packaging_targets: &[JvmPackagingTarget]) {
         let ctx = &target.cargo_context;
         let host = ctx.host_target.canonical_name();
         let triple = target.toolchain.rust_target_triple();
-        let compiler = target.toolchain.jni_compiler_program().display();
-        let build_cmd = match &ctx.cargo_build_command {
-            Some(cmd) => format!("{} {}", cmd.program, cmd.subcommand),
-            None => "cargo build".to_string(),
-        };
+        let compiler = target.toolchain.jni_compiler_command_display();
+        let build_cmd = ctx
+            .cargo_build_command
+            .as_ref()
+            .map(CargoBuildCommand::to_string)
+            .unwrap_or_else(|| CargoBuildCommand::Cargo.to_string());
         let glibc_info = match &ctx.glibc_version {
             Some(v) => format!(", glibc {v}"),
             None => String::new(),
@@ -395,6 +396,8 @@ fn resolve_jvm_packaging_targets(
                 &cargo_command_args,
                 host_target,
                 current_host,
+                config.java_jvm_jni_compiler(),
+                jvm_host_target.glibc_version.as_deref(),
             )?;
             let cargo_context = JvmCargoContext {
                 host_target,
@@ -522,7 +525,7 @@ mod tests {
                 },
                 cargo_build_command: None,
             },
-            toolchain: NativeHostToolchain::discover(None, &[], current_host, current_host)
+            toolchain: NativeHostToolchain::discover(None, &[], current_host, current_host, None, None)
                 .expect("native host toolchain"),
         }];
 
