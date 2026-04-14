@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -336,8 +336,174 @@ impl JavaHostTarget {
         self.native_host_platform().rpath_flag()
     }
 
-    fn unsupported_host_message() -> String {
-        "JVM packaging is only supported on darwin-arm64, darwin-x86_64, linux-x86_64, linux-aarch64, and windows-x86_64 hosts".to_string()
+}
+
+/// A JVM packaging target entry, optionally carrying a minimum glibc version
+/// for Linux targets.
+///
+/// Used in `targets.java.jvm.host_targets` in `boltffi.toml`.
+///
+/// # Syntax
+///
+/// | Config string           | Meaning                                          |
+/// |-------------------------|--------------------------------------------------|
+/// | `"linux-x86_64"`        | Linux x86-64, system-default glibc               |
+/// | `"linux-x86_64.2.17"`   | Linux x86-64, glibc ≥ 2.17 (`cargo zigbuild`)   |
+/// | `"linux-aarch64.2.28"`  | Linux aarch64, glibc ≥ 2.28 (`cargo zigbuild`)  |
+/// | `"darwin-arm64"`        | macOS Apple Silicon (no glibc concept)           |
+/// | `"current"`             | resolved to the current host at build time       |
+///
+/// The glibc version suffix is forwarded verbatim to the `--target` argument
+/// of the cargo build command (e.g. `cargo zigbuild --target x86_64-unknown-linux-gnu.2.17`).
+/// It has no effect on non-Linux targets; specifying it on a non-Linux target is an error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct JavaJvmHostTarget {
+    pub target: JavaHostTarget,
+    /// Minimum glibc version (e.g. `"2.17"`), Linux only.
+    pub glibc_version: Option<String>,
+}
+
+impl JavaJvmHostTarget {
+    pub const DEFAULTS: &'static [Self] = &[Self {
+        target: JavaHostTarget::Current,
+        glibc_version: None,
+    }];
+
+    pub fn resolve_requested(targets: &[Self]) -> Result<Vec<Self>, String> {
+        let current_host = JavaHostTarget::current().ok_or_else(|| {
+            "JVM packaging is only supported on darwin-arm64, darwin-x86_64, \
+             linux-x86_64, linux-aarch64, and windows-x86_64 hosts"
+                .to_string()
+        })?;
+        let mut resolved: Vec<Self> = Vec::new();
+
+        for entry in targets {
+            let resolved_target = match entry.target {
+                JavaHostTarget::Current => current_host,
+                explicit => explicit,
+            };
+            let candidate = Self {
+                target: resolved_target,
+                glibc_version: entry.glibc_version.clone(),
+            };
+            if !resolved.contains(&candidate) {
+                resolved.push(candidate);
+            }
+        }
+
+        Ok(resolved)
+    }
+}
+
+#[cfg(test)]
+impl JavaJvmHostTarget {
+    pub fn new(target: JavaHostTarget) -> Self {
+        Self {
+            target,
+            glibc_version: None,
+        }
+    }
+
+    pub fn with_glibc(target: JavaHostTarget, version: impl Into<String>) -> Self {
+        Self {
+            target,
+            glibc_version: Some(version.into()),
+        }
+    }
+
+    pub fn canonical_name(&self) -> String {
+        let base = self.target.canonical_name();
+        match &self.glibc_version {
+            Some(v) => format!("{base}.{v}"),
+            None => base.to_string(),
+        }
+    }
+}
+
+impl Serialize for JavaJvmHostTarget {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let base = self.target.canonical_name();
+        match &self.glibc_version {
+            Some(v) => serializer.serialize_str(&format!("{base}.{v}")),
+            None => serializer.serialize_str(base),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for JavaJvmHostTarget {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(deserializer)?;
+
+        // Try to split a glibc version suffix: "linux-x86_64.2.17" → ("linux-x86_64", "2.17")
+        // None of the JavaHostTarget canonical names contain a '.', so the first '.' in the
+        // string marks the boundary between the target name and the glibc version.
+        if let Some((base, glibc)) = split_glibc_version_suffix(&s) {
+            let target = JavaHostTarget::from_canonical(base).ok_or_else(|| {
+                serde::de::Error::custom(format!(
+                    "unknown host target '{base}' in '{s}'; \
+                     expected one of: current, darwin-arm64, darwin-x86_64, \
+                     linux-x86_64, linux-aarch64, windows-x86_64"
+                ))
+            })?;
+            if !matches!(target, JavaHostTarget::LinuxX86_64 | JavaHostTarget::LinuxAarch64) {
+                return Err(serde::de::Error::custom(format!(
+                    "glibc version suffix '.{glibc}' is only valid for Linux targets, \
+                     but '{base}' is not a Linux target"
+                )));
+            }
+            return Ok(Self {
+                target,
+                glibc_version: Some(glibc.to_string()),
+            });
+        }
+
+        let target = JavaHostTarget::from_canonical(&s).ok_or_else(|| {
+            serde::de::Error::custom(format!(
+                "unknown host target '{s}'; \
+                 expected one of: current, darwin-arm64, darwin-x86_64, \
+                 linux-x86_64, linux-aarch64, windows-x86_64, \
+                 or a Linux target with a glibc version suffix (e.g. linux-x86_64.2.17)"
+            ))
+        })?;
+
+        Ok(Self {
+            target,
+            glibc_version: None,
+        })
+    }
+}
+
+/// Split `"linux-x86_64.2.17"` into `("linux-x86_64", "2.17")`.
+///
+/// Returns `None` if no valid glibc version suffix is found.
+/// A valid suffix starts with `'.'` followed by digits and optional further `'.digits'` groups.
+/// None of the `JavaHostTarget` canonical names contain `'.'`, so the first `'.'`
+/// in the string is always the separator.
+fn split_glibc_version_suffix(s: &str) -> Option<(&str, &str)> {
+    let dot = s.find('.')?;
+    let version = &s[dot + 1..];
+    // Version must be non-empty, start with a digit, and contain only digits and dots.
+    if version.is_empty()
+        || !version.starts_with(|c: char| c.is_ascii_digit())
+        || !version.bytes().all(|b| b.is_ascii_digit() || b == b'.')
+    {
+        return None;
+    }
+    Some((&s[..dot], version))
+}
+
+impl JavaHostTarget {
+    /// Parse a host target from its canonical string name (same set accepted by serde).
+    pub fn from_canonical(s: &str) -> Option<Self> {
+        match s {
+            "current" => Some(Self::Current),
+            "darwin-arm64" | "darwin-aarch64" => Some(Self::DarwinArm64),
+            "darwin-x86_64" | "darwin-x86-64" => Some(Self::DarwinX86_64),
+            "linux-x86_64" | "linux-x86-64" => Some(Self::LinuxX86_64),
+            "linux-aarch64" | "linux-arm64" => Some(Self::LinuxAarch64),
+            "windows-x86_64" | "windows-x86-64" => Some(Self::WindowsX86_64),
+            _ => None,
+        }
     }
 
     fn native_host_platform(self) -> NativeHostPlatform {
@@ -622,9 +788,9 @@ pub fn resolve_apple_macos_targets(architectures: &[AppleArchitecture]) -> Vec<R
 }
 
 pub fn resolve_java_host_targets(
-    targets: &[JavaHostTarget],
-) -> Result<Vec<JavaHostTarget>, String> {
-    JavaHostTarget::resolve_requested(targets)
+    targets: &[JavaJvmHostTarget],
+) -> Result<Vec<JavaJvmHostTarget>, String> {
+    JavaJvmHostTarget::resolve_requested(targets)
 }
 
 pub fn resolve_dart_native_targets(architectures: &[DartNativeArchitecture]) -> Vec<RustTarget> {
@@ -689,8 +855,9 @@ mod tests {
 
     use super::{
         AndroidArchitecture, AppleArchitecture, AppleIosArchitecture, BuiltLibrary, JavaHostTarget,
-        Platform, RustTarget, resolve_android_targets, resolve_apple_ios_targets,
-        resolve_apple_macos_targets, resolve_apple_simulator_targets, resolve_java_host_targets,
+        JavaJvmHostTarget, Platform, RustTarget, resolve_android_targets,
+        resolve_apple_ios_targets, resolve_apple_macos_targets, resolve_apple_simulator_targets,
+        resolve_java_host_targets,
     };
     use std::fs;
     use std::path::Path;
@@ -782,19 +949,22 @@ mod tests {
     #[test]
     fn resolves_current_java_host_target() {
         let current_host = JavaHostTarget::current().expect("supported test host");
-        let resolved = resolve_java_host_targets(&[JavaHostTarget::Current])
+        let resolved = resolve_java_host_targets(&[JavaJvmHostTarget::new(JavaHostTarget::Current)])
             .expect("expected current host resolution");
 
-        assert_eq!(resolved, vec![current_host]);
+        assert_eq!(resolved, vec![JavaJvmHostTarget::new(current_host)]);
     }
 
     #[test]
     fn dedupes_current_against_explicit_java_host_target() {
         let current_host = JavaHostTarget::current().expect("supported test host");
-        let resolved = resolve_java_host_targets(&[JavaHostTarget::Current, current_host])
-            .expect("expected deduped host targets");
+        let resolved = resolve_java_host_targets(&[
+            JavaJvmHostTarget::new(JavaHostTarget::Current),
+            JavaJvmHostTarget::new(current_host),
+        ])
+        .expect("expected deduped host targets");
 
-        assert_eq!(resolved, vec![current_host]);
+        assert_eq!(resolved, vec![JavaJvmHostTarget::new(current_host)]);
     }
 
     #[test]
@@ -811,10 +981,16 @@ mod tests {
         .find(|target| *target != current_host)
         .expect("alternate host target");
 
-        let resolved = resolve_java_host_targets(&[JavaHostTarget::Current, explicit_other_host])
-            .expect("resolved host targets");
+        let resolved = resolve_java_host_targets(&[
+            JavaJvmHostTarget::new(JavaHostTarget::Current),
+            JavaJvmHostTarget::new(explicit_other_host),
+        ])
+        .expect("resolved host targets");
 
-        assert_eq!(resolved, vec![current_host, explicit_other_host]);
+        assert_eq!(
+            resolved,
+            vec![JavaJvmHostTarget::new(current_host), JavaJvmHostTarget::new(explicit_other_host)]
+        );
     }
 
     #[test]
