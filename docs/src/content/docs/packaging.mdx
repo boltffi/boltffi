@@ -384,6 +384,19 @@ host_targets = ["current", "linux-x86_64"]
 
 `host_targets` defaults to `["current"]`. BoltFFI resolves `current` to the active machine target, dedupes it against explicit entries, and writes one native output per resolved host target under `dist/java/native/<host-target>/`. `boltffi pack java --no-build` is still intentionally unsupported; rerun without `--no-build`.
 
+For Linux targets, you can specify a minimum glibc version to produce binaries compatible with older distributions. This requires `cargo-zigbuild`:
+
+```toml
+[cargo]
+build_command = "zigbuild"
+
+[targets.java.jvm]
+enabled = true
+host_targets = ["darwin-arm64", "linux-x86_64.2.17"]
+```
+
+The `.2.17` suffix is forwarded to `cargo zigbuild` as `--target x86_64-unknown-linux-gnu.2.17`. See [Custom Build Commands](#custom-build-commands) for more details.
+
 Current Phase 4 support is intentionally narrow:
 
 - Current-host packaging works on `darwin-arm64`, `darwin-x86_64`, `linux-x86_64`, `linux-aarch64`, and `windows-x86_64`
@@ -678,6 +691,65 @@ boltffi pack python --experimental --python python3.12 --python python3.13
 ```
 
 If you omit `--python` and do not configure `[targets.python.wheel].interpreters`, BoltFFI falls back to the first available default interpreter on the host.
+
+## Custom Build Commands
+
+BoltFFI uses `cargo build` by default. For cross-compilation or specific toolchain requirements, you can override this with `cargo-zigbuild`, `cross`, or any cargo-compatible tool.
+
+### Using cargo-zigbuild for Linux glibc Targeting
+
+When packaging for Linux servers, you often need to target a specific minimum glibc version. `cargo-zigbuild` uses Zig as a linker to achieve this:
+
+```toml
+[cargo]
+build_command = "zigbuild"
+
+[targets.java.jvm]
+enabled = true
+host_targets = ["linux-x86_64.2.17"]
+```
+
+Then package as usual:
+
+```bash
+boltffi pack java --release
+```
+
+BoltFFI passes `--target x86_64-unknown-linux-gnu.2.17` to `cargo zigbuild`, producing a binary compatible with glibc 2.17+.
+
+You can combine glibc-targeted Linux with other platforms:
+
+```toml
+[targets.java.jvm]
+enabled = true
+host_targets = ["darwin-arm64", "linux-x86_64.2.17", "linux-aarch64.2.28"]
+```
+
+### Using cross for Docker-based Builds
+
+`cross` runs builds inside Docker containers with pre-configured toolchains:
+
+```toml
+[cargo]
+build_command = "cross"
+```
+
+```bash
+boltffi pack android --release
+```
+
+### CLI Override
+
+Override the build command for a single invocation without changing your config:
+
+```bash
+boltffi pack java --release --cargo-build-cmd zigbuild
+boltffi build apple --cargo-build-cmd cross
+```
+
+The `--cargo-build-cmd` flag takes precedence over `[cargo].build_command` in `boltffi.toml`.
+
+See [Configuration](/docs/configuration#cargo-build-command) for the full reference.
 
 ## Build Profiles
 
