@@ -429,7 +429,7 @@ For release-style packaging, BoltFFI rejects this option unless the selected Car
 
 - JDK 8+ installed
 - `JAVA_HOME` environment variable set
-- `clang` available (used to compile the JNI bridge)
+- `clang` available (used to compile the JNI bridge), or a configured `jni_compiler` override
 
 ### Configuration
 
@@ -875,6 +875,24 @@ You can combine glibc-targeted Linux with other platforms:
 enabled = true
 host_targets = ["darwin-arm64", "linux-x86_64.2.17", "linux-aarch64.2.28"]
 ```
+
+### Fully Zig-based Cross-Compilation
+
+For a pure Zig toolchain (no extra cross-linker required), combine `cargo zigbuild` with `zig cc` as the JNI compiler:
+
+```toml
+[cargo]
+build_command = "zigbuild"
+
+[targets.java.jvm]
+enabled = true
+host_targets = ["linux-x86_64.2.17", "linux-aarch64.2.17"]
+jni_compiler = "zig cc"
+```
+
+BoltFFI invokes the JNI compiler as `zig cc -target x86_64-linux-gnu.2.17` (or `aarch64-linux-gnu.2.17` for the second target). The glibc version and zig triple are derived automatically from `host_targets`.
+
+This is the recommended setup when cross-compiling Linux JNI libraries from macOS — no Docker, no cross-linker wrapper, just `cargo install cargo-zigbuild` and a Zig installation.
 
 ### Using cross for Docker-based Builds
 

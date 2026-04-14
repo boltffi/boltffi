@@ -651,6 +651,57 @@ output = "dist/java/symbols"
 
 For release-like packaging profiles, BoltFFI requires Cargo debuginfo to be enabled before it will emit this archive. On Windows MSVC hosts, the archive also includes sibling `.pdb` files for the JNI DLL and any bundled Rust DLL when those sidecars exist.
 
+### JNI Compiler
+
+By default, BoltFFI discovers an appropriate C compiler to link the JNI glue (`clang` on Darwin/Linux, `clang-cl` or `cl` on Windows). Override this with the `jni_compiler` setting:
+
+```toml
+[targets.java.jvm]
+jni_compiler = "zig cc"
+```
+
+#### Using zig cc
+
+`zig cc` is the natural companion to `cargo zigbuild` for fully Zig-based Linux cross-compilation from macOS. Specify `"zig"` or `"zig cc"` and BoltFFI derives the correct `-target` argument automatically from `host_targets`:
+
+```toml
+[cargo]
+build_command = "zigbuild"
+
+[targets.java.jvm]
+enabled = true
+host_targets = ["linux-x86_64.2.17"]
+jni_compiler = "zig cc"
+```
+
+BoltFFI invokes zig as:
+
+```
+zig cc -target x86_64-linux-gnu.2.17
+```
+
+The zig triple is derived from the Rust triple by dropping the vendor component and mapping `darwin` → `macos`. The glibc version suffix is appended automatically when the target uses the GNU ABI (e.g. `-gnu`).
+
+When using `zig cc` for cross-compilation, no separate cross-linker installation (such as `zig-cc` wrappers or `CARGO_TARGET_*_LINKER` env vars) is required alongside `cargo zigbuild`.
+
+#### Using clang with an explicit target
+
+Clang-compatible compiler names (e.g. `clang`, `clang-18`) get `--target {rust_triple}` added automatically:
+
+```toml
+[targets.java.jvm]
+jni_compiler = "clang-18"
+```
+
+#### Using a custom compiler
+
+Any other executable is used as-is with no additional target argument:
+
+```toml
+[targets.java.jvm]
+jni_compiler = "/opt/toolchain/bin/arm-linux-gnueabihf-gcc"
+```
+
 ### Android Target
 
 Enable Android packaging to produce shared libraries for all Android ABIs:
