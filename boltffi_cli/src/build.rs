@@ -20,35 +20,84 @@ pub type OutputCallback = Box<dyn Fn(&str) + Send>;
 /// | `"cargo zigbuild"` | `cargo zigbuild`    |
 /// | `"cross build"`    | `cross build`       |
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CargoBuildCommand {
-    pub program: String,
-    pub subcommand: String,
+pub enum CargoBuildCommand {
+    /// Standard `cargo build`.
+    Cargo,
+    /// `cargo zigbuild` — uses Zig as a linker for glibc-versioned Linux targets.
+    Zigbuild,
+    /// `cross build` — Docker-based cross-compilation via pre-configured containers.
+    Cross,
+    /// A custom `"program subcommand"` pair not directly known to BoltFFI.
+    Custom { program: String, subcommand: String },
 }
 
 impl CargoBuildCommand {
-    /// Parse a build command override string into `(program, subcommand)`.
+    /// Parse a build command override string.
     pub fn parse(s: &str) -> Self {
         let s = s.trim();
-        // Explicit "program subcommand" form
+        // Explicit "program subcommand" form.
         if let Some((program, subcommand)) = s.split_once(' ') {
-            let program = program.trim().to_string();
-            let subcommand = subcommand.trim().to_string();
+            let program = program.trim();
+            let subcommand = subcommand.trim();
             if !program.is_empty() && !subcommand.is_empty() {
-                return Self { program, subcommand };
+                return Self::from_parts(program, subcommand);
             }
         }
-        // Single token: "cross" is a standalone binary, everything else is a cargo subcommand
-        if s == "cross" {
-            Self {
-                program: "cross".to_string(),
-                subcommand: "build".to_string(),
-            }
-        } else {
-            Self {
+        // Single token.
+        Self::from_token(s)
+    }
+
+    /// The executable name for this build command.
+    pub fn program(&self) -> &str {
+        match self {
+            Self::Cargo | Self::Zigbuild => "cargo",
+            Self::Cross => "cross",
+            Self::Custom { program, .. } => program.as_str(),
+        }
+    }
+
+    /// The subcommand passed after the program name.
+    pub fn subcommand(&self) -> &str {
+        match self {
+            Self::Cargo | Self::Cross => "build",
+            Self::Zigbuild => "zigbuild",
+            Self::Custom { subcommand, .. } => subcommand.as_str(),
+        }
+    }
+
+    /// Whether this build command uses `cargo` as its program and should therefore
+    /// receive toolchain selectors like `+nightly`.
+    pub fn is_cargo_program(&self) -> bool {
+        matches!(self, Self::Cargo | Self::Zigbuild)
+    }
+
+    fn from_token(s: &str) -> Self {
+        match s {
+            "cross" => Self::Cross,
+            "zigbuild" => Self::Zigbuild,
+            _ => Self::Custom {
                 program: "cargo".to_string(),
                 subcommand: s.to_string(),
-            }
+            },
         }
+    }
+
+    fn from_parts(program: &str, subcommand: &str) -> Self {
+        match (program, subcommand) {
+            ("cargo", "build") => Self::Cargo,
+            ("cargo", "zigbuild") => Self::Zigbuild,
+            ("cross", "build") => Self::Cross,
+            (p, s) => Self::Custom {
+                program: p.to_string(),
+                subcommand: s.to_string(),
+            },
+        }
+    }
+}
+
+impl std::fmt::Display for CargoBuildCommand {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} {}", self.program(), self.subcommand())
     }
 }
 
@@ -277,16 +326,16 @@ impl<'a> Builder<'a> {
     /// Create the base `Command` for a cargo build invocation, respecting any
     /// `cargo_build_command` override set in `BuildOptions`.
     fn create_build_command(&self, command_args: &CargoBuildCommandArgs) -> Command {
-        let (program, subcommand) = match &self.options.cargo_build_command {
-            Some(cmd) => (cmd.program.as_str(), cmd.subcommand.as_str()),
-            None => ("cargo", "build"),
-        };
+        let cmd = self.options.cargo_build_command.as_ref();
+        let program = cmd.map(CargoBuildCommand::program).unwrap_or("cargo");
+        let subcommand = cmd.map(CargoBuildCommand::subcommand).unwrap_or("build");
+        let is_cargo = cmd.map(CargoBuildCommand::is_cargo_program).unwrap_or(true);
 
         let mut command = Command::new(program);
 
         // Toolchain selectors (+nightly, +stable, …) are a cargo-specific concept
         // and are not forwarded when using a standalone binary such as `cross`.
-        if program == "cargo" {
+        if is_cargo {
             if let Some(toolchain_selector) = command_args.toolchain_selector.as_deref() {
                 command.arg(toolchain_selector);
             }
@@ -379,30 +428,63 @@ mod tests {
 
     #[test]
     fn parses_zigbuild_as_cargo_subcommand() {
-        let cmd = CargoBuildCommand::parse("zigbuild");
-        assert_eq!(cmd.program, "cargo");
-        assert_eq!(cmd.subcommand, "zigbuild");
+        assert_eq!(CargoBuildCommand::parse("zigbuild"), CargoBuildCommand::Zigbuild);
     }
 
     #[test]
     fn parses_cross_as_standalone_binary() {
-        let cmd = CargoBuildCommand::parse("cross");
-        assert_eq!(cmd.program, "cross");
-        assert_eq!(cmd.subcommand, "build");
+        assert_eq!(CargoBuildCommand::parse("cross"), CargoBuildCommand::Cross);
     }
 
     #[test]
     fn parses_explicit_cargo_zigbuild() {
-        let cmd = CargoBuildCommand::parse("cargo zigbuild");
-        assert_eq!(cmd.program, "cargo");
-        assert_eq!(cmd.subcommand, "zigbuild");
+        assert_eq!(CargoBuildCommand::parse("cargo zigbuild"), CargoBuildCommand::Zigbuild);
     }
 
     #[test]
     fn parses_explicit_cross_build() {
-        let cmd = CargoBuildCommand::parse("cross build");
-        assert_eq!(cmd.program, "cross");
-        assert_eq!(cmd.subcommand, "build");
+        assert_eq!(CargoBuildCommand::parse("cross build"), CargoBuildCommand::Cross);
+    }
+
+    #[test]
+    fn parses_explicit_cargo_build_as_cargo_variant() {
+        assert_eq!(CargoBuildCommand::parse("cargo build"), CargoBuildCommand::Cargo);
+    }
+
+    #[test]
+    fn parses_unknown_token_as_custom_cargo_subcommand() {
+        assert_eq!(
+            CargoBuildCommand::parse("nextest"),
+            CargoBuildCommand::Custom {
+                program: "cargo".to_string(),
+                subcommand: "nextest".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn parses_unknown_program_subcommand_pair_as_custom() {
+        assert_eq!(
+            CargoBuildCommand::parse("my-tool build"),
+            CargoBuildCommand::Custom {
+                program: "my-tool".to_string(),
+                subcommand: "build".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn display_formats_program_and_subcommand() {
+        assert_eq!(CargoBuildCommand::Cargo.to_string(), "cargo build");
+        assert_eq!(CargoBuildCommand::Zigbuild.to_string(), "cargo zigbuild");
+        assert_eq!(CargoBuildCommand::Cross.to_string(), "cross build");
+    }
+
+    #[test]
+    fn cargo_and_zigbuild_are_cargo_programs() {
+        assert!(CargoBuildCommand::Cargo.is_cargo_program());
+        assert!(CargoBuildCommand::Zigbuild.is_cargo_program());
+        assert!(!CargoBuildCommand::Cross.is_cargo_program());
     }
 
     #[test]
