@@ -675,17 +675,23 @@ pub(crate) fn build_jvm_native_library(
         command: format!("current_dir: {source}"),
         status: None,
     })?;
-    let mut command = Command::new("cargo");
+    let (program, subcommand) = match &cargo_context.cargo_build_command {
+        Some(cmd) => (cmd.program.as_str(), cmd.subcommand.as_str()),
+        None => ("cargo", "build"),
+    };
+    let mut command = Command::new(program);
     command.current_dir(crate_directory);
 
-    if let Some(toolchain_selector) = cargo_context.toolchain_selector.as_deref() {
-        command.arg(toolchain_selector);
+    if program == "cargo" {
+        if let Some(toolchain_selector) = cargo_context.toolchain_selector.as_deref() {
+            command.arg(toolchain_selector);
+        }
     }
 
     command
-        .arg("build")
+        .arg(subcommand)
         .arg("--target")
-        .arg(&cargo_context.rust_target_triple);
+        .arg(cargo_context.cargo_target_arg());
     apply_jvm_cargo_package_selection(&mut command, cargo_context);
 
     if release {
@@ -696,6 +702,13 @@ pub(crate) fn build_jvm_native_library(
     packaging_target
         .toolchain
         .configure_cargo_build(&mut command);
+
+    if step.is_verbose() {
+        print_verbose_detail(&format!(
+            "cargo build command: {}",
+            format_command_for_log(&command)
+        ));
+    }
 
     if !run_command_streaming(&mut command, on_output.as_ref()) {
         return Err(PackError::BuildFailed {
@@ -1560,6 +1573,7 @@ mod tests {
         JvmCargoContext {
             host_target,
             rust_target_triple: "x86_64-unknown-linux-gnu".to_string(),
+            glibc_version: None,
             release: false,
             build_profile: CargoBuildProfile::Debug,
             artifact_name: "demo".to_string(),
@@ -1573,6 +1587,7 @@ mod tests {
                 builds_staticlib: true,
                 builds_cdylib: false,
             },
+            cargo_build_command: None,
         }
     }
 

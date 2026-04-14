@@ -1,17 +1,17 @@
 use std::path::{Path, PathBuf};
 
-use crate::build::CargoBuildProfile;
+use crate::build::{CargoBuildCommand, CargoBuildProfile};
 use crate::cargo::Cargo;
 use crate::cli::{CliError, Result};
 use crate::commands::generate::run_generate_java_with_output_from_source_dir;
 use crate::config::{Config, DebugSymbolsBundle, DebugSymbolsFormat, Target};
-use crate::pack::resolve_build_cargo_args;
+use crate::pack::{resolve_build_cargo_args, resolve_cargo_build_command};
 use crate::pack::symbols::{
     DebugSymbolArtifact, DebugSymbolArtifactKind, ensure_debug_symbols_profile_has_debuginfo,
     write_debug_symbols_zip,
 };
 use crate::reporter::Reporter;
-use crate::target::JavaHostTarget;
+use crate::target::{JavaHostTarget, JavaJvmHostTarget};
 use crate::toolchain::NativeHostToolchain;
 
 use super::link::{
@@ -27,7 +27,12 @@ use super::outputs::{
 #[derive(Debug, Clone)]
 pub(crate) struct JvmCargoContext {
     pub(crate) host_target: JavaHostTarget,
+    /// Rust target triple used for **artifact directory** lookup (never has a glibc suffix).
     pub(crate) rust_target_triple: String,
+    /// Minimum glibc version (Linux only). When `Some`, this is appended to
+    /// `rust_target_triple` when constructing the `--target` argument for
+    /// `cargo zigbuild` (e.g. `x86_64-unknown-linux-gnu.2.17`).
+    pub(crate) glibc_version: Option<String>,
     pub(crate) release: bool,
     pub(crate) build_profile: CargoBuildProfile,
     pub(crate) artifact_name: String,
@@ -38,6 +43,8 @@ pub(crate) struct JvmCargoContext {
     pub(crate) cargo_command_args: Vec<String>,
     pub(crate) toolchain_selector: Option<String>,
     pub(crate) crate_outputs: JvmCrateOutputs,
+    /// Override for the cargo build program/subcommand (e.g. `cargo zigbuild` or `cross build`).
+    pub(crate) cargo_build_command: Option<CargoBuildCommand>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -62,14 +69,35 @@ impl JvmCargoContext {
             .join(&self.rust_target_triple)
             .join(self.build_profile.output_directory_name())
     }
+
+    /// Returns the value to pass as `--target` to the cargo build command.
+    ///
+    /// For Linux targets with a configured glibc version this appends the
+    /// version suffix understood by `cargo zigbuild`
+    /// (e.g. `x86_64-unknown-linux-gnu.2.17`).
+    /// For all other targets this is identical to `rust_target_triple`.
+    pub(crate) fn cargo_target_arg(&self) -> String {
+        match &self.glibc_version {
+            Some(version)
+                if matches!(
+                    self.host_target,
+                    JavaHostTarget::LinuxX86_64 | JavaHostTarget::LinuxAarch64
+                ) =>
+            {
+                format!("{}.{}", self.rust_target_triple, version)
+            }
+            _ => self.rust_target_triple.clone(),
+        }
+    }
 }
 
 pub(crate) fn check_java_packaging_prereqs(
     config: &Config,
     release: bool,
     cargo_args: &[String],
+    cargo_build_cmd: Option<&str>,
 ) -> Result<()> {
-    prepare_java_packaging(config, release, cargo_args).map(|_| ())
+    prepare_java_packaging(config, release, cargo_args, cargo_build_cmd).map(|_| ())
 }
 
 pub(crate) fn pack_java(
@@ -105,8 +133,10 @@ pub(crate) fn pack_java(
             config,
             options.execution.release,
             &options.execution.cargo_args,
+            options.execution.cargo_build_cmd.as_deref(),
         )?;
         step.finish_success();
+        print_validated_toolchains(&prepared.packaging_targets);
         prepared
     };
 
@@ -129,11 +159,10 @@ pub(crate) fn pack_java(
 
     let mut packaged_outputs = Vec::with_capacity(packaging_targets.len());
     for packaging_target in &packaging_targets {
-        let host_target = packaging_target.cargo_context.host_target;
-        let step = reporter.step(&format!(
-            "Building Rust library for {}",
-            host_target.canonical_name()
-        ));
+        let cargo_context = &packaging_target.cargo_context;
+        let host_target = cargo_context.host_target;
+        let build_label = format_build_label(cargo_context);
+        let step = reporter.step(&format!("Building Rust library for {build_label}"));
         let build_artifacts =
             build_jvm_native_library(packaging_target, options.execution.release, &step)?;
         step.finish_success();
@@ -178,6 +207,7 @@ pub(crate) fn prepare_java_packaging(
     config: &Config,
     release: bool,
     cargo_args: &[String],
+    cargo_build_cmd: Option<&str>,
 ) -> Result<PreparedJvmPackaging> {
     let prepared = prepare_jvm_packaging_matrix(
         config,
@@ -185,6 +215,7 @@ pub(crate) fn prepare_java_packaging(
         cargo_args,
         config.java_jvm_strip_symbols(),
         "pack java",
+        cargo_build_cmd,
     )?;
     if config.java_jvm_debug_symbols_enabled() {
         let build_cargo_args = resolve_build_cargo_args(config, cargo_args);
@@ -208,7 +239,7 @@ pub(crate) fn prepare_kmp_jvm_packaging(
     release: bool,
     cargo_args: &[String],
 ) -> Result<PreparedJvmPackaging> {
-    prepare_jvm_packaging_matrix(config, release, cargo_args, false, "pack kmp")
+    prepare_jvm_packaging_matrix(config, release, cargo_args, false, "pack kmp", None)
 }
 
 fn prepare_jvm_packaging_matrix(
@@ -217,6 +248,7 @@ fn prepare_jvm_packaging_matrix(
     cargo_args: &[String],
     strip_symbols: bool,
     command_name: &str,
+    cargo_build_cmd: Option<&str>,
 ) -> Result<PreparedJvmPackaging> {
     let build_cargo_args = resolve_build_cargo_args(config, cargo_args);
     ensure_jvm_pack_cargo_args_supported(&build_cargo_args, command_name)?;
@@ -228,6 +260,7 @@ fn prepare_jvm_packaging_matrix(
             status: None,
         });
     }
+    let cargo_build_command = resolve_cargo_build_command(config, cargo_build_cmd);
     let packaging_targets = resolve_jvm_packaging_targets(
         config,
         &build_cargo_args,
@@ -235,6 +268,7 @@ fn prepare_jvm_packaging_matrix(
         build_profile,
         &host_targets,
         strip_symbols,
+        cargo_build_command,
     )?;
 
     Ok(PreparedJvmPackaging {
@@ -433,7 +467,44 @@ fn write_jvm_debug_symbols(
     Ok(())
 }
 
-fn resolve_java_host_targets_for_packaging(config: &Config) -> Result<Vec<JavaHostTarget>> {
+/// Formats the step label for "Building Rust library for …".
+///
+/// Includes the glibc version and the cargo build command when they
+/// differ from the defaults so the user can see at a glance what
+/// BoltFFI is doing.
+fn format_build_label(ctx: &JvmCargoContext) -> String {
+    let mut label = ctx.host_target.canonical_name().to_string();
+    if let Some(glibc) = &ctx.glibc_version {
+        label.push_str(&format!(" (glibc {glibc})"));
+    }
+    if let Some(cmd) = &ctx.cargo_build_command {
+        label.push_str(&format!(" [{} {}]", cmd.program, cmd.subcommand));
+    }
+    label
+}
+
+/// Prints a summary of each validated JVM packaging target.
+fn print_validated_toolchains(packaging_targets: &[JvmPackagingTarget]) {
+    for target in packaging_targets {
+        let ctx = &target.cargo_context;
+        let host = ctx.host_target.canonical_name();
+        let triple = target.toolchain.rust_target_triple();
+        let compiler = target.toolchain.jni_compiler_program().display();
+        let build_cmd = match &ctx.cargo_build_command {
+            Some(cmd) => format!("{} {}", cmd.program, cmd.subcommand),
+            None => "cargo build".to_string(),
+        };
+        let glibc_info = match &ctx.glibc_version {
+            Some(v) => format!(", glibc {v}"),
+            None => String::new(),
+        };
+        println!(
+            "      {host}: triple={triple}{glibc_info}, build={build_cmd}, jni_compiler={compiler}"
+        );
+    }
+}
+
+fn resolve_java_host_targets_for_packaging(config: &Config) -> Result<Vec<JavaJvmHostTarget>> {
     config
         .java_jvm_host_targets()
         .map_err(|message| CliError::CommandFailed {
@@ -447,8 +518,9 @@ fn resolve_jvm_packaging_targets(
     build_cargo_args: &[String],
     release: bool,
     build_profile: CargoBuildProfile,
-    host_targets: &[JavaHostTarget],
+    host_targets: &[JavaJvmHostTarget],
     strip_symbols: bool,
+    cargo_build_command: Option<CargoBuildCommand>,
 ) -> Result<Vec<JvmPackagingTarget>> {
     let current_host = JavaHostTarget::current().ok_or_else(|| CliError::CommandFailed {
         command:
@@ -475,8 +547,8 @@ fn resolve_jvm_packaging_targets(
 
     host_targets
         .iter()
-        .copied()
-        .map(|host_target| {
+        .map(|jvm_host_target| {
+            let host_target = jvm_host_target.target;
             validate_desktop_jni_symbol_stripping_for(strip_symbols, host_target)?;
             let toolchain = NativeHostToolchain::discover(
                 toolchain_selector.as_deref(),
@@ -487,6 +559,7 @@ fn resolve_jvm_packaging_targets(
             let cargo_context = JvmCargoContext {
                 host_target,
                 rust_target_triple: toolchain.rust_target_triple().to_string(),
+                glibc_version: jvm_host_target.glibc_version.clone(),
                 release,
                 build_profile: build_profile.clone(),
                 artifact_name: artifact_name.clone(),
@@ -497,6 +570,7 @@ fn resolve_jvm_packaging_targets(
                 cargo_command_args: cargo_command_args.clone(),
                 toolchain_selector: toolchain_selector.clone(),
                 crate_outputs,
+                cargo_build_command: cargo_build_command.clone(),
             };
             let _ = resolve_jni_include_directories(&cargo_context)?;
             Ok(JvmPackagingTarget {
@@ -657,6 +731,7 @@ mod tests {
             cargo_context: JvmCargoContext {
                 host_target: current_host,
                 rust_target_triple: "x86_64-unknown-linux-gnu".to_string(),
+                glibc_version: None,
                 release: false,
                 build_profile: CargoBuildProfile::Debug,
                 artifact_name: "workspace_member".to_string(),
@@ -670,6 +745,7 @@ mod tests {
                     builds_staticlib: true,
                     builds_cdylib: true,
                 },
+                cargo_build_command: None,
             },
             toolchain: NativeHostToolchain::discover(None, &[], current_host, current_host)
                 .expect("native host toolchain"),
