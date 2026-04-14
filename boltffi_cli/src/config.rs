@@ -455,6 +455,19 @@ pub struct JavaJvmConfig {
     pub strip_symbols: bool,
     #[serde(default)]
     pub debug_symbols: DebugSymbolsConfig,
+    /// Override the C compiler used to compile the JNI glue library.
+    ///
+    /// Supports `zig cc` (auto-derives the zig-style `-target` from `host_targets`),
+    /// any clang-compatible driver, or an arbitrary compiler path.
+    ///
+    /// Examples:
+    /// ```toml
+    /// [targets.java.jvm]
+    /// jni_compiler = "zig cc"            # zig C compiler (recommended with zigbuild)
+    /// jni_compiler = "clang"             # explicit clang
+    /// jni_compiler = "/opt/cross/bin/gcc-linux" # absolute path
+    /// ```
+    pub jni_compiler: Option<String>,
 }
 
 impl Default for JavaJvmConfig {
@@ -465,6 +478,7 @@ impl Default for JavaJvmConfig {
             host_targets: None,
             strip_symbols: false,
             debug_symbols: DebugSymbolsConfig::default(),
+            jni_compiler: None,
         }
     }
 }
@@ -1461,6 +1475,10 @@ impl Config {
 
     pub fn java_jvm_debug_symbols_bundle(&self) -> DebugSymbolsBundle {
         self.targets.java.jvm.debug_symbols.bundle
+    }
+
+    pub fn java_jvm_jni_compiler(&self) -> Option<&str> {
+        self.targets.java.jvm.jni_compiler.as_deref()
     }
 
     pub fn java_jvm_requested_host_targets(&self) -> &[JavaJvmHostTarget] {

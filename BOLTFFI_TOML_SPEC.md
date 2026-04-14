@@ -317,6 +317,14 @@ Desktop JVM target configuration.
   - Phase 3 behavior: all configured values must resolve to the current host target after `current` expansion and deduping
   - Packaging layout: `boltffi pack java` writes the JNI library to `dist/java/native/<host-target>/` and also keeps a flat current-host `_jni` copy in `dist/java/`
   - `boltffi pack java --no-build` is unsupported in Phase 3; rerun without `--no-build`
+- `jni_compiler` (string, optional): C compiler used to compile the JNI glue shared library.
+  - Default: auto-discovered (`clang` on Darwin/Linux, `clang-cl` / `cl` on Windows)
+  - `"zig cc"` (or just `"zig"`): uses the Zig C compiler; a zig-style `-target` is derived
+    automatically from `host_targets` (e.g. `x86_64-linux-gnu.2.17` when glibc is specified)
+  - clang-compatible names (`clang`, `clang-18`, …): uses `--target {rust_triple}`
+  - Any other executable path: used as-is; no target argument is added automatically
+  - When set alongside `[cargo].build_command = "zigbuild"` on macOS targeting Linux,
+    no separate cross-linker installation is required
 
 ### `[targets.java.jvm.debug_symbols]` (optional)
 
