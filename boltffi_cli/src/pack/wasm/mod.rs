@@ -3,7 +3,7 @@ mod npm;
 use std::path::Path;
 use std::process::Command;
 
-use crate::build::{BuildOptions, Builder, OutputCallback, all_successful, failed_targets};
+use crate::build::{BuildOptions, Builder, CargoBuildCommand, OutputCallback, all_successful, failed_targets};
 use crate::cli::{CliError, Result};
 use crate::commands::generate::{GenerateOptions, GenerateTarget, run_generate_with_output};
 use crate::commands::pack::PackWasmOptions;
@@ -11,7 +11,7 @@ use crate::config::{Config, WasmOptimizeLevel, WasmOptimizeOnMissing, WasmProfil
 use crate::pack::PackError;
 use crate::reporter::Reporter;
 
-use super::{print_cargo_line, resolve_build_cargo_args};
+use super::{print_cargo_line, resolve_build_cargo_args, resolve_cargo_build_command};
 
 use self::npm::{
     generate_wasm_loader_entrypoints, generate_wasm_package_json, generate_wasm_readme,
@@ -66,9 +66,11 @@ pub(crate) fn pack_wasm(
         }
     };
 
+    let cargo_build_command = resolve_cargo_build_command(config, options.cargo_build_cmd.as_deref());
+
     if !options.no_build {
         let step = reporter.step("Building WASM target");
-        build_wasm_target(config, requested_wasm_profile, &build_cargo_args, &step)?;
+        build_wasm_target(config, requested_wasm_profile, &build_cargo_args, cargo_build_command, &step)?;
         step.finish_success();
     }
 
@@ -158,6 +160,7 @@ fn build_wasm_target(
     config: &Config,
     profile: WasmProfile,
     build_cargo_args: &[String],
+    cargo_build_command: Option<CargoBuildCommand>,
     step: &crate::reporter::Step,
 ) -> Result<()> {
     let on_output: Option<OutputCallback> = if step.is_verbose() {
@@ -171,6 +174,7 @@ fn build_wasm_target(
         package: Some(config.library_name().to_string()),
         cargo_args: build_cargo_args.to_vec(),
         on_output,
+        cargo_build_command,
     };
     let builder = Builder::new(config, build_options);
     let results = builder.build_wasm_with_triple(config.wasm_triple())?;

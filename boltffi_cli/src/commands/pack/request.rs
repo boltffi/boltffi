@@ -16,6 +16,8 @@ pub struct PackAllOptions {
     pub experimental: bool,
     pub python_interpreters: Vec<String>,
     pub cargo_args: Vec<String>,
+    /// See [`crate::build::CargoBuildCommand::parse`] for accepted values.
+    pub cargo_build_cmd: Option<String>,
 }
 
 pub struct PackAppleOptions {
@@ -27,6 +29,8 @@ pub struct PackAppleOptions {
     pub xcframework_only: bool,
     pub layout: Option<SpmLayout>,
     pub cargo_args: Vec<String>,
+    /// See [`crate::build::CargoBuildCommand::parse`] for accepted values.
+    pub cargo_build_cmd: Option<String>,
 }
 
 pub struct PackAndroidOptions {
@@ -34,6 +38,8 @@ pub struct PackAndroidOptions {
     pub regenerate: bool,
     pub no_build: bool,
     pub cargo_args: Vec<String>,
+    /// See [`crate::build::CargoBuildCommand::parse`] for accepted values.
+    pub cargo_build_cmd: Option<String>,
 }
 
 pub struct PackWasmOptions {
@@ -41,6 +47,8 @@ pub struct PackWasmOptions {
     pub regenerate: bool,
     pub no_build: bool,
     pub cargo_args: Vec<String>,
+    /// See [`crate::build::CargoBuildCommand::parse`] for accepted values.
+    pub cargo_build_cmd: Option<String>,
 }
 
 pub struct PackJavaOptions {
@@ -49,6 +57,8 @@ pub struct PackJavaOptions {
     pub no_build: bool,
     pub experimental: bool,
     pub cargo_args: Vec<String>,
+    /// See [`crate::build::CargoBuildCommand::parse`] for accepted values.
+    pub cargo_build_cmd: Option<String>,
 }
 
 pub struct PackPythonOptions {

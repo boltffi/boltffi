@@ -1,6 +1,6 @@
 mod link;
 
-use crate::build::{BuildOptions, Builder, OutputCallback, all_successful, failed_targets};
+use crate::build::{BuildOptions, Builder, CargoBuildCommand, OutputCallback, all_successful, failed_targets};
 use crate::cli::{CliError, Result};
 use crate::commands::generate::{GenerateOptions, GenerateTarget, run_generate_with_output};
 use crate::commands::pack::PackAndroidOptions;
@@ -11,7 +11,7 @@ use crate::target::Platform;
 
 use super::{
     discover_built_libraries_for_targets, missing_built_libraries, print_cargo_line,
-    resolve_build_cargo_args,
+    resolve_build_cargo_args, resolve_cargo_build_command,
 };
 
 pub(crate) use self::link::AndroidPackager;
@@ -33,6 +33,7 @@ pub(crate) fn pack_android(
     let build_cargo_args = resolve_build_cargo_args(config, &options.cargo_args);
     let build_profile = crate::build::resolve_build_profile(options.release, &build_cargo_args);
     let android_targets = config.android_targets();
+    let cargo_build_command = resolve_cargo_build_command(config, options.cargo_build_cmd.as_deref());
 
     if !options.no_build {
         let step = reporter.step("Building Android targets");
@@ -41,6 +42,7 @@ pub(crate) fn pack_android(
             &android_targets,
             options.release,
             &build_cargo_args,
+            cargo_build_command,
             &step,
         )?;
         step.finish_success();
@@ -102,6 +104,7 @@ fn build_android_targets(
     targets: &[crate::target::RustTarget],
     release: bool,
     build_cargo_args: &[String],
+    cargo_build_command: Option<CargoBuildCommand>,
     step: &crate::reporter::Step,
 ) -> Result<()> {
     let on_output: Option<OutputCallback> = if step.is_verbose() {
@@ -115,6 +118,7 @@ fn build_android_targets(
         package: Some(config.library_name().to_string()),
         cargo_args: build_cargo_args.to_vec(),
         on_output,
+        cargo_build_command,
     };
     let builder = Builder::new(config, build_options);
     let results = builder.build_android(targets)?;
