@@ -1,6 +1,6 @@
 use crate::target::{
-    AndroidArchitecture, AppleArchitecture, AppleIosArchitecture, JavaHostTarget, RustTarget,
-    resolve_android_targets, resolve_apple_ios_targets, resolve_apple_macos_targets,
+    AndroidArchitecture, AppleArchitecture, AppleIosArchitecture, JavaJvmHostTarget,
+    RustTarget, resolve_android_targets, resolve_apple_ios_targets, resolve_apple_macos_targets,
     resolve_apple_simulator_targets, resolve_java_host_targets,
 };
 use boltffi_bindgen::render::python::NamingConvention;
@@ -77,6 +77,16 @@ pub struct CargoConfig {
     pub global_args: Vec<String>,
     #[serde(default)]
     pub command_args: HashMap<String, Vec<String>>,
+    /// Override the cargo build subcommand or binary.
+    ///
+    /// Examples (in `boltffi.toml`):
+    /// ```toml
+    /// [cargo]
+    /// build_command = "zigbuild"     # → cargo zigbuild
+    /// build_command = "cross"        # → cross build
+    /// build_command = "cross build"  # → cross build (explicit)
+    /// ```
+    pub build_command: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -333,7 +343,16 @@ pub struct JavaJvmConfig {
     pub enabled: bool,
     #[serde(default = "default_java_jvm_output")]
     pub output: PathBuf,
-    pub host_targets: Option<Vec<JavaHostTarget>>,
+    /// JVM packaging targets, with optional per-Linux glibc version constraints.
+    ///
+    /// Examples:
+    /// ```toml
+    /// host_targets = ["current"]                  # current host only
+    /// host_targets = ["linux-x86_64"]             # Linux x86-64, system glibc
+    /// host_targets = ["linux-x86_64.2.17"]        # Linux x86-64, glibc ≥ 2.17
+    /// host_targets = ["linux-x86_64.2.17", "darwin-arm64"]
+    /// ```
+    pub host_targets: Option<Vec<JavaJvmHostTarget>>,
 }
 
 impl Default for JavaJvmConfig {
@@ -1136,16 +1155,16 @@ impl Config {
         self.targets.java.jvm.output.clone()
     }
 
-    pub fn java_jvm_requested_host_targets(&self) -> &[JavaHostTarget] {
+    pub fn java_jvm_requested_host_targets(&self) -> &[JavaJvmHostTarget] {
         self.targets
             .java
             .jvm
             .host_targets
             .as_deref()
-            .unwrap_or(JavaHostTarget::DEFAULTS)
+            .unwrap_or(JavaJvmHostTarget::DEFAULTS)
     }
 
-    pub fn java_jvm_host_targets(&self) -> std::result::Result<Vec<JavaHostTarget>, String> {
+    pub fn java_jvm_host_targets(&self) -> std::result::Result<Vec<JavaJvmHostTarget>, String> {
         resolve_java_host_targets(self.java_jvm_requested_host_targets())
     }
 
@@ -1477,6 +1496,7 @@ pub enum ConfigError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::target::JavaHostTarget;
 
     fn parse_config(input: &str) -> Config {
         let parsed: Config = toml::from_str(input).expect("toml parse failed");
@@ -1869,7 +1889,7 @@ host_targets = ["current", "{current_host_value}"]
             config
                 .java_jvm_host_targets()
                 .expect("resolved current host"),
-            vec![current_host]
+            vec![JavaJvmHostTarget::new(current_host)]
         );
     }
 
@@ -1902,7 +1922,7 @@ host_targets = ["current", "{}"]
             config
                 .java_jvm_host_targets()
                 .expect("resolved host targets"),
-            vec![current_host, explicit_other_host]
+            vec![JavaJvmHostTarget::new(current_host), JavaJvmHostTarget::new(explicit_other_host)]
         );
     }
 

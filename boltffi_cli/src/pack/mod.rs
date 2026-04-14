@@ -9,6 +9,7 @@ use std::process::Command;
 
 use console::style;
 
+use crate::build::CargoBuildCommand;
 use crate::cli::{CliError, Result};
 use crate::config::Config;
 use crate::target::{BuiltLibrary, RustTarget};
@@ -43,6 +44,17 @@ pub(crate) fn resolve_build_cargo_args(config: &Config, cli_cargo_args: &[String
         .into_iter()
         .chain(cli_cargo_args.iter().cloned())
         .collect()
+}
+
+/// Resolves the cargo build command override, preferring the CLI flag over the config file.
+/// Returns `None` if neither source specifies an override (use the default `cargo build`).
+pub(crate) fn resolve_cargo_build_command(
+    config: &Config,
+    cli_override: Option<&str>,
+) -> Option<CargoBuildCommand> {
+    cli_override
+        .or(config.cargo.build_command.as_deref())
+        .map(CargoBuildCommand::parse)
 }
 
 pub(crate) fn discover_built_libraries_for_targets(
