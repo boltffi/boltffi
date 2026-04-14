@@ -353,6 +353,19 @@ pub struct JavaJvmConfig {
     /// host_targets = ["linux-x86_64.2.17", "darwin-arm64"]
     /// ```
     pub host_targets: Option<Vec<JavaJvmHostTarget>>,
+    /// Override the C compiler used to compile the JNI glue library.
+    ///
+    /// Supports `zig cc` (auto-derives the zig-style `-target` from `host_targets`),
+    /// any clang-compatible driver, or an arbitrary compiler path.
+    ///
+    /// Examples:
+    /// ```toml
+    /// [targets.java.jvm]
+    /// jni_compiler = "zig cc"            # zig C compiler (recommended with zigbuild)
+    /// jni_compiler = "clang"             # explicit clang
+    /// jni_compiler = "/opt/cross/bin/gcc-linux" # absolute path
+    /// ```
+    pub jni_compiler: Option<String>,
 }
 
 impl Default for JavaJvmConfig {
@@ -361,6 +374,7 @@ impl Default for JavaJvmConfig {
             enabled: false,
             output: default_java_jvm_output(),
             host_targets: None,
+            jni_compiler: None,
         }
     }
 }
@@ -1153,6 +1167,10 @@ impl Config {
 
     pub fn java_jvm_output(&self) -> PathBuf {
         self.targets.java.jvm.output.clone()
+    }
+
+    pub fn java_jvm_jni_compiler(&self) -> Option<&str> {
+        self.targets.java.jvm.jni_compiler.as_deref()
     }
 
     pub fn java_jvm_requested_host_targets(&self) -> &[JavaJvmHostTarget] {
