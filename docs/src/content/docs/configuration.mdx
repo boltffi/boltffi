@@ -22,6 +22,117 @@ config. The base `boltffi.toml` must still exist; the overlay only augments or o
 that file for the current command. `boltffi init` is the one command that intentionally rejects
 `--overlay`.
 
+## Cargo Build Command
+
+By default, BoltFFI uses `cargo build` to compile your Rust library. You can override this with alternative build tools like [`cargo-zigbuild`](https://github.com/rust-cross/cargo-zigbuild) or [`cross`](https://github.com/cross-rs/cross) for cross-compilation.
+
+### Configuration
+
+Set the build command in `boltffi.toml`:
+
+```toml
+[cargo]
+build_command = "zigbuild"
+```
+
+BoltFFI resolves shorthand values into the appropriate program and subcommand:
+
+| Config value       | Resolved command     |
+|--------------------|----------------------|
+| `"zigbuild"`       | `cargo zigbuild`     |
+| `"cross"`          | `cross build`        |
+| `"cargo zigbuild"` | `cargo zigbuild`     |
+| `"cross build"`    | `cross build`        |
+
+Any `"program subcommand"` pair is accepted, so you can plug in other cargo-compatible build tools.
+
+### CLI Override
+
+The `--cargo-build-cmd` flag overrides the config file value for a single invocation:
+
+```bash
+boltffi pack java --cargo-build-cmd zigbuild
+boltffi build android --cargo-build-cmd cross
+boltffi pack all --release --cargo-build-cmd "cargo zigbuild"
+```
+
+### Using cargo-zigbuild
+
+[`cargo-zigbuild`](https://github.com/rust-cross/cargo-zigbuild) uses Zig as a linker to cross-compile Rust code for Linux with a specific minimum glibc version. This is useful when you need to produce binaries compatible with older Linux distributions.
+
+Install it first:
+
+```bash
+cargo install cargo-zigbuild
+```
+
+Then configure BoltFFI:
+
+```toml
+[cargo]
+build_command = "zigbuild"
+
+[targets.java.jvm]
+enabled = true
+host_targets = ["linux-x86_64.2.17"]
+```
+
+The `.2.17` suffix on `linux-x86_64` tells `cargo zigbuild` to target glibc 2.17 (CentOS 7 / RHEL 7 era). This suffix is forwarded verbatim to the `--target` argument:
+
+```
+cargo zigbuild --target x86_64-unknown-linux-gnu.2.17
+```
+
+The glibc version suffix is only valid on Linux targets (`linux-x86_64`, `linux-aarch64`). Specifying it on macOS or Windows targets is an error.
+
+Common glibc version targets:
+
+| glibc | Compatible with |
+|-------|-----------------|
+| `2.17` | CentOS/RHEL 7+, Debian 8+, Ubuntu 14.04+ |
+| `2.28` | CentOS/RHEL 8+, Debian 10+, Ubuntu 18.10+ |
+| `2.31` | Debian 11+, Ubuntu 20.04+ |
+| `2.35` | Ubuntu 22.04+ |
+
+Without a glibc suffix, `cargo zigbuild` targets the system default glibc version.
+
+### Using cross
+
+[`cross`](https://github.com/cross-rs/cross) provides Docker-based cross-compilation environments. It mirrors the `cargo` CLI but runs builds inside pre-configured containers with the right toolchains.
+
+Install it first:
+
+```bash
+cargo install cross
+```
+
+Then configure BoltFFI:
+
+```toml
+[cargo]
+build_command = "cross"
+```
+
+Since `cross` is a standalone binary (not a cargo subcommand), BoltFFI invokes it directly as `cross build` and does not forward toolchain selectors like `+nightly`.
+
+### Combining with Other Cargo Settings
+
+The build command works alongside other `[cargo]` settings:
+
+```toml
+[cargo]
+build_command = "zigbuild"
+
+[cargo.command_args]
+build = ["--features", "server"]
+```
+
+Extra cargo arguments from `[cargo.command_args]`, `[cargo.global_args]`, and the `--cargo-arg` CLI flag are appended after the subcommand, so the full invocation becomes:
+
+```
+cargo zigbuild --target <triple> --features server
+```
+
 ## Package Identity
 
 Every `boltffi.toml` starts with a `[package]` section that identifies your library:
@@ -511,6 +622,19 @@ host_targets = ["current", "linux-x86_64"]
 
 The default output is `dist/java`. This produces Java sources, a C header, JNI glue, a structured native output under `dist/java/native/<host-target>/`, and a flat current-host `_jni` compatibility copy in `dist/java/`. `host_targets` defaults to `["current"]`, supports aliases such as `darwin-aarch64` and `linux-x86-64`, resolves `current` to the active host, and dedupes repeated entries. Requires `JAVA_HOME` and `clang`.
 
+Linux targets in `host_targets` accept an optional glibc version suffix for use with `cargo zigbuild`:
+
+```toml
+[cargo]
+build_command = "zigbuild"
+
+[targets.java.jvm]
+enabled = true
+host_targets = ["darwin-arm64", "linux-x86_64.2.17", "linux-aarch64.2.28"]
+```
+
+The glibc suffix (e.g. `.2.17`) is forwarded to the `--target` argument of the build command. Artifacts are written to the standard directory without the suffix.
+
 Phase 4 extends JVM packaging from current-host-only output to explicit desktop host matrices. Current-host packaging works on `darwin-arm64`, `darwin-x86_64`, `linux-x86_64`, `linux-aarch64`, and `windows-x86_64`. The initial cross-host parity path is macOS packaging `linux-x86_64`, which requires the Rust target, a configured Linux linker such as `CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER` or `BOLTFFI_JAVA_LINKER_X86_64_UNKNOWN_LINUX_GNU`, and target-appropriate JNI headers via either `BOLTFFI_JAVA_HOME_X86_64_UNKNOWN_LINUX_GNU` or `BOLTFFI_JAVA_INCLUDE_X86_64_UNKNOWN_LINUX_GNU`. `pack java` rejects explicit Cargo `--target` passthrough args because the host matrix is controlled by `host_targets`.
 
 ### JVM Debug Symbols
@@ -759,6 +883,9 @@ Here's a full configuration for a library that targets all platforms:
 ```toml
 [package]
 name = "mylib"
+
+[cargo]
+build_command = "zigbuild"   # optional: use cargo-zigbuild for Linux glibc targeting
 
 [targets.apple]
 output = "dist/apple"
