@@ -327,10 +327,8 @@ impl<'a> Builder<'a> {
 
         // Toolchain selectors (+nightly, +stable, …) are a cargo-specific concept
         // and are not forwarded when using a standalone binary such as `cross`.
-        if is_cargo {
-            if let Some(toolchain_selector) = command_args.toolchain_selector.as_deref() {
-                command.arg(toolchain_selector);
-            }
+        if is_cargo && let Some(toolchain_selector) = command_args.toolchain_selector.as_deref() {
+            command.arg(toolchain_selector);
         }
 
         command.arg(subcommand);
@@ -420,7 +418,10 @@ mod tests {
 
     #[test]
     fn parses_zigbuild_as_cargo_subcommand() {
-        assert_eq!(CargoBuildCommand::parse("zigbuild"), CargoBuildCommand::Zigbuild);
+        assert_eq!(
+            CargoBuildCommand::parse("zigbuild"),
+            CargoBuildCommand::Zigbuild
+        );
     }
 
     #[test]
@@ -430,17 +431,26 @@ mod tests {
 
     #[test]
     fn parses_explicit_cargo_zigbuild() {
-        assert_eq!(CargoBuildCommand::parse("cargo zigbuild"), CargoBuildCommand::Zigbuild);
+        assert_eq!(
+            CargoBuildCommand::parse("cargo zigbuild"),
+            CargoBuildCommand::Zigbuild
+        );
     }
 
     #[test]
     fn parses_explicit_cross_build() {
-        assert_eq!(CargoBuildCommand::parse("cross build"), CargoBuildCommand::Cross);
+        assert_eq!(
+            CargoBuildCommand::parse("cross build"),
+            CargoBuildCommand::Cross
+        );
     }
 
     #[test]
     fn parses_explicit_cargo_build_as_cargo_variant() {
-        assert_eq!(CargoBuildCommand::parse("cargo build"), CargoBuildCommand::Cargo);
+        assert_eq!(
+            CargoBuildCommand::parse("cargo build"),
+            CargoBuildCommand::Cargo
+        );
     }
 
     #[test]

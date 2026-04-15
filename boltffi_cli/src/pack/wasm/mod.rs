@@ -3,7 +3,9 @@ mod npm;
 use std::path::Path;
 use std::process::Command;
 
-use crate::build::{BuildOptions, Builder, CargoBuildCommand, OutputCallback, all_successful, failed_targets};
+use crate::build::{
+    BuildOptions, Builder, CargoBuildCommand, OutputCallback, all_successful, failed_targets,
+};
 use crate::cli::{CliError, Result};
 use crate::commands::generate::{GenerateOptions, GenerateTarget, run_generate_with_output};
 use crate::commands::pack::PackWasmOptions;
@@ -66,11 +68,18 @@ pub(crate) fn pack_wasm(
         }
     };
 
-    let cargo_build_command = resolve_cargo_build_command(config, options.cargo_build_cmd.as_deref());
+    let cargo_build_command =
+        resolve_cargo_build_command(config, options.cargo_build_cmd.as_deref());
 
     if !options.no_build {
         let step = reporter.step("Building WASM target");
-        build_wasm_target(config, requested_wasm_profile, &build_cargo_args, cargo_build_command, &step)?;
+        build_wasm_target(
+            config,
+            requested_wasm_profile,
+            &build_cargo_args,
+            cargo_build_command,
+            &step,
+        )?;
         step.finish_success();
     }
 

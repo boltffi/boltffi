@@ -264,6 +264,26 @@ Desktop JVM target configuration.
   - When set alongside `[cargo].build_command = "zigbuild"` on macOS targeting Linux,
     no separate cross-linker installation is required
 
+### `[targets.java.jvm.jni_compiler_container]` (optional)
+
+Runs the JNI compiler inside a container (Docker or Podman). Useful for cross-compiling the
+JNI glue with a specific toolchain image (e.g. manylinux2014).
+
+- `image` (string, required): Container image to use.
+- `runtime` (string, optional): Container runtime.
+  - Default: `"docker"`
+  - Supported values: `"docker"`, `"podman"`
+
+BoltFFI invokes `{runtime} run --rm -v <dir>:<dir> {image} {compiler} {args}`, mapping all
+directories referenced by the compiler arguments as bind-mount volumes at identical container
+paths so no path rewriting is needed.
+
+```toml
+[targets.java.jvm.jni_compiler_container]
+image = "quay.io/pypa/manylinux2014_x86_64"
+runtime = "docker"
+```
+
 ### `[targets.java.android]` (optional)
 
 Android target configuration for Java (not Kotlin).

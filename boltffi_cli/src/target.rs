@@ -334,13 +334,6 @@ impl JavaJvmHostTarget {
         }
     }
 
-    pub fn with_glibc(target: JavaHostTarget, version: impl Into<String>) -> Self {
-        Self {
-            target,
-            glibc_version: Some(version.into()),
-        }
-    }
-
     pub fn canonical_name(&self) -> String {
         let base = self.target.canonical_name();
         match &self.glibc_version {
@@ -375,7 +368,10 @@ impl<'de> Deserialize<'de> for JavaJvmHostTarget {
                      linux-x86_64, linux-aarch64, windows-x86_64"
                 ))
             })?;
-            if !matches!(target, JavaHostTarget::LinuxX86_64 | JavaHostTarget::LinuxAarch64) {
+            if !matches!(
+                target,
+                JavaHostTarget::LinuxX86_64 | JavaHostTarget::LinuxAarch64
+            ) {
                 return Err(serde::de::Error::custom(format!(
                     "glibc version suffix '.{glibc}' is only valid for Linux targets, \
                      but '{base}' is not a Linux target"
@@ -764,8 +760,9 @@ mod tests {
     #[test]
     fn resolves_current_java_host_target() {
         let current_host = JavaHostTarget::current().expect("supported test host");
-        let resolved = resolve_java_host_targets(&[JavaJvmHostTarget::new(JavaHostTarget::Current)])
-            .expect("expected current host resolution");
+        let resolved =
+            resolve_java_host_targets(&[JavaJvmHostTarget::new(JavaHostTarget::Current)])
+                .expect("expected current host resolution");
 
         assert_eq!(resolved, vec![JavaJvmHostTarget::new(current_host)]);
     }
@@ -804,7 +801,10 @@ mod tests {
 
         assert_eq!(
             resolved,
-            vec![JavaJvmHostTarget::new(current_host), JavaJvmHostTarget::new(explicit_other_host)]
+            vec![
+                JavaJvmHostTarget::new(current_host),
+                JavaJvmHostTarget::new(explicit_other_host)
+            ]
         );
     }
 

@@ -3,7 +3,9 @@ mod xcframework;
 
 use std::path::Path;
 
-use crate::build::{BuildOptions, Builder, CargoBuildCommand, OutputCallback, all_successful, failed_targets};
+use crate::build::{
+    BuildOptions, Builder, CargoBuildCommand, OutputCallback, all_successful, failed_targets,
+};
 use crate::cli::{CliError, Result};
 use crate::commands::generate::{GenerateOptions, GenerateTarget, run_generate_with_output};
 use crate::commands::pack::PackAppleOptions;
@@ -48,7 +50,8 @@ pub(crate) fn pack_apple(
     let build_profile = crate::build::resolve_build_profile(options.release, &build_cargo_args);
     let apple_targets = config.apple_targets();
 
-    let cargo_build_command = resolve_cargo_build_command(config, options.cargo_build_cmd.as_deref());
+    let cargo_build_command =
+        resolve_cargo_build_command(config, options.cargo_build_cmd.as_deref());
 
     if !options.no_build {
         let step = reporter.step("Building Apple targets");

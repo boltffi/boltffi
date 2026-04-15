@@ -117,7 +117,12 @@ pub(crate) fn pack_java(
         prepared
     } else {
         let step = reporter.step("Validating JVM toolchains");
-        let prepared = prepare_java_packaging(config, options.release, &options.cargo_args, options.cargo_build_cmd.as_deref())?;
+        let prepared = prepare_java_packaging(
+            config,
+            options.release,
+            &options.cargo_args,
+            options.cargo_build_cmd.as_deref(),
+        )?;
         step.finish_success();
         print_validated_toolchains(&prepared.packaging_targets);
         prepared
@@ -398,6 +403,7 @@ fn resolve_jvm_packaging_targets(
                 current_host,
                 config.java_jvm_jni_compiler(),
                 jvm_host_target.glibc_version.as_deref(),
+                config.java_jvm_jni_compiler_container(),
             )?;
             let cargo_context = JvmCargoContext {
                 host_target,
@@ -525,8 +531,16 @@ mod tests {
                 },
                 cargo_build_command: None,
             },
-            toolchain: NativeHostToolchain::discover(None, &[], current_host, current_host, None, None)
-                .expect("native host toolchain"),
+            toolchain: NativeHostToolchain::discover(
+                None,
+                &[],
+                current_host,
+                current_host,
+                None,
+                None,
+                None,
+            )
+            .expect("native host toolchain"),
         }];
 
         let source_directory =

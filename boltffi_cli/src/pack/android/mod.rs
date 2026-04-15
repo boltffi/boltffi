@@ -1,6 +1,8 @@
 mod link;
 
-use crate::build::{BuildOptions, Builder, CargoBuildCommand, OutputCallback, all_successful, failed_targets};
+use crate::build::{
+    BuildOptions, Builder, CargoBuildCommand, OutputCallback, all_successful, failed_targets,
+};
 use crate::cli::{CliError, Result};
 use crate::commands::generate::{GenerateOptions, GenerateTarget, run_generate_with_output};
 use crate::commands::pack::PackAndroidOptions;
@@ -33,7 +35,8 @@ pub(crate) fn pack_android(
     let build_cargo_args = resolve_build_cargo_args(config, &options.cargo_args);
     let build_profile = crate::build::resolve_build_profile(options.release, &build_cargo_args);
     let android_targets = config.android_targets();
-    let cargo_build_command = resolve_cargo_build_command(config, options.cargo_build_cmd.as_deref());
+    let cargo_build_command =
+        resolve_cargo_build_command(config, options.cargo_build_cmd.as_deref());
 
     if !options.no_build {
         let step = reporter.step("Building Android targets");
