@@ -468,6 +468,33 @@ pub struct JavaJvmConfig {
     /// jni_compiler = "/opt/cross/bin/gcc-linux" # absolute path
     /// ```
     pub jni_compiler: Option<String>,
+    /// Run the JNI compiler inside a container (Docker or Podman).
+    ///
+    /// When set, BoltFFI wraps the JNI compiler invocation in a container `run`
+    /// command, automatically mapping the project directory, JNI include paths,
+    /// and output directories as volumes.
+    ///
+    /// Examples:
+    /// ```toml
+    /// [targets.java.jvm.jni_compiler_container]
+    /// image = "quay.io/pypa/manylinux2014_x86_64"
+    /// runtime = "docker"  # or "podman" (default: "docker")
+    /// ```
+    pub jni_compiler_container: Option<JniCompilerContainerConfig>,
+}
+
+/// Configuration for running the JNI compiler inside a container.
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct JniCompilerContainerConfig {
+    /// Container image to use (e.g. `"quay.io/pypa/manylinux2014_x86_64"`).
+    pub image: String,
+    /// Container runtime: `"docker"` or `"podman"`.
+    #[serde(default = "default_container_runtime")]
+    pub runtime: String,
+}
+
+fn default_container_runtime() -> String {
+    "docker".to_string()
 }
 
 impl Default for JavaJvmConfig {
@@ -479,6 +506,7 @@ impl Default for JavaJvmConfig {
             strip_symbols: false,
             debug_symbols: DebugSymbolsConfig::default(),
             jni_compiler: None,
+            jni_compiler_container: None,
         }
     }
 }
@@ -1479,6 +1507,10 @@ impl Config {
 
     pub fn java_jvm_jni_compiler(&self) -> Option<&str> {
         self.targets.java.jvm.jni_compiler.as_deref()
+    }
+
+    pub fn java_jvm_jni_compiler_container(&self) -> Option<&JniCompilerContainerConfig> {
+        self.targets.java.jvm.jni_compiler_container.as_ref()
     }
 
     pub fn java_jvm_requested_host_targets(&self) -> &[JavaJvmHostTarget] {
@@ -2498,7 +2530,10 @@ host_targets = ["current", "{}"]
             config
                 .java_jvm_host_targets()
                 .expect("resolved host targets"),
-            vec![JavaJvmHostTarget::new(current_host), JavaJvmHostTarget::new(explicit_other_host)]
+            vec![
+                JavaJvmHostTarget::new(current_host),
+                JavaJvmHostTarget::new(explicit_other_host)
+            ]
         );
     }
 

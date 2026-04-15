@@ -558,6 +558,7 @@ fn resolve_jvm_packaging_targets(
                 current_host,
                 config.java_jvm_jni_compiler(),
                 jvm_host_target.glibc_version.as_deref(),
+                config.java_jvm_jni_compiler_container(),
             )?;
             let cargo_context = JvmCargoContext {
                 host_target,
@@ -750,8 +751,16 @@ mod tests {
                 },
                 cargo_build_command: None,
             },
-            toolchain: NativeHostToolchain::discover(None, &[], current_host, current_host, None, None)
-                .expect("native host toolchain"),
+            toolchain: NativeHostToolchain::discover(
+                None,
+                &[],
+                current_host,
+                current_host,
+                None,
+                None,
+                None,
+            )
+            .expect("native host toolchain"),
         }];
 
         let source_directory =

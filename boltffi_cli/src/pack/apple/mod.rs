@@ -4,7 +4,9 @@ mod xcframework;
 
 use std::path::Path;
 
-use crate::build::{BuildOptions, Builder, CargoBuildCommand, OutputCallback, all_successful, failed_targets};
+use crate::build::{
+    BuildOptions, Builder, CargoBuildCommand, OutputCallback, all_successful, failed_targets,
+};
 use crate::cli::{CliError, Result};
 use crate::commands::generate::{GenerateOptions, GenerateTarget, run_generate_with_output};
 use crate::commands::pack::PackAppleOptions;

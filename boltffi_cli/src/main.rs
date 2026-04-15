@@ -410,7 +410,13 @@ fn main() {
     };
 
     let reporter = reporter::Reporter::new(verbosity);
-    let result = execute_command(cli.command, &reporter, cli.cargo_args, cli.cargo_build_cmd, &config_paths);
+    let result = execute_command(
+        cli.command,
+        &reporter,
+        cli.cargo_args,
+        cli.cargo_build_cmd,
+        &config_paths,
+    );
 
     if let Err(err) = result {
         eprintln!("\n{} {}", console::style("error:").red().bold(), err);
@@ -872,7 +878,8 @@ fn run_release(
     }
 
     if release_requires_java_environment_validation(config, platform)
-        && let Err(error) = check_java_packaging_prereqs(config, true, &cargo_args, cargo_build_cmd.as_deref())
+        && let Err(error) =
+            check_java_packaging_prereqs(config, true, &cargo_args, cargo_build_cmd.as_deref())
     {
         println!("JVM packaging preflight failed: {error}");
         return Err(error);
@@ -910,7 +917,8 @@ fn run_release(
 
     println!("[4/4] Packaging...");
 
-    for command in release_pack_commands(config, platform, &cargo_args, cargo_build_cmd.as_deref()) {
+    for command in release_pack_commands(config, platform, &cargo_args, cargo_build_cmd.as_deref())
+    {
         run_pack(config, command, reporter)?;
     }
 

@@ -7,6 +7,7 @@ use crate::cargo::config::{
     extract_cargo_config_args, resolve_cargo_config_path,
 };
 use crate::cli::{CliError, Result};
+use crate::config::JniCompilerContainerConfig;
 use crate::target::{JavaHostTarget, NativeHostPlatform};
 
 #[cfg(test)]
@@ -82,6 +83,7 @@ pub struct NativeHostToolchain {
     jni_compiler_program: PathBuf,
     jni_compiler_args: Vec<String>,
     jni_rustflag_linker_args: Vec<String>,
+    jni_compiler_container: Option<JniCompilerContainerConfig>,
 }
 
 impl NativeHostToolchain {
@@ -92,6 +94,7 @@ impl NativeHostToolchain {
         current_host: JavaHostTarget,
         jni_compiler_override: Option<&str>,
         glibc_version: Option<&str>,
+        jni_compiler_container: Option<&JniCompilerContainerConfig>,
     ) -> Result<Self> {
         Self::discover_for_platform(toolchain_selector, cargo_args, target, current_host, "JVM")
     }
@@ -162,35 +165,37 @@ impl NativeHostToolchain {
                 JavaHostTarget::DarwinArm64 | JavaHostTarget::DarwinX86_64,
                 JavaHostTarget::DarwinX86_64,
             ) => {
-                let (jni_compiler_program, jni_compiler_args) =
-                    if let Some(override_str) = jni_compiler_override {
-                        parse_jni_compiler_override(
-                            override_str,
-                            &rust_target_triple,
-                            glibc_version,
-                        )?
-                    } else {
-                        let linker_program =
-                            which::which("clang").map_err(|_| CliError::CommandFailed {
-                                command: "clang not found in PATH for JVM desktop linking"
-                                    .to_string(),
-                                status: None,
-                            })?;
-                        let sdk_root = apple_sdk_root()?;
-                        let linker_args = vec![
-                            "-target".to_string(),
-                            rust_target_triple.clone(),
-                            "-isysroot".to_string(),
-                            sdk_root.display().to_string(),
-                        ];
-                        (linker_program, linker_args)
-                    };
+                let (jni_compiler_program, jni_compiler_args) = if let Some(override_str) =
+                    jni_compiler_override
+                {
+                    parse_jni_compiler_override(
+                        override_str,
+                        &rust_target_triple,
+                        glibc_version,
+                        jni_compiler_container.is_some(),
+                    )?
+                } else {
+                    let linker_program =
+                        which::which("clang").map_err(|_| CliError::CommandFailed {
+                            command: "clang not found in PATH for JVM desktop linking".to_string(),
+                            status: None,
+                        })?;
+                    let sdk_root = apple_sdk_root()?;
+                    let linker_args = vec![
+                        "-target".to_string(),
+                        rust_target_triple.clone(),
+                        "-isysroot".to_string(),
+                        sdk_root.display().to_string(),
+                    ];
+                    (linker_program, linker_args)
+                };
                 Ok(Self {
                     rust_target_triple: rust_target_triple.clone(),
                     cargo_linker_env: None,
                     jni_compiler_program,
                     jni_compiler_args,
                     jni_rustflag_linker_args: rustflag_linker_args,
+                    jni_compiler_container: jni_compiler_container.cloned(),
                 })
             }
             (
@@ -202,8 +207,12 @@ impl NativeHostToolchain {
                     // require a separately-installed cross-linker for the Rust build step.
                     // The user may be using `cargo zigbuild` which bundles its own linker.
                     // We still try to find one via the usual sources, but proceed without it.
-                    let (jni_compiler_program, jni_compiler_args) =
-                        parse_jni_compiler_override(override_str, &rust_target_triple, glibc_version)?;
+                    let (jni_compiler_program, jni_compiler_args) = parse_jni_compiler_override(
+                        override_str,
+                        &rust_target_triple,
+                        glibc_version,
+                        jni_compiler_container.is_some(),
+                    )?;
                     let cargo_linker_env =
                         try_resolve_linux_cross_cargo_linker(cargo_args, &rust_target_triple);
                     Ok(Self {
@@ -212,6 +221,7 @@ impl NativeHostToolchain {
                         jni_compiler_program,
                         jni_compiler_args,
                         jni_rustflag_linker_args: rustflag_linker_args,
+                        jni_compiler_container: jni_compiler_container.cloned(),
                     })
                 } else {
                     let (cargo_linker_program, jni_compiler_program, jni_compiler_args) =
@@ -236,14 +246,21 @@ impl NativeHostToolchain {
                         jni_compiler_program,
                         jni_compiler_args,
                         jni_rustflag_linker_args: rustflag_linker_args,
+                        jni_compiler_container: jni_compiler_container.cloned(),
                     })
                 }
             }
             (JavaHostTarget::LinuxX86_64, JavaHostTarget::LinuxX86_64)
             | (JavaHostTarget::LinuxAarch64, JavaHostTarget::LinuxAarch64) => {
-                let (linker_program, linker_args) = if let Some(override_str) = jni_compiler_override
+                let (linker_program, linker_args) = if let Some(override_str) =
+                    jni_compiler_override
                 {
-                    parse_jni_compiler_override(override_str, &rust_target_triple, glibc_version)?
+                    parse_jni_compiler_override(
+                        override_str,
+                        &rust_target_triple,
+                        glibc_version,
+                        jni_compiler_container.is_some(),
+                    )?
                 } else {
                     resolve_linux_host_linker(toolchain_selector, cargo_args, &rust_target_triple)?
                 };
@@ -253,21 +270,32 @@ impl NativeHostToolchain {
                     jni_compiler_program: linker_program,
                     jni_compiler_args: linker_args,
                     jni_rustflag_linker_args: rustflag_linker_args,
+                    jni_compiler_container: jni_compiler_container.cloned(),
                 })
             }
             (JavaHostTarget::WindowsX86_64, JavaHostTarget::WindowsX86_64) => {
-                let (linker_program, linker_args) = if let Some(override_str) = jni_compiler_override
-                {
-                    parse_jni_compiler_override(override_str, &rust_target_triple, glibc_version)?
-                } else {
-                    resolve_windows_host_linker(toolchain_selector, cargo_args, &rust_target_triple)?
-                };
+                let (linker_program, linker_args) =
+                    if let Some(override_str) = jni_compiler_override {
+                        parse_jni_compiler_override(
+                            override_str,
+                            &rust_target_triple,
+                            glibc_version,
+                            jni_compiler_container.is_some(),
+                        )?
+                    } else {
+                        resolve_windows_host_linker(
+                            toolchain_selector,
+                            cargo_args,
+                            &rust_target_triple,
+                        )?
+                    };
                 Ok(Self {
                     rust_target_triple,
                     cargo_linker_env: None,
                     jni_compiler_program: linker_program,
                     jni_compiler_args: linker_args,
                     jni_rustflag_linker_args: rustflag_linker_args,
+                    jni_compiler_container: jni_compiler_container.cloned(),
                 })
             }
             _ => unreachable!("unsupported host/target pairs should fail before toolchain probing"),
@@ -278,20 +306,21 @@ impl NativeHostToolchain {
         &self.rust_target_triple
     }
 
-    pub fn jni_compiler_program(&self) -> &Path {
-        &self.jni_compiler_program
-    }
-
     /// Returns a human-readable representation of the full JNI compiler invocation,
     /// including any initial arguments such as subcommands or target flags.
     ///
-    /// Examples: `"/usr/bin/clang"`, `"zig cc -target x86_64-linux-gnu.2.17"`
+    /// Examples: `"/usr/bin/clang"`, `"zig cc -target x86_64-linux-gnu.2.17"`,
+    /// `"docker:manylinux2014_x86_64 gcc"`
     pub fn jni_compiler_command_display(&self) -> String {
         let program = self.jni_compiler_program.display().to_string();
-        if self.jni_compiler_args.is_empty() {
+        let compiler = if self.jni_compiler_args.is_empty() {
             program
         } else {
             format!("{} {}", program, self.jni_compiler_args.join(" "))
+        };
+        match &self.jni_compiler_container {
+            Some(container) => format!("{}:{} {}", container.runtime, container.image, compiler),
+            None => compiler,
         }
     }
 
@@ -309,6 +338,53 @@ impl NativeHostToolchain {
 
     pub fn jni_compiler_program(&self) -> &Path {
         &self.jni_compiler_program
+    }
+
+    /// Build a linker `Command` that runs inside a container when
+    /// `jni_compiler_container` is configured.
+    ///
+    /// The container runtime (`docker`/`podman`) is invoked with:
+    /// - `--rm` to clean up after the build
+    /// - `-v <dir>:<dir>` for each unique parent directory among the arguments
+    ///   (project root, JNI include dirs, output dirs)
+    /// - the configured image
+    /// - the compiler program + args exactly as they would run natively
+    ///
+    /// All host paths are mounted at identical container-internal paths so that
+    /// the compiler arguments need no rewriting.
+    pub fn container_linker_command(&self, extra_volume_paths: &[&Path]) -> Command {
+        match &self.jni_compiler_container {
+            None => self.linker_command(),
+            Some(container) => {
+                let mut command = Command::new(&container.runtime);
+                command.arg("run").arg("--rm");
+
+                let cwd = std::env::current_dir().unwrap_or_default();
+                let mut volume_roots: Vec<PathBuf> = Vec::new();
+                for path in extra_volume_paths {
+                    if let Some(parent) = path.parent() {
+                        // Docker/Podman require absolute mount paths.
+                        let absolute = if parent.is_absolute() {
+                            parent.to_path_buf()
+                        } else {
+                            cwd.join(parent)
+                        };
+                        add_unique_volume_root(&mut volume_roots, &absolute);
+                    }
+                }
+
+                for root in &volume_roots {
+                    command
+                        .arg("-v")
+                        .arg(format!("{}:{}", root.display(), root.display()));
+                }
+
+                command.arg(&container.image);
+                command.arg(&self.jni_compiler_program);
+                command.args(&self.jni_compiler_args);
+                command
+            }
+        }
     }
 
     pub fn uses_msvc_compiler(&self) -> bool {
@@ -1036,24 +1112,31 @@ fn parse_jni_compiler_override(
     s: &str,
     rust_target_triple: &str,
     glibc_version: Option<&str>,
+    runs_in_container: bool,
 ) -> Result<(PathBuf, Vec<String>)> {
     let parts = split_shell_words(s.trim());
-    let program_str = parts.first().filter(|s| !s.is_empty()).ok_or_else(|| {
-        CliError::CommandFailed {
-            command: "targets.java.jvm.jni_compiler cannot be empty".to_string(),
-            status: None,
-        }
-    })?;
+    let program_str =
+        parts
+            .first()
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| CliError::CommandFailed {
+                command: "targets.java.jvm.jni_compiler cannot be empty".to_string(),
+                status: None,
+            })?;
 
-    let program = resolve_target_compiler_value(program_str).ok_or_else(|| {
-        CliError::CommandFailed {
+    // When the compiler runs inside a container, it only needs to exist in the
+    // image — skip the host-side executable check and use the name as-is.
+    let program = if runs_in_container {
+        PathBuf::from(program_str)
+    } else {
+        resolve_target_compiler_value(program_str).ok_or_else(|| CliError::CommandFailed {
             command: format!(
                 "configured JNI compiler '{}' not found or not executable",
                 program_str
             ),
             status: None,
-        }
-    })?;
+        })?
+    };
 
     let mut args: Vec<String> = parts[1..].to_vec();
 
@@ -1065,12 +1148,7 @@ fn parse_jni_compiler_override(
         // Add zig-style target (e.g. x86_64-linux-gnu.2.17)
         args.push("-target".to_string());
         args.push(rust_triple_to_zig_target(rust_target_triple, glibc_version));
-    } else if is_clang_driver_name(
-        program
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or(""),
-    ) {
+    } else if is_clang_driver_name(program.file_name().and_then(|n| n.to_str()).unwrap_or("")) {
         // clang-compatible drivers accept --target with the standard Rust triple
         args.push("--target".to_string());
         args.push(rust_target_triple.to_string());
@@ -1115,6 +1193,22 @@ fn rust_triple_to_zig_target(rust_triple: &str, glibc_version: Option<&str>) -> 
 
 fn is_zig_compiler(program: &Path) -> bool {
     linker_program_name(program).is_some_and(|name| name == "zig")
+}
+
+/// Adds `path` to `roots` unless it is already covered by an existing entry
+/// (i.e. one of the existing roots is a prefix of `path`, or `path` is a prefix
+/// of an existing root — in the latter case, the wider root replaces the narrower one).
+fn add_unique_volume_root(roots: &mut Vec<PathBuf>, path: &Path) {
+    let canonical = path.to_path_buf();
+
+    // Already covered by a wider root?
+    if roots.iter().any(|r| canonical.starts_with(r)) {
+        return;
+    }
+
+    // Replace narrower roots that the new path covers.
+    roots.retain(|r| !r.starts_with(&canonical));
+    roots.push(canonical);
 }
 
 /// Tries to find a cargo cross-linker for Linux x86_64 from the usual sources
@@ -1771,29 +1865,30 @@ fn trim_wrapping_quotes(value: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::{
-        CargoTargetCfg, ConfiguredValue, NativeHostToolchain, cargo_cfg_expression_matches,
-        is_zig_compiler, rust_triple_to_zig_target,
-        cargo_config_base_dir, cargo_config_file_candidates_with_inputs,
-        cargo_config_file_linker_values_with_candidates, cargo_config_search_roots,
-        cargo_configured_build_target, cargo_inline_configured_linker_values, cargo_linker_env_key,
-        configured_linux_build_target, configured_linux_x86_64_cross_linker_values_with_sources,
-        configured_target_linker_values, configured_target_rustflag_linker_args,
+        CargoTargetCfg, ConfiguredValue, NativeHostToolchain, add_unique_volume_root,
+        cargo_cfg_expression_matches, cargo_config_base_dir,
+        cargo_config_file_candidates_with_inputs, cargo_config_file_linker_values_with_candidates,
+        cargo_config_search_roots, cargo_configured_build_target,
+        cargo_inline_configured_linker_values, cargo_linker_env_key, configured_linux_build_target,
+        configured_linux_x86_64_cross_linker_values_with_sources, configured_target_linker_values,
+        configured_target_rustflag_linker_args,
         configured_target_rustflag_linker_args_with_sources, configured_windows_build_target,
         default_windows_jni_compiler_candidates, ensure_supported_native_host_pair,
-        extract_cargo_config_args, fallback_without_rustup, linux_cross_linker_args,
-        linux_host_linker_args, parse_build_target_from_config_file,
+        extract_cargo_config_args, fallback_without_rustup, is_zig_compiler,
+        linux_cross_linker_args, linux_host_linker_args, parse_build_target_from_config_file,
         parse_build_target_from_inline_config, parse_rustc_host_triple,
         parse_target_linker_from_config_file, parse_target_linker_from_inline_config,
         parse_target_rustflags_from_config_file, resolve_linux_cross_toolchain,
         resolve_linux_rust_target_triple, resolve_linux_x86_64_cross_linker_from_values,
         resolve_target_compiler_from_values, resolve_target_linker_from_values,
-        resolve_windows_host_linker_with_host_triple, rustflags_to_linker_args,
-        rustup_toolchain_name, split_shell_words, trim_wrapping_quotes,
+        resolve_windows_host_linker_with_host_triple, rust_triple_to_zig_target,
+        rustflags_to_linker_args, rustup_toolchain_name, split_shell_words, trim_wrapping_quotes,
         validate_installed_rustup_target, validate_linux_rust_target_triple,
         validate_windows_rust_target_triple, windows_host_linker_args,
         write_linux_cross_linker_wrapper,
     };
     use crate::cli::CliError;
+    use crate::config::JniCompilerContainerConfig;
     use crate::target::{JavaHostTarget, NativeHostPlatform};
     use std::fs;
     use std::path::{Path, PathBuf};
@@ -3094,6 +3189,7 @@ unix
             jni_compiler_program: compiler_path,
             jni_compiler_args: Vec::new(),
             jni_rustflag_linker_args: Vec::new(),
+            jni_compiler_container: None,
         };
         assert!(toolchain.uses_msvc_compiler());
 
@@ -3156,5 +3252,114 @@ unix
             .expect("windows gnullvm target");
 
         assert_eq!(target, "x86_64-pc-windows-gnullvm");
+    }
+
+    #[test]
+    fn container_linker_command_wraps_in_docker_run() {
+        let toolchain = NativeHostToolchain {
+            rust_target_triple: "x86_64-unknown-linux-gnu".to_string(),
+            cargo_linker_env: None,
+            jni_compiler_program: PathBuf::from("gcc"),
+            jni_compiler_args: vec!["-shared".to_string()],
+            jni_rustflag_linker_args: vec![],
+            jni_compiler_container: Some(JniCompilerContainerConfig {
+                image: "quay.io/pypa/manylinux2014_x86_64".to_string(),
+                runtime: "docker".to_string(),
+            }),
+        };
+
+        let cmd = toolchain.container_linker_command(&[
+            Path::new("/home/user/project/dist/java/jni/jni_glue.c"),
+            Path::new("/home/user/project/dist/java/native/linux-x86_64/libdemo_jni.so"),
+        ]);
+
+        let program = cmd.get_program().to_str().unwrap();
+        let args: Vec<_> = cmd.get_args().map(|a| a.to_str().unwrap()).collect();
+        assert_eq!(program, "docker");
+        assert!(args.contains(&"run"));
+        assert!(args.contains(&"--rm"));
+        assert!(args.contains(&"quay.io/pypa/manylinux2014_x86_64"));
+        assert!(args.contains(&"gcc"));
+        assert!(args.contains(&"-shared"));
+        // Volume mappings should be present
+        assert!(args.contains(&"-v"));
+    }
+
+    #[test]
+    fn container_linker_command_uses_podman_runtime() {
+        let toolchain = NativeHostToolchain {
+            rust_target_triple: "x86_64-unknown-linux-gnu".to_string(),
+            cargo_linker_env: None,
+            jni_compiler_program: PathBuf::from("gcc"),
+            jni_compiler_args: vec![],
+            jni_rustflag_linker_args: vec![],
+            jni_compiler_container: Some(JniCompilerContainerConfig {
+                image: "manylinux2014".to_string(),
+                runtime: "podman".to_string(),
+            }),
+        };
+
+        let cmd = toolchain.container_linker_command(&[]);
+        assert_eq!(cmd.get_program().to_str().unwrap(), "podman");
+    }
+
+    #[test]
+    fn container_linker_command_returns_plain_command_without_container() {
+        let toolchain = NativeHostToolchain {
+            rust_target_triple: "x86_64-unknown-linux-gnu".to_string(),
+            cargo_linker_env: None,
+            jni_compiler_program: PathBuf::from("/usr/bin/gcc"),
+            jni_compiler_args: vec!["-shared".to_string()],
+            jni_rustflag_linker_args: vec![],
+            jni_compiler_container: None,
+        };
+
+        let cmd = toolchain.container_linker_command(&[]);
+        assert_eq!(cmd.get_program().to_str().unwrap(), "/usr/bin/gcc");
+        let args: Vec<_> = cmd.get_args().map(|a| a.to_str().unwrap()).collect();
+        assert_eq!(args, vec!["-shared"]);
+    }
+
+    #[test]
+    fn add_unique_volume_root_deduplicates_nested_paths() {
+        let mut roots: Vec<PathBuf> = Vec::new();
+
+        add_unique_volume_root(&mut roots, Path::new("/home/user/project"));
+        add_unique_volume_root(&mut roots, Path::new("/home/user/project/dist"));
+        add_unique_volume_root(&mut roots, Path::new("/opt/jdk/include"));
+
+        assert_eq!(roots.len(), 2);
+        assert!(roots.contains(&PathBuf::from("/home/user/project")));
+        assert!(roots.contains(&PathBuf::from("/opt/jdk/include")));
+    }
+
+    #[test]
+    fn add_unique_volume_root_replaces_narrow_with_wider() {
+        let mut roots: Vec<PathBuf> = Vec::new();
+
+        add_unique_volume_root(&mut roots, Path::new("/home/user/project/dist"));
+        add_unique_volume_root(&mut roots, Path::new("/home/user/project"));
+
+        assert_eq!(roots, vec![PathBuf::from("/home/user/project")]);
+    }
+
+    #[test]
+    fn jni_compiler_command_display_includes_container_info() {
+        let toolchain = NativeHostToolchain {
+            rust_target_triple: "x86_64-unknown-linux-gnu".to_string(),
+            cargo_linker_env: None,
+            jni_compiler_program: PathBuf::from("gcc"),
+            jni_compiler_args: vec![],
+            jni_rustflag_linker_args: vec![],
+            jni_compiler_container: Some(JniCompilerContainerConfig {
+                image: "manylinux2014_x86_64".to_string(),
+                runtime: "docker".to_string(),
+            }),
+        };
+
+        assert_eq!(
+            toolchain.jni_compiler_command_display(),
+            "docker:manylinux2014_x86_64 gcc"
+        );
     }
 }

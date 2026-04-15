@@ -425,7 +425,17 @@ pub(crate) fn compile_jni_library_with_layout(
     let has_shared_library_copy = compatibility_shared_library.is_some();
     let mut debug_info_sidecars = Vec::new();
 
-    let mut command = packaging_target.toolchain.linker_command();
+    let volume_paths: Vec<&Path> = vec![
+        output_lib.as_path(),
+        jni_glue.as_path(),
+        link_input.path(),
+        jni_dir.as_path(),
+        jni_include_directories.shared.as_path(),
+        jni_include_directories.platform.as_path(),
+    ];
+    let mut command = packaging_target
+        .toolchain
+        .container_linker_command(&volume_paths);
     let jni_linker_args = if packaging_target.toolchain.uses_msvc_compiler() {
         clang_cl_jni_linker_args(&JniLinkerArgs {
             host_target,
@@ -682,10 +692,8 @@ pub(crate) fn build_jvm_native_library(
     let mut command = Command::new(program);
     command.current_dir(crate_directory);
 
-    if is_cargo {
-        if let Some(toolchain_selector) = cargo_context.toolchain_selector.as_deref() {
-            command.arg(toolchain_selector);
-        }
+    if is_cargo && let Some(toolchain_selector) = cargo_context.toolchain_selector.as_deref() {
+        command.arg(toolchain_selector);
     }
 
     command
@@ -1003,7 +1011,16 @@ pub(crate) fn clang_style_jni_linker_args(args: &JniLinkerArgs<'_>) -> Vec<Strin
     resolved_args.extend([
         "-o".to_string(),
         args.output_lib.display().to_string(),
+        // Force C language mode so the JNI glue compiles correctly even when the
+        // compiler driver is a C++ frontend (g++, c++, clang++). The generated
+        // code uses the C JNI API ((*env)->Method(env, ...)) and relies on
+        // implicit void* conversions that are only valid in C.
+        "-x".to_string(),
+        "c".to_string(),
         args.jni_glue.display().to_string(),
+        // Reset to auto-detection for subsequent inputs (the static library).
+        "-x".to_string(),
+        "none".to_string(),
         args.link_input.display().to_string(),
         format!("-I{}", args.jni_dir.display()),
         format!("-I{}", args.jni_include_directories.shared.display()),
@@ -1916,7 +1933,11 @@ mod tests {
                 "-fPIC".to_string(),
                 "-o".to_string(),
                 "/tmp/out/libdemo_jni.dylib".to_string(),
+                "-x".to_string(),
+                "c".to_string(),
                 "/tmp/jni/jni_glue.c".to_string(),
+                "-x".to_string(),
+                "none".to_string(),
                 "/tmp/target/libdemo.a".to_string(),
                 "-I/tmp/jni".to_string(),
                 "-I/tmp/jdk/include".to_string(),

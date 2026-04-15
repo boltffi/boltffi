@@ -326,6 +326,7 @@ Desktop JVM target configuration.
   - When set alongside `[cargo].build_command = "zigbuild"` on macOS targeting Linux,
     no separate cross-linker installation is required
 
+<<<<<<< HEAD
 ### `[targets.java.jvm.debug_symbols]` (optional)
 
 Companion archive output for desktop JNI libraries collected by `boltffi pack java`.
@@ -339,6 +340,27 @@ Companion archive output for desktop JNI libraries collected by `boltffi pack ja
   - Default: `zip`
 - `bundle` (`unstripped`): Bundle kind for the archived payloads.
   - Default: `unstripped`
+=======
+### `[targets.java.jvm.jni_compiler_container]` (optional)
+
+Runs the JNI compiler inside a container (Docker or Podman). Useful for cross-compiling the
+JNI glue with a specific toolchain image (e.g. manylinux2014).
+
+- `image` (string, required): Container image to use.
+- `runtime` (string, optional): Container runtime.
+  - Default: `"docker"`
+  - Supported values: `"docker"`, `"podman"`
+
+BoltFFI invokes `{runtime} run --rm -v <dir>:<dir> {image} {compiler} {args}`, mapping all
+directories referenced by the compiler arguments as bind-mount volumes at identical container
+paths so no path rewriting is needed.
+
+```toml
+[targets.java.jvm.jni_compiler_container]
+image = "quay.io/pypa/manylinux2014_x86_64"
+runtime = "docker"
+```
+>>>>>>> 113cda4 (feat(toolchain): add jni_compiler_container for Docker/Podman-based JNI compilation)
 
 ### `[targets.java.android]` (optional)
 
