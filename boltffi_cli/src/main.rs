@@ -626,6 +626,7 @@ fn execute_command(
                         regenerate,
                         no_build,
                         cargo_args.clone(),
+                        cargo_build_cmd.clone(),
                     ),
                     experimental,
                 }),
@@ -668,6 +669,7 @@ fn execute_command(
                         regenerate,
                         no_build,
                         cargo_args.clone(),
+                        cargo_build_cmd.clone(),
                     ),
                     experimental,
                     python_interpreters,
@@ -678,7 +680,13 @@ fn execute_command(
                     no_build,
                     experimental,
                 } => PackCommand::Dart(PackDartOptions {
-                    execution: pack_execution_options(release, regenerate, no_build, cargo_args),
+                    execution: pack_execution_options(
+                        release,
+                        regenerate,
+                        no_build,
+                        cargo_args,
+                        cargo_build_cmd.clone(),
+                    ),
                     experimental,
                 }),
                 PackTargetArg::Csharp {
@@ -686,7 +694,13 @@ fn execute_command(
                     regenerate,
                     no_build,
                 } => PackCommand::CSharp(PackCSharpOptions {
-                    execution: pack_execution_options(release, regenerate, no_build, cargo_args),
+                    execution: pack_execution_options(
+                        release,
+                        regenerate,
+                        no_build,
+                        cargo_args,
+                        cargo_build_cmd.clone(),
+                    ),
                 }),
             };
             run_pack(&config, command, reporter)
@@ -984,7 +998,13 @@ fn release_pack_commands(
         Some(BuildPlatformArg::Dart) => {
             if config.is_dart_enabled() {
                 commands.push(PackCommand::Dart(PackDartOptions {
-                    execution: pack_execution_options(true, false, true, cargo_args.to_vec()),
+                    execution: pack_execution_options(
+                        true,
+                        false,
+                        true,
+                        cargo_args.to_vec(),
+                        cargo_build_cmd.clone(),
+                    ),
                     experimental: true,
                 }));
             }
@@ -1018,7 +1038,13 @@ fn release_pack_commands(
             }
             if config.should_process(Target::KotlinMultiplatform, false) {
                 commands.push(PackCommand::Kmp(PackKmpOptions {
-                    execution: pack_execution_options(true, true, false, cargo_args.to_vec()),
+                    execution: pack_execution_options(
+                        true,
+                        true,
+                        false,
+                        cargo_args.to_vec(),
+                        cargo_build_cmd.clone(),
+                    ),
                     experimental: false,
                 }));
             }
@@ -1061,14 +1087,26 @@ fn release_pack_commands(
 
             if config.should_process(Target::Dart, false) {
                 commands.push(PackCommand::Dart(PackDartOptions {
-                    execution: pack_execution_options(true, false, false, cargo_args.to_vec()),
+                    execution: pack_execution_options(
+                        true,
+                        false,
+                        false,
+                        cargo_args.to_vec(),
+                        cargo_build_cmd.clone(),
+                    ),
                     experimental: false,
                 }));
             }
 
             if config.is_csharp_enabled() {
                 commands.push(PackCommand::CSharp(PackCSharpOptions {
-                    execution: pack_execution_options(true, true, false, cargo_args.to_vec()),
+                    execution: pack_execution_options(
+                        true,
+                        true,
+                        false,
+                        cargo_args.to_vec(),
+                        cargo_build_cmd.clone(),
+                    ),
                 }));
             }
         }
@@ -1350,7 +1388,7 @@ enabled = true
 "#,
         );
 
-        let commands = release_pack_commands(&config, Some(BuildPlatformArg::All), &[]);
+        let commands = release_pack_commands(&config, Some(BuildPlatformArg::All), &[], None);
 
         assert!(commands.iter().any(|command| matches!(
             command,
@@ -1374,7 +1412,7 @@ enabled = true
 "#,
         );
 
-        let commands = release_pack_commands(&config, Some(BuildPlatformArg::All), &[]);
+        let commands = release_pack_commands(&config, Some(BuildPlatformArg::All), &[], None);
 
         assert!(
             !commands
@@ -1397,7 +1435,7 @@ enabled = true
 "#,
         );
 
-        let commands = release_pack_commands(&config, Some(BuildPlatformArg::All), &[]);
+        let commands = release_pack_commands(&config, Some(BuildPlatformArg::All), &[], None);
 
         assert!(commands.iter().any(|command| matches!(
             command,
@@ -1421,7 +1459,7 @@ enabled = true
 "#,
         );
 
-        let commands = release_pack_commands(&config, Some(BuildPlatformArg::All), &[]);
+        let commands = release_pack_commands(&config, Some(BuildPlatformArg::All), &[], None);
 
         assert!(commands.iter().any(|command| matches!(
             command,

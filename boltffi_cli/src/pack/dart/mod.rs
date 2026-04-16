@@ -31,6 +31,7 @@ fn build_dart_targets(
         package: Some(config.library_name().to_string()),
         cargo_args: build_cargo_args.to_vec(),
         on_output,
+        cargo_build_command: None,
     };
     let builder = Builder::new(config, build_options);
     let results = builder.build_targets(&config.dart_targets())?;

@@ -272,7 +272,7 @@ fn prepare_jvm_packaging_matrix(
     )?;
 
     Ok(PreparedJvmPackaging {
-        host_targets,
+        host_targets: host_targets.iter().map(|t| t.target).collect(),
         packaging_targets,
     })
 }
@@ -600,7 +600,7 @@ mod tests {
     use crate::cli::CliError;
     use crate::config::{CargoConfig, Config, PackageConfig, TargetsConfig};
     use crate::pack::java::link::JvmPackagedNativeOutput;
-    use crate::target::JavaHostTarget;
+    use crate::target::{JavaHostTarget, JavaJvmHostTarget};
     use crate::toolchain::NativeHostToolchain;
 
     fn temporary_directory(prefix: &str) -> PathBuf {
@@ -638,7 +638,7 @@ mod tests {
 
     fn config_with_host_targets(
         java_enabled: bool,
-        host_targets: Vec<JavaHostTarget>,
+        host_targets: Vec<JavaJvmHostTarget>,
         strip_symbols: bool,
     ) -> Config {
         let mut config = config(java_enabled);
@@ -711,12 +711,17 @@ mod tests {
     #[test]
     fn rejects_windows_strip_symbols_during_preflight() {
         let error = match resolve_jvm_packaging_targets(
-            &config_with_host_targets(true, vec![JavaHostTarget::WindowsX86_64], true),
+            &config_with_host_targets(
+                true,
+                vec![JavaJvmHostTarget::new(JavaHostTarget::WindowsX86_64)],
+                true,
+            ),
             &[],
             false,
             CargoBuildProfile::Named("dist".to_string()),
-            &[JavaHostTarget::WindowsX86_64],
+            &[JavaJvmHostTarget::new(JavaHostTarget::WindowsX86_64)],
             true,
+            None,
         ) {
             Ok(_) => panic!("expected unsupported windows strip config to fail during preflight"),
             Err(error) => error,

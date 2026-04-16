@@ -1,6 +1,6 @@
 use crate::target::{
     AndroidArchitecture, AppleArchitecture, AppleIosArchitecture, CSharpRuntimeIdentifier,
-    DartNativeArchitecture, JavaHostTarget, JavaJvmHostTarget, RustTarget, resolve_android_targets,
+    DartNativeArchitecture, JavaJvmHostTarget, RustTarget, resolve_android_targets,
     resolve_apple_ios_targets, resolve_apple_macos_targets, resolve_apple_simulator_targets,
     resolve_dart_native_targets, resolve_java_host_targets,
 };

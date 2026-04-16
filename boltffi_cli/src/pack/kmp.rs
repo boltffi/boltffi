@@ -156,6 +156,7 @@ fn package_kmp_android_libraries(
         &android_targets,
         options.execution.release,
         &build_cargo_args,
+        None,
         &step,
     )?;
     step.finish_success();

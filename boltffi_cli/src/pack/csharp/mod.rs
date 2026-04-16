@@ -801,6 +801,7 @@ mod tests {
                 regenerate: true,
                 no_build: false,
                 cargo_args: Vec::new(),
+                cargo_build_cmd: None,
             },
         }
     }
