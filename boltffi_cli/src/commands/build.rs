@@ -5,6 +5,7 @@ use crate::build::{
 use crate::cli::Result;
 use crate::config::Config;
 use crate::pack::PackError;
+use crate::pack::resolve_cargo_build_command;
 
 pub enum BuildPlatform {
     Apple,
@@ -17,6 +18,8 @@ pub struct BuildCommandOptions {
     pub platform: BuildPlatform,
     pub release: bool,
     pub cargo_args: Vec<String>,
+    /// See [`crate::build::CargoBuildCommand::parse`] for accepted values.
+    pub cargo_build_cmd: Option<String>,
 }
 
 pub fn run_build(config: &Config, options: BuildCommandOptions) -> Result<Vec<BuildResult>> {
@@ -24,6 +27,7 @@ pub fn run_build(config: &Config, options: BuildCommandOptions) -> Result<Vec<Bu
         platform,
         release,
         cargo_args: cli_cargo_args,
+        cargo_build_cmd,
     } = options;
 
     let cargo_args: Vec<String> = config
@@ -34,11 +38,14 @@ pub fn run_build(config: &Config, options: BuildCommandOptions) -> Result<Vec<Bu
 
     let build_profile = resolve_build_profile(release, &cargo_args);
 
+    let cargo_build_command = resolve_cargo_build_command(config, cargo_build_cmd.as_deref());
+
     let build_options = BuildOptions {
         release,
         package: Some(config.library_name().to_string()),
         cargo_args,
         on_output: None,
+        cargo_build_command,
     };
 
     let builder = Builder::new(config, build_options);

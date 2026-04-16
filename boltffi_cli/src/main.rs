@@ -58,6 +58,14 @@ struct Cli {
     )]
     overlay: Option<PathBuf>,
 
+    #[arg(
+        long,
+        global = true,
+        value_name = "CMD",
+        help = "Override the cargo build command (e.g. zigbuild, cross, 'cargo zigbuild')"
+    )]
+    cargo_build_cmd: Option<String>,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -339,7 +347,13 @@ fn main() {
     };
 
     let reporter = reporter::Reporter::new(verbosity);
-    let result = execute_command(cli.command, &reporter, cli.cargo_args, &config_paths);
+    let result = execute_command(
+        cli.command,
+        &reporter,
+        cli.cargo_args,
+        cli.cargo_build_cmd,
+        &config_paths,
+    );
 
     if let Err(err) = result {
         eprintln!("\n{} {}", console::style("error:").red().bold(), err);
@@ -351,6 +365,7 @@ fn execute_command(
     command: Commands,
     reporter: &reporter::Reporter,
     cargo_args: Vec<String>,
+    cargo_build_cmd: Option<String>,
     config_paths: &ConfigPaths,
 ) -> Result<()> {
     match command {
@@ -471,6 +486,7 @@ fn execute_command(
                     .unwrap_or(BuildPlatform::All),
                 release,
                 cargo_args,
+                cargo_build_cmd,
             };
             run_build(&config, options).map(|_| ())
         }
@@ -491,6 +507,7 @@ fn execute_command(
                     experimental,
                     python_interpreters,
                     cargo_args: cargo_args.clone(),
+                    cargo_build_cmd: cargo_build_cmd.clone(),
                 }),
                 PackTargetArg::Apple {
                     release,
@@ -513,6 +530,7 @@ fn execute_command(
                         PackLayoutArg::FfiOnly => crate::config::SpmLayout::FfiOnly,
                     }),
                     cargo_args: cargo_args.clone(),
+                    cargo_build_cmd: cargo_build_cmd.clone(),
                 }),
                 PackTargetArg::Android {
                     release,
@@ -523,6 +541,7 @@ fn execute_command(
                     regenerate,
                     no_build,
                     cargo_args: cargo_args.clone(),
+                    cargo_build_cmd: cargo_build_cmd.clone(),
                 }),
                 PackTargetArg::Wasm {
                     release,
@@ -533,6 +552,7 @@ fn execute_command(
                     regenerate,
                     no_build,
                     cargo_args: cargo_args.clone(),
+                    cargo_build_cmd: cargo_build_cmd.clone(),
                 }),
                 PackTargetArg::Java {
                     release,
@@ -544,6 +564,7 @@ fn execute_command(
                     no_build,
                     experimental: false,
                     cargo_args: cargo_args.clone(),
+                    cargo_build_cmd: cargo_build_cmd.clone(),
                 }),
                 PackTargetArg::Python {
                     release,
@@ -565,7 +586,7 @@ fn execute_command(
 
         Commands::Release { platform } => {
             let config = load_config(config_paths)?;
-            run_release(&config, platform, reporter, cargo_args)
+            run_release(&config, platform, reporter, cargo_args, cargo_build_cmd)
         }
 
         Commands::Verify { path, json } => {
@@ -710,6 +731,7 @@ fn run_release(
     platform: Option<BuildPlatformArg>,
     reporter: &reporter::Reporter,
     cargo_args: Vec<String>,
+    cargo_build_cmd: Option<String>,
 ) -> Result<()> {
     reporter.section("🚀", "Running full release pipeline");
 
@@ -732,7 +754,8 @@ fn run_release(
     }
 
     if release_requires_java_environment_validation(config, platform)
-        && let Err(error) = check_java_packaging_prereqs(config, true, &cargo_args)
+        && let Err(error) =
+            check_java_packaging_prereqs(config, true, &cargo_args, cargo_build_cmd.as_deref())
     {
         println!("JVM packaging preflight failed: {error}");
         return Err(error);
@@ -751,6 +774,7 @@ fn run_release(
             .unwrap_or(BuildPlatform::All),
         release: true,
         cargo_args: cargo_args.clone(),
+        cargo_build_cmd: cargo_build_cmd.clone(),
     };
     run_build(config, build_options)?;
     println!();
@@ -768,7 +792,8 @@ fn run_release(
 
     println!("[4/4] Packaging...");
 
-    for command in release_pack_commands(config, platform, &cargo_args) {
+    for command in release_pack_commands(config, platform, &cargo_args, cargo_build_cmd.as_deref())
+    {
         run_pack(config, command, reporter)?;
     }
 
@@ -782,8 +807,10 @@ fn release_pack_commands(
     config: &Config,
     platform: Option<BuildPlatformArg>,
     cargo_args: &[String],
+    cargo_build_cmd: Option<&str>,
 ) -> Vec<PackCommand> {
     let mut commands = Vec::new();
+    let cargo_build_cmd = cargo_build_cmd.map(str::to_owned);
 
     match platform {
         Some(BuildPlatformArg::Apple) => {
@@ -797,6 +824,7 @@ fn release_pack_commands(
                     xcframework_only: false,
                     layout: None,
                     cargo_args: cargo_args.to_vec(),
+                    cargo_build_cmd: cargo_build_cmd.clone(),
                 }));
             }
         }
@@ -807,6 +835,7 @@ fn release_pack_commands(
                     regenerate: false,
                     no_build: true,
                     cargo_args: cargo_args.to_vec(),
+                    cargo_build_cmd: cargo_build_cmd.clone(),
                 }));
             }
         }
@@ -817,6 +846,7 @@ fn release_pack_commands(
                     regenerate: false,
                     no_build: true,
                     cargo_args: cargo_args.to_vec(),
+                    cargo_build_cmd: cargo_build_cmd.clone(),
                 }));
             }
         }
@@ -831,6 +861,7 @@ fn release_pack_commands(
                     xcframework_only: false,
                     layout: None,
                     cargo_args: cargo_args.to_vec(),
+                    cargo_build_cmd: cargo_build_cmd.clone(),
                 }));
             }
             if config.is_android_enabled() {
@@ -839,6 +870,7 @@ fn release_pack_commands(
                     regenerate: false,
                     no_build: true,
                     cargo_args: cargo_args.to_vec(),
+                    cargo_build_cmd: cargo_build_cmd.clone(),
                 }));
             }
             if config.is_wasm_enabled() {
@@ -847,6 +879,7 @@ fn release_pack_commands(
                     regenerate: false,
                     no_build: true,
                     cargo_args: cargo_args.to_vec(),
+                    cargo_build_cmd: cargo_build_cmd.clone(),
                 }));
             }
             if config.should_process(Target::Python, false) {
@@ -866,6 +899,7 @@ fn release_pack_commands(
                     no_build: false,
                     experimental: false,
                     cargo_args: cargo_args.to_vec(),
+                    cargo_build_cmd: cargo_build_cmd.clone(),
                 }));
             }
         }
@@ -1059,7 +1093,7 @@ enabled = true
 "#,
         );
 
-        let commands = release_pack_commands(&config, Some(BuildPlatformArg::All), &[]);
+        let commands = release_pack_commands(&config, Some(BuildPlatformArg::All), &[], None);
 
         assert_eq!(commands.len(), 4);
         assert!(matches!(
@@ -1099,7 +1133,7 @@ enabled = true
 "#,
         );
 
-        let commands = release_pack_commands(&config, Some(BuildPlatformArg::Apple), &[]);
+        let commands = release_pack_commands(&config, Some(BuildPlatformArg::Apple), &[], None);
 
         assert_eq!(commands.len(), 1);
         assert!(matches!(
@@ -1120,7 +1154,7 @@ enabled = true
 "#,
         );
 
-        let commands = release_pack_commands(&config, Some(BuildPlatformArg::All), &[]);
+        let commands = release_pack_commands(&config, Some(BuildPlatformArg::All), &[], None);
 
         assert!(
             commands
@@ -1147,7 +1181,7 @@ enabled = true
 "#,
         );
 
-        let commands = release_pack_commands(&config, Some(BuildPlatformArg::All), &[]);
+        let commands = release_pack_commands(&config, Some(BuildPlatformArg::All), &[], None);
 
         assert!(commands.iter().any(|command| matches!(
             command,

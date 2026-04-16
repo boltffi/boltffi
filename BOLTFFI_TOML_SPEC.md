@@ -53,6 +53,37 @@ Experimental features:
 - `license` (string, optional): Package license identifier.
 - `repository` (string, optional): Repository URL.
 
+## Cargo
+
+### `[cargo]` (optional)
+
+Configures how BoltFFI invokes Cargo during builds.
+
+- `global_args` (array of strings): Arguments passed to every Cargo invocation.
+  - Default: `[]`
+- `command_args` (table of string → array of strings): Per-command arguments. Key is the Cargo subcommand (e.g. `"build"`).
+  - Default: `{}`
+- `build_command` (string, optional): Override the cargo build command.
+  - Default: `null` (uses `cargo build`)
+  - Interpreted values:
+    - `"zigbuild"` → `cargo zigbuild`
+    - `"cross"` → `cross build`
+    - `"cargo zigbuild"` → `cargo zigbuild`
+    - `"cross build"` → `cross build`
+    - Any `"program subcommand"` pair is accepted
+  - CLI `--cargo-build-cmd` flag takes precedence over this config value
+
+```toml
+[cargo]
+build_command = "zigbuild"
+global_args = ["+nightly"]
+
+[cargo.command_args]
+build = ["--features", "server"]
+```
+
+When the program is not `cargo` (e.g. `cross`), toolchain selectors like `+nightly` are not forwarded to the build command.
+
 ## Targets
 
 All platform-specific configuration lives under `[targets.*]`. Each target can be independently enabled or disabled.
@@ -216,10 +247,42 @@ Desktop JVM target configuration.
 - `host_targets` (array of strings, optional): Desired desktop native outputs.
   - Supported canonical values: `current`, `darwin-arm64`, `darwin-x86_64`, `linux-x86_64`, `linux-aarch64`, `windows-x86_64`
   - Supported aliases: `darwin-aarch64`, `darwin-x86-64`, `linux-x86-64`, `linux-arm64`, `windows-x86-64`
+  - Linux targets accept an optional glibc version suffix: `linux-x86_64.2.17`, `linux-aarch64.2.28`
+    - The suffix is forwarded as part of the `--target` argument to `cargo zigbuild` (e.g. `--target x86_64-unknown-linux-gnu.2.17`)
+    - Artifacts are still written to the base triple directory (without the suffix)
+    - Specifying a glibc version on non-Linux targets is an error
   - Default: `["current"]`
   - Phase 3 behavior: all configured values must resolve to the current host target after `current` expansion and deduping
   - Packaging layout: `boltffi pack java` writes the JNI library to `dist/java/native/<host-target>/` and also keeps a flat current-host `_jni` copy in `dist/java/`
   - `boltffi pack java --no-build` is unsupported in Phase 3; rerun without `--no-build`
+- `jni_compiler` (string, optional): C compiler used to compile the JNI glue shared library.
+  - Default: auto-discovered (`clang` on Darwin/Linux, `clang-cl` / `cl` on Windows)
+  - `"zig cc"` (or just `"zig"`): uses the Zig C compiler; a zig-style `-target` is derived
+    automatically from `host_targets` (e.g. `x86_64-linux-gnu.2.17` when glibc is specified)
+  - clang-compatible names (`clang`, `clang-18`, …): uses `--target {rust_triple}`
+  - Any other executable path: used as-is; no target argument is added automatically
+  - When set alongside `[cargo].build_command = "zigbuild"` on macOS targeting Linux,
+    no separate cross-linker installation is required
+
+### `[targets.java.jvm.jni_compiler_container]` (optional)
+
+Runs the JNI compiler inside a container (Docker or Podman). Useful for cross-compiling the
+JNI glue with a specific toolchain image (e.g. manylinux2014).
+
+- `image` (string, required): Container image to use.
+- `runtime` (string, optional): Container runtime.
+  - Default: `"docker"`
+  - Supported values: `"docker"`, `"podman"`
+
+BoltFFI invokes `{runtime} run --rm -v <dir>:<dir> {image} {compiler} {args}`, mapping all
+directories referenced by the compiler arguments as bind-mount volumes at identical container
+paths so no path rewriting is needed.
+
+```toml
+[targets.java.jvm.jni_compiler_container]
+image = "quay.io/pypa/manylinux2014_x86_64"
+runtime = "docker"
+```
 
 ### `[targets.java.android]` (optional)
 

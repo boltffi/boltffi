@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Arc, Mutex};
 
-use crate::build::{OutputCallback, run_command_streaming};
+use crate::build::{CargoBuildCommand, OutputCallback, run_command_streaming};
 use crate::cli::{CliError, Result};
 use crate::config::Config;
 use crate::pack::PackError;
@@ -79,7 +79,15 @@ pub(crate) fn compile_jni_library(
 ) -> Result<JvmPackagedNativeOutput> {
     let cargo_context = &packaging_target.cargo_context;
     let host_target = cargo_context.host_target;
-    let java_output = config.java_jvm_output();
+    let java_output_raw = config.java_jvm_output();
+    // Ensure all derived paths are absolute so they work inside containers.
+    let java_output = if java_output_raw.is_absolute() {
+        java_output_raw
+    } else {
+        std::env::current_dir()
+            .unwrap_or_default()
+            .join(java_output_raw)
+    };
     let jni_dir = java_output.join("jni");
     let jni_glue = jni_dir.join("jni_glue.c");
     let header = jni_dir.join(format!("{}.h", cargo_context.artifact_name));
@@ -121,7 +129,17 @@ pub(crate) fn compile_jni_library(
     let jni_include_directories = resolve_jni_include_directories(cargo_context)?;
     let has_shared_library_copy = compatibility_shared_library.is_some();
 
-    let mut command = packaging_target.toolchain.linker_command();
+    let volume_paths: Vec<&Path> = vec![
+        output_lib.as_path(),
+        jni_glue.as_path(),
+        link_input.path(),
+        jni_dir.as_path(),
+        jni_include_directories.shared.as_path(),
+        jni_include_directories.platform.as_path(),
+    ];
+    let mut command = packaging_target
+        .toolchain
+        .container_linker_command(&volume_paths);
     let jni_linker_args = if packaging_target.toolchain.uses_msvc_compiler() {
         clang_cl_jni_linker_args(&JniLinkerArgs {
             host_target,
@@ -251,17 +269,21 @@ pub(crate) fn build_jvm_native_library(
         command: format!("current_dir: {source}"),
         status: None,
     })?;
-    let mut command = Command::new("cargo");
+    let cmd = cargo_context.cargo_build_command.as_ref();
+    let program = cmd.map(CargoBuildCommand::program).unwrap_or("cargo");
+    let subcommand = cmd.map(CargoBuildCommand::subcommand).unwrap_or("build");
+    let is_cargo = cmd.map(CargoBuildCommand::is_cargo_program).unwrap_or(true);
+    let mut command = Command::new(program);
     command.current_dir(crate_directory);
 
-    if let Some(toolchain_selector) = cargo_context.toolchain_selector.as_deref() {
+    if is_cargo && let Some(toolchain_selector) = cargo_context.toolchain_selector.as_deref() {
         command.arg(toolchain_selector);
     }
 
     command
-        .arg("build")
+        .arg(subcommand)
         .arg("--target")
-        .arg(&cargo_context.rust_target_triple);
+        .arg(cargo_context.cargo_target_arg());
     apply_jvm_cargo_package_selection(&mut command, cargo_context);
 
     if release {
@@ -272,6 +294,13 @@ pub(crate) fn build_jvm_native_library(
     packaging_target
         .toolchain
         .configure_cargo_build(&mut command);
+
+    if step.is_verbose() {
+        print_verbose_detail(&format!(
+            "cargo build command: {}",
+            format_command_for_log(&command)
+        ));
+    }
 
     if !run_command_streaming(&mut command, on_output.as_ref()) {
         return Err(PackError::BuildFailed {
@@ -564,7 +593,16 @@ pub(crate) fn clang_style_jni_linker_args(args: &JniLinkerArgs<'_>) -> Vec<Strin
         "-fPIC".to_string(),
         "-o".to_string(),
         args.output_lib.display().to_string(),
+        // Force C language mode so the JNI glue compiles correctly even when the
+        // compiler driver is a C++ frontend (g++, c++, clang++). The generated
+        // code uses the C JNI API ((*env)->Method(env, ...)) and relies on
+        // implicit void* conversions that are only valid in C.
+        "-x".to_string(),
+        "c".to_string(),
         args.jni_glue.display().to_string(),
+        // Reset to auto-detection for subsequent inputs (the static library).
+        "-x".to_string(),
+        "none".to_string(),
         args.link_input.display().to_string(),
         format!("-I{}", args.jni_dir.display()),
         format!("-I{}", args.jni_include_directories.shared.display()),
@@ -1052,6 +1090,7 @@ mod tests {
         JvmCargoContext {
             host_target,
             rust_target_triple: "x86_64-unknown-linux-gnu".to_string(),
+            glibc_version: None,
             release: false,
             build_profile: CargoBuildProfile::Debug,
             artifact_name: "demo".to_string(),
@@ -1065,6 +1104,7 @@ mod tests {
                 builds_staticlib: true,
                 builds_cdylib: false,
             },
+            cargo_build_command: None,
         }
     }
 
@@ -1350,7 +1390,11 @@ mod tests {
                 "-fPIC".to_string(),
                 "-o".to_string(),
                 "/tmp/out/libdemo_jni.dylib".to_string(),
+                "-x".to_string(),
+                "c".to_string(),
                 "/tmp/jni/jni_glue.c".to_string(),
+                "-x".to_string(),
+                "none".to_string(),
                 "/tmp/target/libdemo.a".to_string(),
                 "-I/tmp/jni".to_string(),
                 "-I/tmp/jdk/include".to_string(),

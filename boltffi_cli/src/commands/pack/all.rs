@@ -21,7 +21,14 @@ pub(super) fn pack_all(
     )?;
     let prepared_java_packaging = config
         .should_process(Target::Java, options.experimental)
-        .then(|| prepare_java_packaging(config, options.release, &options.cargo_args))
+        .then(|| {
+            prepare_java_packaging(
+                config,
+                options.release,
+                &options.cargo_args,
+                options.cargo_build_cmd.as_deref(),
+            )
+        })
         .transpose()?;
 
     let mut packed_any = false;
@@ -38,6 +45,7 @@ pub(super) fn pack_all(
                 xcframework_only: false,
                 layout: None,
                 cargo_args: options.cargo_args.clone(),
+                cargo_build_cmd: options.cargo_build_cmd.clone(),
             },
             reporter,
         )?;
@@ -52,6 +60,7 @@ pub(super) fn pack_all(
                 regenerate: options.regenerate,
                 no_build: options.no_build,
                 cargo_args: options.cargo_args.clone(),
+                cargo_build_cmd: options.cargo_build_cmd.clone(),
             },
             reporter,
         )?;
@@ -66,6 +75,7 @@ pub(super) fn pack_all(
                 regenerate: options.regenerate,
                 no_build: options.no_build,
                 cargo_args: options.cargo_args.clone(),
+                cargo_build_cmd: options.cargo_build_cmd.clone(),
             },
             reporter,
         )?;
@@ -81,6 +91,7 @@ pub(super) fn pack_all(
                 no_build: options.no_build,
                 experimental: options.experimental,
                 cargo_args: options.cargo_args.clone(),
+                cargo_build_cmd: options.cargo_build_cmd.clone(),
             },
             prepared_java_packaging,
             reporter,

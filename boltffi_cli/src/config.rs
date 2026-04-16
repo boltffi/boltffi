@@ -1,5 +1,5 @@
 use crate::target::{
-    AndroidArchitecture, AppleArchitecture, AppleIosArchitecture, JavaHostTarget, RustTarget,
+    AndroidArchitecture, AppleArchitecture, AppleIosArchitecture, JavaJvmHostTarget, RustTarget,
     resolve_android_targets, resolve_apple_ios_targets, resolve_apple_macos_targets,
     resolve_apple_simulator_targets, resolve_java_host_targets,
 };
@@ -77,6 +77,16 @@ pub struct CargoConfig {
     pub global_args: Vec<String>,
     #[serde(default)]
     pub command_args: HashMap<String, Vec<String>>,
+    /// Override the cargo build subcommand or binary.
+    ///
+    /// Examples (in `boltffi.toml`):
+    /// ```toml
+    /// [cargo]
+    /// build_command = "zigbuild"     # → cargo zigbuild
+    /// build_command = "cross"        # → cross build
+    /// build_command = "cross build"  # → cross build (explicit)
+    /// ```
+    pub build_command: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -333,7 +343,56 @@ pub struct JavaJvmConfig {
     pub enabled: bool,
     #[serde(default = "default_java_jvm_output")]
     pub output: PathBuf,
-    pub host_targets: Option<Vec<JavaHostTarget>>,
+    /// JVM packaging targets, with optional per-Linux glibc version constraints.
+    ///
+    /// Examples:
+    /// ```toml
+    /// host_targets = ["current"]                  # current host only
+    /// host_targets = ["linux-x86_64"]             # Linux x86-64, system glibc
+    /// host_targets = ["linux-x86_64.2.17"]        # Linux x86-64, glibc ≥ 2.17
+    /// host_targets = ["linux-x86_64.2.17", "darwin-arm64"]
+    /// ```
+    pub host_targets: Option<Vec<JavaJvmHostTarget>>,
+    /// Override the C compiler used to compile the JNI glue library.
+    ///
+    /// Supports `zig cc` (auto-derives the zig-style `-target` from `host_targets`),
+    /// any clang-compatible driver, or an arbitrary compiler path.
+    ///
+    /// Examples:
+    /// ```toml
+    /// [targets.java.jvm]
+    /// jni_compiler = "zig cc"            # zig C compiler (recommended with zigbuild)
+    /// jni_compiler = "clang"             # explicit clang
+    /// jni_compiler = "/opt/cross/bin/gcc-linux" # absolute path
+    /// ```
+    pub jni_compiler: Option<String>,
+    /// Run the JNI compiler inside a container (Docker or Podman).
+    ///
+    /// When set, BoltFFI wraps the JNI compiler invocation in a container `run`
+    /// command, automatically mapping the project directory, JNI include paths,
+    /// and output directories as volumes.
+    ///
+    /// Examples:
+    /// ```toml
+    /// [targets.java.jvm.jni_compiler_container]
+    /// image = "quay.io/pypa/manylinux2014_x86_64"
+    /// runtime = "docker"  # or "podman" (default: "docker")
+    /// ```
+    pub jni_compiler_container: Option<JniCompilerContainerConfig>,
+}
+
+/// Configuration for running the JNI compiler inside a container.
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct JniCompilerContainerConfig {
+    /// Container image to use (e.g. `"quay.io/pypa/manylinux2014_x86_64"`).
+    pub image: String,
+    /// Container runtime: `"docker"` or `"podman"`.
+    #[serde(default = "default_container_runtime")]
+    pub runtime: String,
+}
+
+fn default_container_runtime() -> String {
+    "docker".to_string()
 }
 
 impl Default for JavaJvmConfig {
@@ -342,6 +401,8 @@ impl Default for JavaJvmConfig {
             enabled: false,
             output: default_java_jvm_output(),
             host_targets: None,
+            jni_compiler: None,
+            jni_compiler_container: None,
         }
     }
 }
@@ -1136,16 +1197,24 @@ impl Config {
         self.targets.java.jvm.output.clone()
     }
 
-    pub fn java_jvm_requested_host_targets(&self) -> &[JavaHostTarget] {
+    pub fn java_jvm_jni_compiler(&self) -> Option<&str> {
+        self.targets.java.jvm.jni_compiler.as_deref()
+    }
+
+    pub fn java_jvm_jni_compiler_container(&self) -> Option<&JniCompilerContainerConfig> {
+        self.targets.java.jvm.jni_compiler_container.as_ref()
+    }
+
+    pub fn java_jvm_requested_host_targets(&self) -> &[JavaJvmHostTarget] {
         self.targets
             .java
             .jvm
             .host_targets
             .as_deref()
-            .unwrap_or(JavaHostTarget::DEFAULTS)
+            .unwrap_or(JavaJvmHostTarget::DEFAULTS)
     }
 
-    pub fn java_jvm_host_targets(&self) -> std::result::Result<Vec<JavaHostTarget>, String> {
+    pub fn java_jvm_host_targets(&self) -> std::result::Result<Vec<JavaJvmHostTarget>, String> {
         resolve_java_host_targets(self.java_jvm_requested_host_targets())
     }
 
@@ -1477,6 +1546,7 @@ pub enum ConfigError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::target::JavaHostTarget;
 
     fn parse_config(input: &str) -> Config {
         let parsed: Config = toml::from_str(input).expect("toml parse failed");
@@ -1869,7 +1939,7 @@ host_targets = ["current", "{current_host_value}"]
             config
                 .java_jvm_host_targets()
                 .expect("resolved current host"),
-            vec![current_host]
+            vec![JavaJvmHostTarget::new(current_host)]
         );
     }
 
@@ -1902,7 +1972,10 @@ host_targets = ["current", "{}"]
             config
                 .java_jvm_host_targets()
                 .expect("resolved host targets"),
-            vec![current_host, explicit_other_host]
+            vec![
+                JavaJvmHostTarget::new(current_host),
+                JavaJvmHostTarget::new(explicit_other_host)
+            ]
         );
     }
 
