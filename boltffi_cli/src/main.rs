@@ -1181,7 +1181,7 @@ enabled = true
 "#,
         );
 
-        let commands = release_pack_commands(&config, Some(BuildPlatformArg::All), &[]);
+        let commands = release_pack_commands(&config, Some(BuildPlatformArg::All), &[], None);
 
         assert!(commands.iter().any(|command| matches!(
             command,

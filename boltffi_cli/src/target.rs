@@ -226,7 +226,11 @@ impl JavaHostTarget {
     }
 
     pub fn resolve_requested(targets: &[Self]) -> Result<Vec<Self>, String> {
-        let current_host = Self::current().ok_or_else(Self::unsupported_host_message)?;
+        let current_host = Self::current().ok_or_else(|| {
+            "JVM packaging is only supported on darwin-arm64, darwin-x86_64, \
+             linux-x86_64, linux-aarch64, and windows-x86_64 hosts"
+                .to_string()
+        })?;
         let mut resolved = Vec::new();
 
         targets.iter().copied().for_each(|target| {
