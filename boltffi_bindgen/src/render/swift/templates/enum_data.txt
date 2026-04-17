@@ -1,11 +1,11 @@
 {{ self::swift_doc_block(doc, "") }}public enum {{ class_name }}: Hashable, Equatable, Sendable{% if is_error %}, Error{% endif %} {
 {%- for variant in variants %}
 {%- if variant.is_unit() %}
-{{ self::swift_doc_block(variant.doc, "    ") }}    case {{ variant.swift_name }}
+{{ self::swift_doc_block(variant.doc, "    ") }}    {{ variant.indirect_prefix() }}case {{ variant.swift_name }}
 {%- elif variant.is_single_tuple() %}
-{{ self::swift_doc_block(variant.doc, "    ") }}    case {{ variant.swift_name }}({{ variant.fields()[0].swift_type }})
+{{ self::swift_doc_block(variant.doc, "    ") }}    {{ variant.indirect_prefix() }}case {{ variant.swift_name }}({{ variant.fields()[0].swift_type }})
 {%- else %}
-{{ self::swift_doc_block(variant.doc, "    ") }}    case {{ variant.swift_name }}({% for field in variant.fields() %}{{ field.swift_name }}: {{ field.swift_type }}{% if !loop.last %}, {% endif %}{% endfor %})
+{{ self::swift_doc_block(variant.doc, "    ") }}    {{ variant.indirect_prefix() }}case {{ variant.swift_name }}({% for field in variant.fields() %}{{ field.swift_name }}: {{ field.swift_type }}{% if !loop.last %}, {% endif %}{% endfor %})
 {%- endif %}
 {%- endfor %}
 

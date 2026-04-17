@@ -24,6 +24,13 @@ pub enum FixtureStatus {
     Failed = 3,
 }
 
+#[data]
+#[derive(Clone, Debug, PartialEq)]
+pub enum FixtureTree {
+    Leaf(i32),
+    Node(Box<FixtureTree>, Box<FixtureTree>),
+}
+
 #[export]
 pub trait SyncValueCallback {
     fn on_value(&self, value: i32) -> i32;

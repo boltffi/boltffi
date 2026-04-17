@@ -408,6 +408,7 @@ pub struct SwiftVariant {
     pub discriminant: i128,
     pub payload: SwiftVariantPayload,
     pub doc: Option<String>,
+    pub is_recursive: bool,
 }
 
 impl SwiftVariant {
@@ -430,6 +431,10 @@ impl SwiftVariant {
             SwiftVariantPayload::Unit => &[],
             SwiftVariantPayload::Tuple(fields) | SwiftVariantPayload::Struct(fields) => fields,
         }
+    }
+
+    pub fn indirect_prefix(&self) -> &'static str {
+        if self.is_recursive { "indirect " } else { "" }
     }
 
     fn single_tuple_field(&self) -> Option<&SwiftField> {
