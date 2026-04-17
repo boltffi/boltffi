@@ -641,9 +641,9 @@ impl<'a> SwiftLowerer<'a> {
     ) -> bool {
         match payload {
             VariantPayload::Unit => false,
-            VariantPayload::Tuple(types) => types.iter().any(|ty| {
-                self.type_contains_enum(ty, target, visited_enums, visited_records)
-            }),
+            VariantPayload::Tuple(types) => types
+                .iter()
+                .any(|ty| self.type_contains_enum(ty, target, visited_enums, visited_records)),
             VariantPayload::Struct(fields) => fields.iter().any(|field| {
                 self.type_contains_enum(&field.type_expr, target, visited_enums, visited_records)
             }),

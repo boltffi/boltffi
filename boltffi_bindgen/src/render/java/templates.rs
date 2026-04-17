@@ -794,6 +794,75 @@ mod tests {
     }
 
     #[test]
+    fn sealed_enum_template_renders_recursive_variants() {
+        let enumeration = JavaEnum {
+            doc: None,
+            class_name: "Tree".to_string(),
+            kind: JavaEnumKind::SealedInterface,
+            value_type: "int".to_string(),
+            variants: vec![
+                JavaEnumVariant {
+                    doc: None,
+                    name: "Leaf".to_string(),
+                    tag: 0,
+                    fields: vec![JavaEnumField {
+                        doc: None,
+                        name: "value".to_string(),
+                        java_type: "int".to_string(),
+                        wire_decode_expr: "reader.readI32()".to_string(),
+                        wire_size_expr: "4".to_string(),
+                        wire_encode_expr: "wire.writeI32(_v.value())".to_string(),
+                        equals_expr: "this.value == other.value".to_string(),
+                        hash_expr: "Integer.hashCode(value)".to_string(),
+                    }],
+                },
+                JavaEnumVariant {
+                    doc: None,
+                    name: "Node".to_string(),
+                    tag: 1,
+                    fields: vec![
+                        JavaEnumField {
+                            doc: None,
+                            name: "left".to_string(),
+                            java_type: "Tree".to_string(),
+                            wire_decode_expr: "Tree.decode(reader)".to_string(),
+                            wire_size_expr: "_v.left().wireEncodedSize()".to_string(),
+                            wire_encode_expr: "_v.left().encode(wire)".to_string(),
+                            equals_expr: "java.util.Objects.equals(this.left, other.left)"
+                                .to_string(),
+                            hash_expr: "java.util.Objects.hashCode(left)".to_string(),
+                        },
+                        JavaEnumField {
+                            doc: None,
+                            name: "right".to_string(),
+                            java_type: "Tree".to_string(),
+                            wire_decode_expr: "Tree.decode(reader)".to_string(),
+                            wire_size_expr: "_v.right().wireEncodedSize()".to_string(),
+                            wire_encode_expr: "_v.right().encode(wire)".to_string(),
+                            equals_expr: "java.util.Objects.equals(this.right, other.right)"
+                                .to_string(),
+                            hash_expr: "java.util.Objects.hashCode(right)".to_string(),
+                        },
+                    ],
+                },
+            ],
+            constructors: vec![],
+            methods: vec![],
+        };
+
+        let source = DataEnumSealedTemplate {
+            enumeration: &enumeration,
+            package_name: "com.test",
+        }
+        .render()
+        .expect("sealed enum template should render");
+
+        assert!(source.contains("public sealed interface Tree"));
+        assert!(source.contains("record Leaf(int value) implements Tree {}"));
+        assert!(source.contains("record Node(Tree left, Tree right) implements Tree {}"));
+    }
+
+    #[test]
     fn abstract_error_enum_template_preserves_payloads() {
         let enumeration = JavaEnum {
             doc: None,

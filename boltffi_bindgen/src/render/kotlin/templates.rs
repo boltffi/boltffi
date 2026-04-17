@@ -740,6 +740,53 @@ mod tests {
     }
 
     #[test]
+    fn snapshot_sealed_enum_recursive() {
+        let template = SealedEnumTemplate {
+            constructors: &[],
+            methods: &[],
+            class_name: "Tree",
+            variants: &[
+                KotlinEnumVariant {
+                    name: "Leaf".to_string(),
+                    tag: 0,
+                    fields: vec![KotlinEnumField {
+                        name: "value".to_string(),
+                        kotlin_type: "Int".to_string(),
+                        wire_decode_expr: "reader.readI32()".to_string(),
+                        wire_size_expr: "4".to_string(),
+                        wire_encode: "wire.writeI32(value)".to_string(),
+                    }],
+                    doc: None,
+                },
+                KotlinEnumVariant {
+                    name: "Node".to_string(),
+                    tag: 1,
+                    fields: vec![
+                        KotlinEnumField {
+                            name: "left".to_string(),
+                            kotlin_type: "Tree".to_string(),
+                            wire_decode_expr: "Tree.decode(reader)".to_string(),
+                            wire_size_expr: "left.wireEncodedSize()".to_string(),
+                            wire_encode: "left.encode(wire)".to_string(),
+                        },
+                        KotlinEnumField {
+                            name: "right".to_string(),
+                            kotlin_type: "Tree".to_string(),
+                            wire_decode_expr: "Tree.decode(reader)".to_string(),
+                            wire_size_expr: "right.wireEncodedSize()".to_string(),
+                            wire_encode: "right.encode(wire)".to_string(),
+                        },
+                    ],
+                    doc: None,
+                },
+            ],
+            is_error: false,
+            doc: &None,
+        };
+        insta::assert_snapshot!(template.render().unwrap());
+    }
+
+    #[test]
     fn snapshot_error_enum() {
         let template = SealedEnumTemplate {
             constructors: &[],

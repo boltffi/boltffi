@@ -1,0 +1,50 @@
+---
+source: boltffi_bindgen/src/render/kotlin/templates.rs
+assertion_line: 786
+expression: template.render().unwrap()
+---
+sealed class Tree {
+
+    data class Leaf(val value: Int) : Tree()
+
+    data class Node(val left: Tree, val right: Tree) : Tree()
+
+    companion object {
+        fun decode(reader: WireReader): Tree {
+            val tag = reader.readI32()
+            return when (tag) {
+                0 -> {
+                    Leaf(
+                        reader.readI32()
+                    )
+                }
+                1 -> {
+                    Node(
+                        Tree.decode(reader),
+                        Tree.decode(reader)
+                    )
+                }
+                else -> throw FfiException(-1, "Unknown Tree tag: $tag")
+            }
+        }
+    }
+
+    fun wireEncodedSize(): Int = 4 + when (this) {
+        is Leaf -> 4
+        is Node -> left.wireEncodedSize() + right.wireEncodedSize()
+    }
+
+    fun wireEncodeTo(wire: WireWriter) {
+        when (this) {
+            is Leaf -> {
+                wire.writeI32(0)
+                wire.writeI32(value)
+            }
+            is Node -> {
+                wire.writeI32(1)
+                left.encode(wire)
+                right.encode(wire)
+            }
+        }
+    }
+}
