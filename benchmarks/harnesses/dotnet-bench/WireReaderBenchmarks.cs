@@ -12,7 +12,7 @@ using UniffiPoint = uniffi.demo.Point;
 
 namespace BoltFFIBench;
 
-internal interface IWireReaderBindings<TPoint, TAddress, TPerson, TLine>
+public interface IWireReaderBindings<TPoint, TAddress, TPerson, TLine>
 {
     void Noop();
     int EchoI32(int value);
@@ -75,7 +75,7 @@ internal sealed class UniffiWireReaderBindings : IWireReaderBindings<UniffiPoint
 
     public string GenerateString(int size) => UniffiBindings.GenerateString(size);
 
-    public UniffiPoint MakePoint(double x, double y) => UniffiBindings.MakePoint(x, y);
+    public UniffiPoint MakePoint(double x, double y) => new(x, y);
 
     public UniffiAddress MakeAddress(string street, string city, string zip) => new(street, city, zip);
 
@@ -145,14 +145,14 @@ public abstract class WireReaderBenchmarks<TPoint, TAddress, TPerson, TLine>
 }
 
 [MemoryDiagnoser]
-public sealed class BoltffiWireReaderBenchmarks : WireReaderBenchmarks<BoltffiPoint, BoltffiAddress, BoltffiPerson, BoltffiLine>
+public class BoltffiWireReaderBenchmarks : WireReaderBenchmarks<BoltffiPoint, BoltffiAddress, BoltffiPerson, BoltffiLine>
 {
     protected override IWireReaderBindings<BoltffiPoint, BoltffiAddress, BoltffiPerson, BoltffiLine> Bindings =>
         BoltffiWireReaderBindings.Instance;
 }
 
 [MemoryDiagnoser]
-public sealed class UniffiWireReaderBenchmarks : WireReaderBenchmarks<UniffiPoint, UniffiAddress, UniffiPerson, UniffiLine>
+internal sealed class UniffiWireReaderBenchmarks : WireReaderBenchmarks<UniffiPoint, UniffiAddress, UniffiPerson, UniffiLine>
 {
     protected override IWireReaderBindings<UniffiPoint, UniffiAddress, UniffiPerson, UniffiLine> Bindings =>
         UniffiWireReaderBindings.Instance;

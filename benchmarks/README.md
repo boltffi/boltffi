@@ -7,15 +7,14 @@ Cross-language FFI performance suite. BoltFFI is compared against:
 - **WASM (Node.js)**: wasm-bindgen
 - **C# (.NET)**: UniFFI (via [uniffi-bindgen-cs](https://github.com/NordSecurity/uniffi-bindgen-cs))
 
-Every backend wraps the **same Rust code** with identical public APIs, so the only variable is FFI overhead.
+Every backend wraps the same Rust code with identical public APIs, so the only variable is FFI overhead.
 
 ## How the new system works
-
-There used to be separate `rust-boltffi` / `rust-uniffi` / `rust-wasm-bindgen` crates, each re-implementing the same types and functions. That is gone. The Rust source of truth is now **[`examples/demo`](../examples/demo)** — the same crate used by the platform demos and integration tests. Benchmarks are just another consumer of its public surface.
+ The Rust source of truth is now [`examples/demo`](../examples/demo) the same crate used by the platform demos and integration tests. Benchmarks are just another consumer of its public surface.
 
 Three pieces make this work:
 
-1. **`#[benchmark_candidate]` macro** ([`examples/demo/bench_macros`](../examples/demo/bench_macros)). Annotate an item with the kinds of backends it should be exported to:
+1. `#[benchmark_candidate]` macro ([`examples/demo/bench_macros`](../examples/demo/bench_macros)). Annotate an item with the kinds of backends it should be exported to:
 
    ```rust
    #[benchmark_candidate(function, uniffi, wasm_bindgen)]
@@ -28,11 +27,11 @@ Three pieces make this work:
    pub struct Counter { /* ... */ }
    ```
 
-   The macro expands to `#[cfg_attr(feature = "uniffi", uniffi::export)]` (and the wasm-bindgen equivalent) so the item is picked up by each backend only when its feature is enabled. BoltFFI itself discovers items through the regular `#[export]` / derive attributes already on the demo types — the macro is only about the *other* backends.
+   The macro expands to `#[cfg_attr(feature = "uniffi", uniffi::export)]` (and the wasm-bindgen equivalent) so the item is picked up by each backend only when its feature is enabled. BoltFFI itself discovers items through the regular `#[export]` / derive attributes already on the demo types — the macro is only about the other backends.
 
-2. **Benchmark overlay** [`examples/demo/boltffi.benchmark.toml`](../examples/demo/boltffi.benchmark.toml). Same demo crate, different output paths. It redirects every BoltFFI artifact (xcframework, jniLibs, WASM pkg, Java/C# dist) into `benchmarks/generated/boltffi/…`, so benchmark builds never collide with the regular demo outputs. The CLI picks it up with `--overlay`.
+2. Benchmark overlay [`examples/demo/boltffi.benchmark.toml`](../examples/demo/boltffi.benchmark.toml). it is the same demo crate, but with different output paths. It redirects every BoltFFI artifact (xcframework, jniLibs, WASM pkg, Java/C# dist) into `benchmarks/generated/boltffi/…`, so benchmark builds never collide with the regular demo outputs. The CLI picks it up with `--overlay` arguemnt.
 
-3. **UniFFI / wasm-bindgen adapters** under [`benchmarks/adapters/uniffi`](./adapters/uniffi) and [`benchmarks/generated/wasm-bindgen`](./generated/wasm-bindgen). These don't contain Rust source — they are build scripts that compile `examples/demo` with `--features uniffi` or `--features wasm-bench` and run the respective binding generators. The produced libraries and bindings are consumed by the harnesses.
+3. **UniFFI / wasm-bindgen adapters** under [`benchmarks/adapters/uniffi`](./adapters/uniffi) and [`benchmarks/generated/wasm-bindgen`](./generated/wasm-bindgen). These don't contain Rust source, they are build scripts that compile `examples/demo` with `--features uniffi` or `--features wasm-bench` and run the respective binding generators. The produced libraries and bindings are consumed by the harnesses.
 
 Layout:
 
@@ -50,7 +49,7 @@ benchmarks/
 │   ├── java-jvm-bench/
 │   ├── wasm-bench/
 │   └── dotnet-bench/
-└── scripts/               # Catalog, inventory, audit, normalization, publishing
+└── scripts/               # Catalog, inventory, audit, normalization, publishing scripts
 ```
 
 ## Where to see the results
@@ -92,7 +91,7 @@ The release workflow calls the `run-*.sh` scripts directly; you can do the same 
 ./benchmarks/harnesses/dotnet-bench/run-bench.sh
 ```
 
-### Individual harnesses (day-to-day)
+### Individual harnesses
 
 | Target              | Command                     | Notes                                                 |
 |---------------------|-----------------------------|-------------------------------------------------------|
@@ -116,7 +115,7 @@ Clean artifacts: `just clean-benchmarks`.
 
 ## Adding a benchmark
 
-Benchmarks are defined in Rust in `examples/demo`. You do **not** touch separate bench crates anymore.
+Benchmarks are defined in Rust in `examples/demo`. We do not use separate bench crates anymore.
 
 1. **Write (or pick) the Rust item** in `examples/demo/src/…` where it logically belongs (`primitives/`, `records/`, `classes/`, etc.).
 2. **Annotate it** with `#[benchmark_candidate]`, declaring which comparison backends should export it:

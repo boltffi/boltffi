@@ -44,15 +44,13 @@ export CARGO_TARGET_DIR="$ROOT_DIR/benchmarks/generated/boltffi/target"
         generate csharp \
         --experimental
 )
+# The default .NET harness runs the BoltFFI benchmarks only.
+# The UniFFI C# lane is opt-in and goes through the compat generator path in
+# benchmarks/adapters/uniffi/build-csharp.sh when we want to run it.
 
-"$ROOT_DIR/benchmarks/adapters/uniffi/build-csharp.sh"
+dotnet_run_command=(dotnet run -c Release -- --filter "${FILTER:-*}")
 
-DOTNET_ARGS=()
-if [[ -n "$FILTER" ]]; then
-    DOTNET_ARGS+=("--filter" "$FILTER")
-fi
-
-BOLTFFI_BENCH_ARTIFACTS="$ARTIFACTS_DIR" dotnet run -c Release -- "${DOTNET_ARGS[@]}"
+BOLTFFI_BENCH_ARTIFACTS="$ARTIFACTS_DIR" "${dotnet_run_command[@]}"
 
 REPORT_PATH="$(find "$ARTIFACTS_DIR/results" -name '*-report-full.json' -print | sort | tail -n1)"
 if [[ -z "$REPORT_PATH" ]]; then

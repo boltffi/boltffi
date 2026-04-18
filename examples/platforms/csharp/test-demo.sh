@@ -25,10 +25,10 @@ while [[ $# -gt 0 ]]; do
 done
 
 cargo_profile="debug"
-cargo_flags=()
+cargo_build_command=(cargo build)
 if [[ "$configuration" == "Release" ]]; then
   cargo_profile="release"
-  cargo_flags=(--release)
+  cargo_build_command+=(--release)
 fi
 
 native_lib_dir="$demo_dir/target/$cargo_profile"
@@ -43,7 +43,7 @@ case "$(uname -s)" in
 esac
 
 echo "=== cargo build demo ($cargo_profile) ==="
-(cd "$demo_dir" && cargo build "${cargo_flags[@]}")
+(cd "$demo_dir" && "${cargo_build_command[@]}")
 
 if [[ ! -f "$native_lib_dir/$native_lib_file" ]]; then
   echo "Expected native library not found: $native_lib_dir/$native_lib_file" >&2
