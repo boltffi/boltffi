@@ -31,4 +31,15 @@ final class VecsTests: XCTestCase {
         XCTAssertEqual(incrementedValues, [2, 2])
         XCTAssertEqual(incU64Value(value: 9), 10)
     }
+
+    func testNestedVecFns() {
+        XCTAssertEqual(echoVecVecI32(v: [[1, 2, 3], [], [4, 5]]), [[1, 2, 3], [], [4, 5]])
+        XCTAssertEqual(echoVecVecI32(v: []), [])
+
+        let strings = [["hello", "world"], [], ["café", "🌍"]]
+        XCTAssertEqual(echoVecVecString(v: strings), strings)
+
+        XCTAssertEqual(flattenVecVecI32(v: [[1, 2], [3], [], [4, 5]]), [1, 2, 3, 4, 5])
+        XCTAssertEqual(flattenVecVecI32(v: []), [])
+    }
 }

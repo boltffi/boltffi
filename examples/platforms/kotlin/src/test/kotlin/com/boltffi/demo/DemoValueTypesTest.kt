@@ -97,6 +97,26 @@ class DemoValueTypesTest {
     }
 
     @Test
+    fun nestedVecsRoundTrip() {
+        val input = listOf(intArrayOf(1, 2, 3), intArrayOf(), intArrayOf(4, 5))
+        val roundTripped = echoVecVecI32(input)
+        assertEquals(input.size, roundTripped.size)
+        for (i in input.indices) {
+            assertContentEquals(input[i], roundTripped[i])
+        }
+        assertEquals(0, echoVecVecI32(emptyList()).size)
+
+        val strings = listOf(listOf("hello", "world"), emptyList(), listOf("café", "🌍"))
+        assertEquals(strings, echoVecVecString(strings))
+
+        assertContentEquals(
+            intArrayOf(1, 2, 3, 4, 5),
+            flattenVecVecI32(listOf(intArrayOf(1, 2), intArrayOf(3), intArrayOf(), intArrayOf(4, 5))),
+        )
+        assertContentEquals(intArrayOf(), flattenVecVecI32(emptyList()))
+    }
+
+    @Test
     fun optionFunctionsUseCorrectKotlinSurface() {
         assertEquals(7, echoOptionalI32(7))
         assertNull(echoOptionalI32(null))

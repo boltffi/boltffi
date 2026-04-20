@@ -27,6 +27,7 @@ public final class DemoTest {
         testBytesVecs();
         testPrimitiveVecs();
         testVecStrings();
+        testNestedVecs();
         testOptions();
         testRecordsWithVecs();
         testConstructorCoverageMatrix();
@@ -519,6 +520,36 @@ public final class DemoTest {
         assert lengths.length == 2 : "vecStringLengths size";
         assert lengths[0] == 2 : "vecStringLengths[0]";
         assert lengths[1] == 5 : "vecStringLengths[1] (utf8)";
+
+        System.out.println("  PASS\n");
+    }
+
+    private static void testNestedVecs() {
+        System.out.println("Testing nested vecs...");
+
+        List<int[]> vvi = Demo.echoVecVecI32(Arrays.asList(new int[]{1, 2, 3}, new int[]{}, new int[]{4, 5}));
+        assert vvi.size() == 3 : "echoVecVecI32 outer size";
+        assert vvi.get(0).length == 3 && vvi.get(0)[0] == 1 && vvi.get(0)[2] == 3 : "echoVecVecI32[0]";
+        assert vvi.get(1).length == 0 : "echoVecVecI32[1] empty";
+        assert vvi.get(2).length == 2 && vvi.get(2)[0] == 4 && vvi.get(2)[1] == 5 : "echoVecVecI32[2]";
+
+        List<int[]> vviEmpty = Demo.echoVecVecI32(Collections.emptyList());
+        assert vviEmpty.isEmpty() : "echoVecVecI32 empty outer";
+
+        List<List<String>> vvs = Demo.echoVecVecString(Arrays.asList(
+                Arrays.asList("hello", "world"),
+                Collections.emptyList(),
+                Arrays.asList("café", "🌍")));
+        assert vvs.size() == 3 : "echoVecVecString outer size";
+        assert vvs.get(0).equals(Arrays.asList("hello", "world")) : "echoVecVecString[0]";
+        assert vvs.get(1).isEmpty() : "echoVecVecString[1] empty";
+        assert vvs.get(2).equals(Arrays.asList("café", "🌍")) : "echoVecVecString[2]";
+
+        int[] flat = Demo.flattenVecVecI32(Arrays.asList(new int[]{1, 2}, new int[]{3}, new int[]{}, new int[]{4, 5}));
+        assert flat.length == 5 : "flattenVecVecI32 length";
+        assert flat[0] == 1 && flat[1] == 2 && flat[2] == 3 && flat[3] == 4 && flat[4] == 5 : "flattenVecVecI32 values";
+
+        assert Demo.flattenVecVecI32(Collections.emptyList()).length == 0 : "flattenVecVecI32 empty";
 
         System.out.println("  PASS\n");
     }

@@ -20,4 +20,19 @@ export async function run() {
   assertArrayEqual(demo.makeRange(0, 5), [0, 1, 2, 3, 4]);
   assertArrayEqual(demo.reverseVecI32([1, 2, 3]), [3, 2, 1]);
   assert.equal(demo.incU64(BigUint64Array.from([1n, 2n])), undefined);
+
+  const vvi = demo.echoVecVecI32([[1, 2, 3], [], [4, 5]]);
+  assert.equal(vvi.length, 3);
+  assertArrayEqual(vvi[0], [1, 2, 3]);
+  assertArrayEqual(vvi[1], []);
+  assertArrayEqual(vvi[2], [4, 5]);
+  assert.equal(demo.echoVecVecI32([]).length, 0);
+
+  assert.deepEqual(
+    demo.echoVecVecString([["hello", "world"], [], ["café", "🌍"]]),
+    [["hello", "world"], [], ["café", "🌍"]],
+  );
+
+  assertArrayEqual(demo.flattenVecVecI32([[1, 2], [3], [], [4, 5]]), [1, 2, 3, 4, 5]);
+  assertArrayEqual(demo.flattenVecVecI32([]), []);
 }
