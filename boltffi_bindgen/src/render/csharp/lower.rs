@@ -1075,5 +1075,4 @@ mod tests {
             "expecting repr(usize) C-style enums to stay unsupported until the backend has a legal C# projection",
         );
     }
-
 }

@@ -209,7 +209,10 @@ pub fn primitive_vec_reader_call(primitive: PrimitiveType) -> String {
         PrimitiveType::Bool => "ReadBoolArray()".to_string(),
         PrimitiveType::ISize => "ReadNIntArray()".to_string(),
         PrimitiveType::USize => "ReadNUIntArray()".to_string(),
-        other => format!("ReadBlittableArray<{}>()", super::mappings::csharp_type(other)),
+        other => format!(
+            "ReadBlittableArray<{}>()",
+            super::mappings::csharp_type(other)
+        ),
     }
 }
 
@@ -391,11 +394,7 @@ pub fn emit_size_expr(size: &SizeExpr) -> String {
             value,
             layout: VecLayout::Blittable { element_size },
             ..
-        } => format!(
-            "(4 + {}.Length * {})",
-            render_value(value),
-            element_size
-        ),
+        } => format!("(4 + {}.Length * {})", render_value(value), element_size),
         other => panic!("unsupported C# size expr: {:?}", other),
     }
 }

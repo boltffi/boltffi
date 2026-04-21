@@ -126,7 +126,6 @@ pub enum CSharpType {
 }
 
 impl CSharpType {
-
     pub fn is_void(&self) -> bool {
         matches!(self, Self::Void)
     }
@@ -244,9 +243,7 @@ impl fmt::Display for CSharpType {
             Self::Float => f.write_str("float"),
             Self::Double => f.write_str("double"),
             Self::String => f.write_str("string"),
-            Self::Record(name) | Self::CStyleEnum(name) | Self::DataEnum(name) => {
-                f.write_str(name)
-            }
+            Self::Record(name) | Self::CStyleEnum(name) | Self::DataEnum(name) => f.write_str(name),
             Self::Array(inner) => write!(f, "{inner}[]"),
         }
     }
