@@ -244,32 +244,29 @@ pub fn emit_reader_read(seq: &ReadSeq) -> String {
 }
 
 fn emit_reader_vec(element_type: &TypeExpr, element: &ReadSeq, layout: &VecLayout) -> String {
+    if let TypeExpr::Primitive(primitive) = element_type {
+        return format!("reader.{}()", primitive_array_read_method(*primitive));
+    }
     match layout {
-        VecLayout::Blittable { .. } => match element_type {
-            TypeExpr::Primitive(primitive) => {
-                let method = match primitive {
-                    PrimitiveType::I32 | PrimitiveType::U32 => "readIntArray",
-                    PrimitiveType::I16 | PrimitiveType::U16 => "readShortArray",
-                    PrimitiveType::I64
-                    | PrimitiveType::U64
-                    | PrimitiveType::ISize
-                    | PrimitiveType::USize => "readLongArray",
-                    PrimitiveType::F32 => "readFloatArray",
-                    PrimitiveType::F64 => "readDoubleArray",
-                    PrimitiveType::U8 | PrimitiveType::I8 => "readBytes",
-                    PrimitiveType::Bool => "readBooleanArray",
-                };
-                format!("reader.{}()", method)
-            }
-            _ => {
-                let inner = emit_reader_read(element);
-                format!("reader.readList {{ {} }}", inner)
-            }
-        },
-        VecLayout::Encoded => {
+        VecLayout::Blittable { .. } | VecLayout::Encoded => {
             let inner = emit_reader_read(element);
             format!("reader.readList {{ {} }}", inner)
         }
+    }
+}
+
+fn primitive_array_read_method(primitive: PrimitiveType) -> &'static str {
+    match primitive {
+        PrimitiveType::I32 | PrimitiveType::U32 => "readIntArray",
+        PrimitiveType::I16 | PrimitiveType::U16 => "readShortArray",
+        PrimitiveType::I64
+        | PrimitiveType::U64
+        | PrimitiveType::ISize
+        | PrimitiveType::USize => "readLongArray",
+        PrimitiveType::F32 => "readFloatArray",
+        PrimitiveType::F64 => "readDoubleArray",
+        PrimitiveType::U8 | PrimitiveType::I8 => "readBytes",
+        PrimitiveType::Bool => "readBooleanArray",
     }
 }
 
@@ -360,11 +357,11 @@ pub fn emit_write_expr(seq: &WriteSeq) -> String {
 }
 
 fn emit_vec_size(value: &str, inner: &SizeExpr, layout: &VecLayout) -> String {
-    match layout {
-        VecLayout::Blittable { .. } => {
+    match (layout, inner) {
+        (VecLayout::Blittable { .. }, _) | (_, SizeExpr::Fixed(_)) => {
             format!("(4 + {}.size * {})", value, emit_size_expr(inner))
         }
-        VecLayout::Encoded => {
+        (VecLayout::Encoded, _) => {
             format!(
                 "(4 + {}.sumOf {{ item -> ({}).toInt() }})",
                 value,
@@ -404,24 +401,15 @@ fn emit_write_vec(
     element: &WriteSeq,
     layout: &VecLayout,
 ) -> String {
-    match layout {
-        VecLayout::Blittable { .. } => match element_type {
-            TypeExpr::Primitive(_) => format!("wire.writePrimitiveList({})", value),
-            TypeExpr::Record(id) => format!(
-                "wire.writeU32({}.size.toUInt()); {}Writer.writeAllToWire(wire, {})",
-                value,
-                id.as_str(),
-                value
-            ),
-            _ => {
-                let inner = emit_write_expr(element);
-                format!(
-                    "wire.writeU32({}.size.toUInt()); {}.forEach {{ item -> {} }}",
-                    value, value, inner
-                )
-            }
-        },
-        VecLayout::Encoded => {
+    match (layout, element_type) {
+        (_, TypeExpr::Primitive(_)) => format!("wire.writePrimitiveList({})", value),
+        (VecLayout::Blittable { .. }, TypeExpr::Record(id)) => format!(
+            "wire.writeU32({}.size.toUInt()); {}Writer.writeAllToWire(wire, {})",
+            value,
+            id.as_str(),
+            value
+        ),
+        _ => {
             let inner = emit_write_expr(element);
             format!(
                 "wire.writeU32({}.size.toUInt()); {}.forEach {{ item -> {} }}",
