@@ -263,11 +263,14 @@ class DemoValueTypesTest {
 
         val nameFilter = Filter.ByName("ali")
         val pointFilter = Filter.ByPoints(listOf(Point(0.0, 0.0), Point(1.0, 1.0)))
+        val groupFilter = Filter.ByGroups(listOf(listOf("café", "🌍"), emptyList(), listOf("common")))
         assertEquals(Filter.None, echoFilter(Filter.None))
         assertEquals(nameFilter, echoFilter(nameFilter))
+        assertEquals(groupFilter, echoFilter(groupFilter))
         assertEquals("filter by name: ali", describeFilter(nameFilter))
         assertEquals("filter by 2 anchor points", describeFilter(pointFilter))
         assertEquals("filter by 2 tags", describeFilter(Filter.ByTags(listOf("ffi", "jni"))))
+        assertEquals("filter by 3 groups", describeFilter(groupFilter))
         assertEquals("filter by range: 1..5", describeFilter(Filter.ByRange(1.0, 5.0)))
 
         val success = ApiResponse.Success("ok")

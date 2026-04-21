@@ -396,13 +396,14 @@ impl<'a> CSharpLowerer<'a> {
                 CSharpParamKind::DirectArray
             }
             TypeExpr::Vec(inner) if self.is_blittable_vec_element(inner) => {
-                // The CLR can pin primitive arrays automatically but
-                // classifies any struct containing a `bool` (or `char`)
-                // as non-blittable, even when the struct's byte layout
-                // actually matches Rust's `#[repr(C)]`. Rather than let
-                // P/Invoke silently build a marshaled copy with a
-                // mismatched layout, the wrapper pins the managed array
-                // with `fixed` and hands Rust a raw pointer directly.
+                // Primitive arrays can use the CLR's built-in direct-array
+                // path. Record arrays are less predictable once the element
+                // type stops being blittable to the marshaller, e.g. because
+                // it contains `bool` or `char`: P/Invoke may marshal through
+                // a temporary native buffer rather than exposing the managed
+                // array in place. `fixed` keeps this path zero-copy and
+                // makes the ABI contract explicit: Rust reads the actual
+                // managed element buffer, not a marshaled surrogate.
                 let element_type = match inner.as_ref() {
                     TypeExpr::Record(id) => NamingConvention::class_name(id.as_str()),
                     other => todo!(

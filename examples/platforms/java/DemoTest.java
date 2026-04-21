@@ -311,6 +311,16 @@ public final class DemoTest {
         assert logEntry.code() == (short) 42 : "LogEntry.code";
         assert Demo.echoLogEntry(logEntry).equals(logEntry) : "echoLogEntry round-trip";
 
+        Filter groupFilter = new Filter.ByGroups(
+            Arrays.asList(
+                Arrays.asList("café", "🌍"),
+                Collections.emptyList(),
+                Arrays.asList("common")
+            )
+        );
+        assert Demo.echoFilter(groupFilter).equals(groupFilter) : "echoFilter(ByGroups)";
+        assert Demo.describeFilter(groupFilter).equals("filter by 3 groups") : "describeFilter(ByGroups)";
+
         Shape circle = Demo.makeCircle(5.0);
         assert circle instanceof Shape.Circle : "makeCircle returns Circle";
         assert ((Shape.Circle) circle).radius == 5.0 : "makeCircle.radius";
@@ -798,13 +808,17 @@ public final class DemoTest {
         }
 
         try (ConstructorCoverageMatrix enumMix = new ConstructorCoverageMatrix(
-            new Filter.ByTags(Arrays.asList("ffi", "jni")),
+            new Filter.ByGroups(Arrays.asList(
+                Arrays.asList("café", "🌍"),
+                Collections.emptyList(),
+                Arrays.asList("common")
+            )),
             new Message.Image("https://example.com/image.png", 640, 480),
             new Task("ship", Priority.CRITICAL, false)
         )) {
             assert enumMix.constructorVariant().equals("with_enum_mix") : "with_enum_mix variant";
             assert enumMix.summary().equals(
-                "filter=tags:ffi|jni;message=image:https://example.com/image.png#640x480;task=ship#critical"
+                "filter=groups:3;message=image:https://example.com/image.png#640x480;task=ship#critical"
             ) : "with_enum_mix summary";
             assert enumMix.payloadChecksum() == 0 : "with_enum_mix checksum";
             assert enumMix.vectorCount() == 1 : "with_enum_mix vectorCount";

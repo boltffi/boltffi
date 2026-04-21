@@ -2080,6 +2080,68 @@ mod tests {
         );
     }
 
+    /// Regression: when a data-enum variant field is `Vec<Vec<String>>`,
+    /// the `_v` prefix rewrite must apply only to the outer field access
+    /// (`_v.Groups`) and must leave the nested loop / lambda bindings
+    /// alone. Rewriting the inner references to `_v.item1` or `_v.item0`
+    /// would break both the size expression and the encode loop.
+    #[test]
+    fn emit_data_enum_variant_nested_vec_string_prefixes_only_outer_field_access() {
+        let mut contract = empty_contract();
+        contract.catalog.insert_enum(data_enum_single_variant(
+            "filter",
+            "ByGroups",
+            (
+                "groups",
+                TypeExpr::Vec(Box::new(TypeExpr::Vec(Box::new(TypeExpr::String)))),
+            ),
+        ));
+        contract.functions.push(function_with_types(
+            "echo_filter",
+            vec![("f", TypeExpr::Enum(EnumId::new("filter")))],
+            ReturnDef::Value(TypeExpr::Enum(EnumId::new("filter"))),
+        ));
+
+        let files = emit_files_for(&contract);
+        let enum_src = files
+            .iter()
+            .find(|(name, _)| name == "Filter.cs")
+            .expect("Filter.cs")
+            .1
+            .as_str();
+
+        assert_source_contains(
+            enum_src,
+            "ByGroups _v => WireWriter.EncodedArraySize(_v.Groups, sizeItem1 => WireWriter.EncodedArraySize(sizeItem1, sizeItem0 => (4 + Encoding.UTF8.GetByteCount(sizeItem0))))",
+            "the size expression to prefix only the outer field access and keep distinct nested lambda variables",
+        );
+        assert_source_contains(
+            enum_src,
+            "wire.WriteI32(_v.Groups.Length); foreach (string[] item1 in _v.Groups) { wire.WriteI32(item1.Length); foreach (string item0 in item1) { wire.WriteString(item0); }; }",
+            "the encode body to prefix only the outer field access and keep the nested foreach bindings untouched",
+        );
+        assert_source_lacks(
+            enum_src,
+            "_v.item1",
+            "the outer `_v` prefix must not leak into the nested foreach binding",
+        );
+        assert_source_lacks(
+            enum_src,
+            "_v.item0",
+            "the outer `_v` prefix must not leak into the innermost foreach binding",
+        );
+        assert_source_lacks(
+            enum_src,
+            "_v.sizeItem1",
+            "the outer `_v` prefix must not leak into the nested size lambda binding",
+        );
+        assert_source_lacks(
+            enum_src,
+            "_v.sizeItem0",
+            "the outer `_v` prefix must not leak into the innermost size lambda binding",
+        );
+    }
+
     /// A function that returns `Vec<i32>` by flattening a `Vec<Vec<i32>>`
     /// param keeps the top-level return on the no-prefix blittable fast
     /// path: the outer count comes from `FfiBuf.len`. This guards against

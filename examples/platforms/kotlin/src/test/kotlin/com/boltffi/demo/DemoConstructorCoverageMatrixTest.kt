@@ -68,13 +68,13 @@ class DemoConstructorCoverageMatrixTest {
         }
 
         ConstructorCoverageMatrix(
-            Filter.ByTags(listOf("ffi", "jni")),
+            Filter.ByGroups(listOf(listOf("café", "🌍"), emptyList(), listOf("common"))),
             Message.Image("https://example.com/image.png", 640u, 480u),
             Task("ship", Priority.CRITICAL, false),
         ).use { matrix ->
             assertEquals("with_enum_mix", matrix.constructorVariant())
             assertEquals(
-                "filter=tags:ffi|jni;message=image:https://example.com/image.png#640x480;task=ship#critical",
+                "filter=groups:3;message=image:https://example.com/image.png#640x480;task=ship#critical",
                 matrix.summary(),
             )
             assertEquals(0u, matrix.payloadChecksum())

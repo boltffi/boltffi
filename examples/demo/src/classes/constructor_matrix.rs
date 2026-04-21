@@ -234,6 +234,7 @@ impl ConstructorCoverageMatrix {
             Filter::ByName { name } => format!("name:{name}"),
             Filter::ByRange { min, max } => format!("range:{min:.1}-{max:.1}"),
             Filter::ByTags { tags } => format!("tags:{}", tags.join("|")),
+            Filter::ByGroups { groups } => format!("groups:{}", groups.len()),
             Filter::ByPoints { anchors } => format!("points:{}", anchors.len()),
         }
     }

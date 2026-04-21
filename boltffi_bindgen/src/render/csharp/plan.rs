@@ -978,15 +978,18 @@ pub enum CSharpParamKind {
     ///
     /// The struct layout of a blittable record matches Rust's `#[repr(C)]`
     /// exactly, so a pointer to the first element plus an element count
-    /// is everything Rust needs. The obstacle is that the CLR classifies
-    /// any struct containing a `bool` or `char` as non-blittable and
-    /// refuses to pin `T[]` through the default P/Invoke path — instead
-    /// it silently builds a marshaled copy with a different byte layout,
-    /// which mismatches what Rust expects. The wrapper sidesteps that by
-    /// taking a raw pointer with `fixed (T* _xPtr = x)`, which pins the
-    /// array in place for the duration of the native call, and passes
-    /// the pointer as `IntPtr`. Zero copy: C# and Rust read the same
-    /// block of managed heap memory.
+    /// is everything Rust needs. Primitive arrays can use the CLR's
+    /// built-in direct-array path, but record arrays are trickier once
+    /// the element type stops being blittable to the marshaller (for
+    /// example because it contains `bool` or `char`): P/Invoke may
+    /// marshal through a temporary native buffer instead of exposing the
+    /// managed array in place. With the right field-level marshalling
+    /// that copy can still be layout-compatible, but it is no longer the
+    /// zero-copy contract this fast path wants. The wrapper sidesteps the
+    /// marshaller entirely by taking a raw pointer with `fixed (T* _xPtr
+    /// = x)`, which pins the array in place for the duration of the
+    /// native call and passes the pointer as `IntPtr`. C# and Rust then
+    /// read the same block of managed heap memory.
     ///
     /// `element_type` is the C# type literal for `T` (e.g., `"Location"`)
     /// — threaded here so `pinned_fixed_args` can render

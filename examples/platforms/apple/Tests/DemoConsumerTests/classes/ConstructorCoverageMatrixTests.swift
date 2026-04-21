@@ -45,9 +45,9 @@ final class ConstructorCoverageMatrixTests: XCTestCase {
         XCTAssertEqual(collectionRecords.payloadChecksum(), 0)
         XCTAssertEqual(collectionRecords.vectorCount(), 7)
 
-        let enumMix = ConstructorCoverageMatrix(withEnumMix: .byTags(tags: ["ffi", "jni"]), message: .image(url: "https://example.com/image.png", width: 640, height: 480), task: Task(title: "ship", priority: .critical, completed: false))
+        let enumMix = ConstructorCoverageMatrix(withEnumMix: .byGroups(groups: [["café", "🌍"], [], ["common"]]), message: .image(url: "https://example.com/image.png", width: 640, height: 480), task: Task(title: "ship", priority: .critical, completed: false))
         XCTAssertEqual(enumMix.constructorVariant(), "with_enum_mix")
-        XCTAssertEqual(enumMix.summary(), "filter=tags:ffi|jni;message=image:https://example.com/image.png#640x480;task=ship#critical")
+        XCTAssertEqual(enumMix.summary(), "filter=groups:3;message=image:https://example.com/image.png#640x480;task=ship#critical")
         XCTAssertEqual(enumMix.payloadChecksum(), 0)
         XCTAssertEqual(enumMix.vectorCount(), 1)
 

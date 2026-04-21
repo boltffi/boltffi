@@ -769,8 +769,9 @@ public static class DemoTest
     /// <summary>
     /// Vec fields inside records and data-enum variants. Polygon.Points and
     /// Filter.ByPoints.Anchors ride the length-prefixed blittable path;
-    /// Team.Members, Classroom.Students, TaggedScores.Scores, Filter.ByTags.Tags,
-    /// and BenchmarkUserProfile.Tags/Scores mix the encoded and blittable
+    /// Team.Members, Classroom.Students, Filter.ByTags.Tags,
+    /// Filter.ByGroups.Groups, TaggedScores.Scores, and
+    /// BenchmarkUserProfile.Tags/Scores mix the encoded and blittable
     /// paths inside the enclosing record's wire buffer. UTF-8 sentinels
     /// (café, 🌍) ride through any Vec&lt;String&gt; position to exercise
     /// 2-byte and 4-byte codepoints across the boundary.
@@ -824,6 +825,25 @@ public static class DemoTest
         Filter echoedTags = EchoFilter(byTags);
         Require(echoedTags is Filter.ByTags t && t.Tags.SequenceEqual(((Filter.ByTags)byTags).Tags), "echoFilter ByTags");
         Require(DescribeFilter(byTags) == "filter by 2 tags", "describeFilter ByTags");
+
+        Filter byGroups = new Filter.ByGroups(
+            new[]
+            {
+                new[] { "café", "🌍" },
+                Array.Empty<string>(),
+                new[] { "common" },
+            }
+        );
+        Filter echoedGroups = EchoFilter(byGroups);
+        Require(echoedGroups is Filter.ByGroups g && g.Groups.Length == 3, "echoFilter ByGroups outer length");
+        Require(
+            echoedGroups is Filter.ByGroups g0
+                && g0.Groups[0].SequenceEqual(((Filter.ByGroups)byGroups).Groups[0])
+                && g0.Groups[1].SequenceEqual(((Filter.ByGroups)byGroups).Groups[1])
+                && g0.Groups[2].SequenceEqual(((Filter.ByGroups)byGroups).Groups[2]),
+            "echoFilter ByGroups nested strings"
+        );
+        Require(DescribeFilter(byGroups) == "filter by 3 groups", "describeFilter ByGroups");
 
         Filter byPoints = new Filter.ByPoints(new[] { new Point(1.0, 2.0), new Point(3.0, 4.0) });
         Filter echoedPts = EchoFilter(byPoints);

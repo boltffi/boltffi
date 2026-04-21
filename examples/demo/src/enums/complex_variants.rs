@@ -9,6 +9,7 @@ pub enum Filter {
     ByName { name: String },
     ByRange { min: f64, max: f64 },
     ByTags { tags: Vec<String> },
+    ByGroups { groups: Vec<Vec<String>> },
     ByPoints { anchors: Vec<Point> },
 }
 
@@ -24,6 +25,7 @@ pub fn describe_filter(f: Filter) -> String {
         Filter::ByName { name } => format!("filter by name: {}", name),
         Filter::ByRange { min, max } => format!("filter by range: {}..{}", min, max),
         Filter::ByTags { tags } => format!("filter by {} tags", tags.len()),
+        Filter::ByGroups { groups } => format!("filter by {} groups", groups.len()),
         Filter::ByPoints { anchors } => format!("filter by {} anchor points", anchors.len()),
     }
 }

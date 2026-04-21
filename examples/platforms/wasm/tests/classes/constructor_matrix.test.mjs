@@ -66,12 +66,12 @@ export async function run() {
   );
   assertMatrix(
     demo.ConstructorCoverageMatrix.withEnumMix(
-      { tag: "ByTags", tags: ["ffi", "jni"] },
+      { tag: "ByGroups", groups: [["café", "🌍"], [], ["common"]] },
       { tag: "Image", url: "https://example.com/image.png", width: 640, height: 480 },
       { title: "ship", priority: demo.Priority.Critical, completed: false },
     ),
     "with_enum_mix",
-    "filter=tags:ffi|jni;message=image:https://example.com/image.png#640x480;task=ship#critical",
+    "filter=groups:3;message=image:https://example.com/image.png#640x480;task=ship#critical",
     0,
     1,
   );
