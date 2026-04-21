@@ -140,6 +140,88 @@
             return v;
         }
 
+        /// Reads the remaining bytes of this buffer as a `T[]`, assuming
+        /// the buffer holds a raw element array with no length prefix.
+        /// This matches the wire shape of a top-level `Vec<T>` return,
+        /// where the FfiBuf's own `len` provides the element count.
+        internal T[] ReadBlittableArray<T>() where T : unmanaged
+        {
+            int byteCount = _length - _pos;
+            if (byteCount < 0)
+                throw new InvalidOperationException("corrupt wire: read position past end");
+            int elementSize = Unsafe.SizeOf<T>();
+            if (byteCount % elementSize != 0)
+                throw new InvalidOperationException(
+                    "corrupt wire: blittable array byte count is not a multiple of element size");
+            if (byteCount == 0) return Array.Empty<T>();
+            int count = byteCount / elementSize;
+            T[] result = new T[count];
+            // Fast path via Marshal.Copy's per-type overloads for the types
+            // that ship with one (byte, short, int, long, float, double).
+            // Unsigned primitives and any other unmanaged T fall through to
+            // a byte scratch buffer reinterpreted via MemoryMarshal.AsBytes.
+            // Little-endian hosts only; big-endian would need byte-swap.
+            switch (result)
+            {
+                case byte[] dst:
+                    Marshal.Copy(_ptr + _pos, dst, 0, byteCount);
+                    break;
+                case short[] dst:
+                    Marshal.Copy(_ptr + _pos, dst, 0, count);
+                    break;
+                case int[] dst:
+                    Marshal.Copy(_ptr + _pos, dst, 0, count);
+                    break;
+                case long[] dst:
+                    Marshal.Copy(_ptr + _pos, dst, 0, count);
+                    break;
+                case float[] dst:
+                    Marshal.Copy(_ptr + _pos, dst, 0, count);
+                    break;
+                case double[] dst:
+                    Marshal.Copy(_ptr + _pos, dst, 0, count);
+                    break;
+                default:
+                    byte[] scratch = new byte[byteCount];
+                    Marshal.Copy(_ptr + _pos, scratch, 0, byteCount);
+                    scratch.AsSpan().CopyTo(MemoryMarshal.AsBytes(result.AsSpan()));
+                    break;
+            }
+            _pos += byteCount;
+            return result;
+        }
+
+        internal bool[] ReadBoolArray()
+        {
+            int count = _length - _pos;
+            if (count < 0)
+                throw new InvalidOperationException("corrupt wire: read position past end");
+            if (count == 0) return Array.Empty<bool>();
+            bool[] result = new bool[count];
+            for (int i = 0; i < count; i++)
+            {
+                result[i] = Marshal.ReadByte(_ptr, _pos + i) != 0;
+            }
+            _pos += count;
+            return result;
+        }
+
+        internal nint[] ReadNIntArray()
+        {
+            long[] raw = ReadBlittableArray<long>();
+            nint[] result = new nint[raw.Length];
+            for (int i = 0; i < raw.Length; i++) result[i] = (nint)raw[i];
+            return result;
+        }
+
+        internal nuint[] ReadNUIntArray()
+        {
+            long[] raw = ReadBlittableArray<long>();
+            nuint[] result = new nuint[raw.Length];
+            for (int i = 0; i < raw.Length; i++) result[i] = (nuint)(ulong)raw[i];
+            return result;
+        }
+
         private void Require(int n, string kind)
         {
             if (n < 0 || n > _length - _pos) throw new InvalidOperationException("corrupt wire: truncated " + kind);
@@ -207,6 +289,45 @@
             EnsureCapacity(v.Length);
             Buffer.BlockCopy(v, 0, _buffer, _pos, v.Length);
             _pos += v.Length;
+        }
+
+        internal void WriteBlittableArray<T>(T[] v) where T : unmanaged
+        {
+            WriteI32(v.Length);
+            if (v.Length == 0) return;
+            int byteCount = checked(v.Length * Unsafe.SizeOf<T>());
+            EnsureCapacity(byteCount);
+            // Reinterpret the source T[] as bytes and block-copy into the
+            // managed buffer. Zero extra allocations, one copy. Little-endian
+            // hosts only; big-endian would need byte-swap.
+            MemoryMarshal.AsBytes(v.AsSpan()).CopyTo(_buffer.AsSpan(_pos, byteCount));
+            _pos += byteCount;
+        }
+
+        internal void WriteBoolArray(bool[] v)
+        {
+            WriteI32(v.Length);
+            if (v.Length == 0) return;
+            EnsureCapacity(v.Length);
+            for (int i = 0; i < v.Length; i++)
+            {
+                _buffer[_pos + i] = (byte)(v[i] ? 1 : 0);
+            }
+            _pos += v.Length;
+        }
+
+        internal void WriteNIntArray(nint[] v)
+        {
+            long[] widened = new long[v.Length];
+            for (int i = 0; i < v.Length; i++) widened[i] = (long)v[i];
+            WriteBlittableArray(widened);
+        }
+
+        internal void WriteNUIntArray(nuint[] v)
+        {
+            long[] widened = new long[v.Length];
+            for (int i = 0; i < v.Length; i++) widened[i] = (long)(ulong)v[i];
+            WriteBlittableArray(widened);
         }
 
         private void EnsureCapacity(int additional)

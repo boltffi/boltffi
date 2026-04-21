@@ -12,9 +12,9 @@ use std::collections::HashSet;
 
 use askama::Template as _;
 
-use crate::ir::codec::EnumLayout;
+use crate::ir::codec::{EnumLayout, VecLayout};
 use crate::ir::ops::{ReadOp, ReadSeq, SizeExpr, ValueExpr, WriteOp, WriteSeq};
-use crate::ir::types::PrimitiveType;
+use crate::ir::types::{PrimitiveType, TypeExpr};
 use crate::ir::{AbiContract, FfiContract};
 
 use super::{
@@ -198,6 +198,32 @@ pub fn primitive_write_method(primitive: PrimitiveType) -> &'static str {
     }
 }
 
+/// The WireReader method invocation for a blittable primitive `Vec<T>`,
+/// without the receiver. Bool, isize, and usize have dedicated methods
+/// because C# `bool` is not `unmanaged`-cast-safe against the 1-byte wire
+/// form, and the wire form of isize/usize is a fixed 8 bytes while C#
+/// `nint`/`nuint` are pointer-sized. Every other primitive flows through
+/// a generic `ReadBlittableArray<T>()` that bulk-casts via `MemoryMarshal`.
+pub fn primitive_vec_reader_call(primitive: PrimitiveType) -> String {
+    match primitive {
+        PrimitiveType::Bool => "ReadBoolArray()".to_string(),
+        PrimitiveType::ISize => "ReadNIntArray()".to_string(),
+        PrimitiveType::USize => "ReadNUIntArray()".to_string(),
+        other => format!("ReadBlittableArray<{}>()", super::mappings::csharp_type(other)),
+    }
+}
+
+/// The WireWriter method invocation for a blittable primitive `Vec<T>`,
+/// formatted as `"{method}({value})"` without the receiver.
+pub fn primitive_vec_writer_call(primitive: PrimitiveType, value: &str) -> String {
+    match primitive {
+        PrimitiveType::Bool => format!("WriteBoolArray({value})"),
+        PrimitiveType::ISize => format!("WriteNIntArray({value})"),
+        PrimitiveType::USize => format!("WriteNUIntArray({value})"),
+        _ => format!("WriteBlittableArray({value})"),
+    }
+}
+
 /// Names shadowed by a nested scope in the rendering site. Passed to
 /// [`emit_reader_read`] when emitting decode expressions inside a data
 /// enum body, where nested `sealed record Foo() : E` variants shadow
@@ -252,6 +278,19 @@ pub fn emit_reader_read(seq: &ReadSeq, scope: Option<&ShadowScope>) -> String {
             let class_name = NamingConvention::class_name(id.as_str());
             format!("{}.Decode(reader)", qualify_if_shadowed(&class_name, scope))
         }
+        ReadOp::Vec {
+            element_type: TypeExpr::Primitive(p),
+            layout: VecLayout::Blittable { .. },
+            ..
+        } => format!("reader.{}", primitive_vec_reader_call(*p)),
+        ReadOp::Vec {
+            element_type,
+            layout: VecLayout::Blittable { .. },
+            ..
+        } => todo!(
+            "blittable Vec with non-primitive element {:?} is not yet supported by the C# backend",
+            element_type
+        ),
         other => panic!("unsupported C# read op: {:?}", other),
     }
 }
@@ -299,6 +338,24 @@ pub fn emit_write_expr(seq: &WriteSeq, writer_name: &str) -> String {
             layout: EnumLayout::CStyle { .. } | EnumLayout::Data { .. },
             ..
         } => format!("{}.WireEncodeTo({})", render_value(value), writer_name),
+        WriteOp::Vec {
+            value,
+            element_type: TypeExpr::Primitive(p),
+            layout: VecLayout::Blittable { .. },
+            ..
+        } => format!(
+            "{}.{}",
+            writer_name,
+            primitive_vec_writer_call(*p, &render_value(value))
+        ),
+        WriteOp::Vec {
+            element_type,
+            layout: VecLayout::Blittable { .. },
+            ..
+        } => todo!(
+            "blittable Vec with non-primitive element {:?} is not yet supported by the C# backend",
+            element_type
+        ),
         other => panic!("unsupported C# write op: {:?}", other),
     }
 }
@@ -330,6 +387,15 @@ pub fn emit_size_expr(size: &SizeExpr) -> String {
                 .join(" + ");
             format!("({})", rendered)
         }
+        SizeExpr::VecSize {
+            value,
+            layout: VecLayout::Blittable { element_size },
+            ..
+        } => format!(
+            "(4 + {}.Length * {})",
+            render_value(value),
+            element_size
+        ),
         other => panic!("unsupported C# size expr: {:?}", other),
     }
 }

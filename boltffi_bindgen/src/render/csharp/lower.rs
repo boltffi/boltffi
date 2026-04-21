@@ -6,7 +6,7 @@ use crate::ir::abi::{
     AbiCall, AbiEnum, AbiEnumField, AbiEnumPayload, AbiEnumVariant, AbiParam, AbiRecord, CallId,
     ParamRole,
 };
-use crate::ir::codec::EnumLayout;
+use crate::ir::codec::{EnumLayout, VecLayout};
 use crate::ir::definitions::{
     ConstructorDef, EnumDef, EnumRepr, FieldDef, FunctionDef, MethodDef, ParamDef, ParamPassing,
     Receiver, RecordDef, ReturnDef, VariantPayload,
@@ -144,6 +144,10 @@ impl<'a> CSharpLowerer<'a> {
             TypeExpr::Primitive(_) | TypeExpr::String | TypeExpr::Void => true,
             TypeExpr::Record(id) => records.contains(id.as_str()),
             TypeExpr::Enum(id) => enums.contains(id.as_str()),
+            // The current C# field surface excludes embedded vecs; only
+            // top-level primitive Vec params/returns participate in this
+            // backend path.
+            TypeExpr::Vec(_) => false,
             _ => false,
         }
     }
@@ -244,6 +248,15 @@ impl<'a> CSharpLowerer<'a> {
                     class_name: NamingConvention::class_name(id.as_str()),
                 }
             }
+            ReturnDef::Value(TypeExpr::Vec(inner)) => match inner.as_ref() {
+                TypeExpr::Primitive(p) => CSharpReturnKind::WireDecodeArray {
+                    reader_call: emit::primitive_vec_reader_call(*p),
+                },
+                other => todo!(
+                    "Vec return with non-primitive element {:?} is not yet supported by the C# backend",
+                    other
+                ),
+            },
             // Primitives, bools, blittable records, and C-style enums
             // are all direct: the CLR marshals them across P/Invoke
             // without any wrapper help.
@@ -281,6 +294,7 @@ impl<'a> CSharpLowerer<'a> {
             TypeExpr::Primitive(_) | TypeExpr::String | TypeExpr::Void => true,
             TypeExpr::Record(id) => self.supported_records.contains(id.as_str()),
             TypeExpr::Enum(id) => self.supported_enums.contains(id.as_str()),
+            TypeExpr::Vec(inner) => matches!(inner.as_ref(), TypeExpr::Primitive(_)),
             _ => false,
         }
     }
@@ -313,8 +327,11 @@ impl<'a> CSharpLowerer<'a> {
                     binding_name: writer.bytes_binding_name.clone(),
                 }
             }
+            TypeExpr::Vec(inner) if matches!(inner.as_ref(), TypeExpr::Primitive(_)) => {
+                CSharpParamKind::DirectArray
+            }
             // Primitives, bools, blittable records, and C-style enums
-            // pass directly — the CLR marshals them across P/Invoke with
+            // pass directly. The CLR marshals them across P/Invoke with
             // no extra setup.
             _ => CSharpParamKind::Direct,
         };
@@ -345,6 +362,10 @@ impl<'a> CSharpLowerer<'a> {
             TypeExpr::Enum(id) if self.supported_enums.contains(id.as_str()) => {
                 let enum_def = self.ffi.catalog.resolve_enum(id)?;
                 Some(mappings::csharp_enum_type(enum_def))
+            }
+            TypeExpr::Vec(inner) if matches!(inner.as_ref(), TypeExpr::Primitive(_)) => {
+                let inner_type = self.lower_type(inner)?;
+                Some(CSharpType::Array(Box::new(inner_type)))
             }
             _ => None,
         }
@@ -740,18 +761,36 @@ impl<'a> CSharpLowerer<'a> {
     }
 
     /// Whether a param's encode op requires a `WireWriter` setup block
-    /// before the native call. Strings keep their direct-byte[] path.
-    /// Blittable record and C-style enum params pass through P/Invoke as
-    /// value types. Non-blittable records and data enums need the
-    /// buffer because their payloads are variable-width.
+    /// before the native call.
+    ///
+    /// Primitives pass as value types, strings go through the UTF-8 byte
+    /// path, raw bytes ride as `byte[]` directly. Blittable records and
+    /// C-style enums also pass by value. Variable-width payloads
+    /// (non-blittable records, data enums, vecs) need a length-prefixed
+    /// buffer serialized up front.
     fn param_needs_wire_buffer(&self, op: &WriteOp) -> bool {
         match op {
+            WriteOp::Primitive { .. } | WriteOp::String { .. } | WriteOp::Bytes { .. } => false,
             WriteOp::Record { id, .. } => !self.is_blittable_record(id),
             WriteOp::Enum {
                 layout: EnumLayout::Data { .. },
                 ..
             } => true,
-            _ => false,
+            WriteOp::Enum { .. } => false,
+            WriteOp::Vec {
+                layout: VecLayout::Blittable { .. },
+                ..
+            } => false,
+            WriteOp::Vec {
+                layout: VecLayout::Encoded,
+                ..
+            } => true,
+            WriteOp::Option { .. }
+            | WriteOp::Result { .. }
+            | WriteOp::Builtin { .. }
+            | WriteOp::Custom { .. } => {
+                todo!("C# backend has not yet implemented param support for {op:?}")
+            }
         }
     }
 
@@ -1036,4 +1075,5 @@ mod tests {
             "expecting repr(usize) C-style enums to stay unsupported until the backend has a legal C# projection",
         );
     }
+
 }

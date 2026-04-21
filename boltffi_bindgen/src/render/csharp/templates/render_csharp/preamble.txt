@@ -7,6 +7,7 @@ using System.Runtime.InteropServices;
 {%- if module.needs_wire_reader() || module.needs_wire_writer() %}
 using System.Buffers;
 using System.Buffers.Binary;
+using System.Runtime.CompilerServices;
 {%- endif %}
 {%- if module.needs_system_text() %}
 using System.Text;

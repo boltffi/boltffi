@@ -29,6 +29,7 @@ public static class DemoTest
         TestCStyleEnums();
         TestDataEnums();
         TestRecordsWithEnumFields();
+        TestPrimitiveVecs();
         Console.WriteLine("All tests passed!");
         return 0;
     }
@@ -534,6 +535,39 @@ public static class DemoTest
         Require(entry.Code == 42, "MakeErrorLogEntry.Code");
         LogEntry echoedEntry = EchoLogEntry(entry);
         Require(echoedEntry == entry, "EchoLogEntry round-trip");
+
+        Console.WriteLine("  PASS\n");
+    }
+
+    private static void TestPrimitiveVecs()
+    {
+        Console.WriteLine("Testing primitive vecs...");
+
+        int[] echoedI32 = EchoVecI32(new int[] { 1, 2, 3 });
+        Require(echoedI32.SequenceEqual(new[] { 1, 2, 3 }), "echoVecI32");
+        Require(EchoVecI32(Array.Empty<int>()).Length == 0, "echoVecI32 empty");
+
+        Require(EchoVecI8(new sbyte[] { -1, 0, 7 }).SequenceEqual(new sbyte[] { -1, 0, 7 }), "echoVecI8");
+        Require(EchoVecU8(new byte[] { 0, 1, 2, 3 }).SequenceEqual(new byte[] { 0, 1, 2, 3 }), "echoVecU8");
+        Require(EchoVecI16(new short[] { -3, 0, 9 }).SequenceEqual(new short[] { -3, 0, 9 }), "echoVecI16");
+        Require(EchoVecU16(new ushort[] { 0, 10, 20 }).SequenceEqual(new ushort[] { 0, 10, 20 }), "echoVecU16");
+        Require(EchoVecU32(new uint[] { 0, 10, 20 }).SequenceEqual(new uint[] { 0, 10, 20 }), "echoVecU32");
+        Require(EchoVecI64(new long[] { -5L, 0L, 8L }).SequenceEqual(new long[] { -5L, 0L, 8L }), "echoVecI64");
+        Require(EchoVecU64(new ulong[] { 0UL, 1UL, 2UL }).SequenceEqual(new ulong[] { 0UL, 1UL, 2UL }), "echoVecU64");
+        Require(EchoVecIsize(new nint[] { -2, 0, 5 }).SequenceEqual(new nint[] { -2, 0, 5 }), "echoVecIsize");
+        Require(EchoVecUsize(new nuint[] { 0, 2, 4 }).SequenceEqual(new nuint[] { 0, 2, 4 }), "echoVecUsize");
+        Require(EchoVecF32(new float[] { 1.25f, -2.5f }).SequenceEqual(new float[] { 1.25f, -2.5f }), "echoVecF32");
+        Require(EchoVecF64(new double[] { 1.5, 2.5 }).SequenceEqual(new double[] { 1.5, 2.5 }), "echoVecF64");
+        Require(EchoVecBool(new bool[] { true, false, true }).SequenceEqual(new bool[] { true, false, true }), "echoVecBool");
+
+        Require(SumVecI32(new int[] { 10, 20, 30 }) == 60L, "sumVecI32");
+        Require(SumVecI32(Array.Empty<int>()) == 0L, "sumVecI32 empty");
+
+        Require(MakeRange(0, 5).SequenceEqual(new int[] { 0, 1, 2, 3, 4 }), "makeRange");
+        Require(ReverseVecI32(new int[] { 1, 2, 3 }).SequenceEqual(new int[] { 3, 2, 1 }), "reverseVecI32");
+        Require(GenerateI32Vec(4).SequenceEqual(new int[] { 0, 1, 2, 3 }), "generateI32Vec");
+        Require(GenerateF64Vec(3).Length == 3, "generateF64Vec length");
+        Require(Math.Abs(SumF64Vec(new double[] { 0.5, 1.5, 2.0 }) - 4.0) < 1e-9, "sumF64Vec");
 
         Console.WriteLine("  PASS\n");
     }

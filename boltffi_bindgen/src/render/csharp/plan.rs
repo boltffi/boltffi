@@ -118,31 +118,14 @@ pub enum CSharpType {
     /// Always wire-encoded — never blittable — because variant payloads
     /// are variable-width.
     DataEnum(String),
+    /// A `Vec<T>` projected into the C# surface as a `T[]` jagged array.
+    /// Uniform representation across every element kind — primitives ride
+    /// the blittable bulk-copy path, composites walk element-by-element.
+    /// Nested vecs fall out naturally via recursive `Array(Array(...))`.
+    Array(Box<CSharpType>),
 }
 
 impl CSharpType {
-    pub fn display_name(&self) -> &str {
-        match self {
-            Self::Void => "void",
-            Self::Bool => "bool",
-            Self::SByte => "sbyte",
-            Self::Byte => "byte",
-            Self::Short => "short",
-            Self::UShort => "ushort",
-            Self::Int => "int",
-            Self::UInt => "uint",
-            Self::Long => "long",
-            Self::ULong => "ulong",
-            Self::NInt => "nint",
-            Self::NUInt => "nuint",
-            Self::Float => "float",
-            Self::Double => "double",
-            Self::String => "string",
-            Self::Record(name) => name.as_str(),
-            Self::CStyleEnum(name) => name.as_str(),
-            Self::DataEnum(name) => name.as_str(),
-        }
-    }
 
     pub fn is_void(&self) -> bool {
         matches!(self, Self::Void)
@@ -168,6 +151,18 @@ impl CSharpType {
         matches!(self, Self::DataEnum(_))
     }
 
+    pub fn is_array(&self) -> bool {
+        matches!(self, Self::Array(_))
+    }
+
+    /// If this is `Array(inner)`, returns `Some(inner)`; otherwise `None`.
+    pub fn array_element(&self) -> Option<&CSharpType> {
+        match self {
+            Self::Array(inner) => Some(inner),
+            _ => None,
+        }
+    }
+
     /// If `self` is a user-defined named type (record or enum) whose
     /// class name is shadowed by an enclosing scope, return a variant
     /// wrapping the fully-qualified `global::{namespace}.{ClassName}`.
@@ -180,17 +175,19 @@ impl CSharpType {
         shadowed: &std::collections::HashSet<String>,
         namespace: &str,
     ) -> Self {
-        let needs_qualification = match &self {
-            Self::Record(n) | Self::CStyleEnum(n) | Self::DataEnum(n) => shadowed.contains(n),
-            _ => false,
-        };
-        if !needs_qualification {
-            return self;
-        }
         match self {
-            Self::Record(n) => Self::Record(format!("global::{}.{}", namespace, n)),
-            Self::CStyleEnum(n) => Self::CStyleEnum(format!("global::{}.{}", namespace, n)),
-            Self::DataEnum(n) => Self::DataEnum(format!("global::{}.{}", namespace, n)),
+            Self::Record(n) if shadowed.contains(&n) => {
+                Self::Record(format!("global::{}.{}", namespace, n))
+            }
+            Self::CStyleEnum(n) if shadowed.contains(&n) => {
+                Self::CStyleEnum(format!("global::{}.{}", namespace, n))
+            }
+            Self::DataEnum(n) if shadowed.contains(&n) => {
+                Self::DataEnum(format!("global::{}.{}", namespace, n))
+            }
+            Self::Array(inner) => {
+                Self::Array(Box::new((*inner).qualify_if_shadowed(shadowed, namespace)))
+            }
             other => other,
         }
     }
@@ -219,14 +216,39 @@ impl CSharpType {
             | Self::Float
             | Self::Double
             | Self::CStyleEnum(_) => true,
-            Self::Void | Self::Bool | Self::String | Self::Record(_) | Self::DataEnum(_) => false,
+            Self::Void
+            | Self::Bool
+            | Self::String
+            | Self::Record(_)
+            | Self::DataEnum(_)
+            | Self::Array(_) => false,
         }
     }
 }
 
 impl fmt::Display for CSharpType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.display_name())
+        match self {
+            Self::Void => f.write_str("void"),
+            Self::Bool => f.write_str("bool"),
+            Self::SByte => f.write_str("sbyte"),
+            Self::Byte => f.write_str("byte"),
+            Self::Short => f.write_str("short"),
+            Self::UShort => f.write_str("ushort"),
+            Self::Int => f.write_str("int"),
+            Self::UInt => f.write_str("uint"),
+            Self::Long => f.write_str("long"),
+            Self::ULong => f.write_str("ulong"),
+            Self::NInt => f.write_str("nint"),
+            Self::NUInt => f.write_str("nuint"),
+            Self::Float => f.write_str("float"),
+            Self::Double => f.write_str("double"),
+            Self::String => f.write_str("string"),
+            Self::Record(name) | Self::CStyleEnum(name) | Self::DataEnum(name) => {
+                f.write_str(name)
+            }
+            Self::Array(inner) => write!(f, "{inner}[]"),
+        }
     }
 }
 
@@ -674,6 +696,13 @@ pub enum CSharpReturnKind {
     /// enums, whose rendered C# types both expose the same `Decode` API
     /// at the call site.
     WireDecodeObject { class_name: String },
+    /// The native function returns an `FfiBuf` carrying a wire-encoded
+    /// `Vec<T>`. The wrapper wraps it in a `WireReader` and invokes
+    /// `reader_call` on the reader to reconstruct the managed `T[]`.
+    /// `reader_call` is the full method invocation without the receiver,
+    /// e.g. `ReadBlittableArray<int>()` for `Vec<i32>` or
+    /// `ReadBoolArray()` for `Vec<bool>`.
+    WireDecodeArray { reader_call: String },
 }
 
 impl CSharpReturnKind {
@@ -693,9 +722,16 @@ impl CSharpReturnKind {
         matches!(self, Self::WireDecodeObject { .. })
     }
 
+    pub fn is_wire_decode_array(&self) -> bool {
+        matches!(self, Self::WireDecodeArray { .. })
+    }
+
     /// Whether the native (DllImport) signature returns an `FfiBuf`.
     pub fn native_returns_ffi_buf(&self) -> bool {
-        matches!(self, Self::WireDecodeString | Self::WireDecodeObject { .. })
+        matches!(
+            self,
+            Self::WireDecodeString | Self::WireDecodeObject { .. } | Self::WireDecodeArray { .. }
+        )
     }
 
     /// For `WireDecodeObject`, the decoded C# class name (e.g., `"Point"`
@@ -721,6 +757,10 @@ impl CSharpReturnKind {
             Self::WireDecodeObject { class_name } => Some(format!(
                 "return {}.Decode(new WireReader({}));",
                 class_name, buf_var
+            )),
+            Self::WireDecodeArray { reader_call } => Some(format!(
+                "return new WireReader({}).{};",
+                buf_var, reader_call
             )),
             _ => None,
         }
@@ -763,6 +803,20 @@ impl CSharpParam {
             CSharpParamKind::Direct => {
                 format!("{} {}", self.csharp_type, self.name)
             }
+            CSharpParamKind::DirectArray => {
+                let element = self
+                    .csharp_type
+                    .array_element()
+                    .expect("DirectArray param must carry an Array type");
+                let decl = format!("{element}[] {name}, UIntPtr {name}Len", name = self.name);
+                if matches!(element, CSharpType::Bool) {
+                    format!(
+                        "[MarshalAs(UnmanagedType.LPArray, ArraySubType = UnmanagedType.U1)] {decl}"
+                    )
+                } else {
+                    decl
+                }
+            }
         }
     }
 
@@ -777,6 +831,9 @@ impl CSharpParam {
             }
             CSharpParamKind::WireEncoded { binding_name } => {
                 format!("{binding_name}, (UIntPtr){binding_name}.Length")
+            }
+            CSharpParamKind::DirectArray => {
+                format!("{name}, (UIntPtr){name}.Length", name = self.name)
             }
         }
     }
@@ -809,6 +866,13 @@ pub enum CSharpParamKind {
     /// `WireWriter` and passed as `(byte[], UIntPtr)`. `binding_name`
     /// is the local variable holding the encoded byte array.
     WireEncoded { binding_name: String },
+    /// A managed array of a blittable primitive element type, passed
+    /// directly as `(T[], UIntPtr)` without any wire encoding. The CLR's
+    /// default P/Invoke marshaller pins the array and hands the native
+    /// side a pointer to the element buffer. `bool[]` gets an explicit
+    /// `[MarshalAs(LPArray, ArraySubType = U1)]` override so CLR emits
+    /// one byte per element instead of the 4-byte Win32 BOOL default.
+    DirectArray,
 }
 
 /// Bookkeeping for a single record param that must be wire-encoded into a
