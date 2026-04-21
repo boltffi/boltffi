@@ -2107,9 +2107,10 @@ mod tests {
     #[test]
     fn emit_vec_c_style_enum_round_trips_through_encoded_array_helpers() {
         let mut contract = empty_contract();
-        contract
-            .catalog
-            .insert_enum(c_style_enum("status", vec!["Active", "Inactive", "Pending"]));
+        contract.catalog.insert_enum(c_style_enum(
+            "status",
+            vec!["Active", "Inactive", "Pending"],
+        ));
         contract.functions.push(function_with_types(
             "echo_vec_status",
             vec![(
@@ -2165,7 +2166,9 @@ mod tests {
                 "values",
                 TypeExpr::Vec(Box::new(TypeExpr::Enum(EnumId::new("shape")))),
             )],
-            ReturnDef::Value(TypeExpr::Vec(Box::new(TypeExpr::Enum(EnumId::new("shape"))))),
+            ReturnDef::Value(TypeExpr::Vec(Box::new(TypeExpr::Enum(EnumId::new(
+                "shape",
+            ))))),
         ));
 
         let src = emit_contract(&contract).combined_source();

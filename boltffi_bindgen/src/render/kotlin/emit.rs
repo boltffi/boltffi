@@ -259,10 +259,9 @@ fn primitive_array_read_method(primitive: PrimitiveType) -> &'static str {
     match primitive {
         PrimitiveType::I32 | PrimitiveType::U32 => "readIntArray",
         PrimitiveType::I16 | PrimitiveType::U16 => "readShortArray",
-        PrimitiveType::I64
-        | PrimitiveType::U64
-        | PrimitiveType::ISize
-        | PrimitiveType::USize => "readLongArray",
+        PrimitiveType::I64 | PrimitiveType::U64 | PrimitiveType::ISize | PrimitiveType::USize => {
+            "readLongArray"
+        }
         PrimitiveType::F32 => "readFloatArray",
         PrimitiveType::F64 => "readDoubleArray",
         PrimitiveType::U8 | PrimitiveType::I8 => "readBytes",
