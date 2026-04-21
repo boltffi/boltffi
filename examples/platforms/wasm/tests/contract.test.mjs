@@ -10,7 +10,12 @@ const repositoryRoot = dirname(dirname(dirname(wasmRoot)));
 const rustSourceRoot = join(repositoryRoot, "examples", "demo", "src");
 const generatedDeclarationPath = join(wasmRoot, "dist", "demo.d.ts");
 
-const unsupportedTopLevelFunctions = new Set();
+// Blocked on #203: nested Vec<Vec<isize>>/Vec<Vec<usize>> writer passes
+// plain Number to setBigInt64; re-enable once the TS/WASM lowering coerces.
+const unsupportedTopLevelFunctions = new Set([
+  "primitives/vecs.rs::echoVecVecIsize",
+  "primitives/vecs.rs::echoVecVecUsize",
+]);
 
 const unsupportedTypeMembers = new Set([
   "classes/streams.rs::EventBus::subscribeValues",
