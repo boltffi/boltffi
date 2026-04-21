@@ -33,6 +33,7 @@ public static class DemoTest
         TestStringAndNestedVecs();
         TestBlittableRecordVecs();
         TestEnumVecs();
+        TestVecFields();
         Console.WriteLine("All tests passed!");
         return 0;
     }
@@ -761,6 +762,82 @@ public static class DemoTest
         Require(echoedShapes.Length == shapes.Length, "echoVecShape length");
         Require(echoedShapes.SequenceEqual(shapes), "echoVecShape round-trip preserves each variant");
         Require(EchoVecShape(Array.Empty<Shape>()).Length == 0, "echoVecShape empty");
+
+        Console.WriteLine("  PASS\n");
+    }
+
+    /// <summary>
+    /// Vec fields inside records and data-enum variants. Polygon.Points and
+    /// Filter.ByPoints.Anchors ride the length-prefixed blittable path;
+    /// Team.Members, Classroom.Students, TaggedScores.Scores, Filter.ByTags.Tags,
+    /// and BenchmarkUserProfile.Tags/Scores mix the encoded and blittable
+    /// paths inside the enclosing record's wire buffer. UTF-8 sentinels
+    /// (café, 🌍) ride through any Vec&lt;String&gt; position to exercise
+    /// 2-byte and 4-byte codepoints across the boundary.
+    /// </summary>
+    private static void TestVecFields()
+    {
+        Console.WriteLine("Testing Vec fields inside records and enum variants...");
+
+        Polygon triangle = new Polygon(new[]
+        {
+            new Point(0.0, 0.0),
+            new Point(4.0, 0.0),
+            new Point(0.0, 3.0),
+        });
+        Polygon echoedTriangle = EchoPolygon(triangle);
+        Require(echoedTriangle.Points.SequenceEqual(triangle.Points), "echoPolygon round-trip");
+        Require(PolygonVertexCount(triangle) == 3u, "polygonVertexCount");
+        Point centroid = PolygonCentroid(triangle);
+        Require(Math.Abs(centroid.X - 4.0 / 3.0) < 1e-9 && Math.Abs(centroid.Y - 1.0) < 1e-9, "polygonCentroid");
+        Polygon built = MakePolygon(triangle.Points);
+        Require(built.Points.SequenceEqual(triangle.Points), "makePolygon");
+        Require(EchoPolygon(new Polygon(Array.Empty<Point>())).Points.Length == 0, "echoPolygon empty");
+
+        Team team = new Team("Alpha", new[] { "café", "🌍", "common" });
+        Team echoedTeam = EchoTeam(team);
+        Require(echoedTeam.Name == team.Name, "echoTeam name");
+        Require(echoedTeam.Members.SequenceEqual(team.Members), "echoTeam members utf-8 round-trip");
+        Require(TeamSize(team) == 3u, "teamSize");
+        Team built2 = MakeTeam("Beta", new[] { "x", "y" });
+        Require(built2.Name == "Beta" && built2.Members.SequenceEqual(new[] { "x", "y" }), "makeTeam");
+        Require(EchoTeam(new Team("Empty", Array.Empty<string>())).Members.Length == 0, "echoTeam empty members");
+
+        Classroom classroom = new Classroom(new[]
+        {
+            new Person("café", 7u),
+            new Person("🌍", 42u),
+        });
+        Classroom echoedClass = EchoClassroom(classroom);
+        Require(echoedClass.Students.SequenceEqual(classroom.Students), "echoClassroom utf-8 round-trip");
+        Classroom built3 = MakeClassroom(classroom.Students);
+        Require(built3.Students.SequenceEqual(classroom.Students), "makeClassroom (Vec<NonBlittableRecord> param)");
+        Require(EchoClassroom(new Classroom(Array.Empty<Person>())).Students.Length == 0, "echoClassroom empty");
+
+        TaggedScores scores = new TaggedScores("quiz", new[] { 10.0, 20.0, 30.0 });
+        TaggedScores echoedScores = EchoTaggedScores(scores);
+        Require(echoedScores.Label == "quiz" && echoedScores.Scores.SequenceEqual(scores.Scores), "echoTaggedScores");
+        Require(Math.Abs(AverageScore(scores) - 20.0) < 1e-9, "averageScore");
+        Require(AverageScore(new TaggedScores("empty", Array.Empty<double>())) == 0.0, "averageScore empty");
+
+        Filter byTags = new Filter.ByTags(new[] { "café", "🌍" });
+        Filter echoedTags = EchoFilter(byTags);
+        Require(echoedTags is Filter.ByTags t && t.Tags.SequenceEqual(((Filter.ByTags)byTags).Tags), "echoFilter ByTags");
+        Require(DescribeFilter(byTags) == "filter by 2 tags", "describeFilter ByTags");
+
+        Filter byPoints = new Filter.ByPoints(new[] { new Point(1.0, 2.0), new Point(3.0, 4.0) });
+        Filter echoedPts = EchoFilter(byPoints);
+        Require(echoedPts is Filter.ByPoints p2 && p2.Anchors.SequenceEqual(((Filter.ByPoints)byPoints).Anchors), "echoFilter ByPoints");
+        Require(DescribeFilter(byPoints) == "filter by 2 anchor points", "describeFilter ByPoints");
+
+        BenchmarkUserProfile[] profiles = GenerateUserProfiles(4);
+        Require(profiles.Length == 4, "generateUserProfiles length");
+        Require(profiles[0].Tags.Length == 3 && profiles[0].Scores.Length == 3, "generateUserProfiles inner vec shapes");
+        Require(profiles[0].IsActive && !profiles[1].IsActive, "generateUserProfiles is_active pattern");
+        double expectedSum = 0.0 + 1.5 + 3.0 + 4.5;
+        Require(Math.Abs(SumUserScores(profiles) - expectedSum) < 1e-9, "sumUserScores round-trip");
+        Require(CountActiveUsers(profiles) == 2, "countActiveUsers (even indices active)");
+        Require(SumUserScores(Array.Empty<BenchmarkUserProfile>()) == 0.0, "sumUserScores empty");
 
         Console.WriteLine("  PASS\n");
     }

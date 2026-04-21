@@ -144,10 +144,10 @@ impl<'a> CSharpLowerer<'a> {
             TypeExpr::Primitive(_) | TypeExpr::String | TypeExpr::Void => true,
             TypeExpr::Record(id) => records.contains(id.as_str()),
             TypeExpr::Enum(id) => enums.contains(id.as_str()),
-            // The current C# field surface excludes embedded vecs; only
-            // top-level primitive Vec params/returns participate in this
-            // backend path.
-            TypeExpr::Vec(_) => false,
+            // Vec as a field walks its inner type through the same
+            // admission rules: any field-admissible type is also a valid
+            // Vec element, and vice versa.
+            TypeExpr::Vec(inner) => Self::is_field_type_supported(inner, records, enums),
             _ => false,
         }
     }
@@ -942,6 +942,22 @@ impl<'a> CSharpLowerer<'a> {
                 value: Self::prefix_value(value, binding),
                 layout: layout.clone(),
             },
+            WriteOp::Vec {
+                value,
+                element_type,
+                element,
+                layout,
+            } => WriteOp::Vec {
+                value: Self::prefix_value(value, binding),
+                element_type: element_type.clone(),
+                // `element` references the per-iteration loop binding
+                // (`item`), which belongs to the foreach the Vec writer
+                // emits around the enclosing variant scope. Rewriting it
+                // to `_v.item` would break the generated loop; leave the
+                // element seq untouched.
+                element: element.clone(),
+                layout: layout.clone(),
+            },
             other => panic!(
                 "prefix_write_op: unsupported op for C# variant fields: {:?}",
                 other
@@ -979,6 +995,18 @@ impl<'a> CSharpLowerer<'a> {
                     .map(|p| Self::prefix_size_expr(p, binding))
                     .collect(),
             ),
+            SizeExpr::VecSize {
+                value,
+                inner,
+                layout,
+            } => SizeExpr::VecSize {
+                value: Self::prefix_value(value, binding),
+                // `inner` uses the per-element loop variable (`item`) the
+                // encoded-array size lambda binds. The `_v` rewrite only
+                // applies to the enclosing variant field reference.
+                inner: inner.clone(),
+                layout: layout.clone(),
+            },
             other => panic!(
                 "prefix_size_expr: unsupported expr for C# variant fields: {:?}",
                 other

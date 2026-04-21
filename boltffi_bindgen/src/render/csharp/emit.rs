@@ -434,10 +434,17 @@ fn emit_reader_read_with_context(
             element_type,
             layout: VecLayout::Blittable { .. },
             ..
-        } => todo!(
-            "blittable Vec with non-primitive element {:?} is not yet supported by the C# backend",
-            element_type
-        ),
+        } => {
+            // Reached when a record field or enum-variant field carries
+            // a `Vec<BlittableRecord>`. Nested position so the wire shape
+            // is length-prefixed, same as nested primitive vecs. The C#
+            // struct generated for a blittable record is `unmanaged`, so
+            // it satisfies the generic helper's constraint.
+            format!(
+                "reader.ReadLengthPrefixedBlittableArray<{}>()",
+                csharp_type_for_inner(element_type)
+            )
+        }
         ReadOp::Vec {
             element_type,
             element,
@@ -523,13 +530,21 @@ fn emit_write_expr_with_context(
             primitive_vec_writer_call(*p, &render_value(value))
         ),
         WriteOp::Vec {
-            element_type,
+            value,
             layout: VecLayout::Blittable { .. },
             ..
-        } => todo!(
-            "blittable Vec with non-primitive element {:?} is not yet supported by the C# backend",
-            element_type
-        ),
+        } => {
+            // Reached when a record field or enum-variant field carries
+            // a `Vec<BlittableRecord>`. `WriteBlittableArray<T>` already
+            // emits the 4-byte length prefix followed by the raw element
+            // bytes, which is the nested wire shape Rust expects. The
+            // unmanaged constraint is satisfied by the generated struct.
+            format!(
+                "{}.WriteBlittableArray({})",
+                writer_name,
+                render_value(value),
+            )
+        }
         WriteOp::Vec {
             value,
             element_type,
@@ -2249,6 +2264,60 @@ mod tests {
             &src,
             "fixed (Person*",
             "non-blittable record vecs should not go through the pinned fast path",
+        );
+    }
+
+    /// `Polygon { points: Vec<Point> }` is the canonical record-with-
+    /// blittable-Vec-field shape. The field rides the length-prefixed
+    /// blittable path inside the enclosing record's wire buffer: the
+    /// codec emits `wire.WriteBlittableArray(this.Points)` on write
+    /// (which produces the 4-byte count + raw element bytes) and
+    /// `reader.ReadLengthPrefixedBlittableArray<Point>()` on read. The
+    /// size contribution is `(4 + this.Points.Length * 16)` because
+    /// Point is 16 bytes wide.
+    #[test]
+    fn emit_record_with_blittable_vec_field_uses_length_prefixed_blittable_codec() {
+        let mut contract = empty_contract();
+        contract.catalog.insert_record(record_with_fields(
+            "point",
+            true,
+            vec![
+                ("x", TypeExpr::Primitive(PrimitiveType::F64)),
+                ("y", TypeExpr::Primitive(PrimitiveType::F64)),
+            ],
+        ));
+        contract.catalog.insert_record(record_with_fields(
+            "polygon",
+            false,
+            vec![(
+                "points",
+                TypeExpr::Vec(Box::new(TypeExpr::Record(RecordId::new("point")))),
+            )],
+        ));
+        contract.functions.push(function_with_types(
+            "echo_polygon",
+            vec![("p", TypeExpr::Record(RecordId::new("polygon")))],
+            ReturnDef::Value(TypeExpr::Record(RecordId::new("polygon"))),
+        ));
+
+        let src = emit_contract(&contract).combined_source();
+
+        assert_source_contains(
+            &src,
+            "wire.WriteBlittableArray(this.Points)",
+            "the record's encode body writes the Vec<Point> via WriteBlittableArray, \
+             which emits the 4-byte count and the raw element bytes",
+        );
+        assert_source_contains(
+            &src,
+            "reader.ReadLengthPrefixedBlittableArray<Point>()",
+            "the record's decode reads the Vec<Point> back through the length-prefixed blittable helper",
+        );
+        assert_source_contains(
+            &src,
+            "(4 + this.Points.Length * 16)",
+            "the size expression accounts for the 4-byte length prefix and the element stride \
+             (two f64s → 16 bytes per Point)",
         );
     }
 }
