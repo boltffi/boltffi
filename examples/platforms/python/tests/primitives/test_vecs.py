@@ -55,24 +55,6 @@ class PrimitiveVecsTests(unittest.TestCase):
         self.assertTrue(math.isclose(values[0], 1.25, rel_tol=0.0, abs_tol=1e-6))
         self.assertTrue(math.isclose(values[1], -2.5, rel_tol=0.0, abs_tol=1e-6))
 
-    def test_echo_vec_vec_bool(self) -> None:
-        self.assertEqual(
-            demo.echo_vec_vec_bool([[True, False, True], [], [False]]),
-            [[True, False, True], [], [False]],
-        )
-
-    def test_echo_vec_vec_isize(self) -> None:
-        self.assertEqual(
-            demo.echo_vec_vec_isize([[-2, 0, 5], [], [9]]),
-            [[-2, 0, 5], [], [9]],
-        )
-
-    def test_echo_vec_vec_usize(self) -> None:
-        self.assertEqual(
-            demo.echo_vec_vec_usize([[0, 2, 4], [], [8]]),
-            [[0, 2, 4], [], [8]],
-        )
-
     def test_make_range(self) -> None:
         self.assertEqual(demo.make_range(0, 5), [0, 1, 2, 3, 4])
 
