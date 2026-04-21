@@ -28,6 +28,24 @@ export async function run() {
   assertArrayEqual(vvi[2], [4, 5]);
   assert.equal(demo.echoVecVecI32([]).length, 0);
 
+  const vvb = demo.echoVecVecBool([[true, false, true], [], [false]]);
+  assert.equal(vvb.length, 3);
+  assertArrayEqual(vvb[0], [true, false, true]);
+  assertArrayEqual(vvb[1], []);
+  assertArrayEqual(vvb[2], [false]);
+
+  const vvisize = demo.echoVecVecIsize([[-2, 0, 5], [], [9]]);
+  assert.equal(vvisize.length, 3);
+  assertArrayEqual(vvisize[0], [-2, 0, 5]);
+  assertArrayEqual(vvisize[1], []);
+  assertArrayEqual(vvisize[2], [9]);
+
+  const vvusize = demo.echoVecVecUsize([[0, 2, 4], [], [8]]);
+  assert.equal(vvusize.length, 3);
+  assertArrayEqual(vvusize[0], [0, 2, 4]);
+  assertArrayEqual(vvusize[1], []);
+  assertArrayEqual(vvusize[2], [8]);
+
   assert.deepEqual(
     demo.echoVecVecString([["hello", "world"], [], ["café", "🌍"]]),
     [["hello", "world"], [], ["café", "🌍"]],

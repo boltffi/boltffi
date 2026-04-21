@@ -30,6 +30,7 @@ public static class DemoTest
         TestDataEnums();
         TestRecordsWithEnumFields();
         TestPrimitiveVecs();
+        TestStringAndNestedVecs();
         Console.WriteLine("All tests passed!");
         return 0;
     }
@@ -568,6 +569,98 @@ public static class DemoTest
         Require(GenerateI32Vec(4).SequenceEqual(new int[] { 0, 1, 2, 3 }), "generateI32Vec");
         Require(GenerateF64Vec(3).Length == 3, "generateF64Vec length");
         Require(Math.Abs(SumF64Vec(new double[] { 0.5, 1.5, 2.0 }) - 4.0) < 1e-9, "sumF64Vec");
+
+        Console.WriteLine("  PASS\n");
+    }
+
+    /// <summary>
+    /// Vec&lt;String&gt; and Vec&lt;Vec&lt;_&gt;&gt; travel wire-encoded: the param
+    /// side builds a length-prefixed buffer via WireWriter, the return
+    /// side walks the buffer through ReadEncodedArray. Exercises the
+    /// 2-byte ("café") and 4-byte ("🌍") UTF-8 boundaries at the element
+    /// level so truncation or mis-sized length prefixes surface loudly.
+    /// </summary>
+    private static void TestStringAndNestedVecs()
+    {
+        Console.WriteLine("Testing Vec<String> and Vec<Vec<_>>...");
+
+        string[] words = new[] { "hello", "", "café", "🌍" };
+        string[] echoedWords = EchoVecString(words);
+        Require(echoedWords.SequenceEqual(words), "echoVecString round-trip");
+        Require(EchoVecString(Array.Empty<string>()).Length == 0, "echoVecString empty");
+
+        uint[] lengths = VecStringLengths(new[] { "", "a", "café", "🌍" });
+        Require(lengths.SequenceEqual(new uint[] { 0u, 1u, 5u, 4u }), "vecStringLengths UTF-8 byte counts");
+
+        int[][] nestedInts = new[]
+        {
+            new[] { 1, 2, 3 },
+            Array.Empty<int>(),
+            new[] { -1 },
+        };
+        int[][] echoedInts = EchoVecVecI32(nestedInts);
+        Require(echoedInts.Length == nestedInts.Length, "echoVecVecI32 outer length");
+        for (int i = 0; i < nestedInts.Length; i++)
+        {
+            Require(echoedInts[i].SequenceEqual(nestedInts[i]), $"echoVecVecI32 inner[{i}]");
+        }
+        Require(EchoVecVecI32(Array.Empty<int[]>()).Length == 0, "echoVecVecI32 empty outer");
+
+        bool[][] nestedBools = new[]
+        {
+            new[] { true, false, true },
+            Array.Empty<bool>(),
+            new[] { false },
+        };
+        bool[][] echoedBools = EchoVecVecBool(nestedBools);
+        Require(echoedBools.Length == nestedBools.Length, "echoVecVecBool outer length");
+        for (int i = 0; i < nestedBools.Length; i++)
+        {
+            Require(echoedBools[i].SequenceEqual(nestedBools[i]), $"echoVecVecBool inner[{i}]");
+        }
+
+        nint[][] nestedIsizes = new[]
+        {
+            new nint[] { -2, 0, 5 },
+            Array.Empty<nint>(),
+            new nint[] { 9 },
+        };
+        nint[][] echoedIsizes = EchoVecVecIsize(nestedIsizes);
+        Require(echoedIsizes.Length == nestedIsizes.Length, "echoVecVecIsize outer length");
+        for (int i = 0; i < nestedIsizes.Length; i++)
+        {
+            Require(echoedIsizes[i].SequenceEqual(nestedIsizes[i]), $"echoVecVecIsize inner[{i}]");
+        }
+
+        nuint[][] nestedUsizes = new[]
+        {
+            new nuint[] { 0, 2, 4 },
+            Array.Empty<nuint>(),
+            new nuint[] { 8 },
+        };
+        nuint[][] echoedUsizes = EchoVecVecUsize(nestedUsizes);
+        Require(echoedUsizes.Length == nestedUsizes.Length, "echoVecVecUsize outer length");
+        for (int i = 0; i < nestedUsizes.Length; i++)
+        {
+            Require(echoedUsizes[i].SequenceEqual(nestedUsizes[i]), $"echoVecVecUsize inner[{i}]");
+        }
+
+        int[] flattened = FlattenVecVecI32(nestedInts);
+        Require(flattened.SequenceEqual(new[] { 1, 2, 3, -1 }), "flattenVecVecI32");
+
+        string[][] nestedStrings = new[]
+        {
+            new[] { "café", "🌍" },
+            Array.Empty<string>(),
+            new[] { "" },
+            new[] { "one", "two", "three" },
+        };
+        string[][] echoedStrings = EchoVecVecString(nestedStrings);
+        Require(echoedStrings.Length == nestedStrings.Length, "echoVecVecString outer length");
+        for (int i = 0; i < nestedStrings.Length; i++)
+        {
+            Require(echoedStrings[i].SequenceEqual(nestedStrings[i]), $"echoVecVecString inner[{i}]");
+        }
 
         Console.WriteLine("  PASS\n");
     }

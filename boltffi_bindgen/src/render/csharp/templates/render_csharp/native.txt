@@ -222,6 +222,97 @@
             return result;
         }
 
+        /// Reads a length-prefixed `T[]` whose bytes follow the 4-byte count.
+        /// Used for `Vec<T>` nested inside an encoded outer container, where
+        /// the outer codec needs an explicit count to know how far to advance
+        /// the cursor between sibling elements.
+        internal T[] ReadLengthPrefixedBlittableArray<T>() where T : unmanaged
+        {
+            int count = ReadI32();
+            if (count < 0) throw new InvalidOperationException("corrupt wire: negative array length");
+            if (count == 0) return Array.Empty<T>();
+            int elementSize = Unsafe.SizeOf<T>();
+            int byteCount = checked(count * elementSize);
+            Require(byteCount, "blittable array payload");
+            T[] result = new T[count];
+            switch (result)
+            {
+                case byte[] dst:
+                    Marshal.Copy(_ptr + _pos, dst, 0, byteCount);
+                    break;
+                case short[] dst:
+                    Marshal.Copy(_ptr + _pos, dst, 0, count);
+                    break;
+                case int[] dst:
+                    Marshal.Copy(_ptr + _pos, dst, 0, count);
+                    break;
+                case long[] dst:
+                    Marshal.Copy(_ptr + _pos, dst, 0, count);
+                    break;
+                case float[] dst:
+                    Marshal.Copy(_ptr + _pos, dst, 0, count);
+                    break;
+                case double[] dst:
+                    Marshal.Copy(_ptr + _pos, dst, 0, count);
+                    break;
+                default:
+                    byte[] scratch = new byte[byteCount];
+                    Marshal.Copy(_ptr + _pos, scratch, 0, byteCount);
+                    scratch.AsSpan().CopyTo(MemoryMarshal.AsBytes(result.AsSpan()));
+                    break;
+            }
+            _pos += byteCount;
+            return result;
+        }
+
+        internal bool[] ReadLengthPrefixedBoolArray()
+        {
+            int count = ReadI32();
+            if (count < 0) throw new InvalidOperationException("corrupt wire: negative array length");
+            if (count == 0) return Array.Empty<bool>();
+            Require(count, "bool array payload");
+            bool[] result = new bool[count];
+            for (int i = 0; i < count; i++)
+            {
+                result[i] = Marshal.ReadByte(_ptr, _pos + i) != 0;
+            }
+            _pos += count;
+            return result;
+        }
+
+        internal nint[] ReadLengthPrefixedNIntArray()
+        {
+            long[] raw = ReadLengthPrefixedBlittableArray<long>();
+            nint[] result = new nint[raw.Length];
+            for (int i = 0; i < raw.Length; i++) result[i] = (nint)raw[i];
+            return result;
+        }
+
+        internal nuint[] ReadLengthPrefixedNUIntArray()
+        {
+            long[] raw = ReadLengthPrefixedBlittableArray<long>();
+            nuint[] result = new nuint[raw.Length];
+            for (int i = 0; i < raw.Length; i++) result[i] = (nuint)(ulong)raw[i];
+            return result;
+        }
+
+        /// Reads a length-prefixed array whose elements are decoded by
+        /// invoking `read` once per slot. Used for `Vec<T>` where each
+        /// element has variable wire width (strings, nested encoded vecs,
+        /// records).
+        internal T[] ReadEncodedArray<T>(Func<WireReader, T> read)
+        {
+            int count = ReadI32();
+            if (count < 0) throw new InvalidOperationException("corrupt wire: negative array length");
+            if (count == 0) return Array.Empty<T>();
+            T[] result = new T[count];
+            for (int i = 0; i < count; i++)
+            {
+                result[i] = read(this);
+            }
+            return result;
+        }
+
         private void Require(int n, string kind)
         {
             if (n < 0 || n > _length - _pos) throw new InvalidOperationException("corrupt wire: truncated " + kind);
@@ -328,6 +419,18 @@
             long[] widened = new long[v.Length];
             for (int i = 0; i < v.Length; i++) widened[i] = (long)(ulong)v[i];
             WriteBlittableArray(widened);
+        }
+
+        /// Byte size of an encoded `T[]`: the `sizeof(int)` length prefix
+        /// plus the per-element size. Size expressions for `Vec<T>` with
+        /// variable-width elements (strings, nested vecs, records) use this
+        /// helper to drive the `WireWriter` pre-size so its initial
+        /// capacity matches the payload and no growth copy is needed.
+        internal static int EncodedArraySize<T>(T[] v, Func<T, int> sizer)
+        {
+            int total = sizeof(int);
+            for (int i = 0; i < v.Length; i++) total += sizer(v[i]);
+            return total;
         }
 
         private void EnsureCapacity(int additional)

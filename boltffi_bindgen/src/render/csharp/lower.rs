@@ -212,7 +212,12 @@ impl<'a> CSharpLowerer<'a> {
         }
 
         let return_type = self.lower_return(&function.returns)?;
-        let return_kind = self.return_kind(&function.returns, &return_type);
+        let call = self.abi_call_for_function(function)?;
+        let return_kind = self.return_kind(
+            &function.returns,
+            &return_type,
+            call.returns.decode_ops.as_ref(),
+        );
 
         let wire_writers = self.wire_writers_for_params(function)?;
 
@@ -232,7 +237,12 @@ impl<'a> CSharpLowerer<'a> {
         })
     }
 
-    fn return_kind(&self, return_def: &ReturnDef, return_type: &CSharpType) -> CSharpReturnKind {
+    fn return_kind(
+        &self,
+        return_def: &ReturnDef,
+        return_type: &CSharpType,
+        decode_ops: Option<&ReadSeq>,
+    ) -> CSharpReturnKind {
         if return_type.is_void() {
             return CSharpReturnKind::Void;
         }
@@ -248,19 +258,33 @@ impl<'a> CSharpLowerer<'a> {
                     class_name: NamingConvention::class_name(id.as_str()),
                 }
             }
-            ReturnDef::Value(TypeExpr::Vec(inner)) => match inner.as_ref() {
-                TypeExpr::Primitive(p) => CSharpReturnKind::WireDecodeArray {
-                    reader_call: emit::primitive_vec_reader_call(*p),
-                },
-                other => todo!(
-                    "Vec return with non-primitive element {:?} is not yet supported by the C# backend",
-                    other
-                ),
-            },
+            ReturnDef::Value(TypeExpr::Vec(inner)) => {
+                let reader_call = match inner.as_ref() {
+                    TypeExpr::Primitive(p) => emit::primitive_vec_reader_call(*p),
+                    _ => {
+                        let element_seq = Self::vec_element_read_seq(decode_ops)
+                            .expect("encoded Vec return must carry decode_ops with a Vec ReadOp");
+                        emit::vec_return_reader_call(inner, &element_seq)
+                    }
+                };
+                CSharpReturnKind::WireDecodeArray { reader_call }
+            }
             // Primitives, bools, blittable records, and C-style enums
             // are all direct: the CLR marshals them across P/Invoke
             // without any wrapper help.
             _ => CSharpReturnKind::Direct,
+        }
+    }
+
+    /// Extract the per-element [`ReadSeq`] from a `ReadSeq` whose top op is
+    /// a `Vec`. Used to render the inner decode expression that gets wrapped
+    /// in `ReadEncodedArray<T>(r => ...)`. Primitive-element Vec returns
+    /// never call into this; they short-circuit on the no-prefix fast path.
+    fn vec_element_read_seq(decode_ops: Option<&ReadSeq>) -> Option<ReadSeq> {
+        let decode = decode_ops?;
+        match decode.ops.first()? {
+            ReadOp::Vec { element, .. } => Some((**element).clone()),
+            _ => None,
         }
     }
 
@@ -294,7 +318,19 @@ impl<'a> CSharpLowerer<'a> {
             TypeExpr::Primitive(_) | TypeExpr::String | TypeExpr::Void => true,
             TypeExpr::Record(id) => self.supported_records.contains(id.as_str()),
             TypeExpr::Enum(id) => self.supported_enums.contains(id.as_str()),
-            TypeExpr::Vec(inner) => matches!(inner.as_ref(), TypeExpr::Primitive(_)),
+            TypeExpr::Vec(inner) => Self::is_supported_vec_inner(inner),
+            _ => false,
+        }
+    }
+
+    /// Which element types the C# backend currently admits inside a
+    /// top-level `Vec<_>` param or return. Primitives ride the blittable
+    /// fast path; strings and nested vecs ride the encoded wire form.
+    /// Records and enums are out of scope for this step.
+    fn is_supported_vec_inner(ty: &TypeExpr) -> bool {
+        match ty {
+            TypeExpr::Primitive(_) | TypeExpr::String => true,
+            TypeExpr::Vec(inner) => Self::is_supported_vec_inner(inner),
             _ => false,
         }
     }
@@ -330,6 +366,16 @@ impl<'a> CSharpLowerer<'a> {
             TypeExpr::Vec(inner) if matches!(inner.as_ref(), TypeExpr::Primitive(_)) => {
                 CSharpParamKind::DirectArray
             }
+            TypeExpr::Vec(inner) if Self::is_supported_vec_inner(inner) => {
+                // Vec<String> and Vec<Vec<_>> carry variable-width elements, so
+                // the param travels wire-encoded rather than as a pinned T[].
+                let writer = wire_writers
+                    .iter()
+                    .find(|w| w.param_name == param.name.as_str())?;
+                CSharpParamKind::WireEncoded {
+                    binding_name: writer.bytes_binding_name.clone(),
+                }
+            }
             // Primitives, bools, blittable records, and C-style enums
             // pass directly. The CLR marshals them across P/Invoke with
             // no extra setup.
@@ -363,7 +409,7 @@ impl<'a> CSharpLowerer<'a> {
                 let enum_def = self.ffi.catalog.resolve_enum(id)?;
                 Some(mappings::csharp_enum_type(enum_def))
             }
-            TypeExpr::Vec(inner) if matches!(inner.as_ref(), TypeExpr::Primitive(_)) => {
+            TypeExpr::Vec(inner) if Self::is_supported_vec_inner(inner) => {
                 let inner_type = self.lower_type(inner)?;
                 Some(CSharpType::Array(Box::new(inner_type)))
             }
@@ -627,7 +673,11 @@ impl<'a> CSharpLowerer<'a> {
             ReturnDef::Value(type_expr) => self.lower_type(type_expr)?,
             ReturnDef::Result { .. } => return None,
         };
-        let return_kind = self.return_kind(&method_def.returns, &return_type);
+        let return_kind = self.return_kind(
+            &method_def.returns,
+            &return_type,
+            call.returns.decode_ops.as_ref(),
+        );
 
         let receiver = match method_def.receiver {
             Receiver::Static => CSharpReceiver::Static,

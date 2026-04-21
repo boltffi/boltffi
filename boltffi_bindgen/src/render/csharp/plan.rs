@@ -37,13 +37,14 @@ impl CSharpModule {
     ///
     /// Top-level string params use `Encoding.UTF8.GetBytes` in the wrapper,
     /// and `WireWriter` uses `Encoding.UTF8.GetByteCount` / `GetBytes` when
-    /// encoding string fields of a record. Decoding no longer needs
+    /// encoding string-bearing params (including `Vec<String>` / nested
+    /// string vecs) or string fields of a record. Decoding no longer needs
     /// `System.Text` — `WireReader` reads strings through
     /// `Marshal.PtrToStringUTF8`.
     pub fn needs_system_text(&self) -> bool {
         self.functions
             .iter()
-            .any(|f| f.params.iter().any(|p| p.csharp_type.is_string()))
+            .any(|f| f.params.iter().any(|p| p.csharp_type.contains_string()))
             || self.records.iter().any(CSharpRecord::has_string_fields)
     }
 
@@ -136,6 +137,17 @@ impl CSharpType {
 
     pub fn is_string(&self) -> bool {
         matches!(self, Self::String)
+    }
+
+    /// Whether this type contains `string` at any nesting depth. Used for
+    /// import decisions where `string[]` / `string[][]` still require
+    /// `System.Text` because their encode path calls `Encoding.UTF8`.
+    pub fn contains_string(&self) -> bool {
+        match self {
+            Self::String => true,
+            Self::Array(inner) => inner.contains_string(),
+            _ => false,
+        }
     }
 
     pub fn is_record(&self) -> bool {

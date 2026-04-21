@@ -35,6 +35,9 @@ final class VecsTests: XCTestCase {
     func testNestedVecFns() {
         XCTAssertEqual(echoVecVecI32(v: [[1, 2, 3], [], [4, 5]]), [[1, 2, 3], [], [4, 5]])
         XCTAssertEqual(echoVecVecI32(v: []), [])
+        XCTAssertEqual(echoVecVecBool(v: [[true, false, true], [], [false]]), [[true, false, true], [], [false]])
+        XCTAssertEqual(echoVecVecIsize(v: [[-2, 0, 5], [], [9]]), [[-2, 0, 5], [], [9]])
+        XCTAssertEqual(echoVecVecUsize(v: [[0, 2, 4], [], [8]]), [[0, 2, 4], [], [8]])
 
         let strings = [["hello", "world"], [], ["café", "🌍"]]
         XCTAssertEqual(echoVecVecString(v: strings), strings)

@@ -106,6 +106,27 @@ class DemoValueTypesTest {
         }
         assertEquals(0, echoVecVecI32(emptyList()).size)
 
+        val bools = listOf(booleanArrayOf(true, false, true), booleanArrayOf(), booleanArrayOf(false))
+        val roundTrippedBools = echoVecVecBool(bools)
+        assertEquals(bools.size, roundTrippedBools.size)
+        for (i in bools.indices) {
+            assertContentEquals(bools[i], roundTrippedBools[i])
+        }
+
+        val isizes = listOf(longArrayOf(-2L, 0L, 5L), longArrayOf(), longArrayOf(9L))
+        val roundTrippedIsizes = echoVecVecIsize(isizes)
+        assertEquals(isizes.size, roundTrippedIsizes.size)
+        for (i in isizes.indices) {
+            assertContentEquals(isizes[i], roundTrippedIsizes[i])
+        }
+
+        val usizes = listOf(longArrayOf(0L, 2L, 4L), longArrayOf(), longArrayOf(8L))
+        val roundTrippedUsizes = echoVecVecUsize(usizes)
+        assertEquals(usizes.size, roundTrippedUsizes.size)
+        for (i in usizes.indices) {
+            assertContentEquals(usizes[i], roundTrippedUsizes[i])
+        }
+
         val strings = listOf(listOf("hello", "world"), emptyList(), listOf("café", "🌍"))
         assertEquals(strings, echoVecVecString(strings))
 

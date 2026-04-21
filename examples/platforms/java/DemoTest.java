@@ -536,6 +536,33 @@ public final class DemoTest {
         List<int[]> vviEmpty = Demo.echoVecVecI32(Collections.emptyList());
         assert vviEmpty.isEmpty() : "echoVecVecI32 empty outer";
 
+        List<boolean[]> vvb = Demo.echoVecVecBool(Arrays.asList(
+                new boolean[]{true, false, true},
+                new boolean[]{},
+                new boolean[]{false}));
+        assert vvb.size() == 3 : "echoVecVecBool outer size";
+        assert vvb.get(0).length == 3 && vvb.get(0)[0] && !vvb.get(0)[1] && vvb.get(0)[2] : "echoVecVecBool[0]";
+        assert vvb.get(1).length == 0 : "echoVecVecBool[1] empty";
+        assert vvb.get(2).length == 1 && !vvb.get(2)[0] : "echoVecVecBool[2]";
+
+        List<long[]> vvisize = Demo.echoVecVecIsize(Arrays.asList(
+                new long[]{-2L, 0L, 5L},
+                new long[]{},
+                new long[]{9L}));
+        assert vvisize.size() == 3 : "echoVecVecIsize outer size";
+        assert vvisize.get(0).length == 3 && vvisize.get(0)[0] == -2L && vvisize.get(0)[2] == 5L : "echoVecVecIsize[0]";
+        assert vvisize.get(1).length == 0 : "echoVecVecIsize[1] empty";
+        assert vvisize.get(2).length == 1 && vvisize.get(2)[0] == 9L : "echoVecVecIsize[2]";
+
+        List<long[]> vvusize = Demo.echoVecVecUsize(Arrays.asList(
+                new long[]{0L, 2L, 4L},
+                new long[]{},
+                new long[]{8L}));
+        assert vvusize.size() == 3 : "echoVecVecUsize outer size";
+        assert vvusize.get(0).length == 3 && vvusize.get(0)[0] == 0L && vvusize.get(0)[2] == 4L : "echoVecVecUsize[0]";
+        assert vvusize.get(1).length == 0 : "echoVecVecUsize[1] empty";
+        assert vvusize.get(2).length == 1 && vvusize.get(2)[0] == 8L : "echoVecVecUsize[2]";
+
         List<List<String>> vvs = Demo.echoVecVecString(Arrays.asList(
                 Arrays.asList("hello", "world"),
                 Collections.emptyList(),
