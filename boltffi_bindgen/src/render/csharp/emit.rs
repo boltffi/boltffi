@@ -338,11 +338,17 @@ pub fn vec_return_reader_call(inner: &TypeExpr, element_seq: &ReadSeq) -> String
 }
 
 /// C# type literal for a `Vec<_>` element. Used when stamping the generic
-/// parameter on `ReadEncodedArray<T>` at emit time.
+/// parameter on `ReadEncodedArray<T>` at emit time. Records and enums
+/// render as their PascalCase class name. Vec elements are only typed at
+/// the function-level wrapper, never inside a nested enum body, so the
+/// shadowing machinery that qualifies record decodes inside data-enum
+/// variants does not apply here.
 fn csharp_type_for_inner(ty: &TypeExpr) -> String {
     match ty {
         TypeExpr::Primitive(p) => super::mappings::csharp_type(*p).to_string(),
         TypeExpr::String => "string".to_string(),
+        TypeExpr::Record(id) => NamingConvention::class_name(id.as_str()),
+        TypeExpr::Enum(id) => NamingConvention::class_name(id.as_str()),
         TypeExpr::Vec(inner) => format!("{}[]", csharp_type_for_inner(inner)),
         other => todo!(
             "csharp_type_for_inner: Vec element {:?} is not yet supported by the C# backend",
@@ -2086,6 +2092,160 @@ mod tests {
             &src,
             "return new WireReader(_buf).ReadBlittableArray<int>();",
             "the top-level Vec<i32> return stays on the no-prefix fast path, count taken from FfiBuf.len",
+        );
+    }
+
+    // ----- Encoded Vec tests (Vec<Enum>, Vec<non-blittable Record>) -----
+
+    /// `Vec<CStyleEnum>` rides the wire-encoded path on both sides because
+    /// the Rust `#[export]` macro classifies C-style enums as `Scalar`
+    /// and its `supports_direct_vec` gate only admits `Blittable`. A
+    /// bulk-copy fast path would hand Rust raw enum bytes where it
+    /// expects a length-prefixed array of I32 tags. The generated
+    /// wrapper should encode via `{Name}Wire.WireEncodeTo` per element
+    /// and decode via `ReadEncodedArray<{Name}>(r => {Name}Wire.Decode(r))`.
+    #[test]
+    fn emit_vec_c_style_enum_round_trips_through_encoded_array_helpers() {
+        let mut contract = empty_contract();
+        contract
+            .catalog
+            .insert_enum(c_style_enum("status", vec!["Active", "Inactive", "Pending"]));
+        contract.functions.push(function_with_types(
+            "echo_vec_status",
+            vec![(
+                "values",
+                TypeExpr::Vec(Box::new(TypeExpr::Enum(EnumId::new("status")))),
+            )],
+            ReturnDef::Value(TypeExpr::Vec(Box::new(TypeExpr::Enum(EnumId::new(
+                "status",
+            ))))),
+        ));
+
+        let src = emit_contract(&contract).combined_source();
+
+        assert_source_contains(
+            &src,
+            "public static Status[] EchoVecStatus(Status[] values)",
+            "the public wrapper exposes Vec<Status> on both sides as Status[]",
+        );
+        assert_source_contains(
+            &src,
+            "internal static extern FfiBuf EchoVecStatus(byte[] values, UIntPtr valuesLen);",
+            "the DllImport carries the wire-encoded buffer, matching the macro's WireEncoded classification for Vec<Scalar>",
+        );
+        assert_source_contains(
+            &src,
+            "_wire_values.WriteI32(values.Length); foreach (Status item0 in values) { item0.WireEncodeTo(_wire_values); }",
+            "the encode body writes the 4-byte count then loops WireEncodeTo over each enum value",
+        );
+        assert_source_contains(
+            &src,
+            "return new WireReader(_buf).ReadEncodedArray<Status>(r0 => StatusWire.Decode(r0));",
+            "the return decodes through ReadEncodedArray with the StatusWire.Decode helper per element",
+        );
+    }
+
+    /// `Vec<DataEnum>` rides the wire-encoded path. Each element carries
+    /// its own variant tag + payload, so the encode loop delegates to
+    /// the enum's own `WireEncodeTo` and decode delegates to its
+    /// `Decode` static. Same call shape as `Vec<CStyleEnum>` but the
+    /// inner decode is the data-enum entry point (`Shape.Decode`) rather
+    /// than the `Wire` helper.
+    #[test]
+    fn emit_vec_data_enum_round_trips_through_encoded_array_helpers() {
+        let mut contract = empty_contract();
+        contract.catalog.insert_enum(data_enum_single_variant(
+            "shape",
+            "Circle",
+            ("radius", TypeExpr::Primitive(PrimitiveType::F64)),
+        ));
+        contract.functions.push(function_with_types(
+            "echo_vec_shape",
+            vec![(
+                "values",
+                TypeExpr::Vec(Box::new(TypeExpr::Enum(EnumId::new("shape")))),
+            )],
+            ReturnDef::Value(TypeExpr::Vec(Box::new(TypeExpr::Enum(EnumId::new("shape"))))),
+        ));
+
+        let src = emit_contract(&contract).combined_source();
+
+        assert_source_contains(
+            &src,
+            "public static Shape[] EchoVecShape(Shape[] values)",
+            "the public wrapper exposes Vec<Shape> on both sides as Shape[]",
+        );
+        assert_source_contains(
+            &src,
+            "internal static extern FfiBuf EchoVecShape(byte[] values, UIntPtr valuesLen);",
+            "the DllImport takes a wire-encoded buffer and returns an FfiBuf",
+        );
+        assert_source_contains(
+            &src,
+            "_wire_values.WriteI32(values.Length); foreach (Shape item0 in values) { item0.WireEncodeTo(_wire_values); }",
+            "the encode body writes the count and loops the data enum's WireEncodeTo over each element",
+        );
+        assert_source_contains(
+            &src,
+            "return new WireReader(_buf).ReadEncodedArray<Shape>(r0 => Shape.Decode(r0));",
+            "the return decodes through ReadEncodedArray with Shape.Decode per element",
+        );
+    }
+
+    /// `Vec<NonBlittableRecord>` rides the wire-encoded path: the record
+    /// carries a string field, so each element is a variable-width
+    /// payload that serialises via the record's own `WireEncodeTo` and
+    /// deserialises via its `Decode` static. Guards against regressions
+    /// that would route non-blittable record vecs onto the pinned
+    /// fast path (which only works for blittable records).
+    #[test]
+    fn emit_vec_non_blittable_record_round_trips_through_encoded_array_helpers() {
+        let mut contract = empty_contract();
+        contract.catalog.insert_record(record_with_fields(
+            "person",
+            false,
+            vec![
+                ("name", TypeExpr::String),
+                ("age", TypeExpr::Primitive(PrimitiveType::U32)),
+            ],
+        ));
+        contract.functions.push(function_with_types(
+            "echo_vec_person",
+            vec![(
+                "people",
+                TypeExpr::Vec(Box::new(TypeExpr::Record(RecordId::new("person")))),
+            )],
+            ReturnDef::Value(TypeExpr::Vec(Box::new(TypeExpr::Record(RecordId::new(
+                "person",
+            ))))),
+        ));
+
+        let src = emit_contract(&contract).combined_source();
+
+        assert_source_contains(
+            &src,
+            "public static Person[] EchoVecPerson(Person[] people)",
+            "the public wrapper exposes Vec<Person> on both sides as Person[]",
+        );
+        assert_source_contains(
+            &src,
+            "internal static extern FfiBuf EchoVecPerson(byte[] people, UIntPtr peopleLen);",
+            "the DllImport takes a wire-encoded buffer and returns an FfiBuf",
+        );
+        assert_source_contains(
+            &src,
+            "_wire_people.WriteI32(people.Length); foreach (Person item0 in people) { item0.WireEncodeTo(_wire_people); }",
+            "the encode body writes the count and loops the record's WireEncodeTo over each element",
+        );
+        assert_source_contains(
+            &src,
+            "return new WireReader(_buf).ReadEncodedArray<Person>(r0 => Person.Decode(r0));",
+            "the return decodes through ReadEncodedArray with Person.Decode per element",
+        );
+        assert_source_lacks(
+            &src,
+            "fixed (Person*",
+            "non-blittable record vecs should not go through the pinned fast path",
         );
     }
 }

@@ -32,6 +32,7 @@ public static class DemoTest
         TestPrimitiveVecs();
         TestStringAndNestedVecs();
         TestBlittableRecordVecs();
+        TestEnumVecs();
         Console.WriteLine("All tests passed!");
         return 0;
     }
@@ -717,6 +718,49 @@ public static class DemoTest
         };
         Require(ProcessLocations(handmade) == 2, "processLocations handmade");
         Require(Math.Abs(SumRatings(handmade) - 6.5) < 1e-9, "sumRatings handmade");
+
+        Console.WriteLine("  PASS\n");
+    }
+
+    /// <summary>
+    /// Vec&lt;CStyleEnum&gt; and Vec&lt;DataEnum&gt; both ride the wire-encoded path:
+    /// the Rust macro classifies C-style enums as Scalar (not Blittable),
+    /// so Vec&lt;Status&gt; and Vec&lt;Direction&gt; cross the boundary the same
+    /// way Vec&lt;Shape&gt; does — a length-prefixed encoded buffer. The
+    /// C# side decodes with ReadEncodedArray&lt;T&gt; and per-element
+    /// {Name}Wire.Decode or {Name}.Decode.
+    /// </summary>
+    private static void TestEnumVecs()
+    {
+        Console.WriteLine("Testing Vec<CStyleEnum> and Vec<DataEnum>...");
+
+        Status[] statuses = new[] { Status.Active, Status.Inactive, Status.Pending, Status.Active };
+        Status[] echoedStatuses = EchoVecStatus(statuses);
+        Require(echoedStatuses.SequenceEqual(statuses), "echoVecStatus round-trip");
+        Require(EchoVecStatus(Array.Empty<Status>()).Length == 0, "echoVecStatus empty");
+
+        Direction[] generated = GenerateDirections(6);
+        Require(generated.Length == 6, "generateDirections length");
+        Require(generated[0] == Direction.North && generated[4] == Direction.North, "generateDirections wraps the 4-direction cycle");
+        Require(CountNorth(generated) == 2, "countNorth on generateDirections(6)");
+        Require(CountNorth(Array.Empty<Direction>()) == 0, "countNorth empty");
+
+        LogLevel[] levels = new[] { LogLevel.Trace, LogLevel.Warn, LogLevel.Error, LogLevel.Debug };
+        LogLevel[] echoedLevels = EchoVecLogLevel(levels);
+        Require(echoedLevels.SequenceEqual(levels), "echoVecLogLevel round-trip");
+        Require(EchoVecLogLevel(Array.Empty<LogLevel>()).Length == 0, "echoVecLogLevel empty");
+
+        Shape[] shapes = new Shape[]
+        {
+            new Shape.Circle(2.5),
+            new Shape.Rectangle(3.0, 4.0),
+            new Shape.Triangle(new Point(0.0, 0.0), new Point(4.0, 0.0), new Point(0.0, 3.0)),
+            new Shape.Point(),
+        };
+        Shape[] echoedShapes = EchoVecShape(shapes);
+        Require(echoedShapes.Length == shapes.Length, "echoVecShape length");
+        Require(echoedShapes.SequenceEqual(shapes), "echoVecShape round-trip preserves each variant");
+        Require(EchoVecShape(Array.Empty<Shape>()).Length == 0, "echoVecShape empty");
 
         Console.WriteLine("  PASS\n");
     }

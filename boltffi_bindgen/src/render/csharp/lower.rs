@@ -328,16 +328,15 @@ impl<'a> CSharpLowerer<'a> {
     }
 
     /// Which element types the C# backend currently admits inside a
-    /// top-level `Vec<_>` param or return. Primitives and blittable
-    /// records ride the fast path via `DirectArray` / `ReadBlittableArray`;
-    /// strings and nested vecs ride the encoded wire form. Non-blittable
-    /// records and enums are still out of scope.
+    /// top-level `Vec<_>` param or return. This is only the admission
+    /// gate: primitives and blittable records can use the blittable
+    /// path; strings, enums, non-blittable records, and nested vecs
+    /// travel through the encoded wire form.
     fn is_supported_vec_element(&self, ty: &TypeExpr) -> bool {
         match ty {
             TypeExpr::Primitive(_) | TypeExpr::String => true,
-            TypeExpr::Record(id) => {
-                self.supported_records.contains(id.as_str()) && self.is_blittable_record(id)
-            }
+            TypeExpr::Record(id) => self.supported_records.contains(id.as_str()),
+            TypeExpr::Enum(id) => self.supported_enums.contains(id.as_str()),
             TypeExpr::Vec(inner) => self.is_supported_vec_element(inner),
             _ => false,
         }
@@ -348,8 +347,15 @@ impl<'a> CSharpLowerer<'a> {
     /// mapping is a blittable value type; blittable records qualify
     /// because `[StructLayout(Sequential)]` guarantees the same byte
     /// layout as Rust's `#[repr(C)]`, so the CLR can hand the native
-    /// side a pointer straight into the element buffer. Everything
-    /// else rides the wire-encoded path.
+    /// side a pointer straight into the element buffer. C-style enums
+    /// do NOT qualify even though their C# projection is a fixed-width
+    /// value type: the Rust `#[export]` macro classifies them as
+    /// `DataTypeCategory::Scalar` and routes `Vec<CStyleEnum>` through
+    /// the wire-encoded path (only `Blittable` survives the macro's
+    /// `supports_direct_vec` gate). Admitting them here would hand the
+    /// native side a raw enum byte array where it expects a
+    /// length-prefixed encoded array of I32 tags. Everything not
+    /// listed rides the wire-encoded path. Tracked: issue #196.
     fn is_blittable_vec_element(&self, ty: &TypeExpr) -> bool {
         match ty {
             TypeExpr::Primitive(_) => true,
