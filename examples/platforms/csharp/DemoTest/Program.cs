@@ -31,6 +31,7 @@ public static class DemoTest
         TestRecordsWithEnumFields();
         TestPrimitiveVecs();
         TestStringAndNestedVecs();
+        TestBlittableRecordVecs();
         Console.WriteLine("All tests passed!");
         return 0;
     }
@@ -661,6 +662,61 @@ public static class DemoTest
         {
             Require(echoedStrings[i].SequenceEqual(nestedStrings[i]), $"echoVecVecString inner[{i}]");
         }
+
+        Console.WriteLine("  PASS\n");
+    }
+
+    /// <summary>
+    /// Vec&lt;BlittableRecord&gt; rides the fast path: returns reinterpret the
+    /// FfiBuf as a T[] via ReadBlittableArray&lt;T&gt;, params pin a T[] and
+    /// hand a pointer across P/Invoke. No wire encoding on either side.
+    /// The generate_* and reduce_* demo pairs cross the boundary in both
+    /// directions with the same struct layout on each side, so any mismatch
+    /// between Rust's #[repr(C)] and C#'s [StructLayout(Sequential)] would
+    /// surface as a wrong sum or a segfault.
+    /// </summary>
+    private static void TestBlittableRecordVecs()
+    {
+        Console.WriteLine("Testing blittable record vecs (Location, Trade, Particle, SensorReading)...");
+
+        Location[] locations = GenerateLocations(3);
+        Require(locations.Length == 3, "generateLocations length");
+        Require(locations[0].Id == 0L, "locations[0].Id");
+        Require(locations[0].Rating == 3.0, "locations[0].Rating");
+        Require(locations[0].IsOpen, "locations[0].IsOpen");
+        Require(locations[1].Id == 1L, "locations[1].Id");
+        Require(!locations[1].IsOpen, "locations[1].IsOpen");
+        Require(locations[2].ReviewCount == 20, "locations[2].ReviewCount");
+
+        Require(ProcessLocations(locations) == 3, "processLocations roundtrip");
+        Require(ProcessLocations(Array.Empty<Location>()) == 0, "processLocations empty");
+        Require(Math.Abs(SumRatings(locations) - (3.0 + 3.1 + 3.2)) < 1e-9, "sumRatings roundtrip");
+
+        Trade[] trades = GenerateTrades(3);
+        Require(trades.Length == 3, "generateTrades length");
+        Require(trades[0].Volume == 0L && trades[1].Volume == 1000L && trades[2].Volume == 2000L, "trades volumes");
+        Require(SumTradeVolumes(trades) == 3000L, "sumTradeVolumes roundtrip");
+        Require(AggregateLocationTradeStats(locations, trades) == 3002L, "aggregateLocationTradeStats two pinned arrays");
+
+        Particle[] particles = GenerateParticles(3);
+        Require(particles.Length == 3, "generateParticles length");
+        Require(Math.Abs(SumParticleMasses(particles) - (1.0 + 1.001 + 1.002)) < 1e-9, "sumParticleMasses roundtrip");
+
+        SensorReading[] readings = GenerateSensorReadings(3);
+        Require(readings.Length == 3, "generateSensorReadings length");
+        Require(Math.Abs(AvgSensorTemperature(readings) - 21.0) < 1e-9, "avgSensorTemperature roundtrip");
+        Require(AvgSensorTemperature(Array.Empty<SensorReading>()) == 0.0, "avgSensorTemperature empty");
+
+        // Construct a Location[] in C# and pass it to native code. Exercises
+        // the param direction independently of the round-trip: if the CLR's
+        // struct layout drifts from Rust's, SumRatings will see garbage.
+        Location[] handmade = new[]
+        {
+            new Location(100L, 40.0, -70.0, 2.5, 5, true),
+            new Location(101L, 40.5, -70.5, 4.0, 50, false),
+        };
+        Require(ProcessLocations(handmade) == 2, "processLocations handmade");
+        Require(Math.Abs(SumRatings(handmade) - 6.5) < 1e-9, "sumRatings handmade");
 
         Console.WriteLine("  PASS\n");
     }

@@ -21,6 +21,14 @@
             {{ writer.encode_expr }};
             byte[] {{ writer.bytes_binding_name }} = {{ writer.binding_name }}.ToArray();
 {%- endfor %}
+{%- if method.has_pinned_params() %}
+            unsafe
+            {
+{%- for fixed_arg in method.pinned_fixed_args() %}
+                fixed ({{ fixed_arg }})
+                {
+{%- endfor %}
+{%- endif %}
 {%- if method.return_kind.is_void() %}
             NativeMethods.{{ method.native_method_name }}({{ method.full_native_call_args() }});
 {%- else if method.return_kind.is_direct() %}
@@ -34,6 +42,12 @@
             finally
             {
                 NativeMethods.FreeBuf(_buf);
+            }
+{%- endif %}
+{%- if method.has_pinned_params() %}
+{%- for _fixed_arg in method.pinned_fixed_args() %}
+                }
+{%- endfor %}
             }
 {%- endif %}
         }

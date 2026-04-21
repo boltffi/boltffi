@@ -261,6 +261,10 @@ impl<'a> CSharpLowerer<'a> {
             ReturnDef::Value(TypeExpr::Vec(inner)) => {
                 let reader_call = match inner.as_ref() {
                     TypeExpr::Primitive(p) => emit::primitive_vec_reader_call(*p),
+                    TypeExpr::Record(id) if self.is_blittable_record(id) => format!(
+                        "ReadBlittableArray<{}>()",
+                        NamingConvention::class_name(id.as_str())
+                    ),
                     _ => {
                         let element_seq = Self::vec_element_read_seq(decode_ops)
                             .expect("encoded Vec return must carry decode_ops with a Vec ReadOp");
@@ -318,19 +322,38 @@ impl<'a> CSharpLowerer<'a> {
             TypeExpr::Primitive(_) | TypeExpr::String | TypeExpr::Void => true,
             TypeExpr::Record(id) => self.supported_records.contains(id.as_str()),
             TypeExpr::Enum(id) => self.supported_enums.contains(id.as_str()),
-            TypeExpr::Vec(inner) => Self::is_supported_vec_inner(inner),
+            TypeExpr::Vec(inner) => self.is_supported_vec_element(inner),
             _ => false,
         }
     }
 
     /// Which element types the C# backend currently admits inside a
-    /// top-level `Vec<_>` param or return. Primitives ride the blittable
-    /// fast path; strings and nested vecs ride the encoded wire form.
-    /// Records and enums are out of scope for this step.
-    fn is_supported_vec_inner(ty: &TypeExpr) -> bool {
+    /// top-level `Vec<_>` param or return. Primitives and blittable
+    /// records ride the fast path via `DirectArray` / `ReadBlittableArray`;
+    /// strings and nested vecs ride the encoded wire form. Non-blittable
+    /// records and enums are still out of scope.
+    fn is_supported_vec_element(&self, ty: &TypeExpr) -> bool {
         match ty {
             TypeExpr::Primitive(_) | TypeExpr::String => true,
-            TypeExpr::Vec(inner) => Self::is_supported_vec_inner(inner),
+            TypeExpr::Record(id) => {
+                self.supported_records.contains(id.as_str()) && self.is_blittable_record(id)
+            }
+            TypeExpr::Vec(inner) => self.is_supported_vec_element(inner),
+            _ => false,
+        }
+    }
+
+    /// Vec element types whose param form is a pinned `T[]` passed
+    /// directly across P/Invoke. Primitives qualify because their C#
+    /// mapping is a blittable value type; blittable records qualify
+    /// because `[StructLayout(Sequential)]` guarantees the same byte
+    /// layout as Rust's `#[repr(C)]`, so the CLR can hand the native
+    /// side a pointer straight into the element buffer. Everything
+    /// else rides the wire-encoded path.
+    fn is_blittable_vec_element(&self, ty: &TypeExpr) -> bool {
+        match ty {
+            TypeExpr::Primitive(_) => true,
+            TypeExpr::Record(id) => self.is_blittable_record(id),
             _ => false,
         }
     }
@@ -366,7 +389,23 @@ impl<'a> CSharpLowerer<'a> {
             TypeExpr::Vec(inner) if matches!(inner.as_ref(), TypeExpr::Primitive(_)) => {
                 CSharpParamKind::DirectArray
             }
-            TypeExpr::Vec(inner) if Self::is_supported_vec_inner(inner) => {
+            TypeExpr::Vec(inner) if self.is_blittable_vec_element(inner) => {
+                // The CLR can pin primitive arrays automatically but
+                // classifies any struct containing a `bool` (or `char`)
+                // as non-blittable, even when the struct's byte layout
+                // actually matches Rust's `#[repr(C)]`. Rather than let
+                // P/Invoke silently build a marshaled copy with a
+                // mismatched layout, the wrapper pins the managed array
+                // with `fixed` and hands Rust a raw pointer directly.
+                let element_type = match inner.as_ref() {
+                    TypeExpr::Record(id) => NamingConvention::class_name(id.as_str()),
+                    other => todo!(
+                        "C# backend pinned-array param support not yet implemented for {other:?}"
+                    ),
+                };
+                CSharpParamKind::PinnedArray { element_type }
+            }
+            TypeExpr::Vec(inner) if self.is_supported_vec_element(inner) => {
                 // Vec<String> and Vec<Vec<_>> carry variable-width elements, so
                 // the param travels wire-encoded rather than as a pinned T[].
                 let writer = wire_writers
@@ -409,7 +448,7 @@ impl<'a> CSharpLowerer<'a> {
                 let enum_def = self.ffi.catalog.resolve_enum(id)?;
                 Some(mappings::csharp_enum_type(enum_def))
             }
-            TypeExpr::Vec(inner) if Self::is_supported_vec_inner(inner) => {
+            TypeExpr::Vec(inner) if self.is_supported_vec_element(inner) => {
                 let inner_type = self.lower_type(inner)?;
                 Some(CSharpType::Array(Box::new(inner_type)))
             }

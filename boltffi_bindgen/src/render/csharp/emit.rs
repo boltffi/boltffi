@@ -1269,6 +1269,75 @@ mod tests {
         );
     }
 
+    /// Each pinned record-array param needs its own `fixed` statement.
+    /// C# rejects comma-joined declarations here, so the wrapper must
+    /// nest the blocks when a function takes multiple
+    /// `Vec<BlittableRecord>` params.
+    #[test]
+    fn emit_blittable_record_vec_params_use_nested_fixed_blocks() {
+        let mut contract = empty_contract();
+        contract.catalog.insert_record(record_with_fields(
+            "point",
+            true,
+            vec![
+                ("x", TypeExpr::Primitive(PrimitiveType::F64)),
+                ("y", TypeExpr::Primitive(PrimitiveType::F64)),
+            ],
+        ));
+        contract.catalog.insert_record(record_with_fields(
+            "color",
+            true,
+            vec![
+                ("r", TypeExpr::Primitive(PrimitiveType::U8)),
+                ("g", TypeExpr::Primitive(PrimitiveType::U8)),
+                ("b", TypeExpr::Primitive(PrimitiveType::U8)),
+                ("a", TypeExpr::Primitive(PrimitiveType::U8)),
+            ],
+        ));
+        contract.functions.push(function_with_types(
+            "score_batches",
+            vec![
+                (
+                    "points",
+                    TypeExpr::Vec(Box::new(TypeExpr::Record(RecordId::new("point")))),
+                ),
+                (
+                    "colors",
+                    TypeExpr::Vec(Box::new(TypeExpr::Record(RecordId::new("color")))),
+                ),
+            ],
+            ReturnDef::Value(TypeExpr::Primitive(PrimitiveType::I32)),
+        ));
+
+        let src = emit_contract(&contract).combined_source();
+
+        assert_source_contains(
+            &src,
+            "fixed (Point* _pointsPtr = points)",
+            "the first pinned record vec param to get its own fixed statement",
+        );
+        assert_source_contains(
+            &src,
+            "fixed (Color* _colorsPtr = colors)",
+            "the second pinned record vec param to get a nested fixed statement instead of a comma-joined declaration",
+        );
+        assert_source_lacks(
+            &src,
+            "fixed (Point* _pointsPtr = points, Color* _colorsPtr = colors)",
+            "C# does not accept comma-joined fixed declarations across pinned params",
+        );
+        assert_source_contains(
+            &src,
+            "return NativeMethods.ScoreBatches((IntPtr)_pointsPtr, (UIntPtr)(points.Length * Unsafe.SizeOf<Point>()), (IntPtr)_colorsPtr, (UIntPtr)(colors.Length * Unsafe.SizeOf<Color>()));",
+            "the native call to use both pointer locals and byte lengths from the nested fixed blocks",
+        );
+        assert_source_contains(
+            &src,
+            "internal static extern int ScoreBatches(IntPtr points, UIntPtr pointsLen, IntPtr colors, UIntPtr colorsLen);",
+            "the DllImport signature to expose both pinned arrays as raw pointers plus byte lengths",
+        );
+    }
+
     /// A non-blittable record (one with a string field) must NOT carry
     /// `[StructLayout(Sequential)]` — its memory layout doesn't need to
     /// match Rust's because it travels as wire-encoded bytes, not as a
@@ -1691,6 +1760,63 @@ mod tests {
             &src,
             "internal static extern Direction DirectionOpposite(Direction self);",
             "the DllImport to declare the prefixed native name, return the enum type directly, and take the enum-typed self param",
+        );
+    }
+
+    /// Enum methods share the same value-type method template as enum
+    /// constructors. A blittable record vec param therefore needs the
+    /// same `unsafe { fixed (...) { ... } }` wrapper as a top-level
+    /// function so the generated pointer local exists at the native call
+    /// site and the array stays pinned for the duration of the call.
+    #[test]
+    fn emit_enum_method_with_blittable_record_vec_param_uses_fixed_block() {
+        let mut contract = empty_contract();
+        contract.catalog.insert_record(record_with_fields(
+            "point",
+            true,
+            vec![
+                ("x", TypeExpr::Primitive(PrimitiveType::F64)),
+                ("y", TypeExpr::Primitive(PrimitiveType::F64)),
+            ],
+        ));
+        let mut enum_def = c_style_enum("direction", vec!["North", "South"]);
+        enum_def.methods.push(MethodDef {
+            id: MethodId::new("from_points"),
+            receiver: Receiver::Static,
+            params: vec![ParamDef {
+                name: ParamName::new("points"),
+                type_expr: TypeExpr::Vec(Box::new(TypeExpr::Record(RecordId::new("point")))),
+                passing: ParamPassing::Value,
+                doc: None,
+            }],
+            returns: ReturnDef::Value(TypeExpr::Enum(EnumId::new("direction"))),
+            execution_kind: ExecutionKind::Sync,
+            doc: None,
+            deprecated: None,
+        });
+        contract.catalog.insert_enum(enum_def);
+
+        let src = emit_contract(&contract).combined_source();
+
+        assert_source_contains(
+            &src,
+            "public static Direction FromPoints(Point[] points)",
+            "the enum companion method to expose the blittable record vec as Point[]",
+        );
+        assert_source_contains(
+            &src,
+            "fixed (Point* _pointsPtr = points)",
+            "the method body to pin the managed Point[] before the native call",
+        );
+        assert_source_contains(
+            &src,
+            "return NativeMethods.DirectionFromPoints((IntPtr)_pointsPtr, (UIntPtr)(points.Length * Unsafe.SizeOf<Point>()));",
+            "the native call to use the pointer local introduced by the fixed block",
+        );
+        assert_source_contains(
+            &src,
+            "internal static extern Direction DirectionFromPoints(IntPtr points, UIntPtr pointsLen);",
+            "the DllImport signature to take a raw pointer and byte length for the pinned array param",
         );
     }
 

@@ -28,6 +28,7 @@ public final class DemoTest {
         testPrimitiveVecs();
         testVecStrings();
         testNestedVecs();
+        testBlittableRecordVecs();
         testOptions();
         testRecordsWithVecs();
         testConstructorCoverageMatrix();
@@ -577,6 +578,30 @@ public final class DemoTest {
         assert flat[0] == 1 && flat[1] == 2 && flat[2] == 3 && flat[3] == 4 && flat[4] == 5 : "flattenVecVecI32 values";
 
         assert Demo.flattenVecVecI32(Collections.emptyList()).length == 0 : "flattenVecVecI32 empty";
+
+        System.out.println("  PASS\n");
+    }
+
+    private static void testBlittableRecordVecs() {
+        System.out.println("Testing blittable record vecs...");
+
+        List<Location> locations = Demo.generateLocations(3);
+        assert locations.size() == 3 : "generateLocations size";
+        assert Demo.processLocations(locations) == 3 : "processLocations";
+        assert Math.abs(Demo.sumRatings(locations) - 9.3) < 0.0001 : "sumRatings";
+
+        List<Trade> trades = Demo.generateTrades(3);
+        assert trades.size() == 3 : "generateTrades size";
+        assert Demo.sumTradeVolumes(trades) == 3000L : "sumTradeVolumes";
+        assert Demo.aggregateLocationTradeStats(locations, trades) == 3002L : "aggregateLocationTradeStats";
+
+        List<Particle> particles = Demo.generateParticles(3);
+        assert particles.size() == 3 : "generateParticles size";
+        assert Math.abs(Demo.sumParticleMasses(particles) - 3.003) < 0.0001 : "sumParticleMasses";
+
+        List<SensorReading> readings = Demo.generateSensorReadings(3);
+        assert readings.size() == 3 : "generateSensorReadings size";
+        assert Math.abs(Demo.avgSensorTemperature(readings) - 21.0) < 0.0001 : "avgSensorTemperature";
 
         System.out.println("  PASS\n");
     }

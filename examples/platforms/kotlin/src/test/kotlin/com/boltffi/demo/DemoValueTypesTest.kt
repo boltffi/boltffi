@@ -138,6 +138,27 @@ class DemoValueTypesTest {
     }
 
     @Test
+    fun blittableRecordVecsRoundTrip() {
+        val locations = generateLocations(3)
+        assertEquals(3, locations.size)
+        assertEquals(3, processLocations(locations))
+        assertDoubleEquals(9.3, sumRatings(locations))
+
+        val trades = generateTrades(3)
+        assertEquals(3, trades.size)
+        assertEquals(3000L, sumTradeVolumes(trades))
+        assertEquals(3002L, aggregateLocationTradeStats(locations, trades))
+
+        val particles = generateParticles(3)
+        assertEquals(3, particles.size)
+        assertDoubleEquals(3.003, sumParticleMasses(particles))
+
+        val readings = generateSensorReadings(3)
+        assertEquals(3, readings.size)
+        assertDoubleEquals(21.0, avgSensorTemperature(readings))
+    }
+
+    @Test
     fun optionFunctionsUseCorrectKotlinSurface() {
         assertEquals(7, echoOptionalI32(7))
         assertNull(echoOptionalI32(null))

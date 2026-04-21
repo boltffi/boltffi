@@ -14,6 +14,14 @@
             {{ writer.encode_expr }};
             byte[] {{ writer.bytes_binding_name }} = {{ writer.binding_name }}.ToArray();
 {%- endfor %}
+{%- if func.has_pinned_params() %}
+            unsafe
+            {
+{%- for fixed_arg in func.pinned_fixed_args() %}
+                fixed ({{ fixed_arg }})
+                {
+{%- endfor %}
+{%- endif %}
 {%- if let Some(body) = func.return_kind.wire_decode_return("_buf") %}
             FfiBuf _buf = NativeMethods.{{ func.name }}({{ func.native_call_args() }});
             try
@@ -28,6 +36,12 @@
             NativeMethods.{{ func.name }}({{ func.native_call_args() }});
 {%- else %}
             return NativeMethods.{{ func.name }}({{ func.native_call_args() }});
+{%- endif %}
+{%- if func.has_pinned_params() %}
+{%- for _fixed_arg in func.pinned_fixed_args() %}
+                }
+{%- endfor %}
+            }
 {%- endif %}
         }
 {% endfor %}

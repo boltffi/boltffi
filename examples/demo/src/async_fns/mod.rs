@@ -1,5 +1,5 @@
-use boltffi::*;
 use crate::results::ComputeError;
+use boltffi::*;
 
 /// Adds two numbers asynchronously.
 #[export]

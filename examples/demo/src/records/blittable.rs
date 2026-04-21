@@ -350,6 +350,14 @@ pub fn sum_trade_volumes(trades: Vec<Trade>) -> i64 {
 
 #[export]
 #[benchmark_candidate(function, uniffi, wasm_bindgen)]
+pub fn aggregate_location_trade_stats(locations: Vec<Location>, trades: Vec<Trade>) -> i64 {
+    let open_locations = locations.iter().filter(|location| location.is_open).count() as i64;
+    let total_trade_volume: i64 = trades.iter().map(|trade| trade.volume).sum();
+    open_locations + total_trade_volume
+}
+
+#[export]
+#[benchmark_candidate(function, uniffi, wasm_bindgen)]
 pub fn generate_particles(count: i32) -> Vec<Particle> {
     (0..count)
         .map(|index| Particle {

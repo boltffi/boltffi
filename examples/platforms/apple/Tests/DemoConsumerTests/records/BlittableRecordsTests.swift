@@ -29,22 +29,23 @@ final class BlittableRecordsTests: XCTestCase {
     }
 
     func testBenchmarkRecordFns() {
-        let locations = generateLocations(count: 2)
-        XCTAssertEqual(locations.count, 2)
-        XCTAssertEqual(processLocations(locations: locations), 2)
-        XCTAssertEqual(sumRatings(locations: locations), 6.1, accuracy: 1e-9)
+        let locations = generateLocations(count: 3)
+        XCTAssertEqual(locations.count, 3)
+        XCTAssertEqual(processLocations(locations: locations), 3)
+        XCTAssertEqual(sumRatings(locations: locations), 9.3, accuracy: 1e-9)
 
         let trades = generateTrades(count: 3)
         XCTAssertEqual(trades.count, 3)
         XCTAssertEqual(sumTradeVolumes(trades: trades), 3000)
+        XCTAssertEqual(aggregateLocationTradeStats(locations: locations, trades: trades), 3002)
 
         let particles = generateParticles(count: 3)
         XCTAssertEqual(particles.count, 3)
         XCTAssertEqual(sumParticleMasses(particles: particles), 3.003, accuracy: 1e-9)
 
-        let readings = generateSensorReadings(count: 2)
-        XCTAssertEqual(readings.count, 2)
-        XCTAssertEqual(avgSensorTemperature(readings: readings), 20.5, accuracy: 1e-9)
+        let readings = generateSensorReadings(count: 3)
+        XCTAssertEqual(readings.count, 3)
+        XCTAssertEqual(avgSensorTemperature(readings: readings), 21.0, accuracy: 1e-9)
 
         XCTAssertEqual(
             findLocation(id: 7),

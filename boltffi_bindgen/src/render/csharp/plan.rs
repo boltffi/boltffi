@@ -560,6 +560,16 @@ impl CSharpMethod {
         }
     }
 
+    /// Declarations for nested `fixed` statements pinning every
+    /// [`CSharpParamKind::PinnedArray`] param in the signature.
+    pub fn pinned_fixed_args(&self) -> Vec<String> {
+        pinned_fixed_args(&self.params)
+    }
+
+    pub fn has_pinned_params(&self) -> bool {
+        !self.pinned_fixed_args().is_empty()
+    }
+
     /// Param list used in the DllImport signature, including the
     /// receiver-dependent self declaration prepended when the method is
     /// an instance method:
@@ -683,6 +693,29 @@ impl CSharpFunction {
         } else {
             self.return_type.to_string()
         }
+    }
+
+    /// Declarations for nested `fixed` statements pinning every
+    /// [`CSharpParamKind::PinnedArray`] param in the signature.
+    ///
+    /// Rendered shape for a function with two pinned params:
+    ///
+    /// ```ignore
+    /// [
+    ///   "Location* _locationsPtr = locations",
+    ///   "Trade* _tradesPtr = trades",
+    /// ]
+    /// ```
+    ///
+    /// The template wraps the call in `unsafe { fixed (...) { fixed (...)
+    /// { ... } } }` so Rust reads directly from the C# heap without the
+    /// GC relocating either managed array during the call.
+    pub fn pinned_fixed_args(&self) -> Vec<String> {
+        pinned_fixed_args(&self.params)
+    }
+
+    pub fn has_pinned_params(&self) -> bool {
+        !self.pinned_fixed_args().is_empty()
     }
 }
 
@@ -826,6 +859,13 @@ impl CSharpParam {
                     decl
                 }
             }
+            // The wrapper's `fixed` block takes the managed array and
+            // hands the native side a raw pointer, so the DllImport sees
+            // only `IntPtr` and a length — no element type, no P/Invoke
+            // marshaling.
+            CSharpParamKind::PinnedArray { .. } => {
+                format!("IntPtr {name}, UIntPtr {name}Len", name = self.name)
+            }
         }
     }
 
@@ -844,6 +884,27 @@ impl CSharpParam {
             CSharpParamKind::DirectArray => {
                 format!("{name}, (UIntPtr){name}.Length", name = self.name)
             }
+            // `_{name}Ptr` is the pointer local introduced by the
+            // enclosing `fixed` statement; see `pinned_fixed_args`. The
+            // cast to `IntPtr` matches the DllImport signature.
+            //
+            // The Rust FFI shim for `Vec<Passable>` takes a raw byte
+            // length and divides by `size_of::<T>()` to recover the
+            // element count — the opposite of `Vec<Primitive>`, which
+            // takes element count directly. The primitive path and this
+            // path therefore send different numbers across the same
+            // `UIntPtr` slot. `Unsafe.SizeOf<T>()` is a JIT-time constant
+            // for `unmanaged` struct types, so the multiply folds away.
+            CSharpParamKind::PinnedArray { element_type } => {
+                let ptr_name = self
+                    .pinned_ptr_name()
+                    .expect("PinnedArray params must have a pointer local");
+                format!(
+                    "(IntPtr){ptr_name}, (UIntPtr)({name}.Length * Unsafe.SizeOf<{element_type}>())",
+                    ptr_name = ptr_name,
+                    name = self.name,
+                )
+            }
         }
     }
 
@@ -861,6 +922,36 @@ impl CSharpParam {
             _ => None,
         }
     }
+
+    pub fn pinned_fixed_arg(&self) -> Option<String> {
+        match &self.kind {
+            CSharpParamKind::PinnedArray { element_type } => Some(format!(
+                "{element_type}* {ptr_name} = {name}",
+                ptr_name = self
+                    .pinned_ptr_name()
+                    .expect("PinnedArray params must have a pointer local"),
+                name = self.name,
+            )),
+            _ => None,
+        }
+    }
+
+    fn pinned_ptr_name(&self) -> Option<String> {
+        match self.kind {
+            CSharpParamKind::PinnedArray { .. } => {
+                let base_name = self.name.strip_prefix('@').unwrap_or(&self.name);
+                Some(format!("_{base_name}Ptr"))
+            }
+            _ => None,
+        }
+    }
+}
+
+fn pinned_fixed_args(params: &[CSharpParam]) -> Vec<String> {
+    params
+        .iter()
+        .filter_map(CSharpParam::pinned_fixed_arg)
+        .collect()
 }
 
 /// How a parameter is marshalled across the C# / C ABI boundary.
@@ -882,6 +973,25 @@ pub enum CSharpParamKind {
     /// `[MarshalAs(LPArray, ArraySubType = U1)]` override so CLR emits
     /// one byte per element instead of the 4-byte Win32 BOOL default.
     DirectArray,
+    /// A managed array of a blittable record element type, pinned with
+    /// a `fixed` statement so Rust can read directly from the C# heap.
+    ///
+    /// The struct layout of a blittable record matches Rust's `#[repr(C)]`
+    /// exactly, so a pointer to the first element plus an element count
+    /// is everything Rust needs. The obstacle is that the CLR classifies
+    /// any struct containing a `bool` or `char` as non-blittable and
+    /// refuses to pin `T[]` through the default P/Invoke path — instead
+    /// it silently builds a marshaled copy with a different byte layout,
+    /// which mismatches what Rust expects. The wrapper sidesteps that by
+    /// taking a raw pointer with `fixed (T* _xPtr = x)`, which pins the
+    /// array in place for the duration of the native call, and passes
+    /// the pointer as `IntPtr`. Zero copy: C# and Rust read the same
+    /// block of managed heap memory.
+    ///
+    /// `element_type` is the C# type literal for `T` (e.g., `"Location"`)
+    /// — threaded here so `pinned_fixed_args` can render
+    /// `Location* _xPtr = x` without re-deriving from `csharp_type`.
+    PinnedArray { element_type: String },
 }
 
 /// Bookkeeping for a single record param that must be wire-encoded into a
