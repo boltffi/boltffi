@@ -20,4 +20,7 @@ export async function run() {
   assert.deepEqual(demo.findApiResult(0), { tag: "Success" });
   assert.deepEqual(demo.findApiResult(1), { tag: "ErrorCode", value0: -1 });
   assert.equal(demo.findApiResult(99), null);
+
+  assert.deepEqual(demo.echoVecOptionalI32([1, null, 2, null, 3]), [1, null, 2, null, 3]);
+  assert.deepEqual(demo.echoVecOptionalI32([]), []);
 }
