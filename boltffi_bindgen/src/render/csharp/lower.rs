@@ -148,10 +148,13 @@ impl<'a> CSharpLowerer<'a> {
             // admission rules: any field-admissible type is also a valid
             // Vec element, and vice versa.
             TypeExpr::Vec(inner) => Self::is_field_type_supported(inner, records, enums),
-            // Option as a field admits whatever its inner type does —
-            // the 1-byte tag + payload wire shape is uniform across
-            // every inner kind the backend already handles.
-            TypeExpr::Option(inner) => Self::is_field_type_supported(inner, records, enums),
+            // C# models `Option<T>` as `T?`, so `Option<Option<T>>`
+            // would need `T??`, which the language rejects and which
+            // cannot be flattened without losing the `Some(None)` state.
+            TypeExpr::Option(inner) => {
+                !matches!(inner.as_ref(), TypeExpr::Option(_))
+                    && Self::is_field_type_supported(inner, records, enums)
+            }
             _ => false,
         }
     }
@@ -338,7 +341,9 @@ impl<'a> CSharpLowerer<'a> {
             TypeExpr::Record(id) => self.supported_records.contains(id.as_str()),
             TypeExpr::Enum(id) => self.supported_enums.contains(id.as_str()),
             TypeExpr::Vec(inner) => self.is_supported_vec_element(inner),
-            TypeExpr::Option(inner) => self.is_supported_type(inner),
+            TypeExpr::Option(inner) => {
+                !matches!(inner.as_ref(), TypeExpr::Option(_)) && self.is_supported_type(inner)
+            }
             _ => false,
         }
     }
@@ -354,7 +359,10 @@ impl<'a> CSharpLowerer<'a> {
             TypeExpr::Record(id) => self.supported_records.contains(id.as_str()),
             TypeExpr::Enum(id) => self.supported_enums.contains(id.as_str()),
             TypeExpr::Vec(inner) => self.is_supported_vec_element(inner),
-            TypeExpr::Option(inner) => self.is_supported_vec_element(inner),
+            TypeExpr::Option(inner) => {
+                !matches!(inner.as_ref(), TypeExpr::Option(_))
+                    && self.is_supported_vec_element(inner)
+            }
             _ => false,
         }
     }
@@ -1115,9 +1123,13 @@ impl<'a> CSharpLowerer<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ir::Lowerer as IrLowerer;
     use crate::ir::contract::{FfiContract, PackageInfo};
-    use crate::ir::definitions::{DataVariant, EnumDef};
+    use crate::ir::definitions::{DataVariant, EnumDef, FunctionDef, ParamDef, ReturnDef};
     use crate::ir::types::PrimitiveType;
+    use boltffi_ffi_rules::callable::ExecutionKind;
+
+    use crate::ir::ids::{FunctionId, ParamName};
 
     fn data_enum(id: &str, variants: Vec<DataVariant>) -> EnumDef {
         EnumDef {
@@ -1293,6 +1305,61 @@ mod tests {
         assert!(
             !enums.contains("platform_status"),
             "expecting repr(usize) C-style enums to stay unsupported until the backend has a legal C# projection",
+        );
+    }
+
+    /// C# projects `Option<T>` as `T?`, so `Option<Option<i32>>` would
+    /// need `int??`, which does not parse. Reject the shape at the
+    /// backend support gate rather than silently emitting uncompilable
+    /// code or flattening away the `Some(None)` state.
+    #[test]
+    fn nested_option_shapes_are_rejected() {
+        let mut contract = FfiContract {
+            package: PackageInfo {
+                name: "demo_lib".to_string(),
+                version: None,
+            },
+            functions: vec![],
+            catalog: Default::default(),
+        };
+        let nested_option = TypeExpr::Option(Box::new(TypeExpr::Option(Box::new(
+            TypeExpr::Primitive(PrimitiveType::I32),
+        ))));
+        contract.catalog.insert_record(record_with_one_field(
+            "holder",
+            "value",
+            nested_option.clone(),
+        ));
+        contract.functions.push(FunctionDef {
+            id: FunctionId::new("echo_nested_option"),
+            params: vec![ParamDef {
+                name: ParamName::new("value"),
+                type_expr: nested_option.clone(),
+                passing: ParamPassing::Value,
+                doc: None,
+            }],
+            returns: ReturnDef::Value(nested_option.clone()),
+            execution_kind: ExecutionKind::Sync,
+            doc: None,
+            deprecated: None,
+        });
+
+        let abi = IrLowerer::new(&contract).to_abi_contract();
+        let options = CSharpOptions::default();
+        let lowerer = CSharpLowerer::new(&contract, &abi, &options);
+        let (records, _enums) = CSharpLowerer::compute_supported_sets(&contract);
+
+        assert!(
+            !records.contains("holder"),
+            "expecting a record with Option<Option<i32>> field to stay unsupported because it would render as int??",
+        );
+        assert!(
+            !lowerer.is_supported_type(&nested_option),
+            "expecting Option<Option<i32>> to fail the C# support gate before lowering",
+        );
+        assert!(
+            lowerer.lower_function(&contract.functions[0]).is_none(),
+            "expecting a function with nested Option param/return to be dropped rather than emitting int??",
         );
     }
 }
