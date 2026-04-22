@@ -124,6 +124,14 @@ pub enum CSharpType {
     /// the blittable bulk-copy path, composites walk element-by-element.
     /// Nested vecs fall out naturally via recursive `Array(Array(...))`.
     Array(Box<CSharpType>),
+    /// An `Option<T>` projected into the C# surface as `T?`. Uniform
+    /// across value-type and reference-type inners: for value types it
+    /// desugars to `Nullable<T>`, for reference types it reads as a
+    /// nullable-annotated reference (both require `#nullable enable`,
+    /// which the generated files opt in to). Always travels
+    /// wire-encoded across the ABI — the 1-byte tag + payload form does
+    /// not line up with any CLR primitive layout.
+    Nullable(Box<CSharpType>),
 }
 
 impl CSharpType {
@@ -145,7 +153,7 @@ impl CSharpType {
     pub fn contains_string(&self) -> bool {
         match self {
             Self::String => true,
-            Self::Array(inner) => inner.contains_string(),
+            Self::Array(inner) | Self::Nullable(inner) => inner.contains_string(),
             _ => false,
         }
     }
@@ -199,6 +207,9 @@ impl CSharpType {
             Self::Array(inner) => {
                 Self::Array(Box::new((*inner).qualify_if_shadowed(shadowed, namespace)))
             }
+            Self::Nullable(inner) => {
+                Self::Nullable(Box::new((*inner).qualify_if_shadowed(shadowed, namespace)))
+            }
             other => other,
         }
     }
@@ -232,7 +243,8 @@ impl CSharpType {
             | Self::String
             | Self::Record(_)
             | Self::DataEnum(_)
-            | Self::Array(_) => false,
+            | Self::Array(_)
+            | Self::Nullable(_) => false,
         }
     }
 }
@@ -257,6 +269,7 @@ impl fmt::Display for CSharpType {
             Self::String => f.write_str("string"),
             Self::Record(name) | Self::CStyleEnum(name) | Self::DataEnum(name) => f.write_str(name),
             Self::Array(inner) => write!(f, "{inner}[]"),
+            Self::Nullable(inner) => write!(f, "{inner}?"),
         }
     }
 }
@@ -292,12 +305,13 @@ impl CSharpRecord {
         !self.is_blittable
     }
 
-    /// Whether the record has at least one string-typed field. Used by the
-    /// record template to decide whether to import `System.Text` (for
-    /// `Encoding.UTF8.GetByteCount`). Required because
-    /// `TreatWarningsAsErrors` flags unused usings.
+    /// Whether the record has at least one field whose type contains a
+    /// string at any nesting depth (bare `string`, `string?`, `string[]`,
+    /// nested vecs of strings). Used by the record template to decide
+    /// whether to import `System.Text` (for `Encoding.UTF8.GetByteCount`).
+    /// Required because `TreatWarningsAsErrors` flags unused usings.
     pub fn has_string_fields(&self) -> bool {
-        self.fields.iter().any(|f| f.csharp_type.is_string())
+        self.fields.iter().any(|f| f.csharp_type.contains_string())
     }
 }
 
@@ -433,15 +447,16 @@ impl CSharpEnum {
         }
     }
 
-    /// Whether any variant payload field is a `string`. Drives the
-    /// `using System.Text;` import in the data enum template — needed
-    /// because string-valued wire-size expressions call
-    /// `Encoding.UTF8.GetByteCount(...)`, which lives in `System.Text`.
+    /// Whether any variant payload field's type contains a string at any
+    /// nesting depth. Drives the `using System.Text;` import in the data
+    /// enum template — needed because string-valued wire-size expressions
+    /// call `Encoding.UTF8.GetByteCount(...)`, which lives in
+    /// `System.Text`.
     pub fn has_string_fields(&self) -> bool {
         self.variants
             .iter()
             .flat_map(|v| v.fields.iter())
-            .any(|f| f.csharp_type.is_string())
+            .any(|f| f.csharp_type.contains_string())
     }
 }
 
@@ -745,6 +760,13 @@ pub enum CSharpReturnKind {
     /// e.g. `ReadBlittableArray<int>()` for `Vec<i32>` or
     /// `ReadBoolArray()` for `Vec<bool>`.
     WireDecodeArray { reader_call: String },
+    /// The native function returns an `FfiBuf` carrying a wire-encoded
+    /// `Option<T>` (1-byte tag + optional payload). The wrapper wraps
+    /// it in a `WireReader` named `reader` and evaluates `decode_expr`,
+    /// which emit has already rendered against that reader so it
+    /// handles every inner shape (primitive, string, record, enum, vec)
+    /// without per-shape branching here.
+    WireDecodeOption { decode_expr: String },
 }
 
 impl CSharpReturnKind {
@@ -768,11 +790,18 @@ impl CSharpReturnKind {
         matches!(self, Self::WireDecodeArray { .. })
     }
 
+    pub fn is_wire_decode_option(&self) -> bool {
+        matches!(self, Self::WireDecodeOption { .. })
+    }
+
     /// Whether the native (DllImport) signature returns an `FfiBuf`.
     pub fn native_returns_ffi_buf(&self) -> bool {
         matches!(
             self,
-            Self::WireDecodeString | Self::WireDecodeObject { .. } | Self::WireDecodeArray { .. }
+            Self::WireDecodeString
+                | Self::WireDecodeObject { .. }
+                | Self::WireDecodeArray { .. }
+                | Self::WireDecodeOption { .. }
         )
     }
 
@@ -803,6 +832,10 @@ impl CSharpReturnKind {
             Self::WireDecodeArray { reader_call } => Some(format!(
                 "return new WireReader({}).{};",
                 buf_var, reader_call
+            )),
+            Self::WireDecodeOption { decode_expr } => Some(format!(
+                "var reader = new WireReader({}); return {};",
+                buf_var, decode_expr
             )),
             _ => None,
         }
@@ -1173,8 +1206,42 @@ mod tests {
     #[case::string(CSharpType::String, false)]
     #[case::record(CSharpType::Record("Point".to_string()), false)]
     #[case::data_enum(CSharpType::DataEnum("Shape".to_string()), false)]
+    #[case::nullable_int(CSharpType::Nullable(Box::new(CSharpType::Int)), false)]
+    #[case::nullable_string(CSharpType::Nullable(Box::new(CSharpType::String)), false)]
     fn is_blittable_leaf_matches_marshaling_story(#[case] ty: CSharpType, #[case] expected: bool) {
         assert_eq!(ty.is_blittable_leaf(), expected);
+    }
+
+    /// `Nullable` renders as `{inner}?` — uniform for value-type inners
+    /// (which desugar to `Nullable<T>`) and reference-type inners (which
+    /// read as nullable-annotated references under `#nullable enable`).
+    #[test]
+    fn nullable_type_display_appends_question_mark() {
+        assert_eq!(
+            CSharpType::Nullable(Box::new(CSharpType::Int)).to_string(),
+            "int?"
+        );
+        assert_eq!(
+            CSharpType::Nullable(Box::new(CSharpType::String)).to_string(),
+            "string?"
+        );
+        assert_eq!(
+            CSharpType::Nullable(Box::new(CSharpType::Record("Point".to_string()))).to_string(),
+            "Point?"
+        );
+    }
+
+    /// `contains_string` must see through `Nullable` so a `string?` field
+    /// still triggers the `System.Text` import — the wire-size expression
+    /// for a nullable string still calls `Encoding.UTF8.GetByteCount`.
+    #[test]
+    fn contains_string_sees_through_nullable() {
+        assert!(CSharpType::Nullable(Box::new(CSharpType::String)).contains_string());
+        assert!(
+            CSharpType::Array(Box::new(CSharpType::Nullable(Box::new(CSharpType::String))))
+                .contains_string()
+        );
+        assert!(!CSharpType::Nullable(Box::new(CSharpType::Int)).contains_string());
     }
 
     // ----- CSharpParam render helpers -----
@@ -1398,6 +1465,13 @@ mod tests {
         CSharpReturnKind::WireDecodeObject { class_name: "Person".to_string() },
         "FfiBuf",
     )]
+    #[case::option_primitive(
+        CSharpType::Nullable(Box::new(CSharpType::Int)),
+        CSharpReturnKind::WireDecodeOption {
+            decode_expr: "reader.ReadU8() == 0 ? (int?)null : reader.ReadI32()".to_string(),
+        },
+        "FfiBuf",
+    )]
     fn native_return_type_reflects_ffi_buf_paths(
         #[case] return_type: CSharpType,
         #[case] return_kind: CSharpReturnKind,
@@ -1426,6 +1500,23 @@ mod tests {
         assert_eq!(
             kind.wire_decode_return("_buf").as_deref(),
             Some("return Person.Decode(new WireReader(_buf));"),
+        );
+    }
+
+    /// `WireDecodeOption` wraps the pre-rendered `decode_expr` in a local
+    /// `reader` binding so the emit-time decoder can reference `reader`
+    /// multiple times (once for the 1-byte tag, again for the payload)
+    /// without duplicating buffer construction.
+    #[test]
+    fn wire_decode_return_for_option_binds_reader_local() {
+        let kind = CSharpReturnKind::WireDecodeOption {
+            decode_expr: "reader.ReadU8() == 0 ? (int?)null : reader.ReadI32()".to_string(),
+        };
+        assert_eq!(
+            kind.wire_decode_return("_buf").as_deref(),
+            Some(
+                "var reader = new WireReader(_buf); return reader.ReadU8() == 0 ? (int?)null : reader.ReadI32();"
+            ),
         );
     }
 

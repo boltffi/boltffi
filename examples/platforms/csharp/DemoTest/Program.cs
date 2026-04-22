@@ -34,6 +34,7 @@ public static class DemoTest
         TestBlittableRecordVecs();
         TestEnumVecs();
         TestVecFields();
+        TestOptions();
         Console.WriteLine("All tests passed!");
         return 0;
     }
@@ -858,6 +859,104 @@ public static class DemoTest
         Require(Math.Abs(SumUserScores(profiles) - expectedSum) < 1e-9, "sumUserScores round-trip");
         Require(CountActiveUsers(profiles) == 2, "countActiveUsers (even indices active)");
         Require(SumUserScores(Array.Empty<BenchmarkUserProfile>()) == 0.0, "sumUserScores empty");
+
+        Console.WriteLine("  PASS\n");
+    }
+
+    /// <summary>
+    /// Option&lt;T&gt; travels wire-encoded: 1 byte for the present/absent tag,
+    /// plus the inner payload when Some. The C# surface renders each
+    /// Option as T? uniformly — Nullable&lt;T&gt; for value-type inners,
+    /// nullable-annotated references for reference-type inners, both
+    /// under #nullable enable in the generated files. Covers the
+    /// primitive matrix plus reference-type inners (string), blittable
+    /// records (Point), C-style enums (Status), and data enums
+    /// (ApiResult). Option fields inside records and nested
+    /// Option/Vec combinations land in a later step.
+    /// </summary>
+    private static void TestOptions()
+    {
+        Console.WriteLine("Testing Option types...");
+
+        Require(EchoOptionalI32(42) == 42, "EchoOptionalI32(Some)");
+        Require(EchoOptionalI32(null) == null, "EchoOptionalI32(None)");
+        Require(EchoOptionalI32(int.MinValue) == int.MinValue, "EchoOptionalI32(min)");
+        Require(EchoOptionalI32(int.MaxValue) == int.MaxValue, "EchoOptionalI32(max)");
+
+        Require(EchoOptionalF64(3.14) == 3.14, "EchoOptionalF64(Some)");
+        Require(EchoOptionalF64(null) == null, "EchoOptionalF64(None)");
+
+        Require(EchoOptionalBool(true) == true, "EchoOptionalBool(true)");
+        Require(EchoOptionalBool(false) == false, "EchoOptionalBool(false)");
+        Require(EchoOptionalBool(null) == null, "EchoOptionalBool(None)");
+
+        Require(UnwrapOrDefaultI32(10, 99) == 10, "UnwrapOrDefaultI32(Some)");
+        Require(UnwrapOrDefaultI32(null, 99) == 99, "UnwrapOrDefaultI32(None) falls back");
+
+        Require(MakeSomeI32(7) == 7, "MakeSomeI32 returns Some");
+        Require(MakeNoneI32() == null, "MakeNoneI32 returns null");
+
+        Require(DoubleIfSome(5) == 10, "DoubleIfSome(Some)");
+        Require(DoubleIfSome(null) == null, "DoubleIfSome(None) stays None");
+
+        Require(FindEven(4) == 4, "FindEven(4) == Some(4)");
+        Require(FindEven(3) == null, "FindEven(3) == None");
+
+        Require(FindPositiveI64(100L) == 100L, "FindPositiveI64(100)");
+        Require(FindPositiveI64(-1L) == null, "FindPositiveI64(-1) == None");
+        Require(FindPositiveI64(0L) == null, "FindPositiveI64(0) == None");
+
+        Require(FindPositiveF64(1.5) == 1.5, "FindPositiveF64(1.5)");
+        Require(FindPositiveF64(-0.5) == null, "FindPositiveF64(-0.5) == None");
+
+        // Option<String>: reference-type inner rides the same 1-byte tag
+        // path; the payload is a length-prefixed UTF-8 buffer. café
+        // exercises 2-byte codepoints, 🌍 exercises 4-byte ones.
+        Require(EchoOptionalString("hello") == "hello", "EchoOptionalString(Some ascii)");
+        Require(EchoOptionalString("café") == "café", "EchoOptionalString(2-byte UTF-8)");
+        Require(EchoOptionalString("🌍") == "🌍", "EchoOptionalString(4-byte UTF-8)");
+        Require(EchoOptionalString("") == "", "EchoOptionalString(empty Some)");
+        Require(EchoOptionalString(null) == null, "EchoOptionalString(None)");
+
+        Require(IsSomeString("x"), "IsSomeString(Some)");
+        Require(!IsSomeString(null), "IsSomeString(None)");
+
+        Require(FindName(7) == "Name_7", "FindName(positive) returns Some");
+        Require(FindName(-1) == null, "FindName(non-positive) returns null");
+
+        // Option<BlittableRecord>: Point is #[repr(C)] with two f64
+        // fields, so the inner payload is 16 raw bytes written via
+        // Point.WireEncodeTo and read via Point.Decode — no layout
+        // shortcut, because the 1-byte tag forces the wire path.
+        Require(EchoOptionalPoint(new Point(1.5, 2.5)) == new Point(1.5, 2.5), "EchoOptionalPoint(Some)");
+        Require(EchoOptionalPoint(null) == null, "EchoOptionalPoint(None)");
+
+        Require(MakeSomePoint(3.0, 4.0) == new Point(3.0, 4.0), "MakeSomePoint returns Some");
+        Require(MakeNonePoint() == null, "MakeNonePoint returns null");
+
+        // Option<CStyleEnum>: Status crosses the wire as a 4-byte i32
+        // tag under an Option — the CLR can't reuse its direct
+        // marshaling path because of the outer 1-byte present tag.
+        Require(EchoOptionalStatus(Status.Active) == Status.Active, "EchoOptionalStatus(Active)");
+        Require(EchoOptionalStatus(Status.Pending) == Status.Pending, "EchoOptionalStatus(Pending)");
+        Require(EchoOptionalStatus(null) == null, "EchoOptionalStatus(None)");
+
+        // Option<DataEnum>: ApiResult has unit, tuple, and struct
+        // variants — the decode inside the Option's ternary must
+        // still dispatch to the right variant.
+        Require(
+            FindApiResult(0) is ApiResult.Success,
+            "FindApiResult(0) returns Success"
+        );
+        Require(
+            FindApiResult(1) is ApiResult.ErrorCode ec && ec.Value0 == -1,
+            "FindApiResult(1) returns ErrorCode(-1)"
+        );
+        Require(
+            FindApiResult(2) is ApiResult.ErrorWithData ewd && ewd.Code == -1 && ewd.Detail == -2,
+            "FindApiResult(2) returns ErrorWithData"
+        );
+        Require(FindApiResult(9) == null, "FindApiResult(unknown) returns null");
 
         Console.WriteLine("  PASS\n");
     }

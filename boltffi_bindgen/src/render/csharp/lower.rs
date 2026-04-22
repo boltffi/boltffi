@@ -148,6 +148,10 @@ impl<'a> CSharpLowerer<'a> {
             // admission rules: any field-admissible type is also a valid
             // Vec element, and vice versa.
             TypeExpr::Vec(inner) => Self::is_field_type_supported(inner, records, enums),
+            // Option as a field admits whatever its inner type does —
+            // the 1-byte tag + payload wire shape is uniform across
+            // every inner kind the backend already handles.
+            TypeExpr::Option(inner) => Self::is_field_type_supported(inner, records, enums),
             _ => false,
         }
     }
@@ -273,6 +277,17 @@ impl<'a> CSharpLowerer<'a> {
                 };
                 CSharpReturnKind::WireDecodeArray { reader_call }
             }
+            ReturnDef::Value(TypeExpr::Option(_)) => {
+                // Fully pre-render the decode expression against a
+                // reader named `reader`. The ABI's decode_ops walks
+                // every inner shape — primitive, string, record, enum,
+                // vec — so one helper covers the whole matrix.
+                let decode_seq = decode_ops
+                    .expect("Option return must carry decode_ops")
+                    .clone();
+                let decode_expr = emit::emit_reader_read(&decode_seq, None);
+                CSharpReturnKind::WireDecodeOption { decode_expr }
+            }
             // Primitives, bools, blittable records, and C-style enums
             // are all direct: the CLR marshals them across P/Invoke
             // without any wrapper help.
@@ -323,6 +338,7 @@ impl<'a> CSharpLowerer<'a> {
             TypeExpr::Record(id) => self.supported_records.contains(id.as_str()),
             TypeExpr::Enum(id) => self.supported_enums.contains(id.as_str()),
             TypeExpr::Vec(inner) => self.is_supported_vec_element(inner),
+            TypeExpr::Option(inner) => self.is_supported_type(inner),
             _ => false,
         }
     }
@@ -338,6 +354,7 @@ impl<'a> CSharpLowerer<'a> {
             TypeExpr::Record(id) => self.supported_records.contains(id.as_str()),
             TypeExpr::Enum(id) => self.supported_enums.contains(id.as_str()),
             TypeExpr::Vec(inner) => self.is_supported_vec_element(inner),
+            TypeExpr::Option(inner) => self.is_supported_vec_element(inner),
             _ => false,
         }
     }
@@ -422,6 +439,17 @@ impl<'a> CSharpLowerer<'a> {
                     binding_name: writer.bytes_binding_name.clone(),
                 }
             }
+            TypeExpr::Option(_) => {
+                // Options are always wire-encoded: the 1-byte tag plus an
+                // optional payload does not line up with any CLR
+                // primitive layout.
+                let writer = wire_writers
+                    .iter()
+                    .find(|w| w.param_name == param.name.as_str())?;
+                CSharpParamKind::WireEncoded {
+                    binding_name: writer.bytes_binding_name.clone(),
+                }
+            }
             // Primitives, bools, blittable records, and C-style enums
             // pass directly. The CLR marshals them across P/Invoke with
             // no extra setup.
@@ -459,16 +487,36 @@ impl<'a> CSharpLowerer<'a> {
                 let inner_type = self.lower_type(inner)?;
                 Some(CSharpType::Array(Box::new(inner_type)))
             }
+            TypeExpr::Option(inner) => {
+                let inner_type = self.lower_type(inner)?;
+                Some(CSharpType::Nullable(Box::new(inner_type)))
+            }
             _ => None,
         }
     }
 
     fn lower_record(&self, record: &RecordDef) -> CSharpRecord {
         let class_name = NamingConvention::class_name(record.id.as_str());
+        // Share one emit context across all fields so pattern-binding
+        // names (e.g. `sizeOpt0`, `opt0`) stay unique within the
+        // generated `WireEncodedSize` and `WireEncodeTo` method
+        // bodies — otherwise two optional fields would each try to
+        // declare `sizeOpt0` in the same enclosing scope.
+        let mut size_ctx = emit::CSharpEmitContext::default();
+        let mut encode_ctx = emit::CSharpEmitContext::default();
+        let mut decode_ctx = emit::CSharpEmitContext::default();
         let fields = record
             .fields
             .iter()
-            .map(|field| self.lower_record_field(&record.id, field))
+            .map(|field| {
+                self.lower_record_field(
+                    &record.id,
+                    field,
+                    &mut size_ctx,
+                    &mut encode_ctx,
+                    &mut decode_ctx,
+                )
+            })
             .collect();
         let is_blittable = self.is_blittable_record(&record.id);
         CSharpRecord {
@@ -535,12 +583,30 @@ impl<'a> CSharpLowerer<'a> {
                     shadowed: &shadowed_variant_names,
                     namespace: &namespace,
                 };
+                // Share one encode/size context across all variants of
+                // this enum because `WireEncodedSize` and `WireEncodeTo`
+                // render all variant fields inside one method body
+                // (via a switch statement). A separate decode context
+                // keeps decode rendering independent — `Decode` builds
+                // each variant in its own constructor call so no
+                // pattern-binding leakage happens across variants.
+                let mut size_ctx = emit::CSharpEmitContext::default();
+                let mut encode_ctx = emit::CSharpEmitContext::default();
+                let mut decode_ctx = emit::CSharpEmitContext::default();
                 let variants = abi_enum
                     .variants
                     .iter()
                     .enumerate()
                     .map(|(ordinal, variant)| {
-                        self.lower_data_enum_variant(abi_enum, variant, ordinal, &scope)
+                        self.lower_data_enum_variant(
+                            abi_enum,
+                            variant,
+                            ordinal,
+                            &scope,
+                            &mut size_ctx,
+                            &mut encode_ctx,
+                            &mut decode_ctx,
+                        )
                     })
                     .collect();
                 Some(CSharpEnum {
@@ -560,13 +626,16 @@ impl<'a> CSharpLowerer<'a> {
         variant: &AbiEnumVariant,
         ordinal: usize,
         scope: &emit::ShadowScope,
+        size_ctx: &mut emit::CSharpEmitContext,
+        encode_ctx: &mut emit::CSharpEmitContext,
+        decode_ctx: &mut emit::CSharpEmitContext,
     ) -> CSharpEnumVariant {
         let tag = abi_enum.resolve_codec_tag(ordinal, variant.discriminant) as i32;
         let fields = match &variant.payload {
             AbiEnumPayload::Unit => Vec::new(),
             AbiEnumPayload::Tuple(fields) | AbiEnumPayload::Struct(fields) => fields
                 .iter()
-                .map(|f| self.lower_variant_field(f, scope))
+                .map(|f| self.lower_variant_field(f, scope, size_ctx, encode_ctx, decode_ctx))
                 .collect(),
         };
         CSharpEnumVariant {
@@ -589,6 +658,9 @@ impl<'a> CSharpLowerer<'a> {
         &self,
         field: &AbiEnumField,
         scope: &emit::ShadowScope,
+        size_ctx: &mut emit::CSharpEmitContext,
+        encode_ctx: &mut emit::CSharpEmitContext,
+        decode_ctx: &mut emit::CSharpEmitContext,
     ) -> CSharpRecordField {
         let prefixed = Self::prefix_write_seq(&field.encode, "_v");
         let csharp_type = self
@@ -598,9 +670,9 @@ impl<'a> CSharpLowerer<'a> {
         CSharpRecordField {
             name: NamingConvention::property_name(field.name.as_str()),
             csharp_type,
-            wire_decode_expr: emit::emit_reader_read(&field.decode, Some(scope)),
-            wire_size_expr: emit::emit_size_expr(&prefixed.size),
-            wire_encode_expr: emit::emit_write_expr(&prefixed, "wire"),
+            wire_decode_expr: emit::emit_reader_read_shared(&field.decode, Some(scope), decode_ctx),
+            wire_size_expr: emit::emit_size_expr_shared(&prefixed.size, size_ctx),
+            wire_encode_expr: emit::emit_write_expr_shared(&prefixed, "wire", encode_ctx),
         }
     }
 
@@ -684,10 +756,12 @@ impl<'a> CSharpLowerer<'a> {
         } else {
             CSharpReturnKind::Direct
         };
+        let mut ctor_size_ctx = emit::CSharpEmitContext::default();
+        let mut ctor_encode_ctx = emit::CSharpEmitContext::default();
         let wire_writers: Vec<CSharpWireWriter> = call
             .params
             .iter()
-            .filter_map(|p| self.wire_writer_for_param(p))
+            .filter_map(|p| self.wire_writer_for_param(p, &mut ctor_size_ctx, &mut ctor_encode_ctx))
             .collect();
         let param_defs = ctor.params();
         let params: Vec<CSharpParam> = param_defs
@@ -742,9 +816,13 @@ impl<'a> CSharpLowerer<'a> {
         } else {
             &call.params[1..]
         };
+        let mut method_size_ctx = emit::CSharpEmitContext::default();
+        let mut method_encode_ctx = emit::CSharpEmitContext::default();
         let wire_writers: Vec<CSharpWireWriter> = explicit_abi_params
             .iter()
-            .filter_map(|p| self.wire_writer_for_param(p))
+            .filter_map(|p| {
+                self.wire_writer_for_param(p, &mut method_size_ctx, &mut method_encode_ctx)
+            })
             .collect();
         let params: Vec<CSharpParam> = method_def
             .params
@@ -763,7 +841,14 @@ impl<'a> CSharpLowerer<'a> {
         })
     }
 
-    fn lower_record_field(&self, record_id: &RecordId, field: &FieldDef) -> CSharpRecordField {
+    fn lower_record_field(
+        &self,
+        record_id: &RecordId,
+        field: &FieldDef,
+        size_ctx: &mut emit::CSharpEmitContext,
+        encode_ctx: &mut emit::CSharpEmitContext,
+        decode_ctx: &mut emit::CSharpEmitContext,
+    ) -> CSharpRecordField {
         let decode_seq = self
             .record_field_read_seq(record_id, &field.name)
             .expect("record field decode ops");
@@ -776,9 +861,9 @@ impl<'a> CSharpLowerer<'a> {
         CSharpRecordField {
             name: NamingConvention::property_name(field.name.as_str()),
             csharp_type,
-            wire_decode_expr: emit::emit_reader_read(&decode_seq, None),
-            wire_size_expr: emit::emit_size_expr(&encode_seq.size),
-            wire_encode_expr: emit::emit_write_expr(&encode_seq, "wire"),
+            wire_decode_expr: emit::emit_reader_read_shared(&decode_seq, None, decode_ctx),
+            wire_size_expr: emit::emit_size_expr_shared(&encode_seq.size, size_ctx),
+            wire_encode_expr: emit::emit_write_expr_shared(&encode_seq, "wire", encode_ctx),
         }
     }
 
@@ -824,15 +909,28 @@ impl<'a> CSharpLowerer<'a> {
     /// not happen for validated contracts).
     fn wire_writers_for_params(&self, function: &FunctionDef) -> Option<Vec<CSharpWireWriter>> {
         let call = self.abi_call_for_function(function)?;
+        // One size/encode context per function body so two Option
+        // params each get fresh `sizeOpt{n}` / `opt{n}` pattern-binding
+        // names — their `using var _wire_*` declarations all live in
+        // the same method scope, so counters must advance together.
+        let mut size_ctx = emit::CSharpEmitContext::default();
+        let mut encode_ctx = emit::CSharpEmitContext::default();
         Some(
             call.params
                 .iter()
-                .filter_map(|abi_param| self.wire_writer_for_param(abi_param))
+                .filter_map(|abi_param| {
+                    self.wire_writer_for_param(abi_param, &mut size_ctx, &mut encode_ctx)
+                })
                 .collect(),
         )
     }
 
-    fn wire_writer_for_param(&self, param: &AbiParam) -> Option<CSharpWireWriter> {
+    fn wire_writer_for_param(
+        &self,
+        param: &AbiParam,
+        size_ctx: &mut emit::CSharpEmitContext,
+        encode_ctx: &mut emit::CSharpEmitContext,
+    ) -> Option<CSharpWireWriter> {
         let encode_ops = match &param.role {
             ParamRole::Input {
                 encode_ops: Some(encode_ops),
@@ -846,12 +944,12 @@ impl<'a> CSharpLowerer<'a> {
         let param_name = param.name.as_str().to_string();
         let binding_name = format!("_wire_{}", param_name);
         let bytes_binding_name = format!("_{}Bytes", NamingConvention::field_name(&param_name));
-        let encode_expr = emit::emit_write_expr(&encode_ops, &binding_name);
+        let encode_expr = emit::emit_write_expr_shared(&encode_ops, &binding_name, encode_ctx);
         Some(CSharpWireWriter {
             binding_name,
             bytes_binding_name,
             param_name,
-            size_expr: emit::emit_size_expr(&encode_ops.size),
+            size_expr: emit::emit_size_expr_shared(&encode_ops.size, size_ctx),
             encode_expr,
         })
     }
@@ -881,10 +979,8 @@ impl<'a> CSharpLowerer<'a> {
                 layout: VecLayout::Encoded,
                 ..
             } => true,
-            WriteOp::Option { .. }
-            | WriteOp::Result { .. }
-            | WriteOp::Builtin { .. }
-            | WriteOp::Custom { .. } => {
+            WriteOp::Option { .. } => true,
+            WriteOp::Result { .. } | WriteOp::Builtin { .. } | WriteOp::Custom { .. } => {
                 todo!("C# backend has not yet implemented param support for {op:?}")
             }
         }

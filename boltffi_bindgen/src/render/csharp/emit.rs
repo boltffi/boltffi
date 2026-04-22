@@ -259,6 +259,8 @@ pub struct CSharpEmitContext {
     write_loop_index: usize,
     read_closure_index: usize,
     size_loop_index: usize,
+    write_option_bind_index: usize,
+    size_option_bind_index: usize,
 }
 
 impl CSharpEmitContext {
@@ -278,6 +280,28 @@ impl CSharpEmitContext {
         let i = self.size_loop_index;
         self.size_loop_index += 1;
         format!("sizeItem{}", i)
+    }
+
+    /// Fresh pattern-variable name for the non-null binding inside a
+    /// `WriteOp::Option` encode statement. Write and size use different
+    /// name prefixes because pattern variables declared in `is { } v`
+    /// leak into the enclosing method scope — a shared `opt0` between
+    /// the WireWriter-size ternary and the encode `if` statement would
+    /// redeclare the same local in one scope.
+    fn next_write_option_bind_var(&mut self) -> String {
+        let i = self.write_option_bind_index;
+        self.write_option_bind_index += 1;
+        format!("opt{}", i)
+    }
+
+    /// Fresh pattern-variable name for the non-null binding inside a
+    /// `SizeExpr::OptionSize` size expression. Distinct from the write
+    /// prefix so the two emissions can coexist in one function body
+    /// without colliding. See [`Self::next_write_option_bind_var`].
+    fn next_size_option_bind_var(&mut self) -> String {
+        let i = self.size_option_bind_index;
+        self.size_option_bind_index += 1;
+        format!("sizeOpt{}", i)
     }
 }
 
@@ -350,8 +374,32 @@ fn csharp_type_for_inner(ty: &TypeExpr) -> String {
         TypeExpr::Record(id) => NamingConvention::class_name(id.as_str()),
         TypeExpr::Enum(id) => NamingConvention::class_name(id.as_str()),
         TypeExpr::Vec(inner) => format!("{}[]", csharp_type_for_inner(inner)),
+        TypeExpr::Option(inner) => format!("{}?", csharp_type_for_inner(inner)),
         other => todo!(
             "csharp_type_for_inner: Vec element {:?} is not yet supported by the C# backend",
+            other
+        ),
+    }
+}
+
+/// C# type literal for the unwrapped payload of a `ReadOp::Option`.
+/// Used by the Option read emit to stamp a `(T?)null` cast on the null
+/// branch of the ternary — without it, the compiler infers the
+/// conditional as `int` (value types) or bare `null` (references),
+/// both of which fail to round-trip back into `int?` / `string?`.
+/// Derived from the Option's own inner `ReadSeq` so emit does not
+/// need the original `TypeExpr` threaded alongside the seq.
+fn csharp_type_for_read_seq_inner(seq: &ReadSeq) -> String {
+    let op = seq.ops.first().expect("option inner read op");
+    match op {
+        ReadOp::Primitive { primitive, .. } => super::mappings::csharp_type(*primitive).to_string(),
+        ReadOp::String { .. } => "string".to_string(),
+        ReadOp::Record { id, .. } => NamingConvention::class_name(id.as_str()),
+        ReadOp::Enum { id, .. } => NamingConvention::class_name(id.as_str()),
+        ReadOp::Vec { element_type, .. } => format!("{}[]", csharp_type_for_inner(element_type)),
+        ReadOp::Option { some, .. } => format!("{}?", csharp_type_for_read_seq_inner(some)),
+        other => todo!(
+            "csharp_type_for_read_seq_inner: option inner {:?} is not yet supported by the C# backend",
             other
         ),
     }
@@ -381,6 +429,18 @@ pub struct ShadowScope<'a> {
 pub fn emit_reader_read(seq: &ReadSeq, scope: Option<&ShadowScope>) -> String {
     let mut ctx = CSharpEmitContext::default();
     emit_reader_read_with_context(seq, scope, &mut ctx)
+}
+
+/// Same as [`emit_reader_read`] but lets the caller thread a shared
+/// [`CSharpEmitContext`] across multiple emissions (e.g. all fields of
+/// one record) so pattern-binding names do not collide in the enclosing
+/// method scope.
+pub fn emit_reader_read_shared(
+    seq: &ReadSeq,
+    scope: Option<&ShadowScope>,
+    ctx: &mut CSharpEmitContext,
+) -> String {
+    emit_reader_read_with_context(seq, scope, ctx)
 }
 
 fn emit_reader_read_with_context(
@@ -419,6 +479,15 @@ fn emit_reader_read_with_context(
         } => {
             let class_name = NamingConvention::class_name(id.as_str());
             format!("{}.Decode(reader)", qualify_if_shadowed(&class_name, scope))
+        }
+        ReadOp::Option { some, .. } => {
+            let inner = emit_reader_read_with_context(some, scope, ctx);
+            let inner_type = csharp_type_for_read_seq_inner(some);
+            format!(
+                "reader.ReadU8() == 0 ? ({inner_type}?)null : {inner}",
+                inner_type = inner_type,
+                inner = inner,
+            )
         }
         ReadOp::Vec {
             element_type: TypeExpr::Primitive(p),
@@ -490,6 +559,18 @@ pub fn emit_write_expr(seq: &WriteSeq, writer_name: &str) -> String {
     emit_write_expr_with_context(seq, writer_name, &mut ctx)
 }
 
+/// Same as [`emit_write_expr`] but shares a [`CSharpEmitContext`] across
+/// calls. Used when emitting multiple fields of one record / variant so
+/// their `is { } opt{n}` pattern bindings get fresh names and do not
+/// collide in the enclosing method scope.
+pub fn emit_write_expr_shared(
+    seq: &WriteSeq,
+    writer_name: &str,
+    ctx: &mut CSharpEmitContext,
+) -> String {
+    emit_write_expr_with_context(seq, writer_name, ctx)
+}
+
 fn emit_write_expr_with_context(
     seq: &WriteSeq,
     writer_name: &str,
@@ -519,6 +600,19 @@ fn emit_write_expr_with_context(
             layout: EnumLayout::CStyle { .. } | EnumLayout::Data { .. },
             ..
         } => format!("{}.WireEncodeTo({})", render_value(value), writer_name),
+        WriteOp::Option { value, some } => {
+            let option_expr = render_value(value);
+            let inner = emit_write_expr_with_context(some, writer_name, ctx);
+            let bind = ctx.next_write_option_bind_var();
+            let remapped_inner = replace_identifier_occurrences(&inner, "v", &bind);
+            format!(
+                "if ({option_expr} is {{ }} {bind}) {{ {writer}.WriteU8((byte)1); {remapped_inner}; }} else {{ {writer}.WriteU8((byte)0); }}",
+                option_expr = option_expr,
+                bind = bind,
+                writer = writer_name,
+                remapped_inner = remapped_inner,
+            )
+        }
         WriteOp::Vec {
             value,
             element_type: TypeExpr::Primitive(p),
@@ -586,6 +680,14 @@ pub fn emit_size_expr(size: &SizeExpr) -> String {
     emit_size_expr_with_context(size, &mut ctx)
 }
 
+/// Same as [`emit_size_expr`] but threads a shared
+/// [`CSharpEmitContext`] so sibling size contributions (e.g. record
+/// fields summed into one `WireEncodedSize`) get distinct `sizeOpt{n}`
+/// pattern-binding names instead of all redeclaring `sizeOpt0`.
+pub fn emit_size_expr_shared(size: &SizeExpr, ctx: &mut CSharpEmitContext) -> String {
+    emit_size_expr_with_context(size, ctx)
+}
+
 fn emit_size_expr_with_context(size: &SizeExpr, ctx: &mut CSharpEmitContext) -> String {
     match size {
         SizeExpr::Fixed(value) => value.to_string(),
@@ -603,6 +705,18 @@ fn emit_size_expr_with_context(size: &SizeExpr, ctx: &mut CSharpEmitContext) -> 
                 .collect::<Vec<_>>()
                 .join(" + ");
             format!("({})", rendered)
+        }
+        SizeExpr::OptionSize { value, inner } => {
+            let option_expr = render_value(value);
+            let inner_expr = emit_size_expr_with_context(inner, ctx);
+            let bind = ctx.next_size_option_bind_var();
+            let remapped_inner = replace_identifier_occurrences(&inner_expr, "v", &bind);
+            format!(
+                "(1 + ({option_expr} is {{ }} {bind} ? {remapped_inner} : 0))",
+                option_expr = option_expr,
+                bind = bind,
+                remapped_inner = remapped_inner,
+            )
         }
         SizeExpr::VecSize {
             value,
@@ -2380,6 +2494,390 @@ mod tests {
             "(4 + this.Points.Length * 16)",
             "the size expression accounts for the 4-byte length prefix and the element stride \
              (two f64s → 16 bytes per Point)",
+        );
+    }
+
+    /// `echo_optional_i32(Option<i32>) -> Option<i32>` is the canonical
+    /// Option-over-primitive shape. The public wrapper must expose `int?`
+    /// on both sides; the wire codec must: (a) size-prefix with the 1-byte
+    /// tag, (b) encode via the `is { } opt0` pattern binding so the
+    /// unwrapped value is named once, and (c) decode with an explicit
+    /// `(int?)null` cast on the null branch so the conditional's type
+    /// resolves to `int?` instead of `int` or bare `null`.
+    #[test]
+    fn emit_option_primitive_round_trip_uses_tagged_wire_encoding() {
+        let mut contract = empty_contract();
+        contract.functions.push(function_with_types(
+            "echo_optional_i32",
+            vec![(
+                "v",
+                TypeExpr::Option(Box::new(TypeExpr::Primitive(PrimitiveType::I32))),
+            )],
+            ReturnDef::Value(TypeExpr::Option(Box::new(TypeExpr::Primitive(
+                PrimitiveType::I32,
+            )))),
+        ));
+
+        let src = emit_contract(&contract).combined_source();
+
+        assert_source_contains(
+            &src,
+            "public static int? EchoOptionalI32(int? v)",
+            "the public wrapper exposes the Option<i32> param and return as int? on both sides",
+        );
+        assert_source_contains(
+            &src,
+            "using var _wire_v = new WireWriter((1 + (v is { } sizeOpt0 ? 4 : 0)));",
+            "the WireWriter is rented with 1 byte for the tag plus the inner size when present, \
+             using the non-null pattern binding under a size-specific prefix so it doesn't \
+             collide with the write-side `opt0` in the same method scope",
+        );
+        assert_source_contains(
+            &src,
+            "if (v is { } opt0) { _wire_v.WriteU8((byte)1); _wire_v.WriteI32(opt0); } \
+             else { _wire_v.WriteU8((byte)0); }",
+            "the encode body uses the non-null pattern binding to name the unwrapped value \
+             once for both the tag write and the primitive write",
+        );
+        assert_source_contains(
+            &src,
+            "internal static extern FfiBuf EchoOptionalI32(byte[] v, UIntPtr vLen);",
+            "the DllImport takes the option as a wire-encoded byte[] + length pair and \
+             returns an FfiBuf carrying the tagged response",
+        );
+        assert_source_contains(
+            &src,
+            "var reader = new WireReader(_buf); \
+             return reader.ReadU8() == 0 ? (int?)null : reader.ReadI32();",
+            "the return body binds a reader local, reads the 1-byte tag, and casts null on \
+             the missing branch so the conditional resolves to int? rather than bare null",
+        );
+        assert_source_contains(
+            &src,
+            "NativeMethods.FreeBuf(_buf);",
+            "the FfiBuf is freed in a finally block, same as every other wire-decoded return",
+        );
+    }
+
+    /// `find_even(i32) -> Option<i32>` is the minimal "Option return, no
+    /// Option param" shape. The param side stays direct (int passes by
+    /// value across P/Invoke), but the return still rides the wire path
+    /// because an Option's 1-byte tag + payload doesn't line up with any
+    /// CLR primitive layout.
+    #[test]
+    fn emit_function_returning_option_primitive_keeps_direct_param_but_wires_return() {
+        let mut contract = empty_contract();
+        contract.functions.push(function_with_types(
+            "find_even",
+            vec![("value", TypeExpr::Primitive(PrimitiveType::I32))],
+            ReturnDef::Value(TypeExpr::Option(Box::new(TypeExpr::Primitive(
+                PrimitiveType::I32,
+            )))),
+        ));
+
+        let src = emit_contract(&contract).combined_source();
+
+        assert_source_contains(
+            &src,
+            "public static int? FindEven(int value)",
+            "the wrapper exposes the i32 param directly and the Option<i32> return as int?",
+        );
+        assert_source_contains(
+            &src,
+            "internal static extern FfiBuf FindEven(int value);",
+            "the DllImport keeps the i32 param direct and returns an FfiBuf for the tagged option",
+        );
+        assert_source_contains(
+            &src,
+            "var reader = new WireReader(_buf); \
+             return reader.ReadU8() == 0 ? (int?)null : reader.ReadI32();",
+            "the return body reads the option tag and either returns null or the decoded i32",
+        );
+        assert_source_lacks(
+            &src,
+            "using var _wire_value",
+            "a direct-param i32 should not get a WireWriter setup, even when the return is Option",
+        );
+    }
+
+    /// Generated `.cs` files must opt in to `#nullable enable` so
+    /// `int?` / `string?` compile under consumer projects that have
+    /// `<TreatWarningsAsErrors>` turned on. Every file — preamble, record,
+    /// C-style enum, data enum — carries the directive, so consumers are
+    /// free to leave their own csproj on `<Nullable>disable</Nullable>`.
+    #[test]
+    fn emit_every_generated_file_opts_in_to_nullable_annotations() {
+        let mut contract = empty_contract();
+        contract.catalog.insert_record(record_with_fields(
+            "point",
+            true,
+            vec![
+                ("x", TypeExpr::Primitive(PrimitiveType::F64)),
+                ("y", TypeExpr::Primitive(PrimitiveType::F64)),
+            ],
+        ));
+        contract.catalog.insert_enum(EnumDef {
+            id: EnumId::new("status"),
+            repr: EnumRepr::CStyle {
+                tag_type: PrimitiveType::I32,
+                variants: vec![CStyleVariant {
+                    name: "Active".into(),
+                    discriminant: 0,
+                    doc: None,
+                }],
+            },
+            is_error: false,
+            constructors: vec![],
+            methods: vec![],
+            doc: None,
+            deprecated: None,
+        });
+        contract.catalog.insert_enum(EnumDef {
+            id: EnumId::new("shape"),
+            repr: EnumRepr::Data {
+                tag_type: PrimitiveType::I32,
+                variants: vec![DataVariant {
+                    name: "Circle".into(),
+                    discriminant: 0,
+                    payload: VariantPayload::Struct(vec![FieldDef {
+                        name: FieldName::new("radius"),
+                        type_expr: TypeExpr::Primitive(PrimitiveType::F64),
+                        doc: None,
+                        default: None,
+                    }]),
+                    doc: None,
+                }],
+            },
+            is_error: false,
+            constructors: vec![],
+            methods: vec![],
+            doc: None,
+            deprecated: None,
+        });
+        contract.functions.push(primitive_function(
+            "add",
+            vec![("a", PrimitiveType::I32), ("b", PrimitiveType::I32)],
+            ReturnDef::Value(TypeExpr::Primitive(PrimitiveType::I32)),
+        ));
+
+        let output = emit_contract(&contract);
+
+        for file in &output.files {
+            assert!(
+                file.source.contains("#nullable enable"),
+                "expecting #nullable enable in {} but not found:\n{}",
+                file.file_name,
+                file.source,
+            );
+        }
+    }
+
+    /// `Option<String>` exercises the variable-width inner: the size
+    /// expression must include the 4-byte length prefix plus the UTF-8
+    /// byte count of the unwrapped string, threaded through the same
+    /// `sizeOpt0` pattern binding so the inner's `v` identifier resolves
+    /// to the non-null value without recomputing the option.
+    #[test]
+    fn emit_option_string_renders_utf8_sized_wire_payload() {
+        let mut contract = empty_contract();
+        contract.functions.push(function_with_types(
+            "echo_optional_string",
+            vec![("v", TypeExpr::Option(Box::new(TypeExpr::String)))],
+            ReturnDef::Value(TypeExpr::Option(Box::new(TypeExpr::String))),
+        ));
+
+        let src = emit_contract(&contract).combined_source();
+
+        assert_source_contains(
+            &src,
+            "public static string? EchoOptionalString(string? v)",
+            "Option<String> renders as string? on both sides under #nullable enable",
+        );
+        assert_source_contains(
+            &src,
+            "using var _wire_v = new WireWriter((1 + (v is { } sizeOpt0 ? (4 + Encoding.UTF8.GetByteCount(sizeOpt0)) : 0)));",
+            "the size sums the 1-byte tag with the 4-byte length prefix and the payload's UTF-8 byte count",
+        );
+        assert_source_contains(
+            &src,
+            "if (v is { } opt0) { _wire_v.WriteU8((byte)1); _wire_v.WriteString(opt0); } else { _wire_v.WriteU8((byte)0); }",
+            "the encode dispatches to WriteString on the unwrapped value",
+        );
+        assert_source_contains(
+            &src,
+            "var reader = new WireReader(_buf); return reader.ReadU8() == 0 ? (string?)null : reader.ReadString();",
+            "the decode casts the null branch to string? so the conditional resolves to the nullable reference type",
+        );
+    }
+
+    /// `Option<BlittableRecord>` still rides the wire path — the 1-byte
+    /// tag in front of the record forces encode/decode, even though the
+    /// record itself is `#[repr(C)]` and could otherwise cross P/Invoke
+    /// by value. Encode dispatches to the record's `WireEncodeTo`;
+    /// decode to `Point.Decode`. The null-branch cast must be `(Point?)`.
+    #[test]
+    fn emit_option_blittable_record_writes_and_decodes_through_record_helpers() {
+        let mut contract = empty_contract();
+        contract.catalog.insert_record(record_with_fields(
+            "point",
+            true,
+            vec![
+                ("x", TypeExpr::Primitive(PrimitiveType::F64)),
+                ("y", TypeExpr::Primitive(PrimitiveType::F64)),
+            ],
+        ));
+        contract.functions.push(function_with_types(
+            "echo_optional_point",
+            vec![(
+                "v",
+                TypeExpr::Option(Box::new(TypeExpr::Record(RecordId::new("point")))),
+            )],
+            ReturnDef::Value(TypeExpr::Option(Box::new(TypeExpr::Record(RecordId::new(
+                "point",
+            ))))),
+        ));
+
+        let src = emit_contract(&contract).combined_source();
+
+        assert_source_contains(
+            &src,
+            "public static Point? EchoOptionalPoint(Point? v)",
+            "Option<Point> renders as Point? — value-type inner desugars to Nullable<Point>",
+        );
+        assert_source_contains(
+            &src,
+            "using var _wire_v = new WireWriter((1 + (v is { } sizeOpt0 ? 16 : 0)));",
+            "Point is two f64 fields so the payload contributes a fixed 16 bytes after the 1-byte tag",
+        );
+        assert_source_contains(
+            &src,
+            "if (v is { } opt0) { _wire_v.WriteU8((byte)1); opt0.WireEncodeTo(_wire_v); } else { _wire_v.WriteU8((byte)0); }",
+            "encode dispatches to the record's own WireEncodeTo on the unwrapped value",
+        );
+        assert_source_contains(
+            &src,
+            "var reader = new WireReader(_buf); return reader.ReadU8() == 0 ? (Point?)null : Point.Decode(reader);",
+            "decode casts the null branch to Point? and otherwise reconstructs through Point.Decode",
+        );
+    }
+
+    /// `Option<CStyleEnum>` must route through the wire path because the
+    /// 1-byte tag defeats direct P/Invoke marshaling. Encode calls the
+    /// enum's `WireEncodeTo` extension method; decode calls
+    /// `{Name}Wire.Decode` — the same helpers used when a C-style enum
+    /// embeds inside a wire-encoded record.
+    #[test]
+    fn emit_option_c_style_enum_goes_through_wire_helpers() {
+        let mut contract = empty_contract();
+        contract.catalog.insert_enum(EnumDef {
+            id: EnumId::new("status"),
+            repr: EnumRepr::CStyle {
+                tag_type: PrimitiveType::I32,
+                variants: vec![
+                    CStyleVariant {
+                        name: "Active".into(),
+                        discriminant: 0,
+                        doc: None,
+                    },
+                    CStyleVariant {
+                        name: "Inactive".into(),
+                        discriminant: 1,
+                        doc: None,
+                    },
+                ],
+            },
+            is_error: false,
+            constructors: vec![],
+            methods: vec![],
+            doc: None,
+            deprecated: None,
+        });
+        contract.functions.push(function_with_types(
+            "echo_optional_status",
+            vec![(
+                "v",
+                TypeExpr::Option(Box::new(TypeExpr::Enum(EnumId::new("status")))),
+            )],
+            ReturnDef::Value(TypeExpr::Option(Box::new(TypeExpr::Enum(EnumId::new(
+                "status",
+            ))))),
+        ));
+
+        let src = emit_contract(&contract).combined_source();
+
+        assert_source_contains(
+            &src,
+            "public static Status? EchoOptionalStatus(Status? v)",
+            "Option<Status> renders as Status? — C# enums are value types, so the nullable is Nullable<Status>",
+        );
+        assert_source_contains(
+            &src,
+            "if (v is { } opt0) { _wire_v.WriteU8((byte)1); opt0.WireEncodeTo(_wire_v); } else { _wire_v.WriteU8((byte)0); }",
+            "encode dispatches to the StatusWire extension method on the unwrapped enum value",
+        );
+        assert_source_contains(
+            &src,
+            "var reader = new WireReader(_buf); return reader.ReadU8() == 0 ? (Status?)null : StatusWire.Decode(reader);",
+            "decode calls StatusWire.Decode on the Some branch, null-casts on the None branch",
+        );
+    }
+
+    /// `Option<DataEnum>` returns an `{Name}?` — a nullable reference
+    /// because the generated data enum is an `abstract record`. Decode
+    /// dispatches to the enum's `Decode` static, which walks the wire
+    /// tag through the variant switch inside the reader.
+    #[test]
+    fn emit_option_data_enum_decodes_through_enum_static_decode() {
+        let mut contract = empty_contract();
+        contract.catalog.insert_enum(EnumDef {
+            id: EnumId::new("shape"),
+            repr: EnumRepr::Data {
+                tag_type: PrimitiveType::I32,
+                variants: vec![
+                    DataVariant {
+                        name: "Circle".into(),
+                        discriminant: 0,
+                        payload: VariantPayload::Struct(vec![FieldDef {
+                            name: FieldName::new("radius"),
+                            type_expr: TypeExpr::Primitive(PrimitiveType::F64),
+                            doc: None,
+                            default: None,
+                        }]),
+                        doc: None,
+                    },
+                    DataVariant {
+                        name: "Square".into(),
+                        discriminant: 1,
+                        payload: VariantPayload::Unit,
+                        doc: None,
+                    },
+                ],
+            },
+            is_error: false,
+            constructors: vec![],
+            methods: vec![],
+            doc: None,
+            deprecated: None,
+        });
+        contract.functions.push(function_with_types(
+            "find_shape",
+            vec![("id", TypeExpr::Primitive(PrimitiveType::I32))],
+            ReturnDef::Value(TypeExpr::Option(Box::new(TypeExpr::Enum(EnumId::new(
+                "shape",
+            ))))),
+        ));
+
+        let src = emit_contract(&contract).combined_source();
+
+        assert_source_contains(
+            &src,
+            "public static Shape? FindShape(int id)",
+            "Option<Shape> renders as Shape? — Shape is an abstract record, so `?` means nullable reference",
+        );
+        assert_source_contains(
+            &src,
+            "var reader = new WireReader(_buf); return reader.ReadU8() == 0 ? (Shape?)null : Shape.Decode(reader);",
+            "decode reads the present tag, then either null-casts or dispatches to the enum's Decode",
         );
     }
 }
