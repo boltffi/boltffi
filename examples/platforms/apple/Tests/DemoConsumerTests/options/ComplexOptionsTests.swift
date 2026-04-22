@@ -29,5 +29,15 @@ final class ComplexOptionsTests: XCTestCase {
         XCTAssertEqual(findApiResult(code: 1), .errorCode(-1))
         XCTAssertEqual(findApiResult(code: 2), .errorWithData(code: -1, detail: -2))
         XCTAssertNil(findApiResult(code: 99))
+
+        // Vec<Option<T>>: each element carries its own present/absent
+        // tag, exercising the encoded-array path composed with the
+        // Option codec inside a single wire payload.
+        let mixed: [Int32?] = [1, nil, 3, nil, 5]
+        XCTAssertEqual(echoVecOptionalI32(v: mixed), mixed)
+        let empty: [Int32?] = []
+        XCTAssertEqual(echoVecOptionalI32(v: empty), empty)
+        let allNone: [Int32?] = [nil, nil, nil]
+        XCTAssertEqual(echoVecOptionalI32(v: allNone), allNone)
     }
 }

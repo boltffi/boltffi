@@ -88,3 +88,13 @@ pub fn find_api_result(code: i32) -> Option<ApiResult> {
         _ => None,
     }
 }
+
+/// Round-trips a vector of optional i32s. Exercises `Vec<Option<T>>` —
+/// the encoded-array path where every element carries its own 1-byte
+/// Option tag. Without this fixture each backend's Option support
+/// would be provable at the function-signature level only, not in
+/// composition with Vec.
+#[export]
+pub fn echo_vec_optional_i32(v: Vec<Option<i32>>) -> Vec<Option<i32>> {
+    v
+}

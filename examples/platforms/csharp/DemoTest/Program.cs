@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using Demo;
 using static Demo.Demo;
 
@@ -35,6 +36,8 @@ public static class DemoTest
         TestEnumVecs();
         TestVecFields();
         TestOptions();
+        TestOptionsInRecords();
+        TestOptionsWithVec();
         Console.WriteLine("All tests passed!");
         return 0;
     }
@@ -957,6 +960,132 @@ public static class DemoTest
             "FindApiResult(2) returns ErrorWithData"
         );
         Require(FindApiResult(9) == null, "FindApiResult(unknown) returns null");
+
+        Console.WriteLine("  PASS\n");
+    }
+
+    /// <summary>
+    /// Records whose fields are themselves Option&lt;T&gt;. Exercises the
+    /// shared-emit-context plumbing: two Option fields on one record
+    /// must each pick fresh `sizeOpt{n}` / `opt{n}` pattern-binding
+    /// names so the sum inside `WireEncodedSize` and the statements
+    /// inside `WireEncodeTo` don't redeclare the same local. The
+    /// Decode path reads each Option through the same tag-and-branch
+    /// pattern used for top-level Option returns.
+    /// </summary>
+    private static void TestOptionsInRecords()
+    {
+        Console.WriteLine("Testing records with Option fields...");
+
+        // UserProfile: one optional string field, one optional f64.
+        // The record round-trip exercises encode + decode together.
+        UserProfile alice = MakeUserProfile("Alice", 30u, "alice@example.com", 92.5);
+        Require(alice.Name == "Alice", "MakeUserProfile.Name");
+        Require(alice.Age == 30u, "MakeUserProfile.Age");
+        Require(alice.Email == "alice@example.com", "MakeUserProfile.Email(Some)");
+        Require(alice.Score == 92.5, "MakeUserProfile.Score(Some)");
+
+        UserProfile newUser = MakeUserProfile("Bob", 25u, null, null);
+        Require(newUser.Email == null, "MakeUserProfile.Email(None)");
+        Require(newUser.Score == null, "MakeUserProfile.Score(None)");
+
+        UserProfile echoed = EchoUserProfile(alice);
+        Require(echoed == alice, "EchoUserProfile round-trip (all fields Some)");
+
+        UserProfile echoedNew = EchoUserProfile(newUser);
+        Require(echoedNew == newUser, "EchoUserProfile round-trip (Option fields None)");
+
+        // Mixed present/absent: one Option field is Some, the other is None.
+        UserProfile mixed = MakeUserProfile("Carol", 40u, "carol@example.com", null);
+        Require(mixed.Email == "carol@example.com", "MakeUserProfile.Email(Some) with Score(None)");
+        Require(mixed.Score == null, "MakeUserProfile.Score(None) with Email(Some)");
+        Require(EchoUserProfile(mixed) == mixed, "EchoUserProfile round-trip (mixed Option fields)");
+
+        // UTF-8 sentinels inside the optional string field.
+        UserProfile emoji = MakeUserProfile("🌍 User", 42u, "café@example.com", 3.14);
+        UserProfile echoedEmoji = EchoUserProfile(emoji);
+        Require(echoedEmoji == emoji, "EchoUserProfile round-trip (UTF-8 in Option fields)");
+
+        Require(
+            UserDisplayName(alice) == "Alice <alice@example.com>",
+            "UserDisplayName when Email is Some"
+        );
+        Require(UserDisplayName(newUser) == "Bob", "UserDisplayName when Email is None");
+
+        // SearchResult: second record shape with Option fields, exercises
+        // the same code path through a different record class name to
+        // catch any accidental per-record coupling in the generator.
+        SearchResult hits = new SearchResult("cats", 42u, "cursor_abc", 0.97);
+        Require(EchoSearchResult(hits) == hits, "EchoSearchResult round-trip (all Some)");
+        Require(HasMoreResults(hits), "HasMoreResults true when NextCursor is Some");
+
+        SearchResult tail = new SearchResult("cats", 42u, null, null);
+        Require(EchoSearchResult(tail) == tail, "EchoSearchResult round-trip (Option fields None)");
+        Require(!HasMoreResults(tail), "HasMoreResults false when NextCursor is None");
+
+        Console.WriteLine("  PASS\n");
+    }
+
+    /// <summary>
+    /// Option composed with Vec in both directions. `Option&lt;Vec&lt;T&gt;&gt;`
+    /// wraps the entire array in the 1-byte tag; `Vec&lt;Option&lt;T&gt;&gt;`
+    /// writes the count, then a tag per element. Both ride the
+    /// encoded-array path on the wire because the element width varies.
+    /// </summary>
+    private static void TestOptionsWithVec()
+    {
+        Console.WriteLine("Testing Option composed with Vec...");
+
+        // Option<Vec<T>>: the Option tag guards an entire length-prefixed
+        // array. Some(vec) and Some(empty_vec) are distinct from None.
+        var numbers = EchoOptionalVec(new[] { 1, 2, 3 });
+        Require(numbers != null && numbers.SequenceEqual(new[] { 1, 2, 3 }), "EchoOptionalVec(Some)");
+        Require(
+            EchoOptionalVec(Array.Empty<int>())!.Length == 0,
+            "EchoOptionalVec(Some empty) stays Some"
+        );
+        Require(EchoOptionalVec(null) == null, "EchoOptionalVec(None)");
+
+        Require(OptionalVecLength(new[] { 10, 20, 30 }) == 3u, "OptionalVecLength(Some)");
+        Require(OptionalVecLength(null) == null, "OptionalVecLength(None)");
+
+        // Option<Vec<_>>-returning functions: the wire return is
+        // FfiBuf, decoded through ReadU8() + ReadLengthPrefixedBlittableArray
+        // (primitive elements) or ReadEncodedArray (variable-width).
+        Require(
+            FindNumbers(3)!.SequenceEqual(new[] { 0, 1, 2 }),
+            "FindNumbers(positive) returns Some(vec)"
+        );
+        Require(FindNumbers(-1) == null, "FindNumbers(non-positive) returns null");
+
+        var names = FindNames(3);
+        Require(
+            names != null && names.SequenceEqual(new[] { "Name_0", "Name_1", "Name_2" }),
+            "FindNames(positive) returns Some(vec of strings)"
+        );
+        Require(FindNames(0) == null, "FindNames(zero) returns null");
+
+        // Vec<Option<T>>: new fixture. Each element carries its own
+        // Option tag, so the wire shape is: count (i32), then for each
+        // slot, 1-byte tag + optional i32 payload. Mixed Some/None
+        // positions in one vec surface any off-by-one errors.
+        int?[] mixed = new int?[] { 1, null, 3, null, 5 };
+        int?[] echoed = EchoVecOptionalI32(mixed);
+        Require(echoed.Length == mixed.Length, "EchoVecOptionalI32 preserves length");
+        for (int i = 0; i < mixed.Length; i++)
+        {
+            Require(echoed[i] == mixed[i], $"EchoVecOptionalI32[{i}] preserves presence and value");
+        }
+
+        Require(EchoVecOptionalI32(Array.Empty<int?>()).Length == 0, "EchoVecOptionalI32 empty");
+        Require(
+            EchoVecOptionalI32(new int?[] { null, null, null }).All(v => v == null),
+            "EchoVecOptionalI32 all-None preserved"
+        );
+        Require(
+            EchoVecOptionalI32(new int?[] { 10, 20, 30 }).SequenceEqual(new int?[] { 10, 20, 30 }),
+            "EchoVecOptionalI32 all-Some preserved"
+        );
 
         Console.WriteLine("  PASS\n");
     }

@@ -2880,4 +2880,172 @@ mod tests {
             "decode reads the present tag, then either null-casts or dispatches to the enum's Decode",
         );
     }
+
+    /// A record with two Option fields exercises the shared-emit-context
+    /// plumbing: both fields must pick fresh pattern-binding names so
+    /// `WireEncodedSize` and `WireEncodeTo` stay legal inside one method
+    /// scope. Without the shared context the second field would try to
+    /// redeclare `sizeOpt0` / `opt0` and fail at compile time.
+    #[test]
+    fn emit_record_with_two_option_fields_uses_distinct_pattern_bindings() {
+        let mut contract = empty_contract();
+        contract.catalog.insert_record(record_with_fields(
+            "user_profile",
+            false,
+            vec![
+                ("name", TypeExpr::String),
+                ("email", TypeExpr::Option(Box::new(TypeExpr::String))),
+                (
+                    "score",
+                    TypeExpr::Option(Box::new(TypeExpr::Primitive(PrimitiveType::F64))),
+                ),
+            ],
+        ));
+        contract.functions.push(function_with_types(
+            "echo_user_profile",
+            vec![("profile", TypeExpr::Record(RecordId::new("user_profile")))],
+            ReturnDef::Value(TypeExpr::Record(RecordId::new("user_profile"))),
+        ));
+
+        let output = emit_contract(&contract);
+        let record_source = output
+            .files
+            .iter()
+            .find(|f| f.file_name == "UserProfile.cs")
+            .expect("UserProfile.cs")
+            .source
+            .as_str();
+
+        // Both size bindings must appear with distinct indices; if the
+        // shared context regressed they would both be `sizeOpt0`.
+        assert_source_contains(
+            record_source,
+            "(1 + (this.Email is { } sizeOpt0 ? (4 + Encoding.UTF8.GetByteCount(sizeOpt0)) : 0)) +",
+            "the first Option field's size contribution uses sizeOpt0",
+        );
+        assert_source_contains(
+            record_source,
+            "(1 + (this.Score is { } sizeOpt1 ? 8 : 0))",
+            "the second Option field's size contribution advances to sizeOpt1 — \
+             confirms the shared emit context is threaded across sibling fields",
+        );
+        // Same story on the encode side: two Option fields, distinct
+        // `opt0` / `opt1` pattern names.
+        assert_source_contains(
+            record_source,
+            "if (this.Email is { } opt0) { wire.WriteU8((byte)1); wire.WriteString(opt0); } else { wire.WriteU8((byte)0); };",
+            "the first Option field's encode uses opt0",
+        );
+        assert_source_contains(
+            record_source,
+            "if (this.Score is { } opt1) { wire.WriteU8((byte)1); wire.WriteF64(opt1); } else { wire.WriteU8((byte)0); };",
+            "the second Option field's encode advances to opt1",
+        );
+        // Decode uses the same ternary form as Option returns.
+        assert_source_contains(
+            record_source,
+            "reader.ReadU8() == 0 ? (string?)null : reader.ReadString()",
+            "the string? field decodes through ReadString with the (string?)null cast on the None branch",
+        );
+        assert_source_contains(
+            record_source,
+            "reader.ReadU8() == 0 ? (double?)null : reader.ReadF64()",
+            "the double? field decodes through ReadF64 with the (double?)null cast on the None branch",
+        );
+    }
+
+    /// `Option<Vec<T>>` wraps the entire length-prefixed array in the
+    /// 1-byte Option tag. The wire codec is: tag byte + (when present)
+    /// the normal 4-byte length prefix + elements. The inner Vec still
+    /// uses whichever path its element type admits — for primitives,
+    /// that's the length-prefixed blittable bulk helper.
+    #[test]
+    fn emit_option_vec_of_primitive_wraps_blittable_vec_in_option_tag() {
+        let mut contract = empty_contract();
+        contract.functions.push(function_with_types(
+            "echo_optional_vec",
+            vec![(
+                "v",
+                TypeExpr::Option(Box::new(TypeExpr::Vec(Box::new(TypeExpr::Primitive(
+                    PrimitiveType::I32,
+                ))))),
+            )],
+            ReturnDef::Value(TypeExpr::Option(Box::new(TypeExpr::Vec(Box::new(
+                TypeExpr::Primitive(PrimitiveType::I32),
+            ))))),
+        ));
+
+        let src = emit_contract(&contract).combined_source();
+
+        assert_source_contains(
+            &src,
+            "public static int[]? EchoOptionalVec(int[]? v)",
+            "Option<Vec<i32>> renders as int[]? — the `?` nullability applies to the whole array",
+        );
+        assert_source_contains(
+            &src,
+            "using var _wire_v = new WireWriter((1 + (v is { } sizeOpt0 ? (4 + sizeOpt0.Length * 4) : 0)));",
+            "size sums the 1-byte Option tag with the 4-byte length prefix and the raw element bytes",
+        );
+        assert_source_contains(
+            &src,
+            "if (v is { } opt0) { _wire_v.WriteU8((byte)1); _wire_v.WriteBlittableArray(opt0); } else { _wire_v.WriteU8((byte)0); }",
+            "encode dispatches to WriteBlittableArray on the unwrapped vec — the fast path is preserved \
+             inside the Option wrapping",
+        );
+        assert_source_contains(
+            &src,
+            "var reader = new WireReader(_buf); return reader.ReadU8() == 0 ? (int[]?)null : reader.ReadLengthPrefixedBlittableArray<int>();",
+            "decode null-casts to int[]? and otherwise reads through the length-prefixed blittable helper",
+        );
+    }
+
+    /// `Vec<Option<T>>` is the nested composition: the outer vec uses
+    /// the encoded-array path (each element is variable-width because
+    /// of the Option tag), and each element carries its own 1-byte
+    /// present/absent byte plus optional payload. Proves emit can
+    /// compose the Option arm inside a Vec arm without the ABI's
+    /// placeholder identifiers colliding: the outer vec's loop var
+    /// (`item` → `item0`) and the inner Option's unwrapped value
+    /// (`v` → `opt0`) occupy separate namespaces.
+    #[test]
+    fn emit_vec_of_option_composes_per_element_tag_into_encoded_array() {
+        let mut contract = empty_contract();
+        contract.functions.push(function_with_types(
+            "echo_vec_optional_i32",
+            vec![(
+                "v",
+                TypeExpr::Vec(Box::new(TypeExpr::Option(Box::new(TypeExpr::Primitive(
+                    PrimitiveType::I32,
+                ))))),
+            )],
+            ReturnDef::Value(TypeExpr::Vec(Box::new(TypeExpr::Option(Box::new(
+                TypeExpr::Primitive(PrimitiveType::I32),
+            ))))),
+        ));
+
+        let src = emit_contract(&contract).combined_source();
+
+        assert_source_contains(
+            &src,
+            "public static int?[] EchoVecOptionalI32(int?[] v)",
+            "Vec<Option<i32>> renders as int?[] — array of Nullable<int>, not a nullable array",
+        );
+        // Write path: length prefix, foreach with a named iterator,
+        // per-element Option encoding.
+        assert_source_contains(
+            &src,
+            "_wire_v.WriteI32(v.Length); foreach (int? item0 in v) { if (item0 is { } opt0) { _wire_v.WriteU8((byte)1); _wire_v.WriteI32(opt0); } else { _wire_v.WriteU8((byte)0); }; }",
+            "encode writes the i32 length then loops each element through its own tag + payload",
+        );
+        // Decode path: ReadEncodedArray with a per-element closure
+        // that reads the tag and either returns (int?)null or the
+        // primitive.
+        assert_source_contains(
+            &src,
+            "return new WireReader(_buf).ReadEncodedArray<int?>(r0 => r0.ReadU8() == 0 ? (int?)null : r0.ReadI32());",
+            "decode walks ReadEncodedArray with a per-element closure that reads the Option tag first, \
+             null-casting on the None branch and reading the i32 payload on the Some branch",
+        );
+    }
 }

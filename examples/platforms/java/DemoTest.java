@@ -695,6 +695,18 @@ public final class DemoTest {
         assert !withoutCursor.maxScore().isPresent() : "echoSearchResult score none";
         assert !Demo.hasMoreResults(withoutCursor) : "hasMoreResults false";
 
+        java.util.List<Optional<Integer>> mixed = java.util.Arrays.asList(
+            Optional.of(1), Optional.empty(), Optional.of(3), Optional.empty(), Optional.of(5)
+        );
+        java.util.List<Optional<Integer>> echoedMixed = Demo.echoVecOptionalI32(mixed);
+        assert echoedMixed.size() == mixed.size() : "echoVecOptionalI32 size";
+        for (int i = 0; i < mixed.size(); i++) {
+            assert echoedMixed.get(i).equals(mixed.get(i))
+                : "echoVecOptionalI32[" + i + "] preserves presence and value";
+        }
+        assert Demo.echoVecOptionalI32(java.util.Collections.emptyList()).isEmpty()
+            : "echoVecOptionalI32 empty";
+
         System.out.println("  PASS\n");
     }
 
