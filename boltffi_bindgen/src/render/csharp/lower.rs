@@ -628,6 +628,7 @@ impl<'a> CSharpLowerer<'a> {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn lower_data_enum_variant(
         &self,
         abi_enum: &AbiEnum,
