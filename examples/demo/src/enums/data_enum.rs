@@ -22,6 +22,17 @@ pub enum Shape {
         c: Point,
     },
     Point,
+    /// Optional tip vertex. Exercises `Option<Record>` as a variant
+    /// field where the record type is also the name of another
+    /// variant on the same enum.
+    Apex {
+        tip: Option<Point>,
+    },
+    /// Exercises `Vec<Record>` as a variant field where the record
+    /// type is also the name of another variant on the same enum.
+    Cluster {
+        members: Vec<Point>,
+    },
 }
 
 #[data(impl)]
@@ -57,6 +68,8 @@ impl Shape {
                 ((a.x * (b.y - c.y) + b.x * (c.y - a.y) + c.x * (a.y - b.y)) / 2.0).abs()
             }
             Shape::Point => 0.0,
+            Shape::Apex { .. } => 0.0,
+            Shape::Cluster { .. } => 0.0,
         }
     }
 
@@ -66,11 +79,26 @@ impl Shape {
             Shape::Rectangle { width, height } => format!("rect {}x{}", width, height),
             Shape::Triangle { .. } => "triangle".to_string(),
             Shape::Point => "point".to_string(),
+            Shape::Apex { tip: Some(p) } => format!("apex at ({}, {})", p.x, p.y),
+            Shape::Apex { tip: None } => "apex (no tip)".to_string(),
+            Shape::Cluster { members } => format!("cluster of {}", members.len()),
         }
     }
 
     pub fn variant_count() -> u32 {
-        4
+        6
+    }
+
+    /// Returns `Some(Point)` for a positive radius, `None` otherwise.
+    /// Exercises a static method on a data enum whose return type is
+    /// `Option<Record>` where the record type is shadowed by another
+    /// variant on the same enum.
+    pub fn try_apex_point(radius: f64) -> Option<Point> {
+        if radius > 0.0 {
+            Some(Point { x: 0.0, y: radius })
+        } else {
+            None
+        }
     }
 }
 

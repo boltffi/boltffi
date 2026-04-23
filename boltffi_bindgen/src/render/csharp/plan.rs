@@ -1,7 +1,13 @@
 use std::fmt;
 
-use crate::ir::types::PrimitiveType;
+use crate::ir::codec::EnumLayout;
+use crate::ir::ops::ReadOp;
+use crate::ir::types::{PrimitiveType, TypeExpr};
 use boltffi_ffi_rules::naming::{LibraryName, Name};
+
+use super::NamingConvention;
+use super::emit::ShadowScope;
+use super::mappings;
 
 /// Represents a lowered C# module, containing everything the templates need
 /// to render a `.cs` file.
@@ -211,6 +217,65 @@ impl CSharpType {
                 Self::Nullable(Box::new((*inner).qualify_if_shadowed(shadowed, namespace)))
             }
             other => other,
+        }
+    }
+
+    /// Applies [`Self::qualify_if_shadowed`] when `scope` is `Some`.
+    pub fn qualify_if_shadowed_opt(self, scope: Option<&ShadowScope<'_>>) -> Self {
+        match scope {
+            Some(s) => self.qualify_if_shadowed(s.shadowed, s.namespace),
+            None => self,
+        }
+    }
+
+    /// Converts from a [`ReadOp`].
+    pub fn from_read_op(op: &ReadOp) -> Self {
+        match op {
+            ReadOp::Primitive { primitive, .. } => mappings::csharp_type(*primitive),
+            ReadOp::String { .. } => Self::String,
+            ReadOp::Bytes { .. } => Self::Array(Box::new(Self::Byte)),
+            ReadOp::Option { some, .. } => {
+                let inner = Self::from_read_op(some.ops.first().expect("option inner read op"));
+                Self::Nullable(Box::new(inner))
+            }
+            ReadOp::Vec { element_type, .. } => {
+                Self::Array(Box::new(Self::from_type_expr(element_type)))
+            }
+            ReadOp::Record { id, .. } => Self::Record(NamingConvention::class_name(id.as_str())),
+            ReadOp::Enum { id, layout, .. } => {
+                let class_name = NamingConvention::class_name(id.as_str());
+                match layout {
+                    EnumLayout::CStyle { .. } => Self::CStyleEnum(class_name),
+                    EnumLayout::Data { .. } | EnumLayout::Recursive => Self::DataEnum(class_name),
+                }
+            }
+            ReadOp::Custom { underlying, .. } => {
+                Self::from_read_op(underlying.ops.first().expect("custom underlying read op"))
+            }
+            ReadOp::Result { .. } | ReadOp::Builtin { .. } => {
+                todo!("CSharpType::from_read_op: {:?}", op)
+            }
+        }
+    }
+
+    /// Converts from a [`TypeExpr`]. `TypeExpr::Enum` picks [`Self::DataEnum`]
+    /// arbitrarily; all three named-type variants render the same through
+    /// [`fmt::Display`] and [`Self::qualify_if_shadowed`].
+    pub fn from_type_expr(expr: &TypeExpr) -> Self {
+        match expr {
+            TypeExpr::Void => Self::Void,
+            TypeExpr::Primitive(p) => mappings::csharp_type(*p),
+            TypeExpr::String => Self::String,
+            TypeExpr::Bytes => Self::Array(Box::new(Self::Byte)),
+            TypeExpr::Vec(inner) => Self::Array(Box::new(Self::from_type_expr(inner))),
+            TypeExpr::Option(inner) => Self::Nullable(Box::new(Self::from_type_expr(inner))),
+            TypeExpr::Record(id) => Self::Record(NamingConvention::class_name(id.as_str())),
+            TypeExpr::Enum(id) => Self::DataEnum(NamingConvention::class_name(id.as_str())),
+            TypeExpr::Result { .. }
+            | TypeExpr::Callback(_)
+            | TypeExpr::Custom(_)
+            | TypeExpr::Builtin(_)
+            | TypeExpr::Handle(_) => todo!("CSharpType::from_type_expr: {:?}", expr),
         }
     }
 
@@ -1539,5 +1604,254 @@ mod tests {
         assert_eq!(CSharpReturnKind::WireDecodeString.decode_class_name(), None);
         assert_eq!(CSharpReturnKind::Void.decode_class_name(), None);
         assert_eq!(CSharpReturnKind::Direct.decode_class_name(), None);
+    }
+
+    mod from_read_op {
+        use super::*;
+        use crate::ir::codec::{EnumLayout, VecLayout};
+        use crate::ir::ids::{EnumId, RecordId};
+        use crate::ir::ops::{OffsetExpr, ReadOp, ReadSeq, SizeExpr, WireShape};
+        use boltffi_ffi_rules::transport::EnumTagStrategy;
+
+        fn seq(op: ReadOp) -> ReadSeq {
+            ReadSeq {
+                size: SizeExpr::Fixed(0),
+                ops: vec![op],
+                shape: WireShape::Value,
+            }
+        }
+
+        fn prim(p: PrimitiveType) -> ReadOp {
+            ReadOp::Primitive {
+                primitive: p,
+                offset: OffsetExpr::Base,
+            }
+        }
+
+        fn cstyle_layout() -> EnumLayout {
+            EnumLayout::CStyle {
+                tag_type: PrimitiveType::I32,
+                tag_strategy: EnumTagStrategy::Discriminant,
+                is_error: false,
+            }
+        }
+
+        fn data_layout() -> EnumLayout {
+            EnumLayout::Data {
+                tag_type: PrimitiveType::I32,
+                tag_strategy: EnumTagStrategy::Discriminant,
+                variants: vec![],
+            }
+        }
+
+        #[test]
+        fn primitive_maps_to_backing_type() {
+            assert_eq!(
+                CSharpType::from_read_op(&prim(PrimitiveType::I32)),
+                CSharpType::Int
+            );
+            assert_eq!(
+                CSharpType::from_read_op(&prim(PrimitiveType::F64)),
+                CSharpType::Double
+            );
+        }
+
+        #[test]
+        fn string_maps_to_string() {
+            let op = ReadOp::String {
+                offset: OffsetExpr::Base,
+            };
+            assert_eq!(CSharpType::from_read_op(&op), CSharpType::String);
+        }
+
+        #[test]
+        fn record_maps_to_record_with_class_name() {
+            let op = ReadOp::Record {
+                id: RecordId::new("point"),
+                offset: OffsetExpr::Base,
+                fields: vec![],
+            };
+            assert_eq!(
+                CSharpType::from_read_op(&op),
+                CSharpType::Record("Point".to_string())
+            );
+        }
+
+        #[test]
+        fn enum_cstyle_layout_maps_to_cstyle_enum() {
+            let op = ReadOp::Enum {
+                id: EnumId::new("status"),
+                offset: OffsetExpr::Base,
+                layout: cstyle_layout(),
+            };
+            assert_eq!(
+                CSharpType::from_read_op(&op),
+                CSharpType::CStyleEnum("Status".to_string())
+            );
+        }
+
+        #[test]
+        fn enum_data_layout_maps_to_data_enum() {
+            let op = ReadOp::Enum {
+                id: EnumId::new("shape"),
+                offset: OffsetExpr::Base,
+                layout: data_layout(),
+            };
+            assert_eq!(
+                CSharpType::from_read_op(&op),
+                CSharpType::DataEnum("Shape".to_string())
+            );
+        }
+
+        #[test]
+        fn option_wraps_inner_in_nullable() {
+            let op = ReadOp::Option {
+                tag_offset: OffsetExpr::Base,
+                some: Box::new(seq(prim(PrimitiveType::I32))),
+            };
+            assert_eq!(
+                CSharpType::from_read_op(&op),
+                CSharpType::Nullable(Box::new(CSharpType::Int))
+            );
+        }
+
+        #[test]
+        fn vec_wraps_element_type_in_array() {
+            let op = ReadOp::Vec {
+                len_offset: OffsetExpr::Base,
+                element_type: TypeExpr::Record(RecordId::new("point")),
+                element: Box::new(seq(ReadOp::Record {
+                    id: RecordId::new("point"),
+                    offset: OffsetExpr::Base,
+                    fields: vec![],
+                })),
+                layout: VecLayout::Encoded,
+            };
+            assert_eq!(
+                CSharpType::from_read_op(&op),
+                CSharpType::Array(Box::new(CSharpType::Record("Point".to_string())))
+            );
+        }
+
+        #[test]
+        fn option_of_vec_of_record_nests_correctly() {
+            let inner_vec = ReadOp::Vec {
+                len_offset: OffsetExpr::Base,
+                element_type: TypeExpr::Record(RecordId::new("point")),
+                element: Box::new(seq(ReadOp::Record {
+                    id: RecordId::new("point"),
+                    offset: OffsetExpr::Base,
+                    fields: vec![],
+                })),
+                layout: VecLayout::Encoded,
+            };
+            let option_op = ReadOp::Option {
+                tag_offset: OffsetExpr::Base,
+                some: Box::new(seq(inner_vec)),
+            };
+            assert_eq!(
+                CSharpType::from_read_op(&option_op),
+                CSharpType::Nullable(Box::new(CSharpType::Array(Box::new(
+                    CSharpType::Record("Point".to_string())
+                ))))
+            );
+        }
+
+        /// Plan step 2 note: `qualify_if_shadowed` recurses through the
+        /// typed intermediate, so a shadowed `Point` inside `Option<Vec<Point>>`
+        /// still qualifies correctly.
+        #[test]
+        fn qualify_if_shadowed_reaches_through_nested_builder_output() {
+            let option_op = ReadOp::Option {
+                tag_offset: OffsetExpr::Base,
+                some: Box::new(seq(ReadOp::Vec {
+                    len_offset: OffsetExpr::Base,
+                    element_type: TypeExpr::Record(RecordId::new("point")),
+                    element: Box::new(seq(ReadOp::Record {
+                        id: RecordId::new("point"),
+                        offset: OffsetExpr::Base,
+                        fields: vec![],
+                    })),
+                    layout: VecLayout::Encoded,
+                })),
+            };
+            let ty = CSharpType::from_read_op(&option_op);
+            let shadowed: std::collections::HashSet<String> =
+                std::iter::once("Point".to_string()).collect();
+            let qualified = ty.qualify_if_shadowed(&shadowed, "Demo");
+            assert_eq!(qualified.to_string(), "global::Demo.Point[]?");
+        }
+    }
+
+    mod from_type_expr {
+        use super::*;
+        use crate::ir::ids::{EnumId, RecordId};
+
+        #[test]
+        fn primitive_maps_to_backing_type() {
+            assert_eq!(
+                CSharpType::from_type_expr(&TypeExpr::Primitive(PrimitiveType::I32)),
+                CSharpType::Int
+            );
+        }
+
+        #[test]
+        fn string_maps_to_string() {
+            assert_eq!(
+                CSharpType::from_type_expr(&TypeExpr::String),
+                CSharpType::String
+            );
+        }
+
+        #[test]
+        fn record_maps_to_record_with_class_name() {
+            assert_eq!(
+                CSharpType::from_type_expr(&TypeExpr::Record(RecordId::new("point"))),
+                CSharpType::Record("Point".to_string())
+            );
+        }
+
+        /// `TypeExpr::Enum` has no layout metadata available here, so we
+        /// commit to [`CSharpType::DataEnum`] by convention. Display and
+        /// qualification render identically for all named-type variants,
+        /// so downstream rendering is unaffected.
+        #[test]
+        fn enum_maps_to_data_enum_by_convention() {
+            assert_eq!(
+                CSharpType::from_type_expr(&TypeExpr::Enum(EnumId::new("status"))),
+                CSharpType::DataEnum("Status".to_string())
+            );
+        }
+
+        #[test]
+        fn vec_wraps_element_in_array() {
+            let expr = TypeExpr::Vec(Box::new(TypeExpr::Primitive(PrimitiveType::F64)));
+            assert_eq!(
+                CSharpType::from_type_expr(&expr),
+                CSharpType::Array(Box::new(CSharpType::Double))
+            );
+        }
+
+        #[test]
+        fn option_wraps_inner_in_nullable() {
+            let expr = TypeExpr::Option(Box::new(TypeExpr::String));
+            assert_eq!(
+                CSharpType::from_type_expr(&expr),
+                CSharpType::Nullable(Box::new(CSharpType::String))
+            );
+        }
+
+        #[test]
+        fn option_of_vec_of_record_nests_correctly() {
+            let expr = TypeExpr::Option(Box::new(TypeExpr::Vec(Box::new(TypeExpr::Record(
+                RecordId::new("point"),
+            )))));
+            assert_eq!(
+                CSharpType::from_type_expr(&expr),
+                CSharpType::Nullable(Box::new(CSharpType::Array(Box::new(
+                    CSharpType::Record("Point".to_string())
+                ))))
+            );
+        }
     }
 }

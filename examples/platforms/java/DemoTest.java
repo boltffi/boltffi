@@ -346,7 +346,7 @@ public final class DemoTest {
         assert Math.abs(rect.area() - 12.0) < 0.0001 : "Shape.area rectangle";
         assert circle.describe().equals("circle r=5") : "Shape.describe circle";
         assert rect.describe().equals("rect 3x4") : "Shape.describe rectangle";
-        assert Shape.variantCount() == 4 : "Shape.variantCount";
+        assert Shape.variantCount() == 6 : "Shape.variantCount";
 
         Shape echoedCircle = Demo.echoShape(circle);
         assert echoedCircle instanceof Shape.Circle : "echoShape(circle) type";

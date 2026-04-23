@@ -20,7 +20,7 @@ use crate::ir::{AbiContract, FfiContract};
 use super::{
     CSharpOptions, NamingConvention,
     lower::CSharpLowerer,
-    plan::{CSharpEnumKind, CSharpRecord},
+    plan::{CSharpEnumKind, CSharpRecord, CSharpType},
     templates::{
         EnumCStyleTemplate, EnumDataTemplate, FunctionsTemplate, NativeTemplate, PreambleTemplate,
         RecordTemplate,
@@ -352,56 +352,9 @@ pub fn vec_return_reader_call(inner: &TypeExpr, element_seq: &ReadSeq) -> String
             let inner_reader = emit_reader_read_with_context(element_seq, None, &mut ctx);
             let closure_var = ctx.next_read_closure_var();
             let remapped = replace_identifier_occurrences(&inner_reader, "reader", &closure_var);
-            let element_type = csharp_type_for_inner(inner);
-            format!(
-                "ReadEncodedArray<{}>({} => {})",
-                element_type, closure_var, remapped
-            )
+            let element_ty = CSharpType::from_type_expr(inner);
+            format!("ReadEncodedArray<{element_ty}>({closure_var} => {remapped})")
         }
-    }
-}
-
-/// C# type literal for a `Vec<_>` element. Used when stamping the generic
-/// parameter on `ReadEncodedArray<T>` at emit time. Records and enums
-/// render as their PascalCase class name. Vec elements are only typed at
-/// the function-level wrapper, never inside a nested enum body, so the
-/// shadowing machinery that qualifies record decodes inside data-enum
-/// variants does not apply here.
-fn csharp_type_for_inner(ty: &TypeExpr) -> String {
-    match ty {
-        TypeExpr::Primitive(p) => super::mappings::csharp_type(*p).to_string(),
-        TypeExpr::String => "string".to_string(),
-        TypeExpr::Record(id) => NamingConvention::class_name(id.as_str()),
-        TypeExpr::Enum(id) => NamingConvention::class_name(id.as_str()),
-        TypeExpr::Vec(inner) => format!("{}[]", csharp_type_for_inner(inner)),
-        TypeExpr::Option(inner) => format!("{}?", csharp_type_for_inner(inner)),
-        other => todo!(
-            "csharp_type_for_inner: Vec element {:?} is not yet supported by the C# backend",
-            other
-        ),
-    }
-}
-
-/// C# type literal for the unwrapped payload of a `ReadOp::Option`.
-/// Used by the Option read emit to stamp a `(T?)null` cast on the null
-/// branch of the ternary — without it, the compiler infers the
-/// conditional as `int` (value types) or bare `null` (references),
-/// both of which fail to round-trip back into `int?` / `string?`.
-/// Derived from the Option's own inner `ReadSeq` so emit does not
-/// need the original `TypeExpr` threaded alongside the seq.
-fn csharp_type_for_read_seq_inner(seq: &ReadSeq) -> String {
-    let op = seq.ops.first().expect("option inner read op");
-    match op {
-        ReadOp::Primitive { primitive, .. } => super::mappings::csharp_type(*primitive).to_string(),
-        ReadOp::String { .. } => "string".to_string(),
-        ReadOp::Record { id, .. } => NamingConvention::class_name(id.as_str()),
-        ReadOp::Enum { id, .. } => NamingConvention::class_name(id.as_str()),
-        ReadOp::Vec { element_type, .. } => format!("{}[]", csharp_type_for_inner(element_type)),
-        ReadOp::Option { some, .. } => format!("{}?", csharp_type_for_read_seq_inner(some)),
-        other => todo!(
-            "csharp_type_for_read_seq_inner: option inner {:?} is not yet supported by the C# backend",
-            other
-        ),
     }
 }
 
@@ -455,9 +408,9 @@ fn emit_reader_read_with_context(
         }
         ReadOp::String { .. } => "reader.ReadString()".to_string(),
         ReadOp::Bytes { .. } => "reader.ReadBytes()".to_string(),
-        ReadOp::Record { id, .. } => {
-            let class_name = NamingConvention::class_name(id.as_str());
-            format!("{}.Decode(reader)", qualify_if_shadowed(&class_name, scope))
+        ReadOp::Record { .. } => {
+            let ty = CSharpType::from_read_op(op).qualify_if_shadowed_opt(scope);
+            format!("{ty}.Decode(reader)")
         }
         ReadOp::Enum {
             id,
@@ -473,21 +426,17 @@ fn emit_reader_read_with_context(
             )
         }
         ReadOp::Enum {
-            id,
             layout: EnumLayout::Data { .. },
             ..
         } => {
-            let class_name = NamingConvention::class_name(id.as_str());
-            format!("{}.Decode(reader)", qualify_if_shadowed(&class_name, scope))
+            let ty = CSharpType::from_read_op(op).qualify_if_shadowed_opt(scope);
+            format!("{ty}.Decode(reader)")
         }
         ReadOp::Option { some, .. } => {
             let inner = emit_reader_read_with_context(some, scope, ctx);
-            let inner_type = csharp_type_for_read_seq_inner(some);
-            format!(
-                "reader.ReadU8() == 0 ? ({inner_type}?)null : {inner}",
-                inner_type = inner_type,
-                inner = inner,
-            )
+            let inner_ty = CSharpType::from_read_op(some.ops.first().expect("option inner read op"))
+                .qualify_if_shadowed_opt(scope);
+            format!("reader.ReadU8() == 0 ? ({inner_ty}?)null : {inner}")
         }
         ReadOp::Vec {
             element_type: TypeExpr::Primitive(p),
@@ -509,10 +458,9 @@ fn emit_reader_read_with_context(
             // is length-prefixed, same as nested primitive vecs. The C#
             // struct generated for a blittable record is `unmanaged`, so
             // it satisfies the generic helper's constraint.
-            format!(
-                "reader.ReadLengthPrefixedBlittableArray<{}>()",
-                csharp_type_for_inner(element_type)
-            )
+            let element_ty =
+                CSharpType::from_type_expr(element_type).qualify_if_shadowed_opt(scope);
+            format!("reader.ReadLengthPrefixedBlittableArray<{element_ty}>()")
         }
         ReadOp::Vec {
             element_type,
@@ -523,32 +471,14 @@ fn emit_reader_read_with_context(
             let inner_reader = emit_reader_read_with_context(element, scope, ctx);
             let closure_var = ctx.next_read_closure_var();
             let remapped = replace_identifier_occurrences(&inner_reader, "reader", &closure_var);
-            let element_type_str = csharp_type_for_inner(element_type);
-            format!(
-                "reader.ReadEncodedArray<{}>({} => {})",
-                element_type_str, closure_var, remapped
-            )
+            let element_ty =
+                CSharpType::from_type_expr(element_type).qualify_if_shadowed_opt(scope);
+            format!("reader.ReadEncodedArray<{element_ty}>({closure_var} => {remapped})")
         }
         other => todo!(
             "C# backend has not yet implemented read support for {:?}",
             other
         ),
-    }
-}
-
-/// If `class_name` is shadowed by an enclosing scope, return the
-/// fully-qualified `"global::{namespace}.{class_name}"`; otherwise
-/// return `class_name` bare. The `global::` prefix skips both the
-/// nested-type shadow *and* any same-named class in the current
-/// namespace (the generated top-level wrapper class shares its name
-/// with the namespace itself, which would otherwise catch a bare
-/// `{namespace}.{class_name}` lookup).
-fn qualify_if_shadowed(class_name: &str, scope: Option<&ShadowScope>) -> String {
-    match scope {
-        Some(s) if s.shadowed.contains(class_name) => {
-            format!("global::{}.{}", s.namespace, class_name)
-        }
-        _ => class_name.to_string(),
     }
 }
 
@@ -648,12 +578,12 @@ fn emit_write_expr_with_context(
             let inner_write = emit_write_expr_with_context(element, writer_name, ctx);
             let loop_var = ctx.next_write_loop_var();
             let remapped = replace_identifier_occurrences(&inner_write, "item", &loop_var);
-            let iter_type = csharp_type_for_inner(element_type);
+            let iter_ty = CSharpType::from_type_expr(element_type);
             format!(
                 "{}.WriteI32({}.Length); foreach ({} {} in {}) {{ {}; }}",
                 writer_name,
                 render_value(value),
-                iter_type,
+                iter_ty,
                 loop_var,
                 render_value(value),
                 remapped,

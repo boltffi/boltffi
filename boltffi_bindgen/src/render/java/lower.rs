@@ -2126,6 +2126,16 @@ impl<'a> JavaLowerer<'a> {
             })
             .collect();
         let owner = JavaValueTypeDef::Enum(enumeration);
+        let mut methods = self.lower_value_type_methods(owner);
+        if matches!(enumeration.repr, EnumRepr::Data { .. }) {
+            for method in &mut methods {
+                self.qualify_collisions_in_type(&mut method.return_type, &variant_names);
+                if let JavaReturnRender::Decode { decode_expr } = &mut method.return_plan.render {
+                    self.qualify_colliding_names(decode_expr, &variant_names);
+                    self.qualify_collisions_in_type(decode_expr, &variant_names);
+                }
+            }
+        }
         JavaEnum {
             doc: enumeration.doc.clone(),
             class_name,
@@ -2133,7 +2143,7 @@ impl<'a> JavaLowerer<'a> {
             value_type,
             variants,
             constructors: self.lower_value_type_constructors(owner),
-            methods: self.lower_value_type_methods(owner),
+            methods,
         }
     }
 
@@ -2219,9 +2229,7 @@ impl<'a> JavaLowerer<'a> {
         let mut decode_expr = self.emit_reader_read(&field.decode);
         let mut size_expr = self.emit_size_expr(&prefixed.size);
         let mut encode_expr = self.emit_write_expr(&prefixed, "wire");
-        if sibling_names.contains(&java_type) {
-            java_type = format!("{}.{}", self.package_name, java_type);
-        }
+        self.qualify_collisions_in_type(&mut java_type, sibling_names);
         self.qualify_colliding_names(&mut decode_expr, sibling_names);
         self.qualify_colliding_names(&mut size_expr, sibling_names);
         self.qualify_colliding_names(&mut encode_expr, sibling_names);
@@ -2238,21 +2246,51 @@ impl<'a> JavaLowerer<'a> {
     }
 
     fn qualify_colliding_names(&self, expr: &mut String, sibling_names: &HashSet<String>) {
+        let static_call_suffixes = [
+            ".decode(",
+            ".wireEncodeTo(",
+            ".wireEncodedSize(",
+            ".decodeBlittableVec(",
+            ".encodeBlittableVec(",
+        ];
         for name in sibling_names {
-            let pattern = format!("{}.decode(", name);
-            if expr.contains(&pattern) {
-                let qualified = format!("{}.{}.decode(", self.package_name, name);
-                *expr = expr.replace(&pattern, &qualified);
+            for suffix in static_call_suffixes {
+                let pattern = format!("{name}{suffix}");
+                if expr.contains(&pattern) {
+                    let qualified = format!("{}.{name}{suffix}", self.package_name);
+                    *expr = expr.replace(&pattern, &qualified);
+                }
             }
-            let pattern = format!("{}.wireEncodeTo(", name);
-            if expr.contains(&pattern) {
-                let qualified = format!("{}.{}.wireEncodeTo(", self.package_name, name);
-                *expr = expr.replace(&pattern, &qualified);
-            }
-            let pattern = format!("{}.wireEncodedSize(", name);
-            if expr.contains(&pattern) {
-                let qualified = format!("{}.{}.wireEncodedSize(", self.package_name, name);
-                *expr = expr.replace(&pattern, &qualified);
+        }
+    }
+
+    /// Rewrites a Java type string so any bare occurrence of a shadowed
+    /// sibling name becomes fully qualified. Handles bare `Point`,
+    /// `Optional<Point>`, `List<Point>`, `Map<Point, Foo>`, etc. Boundary
+    /// detection uses type-syntax delimiters: a sibling name is
+    /// "bare" when neither neighbor is a Java identifier character or
+    /// `.`.
+    fn qualify_collisions_in_type(&self, ty: &mut String, sibling_names: &HashSet<String>) {
+        for name in sibling_names {
+            let qualified = format!("{}.{name}", self.package_name);
+            let mut search_from = 0;
+            while let Some(idx_in_rest) = ty[search_from..].find(name.as_str()) {
+                let idx = search_from + idx_in_rest;
+                let end = idx + name.len();
+                let left_ok = match ty[..idx].chars().next_back() {
+                    None => true,
+                    Some(c) => !c.is_ascii_alphanumeric() && c != '_' && c != '.',
+                };
+                let right_ok = match ty[end..].chars().next() {
+                    None => true,
+                    Some(c) => !c.is_ascii_alphanumeric() && c != '_',
+                };
+                if left_ok && right_ok {
+                    ty.replace_range(idx..end, &qualified);
+                    search_from = idx + qualified.len();
+                } else {
+                    search_from = end;
+                }
             }
         }
     }

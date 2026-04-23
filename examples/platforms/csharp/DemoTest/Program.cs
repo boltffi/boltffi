@@ -391,6 +391,45 @@ public static class DemoTest
         Shape echoedPoint = EchoShape(point);
         Require(echoedPoint is Shape.Point, "EchoShape(Point) unit variant");
 
+        // Apex — Option<Point> as a variant field where Point is shadowed
+        // by the sibling Shape.Point unit variant. Drives the scoped
+        // rendering of the nullable cast inside the Shape scope.
+        Shape apexSome = new Shape.Apex(new Point(3.0, 4.0));
+        Shape echoedApexSome = EchoShape(apexSome);
+        Require(
+            echoedApexSome is Shape.Apex asome && asome.Tip == new Point(3.0, 4.0),
+            "EchoShape(Apex with Some(Point))"
+        );
+
+        Shape apexNone = new Shape.Apex(null);
+        Shape echoedApexNone = EchoShape(apexNone);
+        Require(
+            echoedApexNone is Shape.Apex anone && anone.Tip is null,
+            "EchoShape(Apex with None)"
+        );
+
+        // Cluster — Vec<Point> as a variant field, same shadow setup.
+        // Drives the scoped rendering of the ReadEncodedArray / blittable
+        // array element type inside the Shape scope.
+        Shape cluster = new Shape.Cluster(new[]
+        {
+            new Point(1.0, 2.0),
+            new Point(3.0, 4.0),
+            new Point(5.0, 6.0),
+        });
+        Shape echoedCluster = EchoShape(cluster);
+        Require(
+            echoedCluster is Shape.Cluster cl && cl.Members.Length == 3
+                && cl.Members[0] == new Point(1.0, 2.0)
+                && cl.Members[2] == new Point(5.0, 6.0),
+            "EchoShape(Cluster with Vec<Point>)"
+        );
+        Require(
+            EchoShape(new Shape.Cluster(Array.Empty<Point>())) is Shape.Cluster clE
+                && clE.Members.Length == 0,
+            "EchoShape(Cluster empty)"
+        );
+
         // Free-function factories producing Shape.
         Require(MakeCircle(2.0) is Shape.Circle c2 && c2.Radius == 2.0, "MakeCircle");
         Require(
@@ -412,8 +451,15 @@ public static class DemoTest
             Shape.Square(7.0) is Shape.Rectangle sq && sq.Width == 7.0 && sq.Height == 7.0,
             "Shape.Square(7)"
         );
-        Require(Shape.VariantCount() == 4u, "Shape.VariantCount() == 4");
+        Require(Shape.VariantCount() == 6u, "Shape.VariantCount() == 6");
         Require(Shape.New(3.0) is Shape.Circle sn && sn.Radius == 3.0, "Shape.New(3)");
+
+        // TryApexPoint — static method whose return type is Option<Point>
+        // where Point is shadowed by a sibling variant. Drives scoped
+        // rendering of the Option decode inside the Shape scope.
+        Point? apexPt = Shape.TryApexPoint(2.5);
+        Require(apexPt is { } pt && pt.X == 0.0 && pt.Y == 2.5, "Shape.TryApexPoint(positive)");
+        Require(Shape.TryApexPoint(-1.0) is null, "Shape.TryApexPoint(negative) == null");
 
         // Message — mixes string, primitive, and unit variants.
         Message text = new Message.Text("hello");
@@ -761,11 +807,24 @@ public static class DemoTest
             new Shape.Rectangle(3.0, 4.0),
             new Shape.Triangle(new Point(0.0, 0.0), new Point(4.0, 0.0), new Point(0.0, 3.0)),
             new Shape.Point(),
+            new Shape.Apex(new Point(7.0, 8.0)),
+            new Shape.Apex(null),
         };
         Shape[] echoedShapes = EchoVecShape(shapes);
         Require(echoedShapes.Length == shapes.Length, "echoVecShape length");
         Require(echoedShapes.SequenceEqual(shapes), "echoVecShape round-trip preserves each variant");
         Require(EchoVecShape(Array.Empty<Shape>()).Length == 0, "echoVecShape empty");
+
+        // Cluster carries a `Point[]`, and C# record default equality treats
+        // arrays by reference, so we compare element-wise explicitly.
+        Point[] clusterPoints = new[] { new Point(1.0, 2.0), new Point(3.0, 4.0) };
+        Shape[] clusterRoundTrip = EchoVecShape(new Shape[] { new Shape.Cluster(clusterPoints) });
+        Require(
+            clusterRoundTrip.Length == 1
+                && clusterRoundTrip[0] is Shape.Cluster rc
+                && rc.Members.SequenceEqual(clusterPoints),
+            "echoVecShape(Cluster with Vec<Point>)"
+        );
 
         Console.WriteLine("  PASS\n");
     }

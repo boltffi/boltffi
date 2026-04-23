@@ -224,6 +224,7 @@ impl<'a> CSharpLowerer<'a> {
             &function.returns,
             &return_type,
             call.returns.decode_ops.as_ref(),
+            None,
         );
 
         let wire_writers = self.wire_writers_for_params(function)?;
@@ -249,6 +250,7 @@ impl<'a> CSharpLowerer<'a> {
         return_def: &ReturnDef,
         return_type: &CSharpType,
         decode_ops: Option<&ReadSeq>,
+        scope: Option<&emit::ShadowScope>,
     ) -> CSharpReturnKind {
         if return_type.is_void() {
             return CSharpReturnKind::Void;
@@ -288,7 +290,7 @@ impl<'a> CSharpLowerer<'a> {
                 let decode_seq = decode_ops
                     .expect("Option return must carry decode_ops")
                     .clone();
-                let decode_expr = emit::emit_reader_read(&decode_seq, None);
+                let decode_expr = emit::emit_reader_read(&decode_seq, scope);
                 CSharpReturnKind::WireDecodeOption { decode_expr }
             }
             // Primitives, bools, blittable records, and C-style enums
@@ -553,7 +555,31 @@ impl<'a> CSharpLowerer<'a> {
             return None;
         }
         let class_name = NamingConvention::class_name(enum_def.id.as_str());
-        let methods = self.lower_enum_methods(enum_def, &class_name);
+        // Variant names become nested `sealed record` types; inside the
+        // abstract record's body they shadow any module-level type sharing
+        // a name. Collect the set so emit helpers can qualify outer
+        // references (`Demo.Point.Decode(reader)`) instead of letting them
+        // resolve to the shadowing variant. Only data enums introduce
+        // a nested body where shadowing applies.
+        let abi_enum_for_data = match &enum_def.repr {
+            EnumRepr::Data { .. } => self.abi.enums.iter().find(|e| e.id == enum_def.id),
+            _ => None,
+        };
+        let shadowed_variant_names: HashSet<String> = abi_enum_for_data
+            .map(|abi_enum| {
+                abi_enum
+                    .variants
+                    .iter()
+                    .map(|v| NamingConvention::class_name(v.name.as_str()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let namespace = NamingConvention::namespace(&self.ffi.package.name);
+        let method_scope = abi_enum_for_data.map(|_| emit::ShadowScope {
+            shadowed: &shadowed_variant_names,
+            namespace: &namespace,
+        });
+        let methods = self.lower_enum_methods(enum_def, &class_name, method_scope.as_ref());
         match &enum_def.repr {
             EnumRepr::CStyle { tag_type, variants } => {
                 let lowered_variants = variants
@@ -575,18 +601,7 @@ impl<'a> CSharpLowerer<'a> {
                 })
             }
             EnumRepr::Data { .. } => {
-                let abi_enum = self.abi.enums.iter().find(|e| e.id == enum_def.id)?;
-                // Variant names become nested `sealed record` types; inside
-                // the abstract record's body they shadow any module-level
-                // type sharing a name. Collect the set so emit helpers can
-                // qualify outer references (`Demo.Point.Decode(reader)`)
-                // instead of letting them resolve to the shadowing variant.
-                let shadowed_variant_names: HashSet<String> = abi_enum
-                    .variants
-                    .iter()
-                    .map(|v| NamingConvention::class_name(v.name.as_str()))
-                    .collect();
-                let namespace = NamingConvention::namespace(&self.ffi.package.name);
+                let abi_enum = abi_enum_for_data?;
                 let scope = emit::ShadowScope {
                     shadowed: &shadowed_variant_names,
                     namespace: &namespace,
@@ -691,7 +706,12 @@ impl<'a> CSharpLowerer<'a> {
     /// methods that return `Result<_, _>`, async methods, and
     /// `&mut self` / `self` receivers are silently dropped — those
     /// shapes are served by later PRs on the roadmap, not by this one.
-    fn lower_enum_methods(&self, enum_def: &EnumDef, enum_class_name: &str) -> Vec<CSharpMethod> {
+    fn lower_enum_methods(
+        &self,
+        enum_def: &EnumDef,
+        enum_class_name: &str,
+        scope: Option<&emit::ShadowScope>,
+    ) -> Vec<CSharpMethod> {
         let is_data = matches!(enum_def.repr, EnumRepr::Data { .. });
         let mut methods = Vec::new();
 
@@ -732,7 +752,8 @@ impl<'a> CSharpLowerer<'a> {
             let Some(call) = self.abi.calls.iter().find(|c| c.id == call_id) else {
                 continue;
             };
-            if let Some(method) = self.lower_enum_method(method_def, call, enum_class_name, is_data)
+            if let Some(method) =
+                self.lower_enum_method(method_def, call, enum_class_name, is_data, scope)
             {
                 methods.push(method);
             }
@@ -795,17 +816,19 @@ impl<'a> CSharpLowerer<'a> {
         call: &AbiCall,
         enum_class_name: &str,
         owner_is_data: bool,
+        scope: Option<&emit::ShadowScope>,
     ) -> Option<CSharpMethod> {
         let name = NamingConvention::method_name(method_def.id.as_str());
         let return_type = match &method_def.returns {
             ReturnDef::Void => CSharpType::Void,
-            ReturnDef::Value(type_expr) => self.lower_type(type_expr)?,
+            ReturnDef::Value(type_expr) => self.lower_type(type_expr)?.qualify_if_shadowed_opt(scope),
             ReturnDef::Result { .. } => return None,
         };
         let return_kind = self.return_kind(
             &method_def.returns,
             &return_type,
             call.returns.decode_ops.as_ref(),
+            scope,
         );
 
         let receiver = match method_def.receiver {
@@ -1064,6 +1087,13 @@ impl<'a> CSharpLowerer<'a> {
                 element: element.clone(),
                 layout: layout.clone(),
             },
+            WriteOp::Option { value, some } => WriteOp::Option {
+                value: Self::prefix_value(value, binding),
+                // `some` is written inside an `if (field is { } v)` block
+                // where inner ops reference `v`, not the outer variant
+                // binding. Clone as-is, same as `Vec::element`.
+                some: some.clone(),
+            },
             other => panic!(
                 "prefix_write_op: unsupported op for C# variant fields: {:?}",
                 other
@@ -1112,6 +1142,13 @@ impl<'a> CSharpLowerer<'a> {
                 // applies to the enclosing variant field reference.
                 inner: inner.clone(),
                 layout: layout.clone(),
+            },
+            SizeExpr::OptionSize { value, inner } => SizeExpr::OptionSize {
+                value: Self::prefix_value(value, binding),
+                // `inner` references the unwrapped-option binding `v` that
+                // the size-option emit lambda introduces, not the enclosing
+                // variant field. Clone as-is, same as `VecSize::inner`.
+                inner: inner.clone(),
             },
             other => panic!(
                 "prefix_size_expr: unsupported expr for C# variant fields: {:?}",

@@ -763,12 +763,21 @@ impl<'a> KotlinLowerer<'a> {
                 )
             })
             .collect::<Vec<_>>();
-        let methods = enumeration
+        let mut methods = enumeration
             .method_calls()
             .map(|(call_id, method)| {
                 self.lower_value_type_method(method, &call_id, enumeration.id.as_str())
             })
             .collect::<Vec<_>>();
+        if matches!(enumeration.repr, EnumRepr::Data { .. }) {
+            for method in &mut methods {
+                match &mut method.impl_ {
+                    KotlinMethodImpl::SyncMethod(src) | KotlinMethodImpl::AsyncMethod(src) => {
+                        self.qualify_collisions_in_string(src, &variant_names);
+                    }
+                }
+            }
+        }
         KotlinEnum {
             class_name,
             variants,
@@ -812,17 +821,21 @@ impl<'a> KotlinLowerer<'a> {
         field: &AbiEnumField,
         variant_names: &HashSet<String>,
     ) -> KotlinEnumField {
-        let (kotlin_type, decode_name) =
+        let (mut kotlin_type, decode_name) =
             self.kotlin_type_with_disambiguation(&field.type_expr, variant_names);
         let field_name = NamingConvention::property_name(field.name.as_str());
         let base_decode = self.decode_expr_with_native_conversion(&field.type_expr, &field.decode);
-        let wire_decode_expr = self.qualify_decode_expr(base_decode, decode_name.as_deref());
+        let mut wire_decode_expr = self.qualify_decode_expr(base_decode, decode_name.as_deref());
         let base_size = emit::emit_size_expr_for_write_seq(&field.encode);
-        let wire_size_expr =
+        let mut wire_size_expr =
             self.apply_native_encode_conversion(&field.type_expr, base_size, &field_name);
         let base_encode = emit::emit_write_expr(&field.encode);
-        let wire_encode =
+        let mut wire_encode =
             self.apply_native_encode_conversion(&field.type_expr, base_encode, &field_name);
+        self.qualify_collisions_in_string(&mut kotlin_type, variant_names);
+        self.qualify_collisions_in_string(&mut wire_decode_expr, variant_names);
+        self.qualify_collisions_in_string(&mut wire_size_expr, variant_names);
+        self.qualify_collisions_in_string(&mut wire_encode, variant_names);
         KotlinEnumField {
             name: field_name,
             kotlin_type,
@@ -2903,6 +2916,35 @@ impl<'a> KotlinLowerer<'a> {
         expr.strip_prefix(&prefix)
             .map(|suffix| format!("{}.{}", qualified, suffix))
             .unwrap_or(expr)
+    }
+
+    /// Rewrites a Kotlin source fragment so any bare occurrence of a
+    /// shadowed sibling name becomes fully qualified. Boundary
+    /// detection matches identifier chars and `.` so existing FQNs
+    /// like `com.boltffi.demo.Point` are left alone.
+    fn qualify_collisions_in_string(&self, src: &mut String, sibling_names: &HashSet<String>) {
+        for name in sibling_names {
+            let qualified = format!("{}.{name}", self.package_name);
+            let mut search_from = 0;
+            while let Some(idx_in_rest) = src[search_from..].find(name.as_str()) {
+                let idx = search_from + idx_in_rest;
+                let end = idx + name.len();
+                let left_ok = match src[..idx].chars().next_back() {
+                    None => true,
+                    Some(c) => !c.is_ascii_alphanumeric() && c != '_' && c != '.',
+                };
+                let right_ok = match src[end..].chars().next() {
+                    None => true,
+                    Some(c) => !c.is_ascii_alphanumeric() && c != '_',
+                };
+                if left_ok && right_ok {
+                    src.replace_range(idx..end, &qualified);
+                    search_from = idx + qualified.len();
+                } else {
+                    search_from = end;
+                }
+            }
+        }
     }
 
     fn disambiguate_type_name(

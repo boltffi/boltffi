@@ -8,12 +8,17 @@ final class DataEnumTests: XCTestCase {
         XCTAssertEqual(Shape(square: 3.0), Shape.rectangle(width: 3.0, height: 3.0))
         XCTAssertEqual(try Shape(tryCircle: 2.0), Shape.circle(radius: 2.0))
         assertThrowsMessageContains("radius must be positive", try Shape(tryCircle: -1.0))
-        XCTAssertEqual(Shape.variantCount(), 4)
+        XCTAssertEqual(Shape.variantCount(), 6)
         XCTAssertEqual(circle.area(), Double.pi * 25.0, accuracy: 1e-6)
         XCTAssertEqual(circle.describe(), "circle r=5")
         XCTAssertEqual(echoShape(s: makeCircle(radius: 2.0)), .circle(radius: 2.0))
         XCTAssertEqual(echoShape(s: makeRectangle(width: 3.0, height: 4.0)), .rectangle(width: 3.0, height: 4.0))
         XCTAssertEqual(echoVecShape(values: [.circle(radius: 2.0), .rectangle(width: 3.0, height: 4.0), .point]).count, 3)
+        XCTAssertEqual(echoShape(s: .apex(tip: Point(x: 3.0, y: 4.0))), .apex(tip: Point(x: 3.0, y: 4.0)))
+        XCTAssertEqual(echoShape(s: .apex(tip: nil)), .apex(tip: nil))
+        XCTAssertEqual(echoShape(s: .cluster(members: [Point(x: 1.0, y: 2.0)])), .cluster(members: [Point(x: 1.0, y: 2.0)]))
+        XCTAssertEqual(Shape.tryApexPoint(radius: 2.5), Point(x: 0.0, y: 2.5))
+        XCTAssertNil(Shape.tryApexPoint(radius: -1.0))
     }
 
     func testMessageFns() {

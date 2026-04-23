@@ -11,7 +11,7 @@ export async function run() {
   assertThrowsWithMessage(() => demo.Shape.tryCircle(0), "radius must be positive");
   assert.equal(demo.Shape.area({ tag: "Circle", radius: 2 }), Math.PI * 4);
   assert.equal(demo.Shape.describe({ tag: "Point" }), "point");
-  assert.equal(demo.Shape.variantCount(), 4);
+  assert.equal(demo.Shape.variantCount(), 6);
 
   const rectangle = demo.makeRectangle(3, 4);
   assert.equal(rectangle.tag, "Rectangle");
