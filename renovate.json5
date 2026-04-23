@@ -6,7 +6,7 @@
     ":semanticCommitTypeAll(chore)",
   ],
   timezone: "UTC",
-  schedule: ["after 6am and before 9am on Wednesday"],
+  schedule: ["on Wednesday"],
   prConcurrentLimit: 5,
   minimumReleaseAge: "5 days",
   labels: ["dependencies"],
