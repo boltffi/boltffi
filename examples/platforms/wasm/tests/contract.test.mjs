@@ -22,7 +22,6 @@ const unsupportedTypeMembers = new Set([
   "classes/streams.rs::EventBus::subscribePoints",
   "classes/streams.rs::EventBus::subscribeValuesBatch",
   "classes/streams.rs::EventBus::subscribeValuesCallback",
-  "enums/data_enum.rs::Shape::tryApexPoint",
 ]);
 
 const tsKeywords = new Set([

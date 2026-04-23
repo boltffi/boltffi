@@ -21,6 +21,11 @@ export async function run() {
   assert.deepEqual(demo.echoShape(demo.makeCircle(2)), demo.makeCircle(2));
   assert.deepEqual(demo.echoShape(demo.makeRectangle(3, 4)), demo.makeRectangle(3, 4));
   assert.equal(demo.echoVecShape([demo.makeCircle(2), demo.makeRectangle(3, 4), { tag: "Point" }]).length, 3);
+  assert.deepEqual(demo.Shape.tryApexPoint(2.5), { x: 0, y: 2.5 });
+  assert.equal(demo.Shape.tryApexPoint(-1), null);
+  assert.deepEqual(demo.echoShape({ tag: "Apex", tip: { x: 3, y: 4 } }), { tag: "Apex", tip: { x: 3, y: 4 } });
+  assert.deepEqual(demo.echoShape({ tag: "Apex", tip: null }), { tag: "Apex", tip: null });
+  assert.deepEqual(demo.echoShape({ tag: "Cluster", members: [{ x: 1, y: 2 }] }), { tag: "Cluster", members: [{ x: 1, y: 2 }] });
 
   const textMessage = { tag: "Text", body: "hello" };
   const imageMessage = { tag: "Image", url: "https://example.com/image.png", width: 640, height: 480 };
