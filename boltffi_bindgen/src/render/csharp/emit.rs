@@ -671,7 +671,6 @@ const _: fn(&CSharpRecord) = |_| {};
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashSet;
     use crate::ir::Lowerer as IrLowerer;
     use crate::ir::codec::EnumLayout;
     use crate::ir::contract::{FfiContract, PackageInfo};
@@ -684,6 +683,7 @@ mod tests {
     use crate::ir::types::{PrimitiveType, TypeExpr};
     use boltffi_ffi_rules::callable::ExecutionKind;
     use boltffi_ffi_rules::transport::EnumTagStrategy;
+    use std::collections::HashSet;
 
     fn empty_contract() -> FfiContract {
         FfiContract {

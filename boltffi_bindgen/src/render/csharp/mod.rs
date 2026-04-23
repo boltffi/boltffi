@@ -26,7 +26,7 @@
 //! Supporting modules:
 //!
 //! - `names`: how elements get named in C#. Used by `plan`, `lower`,
-//!    and `emit`.
+//!   and `emit`.
 //! - `templates`: Askama bindings over `plan`, rendered by `emit`.
 //!   Snapshot tests live alongside.
 //!
