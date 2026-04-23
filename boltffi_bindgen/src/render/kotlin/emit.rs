@@ -127,7 +127,7 @@ pub fn emit_size_expr(size: &SizeExpr) -> String {
         SizeExpr::OptionSize { value, inner } => {
             let inner_expr = emit_size_expr(inner);
             format!(
-                "({}?.let {{ v -> 1 + {} }} ?: 1)",
+                "({}?.let {{ v -> 1 + {} }} ?: 1.toInt())",
                 render_value(value),
                 inner_expr
             )
