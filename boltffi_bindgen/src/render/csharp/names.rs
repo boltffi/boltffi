@@ -1,3 +1,8 @@
+//! How elements get named in C#. Stateless identifier transforms
+//! (snake_case source → PascalCase / camelCase), plus escaping with
+//! `@` for reserved keywords. Used by `plan`, `lower`, and `emit`
+//! wherever the backend needs to render a name.
+
 use boltffi_ffi_rules::naming;
 
 /// C# naming conventions. Methods and properties use PascalCase,

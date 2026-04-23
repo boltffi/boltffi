@@ -1,3 +1,17 @@
+//! Decision layer for the C# backend. `CSharpLowerer` walks the
+//! `FfiContract` + `AbiContract` IR and produces a `CSharpModule`,
+//! the plan the templates render.
+//!
+//! Every policy decision lives here:
+//!
+//! - Which records and enums are supported (a joint fixed-point that
+//!   admits mutually-recursive types together).
+//! - Whether a value rides the direct P/Invoke path or the wire-
+//!   encoded path (blittable records + C-style enums vs. data enums,
+//!   strings, vecs, options, non-blittable records).
+//! - How each param is marshalled (`CSharpParamKind`) and how each
+//!   return is delivered (`CSharpReturnKind`).
+
 use std::collections::HashSet;
 
 use boltffi_ffi_rules::naming;
@@ -17,11 +31,10 @@ use crate::ir::types::TypeExpr;
 use crate::ir::{AbiContract, FfiContract};
 
 use super::emit;
-use super::mappings;
 use super::plan::{
     CSharpEnum, CSharpEnumKind, CSharpEnumVariant, CSharpFunction, CSharpMethod, CSharpModule,
     CSharpParam, CSharpParamKind, CSharpReceiver, CSharpRecord, CSharpRecordField,
-    CSharpReturnKind, CSharpType, CSharpWireWriter,
+    CSharpReturnKind, CSharpType, CSharpWireWriter, ShadowScope,
 };
 use super::{CSharpOptions, NamingConvention};
 
@@ -31,7 +44,7 @@ pub struct CSharpLowerer<'a> {
     ffi: &'a FfiContract,
     abi: &'a AbiContract,
     options: &'a CSharpOptions,
-    /// Records that are fully supported — every field resolves to a type the
+    /// Records that are fully supported: every field resolves to a type the
     /// C# backend can currently render. Populated up front because whether
     /// a record is supported can depend on whether *other* records are
     /// supported, so we need a fixed-point pass before lowering individual
@@ -60,7 +73,7 @@ impl<'a> CSharpLowerer<'a> {
     /// Records and enums can reference each other in either direction:
     /// a record field may be a data enum, and a data-enum variant field
     /// may be a record. Neither set can be computed independently, so
-    /// both grow together in one fixed-point loop — each iteration tries
+    /// both grow together in one fixed-point loop. Each iteration tries
     /// to admit every not-yet-supported record and every not-yet-supported
     /// data enum against the current state of both sets, terminating when
     /// a pass produces no new admissions. C-style enums have no payload,
@@ -70,7 +83,7 @@ impl<'a> CSharpLowerer<'a> {
     /// Termination: every non-breaking iteration admits at least one new
     /// record or data enum; both catalogs are finite; admissions are
     /// monotonic. Mutually recursive types that require each other to be
-    /// admitted first never make progress — the first pass finds neither
+    /// admitted first never make progress: the first pass finds neither
     /// admissible, no admissions are made, and the loop exits leaving
     /// both out of the supported sets.
     fn compute_supported_sets(ffi: &FfiContract) -> (HashSet<String>, HashSet<String>) {
@@ -79,7 +92,7 @@ impl<'a> CSharpLowerer<'a> {
             .all_enums()
             .filter(|e| match &e.repr {
                 EnumRepr::CStyle { tag_type, .. } => {
-                    mappings::csharp_enum_backing_type(*tag_type).is_some()
+                    CSharpType::enum_backing_for(*tag_type).is_some()
                 }
                 EnumRepr::Data { .. } => false,
             })
@@ -250,7 +263,7 @@ impl<'a> CSharpLowerer<'a> {
         return_def: &ReturnDef,
         return_type: &CSharpType,
         decode_ops: Option<&ReadSeq>,
-        scope: Option<&emit::ShadowScope>,
+        scope: Option<&ShadowScope>,
     ) -> CSharpReturnKind {
         if return_type.is_void() {
             return CSharpReturnKind::Void;
@@ -285,8 +298,8 @@ impl<'a> CSharpLowerer<'a> {
             ReturnDef::Value(TypeExpr::Option(_)) => {
                 // Fully pre-render the decode expression against a
                 // reader named `reader`. The ABI's decode_ops walks
-                // every inner shape — primitive, string, record, enum,
-                // vec — so one helper covers the whole matrix.
+                // every inner shape (primitive, string, record, enum,
+                // vec) so one helper covers the whole matrix.
                 let decode_seq = decode_ops
                     .expect("Option return must carry decode_ops")
                     .clone();
@@ -323,8 +336,8 @@ impl<'a> CSharpLowerer<'a> {
     /// `[StructLayout(Sequential)]` and no wire encoding. Defers entirely
     /// to the IR's `is_blittable` flag, which admits all-primitive
     /// `#[repr(C)]` records only. A record that carries any user-defined
-    /// type (record or enum, C-style or data) stays on the wire path —
-    /// the Rust `#[export]` macro (see `boltffi_macros::data::analysis`)
+    /// type (record or enum, C-style or data) stays on the wire path.
+    /// The Rust `#[export]` macro (see `boltffi_macros::data::analysis`)
     /// makes the same call, so the two sides agree on whether a given
     /// FFI symbol returns a value or an `FfiBuf`. Widening C#'s view
     /// without teaching the macro would produce a call-site / ABI
@@ -484,14 +497,14 @@ impl<'a> CSharpLowerer<'a> {
     fn lower_type(&self, type_expr: &TypeExpr) -> Option<CSharpType> {
         match type_expr {
             TypeExpr::Void => Some(CSharpType::Void),
-            TypeExpr::Primitive(primitive) => Some(mappings::csharp_type(*primitive)),
+            TypeExpr::Primitive(primitive) => Some(CSharpType::from(*primitive)),
             TypeExpr::String => Some(CSharpType::String),
             TypeExpr::Record(id) if self.supported_records.contains(id.as_str()) => Some(
                 CSharpType::Record(NamingConvention::class_name(id.as_str())),
             ),
             TypeExpr::Enum(id) if self.supported_enums.contains(id.as_str()) => {
                 let enum_def = self.ffi.catalog.resolve_enum(id)?;
-                Some(mappings::csharp_enum_type(enum_def))
+                Some(CSharpType::for_enum(enum_def))
             }
             TypeExpr::Vec(inner) if self.is_supported_vec_element(inner) => {
                 let inner_type = self.lower_type(inner)?;
@@ -510,7 +523,7 @@ impl<'a> CSharpLowerer<'a> {
         // Share one emit context across all fields so pattern-binding
         // names (e.g. `sizeOpt0`, `opt0`) stay unique within the
         // generated `WireEncodedSize` and `WireEncodeTo` method
-        // bodies — otherwise two optional fields would each try to
+        // bodies. Otherwise two optional fields would each try to
         // declare `sizeOpt0` in the same enclosing scope.
         let mut size_ctx = emit::CSharpEmitContext::default();
         let mut encode_ctx = emit::CSharpEmitContext::default();
@@ -548,7 +561,7 @@ impl<'a> CSharpLowerer<'a> {
     ///   discriminants must be preserved.
     /// - **Data enums** render as nested `sealed record` variants
     ///   dispatched by a wire tag. Tags come from the variant's ordinal
-    ///   position (`EnumTagStrategy::OrdinalIndex`) — the Rust
+    ///   position (`EnumTagStrategy::OrdinalIndex`). The Rust
     ///   discriminant is not part of the codec.
     fn lower_enum(&self, enum_def: &EnumDef) -> Option<CSharpEnum> {
         if !self.supported_enums.contains(enum_def.id.as_str()) {
@@ -575,7 +588,7 @@ impl<'a> CSharpLowerer<'a> {
             })
             .unwrap_or_default();
         let namespace = NamingConvention::namespace(&self.ffi.package.name);
-        let method_scope = abi_enum_for_data.map(|_| emit::ShadowScope {
+        let method_scope = abi_enum_for_data.map(|_| ShadowScope {
             shadowed: &shadowed_variant_names,
             namespace: &namespace,
         });
@@ -602,7 +615,7 @@ impl<'a> CSharpLowerer<'a> {
             }
             EnumRepr::Data { .. } => {
                 let abi_enum = abi_enum_for_data?;
-                let scope = emit::ShadowScope {
+                let scope = ShadowScope {
                     shadowed: &shadowed_variant_names,
                     namespace: &namespace,
                 };
@@ -610,7 +623,7 @@ impl<'a> CSharpLowerer<'a> {
                 // this enum because `WireEncodedSize` and `WireEncodeTo`
                 // render all variant fields inside one method body
                 // (via a switch statement). A separate decode context
-                // keeps decode rendering independent — `Decode` builds
+                // keeps decode rendering independent. `Decode` builds
                 // each variant in its own constructor call so no
                 // pattern-binding leakage happens across variants.
                 let mut size_ctx = emit::CSharpEmitContext::default();
@@ -649,7 +662,7 @@ impl<'a> CSharpLowerer<'a> {
         abi_enum: &AbiEnum,
         variant: &AbiEnumVariant,
         ordinal: usize,
-        scope: &emit::ShadowScope,
+        scope: &ShadowScope,
         size_ctx: &mut emit::CSharpEmitContext,
         encode_ctx: &mut emit::CSharpEmitContext,
         decode_ctx: &mut emit::CSharpEmitContext,
@@ -666,7 +679,7 @@ impl<'a> CSharpLowerer<'a> {
             name: NamingConvention::class_name(variant.name.as_str()),
             tag,
             // For data enums the public surface is a `sealed record`,
-            // not a numbered enum, so `tag` and `wire_tag` converge —
+            // not a numbered enum, so `tag` and `wire_tag` converge:
             // both are the ordinal dispatch value used on the wire.
             wire_tag: tag,
             fields,
@@ -681,7 +694,7 @@ impl<'a> CSharpLowerer<'a> {
     fn lower_variant_field(
         &self,
         field: &AbiEnumField,
-        scope: &emit::ShadowScope,
+        scope: &ShadowScope,
         size_ctx: &mut emit::CSharpEmitContext,
         encode_ctx: &mut emit::CSharpEmitContext,
         decode_ctx: &mut emit::CSharpEmitContext,
@@ -704,13 +717,13 @@ impl<'a> CSharpLowerer<'a> {
     /// produces the corresponding C# method plans. Fallible constructors
     /// (`Result<Self, _>`), optional constructors (`Option<Self>`),
     /// methods that return `Result<_, _>`, async methods, and
-    /// `&mut self` / `self` receivers are silently dropped — those
+    /// `&mut self` / `self` receivers are silently dropped. Those
     /// shapes are served by later PRs on the roadmap, not by this one.
     fn lower_enum_methods(
         &self,
         enum_def: &EnumDef,
         enum_class_name: &str,
-        scope: Option<&emit::ShadowScope>,
+        scope: Option<&ShadowScope>,
     ) -> Vec<CSharpMethod> {
         let is_data = matches!(enum_def.repr, EnumRepr::Data { .. });
         let mut methods = Vec::new();
@@ -816,7 +829,7 @@ impl<'a> CSharpLowerer<'a> {
         call: &AbiCall,
         enum_class_name: &str,
         owner_is_data: bool,
-        scope: Option<&emit::ShadowScope>,
+        scope: Option<&ShadowScope>,
     ) -> Option<CSharpMethod> {
         let name = NamingConvention::method_name(method_def.id.as_str());
         let return_type = match &method_def.returns {
@@ -843,7 +856,7 @@ impl<'a> CSharpLowerer<'a> {
             }
         };
         // Instance methods have a synthetic `self` prepended to the ABI
-        // param list — skip it when building wire writers and mapping
+        // param list; skip it when building wire writers and mapping
         // back to the explicit IR params, which never include `self`.
         let explicit_abi_params = if matches!(receiver, CSharpReceiver::Static) {
             &call.params[..]
@@ -945,7 +958,7 @@ impl<'a> CSharpLowerer<'a> {
         let call = self.abi_call_for_function(function)?;
         // One size/encode context per function body so two Option
         // params each get fresh `sizeOpt{n}` / `opt{n}` pattern-binding
-        // names — their `using var _wire_*` declarations all live in
+        // names. Their `using var _wire_*` declarations all live in
         // the same method scope, so counters must advance together.
         let mut size_ctx = emit::CSharpEmitContext::default();
         let mut encode_ctx = emit::CSharpEmitContext::default();

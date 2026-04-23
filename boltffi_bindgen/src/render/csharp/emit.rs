@@ -1,14 +1,13 @@
-//! Orchestrates the lowerer and templates to produce the final `.cs` output.
+//! Two-role module:
 //!
-//! Also hosts the C#-syntax helpers that translate ABI ops
-//! ([`ReadOp`], [`WriteOp`], [`SizeExpr`], [`ValueExpr`]) into source
-//! snippets. The lowerer calls these helpers to pre-render the wire
-//! expressions that end up in [`CSharpRecordField`] and
-//! [`CSharpWireWriter`]. Keeping the syntax formatting here (and the
-//! "which ops apply to which field" logic in [`lower`](super::lower))
-//! mirrors the Java backend split.
-
-use std::collections::HashSet;
+//! 1. **Orchestrator**: `CSharpEmitter::emit` runs the lowerer, then
+//!    renders each plan entry through its Askama template, assembling
+//!    the `CSharpOutput`.
+//!
+//! 2. **Syntax helpers**: a library of "ABI op → C# source snippet"
+//!    functions (`render_value`, `emit_reader_read`, `emit_write_expr`,
+//!    `emit_size_expr`, etc.). The lowerer calls these to pre-render
+//!    wire expressions as strings into the plan.
 
 use askama::Template as _;
 
@@ -20,7 +19,7 @@ use crate::ir::{AbiContract, FfiContract};
 use super::{
     CSharpOptions, NamingConvention,
     lower::CSharpLowerer,
-    plan::{CSharpEnumKind, CSharpRecord, CSharpType},
+    plan::{CSharpEnumKind, CSharpRecord, CSharpType, ShadowScope},
     templates::{
         EnumCStyleTemplate, EnumDataTemplate, FunctionsTemplate, NativeTemplate, PreambleTemplate,
         RecordTemplate,
@@ -138,7 +137,7 @@ impl CSharpEmitter {
 //
 // Scope: supports the subset of ops we need for records with primitive,
 // string, and nested-record fields. Vec / Option / Enum / Builtin / Custom
-// etc. will be added in follow-up PRs — today they panic so the gap is
+// etc. will be added in follow-up PRs. Today they panic so the gap is
 // surfaced loudly rather than silently producing broken output.
 // ---------------------------------------------------------------------------
 
@@ -211,10 +210,7 @@ pub fn primitive_vec_reader_call(primitive: PrimitiveType) -> String {
         PrimitiveType::Bool => "ReadBoolArray()".to_string(),
         PrimitiveType::ISize => "ReadNIntArray()".to_string(),
         PrimitiveType::USize => "ReadNUIntArray()".to_string(),
-        other => format!(
-            "ReadBlittableArray<{}>()",
-            super::mappings::csharp_type(other)
-        ),
+        other => format!("ReadBlittableArray<{}>()", CSharpType::from(other)),
     }
 }
 
@@ -229,7 +225,7 @@ fn primitive_vec_nested_reader_call(primitive: PrimitiveType) -> String {
         PrimitiveType::USize => "ReadLengthPrefixedNUIntArray()".to_string(),
         other => format!(
             "ReadLengthPrefixedBlittableArray<{}>()",
-            super::mappings::csharp_type(other)
+            CSharpType::from(other)
         ),
     }
 }
@@ -285,7 +281,7 @@ impl CSharpEmitContext {
     /// Fresh pattern-variable name for the non-null binding inside a
     /// `WriteOp::Option` encode statement. Write and size use different
     /// name prefixes because pattern variables declared in `is { } v`
-    /// leak into the enclosing method scope — a shared `opt0` between
+    /// leak into the enclosing method scope. A shared `opt0` between
     /// the WireWriter-size ternary and the encode `if` statement would
     /// redeclare the same local in one scope.
     fn next_write_option_bind_var(&mut self) -> String {
@@ -358,17 +354,6 @@ pub fn vec_return_reader_call(inner: &TypeExpr, element_seq: &ReadSeq) -> String
     }
 }
 
-/// Names shadowed by a nested scope in the rendering site. Passed to
-/// [`emit_reader_read`] when emitting decode expressions inside a data
-/// enum body, where nested `sealed record Foo() : E` variants shadow
-/// module-level types of the same name. Any class reference whose name
-/// appears in `shadowed` gets qualified as `{namespace}.{ClassName}` so
-/// it resolves past the nested variant.
-pub struct ShadowScope<'a> {
-    pub shadowed: &'a HashSet<String>,
-    pub namespace: &'a str,
-}
-
 /// Render the first op of a [`ReadSeq`] as a decode expression.
 ///
 /// `scope` is `None` when rendering in a context where no name shadowing
@@ -376,7 +361,7 @@ pub struct ShadowScope<'a> {
 /// rendering inside a data enum body whose nested variants may shadow
 /// module-level types.
 ///
-/// Today each [`ReadSeq`] we handle has exactly one top-level op — either
+/// Today each [`ReadSeq`] we handle has exactly one top-level op: either
 /// a primitive, a string, or a nested record/enum. Container ops (Option,
 /// Vec, Result) will land in follow-up PRs.
 pub fn emit_reader_read(seq: &ReadSeq, scope: Option<&ShadowScope>) -> String {
@@ -686,6 +671,7 @@ const _: fn(&CSharpRecord) = |_| {};
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashSet;
     use crate::ir::Lowerer as IrLowerer;
     use crate::ir::codec::EnumLayout;
     use crate::ir::contract::{FfiContract, PackageInfo};
@@ -949,8 +935,8 @@ mod tests {
     }
 
     /// The `FfiBuf` struct, `WireReader`, and `FreeBuf` DllImport are only
-    /// needed when a module actually traffics in wire-encoded returns —
-    /// primitive-only output should not carry the extra helpers.
+    /// needed when a module actually traffics in wire-encoded returns.
+    /// Primitive-only output should not carry the extra helpers.
     #[test]
     fn emit_string_helpers_only_appear_when_strings_are_used() {
         let mut primitive_only = empty_contract();
@@ -1130,7 +1116,7 @@ mod tests {
 
     /// A `ReadOp::Enum` with a C-style layout routes to the generated
     /// `{Name}Wire.Decode(reader)` helper rather than inlining the cast.
-    /// Keeps the tag-width choice in one place — the enum's wire helper —
+    /// Keeps the tag-width choice in one place (the enum's wire helper)
     /// so field-level emit code stays oblivious to i32-vs-i16 changes.
     #[test]
     fn emit_reader_read_c_style_enum_calls_wire_helper() {
@@ -1180,7 +1166,7 @@ mod tests {
     }
 
     /// The shadowing pass is inert when the referenced class name is not
-    /// in the shadow set — record decodes stay unqualified so we don't
+    /// in the shadow set. Record decodes stay unqualified so we don't
     /// pollute call sites that don't need the namespace prefix.
     #[test]
     fn emit_reader_read_leaves_record_unqualified_when_not_shadowed() {
@@ -1203,7 +1189,7 @@ mod tests {
     }
 
     /// A `WriteOp::Enum` with a C-style layout emits the same call shape
-    /// as a record field — `{value}.WireEncodeTo(wire)`. The extension
+    /// as a record field: `{value}.WireEncodeTo(wire)`. The extension
     /// method on the generated `{Name}Wire` class lets the enum slot into
     /// that uniform shape at no runtime cost.
     #[test]
@@ -1286,7 +1272,7 @@ mod tests {
         assert_source_contains(
             &src,
             "public readonly record struct Point(",
-            "readonly record struct declaration — value type with generated equality",
+            "readonly record struct declaration: value type with generated equality",
         );
     }
 
@@ -1321,7 +1307,7 @@ mod tests {
         assert_source_contains(
             &src,
             "return NativeMethods.EchoPoint(p);",
-            "single-line delegating body — no WireWriter, no FfiBuf",
+            "single-line delegating body, no WireWriter, no FfiBuf",
         );
         assert_source_contains(
             &src,
@@ -1331,7 +1317,7 @@ mod tests {
         assert_source_lacks(
             &src,
             "WireWriter(p.WireEncodedSize())",
-            "no WireWriter setup for a blittable param — that would defeat the zero-copy win",
+            "no WireWriter setup for a blittable param (that would defeat the zero-copy win)",
         );
     }
 
@@ -1405,7 +1391,7 @@ mod tests {
     }
 
     /// A non-blittable record (one with a string field) must NOT carry
-    /// `[StructLayout(Sequential)]` — its memory layout doesn't need to
+    /// `[StructLayout(Sequential)]`. Its memory layout doesn't need to
     /// match Rust's because it travels as wire-encoded bytes, not as a
     /// struct value.
     #[test]
@@ -1741,7 +1727,7 @@ mod tests {
     }
 
     /// A function taking and returning a data enum travels through the
-    /// wire codec just like a non-blittable record — the public wrapper
+    /// wire codec just like a non-blittable record. The public wrapper
     /// allocates a `WireWriter`, encodes the input, calls the native
     /// DllImport with `(byte[], UIntPtr)`, and decodes the returned
     /// `FfiBuf` via `Shape.Decode(new WireReader(_buf))`. Same shape as
@@ -1780,7 +1766,7 @@ mod tests {
         assert_source_contains(
             &src,
             "s.WireEncodeTo(_wire_s);",
-            "the wrapper body to drive the data enum's own WireEncodeTo — same call shape as records",
+            "the wrapper body to drive the data enum's own WireEncodeTo: same call shape as records",
         );
         assert_source_contains(
             &src,
@@ -1887,7 +1873,7 @@ mod tests {
     }
 
     /// A function that takes and returns a C-style enum marshals through
-    /// P/Invoke with zero ceremony — the DllImport signature names the
+    /// P/Invoke with zero ceremony. The DllImport signature names the
     /// enum type directly, and the public wrapper is a one-line pass-
     /// through. No cast, no byte buffer, no FfiBuf.
     #[test]
@@ -1917,7 +1903,7 @@ mod tests {
         assert_source_contains(
             &src,
             "return NativeMethods.EchoStatus(s);",
-            "the wrapper body to pass the enum through unchanged — no cast required",
+            "the wrapper body to pass the enum through unchanged, no cast required",
         );
         assert_source_lacks(
             &src,
@@ -2533,8 +2519,8 @@ mod tests {
 
     /// Generated `.cs` files must opt in to `#nullable enable` so
     /// `int?` / `string?` compile under consumer projects that have
-    /// `<TreatWarningsAsErrors>` turned on. Every file — preamble, record,
-    /// C-style enum, data enum — carries the directive, so consumers are
+    /// `<TreatWarningsAsErrors>` turned on. Every file (preamble, record,
+    /// C-style enum, data enum) carries the directive, so consumers are
     /// free to leave their own csproj on `<Nullable>disable</Nullable>`.
     #[test]
     fn emit_every_generated_file_opts_in_to_nullable_annotations() {
@@ -2641,7 +2627,7 @@ mod tests {
         );
     }
 
-    /// `Option<BlittableRecord>` still rides the wire path — the 1-byte
+    /// `Option<BlittableRecord>` still rides the wire path. The 1-byte
     /// tag in front of the record forces encode/decode, even though the
     /// record itself is `#[repr(C)]` and could otherwise cross P/Invoke
     /// by value. Encode dispatches to the record's `WireEncodeTo`;
@@ -2673,7 +2659,7 @@ mod tests {
         assert_source_contains(
             &src,
             "public static Point? EchoOptionalPoint(Point? v)",
-            "Option<Point> renders as Point? — value-type inner desugars to Nullable<Point>",
+            "Option<Point> renders as Point?: value-type inner desugars to Nullable<Point>",
         );
         assert_source_contains(
             &src,
@@ -2695,7 +2681,7 @@ mod tests {
     /// `Option<CStyleEnum>` must route through the wire path because the
     /// 1-byte tag defeats direct P/Invoke marshaling. Encode calls the
     /// enum's `WireEncodeTo` extension method; decode calls
-    /// `{Name}Wire.Decode` — the same helpers used when a C-style enum
+    /// `{Name}Wire.Decode`, the same helpers used when a C-style enum
     /// embeds inside a wire-encoded record.
     #[test]
     fn emit_option_c_style_enum_goes_through_wire_helpers() {
@@ -2739,7 +2725,7 @@ mod tests {
         assert_source_contains(
             &src,
             "public static Status? EchoOptionalStatus(Status? v)",
-            "Option<Status> renders as Status? — C# enums are value types, so the nullable is Nullable<Status>",
+            "Option<Status> renders as Status?: C# enums are value types, so the nullable is Nullable<Status>",
         );
         assert_source_contains(
             &src,
@@ -2753,7 +2739,7 @@ mod tests {
         );
     }
 
-    /// `Option<DataEnum>` returns an `{Name}?` — a nullable reference
+    /// `Option<DataEnum>` returns an `{Name}?`, a nullable reference
     /// because the generated data enum is an `abstract record`. Decode
     /// dispatches to the enum's `Decode` static, which walks the wire
     /// tag through the variant switch inside the reader.
@@ -2803,7 +2789,7 @@ mod tests {
         assert_source_contains(
             &src,
             "public static Shape? FindShape(int id)",
-            "Option<Shape> renders as Shape? — Shape is an abstract record, so `?` means nullable reference",
+            "Option<Shape> renders as Shape?: Shape is an abstract record, so `?` means nullable reference",
         );
         assert_source_contains(
             &src,
@@ -2857,8 +2843,8 @@ mod tests {
         assert_source_contains(
             record_source,
             "(1 + (this.Score is { } sizeOpt1 ? 8 : 0))",
-            "the second Option field's size contribution advances to sizeOpt1 — \
-             confirms the shared emit context is threaded across sibling fields",
+            "the second Option field's size contribution advances to sizeOpt1, \
+             confirming the shared emit context is threaded across sibling fields",
         );
         // Same story on the encode side: two Option fields, distinct
         // `opt0` / `opt1` pattern names.
@@ -2888,7 +2874,7 @@ mod tests {
     /// `Option<Vec<T>>` wraps the entire length-prefixed array in the
     /// 1-byte Option tag. The wire codec is: tag byte + (when present)
     /// the normal 4-byte length prefix + elements. The inner Vec still
-    /// uses whichever path its element type admits — for primitives,
+    /// uses whichever path its element type admits. For primitives,
     /// that's the length-prefixed blittable bulk helper.
     #[test]
     fn emit_option_vec_of_primitive_wraps_blittable_vec_in_option_tag() {
@@ -2911,7 +2897,7 @@ mod tests {
         assert_source_contains(
             &src,
             "public static int[]? EchoOptionalVec(int[]? v)",
-            "Option<Vec<i32>> renders as int[]? — the `?` nullability applies to the whole array",
+            "Option<Vec<i32>> renders as int[]?: the `?` nullability applies to the whole array",
         );
         assert_source_contains(
             &src,
@@ -2921,7 +2907,7 @@ mod tests {
         assert_source_contains(
             &src,
             "if (v is { } opt0) { _wire_v.WriteU8((byte)1); _wire_v.WriteBlittableArray(opt0); } else { _wire_v.WriteU8((byte)0); }",
-            "encode dispatches to WriteBlittableArray on the unwrapped vec — the fast path is preserved \
+            "encode dispatches to WriteBlittableArray on the unwrapped vec; the fast path is preserved \
              inside the Option wrapping",
         );
         assert_source_contains(
@@ -2960,7 +2946,7 @@ mod tests {
         assert_source_contains(
             &src,
             "public static int?[] EchoVecOptionalI32(int?[] v)",
-            "Vec<Option<i32>> renders as int?[] — array of Nullable<int>, not a nullable array",
+            "Vec<Option<i32>> renders as int?[]: array of Nullable<int>, not a nullable array",
         );
         // Write path: length prefix, foreach with a named iterator,
         // per-element Option encoding.

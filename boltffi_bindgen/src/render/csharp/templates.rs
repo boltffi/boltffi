@@ -1,10 +1,10 @@
-//! Askama template definitions that map plan structs to `.txt` template files.
+//! Askama template bindings: one struct per `.txt` template, each
+//! borrowing the plan node it renders. Templates only interpolate.
+//! All branching and decision logic lives upstream in `lower`.
 //!
-//! Snapshot tests live next to the template declarations so that a
-//! template change shows up as a single `.snap` diff rather than rippling
-//! across every emit-level test. Plan-level unit tests remain in
-//! [`plan`](super::plan); template tests pin the *rendered shape* given a
-//! specific plan fixture.
+//! Snapshot tests pin the rendered shape against curated plan
+//! fixtures, so a template change surfaces as a single `.snap` diff
+//! rather than rippling across emit-level tests.
 
 use askama::Template;
 
@@ -94,7 +94,7 @@ mod tests {
         }
     }
 
-    /// Point: the canonical blittable record — two f64 fields, `#[repr(C)]`
+    /// Point: the canonical blittable record. Two f64 fields, `#[repr(C)]`
     /// in Rust. Carries `[StructLayout(Sequential)]` and still emits wire
     /// helpers so it can be embedded inside a non-blittable record's
     /// wire encode/decode path without a second code shape.
@@ -127,7 +127,7 @@ mod tests {
         insta::assert_snapshot!(template.render().unwrap());
     }
 
-    /// Person: the canonical non-blittable record — a string field (which
+    /// Person: the canonical non-blittable record: a string field (which
     /// forces the wire path) plus a primitive. No StructLayout attribute.
     /// Imports `System.Text` because the size expression uses
     /// `Encoding.UTF8.GetByteCount`.
@@ -162,7 +162,7 @@ mod tests {
 
     /// Line: a record whose fields are themselves records. The decode
     /// expression for a record-typed field is `Point.Decode(reader)` and
-    /// the encode is `this.Start.WireEncodeTo(wire)` — the recursive
+    /// the encode is `this.Start.WireEncodeTo(wire)`, the recursive
     /// glue that lets records compose.
     #[test]
     fn snapshot_nested_record_line() {
@@ -193,7 +193,7 @@ mod tests {
         insta::assert_snapshot!(template.render().unwrap());
     }
 
-    /// A fieldless record: the template must still produce valid C# —
+    /// A fieldless record: the template must still produce valid C#.
     /// `WireEncodedSize` returns 0 and `WireEncodeTo` is an empty method.
     #[test]
     fn snapshot_empty_record() {
@@ -212,8 +212,8 @@ mod tests {
     /// Flag: the canonical "blittable record with a C-style enum field."
     /// Status is an `enum : int` here, so embedding it alongside a `uint`
     /// keeps the record on the zero-copy P/Invoke path with
-    /// `[StructLayout(Sequential)]`. The wire helpers are still emitted —
-    /// they exist so non-blittable records that embed `Flag` can reach its
+    /// `[StructLayout(Sequential)]`. The wire helpers are still emitted
+    /// so non-blittable records that embed `Flag` can reach its
     /// wire encoder without a second rendering shape.
     #[test]
     fn snapshot_blittable_record_with_cstyle_enum_field() {
@@ -454,7 +454,7 @@ mod tests {
         insta::assert_snapshot!(template.render().unwrap());
     }
 
-    /// Shape: the canonical data enum exercising every payload shape —
+    /// Shape: the canonical data enum exercising every payload shape:
     /// a single-field variant (Circle), a multi-field variant (Rectangle),
     /// and a unit variant (Point). Renders as `abstract record Shape`
     /// with nested `sealed record` variants, switch-expression Decode,
@@ -518,7 +518,7 @@ mod tests {
 
     /// Shape with methods: a data enum carrying both static factories
     /// (UnitCircle, VariantCount) and instance methods (Area, Describe).
-    /// Methods render inside the abstract record body — instance ones
+    /// Methods render inside the abstract record body. Instance ones
     /// wire-encode `this` into `_selfBytes` before the native call.
     #[test]
     fn snapshot_data_enum_with_methods_shape() {
