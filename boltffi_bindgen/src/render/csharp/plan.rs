@@ -1751,9 +1751,9 @@ mod tests {
             };
             assert_eq!(
                 CSharpType::from_read_op(&option_op),
-                CSharpType::Nullable(Box::new(CSharpType::Array(Box::new(
-                    CSharpType::Record("Point".to_string())
-                ))))
+                CSharpType::Nullable(Box::new(CSharpType::Array(Box::new(CSharpType::Record(
+                    "Point".to_string()
+                )))))
             );
         }
 
@@ -1848,9 +1848,9 @@ mod tests {
             )))));
             assert_eq!(
                 CSharpType::from_type_expr(&expr),
-                CSharpType::Nullable(Box::new(CSharpType::Array(Box::new(
-                    CSharpType::Record("Point".to_string())
-                ))))
+                CSharpType::Nullable(Box::new(CSharpType::Array(Box::new(CSharpType::Record(
+                    "Point".to_string()
+                )))))
             );
         }
     }

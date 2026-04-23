@@ -434,8 +434,9 @@ fn emit_reader_read_with_context(
         }
         ReadOp::Option { some, .. } => {
             let inner = emit_reader_read_with_context(some, scope, ctx);
-            let inner_ty = CSharpType::from_read_op(some.ops.first().expect("option inner read op"))
-                .qualify_if_shadowed_opt(scope);
+            let inner_ty =
+                CSharpType::from_read_op(some.ops.first().expect("option inner read op"))
+                    .qualify_if_shadowed_opt(scope);
             format!("reader.ReadU8() == 0 ? ({inner_ty}?)null : {inner}")
         }
         ReadOp::Vec {

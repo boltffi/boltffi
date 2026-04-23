@@ -821,7 +821,9 @@ impl<'a> CSharpLowerer<'a> {
         let name = NamingConvention::method_name(method_def.id.as_str());
         let return_type = match &method_def.returns {
             ReturnDef::Void => CSharpType::Void,
-            ReturnDef::Value(type_expr) => self.lower_type(type_expr)?.qualify_if_shadowed_opt(scope),
+            ReturnDef::Value(type_expr) => {
+                self.lower_type(type_expr)?.qualify_if_shadowed_opt(scope)
+            }
             ReturnDef::Result { .. } => return None,
         };
         let return_kind = self.return_kind(
