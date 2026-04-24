@@ -5,9 +5,8 @@
 
 use boltffi_ffi_rules::naming::{LibraryName, Name};
 
-use super::{
-    CFunctionName, CSharpClassName, CSharpEnum, CSharpFunction, CSharpNamespace, CSharpRecord,
-};
+use super::super::ast::{CSharpClassName, CSharpNamespace};
+use super::{CFunctionName, CSharpEnum, CSharpFunction, CSharpRecord};
 
 /// Represents a lowered C# module, containing everything the templates need
 /// to render a `.cs` file.

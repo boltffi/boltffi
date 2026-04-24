@@ -11,7 +11,7 @@ mod method;
 pub use function::{CSharpFunction, CSharpReturnKind};
 pub use method::{CSharpMethod, CSharpReceiver};
 
-use super::{
+use super::super::ast::{
     CSharpExpression, CSharpLocalDecl, CSharpLocalName, CSharpParamName, CSharpStatement,
     CSharpType,
 };
@@ -244,7 +244,7 @@ mod tests {
     }
 
     fn record_type(name: &str) -> CSharpType {
-        CSharpType::Record(super::super::CSharpClassName::from_source(name).into())
+        CSharpType::Record(super::super::super::ast::CSharpClassName::from_source(name).into())
     }
 
     fn wire_encoded_local() -> CSharpLocalName {

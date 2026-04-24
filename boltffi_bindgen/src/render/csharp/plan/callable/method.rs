@@ -4,7 +4,8 @@
 //! method) depending on whether the owning type can hold its own
 //! members and how `self` crosses the ABI.
 
-use super::super::{CFunctionName, CSharpClassName, CSharpMethodName, CSharpType};
+use super::super::super::ast::{CSharpClassName, CSharpMethodName, CSharpType};
+use super::super::CFunctionName;
 use super::{CSharpParam, CSharpReturnKind, CSharpWireWriter, pinned_fixed_args};
 
 /// A method or factory constructor on a value type, today always an

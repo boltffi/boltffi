@@ -8,7 +8,8 @@
 
 use askama::Template;
 
-use super::plan::{CSharpEnum, CSharpModule, CSharpNamespace, CSharpRecord};
+use super::ast::CSharpNamespace;
+use super::plan::{CSharpEnum, CSharpModule, CSharpRecord};
 
 /// Renders the file header: auto-generated comment, `using` directives,
 /// and namespace declaration.
@@ -73,11 +74,13 @@ pub struct EnumDataTemplate<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::render::csharp::ast::{
+        CSharpClassName, CSharpExpression, CSharpMethodName, CSharpParamName, CSharpPropertyName,
+        CSharpStatement, CSharpType,
+    };
     use crate::render::csharp::plan::{
-        CFunctionName, CSharpClassName, CSharpEnum, CSharpEnumKind, CSharpEnumVariant,
-        CSharpExpression, CSharpField, CSharpMethod, CSharpMethodName, CSharpParam,
-        CSharpParamKind, CSharpParamName, CSharpPropertyName, CSharpReceiver, CSharpRecord,
-        CSharpReturnKind, CSharpStatement, CSharpType,
+        CFunctionName, CSharpEnum, CSharpEnumKind, CSharpEnumVariant, CSharpField, CSharpMethod,
+        CSharpParam, CSharpParamKind, CSharpReceiver, CSharpRecord, CSharpReturnKind,
     };
 
     fn demo_namespace() -> CSharpNamespace {

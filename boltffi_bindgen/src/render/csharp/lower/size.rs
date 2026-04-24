@@ -11,7 +11,7 @@
 use crate::ir::codec::VecLayout;
 use crate::ir::ops::SizeExpr;
 
-use super::super::plan::{
+use super::super::ast::{
     CSharpBinaryOp, CSharpExpression, CSharpIdent, CSharpLiteral, CSharpLocalName,
     CSharpMethodName, CSharpPropertyName,
 };

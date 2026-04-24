@@ -8,7 +8,8 @@
 
 use crate::ir::types::PrimitiveType;
 
-use super::{CSharpClassName, CSharpField, CSharpMethod};
+use super::super::ast::CSharpClassName;
+use super::{CSharpField, CSharpMethod};
 
 /// A Rust enum lifted into the C# type surface. C-style enums (all unit
 /// variants) render as native `enum` declarations and ride the CLR's
@@ -155,7 +156,7 @@ impl CSharpEnumVariant {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::super::{CSharpExpression, CSharpPropertyName, CSharpStatement, CSharpType};
+    use super::super::super::ast::{CSharpExpression, CSharpPropertyName, CSharpStatement, CSharpType};
 
     fn c_style_enum(source_name: &str, tag_type: PrimitiveType) -> CSharpEnum {
         let class_name = CSharpClassName::from_source(source_name);

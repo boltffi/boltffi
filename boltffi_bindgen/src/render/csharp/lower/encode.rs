@@ -18,7 +18,7 @@ use crate::ir::codec::{EnumLayout, VecLayout};
 use crate::ir::ops::{WriteOp, WriteSeq};
 use crate::ir::types::{PrimitiveType, TypeExpr};
 
-use super::super::plan::{
+use super::super::ast::{
     CSharpExpression, CSharpIdent, CSharpLiteral, CSharpLocalName, CSharpMethodName,
     CSharpPropertyName, CSharpStatement, CSharpType,
 };

@@ -22,8 +22,9 @@ use std::collections::HashSet;
 
 use super::{
     CSharpOptions, NamingConvention,
+    ast::{CSharpClassName, CSharpNamespace, CSharpType},
     lower::CSharpLowerer,
-    plan::{CSharpClassName, CSharpEnumKind, CSharpNamespace, CSharpRecord, CSharpType},
+    plan::{CSharpEnumKind, CSharpRecord},
     templates::{
         EnumCStyleTemplate, EnumDataTemplate, FunctionsTemplate, NativeTemplate, PreambleTemplate,
         RecordTemplate,

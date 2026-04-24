@@ -38,12 +38,15 @@ use crate::ir::ops::{FieldWriteOp, ReadOp, ReadSeq, SizeExpr, ValueExpr, WriteOp
 use crate::ir::types::TypeExpr;
 use crate::ir::{AbiContract, FfiContract};
 
+use super::ast::{
+    CSharpClassName, CSharpExpression, CSharpIdent, CSharpLocalName, CSharpMethodName,
+    CSharpNamespace, CSharpParamName, CSharpType,
+};
 use super::emit;
 use super::plan::{
-    CFunctionName, CSharpClassName, CSharpEnum, CSharpEnumKind, CSharpEnumVariant,
-    CSharpExpression, CSharpField, CSharpFunction, CSharpIdent, CSharpLocalName, CSharpMethod,
-    CSharpMethodName, CSharpModule, CSharpNamespace, CSharpParam, CSharpParamKind, CSharpParamName,
-    CSharpReceiver, CSharpRecord, CSharpReturnKind, CSharpType, CSharpWireWriter,
+    CFunctionName, CSharpEnum, CSharpEnumKind, CSharpEnumVariant, CSharpField, CSharpFunction,
+    CSharpMethod, CSharpModule, CSharpParam, CSharpParamKind, CSharpReceiver, CSharpRecord,
+    CSharpReturnKind, CSharpWireWriter,
 };
 use super::{CSharpOptions, NamingConvention};
 

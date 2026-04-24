@@ -5,7 +5,7 @@
 //! name, same [`CSharpType`], same decode/size/encode trees. One
 //! type, two consumers.
 
-use super::{CSharpExpression, CSharpPropertyName, CSharpStatement, CSharpType};
+use super::super::ast::{CSharpExpression, CSharpPropertyName, CSharpStatement, CSharpType};
 
 /// A named field carrying a type and the three wire trees (decode
 /// expression, size expression, encode statement) the templates

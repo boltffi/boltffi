@@ -13,7 +13,7 @@ use std::collections::HashMap;
 use crate::ir::ops::ValueExpr;
 
 use super::super::NamingConvention;
-use super::super::plan::{CSharpExpression, CSharpIdent, CSharpPropertyName};
+use super::super::ast::{CSharpExpression, CSharpIdent, CSharpPropertyName};
 
 /// Active rebindings from IR variable names (as they appear in
 /// [`ValueExpr::Var`]) to the C# expression that should stand in for

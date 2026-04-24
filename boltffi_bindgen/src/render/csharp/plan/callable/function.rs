@@ -5,7 +5,8 @@
 //! native signature returns raw bytes (`FfiBuf`) or a CLR-marshalled
 //! primitive.
 
-use super::super::{CFunctionName, CSharpMethodName, CSharpType};
+use super::super::super::ast::{CSharpMethodName, CSharpType};
+use super::super::CFunctionName;
 use super::{CSharpParam, CSharpWireWriter, pinned_fixed_args};
 
 /// A primitive function binding. Serves double duty: the template uses `name`
@@ -212,8 +213,8 @@ impl CSharpReturnKind {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::super::super::CSharpClassName;
-    use super::super::{CSharpLocalName, CSharpParamKind, CSharpParamName};
+    use super::super::super::super::ast::{CSharpClassName, CSharpLocalName, CSharpParamName};
+    use super::super::CSharpParamKind;
     use rstest::rstest;
 
     fn function_with_return(

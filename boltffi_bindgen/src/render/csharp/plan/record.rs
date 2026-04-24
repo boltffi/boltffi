@@ -4,7 +4,8 @@
 //! blittability flag that decides whether the record rides the direct
 //! P/Invoke path or goes through wire encoding.
 
-use super::{CSharpClassName, CSharpField};
+use super::super::ast::CSharpClassName;
+use super::CSharpField;
 
 /// A record (Rust struct) exposed as a C# `readonly record struct`.
 ///
