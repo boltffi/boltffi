@@ -1,0 +1,40 @@
+---
+source: boltffi_bindgen/src/render/typescript/templates.rs
+assertion_line: 909
+expression: template.render().unwrap()
+---
+export type Tree =
+  | { readonly tag: "Leaf"; readonly value: number }
+  | { readonly tag: "Node"; readonly left: Tree; readonly right: Tree };
+
+const TreeCodec: WireCodec<Tree> = {
+  size: (v) => {
+    switch (v.tag) {
+      case "Leaf": return 4 + 4;
+      case "Node": return 4 + 4 + 4;
+    }
+  },
+  encode: (writer, v) => {
+    switch (v.tag) {
+      case "Leaf":
+        writer.writeI32(0);
+        writer.writeI32(v.value);
+        break;
+      case "Node":
+        writer.writeI32(1);
+        writer.writeI32(v.left);
+        writer.writeI32(v.right);
+        break;
+    }
+  },
+  decode: (reader) => {
+    const tag = reader.readI32();
+    switch (tag) {
+      case 0:
+        return { tag: "Leaf", value: reader.readI32() };
+      case 1:
+        return { tag: "Node", left: reader.readI32(), right: reader.readI32() };
+      default: throw new Error(`Unknown Tree wire tag: ${tag}`);
+    }
+  },
+};

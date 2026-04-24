@@ -867,6 +867,49 @@ mod tests {
     }
 
     #[test]
+    fn snapshot_enum_data_recursive() {
+        let doc: Option<String> = None;
+        let variants = vec![
+            TsVariant {
+                name: "Leaf".to_string(),
+                discriminant: 0,
+                fields: vec![TsVariantField {
+                    name: "value".to_string(),
+                    ts_type: "number".to_string(),
+                    decode: primitive_read(PrimitiveType::I32),
+                    encode: primitive_write(PrimitiveType::I32, "value"),
+                }],
+                doc: None,
+            },
+            TsVariant {
+                name: "Node".to_string(),
+                discriminant: 1,
+                fields: vec![
+                    TsVariantField {
+                        name: "left".to_string(),
+                        ts_type: "Tree".to_string(),
+                        decode: primitive_read(PrimitiveType::I32),
+                        encode: primitive_write(PrimitiveType::I32, "left"),
+                    },
+                    TsVariantField {
+                        name: "right".to_string(),
+                        ts_type: "Tree".to_string(),
+                        decode: primitive_read(PrimitiveType::I32),
+                        encode: primitive_write(PrimitiveType::I32, "right"),
+                    },
+                ],
+                doc: None,
+            },
+        ];
+        let template = EnumDataTemplate {
+            name: "Tree",
+            variants: &variants,
+            doc: &doc,
+        };
+        insta::assert_snapshot!(template.render().unwrap());
+    }
+
+    #[test]
     fn snapshot_function_void() {
         let doc: Option<String> = None;
         let template = FunctionTemplate {

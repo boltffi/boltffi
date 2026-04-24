@@ -8,7 +8,7 @@ use boltffi_ffi_rules::transport::{
 };
 use heck::ToLowerCamelCase;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use super::emit;
 use super::plan::{
@@ -28,8 +28,8 @@ use crate::ir::abi::{
 use crate::ir::codec::CodecPlan;
 use crate::ir::contract::FfiContract;
 use crate::ir::definitions::{
-    CallbackKind, CallbackMethodDef, ConstructorDef, DefaultValue, EnumRepr, MethodDef, ParamDef,
-    Receiver, ReturnDef, StreamDef, StreamMode,
+    CallbackKind, CallbackMethodDef, ConstructorDef, DefaultValue, EnumDef, EnumRepr, MethodDef,
+    ParamDef, Receiver, ReturnDef, StreamDef, StreamMode, VariantPayload,
 };
 use crate::ir::ids::{CallbackId, ClassId, EnumId, FieldName, ParamName, RecordId};
 use crate::ir::ops::{
@@ -573,6 +573,7 @@ impl<'a> SwiftLowerer<'a> {
                         discriminant: variant.discriminant,
                         payload: self.lower_variant_payload(variant),
                         doc: variant_docs.get(i).cloned().flatten(),
+                        is_recursive: self.variant_is_recursive(def, i),
                     })
                     .collect();
 
@@ -612,6 +613,96 @@ impl<'a> SwiftLowerer<'a> {
                 }
             })
             .collect()
+    }
+
+    fn variant_is_recursive(&self, def: &EnumDef, index: usize) -> bool {
+        let EnumRepr::Data { variants, .. } = &def.repr else {
+            return false;
+        };
+        let Some(data_variant) = variants.get(index) else {
+            return false;
+        };
+        let mut visited_enums = HashSet::from([def.id.clone()]);
+        let mut visited_records = HashSet::new();
+        self.payload_contains_enum(
+            &data_variant.payload,
+            &def.id,
+            &mut visited_enums,
+            &mut visited_records,
+        )
+    }
+
+    fn payload_contains_enum(
+        &self,
+        payload: &VariantPayload,
+        target: &EnumId,
+        visited_enums: &mut HashSet<EnumId>,
+        visited_records: &mut HashSet<RecordId>,
+    ) -> bool {
+        match payload {
+            VariantPayload::Unit => false,
+            VariantPayload::Tuple(types) => types
+                .iter()
+                .any(|ty| self.type_contains_enum(ty, target, visited_enums, visited_records)),
+            VariantPayload::Struct(fields) => fields.iter().any(|field| {
+                self.type_contains_enum(&field.type_expr, target, visited_enums, visited_records)
+            }),
+        }
+    }
+
+    fn type_contains_enum(
+        &self,
+        type_expr: &TypeExpr,
+        target: &EnumId,
+        visited_enums: &mut HashSet<EnumId>,
+        visited_records: &mut HashSet<RecordId>,
+    ) -> bool {
+        match type_expr {
+            TypeExpr::Enum(id) if id == target => true,
+            TypeExpr::Enum(id) => {
+                if !visited_enums.insert(id.clone()) {
+                    return false;
+                }
+                let Some(def) = self.contract.catalog.resolve_enum(id) else {
+                    return false;
+                };
+                match &def.repr {
+                    EnumRepr::Data { variants, .. } => variants.iter().any(|v| {
+                        self.payload_contains_enum(
+                            &v.payload,
+                            target,
+                            visited_enums,
+                            visited_records,
+                        )
+                    }),
+                    EnumRepr::CStyle { .. } => false,
+                }
+            }
+            TypeExpr::Record(id) => {
+                if !visited_records.insert(id.clone()) {
+                    return false;
+                }
+                let Some(def) = self.contract.catalog.resolve_record(id) else {
+                    return false;
+                };
+                def.fields.iter().any(|field| {
+                    self.type_contains_enum(
+                        &field.type_expr,
+                        target,
+                        visited_enums,
+                        visited_records,
+                    )
+                })
+            }
+            TypeExpr::Option(inner) | TypeExpr::Vec(inner) => {
+                self.type_contains_enum(inner, target, visited_enums, visited_records)
+            }
+            TypeExpr::Result { ok, err } => {
+                self.type_contains_enum(ok, target, visited_enums, visited_records)
+                    || self.type_contains_enum(err, target, visited_enums, visited_records)
+            }
+            _ => false,
+        }
     }
 
     fn lower_variant_payload(&self, variant: &AbiEnumVariant) -> SwiftVariantPayload {
