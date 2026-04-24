@@ -32,9 +32,10 @@ use crate::ir::{AbiContract, FfiContract};
 
 use super::emit;
 use super::plan::{
-    CSharpEnum, CSharpEnumKind, CSharpEnumVariant, CSharpFunction, CSharpMethod, CSharpModule,
-    CSharpParam, CSharpParamKind, CSharpReceiver, CSharpRecord, CSharpField,
-    CSharpReturnKind, CSharpType, CSharpWireWriter, ShadowScope,
+    CFunctionName, CSharpClassName, CSharpEnum, CSharpEnumKind, CSharpEnumVariant, CSharpField,
+    CSharpFunction, CSharpLocalName, CSharpMethod, CSharpMethodName, CSharpModule,
+    CSharpNamespace, CSharpParam, CSharpParamKind, CSharpParamName, CSharpReceiver, CSharpRecord,
+    CSharpReturnKind, CSharpType, CSharpWireWriter,
 };
 use super::{CSharpOptions, NamingConvention};
 
@@ -44,6 +45,10 @@ pub struct CSharpLowerer<'a> {
     ffi: &'a FfiContract,
     abi: &'a AbiContract,
     options: &'a CSharpOptions,
+    /// The C# namespace every generated file lands in. Computed once at
+    /// construction and passed to `qualify_if_shadowed` at each call site
+    /// that needs it; it never varies across a lowering run.
+    namespace: CSharpNamespace,
     /// Records that are fully supported: every field resolves to a type the
     /// C# backend can currently render. Populated up front because whether
     /// a record is supported can depend on whether *other* records are
@@ -59,10 +64,12 @@ pub struct CSharpLowerer<'a> {
 impl<'a> CSharpLowerer<'a> {
     pub fn new(ffi: &'a FfiContract, abi: &'a AbiContract, options: &'a CSharpOptions) -> Self {
         let (supported_records, supported_enums) = Self::compute_supported_sets(ffi);
+        let namespace = CSharpNamespace::from_source(&ffi.package.name);
         Self {
             ffi,
             abi,
             options,
+            namespace,
             supported_records,
             supported_enums,
         }
@@ -180,9 +187,10 @@ impl<'a> CSharpLowerer<'a> {
             .clone()
             .unwrap_or_else(|| naming::library_name(&self.ffi.package.name));
 
-        let class_name = NamingConvention::class_name(&self.ffi.package.name);
-        let namespace = NamingConvention::namespace(&self.ffi.package.name);
-        let prefix = naming::ffi_prefix().to_string();
+        let class_name = CSharpClassName::from_source(&self.ffi.package.name);
+        let namespace = self.namespace.clone();
+        let free_buf_ffi_name =
+            CFunctionName::new(format!("{}_free_buf", naming::ffi_prefix()));
 
         let records: Vec<CSharpRecord> = self
             .ffi
@@ -210,7 +218,7 @@ impl<'a> CSharpLowerer<'a> {
             namespace,
             class_name,
             lib_name,
-            prefix,
+            free_buf_ffi_name,
             records,
             enums,
             functions,
@@ -249,8 +257,8 @@ impl<'a> CSharpLowerer<'a> {
             .collect::<Option<Vec<_>>>()?;
 
         Some(CSharpFunction {
-            name: NamingConvention::method_name(function.id.as_str()),
-            ffi_name: naming::function_ffi_name(function.id.as_str()).into_string(),
+            name: (&function.id).into(),
+            ffi_name: naming::function_ffi_name(function.id.as_str()).into(),
             params,
             return_type,
             return_kind,
@@ -263,7 +271,7 @@ impl<'a> CSharpLowerer<'a> {
         return_def: &ReturnDef,
         return_type: &CSharpType,
         decode_ops: Option<&ReadSeq>,
-        scope: Option<&ShadowScope>,
+        shadowed: Option<&HashSet<CSharpClassName>>,
     ) -> CSharpReturnKind {
         if return_type.is_void() {
             return CSharpReturnKind::Void;
@@ -290,7 +298,7 @@ impl<'a> CSharpLowerer<'a> {
                     _ => {
                         let element_seq = Self::vec_element_read_seq(decode_ops)
                             .expect("encoded Vec return must carry decode_ops with a Vec ReadOp");
-                        emit::vec_return_reader_call(inner, &element_seq)
+                        emit::vec_return_reader_call(inner, &element_seq, &self.namespace)
                     }
                 };
                 CSharpReturnKind::WireDecodeArray { reader_call }
@@ -303,7 +311,8 @@ impl<'a> CSharpLowerer<'a> {
                 let decode_seq = decode_ops
                     .expect("Option return must carry decode_ops")
                     .clone();
-                let decode_expr = emit::emit_reader_read(&decode_seq, scope);
+                let decode_expr =
+                    emit::emit_reader_read(&decode_seq, shadowed, &self.namespace);
                 CSharpReturnKind::WireDecodeOption { decode_expr }
             }
             // Primitives, bools, blittable records, and C-style enums
@@ -419,7 +428,7 @@ impl<'a> CSharpLowerer<'a> {
             TypeExpr::Record(id) if !self.is_blittable_record(id) => {
                 let writer = wire_writers
                     .iter()
-                    .find(|w| w.param_name == param.name.as_str())?;
+                    .find(|w| w.param_name.as_str() == param.name.as_str())?;
                 CSharpParamKind::WireEncoded {
                     binding_name: writer.bytes_binding_name.clone(),
                 }
@@ -427,7 +436,7 @@ impl<'a> CSharpLowerer<'a> {
             TypeExpr::Enum(id) if self.is_data_enum(id) => {
                 let writer = wire_writers
                     .iter()
-                    .find(|w| w.param_name == param.name.as_str())?;
+                    .find(|w| w.param_name.as_str() == param.name.as_str())?;
                 CSharpParamKind::WireEncoded {
                     binding_name: writer.bytes_binding_name.clone(),
                 }
@@ -457,7 +466,7 @@ impl<'a> CSharpLowerer<'a> {
                 // the param travels wire-encoded rather than as a pinned T[].
                 let writer = wire_writers
                     .iter()
-                    .find(|w| w.param_name == param.name.as_str())?;
+                    .find(|w| w.param_name.as_str() == param.name.as_str())?;
                 CSharpParamKind::WireEncoded {
                     binding_name: writer.bytes_binding_name.clone(),
                 }
@@ -468,7 +477,7 @@ impl<'a> CSharpLowerer<'a> {
                 // primitive layout.
                 let writer = wire_writers
                     .iter()
-                    .find(|w| w.param_name == param.name.as_str())?;
+                    .find(|w| w.param_name.as_str() == param.name.as_str())?;
                 CSharpParamKind::WireEncoded {
                     binding_name: writer.bytes_binding_name.clone(),
                 }
@@ -480,7 +489,7 @@ impl<'a> CSharpLowerer<'a> {
         };
 
         Some(CSharpParam {
-            name: NamingConvention::field_name(param.name.as_str()),
+            name: (&param.name).into(),
             csharp_type,
             kind,
         })
@@ -499,9 +508,10 @@ impl<'a> CSharpLowerer<'a> {
             TypeExpr::Void => Some(CSharpType::Void),
             TypeExpr::Primitive(primitive) => Some(CSharpType::from(*primitive)),
             TypeExpr::String => Some(CSharpType::String),
-            TypeExpr::Record(id) if self.supported_records.contains(id.as_str()) => Some(
-                CSharpType::Record(NamingConvention::class_name(id.as_str())),
-            ),
+            TypeExpr::Record(id) if self.supported_records.contains(id.as_str()) => {
+                let class_name: CSharpClassName = id.into();
+                Some(CSharpType::Record(class_name.into()))
+            }
             TypeExpr::Enum(id) if self.supported_enums.contains(id.as_str()) => {
                 let enum_def = self.ffi.catalog.resolve_enum(id)?;
                 Some(CSharpType::for_enum(enum_def))
@@ -519,7 +529,7 @@ impl<'a> CSharpLowerer<'a> {
     }
 
     fn lower_record(&self, record: &RecordDef) -> CSharpRecord {
-        let class_name = NamingConvention::class_name(record.id.as_str());
+        let class_name: CSharpClassName = (&record.id).into();
         // Share one emit context across all fields so pattern-binding
         // names (e.g. `sizeOpt0`, `opt0`) stay unique within the
         // generated `WireEncodedSize` and `WireEncodeTo` method
@@ -567,7 +577,8 @@ impl<'a> CSharpLowerer<'a> {
         if !self.supported_enums.contains(enum_def.id.as_str()) {
             return None;
         }
-        let class_name = NamingConvention::class_name(enum_def.id.as_str());
+        let class_name: CSharpClassName = (&enum_def.id).into();
+        let wire_class_name = CSharpClassName::wire_helper(&class_name);
         // Variant names become nested `sealed record` types; inside the
         // abstract record's body they shadow any module-level type sharing
         // a name. Collect the set so emit helpers can qualify outer
@@ -578,28 +589,23 @@ impl<'a> CSharpLowerer<'a> {
             EnumRepr::Data { .. } => self.abi.enums.iter().find(|e| e.id == enum_def.id),
             _ => None,
         };
-        let shadowed_variant_names: HashSet<String> = abi_enum_for_data
-            .map(|abi_enum| {
-                abi_enum
-                    .variants
-                    .iter()
-                    .map(|v| NamingConvention::class_name(v.name.as_str()))
-                    .collect()
-            })
+        let shadowed_variant_names: HashSet<CSharpClassName> = abi_enum_for_data
+            .map(|abi_enum| abi_enum.variants.iter().map(|v| (&v.name).into()).collect())
             .unwrap_or_default();
-        let namespace = NamingConvention::namespace(&self.ffi.package.name);
-        let method_scope = abi_enum_for_data.map(|_| ShadowScope {
-            shadowed: &shadowed_variant_names,
-            namespace: &namespace,
-        });
-        let methods = self.lower_enum_methods(enum_def, &class_name, method_scope.as_ref());
+        let method_shadowed = abi_enum_for_data.map(|_| &shadowed_variant_names);
+        let methods = self.lower_enum_methods(enum_def, &class_name, method_shadowed);
+        let methods_class_name = if methods.is_empty() {
+            None
+        } else {
+            Some(CSharpClassName::methods_companion(&class_name))
+        };
         match &enum_def.repr {
             EnumRepr::CStyle { tag_type, variants } => {
                 let lowered_variants = variants
                     .iter()
                     .enumerate()
                     .map(|(ordinal, variant)| CSharpEnumVariant {
-                        name: NamingConvention::class_name(variant.name.as_str()),
+                        name: (&variant.name).into(),
                         tag: variant.discriminant as i32,
                         wire_tag: ordinal as i32,
                         fields: Vec::new(),
@@ -607,6 +613,8 @@ impl<'a> CSharpLowerer<'a> {
                     .collect();
                 Some(CSharpEnum {
                     class_name,
+                    wire_class_name,
+                    methods_class_name,
                     kind: CSharpEnumKind::CStyle,
                     c_style_tag_type: Some(*tag_type),
                     variants: lowered_variants,
@@ -615,10 +623,6 @@ impl<'a> CSharpLowerer<'a> {
             }
             EnumRepr::Data { .. } => {
                 let abi_enum = abi_enum_for_data?;
-                let scope = ShadowScope {
-                    shadowed: &shadowed_variant_names,
-                    namespace: &namespace,
-                };
                 // Share one encode/size context across all variants of
                 // this enum because `WireEncodedSize` and `WireEncodeTo`
                 // render all variant fields inside one method body
@@ -638,7 +642,7 @@ impl<'a> CSharpLowerer<'a> {
                             abi_enum,
                             variant,
                             ordinal,
-                            &scope,
+                            &shadowed_variant_names,
                             &mut size_ctx,
                             &mut encode_ctx,
                             &mut decode_ctx,
@@ -647,6 +651,8 @@ impl<'a> CSharpLowerer<'a> {
                     .collect();
                 Some(CSharpEnum {
                     class_name,
+                    wire_class_name,
+                    methods_class_name,
                     kind: CSharpEnumKind::Data,
                     c_style_tag_type: None,
                     variants,
@@ -662,7 +668,7 @@ impl<'a> CSharpLowerer<'a> {
         abi_enum: &AbiEnum,
         variant: &AbiEnumVariant,
         ordinal: usize,
-        scope: &ShadowScope,
+        shadowed: &HashSet<CSharpClassName>,
         size_ctx: &mut emit::CSharpEmitContext,
         encode_ctx: &mut emit::CSharpEmitContext,
         decode_ctx: &mut emit::CSharpEmitContext,
@@ -672,11 +678,11 @@ impl<'a> CSharpLowerer<'a> {
             AbiEnumPayload::Unit => Vec::new(),
             AbiEnumPayload::Tuple(fields) | AbiEnumPayload::Struct(fields) => fields
                 .iter()
-                .map(|f| self.lower_variant_field(f, scope, size_ctx, encode_ctx, decode_ctx))
+                .map(|f| self.lower_variant_field(f, shadowed, size_ctx, encode_ctx, decode_ctx))
                 .collect(),
         };
         CSharpEnumVariant {
-            name: NamingConvention::class_name(variant.name.as_str()),
+            name: (&variant.name).into(),
             tag,
             // For data enums the public surface is a `sealed record`,
             // not a numbered enum, so `tag` and `wire_tag` converge:
@@ -694,7 +700,7 @@ impl<'a> CSharpLowerer<'a> {
     fn lower_variant_field(
         &self,
         field: &AbiEnumField,
-        scope: &ShadowScope,
+        shadowed: &HashSet<CSharpClassName>,
         size_ctx: &mut emit::CSharpEmitContext,
         encode_ctx: &mut emit::CSharpEmitContext,
         decode_ctx: &mut emit::CSharpEmitContext,
@@ -703,11 +709,16 @@ impl<'a> CSharpLowerer<'a> {
         let csharp_type = self
             .lower_type(&field.type_expr)
             .expect("variant field type must be supported")
-            .qualify_if_shadowed(scope.shadowed, scope.namespace);
+            .qualify_if_shadowed(shadowed, &self.namespace);
         CSharpField {
-            name: NamingConvention::property_name(field.name.as_str()),
+            name: (&field.name).into(),
             csharp_type,
-            wire_decode_expr: emit::emit_reader_read_shared(&field.decode, Some(scope), decode_ctx),
+            wire_decode_expr: emit::emit_reader_read_shared(
+                &field.decode,
+                Some(shadowed),
+                &self.namespace,
+                decode_ctx,
+            ),
             wire_size_expr: emit::emit_size_expr_shared(&prefixed.size, size_ctx),
             wire_encode_expr: emit::emit_write_expr_shared(&prefixed, "wire", encode_ctx),
         }
@@ -722,8 +733,8 @@ impl<'a> CSharpLowerer<'a> {
     fn lower_enum_methods(
         &self,
         enum_def: &EnumDef,
-        enum_class_name: &str,
-        scope: Option<&ShadowScope>,
+        enum_class_name: &CSharpClassName,
+        shadowed: Option<&HashSet<CSharpClassName>>,
     ) -> Vec<CSharpMethod> {
         let is_data = matches!(enum_def.repr, EnumRepr::Data { .. });
         let mut methods = Vec::new();
@@ -766,7 +777,7 @@ impl<'a> CSharpLowerer<'a> {
                 continue;
             };
             if let Some(method) =
-                self.lower_enum_method(method_def, call, enum_class_name, is_data, scope)
+                self.lower_enum_method(method_def, call, enum_class_name, is_data, shadowed)
             {
                 methods.push(method);
             }
@@ -779,22 +790,22 @@ impl<'a> CSharpLowerer<'a> {
         &self,
         ctor: &ConstructorDef,
         call: &AbiCall,
-        enum_class_name: &str,
+        enum_class_name: &CSharpClassName,
         owner_is_data: bool,
     ) -> Option<CSharpMethod> {
         let raw_name: &str = match ctor.name() {
             Some(id) => id.as_str(),
             None => "new",
         };
-        let name = NamingConvention::method_name(raw_name);
+        let name = CSharpMethodName::from_source(raw_name);
         let return_type = if owner_is_data {
-            CSharpType::DataEnum(enum_class_name.to_string())
+            CSharpType::DataEnum(enum_class_name.clone().into())
         } else {
-            CSharpType::CStyleEnum(enum_class_name.to_string())
+            CSharpType::CStyleEnum(enum_class_name.clone().into())
         };
         let return_kind = if owner_is_data {
             CSharpReturnKind::WireDecodeObject {
-                class_name: enum_class_name.to_string(),
+                class_name: enum_class_name.as_str().to_string(),
             }
         } else {
             CSharpReturnKind::Direct
@@ -812,9 +823,9 @@ impl<'a> CSharpLowerer<'a> {
             .map(|p| self.lower_param(p, &wire_writers))
             .collect::<Option<Vec<_>>>()?;
         Some(CSharpMethod {
-            native_method_name: format!("{enum_class_name}{name}"),
+            native_method_name: CSharpMethodName::native_for_owner(enum_class_name, &name),
             name,
-            ffi_name: call.symbol.as_str().to_string(),
+            ffi_name: (&call.symbol).into(),
             receiver: CSharpReceiver::Static,
             params,
             return_type,
@@ -827,23 +838,23 @@ impl<'a> CSharpLowerer<'a> {
         &self,
         method_def: &MethodDef,
         call: &AbiCall,
-        enum_class_name: &str,
+        enum_class_name: &CSharpClassName,
         owner_is_data: bool,
-        scope: Option<&ShadowScope>,
+        shadowed: Option<&HashSet<CSharpClassName>>,
     ) -> Option<CSharpMethod> {
-        let name = NamingConvention::method_name(method_def.id.as_str());
+        let name: CSharpMethodName = (&method_def.id).into();
         let return_type = match &method_def.returns {
             ReturnDef::Void => CSharpType::Void,
-            ReturnDef::Value(type_expr) => {
-                self.lower_type(type_expr)?.qualify_if_shadowed_opt(scope)
-            }
+            ReturnDef::Value(type_expr) => self
+                .lower_type(type_expr)?
+                .qualify_if_shadowed_opt(shadowed, &self.namespace),
             ReturnDef::Result { .. } => return None,
         };
         let return_kind = self.return_kind(
             &method_def.returns,
             &return_type,
             call.returns.decode_ops.as_ref(),
-            scope,
+            shadowed,
         );
 
         let receiver = match method_def.receiver {
@@ -877,9 +888,9 @@ impl<'a> CSharpLowerer<'a> {
             .map(|p| self.lower_param(p, &wire_writers))
             .collect::<Option<Vec<_>>>()?;
         Some(CSharpMethod {
-            native_method_name: format!("{enum_class_name}{name}"),
+            native_method_name: CSharpMethodName::native_for_owner(enum_class_name, &name),
             name,
-            ffi_name: call.symbol.as_str().to_string(),
+            ffi_name: (&call.symbol).into(),
             receiver,
             params,
             return_type,
@@ -906,9 +917,14 @@ impl<'a> CSharpLowerer<'a> {
             .lower_type(&field.type_expr)
             .expect("record field type must be supported");
         CSharpField {
-            name: NamingConvention::property_name(field.name.as_str()),
+            name: (&field.name).into(),
             csharp_type,
-            wire_decode_expr: emit::emit_reader_read_shared(&decode_seq, None, decode_ctx),
+            wire_decode_expr: emit::emit_reader_read_shared(
+                &decode_seq,
+                None,
+                &self.namespace,
+                decode_ctx,
+            ),
             wire_size_expr: emit::emit_size_expr_shared(&encode_seq.size, size_ctx),
             wire_encode_expr: emit::emit_write_expr_shared(&encode_seq, "wire", encode_ctx),
         }
@@ -988,10 +1004,11 @@ impl<'a> CSharpLowerer<'a> {
         if !self.param_needs_wire_buffer(encode_ops.ops.first()?) {
             return None;
         }
-        let param_name = param.name.as_str().to_string();
-        let binding_name = format!("_wire_{}", param_name);
-        let bytes_binding_name = format!("_{}Bytes", NamingConvention::field_name(&param_name));
-        let encode_expr = emit::emit_write_expr_shared(&encode_ops, &binding_name, encode_ctx);
+        let param_name: CSharpParamName = (&param.name).into();
+        let binding_name = CSharpLocalName::for_wire_writer(&param_name);
+        let bytes_binding_name = CSharpLocalName::for_bytes(&param_name);
+        let encode_expr =
+            emit::emit_write_expr_shared(&encode_ops, binding_name.as_str(), encode_ctx);
         Some(CSharpWireWriter {
             binding_name,
             bytes_binding_name,

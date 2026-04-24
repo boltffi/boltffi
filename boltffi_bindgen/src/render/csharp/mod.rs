@@ -42,8 +42,9 @@ mod names;
 mod plan;
 mod templates;
 
-pub use emit::{CSharpEmitter, CSharpOutput};
+pub use emit::{CSharpEmitter, CSharpFile, CSharpOutput};
 pub use names::NamingConvention;
+pub use plan::{CSharpClassName, CSharpNamespace};
 
 use boltffi_ffi_rules::naming::{LibraryName, Name};
 

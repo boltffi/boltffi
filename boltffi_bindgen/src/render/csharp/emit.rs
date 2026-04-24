@@ -16,10 +16,12 @@ use crate::ir::ops::{ReadOp, ReadSeq, SizeExpr, ValueExpr, WriteOp, WriteSeq};
 use crate::ir::types::{PrimitiveType, TypeExpr};
 use crate::ir::{AbiContract, FfiContract};
 
+use std::collections::HashSet;
+
 use super::{
     CSharpOptions, NamingConvention,
     lower::CSharpLowerer,
-    plan::{CSharpEnumKind, CSharpRecord, CSharpType, ShadowScope},
+    plan::{CSharpClassName, CSharpEnumKind, CSharpNamespace, CSharpRecord, CSharpType},
     templates::{
         EnumCStyleTemplate, EnumDataTemplate, FunctionsTemplate, NativeTemplate, PreambleTemplate,
         RecordTemplate,
@@ -39,10 +41,10 @@ pub struct CSharpFile {
 #[derive(Debug, Clone)]
 pub struct CSharpOutput {
     pub files: Vec<CSharpFile>,
-    /// The top-level class name (used for the main file, e.g., `"MyApp"`).
-    pub class_name: String,
-    /// The C# namespace.
-    pub namespace: String,
+    /// Top-level wrapper class name, used to name the main file.
+    pub class_name: CSharpClassName,
+    /// Namespace for the generated files.
+    pub namespace: CSharpNamespace,
 }
 
 impl CSharpOutput {
@@ -340,12 +342,17 @@ fn is_identifier_char(c: char) -> bool {
 /// element vecs use the no-prefix fast path keyed off `FfiBuf.len`;
 /// encoded element vecs (strings, nested vecs) wrap `ReadEncodedArray<T>`
 /// around a closure that decodes one element.
-pub fn vec_return_reader_call(inner: &TypeExpr, element_seq: &ReadSeq) -> String {
+pub fn vec_return_reader_call(
+    inner: &TypeExpr,
+    element_seq: &ReadSeq,
+    namespace: &CSharpNamespace,
+) -> String {
     match inner {
         TypeExpr::Primitive(p) => primitive_vec_reader_call(*p),
         _ => {
             let mut ctx = CSharpEmitContext::default();
-            let inner_reader = emit_reader_read_with_context(element_seq, None, &mut ctx);
+            let inner_reader =
+                emit_reader_read_with_context(element_seq, None, namespace, &mut ctx);
             let closure_var = ctx.next_read_closure_var();
             let remapped = replace_identifier_occurrences(&inner_reader, "reader", &closure_var);
             let element_ty = CSharpType::from_type_expr(inner);
@@ -364,9 +371,13 @@ pub fn vec_return_reader_call(inner: &TypeExpr, element_seq: &ReadSeq) -> String
 /// Today each [`ReadSeq`] we handle has exactly one top-level op: either
 /// a primitive, a string, or a nested record/enum. Container ops (Option,
 /// Vec, Result) will land in follow-up PRs.
-pub fn emit_reader_read(seq: &ReadSeq, scope: Option<&ShadowScope>) -> String {
+pub fn emit_reader_read(
+    seq: &ReadSeq,
+    shadowed: Option<&HashSet<CSharpClassName>>,
+    namespace: &CSharpNamespace,
+) -> String {
     let mut ctx = CSharpEmitContext::default();
-    emit_reader_read_with_context(seq, scope, &mut ctx)
+    emit_reader_read_with_context(seq, shadowed, namespace, &mut ctx)
 }
 
 /// Same as [`emit_reader_read`] but lets the caller thread a shared
@@ -375,15 +386,17 @@ pub fn emit_reader_read(seq: &ReadSeq, scope: Option<&ShadowScope>) -> String {
 /// method scope.
 pub fn emit_reader_read_shared(
     seq: &ReadSeq,
-    scope: Option<&ShadowScope>,
+    shadowed: Option<&HashSet<CSharpClassName>>,
+    namespace: &CSharpNamespace,
     ctx: &mut CSharpEmitContext,
 ) -> String {
-    emit_reader_read_with_context(seq, scope, ctx)
+    emit_reader_read_with_context(seq, shadowed, namespace, ctx)
 }
 
 fn emit_reader_read_with_context(
     seq: &ReadSeq,
-    scope: Option<&ShadowScope>,
+    shadowed: Option<&HashSet<CSharpClassName>>,
+    namespace: &CSharpNamespace,
     ctx: &mut CSharpEmitContext,
 ) -> String {
     let op = seq.ops.first().expect("read ops");
@@ -394,7 +407,7 @@ fn emit_reader_read_with_context(
         ReadOp::String { .. } => "reader.ReadString()".to_string(),
         ReadOp::Bytes { .. } => "reader.ReadBytes()".to_string(),
         ReadOp::Record { .. } => {
-            let ty = CSharpType::from_read_op(op).qualify_if_shadowed_opt(scope);
+            let ty = CSharpType::from_read_op(op).qualify_if_shadowed_opt(shadowed, namespace);
             format!("{ty}.Decode(reader)")
         }
         ReadOp::Enum {
@@ -414,14 +427,14 @@ fn emit_reader_read_with_context(
             layout: EnumLayout::Data { .. },
             ..
         } => {
-            let ty = CSharpType::from_read_op(op).qualify_if_shadowed_opt(scope);
+            let ty = CSharpType::from_read_op(op).qualify_if_shadowed_opt(shadowed, namespace);
             format!("{ty}.Decode(reader)")
         }
         ReadOp::Option { some, .. } => {
-            let inner = emit_reader_read_with_context(some, scope, ctx);
+            let inner = emit_reader_read_with_context(some, shadowed, namespace, ctx);
             let inner_ty =
                 CSharpType::from_read_op(some.ops.first().expect("option inner read op"))
-                    .qualify_if_shadowed_opt(scope);
+                    .qualify_if_shadowed_opt(shadowed, namespace);
             format!("reader.ReadU8() == 0 ? ({inner_ty}?)null : {inner}")
         }
         ReadOp::Vec {
@@ -444,8 +457,8 @@ fn emit_reader_read_with_context(
             // is length-prefixed, same as nested primitive vecs. The C#
             // struct generated for a blittable record is `unmanaged`, so
             // it satisfies the generic helper's constraint.
-            let element_ty =
-                CSharpType::from_type_expr(element_type).qualify_if_shadowed_opt(scope);
+            let element_ty = CSharpType::from_type_expr(element_type)
+                .qualify_if_shadowed_opt(shadowed, namespace);
             format!("reader.ReadLengthPrefixedBlittableArray<{element_ty}>()")
         }
         ReadOp::Vec {
@@ -454,11 +467,11 @@ fn emit_reader_read_with_context(
             layout: VecLayout::Encoded,
             ..
         } => {
-            let inner_reader = emit_reader_read_with_context(element, scope, ctx);
+            let inner_reader = emit_reader_read_with_context(element, shadowed, namespace, ctx);
             let closure_var = ctx.next_read_closure_var();
             let remapped = replace_identifier_occurrences(&inner_reader, "reader", &closure_var);
-            let element_ty =
-                CSharpType::from_type_expr(element_type).qualify_if_shadowed_opt(scope);
+            let element_ty = CSharpType::from_type_expr(element_type)
+                .qualify_if_shadowed_opt(shadowed, namespace);
             format!("reader.ReadEncodedArray<{element_ty}>({closure_var} => {remapped})")
         }
         other => todo!(
@@ -793,8 +806,8 @@ mod tests {
         let contract = empty_contract();
         let output = emit_contract(&contract);
 
-        assert_eq!(output.namespace, "DemoLib");
-        assert_eq!(output.class_name, "DemoLib");
+        assert_eq!(output.namespace.as_str(), "DemoLib");
+        assert_eq!(output.class_name.as_str(), "DemoLib");
         assert!(output.combined_source().contains("namespace DemoLib"));
     }
 
@@ -1134,7 +1147,11 @@ mod tests {
             shape: WireShape::Value,
         };
 
-        assert_eq!(emit_reader_read(&seq, None), "StatusWire.Decode(reader)");
+        let ns = CSharpNamespace::from_source("demo");
+        assert_eq!(
+            emit_reader_read(&seq, None, &ns),
+            "StatusWire.Decode(reader)"
+        );
     }
 
     /// A record decode inside a data-enum body must name-qualify to the
@@ -1153,14 +1170,12 @@ mod tests {
             }],
             shape: WireShape::Value,
         };
-        let shadowed: HashSet<String> = ["Point".to_string()].into_iter().collect();
-        let scope = ShadowScope {
-            shadowed: &shadowed,
-            namespace: "Demo",
-        };
+        let shadowed: HashSet<CSharpClassName> =
+            [CSharpClassName::from_source("point")].into_iter().collect();
+        let ns = CSharpNamespace::from_source("demo");
 
         assert_eq!(
-            emit_reader_read(&seq, Some(&scope)),
+            emit_reader_read(&seq, Some(&shadowed), &ns),
             "global::Demo.Point.Decode(reader)"
         );
     }
@@ -1179,13 +1194,14 @@ mod tests {
             }],
             shape: WireShape::Value,
         };
-        let shadowed: HashSet<String> = ["Circle".to_string()].into_iter().collect();
-        let scope = ShadowScope {
-            shadowed: &shadowed,
-            namespace: "Demo",
-        };
+        let shadowed: HashSet<CSharpClassName> =
+            [CSharpClassName::from_source("circle")].into_iter().collect();
+        let ns = CSharpNamespace::from_source("demo");
 
-        assert_eq!(emit_reader_read(&seq, Some(&scope)), "Point.Decode(reader)");
+        assert_eq!(
+            emit_reader_read(&seq, Some(&shadowed), &ns),
+            "Point.Decode(reader)"
+        );
     }
 
     /// A `WriteOp::Enum` with a C-style layout emits the same call shape

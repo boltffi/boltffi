@@ -5,17 +5,15 @@
 //! name, same [`CSharpType`], same pre-rendered decode/size/encode
 //! expressions. One type, two consumers.
 
-use super::CSharpType;
+use super::{CSharpPropertyName, CSharpType};
 
 /// A named field carrying a type and the three wire expressions
 /// (decode, size, encode) pre-rendered by the lowerer so the template
 /// pastes them verbatim.
 #[derive(Debug, Clone)]
 pub struct CSharpField {
-    /// PascalCase property name (e.g., `"X"`). Records and data-enum
-    /// variant payloads both expose their fields as PascalCase
-    /// properties, matching idiomatic C# record syntax.
-    pub name: String,
+    /// Field name as it appears on the generated record or variant.
+    pub name: CSharpPropertyName,
     /// C# type of the field.
     pub csharp_type: CSharpType,
     /// Expression that decodes this field from a `WireReader`

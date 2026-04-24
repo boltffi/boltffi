@@ -4,7 +4,7 @@
 //! blittability flag that decides whether the record rides the direct
 //! P/Invoke path or goes through wire encoding.
 
-use super::CSharpField;
+use super::{CSharpClassName, CSharpField};
 
 /// A record (Rust struct) exposed as a C# `readonly record struct`.
 ///
@@ -16,8 +16,8 @@ use super::CSharpField;
 /// `WireEncodeTo` members and travel as wire-encoded buffers.
 #[derive(Debug, Clone)]
 pub struct CSharpRecord {
-    /// PascalCase class name (e.g., `"Point"`).
-    pub class_name: String,
+    /// Class name (e.g., `"Point"`).
+    pub class_name: CSharpClassName,
     /// The record's fields, in declaration order.
     pub fields: Vec<CSharpField>,
     /// Whether the record can cross the P/Invoke boundary as a direct

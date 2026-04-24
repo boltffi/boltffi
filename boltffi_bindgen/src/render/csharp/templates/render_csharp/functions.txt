@@ -5,8 +5,8 @@
         public static {{ func.return_type }} {{ func.name }}({{ func.wrapper_param_list() }})
         {
 {%- for param in func.params %}
-{%- if let Some(stmt) = param.setup_statement() %}
-            {{ stmt }}
+{%- if let Some(decl) = param.setup_declaration() %}
+            {{ decl }}
 {%- endif %}
 {%- endfor %}
 {%- for writer in func.wire_writers %}

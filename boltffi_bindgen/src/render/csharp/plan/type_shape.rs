@@ -1,8 +1,9 @@
 //! The central type vocabulary for the C# backend. `CSharpType` is
 //! the shape every record field, param, return, and variant field
-//! resolves to. `ShadowScope` travels alongside so that class-name
-//! references can be fully qualified through the enclosing namespace
-//! when a nested scope shadows them.
+//! resolves to. Named-type variants (`Record`, `CStyleEnum`,
+//! `DataEnum`) carry a [`CSharpTypeReference`] rather than a raw
+//! string, so callers can distinguish a bare class name from a
+//! `global::`-qualified one structurally.
 //!
 //! All IR-to-type constructors live here (`From<PrimitiveType>`,
 //! `enum_backing_for`, `for_enum`, `from_read_op`, `from_type_expr`)
@@ -16,7 +17,7 @@ use crate::ir::definitions::{EnumDef, EnumRepr};
 use crate::ir::ops::ReadOp;
 use crate::ir::types::{PrimitiveType, TypeExpr};
 
-use super::super::NamingConvention;
+use super::{CSharpClassName, CSharpNamespace, CSharpTypeReference};
 
 /// A C# type keyword. Includes `Void` so return types and value types share
 /// one enum; params never carry `Void` because the lowerer rejects it before
@@ -38,19 +39,18 @@ pub enum CSharpType {
     Float,
     Double,
     String,
-    /// A user-defined record, identified by its rendered PascalCase class
-    /// name (e.g., `"Point"`).
-    Record(String),
+    /// A user-defined record.
+    Record(CSharpTypeReference),
     /// A user-defined C-style enum (all variants are unit). Renders as a
     /// C# `enum` with an `int` backing type. Blittable: passes directly
     /// across P/Invoke as its underlying integer, and stays blittable when
     /// embedded in a `[StructLayout(Sequential)]` record.
-    CStyleEnum(String),
+    CStyleEnum(CSharpTypeReference),
     /// A user-defined data enum (at least one variant carries a payload).
     /// Renders as an `abstract record` with nested `sealed record` variants.
     /// Always wire-encoded (never blittable) because variant payloads
     /// are variable-width.
-    DataEnum(String),
+    DataEnum(CSharpTypeReference),
     /// A `Vec<T>` projected into the C# surface as a `T[]` jagged array.
     /// Uniform representation across every element kind: primitives ride
     /// the blittable bulk-copy path, composites walk element-by-element.
@@ -114,28 +114,20 @@ impl CSharpType {
         }
     }
 
-    /// If `self` is a user-defined named type (record or enum) whose
-    /// class name is shadowed by an enclosing scope, return a variant
-    /// wrapping the fully-qualified `global::{namespace}.{ClassName}`.
-    /// Primitives and unnamed types pass through unchanged. The
-    /// `global::` prefix dodges both nested-type shadowing *and* any
-    /// same-named class in the current namespace (the generated
-    /// top-level wrapper class, typically).
+    /// Recursively qualify any named-type references inside `self` that
+    /// are shadowed by an enclosing scope. Primitives and unnamed types
+    /// pass through unchanged; `Array` and `Nullable` recurse. The
+    /// per-reference decision lives on
+    /// [`CSharpTypeReference::qualify_if_shadowed`].
     pub fn qualify_if_shadowed(
         self,
-        shadowed: &std::collections::HashSet<String>,
-        namespace: &str,
+        shadowed: &HashSet<CSharpClassName>,
+        namespace: &CSharpNamespace,
     ) -> Self {
         match self {
-            Self::Record(n) if shadowed.contains(&n) => {
-                Self::Record(format!("global::{}.{}", namespace, n))
-            }
-            Self::CStyleEnum(n) if shadowed.contains(&n) => {
-                Self::CStyleEnum(format!("global::{}.{}", namespace, n))
-            }
-            Self::DataEnum(n) if shadowed.contains(&n) => {
-                Self::DataEnum(format!("global::{}.{}", namespace, n))
-            }
+            Self::Record(r) => Self::Record(r.qualify_if_shadowed(shadowed, namespace)),
+            Self::CStyleEnum(r) => Self::CStyleEnum(r.qualify_if_shadowed(shadowed, namespace)),
+            Self::DataEnum(r) => Self::DataEnum(r.qualify_if_shadowed(shadowed, namespace)),
             Self::Array(inner) => {
                 Self::Array(Box::new((*inner).qualify_if_shadowed(shadowed, namespace)))
             }
@@ -146,10 +138,17 @@ impl CSharpType {
         }
     }
 
-    /// Applies [`Self::qualify_if_shadowed`] when `scope` is `Some`.
-    pub fn qualify_if_shadowed_opt(self, scope: Option<&ShadowScope<'_>>) -> Self {
-        match scope {
-            Some(s) => self.qualify_if_shadowed(s.shadowed, s.namespace),
+    /// Apply [`Self::qualify_if_shadowed`] when `shadowed` is `Some`;
+    /// pass through when it's `None`. Used at call sites that might or
+    /// might not be rendering inside a shadowing scope (e.g. an enum
+    /// method whose owner may be a data enum or a C-style enum).
+    pub fn qualify_if_shadowed_opt(
+        self,
+        shadowed: Option<&HashSet<CSharpClassName>>,
+        namespace: &CSharpNamespace,
+    ) -> Self {
+        match shadowed {
+            Some(sh) => self.qualify_if_shadowed(sh, namespace),
             None => self,
         }
     }
@@ -185,10 +184,10 @@ impl CSharpType {
     /// Everything downstream (the return-kind dispatch, param marshaling,
     /// record blittability) keys off this one decision.
     pub fn for_enum(enum_def: &EnumDef) -> CSharpType {
-        let class_name = NamingConvention::class_name(enum_def.id.as_str());
+        let class_name: CSharpClassName = (&enum_def.id).into();
         match &enum_def.repr {
-            EnumRepr::CStyle { .. } => CSharpType::CStyleEnum(class_name),
-            EnumRepr::Data { .. } => CSharpType::DataEnum(class_name),
+            EnumRepr::CStyle { .. } => CSharpType::CStyleEnum(class_name.into()),
+            EnumRepr::Data { .. } => CSharpType::DataEnum(class_name.into()),
         }
     }
 
@@ -205,12 +204,17 @@ impl CSharpType {
             ReadOp::Vec { element_type, .. } => {
                 Self::Array(Box::new(Self::from_type_expr(element_type)))
             }
-            ReadOp::Record { id, .. } => Self::Record(NamingConvention::class_name(id.as_str())),
+            ReadOp::Record { id, .. } => {
+                let class_name: CSharpClassName = id.into();
+                Self::Record(class_name.into())
+            }
             ReadOp::Enum { id, layout, .. } => {
-                let class_name = NamingConvention::class_name(id.as_str());
+                let class_name: CSharpClassName = id.into();
                 match layout {
-                    EnumLayout::CStyle { .. } => Self::CStyleEnum(class_name),
-                    EnumLayout::Data { .. } | EnumLayout::Recursive => Self::DataEnum(class_name),
+                    EnumLayout::CStyle { .. } => Self::CStyleEnum(class_name.into()),
+                    EnumLayout::Data { .. } | EnumLayout::Recursive => {
+                        Self::DataEnum(class_name.into())
+                    }
                 }
             }
             ReadOp::Custom { underlying, .. } => {
@@ -233,8 +237,14 @@ impl CSharpType {
             TypeExpr::Bytes => Self::Array(Box::new(Self::Byte)),
             TypeExpr::Vec(inner) => Self::Array(Box::new(Self::from_type_expr(inner))),
             TypeExpr::Option(inner) => Self::Nullable(Box::new(Self::from_type_expr(inner))),
-            TypeExpr::Record(id) => Self::Record(NamingConvention::class_name(id.as_str())),
-            TypeExpr::Enum(id) => Self::DataEnum(NamingConvention::class_name(id.as_str())),
+            TypeExpr::Record(id) => {
+                let class_name: CSharpClassName = id.into();
+                Self::Record(class_name.into())
+            }
+            TypeExpr::Enum(id) => {
+                let class_name: CSharpClassName = id.into();
+                Self::DataEnum(class_name.into())
+            }
             TypeExpr::Result { .. }
             | TypeExpr::Callback(_)
             | TypeExpr::Custom(_)
@@ -319,46 +329,47 @@ impl fmt::Display for CSharpType {
             Self::Float => f.write_str("float"),
             Self::Double => f.write_str("double"),
             Self::String => f.write_str("string"),
-            Self::Record(name) | Self::CStyleEnum(name) | Self::DataEnum(name) => f.write_str(name),
+            Self::Record(r) | Self::CStyleEnum(r) | Self::DataEnum(r) => r.fmt(f),
             Self::Array(inner) => write!(f, "{inner}[]"),
             Self::Nullable(inner) => write!(f, "{inner}?"),
         }
     }
 }
 
-/// Type names shadowed by a nested scope at the render site. Used when
-/// emitting inside a data enum's body, where nested `sealed record`
-/// variants shadow module-level types of the same name: any class
-/// reference whose name is in `shadowed` gets qualified as
-/// `global::{namespace}.{ClassName}` so it resolves past the shadowing
-/// variant. Constructed by the lowerer and passed down through emit.
-pub struct ShadowScope<'a> {
-    pub shadowed: &'a HashSet<String>,
-    pub namespace: &'a str,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn record_type(name: &str) -> CSharpType {
+        CSharpType::Record(CSharpClassName::from_source(name).into())
+    }
+
+    fn c_style_enum_type(name: &str) -> CSharpType {
+        CSharpType::CStyleEnum(CSharpClassName::from_source(name).into())
+    }
+
+    fn data_enum_type(name: &str) -> CSharpType {
+        CSharpType::DataEnum(CSharpClassName::from_source(name).into())
+    }
+
     #[test]
-    fn record_type_display_uses_class_name() {
-        let ty = CSharpType::Record("Point".to_string());
+    fn record_typepe_display_uses_class_name() {
+        let ty = record_type("point");
         assert_eq!(ty.to_string(), "Point");
         assert!(ty.is_record());
     }
 
     #[test]
-    fn c_style_enum_type_display_uses_class_name() {
-        let ty = CSharpType::CStyleEnum("Status".to_string());
+    fn c_style_enum_typepe_display_uses_class_name() {
+        let ty = c_style_enum_type("status");
         assert_eq!(ty.to_string(), "Status");
         assert!(ty.is_c_style_enum());
         assert!(!ty.is_data_enum());
     }
 
     #[test]
-    fn data_enum_type_display_uses_class_name() {
-        let ty = CSharpType::DataEnum("Shape".to_string());
+    fn data_enum_typepe_display_uses_class_name() {
+        let ty = data_enum_type("shape");
         assert_eq!(ty.to_string(), "Shape");
         assert!(ty.is_data_enum());
         assert!(!ty.is_c_style_enum());
@@ -371,11 +382,11 @@ mod tests {
     #[rstest::rstest]
     #[case::int(CSharpType::Int, true)]
     #[case::double(CSharpType::Double, true)]
-    #[case::cstyle_enum(CSharpType::CStyleEnum("Status".to_string()), true)]
+    #[case::cstyle_enum(c_style_enum_type("status"), true)]
     #[case::bool(CSharpType::Bool, false)]
     #[case::string(CSharpType::String, false)]
-    #[case::record(CSharpType::Record("Point".to_string()), false)]
-    #[case::data_enum(CSharpType::DataEnum("Shape".to_string()), false)]
+    #[case::record(record_type("point"), false)]
+    #[case::data_enum(data_enum_type("shape"), false)]
     #[case::nullable_int(CSharpType::Nullable(Box::new(CSharpType::Int)), false)]
     #[case::nullable_string(CSharpType::Nullable(Box::new(CSharpType::String)), false)]
     fn is_blittable_leaf_matches_marshaling_story(#[case] ty: CSharpType, #[case] expected: bool) {
@@ -396,7 +407,7 @@ mod tests {
             "string?"
         );
         assert_eq!(
-            CSharpType::Nullable(Box::new(CSharpType::Record("Point".to_string()))).to_string(),
+            CSharpType::Nullable(Box::new(record_type("point"))).to_string(),
             "Point?"
         );
     }
@@ -479,10 +490,7 @@ mod tests {
                 offset: OffsetExpr::Base,
                 fields: vec![],
             };
-            assert_eq!(
-                CSharpType::from_read_op(&op),
-                CSharpType::Record("Point".to_string())
-            );
+            assert_eq!(CSharpType::from_read_op(&op), record_type("point"));
         }
 
         #[test]
@@ -492,10 +500,7 @@ mod tests {
                 offset: OffsetExpr::Base,
                 layout: cstyle_layout(),
             };
-            assert_eq!(
-                CSharpType::from_read_op(&op),
-                CSharpType::CStyleEnum("Status".to_string())
-            );
+            assert_eq!(CSharpType::from_read_op(&op), c_style_enum_type("status"));
         }
 
         #[test]
@@ -505,10 +510,7 @@ mod tests {
                 offset: OffsetExpr::Base,
                 layout: data_layout(),
             };
-            assert_eq!(
-                CSharpType::from_read_op(&op),
-                CSharpType::DataEnum("Shape".to_string())
-            );
+            assert_eq!(CSharpType::from_read_op(&op), data_enum_type("shape"));
         }
 
         #[test]
@@ -537,7 +539,7 @@ mod tests {
             };
             assert_eq!(
                 CSharpType::from_read_op(&op),
-                CSharpType::Array(Box::new(CSharpType::Record("Point".to_string())))
+                CSharpType::Array(Box::new(record_type("point")))
             );
         }
 
@@ -559,15 +561,13 @@ mod tests {
             };
             assert_eq!(
                 CSharpType::from_read_op(&option_op),
-                CSharpType::Nullable(Box::new(CSharpType::Array(Box::new(CSharpType::Record(
-                    "Point".to_string()
-                )))))
+                CSharpType::Nullable(Box::new(CSharpType::Array(Box::new(record_type("point")))))
             );
         }
 
-        /// Plan step 2 note: `qualify_if_shadowed` recurses through the
-        /// typed intermediate, so a shadowed `Point` inside `Option<Vec<Point>>`
-        /// still qualifies correctly.
+        /// `qualify_if_shadowed` recurses through the typed intermediate,
+        /// so a shadowed `Point` inside `Option<Vec<Point>>` still
+        /// qualifies correctly.
         #[test]
         fn qualify_if_shadowed_reaches_through_nested_builder_output() {
             let option_op = ReadOp::Option {
@@ -584,9 +584,10 @@ mod tests {
                 })),
             };
             let ty = CSharpType::from_read_op(&option_op);
-            let shadowed: std::collections::HashSet<String> =
-                std::iter::once("Point".to_string()).collect();
-            let qualified = ty.qualify_if_shadowed(&shadowed, "Demo");
+            let shadowed: HashSet<CSharpClassName> =
+                std::iter::once(CSharpClassName::from_source("point")).collect();
+            let namespace = CSharpNamespace::from_source("demo");
+            let qualified = ty.qualify_if_shadowed(&shadowed, &namespace);
             assert_eq!(qualified.to_string(), "global::Demo.Point[]?");
         }
     }
@@ -615,7 +616,7 @@ mod tests {
         fn record_maps_to_record_with_class_name() {
             assert_eq!(
                 CSharpType::from_type_expr(&TypeExpr::Record(RecordId::new("point"))),
-                CSharpType::Record("Point".to_string())
+                record_type("point")
             );
         }
 
@@ -627,7 +628,7 @@ mod tests {
         fn enum_maps_to_data_enum_by_convention() {
             assert_eq!(
                 CSharpType::from_type_expr(&TypeExpr::Enum(EnumId::new("status"))),
-                CSharpType::DataEnum("Status".to_string())
+                data_enum_type("status")
             );
         }
 
@@ -656,9 +657,7 @@ mod tests {
             )))));
             assert_eq!(
                 CSharpType::from_type_expr(&expr),
-                CSharpType::Nullable(Box::new(CSharpType::Array(Box::new(CSharpType::Record(
-                    "Point".to_string()
-                )))))
+                CSharpType::Nullable(Box::new(CSharpType::Array(Box::new(record_type("point")))))
             );
         }
     }
@@ -681,7 +680,7 @@ mod tests {
         }
 
         #[test]
-        fn c_style_repr_maps_to_c_style_enum_type() {
+        fn c_style_repr_maps_to_c_style_enum_typepe() {
             let def = enum_def(
                 "Status",
                 EnumRepr::CStyle {
@@ -693,14 +692,11 @@ mod tests {
                     }],
                 },
             );
-            assert_eq!(
-                CSharpType::for_enum(&def),
-                CSharpType::CStyleEnum("Status".to_string())
-            );
+            assert_eq!(CSharpType::for_enum(&def), c_style_enum_type("Status"));
         }
 
         #[test]
-        fn data_repr_maps_to_data_enum_type() {
+        fn data_repr_maps_to_data_enum_typepe() {
             let def = enum_def(
                 "Shape",
                 EnumRepr::Data {
@@ -713,15 +709,12 @@ mod tests {
                     }],
                 },
             );
-            assert_eq!(
-                CSharpType::for_enum(&def),
-                CSharpType::DataEnum("Shape".to_string())
-            );
+            assert_eq!(CSharpType::for_enum(&def), data_enum_type("Shape"));
         }
 
         /// `class_name` runs the source `snake_case` enum name through
-        /// [`NamingConvention::class_name`], so the C# type keeps the name
-        /// in PascalCase even if upstream ever shifts the ID casing.
+        /// [`CSharpClassName::from_source`], so the C# type keeps the
+        /// name in PascalCase even if upstream ever shifts the ID casing.
         #[test]
         fn class_name_round_trips_through_naming_convention() {
             let def = enum_def(
@@ -731,10 +724,7 @@ mod tests {
                     variants: vec![],
                 },
             );
-            assert_eq!(
-                CSharpType::for_enum(&def),
-                CSharpType::CStyleEnum("LogLevel".to_string())
-            );
+            assert_eq!(CSharpType::for_enum(&def), c_style_enum_type("log_level"));
         }
     }
 

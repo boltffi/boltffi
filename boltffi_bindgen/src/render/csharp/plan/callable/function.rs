@@ -5,7 +5,7 @@
 //! native signature returns raw bytes (`FfiBuf`) or a CLR-marshalled
 //! primitive.
 
-use super::super::CSharpType;
+use super::super::{CFunctionName, CSharpMethodName, CSharpType};
 use super::{CSharpParam, CSharpWireWriter, pinned_fixed_args};
 
 /// A primitive function binding. Serves double duty: the template uses `name`
@@ -13,8 +13,8 @@ use super::{CSharpParam, CSharpWireWriter, pinned_fixed_args};
 /// `[DllImport]` entry point.
 #[derive(Debug, Clone)]
 pub struct CSharpFunction {
-    /// PascalCase method name (e.g., `"EchoI32"`).
-    pub name: String,
+    /// Public wrapper method name.
+    pub name: CSharpMethodName,
     /// Parameters with C# types.
     pub params: Vec<CSharpParam>,
     /// C# return type as it appears in the public wrapper signature.
@@ -23,8 +23,8 @@ pub struct CSharpFunction {
     /// decodes the native return and what the `[DllImport]` signature looks
     /// like.
     pub return_kind: CSharpReturnKind,
-    /// The C symbol name (e.g., `"boltffi_echo_i32"`).
-    pub ffi_name: String,
+    /// The C function this wrapper calls across the ABI boundary.
+    pub ffi_name: CFunctionName,
     /// For each non-blittable record param, the setup code that wire-encodes
     /// it into a `byte[]` before the native call. Empty if the function has
     /// no wire-encoded params (blittable record params count as direct and
@@ -212,7 +212,8 @@ impl CSharpReturnKind {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::super::CSharpParamKind;
+    use super::super::super::CSharpClassName;
+    use super::super::{CSharpLocalName, CSharpParamKind, CSharpParamName};
     use rstest::rstest;
 
     fn function_with_return(
@@ -220,21 +221,25 @@ mod tests {
         return_kind: CSharpReturnKind,
     ) -> CSharpFunction {
         CSharpFunction {
-            name: "Test".to_string(),
+            name: CSharpMethodName::from_source("test"),
             params: vec![],
             return_type,
             return_kind,
-            ffi_name: "boltffi_test".to_string(),
+            ffi_name: CFunctionName::new("boltffi_test".to_string()),
             wire_writers: vec![],
         }
     }
 
     fn param(name: &str, csharp_type: CSharpType, kind: CSharpParamKind) -> CSharpParam {
         CSharpParam {
-            name: name.to_string(),
+            name: super::super::CSharpParamName::from_source(name),
             csharp_type,
             kind,
         }
+    }
+
+    fn record_type(name: &str) -> CSharpType {
+        CSharpType::Record(CSharpClassName::from_source(name).into())
     }
 
     fn function_with_params(
@@ -243,11 +248,11 @@ mod tests {
         return_kind: CSharpReturnKind,
     ) -> CSharpFunction {
         CSharpFunction {
-            name: "Test".to_string(),
+            name: CSharpMethodName::from_source("test"),
             params,
             return_type,
             return_kind,
-            ffi_name: "boltffi_test".to_string(),
+            ffi_name: CFunctionName::new("boltffi_test".to_string()),
             wire_writers: vec![],
         }
     }
@@ -300,9 +305,11 @@ mod tests {
                 param("count", CSharpType::UInt, CSharpParamKind::Direct),
                 param(
                     "person",
-                    CSharpType::Record("Person".to_string()),
+                    record_type("person"),
                     CSharpParamKind::WireEncoded {
-                        binding_name: "_personBytes".to_string(),
+                        binding_name: CSharpLocalName::for_bytes(&CSharpParamName::from_source(
+                            "person",
+                        )),
                     },
                 ),
             ],
@@ -338,13 +345,13 @@ mod tests {
     #[case::void(CSharpType::Void, CSharpReturnKind::Void, "void")]
     #[case::primitive(CSharpType::Int, CSharpReturnKind::Direct, "int")]
     #[case::blittable_record(
-        CSharpType::Record("Point".to_string()),
+        record_type("point"),
         CSharpReturnKind::Direct,
         "Point",
     )]
     #[case::string(CSharpType::String, CSharpReturnKind::WireDecodeString, "FfiBuf")]
     #[case::wire_record(
-        CSharpType::Record("Person".to_string()),
+        record_type("person"),
         CSharpReturnKind::WireDecodeObject { class_name: "Person".to_string() },
         "FfiBuf",
     )]

@@ -458,7 +458,7 @@
         private const string LibName = "{{ module.lib_name }}";
 {%- if module.needs_ffi_buf() %}
 
-        [DllImport(LibName, EntryPoint = "{{ module.prefix }}_free_buf")]
+        [DllImport(LibName, EntryPoint = "{{ module.free_buf_ffi_name }}")]
         internal static extern void FreeBuf(FfiBuf buf);
 {%- endif %}
 {%- for func in module.functions %}

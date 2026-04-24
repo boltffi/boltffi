@@ -4,7 +4,7 @@
 //! method) depending on whether the owning type can hold its own
 //! members and how `self` crosses the ABI.
 
-use super::super::CSharpType;
+use super::super::{CFunctionName, CSharpClassName, CSharpMethodName, CSharpType};
 use super::{CSharpParam, CSharpReturnKind, CSharpWireWriter, pinned_fixed_args};
 
 /// A method or factory constructor on a value type, today always an
@@ -14,18 +14,16 @@ use super::{CSharpParam, CSharpReturnKind, CSharpWireWriter, pinned_fixed_args};
 /// The dispatch is driven by [`CSharpReceiver`].
 #[derive(Debug, Clone)]
 pub struct CSharpMethod {
-    /// PascalCase method name as it appears on the owning type's public
-    /// API (e.g., `"Opposite"`, `"UnitCircle"`).
-    pub name: String,
+    /// Method name as it appears on the owning type's public API.
+    pub name: CSharpMethodName,
     /// Name used for this method's DllImport entry inside the shared
     /// `NativeMethods` class. Prefixed with the owning class name (e.g.,
     /// `"DirectionOpposite"`, `"ShapeArea"`) because two types may
     /// declare methods of the same name, and the DllImport class is
     /// flat.
-    pub native_method_name: String,
-    /// The C FFI symbol implementing this method (e.g.,
-    /// `"boltffi_direction_opposite"`).
-    pub ffi_name: String,
+    pub native_method_name: CSharpMethodName,
+    /// The C function implementing this method.
+    pub ffi_name: CFunctionName,
     /// How `self` (if any) participates in the call.
     pub receiver: CSharpReceiver,
     /// Explicit params. Does not include `self` for instance methods.
@@ -137,7 +135,11 @@ impl CSharpMethod {
     /// `owner_is_blittable` distinguishes the two `InstanceNative` sub-
     /// cases. For wire-encoded owners it's `false`; for blittable
     /// records it will be `true` once record instance methods land.
-    pub fn native_param_list(&self, owner_class_name: &str, owner_is_blittable: bool) -> String {
+    pub fn native_param_list(
+        &self,
+        owner_class_name: &CSharpClassName,
+        owner_is_blittable: bool,
+    ) -> String {
         let explicit: Vec<String> = self
             .params
             .iter()

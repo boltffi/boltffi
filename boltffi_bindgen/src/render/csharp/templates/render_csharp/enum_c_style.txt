@@ -14,7 +14,7 @@ namespace {{ namespace }}
 {%- endfor %}
     }
 
-    internal static class {{ enumeration.class_name }}Wire
+    internal static class {{ enumeration.wire_class_name }}
     {
         internal const int WireEncodedSize = 4;
 
@@ -36,9 +36,9 @@ namespace {{ namespace }}
                 _ => throw new InvalidOperationException($"Unknown {{ enumeration.class_name }} variant: {value}"),
             });
     }
-{%- if enumeration.has_methods() %}
+{%- if let Some(methods_class_name) = enumeration.methods_class_name.as_ref() %}
 
-    public static class {{ enumeration.class_name }}Methods
+    public static class {{ methods_class_name }}
     {
 {%- for method in enumeration.methods %}
 {% include "render_csharp/value_type_method.txt" %}

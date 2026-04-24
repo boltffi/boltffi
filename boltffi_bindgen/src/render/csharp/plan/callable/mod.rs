@@ -11,13 +11,13 @@ mod method;
 pub use function::{CSharpFunction, CSharpReturnKind};
 pub use method::{CSharpMethod, CSharpReceiver};
 
-use super::CSharpType;
+use super::{CSharpExpression, CSharpLocalDecl, CSharpLocalName, CSharpParamName, CSharpType};
 
 /// A parameter in a C# function.
 #[derive(Debug, Clone)]
 pub struct CSharpParam {
-    /// camelCase parameter name, keyword-escaped with `@` if needed.
-    pub name: String,
+    /// Parameter name as it appears in the public wrapper signature.
+    pub name: CSharpParamName,
     /// C# type as it appears in the public wrapper signature.
     pub csharp_type: CSharpType,
     /// How the parameter crosses the ABI.
@@ -77,9 +77,9 @@ impl CSharpParam {
     /// raw param, or the pre-encoded byte array plus its length.
     pub fn native_call_arg(&self) -> String {
         match &self.kind {
-            CSharpParamKind::Direct => self.name.clone(),
+            CSharpParamKind::Direct => self.name.as_str().to_string(),
             CSharpParamKind::Utf8Bytes => {
-                let buf = format!("_{}Bytes", self.name);
+                let buf = CSharpLocalName::for_bytes(&self.name);
                 format!("{buf}, (UIntPtr){buf}.Length")
             }
             CSharpParamKind::WireEncoded { binding_name } => {
@@ -112,17 +112,18 @@ impl CSharpParam {
         }
     }
 
-    /// The one-line setup statement that prepares this param before the
+    /// The local declaration that prepares this param before the
     /// native call, or `None` when the param passes through directly.
     /// UTF-8 encoding is the only inline setup; record wire encoding
     /// needs a `using` block and is handled separately via
-    /// [`CSharpFunction::wire_writers`].
-    pub fn setup_statement(&self) -> Option<String> {
+    /// [`CSharpFunction::wire_writers`](super::CSharpFunction::wire_writers).
+    pub fn setup_declaration(&self) -> Option<CSharpLocalDecl> {
         match &self.kind {
-            CSharpParamKind::Utf8Bytes => Some(format!(
-                "byte[] _{name}Bytes = Encoding.UTF8.GetBytes({name});",
-                name = self.name
-            )),
+            CSharpParamKind::Utf8Bytes => Some(CSharpLocalDecl {
+                declared_type: CSharpType::Array(Box::new(CSharpType::Byte)),
+                name: CSharpLocalName::for_bytes(&self.name),
+                rhs: CSharpExpression::new(format!("Encoding.UTF8.GetBytes({})", self.name)),
+            }),
             _ => None,
         }
     }
@@ -143,7 +144,11 @@ impl CSharpParam {
     fn pinned_ptr_name(&self) -> Option<String> {
         match self.kind {
             CSharpParamKind::PinnedArray { .. } => {
-                let base_name = self.name.strip_prefix('@').unwrap_or(&self.name);
+                let base_name = self
+                    .name
+                    .as_str()
+                    .strip_prefix('@')
+                    .unwrap_or(self.name.as_str());
                 Some(format!("_{base_name}Ptr"))
             }
             _ => None,
@@ -168,8 +173,8 @@ pub enum CSharpParamKind {
     Utf8Bytes,
     /// A record that must be wire-encoded into a `byte[]` by a
     /// `WireWriter` and passed as `(byte[], UIntPtr)`. `binding_name`
-    /// is the local variable holding the encoded byte array.
-    WireEncoded { binding_name: String },
+    /// is the local holding the encoded byte array.
+    WireEncoded { binding_name: CSharpLocalName },
     /// A managed array of a blittable primitive element type, passed
     /// directly as `(T[], UIntPtr)` without any wire encoding. The CLR's
     /// default P/Invoke marshaller pins the array and hands the native
@@ -207,13 +212,13 @@ pub enum CSharpParamKind {
 /// buffer recycled) even if the native call throws.
 #[derive(Debug, Clone)]
 pub struct CSharpWireWriter {
-    /// The `_wire_foo` local name for the `WireWriter` instance.
-    pub binding_name: String,
-    /// The `_fooBytes` local name for the resulting `byte[]`.
-    pub bytes_binding_name: String,
-    /// The original (camelCase) param name, used to find the corresponding
-    /// `CSharpParam` at render time.
-    pub param_name: String,
+    /// Local holding the `WireWriter` instance.
+    pub binding_name: CSharpLocalName,
+    /// Local holding the resulting `byte[]`.
+    pub bytes_binding_name: CSharpLocalName,
+    /// The param this writer encodes, used to correlate with the
+    /// corresponding [`CSharpParam`] at render time.
+    pub param_name: CSharpParamName,
     /// Expression rendered against the param that returns its wire-encoded
     /// byte size (e.g., `"point.WireEncodedSize()"`).
     pub size_expr: String,
@@ -228,10 +233,18 @@ mod tests {
 
     fn param(name: &str, csharp_type: CSharpType, kind: CSharpParamKind) -> CSharpParam {
         CSharpParam {
-            name: name.to_string(),
+            name: CSharpParamName::from_source(name),
             csharp_type,
             kind,
         }
+    }
+
+    fn record_type(name: &str) -> CSharpType {
+        CSharpType::Record(super::super::CSharpClassName::from_source(name).into())
+    }
+
+    fn wire_encoded_local() -> CSharpLocalName {
+        CSharpLocalName::for_bytes(&CSharpParamName::from_source("person"))
     }
 
     #[test]
@@ -244,7 +257,7 @@ mod tests {
     fn wrapper_declaration_uses_record_class_name() {
         let p = param(
             "point",
-            CSharpType::Record("Point".to_string()),
+            record_type("point"),
             CSharpParamKind::Direct,
         );
         assert_eq!(p.wrapper_declaration(), "Point point");
@@ -275,7 +288,7 @@ mod tests {
     fn native_declaration_blittable_record_passes_by_value() {
         let p = param(
             "point",
-            CSharpType::Record("Point".to_string()),
+            record_type("point"),
             CSharpParamKind::Direct,
         );
         assert_eq!(p.native_declaration(), "Point point");
@@ -295,9 +308,9 @@ mod tests {
     fn native_declaration_wire_encoded_record_splits_into_bytes_and_length() {
         let p = param(
             "person",
-            CSharpType::Record("Person".to_string()),
+            record_type("person"),
             CSharpParamKind::WireEncoded {
-                binding_name: "_personBytes".to_string(),
+                binding_name: wire_encoded_local(),
             },
         );
         assert_eq!(p.native_declaration(), "byte[] person, UIntPtr personLen");
@@ -319,9 +332,9 @@ mod tests {
     fn native_call_arg_wire_encoded_uses_binding_name() {
         let p = param(
             "person",
-            CSharpType::Record("Person".to_string()),
+            record_type("person"),
             CSharpParamKind::WireEncoded {
-                binding_name: "_personBytes".to_string(),
+                binding_name: wire_encoded_local(),
             },
         );
         assert_eq!(
@@ -330,28 +343,32 @@ mod tests {
         );
     }
 
-    /// Only UTF-8 string params have an inline setup statement. Direct
-    /// params need no prep; wire-encoded records use a `using` block
-    /// that is emitted around the call, not as a flat setup line.
-    #[rstest::rstest]
-    #[case::direct(CSharpParamKind::Direct, None)]
-    #[case::wire_encoded(
-        CSharpParamKind::WireEncoded { binding_name: "_personBytes".to_string() },
-        None,
-    )]
-    fn setup_statement_non_string_has_none(
-        #[case] kind: CSharpParamKind,
-        #[case] expected: Option<&str>,
-    ) {
-        let p = param("x", CSharpType::Int, kind);
-        assert_eq!(p.setup_statement().as_deref(), expected);
+    /// Direct params need no prep.
+    #[test]
+    fn setup_declaration_direct_has_none() {
+        let p = param("x", CSharpType::Int, CSharpParamKind::Direct);
+        assert!(p.setup_declaration().is_none());
+    }
+
+    /// Wire-encoded records use a `using` block around the call, not a
+    /// flat setup line, so their setup_declaration is `None`.
+    #[test]
+    fn setup_declaration_wire_encoded_has_none() {
+        let p = param(
+            "person",
+            record_type("person"),
+            CSharpParamKind::WireEncoded {
+                binding_name: wire_encoded_local(),
+            },
+        );
+        assert!(p.setup_declaration().is_none());
     }
 
     #[test]
-    fn setup_statement_utf8_bytes_encodes_string() {
+    fn setup_declaration_utf8_bytes_encodes_string() {
         let p = param("v", CSharpType::String, CSharpParamKind::Utf8Bytes);
         assert_eq!(
-            p.setup_statement().as_deref(),
+            p.setup_declaration().map(|d| d.to_string()).as_deref(),
             Some("byte[] _vBytes = Encoding.UTF8.GetBytes(v);"),
         );
     }

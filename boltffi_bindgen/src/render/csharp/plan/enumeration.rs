@@ -8,7 +8,7 @@
 
 use crate::ir::types::PrimitiveType;
 
-use super::{CSharpField, CSharpMethod};
+use super::{CSharpField, CSharpMethod, CSharpClassName};
 
 /// A Rust enum lifted into the C# type surface. C-style enums (all unit
 /// variants) render as native `enum` declarations and ride the CLR's
@@ -16,8 +16,17 @@ use super::{CSharpField, CSharpMethod};
 /// hierarchies and travel wire-encoded.
 #[derive(Debug, Clone)]
 pub struct CSharpEnum {
-    /// PascalCase class name (e.g., `"Shape"`, `"Status"`).
-    pub class_name: String,
+    /// Class name (e.g., `"Shape"`, `"Status"`).
+    pub class_name: CSharpClassName,
+    /// Companion static class holding the wire codec (`Decode` and the
+    /// `WireEncodeTo` extension method) for a C-style enum. Always
+    /// populated; only referenced by the c-style template.
+    pub wire_class_name: CSharpClassName,
+    /// Companion static class hosting methods declared on a C-style
+    /// enum (since C# enums can't carry members themselves). `None`
+    /// when the enum has no methods, or for data enums (whose methods
+    /// live on the abstract record directly).
+    pub methods_class_name: Option<CSharpClassName>,
     /// Whether this is a C-style or data enum. Drives the rendering shape.
     pub kind: CSharpEnumKind,
     /// For C-style enums, the declared integral repr primitive. `None` for
@@ -29,11 +38,11 @@ pub struct CSharpEnum {
     /// load-bearing.
     pub variants: Vec<CSharpEnumVariant>,
     /// Methods and factory constructors declared via `#[data(impl)]`. For
-    /// C-style enums these render as a companion `{Name}Methods` static
-    /// class; for data enums they go directly on the abstract record.
-    /// The Rust IR separates constructors from methods, but at the C#
-    /// call site they're both just static or instance methods, merged
-    /// into one list here.
+    /// C-style enums these render in [`Self::methods_class_name`]; for
+    /// data enums they go directly on the abstract record. The Rust IR
+    /// separates constructors from methods, but at the C# call site
+    /// they're both just static or instance methods, merged into one
+    /// list here.
     pub methods: Vec<CSharpMethod>,
 }
 
@@ -59,8 +68,10 @@ pub enum CSharpEnumKind {
 /// renders as `sealed record Name() : Enum`).
 #[derive(Debug, Clone)]
 pub struct CSharpEnumVariant {
-    /// PascalCase variant name (e.g., `"Circle"`, `"Active"`).
-    pub name: String,
+    /// Variant name — for data enums this becomes the nested
+    /// `sealed record` class name; for C-style enums it's the enum
+    /// member identifier.
+    pub name: CSharpClassName,
     /// Numeric value rendered in the *public* surface. For C-style enums
     /// this is the Rust discriminant (`HttpCode.NotFound = 404`), so
     /// client code reading or comparing the enum sees real values, not
@@ -144,14 +155,42 @@ impl CSharpEnumVariant {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::super::CSharpType;
+    use super::super::{CSharpPropertyName, CSharpType};
+
+    fn c_style_enum(source_name: &str, tag_type: PrimitiveType) -> CSharpEnum {
+        let class_name = CSharpClassName::from_source(source_name);
+        let wire_class_name = CSharpClassName::wire_helper(&class_name);
+        CSharpEnum {
+            class_name,
+            wire_class_name,
+            methods_class_name: None,
+            kind: CSharpEnumKind::CStyle,
+            c_style_tag_type: Some(tag_type),
+            variants: vec![],
+            methods: vec![],
+        }
+    }
+
+    fn data_enum(source_name: &str) -> CSharpEnum {
+        let class_name = CSharpClassName::from_source(source_name);
+        let wire_class_name = CSharpClassName::wire_helper(&class_name);
+        CSharpEnum {
+            class_name,
+            wire_class_name,
+            methods_class_name: None,
+            kind: CSharpEnumKind::Data,
+            c_style_tag_type: None,
+            variants: vec![],
+            methods: vec![],
+        }
+    }
 
     /// A variant with no payload fields is a unit: true for every C-style
     /// variant and for data-enum unit variants like `Shape::Point`.
     #[test]
     fn variant_with_empty_fields_is_unit() {
         let variant = CSharpEnumVariant {
-            name: "Active".to_string(),
+            name: CSharpClassName::from_source("active"),
             tag: 0,
             wire_tag: 0,
             fields: vec![],
@@ -165,11 +204,11 @@ mod tests {
     #[test]
     fn variant_with_payload_is_not_unit() {
         let variant = CSharpEnumVariant {
-            name: "Circle".to_string(),
+            name: CSharpClassName::from_source("circle"),
             tag: 0,
             wire_tag: 0,
             fields: vec![CSharpField {
-                name: "Radius".to_string(),
+                name: CSharpPropertyName::from_source("radius"),
                 csharp_type: CSharpType::Double,
                 wire_decode_expr: "reader.ReadF64()".to_string(),
                 wire_size_expr: "8".to_string(),
@@ -181,26 +220,14 @@ mod tests {
 
     #[test]
     fn c_style_kind_is_c_style_and_not_data() {
-        let enumeration = CSharpEnum {
-            class_name: "Status".to_string(),
-            kind: CSharpEnumKind::CStyle,
-            c_style_tag_type: Some(PrimitiveType::I32),
-            variants: vec![],
-            methods: vec![],
-        };
+        let enumeration = c_style_enum("status", PrimitiveType::I32);
         assert!(enumeration.is_c_style());
         assert!(!enumeration.is_data());
     }
 
     #[test]
     fn data_kind_is_data_and_not_c_style() {
-        let enumeration = CSharpEnum {
-            class_name: "Shape".to_string(),
-            kind: CSharpEnumKind::Data,
-            c_style_tag_type: None,
-            variants: vec![],
-            methods: vec![],
-        };
+        let enumeration = data_enum("shape");
         assert!(enumeration.is_data());
         assert!(!enumeration.is_c_style());
     }
@@ -213,7 +240,9 @@ mod tests {
     #[test]
     fn c_style_backing_type_maps_primitive_to_csharp_keyword() {
         let enumeration = CSharpEnum {
-            class_name: "LogLevel".to_string(),
+            class_name: CSharpClassName::from_source("log_level"),
+            wire_class_name: CSharpClassName::from_source("log_level_wire"),
+            methods_class_name: None,
             kind: CSharpEnumKind::CStyle,
             c_style_tag_type: Some(PrimitiveType::U8),
             variants: vec![],

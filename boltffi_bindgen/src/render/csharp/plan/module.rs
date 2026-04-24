@@ -5,20 +5,24 @@
 
 use boltffi_ffi_rules::naming::{LibraryName, Name};
 
-use super::{CSharpEnum, CSharpFunction, CSharpRecord};
+use super::{
+    CFunctionName, CSharpClassName, CSharpEnum, CSharpFunction, CSharpNamespace, CSharpRecord,
+};
 
 /// Represents a lowered C# module, containing everything the templates need
 /// to render a `.cs` file.
 #[derive(Debug, Clone)]
 pub struct CSharpModule {
-    /// C# namespace for the generated file (e.g., `"MyApp"`).
-    pub namespace: String,
-    /// Top-level class name (e.g., `"MyApp"`).
-    pub class_name: String,
+    /// Namespace for the generated files.
+    pub namespace: CSharpNamespace,
+    /// Top-level wrapper class name.
+    pub class_name: CSharpClassName,
     /// Native library name used in `[DllImport("...")]` declarations.
     pub lib_name: Name<LibraryName>,
-    /// FFI symbol prefix (e.g., `"boltffi"`).
-    pub prefix: String,
+    /// C function that frees the buffer used by wire-encoded returns.
+    /// Pre-computed so the native template doesn't concatenate the
+    /// shared FFI prefix with a literal suffix at render time.
+    pub free_buf_ffi_name: CFunctionName,
     /// Records exposed by the module. Each record is rendered to its own
     /// `.cs` file as a `readonly record struct`.
     pub records: Vec<CSharpRecord>,
