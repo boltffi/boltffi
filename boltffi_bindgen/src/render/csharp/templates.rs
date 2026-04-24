@@ -74,9 +74,10 @@ pub struct EnumDataTemplate<'a> {
 mod tests {
     use super::*;
     use crate::render::csharp::plan::{
-        CFunctionName, CSharpClassName, CSharpEnum, CSharpEnumKind, CSharpEnumVariant, CSharpField,
-        CSharpMethod, CSharpMethodName, CSharpParam, CSharpParamKind, CSharpParamName,
-        CSharpPropertyName, CSharpReceiver, CSharpRecord, CSharpReturnKind, CSharpType,
+        CFunctionName, CSharpClassName, CSharpEnum, CSharpEnumKind, CSharpEnumVariant,
+        CSharpExpression, CSharpField, CSharpMethod, CSharpMethodName, CSharpParam,
+        CSharpParamKind, CSharpParamName, CSharpPropertyName, CSharpReceiver, CSharpRecord,
+        CSharpReturnKind, CSharpStatement, CSharpType,
     };
 
     fn demo_namespace() -> CSharpNamespace {
@@ -108,9 +109,9 @@ mod tests {
         CSharpField {
             name: CSharpPropertyName::from_source(name),
             csharp_type,
-            wire_decode_expr: decode.to_string(),
-            wire_size_expr: size.to_string(),
-            wire_encode_expr: encode.to_string(),
+            wire_decode_expr: CSharpExpression::Raw(decode.to_string()),
+            wire_size_expr: CSharpExpression::Raw(size.to_string()),
+            wire_encode_expr: CSharpStatement::Raw(encode.to_string()),
         }
     }
 

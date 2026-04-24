@@ -11,7 +11,10 @@ mod method;
 pub use function::{CSharpFunction, CSharpReturnKind};
 pub use method::{CSharpMethod, CSharpReceiver};
 
-use super::{CSharpExpression, CSharpLocalDecl, CSharpLocalName, CSharpParamName, CSharpType};
+use super::{
+    CSharpExpression, CSharpLocalDecl, CSharpLocalName, CSharpParamName, CSharpStatement,
+    CSharpType,
+};
 
 /// A parameter in a C# function.
 #[derive(Debug, Clone)]
@@ -122,7 +125,7 @@ impl CSharpParam {
             CSharpParamKind::Utf8Bytes => Some(CSharpLocalDecl {
                 declared_type: CSharpType::Array(Box::new(CSharpType::Byte)),
                 name: CSharpLocalName::for_bytes(&self.name),
-                rhs: CSharpExpression::new(format!("Encoding.UTF8.GetBytes({})", self.name)),
+                rhs: CSharpExpression::Raw(format!("Encoding.UTF8.GetBytes({})", self.name)),
             }),
             _ => None,
         }
@@ -219,12 +222,13 @@ pub struct CSharpWireWriter {
     /// The param this writer encodes, used to correlate with the
     /// corresponding [`CSharpParam`] at render time.
     pub param_name: CSharpParamName,
-    /// Expression rendered against the param that returns its wire-encoded
-    /// byte size (e.g., `"point.WireEncodedSize()"`).
-    pub size_expr: String,
-    /// Statement that writes the param's contents into the `WireWriter`
-    /// named by `binding_name` (e.g., `"point.WireEncodeTo(_wire_point)"`).
-    pub encode_expr: String,
+    /// Expression rendered against the param that returns its
+    /// wire-encoded byte size (e.g., `point.WireEncodedSize()`).
+    pub size_expr: CSharpExpression,
+    /// Statement that writes the param's contents into the
+    /// `WireWriter` named by `binding_name` (e.g.,
+    /// `point.WireEncodeTo(_wire_point)`).
+    pub encode_expr: CSharpStatement,
 }
 
 #[cfg(test)]

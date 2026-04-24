@@ -75,7 +75,7 @@ impl From<&VariantName> for CSharpClassName {
 /// (`Qualified { Demo, Point }` → emits `"global::Demo.Point"`).
 ///
 /// Qualified is used when the bare name would resolve wrong at the
-/// render site — today that's inside a data enum's body, where nested
+/// render site. Today that's inside a data enum's body, where nested
 /// `sealed record` variants shadow module-level types of the same
 /// name. [`Self::qualify_if_shadowed`] is the one decision point that
 /// switches a `Plain` into a `Qualified`; plain is the default and
@@ -91,7 +91,7 @@ pub enum CSharpTypeReference {
 
 impl CSharpTypeReference {
     /// Promote `Plain(name)` to the qualified form when `name` is in
-    /// `shadowed`. `Qualified` passes through untouched — once a
+    /// `shadowed`. `Qualified` passes through untouched; once a
     /// reference has been qualified, re-qualification is a no-op.
     pub fn qualify_if_shadowed(
         self,
@@ -140,6 +140,16 @@ impl CSharpMethodName {
     /// Builds from a snake_case source name. `do_thing` → `"DoThing"`.
     pub fn from_source(source: &str) -> Self {
         Self(naming::to_upper_camel_case(source))
+    }
+
+    /// Wraps a pre-formed PascalCase method name. Used for runtime
+    /// library methods whose C# spelling doesn't round-trip through
+    /// the snake_case convention, typically those embedding an
+    /// acronym that resists the usual splitter (e.g.,
+    /// `WriteNIntArray` where `NInt` wants a capital `I` in the
+    /// middle of a segment).
+    pub fn new(name: impl Into<String>) -> Self {
+        Self(name.into())
     }
 
     /// `{owner}{method}`: the DllImport entry name used inside the
@@ -257,6 +267,47 @@ impl CSharpLocalName {
     /// from `param` for the same reason.
     pub fn for_bytes(param: &CSharpParamName) -> Self {
         Self(format!("_{}Bytes", param.stripped()))
+    }
+
+    /// `sizeOpt{n}`: the pattern binding introduced inside a
+    /// `SizeExpr::OptionSize` ternary so the option's non-null payload
+    /// can be referenced while summing its byte size. The prefix is
+    /// distinct from the write-side `opt{n}` because pattern variables
+    /// leak into the enclosing method scope and the size ternary plus
+    /// the write `if` statement coexist in the same method body.
+    pub fn size_option_binding(n: usize) -> Self {
+        Self(format!("sizeOpt{n}"))
+    }
+
+    /// `sizeItem{n}`: the per-iteration loop variable inside
+    /// `WireWriter.EncodedArraySize`'s size-lambda. Distinct from the
+    /// write-side `item{n}` for the same method-scope reason.
+    pub fn size_loop_var(n: usize) -> Self {
+        Self(format!("sizeItem{n}"))
+    }
+
+    /// `opt{n}`: the pattern binding introduced inside the encode-
+    /// phase `if` statement that writes a `WriteOp::Option`. Distinct
+    /// from the size-phase `sizeOpt{n}` so the two emissions can
+    /// coexist in one method body without redeclaring the same local.
+    pub fn encode_option_binding(n: usize) -> Self {
+        Self(format!("opt{n}"))
+    }
+
+    /// `item{n}`: the per-iteration loop variable inside the encode-
+    /// phase `foreach` block for an encoded vec. Distinct from the
+    /// size-phase `sizeItem{n}` for the same method-scope reason.
+    pub fn encode_loop_var(n: usize) -> Self {
+        Self(format!("item{n}"))
+    }
+
+    /// `r{n}`: the lambda parameter inside the decode-phase
+    /// `ReadEncodedArray<T>(r{n} => ...)` call. Each nested encoded
+    /// vec introduces its own lambda, so siblings need distinct
+    /// counter values to avoid shadowing inside the enclosing method
+    /// body.
+    pub fn decode_closure_var(n: usize) -> Self {
+        Self(format!("r{n}"))
     }
 
     pub fn as_str(&self) -> &str {
@@ -518,6 +569,66 @@ mod tests {
         let param = CSharpParamName::from_source("value");
         let local = CSharpLocalName::for_bytes(&param);
         assert_eq!(local.as_str(), "_valueBytes");
+    }
+
+    #[rstest::rstest]
+    #[case::first(0, "sizeOpt0")]
+    #[case::second(1, "sizeOpt1")]
+    #[case::later(3, "sizeOpt3")]
+    fn csharp_local_name_size_option_binding_uses_sizeopt_prefix(
+        #[case] n: usize,
+        #[case] expected: &str,
+    ) {
+        assert_eq!(CSharpLocalName::size_option_binding(n).as_str(), expected);
+    }
+
+    #[rstest::rstest]
+    #[case::first(0, "sizeItem0")]
+    #[case::second(1, "sizeItem1")]
+    #[case::later(2, "sizeItem2")]
+    fn csharp_local_name_size_loop_var_uses_sizeitem_prefix(
+        #[case] n: usize,
+        #[case] expected: &str,
+    ) {
+        assert_eq!(CSharpLocalName::size_loop_var(n).as_str(), expected);
+    }
+
+    #[rstest::rstest]
+    #[case::first(0, "opt0")]
+    #[case::second(1, "opt1")]
+    #[case::later(5, "opt5")]
+    fn csharp_local_name_encode_option_binding_uses_opt_prefix(
+        #[case] n: usize,
+        #[case] expected: &str,
+    ) {
+        assert_eq!(CSharpLocalName::encode_option_binding(n).as_str(), expected);
+    }
+
+    #[rstest::rstest]
+    #[case::first(0, "item0")]
+    #[case::second(1, "item1")]
+    #[case::later(4, "item4")]
+    fn csharp_local_name_encode_loop_var_uses_item_prefix(
+        #[case] n: usize,
+        #[case] expected: &str,
+    ) {
+        assert_eq!(CSharpLocalName::encode_loop_var(n).as_str(), expected);
+    }
+
+    #[rstest::rstest]
+    #[case::first(0, "r0")]
+    #[case::second(1, "r1")]
+    #[case::later(3, "r3")]
+    fn csharp_local_name_decode_closure_var_uses_r_prefix(
+        #[case] n: usize,
+        #[case] expected: &str,
+    ) {
+        assert_eq!(CSharpLocalName::decode_closure_var(n).as_str(), expected);
+    }
+
+    #[test]
+    fn csharp_method_name_new_wraps_pre_formed_name_verbatim() {
+        assert_eq!(CSharpMethodName::new("WriteNIntArray").as_str(), "WriteNIntArray");
     }
 
     #[test]

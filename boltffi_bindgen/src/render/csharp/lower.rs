@@ -11,6 +11,14 @@
 //!   strings, vecs, options, non-blittable records).
 //! - How each param is marshalled (`CSharpParamKind`) and how each
 //!   return is delivered (`CSharpReturnKind`).
+//!
+//! IR → AST helpers live in submodules ([`size`] for wire-size
+//! expressions, [`value`] for value references) so this file stays
+//! focused on the dispatch / policy logic.
+
+mod encode;
+mod size;
+mod value;
 
 use std::collections::HashSet;
 
@@ -32,10 +40,10 @@ use crate::ir::{AbiContract, FfiContract};
 
 use super::emit;
 use super::plan::{
-    CFunctionName, CSharpClassName, CSharpEnum, CSharpEnumKind, CSharpEnumVariant, CSharpField,
-    CSharpFunction, CSharpLocalName, CSharpMethod, CSharpMethodName, CSharpModule,
-    CSharpNamespace, CSharpParam, CSharpParamKind, CSharpParamName, CSharpReceiver, CSharpRecord,
-    CSharpReturnKind, CSharpType, CSharpWireWriter,
+    CFunctionName, CSharpClassName, CSharpEnum, CSharpEnumKind, CSharpEnumVariant,
+    CSharpExpression, CSharpField, CSharpFunction, CSharpIdent, CSharpLocalName, CSharpMethod,
+    CSharpMethodName, CSharpModule, CSharpNamespace, CSharpParam, CSharpParamKind, CSharpParamName,
+    CSharpReceiver, CSharpRecord, CSharpReturnKind, CSharpType, CSharpWireWriter,
 };
 use super::{CSharpOptions, NamingConvention};
 
@@ -535,8 +543,8 @@ impl<'a> CSharpLowerer<'a> {
         // generated `WireEncodedSize` and `WireEncodeTo` method
         // bodies. Otherwise two optional fields would each try to
         // declare `sizeOpt0` in the same enclosing scope.
-        let mut size_ctx = emit::CSharpEmitContext::default();
-        let mut encode_ctx = emit::CSharpEmitContext::default();
+        let mut size_locals = size::SizeLocalCounters::default();
+        let mut encode_locals = encode::EncodeLocalCounters::default();
         let mut decode_ctx = emit::CSharpEmitContext::default();
         let fields = record
             .fields
@@ -545,8 +553,8 @@ impl<'a> CSharpLowerer<'a> {
                 self.lower_record_field(
                     &record.id,
                     field,
-                    &mut size_ctx,
-                    &mut encode_ctx,
+                    &mut size_locals,
+                    &mut encode_locals,
                     &mut decode_ctx,
                 )
             })
@@ -630,8 +638,8 @@ impl<'a> CSharpLowerer<'a> {
                 // keeps decode rendering independent. `Decode` builds
                 // each variant in its own constructor call so no
                 // pattern-binding leakage happens across variants.
-                let mut size_ctx = emit::CSharpEmitContext::default();
-                let mut encode_ctx = emit::CSharpEmitContext::default();
+                let mut size_locals = size::SizeLocalCounters::default();
+                let mut encode_locals = encode::EncodeLocalCounters::default();
                 let mut decode_ctx = emit::CSharpEmitContext::default();
                 let variants = abi_enum
                     .variants
@@ -643,8 +651,8 @@ impl<'a> CSharpLowerer<'a> {
                             variant,
                             ordinal,
                             &shadowed_variant_names,
-                            &mut size_ctx,
-                            &mut encode_ctx,
+                            &mut size_locals,
+                            &mut encode_locals,
                             &mut decode_ctx,
                         )
                     })
@@ -669,8 +677,8 @@ impl<'a> CSharpLowerer<'a> {
         variant: &AbiEnumVariant,
         ordinal: usize,
         shadowed: &HashSet<CSharpClassName>,
-        size_ctx: &mut emit::CSharpEmitContext,
-        encode_ctx: &mut emit::CSharpEmitContext,
+        size_locals: &mut size::SizeLocalCounters,
+        encode_locals: &mut encode::EncodeLocalCounters,
         decode_ctx: &mut emit::CSharpEmitContext,
     ) -> CSharpEnumVariant {
         let tag = abi_enum.resolve_codec_tag(ordinal, variant.discriminant) as i32;
@@ -678,7 +686,9 @@ impl<'a> CSharpLowerer<'a> {
             AbiEnumPayload::Unit => Vec::new(),
             AbiEnumPayload::Tuple(fields) | AbiEnumPayload::Struct(fields) => fields
                 .iter()
-                .map(|f| self.lower_variant_field(f, shadowed, size_ctx, encode_ctx, decode_ctx))
+                .map(|f| {
+                    self.lower_variant_field(f, shadowed, size_locals, encode_locals, decode_ctx)
+                })
                 .collect(),
         };
         CSharpEnumVariant {
@@ -701,8 +711,8 @@ impl<'a> CSharpLowerer<'a> {
         &self,
         field: &AbiEnumField,
         shadowed: &HashSet<CSharpClassName>,
-        size_ctx: &mut emit::CSharpEmitContext,
-        encode_ctx: &mut emit::CSharpEmitContext,
+        size_locals: &mut size::SizeLocalCounters,
+        encode_locals: &mut encode::EncodeLocalCounters,
         decode_ctx: &mut emit::CSharpEmitContext,
     ) -> CSharpField {
         let prefixed = Self::prefix_write_seq(&field.encode, "_v");
@@ -713,14 +723,23 @@ impl<'a> CSharpLowerer<'a> {
         CSharpField {
             name: (&field.name).into(),
             csharp_type,
-            wire_decode_expr: emit::emit_reader_read_shared(
+            wire_decode_expr: CSharpExpression::Raw(emit::emit_reader_read_shared(
                 &field.decode,
                 Some(shadowed),
                 &self.namespace,
                 decode_ctx,
+            )),
+            wire_size_expr: size::lower_size_expr(
+                &prefixed.size,
+                &value::Renames::new(),
+                size_locals,
             ),
-            wire_size_expr: emit::emit_size_expr_shared(&prefixed.size, size_ctx),
-            wire_encode_expr: emit::emit_write_expr_shared(&prefixed, "wire", encode_ctx),
+            wire_encode_expr: encode::lower_encode_expr(
+                &prefixed,
+                &CSharpExpression::Ident(CSharpIdent::free("wire")),
+                &value::Renames::new(),
+                encode_locals,
+            ),
         }
     }
 
@@ -810,12 +829,14 @@ impl<'a> CSharpLowerer<'a> {
         } else {
             CSharpReturnKind::Direct
         };
-        let mut ctor_size_ctx = emit::CSharpEmitContext::default();
-        let mut ctor_encode_ctx = emit::CSharpEmitContext::default();
+        let mut ctor_size_locals = size::SizeLocalCounters::default();
+        let mut ctor_encode_locals = encode::EncodeLocalCounters::default();
         let wire_writers: Vec<CSharpWireWriter> = call
             .params
             .iter()
-            .filter_map(|p| self.wire_writer_for_param(p, &mut ctor_size_ctx, &mut ctor_encode_ctx))
+            .filter_map(|p| {
+                self.wire_writer_for_param(p, &mut ctor_size_locals, &mut ctor_encode_locals)
+            })
             .collect();
         let param_defs = ctor.params();
         let params: Vec<CSharpParam> = param_defs
@@ -874,12 +895,12 @@ impl<'a> CSharpLowerer<'a> {
         } else {
             &call.params[1..]
         };
-        let mut method_size_ctx = emit::CSharpEmitContext::default();
-        let mut method_encode_ctx = emit::CSharpEmitContext::default();
+        let mut method_size_locals = size::SizeLocalCounters::default();
+        let mut method_encode_locals = encode::EncodeLocalCounters::default();
         let wire_writers: Vec<CSharpWireWriter> = explicit_abi_params
             .iter()
             .filter_map(|p| {
-                self.wire_writer_for_param(p, &mut method_size_ctx, &mut method_encode_ctx)
+                self.wire_writer_for_param(p, &mut method_size_locals, &mut method_encode_locals)
             })
             .collect();
         let params: Vec<CSharpParam> = method_def
@@ -903,8 +924,8 @@ impl<'a> CSharpLowerer<'a> {
         &self,
         record_id: &RecordId,
         field: &FieldDef,
-        size_ctx: &mut emit::CSharpEmitContext,
-        encode_ctx: &mut emit::CSharpEmitContext,
+        size_locals: &mut size::SizeLocalCounters,
+        encode_locals: &mut encode::EncodeLocalCounters,
         decode_ctx: &mut emit::CSharpEmitContext,
     ) -> CSharpField {
         let decode_seq = self
@@ -919,14 +940,23 @@ impl<'a> CSharpLowerer<'a> {
         CSharpField {
             name: (&field.name).into(),
             csharp_type,
-            wire_decode_expr: emit::emit_reader_read_shared(
+            wire_decode_expr: CSharpExpression::Raw(emit::emit_reader_read_shared(
                 &decode_seq,
                 None,
                 &self.namespace,
                 decode_ctx,
+            )),
+            wire_size_expr: size::lower_size_expr(
+                &encode_seq.size,
+                &value::Renames::new(),
+                size_locals,
             ),
-            wire_size_expr: emit::emit_size_expr_shared(&encode_seq.size, size_ctx),
-            wire_encode_expr: emit::emit_write_expr_shared(&encode_seq, "wire", encode_ctx),
+            wire_encode_expr: encode::lower_encode_expr(
+                &encode_seq,
+                &CSharpExpression::Ident(CSharpIdent::free("wire")),
+                &value::Renames::new(),
+                encode_locals,
+            ),
         }
     }
 
@@ -976,13 +1006,13 @@ impl<'a> CSharpLowerer<'a> {
         // params each get fresh `sizeOpt{n}` / `opt{n}` pattern-binding
         // names. Their `using var _wire_*` declarations all live in
         // the same method scope, so counters must advance together.
-        let mut size_ctx = emit::CSharpEmitContext::default();
-        let mut encode_ctx = emit::CSharpEmitContext::default();
+        let mut size_locals = size::SizeLocalCounters::default();
+        let mut encode_locals = encode::EncodeLocalCounters::default();
         Some(
             call.params
                 .iter()
                 .filter_map(|abi_param| {
-                    self.wire_writer_for_param(abi_param, &mut size_ctx, &mut encode_ctx)
+                    self.wire_writer_for_param(abi_param, &mut size_locals, &mut encode_locals)
                 })
                 .collect(),
         )
@@ -991,8 +1021,8 @@ impl<'a> CSharpLowerer<'a> {
     fn wire_writer_for_param(
         &self,
         param: &AbiParam,
-        size_ctx: &mut emit::CSharpEmitContext,
-        encode_ctx: &mut emit::CSharpEmitContext,
+        size_locals: &mut size::SizeLocalCounters,
+        encode_locals: &mut encode::EncodeLocalCounters,
     ) -> Option<CSharpWireWriter> {
         let encode_ops = match &param.role {
             ParamRole::Input {
@@ -1007,13 +1037,18 @@ impl<'a> CSharpLowerer<'a> {
         let param_name: CSharpParamName = (&param.name).into();
         let binding_name = CSharpLocalName::for_wire_writer(&param_name);
         let bytes_binding_name = CSharpLocalName::for_bytes(&param_name);
+        let writer = CSharpExpression::Ident(CSharpIdent::Local(binding_name.clone()));
         let encode_expr =
-            emit::emit_write_expr_shared(&encode_ops, binding_name.as_str(), encode_ctx);
+            encode::lower_encode_expr(&encode_ops, &writer, &value::Renames::new(), encode_locals);
         Some(CSharpWireWriter {
             binding_name,
             bytes_binding_name,
             param_name,
-            size_expr: emit::emit_size_expr_shared(&encode_ops.size, size_ctx),
+            size_expr: size::lower_size_expr(
+                &encode_ops.size,
+                &value::Renames::new(),
+                size_locals,
+            ),
             encode_expr,
         })
     }

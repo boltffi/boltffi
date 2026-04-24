@@ -25,7 +25,9 @@ pub use callable::{
     CSharpFunction, CSharpMethod, CSharpParam, CSharpParamKind, CSharpReceiver, CSharpReturnKind,
     CSharpWireWriter,
 };
-pub use code::{CSharpExpression, CSharpLocalDecl};
+pub use code::{
+    CSharpBinaryOp, CSharpExpression, CSharpIdent, CSharpLiteral, CSharpLocalDecl, CSharpStatement,
+};
 pub use enumeration::{CSharpEnum, CSharpEnumKind, CSharpEnumVariant};
 pub use field::CSharpField;
 pub use identifier::{

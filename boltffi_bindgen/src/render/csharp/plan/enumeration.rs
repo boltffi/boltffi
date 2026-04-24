@@ -8,7 +8,7 @@
 
 use crate::ir::types::PrimitiveType;
 
-use super::{CSharpField, CSharpMethod, CSharpClassName};
+use super::{CSharpClassName, CSharpField, CSharpMethod};
 
 /// A Rust enum lifted into the C# type surface. C-style enums (all unit
 /// variants) render as native `enum` declarations and ride the CLR's
@@ -155,7 +155,7 @@ impl CSharpEnumVariant {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::super::{CSharpPropertyName, CSharpType};
+    use super::super::{CSharpExpression, CSharpPropertyName, CSharpStatement, CSharpType};
 
     fn c_style_enum(source_name: &str, tag_type: PrimitiveType) -> CSharpEnum {
         let class_name = CSharpClassName::from_source(source_name);
@@ -210,9 +210,11 @@ mod tests {
             fields: vec![CSharpField {
                 name: CSharpPropertyName::from_source("radius"),
                 csharp_type: CSharpType::Double,
-                wire_decode_expr: "reader.ReadF64()".to_string(),
-                wire_size_expr: "8".to_string(),
-                wire_encode_expr: "wire.WriteF64(this.Radius)".to_string(),
+                wire_decode_expr: CSharpExpression::Raw("reader.ReadF64()".to_string()),
+                wire_size_expr: CSharpExpression::Raw("8".to_string()),
+                wire_encode_expr: CSharpStatement::Raw(
+                    "wire.WriteF64(this.Radius)".to_string(),
+                ),
             }],
         };
         assert!(!variant.is_unit());
