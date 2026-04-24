@@ -1,4 +1,4 @@
-//! [`CSharpModule`]: the top-level aggregator. Holds the records,
+//! [`CSharpModulePlan`]: the top-level aggregator. Holds the records,
 //! enums, and functions the templates render, plus the handful of
 //! boolean flags that decide which shared runtime helpers (`FfiBuf`,
 //! `WireReader`, `WireWriter`, `System.Text`) get emitted.
@@ -6,12 +6,12 @@
 use boltffi_ffi_rules::naming::{LibraryName, Name};
 
 use super::super::ast::{CSharpClassName, CSharpNamespace};
-use super::{CFunctionName, CSharpEnum, CSharpFunction, CSharpRecord};
+use super::{CFunctionName, CSharpEnumPlan, CSharpFunctionPlan, CSharpRecordPlan};
 
 /// Represents a lowered C# module, containing everything the templates need
 /// to render a `.cs` file.
 #[derive(Debug, Clone)]
-pub struct CSharpModule {
+pub struct CSharpModulePlan {
     /// Namespace for the generated files.
     pub namespace: CSharpNamespace,
     /// Top-level wrapper class name.
@@ -24,18 +24,18 @@ pub struct CSharpModule {
     pub free_buf_ffi_name: CFunctionName,
     /// Records exposed by the module. Each record is rendered to its own
     /// `.cs` file as a `readonly record struct`.
-    pub records: Vec<CSharpRecord>,
+    pub records: Vec<CSharpRecordPlan>,
     /// Enums exposed by the module. Each enum is rendered to its own `.cs`
     /// file: C-style as a native `enum`, data-carrying as an
     /// `abstract record` with nested `sealed record` variants.
-    pub enums: Vec<CSharpEnum>,
+    pub enums: Vec<CSharpEnumPlan>,
     /// Top-level primitive functions. Used by both the public wrapper class
     /// and the `[DllImport]` native declarations: C# P/Invoke passes
     /// primitives directly, so one struct serves both layers.
-    pub functions: Vec<CSharpFunction>,
+    pub functions: Vec<CSharpFunctionPlan>,
 }
 
-impl CSharpModule {
+impl CSharpModulePlan {
     pub fn has_functions(&self) -> bool {
         !self.functions.is_empty()
     }
@@ -52,7 +52,7 @@ impl CSharpModule {
         self.functions
             .iter()
             .any(|f| f.params.iter().any(|p| p.csharp_type.contains_string()))
-            || self.records.iter().any(CSharpRecord::has_string_fields)
+            || self.records.iter().any(CSharpRecordPlan::has_string_fields)
     }
 
     /// Whether any function takes a wire-encoded record param. Blittable

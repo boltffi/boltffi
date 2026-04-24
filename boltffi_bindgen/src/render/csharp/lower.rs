@@ -1,5 +1,5 @@
 //! Decision layer for the C# backend. `CSharpLowerer` walks the
-//! `FfiContract` + `AbiContract` IR and produces a `CSharpModule`,
+//! `FfiContract` + `AbiContract` IR and produces a `CSharpModulePlan`,
 //! the plan the templates render.
 //!
 //! Every policy decision lives here:
@@ -44,14 +44,14 @@ use super::ast::{
 };
 use super::emit;
 use super::plan::{
-    CFunctionName, CSharpEnum, CSharpEnumKind, CSharpEnumVariant, CSharpField, CSharpFunction,
-    CSharpMethod, CSharpModule, CSharpParam, CSharpParamKind, CSharpReceiver, CSharpRecord,
-    CSharpReturnKind, CSharpWireWriter,
+    CFunctionName, CSharpEnumPlan, CSharpEnumKind, CSharpEnumVariantPlan, CSharpFieldPlan, CSharpFunctionPlan,
+    CSharpMethodPlan, CSharpModulePlan, CSharpParamPlan, CSharpParamKind, CSharpReceiver, CSharpRecordPlan,
+    CSharpReturnKind, CSharpWireWriterPlan,
 };
 use super::{CSharpOptions, NamingConvention};
 
 /// Transforms the language-agnostic [`FfiContract`] and [`AbiContract`] into
-/// a [`CSharpModule`] containing everything the C# templates need to render.
+/// a [`CSharpModulePlan`] containing everything the C# templates need to render.
 pub struct CSharpLowerer<'a> {
     ffi: &'a FfiContract,
     abi: &'a AbiContract,
@@ -191,7 +191,7 @@ impl<'a> CSharpLowerer<'a> {
     }
 
     /// Walk the contracts and produce a C# module plan.
-    pub fn lower(&self) -> CSharpModule {
+    pub fn lower(&self) -> CSharpModulePlan {
         let lib_name = self
             .options
             .library_name
@@ -203,7 +203,7 @@ impl<'a> CSharpLowerer<'a> {
         let free_buf_ffi_name =
             CFunctionName::new(format!("{}_free_buf", naming::ffi_prefix()));
 
-        let records: Vec<CSharpRecord> = self
+        let records: Vec<CSharpRecordPlan> = self
             .ffi
             .catalog
             .all_records()
@@ -211,21 +211,21 @@ impl<'a> CSharpLowerer<'a> {
             .map(|r| self.lower_record(r))
             .collect();
 
-        let enums: Vec<CSharpEnum> = self
+        let enums: Vec<CSharpEnumPlan> = self
             .ffi
             .catalog
             .all_enums()
             .filter_map(|e| self.lower_enum(e))
             .collect();
 
-        let functions: Vec<CSharpFunction> = self
+        let functions: Vec<CSharpFunctionPlan> = self
             .ffi
             .functions
             .iter()
             .filter_map(|f| self.lower_function(f))
             .collect();
 
-        CSharpModule {
+        CSharpModulePlan {
             namespace,
             class_name,
             lib_name,
@@ -241,7 +241,7 @@ impl<'a> CSharpLowerer<'a> {
     ///
     /// Returns `None` for functions whose signatures include types not yet
     /// supported by the C# backend.
-    fn lower_function(&self, function: &FunctionDef) -> Option<CSharpFunction> {
+    fn lower_function(&self, function: &FunctionDef) -> Option<CSharpFunctionPlan> {
         if function.is_async() {
             return None;
         }
@@ -261,13 +261,13 @@ impl<'a> CSharpLowerer<'a> {
 
         let wire_writers = self.wire_writers_for_params(function)?;
 
-        let params: Vec<CSharpParam> = function
+        let params: Vec<CSharpParamPlan> = function
             .params
             .iter()
             .map(|p| self.lower_param(p, &wire_writers))
             .collect::<Option<Vec<_>>>()?;
 
-        Some(CSharpFunction {
+        Some(CSharpFunctionPlan {
             name: (&function.id).into(),
             ffi_name: naming::function_ffi_name(function.id.as_str()).into(),
             params,
@@ -427,8 +427,8 @@ impl<'a> CSharpLowerer<'a> {
     fn lower_param(
         &self,
         param: &ParamDef,
-        wire_writers: &[CSharpWireWriter],
-    ) -> Option<CSharpParam> {
+        wire_writers: &[CSharpWireWriterPlan],
+    ) -> Option<CSharpParamPlan> {
         if param.passing != ParamPassing::Value {
             return None;
         }
@@ -499,7 +499,7 @@ impl<'a> CSharpLowerer<'a> {
             _ => CSharpParamKind::Direct,
         };
 
-        Some(CSharpParam {
+        Some(CSharpParamPlan {
             name: (&param.name).into(),
             csharp_type,
             kind,
@@ -539,7 +539,7 @@ impl<'a> CSharpLowerer<'a> {
         }
     }
 
-    fn lower_record(&self, record: &RecordDef) -> CSharpRecord {
+    fn lower_record(&self, record: &RecordDef) -> CSharpRecordPlan {
         let class_name: CSharpClassName = (&record.id).into();
         // Share one emit context across all fields so pattern-binding
         // names (e.g. `sizeOpt0`, `opt0`) stay unique within the
@@ -563,7 +563,7 @@ impl<'a> CSharpLowerer<'a> {
             })
             .collect();
         let is_blittable = self.is_blittable_record(&record.id);
-        CSharpRecord {
+        CSharpRecordPlan {
             class_name,
             fields,
             is_blittable,
@@ -584,7 +584,7 @@ impl<'a> CSharpLowerer<'a> {
     ///   dispatched by a wire tag. Tags come from the variant's ordinal
     ///   position (`EnumTagStrategy::OrdinalIndex`). The Rust
     ///   discriminant is not part of the codec.
-    fn lower_enum(&self, enum_def: &EnumDef) -> Option<CSharpEnum> {
+    fn lower_enum(&self, enum_def: &EnumDef) -> Option<CSharpEnumPlan> {
         if !self.supported_enums.contains(enum_def.id.as_str()) {
             return None;
         }
@@ -615,14 +615,14 @@ impl<'a> CSharpLowerer<'a> {
                 let lowered_variants = variants
                     .iter()
                     .enumerate()
-                    .map(|(ordinal, variant)| CSharpEnumVariant {
+                    .map(|(ordinal, variant)| CSharpEnumVariantPlan {
                         name: (&variant.name).into(),
                         tag: variant.discriminant as i32,
                         wire_tag: ordinal as i32,
                         fields: Vec::new(),
                     })
                     .collect();
-                Some(CSharpEnum {
+                Some(CSharpEnumPlan {
                     class_name,
                     wire_class_name,
                     methods_class_name,
@@ -660,7 +660,7 @@ impl<'a> CSharpLowerer<'a> {
                         )
                     })
                     .collect();
-                Some(CSharpEnum {
+                Some(CSharpEnumPlan {
                     class_name,
                     wire_class_name,
                     methods_class_name,
@@ -683,7 +683,7 @@ impl<'a> CSharpLowerer<'a> {
         size_locals: &mut size::SizeLocalCounters,
         encode_locals: &mut encode::EncodeLocalCounters,
         decode_ctx: &mut emit::CSharpEmitContext,
-    ) -> CSharpEnumVariant {
+    ) -> CSharpEnumVariantPlan {
         let tag = abi_enum.resolve_codec_tag(ordinal, variant.discriminant) as i32;
         let fields = match &variant.payload {
             AbiEnumPayload::Unit => Vec::new(),
@@ -694,7 +694,7 @@ impl<'a> CSharpLowerer<'a> {
                 })
                 .collect(),
         };
-        CSharpEnumVariant {
+        CSharpEnumVariantPlan {
             name: (&variant.name).into(),
             tag,
             // For data enums the public surface is a `sealed record`,
@@ -717,13 +717,13 @@ impl<'a> CSharpLowerer<'a> {
         size_locals: &mut size::SizeLocalCounters,
         encode_locals: &mut encode::EncodeLocalCounters,
         decode_ctx: &mut emit::CSharpEmitContext,
-    ) -> CSharpField {
+    ) -> CSharpFieldPlan {
         let prefixed = Self::prefix_write_seq(&field.encode, "_v");
         let csharp_type = self
             .lower_type(&field.type_expr)
             .expect("variant field type must be supported")
             .qualify_if_shadowed(shadowed, &self.namespace);
-        CSharpField {
+        CSharpFieldPlan {
             name: (&field.name).into(),
             csharp_type,
             wire_decode_expr: CSharpExpression::Raw(emit::emit_reader_read_shared(
@@ -757,7 +757,7 @@ impl<'a> CSharpLowerer<'a> {
         enum_def: &EnumDef,
         enum_class_name: &CSharpClassName,
         shadowed: Option<&HashSet<CSharpClassName>>,
-    ) -> Vec<CSharpMethod> {
+    ) -> Vec<CSharpMethodPlan> {
         let is_data = matches!(enum_def.repr, EnumRepr::Data { .. });
         let mut methods = Vec::new();
 
@@ -814,7 +814,7 @@ impl<'a> CSharpLowerer<'a> {
         call: &AbiCall,
         enum_class_name: &CSharpClassName,
         owner_is_data: bool,
-    ) -> Option<CSharpMethod> {
+    ) -> Option<CSharpMethodPlan> {
         let raw_name: &str = match ctor.name() {
             Some(id) => id.as_str(),
             None => "new",
@@ -834,7 +834,7 @@ impl<'a> CSharpLowerer<'a> {
         };
         let mut ctor_size_locals = size::SizeLocalCounters::default();
         let mut ctor_encode_locals = encode::EncodeLocalCounters::default();
-        let wire_writers: Vec<CSharpWireWriter> = call
+        let wire_writers: Vec<CSharpWireWriterPlan> = call
             .params
             .iter()
             .filter_map(|p| {
@@ -842,11 +842,11 @@ impl<'a> CSharpLowerer<'a> {
             })
             .collect();
         let param_defs = ctor.params();
-        let params: Vec<CSharpParam> = param_defs
+        let params: Vec<CSharpParamPlan> = param_defs
             .iter()
             .map(|p| self.lower_param(p, &wire_writers))
             .collect::<Option<Vec<_>>>()?;
-        Some(CSharpMethod {
+        Some(CSharpMethodPlan {
             native_method_name: CSharpMethodName::native_for_owner(enum_class_name, &name),
             name,
             ffi_name: (&call.symbol).into(),
@@ -865,7 +865,7 @@ impl<'a> CSharpLowerer<'a> {
         enum_class_name: &CSharpClassName,
         owner_is_data: bool,
         shadowed: Option<&HashSet<CSharpClassName>>,
-    ) -> Option<CSharpMethod> {
+    ) -> Option<CSharpMethodPlan> {
         let name: CSharpMethodName = (&method_def.id).into();
         let return_type = match &method_def.returns {
             ReturnDef::Void => CSharpType::Void,
@@ -900,18 +900,18 @@ impl<'a> CSharpLowerer<'a> {
         };
         let mut method_size_locals = size::SizeLocalCounters::default();
         let mut method_encode_locals = encode::EncodeLocalCounters::default();
-        let wire_writers: Vec<CSharpWireWriter> = explicit_abi_params
+        let wire_writers: Vec<CSharpWireWriterPlan> = explicit_abi_params
             .iter()
             .filter_map(|p| {
                 self.wire_writer_for_param(p, &mut method_size_locals, &mut method_encode_locals)
             })
             .collect();
-        let params: Vec<CSharpParam> = method_def
+        let params: Vec<CSharpParamPlan> = method_def
             .params
             .iter()
             .map(|p| self.lower_param(p, &wire_writers))
             .collect::<Option<Vec<_>>>()?;
-        Some(CSharpMethod {
+        Some(CSharpMethodPlan {
             native_method_name: CSharpMethodName::native_for_owner(enum_class_name, &name),
             name,
             ffi_name: (&call.symbol).into(),
@@ -930,7 +930,7 @@ impl<'a> CSharpLowerer<'a> {
         size_locals: &mut size::SizeLocalCounters,
         encode_locals: &mut encode::EncodeLocalCounters,
         decode_ctx: &mut emit::CSharpEmitContext,
-    ) -> CSharpField {
+    ) -> CSharpFieldPlan {
         let decode_seq = self
             .record_field_read_seq(record_id, &field.name)
             .expect("record field decode ops");
@@ -940,7 +940,7 @@ impl<'a> CSharpLowerer<'a> {
         let csharp_type = self
             .lower_type(&field.type_expr)
             .expect("record field type must be supported");
-        CSharpField {
+        CSharpFieldPlan {
             name: (&field.name).into(),
             csharp_type,
             wire_decode_expr: CSharpExpression::Raw(emit::emit_reader_read_shared(
@@ -1000,10 +1000,10 @@ impl<'a> CSharpLowerer<'a> {
             .find(|record| record.id == *record_id)
     }
 
-    /// Build one [`CSharpWireWriter`] per record param, in param order.
+    /// Build one [`CSharpWireWriterPlan`] per record param, in param order.
     /// Returns `None` if the function's ABI call cannot be found (should
     /// not happen for validated contracts).
-    fn wire_writers_for_params(&self, function: &FunctionDef) -> Option<Vec<CSharpWireWriter>> {
+    fn wire_writers_for_params(&self, function: &FunctionDef) -> Option<Vec<CSharpWireWriterPlan>> {
         let call = self.abi_call_for_function(function)?;
         // One size/encode context per function body so two Option
         // params each get fresh `sizeOpt{n}` / `opt{n}` pattern-binding
@@ -1026,7 +1026,7 @@ impl<'a> CSharpLowerer<'a> {
         param: &AbiParam,
         size_locals: &mut size::SizeLocalCounters,
         encode_locals: &mut encode::EncodeLocalCounters,
-    ) -> Option<CSharpWireWriter> {
+    ) -> Option<CSharpWireWriterPlan> {
         let encode_ops = match &param.role {
             ParamRole::Input {
                 encode_ops: Some(encode_ops),
@@ -1043,7 +1043,7 @@ impl<'a> CSharpLowerer<'a> {
         let writer = CSharpExpression::Ident(CSharpIdent::Local(binding_name.clone()));
         let encode_expr =
             encode::lower_encode_expr(&encode_ops, &writer, &value::Renames::new(), encode_locals);
-        Some(CSharpWireWriter {
+        Some(CSharpWireWriterPlan {
             binding_name,
             bytes_binding_name,
             param_name,

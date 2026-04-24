@@ -1,15 +1,15 @@
 //! Callables: things you invoke across the ABI. Holds the two callable
-//! shapes ([`CSharpFunction`] top-level, [`CSharpMethod`] on a type)
-//! plus the per-parameter vocabulary they both use: [`CSharpParam`] +
+//! shapes ([`CSharpFunctionPlan`] top-level, [`CSharpMethodPlan`] on a type)
+//! plus the per-parameter vocabulary they both use: [`CSharpParamPlan`] +
 //! [`CSharpParamKind`] decide how a value crosses the boundary, and
-//! [`CSharpWireWriter`] carries the setup block for wire-encoded
+//! [`CSharpWireWriterPlan`] carries the setup block for wire-encoded
 //! record params.
 
 mod function;
 mod method;
 
-pub use function::{CSharpFunction, CSharpReturnKind};
-pub use method::{CSharpMethod, CSharpReceiver};
+pub use function::{CSharpFunctionPlan, CSharpReturnKind};
+pub use method::{CSharpMethodPlan, CSharpReceiver};
 
 use super::super::ast::{
     CSharpExpression, CSharpLocalDecl, CSharpLocalName, CSharpParamName, CSharpStatement,
@@ -18,7 +18,7 @@ use super::super::ast::{
 
 /// A parameter in a C# function.
 #[derive(Debug, Clone)]
-pub struct CSharpParam {
+pub struct CSharpParamPlan {
     /// Parameter name as it appears in the public wrapper signature.
     pub name: CSharpParamName,
     /// C# type as it appears in the public wrapper signature.
@@ -27,7 +27,7 @@ pub struct CSharpParam {
     pub kind: CSharpParamKind,
 }
 
-impl CSharpParam {
+impl CSharpParamPlan {
     /// Declaration as it appears in the public wrapper signature,
     /// e.g. `"int value"`, `"string v"`, `"Point point"`.
     pub fn wrapper_declaration(&self) -> String {
@@ -119,7 +119,7 @@ impl CSharpParam {
     /// native call, or `None` when the param passes through directly.
     /// UTF-8 encoding is the only inline setup; record wire encoding
     /// needs a `using` block and is handled separately via
-    /// [`CSharpFunction::wire_writers`](super::CSharpFunction::wire_writers).
+    /// [`CSharpFunctionPlan::wire_writers`](super::CSharpFunctionPlan::wire_writers).
     pub fn setup_declaration(&self) -> Option<CSharpLocalDecl> {
         match &self.kind {
             CSharpParamKind::Utf8Bytes => Some(CSharpLocalDecl {
@@ -159,10 +159,10 @@ impl CSharpParam {
     }
 }
 
-pub(super) fn pinned_fixed_args(params: &[CSharpParam]) -> Vec<String> {
+pub(super) fn pinned_fixed_args(params: &[CSharpParamPlan]) -> Vec<String> {
     params
         .iter()
-        .filter_map(CSharpParam::pinned_fixed_arg)
+        .filter_map(CSharpParamPlan::pinned_fixed_arg)
         .collect()
 }
 
@@ -214,13 +214,13 @@ pub enum CSharpParamKind {
 /// in a `using` block so each `WireWriter` is disposed (and its rented
 /// buffer recycled) even if the native call throws.
 #[derive(Debug, Clone)]
-pub struct CSharpWireWriter {
+pub struct CSharpWireWriterPlan {
     /// Local holding the `WireWriter` instance.
     pub binding_name: CSharpLocalName,
     /// Local holding the resulting `byte[]`.
     pub bytes_binding_name: CSharpLocalName,
     /// The param this writer encodes, used to correlate with the
-    /// corresponding [`CSharpParam`] at render time.
+    /// corresponding [`CSharpParamPlan`] at render time.
     pub param_name: CSharpParamName,
     /// Expression rendered against the param that returns its
     /// wire-encoded byte size (e.g., `point.WireEncodedSize()`).
@@ -235,8 +235,8 @@ pub struct CSharpWireWriter {
 mod tests {
     use super::*;
 
-    fn param(name: &str, csharp_type: CSharpType, kind: CSharpParamKind) -> CSharpParam {
-        CSharpParam {
+    fn param(name: &str, csharp_type: CSharpType, kind: CSharpParamKind) -> CSharpParamPlan {
+        CSharpParamPlan {
             name: CSharpParamName::from_source(name),
             csharp_type,
             kind,

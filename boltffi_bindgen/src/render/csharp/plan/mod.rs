@@ -15,11 +15,11 @@ mod module;
 mod record;
 
 pub use callable::{
-    CSharpFunction, CSharpMethod, CSharpParam, CSharpParamKind, CSharpReceiver, CSharpReturnKind,
-    CSharpWireWriter,
+    CSharpFunctionPlan, CSharpMethodPlan, CSharpParamPlan, CSharpParamKind, CSharpReceiver, CSharpReturnKind,
+    CSharpWireWriterPlan,
 };
-pub use enumeration::{CSharpEnum, CSharpEnumKind, CSharpEnumVariant};
-pub use field::CSharpField;
+pub use enumeration::{CSharpEnumPlan, CSharpEnumKind, CSharpEnumVariantPlan};
+pub use field::CSharpFieldPlan;
 pub use identifier::CFunctionName;
-pub use module::CSharpModule;
-pub use record::CSharpRecord;
+pub use module::CSharpModulePlan;
+pub use record::CSharpRecordPlan;

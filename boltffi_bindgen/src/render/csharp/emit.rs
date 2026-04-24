@@ -24,7 +24,7 @@ use super::{
     CSharpOptions, NamingConvention,
     ast::{CSharpClassName, CSharpNamespace, CSharpType},
     lower::CSharpLowerer,
-    plan::{CSharpEnumKind, CSharpRecord},
+    plan::{CSharpEnumKind, CSharpRecordPlan},
     templates::{
         EnumCStyleTemplate, EnumDataTemplate, FunctionsTemplate, NativeTemplate, PreambleTemplate,
         RecordTemplate,
@@ -455,11 +455,11 @@ fn emit_reader_read_with_context(
 }
 
 // ---------------------------------------------------------------------------
-// Ignore unused-import warnings for CSharpRecord in emit.rs while the
+// Ignore unused-import warnings for CSharpRecordPlan in emit.rs while the
 // record template type is defined in templates.rs.
 // ---------------------------------------------------------------------------
 #[allow(dead_code)]
-const _: fn(&CSharpRecord) = |_| {};
+const _: fn(&CSharpRecordPlan) = |_| {};
 
 #[cfg(test)]
 mod tests {

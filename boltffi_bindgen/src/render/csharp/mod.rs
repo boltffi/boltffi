@@ -10,7 +10,7 @@
 //! FfiContract + AbiContract
 //!         │
 //!         ▼  lower: walk the IR, decide supported + blittable paths
-//! CSharpModule (plan: data shapes the templates consume)
+//! CSharpModulePlan (plan: data shapes the templates consume)
 //!         │
 //!         ▼  emit: orchestrate + render templates
 //! Vec<CSharpFile>

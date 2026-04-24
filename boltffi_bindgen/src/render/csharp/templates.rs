@@ -9,14 +9,14 @@
 use askama::Template;
 
 use super::ast::CSharpNamespace;
-use super::plan::{CSharpEnum, CSharpModule, CSharpRecord};
+use super::plan::{CSharpEnumPlan, CSharpModulePlan, CSharpRecordPlan};
 
 /// Renders the file header: auto-generated comment, `using` directives,
 /// and namespace declaration.
 #[derive(Template)]
 #[template(path = "render_csharp/preamble.txt", escape = "none")]
 pub struct PreambleTemplate<'a> {
-    pub module: &'a CSharpModule,
+    pub module: &'a CSharpModulePlan,
 }
 
 /// Renders the public static wrapper class with methods that delegate
@@ -24,7 +24,7 @@ pub struct PreambleTemplate<'a> {
 #[derive(Template)]
 #[template(path = "render_csharp/functions.txt", escape = "none")]
 pub struct FunctionsTemplate<'a> {
-    pub module: &'a CSharpModule,
+    pub module: &'a CSharpModulePlan,
 }
 
 /// Renders the `NativeMethods` static class containing `[DllImport]`
@@ -32,7 +32,7 @@ pub struct FunctionsTemplate<'a> {
 #[derive(Template)]
 #[template(path = "render_csharp/native.txt", escape = "none")]
 pub struct NativeTemplate<'a> {
-    pub module: &'a CSharpModule,
+    pub module: &'a CSharpModulePlan,
 }
 
 /// Renders a single record as a standalone `.cs` file. Each record becomes
@@ -42,7 +42,7 @@ pub struct NativeTemplate<'a> {
 #[derive(Template)]
 #[template(path = "render_csharp/record.txt", escape = "none")]
 pub struct RecordTemplate<'a> {
-    pub record: &'a CSharpRecord,
+    pub record: &'a CSharpRecordPlan,
     pub namespace: &'a CSharpNamespace,
 }
 
@@ -56,7 +56,7 @@ pub struct RecordTemplate<'a> {
 #[derive(Template)]
 #[template(path = "render_csharp/enum_c_style.txt", escape = "none")]
 pub struct EnumCStyleTemplate<'a> {
-    pub enumeration: &'a CSharpEnum,
+    pub enumeration: &'a CSharpEnumPlan,
     pub namespace: &'a CSharpNamespace,
 }
 
@@ -67,7 +67,7 @@ pub struct EnumCStyleTemplate<'a> {
 #[derive(Template)]
 #[template(path = "render_csharp/enum_data.txt", escape = "none")]
 pub struct EnumDataTemplate<'a> {
-    pub enumeration: &'a CSharpEnum,
+    pub enumeration: &'a CSharpEnumPlan,
     pub namespace: &'a CSharpNamespace,
 }
 
@@ -79,8 +79,8 @@ mod tests {
         CSharpStatement, CSharpType,
     };
     use crate::render::csharp::plan::{
-        CFunctionName, CSharpEnum, CSharpEnumKind, CSharpEnumVariant, CSharpField, CSharpMethod,
-        CSharpParam, CSharpParamKind, CSharpReceiver, CSharpRecord, CSharpReturnKind,
+        CFunctionName, CSharpEnumPlan, CSharpEnumKind, CSharpEnumVariantPlan, CSharpFieldPlan, CSharpMethodPlan,
+        CSharpParamPlan, CSharpParamKind, CSharpReceiver, CSharpRecordPlan, CSharpReturnKind,
     };
 
     fn demo_namespace() -> CSharpNamespace {
@@ -108,8 +108,8 @@ mod tests {
         decode: &str,
         size: &str,
         encode: &str,
-    ) -> CSharpField {
-        CSharpField {
+    ) -> CSharpFieldPlan {
+        CSharpFieldPlan {
             name: CSharpPropertyName::from_source(name),
             csharp_type,
             wire_decode_expr: CSharpExpression::Raw(decode.to_string()),
@@ -124,7 +124,7 @@ mod tests {
     /// wire encode/decode path without a second code shape.
     #[test]
     fn snapshot_blittable_record_point() {
-        let record = CSharpRecord {
+        let record = CSharpRecordPlan {
             class_name: CSharpClassName::from_source("point"),
             is_blittable: true,
             fields: vec![
@@ -157,7 +157,7 @@ mod tests {
     /// `Encoding.UTF8.GetByteCount`.
     #[test]
     fn snapshot_non_blittable_record_person_with_string() {
-        let record = CSharpRecord {
+        let record = CSharpRecordPlan {
             class_name: CSharpClassName::from_source("person"),
             is_blittable: false,
             fields: vec![
@@ -190,7 +190,7 @@ mod tests {
     /// glue that lets records compose.
     #[test]
     fn snapshot_nested_record_line() {
-        let record = CSharpRecord {
+        let record = CSharpRecordPlan {
             class_name: CSharpClassName::from_source("line"),
             is_blittable: false,
             fields: vec![
@@ -221,7 +221,7 @@ mod tests {
     /// `WireEncodedSize` returns 0 and `WireEncodeTo` is an empty method.
     #[test]
     fn snapshot_empty_record() {
-        let record = CSharpRecord {
+        let record = CSharpRecordPlan {
             class_name: CSharpClassName::from_source("unit"),
             is_blittable: true,
             fields: vec![],
@@ -241,7 +241,7 @@ mod tests {
     /// wire encoder without a second rendering shape.
     #[test]
     fn snapshot_blittable_record_with_cstyle_enum_field() {
-        let record = CSharpRecord {
+        let record = CSharpRecordPlan {
             class_name: CSharpClassName::from_source("flag"),
             is_blittable: true,
             fields: vec![
@@ -276,13 +276,13 @@ mod tests {
         name: &str,
         ffi_name: &str,
         receiver: CSharpReceiver,
-        params: Vec<CSharpParam>,
+        params: Vec<CSharpParamPlan>,
         return_type: CSharpType,
         return_kind: CSharpReturnKind,
-    ) -> CSharpMethod {
+    ) -> CSharpMethodPlan {
         let owner = CSharpClassName::from_source(owner_class_name);
         let method_name = CSharpMethodName::from_source(name);
-        CSharpMethod {
+        CSharpMethodPlan {
             native_method_name: CSharpMethodName::native_for_owner(&owner, &method_name),
             name: method_name,
             ffi_name: CFunctionName::new(ffi_name.to_string()),
@@ -294,15 +294,15 @@ mod tests {
         }
     }
 
-    fn param(name: &str, csharp_type: CSharpType) -> CSharpParam {
-        CSharpParam {
+    fn param(name: &str, csharp_type: CSharpType) -> CSharpParamPlan {
+        CSharpParamPlan {
             name: CSharpParamName::from_source(name),
             csharp_type,
             kind: CSharpParamKind::Direct,
         }
     }
 
-    /// Build a CSharpEnum for the snapshot fixtures. Accepts the
+    /// Build a CSharpEnumPlan for the snapshot fixtures. Accepts the
     /// already-rendered class name and populates the derived
     /// `wire_class_name` and `methods_class_name` to match what the
     /// lowerer would produce.
@@ -310,9 +310,9 @@ mod tests {
         class_source: &str,
         kind: CSharpEnumKind,
         c_style_tag_type: Option<crate::ir::types::PrimitiveType>,
-        variants: Vec<CSharpEnumVariant>,
-        methods: Vec<CSharpMethod>,
-    ) -> CSharpEnum {
+        variants: Vec<CSharpEnumVariantPlan>,
+        methods: Vec<CSharpMethodPlan>,
+    ) -> CSharpEnumPlan {
         let class_name = CSharpClassName::from_source(class_source);
         let wire_class_name = CSharpClassName::wire_helper(&class_name);
         let methods_class_name = if methods.is_empty() {
@@ -320,7 +320,7 @@ mod tests {
         } else {
             Some(CSharpClassName::methods_companion(&class_name))
         };
-        CSharpEnum {
+        CSharpEnumPlan {
             class_name,
             wire_class_name,
             methods_class_name,
@@ -331,8 +331,8 @@ mod tests {
         }
     }
 
-    fn variant(name: &str, tag: i32, wire_tag: i32, fields: Vec<CSharpField>) -> CSharpEnumVariant {
-        CSharpEnumVariant {
+    fn variant(name: &str, tag: i32, wire_tag: i32, fields: Vec<CSharpFieldPlan>) -> CSharpEnumVariantPlan {
+        CSharpEnumVariantPlan {
             name: CSharpClassName::from_source(name),
             tag,
             wire_tag,

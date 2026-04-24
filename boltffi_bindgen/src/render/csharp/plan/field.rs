@@ -1,6 +1,6 @@
 //! A named, typed, wire-encoded field. Used by both
-//! [`CSharpRecord`](super::CSharpRecord) and
-//! [`CSharpEnumVariant`](super::CSharpEnumVariant) because a data-enum
+//! [`CSharpRecordPlan`](super::CSharpRecordPlan) and
+//! [`CSharpEnumVariantPlan`](super::CSharpEnumVariantPlan) because a data-enum
 //! variant payload is structurally identical to a record field: same
 //! name, same [`CSharpType`], same decode/size/encode trees. One
 //! type, two consumers.
@@ -11,7 +11,7 @@ use super::super::ast::{CSharpExpression, CSharpPropertyName, CSharpStatement, C
 /// expression, size expression, encode statement) the templates
 /// interpolate through [`fmt::Display`](std::fmt::Display).
 #[derive(Debug, Clone)]
-pub struct CSharpField {
+pub struct CSharpFieldPlan {
     /// Field name as it appears on the generated record or variant.
     pub name: CSharpPropertyName,
     /// C# type of the field.

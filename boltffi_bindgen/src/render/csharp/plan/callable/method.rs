@@ -1,4 +1,4 @@
-//! [`CSharpMethod`]: a method or factory constructor on a value type
+//! [`CSharpMethodPlan`]: a method or factory constructor on a value type
 //! (enum today, records eventually). [`CSharpReceiver`] drives the
 //! three rendering shapes (static, C# extension method, native instance
 //! method) depending on whether the owning type can hold its own
@@ -6,7 +6,7 @@
 
 use super::super::super::ast::{CSharpClassName, CSharpMethodName, CSharpType};
 use super::super::CFunctionName;
-use super::{CSharpParam, CSharpReturnKind, CSharpWireWriter, pinned_fixed_args};
+use super::{CSharpParamPlan, CSharpReturnKind, CSharpWireWriterPlan, pinned_fixed_args};
 
 /// A method or factory constructor on a value type, today always an
 /// enum, eventually also records. Renders as a static method, a C#
@@ -14,7 +14,7 @@ use super::{CSharpParam, CSharpReturnKind, CSharpWireWriter, pinned_fixed_args};
 /// can't have members), or a native instance method on the owning type.
 /// The dispatch is driven by [`CSharpReceiver`].
 #[derive(Debug, Clone)]
-pub struct CSharpMethod {
+pub struct CSharpMethodPlan {
     /// Method name as it appears on the owning type's public API.
     pub name: CSharpMethodName,
     /// Name used for this method's DllImport entry inside the shared
@@ -28,14 +28,14 @@ pub struct CSharpMethod {
     /// How `self` (if any) participates in the call.
     pub receiver: CSharpReceiver,
     /// Explicit params. Does not include `self` for instance methods.
-    pub params: Vec<CSharpParam>,
+    pub params: Vec<CSharpParamPlan>,
     /// C# return type of the public-facing method.
     pub return_type: CSharpType,
     /// How the return value crosses the ABI.
     pub return_kind: CSharpReturnKind,
     /// For each non-blittable record/data-enum param, the setup block
     /// that wire-encodes it into a `byte[]` before the native call.
-    pub wire_writers: Vec<CSharpWireWriter>,
+    pub wire_writers: Vec<CSharpWireWriterPlan>,
 }
 
 /// How a method's receiver (`self`) participates in the rendered C#.
@@ -76,7 +76,7 @@ impl CSharpReceiver {
     }
 }
 
-impl CSharpMethod {
+impl CSharpMethodPlan {
     pub fn is_void(&self) -> bool {
         matches!(self.return_kind, CSharpReturnKind::Void)
     }
@@ -87,17 +87,17 @@ impl CSharpMethod {
     pub fn wrapper_param_list(&self) -> String {
         self.params
             .iter()
-            .map(CSharpParam::wrapper_declaration)
+            .map(CSharpParamPlan::wrapper_declaration)
             .collect::<Vec<_>>()
             .join(", ")
     }
 
     /// Comma-joined call arguments for the native DllImport invocation,
-    /// excluding `self`. Matches [`CSharpFunction::native_call_args`](super::CSharpFunction::native_call_args).
+    /// excluding `self`. Matches [`CSharpFunctionPlan::native_call_args`](super::CSharpFunctionPlan::native_call_args).
     pub fn native_call_args(&self) -> String {
         self.params
             .iter()
-            .map(CSharpParam::native_call_arg)
+            .map(CSharpParamPlan::native_call_arg)
             .collect::<Vec<_>>()
             .join(", ")
     }
@@ -144,7 +144,7 @@ impl CSharpMethod {
         let explicit: Vec<String> = self
             .params
             .iter()
-            .map(CSharpParam::native_declaration)
+            .map(CSharpParamPlan::native_declaration)
             .collect();
         let self_decl: Option<String> = match self.receiver {
             CSharpReceiver::Static => None,

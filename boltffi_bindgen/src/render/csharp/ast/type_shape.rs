@@ -21,7 +21,7 @@ use super::{CSharpClassName, CSharpNamespace, CSharpTypeReference};
 
 /// A C# type keyword. Includes `Void` so return types and value types share
 /// one enum; params never carry `Void` because the lowerer rejects it before
-/// constructing a [`CSharpParam`](super::CSharpParam).
+/// constructing a [`CSharpParamPlan`](super::CSharpParamPlan).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CSharpType {
     Void,

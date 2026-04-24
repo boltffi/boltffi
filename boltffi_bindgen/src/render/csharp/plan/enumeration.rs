@@ -1,22 +1,22 @@
-//! [`CSharpEnum`] and its variants. A Rust enum lifts into two shapes:
+//! [`CSharpEnumPlan`] and its variants. A Rust enum lifts into two shapes:
 //! C-style (all unit variants) renders as a native C# `enum` and rides
 //! P/Invoke as its integral backing type; data (at least one payload)
 //! renders as an `abstract record` hierarchy and travels wire-encoded.
-//! [`CSharpEnumKind`] carries that choice; [`CSharpEnumVariant`] holds
-//! the per-variant payload using [`CSharpField`](super::CSharpField),
+//! [`CSharpEnumKind`] carries that choice; [`CSharpEnumVariantPlan`] holds
+//! the per-variant payload using [`CSharpFieldPlan`](super::CSharpFieldPlan),
 //! the same type record fields use.
 
 use crate::ir::types::PrimitiveType;
 
 use super::super::ast::CSharpClassName;
-use super::{CSharpField, CSharpMethod};
+use super::{CSharpFieldPlan, CSharpMethodPlan};
 
 /// A Rust enum lifted into the C# type surface. C-style enums (all unit
 /// variants) render as native `enum` declarations and ride the CLR's
 /// transparent int-marshaling; data enums render as `abstract record`
 /// hierarchies and travel wire-encoded.
 #[derive(Debug, Clone)]
-pub struct CSharpEnum {
+pub struct CSharpEnumPlan {
     /// Class name (e.g., `"Shape"`, `"Status"`).
     pub class_name: CSharpClassName,
     /// Companion static class holding the wire codec (`Decode` and the
@@ -37,14 +37,14 @@ pub struct CSharpEnum {
     /// Variants, in declaration order. The wire tag is the variant's index
     /// in this list (per `EnumTagStrategy::OrdinalIndex`), so order is
     /// load-bearing.
-    pub variants: Vec<CSharpEnumVariant>,
+    pub variants: Vec<CSharpEnumVariantPlan>,
     /// Methods and factory constructors declared via `#[data(impl)]`. For
     /// C-style enums these render in [`Self::methods_class_name`]; for
     /// data enums they go directly on the abstract record. The Rust IR
     /// separates constructors from methods, but at the C# call site
     /// they're both just static or instance methods, merged into one
     /// list here.
-    pub methods: Vec<CSharpMethod>,
+    pub methods: Vec<CSharpMethodPlan>,
 }
 
 /// The two flavors the enum renderer knows how to produce. The `#[repr]`
@@ -64,11 +64,11 @@ pub enum CSharpEnumKind {
     Data,
 }
 
-/// One variant of a [`CSharpEnum`]. For C-style enums, `fields` is always
+/// One variant of a [`CSharpEnumPlan`]. For C-style enums, `fields` is always
 /// empty; for data enums, a unit variant also has empty `fields` (and
 /// renders as `sealed record Name() : Enum`).
 #[derive(Debug, Clone)]
-pub struct CSharpEnumVariant {
+pub struct CSharpEnumVariantPlan {
     /// Variant name — for data enums this becomes the nested
     /// `sealed record` class name; for C-style enums it's the enum
     /// member identifier.
@@ -90,10 +90,10 @@ pub struct CSharpEnumVariant {
     pub wire_tag: i32,
     /// Variant fields. Empty for unit variants and for every C-style
     /// variant.
-    pub fields: Vec<CSharpField>,
+    pub fields: Vec<CSharpFieldPlan>,
 }
 
-impl CSharpEnum {
+impl CSharpEnumPlan {
     pub fn is_c_style(&self) -> bool {
         self.kind == CSharpEnumKind::CStyle
     }
@@ -145,7 +145,7 @@ impl CSharpEnum {
     }
 }
 
-impl CSharpEnumVariant {
+impl CSharpEnumVariantPlan {
     /// Whether this variant carries no payload. True for every C-style
     /// variant, and for data enum "unit" variants like `Shape::Point`.
     pub fn is_unit(&self) -> bool {
@@ -158,10 +158,10 @@ mod tests {
     use super::*;
     use super::super::super::ast::{CSharpExpression, CSharpPropertyName, CSharpStatement, CSharpType};
 
-    fn c_style_enum(source_name: &str, tag_type: PrimitiveType) -> CSharpEnum {
+    fn c_style_enum(source_name: &str, tag_type: PrimitiveType) -> CSharpEnumPlan {
         let class_name = CSharpClassName::from_source(source_name);
         let wire_class_name = CSharpClassName::wire_helper(&class_name);
-        CSharpEnum {
+        CSharpEnumPlan {
             class_name,
             wire_class_name,
             methods_class_name: None,
@@ -172,10 +172,10 @@ mod tests {
         }
     }
 
-    fn data_enum(source_name: &str) -> CSharpEnum {
+    fn data_enum(source_name: &str) -> CSharpEnumPlan {
         let class_name = CSharpClassName::from_source(source_name);
         let wire_class_name = CSharpClassName::wire_helper(&class_name);
-        CSharpEnum {
+        CSharpEnumPlan {
             class_name,
             wire_class_name,
             methods_class_name: None,
@@ -190,7 +190,7 @@ mod tests {
     /// variant and for data-enum unit variants like `Shape::Point`.
     #[test]
     fn variant_with_empty_fields_is_unit() {
-        let variant = CSharpEnumVariant {
+        let variant = CSharpEnumVariantPlan {
             name: CSharpClassName::from_source("active"),
             tag: 0,
             wire_tag: 0,
@@ -204,11 +204,11 @@ mod tests {
     /// rather than the empty-paren `sealed record Foo()` shape.
     #[test]
     fn variant_with_payload_is_not_unit() {
-        let variant = CSharpEnumVariant {
+        let variant = CSharpEnumVariantPlan {
             name: CSharpClassName::from_source("circle"),
             tag: 0,
             wire_tag: 0,
-            fields: vec![CSharpField {
+            fields: vec![CSharpFieldPlan {
                 name: CSharpPropertyName::from_source("radius"),
                 csharp_type: CSharpType::Double,
                 wire_decode_expr: CSharpExpression::Raw("reader.ReadF64()".to_string()),
@@ -242,7 +242,7 @@ mod tests {
     /// `ReadI32`/`WriteI32` around an ordinal-tag switch.
     #[test]
     fn c_style_backing_type_maps_primitive_to_csharp_keyword() {
-        let enumeration = CSharpEnum {
+        let enumeration = CSharpEnumPlan {
             class_name: CSharpClassName::from_source("log_level"),
             wire_class_name: CSharpClassName::from_source("log_level_wire"),
             methods_class_name: None,

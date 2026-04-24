@@ -1,4 +1,4 @@
-//! [`CSharpFunction`] (a top-level primitive function binding) and
+//! [`CSharpFunctionPlan`] (a top-level primitive function binding) and
 //! [`CSharpReturnKind`] (how its return value crosses the ABI). The
 //! binding serves the public wrapper method and the `[DllImport]`
 //! native declaration at once; `CSharpReturnKind` decides whether the
@@ -7,17 +7,17 @@
 
 use super::super::super::ast::{CSharpMethodName, CSharpType};
 use super::super::CFunctionName;
-use super::{CSharpParam, CSharpWireWriter, pinned_fixed_args};
+use super::{CSharpParamPlan, CSharpWireWriterPlan, pinned_fixed_args};
 
 /// A primitive function binding. Serves double duty: the template uses `name`
 /// and C# types for the public static method, and `ffi_name` for the
 /// `[DllImport]` entry point.
 #[derive(Debug, Clone)]
-pub struct CSharpFunction {
+pub struct CSharpFunctionPlan {
     /// Public wrapper method name.
     pub name: CSharpMethodName,
     /// Parameters with C# types.
-    pub params: Vec<CSharpParam>,
+    pub params: Vec<CSharpParamPlan>,
     /// C# return type as it appears in the public wrapper signature.
     pub return_type: CSharpType,
     /// How the return value crosses the ABI. Drives how the wrapper body
@@ -30,10 +30,10 @@ pub struct CSharpFunction {
     /// it into a `byte[]` before the native call. Empty if the function has
     /// no wire-encoded params (blittable record params count as direct and
     /// do not appear here).
-    pub wire_writers: Vec<CSharpWireWriter>,
+    pub wire_writers: Vec<CSharpWireWriterPlan>,
 }
 
-impl CSharpFunction {
+impl CSharpFunctionPlan {
     pub fn is_void(&self) -> bool {
         matches!(self.return_kind, CSharpReturnKind::Void)
     }
@@ -43,7 +43,7 @@ impl CSharpFunction {
     pub fn wrapper_param_list(&self) -> String {
         self.params
             .iter()
-            .map(CSharpParam::wrapper_declaration)
+            .map(CSharpParamPlan::wrapper_declaration)
             .collect::<Vec<_>>()
             .join(", ")
     }
@@ -53,7 +53,7 @@ impl CSharpFunction {
     pub fn native_param_list(&self) -> String {
         self.params
             .iter()
-            .map(CSharpParam::native_declaration)
+            .map(CSharpParamPlan::native_declaration)
             .collect::<Vec<_>>()
             .join(", ")
     }
@@ -62,7 +62,7 @@ impl CSharpFunction {
     pub fn native_call_args(&self) -> String {
         self.params
             .iter()
-            .map(CSharpParam::native_call_arg)
+            .map(CSharpParamPlan::native_call_arg)
             .collect::<Vec<_>>()
             .join(", ")
     }
@@ -220,8 +220,8 @@ mod tests {
     fn function_with_return(
         return_type: CSharpType,
         return_kind: CSharpReturnKind,
-    ) -> CSharpFunction {
-        CSharpFunction {
+    ) -> CSharpFunctionPlan {
+        CSharpFunctionPlan {
             name: CSharpMethodName::from_source("test"),
             params: vec![],
             return_type,
@@ -231,8 +231,8 @@ mod tests {
         }
     }
 
-    fn param(name: &str, csharp_type: CSharpType, kind: CSharpParamKind) -> CSharpParam {
-        CSharpParam {
+    fn param(name: &str, csharp_type: CSharpType, kind: CSharpParamKind) -> CSharpParamPlan {
+        CSharpParamPlan {
             name: super::super::CSharpParamName::from_source(name),
             csharp_type,
             kind,
@@ -244,11 +244,11 @@ mod tests {
     }
 
     fn function_with_params(
-        params: Vec<CSharpParam>,
+        params: Vec<CSharpParamPlan>,
         return_type: CSharpType,
         return_kind: CSharpReturnKind,
-    ) -> CSharpFunction {
-        CSharpFunction {
+    ) -> CSharpFunctionPlan {
+        CSharpFunctionPlan {
             name: CSharpMethodName::from_source("test"),
             params,
             return_type,

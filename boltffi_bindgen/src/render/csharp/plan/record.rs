@@ -1,11 +1,11 @@
-//! [`CSharpRecord`]: a Rust struct exposed as a C# `readonly record
-//! struct`. Holds its fields as [`CSharpField`](super::CSharpField)
+//! [`CSharpRecordPlan`]: a Rust struct exposed as a C# `readonly record
+//! struct`. Holds its fields as [`CSharpFieldPlan`](super::CSharpFieldPlan)
 //! (the same field type used by data-enum variants) and carries a
 //! blittability flag that decides whether the record rides the direct
 //! P/Invoke path or goes through wire encoding.
 
 use super::super::ast::CSharpClassName;
-use super::CSharpField;
+use super::CSharpFieldPlan;
 
 /// A record (Rust struct) exposed as a C# `readonly record struct`.
 ///
@@ -16,18 +16,18 @@ use super::CSharpField;
 /// needed. Non-blittable records carry `Decode` / `WireEncodedSize` /
 /// `WireEncodeTo` members and travel as wire-encoded buffers.
 #[derive(Debug, Clone)]
-pub struct CSharpRecord {
+pub struct CSharpRecordPlan {
     /// Class name (e.g., `"Point"`).
     pub class_name: CSharpClassName,
     /// The record's fields, in declaration order.
-    pub fields: Vec<CSharpField>,
+    pub fields: Vec<CSharpFieldPlan>,
     /// Whether the record can cross the P/Invoke boundary as a direct
     /// `[StructLayout(Sequential)]` value. True when the Rust type is
     /// `#[repr(C)]` with blittable fields only.
     pub is_blittable: bool,
 }
 
-impl CSharpRecord {
+impl CSharpRecordPlan {
     pub fn is_empty(&self) -> bool {
         self.fields.is_empty()
     }
