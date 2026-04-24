@@ -6,9 +6,7 @@
 //! the per-variant payload using [`CSharpFieldPlan`](super::CSharpFieldPlan),
 //! the same type record fields use.
 
-use crate::ir::types::PrimitiveType;
-
-use super::super::ast::CSharpClassName;
+use super::super::ast::{CSharpClassName, CSharpEnumUnderlyingType};
 use super::{CSharpFieldPlan, CSharpMethodPlan};
 
 /// A Rust enum lifted into the C# type surface. C-style enums (all unit
@@ -30,10 +28,10 @@ pub struct CSharpEnumPlan {
     pub methods_class_name: Option<CSharpClassName>,
     /// Whether this is a C-style or data enum. Drives the rendering shape.
     pub kind: CSharpEnumKind,
-    /// For C-style enums, the declared integral repr primitive. `None` for
-    /// data enums, whose public surface is always a reference type and whose
-    /// wire tag stays an implementation detail of the codec.
-    pub c_style_tag_type: Option<PrimitiveType>,
+    /// For C-style enums, the C# integral type that follows the `:` in
+    /// `enum Foo : byte`. `None` for data enums, whose public surface is a
+    /// reference type with no underlying base.
+    pub underlying_type: Option<CSharpEnumUnderlyingType>,
     /// Variants, in declaration order. The wire tag is the variant's index
     /// in this list (per `EnumTagStrategy::OrdinalIndex`), so order is
     /// load-bearing.
@@ -106,30 +104,13 @@ impl CSharpEnumPlan {
         !self.methods.is_empty()
     }
 
-    fn c_style_tag_type(&self) -> PrimitiveType {
-        self.c_style_tag_type
-            .expect("c-style enum helpers only apply to C-style enums")
-    }
-
-    /// The C# enum backing type keyword (`byte`, `short`, `int`, `long`,
-    /// etc.). C# does not permit `nint` / `nuint` enum base types, so those
-    /// reprs are filtered out before a plan is ever constructed.
-    pub fn c_style_backing_type(&self) -> &'static str {
-        match self.c_style_tag_type() {
-            PrimitiveType::I8 => "sbyte",
-            PrimitiveType::U8 => "byte",
-            PrimitiveType::I16 => "short",
-            PrimitiveType::U16 => "ushort",
-            PrimitiveType::I32 => "int",
-            PrimitiveType::U32 => "uint",
-            PrimitiveType::I64 => "long",
-            PrimitiveType::U64 => "ulong",
-            PrimitiveType::Bool
-            | PrimitiveType::ISize
-            | PrimitiveType::USize
-            | PrimitiveType::F32
-            | PrimitiveType::F64 => panic!("unsupported C# enum backing type"),
-        }
+    /// Unwraps [`Self::underlying_type`] for the c-style enum template,
+    /// which only renders for c-style enums and so always sees `Some`.
+    /// Panics on data enums by design.
+    pub fn c_style_underlying_type(&self) -> &CSharpEnumUnderlyingType {
+        self.underlying_type
+            .as_ref()
+            .expect("c_style_underlying_type called on data enum")
     }
 
     /// Whether any variant payload field's type contains a string at any
@@ -158,7 +139,7 @@ mod tests {
     use super::*;
     use super::super::super::ast::{CSharpExpression, CSharpPropertyName, CSharpStatement, CSharpType};
 
-    fn c_style_enum(source_name: &str, tag_type: PrimitiveType) -> CSharpEnumPlan {
+    fn c_style_enum(source_name: &str, underlying: CSharpEnumUnderlyingType) -> CSharpEnumPlan {
         let class_name = CSharpClassName::from_source(source_name);
         let wire_class_name = CSharpClassName::wire_helper(&class_name);
         CSharpEnumPlan {
@@ -166,7 +147,7 @@ mod tests {
             wire_class_name,
             methods_class_name: None,
             kind: CSharpEnumKind::CStyle,
-            c_style_tag_type: Some(tag_type),
+            underlying_type: Some(underlying),
             variants: vec![],
             methods: vec![],
         }
@@ -180,7 +161,7 @@ mod tests {
             wire_class_name,
             methods_class_name: None,
             kind: CSharpEnumKind::Data,
-            c_style_tag_type: None,
+            underlying_type: None,
             variants: vec![],
             methods: vec![],
         }
@@ -223,7 +204,7 @@ mod tests {
 
     #[test]
     fn c_style_kind_is_c_style_and_not_data() {
-        let enumeration = c_style_enum("status", PrimitiveType::I32);
+        let enumeration = c_style_enum("status", CSharpEnumUnderlyingType::Int);
         assert!(enumeration.is_c_style());
         assert!(!enumeration.is_data());
     }
@@ -233,25 +214,5 @@ mod tests {
         let enumeration = data_enum("shape");
         assert!(enumeration.is_data());
         assert!(!enumeration.is_c_style());
-    }
-
-    /// `c_style_backing_type` drives only the public enum declaration
-    /// (`public enum LogLevel : byte`). The wire codec is width-fixed at
-    /// 4 bytes across every boltffi backend, so there is no per-backing-
-    /// type read/write method to resolve: the template hardcodes
-    /// `ReadI32`/`WriteI32` around an ordinal-tag switch.
-    #[test]
-    fn c_style_backing_type_maps_primitive_to_csharp_keyword() {
-        let enumeration = CSharpEnumPlan {
-            class_name: CSharpClassName::from_source("log_level"),
-            wire_class_name: CSharpClassName::from_source("log_level_wire"),
-            methods_class_name: None,
-            kind: CSharpEnumKind::CStyle,
-            c_style_tag_type: Some(PrimitiveType::U8),
-            variants: vec![],
-            methods: vec![],
-        };
-
-        assert_eq!(enumeration.c_style_backing_type(), "byte");
     }
 }

@@ -39,8 +39,8 @@ use crate::ir::types::TypeExpr;
 use crate::ir::{AbiContract, FfiContract};
 
 use super::ast::{
-    CSharpClassName, CSharpExpression, CSharpIdent, CSharpLocalName, CSharpMethodName,
-    CSharpNamespace, CSharpParamName, CSharpType,
+    CSharpClassName, CSharpEnumUnderlyingType, CSharpExpression, CSharpIdent, CSharpLocalName,
+    CSharpMethodName, CSharpNamespace, CSharpParamName, CSharpType,
 };
 use super::emit;
 use super::plan::{
@@ -110,7 +110,7 @@ impl<'a> CSharpLowerer<'a> {
             .all_enums()
             .filter(|e| match &e.repr {
                 EnumRepr::CStyle { tag_type, .. } => {
-                    CSharpType::enum_backing_for(*tag_type).is_some()
+                    CSharpEnumUnderlyingType::for_primitive(*tag_type).is_some()
                 }
                 EnumRepr::Data { .. } => false,
             })
@@ -627,7 +627,10 @@ impl<'a> CSharpLowerer<'a> {
                     wire_class_name,
                     methods_class_name,
                     kind: CSharpEnumKind::CStyle,
-                    c_style_tag_type: Some(*tag_type),
+                    underlying_type: Some(
+                        CSharpEnumUnderlyingType::for_primitive(*tag_type)
+                            .expect("supported-set filter admits only legal underlying types"),
+                    ),
                     variants: lowered_variants,
                     methods,
                 })
@@ -665,7 +668,7 @@ impl<'a> CSharpLowerer<'a> {
                     wire_class_name,
                     methods_class_name,
                     kind: CSharpEnumKind::Data,
-                    c_style_tag_type: None,
+                    underlying_type: None,
                     variants,
                     methods,
                 })

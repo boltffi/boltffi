@@ -75,8 +75,8 @@ pub struct EnumDataTemplate<'a> {
 mod tests {
     use super::*;
     use crate::render::csharp::ast::{
-        CSharpClassName, CSharpExpression, CSharpMethodName, CSharpParamName, CSharpPropertyName,
-        CSharpStatement, CSharpType,
+        CSharpClassName, CSharpEnumUnderlyingType, CSharpExpression, CSharpMethodName,
+        CSharpParamName, CSharpPropertyName, CSharpStatement, CSharpType,
     };
     use crate::render::csharp::plan::{
         CFunctionName, CSharpEnumPlan, CSharpEnumKind, CSharpEnumVariantPlan, CSharpFieldPlan, CSharpMethodPlan,
@@ -309,7 +309,7 @@ mod tests {
     fn build_enum(
         class_source: &str,
         kind: CSharpEnumKind,
-        c_style_tag_type: Option<crate::ir::types::PrimitiveType>,
+        underlying_type: Option<CSharpEnumUnderlyingType>,
         variants: Vec<CSharpEnumVariantPlan>,
         methods: Vec<CSharpMethodPlan>,
     ) -> CSharpEnumPlan {
@@ -325,7 +325,7 @@ mod tests {
             wire_class_name,
             methods_class_name,
             kind,
-            c_style_tag_type,
+            underlying_type,
             variants,
             methods,
         }
@@ -403,7 +403,7 @@ mod tests {
         let enumeration = build_enum(
             "direction",
             CSharpEnumKind::CStyle,
-            Some(crate::ir::types::PrimitiveType::I32),
+            Some(CSharpEnumUnderlyingType::Int),
             variants,
             methods,
         );
@@ -427,7 +427,7 @@ mod tests {
         let enumeration = build_enum(
             "status",
             CSharpEnumKind::CStyle,
-            Some(crate::ir::types::PrimitiveType::I32),
+            Some(CSharpEnumUnderlyingType::Int),
             variants,
             vec![],
         );
@@ -454,7 +454,7 @@ mod tests {
         let enumeration = build_enum(
             "log_level",
             CSharpEnumKind::CStyle,
-            Some(crate::ir::types::PrimitiveType::U8),
+            Some(CSharpEnumUnderlyingType::Byte),
             variants,
             vec![],
         );

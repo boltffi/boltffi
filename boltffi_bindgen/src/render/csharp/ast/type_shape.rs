@@ -6,8 +6,10 @@
 //! `global::`-qualified one structurally.
 //!
 //! All IR-to-type constructors live here (`From<PrimitiveType>`,
-//! `enum_backing_for`, `for_enum`, `from_read_op`, `from_type_expr`)
-//! so one file answers "what C# type does this IR node become?".
+//! `for_enum`, `from_read_op`, `from_type_expr`) so one file answers
+//! "what C# type does this IR node become?". The constraint-narrowed
+//! "what's a legal enum *underlying* type" lives separately in
+//! [`super::CSharpEnumUnderlyingType`].
 
 use std::collections::HashSet;
 use std::fmt;
@@ -150,29 +152,6 @@ impl CSharpType {
         match shadowed {
             Some(sh) => self.qualify_if_shadowed(sh, namespace),
             None => self,
-        }
-    }
-
-    /// The C# type a Rust C-style enum's tag primitive becomes when used
-    /// as the enum's backing type. Returns `None` for primitives that C#
-    /// does not accept as an enum base (`nint`, `nuint`, `bool`, `f32`,
-    /// `f64`), so the caller can drop the enum from the supported set
-    /// instead of emitting an illegal `enum : nuint`.
-    pub fn enum_backing_for(tag_type: PrimitiveType) -> Option<CSharpType> {
-        match tag_type {
-            PrimitiveType::I8 => Some(CSharpType::SByte),
-            PrimitiveType::U8 => Some(CSharpType::Byte),
-            PrimitiveType::I16 => Some(CSharpType::Short),
-            PrimitiveType::U16 => Some(CSharpType::UShort),
-            PrimitiveType::I32 => Some(CSharpType::Int),
-            PrimitiveType::U32 => Some(CSharpType::UInt),
-            PrimitiveType::I64 => Some(CSharpType::Long),
-            PrimitiveType::U64 => Some(CSharpType::ULong),
-            PrimitiveType::Bool
-            | PrimitiveType::ISize
-            | PrimitiveType::USize
-            | PrimitiveType::F32
-            | PrimitiveType::F64 => None,
         }
     }
 
@@ -725,23 +704,6 @@ mod tests {
                 },
             );
             assert_eq!(CSharpType::for_enum(&def), c_style_enum_type("log_level"));
-        }
-    }
-
-    mod enum_backing_for {
-        use super::*;
-
-        #[test]
-        fn maps_u8_to_byte() {
-            assert_eq!(
-                CSharpType::enum_backing_for(PrimitiveType::U8),
-                Some(CSharpType::Byte)
-            );
-        }
-
-        #[test]
-        fn rejects_usize() {
-            assert_eq!(CSharpType::enum_backing_for(PrimitiveType::USize), None);
         }
     }
 }

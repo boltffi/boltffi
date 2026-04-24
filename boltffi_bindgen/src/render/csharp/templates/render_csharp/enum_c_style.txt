@@ -7,7 +7,7 @@ using System;
 
 namespace {{ namespace }}
 {
-    public enum {{ enumeration.class_name }} : {{ enumeration.c_style_backing_type() }}
+    public enum {{ enumeration.class_name }} : {{ enumeration.c_style_underlying_type() }}
     {
 {%- for variant in enumeration.variants %}
         {{ variant.name }} = {{ variant.tag }}{% if !loop.last %},{% endif %}

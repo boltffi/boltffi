@@ -10,12 +10,14 @@
 //! of ast/ depends in the other direction.
 
 mod code;
+mod enum_underlying_type;
 mod identifier;
 mod type_shape;
 
 pub use code::{
     CSharpBinaryOp, CSharpExpression, CSharpIdent, CSharpLiteral, CSharpLocalDecl, CSharpStatement,
 };
+pub use enum_underlying_type::CSharpEnumUnderlyingType;
 pub use identifier::{
     CSharpClassName, CSharpLocalName, CSharpMethodName, CSharpNamespace, CSharpParamName,
     CSharpPropertyName, CSharpTypeReference,
