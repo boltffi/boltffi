@@ -75,7 +75,7 @@ mod tests {
     use super::*;
     use crate::render::csharp::plan::{
         CSharpEnum, CSharpEnumKind, CSharpEnumVariant, CSharpMethod, CSharpParam, CSharpParamKind,
-        CSharpReceiver, CSharpRecord, CSharpRecordField, CSharpReturnKind, CSharpType,
+        CSharpReceiver, CSharpRecord, CSharpField, CSharpReturnKind, CSharpType,
     };
 
     fn record_field(
@@ -84,8 +84,8 @@ mod tests {
         decode: &str,
         size: &str,
         encode: &str,
-    ) -> CSharpRecordField {
-        CSharpRecordField {
+    ) -> CSharpField {
+        CSharpField {
             name: name.to_string(),
             csharp_type,
             wire_decode_expr: decode.to_string(),

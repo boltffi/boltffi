@@ -44,7 +44,6 @@ mod templates;
 
 pub use emit::{CSharpEmitter, CSharpOutput};
 pub use names::NamingConvention;
-pub use plan::*;
 
 use boltffi_ffi_rules::naming::{LibraryName, Name};
 

@@ -33,7 +33,7 @@ use crate::ir::{AbiContract, FfiContract};
 use super::emit;
 use super::plan::{
     CSharpEnum, CSharpEnumKind, CSharpEnumVariant, CSharpFunction, CSharpMethod, CSharpModule,
-    CSharpParam, CSharpParamKind, CSharpReceiver, CSharpRecord, CSharpRecordField,
+    CSharpParam, CSharpParamKind, CSharpReceiver, CSharpRecord, CSharpField,
     CSharpReturnKind, CSharpType, CSharpWireWriter, ShadowScope,
 };
 use super::{CSharpOptions, NamingConvention};
@@ -698,13 +698,13 @@ impl<'a> CSharpLowerer<'a> {
         size_ctx: &mut emit::CSharpEmitContext,
         encode_ctx: &mut emit::CSharpEmitContext,
         decode_ctx: &mut emit::CSharpEmitContext,
-    ) -> CSharpRecordField {
+    ) -> CSharpField {
         let prefixed = Self::prefix_write_seq(&field.encode, "_v");
         let csharp_type = self
             .lower_type(&field.type_expr)
             .expect("variant field type must be supported")
             .qualify_if_shadowed(scope.shadowed, scope.namespace);
-        CSharpRecordField {
+        CSharpField {
             name: NamingConvention::property_name(field.name.as_str()),
             csharp_type,
             wire_decode_expr: emit::emit_reader_read_shared(&field.decode, Some(scope), decode_ctx),
@@ -895,7 +895,7 @@ impl<'a> CSharpLowerer<'a> {
         size_ctx: &mut emit::CSharpEmitContext,
         encode_ctx: &mut emit::CSharpEmitContext,
         decode_ctx: &mut emit::CSharpEmitContext,
-    ) -> CSharpRecordField {
+    ) -> CSharpField {
         let decode_seq = self
             .record_field_read_seq(record_id, &field.name)
             .expect("record field decode ops");
@@ -905,7 +905,7 @@ impl<'a> CSharpLowerer<'a> {
         let csharp_type = self
             .lower_type(&field.type_expr)
             .expect("record field type must be supported");
-        CSharpRecordField {
+        CSharpField {
             name: NamingConvention::property_name(field.name.as_str()),
             csharp_type,
             wire_decode_expr: emit::emit_reader_read_shared(&decode_seq, None, decode_ctx),
