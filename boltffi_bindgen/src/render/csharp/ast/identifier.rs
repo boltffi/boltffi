@@ -124,7 +124,6 @@ impl CSharpTypeReference {
             None => self,
         }
     }
-
 }
 
 impl fmt::Display for CSharpTypeReference {
@@ -610,7 +609,10 @@ mod tests {
         #[case] n: usize,
         #[case] expected: &str,
     ) {
-        assert_eq!(CSharpLocalName::size_option_binding(n).to_string(), expected);
+        assert_eq!(
+            CSharpLocalName::size_option_binding(n).to_string(),
+            expected
+        );
     }
 
     #[rstest::rstest]
@@ -632,7 +634,10 @@ mod tests {
         #[case] n: usize,
         #[case] expected: &str,
     ) {
-        assert_eq!(CSharpLocalName::encode_option_binding(n).to_string(), expected);
+        assert_eq!(
+            CSharpLocalName::encode_option_binding(n).to_string(),
+            expected
+        );
     }
 
     #[rstest::rstest]
@@ -659,7 +664,10 @@ mod tests {
 
     #[test]
     fn csharp_method_name_new_wraps_pre_formed_name_verbatim() {
-        assert_eq!(CSharpMethodName::new("WriteNIntArray").as_str(), "WriteNIntArray");
+        assert_eq!(
+            CSharpMethodName::new("WriteNIntArray").as_str(),
+            "WriteNIntArray"
+        );
     }
 
     #[test]

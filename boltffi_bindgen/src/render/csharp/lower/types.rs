@@ -5,9 +5,7 @@ use crate::ir::types::TypeExpr;
 use super::super::ast::{
     CSharpClassName, CSharpLocalName, CSharpParamName, CSharpType, CSharpTypeReference,
 };
-use super::super::plan::{
-    CSharpParamKind, CSharpParamPlan, CSharpWireWriterPlan,
-};
+use super::super::plan::{CSharpParamKind, CSharpParamPlan, CSharpWireWriterPlan};
 use super::lowerer::CSharpLowerer;
 
 impl<'a> CSharpLowerer<'a> {
@@ -46,9 +44,9 @@ impl<'a> CSharpLowerer<'a> {
                 // makes the ABI contract explicit: Rust reads the actual
                 // managed element buffer, not a marshaled surrogate.
                 let element_type = match inner.as_ref() {
-                    TypeExpr::Record(id) => CSharpType::Record(
-                        CSharpTypeReference::Plain(id.into()),
-                    ),
+                    TypeExpr::Record(id) => {
+                        CSharpType::Record(CSharpTypeReference::Plain(id.into()))
+                    }
                     other => todo!(
                         "C# backend pinned-array param support not yet implemented for {other:?}"
                     ),

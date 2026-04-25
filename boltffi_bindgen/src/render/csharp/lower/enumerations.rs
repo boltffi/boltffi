@@ -1,9 +1,7 @@
 use std::collections::HashSet;
 
 use crate::ir::abi::{AbiCall, AbiEnum, AbiEnumField, AbiEnumPayload, AbiEnumVariant, CallId};
-use crate::ir::definitions::{
-    ConstructorDef, EnumDef, EnumRepr, MethodDef, Receiver, ReturnDef,
-};
+use crate::ir::definitions::{ConstructorDef, EnumDef, EnumRepr, MethodDef, Receiver, ReturnDef};
 
 use super::super::ast::{
     CSharpClassName, CSharpEnumUnderlyingType, CSharpExpression, CSharpIdentity, CSharpLocalName,

@@ -80,8 +80,8 @@ pub(crate) fn lower_decode_expr(
         },
         ReadOp::Record { id, .. } => {
             let class_name: CSharpClassName = id.into();
-            let type_ref = CSharpTypeReference::Plain(class_name)
-                .qualify_if_shadowed_opt(shadowed, namespace);
+            let type_ref =
+                CSharpTypeReference::Plain(class_name).qualify_if_shadowed_opt(shadowed, namespace);
             CSharpExpression::MethodCall {
                 receiver: Box::new(CSharpExpression::TypeRef(type_ref)),
                 method: CSharpMethodName::from_source("decode"),
@@ -111,8 +111,8 @@ pub(crate) fn lower_decode_expr(
             ..
         } => {
             let class_name: CSharpClassName = id.into();
-            let type_ref = CSharpTypeReference::Plain(class_name)
-                .qualify_if_shadowed_opt(shadowed, namespace);
+            let type_ref =
+                CSharpTypeReference::Plain(class_name).qualify_if_shadowed_opt(shadowed, namespace);
             CSharpExpression::MethodCall {
                 receiver: Box::new(CSharpExpression::TypeRef(type_ref)),
                 method: CSharpMethodName::from_source("decode"),
@@ -122,10 +122,9 @@ pub(crate) fn lower_decode_expr(
         }
         ReadOp::Option { some, .. } => {
             let inner = lower_decode_expr(some, reader, shadowed, namespace, locals);
-            let inner_ty = CSharpType::from_read_op(
-                some.ops.first().expect("option inner read op"),
-            )
-            .qualify_if_shadowed_opt(shadowed, namespace);
+            let inner_ty =
+                CSharpType::from_read_op(some.ops.first().expect("option inner read op"))
+                    .qualify_if_shadowed_opt(shadowed, namespace);
             // reader.ReadU8() == 0 ? (Inner?)null : <inner>
             CSharpExpression::Ternary {
                 cond: Box::new(CSharpExpression::Binary {
@@ -360,8 +359,9 @@ mod tests {
     #[test]
     fn record_qualifies_when_shadowed_by_sibling_variant() {
         let mut locals = DecodeLocalCounters::default();
-        let shadowed: HashSet<CSharpClassName> =
-            [CSharpClassName::from_source("point")].into_iter().collect();
+        let shadowed: HashSet<CSharpClassName> = [CSharpClassName::from_source("point")]
+            .into_iter()
+            .collect();
         let r = lower_decode_expr(
             &seq(ReadOp::Record {
                 id: RecordId::new("point"),

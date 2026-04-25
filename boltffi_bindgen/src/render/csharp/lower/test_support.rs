@@ -1,6 +1,4 @@
-use crate::ir::definitions::{
-    DataVariant, EnumDef, EnumRepr, FieldDef, RecordDef, VariantPayload,
-};
+use crate::ir::definitions::{DataVariant, EnumDef, EnumRepr, FieldDef, RecordDef, VariantPayload};
 use crate::ir::ids::{EnumId, RecordId};
 use crate::ir::types::{PrimitiveType, TypeExpr};
 
@@ -42,11 +40,7 @@ pub(super) fn struct_variant(
     }
 }
 
-pub(super) fn record_with_one_field(
-    id: &str,
-    field_name: &str,
-    type_expr: TypeExpr,
-) -> RecordDef {
+pub(super) fn record_with_one_field(id: &str, field_name: &str, type_expr: TypeExpr) -> RecordDef {
     RecordDef {
         id: RecordId::new(id),
         is_repr_c: false,

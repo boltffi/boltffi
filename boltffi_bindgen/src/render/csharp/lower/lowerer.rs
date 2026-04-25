@@ -5,11 +5,11 @@ use boltffi_ffi_rules::naming;
 use crate::ir::ids::{EnumId, RecordId};
 use crate::ir::{AbiContract, FfiContract};
 
+use super::super::CSharpOptions;
 use super::super::ast::{CSharpClassName, CSharpNamespace};
 use super::super::plan::{
     CFunctionName, CSharpEnumPlan, CSharpFunctionPlan, CSharpModulePlan, CSharpRecordPlan,
 };
-use super::super::CSharpOptions;
 
 /// Produces a [`CSharpModulePlan`] from the IR contracts.
 pub struct CSharpLowerer<'a> {
@@ -53,8 +53,7 @@ impl<'a> CSharpLowerer<'a> {
 
         let class_name = CSharpClassName::from_source(&self.ffi.package.name);
         let namespace = self.namespace.clone();
-        let free_buf_ffi_name =
-            CFunctionName::new(format!("{}_free_buf", naming::ffi_prefix()));
+        let free_buf_ffi_name = CFunctionName::new(format!("{}_free_buf", naming::ffi_prefix()));
 
         let records: Vec<CSharpRecordPlan> = self
             .ffi

@@ -124,11 +124,11 @@ impl CSharpEnumVariantPlan {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::super::ast::{
         CSharpArgumentList, CSharpExpression, CSharpIdentity, CSharpLiteral, CSharpLocalName,
         CSharpMethodName, CSharpPropertyName, CSharpStatement, CSharpType,
     };
+    use super::*;
 
     /// A variant with no payload fields is a unit: true for every C-style
     /// variant and for data-enum unit variants like `Shape::Point`.

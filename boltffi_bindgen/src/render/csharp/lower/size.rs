@@ -59,9 +59,9 @@ pub(crate) fn lower_size_expr(
             // two-segment type path.
             CSharpExpression::MethodCall {
                 receiver: Box::new(CSharpExpression::MemberAccess {
-                    receiver: Box::new(CSharpExpression::TypeRef(
-                        CSharpTypeReference::Plain(CSharpClassName::new("Encoding")),
-                    )),
+                    receiver: Box::new(CSharpExpression::TypeRef(CSharpTypeReference::Plain(
+                        CSharpClassName::new("Encoding"),
+                    ))),
                     name: CSharpPropertyName::from_source("UTF8"),
                 }),
                 method: CSharpMethodName::from_source("get_byte_count"),
@@ -247,10 +247,7 @@ mod tests {
     /// string field's wire size is over-counted by 4 bytes.
     #[test]
     fn sum_of_fixed_and_string_len_joins_with_plus() {
-        let size = SizeExpr::Sum(vec![
-            SizeExpr::Fixed(4),
-            SizeExpr::StringLen(named("name")),
-        ]);
+        let size = SizeExpr::Sum(vec![SizeExpr::Fixed(4), SizeExpr::StringLen(named("name"))]);
         assert_eq!(
             lower_fresh(&size).to_string(),
             "(4 + Encoding.UTF8.GetByteCount(name))"

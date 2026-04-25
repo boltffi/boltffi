@@ -6,7 +6,7 @@
 
 use super::super::super::ast::{
     CSharpArgumentList, CSharpClassName, CSharpExpression, CSharpIdentity, CSharpLocalName,
-    CSharpMethodName, CSharpParameter, CSharpParameterList, CSharpParamName, CSharpPropertyName,
+    CSharpMethodName, CSharpParamName, CSharpParameter, CSharpParameterList, CSharpPropertyName,
     CSharpType, CSharpTypeReference,
 };
 use super::super::CFunctionName;
@@ -122,9 +122,9 @@ impl CSharpMethodPlan {
                 )));
             }
             CSharpReceiver::InstanceNative if owner_is_blittable => {
-                list.push(self_param(CSharpType::Record(
-                    CSharpTypeReference::Plain(owner_class_name.clone()),
-                )));
+                list.push(self_param(CSharpType::Record(CSharpTypeReference::Plain(
+                    owner_class_name.clone(),
+                ))));
             }
             CSharpReceiver::InstanceNative => {
                 list.push(CSharpParameter::bare(
@@ -188,11 +188,11 @@ fn uintptr_length_member(receiver: CSharpExpression) -> CSharpExpression {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::super::super::ast::{
         CSharpClassName, CSharpMethodName, CSharpParamName, CSharpType,
     };
     use super::super::CSharpParamKind;
+    use super::*;
 
     fn method(receiver: CSharpReceiver) -> CSharpMethodPlan {
         CSharpMethodPlan {
@@ -217,10 +217,7 @@ mod tests {
     fn native_param_list_static_has_no_self() {
         let m = method(CSharpReceiver::Static);
         let owner = CSharpClassName::from_source("shape");
-        assert_eq!(
-            m.native_param_list(&owner, false).to_string(),
-            "int count",
-        );
+        assert_eq!(m.native_param_list(&owner, false).to_string(), "int count",);
     }
 
     /// C-style enum instance methods render as extensions and prepend

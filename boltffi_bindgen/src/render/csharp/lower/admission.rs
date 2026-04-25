@@ -1,9 +1,9 @@
 use std::collections::HashSet;
 
+use crate::ir::FfiContract;
 use crate::ir::definitions::{EnumDef, EnumRepr, VariantPayload};
 use crate::ir::ids::{EnumId, RecordId};
 use crate::ir::types::TypeExpr;
-use crate::ir::FfiContract;
 
 use super::super::ast::CSharpEnumUnderlyingType;
 use super::lowerer::CSharpLowerer;
@@ -119,13 +119,13 @@ fn is_field_type_supported(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::test_support::{data_enum, record_with_one_field, struct_variant};
+    use super::*;
+    use crate::ir::Lowerer as IrLowerer;
     use crate::ir::contract::PackageInfo;
     use crate::ir::definitions::{CStyleVariant, FunctionDef, ParamDef, ParamPassing, ReturnDef};
     use crate::ir::ids::{FunctionId, ParamName};
     use crate::ir::types::PrimitiveType;
-    use crate::ir::Lowerer as IrLowerer;
     use boltffi_ffi_rules::callable::ExecutionKind;
 
     use super::super::super::CSharpOptions;

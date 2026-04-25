@@ -66,11 +66,7 @@ impl<'a> CSharpLowerer<'a> {
             binding_name,
             bytes_binding_name,
             param_name,
-            size_expr: size::lower_size_expr(
-                &encode_ops.size,
-                &value::Renames::new(),
-                size_locals,
-            ),
+            size_expr: size::lower_size_expr(&encode_ops.size, &value::Renames::new(), size_locals),
             encode_stmts,
         })
     }
@@ -135,7 +131,10 @@ pub(crate) fn self_wire_writer() -> CSharpWireWriterPlan {
         receiver: Box::new(this_expr),
         method: CSharpMethodName::from_source("wire_encode_to"),
         type_args: vec![],
-        args: vec![CSharpExpression::Identity(CSharpIdentity::Local(binding_name.clone()))].into(),
+        args: vec![CSharpExpression::Identity(CSharpIdentity::Local(
+            binding_name.clone(),
+        ))]
+        .into(),
     })];
     CSharpWireWriterPlan {
         binding_name,

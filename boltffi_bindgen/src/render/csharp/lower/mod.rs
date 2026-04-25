@@ -20,4 +20,6 @@ mod value;
 mod wire_writers;
 
 pub use lowerer::CSharpLowerer;
+
+#[cfg(test)]
 pub(super) use wire_writers::self_wire_writer;

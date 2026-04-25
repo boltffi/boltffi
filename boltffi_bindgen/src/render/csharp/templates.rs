@@ -87,8 +87,9 @@ mod tests {
         CSharpParamName, CSharpPropertyName, CSharpStatement, CSharpType, CSharpTypeReference,
     };
     use crate::render::csharp::plan::{
-        CFunctionName, CSharpEnumPlan, CSharpEnumKind, CSharpEnumVariantPlan, CSharpFieldPlan, CSharpMethodPlan,
-        CSharpParamPlan, CSharpParamKind, CSharpReceiver, CSharpRecordPlan, CSharpReturnKind,
+        CFunctionName, CSharpEnumKind, CSharpEnumPlan, CSharpEnumVariantPlan, CSharpFieldPlan,
+        CSharpMethodPlan, CSharpParamKind, CSharpParamPlan, CSharpReceiver, CSharpRecordPlan,
+        CSharpReturnKind,
     };
 
     fn demo_namespace() -> CSharpNamespace {
@@ -454,7 +455,12 @@ mod tests {
         }
     }
 
-    fn variant(name: &str, tag: i32, wire_tag: i32, fields: Vec<CSharpFieldPlan>) -> CSharpEnumVariantPlan {
+    fn variant(
+        name: &str,
+        tag: i32,
+        wire_tag: i32,
+        fields: Vec<CSharpFieldPlan>,
+    ) -> CSharpEnumVariantPlan {
         CSharpEnumVariantPlan {
             name: CSharpClassName::from_source(name),
             tag,
@@ -477,52 +483,52 @@ mod tests {
             variant("West", 3, 3, vec![]),
         ];
         let methods = vec![
-                method(
-                    "Direction",
-                    "FromDegrees",
-                    "boltffi_direction_from_degrees",
-                    CSharpReceiver::Static,
-                    vec![param("degrees", CSharpType::Double)],
-                    c_style_enum_type("direction"),
-                    CSharpReturnKind::Direct,
-                ),
-                method(
-                    "Direction",
-                    "Count",
-                    "boltffi_direction_count",
-                    CSharpReceiver::Static,
-                    vec![],
-                    CSharpType::UInt,
-                    CSharpReturnKind::Direct,
-                ),
-                method(
-                    "Direction",
-                    "Opposite",
-                    "boltffi_direction_opposite",
-                    CSharpReceiver::InstanceExtension,
-                    vec![],
-                    c_style_enum_type("direction"),
-                    CSharpReturnKind::Direct,
-                ),
-                method(
-                    "Direction",
-                    "IsHorizontal",
-                    "boltffi_direction_is_horizontal",
-                    CSharpReceiver::InstanceExtension,
-                    vec![],
-                    CSharpType::Bool,
-                    CSharpReturnKind::Direct,
-                ),
-                method(
-                    "Direction",
-                    "Label",
-                    "boltffi_direction_label",
-                    CSharpReceiver::InstanceExtension,
-                    vec![],
-                    CSharpType::String,
-                    CSharpReturnKind::WireDecodeString,
-                ),
-            ];
+            method(
+                "Direction",
+                "FromDegrees",
+                "boltffi_direction_from_degrees",
+                CSharpReceiver::Static,
+                vec![param("degrees", CSharpType::Double)],
+                c_style_enum_type("direction"),
+                CSharpReturnKind::Direct,
+            ),
+            method(
+                "Direction",
+                "Count",
+                "boltffi_direction_count",
+                CSharpReceiver::Static,
+                vec![],
+                CSharpType::UInt,
+                CSharpReturnKind::Direct,
+            ),
+            method(
+                "Direction",
+                "Opposite",
+                "boltffi_direction_opposite",
+                CSharpReceiver::InstanceExtension,
+                vec![],
+                c_style_enum_type("direction"),
+                CSharpReturnKind::Direct,
+            ),
+            method(
+                "Direction",
+                "IsHorizontal",
+                "boltffi_direction_is_horizontal",
+                CSharpReceiver::InstanceExtension,
+                vec![],
+                CSharpType::Bool,
+                CSharpReturnKind::Direct,
+            ),
+            method(
+                "Direction",
+                "Label",
+                "boltffi_direction_label",
+                CSharpReceiver::InstanceExtension,
+                vec![],
+                CSharpType::String,
+                CSharpReturnKind::WireDecodeString,
+            ),
+        ];
         let enumeration = build_enum(
             "direction",
             CSharpEnumKind::CStyle,

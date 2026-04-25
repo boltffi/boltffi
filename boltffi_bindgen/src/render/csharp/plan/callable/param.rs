@@ -46,7 +46,10 @@ impl CSharpParamPlan {
                 name: self.name.clone(),
             }],
             CSharpParamKind::Direct => {
-                vec![CSharpParameter::bare(self.csharp_type.clone(), self.name.clone())]
+                vec![CSharpParameter::bare(
+                    self.csharp_type.clone(),
+                    self.name.clone(),
+                )]
             }
             CSharpParamKind::Utf8Bytes | CSharpParamKind::WireEncoded { .. } => {
                 buffer_and_length(CSharpType::Array(Box::new(CSharpType::Byte)), &self.name)
@@ -68,7 +71,9 @@ impl CSharpParamPlan {
                 };
                 vec![buf_param, length_param(&self.name)]
             }
-            CSharpParamKind::PinnedArray { .. } => buffer_and_length(CSharpType::IntPtr, &self.name),
+            CSharpParamKind::PinnedArray { .. } => {
+                buffer_and_length(CSharpType::IntPtr, &self.name)
+            }
         }
     }
 }
@@ -136,28 +141,35 @@ impl CSharpParamPlan {
             // The Rust FFI shim for `Vec<Passable>` expects a byte length, so
             // multiply element count by `Unsafe.SizeOf<T>()` (a JIT-time
             // constant for `unmanaged` struct types).
-            CSharpParamKind::PinnedArray { element_type, ptr_local } => {
+            CSharpParamKind::PinnedArray {
+                element_type,
+                ptr_local,
+            } => {
                 let ptr_arg = CSharpExpression::Cast {
                     target: CSharpType::IntPtr,
-                    inner: Box::new(CSharpExpression::Identity(CSharpIdentity::Local(ptr_local.clone()))),
+                    inner: Box::new(CSharpExpression::Identity(CSharpIdentity::Local(
+                        ptr_local.clone(),
+                    ))),
                 };
                 let length_arg = CSharpExpression::Cast {
                     target: CSharpType::UIntPtr,
-                    inner: Box::new(CSharpExpression::Paren(Box::new(CSharpExpression::Binary {
-                        op: CSharpBinaryOp::Mul,
-                        left: Box::new(CSharpExpression::MemberAccess {
-                            receiver: Box::new(param_ident(&self.name)),
-                            name: CSharpPropertyName::from_source("length"),
-                        }),
-                        right: Box::new(CSharpExpression::MethodCall {
-                            receiver: Box::new(CSharpExpression::TypeRef(
-                                CSharpTypeReference::Plain(CSharpClassName::new("Unsafe")),
-                            )),
-                            method: CSharpMethodName::new("SizeOf"),
-                            type_args: vec![element_type.clone()],
-                            args: CSharpArgumentList::default(),
-                        }),
-                    }))),
+                    inner: Box::new(CSharpExpression::Paren(Box::new(
+                        CSharpExpression::Binary {
+                            op: CSharpBinaryOp::Mul,
+                            left: Box::new(CSharpExpression::MemberAccess {
+                                receiver: Box::new(param_ident(&self.name)),
+                                name: CSharpPropertyName::from_source("length"),
+                            }),
+                            right: Box::new(CSharpExpression::MethodCall {
+                                receiver: Box::new(CSharpExpression::TypeRef(
+                                    CSharpTypeReference::Plain(CSharpClassName::new("Unsafe")),
+                                )),
+                                method: CSharpMethodName::new("SizeOf"),
+                                type_args: vec![element_type.clone()],
+                                args: CSharpArgumentList::default(),
+                            }),
+                        },
+                    ))),
                 };
                 vec![ptr_arg, length_arg]
             }

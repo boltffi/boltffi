@@ -17,10 +17,7 @@ impl<'a> CSharpLowerer<'a> {
     /// Lowers a Rust function definition to a [`CSharpFunctionPlan`].
     /// Returns `None` if the function is async or any param/return type
     /// isn't yet supported by the C# backend.
-    pub(super) fn lower_function(
-        &self,
-        function: &FunctionDef,
-    ) -> Option<CSharpFunctionPlan> {
+    pub(super) fn lower_function(&self, function: &FunctionDef) -> Option<CSharpFunctionPlan> {
         if function.is_async() {
             return None;
         }
@@ -88,9 +85,7 @@ impl<'a> CSharpLowerer<'a> {
                     type_arg: decode::top_level_blittable_primitive_array_type_arg(*p),
                 },
                 TypeExpr::Record(id) if self.is_blittable_record(id) => {
-                    CSharpReturnKind::WireDecodeBlittableRecordArray {
-                        element: id.into(),
-                    }
+                    CSharpReturnKind::WireDecodeBlittableRecordArray { element: id.into() }
                 }
                 _ => {
                     let element_seq = vec_element_read_seq(decode_ops)
@@ -117,11 +112,11 @@ impl<'a> CSharpLowerer<'a> {
                 }
             },
             ReturnDef::Value(TypeExpr::Option(_)) => {
-                let decode_seq = decode_ops
-                    .expect("Option return must carry decode_ops");
+                let decode_seq = decode_ops.expect("Option return must carry decode_ops");
                 let mut locals = decode::DecodeLocalCounters::default();
-                let reader =
-                    CSharpExpression::Identity(CSharpIdentity::Local(CSharpLocalName::new("reader")));
+                let reader = CSharpExpression::Identity(CSharpIdentity::Local(
+                    CSharpLocalName::new("reader"),
+                ));
                 let decode_expr = decode::lower_decode_expr(
                     decode_seq,
                     &reader,

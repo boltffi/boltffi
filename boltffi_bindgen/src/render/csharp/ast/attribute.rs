@@ -68,8 +68,8 @@ impl fmt::Display for CSharpAttributeArg {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::{CSharpExpression, CSharpTypeReference};
+    use super::*;
 
     fn unmanaged_type_member(member: &str) -> CSharpExpression {
         CSharpExpression::MemberAccess {

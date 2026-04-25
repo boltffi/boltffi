@@ -137,9 +137,9 @@ impl CSharpReturnKind {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::super::super::ast::{CSharpClassName, CSharpLocalName, CSharpParamName};
     use super::super::CSharpParamKind;
+    use super::*;
 
     fn function_with_return(
         return_type: CSharpType,

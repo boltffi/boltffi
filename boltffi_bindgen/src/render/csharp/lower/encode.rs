@@ -66,24 +66,30 @@ pub(crate) fn lower_encode_expr(
                 args: vec![render_value(value, renames)].into(),
             })]
         }
-        WriteOp::String { value } => vec![CSharpStatement::Expression(CSharpExpression::MethodCall {
-            receiver: Box::new(writer.clone()),
-            method: CSharpMethodName::from_source("write_string"),
-            type_args: vec![],
-            args: vec![render_value(value, renames)].into(),
-        })],
-        WriteOp::Bytes { value } => vec![CSharpStatement::Expression(CSharpExpression::MethodCall {
-            receiver: Box::new(writer.clone()),
-            method: CSharpMethodName::from_source("write_bytes"),
-            type_args: vec![],
-            args: vec![render_value(value, renames)].into(),
-        })],
-        WriteOp::Record { value, .. } => vec![CSharpStatement::Expression(CSharpExpression::MethodCall {
-            receiver: Box::new(render_value(value, renames)),
-            method: CSharpMethodName::from_source("wire_encode_to"),
-            type_args: vec![],
-            args: vec![writer.clone()].into(),
-        })],
+        WriteOp::String { value } => {
+            vec![CSharpStatement::Expression(CSharpExpression::MethodCall {
+                receiver: Box::new(writer.clone()),
+                method: CSharpMethodName::from_source("write_string"),
+                type_args: vec![],
+                args: vec![render_value(value, renames)].into(),
+            })]
+        }
+        WriteOp::Bytes { value } => {
+            vec![CSharpStatement::Expression(CSharpExpression::MethodCall {
+                receiver: Box::new(writer.clone()),
+                method: CSharpMethodName::from_source("write_bytes"),
+                type_args: vec![],
+                args: vec![render_value(value, renames)].into(),
+            })]
+        }
+        WriteOp::Record { value, .. } => {
+            vec![CSharpStatement::Expression(CSharpExpression::MethodCall {
+                receiver: Box::new(render_value(value, renames)),
+                method: CSharpMethodName::from_source("wire_encode_to"),
+                type_args: vec![],
+                args: vec![writer.clone()].into(),
+            })]
+        }
         WriteOp::Enum {
             value,
             layout: EnumLayout::CStyle { .. } | EnumLayout::Data { .. },

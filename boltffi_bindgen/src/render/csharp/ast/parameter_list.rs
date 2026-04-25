@@ -101,21 +101,23 @@ impl IntoIterator for CSharpParameterList {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::{
         CSharpAttribute, CSharpAttributeArg, CSharpClassName, CSharpExpression, CSharpPropertyName,
         CSharpTypeReference,
     };
+    use super::*;
 
     fn marshal_as(member: &str) -> CSharpAttribute {
         CSharpAttribute {
             name: CSharpClassName::new("MarshalAs"),
-            args: vec![CSharpAttributeArg::Positional(CSharpExpression::MemberAccess {
-                receiver: Box::new(CSharpExpression::TypeRef(CSharpTypeReference::Plain(
-                    CSharpClassName::new("UnmanagedType"),
-                ))),
-                name: CSharpPropertyName::from_source(member),
-            })],
+            args: vec![CSharpAttributeArg::Positional(
+                CSharpExpression::MemberAccess {
+                    receiver: Box::new(CSharpExpression::TypeRef(CSharpTypeReference::Plain(
+                        CSharpClassName::new("UnmanagedType"),
+                    ))),
+                    name: CSharpPropertyName::from_source(member),
+                },
+            )],
         }
     }
 

@@ -534,7 +534,6 @@ mod tests {
         );
     }
 
-
     // ----- Record tests -----
 
     /// Build a record with the given fields. `is_repr_c = true` lets the

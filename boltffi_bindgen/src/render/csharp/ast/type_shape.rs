@@ -199,7 +199,6 @@ impl CSharpType {
             | TypeExpr::Handle(_) => todo!("CSharpType::from_type_expr: {:?}", expr),
         }
     }
-
 }
 
 impl From<PrimitiveType> for CSharpType {
