@@ -100,10 +100,6 @@ impl CSharpEnumPlan {
         self.kind == CSharpEnumKind::Data
     }
 
-    pub fn has_methods(&self) -> bool {
-        !self.methods.is_empty()
-    }
-
     /// Unwraps [`Self::underlying_type`] for the c-style enum template,
     /// which only renders for c-style enums and so always sees `Some`.
     /// Panics on data enums by design.

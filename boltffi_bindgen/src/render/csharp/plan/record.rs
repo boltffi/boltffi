@@ -32,12 +32,6 @@ impl CSharpRecordPlan {
         self.fields.is_empty()
     }
 
-    /// Wire helpers are only needed for non-blittable records. Blittable
-    /// records skip wire encoding entirely.
-    pub fn needs_wire_helpers(&self) -> bool {
-        !self.is_blittable
-    }
-
     /// Whether the record has at least one field whose type contains a
     /// string at any nesting depth (bare `string`, `string?`, `string[]`,
     /// nested vecs of strings). Used by the record template to decide
