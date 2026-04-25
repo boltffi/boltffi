@@ -10,16 +10,24 @@ use super::super::super::ast::{
     CSharpType, CSharpTypeReference,
 };
 use super::super::CFunctionName;
-use super::{
-    CSharpParamPlan, CSharpReturnKind, CSharpWireWriterPlan, native_call_arg_list,
-    native_param_list,
-};
+use super::param::{native_call_arg_list, native_param_list};
+use super::{CSharpParamPlan, CSharpReturnKind, CSharpWireWriterPlan};
 
 /// A method or factory constructor on a value type, today always an
-/// enum, eventually also records. Renders as a static method, a C#
-/// extension method (for C-style enum instance methods, since C# enums
-/// can't have members), or a native instance method on the owning type.
-/// The dispatch is driven by [`CSharpReceiver`].
+/// enum, eventually also records. The dispatch is driven by [`CSharpReceiver`].
+///
+/// Examples:
+/// ```csharp
+/// // 1. Static method (no self)
+/// public static Shape MakePoint(double x, double y) => ...;
+///
+/// // 2. Instance extension method (C-style enum, since C# enums can't
+/// //    carry members)
+/// public static Direction Opposite(this Direction self) => ...;
+///
+/// // 3. Native instance method (data enum or record)
+/// public double Area() => ...;
+/// ```
 #[derive(Debug, Clone)]
 pub struct CSharpMethodPlan {
     /// Method name as it appears on the owning type's public API.
@@ -132,7 +140,13 @@ impl CSharpMethodPlan {
         list.extend(native_param_list(&self.params));
         list
     }
+}
 
+fn self_param(csharp_type: CSharpType) -> CSharpParameter {
+    CSharpParameter::bare(csharp_type, CSharpParamName::new("self"))
+}
+
+impl CSharpMethodPlan {
     /// Typed argument list *including* the receiver's self-argument
     /// where the receiver needs one. Extension methods prepend the
     /// bound `self` local; data-enum instance methods prepend the
@@ -156,15 +170,11 @@ impl CSharpMethodPlan {
     }
 }
 
-fn self_param(csharp_type: CSharpType) -> CSharpParameter {
-    CSharpParameter::bare(csharp_type, CSharpParamName::new("self"))
-}
-
 fn local_ident(name: &str) -> CSharpExpression {
     CSharpExpression::Identity(CSharpIdentity::Local(CSharpLocalName::new(name)))
 }
 
-/// `(UIntPtr){receiver}.Length` — same shape as the per-param length
+/// `(UIntPtr){receiver}.Length`, the same shape as the per-param length
 /// arg in [`super::CSharpParamPlan::native_call_args`].
 fn uintptr_length_member(receiver: CSharpExpression) -> CSharpExpression {
     CSharpExpression::Cast {
@@ -173,5 +183,80 @@ fn uintptr_length_member(receiver: CSharpExpression) -> CSharpExpression {
             receiver: Box::new(receiver),
             name: CSharpPropertyName::from_source("length"),
         }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use super::super::super::super::ast::{
+        CSharpClassName, CSharpMethodName, CSharpParamName, CSharpType,
+    };
+    use super::super::CSharpParamKind;
+
+    fn method(receiver: CSharpReceiver) -> CSharpMethodPlan {
+        CSharpMethodPlan {
+            name: CSharpMethodName::from_source("test"),
+            native_method_name: CSharpMethodName::from_source("OwnerTest"),
+            ffi_name: CFunctionName::new("boltffi_test".to_string()),
+            receiver,
+            params: vec![CSharpParamPlan {
+                name: CSharpParamName::from_source("count"),
+                csharp_type: CSharpType::Int,
+                kind: CSharpParamKind::Direct,
+            }],
+            return_type: CSharpType::Void,
+            return_kind: CSharpReturnKind::Void,
+            wire_writers: vec![],
+        }
+    }
+
+    /// Static methods take no self; the param list is just the explicit
+    /// params.
+    #[test]
+    fn native_param_list_static_has_no_self() {
+        let m = method(CSharpReceiver::Static);
+        let owner = CSharpClassName::from_source("shape");
+        assert_eq!(
+            m.native_param_list(&owner, false).to_string(),
+            "int count",
+        );
+    }
+
+    /// C-style enum instance methods render as extensions and prepend
+    /// the enum-typed self, marshalled as its backing integral type.
+    #[test]
+    fn native_param_list_instance_extension_prepends_enum_self() {
+        let m = method(CSharpReceiver::InstanceExtension);
+        let owner = CSharpClassName::from_source("direction");
+        assert_eq!(
+            m.native_param_list(&owner, false).to_string(),
+            "Direction self, int count",
+        );
+    }
+
+    /// Blittable record instance methods pass the receiver by value as
+    /// a single struct argument.
+    #[test]
+    fn native_param_list_instance_native_blittable_prepends_record_self() {
+        let m = method(CSharpReceiver::InstanceNative);
+        let owner = CSharpClassName::from_source("point");
+        assert_eq!(
+            m.native_param_list(&owner, true).to_string(),
+            "Point self, int count",
+        );
+    }
+
+    /// Wire-encoded receivers (data enums, non-blittable records) split
+    /// `this` into a `(byte[] self, UIntPtr selfLen)` pair, matching the
+    /// non-blittable-record param shape.
+    #[test]
+    fn native_param_list_instance_native_wire_encoded_prepends_byte_buffer_self() {
+        let m = method(CSharpReceiver::InstanceNative);
+        let owner = CSharpClassName::from_source("shape");
+        assert_eq!(
+            m.native_param_list(&owner, false).to_string(),
+            "byte[] self, UIntPtr selfLen, int count",
+        );
     }
 }

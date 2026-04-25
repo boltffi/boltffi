@@ -1,42 +1,44 @@
-//! [`CSharpRecordPlan`]: a Rust struct exposed as a C# `readonly record
-//! struct`. Holds its fields as [`CSharpFieldPlan`](super::CSharpFieldPlan)
-//! (the same field type used by data-enum variants) and carries a
-//! blittability flag that decides whether the record rides the direct
-//! P/Invoke path or goes through wire encoding.
-
 use super::super::ast::CSharpClassName;
 use super::CSharpFieldPlan;
 
-/// A record (Rust struct) exposed as a C# `readonly record struct`.
+/// A Rust struct exposed as a C# `readonly record struct`, emitted to its own `.cs` file.
 ///
-/// Each record is emitted to its own `.cs` file. Blittable records (all
-/// fields are primitives, layout matches Rust's `#[repr(C)]`) get a
-/// `[StructLayout(LayoutKind.Sequential)]` attribute so the CLR passes
-/// them directly across the P/Invoke boundary by value, no wire encoding
-/// needed. Non-blittable records carry `Decode` / `WireEncodedSize` /
-/// `WireEncodeTo` members and travel as wire-encoded buffers.
+/// Examples:
+/// ```csharp
+/// // Blittable record: crosses P/Invoke by value
+/// [StructLayout(LayoutKind.Sequential)]
+/// public readonly record struct Point(double X, double Y);
+///
+/// // Non-blittable record: travels as a wire-encoded buffer
+/// public readonly record struct Person(string Name, int Age)
+/// {
+///     internal static Person Decode(WireReader reader) => ...;
+///     internal int WireEncodedSize() => ...;
+///     internal void WireEncodeTo(WireWriter wire) { ... }
+/// }
+/// ```
 #[derive(Debug, Clone)]
 pub struct CSharpRecordPlan {
     /// Class name (e.g., `"Point"`).
     pub class_name: CSharpClassName,
     /// The record's fields, in declaration order.
     pub fields: Vec<CSharpFieldPlan>,
-    /// Whether the record can cross the P/Invoke boundary as a direct
-    /// `[StructLayout(Sequential)]` value. True when the Rust type is
-    /// `#[repr(C)]` with blittable fields only.
+    /// Whether the record is blittable: `#[repr(C)]` Rust layout with all
+    /// blittable fields. Blittable records get `[StructLayout(LayoutKind.Sequential)]`
+    /// and cross P/Invoke by value; otherwise the record carries
+    /// `Decode`/`WireEncodedSize`/`WireEncodeTo` and travels as a wire buffer.
     pub is_blittable: bool,
 }
 
 impl CSharpRecordPlan {
+    /// True for records with no fields. The template uses this to short-circuit
+    /// `WireEncodedSize()` to `0` instead of emitting an empty sum.
     pub fn is_empty(&self) -> bool {
         self.fields.is_empty()
     }
 
-    /// Whether the record has at least one field whose type contains a
-    /// string at any nesting depth (bare `string`, `string?`, `string[]`,
-    /// nested vecs of strings). Used by the record template to decide
-    /// whether to import `System.Text` (for `Encoding.UTF8.GetByteCount`).
-    /// Required because `TreatWarningsAsErrors` flags unused usings.
+    /// Whether any field's type contains a string at any depth. Gates the
+    /// `using System.Text;` import in the record template.
     pub fn has_string_fields(&self) -> bool {
         self.fields.iter().any(|f| f.csharp_type.contains_string())
     }

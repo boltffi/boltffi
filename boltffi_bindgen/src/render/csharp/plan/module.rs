@@ -1,15 +1,15 @@
-//! [`CSharpModulePlan`]: the top-level aggregator. Holds the records,
-//! enums, and functions the templates render, plus the handful of
-//! boolean flags that decide which shared runtime helpers (`FfiBuf`,
-//! `WireReader`, `WireWriter`, `System.Text`) get emitted.
-
 use boltffi_ffi_rules::naming::{LibraryName, Name};
 
 use super::super::ast::{CSharpClassName, CSharpNamespace};
 use super::{CFunctionName, CSharpEnumPlan, CSharpFunctionPlan, CSharpRecordPlan};
 
-/// Represents a lowered C# module, containing everything the templates need
-/// to render a `.cs` file.
+/// A whole C# module: namespace, library binding, and every record, enum,
+/// and function it exposes. Renders into a `namespace` spread across
+/// multiple `.cs` files: one per record (`{record_name}.cs`), one per enum
+/// (`{enum_name}.cs`), and a shared file (`{class_name}.cs`) holding the
+/// function wrappers, the `NativeMethods` DllImport class, and the
+/// runtime helpers (`FfiBuf`, `WireReader`, `WireWriter`) gated by the
+/// `needs_*` predicates.
 #[derive(Debug, Clone)]
 pub struct CSharpModulePlan {
     /// Namespace for the generated files.
@@ -19,8 +19,6 @@ pub struct CSharpModulePlan {
     /// Native library name used in `[DllImport("...")]` declarations.
     pub lib_name: Name<LibraryName>,
     /// C function that frees the buffer used by wire-encoded returns.
-    /// Pre-computed so the native template doesn't concatenate the
-    /// shared FFI prefix with a literal suffix at render time.
     pub free_buf_ffi_name: CFunctionName,
     /// Records exposed by the module. Each record is rendered to its own
     /// `.cs` file as a `readonly record struct`.
@@ -29,25 +27,21 @@ pub struct CSharpModulePlan {
     /// file: C-style as a native `enum`, data-carrying as an
     /// `abstract record` with nested `sealed record` variants.
     pub enums: Vec<CSharpEnumPlan>,
-    /// Top-level primitive functions. Used by both the public wrapper class
-    /// and the `[DllImport]` native declarations: C# P/Invoke passes
-    /// primitives directly, so one struct serves both layers.
+    /// Top-level functions exposed by the module.
     pub functions: Vec<CSharpFunctionPlan>,
 }
 
 impl CSharpModulePlan {
+    /// Whether the module exposes any functions. Gates the wrapper-class
+    /// file in the functions template.
     pub fn has_functions(&self) -> bool {
         !self.functions.is_empty()
     }
 
-    /// Whether the shared runtime helpers need `System.Text`.
-    ///
-    /// Top-level string params use `Encoding.UTF8.GetBytes` in the wrapper,
-    /// and `WireWriter` uses `Encoding.UTF8.GetByteCount` / `GetBytes` when
-    /// encoding string-bearing params (including `Vec<String>` / nested
-    /// string vecs) or string fields of a record. Decoding no longer needs
-    /// `System.Text`. `WireReader` reads strings through
-    /// `Marshal.PtrToStringUTF8`.
+    /// Whether the module needs `using System.Text;`. True when any function
+    /// has a string param or any record has a string field, since
+    /// `Encoding.UTF8.GetBytes` lives there. Decoding does not need
+    /// `System.Text`; `WireReader` reads strings via `Marshal.PtrToStringUTF8`.
     pub fn needs_system_text(&self) -> bool {
         self.functions
             .iter()
@@ -58,14 +52,14 @@ impl CSharpModulePlan {
     /// Whether any function takes a wire-encoded record param. Blittable
     /// record params pass through the CLR as direct struct values and do
     /// not contribute here.
-    pub fn has_wire_params(&self) -> bool {
+    fn has_wire_params(&self) -> bool {
         self.functions.iter().any(|f| !f.wire_writers.is_empty())
     }
 
     /// Whether any function returns through an `FfiBuf`, a wire-decoded
     /// string or non-blittable record. Blittable records come back as
     /// direct struct values and do not count here.
-    pub fn has_ffi_buf_returns(&self) -> bool {
+    fn has_ffi_buf_returns(&self) -> bool {
         self.functions
             .iter()
             .any(|f| f.return_kind.native_returns_ffi_buf())

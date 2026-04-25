@@ -1,15 +1,23 @@
-//! A named, typed, wire-encoded field. Used by both
-//! [`CSharpRecordPlan`](super::CSharpRecordPlan) and
-//! [`CSharpEnumVariantPlan`](super::CSharpEnumVariantPlan) because a data-enum
-//! variant payload is structurally identical to a record field: same
-//! name, same [`CSharpType`], same decode/size/encode trees. One
-//! type, two consumers.
-
 use super::super::ast::{CSharpExpression, CSharpPropertyName, CSharpStatement, CSharpType};
 
-/// A named field carrying a type and the three wire trees (decode
-/// expression, size expression, encode statement) the templates
-/// interpolate through [`fmt::Display`](std::fmt::Display).
+/// A single field of a generated C# record, or one payload slot of a data-enum variant.
+///
+/// Examples:
+/// ```csharp
+/// // Record fields
+/// public readonly record struct Point(
+///     double X,
+/// //  ^^^^^^^^
+///     double Y
+/// //  ^^^^^^^^
+/// );
+///
+/// // Data-enum variant payload
+/// public sealed record Circle(
+///     double Radius
+/// //  ^^^^^^^^^^^^^
+/// ) : Shape;
+/// ```
 #[derive(Debug, Clone)]
 pub struct CSharpFieldPlan {
     /// Field name as it appears on the generated record or variant.
@@ -22,9 +30,7 @@ pub struct CSharpFieldPlan {
     /// Expression that produces the wire-encoded byte size of this
     /// field (e.g., `8`, `WireWriter.StringWireSize(this.Name)`).
     pub wire_size_expr: CSharpExpression,
-    /// Statements that write this field to a `WireWriter` named
-    /// `wire`. Most fields produce a single statement; a length-
-    /// prefixed encoded array produces two (the length write and
-    /// the per-element loop).
+    /// Statements that write this field to a `WireWriter` named `wire`
+    /// (e.g., `wire.WriteF64(this.X);`).
     pub wire_encode_stmts: Vec<CSharpStatement>,
 }

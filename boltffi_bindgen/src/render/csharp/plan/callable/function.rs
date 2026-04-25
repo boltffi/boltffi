@@ -10,13 +10,24 @@ use super::super::super::ast::{
     CSharpType,
 };
 use super::super::CFunctionName;
-use super::{
-    CSharpParamPlan, CSharpWireWriterPlan, native_call_arg_list, native_param_list,
-};
+use super::param::{native_call_arg_list, native_param_list};
+use super::{CSharpParamPlan, CSharpWireWriterPlan};
 
-/// A primitive function binding. Serves double duty: the template uses `name`
-/// and C# types for the public static method, and `ffi_name` for the
-/// `[DllImport]` entry point.
+/// A top-level function binding. Serves double duty: drives both the public
+/// static wrapper method and the matching `[DllImport]` declaration.
+///
+/// Examples:
+/// ```csharp
+/// // Public wrapper (functions.txt)
+/// public static int Echo(int value)
+/// {
+///     return NativeMethods.Echo(value);
+/// }
+///
+/// // DllImport declaration (native.txt)
+/// [DllImport(LibName, EntryPoint = "boltffi_echo")]
+/// internal static extern int Echo(int value);
+/// ```
 #[derive(Debug, Clone)]
 pub struct CSharpFunctionPlan {
     /// Public wrapper method name.
@@ -32,9 +43,7 @@ pub struct CSharpFunctionPlan {
     /// The C function this wrapper calls across the ABI boundary.
     pub ffi_name: CFunctionName,
     /// For each non-blittable record param, the setup code that wire-encodes
-    /// it into a `byte[]` before the native call. Empty if the function has
-    /// no wire-encoded params (blittable record params count as direct and
-    /// do not appear here).
+    /// it into a `byte[]` before the native call.
     pub wire_writers: Vec<CSharpWireWriterPlan>,
 }
 
@@ -51,28 +60,23 @@ impl CSharpFunctionPlan {
 
     /// Whether the function has any
     /// [`CSharpParamKind::PinnedArray`](super::CSharpParamKind::PinnedArray)
-    /// param. Drives the template's `unsafe { fixed (...) { ... } }`
-    /// scaffolding: a true result means at least one `fixed` block (and
-    /// the surrounding `unsafe` block) gets rendered, with `T* _xPtr =
-    /// x` declarators iterated out of `params` directly.
+    /// param. Gates the `unsafe { fixed (...) { ... } }` scaffolding in
+    /// the wrapper template.
     pub fn has_pinned_params(&self) -> bool {
         self.params.iter().any(CSharpParamPlan::is_pinned)
     }
 }
 
-/// How a function's return value is delivered across the ABI. Drives
-/// template branching on the wrapper-body shape; the templates own the
-/// `return new WireReader(...)...` boilerplate around the variable bits
-/// each variant carries.
+/// How a function's return value is delivered across the ABI. Drives the
+/// template's branching on the wrapper-body shape.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CSharpReturnKind {
     /// No return value.
     Void,
-    /// Returned directly. Primitives, bools, and blittable records all
-    /// share this path. The CLR already knows how to marshal them.
+    /// Returned directly. Primitives, bools, and blittable records share
+    /// this path.
     Direct,
-    /// `FfiBuf` carrying a wire-encoded `string`. Template owns the
-    /// entire body.
+    /// `FfiBuf` carrying a wire-encoded `string`.
     WireDecodeString,
     /// `FfiBuf` carrying a wire-encoded value with a static
     /// `Decode(WireReader)` method (non-blittable records, data enums).
@@ -95,22 +99,16 @@ pub enum CSharpReturnKind {
     /// `FfiBuf` carrying a wire-encoded `Vec<T>` of a wire-encoded
     /// element (string, non-blittable record, nested vec, option).
     /// Renders as `ReadEncodedArray<{element_type}>({decode_lambda})`,
-    /// where `decode_lambda` is the pre-rendered closure (`r0 => …`,
-    /// `r1 => …`, depending on nesting depth — the lowerer's read
-    /// counter assigns the closure parameter, so the template can't
-    /// hardcode the name).
+    /// where `decode_lambda` is a pre-rendered closure (e.g., `r0 => ...`)
+    /// whose parameter name is assigned by the lowerer's read counter.
     WireDecodeEncodedArray {
         element_type: CSharpType,
         decode_lambda: CSharpExpression,
     },
     /// `FfiBuf` carrying a wire-encoded `Option<T>` (1-byte tag +
-    /// optional payload). The inner decode walks the IR recursively
-    /// across every inner shape (primitive, string, record, enum, vec,
-    /// nested option), so `decode_expr` is the whole pre-rendered
-    /// expression evaluated against a `reader` local the template
-    /// introduces. Templates can't enumerate the recursion without
-    /// recursive includes; this is the one decode shape where the
-    /// expression genuinely belongs in the plan.
+    /// optional payload). `decode_expr` is the pre-rendered decode
+    /// expression, evaluated against a `reader` local the template
+    /// introduces.
     WireDecodeOption { decode_expr: CSharpExpression },
 }
 
