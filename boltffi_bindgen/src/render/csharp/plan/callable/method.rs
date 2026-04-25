@@ -4,9 +4,16 @@
 //! method) depending on whether the owning type can hold its own
 //! members and how `self` crosses the ABI.
 
-use super::super::super::ast::{CSharpClassName, CSharpMethodName, CSharpType};
+use super::super::super::ast::{
+    CSharpArgumentList, CSharpClassName, CSharpExpression, CSharpIdent, CSharpLocalName,
+    CSharpMethodName, CSharpParameter, CSharpParameterList, CSharpParamName, CSharpPropertyName,
+    CSharpType, CSharpTypeReference,
+};
 use super::super::CFunctionName;
-use super::{CSharpParamPlan, CSharpReturnKind, CSharpWireWriterPlan, pinned_fixed_args};
+use super::{
+    CSharpParamPlan, CSharpReturnKind, CSharpWireWriterPlan, native_call_arg_list,
+    native_param_list, pinned_fixed_args,
+};
 
 /// A method or factory constructor on a value type, today always an
 /// enum, eventually also records. Renders as a static method, a C#
@@ -81,38 +88,6 @@ impl CSharpMethodPlan {
         matches!(self.return_kind, CSharpReturnKind::Void)
     }
 
-    /// Comma-joined param declarations for the method signature.
-    /// Excludes `self`, which the template handles separately based on
-    /// the receiver kind.
-    pub fn wrapper_param_list(&self) -> String {
-        self.params
-            .iter()
-            .map(CSharpParamPlan::wrapper_declaration)
-            .collect::<Vec<_>>()
-            .join(", ")
-    }
-
-    /// Comma-joined call arguments for the native DllImport invocation,
-    /// excluding `self`. Matches [`CSharpFunctionPlan::native_call_args`](super::CSharpFunctionPlan::native_call_args).
-    pub fn native_call_args(&self) -> String {
-        self.params
-            .iter()
-            .map(CSharpParamPlan::native_call_arg)
-            .collect::<Vec<_>>()
-            .join(", ")
-    }
-
-    /// The return type used in the DllImport signature. Wire-decoded
-    /// returns (strings, non-blittable records, data enums) come back
-    /// as an `FfiBuf`; everything else uses the C# type directly.
-    pub fn native_return_type(&self) -> String {
-        if self.return_kind.native_returns_ffi_buf() {
-            "FfiBuf".to_string()
-        } else {
-            self.return_type.to_string()
-        }
-    }
-
     /// Declarations for nested `fixed` statements pinning every
     /// [`CSharpParamKind::PinnedArray`](super::CSharpParamKind::PinnedArray) param in the signature.
     pub fn pinned_fixed_args(&self) -> Vec<String> {
@@ -123,15 +98,15 @@ impl CSharpMethodPlan {
         !self.pinned_fixed_args().is_empty()
     }
 
-    /// Param list used in the DllImport signature, including the
-    /// receiver-dependent self declaration prepended when the method is
+    /// Typed param list for the DllImport signature, including the
+    /// receiver-dependent self parameter prepended when the method is
     /// an instance method:
     /// - `InstanceExtension`: prepends `{OwnerClass} self`, relying on
     ///   the CLR to marshal the enum as its declared backing integral type.
     /// - `InstanceNative`: prepends `byte[] self, UIntPtr selfLen` for
     ///   wire-encoded `this`; passes `{OwnerClass} self` for blittable
     ///   types.
-    /// - `Static`: no self declaration.
+    /// - `Static`: no self parameter.
     ///
     /// `owner_is_blittable` distinguishes the two `InstanceNative` sub-
     /// cases. For wire-encoded owners it's `false`; for blittable
@@ -140,45 +115,74 @@ impl CSharpMethodPlan {
         &self,
         owner_class_name: &CSharpClassName,
         owner_is_blittable: bool,
-    ) -> String {
-        let explicit: Vec<String> = self
-            .params
-            .iter()
-            .map(CSharpParamPlan::native_declaration)
-            .collect();
-        let self_decl: Option<String> = match self.receiver {
-            CSharpReceiver::Static => None,
-            CSharpReceiver::InstanceExtension => Some(format!("{} self", owner_class_name)),
-            CSharpReceiver::InstanceNative if owner_is_blittable => {
-                Some(format!("{} self", owner_class_name))
+    ) -> CSharpParameterList {
+        let mut list = CSharpParameterList::empty();
+        match self.receiver {
+            CSharpReceiver::Static => {}
+            CSharpReceiver::InstanceExtension => {
+                list.push(self_param(CSharpType::CStyleEnum(
+                    CSharpTypeReference::Plain(owner_class_name.clone()),
+                )));
             }
-            CSharpReceiver::InstanceNative => Some("byte[] self, UIntPtr selfLen".to_string()),
-        };
-        match self_decl {
-            Some(d) => std::iter::once(d)
-                .chain(explicit)
-                .collect::<Vec<_>>()
-                .join(", "),
-            None => explicit.join(", "),
+            CSharpReceiver::InstanceNative if owner_is_blittable => {
+                list.push(self_param(CSharpType::Record(
+                    CSharpTypeReference::Plain(owner_class_name.clone()),
+                )));
+            }
+            CSharpReceiver::InstanceNative => {
+                list.push(CSharpParameter::bare(
+                    CSharpType::Array(Box::new(CSharpType::Byte)),
+                    CSharpParamName::new("self"),
+                ));
+                list.push(CSharpParameter::bare(
+                    CSharpType::UIntPtr,
+                    CSharpParamName::new("selfLen"),
+                ));
+            }
         }
+        list.extend(native_param_list(&self.params));
+        list
     }
 
-    /// Comma-joined call arguments *including* the receiver's
-    /// self-argument where the receiver needs one. Extension methods
-    /// prepend the bound `self` local; data-enum instance methods
-    /// prepend the pre-encoded `_selfBytes, (UIntPtr)_selfBytes.Length`
-    /// pair that the surrounding method body set up.
-    pub fn full_native_call_args(&self) -> String {
-        let explicit = self.native_call_args();
-        let self_prefix: &str = match self.receiver {
-            CSharpReceiver::Static => "",
-            CSharpReceiver::InstanceExtension => "self",
-            CSharpReceiver::InstanceNative => "_selfBytes, (UIntPtr)_selfBytes.Length",
-        };
-        match (self_prefix.is_empty(), explicit.is_empty()) {
-            (true, _) => explicit,
-            (false, true) => self_prefix.to_string(),
-            (false, false) => format!("{self_prefix}, {explicit}"),
+    /// Typed argument list *including* the receiver's self-argument
+    /// where the receiver needs one. Extension methods prepend the
+    /// bound `self` local; data-enum instance methods prepend the
+    /// pre-encoded `_selfBytes, (UIntPtr)_selfBytes.Length` pair that
+    /// the surrounding method body set up.
+    pub fn full_native_call_args(&self) -> CSharpArgumentList {
+        let mut list = CSharpArgumentList::empty();
+        match self.receiver {
+            CSharpReceiver::Static => {}
+            CSharpReceiver::InstanceExtension => {
+                list.push(local_ident("self"));
+            }
+            CSharpReceiver::InstanceNative => {
+                let buf = local_ident("_selfBytes");
+                list.push(buf.clone());
+                list.push(uintptr_length_member(buf));
+            }
         }
+        list.extend(native_call_arg_list(&self.params));
+        list
+    }
+}
+
+fn self_param(csharp_type: CSharpType) -> CSharpParameter {
+    CSharpParameter::bare(csharp_type, CSharpParamName::new("self"))
+}
+
+fn local_ident(name: &str) -> CSharpExpression {
+    CSharpExpression::Ident(CSharpIdent::Local(CSharpLocalName::new(name)))
+}
+
+/// `(UIntPtr){receiver}.Length` — same shape as the per-param length
+/// arg in [`super::CSharpParamPlan::native_call_args`].
+fn uintptr_length_member(receiver: CSharpExpression) -> CSharpExpression {
+    CSharpExpression::Cast {
+        target: CSharpType::UIntPtr,
+        inner: Box::new(CSharpExpression::MemberAccess {
+            receiver: Box::new(receiver),
+            name: CSharpPropertyName::from_source("length"),
+        }),
     }
 }

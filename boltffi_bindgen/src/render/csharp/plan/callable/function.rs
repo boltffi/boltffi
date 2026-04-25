@@ -5,9 +5,15 @@
 //! native signature returns raw bytes (`FfiBuf`) or a CLR-marshalled
 //! primitive.
 
-use super::super::super::ast::{CSharpMethodName, CSharpType};
+use super::super::super::ast::{
+    CSharpArgumentList, CSharpClassName, CSharpExpression, CSharpMethodName, CSharpParameterList,
+    CSharpType,
+};
 use super::super::CFunctionName;
-use super::{CSharpParamPlan, CSharpWireWriterPlan, pinned_fixed_args};
+use super::{
+    CSharpParamPlan, CSharpWireWriterPlan, native_call_arg_list, native_param_list,
+    pinned_fixed_args,
+};
 
 /// A primitive function binding. Serves double duty: the template uses `name`
 /// and C# types for the public static method, and `ffi_name` for the
@@ -38,44 +44,14 @@ impl CSharpFunctionPlan {
         matches!(self.return_kind, CSharpReturnKind::Void)
     }
 
-    /// Comma-joined param declarations as they appear in the public
-    /// wrapper signature.
-    pub fn wrapper_param_list(&self) -> String {
-        self.params
-            .iter()
-            .map(CSharpParamPlan::wrapper_declaration)
-            .collect::<Vec<_>>()
-            .join(", ")
+    /// Typed param list for the `[DllImport]` native signature.
+    pub fn native_param_list(&self) -> CSharpParameterList {
+        native_param_list(&self.params)
     }
 
-    /// Comma-joined param declarations as they appear in the
-    /// `[DllImport]` native signature.
-    pub fn native_param_list(&self) -> String {
-        self.params
-            .iter()
-            .map(CSharpParamPlan::native_declaration)
-            .collect::<Vec<_>>()
-            .join(", ")
-    }
-
-    /// Comma-joined call arguments handed to the native invocation.
-    pub fn native_call_args(&self) -> String {
-        self.params
-            .iter()
-            .map(CSharpParamPlan::native_call_arg)
-            .collect::<Vec<_>>()
-            .join(", ")
-    }
-
-    /// The return type used in the `[DllImport]` signature. Wire-encoded
-    /// returns come back as an `FfiBuf`; everything else (primitives,
-    /// bools, blittable records) uses the C# type directly.
-    pub fn native_return_type(&self) -> String {
-        if self.return_kind.native_returns_ffi_buf() {
-            "FfiBuf".to_string()
-        } else {
-            self.return_type.to_string()
-        }
+    /// Typed argument list for the native invocation.
+    pub fn native_call_args(&self) -> CSharpArgumentList {
+        native_call_arg_list(&self.params)
     }
 
     /// Declarations for nested `fixed` statements pinning every
@@ -102,7 +78,10 @@ impl CSharpFunctionPlan {
     }
 }
 
-/// How a function's return value is delivered across the ABI.
+/// How a function's return value is delivered across the ABI. Drives
+/// template branching on the wrapper-body shape; the templates own the
+/// `return new WireReader(...)...` boilerplate around the variable bits
+/// each variant carries.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CSharpReturnKind {
     /// No return value.
@@ -110,31 +89,47 @@ pub enum CSharpReturnKind {
     /// Returned directly. Primitives, bools, and blittable records all
     /// share this path. The CLR already knows how to marshal them.
     Direct,
-    /// The native function returns an `FfiBuf`. The wrapper copies the
-    /// bytes into a managed `string` via `WireReader.ReadString` and
-    /// frees the buffer.
+    /// `FfiBuf` carrying a wire-encoded `string`. Template owns the
+    /// entire body.
     WireDecodeString,
-    /// The native function returns an `FfiBuf` carrying a wire-encoded
-    /// value with a static `Decode(WireReader)` method. The wrapper wraps
-    /// it in a `WireReader` and calls `{class_name}.Decode(reader)` to
-    /// reconstruct the value. Used for non-blittable records and data
-    /// enums, whose rendered C# types both expose the same `Decode` API
-    /// at the call site.
-    WireDecodeObject { class_name: String },
-    /// The native function returns an `FfiBuf` carrying a wire-encoded
-    /// `Vec<T>`. The wrapper wraps it in a `WireReader` and invokes
-    /// `reader_call` on the reader to reconstruct the managed `T[]`.
-    /// `reader_call` is the full method invocation without the receiver,
-    /// e.g. `ReadBlittableArray<int>()` for `Vec<i32>` or
-    /// `ReadBoolArray()` for `Vec<bool>`.
-    WireDecodeArray { reader_call: String },
-    /// The native function returns an `FfiBuf` carrying a wire-encoded
-    /// `Option<T>` (1-byte tag + optional payload). The wrapper wraps
-    /// it in a `WireReader` named `reader` and evaluates `decode_expr`,
-    /// which emit has already rendered against that reader so it
-    /// handles every inner shape (primitive, string, record, enum, vec)
-    /// without per-shape branching here.
-    WireDecodeOption { decode_expr: String },
+    /// `FfiBuf` carrying a wire-encoded value with a static
+    /// `Decode(WireReader)` method (non-blittable records, data enums).
+    /// `class_name` is the receiver of that `Decode` call.
+    WireDecodeObject { class_name: CSharpClassName },
+    /// `FfiBuf` carrying a wire-encoded `Vec<T>` of a blittable
+    /// primitive. Each primitive's wire shape picks a specific reader
+    /// method: `bool` → `ReadBoolArray()`, `isize` → `ReadNIntArray()`,
+    /// `usize` → `ReadNUIntArray()`, every other primitive →
+    /// `ReadBlittableArray<T>()`. `type_arg` is `Some(T)` only for the
+    /// generic `ReadBlittableArray<T>` form; the dedicated methods carry
+    /// `None`.
+    WireDecodeBlittablePrimitiveArray {
+        method: CSharpMethodName,
+        type_arg: Option<CSharpType>,
+    },
+    /// `FfiBuf` carrying a wire-encoded `Vec<T>` of a blittable record.
+    /// Always renders as `ReadBlittableArray<{element}>()`.
+    WireDecodeBlittableRecordArray { element: CSharpClassName },
+    /// `FfiBuf` carrying a wire-encoded `Vec<T>` of a wire-encoded
+    /// element (string, non-blittable record, nested vec, option).
+    /// Renders as `ReadEncodedArray<{element_type}>({decode_lambda})`,
+    /// where `decode_lambda` is the pre-rendered closure (`r0 => …`,
+    /// `r1 => …`, depending on nesting depth — the lowerer's read
+    /// counter assigns the closure parameter, so the template can't
+    /// hardcode the name).
+    WireDecodeEncodedArray {
+        element_type: CSharpType,
+        decode_lambda: CSharpExpression,
+    },
+    /// `FfiBuf` carrying a wire-encoded `Option<T>` (1-byte tag +
+    /// optional payload). The inner decode walks the IR recursively
+    /// across every inner shape (primitive, string, record, enum, vec,
+    /// nested option), so `decode_expr` is the whole pre-rendered
+    /// expression evaluated against a `reader` local the template
+    /// introduces. Templates can't enumerate the recursion without
+    /// recursive includes; this is the one decode shape where the
+    /// expression genuinely belongs in the plan.
+    WireDecodeOption { decode_expr: CSharpExpression },
 }
 
 impl CSharpReturnKind {
@@ -146,67 +141,17 @@ impl CSharpReturnKind {
         matches!(self, Self::Direct)
     }
 
-    pub fn is_wire_decode_string(&self) -> bool {
-        matches!(self, Self::WireDecodeString)
-    }
-
-    pub fn is_wire_decode_object(&self) -> bool {
-        matches!(self, Self::WireDecodeObject { .. })
-    }
-
-    pub fn is_wire_decode_array(&self) -> bool {
-        matches!(self, Self::WireDecodeArray { .. })
-    }
-
-    pub fn is_wire_decode_option(&self) -> bool {
-        matches!(self, Self::WireDecodeOption { .. })
-    }
-
     /// Whether the native (DllImport) signature returns an `FfiBuf`.
     pub fn native_returns_ffi_buf(&self) -> bool {
         matches!(
             self,
             Self::WireDecodeString
                 | Self::WireDecodeObject { .. }
-                | Self::WireDecodeArray { .. }
+                | Self::WireDecodeBlittablePrimitiveArray { .. }
+                | Self::WireDecodeBlittableRecordArray { .. }
+                | Self::WireDecodeEncodedArray { .. }
                 | Self::WireDecodeOption { .. }
         )
-    }
-
-    /// For `WireDecodeObject`, the decoded C# class name (e.g., `"Point"`
-    /// for a record, `"Shape"` for a data enum); `None` for every other
-    /// kind. Templates use this to emit `{class_name}.Decode`.
-    pub fn decode_class_name(&self) -> Option<&str> {
-        match self {
-            Self::WireDecodeObject { class_name } => Some(class_name),
-            _ => None,
-        }
-    }
-
-    /// The `return` statement that goes inside the `try` block of a
-    /// wire-decoded call body. `buf_var` is the local name holding the
-    /// `FfiBuf` from the native call. Returns `None` for non-wire-decoded
-    /// kinds so callers cannot misuse an empty-string fallback as valid
-    /// generated code.
-    pub fn wire_decode_return(&self, buf_var: &str) -> Option<String> {
-        match self {
-            Self::WireDecodeString => {
-                Some(format!("return new WireReader({}).ReadString();", buf_var))
-            }
-            Self::WireDecodeObject { class_name } => Some(format!(
-                "return {}.Decode(new WireReader({}));",
-                class_name, buf_var
-            )),
-            Self::WireDecodeArray { reader_call } => Some(format!(
-                "return new WireReader({}).{};",
-                buf_var, reader_call
-            )),
-            Self::WireDecodeOption { decode_expr } => Some(format!(
-                "var reader = new WireReader({}); return {};",
-                buf_var, decode_expr
-            )),
-            _ => None,
-        }
     }
 }
 
@@ -274,29 +219,9 @@ mod tests {
         );
     }
 
-    #[test]
-    fn wrapper_param_list_joins_with_comma_space() {
-        let f = function_with_params(
-            vec![
-                param("a", CSharpType::Int, CSharpParamKind::Direct),
-                param("b", CSharpType::String, CSharpParamKind::Utf8Bytes),
-            ],
-            CSharpType::Void,
-            CSharpReturnKind::Void,
-        );
-        assert_eq!(f.wrapper_param_list(), "int a, string b");
-    }
-
-    #[test]
-    fn wrapper_param_list_empty_for_no_params() {
-        let f = function_with_params(vec![], CSharpType::Void, CSharpReturnKind::Void);
-        assert_eq!(f.wrapper_param_list(), "");
-    }
-
     /// The native param list exposes each slot's marshalling shape: a
     /// string expands to a pair, bool gets a MarshalAs, and primitives
-    /// stay bare. This is the one place the different shapes must line
-    /// up, so we pin it with a mixed-shape case.
+    /// stay bare. Mixed-shape case pins the spacing.
     #[test]
     fn native_param_list_expands_each_slot_by_kind() {
         let f = function_with_params(
@@ -318,7 +243,7 @@ mod tests {
             CSharpReturnKind::Void,
         );
         assert_eq!(
-            f.native_param_list(),
+            f.native_param_list().to_string(),
             "[MarshalAs(UnmanagedType.I1)] bool flag, byte[] v, UIntPtr vLen, uint count, byte[] person, UIntPtr personLen",
         );
     }
@@ -334,101 +259,8 @@ mod tests {
             CSharpReturnKind::Void,
         );
         assert_eq!(
-            f.native_call_args(),
+            f.native_call_args().to_string(),
             "_vBytes, (UIntPtr)_vBytes.Length, count",
         );
-    }
-
-    /// Wire-encoded returns (string, non-blittable record) come back as
-    /// an `FfiBuf` in the native signature regardless of the wrapper's
-    /// public return type.
-    #[rstest]
-    #[case::void(CSharpType::Void, CSharpReturnKind::Void, "void")]
-    #[case::primitive(CSharpType::Int, CSharpReturnKind::Direct, "int")]
-    #[case::blittable_record(
-        record_type("point"),
-        CSharpReturnKind::Direct,
-        "Point",
-    )]
-    #[case::string(CSharpType::String, CSharpReturnKind::WireDecodeString, "FfiBuf")]
-    #[case::wire_record(
-        record_type("person"),
-        CSharpReturnKind::WireDecodeObject { class_name: "Person".to_string() },
-        "FfiBuf",
-    )]
-    #[case::option_primitive(
-        CSharpType::Nullable(Box::new(CSharpType::Int)),
-        CSharpReturnKind::WireDecodeOption {
-            decode_expr: "reader.ReadU8() == 0 ? (int?)null : reader.ReadI32()".to_string(),
-        },
-        "FfiBuf",
-    )]
-    fn native_return_type_reflects_ffi_buf_paths(
-        #[case] return_type: CSharpType,
-        #[case] return_kind: CSharpReturnKind,
-        #[case] expected: &str,
-    ) {
-        assert_eq!(
-            function_with_return(return_type, return_kind).native_return_type(),
-            expected
-        );
-    }
-
-    #[test]
-    fn wire_decode_return_for_string_uses_read_string() {
-        let kind = CSharpReturnKind::WireDecodeString;
-        assert_eq!(
-            kind.wire_decode_return("_buf").as_deref(),
-            Some("return new WireReader(_buf).ReadString();"),
-        );
-    }
-
-    #[test]
-    fn wire_decode_return_for_object_calls_decode() {
-        let kind = CSharpReturnKind::WireDecodeObject {
-            class_name: "Person".to_string(),
-        };
-        assert_eq!(
-            kind.wire_decode_return("_buf").as_deref(),
-            Some("return Person.Decode(new WireReader(_buf));"),
-        );
-    }
-
-    /// `WireDecodeOption` wraps the pre-rendered `decode_expr` in a local
-    /// `reader` binding so the emit-time decoder can reference `reader`
-    /// multiple times (once for the 1-byte tag, again for the payload)
-    /// without duplicating buffer construction.
-    #[test]
-    fn wire_decode_return_for_option_binds_reader_local() {
-        let kind = CSharpReturnKind::WireDecodeOption {
-            decode_expr: "reader.ReadU8() == 0 ? (int?)null : reader.ReadI32()".to_string(),
-        };
-        assert_eq!(
-            kind.wire_decode_return("_buf").as_deref(),
-            Some(
-                "var reader = new WireReader(_buf); return reader.ReadU8() == 0 ? (int?)null : reader.ReadI32();"
-            ),
-        );
-    }
-
-    #[rstest]
-    #[case::void(CSharpReturnKind::Void)]
-    #[case::direct(CSharpReturnKind::Direct)]
-    fn wire_decode_return_none_for_non_wire_kinds(#[case] kind: CSharpReturnKind) {
-        assert_eq!(kind.wire_decode_return("_buf"), None);
-    }
-
-    #[test]
-    fn decode_class_name_some_only_for_wire_decode_object() {
-        assert_eq!(
-            CSharpReturnKind::WireDecodeObject {
-                class_name: "Point".to_string()
-            }
-            .decode_class_name(),
-            Some("Point"),
-        );
-        assert_eq!(CSharpReturnKind::WireDecodeString.decode_class_name(), None);
-        assert_eq!(CSharpReturnKind::Void.decode_class_name(), None);
-        assert_eq!(CSharpReturnKind::Direct.decode_class_name(), None);
     }
 }

@@ -242,7 +242,7 @@ mod tests {
     use crate::ir::ops::{SizeExpr, ValueExpr, WireShape, WriteOp, WriteSeq};
 
     fn wire_receiver() -> CSharpExpression {
-        CSharpExpression::Ident(CSharpIdent::free("wire"))
+        CSharpExpression::Ident(CSharpIdent::Local(CSharpLocalName::new("wire")))
     }
 
     fn seq(op: WriteOp) -> WriteSeq {

@@ -9,11 +9,16 @@
 //! backend. ast/ depends on the IR; nothing in render/csharp/ outside
 //! of ast/ depends in the other direction.
 
+mod argument_list;
+mod attribute;
 mod code;
 mod enum_underlying_type;
 mod identifier;
+mod parameter_list;
 mod type_shape;
 
+pub use argument_list::CSharpArgumentList;
+pub use attribute::{CSharpAttribute, CSharpAttributeArg};
 pub use code::{
     CSharpBinaryOp, CSharpExpression, CSharpIdent, CSharpLiteral, CSharpLocalDecl, CSharpStatement,
 };
@@ -22,4 +27,5 @@ pub use identifier::{
     CSharpClassName, CSharpLocalName, CSharpMethodName, CSharpNamespace, CSharpParamName,
     CSharpPropertyName, CSharpTypeReference,
 };
+pub use parameter_list::{CSharpParameter, CSharpParameterList};
 pub use type_shape::CSharpType;

@@ -4,25 +4,22 @@
 //!    renders each plan entry through its Askama template, assembling
 //!    the `CSharpOutput`.
 //!
-//! 2. **Syntax helpers**: a library of "ABI op → C# source snippet"
-//!    functions (`render_value`, `emit_reader_read`, `emit_write_expr`).
-//!    The lowerer calls these to pre-render wire expressions as
-//!    strings into the plan. The size path moved to typed AST
-//!    construction under `super::lower::size`; the read and write
-//!    paths follow in later substeps of the migration.
+//! 2. **Syntax helpers**: a small remaining library of "ABI op → C#
+//!    source snippet" functions for the write path (`emit_write_expr`
+//!    and friends). The size, encode, and decode paths have all
+//!    migrated to typed AST construction under
+//!    [`super::lower`](super::lower); the write path is the last
+//!    holdout pending its own follow-up.
 
 use askama::Template as _;
 
-use crate::ir::codec::{EnumLayout, VecLayout};
-use crate::ir::ops::{ReadOp, ReadSeq, ValueExpr};
-use crate::ir::types::{PrimitiveType, TypeExpr};
+use crate::ir::ops::ValueExpr;
+use crate::ir::types::PrimitiveType;
 use crate::ir::{AbiContract, FfiContract};
-
-use std::collections::HashSet;
 
 use super::{
     CSharpOptions, NamingConvention,
-    ast::{CSharpClassName, CSharpNamespace, CSharpType},
+    ast::{CSharpClassName, CSharpNamespace},
     lower::CSharpLowerer,
     plan::{CSharpEnumKind, CSharpRecordPlan},
     templates::{
@@ -166,24 +163,6 @@ pub fn render_value(expr: &ValueExpr) -> String {
     }
 }
 
-pub fn primitive_read_method(primitive: PrimitiveType) -> &'static str {
-    match primitive {
-        PrimitiveType::Bool => "ReadBool",
-        PrimitiveType::I8 => "ReadI8",
-        PrimitiveType::U8 => "ReadU8",
-        PrimitiveType::I16 => "ReadI16",
-        PrimitiveType::U16 => "ReadU16",
-        PrimitiveType::I32 => "ReadI32",
-        PrimitiveType::U32 => "ReadU32",
-        PrimitiveType::I64 => "ReadI64",
-        PrimitiveType::U64 => "ReadU64",
-        PrimitiveType::ISize => "ReadNInt",
-        PrimitiveType::USize => "ReadNUInt",
-        PrimitiveType::F32 => "ReadF32",
-        PrimitiveType::F64 => "ReadF64",
-    }
-}
-
 pub fn primitive_write_method(primitive: PrimitiveType) -> &'static str {
     match primitive {
         PrimitiveType::Bool => "WriteBool",
@@ -202,39 +181,6 @@ pub fn primitive_write_method(primitive: PrimitiveType) -> &'static str {
     }
 }
 
-/// The WireReader method invocation for a top-level blittable primitive
-/// `Vec<T>` return, without the receiver. Top-level vec returns carry no
-/// length prefix: the count comes from `FfiBuf.len`. Bool, isize, and
-/// usize have dedicated methods because C# `bool` is not `unmanaged`-cast-
-/// safe against the 1-byte wire form, and the wire form of isize/usize is
-/// a fixed 8 bytes while C# `nint`/`nuint` are pointer-sized. Every other
-/// primitive flows through a generic `ReadBlittableArray<T>()` that bulk-
-/// casts via `MemoryMarshal`.
-pub fn primitive_vec_reader_call(primitive: PrimitiveType) -> String {
-    match primitive {
-        PrimitiveType::Bool => "ReadBoolArray()".to_string(),
-        PrimitiveType::ISize => "ReadNIntArray()".to_string(),
-        PrimitiveType::USize => "ReadNUIntArray()".to_string(),
-        other => format!("ReadBlittableArray<{}>()", CSharpType::from(other)),
-    }
-}
-
-/// The WireReader method invocation for a nested blittable primitive
-/// `Vec<T>`, without the receiver. Nested reads carry a 4-byte length
-/// prefix because the outer encoded container needs to know how far to
-/// advance the cursor before decoding the next element.
-fn primitive_vec_nested_reader_call(primitive: PrimitiveType) -> String {
-    match primitive {
-        PrimitiveType::Bool => "ReadLengthPrefixedBoolArray()".to_string(),
-        PrimitiveType::ISize => "ReadLengthPrefixedNIntArray()".to_string(),
-        PrimitiveType::USize => "ReadLengthPrefixedNUIntArray()".to_string(),
-        other => format!(
-            "ReadLengthPrefixedBlittableArray<{}>()",
-            CSharpType::from(other)
-        ),
-    }
-}
-
 /// The WireWriter method invocation for a blittable primitive `Vec<T>`,
 /// formatted as `"{method}({value})"` without the receiver. The writer
 /// always prepends a 4-byte length prefix, which serves the nested
@@ -247,210 +193,6 @@ pub fn primitive_vec_writer_call(primitive: PrimitiveType, value: &str) -> Strin
         PrimitiveType::ISize => format!("WriteNIntArray({value})"),
         PrimitiveType::USize => format!("WriteNUIntArray({value})"),
         _ => format!("WriteBlittableArray({value})"),
-    }
-}
-
-/// Per-function rendering scratchpad for the string-producing read
-/// emitter. Hands out unique closure-argument names so nested
-/// `Vec<Vec<_>>` decode expressions don't shadow each other. One
-/// instance per top-level emit call; counters are consumed in the
-/// order the read helper encounters nested vecs, which is stable
-/// across renders of the same seq.
-///
-/// Size and encode expressions no longer share this struct: they
-/// moved to the lowerer's typed AST builders in
-/// [`super::lower::size::SizeLocalCounters`] and
-/// [`super::lower::encode::EncodeLocalCounters`]. This struct is
-/// deleted entirely once the read path follows in the decode-phase
-/// migration.
-#[derive(Default)]
-pub struct CSharpEmitContext {
-    read_closure_index: usize,
-}
-
-impl CSharpEmitContext {
-    fn next_read_closure_var(&mut self) -> String {
-        let i = self.read_closure_index;
-        self.read_closure_index += 1;
-        format!("r{}", i)
-    }
-}
-
-/// Replace every word-boundary occurrence of `identifier` in `expression`
-/// with `replacement`. A token inside another identifier (e.g. `item`
-/// inside `item0`) is left alone. Used to rename the ABI-provided loop
-/// variable `"item"` and closure receiver `"reader"` to per-nesting-level
-/// unique names without running a real parser.
-fn replace_identifier_occurrences(expression: &str, identifier: &str, replacement: &str) -> String {
-    if identifier.is_empty() {
-        return expression.to_string();
-    }
-    let mut result = String::with_capacity(expression.len());
-    let mut cursor = 0;
-    while let Some(rel) = expression[cursor..].find(identifier) {
-        let start = cursor + rel;
-        let end = start + identifier.len();
-        let prev = expression[..start].chars().next_back();
-        let next = expression[end..].chars().next();
-        let prev_is_id = prev.map(is_identifier_char).unwrap_or(false);
-        let next_is_id = next.map(is_identifier_char).unwrap_or(false);
-        if prev_is_id || next_is_id {
-            result.push_str(&expression[cursor..end]);
-        } else {
-            result.push_str(&expression[cursor..start]);
-            result.push_str(replacement);
-        }
-        cursor = end;
-    }
-    result.push_str(&expression[cursor..]);
-    result
-}
-
-fn is_identifier_char(c: char) -> bool {
-    c.is_ascii_alphanumeric() || c == '_'
-}
-
-/// Render the `reader_call` portion (without the leading `new WireReader
-/// (_buf).` receiver) for a top-level `Vec<inner>` return. Primitive
-/// element vecs use the no-prefix fast path keyed off `FfiBuf.len`;
-/// encoded element vecs (strings, nested vecs) wrap `ReadEncodedArray<T>`
-/// around a closure that decodes one element.
-pub fn vec_return_reader_call(
-    inner: &TypeExpr,
-    element_seq: &ReadSeq,
-    namespace: &CSharpNamespace,
-) -> String {
-    match inner {
-        TypeExpr::Primitive(p) => primitive_vec_reader_call(*p),
-        _ => {
-            let mut ctx = CSharpEmitContext::default();
-            let inner_reader =
-                emit_reader_read_with_context(element_seq, None, namespace, &mut ctx);
-            let closure_var = ctx.next_read_closure_var();
-            let remapped = replace_identifier_occurrences(&inner_reader, "reader", &closure_var);
-            let element_ty = CSharpType::from_type_expr(inner);
-            format!("ReadEncodedArray<{element_ty}>({closure_var} => {remapped})")
-        }
-    }
-}
-
-/// Render the first op of a [`ReadSeq`] as a decode expression.
-///
-/// `scope` is `None` when rendering in a context where no name shadowing
-/// can happen (record bodies, top-level function returns) and `Some` when
-/// rendering inside a data enum body whose nested variants may shadow
-/// module-level types.
-///
-/// Today each [`ReadSeq`] we handle has exactly one top-level op: either
-/// a primitive, a string, or a nested record/enum. Container ops (Option,
-/// Vec, Result) will land in follow-up PRs.
-pub fn emit_reader_read(
-    seq: &ReadSeq,
-    shadowed: Option<&HashSet<CSharpClassName>>,
-    namespace: &CSharpNamespace,
-) -> String {
-    let mut ctx = CSharpEmitContext::default();
-    emit_reader_read_with_context(seq, shadowed, namespace, &mut ctx)
-}
-
-/// Same as [`emit_reader_read`] but lets the caller thread a shared
-/// [`CSharpEmitContext`] across multiple emissions (e.g. all fields of
-/// one record) so pattern-binding names do not collide in the enclosing
-/// method scope.
-pub fn emit_reader_read_shared(
-    seq: &ReadSeq,
-    shadowed: Option<&HashSet<CSharpClassName>>,
-    namespace: &CSharpNamespace,
-    ctx: &mut CSharpEmitContext,
-) -> String {
-    emit_reader_read_with_context(seq, shadowed, namespace, ctx)
-}
-
-fn emit_reader_read_with_context(
-    seq: &ReadSeq,
-    shadowed: Option<&HashSet<CSharpClassName>>,
-    namespace: &CSharpNamespace,
-    ctx: &mut CSharpEmitContext,
-) -> String {
-    let op = seq.ops.first().expect("read ops");
-    match op {
-        ReadOp::Primitive { primitive, .. } => {
-            format!("reader.{}()", primitive_read_method(*primitive))
-        }
-        ReadOp::String { .. } => "reader.ReadString()".to_string(),
-        ReadOp::Bytes { .. } => "reader.ReadBytes()".to_string(),
-        ReadOp::Record { .. } => {
-            let ty = CSharpType::from_read_op(op).qualify_if_shadowed_opt(shadowed, namespace);
-            format!("{ty}.Decode(reader)")
-        }
-        ReadOp::Enum {
-            id,
-            layout: EnumLayout::CStyle { .. },
-            ..
-        } => {
-            // The generated helper is `{Name}Wire`, not `{Name}`, so the
-            // `Wire` suffix is already unambiguous against variant names
-            // that match `{Name}` alone; no shadowing fix needed here.
-            format!(
-                "{}Wire.Decode(reader)",
-                NamingConvention::class_name(id.as_str())
-            )
-        }
-        ReadOp::Enum {
-            layout: EnumLayout::Data { .. },
-            ..
-        } => {
-            let ty = CSharpType::from_read_op(op).qualify_if_shadowed_opt(shadowed, namespace);
-            format!("{ty}.Decode(reader)")
-        }
-        ReadOp::Option { some, .. } => {
-            let inner = emit_reader_read_with_context(some, shadowed, namespace, ctx);
-            let inner_ty =
-                CSharpType::from_read_op(some.ops.first().expect("option inner read op"))
-                    .qualify_if_shadowed_opt(shadowed, namespace);
-            format!("reader.ReadU8() == 0 ? ({inner_ty}?)null : {inner}")
-        }
-        ReadOp::Vec {
-            element_type: TypeExpr::Primitive(p),
-            layout: VecLayout::Blittable { .. },
-            ..
-        } => {
-            // A Vec op reached through emit_reader_read is always nested
-            // (top-level vec returns go through vec_return_reader_call).
-            // Nested position means the wire shape is length-prefixed.
-            format!("reader.{}", primitive_vec_nested_reader_call(*p))
-        }
-        ReadOp::Vec {
-            element_type,
-            layout: VecLayout::Blittable { .. },
-            ..
-        } => {
-            // Reached when a record field or enum-variant field carries
-            // a `Vec<BlittableRecord>`. Nested position so the wire shape
-            // is length-prefixed, same as nested primitive vecs. The C#
-            // struct generated for a blittable record is `unmanaged`, so
-            // it satisfies the generic helper's constraint.
-            let element_ty = CSharpType::from_type_expr(element_type)
-                .qualify_if_shadowed_opt(shadowed, namespace);
-            format!("reader.ReadLengthPrefixedBlittableArray<{element_ty}>()")
-        }
-        ReadOp::Vec {
-            element_type,
-            element,
-            layout: VecLayout::Encoded,
-            ..
-        } => {
-            let inner_reader = emit_reader_read_with_context(element, shadowed, namespace, ctx);
-            let closure_var = ctx.next_read_closure_var();
-            let remapped = replace_identifier_occurrences(&inner_reader, "reader", &closure_var);
-            let element_ty = CSharpType::from_type_expr(element_type)
-                .qualify_if_shadowed_opt(shadowed, namespace);
-            format!("reader.ReadEncodedArray<{element_ty}>({closure_var} => {remapped})")
-        }
-        other => todo!(
-            "C# backend has not yet implemented read support for {:?}",
-            other
-        ),
     }
 }
 
@@ -889,83 +631,6 @@ mod tests {
         );
     }
 
-
-    /// A `ReadOp::Enum` with a C-style layout routes to the generated
-    /// `{Name}Wire.Decode(reader)` helper rather than inlining the cast.
-    /// Keeps the tag-width choice in one place (the enum's wire helper)
-    /// so field-level emit code stays oblivious to i32-vs-i16 changes.
-    #[test]
-    fn emit_reader_read_c_style_enum_calls_wire_helper() {
-        let seq = ReadSeq {
-            size: SizeExpr::Fixed(4),
-            ops: vec![ReadOp::Enum {
-                id: EnumId::new("status"),
-                offset: OffsetExpr::Fixed(0),
-                layout: EnumLayout::CStyle {
-                    tag_type: PrimitiveType::I32,
-                    tag_strategy: EnumTagStrategy::OrdinalIndex,
-                    is_error: false,
-                },
-            }],
-            shape: WireShape::Value,
-        };
-
-        let ns = CSharpNamespace::from_source("demo");
-        assert_eq!(
-            emit_reader_read(&seq, None, &ns),
-            "StatusWire.Decode(reader)"
-        );
-    }
-
-    /// A record decode inside a data-enum body must name-qualify to the
-    /// module namespace when the outer type collides with a sibling
-    /// variant name. Without the fix, `Point.Decode(reader)` would
-    /// resolve to the nested `sealed record Point()` (no Decode method),
-    /// breaking compilation.
-    #[test]
-    fn emit_reader_read_qualifies_record_when_shadowed_by_sibling_variant() {
-        let seq = ReadSeq {
-            size: SizeExpr::Fixed(16),
-            ops: vec![ReadOp::Record {
-                id: RecordId::new("point"),
-                offset: OffsetExpr::Fixed(0),
-                fields: vec![],
-            }],
-            shape: WireShape::Value,
-        };
-        let shadowed: HashSet<CSharpClassName> =
-            [CSharpClassName::from_source("point")].into_iter().collect();
-        let ns = CSharpNamespace::from_source("demo");
-
-        assert_eq!(
-            emit_reader_read(&seq, Some(&shadowed), &ns),
-            "global::Demo.Point.Decode(reader)"
-        );
-    }
-
-    /// The shadowing pass is inert when the referenced class name is not
-    /// in the shadow set. Record decodes stay unqualified so we don't
-    /// pollute call sites that don't need the namespace prefix.
-    #[test]
-    fn emit_reader_read_leaves_record_unqualified_when_not_shadowed() {
-        let seq = ReadSeq {
-            size: SizeExpr::Fixed(16),
-            ops: vec![ReadOp::Record {
-                id: RecordId::new("point"),
-                offset: OffsetExpr::Fixed(0),
-                fields: vec![],
-            }],
-            shape: WireShape::Value,
-        };
-        let shadowed: HashSet<CSharpClassName> =
-            [CSharpClassName::from_source("circle")].into_iter().collect();
-        let ns = CSharpNamespace::from_source("demo");
-
-        assert_eq!(
-            emit_reader_read(&seq, Some(&shadowed), &ns),
-            "Point.Decode(reader)"
-        );
-    }
 
     // ----- Record tests -----
 
@@ -1853,8 +1518,8 @@ mod tests {
         );
         assert_source_contains(
             &src,
-            "return new WireReader(_buf).ReadEncodedArray<string[]>(r1 => r1.ReadEncodedArray<string>(r0 => r0.ReadString()));",
-            "the return decodes through two nested ReadEncodedArray closures with distinct receiver names",
+            "return new WireReader(_buf).ReadEncodedArray<string[]>(r0 => r0.ReadEncodedArray<string>(r1 => r1.ReadString()));",
+            "the return decodes through two nested ReadEncodedArray closures, outer-first numbering",
         );
         assert_source_contains(
             &src,

@@ -26,6 +26,14 @@ impl CSharpClassName {
         Self(naming::to_upper_camel_case(source))
     }
 
+    /// Wraps a pre-formed PascalCase class name. Used for runtime-
+    /// library or built-in type references whose C# spelling is fixed
+    /// (`Encoding`, `WireWriter`, `WireReader`) and so doesn't round-
+    /// trip through the snake_case convention.
+    pub fn new(name: impl Into<String>) -> Self {
+        Self(name.into())
+    }
+
     /// `{base}Wire`: the companion static class hosting a C-style
     /// enum's wire codec helpers.
     pub fn wire_helper(base: &CSharpClassName) -> Self {
@@ -102,6 +110,21 @@ impl CSharpTypeReference {
                 name,
             },
             other => other,
+        }
+    }
+
+    /// Apply [`Self::qualify_if_shadowed`] when `shadowed` is `Some`;
+    /// pass through when `None`. Mirrors
+    /// [`CSharpType::qualify_if_shadowed_opt`](super::CSharpType::qualify_if_shadowed_opt)
+    /// for callers that may or may not be inside a shadowing scope.
+    pub fn qualify_if_shadowed_opt(
+        self,
+        shadowed: Option<&HashSet<CSharpClassName>>,
+        namespace: &CSharpNamespace,
+    ) -> Self {
+        match shadowed {
+            Some(sh) => self.qualify_if_shadowed(sh, namespace),
+            None => self,
         }
     }
 
@@ -220,6 +243,13 @@ impl CSharpParamName {
         Self(escape_if_keyword(naming::snake_to_camel(source)))
     }
 
+    /// Wraps a pre-formed param name. Used to build derived names
+    /// without re-running the snake-case transform (e.g.
+    /// `"{name}Len"` length params on the DllImport side).
+    pub fn new(name: impl Into<String>) -> Self {
+        Self(name.into())
+    }
+
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -253,6 +283,14 @@ impl From<&ParamName> for CSharpParamName {
 pub struct CSharpLocalName(String);
 
 impl CSharpLocalName {
+    /// Wraps a pre-formed local-variable name. Used for fixed-vocabulary
+    /// locals that the lowerer doesn't synthesize from a counter or
+    /// transform from a source name (`reader`, `wire`, IR-supplied
+    /// rebinding placeholders).
+    pub fn new(name: impl Into<String>) -> Self {
+        Self(name.into())
+    }
+
     /// `_wire_{param}`: the `WireWriter` instance a record param is
     /// encoded into. `@`-escape is stripped from `param` so the
     /// produced name stays a valid C# identifier.

@@ -16,6 +16,7 @@
 //! expressions, [`value`] for value references) so this file stays
 //! focused on the dispatch / policy logic.
 
+mod decode;
 mod encode;
 mod size;
 mod value;
@@ -40,15 +41,14 @@ use crate::ir::{AbiContract, FfiContract};
 
 use super::ast::{
     CSharpClassName, CSharpEnumUnderlyingType, CSharpExpression, CSharpIdent, CSharpLocalName,
-    CSharpMethodName, CSharpNamespace, CSharpParamName, CSharpType,
+    CSharpMethodName, CSharpNamespace, CSharpParamName, CSharpType, CSharpTypeReference,
 };
-use super::emit;
 use super::plan::{
     CFunctionName, CSharpEnumPlan, CSharpEnumKind, CSharpEnumVariantPlan, CSharpFieldPlan, CSharpFunctionPlan,
     CSharpMethodPlan, CSharpModulePlan, CSharpParamPlan, CSharpParamKind, CSharpReceiver, CSharpRecordPlan,
     CSharpReturnKind, CSharpWireWriterPlan,
 };
-use super::{CSharpOptions, NamingConvention};
+use super::CSharpOptions;
 
 /// Transforms the language-agnostic [`FfiContract`] and [`AbiContract`] into
 /// a [`CSharpModulePlan`] containing everything the C# templates need to render.
@@ -291,39 +291,61 @@ impl<'a> CSharpLowerer<'a> {
             ReturnDef::Value(TypeExpr::String) => CSharpReturnKind::WireDecodeString,
             ReturnDef::Value(TypeExpr::Record(id)) if !self.is_blittable_record(id) => {
                 CSharpReturnKind::WireDecodeObject {
-                    class_name: NamingConvention::class_name(id.as_str()),
+                    class_name: id.into(),
                 }
             }
             ReturnDef::Value(TypeExpr::Enum(id)) if self.is_data_enum(id) => {
                 CSharpReturnKind::WireDecodeObject {
-                    class_name: NamingConvention::class_name(id.as_str()),
+                    class_name: id.into(),
                 }
             }
-            ReturnDef::Value(TypeExpr::Vec(inner)) => {
-                let reader_call = match inner.as_ref() {
-                    TypeExpr::Primitive(p) => emit::primitive_vec_reader_call(*p),
-                    TypeExpr::Record(id) if self.is_blittable_record(id) => format!(
-                        "ReadBlittableArray<{}>()",
-                        NamingConvention::class_name(id.as_str())
-                    ),
-                    _ => {
-                        let element_seq = Self::vec_element_read_seq(decode_ops)
-                            .expect("encoded Vec return must carry decode_ops with a Vec ReadOp");
-                        emit::vec_return_reader_call(inner, &element_seq, &self.namespace)
+            ReturnDef::Value(TypeExpr::Vec(inner)) => match inner.as_ref() {
+                TypeExpr::Primitive(p) => CSharpReturnKind::WireDecodeBlittablePrimitiveArray {
+                    method: decode::top_level_blittable_primitive_array_method(*p),
+                    type_arg: decode::top_level_blittable_primitive_array_type_arg(*p),
+                },
+                TypeExpr::Record(id) if self.is_blittable_record(id) => {
+                    CSharpReturnKind::WireDecodeBlittableRecordArray {
+                        element: id.into(),
                     }
-                };
-                CSharpReturnKind::WireDecodeArray { reader_call }
-            }
+                }
+                _ => {
+                    let element_seq = Self::vec_element_read_seq(decode_ops)
+                        .expect("encoded Vec return must carry decode_ops with a Vec ReadOp");
+                    let mut locals = decode::DecodeLocalCounters::default();
+                    let closure_var = locals.next_closure_var();
+                    let closure_receiver =
+                        CSharpExpression::Ident(CSharpIdent::Local(closure_var.clone()));
+                    let body = decode::lower_decode_expr(
+                        &element_seq,
+                        &closure_receiver,
+                        shadowed,
+                        &self.namespace,
+                        &mut locals,
+                    );
+                    CSharpReturnKind::WireDecodeEncodedArray {
+                        element_type: CSharpType::from_type_expr(inner)
+                            .qualify_if_shadowed_opt(shadowed, &self.namespace),
+                        decode_lambda: CSharpExpression::Lambda {
+                            param: closure_var,
+                            body: Box::new(body),
+                        },
+                    }
+                }
+            },
             ReturnDef::Value(TypeExpr::Option(_)) => {
-                // Fully pre-render the decode expression against a
-                // reader named `reader`. The ABI's decode_ops walks
-                // every inner shape (primitive, string, record, enum,
-                // vec) so one helper covers the whole matrix.
                 let decode_seq = decode_ops
-                    .expect("Option return must carry decode_ops")
-                    .clone();
-                let decode_expr =
-                    emit::emit_reader_read(&decode_seq, shadowed, &self.namespace);
+                    .expect("Option return must carry decode_ops");
+                let mut locals = decode::DecodeLocalCounters::default();
+                let reader =
+                    CSharpExpression::Ident(CSharpIdent::Local(CSharpLocalName::new("reader")));
+                let decode_expr = decode::lower_decode_expr(
+                    decode_seq,
+                    &reader,
+                    shadowed,
+                    &self.namespace,
+                    &mut locals,
+                );
                 CSharpReturnKind::WireDecodeOption { decode_expr }
             }
             // Primitives, bools, blittable records, and C-style enums
@@ -465,7 +487,9 @@ impl<'a> CSharpLowerer<'a> {
                 // makes the ABI contract explicit: Rust reads the actual
                 // managed element buffer, not a marshaled surrogate.
                 let element_type = match inner.as_ref() {
-                    TypeExpr::Record(id) => NamingConvention::class_name(id.as_str()),
+                    TypeExpr::Record(id) => CSharpType::Record(
+                        CSharpTypeReference::Plain(id.into()),
+                    ),
                     other => todo!(
                         "C# backend pinned-array param support not yet implemented for {other:?}"
                     ),
@@ -548,7 +572,7 @@ impl<'a> CSharpLowerer<'a> {
         // declare `sizeOpt0` in the same enclosing scope.
         let mut size_locals = size::SizeLocalCounters::default();
         let mut encode_locals = encode::EncodeLocalCounters::default();
-        let mut decode_ctx = emit::CSharpEmitContext::default();
+        let mut decode_locals = decode::DecodeLocalCounters::default();
         let fields = record
             .fields
             .iter()
@@ -558,7 +582,7 @@ impl<'a> CSharpLowerer<'a> {
                     field,
                     &mut size_locals,
                     &mut encode_locals,
-                    &mut decode_ctx,
+                    &mut decode_locals,
                 )
             })
             .collect();
@@ -646,7 +670,7 @@ impl<'a> CSharpLowerer<'a> {
                 // pattern-binding leakage happens across variants.
                 let mut size_locals = size::SizeLocalCounters::default();
                 let mut encode_locals = encode::EncodeLocalCounters::default();
-                let mut decode_ctx = emit::CSharpEmitContext::default();
+                let mut decode_locals = decode::DecodeLocalCounters::default();
                 let variants = abi_enum
                     .variants
                     .iter()
@@ -659,7 +683,7 @@ impl<'a> CSharpLowerer<'a> {
                             &shadowed_variant_names,
                             &mut size_locals,
                             &mut encode_locals,
-                            &mut decode_ctx,
+                            &mut decode_locals,
                         )
                     })
                     .collect();
@@ -685,7 +709,7 @@ impl<'a> CSharpLowerer<'a> {
         shadowed: &HashSet<CSharpClassName>,
         size_locals: &mut size::SizeLocalCounters,
         encode_locals: &mut encode::EncodeLocalCounters,
-        decode_ctx: &mut emit::CSharpEmitContext,
+        decode_locals: &mut decode::DecodeLocalCounters,
     ) -> CSharpEnumVariantPlan {
         let tag = abi_enum.resolve_codec_tag(ordinal, variant.discriminant) as i32;
         let fields = match &variant.payload {
@@ -693,7 +717,7 @@ impl<'a> CSharpLowerer<'a> {
             AbiEnumPayload::Tuple(fields) | AbiEnumPayload::Struct(fields) => fields
                 .iter()
                 .map(|f| {
-                    self.lower_variant_field(f, shadowed, size_locals, encode_locals, decode_ctx)
+                    self.lower_variant_field(f, shadowed, size_locals, encode_locals, decode_locals)
                 })
                 .collect(),
         };
@@ -719,7 +743,7 @@ impl<'a> CSharpLowerer<'a> {
         shadowed: &HashSet<CSharpClassName>,
         size_locals: &mut size::SizeLocalCounters,
         encode_locals: &mut encode::EncodeLocalCounters,
-        decode_ctx: &mut emit::CSharpEmitContext,
+        decode_locals: &mut decode::DecodeLocalCounters,
     ) -> CSharpFieldPlan {
         let prefixed = Self::prefix_write_seq(&field.encode, "_v");
         let csharp_type = self
@@ -729,12 +753,13 @@ impl<'a> CSharpLowerer<'a> {
         CSharpFieldPlan {
             name: (&field.name).into(),
             csharp_type,
-            wire_decode_expr: CSharpExpression::Raw(emit::emit_reader_read_shared(
+            wire_decode_expr: decode::lower_decode_expr(
                 &field.decode,
+                &CSharpExpression::Ident(CSharpIdent::Local(CSharpLocalName::new("reader"))),
                 Some(shadowed),
                 &self.namespace,
-                decode_ctx,
-            )),
+                decode_locals,
+            ),
             wire_size_expr: size::lower_size_expr(
                 &prefixed.size,
                 &value::Renames::new(),
@@ -742,7 +767,7 @@ impl<'a> CSharpLowerer<'a> {
             ),
             wire_encode_expr: encode::lower_encode_expr(
                 &prefixed,
-                &CSharpExpression::Ident(CSharpIdent::free("wire")),
+                &CSharpExpression::Ident(CSharpIdent::Local(CSharpLocalName::new("wire"))),
                 &value::Renames::new(),
                 encode_locals,
             ),
@@ -830,7 +855,7 @@ impl<'a> CSharpLowerer<'a> {
         };
         let return_kind = if owner_is_data {
             CSharpReturnKind::WireDecodeObject {
-                class_name: enum_class_name.as_str().to_string(),
+                class_name: enum_class_name.clone(),
             }
         } else {
             CSharpReturnKind::Direct
@@ -932,7 +957,7 @@ impl<'a> CSharpLowerer<'a> {
         field: &FieldDef,
         size_locals: &mut size::SizeLocalCounters,
         encode_locals: &mut encode::EncodeLocalCounters,
-        decode_ctx: &mut emit::CSharpEmitContext,
+        decode_locals: &mut decode::DecodeLocalCounters,
     ) -> CSharpFieldPlan {
         let decode_seq = self
             .record_field_read_seq(record_id, &field.name)
@@ -946,12 +971,13 @@ impl<'a> CSharpLowerer<'a> {
         CSharpFieldPlan {
             name: (&field.name).into(),
             csharp_type,
-            wire_decode_expr: CSharpExpression::Raw(emit::emit_reader_read_shared(
+            wire_decode_expr: decode::lower_decode_expr(
                 &decode_seq,
+                &CSharpExpression::Ident(CSharpIdent::Local(CSharpLocalName::new("reader"))),
                 None,
                 &self.namespace,
-                decode_ctx,
-            )),
+                decode_locals,
+            ),
             wire_size_expr: size::lower_size_expr(
                 &encode_seq.size,
                 &value::Renames::new(),
@@ -959,7 +985,7 @@ impl<'a> CSharpLowerer<'a> {
             ),
             wire_encode_expr: encode::lower_encode_expr(
                 &encode_seq,
-                &CSharpExpression::Ident(CSharpIdent::free("wire")),
+                &CSharpExpression::Ident(CSharpIdent::Local(CSharpLocalName::new("wire"))),
                 &value::Renames::new(),
                 encode_locals,
             ),

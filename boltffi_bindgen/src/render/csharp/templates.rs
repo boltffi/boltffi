@@ -9,7 +9,7 @@
 use askama::Template;
 
 use super::ast::CSharpNamespace;
-use super::plan::{CSharpEnumPlan, CSharpModulePlan, CSharpRecordPlan};
+use super::plan::{CSharpEnumPlan, CSharpModulePlan, CSharpRecordPlan, CSharpReturnKind};
 
 /// Renders the file header: auto-generated comment, `using` directives,
 /// and namespace declaration.
@@ -544,7 +544,7 @@ mod tests {
                 vec![],
                 data_enum_type("shape"),
                 CSharpReturnKind::WireDecodeObject {
-                    class_name: "Shape".to_string(),
+                    class_name: CSharpClassName::from_source("shape"),
                 },
             ),
             method(

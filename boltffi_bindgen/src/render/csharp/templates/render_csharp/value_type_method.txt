@@ -1,14 +1,14 @@
 
 {%- if method.receiver.is_static() %}
-        public static {{ method.return_type }} {{ method.name }}({{ method.wrapper_param_list() }})
+        public static {{ method.return_type }} {{ method.name }}({% for p in method.params %}{{ p.csharp_type }} {{ p.name }}{% if !loop.last %}, {% endif %}{% endfor %})
 {%- else if method.receiver.is_instance_extension() %}
 {%- if method.params.is_empty() %}
         public static {{ method.return_type }} {{ method.name }}(this {{ enumeration.class_name }} self)
 {%- else %}
-        public static {{ method.return_type }} {{ method.name }}(this {{ enumeration.class_name }} self, {{ method.wrapper_param_list() }})
+        public static {{ method.return_type }} {{ method.name }}(this {{ enumeration.class_name }} self, {% for p in method.params %}{{ p.csharp_type }} {{ p.name }}{% if !loop.last %}, {% endif %}{% endfor %})
 {%- endif %}
 {%- else %}
-        public {{ method.return_type }} {{ method.name }}({{ method.wrapper_param_list() }})
+        public {{ method.return_type }} {{ method.name }}({% for p in method.params %}{{ p.csharp_type }} {{ p.name }}{% if !loop.last %}, {% endif %}{% endfor %})
 {%- endif %}
         {
 {%- if method.receiver.is_instance_native() %}
@@ -37,7 +37,25 @@
             FfiBuf _buf = NativeMethods.{{ method.native_method_name }}({{ method.full_native_call_args() }});
             try
             {
-                {{ method.return_kind.wire_decode_return("_buf").unwrap() }}
+                {%- match method.return_kind %}
+                {%- when CSharpReturnKind::WireDecodeString %}
+                return new WireReader(_buf).ReadString();
+                {%- when CSharpReturnKind::WireDecodeObject with { class_name } %}
+                return {{ class_name }}.Decode(new WireReader(_buf));
+                {%- when CSharpReturnKind::WireDecodeBlittablePrimitiveArray with { method: m, type_arg } %}
+                {%- if let Some(t) = type_arg %}
+                return new WireReader(_buf).{{ m }}<{{ t }}>();
+                {%- else %}
+                return new WireReader(_buf).{{ m }}();
+                {%- endif %}
+                {%- when CSharpReturnKind::WireDecodeBlittableRecordArray with { element } %}
+                return new WireReader(_buf).ReadBlittableArray<{{ element }}>();
+                {%- when CSharpReturnKind::WireDecodeEncodedArray with { element_type, decode_lambda } %}
+                return new WireReader(_buf).ReadEncodedArray<{{ element_type }}>({{ decode_lambda }});
+                {%- when CSharpReturnKind::WireDecodeOption with { decode_expr } %}
+                var reader = new WireReader(_buf); return {{ decode_expr }};
+                {%- when _ %}
+                {%- endmatch %}
             }
             finally
             {

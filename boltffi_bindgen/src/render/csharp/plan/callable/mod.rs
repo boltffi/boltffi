@@ -12,8 +12,10 @@ pub use function::{CSharpFunctionPlan, CSharpReturnKind};
 pub use method::{CSharpMethodPlan, CSharpReceiver};
 
 use super::super::ast::{
-    CSharpExpression, CSharpLocalDecl, CSharpLocalName, CSharpParamName, CSharpStatement,
-    CSharpType,
+    CSharpArgumentList, CSharpAttribute, CSharpAttributeArg, CSharpBinaryOp, CSharpClassName,
+    CSharpExpression, CSharpIdent, CSharpLocalDecl, CSharpLocalName, CSharpMethodName,
+    CSharpParamName, CSharpParameter, CSharpParameterList, CSharpPropertyName, CSharpStatement,
+    CSharpType, CSharpTypeReference,
 };
 
 /// A parameter in a C# function.
@@ -28,89 +30,110 @@ pub struct CSharpParamPlan {
 }
 
 impl CSharpParamPlan {
-    /// Declaration as it appears in the public wrapper signature,
-    /// e.g. `"int value"`, `"string v"`, `"Point point"`.
-    pub fn wrapper_declaration(&self) -> String {
-        format!("{} {}", self.csharp_type, self.name)
+    /// Public wrapper-signature declaration for this param: bare
+    /// `Type name`, no attributes, single parameter (no expansion).
+    pub fn wrapper_declaration(&self) -> CSharpParameter {
+        CSharpParameter::bare(self.csharp_type.clone(), self.name.clone())
     }
 
-    /// Declaration as it appears in the `[DllImport]` signature. This
-    /// is where the different marshalling paths diverge:
-    /// - Primitives and blittable records pass through directly.
-    /// - Bool needs the `[MarshalAs(UnmanagedType.I1)]` attribute
-    ///   because P/Invoke defaults to the 4-byte Win32 BOOL.
-    /// - Strings and wire-encoded records are split into
-    ///   `(byte[] x, UIntPtr xLen)`.
-    pub fn native_declaration(&self) -> String {
+    /// `[DllImport]`-side declaration(s). Returns one or two
+    /// parameters depending on the marshalling shape:
+    /// - Primitives pass through as one parameter (with `[MarshalAs(I1)]`
+    ///   on bool to override P/Invoke's 4-byte BOOL default).
+    /// - Strings, wire-encoded records, and direct/pinned arrays expand
+    ///   into a `(buffer, UIntPtr length)` pair.
+    pub fn native_declarations(&self) -> Vec<CSharpParameter> {
         match &self.kind {
-            CSharpParamKind::Utf8Bytes | CSharpParamKind::WireEncoded { .. } => {
-                format!("byte[] {name}, UIntPtr {name}Len", name = self.name)
-            }
-            CSharpParamKind::Direct if self.csharp_type.is_bool() => {
-                format!("[MarshalAs(UnmanagedType.I1)] bool {}", self.name)
-            }
+            CSharpParamKind::Direct if self.csharp_type.is_bool() => vec![CSharpParameter {
+                attributes: vec![marshal_as(CSharpAttributeArg::Positional(
+                    unmanaged_type_member("I1"),
+                ))],
+                csharp_type: CSharpType::Bool,
+                name: self.name.clone(),
+            }],
             CSharpParamKind::Direct => {
-                format!("{} {}", self.csharp_type, self.name)
+                vec![CSharpParameter::bare(self.csharp_type.clone(), self.name.clone())]
+            }
+            CSharpParamKind::Utf8Bytes | CSharpParamKind::WireEncoded { .. } => {
+                buffer_and_length(CSharpType::Array(Box::new(CSharpType::Byte)), &self.name)
             }
             CSharpParamKind::DirectArray => {
                 let element = self
                     .csharp_type
                     .array_element()
-                    .expect("DirectArray param must carry an Array type");
-                let decl = format!("{element}[] {name}, UIntPtr {name}Len", name = self.name);
-                if matches!(element, CSharpType::Bool) {
-                    format!(
-                        "[MarshalAs(UnmanagedType.LPArray, ArraySubType = UnmanagedType.U1)] {decl}"
-                    )
-                } else {
-                    decl
-                }
+                    .expect("DirectArray param must carry an Array type")
+                    .clone();
+                let buf_param = CSharpParameter {
+                    attributes: if matches!(element, CSharpType::Bool) {
+                        vec![marshal_as_lp_array_u1()]
+                    } else {
+                        vec![]
+                    },
+                    csharp_type: CSharpType::Array(Box::new(element)),
+                    name: self.name.clone(),
+                };
+                vec![buf_param, length_param(&self.name)]
             }
             // The wrapper's `fixed` block takes the managed array and
-            // hands the native side a raw pointer, so the DllImport sees
-            // only `IntPtr` and a length. No element type, no P/Invoke
-            // marshaling.
-            CSharpParamKind::PinnedArray { .. } => {
-                format!("IntPtr {name}, UIntPtr {name}Len", name = self.name)
-            }
+            // hands the native side a raw pointer, so the DllImport
+            // sees only `IntPtr` and a length. No element type, no
+            // P/Invoke marshaling.
+            CSharpParamKind::PinnedArray { .. } => buffer_and_length(CSharpType::IntPtr, &self.name),
         }
     }
 
-    /// The argument expression to hand to the native call: either the
-    /// raw param, or the pre-encoded byte array plus its length.
-    pub fn native_call_arg(&self) -> String {
+    /// Argument expression(s) to hand to the native call. Returns one
+    /// or two expressions matching the shape of `native_declarations`.
+    pub fn native_call_args(&self) -> Vec<CSharpExpression> {
         match &self.kind {
-            CSharpParamKind::Direct => self.name.as_str().to_string(),
+            CSharpParamKind::Direct => vec![param_ident(&self.name)],
             CSharpParamKind::Utf8Bytes => {
                 let buf = CSharpLocalName::for_bytes(&self.name);
-                format!("{buf}, (UIntPtr){buf}.Length")
+                buffer_and_uintptr_length_local(buf)
             }
             CSharpParamKind::WireEncoded { binding_name } => {
-                format!("{binding_name}, (UIntPtr){binding_name}.Length")
+                buffer_and_uintptr_length_local(binding_name.clone())
             }
-            CSharpParamKind::DirectArray => {
-                format!("{name}, (UIntPtr){name}.Length", name = self.name)
-            }
-            // `_{name}Ptr` is the pointer local introduced by the
-            // enclosing `fixed` statement; see `pinned_fixed_args`. The
-            // cast to `IntPtr` matches the DllImport signature.
+            CSharpParamKind::DirectArray => buffer_and_uintptr_length_param(&self.name),
+            // `_{name}Ptr` is the pointer local introduced by the enclosing
+            // `fixed` statement; see [`pinned_fixed_arg`]. The cast to
+            // `IntPtr` matches the DllImport signature.
             //
             // The Rust FFI shim for `Vec<Passable>` takes a raw byte
             // length and divides by `size_of::<T>()` to recover the
             // element count, the opposite of `Vec<Primitive>`, which
             // takes element count directly. The primitive path and this
             // path therefore send different numbers across the same
-            // `UIntPtr` slot. `Unsafe.SizeOf<T>()` is a JIT-time constant
-            // for `unmanaged` struct types, so the multiply folds away.
+            // `UIntPtr` slot. `Unsafe.SizeOf<T>()` is a JIT-time
+            // constant for `unmanaged` struct types, so the multiply
+            // folds away.
             CSharpParamKind::PinnedArray { element_type } => {
-                let ptr_name = self
-                    .pinned_ptr_name()
+                let ptr_local = self
+                    .pinned_ptr_local()
                     .expect("PinnedArray params must have a pointer local");
-                format!(
-                    "(IntPtr){ptr_name}, (UIntPtr)({name}.Length * Unsafe.SizeOf<{element_type}>())",
-                    ptr_name = ptr_name,
-                    name = self.name,
-                )
+                let ptr_arg = CSharpExpression::Cast {
+                    target: CSharpType::IntPtr,
+                    inner: Box::new(CSharpExpression::Ident(CSharpIdent::Local(ptr_local))),
+                };
+                let length_arg = CSharpExpression::Cast {
+                    target: CSharpType::UIntPtr,
+                    inner: Box::new(CSharpExpression::Paren(Box::new(CSharpExpression::Binary {
+                        op: CSharpBinaryOp::Mul,
+                        left: Box::new(CSharpExpression::MemberAccess {
+                            receiver: Box::new(param_ident(&self.name)),
+                            name: CSharpPropertyName::from_source("length"),
+                        }),
+                        right: Box::new(CSharpExpression::MethodCall {
+                            receiver: Box::new(CSharpExpression::TypeRef(
+                                CSharpTypeReference::Plain(CSharpClassName::new("Unsafe")),
+                            )),
+                            method: CSharpMethodName::new("SizeOf"),
+                            type_args: vec![element_type.clone()],
+                            args: vec![],
+                        }),
+                    }))),
+                };
+                vec![ptr_arg, length_arg]
             }
         }
     }
@@ -136,7 +159,7 @@ impl CSharpParamPlan {
             CSharpParamKind::PinnedArray { element_type } => Some(format!(
                 "{element_type}* {ptr_name} = {name}",
                 ptr_name = self
-                    .pinned_ptr_name()
+                    .pinned_ptr_local()
                     .expect("PinnedArray params must have a pointer local"),
                 name = self.name,
             )),
@@ -144,7 +167,7 @@ impl CSharpParamPlan {
         }
     }
 
-    fn pinned_ptr_name(&self) -> Option<String> {
+    fn pinned_ptr_local(&self) -> Option<CSharpLocalName> {
         match self.kind {
             CSharpParamKind::PinnedArray { .. } => {
                 let base_name = self
@@ -152,7 +175,7 @@ impl CSharpParamPlan {
                     .as_str()
                     .strip_prefix('@')
                     .unwrap_or(self.name.as_str());
-                Some(format!("_{base_name}Ptr"))
+                Some(CSharpLocalName::new(format!("_{base_name}Ptr")))
             }
             _ => None,
         }
@@ -164,6 +187,102 @@ pub(super) fn pinned_fixed_args(params: &[CSharpParamPlan]) -> Vec<String> {
         .iter()
         .filter_map(CSharpParamPlan::pinned_fixed_arg)
         .collect()
+}
+
+pub(super) fn native_param_list(params: &[CSharpParamPlan]) -> CSharpParameterList {
+    let mut list = CSharpParameterList::empty();
+    for p in params {
+        list.extend(p.native_declarations());
+    }
+    list
+}
+
+pub(super) fn native_call_arg_list(params: &[CSharpParamPlan]) -> CSharpArgumentList {
+    let mut list = CSharpArgumentList::empty();
+    for p in params {
+        list.extend(p.native_call_args());
+    }
+    list
+}
+
+pub(super) fn wrapper_param_list(params: &[CSharpParamPlan]) -> CSharpParameterList {
+    CSharpParameterList::new(params.iter().map(CSharpParamPlan::wrapper_declaration).collect())
+}
+
+// --- Small constructors for the per-kind shapes ---
+
+fn param_ident(name: &CSharpParamName) -> CSharpExpression {
+    CSharpExpression::Ident(CSharpIdent::Param(name.clone()))
+}
+
+fn length_param(base: &CSharpParamName) -> CSharpParameter {
+    CSharpParameter::bare(
+        CSharpType::UIntPtr,
+        CSharpParamName::new(format!("{base}Len")),
+    )
+}
+
+fn buffer_and_length(buffer_type: CSharpType, base: &CSharpParamName) -> Vec<CSharpParameter> {
+    vec![
+        CSharpParameter::bare(buffer_type, base.clone()),
+        length_param(base),
+    ]
+}
+
+fn buffer_and_uintptr_length_param(name: &CSharpParamName) -> Vec<CSharpExpression> {
+    let buf = param_ident(name);
+    let len = uintptr_length_member(buf.clone());
+    vec![buf, len]
+}
+
+fn buffer_and_uintptr_length_local(local: CSharpLocalName) -> Vec<CSharpExpression> {
+    let buf = CSharpExpression::Ident(CSharpIdent::Local(local));
+    let len = uintptr_length_member(buf.clone());
+    vec![buf, len]
+}
+
+/// `(UIntPtr){receiver}.Length` — the length pair partner for
+/// buffer-style native call args.
+fn uintptr_length_member(receiver: CSharpExpression) -> CSharpExpression {
+    CSharpExpression::Cast {
+        target: CSharpType::UIntPtr,
+        inner: Box::new(CSharpExpression::MemberAccess {
+            receiver: Box::new(receiver),
+            name: CSharpPropertyName::from_source("length"),
+        }),
+    }
+}
+
+fn unmanaged_type_member(member: &str) -> CSharpExpression {
+    CSharpExpression::MemberAccess {
+        receiver: Box::new(CSharpExpression::TypeRef(CSharpTypeReference::Plain(
+            CSharpClassName::new("UnmanagedType"),
+        ))),
+        name: CSharpPropertyName::from_source(member),
+    }
+}
+
+fn marshal_as(arg: CSharpAttributeArg) -> CSharpAttribute {
+    CSharpAttribute {
+        name: CSharpClassName::new("MarshalAs"),
+        args: vec![arg],
+    }
+}
+
+/// `[MarshalAs(UnmanagedType.LPArray, ArraySubType = UnmanagedType.U1)]`:
+/// the single shape used to override the CLR's BOOL marshaling for
+/// `bool[]` direct-array params.
+fn marshal_as_lp_array_u1() -> CSharpAttribute {
+    CSharpAttribute {
+        name: CSharpClassName::new("MarshalAs"),
+        args: vec![
+            CSharpAttributeArg::Positional(unmanaged_type_member("LPArray")),
+            CSharpAttributeArg::Named {
+                name: CSharpPropertyName::from_source("array_sub_type"),
+                value: unmanaged_type_member("U1"),
+            },
+        ],
+    }
 }
 
 /// How a parameter is marshalled across the C# / C ABI boundary.
@@ -203,10 +322,11 @@ pub enum CSharpParamKind {
     /// native call and passes the pointer as `IntPtr`. C# and Rust then
     /// read the same block of managed heap memory.
     ///
-    /// `element_type` is the C# type literal for `T` (e.g., `"Location"`),
-    /// threaded here so `pinned_fixed_args` can render
-    /// `Location* _xPtr = x` without re-deriving from `csharp_type`.
-    PinnedArray { element_type: String },
+    /// `element_type` is the C# type for `T` (e.g.,
+    /// `CSharpType::Record(Plain("Location"))`), threaded here so
+    /// `pinned_fixed_args` can render `Location* _xPtr = x` without
+    /// re-deriving from `csharp_type`.
+    PinnedArray { element_type: CSharpType },
 }
 
 /// Bookkeeping for a single record param that must be wire-encoded into a
@@ -244,34 +364,44 @@ mod tests {
     }
 
     fn record_type(name: &str) -> CSharpType {
-        CSharpType::Record(super::super::super::ast::CSharpClassName::from_source(name).into())
+        CSharpType::Record(CSharpClassName::from_source(name).into())
     }
 
     fn wire_encoded_local() -> CSharpLocalName {
         CSharpLocalName::for_bytes(&CSharpParamName::from_source("person"))
     }
 
+    /// Render a Vec of native_declarations as it would appear inside
+    /// the DllImport's parens — comma-joined, matching CSharpParameterList's
+    /// Display.
+    fn render_native_decls(p: &CSharpParamPlan) -> String {
+        CSharpParameterList::new(p.native_declarations()).to_string()
+    }
+
+    /// Render a Vec of native_call_args as it would appear inside the
+    /// invocation's parens — comma-joined, matching CSharpArgumentList's
+    /// Display.
+    fn render_native_args(p: &CSharpParamPlan) -> String {
+        CSharpArgumentList::new(p.native_call_args()).to_string()
+    }
+
     #[test]
     fn wrapper_declaration_puts_type_before_name() {
         let p = param("value", CSharpType::Int, CSharpParamKind::Direct);
-        assert_eq!(p.wrapper_declaration(), "int value");
+        assert_eq!(p.wrapper_declaration().to_string(), "int value");
     }
 
     #[test]
     fn wrapper_declaration_uses_record_class_name() {
-        let p = param(
-            "point",
-            record_type("point"),
-            CSharpParamKind::Direct,
-        );
-        assert_eq!(p.wrapper_declaration(), "Point point");
+        let p = param("point", record_type("point"), CSharpParamKind::Direct);
+        assert_eq!(p.wrapper_declaration().to_string(), "Point point");
     }
 
     /// Direct primitives pass through the native declaration unchanged.
     #[test]
     fn native_declaration_direct_primitive_matches_wrapper() {
         let p = param("value", CSharpType::Int, CSharpParamKind::Direct);
-        assert_eq!(p.native_declaration(), "int value");
+        assert_eq!(render_native_decls(&p), "int value");
     }
 
     /// P/Invoke marshals `bool` as a 4-byte Win32 BOOL by default, but the
@@ -281,7 +411,7 @@ mod tests {
     fn native_declaration_bool_gets_marshal_attribute() {
         let p = param("flag", CSharpType::Bool, CSharpParamKind::Direct);
         assert_eq!(
-            p.native_declaration(),
+            render_native_decls(&p),
             "[MarshalAs(UnmanagedType.I1)] bool flag"
         );
     }
@@ -290,12 +420,8 @@ mod tests {
     /// native declaration is just the struct name, no byte[] split.
     #[test]
     fn native_declaration_blittable_record_passes_by_value() {
-        let p = param(
-            "point",
-            record_type("point"),
-            CSharpParamKind::Direct,
-        );
-        assert_eq!(p.native_declaration(), "Point point");
+        let p = param("point", record_type("point"), CSharpParamKind::Direct);
+        assert_eq!(render_native_decls(&p), "Point point");
     }
 
     /// String params split into two arguments to match the C ABI
@@ -303,7 +429,7 @@ mod tests {
     #[test]
     fn native_declaration_string_splits_into_bytes_and_length() {
         let p = param("v", CSharpType::String, CSharpParamKind::Utf8Bytes);
-        assert_eq!(p.native_declaration(), "byte[] v, UIntPtr vLen");
+        assert_eq!(render_native_decls(&p), "byte[] v, UIntPtr vLen");
     }
 
     /// Wire-encoded record params use the same `byte[] + UIntPtr` split
@@ -317,19 +443,19 @@ mod tests {
                 binding_name: wire_encoded_local(),
             },
         );
-        assert_eq!(p.native_declaration(), "byte[] person, UIntPtr personLen");
+        assert_eq!(render_native_decls(&p), "byte[] person, UIntPtr personLen");
     }
 
     #[test]
     fn native_call_arg_direct_passes_name() {
         let p = param("value", CSharpType::Int, CSharpParamKind::Direct);
-        assert_eq!(p.native_call_arg(), "value");
+        assert_eq!(render_native_args(&p), "value");
     }
 
     #[test]
     fn native_call_arg_utf8_bytes_passes_buffer_and_length() {
         let p = param("v", CSharpType::String, CSharpParamKind::Utf8Bytes);
-        assert_eq!(p.native_call_arg(), "_vBytes, (UIntPtr)_vBytes.Length");
+        assert_eq!(render_native_args(&p), "_vBytes, (UIntPtr)_vBytes.Length");
     }
 
     #[test]
@@ -342,7 +468,7 @@ mod tests {
             },
         );
         assert_eq!(
-            p.native_call_arg(),
+            render_native_args(&p),
             "_personBytes, (UIntPtr)_personBytes.Length"
         );
     }

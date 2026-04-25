@@ -38,6 +38,12 @@ pub enum CSharpType {
     ULong,
     NInt,
     NUInt,
+    /// `System.IntPtr`. Same compiled type as `nint`; the convention in
+    /// P/Invoke signatures is the PascalCase spelling.
+    IntPtr,
+    /// `System.UIntPtr`. Same compiled type as `nuint`; PascalCase spelling
+    /// is the P/Invoke convention.
+    UIntPtr,
     Float,
     Double,
     String,
@@ -253,6 +259,8 @@ impl CSharpType {
             | Self::ULong
             | Self::NInt
             | Self::NUInt
+            | Self::IntPtr
+            | Self::UIntPtr
             | Self::Float
             | Self::Double
             | Self::CStyleEnum(_) => true,
@@ -305,6 +313,8 @@ impl fmt::Display for CSharpType {
             Self::ULong => f.write_str("ulong"),
             Self::NInt => f.write_str("nint"),
             Self::NUInt => f.write_str("nuint"),
+            Self::IntPtr => f.write_str("IntPtr"),
+            Self::UIntPtr => f.write_str("UIntPtr"),
             Self::Float => f.write_str("float"),
             Self::Double => f.write_str("double"),
             Self::String => f.write_str("string"),

@@ -28,22 +28,12 @@ pub enum CSharpIdent {
     /// C# `this` keyword, used as a receiver in record wire-encode
     /// statements (`this.X.WireEncodeTo(wire)`).
     This,
-    /// A synthesized local (`_v`, `item0`, `opt0`, `r0`).
+    /// A local variable: synthesized by the lowerer (`_v`, `item0`,
+    /// `opt0`, `r0`) or a fixed-vocabulary local from the surrounding
+    /// generated method (`reader`, `wire`).
     Local(CSharpLocalName),
     /// A user parameter (`v`, `count`, `@class`).
     Param(CSharpParamName),
-    /// A free identifier whose name comes from the C# runtime or the
-    /// generated wire library itself (`reader`, `wire`, `Encoding`,
-    /// `WireWriter`). Carried as a raw string because it doesn't map
-    /// to a typed newtype: the referent is fixed library or template
-    /// vocabulary, not something the lowerer synthesizes.
-    Free(String),
-}
-
-impl CSharpIdent {
-    pub fn free(name: impl Into<String>) -> Self {
-        Self::Free(name.into())
-    }
 }
 
 impl fmt::Display for CSharpIdent {
@@ -52,7 +42,6 @@ impl fmt::Display for CSharpIdent {
             Self::This => f.write_str("this"),
             Self::Local(name) => name.fmt(f),
             Self::Param(name) => name.fmt(f),
-            Self::Free(name) => f.write_str(name),
         }
     }
 }
@@ -352,7 +341,7 @@ mod tests {
     use super::super::{CSharpClassName, CSharpNamespace};
     use rstest::rstest;
 
-    fn local(name: &str) -> CSharpLocalName {
+    fn local_for(name: &str) -> CSharpLocalName {
         CSharpLocalName::for_bytes(&CSharpParamName::from_source(name))
     }
 
@@ -360,8 +349,12 @@ mod tests {
         CSharpExpression::Literal(CSharpLiteral::Int(v))
     }
 
-    fn free(name: &str) -> CSharpExpression {
-        CSharpExpression::Ident(CSharpIdent::free(name))
+    fn local_ident(name: &str) -> CSharpExpression {
+        CSharpExpression::Ident(CSharpIdent::Local(CSharpLocalName::new(name)))
+    }
+
+    fn type_ref(name: &str) -> CSharpExpression {
+        CSharpExpression::TypeRef(CSharpTypeReference::Plain(CSharpClassName::new(name)))
     }
 
     mod ident {
@@ -375,7 +368,7 @@ mod tests {
         #[test]
         fn local_renders_via_wrapped_type() {
             assert_eq!(
-                CSharpIdent::Local(local("person")).to_string(),
+                CSharpIdent::Local(local_for("person")).to_string(),
                 "_personBytes"
             );
         }
@@ -403,10 +396,6 @@ mod tests {
             assert_eq!(ident.to_string(), expected);
         }
 
-        #[test]
-        fn free_renders_literally() {
-            assert_eq!(CSharpIdent::free("Encoding").to_string(), "Encoding");
-        }
     }
 
     mod literal {
@@ -452,7 +441,7 @@ mod tests {
         use super::*;
 
         fn reader() -> CSharpExpression {
-            free("reader")
+            local_ident("reader")
         }
 
         #[test]
@@ -494,12 +483,12 @@ mod tests {
         }
 
         /// Member access nests: `Encoding.UTF8` is a `MemberAccess` on
-        /// a `Free("Encoding")` identifier, and further members stack on
+        /// a `TypeRef(Encoding)` receiver, and further members stack on
         /// top.
         #[test]
         fn member_access_chains_through_nested_access() {
             let encoding = CSharpExpression::MemberAccess {
-                receiver: Box::new(free("Encoding")),
+                receiver: Box::new(type_ref("Encoding")),
                 name: CSharpPropertyName::from_source("UTF8"),
             };
             assert_eq!(encoding.to_string(), "Encoding.UTF8");
@@ -519,7 +508,7 @@ mod tests {
         #[test]
         fn method_call_with_args_renders_comma_separated() {
             let expr = CSharpExpression::MethodCall {
-                receiver: Box::new(free("wire")),
+                receiver: Box::new(local_ident("wire")),
                 method: CSharpMethodName::from_source("write_f64"),
                 type_args: vec![],
                 args: vec![CSharpExpression::MemberAccess {
@@ -647,7 +636,7 @@ mod tests {
                     receiver: Box::new(CSharpExpression::Ident(CSharpIdent::This)),
                     name: CSharpPropertyName::from_source("name"),
                 }),
-                binding: local("opt"),
+                binding: local_for("opt"),
             };
             assert_eq!(expr.to_string(), "this.Name is { } _optBytes");
         }
@@ -675,7 +664,7 @@ mod tests {
         #[test]
         fn expression_statement_renders_expression_alone() {
             let stmt = CSharpStatement::Expression(CSharpExpression::MethodCall {
-                receiver: Box::new(free("wire")),
+                receiver: Box::new(local_ident("wire")),
                 method: CSharpMethodName::from_source("write_f64"),
                 type_args: vec![],
                 args: vec![CSharpExpression::MemberAccess {
@@ -690,7 +679,7 @@ mod tests {
         fn local_decl_includes_trailing_semicolon() {
             let decl = CSharpLocalDecl {
                 declared_type: CSharpType::Array(Box::new(CSharpType::Byte)),
-                name: local("v"),
+                name: local_for("v"),
                 rhs: CSharpExpression::Raw("Encoding.UTF8.GetBytes(v)".to_string()),
             };
             let stmt = CSharpStatement::LocalDecl(decl);
@@ -734,7 +723,7 @@ mod tests {
         fn foreach_renders_header_and_body_brace_block() {
             let stmt = CSharpStatement::ForEach {
                 elem_type: CSharpType::String,
-                var: local("name"),
+                var: local_for("name"),
                 collection: CSharpExpression::Raw("_v.Names".to_string()),
                 body: vec![raw("wire.WriteString(_nameBytes)")],
             };
@@ -753,7 +742,7 @@ mod tests {
                 raw("wire.WriteI32(_v.Names.Length)"),
                 CSharpStatement::ForEach {
                     elem_type: CSharpType::String,
-                    var: local("item"),
+                    var: local_for("item"),
                     collection: CSharpExpression::Raw("_v.Names".to_string()),
                     body: vec![raw("wire.WriteString(_itemBytes)")],
                 },

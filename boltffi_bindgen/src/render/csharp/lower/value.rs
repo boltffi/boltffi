@@ -13,7 +13,9 @@ use std::collections::HashMap;
 use crate::ir::ops::ValueExpr;
 
 use super::super::NamingConvention;
-use super::super::ast::{CSharpExpression, CSharpIdent, CSharpPropertyName};
+use super::super::ast::{
+    CSharpExpression, CSharpIdent, CSharpLocalName, CSharpParamName, CSharpPropertyName,
+};
 
 /// Active rebindings from IR variable names (as they appear in
 /// [`ValueExpr::Var`]) to the C# expression that should stand in for
@@ -37,14 +39,14 @@ pub(super) fn render_value(value: &ValueExpr, renames: &Renames) -> CSharpExpres
         ValueExpr::Instance => CSharpExpression::Ident(CSharpIdent::This),
         ValueExpr::Var(name) => match renames.get(name) {
             Some(expr) => expr.clone(),
-            None => CSharpExpression::Ident(CSharpIdent::free(name.clone())),
+            None => CSharpExpression::Ident(CSharpIdent::Local(CSharpLocalName::new(
+                name.clone(),
+            ))),
         },
         ValueExpr::Named(name) => {
-            // Preserves the old `render_value` conversion: camelCase
-            // + keyword escape. `Free` carries the converted string
-            // because the result is a bare identifier at the render
-            // site, not a member access on an implicit receiver.
-            CSharpExpression::Ident(CSharpIdent::free(NamingConvention::field_name(name)))
+            // Param-typed identifier: the camelCase + `@`-keyword-escape
+            // conversion lives on `CSharpParamName::from_source`.
+            CSharpExpression::Ident(CSharpIdent::Param(CSharpParamName::from_source(name)))
         }
         ValueExpr::Field(parent, field) => CSharpExpression::MemberAccess {
             receiver: Box::new(render_value(parent, renames)),
@@ -92,7 +94,7 @@ mod tests {
         let mut renames = Renames::new();
         renames.insert(
             "v".to_string(),
-            CSharpExpression::Ident(CSharpIdent::free("sizeOpt0")),
+            CSharpExpression::Ident(CSharpIdent::Local(CSharpLocalName::new("sizeOpt0"))),
         );
         let expr = render_value(&ValueExpr::Var("v".to_string()), &renames);
         assert_eq!(expr.to_string(), "sizeOpt0");
@@ -135,7 +137,7 @@ mod tests {
         let mut renames = Renames::new();
         renames.insert(
             "_v".to_string(),
-            CSharpExpression::Ident(CSharpIdent::free("_rebound")),
+            CSharpExpression::Ident(CSharpIdent::Local(CSharpLocalName::new("_rebound"))),
         );
         let expr = render_value(
             &ValueExpr::Field(

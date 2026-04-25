@@ -12,8 +12,8 @@ use crate::ir::codec::VecLayout;
 use crate::ir::ops::SizeExpr;
 
 use super::super::ast::{
-    CSharpBinaryOp, CSharpExpression, CSharpIdent, CSharpLiteral, CSharpLocalName,
-    CSharpMethodName, CSharpPropertyName,
+    CSharpBinaryOp, CSharpClassName, CSharpExpression, CSharpIdent, CSharpLiteral, CSharpLocalName,
+    CSharpMethodName, CSharpPropertyName, CSharpTypeReference,
 };
 use super::value::{Renames, render_value};
 
@@ -62,7 +62,9 @@ pub(crate) fn lower_size_expr(
             // two-segment type path.
             CSharpExpression::MethodCall {
                 receiver: Box::new(CSharpExpression::MemberAccess {
-                    receiver: Box::new(CSharpExpression::Ident(CSharpIdent::free("Encoding"))),
+                    receiver: Box::new(CSharpExpression::TypeRef(
+                        CSharpTypeReference::Plain(CSharpClassName::new("Encoding")),
+                    )),
                     name: CSharpPropertyName::from_source("UTF8"),
                 }),
                 method: CSharpMethodName::from_source("get_byte_count"),
@@ -160,7 +162,9 @@ pub(crate) fn lower_size_expr(
             );
             let inner_expr = lower_size_expr(inner, &inner_renames, locals);
             CSharpExpression::MethodCall {
-                receiver: Box::new(CSharpExpression::Ident(CSharpIdent::free("WireWriter"))),
+                receiver: Box::new(CSharpExpression::TypeRef(CSharpTypeReference::Plain(
+                    CSharpClassName::new("WireWriter"),
+                ))),
                 method: CSharpMethodName::from_source("encoded_array_size"),
                 type_args: vec![],
                 args: vec![

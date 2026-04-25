@@ -467,7 +467,7 @@
 {%- if func.return_type.is_bool() %}
         [return: MarshalAs(UnmanagedType.I1)]
 {%- endif %}
-        internal static extern {{ func.native_return_type() }} {{ func.name }}({{ func.native_param_list() }});
+        internal static extern {% if func.return_kind.native_returns_ffi_buf() %}FfiBuf{% else %}{{ func.return_type }}{% endif %} {{ func.name }}({{ func.native_param_list() }});
 {%- endfor %}
 {%- for enumeration in module.enums %}
 {%- for method in enumeration.methods %}
@@ -476,7 +476,7 @@
 {%- if method.return_type.is_bool() %}
         [return: MarshalAs(UnmanagedType.I1)]
 {%- endif %}
-        internal static extern {{ method.native_return_type() }} {{ method.native_method_name }}({{ method.native_param_list(enumeration.class_name, false) }});
+        internal static extern {% if method.return_kind.native_returns_ffi_buf() %}FfiBuf{% else %}{{ method.return_type }}{% endif %} {{ method.native_method_name }}({{ method.native_param_list(enumeration.class_name, false) }});
 {%- endfor %}
 {%- endfor %}
     }
