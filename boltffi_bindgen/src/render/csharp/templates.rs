@@ -9,7 +9,9 @@
 use askama::Template;
 
 use super::ast::CSharpNamespace;
-use super::plan::{CSharpEnumPlan, CSharpModulePlan, CSharpRecordPlan, CSharpReturnKind};
+use super::plan::{
+    CSharpEnumPlan, CSharpModulePlan, CSharpParamKind, CSharpRecordPlan, CSharpReturnKind,
+};
 
 /// Renders the file header: auto-generated comment, `using` directives,
 /// and namespace declaration.
@@ -271,6 +273,10 @@ mod tests {
     /// `owner_class_name` and `name` are already in their rendered C#
     /// form — the fixtures pin what the generated code looks like, so
     /// we don't run a source transform on them.
+    ///
+    /// Mirrors the lowerer's contract for `InstanceNative` receivers:
+    /// the receiver's wire-encode block lives at `wire_writers[0]`, so
+    /// the snapshot fixtures synthesize the same plan the lowerer would.
     fn method(
         owner_class_name: &str,
         name: &str,
@@ -282,6 +288,11 @@ mod tests {
     ) -> CSharpMethodPlan {
         let owner = CSharpClassName::from_source(owner_class_name);
         let method_name = CSharpMethodName::from_source(name);
+        let wire_writers = if matches!(receiver, CSharpReceiver::InstanceNative) {
+            vec![crate::render::csharp::lower::self_wire_writer()]
+        } else {
+            vec![]
+        };
         CSharpMethodPlan {
             native_method_name: CSharpMethodName::native_for_owner(&owner, &method_name),
             name: method_name,
@@ -290,7 +301,7 @@ mod tests {
             params,
             return_type,
             return_kind,
-            wire_writers: vec![],
+            wire_writers,
         }
     }
 

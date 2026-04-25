@@ -23,33 +23,30 @@
 //!   downstream.
 //! - `plan`: FFI-shaped view model built on `ast` payloads. Models
 //!   records, enums, functions, methods, params: what crosses the ABI.
-//! - `lower`: decision layer. Walks the IR and produces a plan.
-//! - `emit`: orchestrator plus ABI-op → C# syntax helpers.
+//! - `lower`: decision layer. Walks the IR and produces a plan,
+//!   including the typed AST sub-trees for the size, encode, and
+//!   decode wire phases.
+//! - `emit`: orchestrator. Drives the lowerer and renders each plan
+//!   entry through its Askama template.
 //!
-//! Supporting modules:
+//! Supporting module:
 //!
-//! - `names`: legacy snake_case → PascalCase / camelCase helpers.
-//!   Being absorbed into `ast::identifier`; will go away once every
-//!   call site has migrated.
 //! - `templates`: Askama bindings over `plan`, rendered by `emit`.
 //!   Snapshot tests live alongside.
 //!
 //! Module dependencies: `ast` builds on the IR. `plan` builds on
 //! `ast`. `templates`, `lower`, and `emit` all build on `plan` and
-//! `ast`. `lower` and `emit` cooperate: `lower` calls `emit`'s syntax
-//! helpers to pre-render wire expressions into the plan; `emit`'s
-//! orchestrator calls `lower` to produce that plan.
+//! `ast`. `emit` calls `lower` to produce the plan; everything else
+//! flows downstream from there.
 
 mod ast;
 mod emit;
 mod lower;
-mod names;
 mod plan;
 mod templates;
 
 pub use ast::{CSharpClassName, CSharpNamespace};
 pub use emit::{CSharpEmitter, CSharpFile, CSharpOutput};
-pub use names::NamingConvention;
 
 use boltffi_ffi_rules::naming::{LibraryName, Name};
 

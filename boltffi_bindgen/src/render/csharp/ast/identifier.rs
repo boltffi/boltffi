@@ -305,6 +305,14 @@ impl CSharpLocalName {
         Self(format!("_{}Bytes", param.stripped()))
     }
 
+    /// `_{param}Ptr`: the pointer local introduced by the `fixed`
+    /// statement that pins a `PinnedArray` param. `@`-escape is
+    /// stripped for the same identifier-validity reason as
+    /// [`Self::for_bytes`].
+    pub fn for_pinned_ptr(param: &CSharpParamName) -> Self {
+        Self(format!("_{}Ptr", param.stripped()))
+    }
+
     /// `sizeOpt{n}`: the pattern binding introduced inside a
     /// `SizeExpr::OptionSize` ternary so the option's non-null payload
     /// can be referenced while summing its byte size. The prefix is

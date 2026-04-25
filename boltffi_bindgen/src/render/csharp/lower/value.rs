@@ -12,7 +12,6 @@ use std::collections::HashMap;
 
 use crate::ir::ops::ValueExpr;
 
-use super::super::NamingConvention;
 use super::super::ast::{
     CSharpExpression, CSharpIdent, CSharpLocalName, CSharpParamName, CSharpPropertyName,
 };
@@ -50,13 +49,7 @@ pub(super) fn render_value(value: &ValueExpr, renames: &Renames) -> CSharpExpres
         }
         ValueExpr::Field(parent, field) => CSharpExpression::MemberAccess {
             receiver: Box::new(render_value(parent, renames)),
-            // `property_name` applies both the PascalCase conversion
-            // and the `@` keyword escape; `CSharpPropertyName::from_source`
-            // skips the escape so we route through the names helper
-            // until `names.rs` is retired.
-            name: CSharpPropertyName::from_source(&NamingConvention::property_name(
-                field.as_str(),
-            )),
+            name: CSharpPropertyName::from_source(field.as_str()),
         },
     }
 }

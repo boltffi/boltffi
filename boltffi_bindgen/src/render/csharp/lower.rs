@@ -456,6 +456,7 @@ impl<'a> CSharpLowerer<'a> {
         }
 
         let csharp_type = self.lower_type(&param.type_expr)?;
+        let csharp_param_name: CSharpParamName = (&param.name).into();
         let kind = match &param.type_expr {
             TypeExpr::String => CSharpParamKind::Utf8Bytes,
             TypeExpr::Record(id) if !self.is_blittable_record(id) => {
@@ -494,7 +495,10 @@ impl<'a> CSharpLowerer<'a> {
                         "C# backend pinned-array param support not yet implemented for {other:?}"
                     ),
                 };
-                CSharpParamKind::PinnedArray { element_type }
+                CSharpParamKind::PinnedArray {
+                    element_type,
+                    ptr_local: CSharpLocalName::for_pinned_ptr(&csharp_param_name),
+                }
             }
             TypeExpr::Vec(inner) if self.is_supported_vec_element(inner) => {
                 // Vec<String> and Vec<Vec<_>> carry variable-width elements, so
@@ -524,7 +528,7 @@ impl<'a> CSharpLowerer<'a> {
         };
 
         Some(CSharpParamPlan {
-            name: (&param.name).into(),
+            name: csharp_param_name,
             csharp_type,
             kind,
         })
@@ -928,12 +932,13 @@ impl<'a> CSharpLowerer<'a> {
         };
         let mut method_size_locals = size::SizeLocalCounters::default();
         let mut method_encode_locals = encode::EncodeLocalCounters::default();
-        let wire_writers: Vec<CSharpWireWriterPlan> = explicit_abi_params
-            .iter()
-            .filter_map(|p| {
-                self.wire_writer_for_param(p, &mut method_size_locals, &mut method_encode_locals)
-            })
-            .collect();
+        let mut wire_writers: Vec<CSharpWireWriterPlan> = Vec::new();
+        if matches!(receiver, CSharpReceiver::InstanceNative) {
+            wire_writers.push(self_wire_writer());
+        }
+        wire_writers.extend(explicit_abi_params.iter().filter_map(|p| {
+            self.wire_writer_for_param(p, &mut method_size_locals, &mut method_encode_locals)
+        }));
         let params: Vec<CSharpParamPlan> = method_def
             .params
             .iter()
@@ -1254,6 +1259,45 @@ impl<'a> CSharpLowerer<'a> {
                 other
             ),
         }
+    }
+}
+
+/// Synthesize the [`CSharpWireWriterPlan`] for an `InstanceNative`
+/// receiver whose owner is wire-encoded (data enums today, non-
+/// blittable records once their instance methods land). Lets the
+/// template iterate `wire_writers` uniformly instead of hardcoding
+/// the receiver's encode block as a special case. The size and encode
+/// expressions root at `this` rather than going through the IR's
+/// `Named("self")` reference.
+///
+/// Exposed at `pub(super)` so the templates' snapshot fixtures (which
+/// build hand-rolled [`CSharpMethodPlan`]s) can mirror the lowerer's
+/// new contract: an `InstanceNative` plan must include a self-writer
+/// in `wire_writers[0]`.
+pub(super) fn self_wire_writer() -> CSharpWireWriterPlan {
+    use super::ast::CSharpStatement;
+    let self_param_name = CSharpParamName::new("self");
+    let binding_name = CSharpLocalName::for_wire_writer(&self_param_name);
+    let bytes_binding_name = CSharpLocalName::for_bytes(&self_param_name);
+    let this_expr = CSharpExpression::Ident(CSharpIdent::This);
+    let size_expr = CSharpExpression::MethodCall {
+        receiver: Box::new(this_expr.clone()),
+        method: CSharpMethodName::from_source("wire_encoded_size"),
+        type_args: vec![],
+        args: vec![],
+    };
+    let encode_expr = CSharpStatement::Expression(CSharpExpression::MethodCall {
+        receiver: Box::new(this_expr),
+        method: CSharpMethodName::from_source("wire_encode_to"),
+        type_args: vec![],
+        args: vec![CSharpExpression::Ident(CSharpIdent::Local(binding_name.clone()))],
+    });
+    CSharpWireWriterPlan {
+        binding_name,
+        bytes_binding_name,
+        param_name: self_param_name,
+        size_expr,
+        encode_expr,
     }
 }
 

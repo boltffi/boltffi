@@ -12,7 +12,7 @@ use super::super::super::ast::{
 use super::super::CFunctionName;
 use super::{
     CSharpParamPlan, CSharpReturnKind, CSharpWireWriterPlan, native_call_arg_list,
-    native_param_list, pinned_fixed_args,
+    native_param_list,
 };
 
 /// A method or factory constructor on a value type, today always an
@@ -88,14 +88,11 @@ impl CSharpMethodPlan {
         matches!(self.return_kind, CSharpReturnKind::Void)
     }
 
-    /// Declarations for nested `fixed` statements pinning every
-    /// [`CSharpParamKind::PinnedArray`](super::CSharpParamKind::PinnedArray) param in the signature.
-    pub fn pinned_fixed_args(&self) -> Vec<String> {
-        pinned_fixed_args(&self.params)
-    }
-
+    /// Whether the method has any
+    /// [`CSharpParamKind::PinnedArray`](super::CSharpParamKind::PinnedArray)
+    /// param. See [`CSharpFunctionPlan::has_pinned_params`](super::CSharpFunctionPlan::has_pinned_params).
     pub fn has_pinned_params(&self) -> bool {
-        !self.pinned_fixed_args().is_empty()
+        self.params.iter().any(CSharpParamPlan::is_pinned)
     }
 
     /// Typed param list for the DllImport signature, including the

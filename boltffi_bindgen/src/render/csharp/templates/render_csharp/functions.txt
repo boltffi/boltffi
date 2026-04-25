@@ -17,9 +17,13 @@
 {%- if func.has_pinned_params() %}
             unsafe
             {
-{%- for fixed_arg in func.pinned_fixed_args() %}
-                fixed ({{ fixed_arg }})
+{%- for param in func.params %}
+{%- match param.kind %}
+{%- when CSharpParamKind::PinnedArray with { element_type, ptr_local } %}
+                fixed ({{ element_type }}* {{ ptr_local }} = {{ param.name }})
                 {
+{%- when _ %}
+{%- endmatch %}
 {%- endfor %}
 {%- endif %}
 {%- if func.return_kind.is_void() %}
@@ -56,8 +60,10 @@
             }
 {%- endif %}
 {%- if func.has_pinned_params() %}
-{%- for _fixed_arg in func.pinned_fixed_args() %}
+{%- for param in func.params %}
+{%- if param.is_pinned() %}
                 }
+{%- endif %}
 {%- endfor %}
             }
 {%- endif %}

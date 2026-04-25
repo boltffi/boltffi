@@ -12,7 +12,6 @@ use super::super::super::ast::{
 use super::super::CFunctionName;
 use super::{
     CSharpParamPlan, CSharpWireWriterPlan, native_call_arg_list, native_param_list,
-    pinned_fixed_args,
 };
 
 /// A primitive function binding. Serves double duty: the template uses `name`
@@ -54,27 +53,14 @@ impl CSharpFunctionPlan {
         native_call_arg_list(&self.params)
     }
 
-    /// Declarations for nested `fixed` statements pinning every
-    /// [`CSharpParamKind::PinnedArray`](super::CSharpParamKind::PinnedArray) param in the signature.
-    ///
-    /// Rendered shape for a function with two pinned params:
-    ///
-    /// ```ignore
-    /// [
-    ///   "Location* _locationsPtr = locations",
-    ///   "Trade* _tradesPtr = trades",
-    /// ]
-    /// ```
-    ///
-    /// The template wraps the call in `unsafe { fixed (...) { fixed (...)
-    /// { ... } } }` so Rust reads directly from the C# heap without the
-    /// GC relocating either managed array during the call.
-    pub fn pinned_fixed_args(&self) -> Vec<String> {
-        pinned_fixed_args(&self.params)
-    }
-
+    /// Whether the function has any
+    /// [`CSharpParamKind::PinnedArray`](super::CSharpParamKind::PinnedArray)
+    /// param. Drives the template's `unsafe { fixed (...) { ... } }`
+    /// scaffolding: a true result means at least one `fixed` block (and
+    /// the surrounding `unsafe` block) gets rendered, with `T* _xPtr =
+    /// x` declarators iterated out of `params` directly.
     pub fn has_pinned_params(&self) -> bool {
-        !self.pinned_fixed_args().is_empty()
+        self.params.iter().any(CSharpParamPlan::is_pinned)
     }
 }
 

@@ -11,11 +11,6 @@
         public {{ method.return_type }} {{ method.name }}({% for p in method.params %}{{ p.csharp_type }} {{ p.name }}{% if !loop.last %}, {% endif %}{% endfor %})
 {%- endif %}
         {
-{%- if method.receiver.is_instance_native() %}
-            using var _wire_self = new WireWriter(this.WireEncodedSize());
-            this.WireEncodeTo(_wire_self);
-            byte[] _selfBytes = _wire_self.ToArray();
-{%- endif %}
 {%- for writer in method.wire_writers %}
             using var {{ writer.binding_name }} = new WireWriter({{ writer.size_expr }});
             {{ writer.encode_expr }};
@@ -24,9 +19,13 @@
 {%- if method.has_pinned_params() %}
             unsafe
             {
-{%- for fixed_arg in method.pinned_fixed_args() %}
-                fixed ({{ fixed_arg }})
+{%- for param in method.params %}
+{%- match param.kind %}
+{%- when CSharpParamKind::PinnedArray with { element_type, ptr_local } %}
+                fixed ({{ element_type }}* {{ ptr_local }} = {{ param.name }})
                 {
+{%- when _ %}
+{%- endmatch %}
 {%- endfor %}
 {%- endif %}
 {%- if method.return_kind.is_void() %}
@@ -63,8 +62,10 @@
             }
 {%- endif %}
 {%- if method.has_pinned_params() %}
-{%- for _fixed_arg in method.pinned_fixed_args() %}
+{%- for param in method.params %}
+{%- if param.is_pinned() %}
                 }
+{%- endif %}
 {%- endfor %}
             }
 {%- endif %}

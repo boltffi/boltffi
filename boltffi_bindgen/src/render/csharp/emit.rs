@@ -1,27 +1,18 @@
-//! Two-role module:
-//!
-//! 1. **Orchestrator**: `CSharpEmitter::emit` runs the lowerer, then
-//!    renders each plan entry through its Askama template, assembling
-//!    the `CSharpOutput`.
-//!
-//! 2. **Syntax helpers**: a small remaining library of "ABI op → C#
-//!    source snippet" functions for the write path (`emit_write_expr`
-//!    and friends). The size, encode, and decode paths have all
-//!    migrated to typed AST construction under
-//!    [`super::lower`](super::lower); the write path is the last
-//!    holdout pending its own follow-up.
+//! Orchestrator: [`CSharpEmitter::emit`] runs the lowerer, then renders
+//! each plan entry through its Askama template, assembling the
+//! [`CSharpOutput`]. All "ABI op → C# syntax" translation lives in
+//! [`super::lower`](super::lower) (the size, encode, and decode
+//! sub-modules); this module contains no syntax helpers of its own.
 
 use askama::Template as _;
 
-use crate::ir::ops::ValueExpr;
-use crate::ir::types::PrimitiveType;
 use crate::ir::{AbiContract, FfiContract};
 
 use super::{
-    CSharpOptions, NamingConvention,
+    CSharpOptions,
     ast::{CSharpClassName, CSharpNamespace},
     lower::CSharpLowerer,
-    plan::{CSharpEnumKind, CSharpRecordPlan},
+    plan::CSharpEnumKind,
     templates::{
         EnumCStyleTemplate, EnumDataTemplate, FunctionsTemplate, NativeTemplate, PreambleTemplate,
         RecordTemplate,
@@ -130,95 +121,18 @@ impl CSharpEmitter {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Render helpers: ABI ops -> C# syntax snippets.
-//
-// These are the C# counterparts of the functions in render/java/emit.rs.
-// Each takes a [`ReadSeq`] / [`WriteSeq`] / [`SizeExpr`] / [`ValueExpr`]
-// node from the ABI and produces the C# source that implements it.
-//
-// Scope: supports the subset of ops we need for records with primitive,
-// string, and nested-record fields. Vec / Option / Enum / Builtin / Custom
-// etc. will be added in follow-up PRs. Today they panic so the gap is
-// surfaced loudly rather than silently producing broken output.
-// ---------------------------------------------------------------------------
-
-/// Render a [`ValueExpr`] as a C# value access path.
-///
-/// [`Instance`](ValueExpr::Instance) becomes `this.` (trailing dot joined
-/// by the field walk). A [`Field`](ValueExpr::Field) chain walks outward
-/// producing e.g. `this.Origin.X`. Parameter references keep their
-/// camelCase name; field references convert to PascalCase property names
-/// to match the record struct definition.
-pub fn render_value(expr: &ValueExpr) -> String {
-    match expr {
-        ValueExpr::Instance => "this".to_string(),
-        ValueExpr::Var(name) => name.clone(),
-        ValueExpr::Named(name) => NamingConvention::field_name(name),
-        ValueExpr::Field(parent, field) => {
-            let parent_str = render_value(parent);
-            let field_str = NamingConvention::property_name(field.as_str());
-            format!("{}.{}", parent_str, field_str)
-        }
-    }
-}
-
-pub fn primitive_write_method(primitive: PrimitiveType) -> &'static str {
-    match primitive {
-        PrimitiveType::Bool => "WriteBool",
-        PrimitiveType::I8 => "WriteI8",
-        PrimitiveType::U8 => "WriteU8",
-        PrimitiveType::I16 => "WriteI16",
-        PrimitiveType::U16 => "WriteU16",
-        PrimitiveType::I32 => "WriteI32",
-        PrimitiveType::U32 => "WriteU32",
-        PrimitiveType::I64 => "WriteI64",
-        PrimitiveType::U64 => "WriteU64",
-        PrimitiveType::ISize => "WriteNInt",
-        PrimitiveType::USize => "WriteNUInt",
-        PrimitiveType::F32 => "WriteF32",
-        PrimitiveType::F64 => "WriteF64",
-    }
-}
-
-/// The WireWriter method invocation for a blittable primitive `Vec<T>`,
-/// formatted as `"{method}({value})"` without the receiver. The writer
-/// always prepends a 4-byte length prefix, which serves the nested
-/// position (inside an encoded outer vec) and the future record-field
-/// position. Top-level vec params go through `DirectArray` and never
-/// touch this code path.
-pub fn primitive_vec_writer_call(primitive: PrimitiveType, value: &str) -> String {
-    match primitive {
-        PrimitiveType::Bool => format!("WriteBoolArray({value})"),
-        PrimitiveType::ISize => format!("WriteNIntArray({value})"),
-        PrimitiveType::USize => format!("WriteNUIntArray({value})"),
-        _ => format!("WriteBlittableArray({value})"),
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Ignore unused-import warnings for CSharpRecordPlan in emit.rs while the
-// record template type is defined in templates.rs.
-// ---------------------------------------------------------------------------
-#[allow(dead_code)]
-const _: fn(&CSharpRecordPlan) = |_| {};
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::ir::Lowerer as IrLowerer;
-    use crate::ir::codec::EnumLayout;
     use crate::ir::contract::{FfiContract, PackageInfo};
     use crate::ir::definitions::{
         CStyleVariant, DataVariant, EnumDef, EnumRepr, FieldDef, FunctionDef, MethodDef, ParamDef,
         ParamPassing, Receiver, RecordDef, ReturnDef, VariantPayload,
     };
     use crate::ir::ids::{EnumId, FieldName, FunctionId, MethodId, ParamName, RecordId};
-    use crate::ir::ops::{OffsetExpr, SizeExpr, WireShape};
     use crate::ir::types::{PrimitiveType, TypeExpr};
     use boltffi_ffi_rules::callable::ExecutionKind;
-    use boltffi_ffi_rules::transport::EnumTagStrategy;
-    use std::collections::HashSet;
 
     fn empty_contract() -> FfiContract {
         FfiContract {

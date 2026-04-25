@@ -95,9 +95,9 @@ impl CSharpParamPlan {
                 buffer_and_uintptr_length_local(binding_name.clone())
             }
             CSharpParamKind::DirectArray => buffer_and_uintptr_length_param(&self.name),
-            // `_{name}Ptr` is the pointer local introduced by the enclosing
-            // `fixed` statement; see [`pinned_fixed_arg`]. The cast to
-            // `IntPtr` matches the DllImport signature.
+            // `ptr_local` is the pointer local introduced by the enclosing
+            // `fixed` statement that the template renders for this param.
+            // The cast to `IntPtr` matches the DllImport signature.
             //
             // The Rust FFI shim for `Vec<Passable>` takes a raw byte
             // length and divides by `size_of::<T>()` to recover the
@@ -107,13 +107,10 @@ impl CSharpParamPlan {
             // `UIntPtr` slot. `Unsafe.SizeOf<T>()` is a JIT-time
             // constant for `unmanaged` struct types, so the multiply
             // folds away.
-            CSharpParamKind::PinnedArray { element_type } => {
-                let ptr_local = self
-                    .pinned_ptr_local()
-                    .expect("PinnedArray params must have a pointer local");
+            CSharpParamKind::PinnedArray { element_type, ptr_local } => {
                 let ptr_arg = CSharpExpression::Cast {
                     target: CSharpType::IntPtr,
-                    inner: Box::new(CSharpExpression::Ident(CSharpIdent::Local(ptr_local))),
+                    inner: Box::new(CSharpExpression::Ident(CSharpIdent::Local(ptr_local.clone()))),
                 };
                 let length_arg = CSharpExpression::Cast {
                     target: CSharpType::UIntPtr,
@@ -154,39 +151,12 @@ impl CSharpParamPlan {
         }
     }
 
-    pub fn pinned_fixed_arg(&self) -> Option<String> {
-        match &self.kind {
-            CSharpParamKind::PinnedArray { element_type } => Some(format!(
-                "{element_type}* {ptr_name} = {name}",
-                ptr_name = self
-                    .pinned_ptr_local()
-                    .expect("PinnedArray params must have a pointer local"),
-                name = self.name,
-            )),
-            _ => None,
-        }
+    /// Whether this param needs a `fixed` statement around the native
+    /// call. Drives the `unsafe { fixed (...) { ... } }` scaffolding in
+    /// the wrapper templates.
+    pub fn is_pinned(&self) -> bool {
+        matches!(self.kind, CSharpParamKind::PinnedArray { .. })
     }
-
-    fn pinned_ptr_local(&self) -> Option<CSharpLocalName> {
-        match self.kind {
-            CSharpParamKind::PinnedArray { .. } => {
-                let base_name = self
-                    .name
-                    .as_str()
-                    .strip_prefix('@')
-                    .unwrap_or(self.name.as_str());
-                Some(CSharpLocalName::new(format!("_{base_name}Ptr")))
-            }
-            _ => None,
-        }
-    }
-}
-
-pub(super) fn pinned_fixed_args(params: &[CSharpParamPlan]) -> Vec<String> {
-    params
-        .iter()
-        .filter_map(CSharpParamPlan::pinned_fixed_arg)
-        .collect()
 }
 
 pub(super) fn native_param_list(params: &[CSharpParamPlan]) -> CSharpParameterList {
@@ -323,10 +293,16 @@ pub enum CSharpParamKind {
     /// read the same block of managed heap memory.
     ///
     /// `element_type` is the C# type for `T` (e.g.,
-    /// `CSharpType::Record(Plain("Location"))`), threaded here so
-    /// `pinned_fixed_args` can render `Location* _xPtr = x` without
-    /// re-deriving from `csharp_type`.
-    PinnedArray { element_type: CSharpType },
+    /// `CSharpType::Record(Plain("Location"))`); `ptr_local` is the
+    /// pointer local the template introduces in the `fixed` statement
+    /// (`_xPtr` for a param named `x`). The lowerer derives `ptr_local`
+    /// once via [`CSharpLocalName::for_pinned_ptr`] so the template can
+    /// render `{element_type}* {ptr_local} = {param.name}` without
+    /// re-deriving the name.
+    PinnedArray {
+        element_type: CSharpType,
+        ptr_local: CSharpLocalName,
+    },
 }
 
 /// Bookkeeping for a single record param that must be wire-encoded into a
