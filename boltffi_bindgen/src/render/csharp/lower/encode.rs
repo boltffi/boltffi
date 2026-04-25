@@ -31,12 +31,14 @@ pub(crate) struct EncodeLocalCounters {
 }
 
 impl EncodeLocalCounters {
+    /// Mint the next `opt{n}` pattern-binding local.
     fn next_option_binding(&mut self) -> CSharpLocalName {
         let i = self.option_binding_index;
         self.option_binding_index += 1;
         CSharpLocalName::encode_option_binding(i)
     }
 
+    /// Mint the next `item{n}` loop-variable local.
     fn next_loop_var(&mut self) -> CSharpLocalName {
         let i = self.loop_var_index;
         self.loop_var_index += 1;

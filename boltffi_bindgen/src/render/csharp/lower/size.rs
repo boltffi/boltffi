@@ -1,12 +1,10 @@
-//! Translate an IR [`SizeExpr`] into a typed C# AST. Each variant
-//! maps to the same Display text the old string-based emitter
-//! produced, but the intermediate form is structural so downstream
-//! transforms can inspect it without reparsing source.
+//! Translates an IR [`SizeExpr`] into a typed C# AST. The structural
+//! intermediate form lets downstream transforms inspect the expression
+//! without reparsing source.
 //!
 //! Identifier rebinding (`v` → `sizeOpt0`, `item` → `sizeItem0`) is
 //! handled through the [`Renames`](super::value::Renames) map passed
-//! to [`super::value::render_value`]; there is no post-pass string
-//! scan, and no `replace_identifier_occurrences` call on this path.
+//! to [`super::value::render_value`].
 
 use crate::ir::codec::VecLayout;
 use crate::ir::ops::SizeExpr;
@@ -45,11 +43,10 @@ impl SizeLocalCounters {
     }
 }
 
-/// Render a size expression, threading a shared [`Renames`] map and
-/// [`SizeLocalCounters`] counter so callers can (a) rebind inner `Var`
-/// references without post-pass string rewriting and (b) share
-/// pattern-binding / loop counters across sibling contributions
-/// summed into one method body.
+/// Renders a size expression, threading a shared [`Renames`] map and
+/// [`SizeLocalCounters`] so callers can (a) rebind inner `Var`
+/// references and (b) share pattern-binding and loop counters across
+/// sibling contributions summed into one method body.
 pub(crate) fn lower_size_expr(
     size: &SizeExpr,
     renames: &Renames,
@@ -84,8 +81,7 @@ pub(crate) fn lower_size_expr(
         },
         SizeExpr::Sum(parts) => {
             // The IR guarantees a non-empty sum in every reachable
-            // shape. Reducing left-to-right with `Binary(Add)` mirrors
-            // the old `.join(" + ")` output.
+            // shape. Reduce left-to-right with `Binary(Add)`.
             let mut rendered = parts.iter().map(|p| lower_size_expr(p, renames, locals));
             let first = rendered
                 .next()
@@ -237,9 +233,8 @@ mod tests {
         );
     }
 
-    /// `Sum` with one contribution still wraps in parens; matches the
-    /// old `"({})"` formatting and keeps precedence sane when the sum
-    /// participates in a larger expression.
+    /// `Sum` with one contribution still wraps in parens, keeping
+    /// precedence sane when the sum participates in a larger expression.
     #[test]
     fn sum_with_single_contribution_still_parenthesizes() {
         let size = SizeExpr::Sum(vec![SizeExpr::Fixed(4)]);

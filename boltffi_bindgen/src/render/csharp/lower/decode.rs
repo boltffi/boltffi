@@ -1,6 +1,5 @@
-//! Translate an IR [`ReadSeq`] into a typed C# decode-phase
+//! Translates an IR [`ReadSeq`] into a typed C# decode-phase
 //! expression tree. Companion to [`super::size`] and [`super::encode`].
-//! Replaces the string-based `emit::emit_reader_read`.
 //!
 //! The walker carries a `reader` receiver expression so each
 //! `ReadOp` that needs a stateful read (`reader.ReadX()`) can target
@@ -12,7 +11,7 @@
 //! and encode arcs: the outermost lambda gets `r0`, nested lambdas
 //! advance the counter outward-in.
 //!
-//! Top-level vec returns are dispatched in [`super::super::lower`]
+//! Top-level vec returns are dispatched in [`super::functions`]
 //! (different wire shape: no length prefix). The walker handles only
 //! nested vecs.
 
@@ -151,8 +150,9 @@ pub(crate) fn lower_decode_expr(
             layout: VecLayout::Blittable { .. },
             ..
         } => {
-            // Reached only nested (top-level Vec returns dispatch in
-            // lower.rs). Nested = length-prefixed.
+            // Reached only for nested vecs (top-level Vec returns
+            // dispatch in `super::functions::return_kind`). Nested
+            // means length-prefixed.
             CSharpExpression::MethodCall {
                 receiver: Box::new(reader.clone()),
                 method: nested_blittable_primitive_array_method(*p),
@@ -211,7 +211,7 @@ pub(crate) fn lower_decode_expr(
 /// The reader method for a top-level blittable primitive `Vec<T>`
 /// return (no length prefix; the count comes from `FfiBuf.len`).
 /// Bool, isize, and usize have dedicated methods. Used by the
-/// return-kind classifier in [`super::super::lower`].
+/// return-kind classifier in [`super::functions::return_kind`].
 pub(crate) fn top_level_blittable_primitive_array_method(
     primitive: PrimitiveType,
 ) -> CSharpMethodName {
@@ -355,7 +355,7 @@ mod tests {
 
     /// Inside a data-enum body, a record reference whose class name
     /// collides with a sibling variant must qualify through the module
-    /// namespace — otherwise `Point.Decode(reader)` resolves to the
+    /// namespace; otherwise `Point.Decode(reader)` resolves to the
     /// nested `sealed record Point()` (which has no Decode method).
     #[test]
     fn record_qualifies_when_shadowed_by_sibling_variant() {

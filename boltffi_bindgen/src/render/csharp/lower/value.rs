@@ -1,12 +1,11 @@
-//! Translate an IR [`ValueExpr`] into a typed C# AST reference.
+//! Translates an IR [`ValueExpr`] into a typed C# AST reference.
 //!
-//! Companion to [`super::size`] and (later) the write / read lowering
-//! substeps. Takes a `renames` map so callers can rebind inner `Var`
-//! references without post-pass string rewriting: when a size- or
-//! write-option introduces a pattern binding (`sizeOpt0`, `opt0`) or a
-//! foreach loop introduces an item variable (`sizeItem0`, `item0`),
-//! the caller extends the map before recursing into the inner seq and
-//! this helper substitutes the bound expression at the point of use.
+//! Takes a `renames` map so callers can rebind inner `Var` references
+//! without post-pass string rewriting: when a size- or write-option
+//! introduces a pattern binding (`sizeOpt0`, `opt0`) or a foreach loop
+//! introduces an item variable (`sizeItem0`, `item0`), the caller
+//! extends the map before recursing into the inner seq and this helper
+//! substitutes the bound expression at the point of use.
 
 use std::collections::HashMap;
 
@@ -23,16 +22,15 @@ use super::super::ast::{
 pub(super) type Renames = HashMap<String, CSharpExpression>;
 
 /// Render an IR `ValueExpr` as a typed C# expression under the given
-/// [`Renames`] map. The translation mirrors the previous string-based
-/// `render_value` from `emit.rs` byte-for-byte:
+/// [`Renames`] map.
 ///
 /// - `Instance` → `this`.
 /// - `Var(n)` → the renamed expression if `renames` binds `n`, else a
 ///   free identifier with the raw name.
 /// - `Named(n)` → camelCase-converted free identifier (with the same
-///   keyword escape the old path applied).
+///   keyword escape the param naming applies).
 /// - `Field(parent, f)` → `parent.F` where `F` is the PascalCase
-///   property name (again, with keyword escape to match the old path).
+///   property name (again, with keyword escape).
 pub(super) fn render_value(value: &ValueExpr, renames: &Renames) -> CSharpExpression {
     match value {
         ValueExpr::Instance => CSharpExpression::Identity(CSharpIdentity::This),
