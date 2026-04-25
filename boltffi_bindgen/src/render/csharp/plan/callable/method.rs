@@ -77,10 +77,6 @@ impl CSharpReceiver {
     pub fn is_instance_extension(&self) -> bool {
         matches!(self, Self::InstanceExtension)
     }
-
-    pub fn is_instance_native(&self) -> bool {
-        matches!(self, Self::InstanceNative)
-    }
 }
 
 impl CSharpMethodPlan {
