@@ -61,7 +61,7 @@ pub(crate) fn lower_encode_expr(
         WriteOp::Primitive { primitive, value } => {
             vec![CSharpStatement::Expression(CSharpExpression::MethodCall {
                 receiver: Box::new(writer.clone()),
-                method: CSharpMethodName::from_source(primitive_write_method(*primitive)),
+                method: primitive_write_method(*primitive),
                 type_args: vec![],
                 args: vec![render_value(value, renames)].into(),
             })]
@@ -204,21 +204,24 @@ pub(crate) fn lower_encode_expr(
     }
 }
 
-fn primitive_write_method(primitive: PrimitiveType) -> &'static str {
+fn primitive_write_method(primitive: PrimitiveType) -> CSharpMethodName {
     match primitive {
-        PrimitiveType::Bool => "write_bool",
-        PrimitiveType::I8 => "write_i8",
-        PrimitiveType::U8 => "write_u8",
-        PrimitiveType::I16 => "write_i16",
-        PrimitiveType::U16 => "write_u16",
-        PrimitiveType::I32 => "write_i32",
-        PrimitiveType::U32 => "write_u32",
-        PrimitiveType::I64 => "write_i64",
-        PrimitiveType::U64 => "write_u64",
-        PrimitiveType::ISize => "write_nint",
-        PrimitiveType::USize => "write_nuint",
-        PrimitiveType::F32 => "write_f32",
-        PrimitiveType::F64 => "write_f64",
+        // `WriteNInt` / `WriteNUInt` carry a capital `I`/`U` in the
+        // middle of their names; the snake_case splitter would render
+        // them `WriteNint` / `WriteNuint`, so wrap the exact names.
+        PrimitiveType::ISize => CSharpMethodName::new("WriteNInt"),
+        PrimitiveType::USize => CSharpMethodName::new("WriteNUInt"),
+        PrimitiveType::Bool => CSharpMethodName::from_source("write_bool"),
+        PrimitiveType::I8 => CSharpMethodName::from_source("write_i8"),
+        PrimitiveType::U8 => CSharpMethodName::from_source("write_u8"),
+        PrimitiveType::I16 => CSharpMethodName::from_source("write_i16"),
+        PrimitiveType::U16 => CSharpMethodName::from_source("write_u16"),
+        PrimitiveType::I32 => CSharpMethodName::from_source("write_i32"),
+        PrimitiveType::U32 => CSharpMethodName::from_source("write_u32"),
+        PrimitiveType::I64 => CSharpMethodName::from_source("write_i64"),
+        PrimitiveType::U64 => CSharpMethodName::from_source("write_u64"),
+        PrimitiveType::F32 => CSharpMethodName::from_source("write_f32"),
+        PrimitiveType::F64 => CSharpMethodName::from_source("write_f64"),
     }
 }
 
@@ -288,6 +291,21 @@ mod tests {
             value: field_of_this("x"),
         }));
         assert_single(&stmts, "wire.WriteF64(this.X)");
+    }
+
+    #[test]
+    fn pointer_sized_primitive_writes_keep_csharp_helper_casing() {
+        let isize = lower_fresh(&seq(WriteOp::Primitive {
+            primitive: PrimitiveType::ISize,
+            value: ValueExpr::Var("item".to_string()),
+        }));
+        assert_single(&isize, "wire.WriteNInt(item)");
+
+        let usize = lower_fresh(&seq(WriteOp::Primitive {
+            primitive: PrimitiveType::USize,
+            value: ValueExpr::Var("item".to_string()),
+        }));
+        assert_single(&usize, "wire.WriteNUInt(item)");
     }
 
     #[test]
