@@ -1,29 +1,38 @@
-//! C# attribute application syntax: the `[Name(arg, ...)]` decoration
-//! that appears before a parameter, field, method, or class declaration.
-//!
-//! Today's vocabulary covers the P/Invoke marshaling attributes
-//! (`[MarshalAs(UnmanagedType.I1)]`,
-//! `[MarshalAs(UnmanagedType.LPArray, ArraySubType = UnmanagedType.U1)]`).
-//! Both positional and named attribute arguments are supported because
-//! `MarshalAs` mixes them. The C# spec calls these `attribute_argument`s.
+//! C# attribute application: the `[Name(args)]` decoration that
+//! precedes a declaration.
 
 use std::fmt;
 
 use super::{CSharpClassName, CSharpExpression, CSharpPropertyName};
 
-/// A single attribute application. Renders as `[{name}]` when `args`
-/// is empty or `[{name}({args, ...})]` otherwise.
+/// A C# attribute application: a name and an optional argument list,
+/// rendered between square brackets.
+///
+/// Examples:
+/// ```csharp
+/// [Serializable]
+/// [MarshalAs(UnmanagedType.I1)]
+/// [MarshalAs(UnmanagedType.LPArray, ArraySubType = UnmanagedType.U1)]
+/// ```
 #[derive(Debug, Clone)]
-pub struct CSharpAttribute {
-    pub name: CSharpClassName,
-    pub args: Vec<CSharpAttributeArg>,
+pub(crate) struct CSharpAttribute {
+    pub(crate) name: CSharpClassName,
+    pub(crate) args: Vec<CSharpAttributeArg>,
 }
 
-/// One attribute argument. Positional carries a bare expression
-/// (`UnmanagedType.I1`); Named is the C# `name = value` form
-/// (`ArraySubType = UnmanagedType.U1`).
+/// An argument inside an attribute's parens. Either positional or
+/// the `name = value` named form.
+///
+/// Examples:
+/// ```csharp
+/// // Positional
+/// UnmanagedType.I1
+///
+/// // Named
+/// ArraySubType = UnmanagedType.U1
+/// ```
 #[derive(Debug, Clone)]
-pub enum CSharpAttributeArg {
+pub(crate) enum CSharpAttributeArg {
     Positional(CSharpExpression),
     Named {
         name: CSharpPropertyName,

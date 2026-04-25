@@ -23,8 +23,9 @@ use crate::ir::ops::{ReadOp, ReadSeq};
 use crate::ir::types::{PrimitiveType, TypeExpr};
 
 use super::super::ast::{
-    CSharpBinaryOp, CSharpClassName, CSharpExpression, CSharpIdent, CSharpLiteral, CSharpLocalName,
-    CSharpMethodName, CSharpNamespace, CSharpType, CSharpTypeReference,
+    CSharpArgumentList, CSharpBinaryOp, CSharpClassName, CSharpExpression, CSharpIdentity,
+    CSharpLiteral, CSharpLocalName, CSharpMethodName, CSharpNamespace, CSharpType,
+    CSharpTypeReference,
 };
 
 /// Counter state for synthesized C# locals introduced by the decode
@@ -64,19 +65,19 @@ pub(crate) fn lower_decode_expr(
             receiver: Box::new(reader.clone()),
             method: primitive_read_method(*primitive),
             type_args: vec![],
-            args: vec![],
+            args: CSharpArgumentList::default(),
         },
         ReadOp::String { .. } => CSharpExpression::MethodCall {
             receiver: Box::new(reader.clone()),
             method: CSharpMethodName::from_source("read_string"),
             type_args: vec![],
-            args: vec![],
+            args: CSharpArgumentList::default(),
         },
         ReadOp::Bytes { .. } => CSharpExpression::MethodCall {
             receiver: Box::new(reader.clone()),
             method: CSharpMethodName::from_source("read_bytes"),
             type_args: vec![],
-            args: vec![],
+            args: CSharpArgumentList::default(),
         },
         ReadOp::Record { id, .. } => {
             let class_name: CSharpClassName = id.into();
@@ -86,7 +87,7 @@ pub(crate) fn lower_decode_expr(
                 receiver: Box::new(CSharpExpression::TypeRef(type_ref)),
                 method: CSharpMethodName::from_source("decode"),
                 type_args: vec![],
-                args: vec![reader.clone()],
+                args: vec![reader.clone()].into(),
             }
         }
         ReadOp::Enum {
@@ -102,7 +103,7 @@ pub(crate) fn lower_decode_expr(
                 receiver: Box::new(CSharpExpression::TypeRef(CSharpTypeReference::Plain(wire))),
                 method: CSharpMethodName::from_source("decode"),
                 type_args: vec![],
-                args: vec![reader.clone()],
+                args: vec![reader.clone()].into(),
             }
         }
         ReadOp::Enum {
@@ -117,7 +118,7 @@ pub(crate) fn lower_decode_expr(
                 receiver: Box::new(CSharpExpression::TypeRef(type_ref)),
                 method: CSharpMethodName::from_source("decode"),
                 type_args: vec![],
-                args: vec![reader.clone()],
+                args: vec![reader.clone()].into(),
             }
         }
         ReadOp::Option { some, .. } => {
@@ -134,7 +135,7 @@ pub(crate) fn lower_decode_expr(
                         receiver: Box::new(reader.clone()),
                         method: CSharpMethodName::from_source("read_u8"),
                         type_args: vec![],
-                        args: vec![],
+                        args: CSharpArgumentList::default(),
                     }),
                     right: Box::new(CSharpExpression::Literal(CSharpLiteral::Int(0))),
                 }),
@@ -156,7 +157,7 @@ pub(crate) fn lower_decode_expr(
                 receiver: Box::new(reader.clone()),
                 method: nested_blittable_primitive_array_method(*p),
                 type_args: nested_blittable_primitive_array_type_args(*p),
-                args: vec![],
+                args: CSharpArgumentList::default(),
             }
         }
         ReadOp::Vec {
@@ -171,7 +172,7 @@ pub(crate) fn lower_decode_expr(
                 receiver: Box::new(reader.clone()),
                 method: CSharpMethodName::from_source("read_length_prefixed_blittable_array"),
                 type_args: vec![element_ty],
-                args: vec![],
+                args: CSharpArgumentList::default(),
             }
         }
         ReadOp::Vec {
@@ -185,7 +186,7 @@ pub(crate) fn lower_decode_expr(
             // as its receiver.
             let closure_var = locals.next_closure_var();
             let closure_receiver =
-                CSharpExpression::Ident(CSharpIdent::Local(closure_var.clone()));
+                CSharpExpression::Identity(CSharpIdentity::Local(closure_var.clone()));
             let inner = lower_decode_expr(element, &closure_receiver, shadowed, namespace, locals);
             let element_ty = CSharpType::from_type_expr(element_type)
                 .qualify_if_shadowed_opt(shadowed, namespace);
@@ -196,7 +197,8 @@ pub(crate) fn lower_decode_expr(
                 args: vec![CSharpExpression::Lambda {
                     param: closure_var,
                     body: Box::new(inner),
-                }],
+                }]
+                .into(),
             }
         }
         other => todo!(
@@ -285,7 +287,7 @@ mod tests {
     }
 
     fn reader() -> CSharpExpression {
-        CSharpExpression::Ident(CSharpIdent::Local(CSharpLocalName::new("reader")))
+        CSharpExpression::Identity(CSharpIdentity::Local(CSharpLocalName::new("reader")))
     }
 
     fn seq(op: ReadOp) -> ReadSeq {

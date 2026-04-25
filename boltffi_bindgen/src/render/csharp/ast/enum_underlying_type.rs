@@ -1,21 +1,20 @@
-//! The underlying type of a C-style enum: the integral type after the
-//! `:` in `enum Foo : byte { ... }`. Spec name: "underlying type".
-//!
-//! Modeled as its own enum (rather than a [`CSharpType`](super::CSharpType))
-//! because only eight of C#'s integral types are legal here. Putting the
-//! constraint in the type system means the lowerer can't accidentally
-//! hand the template a `string` or a `float`, and downstream code that
-//! receives a `CSharpEnumUnderlyingType` doesn't have to re-check.
-
 use std::fmt;
 
 use crate::ir::types::PrimitiveType;
 
-/// One of the eight integral types C# permits as an enum's underlying
-/// base. `bool`, `char`, `float`, `double`, `decimal`, `nint`, and `nuint`
-/// are not legal here and have no variant.
+/// The integral type after `:` in a C# enum declaration. The C#
+/// spec calls this the enum's underlying type.
+///
+/// Examples:
+/// ```csharp
+/// enum Status : byte { Idle, Active }
+/// //            ^^^^
+///
+/// enum Flags : uint { None = 0, Read = 1 }
+/// //           ^^^^
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CSharpEnumUnderlyingType {
+pub(crate) enum CSharpEnumUnderlyingType {
     SByte,
     Byte,
     Short,
@@ -32,7 +31,7 @@ impl CSharpEnumUnderlyingType {
     /// `bool`, `f32`, `f64`, `isize`, `usize` so the caller can drop
     /// the enum from the supported set instead of constructing an
     /// illegal `enum : nuint`.
-    pub fn for_primitive(primitive: PrimitiveType) -> Option<Self> {
+    pub(crate) fn for_primitive(primitive: PrimitiveType) -> Option<Self> {
         match primitive {
             PrimitiveType::I8 => Some(Self::SByte),
             PrimitiveType::U8 => Some(Self::Byte),

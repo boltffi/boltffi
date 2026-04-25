@@ -10,7 +10,6 @@ use crate::ir::{AbiContract, FfiContract};
 
 use super::{
     CSharpOptions,
-    ast::{CSharpClassName, CSharpNamespace},
     lower::CSharpLowerer,
     plan::CSharpEnumKind,
     templates::{
@@ -32,10 +31,6 @@ pub struct CSharpFile {
 #[derive(Debug, Clone)]
 pub struct CSharpOutput {
     pub files: Vec<CSharpFile>,
-    /// Top-level wrapper class name, used to name the main file.
-    pub class_name: CSharpClassName,
-    /// Namespace for the generated files.
-    pub namespace: CSharpNamespace,
 }
 
 impl CSharpOutput {
@@ -43,7 +38,7 @@ impl CSharpOutput {
     /// and spot-checks that only care about "did this snippet appear
     /// anywhere in the generated code?"
     #[cfg(test)]
-    pub fn combined_source(&self) -> String {
+    pub(crate) fn combined_source(&self) -> String {
         self.files
             .iter()
             .map(|f| f.source.as_str())
@@ -113,11 +108,7 @@ impl CSharpEmitter {
             source: main_source,
         });
 
-        CSharpOutput {
-            files,
-            class_name: module.class_name,
-            namespace: module.namespace,
-        }
+        CSharpOutput { files }
     }
 }
 
@@ -242,8 +233,6 @@ mod tests {
         let contract = empty_contract();
         let output = emit_contract(&contract);
 
-        assert_eq!(output.namespace.as_str(), "DemoLib");
-        assert_eq!(output.class_name.as_str(), "DemoLib");
         assert!(output.combined_source().contains("namespace DemoLib"));
     }
 
@@ -1354,8 +1343,13 @@ mod tests {
         );
         assert_source_contains(
             &src,
-            "_wire_v.WriteI32(v.Length); foreach (string item0 in v) { _wire_v.WriteString(item0); }",
-            "the encode body writes the 4-byte count then loops WriteString over each element",
+            "_wire_v.WriteI32(v.Length);",
+            "the encode body writes the 4-byte count first",
+        );
+        assert_source_contains(
+            &src,
+            "foreach (string item0 in v) { _wire_v.WriteString(item0); }",
+            "the encode body then loops WriteString over each element",
         );
         assert_source_contains(
             &src,
@@ -1394,8 +1388,13 @@ mod tests {
         );
         assert_source_contains(
             &src,
-            "_wire_v.WriteI32(v.Length); foreach (int[] item0 in v) { _wire_v.WriteBlittableArray(item0); }",
-            "the outer write emits the count then loops WriteBlittableArray (which writes its own length prefix) over each inner array",
+            "_wire_v.WriteI32(v.Length);",
+            "the outer write emits the count first",
+        );
+        assert_source_contains(
+            &src,
+            "foreach (int[] item0 in v) { _wire_v.WriteBlittableArray(item0); }",
+            "then loops WriteBlittableArray (which writes its own length prefix) over each inner array",
         );
         assert_source_contains(
             &src,
@@ -1437,8 +1436,13 @@ mod tests {
         );
         assert_source_contains(
             &src,
-            "_wire_v.WriteI32(v.Length); foreach (string[] item0 in v) { _wire_v.WriteI32(item0.Length); foreach (string item1 in item0) { _wire_v.WriteString(item1); }; }",
-            "the encode body nests two foreach loops with distinct loop variables",
+            "_wire_v.WriteI32(v.Length);",
+            "the outer encode writes the outer length first",
+        );
+        assert_source_contains(
+            &src,
+            "foreach (string[] item0 in v) { _wire_v.WriteI32(item0.Length); foreach (string item1 in item0) { _wire_v.WriteString(item1); }; }",
+            "then nests two foreach loops with distinct loop variables",
         );
     }
 
@@ -1479,8 +1483,13 @@ mod tests {
         );
         assert_source_contains(
             enum_src,
-            "wire.WriteI32(_v.Groups.Length); foreach (string[] item0 in _v.Groups) { wire.WriteI32(item0.Length); foreach (string item1 in item0) { wire.WriteString(item1); }; }",
-            "the encode body to prefix only the outer field access and keep the nested foreach bindings untouched",
+            "wire.WriteI32(_v.Groups.Length);",
+            "the outer encode writes the count using the variant-bound `_v` access",
+        );
+        assert_source_contains(
+            enum_src,
+            "foreach (string[] item0 in _v.Groups) { wire.WriteI32(item0.Length); foreach (string item1 in item0) { wire.WriteString(item1); }; }",
+            "then nests two foreach loops with distinct loop variables",
         );
         assert_source_lacks(
             enum_src,
@@ -1575,8 +1584,13 @@ mod tests {
         );
         assert_source_contains(
             &src,
-            "_wire_values.WriteI32(values.Length); foreach (Status item0 in values) { item0.WireEncodeTo(_wire_values); }",
-            "the encode body writes the 4-byte count then loops WireEncodeTo over each enum value",
+            "_wire_values.WriteI32(values.Length);",
+            "the encode body writes the 4-byte count first",
+        );
+        assert_source_contains(
+            &src,
+            "foreach (Status item0 in values) { item0.WireEncodeTo(_wire_values); }",
+            "then loops WireEncodeTo over each enum value",
         );
         assert_source_contains(
             &src,
@@ -1624,8 +1638,13 @@ mod tests {
         );
         assert_source_contains(
             &src,
-            "_wire_values.WriteI32(values.Length); foreach (Shape item0 in values) { item0.WireEncodeTo(_wire_values); }",
-            "the encode body writes the count and loops the data enum's WireEncodeTo over each element",
+            "_wire_values.WriteI32(values.Length);",
+            "the encode body writes the count first",
+        );
+        assert_source_contains(
+            &src,
+            "foreach (Shape item0 in values) { item0.WireEncodeTo(_wire_values); }",
+            "then loops the data enum's WireEncodeTo over each element",
         );
         assert_source_contains(
             &src,
@@ -1676,8 +1695,13 @@ mod tests {
         );
         assert_source_contains(
             &src,
-            "_wire_people.WriteI32(people.Length); foreach (Person item0 in people) { item0.WireEncodeTo(_wire_people); }",
-            "the encode body writes the count and loops the record's WireEncodeTo over each element",
+            "_wire_people.WriteI32(people.Length);",
+            "the encode body writes the count first",
+        );
+        assert_source_contains(
+            &src,
+            "foreach (Person item0 in people) { item0.WireEncodeTo(_wire_people); }",
+            "then loops the record's WireEncodeTo over each element",
         );
         assert_source_contains(
             &src,
@@ -2283,8 +2307,13 @@ mod tests {
         // per-element Option encoding.
         assert_source_contains(
             &src,
-            "_wire_v.WriteI32(v.Length); foreach (int? item0 in v) { if (item0 is { } opt0) { _wire_v.WriteU8((byte)1); _wire_v.WriteI32(opt0); } else { _wire_v.WriteU8((byte)0); }; }",
-            "encode writes the i32 length then loops each element through its own tag + payload",
+            "_wire_v.WriteI32(v.Length);",
+            "encode writes the i32 length first",
+        );
+        assert_source_contains(
+            &src,
+            "foreach (int? item0 in v) { if (item0 is { } opt0) { _wire_v.WriteU8((byte)1); _wire_v.WriteI32(opt0); } else { _wire_v.WriteU8((byte)0); }; }",
+            "then loops each element through its own tag + payload",
         );
         // Decode path: ReadEncodedArray with a per-element closure
         // that reads the tag and either returns (int?)null or the

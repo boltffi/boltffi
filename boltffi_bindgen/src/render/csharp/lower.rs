@@ -40,8 +40,9 @@ use crate::ir::types::TypeExpr;
 use crate::ir::{AbiContract, FfiContract};
 
 use super::ast::{
-    CSharpClassName, CSharpEnumUnderlyingType, CSharpExpression, CSharpIdent, CSharpLocalName,
-    CSharpMethodName, CSharpNamespace, CSharpParamName, CSharpType, CSharpTypeReference,
+    CSharpArgumentList, CSharpClassName, CSharpEnumUnderlyingType, CSharpExpression,
+    CSharpIdentity, CSharpLocalName, CSharpMethodName, CSharpNamespace, CSharpParamName,
+    CSharpType, CSharpTypeReference,
 };
 use super::plan::{
     CFunctionName, CSharpEnumPlan, CSharpEnumKind, CSharpEnumVariantPlan, CSharpFieldPlan, CSharpFunctionPlan,
@@ -315,7 +316,7 @@ impl<'a> CSharpLowerer<'a> {
                     let mut locals = decode::DecodeLocalCounters::default();
                     let closure_var = locals.next_closure_var();
                     let closure_receiver =
-                        CSharpExpression::Ident(CSharpIdent::Local(closure_var.clone()));
+                        CSharpExpression::Identity(CSharpIdentity::Local(closure_var.clone()));
                     let body = decode::lower_decode_expr(
                         &element_seq,
                         &closure_receiver,
@@ -338,7 +339,7 @@ impl<'a> CSharpLowerer<'a> {
                     .expect("Option return must carry decode_ops");
                 let mut locals = decode::DecodeLocalCounters::default();
                 let reader =
-                    CSharpExpression::Ident(CSharpIdent::Local(CSharpLocalName::new("reader")));
+                    CSharpExpression::Identity(CSharpIdentity::Local(CSharpLocalName::new("reader")));
                 let decode_expr = decode::lower_decode_expr(
                     decode_seq,
                     &reader,
@@ -759,7 +760,7 @@ impl<'a> CSharpLowerer<'a> {
             csharp_type,
             wire_decode_expr: decode::lower_decode_expr(
                 &field.decode,
-                &CSharpExpression::Ident(CSharpIdent::Local(CSharpLocalName::new("reader"))),
+                &CSharpExpression::Identity(CSharpIdentity::Local(CSharpLocalName::new("reader"))),
                 Some(shadowed),
                 &self.namespace,
                 decode_locals,
@@ -769,9 +770,9 @@ impl<'a> CSharpLowerer<'a> {
                 &value::Renames::new(),
                 size_locals,
             ),
-            wire_encode_expr: encode::lower_encode_expr(
+            wire_encode_stmts: encode::lower_encode_expr(
                 &prefixed,
-                &CSharpExpression::Ident(CSharpIdent::Local(CSharpLocalName::new("wire"))),
+                &CSharpExpression::Identity(CSharpIdentity::Local(CSharpLocalName::new("wire"))),
                 &value::Renames::new(),
                 encode_locals,
             ),
@@ -978,7 +979,7 @@ impl<'a> CSharpLowerer<'a> {
             csharp_type,
             wire_decode_expr: decode::lower_decode_expr(
                 &decode_seq,
-                &CSharpExpression::Ident(CSharpIdent::Local(CSharpLocalName::new("reader"))),
+                &CSharpExpression::Identity(CSharpIdentity::Local(CSharpLocalName::new("reader"))),
                 None,
                 &self.namespace,
                 decode_locals,
@@ -988,9 +989,9 @@ impl<'a> CSharpLowerer<'a> {
                 &value::Renames::new(),
                 size_locals,
             ),
-            wire_encode_expr: encode::lower_encode_expr(
+            wire_encode_stmts: encode::lower_encode_expr(
                 &encode_seq,
-                &CSharpExpression::Ident(CSharpIdent::Local(CSharpLocalName::new("wire"))),
+                &CSharpExpression::Identity(CSharpIdentity::Local(CSharpLocalName::new("wire"))),
                 &value::Renames::new(),
                 encode_locals,
             ),
@@ -1074,8 +1075,8 @@ impl<'a> CSharpLowerer<'a> {
         let param_name: CSharpParamName = (&param.name).into();
         let binding_name = CSharpLocalName::for_wire_writer(&param_name);
         let bytes_binding_name = CSharpLocalName::for_bytes(&param_name);
-        let writer = CSharpExpression::Ident(CSharpIdent::Local(binding_name.clone()));
-        let encode_expr =
+        let writer = CSharpExpression::Identity(CSharpIdentity::Local(binding_name.clone()));
+        let encode_stmts =
             encode::lower_encode_expr(&encode_ops, &writer, &value::Renames::new(), encode_locals);
         Some(CSharpWireWriterPlan {
             binding_name,
@@ -1086,7 +1087,7 @@ impl<'a> CSharpLowerer<'a> {
                 &value::Renames::new(),
                 size_locals,
             ),
-            encode_expr,
+            encode_stmts,
         })
     }
 
@@ -1279,25 +1280,25 @@ pub(super) fn self_wire_writer() -> CSharpWireWriterPlan {
     let self_param_name = CSharpParamName::new("self");
     let binding_name = CSharpLocalName::for_wire_writer(&self_param_name);
     let bytes_binding_name = CSharpLocalName::for_bytes(&self_param_name);
-    let this_expr = CSharpExpression::Ident(CSharpIdent::This);
+    let this_expr = CSharpExpression::Identity(CSharpIdentity::This);
     let size_expr = CSharpExpression::MethodCall {
         receiver: Box::new(this_expr.clone()),
         method: CSharpMethodName::from_source("wire_encoded_size"),
         type_args: vec![],
-        args: vec![],
+        args: CSharpArgumentList::default(),
     };
-    let encode_expr = CSharpStatement::Expression(CSharpExpression::MethodCall {
+    let encode_stmts = vec![CSharpStatement::Expression(CSharpExpression::MethodCall {
         receiver: Box::new(this_expr),
         method: CSharpMethodName::from_source("wire_encode_to"),
         type_args: vec![],
-        args: vec![CSharpExpression::Ident(CSharpIdent::Local(binding_name.clone()))],
-    });
+        args: vec![CSharpExpression::Identity(CSharpIdentity::Local(binding_name.clone()))].into(),
+    })];
     CSharpWireWriterPlan {
         binding_name,
         bytes_binding_name,
         param_name: self_param_name,
         size_expr,
-        encode_expr,
+        encode_stmts,
     }
 }
 

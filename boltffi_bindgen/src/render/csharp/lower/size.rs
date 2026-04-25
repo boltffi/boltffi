@@ -12,8 +12,8 @@ use crate::ir::codec::VecLayout;
 use crate::ir::ops::SizeExpr;
 
 use super::super::ast::{
-    CSharpBinaryOp, CSharpClassName, CSharpExpression, CSharpIdent, CSharpLiteral, CSharpLocalName,
-    CSharpMethodName, CSharpPropertyName, CSharpTypeReference,
+    CSharpArgumentList, CSharpBinaryOp, CSharpClassName, CSharpExpression, CSharpIdentity,
+    CSharpLiteral, CSharpLocalName, CSharpMethodName, CSharpPropertyName, CSharpTypeReference,
 };
 use super::value::{Renames, render_value};
 
@@ -69,7 +69,7 @@ pub(crate) fn lower_size_expr(
                 }),
                 method: CSharpMethodName::from_source("get_byte_count"),
                 type_args: vec![],
-                args: vec![render_value(value, renames)],
+                args: vec![render_value(value, renames)].into(),
             }
         }
         SizeExpr::BytesLen(value) => CSharpExpression::MemberAccess {
@@ -80,7 +80,7 @@ pub(crate) fn lower_size_expr(
             receiver: Box::new(render_value(value, renames)),
             method: CSharpMethodName::from_source("wire_encoded_size"),
             type_args: vec![],
-            args: vec![],
+            args: CSharpArgumentList::default(),
         },
         SizeExpr::Sum(parts) => {
             // The IR guarantees a non-empty sum in every reachable
@@ -106,7 +106,7 @@ pub(crate) fn lower_size_expr(
             // `Encoding.UTF8.GetByteCount(sizeOpt0)`.
             inner_renames.insert(
                 "v".to_string(),
-                CSharpExpression::Ident(CSharpIdent::Local(binding.clone())),
+                CSharpExpression::Identity(CSharpIdentity::Local(binding.clone())),
             );
             let inner_expr = lower_size_expr(inner, &inner_renames, locals);
             let ternary = CSharpExpression::Paren(Box::new(CSharpExpression::Ternary {
@@ -158,7 +158,7 @@ pub(crate) fn lower_size_expr(
             // against the lambda parameter.
             inner_renames.insert(
                 "item".to_string(),
-                CSharpExpression::Ident(CSharpIdent::Local(loop_var.clone())),
+                CSharpExpression::Identity(CSharpIdentity::Local(loop_var.clone())),
             );
             let inner_expr = lower_size_expr(inner, &inner_renames, locals);
             CSharpExpression::MethodCall {
@@ -173,7 +173,8 @@ pub(crate) fn lower_size_expr(
                         param: loop_var,
                         body: Box::new(inner_expr),
                     },
-                ],
+                ]
+                .into(),
             }
         }
         other => todo!(

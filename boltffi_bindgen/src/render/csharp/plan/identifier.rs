@@ -24,10 +24,6 @@ impl CFunctionName {
     pub fn new(name: String) -> Self {
         Self(name)
     }
-
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
 }
 
 impl fmt::Display for CFunctionName {
@@ -55,7 +51,6 @@ mod tests {
     #[test]
     fn c_function_name_wraps_complete_symbol() {
         let name = CFunctionName::new("boltffi_echo_i32".to_string());
-        assert_eq!(name.as_str(), "boltffi_echo_i32");
         assert_eq!(name.to_string(), "boltffi_echo_i32");
     }
 }

@@ -11,7 +11,9 @@
 {%- endfor %}
 {%- for writer in func.wire_writers %}
             using var {{ writer.binding_name }} = new WireWriter({{ writer.size_expr }});
-            {{ writer.encode_expr }};
+{%- for stmt in writer.encode_stmts %}
+            {{ stmt }};
+{%- endfor %}
             byte[] {{ writer.bytes_binding_name }} = {{ writer.binding_name }}.ToArray();
 {%- endfor %}
 {%- if func.has_pinned_params() %}

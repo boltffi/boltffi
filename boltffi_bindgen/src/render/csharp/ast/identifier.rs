@@ -1,13 +1,6 @@
-//! Typed C# identifier vocabulary. One newtype per role so the AST
-//! captures what each string actually is (a class name vs. a method
-//! name vs. a local binding), and the compiler catches category
-//! errors at construction sites.
-//!
-//! Absorbs the logic that used to live in `names.rs`: the
-//! source-to-C# transformation (snake_case → PascalCase / camelCase)
-//! and the `@`-escape for C# keyword collisions. C-side identifiers
-//! (e.g. [`CFunctionName`](super::super::plan::CFunctionName)) live
-//! in `plan/`: they name FFI symbols, not C# grammar.
+//! C# identifier vocabulary, with one newtype per role (class name,
+//! method name, parameter name, etc.) so call sites can't cross
+//! categories.
 
 use std::collections::HashSet;
 use std::fmt;
@@ -16,13 +9,20 @@ use boltffi_ffi_rules::naming;
 
 use crate::ir::ids::{EnumId, FieldName, FunctionId, MethodId, ParamName, RecordId, VariantName};
 
-/// A C# class or struct name (e.g., `"Point"`, `"Shape"`).
+/// A C# class, struct, or record name in PascalCase.
+///
+/// Examples:
+/// ```csharp
+/// Point
+/// Status
+/// MyRecord
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct CSharpClassName(String);
+pub(crate) struct CSharpClassName(String);
 
 impl CSharpClassName {
     /// Builds from a snake_case source name. `my_record` → `"MyRecord"`.
-    pub fn from_source(source: &str) -> Self {
+    pub(crate) fn from_source(source: &str) -> Self {
         Self(naming::to_upper_camel_case(source))
     }
 
@@ -30,23 +30,23 @@ impl CSharpClassName {
     /// library or built-in type references whose C# spelling is fixed
     /// (`Encoding`, `WireWriter`, `WireReader`) and so doesn't round-
     /// trip through the snake_case convention.
-    pub fn new(name: impl Into<String>) -> Self {
+    pub(crate) fn new(name: impl Into<String>) -> Self {
         Self(name.into())
     }
 
     /// `{base}Wire`: the companion static class hosting a C-style
     /// enum's wire codec helpers.
-    pub fn wire_helper(base: &CSharpClassName) -> Self {
+    pub(crate) fn wire_helper(base: &CSharpClassName) -> Self {
         Self(format!("{}Wire", base.0))
     }
 
     /// `{base}Methods`: the companion static class hosting a C-style
     /// enum's methods, since C# enums can't carry members directly.
-    pub fn methods_companion(base: &CSharpClassName) -> Self {
+    pub(crate) fn methods_companion(base: &CSharpClassName) -> Self {
         Self(format!("{}Methods", base.0))
     }
 
-    pub fn as_str(&self) -> &str {
+    pub(crate) fn as_str(&self) -> &str {
         &self.0
     }
 }
@@ -75,19 +75,16 @@ impl From<&VariantName> for CSharpClassName {
     }
 }
 
-/// A reference to a user-defined C# class, record, or enum at a render
-/// site. Either bare (`Plain("Point")` → emits `"Point"`) or fully
-/// qualified through the global namespace
-/// (`Qualified { Demo, Point }` → emits `"global::Demo.Point"`).
+/// A reference to a user-defined C# type, either by its bare name or
+/// fully qualified through the `global::` namespace alias.
 ///
-/// Qualified is used when the bare name would resolve wrong at the
-/// render site. Today that's inside a data enum's body, where nested
-/// `sealed record` variants shadow module-level types of the same
-/// name. [`Self::qualify_if_shadowed`] is the one decision point that
-/// switches a `Plain` into a `Qualified`; plain is the default and
-/// flows through every other path unchanged.
+/// Examples:
+/// ```csharp
+/// Point
+/// global::Demo.Point
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum CSharpTypeReference {
+pub(crate) enum CSharpTypeReference {
     Plain(CSharpClassName),
     Qualified {
         namespace: CSharpNamespace,
@@ -99,7 +96,7 @@ impl CSharpTypeReference {
     /// Promote `Plain(name)` to the qualified form when `name` is in
     /// `shadowed`. `Qualified` passes through untouched; once a
     /// reference has been qualified, re-qualification is a no-op.
-    pub fn qualify_if_shadowed(
+    pub(crate) fn qualify_if_shadowed(
         self,
         shadowed: &HashSet<CSharpClassName>,
         namespace: &CSharpNamespace,
@@ -117,7 +114,7 @@ impl CSharpTypeReference {
     /// pass through when `None`. Mirrors
     /// [`CSharpType::qualify_if_shadowed_opt`](super::CSharpType::qualify_if_shadowed_opt)
     /// for callers that may or may not be inside a shadowing scope.
-    pub fn qualify_if_shadowed_opt(
+    pub(crate) fn qualify_if_shadowed_opt(
         self,
         shadowed: Option<&HashSet<CSharpClassName>>,
         namespace: &CSharpNamespace,
@@ -128,14 +125,6 @@ impl CSharpTypeReference {
         }
     }
 
-    /// The underlying class name, stripped of any qualification.
-    /// Callers that care about identity (rather than render form) go
-    /// through here.
-    pub fn class_name(&self) -> &CSharpClassName {
-        match self {
-            Self::Plain(name) | Self::Qualified { name, .. } => name,
-        }
-    }
 }
 
 impl fmt::Display for CSharpTypeReference {
@@ -153,13 +142,20 @@ impl From<CSharpClassName> for CSharpTypeReference {
     }
 }
 
-/// A C# method identifier (e.g., `"EchoI32"`).
+/// A C# method name in PascalCase.
+///
+/// Examples:
+/// ```csharp
+/// Decode
+/// EchoI32
+/// WireEncodeTo
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct CSharpMethodName(String);
+pub(crate) struct CSharpMethodName(String);
 
 impl CSharpMethodName {
     /// Builds from a snake_case source name. `do_thing` → `"DoThing"`.
-    pub fn from_source(source: &str) -> Self {
+    pub(crate) fn from_source(source: &str) -> Self {
         Self(naming::to_upper_camel_case(source))
     }
 
@@ -169,7 +165,7 @@ impl CSharpMethodName {
     /// acronym that resists the usual splitter (e.g.,
     /// `WriteNIntArray` where `NInt` wants a capital `I` in the
     /// middle of a segment).
-    pub fn new(name: impl Into<String>) -> Self {
+    pub(crate) fn new(name: impl Into<String>) -> Self {
         Self(name.into())
     }
 
@@ -177,11 +173,11 @@ impl CSharpMethodName {
     /// shared `NativeMethods` class. Two types may declare methods of
     /// the same name, and the DllImport class is flat, so the owner
     /// class name is prefixed to disambiguate.
-    pub fn native_for_owner(owner: &CSharpClassName, method: &CSharpMethodName) -> Self {
+    pub(crate) fn native_for_owner(owner: &CSharpClassName, method: &CSharpMethodName) -> Self {
         Self(format!("{}{}", owner.as_str(), method.as_str()))
     }
 
-    pub fn as_str(&self) -> &str {
+    pub(crate) fn as_str(&self) -> &str {
         &self.0
     }
 }
@@ -204,18 +200,21 @@ impl From<&MethodId> for CSharpMethodName {
     }
 }
 
-/// A C# property identifier on a record (e.g., `"X"`, `"Radius"`).
+/// A C# property name in PascalCase.
+///
+/// Examples:
+/// ```csharp
+/// X
+/// Radius
+/// MyProp
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct CSharpPropertyName(String);
+pub(crate) struct CSharpPropertyName(String);
 
 impl CSharpPropertyName {
     /// Builds from a snake_case source name. `my_prop` → `"MyProp"`.
-    pub fn from_source(source: &str) -> Self {
+    pub(crate) fn from_source(source: &str) -> Self {
         Self(naming::to_upper_camel_case(source))
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.0
     }
 }
 
@@ -231,26 +230,32 @@ impl From<&FieldName> for CSharpPropertyName {
     }
 }
 
-/// A C# parameter name as it appears in the public wrapper signature
-/// (e.g., `"value"`, `"@class"`). `@`-escaped when the transformed
-/// form collides with a reserved keyword.
+/// A C# parameter name in camelCase. Reserved keywords are
+/// `@`-escaped to make them legal identifiers.
+///
+/// Examples:
+/// ```csharp
+/// value
+/// myParam
+/// @class
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct CSharpParamName(String);
+pub(crate) struct CSharpParamName(String);
 
 impl CSharpParamName {
     /// Builds from a snake_case source name. `my_param` → `"myParam"`.
-    pub fn from_source(source: &str) -> Self {
+    pub(crate) fn from_source(source: &str) -> Self {
         Self(escape_if_keyword(naming::snake_to_camel(source)))
     }
 
     /// Wraps a pre-formed param name. Used to build derived names
     /// without re-running the snake-case transform (e.g.
     /// `"{name}Len"` length params on the DllImport side).
-    pub fn new(name: impl Into<String>) -> Self {
+    pub(crate) fn new(name: impl Into<String>) -> Self {
         Self(name.into())
     }
 
-    pub fn as_str(&self) -> &str {
+    pub(crate) fn as_str(&self) -> &str {
         &self.0
     }
 
@@ -275,33 +280,52 @@ impl From<&ParamName> for CSharpParamName {
     }
 }
 
-/// A C# local variable synthesized by the lowerer
-/// (e.g., `"_personBytes"`, `"_wire_point"`). Not derived from a user
-/// source; constructed by the lowerer according to fixed conventions
-/// for each role.
+/// A C# identifier introduced inside a method body. Covers four
+/// roles that the C# spec names separately but that share one
+/// syntactic position: a local variable, a `foreach` iteration
+/// variable, a lambda parameter, and an `is`-pattern variable.
+///
+/// Examples:
+/// ```csharp
+/// // Local variable
+/// byte[] _personBytes = Encoding.UTF8.GetBytes(person);
+/// //     ^^^^^^^^^^^^
+///
+/// // foreach iteration variable
+/// foreach (string item0 in items) { ... }
+/// //               ^^^^^
+///
+/// // Lambda parameter
+/// items.Select(r0 => r0.Decode());
+/// //           ^^
+///
+/// // is-pattern variable
+/// if (this.Name is { } opt0) { ... }
+/// //                   ^^^^
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct CSharpLocalName(String);
+pub(crate) struct CSharpLocalName(String);
 
 impl CSharpLocalName {
     /// Wraps a pre-formed local-variable name. Used for fixed-vocabulary
     /// locals that the lowerer doesn't synthesize from a counter or
     /// transform from a source name (`reader`, `wire`, IR-supplied
     /// rebinding placeholders).
-    pub fn new(name: impl Into<String>) -> Self {
+    pub(crate) fn new(name: impl Into<String>) -> Self {
         Self(name.into())
     }
 
     /// `_wire_{param}`: the `WireWriter` instance a record param is
     /// encoded into. `@`-escape is stripped from `param` so the
     /// produced name stays a valid C# identifier.
-    pub fn for_wire_writer(param: &CSharpParamName) -> Self {
+    pub(crate) fn for_wire_writer(param: &CSharpParamName) -> Self {
         Self(format!("_wire_{}", param.stripped()))
     }
 
     /// `_{param}Bytes`: the `byte[]` holding the encoded payload of a
     /// string or wire-encoded-record param. `@`-escape is stripped
     /// from `param` for the same reason.
-    pub fn for_bytes(param: &CSharpParamName) -> Self {
+    pub(crate) fn for_bytes(param: &CSharpParamName) -> Self {
         Self(format!("_{}Bytes", param.stripped()))
     }
 
@@ -309,7 +333,7 @@ impl CSharpLocalName {
     /// statement that pins a `PinnedArray` param. `@`-escape is
     /// stripped for the same identifier-validity reason as
     /// [`Self::for_bytes`].
-    pub fn for_pinned_ptr(param: &CSharpParamName) -> Self {
+    pub(crate) fn for_pinned_ptr(param: &CSharpParamName) -> Self {
         Self(format!("_{}Ptr", param.stripped()))
     }
 
@@ -319,14 +343,14 @@ impl CSharpLocalName {
     /// distinct from the write-side `opt{n}` because pattern variables
     /// leak into the enclosing method scope and the size ternary plus
     /// the write `if` statement coexist in the same method body.
-    pub fn size_option_binding(n: usize) -> Self {
+    pub(crate) fn size_option_binding(n: usize) -> Self {
         Self(format!("sizeOpt{n}"))
     }
 
     /// `sizeItem{n}`: the per-iteration loop variable inside
     /// `WireWriter.EncodedArraySize`'s size-lambda. Distinct from the
     /// write-side `item{n}` for the same method-scope reason.
-    pub fn size_loop_var(n: usize) -> Self {
+    pub(crate) fn size_loop_var(n: usize) -> Self {
         Self(format!("sizeItem{n}"))
     }
 
@@ -334,14 +358,14 @@ impl CSharpLocalName {
     /// phase `if` statement that writes a `WriteOp::Option`. Distinct
     /// from the size-phase `sizeOpt{n}` so the two emissions can
     /// coexist in one method body without redeclaring the same local.
-    pub fn encode_option_binding(n: usize) -> Self {
+    pub(crate) fn encode_option_binding(n: usize) -> Self {
         Self(format!("opt{n}"))
     }
 
     /// `item{n}`: the per-iteration loop variable inside the encode-
     /// phase `foreach` block for an encoded vec. Distinct from the
     /// size-phase `sizeItem{n}` for the same method-scope reason.
-    pub fn encode_loop_var(n: usize) -> Self {
+    pub(crate) fn encode_loop_var(n: usize) -> Self {
         Self(format!("item{n}"))
     }
 
@@ -350,12 +374,8 @@ impl CSharpLocalName {
     /// vec introduces its own lambda, so siblings need distinct
     /// counter values to avoid shadowing inside the enclosing method
     /// body.
-    pub fn decode_closure_var(n: usize) -> Self {
+    pub(crate) fn decode_closure_var(n: usize) -> Self {
         Self(format!("r{n}"))
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.0
     }
 }
 
@@ -365,19 +385,22 @@ impl fmt::Display for CSharpLocalName {
     }
 }
 
-/// A C# namespace (e.g., `"DemoLib"`).
+/// A C# namespace name in PascalCase, used after the `namespace`
+/// keyword.
+///
+/// Examples:
+/// ```csharp
+/// namespace DemoLib { ... }
+/// namespace MyCompany.Generated { ... }
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct CSharpNamespace(String);
+pub(crate) struct CSharpNamespace(String);
 
 impl CSharpNamespace {
     /// Builds from a snake_case source name (typically the crate name).
     /// `demo_lib` → `"DemoLib"`.
-    pub fn from_source(source: &str) -> Self {
+    pub(crate) fn from_source(source: &str) -> Self {
         Self(naming::to_upper_camel_case(source))
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.0
     }
 }
 
@@ -526,14 +549,14 @@ mod tests {
     #[test]
     fn csharp_property_name_from_snake_case_produces_pascal_case() {
         let name = CSharpPropertyName::from_source("my_prop");
-        assert_eq!(name.as_str(), "MyProp");
+        assert_eq!(name.to_string(), "MyProp");
     }
 
     #[test]
     fn csharp_property_name_from_field_name_converts_through_source() {
         let field = FieldName::new("radius");
         let name: CSharpPropertyName = (&field).into();
-        assert_eq!(name.as_str(), "Radius");
+        assert_eq!(name.to_string(), "Radius");
     }
 
     #[test]
@@ -559,7 +582,7 @@ mod tests {
     fn csharp_local_name_for_wire_writer_prefixes_param() {
         let param = CSharpParamName::from_source("point");
         let local = CSharpLocalName::for_wire_writer(&param);
-        assert_eq!(local.as_str(), "_wire_point");
+        assert_eq!(local.to_string(), "_wire_point");
     }
 
     /// A `@`-escaped param name must not carry the `@` into a derived
@@ -569,14 +592,14 @@ mod tests {
     fn csharp_local_name_for_bytes_strips_keyword_escape() {
         let param = CSharpParamName::from_source("class");
         let local = CSharpLocalName::for_bytes(&param);
-        assert_eq!(local.as_str(), "_classBytes");
+        assert_eq!(local.to_string(), "_classBytes");
     }
 
     #[test]
     fn csharp_local_name_for_bytes_uses_param_directly_when_not_escaped() {
         let param = CSharpParamName::from_source("value");
         let local = CSharpLocalName::for_bytes(&param);
-        assert_eq!(local.as_str(), "_valueBytes");
+        assert_eq!(local.to_string(), "_valueBytes");
     }
 
     #[rstest::rstest]
@@ -587,7 +610,7 @@ mod tests {
         #[case] n: usize,
         #[case] expected: &str,
     ) {
-        assert_eq!(CSharpLocalName::size_option_binding(n).as_str(), expected);
+        assert_eq!(CSharpLocalName::size_option_binding(n).to_string(), expected);
     }
 
     #[rstest::rstest]
@@ -598,7 +621,7 @@ mod tests {
         #[case] n: usize,
         #[case] expected: &str,
     ) {
-        assert_eq!(CSharpLocalName::size_loop_var(n).as_str(), expected);
+        assert_eq!(CSharpLocalName::size_loop_var(n).to_string(), expected);
     }
 
     #[rstest::rstest]
@@ -609,7 +632,7 @@ mod tests {
         #[case] n: usize,
         #[case] expected: &str,
     ) {
-        assert_eq!(CSharpLocalName::encode_option_binding(n).as_str(), expected);
+        assert_eq!(CSharpLocalName::encode_option_binding(n).to_string(), expected);
     }
 
     #[rstest::rstest]
@@ -620,7 +643,7 @@ mod tests {
         #[case] n: usize,
         #[case] expected: &str,
     ) {
-        assert_eq!(CSharpLocalName::encode_loop_var(n).as_str(), expected);
+        assert_eq!(CSharpLocalName::encode_loop_var(n).to_string(), expected);
     }
 
     #[rstest::rstest]
@@ -631,7 +654,7 @@ mod tests {
         #[case] n: usize,
         #[case] expected: &str,
     ) {
-        assert_eq!(CSharpLocalName::decode_closure_var(n).as_str(), expected);
+        assert_eq!(CSharpLocalName::decode_closure_var(n).to_string(), expected);
     }
 
     #[test]
@@ -642,7 +665,7 @@ mod tests {
     #[test]
     fn csharp_namespace_from_snake_case_produces_pascal_case() {
         let ns = CSharpNamespace::from_source("demo_lib");
-        assert_eq!(ns.as_str(), "DemoLib");
+        assert_eq!(ns.to_string(), "DemoLib");
     }
 
     mod csharp_type_reference {
@@ -698,18 +721,6 @@ mod tests {
             let ns = CSharpNamespace::from_source("demo");
             let qualified = r.qualify_if_shadowed(&shadowed(&["point"]), &ns);
             assert_eq!(qualified.to_string(), "global::Demo.Point");
-        }
-
-        #[test]
-        fn class_name_exposes_underlying_name_on_both_variants() {
-            let plain: CSharpTypeReference = CSharpClassName::from_source("point").into();
-            assert_eq!(plain.class_name().as_str(), "Point");
-
-            let qualified = CSharpTypeReference::Qualified {
-                namespace: CSharpNamespace::from_source("demo"),
-                name: CSharpClassName::from_source("point"),
-            };
-            assert_eq!(qualified.class_name().as_str(), "Point");
         }
 
         #[test]

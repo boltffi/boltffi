@@ -22,7 +22,9 @@ pub struct CSharpFieldPlan {
     /// Expression that produces the wire-encoded byte size of this
     /// field (e.g., `8`, `WireWriter.StringWireSize(this.Name)`).
     pub wire_size_expr: CSharpExpression,
-    /// Statement that writes this field to a `WireWriter` named
-    /// `wire` (e.g., `wire.WriteF64(this.X)`).
-    pub wire_encode_expr: CSharpStatement,
+    /// Statements that write this field to a `WireWriter` named
+    /// `wire`. Most fields produce a single statement; a length-
+    /// prefixed encoded array produces two (the length write and
+    /// the per-element loop).
+    pub wire_encode_stmts: Vec<CSharpStatement>,
 }

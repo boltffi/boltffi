@@ -5,7 +5,7 @@
 //! members and how `self` crosses the ABI.
 
 use super::super::super::ast::{
-    CSharpArgumentList, CSharpClassName, CSharpExpression, CSharpIdent, CSharpLocalName,
+    CSharpArgumentList, CSharpClassName, CSharpExpression, CSharpIdentity, CSharpLocalName,
     CSharpMethodName, CSharpParameter, CSharpParameterList, CSharpParamName, CSharpPropertyName,
     CSharpType, CSharpTypeReference,
 };
@@ -80,10 +80,6 @@ impl CSharpReceiver {
 }
 
 impl CSharpMethodPlan {
-    pub fn is_void(&self) -> bool {
-        matches!(self.return_kind, CSharpReturnKind::Void)
-    }
-
     /// Whether the method has any
     /// [`CSharpParamKind::PinnedArray`](super::CSharpParamKind::PinnedArray)
     /// param. See [`CSharpFunctionPlan::has_pinned_params`](super::CSharpFunctionPlan::has_pinned_params).
@@ -165,7 +161,7 @@ fn self_param(csharp_type: CSharpType) -> CSharpParameter {
 }
 
 fn local_ident(name: &str) -> CSharpExpression {
-    CSharpExpression::Ident(CSharpIdent::Local(CSharpLocalName::new(name)))
+    CSharpExpression::Identity(CSharpIdentity::Local(CSharpLocalName::new(name)))
 }
 
 /// `(UIntPtr){receiver}.Length` — same shape as the per-param length

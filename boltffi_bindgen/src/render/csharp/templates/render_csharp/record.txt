@@ -41,7 +41,9 @@ namespace {{ namespace }}
         internal void WireEncodeTo(WireWriter wire)
         {
 {%- for field in record.fields %}
-            {{ field.wire_encode_expr }};
+{%- for stmt in field.wire_encode_stmts %}
+            {{ stmt }};
+{%- endfor %}
 {%- endfor %}
         }
     }

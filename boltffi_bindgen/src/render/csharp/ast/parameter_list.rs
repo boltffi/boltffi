@@ -1,25 +1,30 @@
-//! C# `parameter` and `parameter_list` productions: a single
-//! parameter (optional attributes, type, name) and a comma-separated
-//! list of them inside the parens of a method declaration.
+//! A C# method's parameter declaration: a single parameter and the
+//! comma-separated list of them between the method's parens.
 
 use std::fmt;
 
 use super::{CSharpAttribute, CSharpParamName, CSharpType};
 
-/// A single C# parameter declaration. Attributes (today: `MarshalAs`)
-/// render before the type, separated by spaces. The name follows the
-/// type, separated by one space.
+/// A single C# parameter declaration: optional attributes, then the
+/// type, then the name.
+///
+/// Examples:
+/// ```csharp
+/// int value
+/// byte[] data
+/// [MarshalAs(UnmanagedType.I1)] bool flag
+/// ```
 #[derive(Debug, Clone)]
-pub struct CSharpParameter {
-    pub attributes: Vec<CSharpAttribute>,
-    pub csharp_type: CSharpType,
-    pub name: CSharpParamName,
+pub(crate) struct CSharpParameter {
+    pub(crate) attributes: Vec<CSharpAttribute>,
+    pub(crate) csharp_type: CSharpType,
+    pub(crate) name: CSharpParamName,
 }
 
 impl CSharpParameter {
-    /// A bare parameter with no attributes — the common case for
+    /// A bare parameter with no attributes. The common case for
     /// public wrapper signatures.
-    pub fn bare(csharp_type: CSharpType, name: CSharpParamName) -> Self {
+    pub(crate) fn bare(csharp_type: CSharpType, name: CSharpParamName) -> Self {
         Self {
             attributes: vec![],
             csharp_type,
@@ -37,31 +42,39 @@ impl fmt::Display for CSharpParameter {
     }
 }
 
-/// A typed C# parameter list. Display joins parameters with `, `;
-/// an empty list renders as the empty string so call sites can drop
-/// it directly between the open and close parens.
+/// The comma-separated parameters between the parens of a C# method
+/// declaration.
+///
+/// Examples:
+/// ```csharp
+/// // Empty
+///
+/// // Single
+/// int value
+///
+/// // Multiple
+/// [MarshalAs(UnmanagedType.I1)] bool flag, byte[] v, uint count
+/// ```
 #[derive(Debug, Clone, Default)]
-pub struct CSharpParameterList(Vec<CSharpParameter>);
+pub(crate) struct CSharpParameterList(Vec<CSharpParameter>);
 
 impl CSharpParameterList {
-    pub fn new(params: Vec<CSharpParameter>) -> Self {
-        Self(params)
-    }
-
-    pub fn empty() -> Self {
+    pub(crate) fn empty() -> Self {
         Self(Vec::new())
     }
 
-    pub fn push(&mut self, param: CSharpParameter) {
+    pub(crate) fn push(&mut self, param: CSharpParameter) {
         self.0.push(param);
     }
 
-    pub fn extend(&mut self, params: impl IntoIterator<Item = CSharpParameter>) {
+    pub(crate) fn extend(&mut self, params: impl IntoIterator<Item = CSharpParameter>) {
         self.0.extend(params);
     }
+}
 
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
+impl From<Vec<CSharpParameter>> for CSharpParameterList {
+    fn from(params: Vec<CSharpParameter>) -> Self {
+        Self(params)
     }
 }
 
@@ -135,7 +148,7 @@ mod tests {
 
     #[test]
     fn single_param_renders_without_separator() {
-        let list = CSharpParameterList::new(vec![param("v", CSharpType::String)]);
+        let list: CSharpParameterList = vec![param("v", CSharpType::String)].into();
         assert_eq!(list.to_string(), "string v");
     }
 
@@ -144,7 +157,7 @@ mod tests {
     /// at the end. Templates rely on this exact spacing.
     #[test]
     fn mixed_list_pins_canonical_dllimport_param_spacing() {
-        let list = CSharpParameterList::new(vec![
+        let list: CSharpParameterList = vec![
             CSharpParameter {
                 attributes: vec![marshal_as("I1")],
                 csharp_type: CSharpType::Bool,
@@ -153,7 +166,8 @@ mod tests {
             param("v", CSharpType::Array(Box::new(CSharpType::Byte))),
             param("vLen", CSharpType::UIntPtr),
             param("count", CSharpType::UInt),
-        ]);
+        ]
+        .into();
         assert_eq!(
             list.to_string(),
             "[MarshalAs(UnmanagedType.I1)] bool flag, byte[] v, UIntPtr vLen, uint count"

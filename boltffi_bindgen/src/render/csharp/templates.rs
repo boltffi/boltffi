@@ -77,8 +77,9 @@ pub struct EnumDataTemplate<'a> {
 mod tests {
     use super::*;
     use crate::render::csharp::ast::{
-        CSharpClassName, CSharpEnumUnderlyingType, CSharpExpression, CSharpMethodName,
-        CSharpParamName, CSharpPropertyName, CSharpStatement, CSharpType,
+        CSharpArgumentList, CSharpBinaryOp, CSharpClassName, CSharpEnumUnderlyingType,
+        CSharpExpression, CSharpIdentity, CSharpLiteral, CSharpLocalName, CSharpMethodName,
+        CSharpParamName, CSharpPropertyName, CSharpStatement, CSharpType, CSharpTypeReference,
     };
     use crate::render::csharp::plan::{
         CFunctionName, CSharpEnumPlan, CSharpEnumKind, CSharpEnumVariantPlan, CSharpFieldPlan, CSharpMethodPlan,
@@ -107,17 +108,123 @@ mod tests {
     fn record_field(
         name: &str,
         csharp_type: CSharpType,
-        decode: &str,
-        size: &str,
-        encode: &str,
+        decode: CSharpExpression,
+        size: CSharpExpression,
+        encode: CSharpStatement,
     ) -> CSharpFieldPlan {
         CSharpFieldPlan {
             name: CSharpPropertyName::from_source(name),
             csharp_type,
-            wire_decode_expr: CSharpExpression::Raw(decode.to_string()),
-            wire_size_expr: CSharpExpression::Raw(size.to_string()),
-            wire_encode_expr: CSharpStatement::Raw(encode.to_string()),
+            wire_decode_expr: decode,
+            wire_size_expr: size,
+            wire_encode_stmts: vec![encode],
         }
+    }
+
+    fn local_ident(name: &str) -> CSharpExpression {
+        CSharpExpression::Identity(CSharpIdentity::Local(CSharpLocalName::new(name)))
+    }
+
+    /// `reader.{Method}()` — the canonical decode shape for primitives,
+    /// `String`, and `Bytes`.
+    fn read_call(method: &str) -> CSharpExpression {
+        CSharpExpression::MethodCall {
+            receiver: Box::new(local_ident("reader")),
+            method: CSharpMethodName::from_source(method),
+            type_args: vec![],
+            args: CSharpArgumentList::default(),
+        }
+    }
+
+    /// `{Class}.Decode(reader)` — the decode shape for record-typed and
+    /// C-style-enum-wire-helper-typed fields.
+    fn class_decode(class: &str) -> CSharpExpression {
+        CSharpExpression::MethodCall {
+            receiver: Box::new(CSharpExpression::TypeRef(CSharpTypeReference::Plain(
+                CSharpClassName::new(class),
+            ))),
+            method: CSharpMethodName::from_source("decode"),
+            type_args: vec![],
+            args: vec![local_ident("reader")].into(),
+        }
+    }
+
+    /// `n` — integer literal, the size shape for primitives and
+    /// fixed-size composites.
+    fn int_lit(n: i64) -> CSharpExpression {
+        CSharpExpression::Literal(CSharpLiteral::Int(n))
+    }
+
+    /// `wire.{Method}(this.{Field})` as a statement — the encode shape
+    /// for primitive-typed and string-typed record fields.
+    fn wire_write_this(method: &str, field: &str) -> CSharpStatement {
+        CSharpStatement::Expression(CSharpExpression::MethodCall {
+            receiver: Box::new(local_ident("wire")),
+            method: CSharpMethodName::from_source(method),
+            type_args: vec![],
+            args: vec![CSharpExpression::MemberAccess {
+                receiver: Box::new(CSharpExpression::Identity(CSharpIdentity::This)),
+                name: CSharpPropertyName::from_source(field),
+            }]
+            .into(),
+        })
+    }
+
+    /// `wire.{Method}({local}.{Field})` as a statement — variant of
+    /// [`wire_write_this`] for variant payloads bound through a local
+    /// (e.g. `_v.Radius`).
+    fn wire_write_local_field(method: &str, local: &str, field: &str) -> CSharpStatement {
+        CSharpStatement::Expression(CSharpExpression::MethodCall {
+            receiver: Box::new(local_ident("wire")),
+            method: CSharpMethodName::from_source(method),
+            type_args: vec![],
+            args: vec![CSharpExpression::MemberAccess {
+                receiver: Box::new(local_ident(local)),
+                name: CSharpPropertyName::from_source(field),
+            }]
+            .into(),
+        })
+    }
+
+    /// `this.{Field}.WireEncodeTo(wire)` — the encode shape for nested
+    /// record fields and C-style-enum-typed fields.
+    fn this_wire_encode(field: &str) -> CSharpStatement {
+        CSharpStatement::Expression(CSharpExpression::MethodCall {
+            receiver: Box::new(CSharpExpression::MemberAccess {
+                receiver: Box::new(CSharpExpression::Identity(CSharpIdentity::This)),
+                name: CSharpPropertyName::from_source(field),
+            }),
+            method: CSharpMethodName::new("WireEncodeTo"),
+            type_args: vec![],
+            args: vec![local_ident("wire")].into(),
+        })
+    }
+
+    /// `wire.WriteString(this.{Field})` is the same shape as
+    /// [`wire_write_this`] but the encoded-size contribution for a
+    /// string field is the bespoke `(4 + Encoding.UTF8.GetByteCount(this.{Field}))`.
+    fn string_size_this(field: &str) -> CSharpExpression {
+        let utf8 = CSharpExpression::MemberAccess {
+            receiver: Box::new(CSharpExpression::TypeRef(CSharpTypeReference::Plain(
+                CSharpClassName::new("Encoding"),
+            ))),
+            name: CSharpPropertyName::from_source("UTF8"),
+        };
+        let byte_count = CSharpExpression::MethodCall {
+            receiver: Box::new(utf8),
+            method: CSharpMethodName::new("GetByteCount"),
+            type_args: vec![],
+            args: vec![CSharpExpression::MemberAccess {
+                receiver: Box::new(CSharpExpression::Identity(CSharpIdentity::This)),
+                name: CSharpPropertyName::from_source(field),
+            }]
+            .into(),
+        };
+        CSharpExpression::Paren(Box::new(CSharpExpression::Binary {
+            op: CSharpBinaryOp::Add,
+            left: Box::new(int_lit(4)),
+            right: Box::new(byte_count),
+        }))
     }
 
     /// Point: the canonical blittable record. Two f64 fields, `#[repr(C)]`
@@ -133,16 +240,16 @@ mod tests {
                 record_field(
                     "X",
                     CSharpType::Double,
-                    "reader.ReadF64()",
-                    "8",
-                    "wire.WriteF64(this.X)",
+                    read_call("read_f64"),
+                    int_lit(8),
+                    wire_write_this("write_f64", "X"),
                 ),
                 record_field(
                     "Y",
                     CSharpType::Double,
-                    "reader.ReadF64()",
-                    "8",
-                    "wire.WriteF64(this.Y)",
+                    read_call("read_f64"),
+                    int_lit(8),
+                    wire_write_this("write_f64", "Y"),
                 ),
             ],
         };
@@ -166,16 +273,16 @@ mod tests {
                 record_field(
                     "Name",
                     CSharpType::String,
-                    "reader.ReadString()",
-                    "(4 + Encoding.UTF8.GetByteCount(this.Name))",
-                    "wire.WriteString(this.Name)",
+                    read_call("read_string"),
+                    string_size_this("Name"),
+                    wire_write_this("write_string", "Name"),
                 ),
                 record_field(
                     "Age",
                     CSharpType::UInt,
-                    "reader.ReadU32()",
-                    "4",
-                    "wire.WriteU32(this.Age)",
+                    read_call("read_u32"),
+                    int_lit(4),
+                    wire_write_this("write_u32", "Age"),
                 ),
             ],
         };
@@ -199,16 +306,16 @@ mod tests {
                 record_field(
                     "Start",
                     record_type("point"),
-                    "Point.Decode(reader)",
-                    "16",
-                    "this.Start.WireEncodeTo(wire)",
+                    class_decode("Point"),
+                    int_lit(16),
+                    this_wire_encode("Start"),
                 ),
                 record_field(
                     "End",
                     record_type("point"),
-                    "Point.Decode(reader)",
-                    "16",
-                    "this.End.WireEncodeTo(wire)",
+                    class_decode("Point"),
+                    int_lit(16),
+                    this_wire_encode("End"),
                 ),
             ],
         };
@@ -250,16 +357,16 @@ mod tests {
                 record_field(
                     "Status",
                     c_style_enum_type("status"),
-                    "StatusWire.Decode(reader)",
-                    "4",
-                    "this.Status.WireEncodeTo(wire)",
+                    class_decode("StatusWire"),
+                    int_lit(4),
+                    this_wire_encode("Status"),
                 ),
                 record_field(
                     "Count",
                     CSharpType::UInt,
-                    "reader.ReadU32()",
-                    "4",
-                    "wire.WriteU32(this.Count)",
+                    read_call("read_u32"),
+                    int_lit(4),
+                    wire_write_this("write_u32", "Count"),
                 ),
             ],
         };
@@ -492,9 +599,9 @@ mod tests {
                 vec![record_field(
                     "Radius",
                     CSharpType::Double,
-                    "reader.ReadF64()",
-                    "8",
-                    "wire.WriteF64(_v.Radius)",
+                    read_call("read_f64"),
+                    int_lit(8),
+                    wire_write_local_field("write_f64", "_v", "Radius"),
                 )],
             ),
             variant(
@@ -505,16 +612,16 @@ mod tests {
                     record_field(
                         "Width",
                         CSharpType::Double,
-                        "reader.ReadF64()",
-                        "8",
-                        "wire.WriteF64(_v.Width)",
+                        read_call("read_f64"),
+                        int_lit(8),
+                        wire_write_local_field("write_f64", "_v", "Width"),
                     ),
                     record_field(
                         "Height",
                         CSharpType::Double,
-                        "reader.ReadF64()",
-                        "8",
-                        "wire.WriteF64(_v.Height)",
+                        read_call("read_f64"),
+                        int_lit(8),
+                        wire_write_local_field("write_f64", "_v", "Height"),
                     ),
                 ],
             ),
@@ -541,9 +648,9 @@ mod tests {
             vec![record_field(
                 "Radius",
                 CSharpType::Double,
-                "reader.ReadF64()",
-                "8",
-                "wire.WriteF64(_v.Radius)",
+                read_call("read_f64"),
+                int_lit(8),
+                wire_write_local_field("write_f64", "_v", "Radius"),
             )],
         )];
         let methods = vec![

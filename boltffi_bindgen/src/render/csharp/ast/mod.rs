@@ -1,14 +1,12 @@
-//! Pure C# AST. Each type's [`fmt::Display`](std::fmt::Display)
-//! produces standalone C# source. No FFI concepts, no plan vocabulary,
-//! no awareness of anything downstream of this module.
+//! C# language syntax primitives, that one would read in a textbook on the C# Programming Language,
+//! and as such does not contain any reference to FFI.
 //!
-//! Constructors that lift from the IR (`CSharpType::from_read_op`,
-//! `From<&RecordId> for CSharpClassName`, etc.) live next to the
-//! types they produce because the result *is* a C# AST node; the
-//! input vocabulary is the IR, which sits upstream of every render
-//! backend. ast/ depends on the IR; nothing in render/csharp/ outside
-//! of ast/ depends in the other direction.
-
+//! Rendering occurs through the `templates` module, so a full AST is not needed, so here we create
+//! enough primitives to be able to reason about what code will be generated, in C# language terms,
+//! as we create a plan.
+//!
+//! Ultimately all of these elements implement `Display`, and so are available in the `plan` module
+//! directly by the templates for direct rendering.
 mod argument_list;
 mod attribute;
 mod code;
@@ -17,15 +15,16 @@ mod identifier;
 mod parameter_list;
 mod type_shape;
 
-pub use argument_list::CSharpArgumentList;
-pub use attribute::{CSharpAttribute, CSharpAttributeArg};
-pub use code::{
-    CSharpBinaryOp, CSharpExpression, CSharpIdent, CSharpLiteral, CSharpLocalDecl, CSharpStatement,
+pub(super) use argument_list::CSharpArgumentList;
+pub(super) use attribute::{CSharpAttribute, CSharpAttributeArg};
+pub(super) use code::{
+    CSharpBinaryOp, CSharpExpression, CSharpIdentity, CSharpLiteral, CSharpLocalDecl,
+    CSharpStatement,
 };
-pub use enum_underlying_type::CSharpEnumUnderlyingType;
-pub use identifier::{
+pub(super) use enum_underlying_type::CSharpEnumUnderlyingType;
+pub(super) use identifier::{
     CSharpClassName, CSharpLocalName, CSharpMethodName, CSharpNamespace, CSharpParamName,
     CSharpPropertyName, CSharpTypeReference,
 };
-pub use parameter_list::{CSharpParameter, CSharpParameterList};
-pub use type_shape::CSharpType;
+pub(super) use parameter_list::{CSharpParameter, CSharpParameterList};
+pub(super) use type_shape::CSharpType;

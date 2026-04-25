@@ -39,10 +39,6 @@ pub struct CSharpFunctionPlan {
 }
 
 impl CSharpFunctionPlan {
-    pub fn is_void(&self) -> bool {
-        matches!(self.return_kind, CSharpReturnKind::Void)
-    }
-
     /// Typed param list for the `[DllImport]` native signature.
     pub fn native_param_list(&self) -> CSharpParameterList {
         native_param_list(&self.params)
@@ -146,7 +142,6 @@ mod tests {
     use super::*;
     use super::super::super::super::ast::{CSharpClassName, CSharpLocalName, CSharpParamName};
     use super::super::CSharpParamKind;
-    use rstest::rstest;
 
     fn function_with_return(
         return_type: CSharpType,
@@ -187,22 +182,6 @@ mod tests {
             ffi_name: CFunctionName::new("boltffi_test".to_string()),
             wire_writers: vec![],
         }
-    }
-
-    #[rstest]
-    #[case::void(CSharpType::Void, CSharpReturnKind::Void, true)]
-    #[case::int(CSharpType::Int, CSharpReturnKind::Direct, false)]
-    #[case::bool(CSharpType::Bool, CSharpReturnKind::Direct, false)]
-    #[case::double(CSharpType::Double, CSharpReturnKind::Direct, false)]
-    fn is_void(
-        #[case] return_type: CSharpType,
-        #[case] return_kind: CSharpReturnKind,
-        #[case] expected: bool,
-    ) {
-        assert_eq!(
-            function_with_return(return_type, return_kind).is_void(),
-            expected
-        );
     }
 
     /// The native param list exposes each slot's marshalling shape: a

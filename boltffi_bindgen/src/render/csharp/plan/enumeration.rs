@@ -92,14 +92,6 @@ pub struct CSharpEnumVariantPlan {
 }
 
 impl CSharpEnumPlan {
-    pub fn is_c_style(&self) -> bool {
-        self.kind == CSharpEnumKind::CStyle
-    }
-
-    pub fn is_data(&self) -> bool {
-        self.kind == CSharpEnumKind::Data
-    }
-
     /// Unwraps [`Self::underlying_type`] for the c-style enum template,
     /// which only renders for c-style enums and so always sees `Some`.
     /// Panics on data enums by design.
@@ -133,35 +125,10 @@ impl CSharpEnumVariantPlan {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::super::super::ast::{CSharpExpression, CSharpPropertyName, CSharpStatement, CSharpType};
-
-    fn c_style_enum(source_name: &str, underlying: CSharpEnumUnderlyingType) -> CSharpEnumPlan {
-        let class_name = CSharpClassName::from_source(source_name);
-        let wire_class_name = CSharpClassName::wire_helper(&class_name);
-        CSharpEnumPlan {
-            class_name,
-            wire_class_name,
-            methods_class_name: None,
-            kind: CSharpEnumKind::CStyle,
-            underlying_type: Some(underlying),
-            variants: vec![],
-            methods: vec![],
-        }
-    }
-
-    fn data_enum(source_name: &str) -> CSharpEnumPlan {
-        let class_name = CSharpClassName::from_source(source_name);
-        let wire_class_name = CSharpClassName::wire_helper(&class_name);
-        CSharpEnumPlan {
-            class_name,
-            wire_class_name,
-            methods_class_name: None,
-            kind: CSharpEnumKind::Data,
-            underlying_type: None,
-            variants: vec![],
-            methods: vec![],
-        }
-    }
+    use super::super::super::ast::{
+        CSharpArgumentList, CSharpExpression, CSharpIdentity, CSharpLiteral, CSharpLocalName,
+        CSharpMethodName, CSharpPropertyName, CSharpStatement, CSharpType,
+    };
 
     /// A variant with no payload fields is a unit: true for every C-style
     /// variant and for data-enum unit variants like `Shape::Point`.
@@ -188,27 +155,20 @@ mod tests {
             fields: vec![CSharpFieldPlan {
                 name: CSharpPropertyName::from_source("radius"),
                 csharp_type: CSharpType::Double,
-                wire_decode_expr: CSharpExpression::Raw("reader.ReadF64()".to_string()),
-                wire_size_expr: CSharpExpression::Raw("8".to_string()),
-                wire_encode_expr: CSharpStatement::Raw(
-                    "wire.WriteF64(this.Radius)".to_string(),
-                ),
+                wire_decode_expr: CSharpExpression::MethodCall {
+                    receiver: Box::new(CSharpExpression::Identity(CSharpIdentity::Local(
+                        CSharpLocalName::new("reader"),
+                    ))),
+                    method: CSharpMethodName::from_source("read_f64"),
+                    type_args: vec![],
+                    args: CSharpArgumentList::default(),
+                },
+                wire_size_expr: CSharpExpression::Literal(CSharpLiteral::Int(8)),
+                wire_encode_stmts: vec![CSharpStatement::Expression(CSharpExpression::Literal(
+                    CSharpLiteral::Int(0),
+                ))],
             }],
         };
         assert!(!variant.is_unit());
-    }
-
-    #[test]
-    fn c_style_kind_is_c_style_and_not_data() {
-        let enumeration = c_style_enum("status", CSharpEnumUnderlyingType::Int);
-        assert!(enumeration.is_c_style());
-        assert!(!enumeration.is_data());
-    }
-
-    #[test]
-    fn data_kind_is_data_and_not_c_style() {
-        let enumeration = data_enum("shape");
-        assert!(enumeration.is_data());
-        assert!(!enumeration.is_c_style());
     }
 }

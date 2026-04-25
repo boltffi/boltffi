@@ -67,7 +67,9 @@ namespace {{ namespace }}
                 case {{ variant.name }} _v:
                     wire.WriteI32({{ variant.tag }});
 {%- for field in variant.fields %}
-                    {{ field.wire_encode_expr }};
+{%- for stmt in field.wire_encode_stmts %}
+                    {{ stmt }};
+{%- endfor %}
 {%- endfor %}
                     break;
 {%- endif %}

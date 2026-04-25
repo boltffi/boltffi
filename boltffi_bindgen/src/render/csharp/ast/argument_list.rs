@@ -1,38 +1,37 @@
-//! C# `argument_list` production: a comma-separated sequence of
-//! arguments inside a method invocation's parentheses. Display joins
-//! with `, `; an empty list renders as the empty string so call sites
-//! can drop it directly between the open and close parens.
-
 use std::fmt;
 
 use super::CSharpExpression;
 
-/// A typed C# argument list, used wherever the lowerer pre-computes
-/// the arguments handed to a method call (today: the `[DllImport]`
-/// invocation's argument list, possibly prefixed with a receiver-self
-/// argument).
-#[derive(Debug, Clone, Default)]
-pub struct CSharpArgumentList(Vec<CSharpExpression>);
+/// The list of comma-separated arguments needed when calling (invoking) a method.
+///
+/// Examples:
+/// ```csharp
+/// // A single argument
+/// v
+///
+/// // Multiple arguments
+/// v, 16, count
+/// ```
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct CSharpArgumentList(Vec<CSharpExpression>);
 
 impl CSharpArgumentList {
-    pub fn new(args: Vec<CSharpExpression>) -> Self {
-        Self(args)
-    }
-
-    pub fn empty() -> Self {
+    pub(crate) fn empty() -> Self {
         Self(Vec::new())
     }
 
-    pub fn push(&mut self, arg: CSharpExpression) {
+    pub(crate) fn push(&mut self, arg: CSharpExpression) {
         self.0.push(arg);
     }
 
-    pub fn extend(&mut self, args: impl IntoIterator<Item = CSharpExpression>) {
+    pub(crate) fn extend(&mut self, args: impl IntoIterator<Item = CSharpExpression>) {
         self.0.extend(args);
     }
+}
 
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
+impl From<Vec<CSharpExpression>> for CSharpArgumentList {
+    fn from(args: Vec<CSharpExpression>) -> Self {
+        Self(args)
     }
 }
 
@@ -59,11 +58,11 @@ impl IntoIterator for CSharpArgumentList {
 
 #[cfg(test)]
 mod tests {
+    use super::super::{CSharpIdentity, CSharpLiteral, CSharpLocalName};
     use super::*;
-    use super::super::{CSharpIdent, CSharpLiteral, CSharpLocalName};
 
     fn ident(name: &str) -> CSharpExpression {
-        CSharpExpression::Ident(CSharpIdent::Local(CSharpLocalName::new(name)))
+        CSharpExpression::Identity(CSharpIdentity::Local(CSharpLocalName::new(name)))
     }
 
     fn int(v: i64) -> CSharpExpression {
@@ -77,19 +76,19 @@ mod tests {
 
     #[test]
     fn single_arg_renders_without_separator() {
-        let list = CSharpArgumentList::new(vec![ident("value")]);
+        let list: CSharpArgumentList = vec![ident("value")].into();
         assert_eq!(list.to_string(), "value");
     }
 
     #[test]
     fn multiple_args_join_with_comma_space() {
-        let list = CSharpArgumentList::new(vec![ident("v"), int(16), ident("count")]);
+        let list: CSharpArgumentList = vec![ident("v"), int(16), ident("count")].into();
         assert_eq!(list.to_string(), "v, 16, count");
     }
 
     #[test]
     fn extend_appends_to_existing_list() {
-        let mut list = CSharpArgumentList::new(vec![ident("self")]);
+        let mut list: CSharpArgumentList = vec![ident("self")].into();
         list.extend(vec![ident("x"), ident("y")]);
         assert_eq!(list.to_string(), "self, x, y");
     }

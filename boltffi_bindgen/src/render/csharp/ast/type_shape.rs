@@ -1,16 +1,3 @@
-//! The central type vocabulary for the C# backend. `CSharpType` is
-//! the shape every record field, param, return, and variant field
-//! resolves to. Named-type variants (`Record`, `CStyleEnum`,
-//! `DataEnum`) carry a [`CSharpTypeReference`] rather than a raw
-//! string, so callers can distinguish a bare class name from a
-//! `global::`-qualified one structurally.
-//!
-//! All IR-to-type constructors live here (`From<PrimitiveType>`,
-//! `for_enum`, `from_read_op`, `from_type_expr`) so one file answers
-//! "what C# type does this IR node become?". The constraint-narrowed
-//! "what's a legal enum *underlying* type" lives separately in
-//! [`super::CSharpEnumUnderlyingType`].
-
 use std::collections::HashSet;
 use std::fmt;
 
@@ -21,11 +8,21 @@ use crate::ir::types::{PrimitiveType, TypeExpr};
 
 use super::{CSharpClassName, CSharpNamespace, CSharpTypeReference};
 
-/// A C# type keyword. Includes `Void` so return types and value types share
-/// one enum; params never carry `Void` because the lowerer rejects it before
-/// constructing a [`CSharpParamPlan`](super::CSharpParamPlan).
+/// A C# type reference: `void`, a primitive keyword, a user-defined
+/// record / enum, an array, or a nullable.
+///
+/// Examples:
+/// ```csharp
+/// void
+/// int
+/// string
+/// Point
+/// int[]
+/// string?
+/// Point?[]
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CSharpType {
+pub(crate) enum CSharpType {
     Void,
     Bool,
     SByte,
@@ -38,59 +35,40 @@ pub enum CSharpType {
     ULong,
     NInt,
     NUInt,
-    /// `System.IntPtr`. Same compiled type as `nint`; the convention in
-    /// P/Invoke signatures is the PascalCase spelling.
+    /// `System.IntPtr`. Same compiled type as `nint`; PascalCase spelling.
     IntPtr,
-    /// `System.UIntPtr`. Same compiled type as `nuint`; PascalCase spelling
-    /// is the P/Invoke convention.
+    /// `System.UIntPtr`. Same compiled type as `nuint`; PascalCase spelling.
     UIntPtr,
     Float,
     Double,
     String,
     /// A user-defined record.
     Record(CSharpTypeReference),
-    /// A user-defined C-style enum (all variants are unit). Renders as a
-    /// C# `enum` with an `int` backing type. Blittable: passes directly
-    /// across P/Invoke as its underlying integer, and stays blittable when
-    /// embedded in a `[StructLayout(Sequential)]` record.
+    /// A user-defined enum whose variants are all unit, declared with an
+    /// integral underlying type.
     CStyleEnum(CSharpTypeReference),
-    /// A user-defined data enum (at least one variant carries a payload).
-    /// Renders as an `abstract record` with nested `sealed record` variants.
-    /// Always wire-encoded (never blittable) because variant payloads
-    /// are variable-width.
+    /// A user-defined enum whose variants carry payload data, modeled as
+    /// an `abstract record` with nested `sealed record` variants.
     DataEnum(CSharpTypeReference),
-    /// A `Vec<T>` projected into the C# surface as a `T[]` jagged array.
-    /// Uniform representation across every element kind: primitives ride
-    /// the blittable bulk-copy path, composites walk element-by-element.
-    /// Nested vecs fall out naturally via recursive `Array(Array(...))`.
+    /// `T[]`: a single-dimensional array of `T`.
     Array(Box<CSharpType>),
-    /// An `Option<T>` projected into the C# surface as `T?`. Uniform
-    /// across value-type and reference-type inners: for value types it
-    /// desugars to `Nullable<T>`, for reference types it reads as a
-    /// nullable-annotated reference (both require `#nullable enable`,
-    /// which the generated files opt in to). Always travels
-    /// wire-encoded across the ABI. The 1-byte tag + payload form does
-    /// not line up with any CLR primitive layout.
+    /// `T?`: a value or reference type that may be `null`.
     Nullable(Box<CSharpType>),
 }
 
 impl CSharpType {
-    pub fn is_void(&self) -> bool {
+    pub(crate) fn is_void(&self) -> bool {
         matches!(self, Self::Void)
     }
 
-    pub fn is_bool(&self) -> bool {
+    pub(crate) fn is_bool(&self) -> bool {
         matches!(self, Self::Bool)
-    }
-
-    pub fn is_string(&self) -> bool {
-        matches!(self, Self::String)
     }
 
     /// Whether this type contains `string` at any nesting depth. Used for
     /// import decisions where `string[]` / `string[][]` still require
     /// `System.Text` because their encode path calls `Encoding.UTF8`.
-    pub fn contains_string(&self) -> bool {
+    pub(crate) fn contains_string(&self) -> bool {
         match self {
             Self::String => true,
             Self::Array(inner) | Self::Nullable(inner) => inner.contains_string(),
@@ -98,24 +76,8 @@ impl CSharpType {
         }
     }
 
-    pub fn is_record(&self) -> bool {
-        matches!(self, Self::Record(_))
-    }
-
-    pub fn is_c_style_enum(&self) -> bool {
-        matches!(self, Self::CStyleEnum(_))
-    }
-
-    pub fn is_data_enum(&self) -> bool {
-        matches!(self, Self::DataEnum(_))
-    }
-
-    pub fn is_array(&self) -> bool {
-        matches!(self, Self::Array(_))
-    }
-
     /// If this is `Array(inner)`, returns `Some(inner)`; otherwise `None`.
-    pub fn array_element(&self) -> Option<&CSharpType> {
+    pub(crate) fn array_element(&self) -> Option<&CSharpType> {
         match self {
             Self::Array(inner) => Some(inner),
             _ => None,
@@ -127,7 +89,7 @@ impl CSharpType {
     /// pass through unchanged; `Array` and `Nullable` recurse. The
     /// per-reference decision lives on
     /// [`CSharpTypeReference::qualify_if_shadowed`].
-    pub fn qualify_if_shadowed(
+    pub(crate) fn qualify_if_shadowed(
         self,
         shadowed: &HashSet<CSharpClassName>,
         namespace: &CSharpNamespace,
@@ -150,7 +112,7 @@ impl CSharpType {
     /// pass through when it's `None`. Used at call sites that might or
     /// might not be rendering inside a shadowing scope (e.g. an enum
     /// method whose owner may be a data enum or a C-style enum).
-    pub fn qualify_if_shadowed_opt(
+    pub(crate) fn qualify_if_shadowed_opt(
         self,
         shadowed: Option<&HashSet<CSharpClassName>>,
         namespace: &CSharpNamespace,
@@ -168,7 +130,7 @@ impl CSharpType {
     /// variant) becomes [`CSharpType::DataEnum`] and wire-encodes.
     /// Everything downstream (the return-kind dispatch, param marshaling,
     /// record blittability) keys off this one decision.
-    pub fn for_enum(enum_def: &EnumDef) -> CSharpType {
+    pub(crate) fn for_enum(enum_def: &EnumDef) -> CSharpType {
         let class_name: CSharpClassName = (&enum_def.id).into();
         match &enum_def.repr {
             EnumRepr::CStyle { .. } => CSharpType::CStyleEnum(class_name.into()),
@@ -177,7 +139,7 @@ impl CSharpType {
     }
 
     /// Converts from a [`ReadOp`].
-    pub fn from_read_op(op: &ReadOp) -> Self {
+    pub(crate) fn from_read_op(op: &ReadOp) -> Self {
         match op {
             ReadOp::Primitive { primitive, .. } => Self::from(*primitive),
             ReadOp::String { .. } => Self::String,
@@ -214,7 +176,7 @@ impl CSharpType {
     /// Converts from a [`TypeExpr`]. `TypeExpr::Enum` picks [`Self::DataEnum`]
     /// arbitrarily; all three named-type variants render the same through
     /// [`fmt::Display`] and [`Self::qualify_if_shadowed`].
-    pub fn from_type_expr(expr: &TypeExpr) -> Self {
+    pub(crate) fn from_type_expr(expr: &TypeExpr) -> Self {
         match expr {
             TypeExpr::Void => Self::Void,
             TypeExpr::Primitive(p) => Self::from(*p),
@@ -238,41 +200,6 @@ impl CSharpType {
         }
     }
 
-    /// Whether this type is blittable in the CLR's sense: it can
-    /// live inside a `[StructLayout(Sequential)]` record field and pass
-    /// across P/Invoke without wire encoding. Primitives all qualify;
-    /// `bool` does not (P/Invoke defaults to a 4-byte Win32 BOOL, so
-    /// records with bool fields go through the wire path today). Strings
-    /// and data enums are always wire-encoded. C-style enums are `int`
-    /// underneath and ride the zero-copy path. Records are blittable or
-    /// not based on their own field contents, decided elsewhere. This
-    /// predicate only answers "is this *leaf* type blittable?".
-    pub fn is_blittable_leaf(&self) -> bool {
-        match self {
-            Self::SByte
-            | Self::Byte
-            | Self::Short
-            | Self::UShort
-            | Self::Int
-            | Self::UInt
-            | Self::Long
-            | Self::ULong
-            | Self::NInt
-            | Self::NUInt
-            | Self::IntPtr
-            | Self::UIntPtr
-            | Self::Float
-            | Self::Double
-            | Self::CStyleEnum(_) => true,
-            Self::Void
-            | Self::Bool
-            | Self::String
-            | Self::Record(_)
-            | Self::DataEnum(_)
-            | Self::Array(_)
-            | Self::Nullable(_) => false,
-        }
-    }
 }
 
 impl From<PrimitiveType> for CSharpType {
@@ -342,44 +269,18 @@ mod tests {
     }
 
     #[test]
-    fn record_typepe_display_uses_class_name() {
-        let ty = record_type("point");
-        assert_eq!(ty.to_string(), "Point");
-        assert!(ty.is_record());
+    fn record_type_display_uses_class_name() {
+        assert_eq!(record_type("point").to_string(), "Point");
     }
 
     #[test]
-    fn c_style_enum_typepe_display_uses_class_name() {
-        let ty = c_style_enum_type("status");
-        assert_eq!(ty.to_string(), "Status");
-        assert!(ty.is_c_style_enum());
-        assert!(!ty.is_data_enum());
+    fn c_style_enum_type_display_uses_class_name() {
+        assert_eq!(c_style_enum_type("status").to_string(), "Status");
     }
 
     #[test]
-    fn data_enum_typepe_display_uses_class_name() {
-        let ty = data_enum_type("shape");
-        assert_eq!(ty.to_string(), "Shape");
-        assert!(ty.is_data_enum());
-        assert!(!ty.is_c_style_enum());
-    }
-
-    /// C-style enums ride P/Invoke as their declared backing integral type,
-    /// so they count as blittable leaves alongside the numeric primitives.
-    /// Data enums never do: their payloads are variable-width and must
-    /// wire-encode.
-    #[rstest::rstest]
-    #[case::int(CSharpType::Int, true)]
-    #[case::double(CSharpType::Double, true)]
-    #[case::cstyle_enum(c_style_enum_type("status"), true)]
-    #[case::bool(CSharpType::Bool, false)]
-    #[case::string(CSharpType::String, false)]
-    #[case::record(record_type("point"), false)]
-    #[case::data_enum(data_enum_type("shape"), false)]
-    #[case::nullable_int(CSharpType::Nullable(Box::new(CSharpType::Int)), false)]
-    #[case::nullable_string(CSharpType::Nullable(Box::new(CSharpType::String)), false)]
-    fn is_blittable_leaf_matches_marshaling_story(#[case] ty: CSharpType, #[case] expected: bool) {
-        assert_eq!(ty.is_blittable_leaf(), expected);
+    fn data_enum_type_display_uses_class_name() {
+        assert_eq!(data_enum_type("shape").to_string(), "Shape");
     }
 
     /// `Nullable` renders as `{inner}?`, uniform for value-type inners

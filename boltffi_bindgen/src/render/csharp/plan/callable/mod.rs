@@ -13,7 +13,7 @@ pub use method::{CSharpMethodPlan, CSharpReceiver};
 
 use super::super::ast::{
     CSharpArgumentList, CSharpAttribute, CSharpAttributeArg, CSharpBinaryOp, CSharpClassName,
-    CSharpExpression, CSharpIdent, CSharpLocalDecl, CSharpLocalName, CSharpMethodName,
+    CSharpExpression, CSharpIdentity, CSharpLocalDecl, CSharpLocalName, CSharpMethodName,
     CSharpParamName, CSharpParameter, CSharpParameterList, CSharpPropertyName, CSharpStatement,
     CSharpType, CSharpTypeReference,
 };
@@ -30,12 +30,6 @@ pub struct CSharpParamPlan {
 }
 
 impl CSharpParamPlan {
-    /// Public wrapper-signature declaration for this param: bare
-    /// `Type name`, no attributes, single parameter (no expansion).
-    pub fn wrapper_declaration(&self) -> CSharpParameter {
-        CSharpParameter::bare(self.csharp_type.clone(), self.name.clone())
-    }
-
     /// `[DllImport]`-side declaration(s). Returns one or two
     /// parameters depending on the marshalling shape:
     /// - Primitives pass through as one parameter (with `[MarshalAs(I1)]`
@@ -110,7 +104,7 @@ impl CSharpParamPlan {
             CSharpParamKind::PinnedArray { element_type, ptr_local } => {
                 let ptr_arg = CSharpExpression::Cast {
                     target: CSharpType::IntPtr,
-                    inner: Box::new(CSharpExpression::Ident(CSharpIdent::Local(ptr_local.clone()))),
+                    inner: Box::new(CSharpExpression::Identity(CSharpIdentity::Local(ptr_local.clone()))),
                 };
                 let length_arg = CSharpExpression::Cast {
                     target: CSharpType::UIntPtr,
@@ -126,7 +120,7 @@ impl CSharpParamPlan {
                             )),
                             method: CSharpMethodName::new("SizeOf"),
                             type_args: vec![element_type.clone()],
-                            args: vec![],
+                            args: CSharpArgumentList::default(),
                         }),
                     }))),
                 };
@@ -145,7 +139,20 @@ impl CSharpParamPlan {
             CSharpParamKind::Utf8Bytes => Some(CSharpLocalDecl {
                 declared_type: CSharpType::Array(Box::new(CSharpType::Byte)),
                 name: CSharpLocalName::for_bytes(&self.name),
-                rhs: CSharpExpression::Raw(format!("Encoding.UTF8.GetBytes({})", self.name)),
+                rhs: CSharpExpression::MethodCall {
+                    receiver: Box::new(CSharpExpression::MemberAccess {
+                        receiver: Box::new(CSharpExpression::TypeRef(CSharpTypeReference::Plain(
+                            CSharpClassName::new("Encoding"),
+                        ))),
+                        name: CSharpPropertyName::from_source("UTF8"),
+                    }),
+                    method: CSharpMethodName::new("GetBytes"),
+                    type_args: vec![],
+                    args: vec![CSharpExpression::Identity(CSharpIdentity::Param(
+                        self.name.clone(),
+                    ))]
+                    .into(),
+                },
             }),
             _ => None,
         }
@@ -175,14 +182,10 @@ pub(super) fn native_call_arg_list(params: &[CSharpParamPlan]) -> CSharpArgument
     list
 }
 
-pub(super) fn wrapper_param_list(params: &[CSharpParamPlan]) -> CSharpParameterList {
-    CSharpParameterList::new(params.iter().map(CSharpParamPlan::wrapper_declaration).collect())
-}
-
 // --- Small constructors for the per-kind shapes ---
 
 fn param_ident(name: &CSharpParamName) -> CSharpExpression {
-    CSharpExpression::Ident(CSharpIdent::Param(name.clone()))
+    CSharpExpression::Identity(CSharpIdentity::Param(name.clone()))
 }
 
 fn length_param(base: &CSharpParamName) -> CSharpParameter {
@@ -206,7 +209,7 @@ fn buffer_and_uintptr_length_param(name: &CSharpParamName) -> Vec<CSharpExpressi
 }
 
 fn buffer_and_uintptr_length_local(local: CSharpLocalName) -> Vec<CSharpExpression> {
-    let buf = CSharpExpression::Ident(CSharpIdent::Local(local));
+    let buf = CSharpExpression::Identity(CSharpIdentity::Local(local));
     let len = uintptr_length_member(buf.clone());
     vec![buf, len]
 }
@@ -321,10 +324,12 @@ pub struct CSharpWireWriterPlan {
     /// Expression rendered against the param that returns its
     /// wire-encoded byte size (e.g., `point.WireEncodedSize()`).
     pub size_expr: CSharpExpression,
-    /// Statement that writes the param's contents into the
-    /// `WireWriter` named by `binding_name` (e.g.,
-    /// `point.WireEncodeTo(_wire_point)`).
-    pub encode_expr: CSharpStatement,
+    /// Statements that write the param's contents into the
+    /// `WireWriter` named by `binding_name`. Most params produce a
+    /// single statement (`point.WireEncodeTo(_wire_point)`); a
+    /// `Vec<T>` param produces two (the length prefix and the
+    /// per-element loop).
+    pub encode_stmts: Vec<CSharpStatement>,
 }
 
 #[cfg(test)]
@@ -351,26 +356,16 @@ mod tests {
     /// the DllImport's parens — comma-joined, matching CSharpParameterList's
     /// Display.
     fn render_native_decls(p: &CSharpParamPlan) -> String {
-        CSharpParameterList::new(p.native_declarations()).to_string()
+        let list: CSharpParameterList = p.native_declarations().into();
+        list.to_string()
     }
 
     /// Render a Vec of native_call_args as it would appear inside the
     /// invocation's parens — comma-joined, matching CSharpArgumentList's
     /// Display.
     fn render_native_args(p: &CSharpParamPlan) -> String {
-        CSharpArgumentList::new(p.native_call_args()).to_string()
-    }
-
-    #[test]
-    fn wrapper_declaration_puts_type_before_name() {
-        let p = param("value", CSharpType::Int, CSharpParamKind::Direct);
-        assert_eq!(p.wrapper_declaration().to_string(), "int value");
-    }
-
-    #[test]
-    fn wrapper_declaration_uses_record_class_name() {
-        let p = param("point", record_type("point"), CSharpParamKind::Direct);
-        assert_eq!(p.wrapper_declaration().to_string(), "Point point");
+        let list: CSharpArgumentList = p.native_call_args().into();
+        list.to_string()
     }
 
     /// Direct primitives pass through the native declaration unchanged.
