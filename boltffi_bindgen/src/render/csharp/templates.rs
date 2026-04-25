@@ -1,10 +1,15 @@
-//! Askama template bindings: one struct per `.txt` template, each
-//! borrowing the plan node it renders. Templates only interpolate.
-//! All branching and decision logic lives upstream in `lower`.
+//! Templates are the `View` of the C# backend: each one binds to a
+//! `render_csharp/*.txt` Askama file and renders a plan node as C#
+//! source.
+//!
+//! Templates do no decision-making themselves; all branching and
+//! conditional logic lives upstream in `lower`. Templates only
+//! interpolate values that the plan and its `ast` primitives carry.
 //!
 //! Snapshot tests pin the rendered shape against curated plan
-//! fixtures, so a template change surfaces as a single `.snap` diff
-//! rather than rippling across emit-level tests.
+//! fixtures.
+//!
+//! Templates are instantiated and rendered by the `emit` module.
 
 use askama::Template;
 
