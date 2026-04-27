@@ -1,9 +1,7 @@
 use boltffi_ffi_rules::naming::{LibraryName, Name};
 
 use super::super::ast::{CSharpClassName, CSharpNamespace};
-use super::{
-    CFunctionName, CSharpClassPlan, CSharpEnumPlan, CSharpFunctionPlan, CSharpRecordPlan,
-};
+use super::{CFunctionName, CSharpClassPlan, CSharpEnumPlan, CSharpFunctionPlan, CSharpRecordPlan};
 
 /// A whole C# module: namespace, library binding, and every record, enum,
 /// and function it exposes. Renders into a `namespace` spread across

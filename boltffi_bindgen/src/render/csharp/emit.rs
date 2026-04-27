@@ -96,14 +96,16 @@ impl CSharpEmitter {
             }
         }));
 
-        files.extend(module.classes.iter().map(|class| CSharpFile {
-            file_name: format!("{}.cs", class.class_name),
-            source: ClassTemplate {
-                class,
-                namespace: &module.namespace,
+        files.extend(module.classes.iter().map(|class| {
+            CSharpFile {
+                file_name: format!("{}.cs", class.class_name),
+                source: ClassTemplate {
+                    class,
+                    namespace: &module.namespace,
+                }
+                .render()
+                .unwrap_or_else(|err| panic!("class {} render failed: {err}", class.class_name)),
             }
-            .render()
-            .unwrap_or_else(|err| panic!("class {} render failed: {err}", class.class_name)),
         }));
 
         let mut main_source = String::new();
