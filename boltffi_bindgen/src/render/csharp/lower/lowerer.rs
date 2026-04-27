@@ -8,7 +8,8 @@ use crate::ir::{AbiContract, FfiContract};
 use super::super::CSharpOptions;
 use super::super::ast::{CSharpClassName, CSharpNamespace};
 use super::super::plan::{
-    CFunctionName, CSharpEnumPlan, CSharpFunctionPlan, CSharpModulePlan, CSharpRecordPlan,
+    CFunctionName, CSharpClassPlan, CSharpEnumPlan, CSharpFunctionPlan, CSharpModulePlan,
+    CSharpRecordPlan,
 };
 
 /// Produces a [`CSharpModulePlan`] from the IR contracts.
@@ -77,6 +78,13 @@ impl<'a> CSharpLowerer<'a> {
             .filter_map(|f| self.lower_function(f))
             .collect();
 
+        let classes: Vec<CSharpClassPlan> = self
+            .ffi
+            .catalog
+            .all_classes()
+            .map(|c| self.lower_class(c))
+            .collect();
+
         CSharpModulePlan {
             namespace,
             class_name,
@@ -85,6 +93,7 @@ impl<'a> CSharpLowerer<'a> {
             records,
             enums,
             functions,
+            classes,
         }
     }
 }

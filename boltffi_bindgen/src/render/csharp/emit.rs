@@ -13,8 +13,8 @@ use super::{
     lower::CSharpLowerer,
     plan::CSharpEnumKind,
     templates::{
-        EnumCStyleTemplate, EnumDataTemplate, FunctionsTemplate, NativeTemplate, PreambleTemplate,
-        RecordTemplate,
+        ClassTemplate, EnumCStyleTemplate, EnumDataTemplate, FunctionsTemplate, NativeTemplate,
+        PreambleTemplate, RecordTemplate,
     },
 };
 
@@ -96,6 +96,16 @@ impl CSharpEmitter {
             }
         }));
 
+        files.extend(module.classes.iter().map(|class| CSharpFile {
+            file_name: format!("{}.cs", class.class_name),
+            source: ClassTemplate {
+                class,
+                namespace: &module.namespace,
+            }
+            .render()
+            .unwrap_or_else(|err| panic!("class {} render failed: {err}", class.class_name)),
+        }));
+
         let mut main_source = String::new();
         main_source.push_str(&PreambleTemplate { module: &module }.render().unwrap());
         main_source.push('\n');
@@ -118,10 +128,10 @@ mod tests {
     use crate::ir::Lowerer as IrLowerer;
     use crate::ir::contract::{FfiContract, PackageInfo};
     use crate::ir::definitions::{
-        CStyleVariant, DataVariant, EnumDef, EnumRepr, FieldDef, FunctionDef, MethodDef, ParamDef,
-        ParamPassing, Receiver, RecordDef, ReturnDef, VariantPayload,
+        CStyleVariant, ClassDef, DataVariant, EnumDef, EnumRepr, FieldDef, FunctionDef, MethodDef,
+        ParamDef, ParamPassing, Receiver, RecordDef, ReturnDef, VariantPayload,
     };
-    use crate::ir::ids::{EnumId, FieldName, FunctionId, MethodId, ParamName, RecordId};
+    use crate::ir::ids::{ClassId, EnumId, FieldName, FunctionId, MethodId, ParamName, RecordId};
     use crate::ir::types::{PrimitiveType, TypeExpr};
     use boltffi_ffi_rules::callable::ExecutionKind;
 
@@ -2322,6 +2332,190 @@ mod tests {
             "return new WireReader(_buf).ReadEncodedArray<int?>(r0 => r0.ReadU8() == 0 ? (int?)null : r0.ReadI32());",
             "decode walks ReadEncodedArray with a per-element closure that reads the Option tag first, \
              null-casting on the None branch and reading the i32 payload on the Some branch",
+        );
+    }
+
+    fn empty_class(name: &str) -> ClassDef {
+        ClassDef {
+            id: ClassId::new(name),
+            constructors: vec![],
+            methods: vec![],
+            streams: vec![],
+            doc: None,
+            deprecated: None,
+        }
+    }
+
+    /// A class in the contract emits its own `.cs` file with the
+    /// IDisposable wrapper around an opaque `IntPtr` handle. Snake-case
+    /// class IDs render as PascalCase C# class and file names.
+    #[test]
+    fn emit_class_generates_idisposable_wrapper_file() {
+        let mut contract = empty_contract();
+        contract.catalog.insert_class(empty_class("inventory"));
+
+        let output = emit_contract(&contract);
+        let file = output
+            .files
+            .iter()
+            .find(|f| f.file_name == "Inventory.cs")
+            .expect("Inventory.cs");
+
+        assert_source_contains(
+            &file.source,
+            "public sealed class Inventory : IDisposable",
+            "class is sealed and implements IDisposable",
+        );
+        assert_source_contains(
+            &file.source,
+            "private IntPtr _handle;",
+            "the native handle is held as a private IntPtr field",
+        );
+        assert_source_contains(
+            &file.source,
+            "internal Inventory(IntPtr handle)",
+            "internal constructor takes the raw IntPtr so future factories \
+             and ctors can wrap a handle without exposing the field",
+        );
+        assert_source_contains(
+            &file.source,
+            "Interlocked.Exchange(ref _handle, IntPtr.Zero)",
+            "Dispose atomically swaps the handle out so a second call is a no-op",
+        );
+        assert_source_contains(
+            &file.source,
+            "NativeMethods.InventoryFree(handle);",
+            "Dispose forwards the swapped-out handle to the native free symbol",
+        );
+        assert_source_contains(
+            &file.source,
+            "GC.SuppressFinalize(this);",
+            "Dispose suppresses the finalizer once the handle has been freed",
+        );
+        assert_source_contains(
+            &file.source,
+            "~Inventory()",
+            "finalizer is the safety net for consumers that forget Dispose",
+        );
+    }
+
+    /// The `[DllImport]` for the native free function lands in the
+    /// shared `NativeMethods` class (which lives in the main wrapper
+    /// file), not in the per-class file. The class wrapper just
+    /// references it as `NativeMethods.{Class}Free`.
+    #[test]
+    fn emit_class_registers_dllimport_for_free_in_native_methods() {
+        let mut contract = empty_contract();
+        contract.catalog.insert_class(empty_class("inventory"));
+
+        let output = emit_contract(&contract);
+        let main = output
+            .files
+            .iter()
+            .find(|f| f.file_name == "DemoLib.cs")
+            .expect("DemoLib.cs");
+
+        assert_source_contains(
+            &main.source,
+            r#"[DllImport(LibName, EntryPoint = "boltffi_inventory_free")]"#,
+            "free function is registered in NativeMethods using the standard \
+             boltffi_{class}_free C symbol",
+        );
+        assert_source_contains(
+            &main.source,
+            "internal static extern void InventoryFree(IntPtr handle);",
+            "P/Invoke takes the IntPtr directly: void InventoryFree(IntPtr)",
+        );
+    }
+
+    /// Two classes: each gets its own `.cs` file and its own
+    /// owner-prefixed P/Invoke entry. The owner prefix prevents
+    /// collisions inside the flat `NativeMethods` class.
+    #[test]
+    fn emit_multiple_classes_get_disambiguated_native_methods() {
+        let mut contract = empty_contract();
+        contract.catalog.insert_class(empty_class("inventory"));
+        contract.catalog.insert_class(empty_class("counter"));
+
+        let output = emit_contract(&contract);
+        assert!(output.files.iter().any(|f| f.file_name == "Inventory.cs"));
+        assert!(output.files.iter().any(|f| f.file_name == "Counter.cs"));
+
+        let main_source = &output
+            .files
+            .iter()
+            .find(|f| f.file_name == "DemoLib.cs")
+            .expect("DemoLib.cs")
+            .source;
+
+        assert_source_contains(
+            main_source,
+            "InventoryFree(IntPtr handle);",
+            "first class's free has its owner prefix",
+        );
+        assert_source_contains(
+            main_source,
+            "CounterFree(IntPtr handle);",
+            "second class's free has its own owner prefix, no collision \
+             with the first inside flat NativeMethods",
+        );
+    }
+
+    /// Demo crate test: scanning `examples/demo` and emitting C# yields
+    /// IDisposable wrappers for each class in the demo (`Inventory`,
+    /// `Counter`, etc.) and the matching free DllImports. This pins the
+    /// scan-to-emit pipeline end to end against a real fixture, not a
+    /// hand-built `ClassDef`.
+    #[test]
+    fn emit_demo_crate_classes_render_as_idisposable_wrappers() {
+        use std::path::PathBuf;
+
+        let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .to_path_buf();
+        let demo_crate_path = repo_root.join("examples").join("demo");
+        let mut module = crate::scan::scan_crate(&demo_crate_path, "demo").unwrap();
+        let contract = crate::ir::build_contract(&mut module);
+        let abi = IrLowerer::new(&contract).to_abi_contract();
+        let output = CSharpEmitter::emit(&contract, &abi, &CSharpOptions::default());
+
+        let inventory = output
+            .files
+            .iter()
+            .find(|f| f.file_name == "Inventory.cs")
+            .expect("Inventory.cs from demo crate");
+        assert_source_contains(
+            &inventory.source,
+            "public sealed class Inventory : IDisposable",
+            "demo crate's Inventory class lowers to a sealed IDisposable wrapper",
+        );
+
+        let counter = output
+            .files
+            .iter()
+            .find(|f| f.file_name == "Counter.cs")
+            .expect("Counter.cs from demo crate");
+        assert_source_contains(
+            &counter.source,
+            "public sealed class Counter : IDisposable",
+            "demo crate's Counter class lowers to a sealed IDisposable wrapper",
+        );
+
+        let main = output
+            .files
+            .iter()
+            .find(|f| f.file_name.ends_with(".cs") && f.source.contains("class NativeMethods"))
+            .expect("main wrapper file with NativeMethods");
+        assert_source_contains(
+            &main.source,
+            r#"[DllImport(LibName, EntryPoint = "boltffi_inventory_free")]"#,
+            "demo crate emit registers Inventory's free DllImport",
+        );
+        assert_source_contains(
+            &main.source,
+            r#"[DllImport(LibName, EntryPoint = "boltffi_counter_free")]"#,
+            "demo crate emit registers Counter's free DllImport",
         );
     }
 }

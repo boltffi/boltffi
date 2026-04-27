@@ -479,5 +479,10 @@
         internal static extern {% if method.return_kind.native_returns_ffi_buf() %}FfiBuf{% else %}{{ method.return_type }}{% endif %} {{ method.native_method_name }}({{ method.native_param_list(enumeration.class_name, false) }});
 {%- endfor %}
 {%- endfor %}
+{%- for class in module.classes %}
+
+        [DllImport(LibName, EntryPoint = "{{ class.ffi_free }}")]
+        internal static extern void {{ class.native_free_method_name }}(IntPtr handle);
+{%- endfor %}
     }
 }

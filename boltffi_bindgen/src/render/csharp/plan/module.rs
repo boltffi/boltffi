@@ -1,7 +1,9 @@
 use boltffi_ffi_rules::naming::{LibraryName, Name};
 
 use super::super::ast::{CSharpClassName, CSharpNamespace};
-use super::{CFunctionName, CSharpEnumPlan, CSharpFunctionPlan, CSharpRecordPlan};
+use super::{
+    CFunctionName, CSharpClassPlan, CSharpEnumPlan, CSharpFunctionPlan, CSharpRecordPlan,
+};
 
 /// A whole C# module: namespace, library binding, and every record, enum,
 /// and function it exposes. Renders into a `namespace` spread across
@@ -29,6 +31,10 @@ pub struct CSharpModulePlan {
     pub enums: Vec<CSharpEnumPlan>,
     /// Top-level functions exposed by the module.
     pub functions: Vec<CSharpFunctionPlan>,
+    /// Classes exposed by the module. Each class is rendered to its
+    /// own `.cs` file as a `sealed class` implementing `IDisposable`
+    /// around an opaque native handle.
+    pub classes: Vec<CSharpClassPlan>,
 }
 
 impl CSharpModulePlan {
@@ -36,6 +42,12 @@ impl CSharpModulePlan {
     /// file in the functions template.
     pub fn has_functions(&self) -> bool {
         !self.functions.is_empty()
+    }
+
+    /// Whether the module exposes any classes. Gates the per-class
+    /// `[DllImport]` block in the native template.
+    pub fn has_classes(&self) -> bool {
+        !self.classes.is_empty()
     }
 
     /// Whether the module needs `using System.Text;`. True when any function

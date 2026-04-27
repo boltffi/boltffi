@@ -10,6 +10,7 @@
 //! Plans are created by the `lower` module, and consumed by the `templates` module.
 
 mod callable;
+mod class;
 mod enumeration;
 mod field;
 mod identifier;
@@ -20,6 +21,7 @@ pub use callable::{
     CSharpFunctionPlan, CSharpMethodPlan, CSharpParamKind, CSharpParamPlan, CSharpReceiver,
     CSharpReturnKind, CSharpWireWriterPlan,
 };
+pub use class::CSharpClassPlan;
 pub use enumeration::{CSharpEnumKind, CSharpEnumPlan, CSharpEnumVariantPlan};
 pub use field::CSharpFieldPlan;
 pub use identifier::CFunctionName;

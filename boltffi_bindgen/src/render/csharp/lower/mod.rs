@@ -4,6 +4,7 @@
 
 mod abi;
 mod admission;
+mod classes;
 mod decode;
 mod encode;
 mod enumerations;

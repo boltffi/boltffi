@@ -15,7 +15,8 @@ use askama::Template;
 
 use super::ast::CSharpNamespace;
 use super::plan::{
-    CSharpEnumPlan, CSharpModulePlan, CSharpParamKind, CSharpRecordPlan, CSharpReturnKind,
+    CSharpClassPlan, CSharpEnumPlan, CSharpModulePlan, CSharpParamKind, CSharpRecordPlan,
+    CSharpReturnKind,
 };
 
 /// Renders the file header: auto-generated comment, `using` directives,
@@ -78,6 +79,17 @@ pub struct EnumDataTemplate<'a> {
     pub namespace: &'a CSharpNamespace,
 }
 
+/// Renders a Rust class as a sealed C# class implementing `IDisposable`
+/// around an opaque `IntPtr` handle. The wrapper takes ownership of the
+/// handle, frees it through `NativeMethods.{Class}Free` on `Dispose`,
+/// and falls back to the finalizer if the consumer forgets.
+#[derive(Template)]
+#[template(path = "render_csharp/class.txt", escape = "none")]
+pub struct ClassTemplate<'a> {
+    pub class: &'a CSharpClassPlan,
+    pub namespace: &'a CSharpNamespace,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -87,9 +99,9 @@ mod tests {
         CSharpParamName, CSharpPropertyName, CSharpStatement, CSharpType, CSharpTypeReference,
     };
     use crate::render::csharp::plan::{
-        CFunctionName, CSharpEnumKind, CSharpEnumPlan, CSharpEnumVariantPlan, CSharpFieldPlan,
-        CSharpMethodPlan, CSharpParamKind, CSharpParamPlan, CSharpReceiver, CSharpRecordPlan,
-        CSharpReturnKind,
+        CFunctionName, CSharpClassPlan, CSharpEnumKind, CSharpEnumPlan, CSharpEnumVariantPlan,
+        CSharpFieldPlan, CSharpMethodPlan, CSharpParamKind, CSharpParamPlan, CSharpReceiver,
+        CSharpRecordPlan, CSharpReturnKind,
     };
 
     fn demo_namespace() -> CSharpNamespace {
@@ -707,6 +719,29 @@ mod tests {
         let enumeration = build_enum("shape", CSharpEnumKind::Data, None, variants, methods);
         let template = EnumDataTemplate {
             enumeration: &enumeration,
+            namespace: &demo_namespace(),
+        };
+        insta::assert_snapshot!(template.render().unwrap());
+    }
+
+    /// Inventory: a Rust class with no constructors or methods exposed
+    /// in the plan yet. Pins the bare IDisposable wrapper: the handle
+    /// is held in a private `IntPtr` and freed exactly once through
+    /// `NativeMethods.InventoryFree`, with the finalizer as a safety
+    /// net for callers that forget to dispose.
+    #[test]
+    fn snapshot_class_inventory_idisposable_wrapper() {
+        let class_name = CSharpClassName::from_source("inventory");
+        let class = CSharpClassPlan {
+            native_free_method_name: CSharpMethodName::native_for_owner(
+                &class_name,
+                &CSharpMethodName::new("Free"),
+            ),
+            class_name,
+            ffi_free: CFunctionName::new("boltffi_inventory_free".to_string()),
+        };
+        let template = ClassTemplate {
+            class: &class,
             namespace: &demo_namespace(),
         };
         insta::assert_snapshot!(template.render().unwrap());
