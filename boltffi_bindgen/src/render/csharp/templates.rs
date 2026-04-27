@@ -15,8 +15,8 @@ use askama::Template;
 
 use super::ast::CSharpNamespace;
 use super::plan::{
-    CSharpClassPlan, CSharpEnumPlan, CSharpModulePlan, CSharpParamKind, CSharpRecordPlan,
-    CSharpReturnKind,
+    CSharpClassPlan, CSharpConstructorKind, CSharpEnumPlan, CSharpModulePlan, CSharpParamKind,
+    CSharpRecordPlan, CSharpReturnKind,
 };
 
 /// Renders the file header: auto-generated comment, `using` directives,
@@ -99,9 +99,9 @@ mod tests {
         CSharpParamName, CSharpPropertyName, CSharpStatement, CSharpType, CSharpTypeReference,
     };
     use crate::render::csharp::plan::{
-        CFunctionName, CSharpClassPlan, CSharpEnumKind, CSharpEnumPlan, CSharpEnumVariantPlan,
-        CSharpFieldPlan, CSharpMethodPlan, CSharpParamKind, CSharpParamPlan, CSharpReceiver,
-        CSharpRecordPlan, CSharpReturnKind,
+        CFunctionName, CSharpClassPlan, CSharpConstructorKind, CSharpConstructorPlan,
+        CSharpEnumKind, CSharpEnumPlan, CSharpEnumVariantPlan, CSharpFieldPlan, CSharpMethodPlan,
+        CSharpParamKind, CSharpParamPlan, CSharpReceiver, CSharpRecordPlan, CSharpReturnKind,
     };
 
     fn demo_namespace() -> CSharpNamespace {
@@ -739,6 +739,61 @@ mod tests {
             ),
             class_name,
             ffi_free: CFunctionName::new("boltffi_inventory_free".to_string()),
+            constructors: vec![],
+        };
+        let template = ClassTemplate {
+            class: &class,
+            namespace: &demo_namespace(),
+        };
+        insta::assert_snapshot!(template.render().unwrap());
+    }
+
+    /// Inventory with both a `Default` constructor (`new`) and a
+    /// `NamedInit` constructor (`with_capacity(u32)`). Pins the two
+    /// rendering shapes side by side: the primary lifts to a real C#
+    /// instance constructor delegating through a private static
+    /// helper, and the named-init lifts to a `public static` factory
+    /// that wraps the returned `IntPtr`.
+    #[test]
+    fn snapshot_class_inventory_with_constructors() {
+        let class_name = CSharpClassName::from_source("inventory");
+        let primary = CSharpConstructorPlan {
+            kind: CSharpConstructorKind::Primary,
+            native_method_name: CSharpMethodName::native_for_owner(
+                &class_name,
+                &CSharpMethodName::new("New"),
+            ),
+            helper_method_name: CSharpMethodName::new("InventoryNewHandle"),
+            ffi_name: CFunctionName::new("boltffi_inventory_new".to_string()),
+            params: vec![],
+            wire_writers: vec![],
+        };
+        let with_capacity_name = CSharpMethodName::from_source("with_capacity");
+        let factory = CSharpConstructorPlan {
+            kind: CSharpConstructorKind::StaticFactory {
+                name: with_capacity_name.clone(),
+            },
+            native_method_name: CSharpMethodName::native_for_owner(
+                &class_name,
+                &with_capacity_name,
+            ),
+            helper_method_name: CSharpMethodName::new(""),
+            ffi_name: CFunctionName::new("boltffi_inventory_with_capacity".to_string()),
+            params: vec![CSharpParamPlan {
+                name: CSharpParamName::from_source("capacity"),
+                csharp_type: CSharpType::UInt,
+                kind: CSharpParamKind::Direct,
+            }],
+            wire_writers: vec![],
+        };
+        let class = CSharpClassPlan {
+            native_free_method_name: CSharpMethodName::native_for_owner(
+                &class_name,
+                &CSharpMethodName::new("Free"),
+            ),
+            class_name,
+            ffi_free: CFunctionName::new("boltffi_inventory_free".to_string()),
+            constructors: vec![primary, factory],
         };
         let template = ClassTemplate {
             class: &class,

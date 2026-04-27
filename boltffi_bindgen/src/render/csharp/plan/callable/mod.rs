@@ -12,6 +12,7 @@ mod param;
 pub use function::{CSharpFunctionPlan, CSharpReturnKind};
 pub use method::{CSharpMethodPlan, CSharpReceiver};
 pub use param::{CSharpParamKind, CSharpParamPlan};
+pub(crate) use param::{native_call_arg_list, native_param_list};
 
 use super::super::ast::{CSharpExpression, CSharpLocalName, CSharpParamName, CSharpStatement};
 

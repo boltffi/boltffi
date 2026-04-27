@@ -2490,6 +2490,16 @@ mod tests {
             "public sealed class Inventory : IDisposable",
             "demo crate's Inventory class lowers to a sealed IDisposable wrapper",
         );
+        assert_source_contains(
+            &inventory.source,
+            "public Inventory()",
+            "demo Inventory's `pub fn new()` lifts to a primary C# constructor",
+        );
+        assert_source_contains(
+            &inventory.source,
+            "public static Inventory WithCapacity(uint capacity)",
+            "demo Inventory's `pub fn with_capacity(u32)` lifts to a static factory",
+        );
 
         let counter = output
             .files
@@ -2516,6 +2526,21 @@ mod tests {
             &main.source,
             r#"[DllImport(LibName, EntryPoint = "boltffi_counter_free")]"#,
             "demo crate emit registers Counter's free DllImport",
+        );
+        assert_source_contains(
+            &main.source,
+            r#"[DllImport(LibName, EntryPoint = "boltffi_inventory_new")]"#,
+            "demo crate emit registers Inventory's primary constructor DllImport",
+        );
+        assert_source_contains(
+            &main.source,
+            "internal static extern IntPtr InventoryNew();",
+            "Inventory primary constructor's native method returns IntPtr",
+        );
+        assert_source_contains(
+            &main.source,
+            "internal static extern IntPtr InventoryWithCapacity(uint capacity);",
+            "Inventory's named-init constructor takes its explicit param through DllImport",
         );
     }
 }

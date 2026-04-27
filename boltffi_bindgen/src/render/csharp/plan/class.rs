@@ -1,5 +1,8 @@
-use super::super::ast::{CSharpClassName, CSharpMethodName};
-use super::CFunctionName;
+use super::super::ast::{
+    CSharpArgumentList, CSharpClassName, CSharpMethodName, CSharpParameterList,
+};
+use super::callable::{native_call_arg_list, native_param_list};
+use super::{CFunctionName, CSharpParamPlan, CSharpWireWriterPlan};
 
 /// A Rust object exposed as a C# `IDisposable` wrapper around an
 /// opaque native handle (`IntPtr`), emitted to its own `.cs` file.
@@ -15,6 +18,9 @@ use super::CFunctionName;
 /// {
 ///     private IntPtr _handle;
 ///     internal Inventory(IntPtr handle) { _handle = handle; }
+///     public Inventory() : this(NewHandle()) { }
+///     public static Inventory WithCapacity(uint capacity) =>
+///         new Inventory(NativeMethods.InventoryWithCapacity(capacity));
 ///     public void Dispose() { ... }
 ///     ~Inventory() { Dispose(); }
 /// }
@@ -30,4 +36,129 @@ pub struct CSharpClassPlan {
     /// the owner class name is prefixed (`InventoryFree`,
     /// `CounterFree`).
     pub native_free_method_name: CSharpMethodName,
+    /// Public constructors exposed on the wrapper. A `Default` Rust
+    /// constructor lifts to a [`CSharpConstructorKind::Primary`] C#
+    /// instance constructor; named factories and named-init
+    /// constructors lift to [`CSharpConstructorKind::StaticFactory`]
+    /// methods on the class.
+    pub constructors: Vec<CSharpConstructorPlan>,
+}
+
+/// One public way to construct an instance of the wrapper. Calls the
+/// matching native `_new`-family symbol, then wraps the returned
+/// `IntPtr` in `new ClassName(handle)`.
+///
+/// Examples:
+/// ```csharp
+/// // Primary: rendered as a real C# instance constructor that
+/// // delegates to the internal `IntPtr` ctor through a private
+/// // helper. The helper hosts any wire-encoding setup that the
+/// // chained-ctor `: this(...)` form cannot fit in an expression.
+/// public Inventory() : this(NewHandle()) { }
+/// private static IntPtr NewHandle() => NativeMethods.InventoryNew();
+///
+/// // StaticFactory: rendered as a `public static` method that
+/// // returns a fresh wrapper.
+/// public static Inventory WithCapacity(uint capacity) =>
+///     new Inventory(NativeMethods.InventoryWithCapacity(capacity));
+/// ```
+#[derive(Debug, Clone)]
+pub struct CSharpConstructorPlan {
+    /// How the constructor is rendered on the public surface.
+    pub kind: CSharpConstructorKind,
+    /// Name used for this constructor's DllImport entry inside the
+    /// shared `NativeMethods` class. Prefixed with the owning class
+    /// name (`InventoryNew`, `InventoryWithCapacity`) because the
+    /// DllImport class is flat.
+    pub native_method_name: CSharpMethodName,
+    /// Name of the private static helper that runs setup + native
+    /// call for a primary constructor. Unused for static factories,
+    /// which keep the setup inline in their method body.
+    pub helper_method_name: CSharpMethodName,
+    /// The C function this constructor calls across the ABI.
+    pub ffi_name: CFunctionName,
+    /// Explicit params on the public surface.
+    pub params: Vec<CSharpParamPlan>,
+    /// For each non-blittable record / data-enum / option / nested-vec
+    /// param, the setup block that wire-encodes it into a `byte[]`
+    /// before the native call.
+    pub wire_writers: Vec<CSharpWireWriterPlan>,
+}
+
+/// How a constructor renders on the public surface of the wrapper.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CSharpConstructorKind {
+    /// A real C# instance constructor: `public ClassName(...)`. Lifts
+    /// from a Rust `Default` constructor (the conventional `pub fn
+    /// new(...) -> Self`). Delegates to the internal `IntPtr` ctor
+    /// through a private static helper so any wire-encoding setup has
+    /// somewhere to live; the chained-ctor `: this(...)` syntax only
+    /// accepts a single expression.
+    Primary,
+    /// A static factory: `public static ClassName Name(...)`. Lifts
+    /// from named factories (`pub fn empty() -> Self`) and named-init
+    /// constructors (`pub fn with_capacity(u32) -> Self`). The factory
+    /// body inlines any setup before returning a fresh wrapper.
+    StaticFactory { name: CSharpMethodName },
+}
+
+impl CSharpConstructorKind {
+    pub fn is_primary(&self) -> bool {
+        matches!(self, Self::Primary)
+    }
+}
+
+impl CSharpConstructorPlan {
+    /// Typed param list for the `[DllImport]` native signature.
+    pub fn native_param_list(&self) -> CSharpParameterList {
+        native_param_list(&self.params)
+    }
+
+    /// Argument list passed to the native call. Mirrors the shape
+    /// produced by [`Self::native_param_list`]: a `string` param
+    /// expands into `(name_bytes, (UIntPtr)name_bytes.Length)`, a
+    /// wire-encoded record into `(_nameBytes, (UIntPtr)_nameBytes.Length)`,
+    /// and so on.
+    pub fn native_call_args(&self) -> CSharpArgumentList {
+        native_call_arg_list(&self.params)
+    }
+
+    /// Whether any param requires an `unsafe { fixed (...) { ... } }`
+    /// block around the native call. Drives the same scaffolding the
+    /// top-level functions template uses for `Vec<BlittableRecord>`
+    /// params.
+    pub fn has_pinned_params(&self) -> bool {
+        self.params.iter().any(CSharpParamPlan::is_pinned)
+    }
+
+    /// Whether any param contributes a usage of `Encoding.UTF8` to
+    /// the constructor body. Drives the conditional `using System.Text;`
+    /// directive emitted by the class template. True when a param's
+    /// type contains a `string` at any nesting depth: a plain `string`
+    /// triggers `Encoding.UTF8.GetBytes` setup, and a `Vec<string>` or
+    /// option-wrapped string contributes `Encoding.UTF8.GetByteCount`
+    /// inside its wire-writer size expression.
+    pub fn needs_system_text(&self) -> bool {
+        self.params.iter().any(|p| p.csharp_type.contains_string())
+    }
+}
+
+impl CSharpClassPlan {
+    /// Whether any constructor has a pinned-array param. Aggregates
+    /// [`CSharpConstructorPlan::has_pinned_params`] so the class
+    /// template can decide once per file whether to import
+    /// `System.Runtime.CompilerServices` (for `Unsafe.SizeOf<T>`).
+    pub fn has_pinned_params(&self) -> bool {
+        self.constructors
+            .iter()
+            .any(CSharpConstructorPlan::has_pinned_params)
+    }
+
+    /// Whether any constructor needs `using System.Text;` in the
+    /// class file. Aggregates [`CSharpConstructorPlan::needs_system_text`].
+    pub fn needs_system_text(&self) -> bool {
+        self.constructors
+            .iter()
+            .any(CSharpConstructorPlan::needs_system_text)
+    }
 }

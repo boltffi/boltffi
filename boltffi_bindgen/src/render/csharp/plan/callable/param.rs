@@ -273,7 +273,7 @@ pub enum CSharpParamKind {
     },
 }
 
-pub(super) fn native_param_list(params: &[CSharpParamPlan]) -> CSharpParameterList {
+pub(crate) fn native_param_list(params: &[CSharpParamPlan]) -> CSharpParameterList {
     let mut list = CSharpParameterList::empty();
     for p in params {
         list.extend(p.native_declarations());
@@ -281,7 +281,7 @@ pub(super) fn native_param_list(params: &[CSharpParamPlan]) -> CSharpParameterLi
     list
 }
 
-pub(super) fn native_call_arg_list(params: &[CSharpParamPlan]) -> CSharpArgumentList {
+pub(crate) fn native_call_arg_list(params: &[CSharpParamPlan]) -> CSharpArgumentList {
     let mut list = CSharpArgumentList::empty();
     for p in params {
         list.extend(p.native_call_args());

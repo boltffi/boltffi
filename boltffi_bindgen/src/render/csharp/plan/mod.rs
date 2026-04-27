@@ -21,7 +21,7 @@ pub use callable::{
     CSharpFunctionPlan, CSharpMethodPlan, CSharpParamKind, CSharpParamPlan, CSharpReceiver,
     CSharpReturnKind, CSharpWireWriterPlan,
 };
-pub use class::CSharpClassPlan;
+pub use class::{CSharpClassPlan, CSharpConstructorKind, CSharpConstructorPlan};
 pub use enumeration::{CSharpEnumKind, CSharpEnumPlan, CSharpEnumVariantPlan};
 pub use field::CSharpFieldPlan;
 pub use identifier::CFunctionName;

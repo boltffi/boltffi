@@ -5,6 +5,12 @@
 
 using System;
 using System.Threading;
+{%- if class.has_pinned_params() %}
+using System.Runtime.CompilerServices;
+{%- endif %}
+{%- if class.needs_system_text() %}
+using System.Text;
+{%- endif %}
 
 namespace {{ namespace }}
 {
@@ -16,6 +22,88 @@ namespace {{ namespace }}
         {
             _handle = handle;
         }
+{%- for ctor in class.constructors %}
+{%- if ctor.kind.is_primary() %}
+
+        public {{ class.class_name }}({% for p in ctor.params %}{{ p.csharp_type }} {{ p.name }}{% if !loop.last %}, {% endif %}{% endfor %})
+            : this({{ ctor.helper_method_name }}({% for p in ctor.params %}{{ p.name }}{% if !loop.last %}, {% endif %}{% endfor %})) { }
+
+        private static IntPtr {{ ctor.helper_method_name }}({% for p in ctor.params %}{{ p.csharp_type }} {{ p.name }}{% if !loop.last %}, {% endif %}{% endfor %})
+        {
+{%- for param in ctor.params %}
+{%- if let Some(decl) = param.setup_declaration() %}
+            {{ decl }}
+{%- endif %}
+{%- endfor %}
+{%- for writer in ctor.wire_writers %}
+            using var {{ writer.binding_name }} = new WireWriter({{ writer.size_expr }});
+{%- for stmt in writer.encode_stmts %}
+            {{ stmt }};
+{%- endfor %}
+            byte[] {{ writer.bytes_binding_name }} = {{ writer.binding_name }}.ToArray();
+{%- endfor %}
+{%- if ctor.has_pinned_params() %}
+            unsafe
+            {
+{%- for param in ctor.params %}
+{%- match param.kind %}
+{%- when CSharpParamKind::PinnedArray with { element_type, ptr_local } %}
+                fixed ({{ element_type }}* {{ ptr_local }} = {{ param.name }})
+                {
+{%- when _ %}
+{%- endmatch %}
+{%- endfor %}
+                return NativeMethods.{{ ctor.native_method_name }}({{ ctor.native_call_args() }});
+{%- for param in ctor.params %}
+{%- if param.is_pinned() %}
+                }
+{%- endif %}
+{%- endfor %}
+            }
+{%- else %}
+            return NativeMethods.{{ ctor.native_method_name }}({{ ctor.native_call_args() }});
+{%- endif %}
+        }
+{%- else if let CSharpConstructorKind::StaticFactory with { name } = ctor.kind %}
+
+        public static {{ class.class_name }} {{ name }}({% for p in ctor.params %}{{ p.csharp_type }} {{ p.name }}{% if !loop.last %}, {% endif %}{% endfor %})
+        {
+{%- for param in ctor.params %}
+{%- if let Some(decl) = param.setup_declaration() %}
+            {{ decl }}
+{%- endif %}
+{%- endfor %}
+{%- for writer in ctor.wire_writers %}
+            using var {{ writer.binding_name }} = new WireWriter({{ writer.size_expr }});
+{%- for stmt in writer.encode_stmts %}
+            {{ stmt }};
+{%- endfor %}
+            byte[] {{ writer.bytes_binding_name }} = {{ writer.binding_name }}.ToArray();
+{%- endfor %}
+{%- if ctor.has_pinned_params() %}
+            unsafe
+            {
+{%- for param in ctor.params %}
+{%- match param.kind %}
+{%- when CSharpParamKind::PinnedArray with { element_type, ptr_local } %}
+                fixed ({{ element_type }}* {{ ptr_local }} = {{ param.name }})
+                {
+{%- when _ %}
+{%- endmatch %}
+{%- endfor %}
+                return new {{ class.class_name }}(NativeMethods.{{ ctor.native_method_name }}({{ ctor.native_call_args() }}));
+{%- for param in ctor.params %}
+{%- if param.is_pinned() %}
+                }
+{%- endif %}
+{%- endfor %}
+            }
+{%- else %}
+            return new {{ class.class_name }}(NativeMethods.{{ ctor.native_method_name }}({{ ctor.native_call_args() }}));
+{%- endif %}
+        }
+{%- endif %}
+{%- endfor %}
 
         internal IntPtr RawHandle => _handle;
 

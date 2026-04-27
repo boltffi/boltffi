@@ -38,6 +38,7 @@ public static class DemoTest
         TestOptions();
         TestOptionsInRecords();
         TestOptionsWithVec();
+        TestClasses();
         Console.WriteLine("All tests passed!");
         return 0;
     }
@@ -1145,6 +1146,55 @@ public static class DemoTest
             EchoVecOptionalI32(new int?[] { 10, 20, 30 }).SequenceEqual(new int?[] { 10, 20, 30 }),
             "EchoVecOptionalI32 all-Some preserved"
         );
+
+        Console.WriteLine("  PASS\n");
+    }
+
+    /// <summary>
+    /// Class constructors. Each constructor is just a way to obtain an
+    /// IntPtr handle to a fresh Rust-allocated instance: the public
+    /// `Default` constructor (`pub fn new`) lifts to a real C# instance
+    /// constructor, and named factories / named-init constructors lift
+    /// to `public static` factories. Instance methods are not exposed
+    /// yet, so the test scope is "construct it, dispose it, no
+    /// segfault" plus the surface shape of the generated wrappers.
+    /// </summary>
+    private static void TestClasses()
+    {
+        Console.WriteLine("Testing class constructors (Inventory, Counter)...");
+
+        // Inventory.new() lifts to a parameterless C# instance ctor.
+        // The using block forces Dispose() to run, which hands the
+        // IntPtr back to Rust through boltffi_inventory_free.
+        using (var inv = new Inventory())
+        {
+            Require(inv != null, "new Inventory()");
+        }
+
+        // Inventory.with_capacity(u32) is a NamedInit constructor on
+        // the Rust side, which the C# backend lifts to a static
+        // factory rather than a second instance constructor.
+        using (var inv = Inventory.WithCapacity(50))
+        {
+            Require(inv != null, "Inventory.WithCapacity(50)");
+        }
+
+        // Counter.new(i32) is a Default constructor that takes one
+        // primitive param, so it lifts to a primary instance ctor with
+        // an explicit signature.
+        using (var counter = new Counter(7))
+        {
+            Require(counter != null, "new Counter(7)");
+        }
+
+        // Constructing several instances back to back exercises the
+        // Rust allocator path; if Box::into_raw or Box::from_raw were
+        // mis-ordered this would surface as a segfault or a leak.
+        for (int i = 0; i < 100; i++)
+        {
+            using var counter = new Counter(i);
+            Require(counter != null, $"new Counter({i}) iteration");
+        }
 
         Console.WriteLine("  PASS\n");
     }

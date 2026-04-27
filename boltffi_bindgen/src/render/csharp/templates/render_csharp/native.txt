@@ -483,6 +483,11 @@
 
         [DllImport(LibName, EntryPoint = "{{ class.ffi_free }}")]
         internal static extern void {{ class.native_free_method_name }}(IntPtr handle);
+{%- for ctor in class.constructors %}
+
+        [DllImport(LibName, EntryPoint = "{{ ctor.ffi_name }}")]
+        internal static extern IntPtr {{ ctor.native_method_name }}({{ ctor.native_param_list() }});
+{%- endfor %}
 {%- endfor %}
     }
 }
