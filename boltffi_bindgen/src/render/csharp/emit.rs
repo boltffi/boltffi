@@ -2373,9 +2373,12 @@ mod tests {
         );
         assert_source_contains(
             &file.source,
-            "internal Inventory(IntPtr handle)",
-            "internal constructor takes the raw IntPtr so future factories \
-             and ctors can wrap a handle without exposing the field",
+            "private Inventory(IntPtr handle)",
+            "handle-adopting ctor is private so an integer literal like \
+             `new Inventory(2)` can never resolve here via the implicit \
+             literal-to-IntPtr conversion; the chained `: this(...)` form \
+             and the static factories live inside the class and can still \
+             reach it",
         );
         assert_source_contains(
             &file.source,
@@ -2511,6 +2514,37 @@ mod tests {
             "public sealed class Counter : IDisposable",
             "demo crate's Counter class lowers to a sealed IDisposable wrapper",
         );
+        assert_source_contains(
+            &counter.source,
+            "public int Get()",
+            "demo Counter's `&self` getter renders as a ClassInstance method",
+        );
+        assert_source_contains(
+            &counter.source,
+            "public void Increment()",
+            "demo Counter's void `&self` method renders without a return",
+        );
+        assert_source_contains(
+            &counter.source,
+            "public Point AsPoint()",
+            "demo Counter's blittable-record return is rendered directly",
+        );
+
+        let math_utils = output
+            .files
+            .iter()
+            .find(|f| f.file_name == "MathUtils.cs")
+            .expect("MathUtils.cs from demo crate");
+        assert_source_contains(
+            &math_utils.source,
+            "public static int Add(int a, int b)",
+            "MathUtils::add (no-self) lifts to a `public static` class method",
+        );
+        assert_source_contains(
+            &math_utils.source,
+            "public double Round(double value)",
+            "MathUtils::round (&self) lifts to a ClassInstance method",
+        );
 
         let main = output
             .files
@@ -2541,6 +2575,16 @@ mod tests {
             &main.source,
             "internal static extern IntPtr InventoryWithCapacity(uint capacity);",
             "Inventory's named-init constructor takes its explicit param through DllImport",
+        );
+        assert_source_contains(
+            &main.source,
+            "internal static extern int CounterGet(IntPtr self);",
+            "ClassInstance methods prepend `IntPtr self` to the DllImport signature",
+        );
+        assert_source_contains(
+            &main.source,
+            "internal static extern int MathUtilsAdd(int a, int b);",
+            "Class static methods do not prepend a receiver to the DllImport",
         );
     }
 }

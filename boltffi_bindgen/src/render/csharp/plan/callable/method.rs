@@ -75,6 +75,14 @@ pub enum CSharpReceiver {
     /// body wire-encodes `this` into a `byte[]` before the native call;
     /// blittable records pass `this` by value through P/Invoke.
     InstanceNative,
+    /// Instance method on a class wrapper. Renders as a regular
+    /// instance method `public {ReturnType} {Name}({params})` on the
+    /// sealed class. The native call prepends the wrapper's stored
+    /// `_handle` (an `IntPtr`) so Rust receives the same pointer it
+    /// returned from the constructor. Both `&self` and `&mut self`
+    /// receivers map here; the Rust side handles any interior
+    /// synchronization (`Mutex`, atomics).
+    ClassInstance,
 }
 
 impl CSharpReceiver {
@@ -84,6 +92,10 @@ impl CSharpReceiver {
 
     pub fn is_instance_extension(&self) -> bool {
         matches!(self, Self::InstanceExtension)
+    }
+
+    pub fn is_class_instance(&self) -> bool {
+        matches!(self, Self::ClassInstance)
     }
 }
 
@@ -136,6 +148,9 @@ impl CSharpMethodPlan {
                     CSharpParamName::new("selfLen"),
                 ));
             }
+            CSharpReceiver::ClassInstance => {
+                list.push(self_param(CSharpType::IntPtr));
+            }
         }
         list.extend(native_param_list(&self.params));
         list
@@ -163,6 +178,9 @@ impl CSharpMethodPlan {
                 let buf = local_ident("_selfBytes");
                 list.push(buf.clone());
                 list.push(uintptr_length_member(buf));
+            }
+            CSharpReceiver::ClassInstance => {
+                list.push(local_ident("_handle"));
             }
         }
         list.extend(native_call_arg_list(&self.params));

@@ -2,7 +2,7 @@ use super::super::ast::{
     CSharpArgumentList, CSharpClassName, CSharpMethodName, CSharpParameterList,
 };
 use super::callable::{native_call_arg_list, native_param_list};
-use super::{CFunctionName, CSharpParamPlan, CSharpWireWriterPlan};
+use super::{CFunctionName, CSharpMethodPlan, CSharpParamPlan, CSharpWireWriterPlan};
 
 /// A Rust object exposed as a C# `IDisposable` wrapper around an
 /// opaque native handle (`IntPtr`), emitted to its own `.cs` file.
@@ -42,6 +42,12 @@ pub struct CSharpClassPlan {
     /// constructors lift to [`CSharpConstructorKind::StaticFactory`]
     /// methods on the class.
     pub constructors: Vec<CSharpConstructorPlan>,
+    /// Public methods exposed on the wrapper. Instance methods carry
+    /// [`super::CSharpReceiver::ClassInstance`] so the rendered body
+    /// passes `_handle` as the first native arg; static methods carry
+    /// [`super::CSharpReceiver::Static`] and behave like free functions
+    /// scoped to the class.
+    pub methods: Vec<CSharpMethodPlan>,
 }
 
 /// One public way to construct an instance of the wrapper. Calls the
@@ -144,21 +150,41 @@ impl CSharpConstructorPlan {
 }
 
 impl CSharpClassPlan {
-    /// Whether any constructor has a pinned-array param. Aggregates
-    /// [`CSharpConstructorPlan::has_pinned_params`] so the class
-    /// template can decide once per file whether to import
-    /// `System.Runtime.CompilerServices` (for `Unsafe.SizeOf<T>`).
+    /// Whether any constructor or method has a pinned-array param.
+    /// Drives the conditional `using System.Runtime.CompilerServices`
+    /// import (for `Unsafe.SizeOf<T>`) and the `unsafe { fixed }`
+    /// scaffolding in the class template.
     pub fn has_pinned_params(&self) -> bool {
         self.constructors
             .iter()
             .any(CSharpConstructorPlan::has_pinned_params)
+            || self.methods.iter().any(CSharpMethodPlan::has_pinned_params)
     }
 
-    /// Whether any constructor needs `using System.Text;` in the
-    /// class file. Aggregates [`CSharpConstructorPlan::needs_system_text`].
+    /// Whether any constructor or method needs `using System.Text;` in
+    /// the class file. True when any param's type contains a `string`
+    /// (drives `Encoding.UTF8.GetBytes` or `Encoding.UTF8.GetByteCount`
+    /// somewhere in the body) or when any method's return value
+    /// wire-decodes a string.
     pub fn needs_system_text(&self) -> bool {
         self.constructors
             .iter()
             .any(CSharpConstructorPlan::needs_system_text)
+            || self.methods.iter().any(method_needs_system_text)
     }
+}
+
+/// Whether a class method needs `using System.Text;`: true if any
+/// param contains a `string` (the wire-encode size path uses
+/// `Encoding.UTF8.GetByteCount`) or the return type contains a
+/// `string`. The return-side check covers methods that decode through
+/// `WireReader` since their bodies don't reference `Encoding` directly,
+/// but record-typed returns may; covering "any param or return touches
+/// string" is the conservative match for the predicate.
+fn method_needs_system_text(method: &CSharpMethodPlan) -> bool {
+    method
+        .params
+        .iter()
+        .any(|p| p.csharp_type.contains_string())
+        || method.return_type.contains_string()
 }

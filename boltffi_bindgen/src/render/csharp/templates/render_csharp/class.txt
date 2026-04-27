@@ -18,7 +18,8 @@ namespace {{ namespace }}
     {
         private IntPtr _handle;
 
-        internal {{ class.class_name }}(IntPtr handle)
+        // Private handle-adopting ctor; used only by chained `: this(...)` and the static factories below.
+        private {{ class.class_name }}(IntPtr handle)
         {
             _handle = handle;
         }
@@ -103,6 +104,9 @@ namespace {{ namespace }}
 {%- endif %}
         }
 {%- endif %}
+{%- endfor %}
+{%- for method in class.methods %}
+{% include "render_csharp/class_method.txt" %}
 {%- endfor %}
 
         internal IntPtr RawHandle => _handle;

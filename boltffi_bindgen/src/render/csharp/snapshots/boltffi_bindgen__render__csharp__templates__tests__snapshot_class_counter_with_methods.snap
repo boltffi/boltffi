@@ -12,27 +12,29 @@ using System.Threading;
 
 namespace Demo
 {
-    public sealed class Inventory : IDisposable
+    public sealed class Counter : IDisposable
     {
         private IntPtr _handle;
 
         // Private handle-adopting ctor; used only by chained `: this(...)` and the static factories below.
-        private Inventory(IntPtr handle)
+        private Counter(IntPtr handle)
         {
             _handle = handle;
         }
 
-        public Inventory()
-            : this(InventoryNewHandle()) { }
-
-        private static IntPtr InventoryNewHandle()
+        public int Get()
         {
-            return NativeMethods.InventoryNew();
+            return NativeMethods.CounterGet(_handle);
         }
 
-        public static Inventory WithCapacity(uint capacity)
+        public void Increment()
         {
-            return new Inventory(NativeMethods.InventoryWithCapacity(capacity));
+            NativeMethods.CounterIncrement(_handle);
+        }
+
+        public static int Zero()
+        {
+            return NativeMethods.CounterZero();
         }
 
         internal IntPtr RawHandle => _handle;
@@ -41,11 +43,11 @@ namespace Demo
         {
             IntPtr handle = Interlocked.Exchange(ref _handle, IntPtr.Zero);
             if (handle == IntPtr.Zero) return;
-            NativeMethods.InventoryFree(handle);
+            NativeMethods.CounterFree(handle);
             GC.SuppressFinalize(this);
         }
 
-        ~Inventory()
+        ~Counter()
         {
             Dispose();
         }

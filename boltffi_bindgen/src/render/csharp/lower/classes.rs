@@ -1,11 +1,12 @@
 use boltffi_ffi_rules::naming;
 
 use crate::ir::abi::{AbiCall, CallId};
-use crate::ir::definitions::{ClassDef, ConstructorDef};
+use crate::ir::definitions::{ClassDef, ConstructorDef, MethodDef, Receiver, ReturnDef};
 
-use super::super::ast::{CSharpClassName, CSharpMethodName};
+use super::super::ast::{CSharpClassName, CSharpMethodName, CSharpType};
 use super::super::plan::{
-    CSharpClassPlan, CSharpConstructorKind, CSharpConstructorPlan, CSharpParamPlan,
+    CSharpClassPlan, CSharpConstructorKind, CSharpConstructorPlan, CSharpMethodPlan,
+    CSharpParamPlan, CSharpReceiver,
 };
 use super::lowerer::CSharpLowerer;
 use super::{encode, size};
@@ -22,12 +23,14 @@ impl<'a> CSharpLowerer<'a> {
         let native_free_method_name =
             CSharpMethodName::native_for_owner(&class_name, &CSharpMethodName::new("Free"));
         let constructors = self.lower_class_constructors(class, &class_name);
+        let methods = self.lower_class_methods(class, &class_name);
 
         CSharpClassPlan {
             class_name,
             ffi_free,
             native_free_method_name,
             constructors,
+            methods,
         }
     }
 
@@ -109,6 +112,97 @@ impl<'a> CSharpLowerer<'a> {
             helper_method_name,
             ffi_name: (&call.symbol).into(),
             params,
+            wire_writers,
+        })
+    }
+
+    /// Walks `class.methods` and produces the corresponding
+    /// [`CSharpMethodPlan`]s. Skips:
+    /// - `async` methods (no async runtime support yet)
+    /// - `Result<_, _>` returns (no error transport)
+    /// - `OwnedSelf` receivers (consume the wrapper, complex lifecycle)
+    fn lower_class_methods(
+        &self,
+        class: &ClassDef,
+        class_name: &CSharpClassName,
+    ) -> Vec<CSharpMethodPlan> {
+        class
+            .methods
+            .iter()
+            .filter(|m| !m.is_async())
+            .filter(|m| !matches!(m.receiver, Receiver::OwnedSelf))
+            .filter(|m| !matches!(m.returns, ReturnDef::Result { .. }))
+            .filter_map(|method_def| {
+                let call = self.abi.calls.iter().find(|c| {
+                    c.id == CallId::Method {
+                        class_id: class.id.clone(),
+                        method_id: method_def.id.clone(),
+                    }
+                })?;
+                self.lower_class_method(method_def, call, class_name)
+            })
+            .collect()
+    }
+
+    /// Lowers a single class method. `Static` receivers stay static;
+    /// `RefSelf` and `RefMutSelf` both lift to
+    /// [`CSharpReceiver::ClassInstance`]; `OwnedSelf` is filtered out
+    /// upstream. Returns `None` if any param fails to lower.
+    fn lower_class_method(
+        &self,
+        method_def: &MethodDef,
+        call: &AbiCall,
+        class_name: &CSharpClassName,
+    ) -> Option<CSharpMethodPlan> {
+        let receiver = match method_def.receiver {
+            Receiver::Static => CSharpReceiver::Static,
+            Receiver::RefSelf | Receiver::RefMutSelf => CSharpReceiver::ClassInstance,
+            Receiver::OwnedSelf => return None,
+        };
+
+        let return_type = match &method_def.returns {
+            ReturnDef::Void => CSharpType::Void,
+            ReturnDef::Value(type_expr) => self.lower_type(type_expr)?,
+            ReturnDef::Result { .. } => return None,
+        };
+        let return_kind = self.return_kind(
+            &method_def.returns,
+            &return_type,
+            call.returns.decode_ops.as_ref(),
+            None,
+        );
+
+        // Instance methods carry a synthetic `self` at the head of the
+        // ABI param list. Skip it when building wire writers and when
+        // mapping back to the explicit Rust params (which never include
+        // `self`). Static methods don't have this prefix.
+        let explicit_abi_params = if matches!(receiver, CSharpReceiver::Static) {
+            &call.params[..]
+        } else {
+            &call.params[1..]
+        };
+        let mut size_locals = size::SizeLocalCounters::default();
+        let mut encode_locals = encode::EncodeLocalCounters::default();
+        let wire_writers: Vec<_> = explicit_abi_params
+            .iter()
+            .filter_map(|p| self.wire_writer_for_param(p, &mut size_locals, &mut encode_locals))
+            .collect();
+
+        let params: Vec<CSharpParamPlan> = method_def
+            .params
+            .iter()
+            .map(|p| self.lower_param(p, &wire_writers))
+            .collect::<Option<_>>()?;
+
+        let name: CSharpMethodName = (&method_def.id).into();
+        Some(CSharpMethodPlan {
+            native_method_name: CSharpMethodName::native_for_owner(class_name, &name),
+            name,
+            ffi_name: (&call.symbol).into(),
+            receiver,
+            params,
+            return_type,
+            return_kind,
             wire_writers,
         })
     }

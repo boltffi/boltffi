@@ -740,6 +740,7 @@ mod tests {
             class_name,
             ffi_free: CFunctionName::new("boltffi_inventory_free".to_string()),
             constructors: vec![],
+            methods: vec![],
         };
         let template = ClassTemplate {
             class: &class,
@@ -794,6 +795,67 @@ mod tests {
             class_name,
             ffi_free: CFunctionName::new("boltffi_inventory_free".to_string()),
             constructors: vec![primary, factory],
+            methods: vec![],
+        };
+        let template = ClassTemplate {
+            class: &class,
+            namespace: &demo_namespace(),
+        };
+        insta::assert_snapshot!(template.render().unwrap());
+    }
+
+    /// Counter with two instance methods (a getter returning a
+    /// primitive and a void mutator) and a static method. Pins the
+    /// three rendering shapes the class template emits for methods:
+    ///
+    /// - Static: `public static {ReturnType} {Name}(...)` body.
+    /// - ClassInstance void: `NativeMethods.{Name}(_handle, ...)`.
+    /// - ClassInstance primitive return: `return NativeMethods.{Name}(_handle, ...)`.
+    #[test]
+    fn snapshot_class_counter_with_methods() {
+        let class_name = CSharpClassName::from_source("counter");
+        let get_name = CSharpMethodName::from_source("get");
+        let get = CSharpMethodPlan {
+            name: get_name.clone(),
+            native_method_name: CSharpMethodName::native_for_owner(&class_name, &get_name),
+            ffi_name: CFunctionName::new("boltffi_counter_get".to_string()),
+            receiver: CSharpReceiver::ClassInstance,
+            params: vec![],
+            return_type: CSharpType::Int,
+            return_kind: CSharpReturnKind::Direct,
+            wire_writers: vec![],
+        };
+        let increment_name = CSharpMethodName::from_source("increment");
+        let increment = CSharpMethodPlan {
+            name: increment_name.clone(),
+            native_method_name: CSharpMethodName::native_for_owner(&class_name, &increment_name),
+            ffi_name: CFunctionName::new("boltffi_counter_increment".to_string()),
+            receiver: CSharpReceiver::ClassInstance,
+            params: vec![],
+            return_type: CSharpType::Void,
+            return_kind: CSharpReturnKind::Void,
+            wire_writers: vec![],
+        };
+        let zero_name = CSharpMethodName::from_source("zero");
+        let zero = CSharpMethodPlan {
+            name: zero_name.clone(),
+            native_method_name: CSharpMethodName::native_for_owner(&class_name, &zero_name),
+            ffi_name: CFunctionName::new("boltffi_counter_zero".to_string()),
+            receiver: CSharpReceiver::Static,
+            params: vec![],
+            return_type: CSharpType::Int,
+            return_kind: CSharpReturnKind::Direct,
+            wire_writers: vec![],
+        };
+        let class = CSharpClassPlan {
+            native_free_method_name: CSharpMethodName::native_for_owner(
+                &class_name,
+                &CSharpMethodName::new("Free"),
+            ),
+            class_name,
+            ffi_free: CFunctionName::new("boltffi_counter_free".to_string()),
+            constructors: vec![],
+            methods: vec![get, increment, zero],
         };
         let template = ClassTemplate {
             class: &class,

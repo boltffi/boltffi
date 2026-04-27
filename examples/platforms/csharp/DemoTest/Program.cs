@@ -1151,41 +1151,101 @@ public static class DemoTest
     }
 
     /// <summary>
-    /// Class constructors. Each constructor is just a way to obtain an
-    /// IntPtr handle to a fresh Rust-allocated instance: the public
-    /// `Default` constructor (`pub fn new`) lifts to a real C# instance
-    /// constructor, and named factories / named-init constructors lift
-    /// to `public static` factories. Instance methods are not exposed
-    /// yet, so the test scope is "construct it, dispose it, no
-    /// segfault" plus the surface shape of the generated wrappers.
+    /// Class wrappers. Each construct is an IntPtr handle to a Rust
+    /// allocation; methods forward through that handle. The test
+    /// covers:
+    ///
+    /// - Constructors: Default, NamedInit, named factories, with
+    ///   parameter shapes ranging from no-args to wire-encoded records,
+    ///   pinned blittable-record arrays, and data enums.
+    /// - Instance methods: void, primitive return, Option return,
+    ///   blittable-record return, string param + bool return,
+    ///   Vec&lt;String&gt; return.
+    /// - Static methods on a class: primitives, blittable records,
+    ///   Option return.
+    /// - Dispose: every using block forces the wrapper to hand its
+    ///   IntPtr back to Rust through the matching `_free` symbol, so a
+    ///   leaked or double-freed handle would surface as a segfault or
+    ///   an allocator panic.
     /// </summary>
     private static void TestClasses()
     {
-        Console.WriteLine("Testing class constructors (Inventory, Counter)...");
+        Console.WriteLine("Testing class wrappers (constructors + methods)...");
 
         // Inventory.new() lifts to a parameterless C# instance ctor.
         // The using block forces Dispose() to run, which hands the
         // IntPtr back to Rust through boltffi_inventory_free.
         using (var inv = new Inventory())
         {
-            Require(inv != null, "new Inventory()");
+            Require(inv.Capacity() == 100u, "Inventory().Capacity() defaults to 100");
+            Require(inv.Count() == 0u, "Inventory().Count() starts at 0");
+            Require(inv.Add("apple"), "Inventory.Add(\"apple\") returns true under capacity");
+            Require(inv.Add("banana"), "Inventory.Add(\"banana\") returns true");
+            Require(inv.Count() == 2u, "Inventory.Count() reflects two adds");
+
+            // Vec<String> return decodes via ReadEncodedArray; UTF-8
+            // round-trips for both ascii and emoji.
+            string[] all = inv.GetAll();
+            Require(all.SequenceEqual(new[] { "apple", "banana" }), "Inventory.GetAll round-trips Vec<String>");
+
+            // Option<String> return: Some path then None path.
+            Require(inv.Remove(0) == "apple", "Inventory.Remove(0) returns Some(item)");
+            Require(inv.Remove(99) == null, "Inventory.Remove(out-of-range) returns null");
+            Require(inv.Count() == 1u, "Inventory.Count() decremented after remove");
         }
 
         // Inventory.with_capacity(u32) is a NamedInit constructor on
         // the Rust side, which the C# backend lifts to a static
         // factory rather than a second instance constructor.
-        using (var inv = Inventory.WithCapacity(50))
+        using (var inv = Inventory.WithCapacity(2))
         {
-            Require(inv != null, "Inventory.WithCapacity(50)");
+            Require(inv.Capacity() == 2u, "Inventory.WithCapacity(2).Capacity()");
+            Require(inv.Add("first"), "Add up to capacity");
+            Require(inv.Add("second"), "Add to fill");
+            Require(!inv.Add("third"), "Add past capacity returns false");
         }
 
-        // Counter.new(i32) is a Default constructor that takes one
-        // primitive param, so it lifts to a primary instance ctor with
-        // an explicit signature.
+        // Counter exercises every method-return shape that lands in
+        // this PR: primitive direct, void mutator, Option<primitive>
+        // through FfiBuf, and a blittable record return.
         using (var counter = new Counter(7))
         {
-            Require(counter != null, "new Counter(7)");
+            Require(counter.Get() == 7, "new Counter(7).Get()");
+            counter.Increment();
+            Require(counter.Get() == 8, "Counter.Increment then Get");
+            counter.Add(10);
+            Require(counter.Get() == 18, "Counter.Add(10) then Get");
+            Require(counter.MaybeDouble() == 36, "Counter.MaybeDouble() returns Some when nonzero");
+            counter.Reset();
+            Require(counter.Get() == 0, "Counter.Reset zeros the value");
+            Require(counter.MaybeDouble() == null, "Counter.MaybeDouble() returns null when zero");
+            counter.Add(3);
+            Point p = counter.AsPoint();
+            Require(p.X == 3.0 && p.Y == 0.0, "Counter.AsPoint() returns blittable Point");
         }
+
+        // MathUtils exercises class static methods. Add, Clamp,
+        // DistanceBetween, Midpoint, and SafeSqrt have no `self` and
+        // render as `public static` on the wrapper class itself. Round
+        // is the only `&self` method. The bare integer literal `new
+        // MathUtils(2)` (no `u` suffix) is the regression case the
+        // private handle-adopting ctor exists to defend: without it,
+        // overload resolution would pick the `IntPtr` ctor here.
+        using (var mu = new MathUtils(2))
+        {
+            Require(Math.Abs(mu.Round(3.14159) - 3.14) < 1e-9, "MathUtils(2).Round(3.14159)");
+        }
+        Require(MathUtils.Add(2, 3) == 5, "MathUtils.Add static");
+        Require(Math.Abs(MathUtils.Clamp(15.0, 0.0, 10.0) - 10.0) < 1e-9, "MathUtils.Clamp upper bound");
+        Require(Math.Abs(MathUtils.Clamp(-1.0, 0.0, 10.0)) < 1e-9, "MathUtils.Clamp lower bound");
+        Require(
+            Math.Abs(MathUtils.DistanceBetween(new Point(0.0, 0.0), new Point(3.0, 4.0)) - 5.0) < 1e-9,
+            "MathUtils.DistanceBetween 3-4-5"
+        );
+        Point mid = MathUtils.Midpoint(new Point(0.0, 0.0), new Point(2.0, 4.0));
+        Require(mid.X == 1.0 && mid.Y == 2.0, "MathUtils.Midpoint blittable record return");
+        Require(Math.Abs(MathUtils.SafeSqrt(16.0)!.Value - 4.0) < 1e-9, "MathUtils.SafeSqrt(16) Some");
+        Require(MathUtils.SafeSqrt(-1.0) == null, "MathUtils.SafeSqrt(-1) None");
 
         // Constructing several instances back to back exercises the
         // Rust allocator path; if Box::into_raw or Box::from_raw were
@@ -1193,7 +1253,91 @@ public static class DemoTest
         for (int i = 0; i < 100; i++)
         {
             using var counter = new Counter(i);
-            Require(counter != null, $"new Counter({i}) iteration");
+            Require(counter.Get() == i, $"new Counter({i}).Get() iteration");
+        }
+
+        // Constructor parameter shapes the simple Inventory/Counter
+        // matrix doesn't reach.
+
+        // Primary with a string param: drives Encoding.UTF8.GetBytes
+        // setup inside the private static helper, distinct from the
+        // static factory body that the same string-param shape would
+        // hit.
+        using (var worker = new AsyncWorker("hello"))
+        {
+            Require(worker != null, "new AsyncWorker(string) primary helper path");
+        }
+        using (var holder = new StateHolder("snapshot"))
+        {
+            Require(holder != null, "new StateHolder(string)");
+        }
+        using (var svc = new MixedRecordService("svc"))
+        {
+            Require(svc != null, "new MixedRecordService(string)");
+        }
+
+        // No-arg static factory.
+        using (var ds = DataStore.WithSampleData())
+        {
+            Require(ds != null, "DataStore.WithSampleData()");
+        }
+        // Mixed primitive static factory.
+        using (var ds = DataStore.WithInitialPoint(1.5, 2.5, 1234L))
+        {
+            Require(ds != null, "DataStore.WithInitialPoint(double, double, long)");
+        }
+
+        // Static factory with primitive + bool + C-style enum:
+        // exercises the `[MarshalAs(I1)]` bool path and the direct-
+        // pass enum.
+        using (var m = ConstructorCoverageMatrix.WithScalarMix(7u, true, Priority.High))
+        {
+            Require(m != null, "ConstructorCoverageMatrix.WithScalarMix(uint, bool, Priority)");
+        }
+
+        // Static factory with string + byte[]: two length-prefixed
+        // args back to back.
+        using (var m = ConstructorCoverageMatrix.WithStringAndBytes("label", new byte[] { 1, 2, 3 }))
+        {
+            Require(m != null, "ConstructorCoverageMatrix.WithStringAndBytes");
+        }
+
+        // Static factory with blittable + non-blittable record:
+        // direct-struct + WireEncoded paths in one call.
+        using (var m = ConstructorCoverageMatrix.WithBlittableAndRecord(
+            new Point(1.5, 2.5),
+            new Person("Alice", 30u)))
+        {
+            Require(m != null, "ConstructorCoverageMatrix.WithBlittableAndRecord");
+        }
+
+        // Static factory with `Vec<string>` + `Vec<Point>` + record:
+        // the only test that drives the new `unsafe { fixed }`
+        // scaffolding end to end (`Point[]` is a pinned-array param).
+        using (var m = ConstructorCoverageMatrix.WithVectorsAndPolygon(
+            new[] { "café", "🌍" },
+            new[] { new Point(1.0, 2.0), new Point(3.0, 4.0) },
+            new Polygon(new[] { new Point(0.0, 0.0), new Point(1.0, 1.0) })))
+        {
+            Require(m != null, "ConstructorCoverageMatrix.WithVectorsAndPolygon (pinned + wire)");
+        }
+
+        // Static factory with three back-to-back wire-encoded records.
+        using (var m = ConstructorCoverageMatrix.WithCollectionRecords(
+            new Team("Alpha", new[] { "a", "b" }),
+            new Classroom(new[] { new Person("p", 1u) }),
+            new Polygon(new[] { new Point(0.0, 0.0) })))
+        {
+            Require(m != null, "ConstructorCoverageMatrix.WithCollectionRecords");
+        }
+
+        // Static factory with two data enums + one record.
+        using (var m = ConstructorCoverageMatrix.WithEnumMix(
+            new Filter.ByName("query"),
+            new Message.Text("hello"),
+            new global::Demo.Task("title", Priority.Low, false)))
+        {
+            Require(m != null, "ConstructorCoverageMatrix.WithEnumMix (data enums + record)");
         }
 
         Console.WriteLine("  PASS\n");

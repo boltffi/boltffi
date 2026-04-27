@@ -488,6 +488,14 @@
         [DllImport(LibName, EntryPoint = "{{ ctor.ffi_name }}")]
         internal static extern IntPtr {{ ctor.native_method_name }}({{ ctor.native_param_list() }});
 {%- endfor %}
+{%- for method in class.methods %}
+
+        [DllImport(LibName, EntryPoint = "{{ method.ffi_name }}")]
+{%- if method.return_type.is_bool() %}
+        [return: MarshalAs(UnmanagedType.I1)]
+{%- endif %}
+        internal static extern {% if method.return_kind.native_returns_ffi_buf() %}FfiBuf{% else %}{{ method.return_type }}{% endif %} {{ method.native_method_name }}({{ method.native_param_list(class.class_name, false) }});
+{%- endfor %}
 {%- endfor %}
     }
 }
