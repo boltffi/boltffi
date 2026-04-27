@@ -24,11 +24,13 @@ namespace Demo
 
         public int Get()
         {
+            ThrowIfDisposed();
             return NativeMethods.CounterGet(_handle);
         }
 
         public void Increment()
         {
+            ThrowIfDisposed();
             NativeMethods.CounterIncrement(_handle);
         }
 
@@ -38,6 +40,11 @@ namespace Demo
         }
 
         internal IntPtr RawHandle => _handle;
+
+        private void ThrowIfDisposed()
+        {
+            if (_handle == IntPtr.Zero) throw new ObjectDisposedException(nameof(Counter));
+        }
 
         public void Dispose()
         {

@@ -37,6 +37,11 @@ namespace Demo
 
         internal IntPtr RawHandle => _handle;
 
+        private void ThrowIfDisposed()
+        {
+            if (_handle == IntPtr.Zero) throw new ObjectDisposedException(nameof(Inventory));
+        }
+
         public void Dispose()
         {
             IntPtr handle = Interlocked.Exchange(ref _handle, IntPtr.Zero);

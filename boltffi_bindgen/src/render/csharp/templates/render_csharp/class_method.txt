@@ -5,6 +5,9 @@
         public {{ method.return_type }} {{ method.name }}({% for p in method.params %}{{ p.csharp_type }} {{ p.name }}{% if !loop.last %}, {% endif %}{% endfor %})
 {%- endif %}
         {
+{%- if !method.receiver.is_static() %}
+            ThrowIfDisposed();
+{%- endif %}
 {%- for param in method.params %}
 {%- if let Some(decl) = param.setup_declaration() %}
             {{ decl }}

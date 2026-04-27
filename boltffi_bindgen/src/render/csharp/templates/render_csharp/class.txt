@@ -112,6 +112,11 @@ namespace {{ namespace }}
 
         internal IntPtr RawHandle => _handle;
 
+        private void ThrowIfDisposed()
+        {
+            if (_handle == IntPtr.Zero) throw new ObjectDisposedException(nameof({{ class.class_name }}));
+        }
+
         public void Dispose()
         {
             IntPtr handle = Interlocked.Exchange(ref _handle, IntPtr.Zero);
