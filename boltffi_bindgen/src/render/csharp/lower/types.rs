@@ -1,5 +1,4 @@
 use crate::ir::definitions::{ParamDef, ParamPassing, ReturnDef};
-use crate::ir::ids::ParamName;
 use crate::ir::types::TypeExpr;
 
 use super::super::ast::{
@@ -124,11 +123,12 @@ impl<'a> CSharpLowerer<'a> {
 /// the given param name exists (caller propagates).
 fn wire_encoded_kind(
     wire_writers: &[CSharpWireWriterPlan],
-    param_name: &ParamName,
+    param_name: impl Into<CSharpParamName>,
 ) -> Option<CSharpParamKind> {
+    let csharp_name = param_name.into();
     let writer = wire_writers
         .iter()
-        .find(|w| w.param_name.as_str() == param_name.as_str())?;
+        .find(|w| w.param_name.as_str() == csharp_name.as_str())?;
     Some(CSharpParamKind::WireEncoded {
         binding_name: writer.bytes_binding_name.clone(),
     })

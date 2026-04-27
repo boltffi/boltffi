@@ -1224,6 +1224,20 @@ public static class DemoTest
             Require(p.X == 3.0 && p.Y == 0.0, "Counter.AsPoint() returns blittable Point");
         }
 
+        // SharedCounter pairs a void Set with Increment / Add that
+        // mutate state and return the new value in the same call. The
+        // mutate-then-return shape isn't covered elsewhere in this
+        // method.
+        using (var shared = new SharedCounter(0))
+        {
+            shared.Set(10);
+            Require(shared.Get() == 10, "SharedCounter.Set then Get");
+            Require(shared.Increment() == 11, "SharedCounter.Increment returns new value");
+            Require(shared.Get() == 11, "SharedCounter.Get reflects increment");
+            Require(shared.Add(4) == 15, "SharedCounter.Add returns new value");
+            Require(shared.Get() == 15, "SharedCounter.Get reflects add");
+        }
+
         // MathUtils exercises class static methods. Add, Clamp,
         // DistanceBetween, Midpoint, and SafeSqrt have no `self` and
         // render as `public static` on the wrapper class itself. Round
@@ -1267,13 +1281,81 @@ public static class DemoTest
         {
             Require(worker != null, "new AsyncWorker(string) primary helper path");
         }
+        // StateHolder drives `&mut self` mutators end to end: a primary
+        // ctor that takes a string, then set / increment / add_item /
+        // remove_last / clear in sequence, with `&self` getters
+        // observing the mutations.
         using (var holder = new StateHolder("snapshot"))
         {
-            Require(holder != null, "new StateHolder(string)");
+            Require(holder.GetLabel() == "snapshot", "StateHolder.GetLabel returns ctor arg");
+            Require(holder.GetValue() == 0, "StateHolder default value is 0");
+            holder.SetValue(42);
+            Require(holder.GetValue() == 42, "StateHolder.SetValue then GetValue");
+            Require(holder.Increment() == 43, "StateHolder.Increment returns new value");
+            Require(holder.GetValue() == 43, "StateHolder.GetValue reflects increment");
+            holder.AddItem("alpha");
+            holder.AddItem("beta");
+            holder.AddItem("gamma");
+            Require(holder.ItemCount() == 3u, "StateHolder.ItemCount after three adds");
+            Require(
+                holder.GetItems().SequenceEqual(new[] { "alpha", "beta", "gamma" }),
+                "StateHolder.GetItems round-trips Vec<String>"
+            );
+            Require(holder.RemoveLast() == "gamma", "StateHolder.RemoveLast returns Some(last)");
+            Require(holder.ItemCount() == 2u, "StateHolder.ItemCount decremented after pop");
+            holder.Clear();
+            Require(holder.GetValue() == 0, "StateHolder.Clear resets value");
+            Require(holder.ItemCount() == 0u, "StateHolder.Clear empties items");
+            Require(holder.RemoveLast() == null, "StateHolder.RemoveLast returns null on empty");
         }
+
+        // MixedRecordService drives an instance method that takes a
+        // wire-encoded record (echo_record) and one that takes the
+        // record's parts as separate args (store_record_parts). Both
+        // are `&self` methods returning a wire-encoded MixedRecord.
         using (var svc = new MixedRecordService("svc"))
         {
-            Require(svc != null, "new MixedRecordService(string)");
+            Require(svc.GetLabel() == "svc", "MixedRecordService.GetLabel");
+            Require(svc.StoredCount() == 0u, "MixedRecordService.StoredCount starts at 0");
+
+            MixedRecordParameters parameters = new MixedRecordParameters(
+                new[] { "alpha", "beta" },
+                new[] { new Point(0.0, 0.0), new Point(1.0, 1.0) },
+                new Point(2.0, 3.0),
+                5u,
+                true
+            );
+            MixedRecord record = new MixedRecord(
+                "demo",
+                new Point(1.0, 2.0),
+                Priority.High,
+                new Shape.Rectangle(3.0, 4.0),
+                parameters
+            );
+
+            MixedRecord echoed = svc.EchoRecord(record);
+            Require(echoed.Name == "demo", "EchoRecord round-trips Name");
+            Require(echoed.Anchor.X == 1.0 && echoed.Anchor.Y == 2.0, "EchoRecord round-trips Anchor");
+            Require(echoed.Priority == Priority.High, "EchoRecord round-trips Priority");
+            Require(echoed.Shape is Shape.Rectangle echoedRect && echoedRect.Width == 3.0 && echoedRect.Height == 4.0,
+                "EchoRecord round-trips Shape variant");
+            Require(echoed.Parameters.Tags.SequenceEqual(parameters.Tags), "EchoRecord round-trips Parameters.Tags");
+            Require(echoed.Parameters.MaxRetries == 5u, "EchoRecord round-trips Parameters.MaxRetries");
+            Require(svc.StoredCount() == 0u, "EchoRecord does not bump StoredCount");
+
+            MixedRecord stored = svc.StoreRecordParts(
+                "stored",
+                new Point(5.0, 6.0),
+                Priority.Critical,
+                new Shape.Circle(2.5),
+                parameters
+            );
+            Require(stored.Name == "stored", "StoreRecordParts.Name");
+            Require(stored.Anchor.X == 5.0 && stored.Anchor.Y == 6.0, "StoreRecordParts.Anchor");
+            Require(stored.Priority == Priority.Critical, "StoreRecordParts.Priority");
+            Require(stored.Shape is Shape.Circle storedCircle && storedCircle.Radius == 2.5,
+                "StoreRecordParts.Shape Circle round-trip");
+            Require(svc.StoredCount() == 1u, "StoreRecordParts increments StoredCount");
         }
 
         // No-arg static factory.
@@ -1285,6 +1367,21 @@ public static class DemoTest
         using (var ds = DataStore.WithInitialPoint(1.5, 2.5, 1234L))
         {
             Require(ds != null, "DataStore.WithInitialPoint(double, double, long)");
+        }
+
+        // DataStore exercises an `&self` method taking a blittable
+        // record (Add(DataPoint)) alongside a parts-flavored mutator
+        // (AddParts) and the read-only Sum / Len / IsEmpty trio.
+        using (var ds = new DataStore())
+        {
+            Require(ds.IsEmpty(), "new DataStore.IsEmpty");
+            Require(ds.Len() == (nuint)0, "new DataStore.Len starts at 0");
+            ds.Add(new DataPoint(1.0, 2.0, 100L));
+            ds.Add(new DataPoint(3.0, 4.0, 200L));
+            ds.AddParts(5.0, 6.0, 300L);
+            Require(!ds.IsEmpty(), "DataStore.IsEmpty false after adds");
+            Require(ds.Len() == (nuint)3, "DataStore.Len after three adds");
+            Require(Math.Abs(ds.Sum() - 21.0) < 1e-9, "DataStore.Sum across three points");
         }
 
         // Static factory with primitive + bool + C-style enum:
@@ -1329,6 +1426,48 @@ public static class DemoTest
             new Polygon(new[] { new Point(0.0, 0.0) })))
         {
             Require(m != null, "ConstructorCoverageMatrix.WithCollectionRecords");
+        }
+
+        // Static factory with `Option<wire-encoded record>` +
+        // `Option<string>` parameters: drives both the Some path and
+        // the None path through the same setup machinery.
+        using (var m = ConstructorCoverageMatrix.WithOptionalProfileAndCursor(
+            new UserProfile("John", 29u, "john@example.com", 9.5),
+            "cursor-7"))
+        {
+            Require(m.ConstructorVariant() == "with_optional_profile_and_cursor",
+                "WithOptionalProfileAndCursor.ConstructorVariant");
+            Require(m.Summary() == "profile=John#29#john@example.com#9.5;cursor=cursor-7",
+                "WithOptionalProfileAndCursor.Summary (Some/Some)");
+            Require(m.PayloadChecksum() == 0u, "WithOptionalProfileAndCursor.PayloadChecksum");
+            Require(m.VectorCount() == 2u, "WithOptionalProfileAndCursor.VectorCount (Some/Some)");
+        }
+        using (var m = ConstructorCoverageMatrix.WithOptionalProfileAndCursor(null, null))
+        {
+            Require(m.Summary() == "profile=none;cursor=none",
+                "WithOptionalProfileAndCursor.Summary (None/None)");
+            Require(m.VectorCount() == 0u, "WithOptionalProfileAndCursor.VectorCount (None/None)");
+        }
+
+        // Seven-arg kitchen-sink ctor: stresses multiple wire writers,
+        // setup-only declarations (string, byte[]), and a string array
+        // back-to-back in one body.
+        using (var m = ConstructorCoverageMatrix.WithEverything(
+            new Person("Alice", 31u),
+            new Address("Main", "AMS", "1000"),
+            new UserProfile("John", 29u, "john@example.com", 9.5),
+            new SearchResult("route", 5u, "next-9", 7.5),
+            new byte[] { 4, 5, 6 },
+            new Filter.ByRange(1.0, 3.0),
+            new[] { "alpha", "beta" }))
+        {
+            Require(m.ConstructorVariant() == "with_everything", "WithEverything.ConstructorVariant");
+            Require(
+                m.Summary() == "person=Alice#31;city=AMS;profile=profile=John#29#john@example.com#9.5;query=route;filter=range:1.0-3.0;tags=alpha|beta",
+                "WithEverything.Summary"
+            );
+            Require(m.PayloadChecksum() == 15u, "WithEverything.PayloadChecksum (4+5+6)");
+            Require(m.VectorCount() == 10u, "WithEverything.VectorCount (tags 2 + payload 3 + total 5)");
         }
 
         // Static factory with two data enums + one record.
