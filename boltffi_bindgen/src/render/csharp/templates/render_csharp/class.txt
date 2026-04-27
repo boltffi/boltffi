@@ -24,12 +24,13 @@ namespace {{ namespace }}
             _handle = handle;
         }
 {%- for ctor in class.constructors %}
-{%- if ctor.kind.is_primary() %}
+{%- match ctor.kind %}
+{%- when CSharpConstructorKind::Primary with { helper_method_name } %}
 
         public {{ class.class_name }}({% for p in ctor.params %}{{ p.csharp_type }} {{ p.name }}{% if !loop.last %}, {% endif %}{% endfor %})
-            : this({{ ctor.helper_method_name }}({% for p in ctor.params %}{{ p.name }}{% if !loop.last %}, {% endif %}{% endfor %})) { }
+            : this({{ helper_method_name }}({% for p in ctor.params %}{{ p.name }}{% if !loop.last %}, {% endif %}{% endfor %})) { }
 
-        private static IntPtr {{ ctor.helper_method_name }}({% for p in ctor.params %}{{ p.csharp_type }} {{ p.name }}{% if !loop.last %}, {% endif %}{% endfor %})
+        private static IntPtr {{ helper_method_name }}({% for p in ctor.params %}{{ p.csharp_type }} {{ p.name }}{% if !loop.last %}, {% endif %}{% endfor %})
         {
 {%- for param in ctor.params %}
 {%- if let Some(decl) = param.setup_declaration() %}
@@ -65,7 +66,7 @@ namespace {{ namespace }}
             return NativeMethods.{{ ctor.native_method_name }}({{ ctor.native_call_args() }});
 {%- endif %}
         }
-{%- else if let CSharpConstructorKind::StaticFactory with { name } = ctor.kind %}
+{%- when CSharpConstructorKind::StaticFactory with { name } %}
 
         public static {{ class.class_name }} {{ name }}({% for p in ctor.params %}{{ p.csharp_type }} {{ p.name }}{% if !loop.last %}, {% endif %}{% endfor %})
         {
@@ -103,7 +104,7 @@ namespace {{ namespace }}
             return new {{ class.class_name }}(NativeMethods.{{ ctor.native_method_name }}({{ ctor.native_call_args() }}));
 {%- endif %}
         }
-{%- endif %}
+{%- endmatch %}
 {%- endfor %}
 {%- for method in class.methods %}
 {% include "render_csharp/class_method.txt" %}

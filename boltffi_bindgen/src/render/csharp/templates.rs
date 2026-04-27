@@ -759,12 +759,13 @@ mod tests {
     fn snapshot_class_inventory_with_constructors() {
         let class_name = CSharpClassName::from_source("inventory");
         let primary = CSharpConstructorPlan {
-            kind: CSharpConstructorKind::Primary,
+            kind: CSharpConstructorKind::Primary {
+                helper_method_name: CSharpMethodName::new("InventoryNewHandle"),
+            },
             native_method_name: CSharpMethodName::native_for_owner(
                 &class_name,
                 &CSharpMethodName::new("New"),
             ),
-            helper_method_name: CSharpMethodName::new("InventoryNewHandle"),
             ffi_name: CFunctionName::new("boltffi_inventory_new".to_string()),
             params: vec![],
             wire_writers: vec![],
@@ -778,7 +779,6 @@ mod tests {
                 &class_name,
                 &with_capacity_name,
             ),
-            helper_method_name: CSharpMethodName::new(""),
             ffi_name: CFunctionName::new("boltffi_inventory_with_capacity".to_string()),
             params: vec![CSharpParamPlan {
                 name: CSharpParamName::from_source("capacity"),

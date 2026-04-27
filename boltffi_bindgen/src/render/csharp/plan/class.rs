@@ -77,10 +77,6 @@ pub struct CSharpConstructorPlan {
     /// name (`InventoryNew`, `InventoryWithCapacity`) because the
     /// DllImport class is flat.
     pub native_method_name: CSharpMethodName,
-    /// Name of the private static helper that runs setup + native
-    /// call for a primary constructor. Unused for static factories,
-    /// which keep the setup inline in their method body.
-    pub helper_method_name: CSharpMethodName,
     /// The C function this constructor calls across the ABI.
     pub ffi_name: CFunctionName,
     /// Explicit params on the public surface.
@@ -99,19 +95,17 @@ pub enum CSharpConstructorKind {
     /// new(...) -> Self`). Delegates to the internal `IntPtr` ctor
     /// through a private static helper so any wire-encoding setup has
     /// somewhere to live; the chained-ctor `: this(...)` syntax only
-    /// accepts a single expression.
-    Primary,
+    /// accepts a single expression. `helper_method_name` is the name
+    /// of that helper (e.g., `"InventoryNewHandle"`).
+    Primary {
+        helper_method_name: CSharpMethodName,
+    },
     /// A static factory: `public static ClassName Name(...)`. Lifts
     /// from named factories (`pub fn empty() -> Self`) and named-init
     /// constructors (`pub fn with_capacity(u32) -> Self`). The factory
-    /// body inlines any setup before returning a fresh wrapper.
+    /// body inlines any setup before returning a fresh wrapper, so no
+    /// helper is needed.
     StaticFactory { name: CSharpMethodName },
-}
-
-impl CSharpConstructorKind {
-    pub fn is_primary(&self) -> bool {
-        matches!(self, Self::Primary)
-    }
 }
 
 impl CSharpConstructorPlan {

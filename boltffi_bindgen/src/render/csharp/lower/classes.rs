@@ -72,7 +72,9 @@ impl<'a> CSharpLowerer<'a> {
         class_name: &CSharpClassName,
     ) -> Option<CSharpConstructorPlan> {
         let kind = match ctor {
-            ConstructorDef::Default { .. } => CSharpConstructorKind::Primary,
+            ConstructorDef::Default { .. } => CSharpConstructorKind::Primary {
+                helper_method_name: CSharpMethodName::new(format!("{class_name}NewHandle")),
+            },
             ConstructorDef::NamedFactory { name, .. } | ConstructorDef::NamedInit { name, .. } => {
                 CSharpConstructorKind::StaticFactory {
                     name: CSharpMethodName::from_source(name.as_str()),
@@ -81,16 +83,10 @@ impl<'a> CSharpLowerer<'a> {
         };
 
         let surface_name = match &kind {
-            CSharpConstructorKind::Primary => CSharpMethodName::new("New"),
+            CSharpConstructorKind::Primary { .. } => CSharpMethodName::new("New"),
             CSharpConstructorKind::StaticFactory { name } => name.clone(),
         };
         let native_method_name = CSharpMethodName::native_for_owner(class_name, &surface_name);
-        let helper_method_name = match &kind {
-            CSharpConstructorKind::Primary => {
-                CSharpMethodName::new(format!("{class_name}NewHandle"))
-            }
-            CSharpConstructorKind::StaticFactory { .. } => CSharpMethodName::new(""),
-        };
 
         let mut size_locals = size::SizeLocalCounters::default();
         let mut encode_locals = encode::EncodeLocalCounters::default();
@@ -109,7 +105,6 @@ impl<'a> CSharpLowerer<'a> {
         Some(CSharpConstructorPlan {
             kind,
             native_method_name,
-            helper_method_name,
             ffi_name: (&call.symbol).into(),
             params,
             wire_writers,
