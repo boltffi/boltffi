@@ -1279,7 +1279,11 @@ public static class DemoTest
         // hit.
         using (var worker = new AsyncWorker("hello"))
         {
-            Require(worker != null, "new AsyncWorker(string) primary helper path");
+            // GetPrefix is the only sync method on AsyncWorker (the
+            // async ones are filtered out upstream). Round-tripping the
+            // ctor arg through it confirms the Encoding.UTF8.GetBytes
+            // path in the primary helper actually wrote the right bytes.
+            Require(worker.GetPrefix() == "hello", "AsyncWorker.GetPrefix round-trips ctor arg");
         }
         // StateHolder drives `&mut self` mutators end to end: a primary
         // ctor that takes a string, then set / increment / add_item /
@@ -1396,7 +1400,9 @@ public static class DemoTest
         // args back to back.
         using (var m = ConstructorCoverageMatrix.WithStringAndBytes("label", new byte[] { 1, 2, 3 }))
         {
-            Require(m != null, "ConstructorCoverageMatrix.WithStringAndBytes");
+            Require(m.Summary() == "label=label;bytes=3", "WithStringAndBytes.Summary");
+            Require(m.PayloadChecksum() == 6u, "WithStringAndBytes.PayloadChecksum (1+2+3)");
+            Require(m.VectorCount() == 3u, "WithStringAndBytes.VectorCount");
         }
 
         // Static factory with blittable + non-blittable record:
@@ -1405,7 +1411,9 @@ public static class DemoTest
             new Point(1.5, 2.5),
             new Person("Alice", 30u)))
         {
-            Require(m != null, "ConstructorCoverageMatrix.WithBlittableAndRecord");
+            Require(m.Summary() == "origin=1.5:2.5;person=Alice#30", "WithBlittableAndRecord.Summary");
+            Require(m.PayloadChecksum() == 0u, "WithBlittableAndRecord.PayloadChecksum");
+            Require(m.VectorCount() == 1u, "WithBlittableAndRecord.VectorCount");
         }
 
         // Static factory with `Vec<string>` + `Vec<Point>` + record:
@@ -1416,7 +1424,9 @@ public static class DemoTest
             new[] { new Point(1.0, 2.0), new Point(3.0, 4.0) },
             new Polygon(new[] { new Point(0.0, 0.0), new Point(1.0, 1.0) })))
         {
-            Require(m != null, "ConstructorCoverageMatrix.WithVectorsAndPolygon (pinned + wire)");
+            Require(m.Summary() == "tags=café|🌍;anchors=2;polygon=2", "WithVectorsAndPolygon.Summary");
+            Require(m.PayloadChecksum() == 0u, "WithVectorsAndPolygon.PayloadChecksum");
+            Require(m.VectorCount() == 6u, "WithVectorsAndPolygon.VectorCount (tags 2 + anchors 2 + polygon 2)");
         }
 
         // Static factory with three back-to-back wire-encoded records.
@@ -1425,7 +1435,9 @@ public static class DemoTest
             new Classroom(new[] { new Person("p", 1u) }),
             new Polygon(new[] { new Point(0.0, 0.0) })))
         {
-            Require(m != null, "ConstructorCoverageMatrix.WithCollectionRecords");
+            Require(m.Summary() == "team=Alpha;members=2;students=1;polygon=1", "WithCollectionRecords.Summary");
+            Require(m.PayloadChecksum() == 0u, "WithCollectionRecords.PayloadChecksum");
+            Require(m.VectorCount() == 4u, "WithCollectionRecords.VectorCount (members 2 + students 1 + polygon 1)");
         }
 
         // Static factory with `Option<wire-encoded record>` +
@@ -1468,6 +1480,29 @@ public static class DemoTest
             );
             Require(m.PayloadChecksum() == 15u, "WithEverything.PayloadChecksum (4+5+6)");
             Require(m.VectorCount() == 10u, "WithEverything.VectorCount (tags 2 + payload 3 + total 5)");
+
+            // SummarizeBorrowedInputs is the only method whose params
+            // are all &Reference to non-blittable types. Lower drops the
+            // references and treats them as wire-encoded; without these
+            // assertions that path goes unverified. Cover both the
+            // Some/Some Option path and the None/None path through the
+            // same setup machinery.
+            Require(
+                m.SummarizeBorrowedInputs(
+                    new UserProfile("John", 29u, "john@example.com", 9.5),
+                    new SearchResult("route", 5u, "next-9", 7.5),
+                    new Filter.ByRange(1.0, 3.0))
+                    == "profile=John#29#john@example.com#9.5;query=route;filter=range:1.0-3.0",
+                "SummarizeBorrowedInputs (Some options + Filter.ByRange)"
+            );
+            Require(
+                m.SummarizeBorrowedInputs(
+                    new UserProfile("Jane", 25u, null, null),
+                    new SearchResult("foo", 0u, null, null),
+                    new Filter.None())
+                    == "profile=Jane#25#none#none;query=foo;filter=none",
+                "SummarizeBorrowedInputs (None options + Filter.None)"
+            );
         }
 
         // Static factory with two data enums + one record.
@@ -1476,7 +1511,9 @@ public static class DemoTest
             new Message.Text("hello"),
             new global::Demo.Task("title", Priority.Low, false)))
         {
-            Require(m != null, "ConstructorCoverageMatrix.WithEnumMix (data enums + record)");
+            Require(m.Summary() == "filter=name:query;message=text:hello;task=title#low", "WithEnumMix.Summary");
+            Require(m.PayloadChecksum() == 0u, "WithEnumMix.PayloadChecksum");
+            Require(m.VectorCount() == 1u, "WithEnumMix.VectorCount");
         }
 
         Console.WriteLine("  PASS\n");
