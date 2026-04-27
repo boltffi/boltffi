@@ -166,6 +166,14 @@ impl CSharpClassPlan {
             .any(CSharpConstructorPlan::needs_system_text)
             || self.methods.iter().any(method_needs_system_text)
     }
+
+    /// Whether any constructor or method takes a wire-encoded param
+    /// (and so needs the `WireWriter` helper at module scope). Mirrors
+    /// `CSharpFunctionPlan::has_wire_params` but spans both members.
+    pub fn has_wire_params(&self) -> bool {
+        self.constructors.iter().any(|c| !c.wire_writers.is_empty())
+            || self.methods.iter().any(|m| !m.wire_writers.is_empty())
+    }
 }
 
 /// Whether a class method needs `using System.Text;`: true if any

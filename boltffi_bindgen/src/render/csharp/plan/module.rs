@@ -49,32 +49,24 @@ impl CSharpModulePlan {
     }
 
     /// Whether the module needs `using System.Text;`. True when any function
-    /// or class constructor has a string param, or any record has a string
-    /// field, since `Encoding.UTF8.GetBytes` lives there. Decoding does not
-    /// need `System.Text`; `WireReader` reads strings via
-    /// `Marshal.PtrToStringUTF8`.
+    /// or class member touches a string (param or wire-decoded return), or
+    /// any record has a string field, since `Encoding.UTF8.GetBytes` lives
+    /// there. Decoding does not need `System.Text`; `WireReader` reads
+    /// strings via `Marshal.PtrToStringUTF8`.
     pub fn needs_system_text(&self) -> bool {
         self.functions
             .iter()
             .any(|f| f.params.iter().any(|p| p.csharp_type.contains_string()))
-            || self.classes.iter().any(|c| {
-                c.constructors
-                    .iter()
-                    .any(|ctor| ctor.params.iter().any(|p| p.csharp_type.contains_string()))
-            })
+            || self.classes.iter().any(CSharpClassPlan::needs_system_text)
             || self.records.iter().any(CSharpRecordPlan::has_string_fields)
     }
 
-    /// Whether any function or class constructor takes a wire-encoded
-    /// record param. Blittable record params pass through the CLR as
-    /// direct struct values and do not contribute here.
+    /// Whether any function, class constructor, or class method takes a
+    /// wire-encoded param. Blittable record params pass through the CLR
+    /// as direct struct values and do not contribute here.
     fn has_wire_params(&self) -> bool {
         self.functions.iter().any(|f| !f.wire_writers.is_empty())
-            || self.classes.iter().any(|c| {
-                c.constructors
-                    .iter()
-                    .any(|ctor| !ctor.wire_writers.is_empty())
-            })
+            || self.classes.iter().any(CSharpClassPlan::has_wire_params)
     }
 
     /// Whether any function returns through an `FfiBuf`, a wire-decoded
