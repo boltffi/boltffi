@@ -7,6 +7,7 @@ demo_dir="$repo_root/examples/demo"
 apple_dir="$repo_root/examples/platforms/apple"
 kotlin_dir="$repo_root/examples/platforms/kotlin"
 java_dir="$repo_root/examples/platforms/java"
+csharp_dir="$repo_root/examples/platforms/csharp"
 wasm_dir="$repo_root/examples/platforms/wasm"
 python_dir="$repo_root/examples/platforms/python"
 workspace_manifest="$repo_root/Cargo.toml"
@@ -31,10 +32,10 @@ run_boltffi() {
 host_default_platforms() {
     case "$(uname -s)" in
         Darwin)
-            printf '%s\n' apple kotlin java wasm python
+            printf '%s\n' apple kotlin java csharp wasm python
             ;;
         Linux|MINGW*|MSYS*|CYGWIN*)
-            printf '%s\n' java wasm python
+            printf '%s\n' java csharp wasm python
             ;;
         *)
             printf 'unsupported host for demo verification: %s\n' "$(uname -s)" >&2
@@ -92,7 +93,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         *)
             printf 'Unknown argument: %s\n' "$1" >&2
-            printf 'Usage: %s [--platform <apple|kotlin|java|wasm|python>] [--python <interpreter>] [--host-defaults]\n' "$0" >&2
+            printf 'Usage: %s [--platform <apple|kotlin|java|csharp|wasm|python>] [--python <interpreter>] [--host-defaults]\n' "$0" >&2
             exit 2
             ;;
     esac
@@ -116,6 +117,9 @@ for selected_platform in "${selected_platforms[@]}"; do
         java)
             run_step "pack java" run_boltffi pack java
             run_step "java demo" "$java_dir/test-demo.sh" --auto
+            ;;
+        csharp)
+            run_step "csharp demo" "$csharp_dir/test-demo.sh"
             ;;
         wasm)
             run_step "pack wasm" run_boltffi pack wasm
