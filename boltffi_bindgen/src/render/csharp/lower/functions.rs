@@ -67,19 +67,77 @@ impl<'a> CSharpLowerer<'a> {
         if return_type.is_void() {
             return CSharpReturnKind::Void;
         }
-        match return_def {
-            ReturnDef::Value(TypeExpr::String) => CSharpReturnKind::WireDecodeString,
-            ReturnDef::Value(TypeExpr::Record(id)) if !self.is_blittable_record(id) => {
+        let raw_type = match return_def {
+            ReturnDef::Value(t) => t,
+            _ => return CSharpReturnKind::Direct,
+        };
+        // Custom returns always cross as wire-encoded FfiBuf (the macro
+        // wraps the underlying value uniformly). For repr shapes that
+        // already have a wire-decode path (String, Record, Enum, Vec,
+        // Option) the normalized dispatch below produces the right
+        // kind; for Custom<Primitive> the dispatch would otherwise fall
+        // through to Direct, so synthesize a single-op wire decode.
+        let is_custom = matches!(raw_type, TypeExpr::Custom(_));
+        let normalized = self.normalize_custom_type_expr(raw_type);
+        if is_custom && matches!(normalized, TypeExpr::Primitive(_)) {
+            let decode_seq = decode_ops.expect("Custom return must carry decode_ops");
+            let mut locals = decode::DecodeLocalCounters::default();
+            let reader =
+                CSharpExpression::Identity(CSharpIdentity::Local(CSharpLocalName::new("reader")));
+            let decode_expr = decode::lower_decode_expr(
+                decode_seq,
+                &reader,
+                shadowed,
+                &self.namespace,
+                &mut locals,
+            );
+            return CSharpReturnKind::WireDecodeValue { decode_expr };
+        }
+        // The macro emits `Vec<Custom<_>>` returns as wire-encoded
+        // (length-prefixed) regardless of repr — Custom is treated as
+        // opaque on the return path, so even `Vec<Custom<i64>>` ships
+        // as `[len][i64][i64]...` rather than the raw blittable layout
+        // a bare `Vec<i64>` would use. Force the encoded-array path
+        // (length-prefix + per-element decode) instead of the
+        // top-level blittable shortcut the normalized dispatch below
+        // would otherwise pick.
+        if let TypeExpr::Vec(raw_inner) = raw_type
+            && matches!(raw_inner.as_ref(), TypeExpr::Custom(_))
+        {
+            let normalized_inner = self.normalize_custom_type_expr(raw_inner);
+            let element_seq = vec_element_read_seq(decode_ops)
+                .expect("Vec<Custom> return must carry decode_ops with a Vec ReadOp");
+            let mut locals = decode::DecodeLocalCounters::default();
+            let closure_var = locals.next_closure_var();
+            let closure_receiver =
+                CSharpExpression::Identity(CSharpIdentity::Local(closure_var.clone()));
+            let body = decode::lower_decode_expr(
+                &element_seq,
+                &closure_receiver,
+                shadowed,
+                &self.namespace,
+                &mut locals,
+            );
+            return CSharpReturnKind::WireDecodeEncodedArray {
+                element_type: CSharpType::from_type_expr(&normalized_inner)
+                    .qualify_if_shadowed_opt(shadowed, &self.namespace),
+                decode_lambda: CSharpExpression::Lambda {
+                    param: closure_var,
+                    body: Box::new(body),
+                },
+            };
+        }
+        match &normalized {
+            TypeExpr::String => CSharpReturnKind::WireDecodeString,
+            TypeExpr::Record(id) if !self.is_blittable_record(id) => {
                 CSharpReturnKind::WireDecodeObject {
                     class_name: id.into(),
                 }
             }
-            ReturnDef::Value(TypeExpr::Enum(id)) if self.is_data_enum(id) => {
-                CSharpReturnKind::WireDecodeObject {
-                    class_name: id.into(),
-                }
-            }
-            ReturnDef::Value(TypeExpr::Vec(inner)) => match inner.as_ref() {
+            TypeExpr::Enum(id) if self.is_data_enum(id) => CSharpReturnKind::WireDecodeObject {
+                class_name: id.into(),
+            },
+            TypeExpr::Vec(inner) => match inner.as_ref() {
                 TypeExpr::Primitive(p) => CSharpReturnKind::WireDecodeBlittablePrimitiveArray {
                     method: decode::top_level_blittable_primitive_array_method(*p),
                     type_arg: decode::top_level_blittable_primitive_array_type_arg(*p),
@@ -111,7 +169,7 @@ impl<'a> CSharpLowerer<'a> {
                     }
                 }
             },
-            ReturnDef::Value(TypeExpr::Option(_)) => {
+            TypeExpr::Option(_) => {
                 let decode_seq = decode_ops.expect("Option return must carry decode_ops");
                 let mut locals = decode::DecodeLocalCounters::default();
                 let reader = CSharpExpression::Identity(CSharpIdentity::Local(

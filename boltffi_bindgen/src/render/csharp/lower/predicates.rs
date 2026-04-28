@@ -33,11 +33,14 @@ impl<'a> CSharpLowerer<'a> {
     /// Whether the type can appear as a function param or return today.
     /// Records and enums must be admitted via the supported-set fixed
     /// point; nested options are rejected because C# can't express `T??`.
+    /// `Custom` resolves through to its `repr` since the lowerer erases
+    /// it before emit.
     pub(super) fn is_supported_type(&self, ty: &TypeExpr) -> bool {
         match ty {
             TypeExpr::Primitive(_) | TypeExpr::String | TypeExpr::Void => true,
             TypeExpr::Record(id) => self.supported_records.contains(id),
             TypeExpr::Enum(id) => self.supported_enums.contains(id),
+            TypeExpr::Custom(id) => self.is_supported_type(self.custom_repr_type(id)),
             TypeExpr::Vec(inner) => self.is_supported_vec_element(inner),
             TypeExpr::Option(inner) => {
                 !matches!(inner.as_ref(), TypeExpr::Option(_)) && self.is_supported_type(inner)
@@ -56,6 +59,7 @@ impl<'a> CSharpLowerer<'a> {
             TypeExpr::Primitive(_) | TypeExpr::String => true,
             TypeExpr::Record(id) => self.supported_records.contains(id),
             TypeExpr::Enum(id) => self.supported_enums.contains(id),
+            TypeExpr::Custom(id) => self.is_supported_vec_element(self.custom_repr_type(id)),
             TypeExpr::Vec(inner) => self.is_supported_vec_element(inner),
             TypeExpr::Option(inner) => {
                 !matches!(inner.as_ref(), TypeExpr::Option(_))
@@ -68,14 +72,18 @@ impl<'a> CSharpLowerer<'a> {
     /// Vec element types that pass directly as a pinned `T[]` across
     /// P/Invoke. Primitives qualify (blittable C# value types). Blittable
     /// records qualify (`[StructLayout(Sequential)]` matches Rust
-    /// `#[repr(C)]`). C-style enums do NOT qualify: the Rust `#[export]`
-    /// macro classifies them as `DataTypeCategory::Scalar` and routes
-    /// `Vec<CStyleEnum>` through the wire-encoded path. Admitting them
-    /// here would mismatch the ABI. Tracked in issue #196.
+    /// `#[repr(C)]`). `Custom` resolves through to its `repr` so a
+    /// `Vec<UtcDateTime>` (i64 underneath) rides the pinned-array path
+    /// the macro already produced ABI-side. C-style enums do NOT qualify:
+    /// the Rust `#[export]` macro classifies them as
+    /// `DataTypeCategory::Scalar` and routes `Vec<CStyleEnum>` through
+    /// the wire-encoded path. Admitting them here would mismatch the
+    /// ABI. Tracked in issue #196.
     pub(super) fn is_blittable_vec_element(&self, ty: &TypeExpr) -> bool {
         match ty {
             TypeExpr::Primitive(_) => true,
             TypeExpr::Record(id) => self.is_blittable_record(id),
+            TypeExpr::Custom(id) => self.is_blittable_vec_element(self.custom_repr_type(id)),
             _ => false,
         }
     }

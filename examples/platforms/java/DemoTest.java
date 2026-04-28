@@ -116,6 +116,23 @@ public final class DemoTest {
         assert echoed.name().equals("launch") : "echoEvent.name";
         assert echoed.timestamp() == timestamp : "echoEvent.timestamp";
         assert Demo.eventTimestamp(event) == timestamp : "eventTimestamp";
+
+        String email = "café@example.com";
+        assert Demo.echoEmail(email).equals(email) : "echoEmail roundtrip";
+        assert Demo.emailDomain(email).equals("example.com") : "emailDomain";
+
+        List<String> emails = Arrays.asList("café@example.com", "user@example.org");
+        List<String> echoedEmails = Demo.echoEmails(emails);
+        assert echoedEmails.size() == 2 : "echoEmails length";
+        assert echoedEmails.get(0).equals("café@example.com") : "echoEmails[0] (utf-8)";
+        assert echoedEmails.get(1).equals("user@example.org") : "echoEmails[1]";
+
+        long[] dts = { 1_710_000_000_000L, 1_710_000_001_000L, 1_710_000_002_000L };
+        long[] echoedDts = Demo.echoDatetimes(dts);
+        assert echoedDts.length == 3 : "echoDatetimes length";
+        assert echoedDts[0] == dts[0] && echoedDts[1] == dts[1] && echoedDts[2] == dts[2]
+            : "echoDatetimes roundtrip";
+
         System.out.println("  PASS\n");
     }
 

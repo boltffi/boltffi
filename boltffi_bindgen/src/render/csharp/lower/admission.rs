@@ -51,7 +51,7 @@ impl<'a> CSharpLowerer<'a> {
                 .filter(|r| {
                     r.fields
                         .iter()
-                        .all(|f| is_field_type_supported(&f.type_expr, &records, &enums))
+                        .all(|f| is_field_type_supported(ffi, &f.type_expr, &records, &enums))
                 })
                 .map(|r| r.id.clone())
                 .collect();
@@ -60,7 +60,7 @@ impl<'a> CSharpLowerer<'a> {
                 .all_enums()
                 .filter(|e| matches!(e.repr, EnumRepr::Data { .. }))
                 .filter(|e| !enums.contains(&e.id))
-                .filter(|e| enum_variant_fields_supported(e, &records, &enums))
+                .filter(|e| enum_variant_fields_supported(ffi, e, &records, &enums))
                 .map(|e| e.id.clone())
                 .collect();
             if record_additions.is_empty() && enum_additions.is_empty() {
@@ -76,6 +76,7 @@ impl<'a> CSharpLowerer<'a> {
 /// Whether every variant's payload field type is supported. Vacuously
 /// true for non-Data enums.
 fn enum_variant_fields_supported(
+    ffi: &FfiContract,
     enum_def: &EnumDef,
     records: &HashSet<RecordId>,
     enums: &HashSet<EnumId>,
@@ -87,16 +88,18 @@ fn enum_variant_fields_supported(
         VariantPayload::Unit => true,
         VariantPayload::Tuple(types) => types
             .iter()
-            .all(|t| is_field_type_supported(t, records, enums)),
+            .all(|t| is_field_type_supported(ffi, t, records, enums)),
         VariantPayload::Struct(fields) => fields
             .iter()
-            .all(|f| is_field_type_supported(&f.type_expr, records, enums)),
+            .all(|f| is_field_type_supported(ffi, &f.type_expr, records, enums)),
     })
 }
 
 /// Whether `ty` is a supported field/element type, given the current
-/// admission state of records and enums.
+/// admission state of records and enums. `Custom` resolves through to
+/// its `repr` so the gate matches what the lowerer will normalize to.
 fn is_field_type_supported(
+    ffi: &FfiContract,
     ty: &TypeExpr,
     records: &HashSet<RecordId>,
     enums: &HashSet<EnumId>,
@@ -105,13 +108,17 @@ fn is_field_type_supported(
         TypeExpr::Primitive(_) | TypeExpr::String | TypeExpr::Void => true,
         TypeExpr::Record(id) => records.contains(id),
         TypeExpr::Enum(id) => enums.contains(id),
-        TypeExpr::Vec(inner) => is_field_type_supported(inner, records, enums),
+        TypeExpr::Custom(id) => ffi
+            .catalog
+            .resolve_custom(id)
+            .is_some_and(|custom| is_field_type_supported(ffi, &custom.repr, records, enums)),
+        TypeExpr::Vec(inner) => is_field_type_supported(ffi, inner, records, enums),
         // C# models `Option<T>` as `T?`, so `Option<Option<T>>` would
         // need `T??`, which the language rejects and which can't be
         // flattened without losing the `Some(None)` state.
         TypeExpr::Option(inner) => {
             !matches!(inner.as_ref(), TypeExpr::Option(_))
-                && is_field_type_supported(inner, records, enums)
+                && is_field_type_supported(ffi, inner, records, enums)
         }
         _ => false,
     }
@@ -123,12 +130,27 @@ mod tests {
     use super::*;
     use crate::ir::Lowerer as IrLowerer;
     use crate::ir::contract::PackageInfo;
-    use crate::ir::definitions::{CStyleVariant, FunctionDef, ParamDef, ParamPassing, ReturnDef};
-    use crate::ir::ids::{FunctionId, ParamName};
+    use crate::ir::definitions::{
+        CStyleVariant, CustomTypeDef, FunctionDef, ParamDef, ParamPassing, ReturnDef,
+    };
+    use crate::ir::ids::{ConverterPath, CustomTypeId, FunctionId, ParamName, QualifiedName};
     use crate::ir::types::PrimitiveType;
     use boltffi_ffi_rules::callable::ExecutionKind;
 
     use super::super::super::CSharpOptions;
+
+    fn datetime_custom_type() -> CustomTypeDef {
+        CustomTypeDef {
+            id: CustomTypeId::new("UtcDateTime"),
+            rust_type: QualifiedName::new("chrono::DateTime<Utc>"),
+            repr: TypeExpr::Primitive(PrimitiveType::I64),
+            converters: ConverterPath {
+                into_ffi: QualifiedName::new("test_into_ffi"),
+                try_from_ffi: QualifiedName::new("test_try_from_ffi"),
+            },
+            doc: None,
+        }
+    }
 
     /// A record field that points at a data enum must still let the
     /// record qualify as supported. Records and data enums are computed
@@ -303,6 +325,72 @@ mod tests {
         assert!(
             lowerer.lower_function(&contract.functions[0]).is_none(),
             "expecting a function with nested Option param/return to be dropped rather than emitting int??",
+        );
+    }
+
+    /// A record carrying a `Custom` field (here `UtcDateTime`, repr =
+    /// i64) must admit. The lowerer normalizes `Custom` to `repr` before
+    /// emitting, so the admission gate has to see through the wrapper or
+    /// the entire record gets silently dropped — which is the pre-fix
+    /// behavior issue #146 calls out.
+    #[test]
+    fn record_with_custom_field_is_admitted() {
+        let mut contract = FfiContract {
+            package: PackageInfo {
+                name: "demo_lib".to_string(),
+                version: None,
+            },
+            functions: vec![],
+            catalog: Default::default(),
+        };
+        contract.catalog.insert_custom(datetime_custom_type());
+        contract.catalog.insert_record(record_with_one_field(
+            "event",
+            "timestamp",
+            TypeExpr::Custom(CustomTypeId::new("UtcDateTime")),
+        ));
+
+        let (records, _enums) = CSharpLowerer::compute_supported_sets(&contract);
+
+        assert!(
+            records.contains(&RecordId::new("event")),
+            "expecting a record with a Custom<i64> field to be admitted",
+        );
+    }
+
+    /// `Vec<Custom>` whose underlying repr is a primitive must take the
+    /// blittable pinned-array fast path. The macro already classifies
+    /// `Vec<UtcDateTime>` as `Vec<i64>` ABI-side; if `is_blittable_vec_element`
+    /// didn't look through `Custom`, the C# side would mismatch by trying
+    /// to wire-encode a buffer the macro emits as a direct `*const i64`.
+    #[test]
+    fn blittable_vec_element_resolves_through_custom() {
+        let mut contract = FfiContract {
+            package: PackageInfo {
+                name: "demo_lib".to_string(),
+                version: None,
+            },
+            functions: vec![],
+            catalog: Default::default(),
+        };
+        contract.catalog.insert_custom(datetime_custom_type());
+
+        let abi = IrLowerer::new(&contract).to_abi_contract();
+        let options = CSharpOptions::default();
+        let lowerer = CSharpLowerer::new(&contract, &abi, &options);
+
+        let custom = TypeExpr::Custom(CustomTypeId::new("UtcDateTime"));
+        assert!(
+            lowerer.is_blittable_vec_element(&custom),
+            "expecting Vec<Custom<i64>> to qualify for the pinned-array fast path",
+        );
+        assert!(
+            lowerer.is_supported_type(&custom),
+            "expecting bare Custom<i64> to admit as a param/return type",
+        );
+        assert!(
+            lowerer.is_supported_vec_element(&custom),
+            "expecting Custom<i64> to admit as a Vec element",
         );
     }
 }

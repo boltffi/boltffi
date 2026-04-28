@@ -110,6 +110,13 @@ pub enum CSharpReturnKind {
     /// expression, evaluated against a `reader` local the template
     /// introduces.
     WireDecodeOption { decode_expr: CSharpExpression },
+    /// `FfiBuf` carrying a single wire-encoded value whose decode is
+    /// not captured by the more specific shapes above. Used today for
+    /// `Custom<Primitive>` returns: the macro side wraps the primitive
+    /// in a wire buffer (so the C ABI is uniform across Custom types),
+    /// and we reuse the same `var reader = ...; return ...;` shape as
+    /// `WireDecodeOption` with a pre-rendered single-op decode.
+    WireDecodeValue { decode_expr: CSharpExpression },
 }
 
 impl CSharpReturnKind {
@@ -131,6 +138,7 @@ impl CSharpReturnKind {
                 | Self::WireDecodeBlittableRecordArray { .. }
                 | Self::WireDecodeEncodedArray { .. }
                 | Self::WireDecodeOption { .. }
+                | Self::WireDecodeValue { .. }
         )
     }
 }

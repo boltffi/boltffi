@@ -88,3 +88,13 @@ pub fn echo_event(event: Event) -> Event {
 pub fn event_timestamp(event: Event) -> i64 {
     event.timestamp.timestamp_millis()
 }
+
+#[export]
+pub fn echo_emails(emails: Vec<Email>) -> Vec<Email> {
+    emails
+}
+
+#[export]
+pub fn echo_datetimes(dts: Vec<DateTime<Utc>>) -> Vec<DateTime<Utc>> {
+    dts
+}

@@ -197,6 +197,12 @@ pub(crate) fn lower_encode_expr(
             };
             vec![length_stmt, foreach_stmt]
         }
+        WriteOp::Custom { underlying, .. } => {
+            // Custom types erase to their wire repr: the underlying
+            // WriteSeq carries the actual ops, so recurse into it and
+            // the foreign side never sees Custom.
+            lower_encode_expr(underlying, writer, renames, locals)
+        }
         other => todo!(
             "C# backend has not yet implemented write support for {:?}",
             other

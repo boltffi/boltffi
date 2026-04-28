@@ -1,7 +1,7 @@
 import { assert, demo } from "../support/index.mjs";
 
 export async function run() {
-  const email = "ali@example.com";
+  const email = "café@example.com";
   assert.equal(demo.echoEmail(email), email);
   assert.equal(demo.emailDomain(email), "example.com");
 
@@ -13,4 +13,10 @@ export async function run() {
   const event = { name: "launch", timestamp: datetime };
   assert.deepEqual(demo.echoEvent(event), event);
   assert.equal(demo.eventTimestamp(event), datetime);
+
+  const emails = ["café@example.com", "user@example.org"];
+  assert.deepEqual(demo.echoEmails(emails), emails);
+
+  const dts = [1_710_000_000_000n, 1_710_000_001_000n, 1_710_000_002_000n];
+  assert.deepEqual(demo.echoDatetimes(dts), dts);
 }

@@ -200,6 +200,12 @@ pub(crate) fn lower_decode_expr(
                 .into(),
             }
         }
+        ReadOp::Custom { underlying, .. } => {
+            // Custom types erase to their wire repr: the underlying
+            // ReadSeq carries the actual ops, so recurse into it and
+            // the foreign side never sees Custom.
+            lower_decode_expr(underlying, reader, shadowed, namespace, locals)
+        }
         other => todo!(
             "C# backend has not yet implemented decode support for {:?}",
             other

@@ -46,16 +46,21 @@ impl<'a> CSharpLowerer<'a> {
         size_locals: &mut size::SizeLocalCounters,
         encode_locals: &mut encode::EncodeLocalCounters,
     ) -> Option<CSharpWireWriterPlan> {
-        let encode_ops = match &param.role {
+        let raw_encode_ops = match &param.role {
             ParamRole::Input {
                 encode_ops: Some(encode_ops),
                 ..
             } => encode_ops.clone(),
             _ => return None,
         };
-        if !self.param_needs_wire_buffer(encode_ops.ops.first()?) {
+        if !self.param_needs_wire_buffer(raw_encode_ops.ops.first()?) {
             return None;
         }
+        // Strip Custom wrappers so downstream encode/size walkers see
+        // only the repr ops; otherwise nested `WriteOp::Vec` whose
+        // element_type is `Custom` would feed a Custom TypeExpr into
+        // `from_type_expr` for the foreach element-type annotation.
+        let encode_ops = self.normalize_custom_write_seq(&raw_encode_ops);
         let param_name: CSharpParamName = (&param.name).into();
         let binding_name = CSharpLocalName::for_wire_writer(&param_name);
         let bytes_binding_name = CSharpLocalName::for_bytes(&param_name);
@@ -97,7 +102,13 @@ impl<'a> CSharpLowerer<'a> {
                 ..
             } => true,
             WriteOp::Option { .. } => true,
-            WriteOp::Result { .. } | WriteOp::Builtin { .. } | WriteOp::Custom { .. } => {
+            // The macro exposes every Custom-typed param as a wire-
+            // buffer signature on the C ABI, even when the repr is a
+            // fixed-width primitive — so we always allocate and write
+            // through the wire path. Sending the underlying value raw
+            // would misalign the Rust decoder.
+            WriteOp::Custom { .. } => true,
+            WriteOp::Result { .. } | WriteOp::Builtin { .. } => {
                 todo!("C# backend has not yet implemented param support for {op:?}")
             }
         }

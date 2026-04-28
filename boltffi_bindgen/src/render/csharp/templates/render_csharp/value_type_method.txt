@@ -55,6 +55,8 @@
                 return new WireReader(_buf).ReadEncodedArray<{{ element_type }}>({{ decode_lambda }});
                 {%- when CSharpReturnKind::WireDecodeOption with { decode_expr } %}
                 var reader = new WireReader(_buf); return {{ decode_expr }};
+                {%- when CSharpReturnKind::WireDecodeValue with { decode_expr } %}
+                var reader = new WireReader(_buf); return {{ decode_expr }};
                 {%- when _ %}
                 {%- endmatch %}
             }

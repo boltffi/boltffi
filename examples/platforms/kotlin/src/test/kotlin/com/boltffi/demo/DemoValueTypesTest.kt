@@ -34,7 +34,7 @@ class DemoValueTypesTest {
         assertEquals(url, echoUrl(url))
         assertEquals(url.toString(), urlToString(url))
 
-        val email = "ali@example.com"
+        val email = "café@example.com"
         assertEquals(email, echoEmail(email))
         assertEquals("example.com", emailDomain(email))
 
@@ -42,6 +42,11 @@ class DemoValueTypesTest {
         assertEquals(datetime, echoDatetime(datetime))
         assertEquals(1_701_234_567_890L, datetimeToMillis(datetime))
 
+        val emails = listOf("café@example.com", "user@example.org")
+        assertContentEquals(emails, echoEmails(emails))
+
+        val datetimes = longArrayOf(1_710_000_000_000L, 1_710_000_001_000L, 1_710_000_002_000L)
+        assertContentEquals(datetimes, echoDatetimes(datetimes))
     }
 
     @Test

@@ -2589,4 +2589,136 @@ mod tests {
             "Class static methods do not prepend a receiver to the DllImport",
         );
     }
+
+    /// Pins the shape of the C# bindings for the demo crate's custom
+    /// types: `Email` (`#[custom_ffi]`, repr = String), `UtcDateTime`
+    /// (`custom_type!`, repr = i64), and `Event` (a `#[data]` record
+    /// holding a `DateTime<Utc>` field). Custom types erase to their
+    /// repr in the foreign API, but the macro always exposes them as
+    /// wire-encoded across the C ABI — even Custom<i64> ships
+    /// length-prefixed. The asserts below pin both halves of that
+    /// contract: the public C# surface uses repr types, the DllImport
+    /// signatures use `byte[] + UIntPtr`, and the wrapper bodies wire-
+    /// encode every Custom-typed param (including `Vec<Custom<i64>>`,
+    /// where the IR codec disagrees with the substituted ABI shape).
+    #[test]
+    fn emit_demo_crate_renders_custom_types_through_their_repr() {
+        use std::path::PathBuf;
+
+        let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .to_path_buf();
+        let demo_crate_path = repo_root.join("examples").join("demo");
+        let mut module = crate::scan::scan_crate(&demo_crate_path, "demo").unwrap();
+        let contract = crate::ir::build_contract(&mut module);
+        let abi = IrLowerer::new(&contract).to_abi_contract();
+        let output = CSharpEmitter::emit(&contract, &abi, &CSharpOptions::default());
+
+        let main = output
+            .files
+            .iter()
+            .find(|f| f.file_name.ends_with(".cs") && f.source.contains("class NativeMethods"))
+            .expect("main wrapper file with NativeMethods");
+
+        // Email (Custom<String>): public surface erases to `string`,
+        // but the param wire-encodes (length-prefixed) — sending raw
+        // UTF-8 would misalign the Rust decoder.
+        assert_source_contains(
+            &main.source,
+            "public static string EchoEmail(string email)",
+            "Email param/return erases to string in the public API",
+        );
+        assert_source_contains(
+            &main.source,
+            "_wire_email.WriteString(email);",
+            "Email param wire-encodes via WriteString (length-prefixed UTF-8)",
+        );
+        assert_source_contains(
+            &main.source,
+            "internal static extern FfiBuf EchoEmail(byte[] email, UIntPtr emailLen);",
+            "Custom<String> DllImport takes a byte buffer, not a raw string",
+        );
+
+        // UtcDateTime (Custom<i64>): public surface is `long`, but the
+        // boundary still wire-encodes to keep the C ABI uniform across
+        // Custom types. Return decode goes through the new
+        // WireDecodeValue path: `var reader = ...; return reader.ReadI64();`
+        assert_source_contains(
+            &main.source,
+            "public static long EchoDatetime(long dt)",
+            "UtcDateTime param/return erases to long in the public API",
+        );
+        assert_source_contains(
+            &main.source,
+            "_wire_dt.WriteI64(dt);",
+            "UtcDateTime param wire-encodes the i64 even though it's fixed-width",
+        );
+        assert_source_contains(
+            &main.source,
+            "var reader = new WireReader(_buf); return reader.ReadI64();",
+            "Custom<Primitive> return reads through WireReader, not the direct primitive path",
+        );
+        assert_source_contains(
+            &main.source,
+            "internal static extern FfiBuf EchoDatetime(byte[] dt, UIntPtr dtLen);",
+            "Custom<i64> DllImport takes a byte buffer, not raw long",
+        );
+
+        // Event (record with a DateTime<Utc> field): admission has to
+        // see through Custom or the whole record gets dropped. Field
+        // type erases to `long` in the rendered class.
+        let event_file = output
+            .files
+            .iter()
+            .find(|f| f.file_name == "Event.cs")
+            .expect("Event.cs from demo crate (record with a Custom field admits)");
+        assert_source_contains(
+            &event_file.source,
+            "long Timestamp",
+            "Event.timestamp field surfaces as long, mirroring the repr of UtcDateTime",
+        );
+        assert_source_contains(
+            &event_file.source,
+            "wire.WriteI64(this.Timestamp);",
+            "Event encodes the Custom field through its primitive repr writer",
+        );
+
+        // Vec<Email>: encoded path. The encoded-array writer iterates
+        // emails as `string` (not `Custom<Email>`), so `from_type_expr`
+        // never sees a Custom — entry-point normalization prevents
+        // the latent todo!.
+        assert_source_contains(
+            &main.source,
+            "foreach (string item0 in emails) { _wire_emails.WriteString(item0); };",
+            "Vec<Email> wire-encodes element-wise with string (repr), not Custom",
+        );
+        assert_source_contains(
+            &main.source,
+            "return new WireReader(_buf).ReadEncodedArray<string>(r0 => r0.ReadString());",
+            "Vec<Email> return reads as encoded array of strings",
+        );
+
+        // Vec<UtcDateTime>: the macro's substituted ABI is blittable
+        // (`*const i64, usize`) but the codec layout sets `Encoded` for
+        // any Vec whose element isn't a bare Primitive. The macro
+        // wins — every `Vec<Custom<_>>` ships length-prefixed both
+        // ways. Pinning that here so a future change can't regress
+        // back to the asymmetric DirectArray-in / encoded-out shape.
+        assert_source_contains(
+            &main.source,
+            "foreach (long item0 in dts) { _wire_dts.WriteI64(item0); };",
+            "Vec<UtcDateTime> wire-encodes element-wise as long, not raw long[]",
+        );
+        assert_source_contains(
+            &main.source,
+            "return new WireReader(_buf).ReadEncodedArray<long>(r0 => r0.ReadI64());",
+            "Vec<UtcDateTime> return reads as encoded array, not raw blittable",
+        );
+        assert_source_contains(
+            &main.source,
+            "internal static extern FfiBuf EchoDatetimes(byte[] dts, UIntPtr dtsLen);",
+            "Vec<Custom<i64>> DllImport takes a byte buffer regardless of repr blittability",
+        );
+    }
 }

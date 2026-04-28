@@ -22,7 +22,26 @@ impl<'a> CSharpLowerer<'a> {
 
         let csharp_type = self.lower_type(&param.type_expr)?;
         let csharp_param_name: CSharpParamName = (&param.name).into();
-        let kind = match &param.type_expr {
+        // The macro exposes Custom-typed params (and Vec<Custom<_>>
+        // params) as wire-buffer C ABIs regardless of repr — Custom is
+        // treated as opaque on the boundary, so even Vec<Custom<i64>>
+        // ships as a length-prefixed buffer, not a raw `long[]`. Force
+        // the wire-encoded path here so the call site uses the
+        // `_xBytes` local rather than the raw param.
+        let is_custom_boundary = match &param.type_expr {
+            TypeExpr::Custom(_) => true,
+            TypeExpr::Vec(inner) => matches!(inner.as_ref(), TypeExpr::Custom(_)),
+            _ => false,
+        };
+        if is_custom_boundary {
+            return Some(CSharpParamPlan {
+                name: csharp_param_name.clone(),
+                csharp_type,
+                kind: wire_encoded_kind(wire_writers, &param.name)?,
+            });
+        }
+        let normalized = self.normalize_custom_type_expr(&param.type_expr);
+        let kind = match &normalized {
             TypeExpr::String => CSharpParamKind::Utf8Bytes,
             TypeExpr::Record(id) if !self.is_blittable_record(id) => {
                 wire_encoded_kind(wire_writers, &param.name)?
@@ -91,7 +110,8 @@ impl<'a> CSharpLowerer<'a> {
 
     /// Maps a Rust [`TypeExpr`] to its C# equivalent. Returns `None` if
     /// the type isn't admitted by the backend (callbacks, streams,
-    /// records/enums outside the supported sets).
+    /// records/enums outside the supported sets). `Custom` resolves to
+    /// its `repr` so foreign code only sees the wire type.
     pub(super) fn lower_type(&self, type_expr: &TypeExpr) -> Option<CSharpType> {
         match type_expr {
             TypeExpr::Void => Some(CSharpType::Void),
@@ -105,6 +125,7 @@ impl<'a> CSharpLowerer<'a> {
                 let enum_def = self.ffi.catalog.resolve_enum(id)?;
                 Some(CSharpType::for_enum(enum_def))
             }
+            TypeExpr::Custom(id) => self.lower_type(self.custom_repr_type(id)),
             TypeExpr::Vec(inner) if self.is_supported_vec_element(inner) => {
                 let inner_type = self.lower_type(inner)?;
                 Some(CSharpType::Array(Box::new(inner_type)))

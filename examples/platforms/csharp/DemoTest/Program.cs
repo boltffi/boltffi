@@ -199,6 +199,18 @@ public static class DemoTest
         Require(echoed.Timestamp == ts, "EchoEvent.Timestamp");
         Require(EventTimestamp(evt) == ts, "EventTimestamp");
 
+        string[] emails = new[] { "café@example.com", "user@example.org" };
+        string[] echoedEmails = EchoEmails(emails);
+        Require(echoedEmails.Length == 2, "EchoEmails length");
+        Require(echoedEmails[0] == "café@example.com", "EchoEmails[0] roundtrip (utf-8)");
+        Require(echoedEmails[1] == "user@example.org", "EchoEmails[1] roundtrip");
+
+        long[] dts = new[] { 1_710_000_000_000L, 1_710_000_001_000L, 1_710_000_002_000L };
+        long[] echoedDts = EchoDatetimes(dts);
+        Require(echoedDts.Length == 3, "EchoDatetimes length");
+        Require(echoedDts[0] == dts[0] && echoedDts[1] == dts[1] && echoedDts[2] == dts[2],
+            "EchoDatetimes roundtrip (blittable)");
+
         Console.WriteLine("  PASS\n");
     }
 

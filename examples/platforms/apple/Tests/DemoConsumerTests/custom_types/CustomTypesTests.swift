@@ -4,7 +4,7 @@ import XCTest
 
 final class CustomTypesTests: XCTestCase {
     func testCustomTypesRoundTrip() {
-        let email = "ali@example.com"
+        let email = "café@example.com"
         XCTAssertEqual(echoEmail(email: email), email)
         XCTAssertEqual(emailDomain(email: email), "example.com")
 
@@ -17,5 +17,11 @@ final class CustomTypesTests: XCTestCase {
         let echoedEvent = echoEvent(event: event)
         XCTAssertEqual(echoedEvent, event)
         XCTAssertEqual(eventTimestamp(event: event), datetime)
+
+        let emails = ["café@example.com", "user@example.org"]
+        XCTAssertEqual(echoEmails(emails: emails), emails)
+
+        let dts: [UtcDateTime] = [1_710_000_000_000, 1_710_000_001_000, 1_710_000_002_000]
+        XCTAssertEqual(echoDatetimes(dts: dts), dts)
     }
 }
