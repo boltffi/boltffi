@@ -24,6 +24,7 @@ public static class DemoTest
         TestUsize();
         TestIsize();
         TestStrings();
+        TestCustomTypes();
         TestBlittableRecords();
         TestRecordsWithStrings();
         TestNestedRecords();
@@ -176,6 +177,28 @@ public static class DemoTest
         Require(RepeatString("ab", 3u) == "ababab", "repeatString(ab, 3)");
         Require(RepeatString("x", 0u) == "", "repeatString(x, 0)");
         Require(RepeatString("🌟", 2u) == "🌟🌟", "repeatString(emoji, 2)");
+        Console.WriteLine("  PASS\n");
+    }
+
+    private static void TestCustomTypes()
+    {
+        Console.WriteLine("Testing custom types (Email, UtcDateTime, Event)...");
+
+        string email = "café@example.com";
+        Require(EchoEmail(email) == email, "EchoEmail roundtrip");
+        Require(EmailDomain(email) == "example.com", "EmailDomain");
+
+        long ts = 1_710_000_000_000L;
+        Require(EchoDatetime(ts) == ts, "EchoDatetime");
+        Require(DatetimeToMillis(ts) == ts, "DatetimeToMillis");
+        Require(FormatTimestamp(ts).StartsWith("2024-03-"), "FormatTimestamp");
+
+        Event evt = new Event("launch", ts);
+        Event echoed = EchoEvent(evt);
+        Require(echoed.Name == "launch", "EchoEvent.Name");
+        Require(echoed.Timestamp == ts, "EchoEvent.Timestamp");
+        Require(EventTimestamp(evt) == ts, "EventTimestamp");
+
         Console.WriteLine("  PASS\n");
     }
 
