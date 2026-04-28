@@ -45,7 +45,7 @@ class DemoValueTypesTest {
         val emails = listOf("café@example.com", "user@example.org")
         assertContentEquals(emails, echoEmails(emails))
 
-        val datetimes = longArrayOf(1_710_000_000_000L, 1_710_000_001_000L, 1_710_000_002_000L)
+        val datetimes = listOf<Long>(1_710_000_000_000L, 1_710_000_001_000L, 1_710_000_002_000L)
         assertContentEquals(datetimes, echoDatetimes(datetimes))
     }
 
