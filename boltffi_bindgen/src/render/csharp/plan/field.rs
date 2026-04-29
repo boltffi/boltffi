@@ -1,4 +1,6 @@
-use super::super::ast::{CSharpExpression, CSharpPropertyName, CSharpStatement, CSharpType};
+use super::super::ast::{
+    CSharpComment, CSharpExpression, CSharpPropertyName, CSharpStatement, CSharpType,
+};
 
 /// A single field of a generated C# record, or one payload slot of a data-enum variant.
 ///
@@ -20,6 +22,9 @@ use super::super::ast::{CSharpExpression, CSharpPropertyName, CSharpStatement, C
 /// ```
 #[derive(Debug, Clone)]
 pub struct CSharpFieldPlan {
+    /// Renders a `<param>` doc tag on the containing record or
+    /// variant's positional constructor, when `Some`.
+    pub summary_doc: Option<CSharpComment>,
     /// Field name as it appears on the generated record or variant.
     pub name: CSharpPropertyName,
     /// C# type of the field.

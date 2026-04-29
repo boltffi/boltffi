@@ -7,10 +7,10 @@ using System;
 
 namespace {{ namespace }}
 {
-    public enum {{ enumeration.class_name }} : {{ enumeration.c_style_underlying_type() }}
+{{ self::summary_doc_block(enumeration.summary_doc, "    ") }}    public enum {{ enumeration.class_name }} : {{ enumeration.c_style_underlying_type() }}
     {
 {%- for variant in enumeration.variants %}
-        {{ variant.name }} = {{ variant.tag }}{% if !loop.last %},{% endif %}
+{{ self::summary_doc_block(variant.summary_doc, "        ") }}        {{ variant.name }} = {{ variant.tag }}{% if !loop.last %},{% endif %}
 {%- endfor %}
     }
 

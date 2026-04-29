@@ -10,14 +10,14 @@ using System.Text;
 
 namespace {{ namespace }}
 {
-    public abstract record {{ enumeration.class_name }}
+{{ self::summary_doc_block(enumeration.summary_doc, "    ") }}    public abstract record {{ enumeration.class_name }}
     {
         private {{ enumeration.class_name }}() { }
 {%- for variant in enumeration.variants %}
 {%- if variant.is_unit() %}
-        public sealed record {{ variant.name }}() : {{ enumeration.class_name }};
+{{ self::summary_doc_block(variant.summary_doc, "        ") }}{{ self::param_doc_block(variant.fields, "        ") }}        public sealed record {{ variant.name }}() : {{ enumeration.class_name }};
 {%- else %}
-        public sealed record {{ variant.name }}(
+{{ self::summary_doc_block(variant.summary_doc, "        ") }}{{ self::param_doc_block(variant.fields, "        ") }}        public sealed record {{ variant.name }}(
 {%- for field in variant.fields %}
             {{ field.csharp_type }} {{ field.name }}{% if !loop.last %},{% endif %}
 {%- endfor %}

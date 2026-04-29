@@ -10,6 +10,7 @@
 mod argument_list;
 mod attribute;
 mod code;
+mod comment;
 mod enum_underlying_type;
 mod identifier;
 mod parameter_list;
@@ -21,6 +22,7 @@ pub(super) use code::{
     CSharpBinaryOp, CSharpExpression, CSharpIdentity, CSharpLiteral, CSharpLocalDecl,
     CSharpStatement,
 };
+pub(super) use comment::CSharpComment;
 pub(super) use enum_underlying_type::CSharpEnumUnderlyingType;
 pub(super) use identifier::{
     CSharpClassName, CSharpLocalName, CSharpMethodName, CSharpNamespace, CSharpParamName,

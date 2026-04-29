@@ -16,7 +16,7 @@ namespace {{ namespace }}
 {%- if record.is_blittable %}
     [StructLayout(LayoutKind.Sequential)]
 {%- endif %}
-    public readonly record struct {{ record.class_name }}(
+{{ self::summary_doc_block(record.summary_doc, "    ") }}{{ self::param_doc_block(record.fields, "    ") }}    public readonly record struct {{ record.class_name }}(
 {%- for field in record.fields %}
         {{ field.csharp_type }} {{ field.name }}{% if !loop.last %},{% endif %}
 {%- endfor %}

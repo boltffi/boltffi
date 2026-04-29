@@ -1,5 +1,5 @@
 use super::super::ast::{
-    CSharpArgumentList, CSharpClassName, CSharpMethodName, CSharpParameterList,
+    CSharpArgumentList, CSharpClassName, CSharpComment, CSharpMethodName, CSharpParameterList,
 };
 use super::callable::{native_call_arg_list, native_param_list};
 use super::{CFunctionName, CSharpMethodPlan, CSharpParamPlan, CSharpWireWriterPlan};
@@ -27,6 +27,8 @@ use super::{CFunctionName, CSharpMethodPlan, CSharpParamPlan, CSharpWireWriterPl
 /// ```
 #[derive(Debug, Clone)]
 pub struct CSharpClassPlan {
+    /// Renders a `<summary>` block comment, when `Some`.
+    pub summary_doc: Option<CSharpComment>,
     /// Class name (e.g., `"Inventory"`).
     pub class_name: CSharpClassName,
     /// C-side symbol that frees the native handle.
@@ -70,6 +72,8 @@ pub struct CSharpClassPlan {
 /// ```
 #[derive(Debug, Clone)]
 pub struct CSharpConstructorPlan {
+    /// Renders a `<summary>` block comment, when `Some`.
+    pub summary_doc: Option<CSharpComment>,
     /// How the constructor is rendered on the public surface.
     pub kind: CSharpConstructorKind,
     /// Name used for this constructor's DllImport entry inside the

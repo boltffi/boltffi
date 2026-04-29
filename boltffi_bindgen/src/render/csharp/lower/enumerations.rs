@@ -4,8 +4,8 @@ use crate::ir::abi::{AbiCall, AbiEnum, AbiEnumField, AbiEnumPayload, AbiEnumVari
 use crate::ir::definitions::{ConstructorDef, EnumDef, EnumRepr, MethodDef, Receiver, ReturnDef};
 
 use super::super::ast::{
-    CSharpClassName, CSharpEnumUnderlyingType, CSharpExpression, CSharpIdentity, CSharpLocalName,
-    CSharpMethodName, CSharpType,
+    CSharpClassName, CSharpComment, CSharpEnumUnderlyingType, CSharpExpression, CSharpIdentity,
+    CSharpLocalName, CSharpMethodName, CSharpType,
 };
 use super::super::plan::{
     CSharpEnumKind, CSharpEnumPlan, CSharpEnumVariantPlan, CSharpFieldPlan, CSharpMethodPlan,
@@ -62,6 +62,7 @@ impl<'a> CSharpLowerer<'a> {
                     .iter()
                     .enumerate()
                     .map(|(ordinal, variant)| CSharpEnumVariantPlan {
+                        summary_doc: CSharpComment::from_str_option(variant.doc.as_deref()),
                         name: (&variant.name).into(),
                         tag: variant.discriminant as i32,
                         wire_tag: ordinal as i32,
@@ -69,6 +70,7 @@ impl<'a> CSharpLowerer<'a> {
                     })
                     .collect();
                 Some(CSharpEnumPlan {
+                    summary_doc: CSharpComment::from_str_option(enum_def.doc.as_deref()),
                     class_name,
                     wire_class_name,
                     methods_class_name,
@@ -93,6 +95,7 @@ impl<'a> CSharpLowerer<'a> {
                 let mut size_locals = size::SizeLocalCounters::default();
                 let mut encode_locals = encode::EncodeLocalCounters::default();
                 let mut decode_locals = decode::DecodeLocalCounters::default();
+                let variant_docs = enum_def.variant_docs();
                 let variants = abi_enum
                     .variants
                     .iter()
@@ -101,6 +104,7 @@ impl<'a> CSharpLowerer<'a> {
                         self.lower_data_enum_variant(
                             abi_enum,
                             variant,
+                            variant_docs.get(ordinal).cloned().flatten(),
                             ordinal,
                             &shadowed_variant_names,
                             &mut size_locals,
@@ -110,6 +114,7 @@ impl<'a> CSharpLowerer<'a> {
                     })
                     .collect();
                 Some(CSharpEnumPlan {
+                    summary_doc: CSharpComment::from_str_option(enum_def.doc.as_deref()),
                     class_name,
                     wire_class_name,
                     methods_class_name,
@@ -129,6 +134,7 @@ impl<'a> CSharpLowerer<'a> {
         &self,
         abi_enum: &AbiEnum,
         variant: &AbiEnumVariant,
+        doc: Option<String>,
         ordinal: usize,
         shadowed: &HashSet<CSharpClassName>,
         size_locals: &mut size::SizeLocalCounters,
@@ -146,6 +152,7 @@ impl<'a> CSharpLowerer<'a> {
                 .collect(),
         };
         CSharpEnumVariantPlan {
+            summary_doc: CSharpComment::from_str_option(doc.as_deref()),
             name: (&variant.name).into(),
             tag,
             // For data enums the public surface is a `sealed record`,
@@ -175,6 +182,10 @@ impl<'a> CSharpLowerer<'a> {
             .expect("variant field type must be supported")
             .qualify_if_shadowed(shadowed, &self.namespace);
         CSharpFieldPlan {
+            // Variant payload field docs are dropped by the ABI, so we
+            // can't recover them here without a wider refactor; leave
+            // empty for now.
+            summary_doc: None,
             name: (&field.name).into(),
             csharp_type,
             wire_decode_expr: decode::lower_decode_expr(
@@ -301,6 +312,7 @@ impl<'a> CSharpLowerer<'a> {
             .map(|p| self.lower_param(p, &wire_writers))
             .collect::<Option<Vec<_>>>()?;
         Some(CSharpMethodPlan {
+            summary_doc: CSharpComment::from_str_option(ctor.doc()),
             native_method_name: CSharpMethodName::native_for_owner(enum_class_name, &name),
             name,
             ffi_name: (&call.symbol).into(),
@@ -370,6 +382,7 @@ impl<'a> CSharpLowerer<'a> {
             .map(|p| self.lower_param(p, &wire_writers))
             .collect::<Option<Vec<_>>>()?;
         Some(CSharpMethodPlan {
+            summary_doc: CSharpComment::from_str_option(method_def.doc.as_deref()),
             native_method_name: CSharpMethodName::native_for_owner(enum_class_name, &name),
             name,
             ffi_name: (&call.symbol).into(),

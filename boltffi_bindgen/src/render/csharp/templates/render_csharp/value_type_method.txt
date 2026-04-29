@@ -1,14 +1,14 @@
 
 {%- if method.receiver.is_static() %}
-        public static {{ method.return_type }} {{ method.name }}({% for p in method.params %}{{ p.csharp_type }} {{ p.name }}{% if !loop.last %}, {% endif %}{% endfor %})
+{{ self::summary_doc_block(method.summary_doc, "        ") }}        public static {{ method.return_type }} {{ method.name }}({% for p in method.params %}{{ p.csharp_type }} {{ p.name }}{% if !loop.last %}, {% endif %}{% endfor %})
 {%- else if method.receiver.is_instance_extension() %}
 {%- if method.params.is_empty() %}
-        public static {{ method.return_type }} {{ method.name }}(this {{ enumeration.class_name }} self)
+{{ self::summary_doc_block(method.summary_doc, "        ") }}        public static {{ method.return_type }} {{ method.name }}(this {{ enumeration.class_name }} self)
 {%- else %}
-        public static {{ method.return_type }} {{ method.name }}(this {{ enumeration.class_name }} self, {% for p in method.params %}{{ p.csharp_type }} {{ p.name }}{% if !loop.last %}, {% endif %}{% endfor %})
+{{ self::summary_doc_block(method.summary_doc, "        ") }}        public static {{ method.return_type }} {{ method.name }}(this {{ enumeration.class_name }} self, {% for p in method.params %}{{ p.csharp_type }} {{ p.name }}{% if !loop.last %}, {% endif %}{% endfor %})
 {%- endif %}
 {%- else %}
-        public {{ method.return_type }} {{ method.name }}({% for p in method.params %}{{ p.csharp_type }} {{ p.name }}{% if !loop.last %}, {% endif %}{% endfor %})
+{{ self::summary_doc_block(method.summary_doc, "        ") }}        public {{ method.return_type }} {{ method.name }}({% for p in method.params %}{{ p.csharp_type }} {{ p.name }}{% if !loop.last %}, {% endif %}{% endfor %})
 {%- endif %}
         {
 {%- for writer in method.wire_writers %}

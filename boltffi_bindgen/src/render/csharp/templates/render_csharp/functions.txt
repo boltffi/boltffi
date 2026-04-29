@@ -2,7 +2,7 @@
     public static class {{ module.class_name }}
     {
 {%- for func in module.functions %}
-        public static {{ func.return_type }} {{ func.name }}({% for p in func.params %}{{ p.csharp_type }} {{ p.name }}{% if !loop.last %}, {% endif %}{% endfor %})
+{{ self::summary_doc_block(func.summary_doc, "        ") }}        public static {{ func.return_type }} {{ func.name }}({% for p in func.params %}{{ p.csharp_type }} {{ p.name }}{% if !loop.last %}, {% endif %}{% endfor %})
         {
 {%- for param in func.params %}
 {%- if let Some(decl) = param.setup_declaration() %}

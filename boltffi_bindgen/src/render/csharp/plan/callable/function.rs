@@ -6,8 +6,8 @@
 //! primitive.
 
 use super::super::super::ast::{
-    CSharpArgumentList, CSharpClassName, CSharpExpression, CSharpMethodName, CSharpParameterList,
-    CSharpType,
+    CSharpArgumentList, CSharpClassName, CSharpComment, CSharpExpression, CSharpMethodName,
+    CSharpParameterList, CSharpType,
 };
 use super::super::CFunctionName;
 use super::param::{native_call_arg_list, native_param_list};
@@ -30,6 +30,8 @@ use super::{CSharpParamPlan, CSharpWireWriterPlan};
 /// ```
 #[derive(Debug, Clone)]
 pub struct CSharpFunctionPlan {
+    /// Renders a `<summary>` block comment, when `Some`.
+    pub summary_doc: Option<CSharpComment>,
     /// Public wrapper method name.
     pub name: CSharpMethodName,
     /// Parameters with C# types.
@@ -154,6 +156,7 @@ mod tests {
         return_kind: CSharpReturnKind,
     ) -> CSharpFunctionPlan {
         CSharpFunctionPlan {
+            summary_doc: None,
             name: CSharpMethodName::from_source("test"),
             params: vec![],
             return_type,
@@ -181,6 +184,7 @@ mod tests {
         return_kind: CSharpReturnKind,
     ) -> CSharpFunctionPlan {
         CSharpFunctionPlan {
+            summary_doc: None,
             name: CSharpMethodName::from_source("test"),
             params,
             return_type,

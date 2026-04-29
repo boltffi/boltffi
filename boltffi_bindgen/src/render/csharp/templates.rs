@@ -13,11 +13,86 @@
 
 use askama::Template;
 
-use super::ast::CSharpNamespace;
+use super::ast::{CSharpComment, CSharpNamespace};
 use super::plan::{
-    CSharpClassPlan, CSharpConstructorKind, CSharpEnumPlan, CSharpModulePlan, CSharpParamKind,
-    CSharpRecordPlan, CSharpReturnKind,
+    CSharpClassPlan, CSharpConstructorKind, CSharpEnumPlan, CSharpFieldPlan, CSharpModulePlan,
+    CSharpParamKind, CSharpRecordPlan, CSharpReturnKind,
 };
+
+/// Renders a `<summary>` doc block at `indent`, ending with a
+/// trailing newline so the declaration that follows lands on the next
+/// line. Returns the empty string when the comment is absent so the
+/// declaration emits flush against the previous line; templates call
+/// this inline with the declaration:
+///
+/// ```askama
+/// {{ self::summary_doc_block(record.summary_doc, "    ") }}    public readonly record struct ...
+/// ```
+pub fn summary_doc_block(doc: &Option<CSharpComment>, indent: &str) -> String {
+    let Some(comment) = doc.as_ref() else {
+        return String::new();
+    };
+    let mut out = String::new();
+    push_doc_line(&mut out, indent, "<summary>");
+    for line in comment.lines() {
+        push_text_line(&mut out, indent, line);
+    }
+    push_doc_line(&mut out, indent, "</summary>");
+    out
+}
+
+/// Renders one `<param name="...">` block at `indent` for each field
+/// that carries a doc comment. Used on positional records and
+/// data-enum variants where individual fields have no separate
+/// declaration to attach a `<summary>` to.
+pub fn param_doc_block(fields: &[CSharpFieldPlan], indent: &str) -> String {
+    let mut out = String::new();
+    for field in fields {
+        let Some(comment) = field.summary_doc.as_ref() else {
+            continue;
+        };
+        let mut iter = comment.lines();
+        let first = iter.next().unwrap_or("");
+        let rest: Vec<&str> = iter.collect();
+        if rest.is_empty() {
+            push_doc_line(
+                &mut out,
+                indent,
+                &format!("<param name=\"{}\">{}</param>", field.name, first),
+            );
+            continue;
+        }
+        push_doc_line(
+            &mut out,
+            indent,
+            &format!("<param name=\"{}\">", field.name),
+        );
+        push_text_line(&mut out, indent, first);
+        for line in rest {
+            push_text_line(&mut out, indent, line);
+        }
+        push_doc_line(&mut out, indent, "</param>");
+    }
+    out
+}
+
+fn push_doc_line(out: &mut String, indent: &str, payload: &str) {
+    out.push_str(indent);
+    out.push_str("/// ");
+    out.push_str(payload);
+    out.push('\n');
+}
+
+fn push_text_line(out: &mut String, indent: &str, line: &str) {
+    out.push_str(indent);
+    if line.is_empty() {
+        out.push_str("///\n");
+    } else {
+        out.push_str("/// ");
+        out.push_str(line);
+        out.push('\n');
+    }
+}
 
 /// Renders the file header: auto-generated comment, `using` directives,
 /// and namespace declaration.
@@ -131,6 +206,7 @@ mod tests {
         encode: CSharpStatement,
     ) -> CSharpFieldPlan {
         CSharpFieldPlan {
+            summary_doc: None,
             name: CSharpPropertyName::from_source(name),
             csharp_type,
             wire_decode_expr: decode,
@@ -252,6 +328,7 @@ mod tests {
     #[test]
     fn snapshot_blittable_record_point() {
         let record = CSharpRecordPlan {
+            summary_doc: None,
             class_name: CSharpClassName::from_source("point"),
             is_blittable: true,
             fields: vec![
@@ -285,6 +362,7 @@ mod tests {
     #[test]
     fn snapshot_non_blittable_record_person_with_string() {
         let record = CSharpRecordPlan {
+            summary_doc: None,
             class_name: CSharpClassName::from_source("person"),
             is_blittable: false,
             fields: vec![
@@ -318,6 +396,7 @@ mod tests {
     #[test]
     fn snapshot_nested_record_line() {
         let record = CSharpRecordPlan {
+            summary_doc: None,
             class_name: CSharpClassName::from_source("line"),
             is_blittable: false,
             fields: vec![
@@ -349,6 +428,7 @@ mod tests {
     #[test]
     fn snapshot_empty_record() {
         let record = CSharpRecordPlan {
+            summary_doc: None,
             class_name: CSharpClassName::from_source("unit"),
             is_blittable: true,
             fields: vec![],
@@ -369,6 +449,7 @@ mod tests {
     #[test]
     fn snapshot_blittable_record_with_cstyle_enum_field() {
         let record = CSharpRecordPlan {
+            summary_doc: None,
             class_name: CSharpClassName::from_source("flag"),
             is_blittable: true,
             fields: vec![
@@ -419,6 +500,7 @@ mod tests {
             vec![]
         };
         CSharpMethodPlan {
+            summary_doc: None,
             native_method_name: CSharpMethodName::native_for_owner(&owner, &method_name),
             name: method_name,
             ffi_name: CFunctionName::new(ffi_name.to_string()),
@@ -457,6 +539,7 @@ mod tests {
             Some(CSharpClassName::methods_companion(&class_name))
         };
         CSharpEnumPlan {
+            summary_doc: None,
             class_name,
             wire_class_name,
             methods_class_name,
@@ -474,6 +557,7 @@ mod tests {
         fields: Vec<CSharpFieldPlan>,
     ) -> CSharpEnumVariantPlan {
         CSharpEnumVariantPlan {
+            summary_doc: None,
             name: CSharpClassName::from_source(name),
             tag,
             wire_tag,
@@ -733,6 +817,7 @@ mod tests {
     fn snapshot_class_inventory_idisposable_wrapper() {
         let class_name = CSharpClassName::from_source("inventory");
         let class = CSharpClassPlan {
+            summary_doc: None,
             native_free_method_name: CSharpMethodName::native_for_owner(
                 &class_name,
                 &CSharpMethodName::new("Free"),
@@ -759,6 +844,7 @@ mod tests {
     fn snapshot_class_inventory_with_constructors() {
         let class_name = CSharpClassName::from_source("inventory");
         let primary = CSharpConstructorPlan {
+            summary_doc: None,
             kind: CSharpConstructorKind::Primary {
                 helper_method_name: CSharpMethodName::new("InventoryNewHandle"),
             },
@@ -772,6 +858,7 @@ mod tests {
         };
         let with_capacity_name = CSharpMethodName::from_source("with_capacity");
         let factory = CSharpConstructorPlan {
+            summary_doc: None,
             kind: CSharpConstructorKind::StaticFactory {
                 name: with_capacity_name.clone(),
             },
@@ -788,6 +875,7 @@ mod tests {
             wire_writers: vec![],
         };
         let class = CSharpClassPlan {
+            summary_doc: None,
             native_free_method_name: CSharpMethodName::native_for_owner(
                 &class_name,
                 &CSharpMethodName::new("Free"),
@@ -816,6 +904,7 @@ mod tests {
         let class_name = CSharpClassName::from_source("counter");
         let get_name = CSharpMethodName::from_source("get");
         let get = CSharpMethodPlan {
+            summary_doc: None,
             name: get_name.clone(),
             native_method_name: CSharpMethodName::native_for_owner(&class_name, &get_name),
             ffi_name: CFunctionName::new("boltffi_counter_get".to_string()),
@@ -827,6 +916,7 @@ mod tests {
         };
         let increment_name = CSharpMethodName::from_source("increment");
         let increment = CSharpMethodPlan {
+            summary_doc: None,
             name: increment_name.clone(),
             native_method_name: CSharpMethodName::native_for_owner(&class_name, &increment_name),
             ffi_name: CFunctionName::new("boltffi_counter_increment".to_string()),
@@ -838,6 +928,7 @@ mod tests {
         };
         let zero_name = CSharpMethodName::from_source("zero");
         let zero = CSharpMethodPlan {
+            summary_doc: None,
             name: zero_name.clone(),
             native_method_name: CSharpMethodName::native_for_owner(&class_name, &zero_name),
             ffi_name: CFunctionName::new("boltffi_counter_zero".to_string()),
@@ -848,6 +939,7 @@ mod tests {
             wire_writers: vec![],
         };
         let class = CSharpClassPlan {
+            summary_doc: None,
             native_free_method_name: CSharpMethodName::native_for_owner(
                 &class_name,
                 &CSharpMethodName::new("Free"),
@@ -855,6 +947,204 @@ mod tests {
             class_name,
             ffi_free: CFunctionName::new("boltffi_counter_free".to_string()),
             constructors: vec![],
+            methods: vec![get, increment, zero],
+        };
+        let template = ClassTemplate {
+            class: &class,
+            namespace: &demo_namespace(),
+        };
+        insta::assert_snapshot!(template.render().unwrap());
+    }
+
+    fn doc(text: &str) -> Option<CSharpComment> {
+        CSharpComment::from_str_option(Some(text))
+    }
+
+    /// Person with docs on the record itself and on each field. Pins the
+    /// `<summary>` block above the declaration and one `<param name="...">`
+    /// per documented field, both indented to four spaces (record) and
+    /// kept above the positional record's `(...)` parameter list. The
+    /// multi-line summary preserves blank lines as bare `///` separators,
+    /// and `<` / `&` in the body render as `&lt;` / `&amp;` since the
+    /// helper escapes XML special characters at construction.
+    #[test]
+    fn snapshot_record_person_with_docs() {
+        let record = CSharpRecordPlan {
+            summary_doc: doc("A person record.\n\nWraps Vec<String> & friends."),
+            class_name: CSharpClassName::from_source("person"),
+            is_blittable: false,
+            fields: vec![
+                CSharpFieldPlan {
+                    summary_doc: doc("The display name."),
+                    ..record_field(
+                        "Name",
+                        CSharpType::String,
+                        read_call("read_string"),
+                        string_size_this("Name"),
+                        wire_write_this("write_string", "Name"),
+                    )
+                },
+                CSharpFieldPlan {
+                    summary_doc: doc("Age in years."),
+                    ..record_field(
+                        "Age",
+                        CSharpType::UInt,
+                        read_call("read_u32"),
+                        int_lit(4),
+                        wire_write_this("write_u32", "Age"),
+                    )
+                },
+            ],
+        };
+        let template = RecordTemplate {
+            record: &record,
+            namespace: &demo_namespace(),
+        };
+        insta::assert_snapshot!(template.render().unwrap());
+    }
+
+    /// Status with a class-level doc and per-variant docs. Pins the
+    /// `<summary>` block above `public enum Status` (indent 4) and above
+    /// each variant line (indent 8), with the helper-companion still
+    /// emitted alongside.
+    #[test]
+    fn snapshot_c_style_enum_status_with_docs() {
+        let variants = vec![
+            CSharpEnumVariantPlan {
+                summary_doc: doc("In active use."),
+                ..variant("Active", 0, 0, vec![])
+            },
+            CSharpEnumVariantPlan {
+                summary_doc: doc("Soft-deleted."),
+                ..variant("Inactive", 1, 1, vec![])
+            },
+            CSharpEnumVariantPlan {
+                summary_doc: doc("Awaiting review."),
+                ..variant("Pending", 2, 2, vec![])
+            },
+        ];
+        let mut enumeration = build_enum(
+            "status",
+            CSharpEnumKind::CStyle,
+            Some(CSharpEnumUnderlyingType::Int),
+            variants,
+            vec![],
+        );
+        enumeration.summary_doc = doc("Lifecycle status of an item.");
+        let template = EnumCStyleTemplate {
+            enumeration: &enumeration,
+            namespace: &demo_namespace(),
+        };
+        insta::assert_snapshot!(template.render().unwrap());
+    }
+
+    /// Shape with docs on the data enum, on each variant, and on the
+    /// payload fields. Pins the three doc paths the data-enum template
+    /// touches: namespace-indented `<summary>` above
+    /// `public abstract record Shape`, variant-indented `<summary>`
+    /// above each `public sealed record …`, and `<param name="…">`
+    /// blocks for the positional payload fields.
+    #[test]
+    fn snapshot_data_enum_shape_with_docs() {
+        let variants = vec![
+            CSharpEnumVariantPlan {
+                summary_doc: doc("A round shape."),
+                ..variant(
+                    "Circle",
+                    0,
+                    0,
+                    vec![CSharpFieldPlan {
+                        summary_doc: doc("Distance from the center."),
+                        ..record_field(
+                            "Radius",
+                            CSharpType::Double,
+                            read_call("read_f64"),
+                            int_lit(8),
+                            wire_write_local_field("write_f64", "_v", "Radius"),
+                        )
+                    }],
+                )
+            },
+            CSharpEnumVariantPlan {
+                summary_doc: doc("A degenerate point."),
+                ..variant("Point", 1, 1, vec![])
+            },
+        ];
+        let mut enumeration = build_enum("shape", CSharpEnumKind::Data, None, variants, vec![]);
+        enumeration.summary_doc = doc("A 2D shape.");
+        let template = EnumDataTemplate {
+            enumeration: &enumeration,
+            namespace: &demo_namespace(),
+        };
+        insta::assert_snapshot!(template.render().unwrap());
+    }
+
+    /// Counter with docs on the class, on a primary constructor, and on
+    /// instance + static methods. Pins the doc block above the class
+    /// declaration, above the `public Counter(...)` ctor, and above each
+    /// of the three method shapes (static, ClassInstance void,
+    /// ClassInstance returning a primitive).
+    #[test]
+    fn snapshot_class_counter_with_docs() {
+        let class_name = CSharpClassName::from_source("counter");
+        let primary = CSharpConstructorPlan {
+            summary_doc: doc("Creates a counter starting at zero."),
+            kind: CSharpConstructorKind::Primary {
+                helper_method_name: CSharpMethodName::new("CounterNewHandle"),
+            },
+            native_method_name: CSharpMethodName::native_for_owner(
+                &class_name,
+                &CSharpMethodName::new("New"),
+            ),
+            ffi_name: CFunctionName::new("boltffi_counter_new".to_string()),
+            params: vec![],
+            wire_writers: vec![],
+        };
+        let get_name = CSharpMethodName::from_source("get");
+        let get = CSharpMethodPlan {
+            summary_doc: doc("Returns the current value."),
+            name: get_name.clone(),
+            native_method_name: CSharpMethodName::native_for_owner(&class_name, &get_name),
+            ffi_name: CFunctionName::new("boltffi_counter_get".to_string()),
+            receiver: CSharpReceiver::ClassInstance,
+            params: vec![],
+            return_type: CSharpType::Int,
+            return_kind: CSharpReturnKind::Direct,
+            wire_writers: vec![],
+        };
+        let increment_name = CSharpMethodName::from_source("increment");
+        let increment = CSharpMethodPlan {
+            summary_doc: doc("Adds one to the current value."),
+            name: increment_name.clone(),
+            native_method_name: CSharpMethodName::native_for_owner(&class_name, &increment_name),
+            ffi_name: CFunctionName::new("boltffi_counter_increment".to_string()),
+            receiver: CSharpReceiver::ClassInstance,
+            params: vec![],
+            return_type: CSharpType::Void,
+            return_kind: CSharpReturnKind::Void,
+            wire_writers: vec![],
+        };
+        let zero_name = CSharpMethodName::from_source("zero");
+        let zero = CSharpMethodPlan {
+            summary_doc: doc("Static factory returning zero."),
+            name: zero_name.clone(),
+            native_method_name: CSharpMethodName::native_for_owner(&class_name, &zero_name),
+            ffi_name: CFunctionName::new("boltffi_counter_zero".to_string()),
+            receiver: CSharpReceiver::Static,
+            params: vec![],
+            return_type: CSharpType::Int,
+            return_kind: CSharpReturnKind::Direct,
+            wire_writers: vec![],
+        };
+        let class = CSharpClassPlan {
+            summary_doc: doc("Mutable counter held over FFI."),
+            native_free_method_name: CSharpMethodName::native_for_owner(
+                &class_name,
+                &CSharpMethodName::new("Free"),
+            ),
+            class_name,
+            ffi_free: CFunctionName::new("boltffi_counter_free".to_string()),
+            constructors: vec![primary],
             methods: vec![get, increment, zero],
         };
         let template = ClassTemplate {

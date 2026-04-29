@@ -1,4 +1,4 @@
-use super::super::ast::CSharpClassName;
+use super::super::ast::{CSharpClassName, CSharpComment};
 use super::CSharpFieldPlan;
 
 /// A Rust struct exposed as a C# `readonly record struct`, emitted to its own `.cs` file.
@@ -19,6 +19,8 @@ use super::CSharpFieldPlan;
 /// ```
 #[derive(Debug, Clone)]
 pub struct CSharpRecordPlan {
+    /// Renders a `<summary>` block comment, when `Some`.
+    pub summary_doc: Option<CSharpComment>,
     /// Class name (e.g., `"Point"`).
     pub class_name: CSharpClassName,
     /// The record's fields, in declaration order.

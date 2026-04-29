@@ -3,7 +3,7 @@ use boltffi_ffi_rules::naming;
 use crate::ir::abi::{AbiCall, CallId};
 use crate::ir::definitions::{ClassDef, ConstructorDef, MethodDef, Receiver, ReturnDef};
 
-use super::super::ast::{CSharpClassName, CSharpMethodName, CSharpType};
+use super::super::ast::{CSharpClassName, CSharpComment, CSharpMethodName, CSharpType};
 use super::super::plan::{
     CSharpClassPlan, CSharpConstructorKind, CSharpConstructorPlan, CSharpMethodPlan,
     CSharpParamPlan, CSharpReceiver,
@@ -26,6 +26,7 @@ impl<'a> CSharpLowerer<'a> {
         let methods = self.lower_class_methods(class, &class_name);
 
         CSharpClassPlan {
+            summary_doc: CSharpComment::from_str_option(class.doc.as_deref()),
             class_name,
             ffi_free,
             native_free_method_name,
@@ -103,6 +104,7 @@ impl<'a> CSharpLowerer<'a> {
             .collect::<Option<_>>()?;
 
         Some(CSharpConstructorPlan {
+            summary_doc: CSharpComment::from_str_option(ctor.doc()),
             kind,
             native_method_name,
             ffi_name: (&call.symbol).into(),
@@ -191,6 +193,7 @@ impl<'a> CSharpLowerer<'a> {
 
         let name: CSharpMethodName = (&method_def.id).into();
         Some(CSharpMethodPlan {
+            summary_doc: CSharpComment::from_str_option(method_def.doc.as_deref()),
             native_method_name: CSharpMethodName::native_for_owner(class_name, &name),
             name,
             ffi_name: (&call.symbol).into(),

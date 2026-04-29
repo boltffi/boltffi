@@ -97,3 +97,136 @@ impl<'a> CSharpLowerer<'a> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ir::Lowerer as IrLowerer;
+    use crate::ir::contract::{FfiContract, PackageInfo};
+    use crate::ir::definitions::{
+        ClassDef, ConstructorDef, FieldDef, FunctionDef, MethodDef, ParamDef, ParamPassing,
+        Receiver, RecordDef, ReturnDef,
+    };
+    use crate::ir::ids::{ClassId, FieldName, FunctionId, MethodId, ParamName, RecordId};
+    use crate::ir::types::{PrimitiveType, TypeExpr};
+    use boltffi_ffi_rules::callable::ExecutionKind;
+
+    use super::super::super::CSharpOptions;
+
+    fn empty_contract() -> FfiContract {
+        FfiContract {
+            package: PackageInfo {
+                name: "demo_lib".to_string(),
+                version: None,
+            },
+            functions: vec![],
+            catalog: Default::default(),
+        }
+    }
+
+    fn primitive_param(name: &str, primitive: PrimitiveType) -> ParamDef {
+        ParamDef {
+            name: ParamName::new(name),
+            type_expr: TypeExpr::Primitive(primitive),
+            passing: ParamPassing::Value,
+            doc: None,
+        }
+    }
+
+    #[test]
+    fn lowerer_preserves_doc_comments_on_supported_surface_items() {
+        let mut contract = empty_contract();
+        contract.functions.push(FunctionDef {
+            id: FunctionId::new("ping"),
+            params: vec![],
+            returns: ReturnDef::Void,
+            execution_kind: ExecutionKind::Sync,
+            doc: Some("Pings <native> & returns.".to_string()),
+            deprecated: None,
+        });
+        contract.catalog.insert_record(RecordDef {
+            id: RecordId::new("person"),
+            is_repr_c: false,
+            is_error: false,
+            fields: vec![FieldDef {
+                name: FieldName::new("age"),
+                type_expr: TypeExpr::Primitive(PrimitiveType::U32),
+                doc: Some("Age in years.".to_string()),
+                default: None,
+            }],
+            constructors: vec![],
+            methods: vec![],
+            doc: Some("A person record.".to_string()),
+            deprecated: None,
+        });
+        contract.catalog.insert_class(ClassDef {
+            id: ClassId::new("counter"),
+            constructors: vec![ConstructorDef::Default {
+                params: vec![],
+                is_fallible: false,
+                is_optional: false,
+                doc: Some("Creates a counter.".to_string()),
+                deprecated: None,
+            }],
+            methods: vec![MethodDef {
+                id: MethodId::new("get"),
+                receiver: Receiver::RefSelf,
+                params: vec![primitive_param("scale", PrimitiveType::I32)],
+                returns: ReturnDef::Value(TypeExpr::Primitive(PrimitiveType::I32)),
+                execution_kind: ExecutionKind::Sync,
+                doc: Some("Returns the current value.".to_string()),
+                deprecated: None,
+            }],
+            streams: vec![],
+            doc: Some("Mutable counter.".to_string()),
+            deprecated: None,
+        });
+
+        let abi = IrLowerer::new(&contract).to_abi_contract();
+        let options = CSharpOptions::default();
+        let module = CSharpLowerer::new(&contract, &abi, &options).lower();
+
+        assert_eq!(
+            module.functions[0]
+                .summary_doc
+                .as_ref()
+                .map(ToString::to_string),
+            Some("Pings &lt;native&gt; &amp; returns.".to_string())
+        );
+        assert_eq!(
+            module.records[0]
+                .summary_doc
+                .as_ref()
+                .map(ToString::to_string),
+            Some("A person record.".to_string())
+        );
+        assert_eq!(
+            module.records[0].fields[0]
+                .summary_doc
+                .as_ref()
+                .map(ToString::to_string),
+            Some("Age in years.".to_string())
+        );
+        assert_eq!(
+            module.classes[0]
+                .summary_doc
+                .as_ref()
+                .map(ToString::to_string),
+            Some("Mutable counter.".to_string())
+        );
+        assert_eq!(
+            module.classes[0].constructors[0]
+                .summary_doc
+                .as_ref()
+                .map(ToString::to_string),
+            Some("Creates a counter.".to_string())
+        );
+        assert_eq!(
+            module.classes[0].methods[0]
+                .summary_doc
+                .as_ref()
+                .map(ToString::to_string),
+            Some("Returns the current value.".to_string())
+        );
+    }
+}

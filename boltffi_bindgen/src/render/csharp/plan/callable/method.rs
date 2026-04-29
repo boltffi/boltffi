@@ -5,9 +5,9 @@
 //! members and how `self` crosses the ABI.
 
 use super::super::super::ast::{
-    CSharpArgumentList, CSharpClassName, CSharpExpression, CSharpIdentity, CSharpLocalName,
-    CSharpMethodName, CSharpParamName, CSharpParameter, CSharpParameterList, CSharpPropertyName,
-    CSharpType, CSharpTypeReference,
+    CSharpArgumentList, CSharpClassName, CSharpComment, CSharpExpression, CSharpIdentity,
+    CSharpLocalName, CSharpMethodName, CSharpParamName, CSharpParameter, CSharpParameterList,
+    CSharpPropertyName, CSharpType, CSharpTypeReference,
 };
 use super::super::CFunctionName;
 use super::param::{native_call_arg_list, native_param_list};
@@ -30,6 +30,8 @@ use super::{CSharpParamPlan, CSharpReturnKind, CSharpWireWriterPlan};
 /// ```
 #[derive(Debug, Clone)]
 pub struct CSharpMethodPlan {
+    /// Renders a `<summary>` block comment, when `Some`.
+    pub summary_doc: Option<CSharpComment>,
     /// Method name as it appears on the owning type's public API.
     pub name: CSharpMethodName,
     /// Name used for this method's DllImport entry inside the shared
@@ -214,6 +216,7 @@ mod tests {
 
     fn method(receiver: CSharpReceiver) -> CSharpMethodPlan {
         CSharpMethodPlan {
+            summary_doc: None,
             name: CSharpMethodName::from_source("test"),
             native_method_name: CSharpMethodName::from_source("OwnerTest"),
             ffi_name: CFunctionName::new("boltffi_test".to_string()),

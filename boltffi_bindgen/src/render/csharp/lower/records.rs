@@ -2,7 +2,9 @@ use crate::ir::definitions::{FieldDef, RecordDef};
 use crate::ir::ids::{FieldName, RecordId};
 use crate::ir::ops::{ReadOp, ReadSeq, WriteOp, WriteSeq};
 
-use super::super::ast::{CSharpClassName, CSharpExpression, CSharpIdentity, CSharpLocalName};
+use super::super::ast::{
+    CSharpClassName, CSharpComment, CSharpExpression, CSharpIdentity, CSharpLocalName,
+};
 use super::super::plan::{CSharpFieldPlan, CSharpRecordPlan};
 use super::lowerer::CSharpLowerer;
 use super::{decode, encode, size, value};
@@ -32,6 +34,7 @@ impl<'a> CSharpLowerer<'a> {
             .collect();
         let is_blittable = self.is_blittable_record(&record.id);
         CSharpRecordPlan {
+            summary_doc: CSharpComment::from_str_option(record.doc.as_deref()),
             class_name,
             fields,
             is_blittable,
@@ -59,6 +62,7 @@ impl<'a> CSharpLowerer<'a> {
             .lower_type(&field.type_expr)
             .expect("record field type must be supported");
         CSharpFieldPlan {
+            summary_doc: CSharpComment::from_str_option(field.doc.as_deref()),
             name: (&field.name).into(),
             csharp_type,
             wire_decode_expr: decode::lower_decode_expr(

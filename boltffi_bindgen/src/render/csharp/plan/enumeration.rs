@@ -1,4 +1,4 @@
-use super::super::ast::{CSharpClassName, CSharpEnumUnderlyingType};
+use super::super::ast::{CSharpClassName, CSharpComment, CSharpEnumUnderlyingType};
 use super::{CSharpFieldPlan, CSharpMethodPlan};
 
 /// A Rust enum exposed in C# as either a C-style `enum` or a data
@@ -22,6 +22,8 @@ use super::{CSharpFieldPlan, CSharpMethodPlan};
 /// ```
 #[derive(Debug, Clone)]
 pub struct CSharpEnumPlan {
+    /// Renders a `<summary>` block comment, when `Some`.
+    pub summary_doc: Option<CSharpComment>,
     /// Class name (e.g., `"HttpCode"`, `"Shape"`).
     pub class_name: CSharpClassName,
     /// Companion static class holding the C-style enum's wire codec
@@ -79,6 +81,8 @@ pub enum CSharpEnumKind {
 /// ```
 #[derive(Debug, Clone)]
 pub struct CSharpEnumVariantPlan {
+    /// Renders a `<summary>` block comment, when `Some`.
+    pub summary_doc: Option<CSharpComment>,
     /// Variant name. For C-style enums it's the enum member identifier;
     /// for data enums it's the nested `sealed record` class name.
     pub name: CSharpClassName,
@@ -135,6 +139,7 @@ mod tests {
     #[test]
     fn variant_with_empty_fields_is_unit() {
         let variant = CSharpEnumVariantPlan {
+            summary_doc: None,
             name: CSharpClassName::from_source("active"),
             tag: 0,
             wire_tag: 0,
@@ -149,10 +154,12 @@ mod tests {
     #[test]
     fn variant_with_payload_is_not_unit() {
         let variant = CSharpEnumVariantPlan {
+            summary_doc: None,
             name: CSharpClassName::from_source("circle"),
             tag: 0,
             wire_tag: 0,
             fields: vec![CSharpFieldPlan {
+                summary_doc: None,
                 name: CSharpPropertyName::from_source("radius"),
                 csharp_type: CSharpType::Double,
                 wire_decode_expr: CSharpExpression::MethodCall {

@@ -7,7 +7,7 @@ use crate::ir::ops::{ReadOp, ReadSeq};
 use crate::ir::types::TypeExpr;
 
 use super::super::ast::{
-    CSharpClassName, CSharpExpression, CSharpIdentity, CSharpLocalName, CSharpType,
+    CSharpClassName, CSharpComment, CSharpExpression, CSharpIdentity, CSharpLocalName, CSharpType,
 };
 use super::super::plan::{CSharpFunctionPlan, CSharpParamPlan, CSharpReturnKind};
 use super::decode;
@@ -44,6 +44,7 @@ impl<'a> CSharpLowerer<'a> {
             .collect::<Option<Vec<_>>>()?;
 
         Some(CSharpFunctionPlan {
+            summary_doc: CSharpComment::from_str_option(function.doc.as_deref()),
             name: (&function.id).into(),
             ffi_name: naming::function_ffi_name(function.id.as_str()).into(),
             params,

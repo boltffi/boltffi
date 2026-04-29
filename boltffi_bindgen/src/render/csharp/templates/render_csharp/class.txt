@@ -14,7 +14,7 @@ using System.Text;
 
 namespace {{ namespace }}
 {
-    public sealed class {{ class.class_name }} : IDisposable
+{{ self::summary_doc_block(class.summary_doc, "    ") }}    public sealed class {{ class.class_name }} : IDisposable
     {
         private IntPtr _handle;
 
@@ -27,7 +27,7 @@ namespace {{ namespace }}
 {%- match ctor.kind %}
 {%- when CSharpConstructorKind::Primary with { helper_method_name } %}
 
-        public {{ class.class_name }}({% for p in ctor.params %}{{ p.csharp_type }} {{ p.name }}{% if !loop.last %}, {% endif %}{% endfor %})
+{{ self::summary_doc_block(ctor.summary_doc, "        ") }}        public {{ class.class_name }}({% for p in ctor.params %}{{ p.csharp_type }} {{ p.name }}{% if !loop.last %}, {% endif %}{% endfor %})
             : this({{ helper_method_name }}({% for p in ctor.params %}{{ p.name }}{% if !loop.last %}, {% endif %}{% endfor %})) { }
 
         private static IntPtr {{ helper_method_name }}({% for p in ctor.params %}{{ p.csharp_type }} {{ p.name }}{% if !loop.last %}, {% endif %}{% endfor %})
@@ -68,7 +68,7 @@ namespace {{ namespace }}
         }
 {%- when CSharpConstructorKind::StaticFactory with { name } %}
 
-        public static {{ class.class_name }} {{ name }}({% for p in ctor.params %}{{ p.csharp_type }} {{ p.name }}{% if !loop.last %}, {% endif %}{% endfor %})
+{{ self::summary_doc_block(ctor.summary_doc, "        ") }}        public static {{ class.class_name }} {{ name }}({% for p in ctor.params %}{{ p.csharp_type }} {{ p.name }}{% if !loop.last %}, {% endif %}{% endfor %})
         {
 {%- for param in ctor.params %}
 {%- if let Some(decl) = param.setup_declaration() %}
