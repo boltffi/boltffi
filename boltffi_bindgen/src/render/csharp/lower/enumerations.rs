@@ -321,6 +321,7 @@ impl<'a> CSharpLowerer<'a> {
             return_type,
             return_kind,
             wire_writers,
+            owner_is_blittable: false,
         })
     }
 
@@ -391,6 +392,7 @@ impl<'a> CSharpLowerer<'a> {
             return_type,
             return_kind,
             wire_writers,
+            owner_is_blittable: false,
         })
     }
 }

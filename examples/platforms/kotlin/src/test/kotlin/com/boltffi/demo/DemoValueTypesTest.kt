@@ -362,6 +362,10 @@ class DemoValueTypesTest {
         assertDoubleEquals(5.0, Point(3.0, 4.0).distance())
         assertPointEquals(6.0, 8.0, Point(3.0, 4.0).scale(2.0))
         assertPointEquals(4.0, 6.0, Point(1.0, 2.0).add(Point(3.0, 4.0)))
+        assertDoubleEquals(
+            10.0,
+            Point.pathLength(listOf(Point(0.0, 0.0), Point(3.0, 4.0), Point(6.0, 8.0)))
+        )
         assertEquals(Point(1.0, 2.0), echoPoint(Point(1.0, 2.0)))
         assertEquals(Point(2.0, 3.0), tryMakePoint(2.0, 3.0))
         assertNull(tryMakePoint(0.0, 0.0))
@@ -487,5 +491,6 @@ class DemoValueTypesTest {
         assertEquals("worker:9:eu-west:none:https://default", explicitRegion.describe())
         assertEquals("worker:9:eu-west:https://edge:https://default", explicitEndpoint.describe())
         assertEquals("worker:9:eu-west:https://edge:https://backup", explicitBackupEndpoint.describe())
+        assertEquals("cfg:worker:9:eu-west:https://edge:https://backup", explicitBackupEndpoint.describeWithPrefix("cfg"))
     }
 }

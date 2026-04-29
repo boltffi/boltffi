@@ -69,6 +69,17 @@ impl Point {
         }
     }
 
+    pub fn path_length(points: Vec<Point>) -> f64 {
+        points
+            .windows(2)
+            .map(|pair| {
+                let dx = pair[1].x - pair[0].x;
+                let dy = pair[1].y - pair[0].y;
+                (dx * dx + dy * dy).sqrt()
+            })
+            .sum()
+    }
+
     pub fn dimensions() -> u32 {
         2
     }

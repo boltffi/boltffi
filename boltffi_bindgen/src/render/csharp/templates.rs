@@ -347,6 +347,7 @@ mod tests {
                     wire_write_this("write_f64", "Y"),
                 ),
             ],
+            methods: vec![],
         };
         let template = RecordTemplate {
             record: &record,
@@ -381,6 +382,7 @@ mod tests {
                     wire_write_this("write_u32", "Age"),
                 ),
             ],
+            methods: vec![],
         };
         let template = RecordTemplate {
             record: &record,
@@ -415,6 +417,7 @@ mod tests {
                     this_wire_encode("End"),
                 ),
             ],
+            methods: vec![],
         };
         let template = RecordTemplate {
             record: &record,
@@ -432,6 +435,7 @@ mod tests {
             class_name: CSharpClassName::from_source("unit"),
             is_blittable: true,
             fields: vec![],
+            methods: vec![],
         };
         let template = RecordTemplate {
             record: &record,
@@ -468,6 +472,125 @@ mod tests {
                     wire_write_this("write_u32", "Count"),
                 ),
             ],
+            methods: vec![],
+        };
+        let template = RecordTemplate {
+            record: &record,
+            namespace: &demo_namespace(),
+        };
+        insta::assert_snapshot!(template.render().unwrap());
+    }
+
+    /// Blittable record with `#[data(impl)]` methods. Pins the two
+    /// rendering shapes for record methods on a value-by-value receiver:
+    ///
+    /// - Static factory: `public static Point Origin()` returning the
+    ///   struct directly across P/Invoke (no `this`).
+    /// - Instance method on a blittable owner: `public double Distance()`
+    ///   with `this` passed by value instead of wire-encoded — the
+    ///   `owner_is_blittable` branch of `CSharpReceiver::InstanceNative`.
+    #[test]
+    fn snapshot_blittable_record_with_methods_point() {
+        let methods = vec![
+            method_with_owner(
+                "Point",
+                "Origin",
+                "boltffi_point_origin",
+                CSharpReceiver::Static,
+                vec![],
+                record_type("point"),
+                CSharpReturnKind::Direct,
+                true,
+            ),
+            method_with_owner(
+                "Point",
+                "Distance",
+                "boltffi_point_distance",
+                CSharpReceiver::InstanceNative,
+                vec![],
+                CSharpType::Double,
+                CSharpReturnKind::Direct,
+                true,
+            ),
+            method_with_owner(
+                "Point",
+                "Add",
+                "boltffi_point_add",
+                CSharpReceiver::InstanceNative,
+                vec![param("other", record_type("point"))],
+                record_type("point"),
+                CSharpReturnKind::Direct,
+                true,
+            ),
+        ];
+        let record = CSharpRecordPlan {
+            summary_doc: None,
+            class_name: CSharpClassName::from_source("point"),
+            is_blittable: true,
+            fields: vec![
+                record_field(
+                    "X",
+                    CSharpType::Double,
+                    read_call("read_f64"),
+                    int_lit(8),
+                    wire_write_this("write_f64", "X"),
+                ),
+                record_field(
+                    "Y",
+                    CSharpType::Double,
+                    read_call("read_f64"),
+                    int_lit(8),
+                    wire_write_this("write_f64", "Y"),
+                ),
+            ],
+            methods,
+        };
+        let template = RecordTemplate {
+            record: &record,
+            namespace: &demo_namespace(),
+        };
+        insta::assert_snapshot!(template.render().unwrap());
+    }
+
+    /// Non-blittable record with a `#[data(impl)]` instance method.
+    /// Pins the wire-encoded receiver path: the body wire-encodes `this`
+    /// into a `(byte[] _selfBytes, UIntPtr selfLen)` pair via
+    /// `_wire_self`, calls the native, and decodes the returned `FfiBuf`
+    /// into a string. Same shape that `value_type_method.txt` produces
+    /// for data-enum instance methods.
+    #[test]
+    fn snapshot_non_blittable_record_with_methods_service_config() {
+        let describe = method_with_owner(
+            "ServiceConfig",
+            "Describe",
+            "boltffi_service_config_describe",
+            CSharpReceiver::InstanceNative,
+            vec![],
+            CSharpType::String,
+            CSharpReturnKind::WireDecodeString,
+            false,
+        );
+        let record = CSharpRecordPlan {
+            summary_doc: None,
+            class_name: CSharpClassName::from_source("service_config"),
+            is_blittable: false,
+            fields: vec![
+                record_field(
+                    "Name",
+                    CSharpType::String,
+                    read_call("read_string"),
+                    string_size_this("Name"),
+                    wire_write_this("write_string", "Name"),
+                ),
+                record_field(
+                    "Retries",
+                    CSharpType::Int,
+                    read_call("read_i32"),
+                    int_lit(4),
+                    wire_write_this("write_i32", "Retries"),
+                ),
+            ],
+            methods: vec![describe],
         };
         let template = RecordTemplate {
             record: &record,
@@ -492,13 +615,41 @@ mod tests {
         return_type: CSharpType,
         return_kind: CSharpReturnKind,
     ) -> CSharpMethodPlan {
+        method_with_owner(
+            owner_class_name,
+            name,
+            ffi_name,
+            receiver,
+            params,
+            return_type,
+            return_kind,
+            false,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn method_with_owner(
+        owner_class_name: &str,
+        name: &str,
+        ffi_name: &str,
+        receiver: CSharpReceiver,
+        params: Vec<CSharpParamPlan>,
+        return_type: CSharpType,
+        return_kind: CSharpReturnKind,
+        owner_is_blittable: bool,
+    ) -> CSharpMethodPlan {
         let owner = CSharpClassName::from_source(owner_class_name);
         let method_name = CSharpMethodName::from_source(name);
-        let wire_writers = if matches!(receiver, CSharpReceiver::InstanceNative) {
-            vec![crate::render::csharp::lower::self_wire_writer()]
-        } else {
-            vec![]
-        };
+        // Wire-encoded `InstanceNative` receivers (data enums, non-
+        // blittable records) need a self_wire_writer to encode `this`
+        // before the call. Blittable `InstanceNative` receivers don't —
+        // they pass `this` directly across P/Invoke.
+        let wire_writers =
+            if matches!(receiver, CSharpReceiver::InstanceNative) && !owner_is_blittable {
+                vec![crate::render::csharp::lower::self_wire_writer()]
+            } else {
+                vec![]
+            };
         CSharpMethodPlan {
             summary_doc: None,
             native_method_name: CSharpMethodName::native_for_owner(&owner, &method_name),
@@ -509,6 +660,7 @@ mod tests {
             return_type,
             return_kind,
             wire_writers,
+            owner_is_blittable,
         }
     }
 
@@ -913,6 +1065,7 @@ mod tests {
             return_type: CSharpType::Int,
             return_kind: CSharpReturnKind::Direct,
             wire_writers: vec![],
+            owner_is_blittable: false,
         };
         let increment_name = CSharpMethodName::from_source("increment");
         let increment = CSharpMethodPlan {
@@ -925,6 +1078,7 @@ mod tests {
             return_type: CSharpType::Void,
             return_kind: CSharpReturnKind::Void,
             wire_writers: vec![],
+            owner_is_blittable: false,
         };
         let zero_name = CSharpMethodName::from_source("zero");
         let zero = CSharpMethodPlan {
@@ -937,6 +1091,7 @@ mod tests {
             return_type: CSharpType::Int,
             return_kind: CSharpReturnKind::Direct,
             wire_writers: vec![],
+            owner_is_blittable: false,
         };
         let class = CSharpClassPlan {
             summary_doc: None,
@@ -995,6 +1150,7 @@ mod tests {
                     )
                 },
             ],
+            methods: vec![],
         };
         let template = RecordTemplate {
             record: &record,
@@ -1111,6 +1267,7 @@ mod tests {
             return_type: CSharpType::Int,
             return_kind: CSharpReturnKind::Direct,
             wire_writers: vec![],
+            owner_is_blittable: false,
         };
         let increment_name = CSharpMethodName::from_source("increment");
         let increment = CSharpMethodPlan {
@@ -1123,6 +1280,7 @@ mod tests {
             return_type: CSharpType::Void,
             return_kind: CSharpReturnKind::Void,
             wire_writers: vec![],
+            owner_is_blittable: false,
         };
         let zero_name = CSharpMethodName::from_source("zero");
         let zero = CSharpMethodPlan {
@@ -1135,6 +1293,7 @@ mod tests {
             return_type: CSharpType::Int,
             return_kind: CSharpReturnKind::Direct,
             wire_writers: vec![],
+            owner_is_blittable: false,
         };
         let class = CSharpClassPlan {
             summary_doc: doc("Mutable counter held over FFI."),

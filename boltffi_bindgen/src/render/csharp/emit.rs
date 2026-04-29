@@ -721,6 +721,107 @@ mod tests {
         );
     }
 
+    /// Record methods share the same callable param machinery as top-level
+    /// functions and class methods. A string param lowers to `Utf8Bytes`,
+    /// so the record method body must create the `_prefixBytes` setup local
+    /// before using it in the native call.
+    #[test]
+    fn emit_record_method_with_string_param_declares_utf8_setup_local() {
+        let mut record =
+            record_with_fields("service_config", false, vec![("name", TypeExpr::String)]);
+        record.methods.push(MethodDef {
+            id: MethodId::new("describe_with_prefix"),
+            receiver: Receiver::RefSelf,
+            params: vec![ParamDef {
+                name: ParamName::new("prefix"),
+                type_expr: TypeExpr::String,
+                passing: ParamPassing::Value,
+                doc: None,
+            }],
+            returns: ReturnDef::Value(TypeExpr::String),
+            execution_kind: ExecutionKind::Sync,
+            doc: None,
+            deprecated: None,
+        });
+
+        let mut contract = empty_contract();
+        contract.catalog.insert_record(record);
+
+        let src = emit_contract(&contract).combined_source();
+
+        assert_source_contains(
+            &src,
+            "byte[] _prefixBytes = Encoding.UTF8.GetBytes(prefix);",
+            "record method string params to allocate the UTF-8 byte buffer before the native call",
+        );
+        assert_source_contains(
+            &src,
+            "FfiBuf _buf = NativeMethods.ServiceConfigDescribeWithPrefix(_selfBytes, (UIntPtr)_selfBytes.Length, _prefixBytes, (UIntPtr)_prefixBytes.Length);",
+            "the native call to pass both encoded self and encoded string param",
+        );
+        assert_source_contains(
+            &src,
+            "internal static extern FfiBuf ServiceConfigDescribeWithPrefix(byte[] self, UIntPtr selfLen, byte[] prefix, UIntPtr prefixLen);",
+            "the DllImport signature to split the receiver and string param into byte[]+UIntPtr pairs",
+        );
+    }
+
+    /// A record method with a blittable record vec param emits
+    /// `Unsafe.SizeOf<T>()` in that record's own `.cs` file. The per-record
+    /// template therefore needs the same `System.Runtime.CompilerServices`
+    /// import that functions/classes already conditionally emit.
+    #[test]
+    fn emit_record_method_with_blittable_record_vec_param_imports_unsafe_helpers() {
+        let mut record = record_with_fields(
+            "point",
+            true,
+            vec![
+                ("x", TypeExpr::Primitive(PrimitiveType::F64)),
+                ("y", TypeExpr::Primitive(PrimitiveType::F64)),
+            ],
+        );
+        record.methods.push(MethodDef {
+            id: MethodId::new("path_length"),
+            receiver: Receiver::Static,
+            params: vec![ParamDef {
+                name: ParamName::new("points"),
+                type_expr: TypeExpr::Vec(Box::new(TypeExpr::Record(RecordId::new("point")))),
+                passing: ParamPassing::Value,
+                doc: None,
+            }],
+            returns: ReturnDef::Value(TypeExpr::Primitive(PrimitiveType::F64)),
+            execution_kind: ExecutionKind::Sync,
+            doc: None,
+            deprecated: None,
+        });
+
+        let mut contract = empty_contract();
+        contract.catalog.insert_record(record);
+
+        let output = emit_contract(&contract);
+        let point = output
+            .files
+            .iter()
+            .find(|f| f.file_name == "Point.cs")
+            .expect("Point.cs record output");
+
+        assert_source_contains(
+            &point.source,
+            "using System.Runtime.CompilerServices;",
+            "the record file to import Unsafe when a record method has a pinned array param",
+        );
+        assert_source_contains(
+            &point.source,
+            "fixed (Point* _pointsPtr = points)",
+            "the method body to pin the managed Point[] before the native call",
+        );
+        assert_source_contains(
+            &point.source,
+            "return NativeMethods.PointPathLength((IntPtr)_pointsPtr, (UIntPtr)(points.Length * Unsafe.SizeOf<Point>()));",
+            "the native call to pass the pinned pointer and byte length",
+        );
+    }
+
     /// A non-blittable record (one with a string field) must NOT carry
     /// `[StructLayout(Sequential)]`. Its memory layout doesn't need to
     /// match Rust's because it travels as wire-encoded bytes, not as a

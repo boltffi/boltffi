@@ -53,6 +53,13 @@ pub struct CSharpMethodPlan {
     /// For each non-blittable record/data-enum param, the setup block
     /// that wire-encodes it into a `byte[]` before the native call.
     pub wire_writers: Vec<CSharpWireWriterPlan>,
+    /// Whether the owning type is a blittable record. Only meaningful for
+    /// `InstanceNative`; selects between passing `this` by value across
+    /// P/Invoke (blittable) versus the wire-encoded
+    /// `(byte[] _selfBytes, UIntPtr ...)` pair. `false` for every other
+    /// receiver, since enums/data enums/classes never cross P/Invoke as
+    /// a struct value.
+    pub owner_is_blittable: bool,
 }
 
 /// How a method's receiver (`self`) participates in the rendered C#.
@@ -176,6 +183,9 @@ impl CSharpMethodPlan {
             CSharpReceiver::InstanceExtension => {
                 list.push(local_ident("self"));
             }
+            CSharpReceiver::InstanceNative if self.owner_is_blittable => {
+                list.push(CSharpExpression::Identity(CSharpIdentity::This));
+            }
             CSharpReceiver::InstanceNative => {
                 let buf = local_ident("_selfBytes");
                 list.push(buf.clone());
@@ -215,6 +225,10 @@ mod tests {
     use super::*;
 
     fn method(receiver: CSharpReceiver) -> CSharpMethodPlan {
+        method_with_owner(receiver, false)
+    }
+
+    fn method_with_owner(receiver: CSharpReceiver, owner_is_blittable: bool) -> CSharpMethodPlan {
         CSharpMethodPlan {
             summary_doc: None,
             name: CSharpMethodName::from_source("test"),
@@ -229,6 +243,7 @@ mod tests {
             return_type: CSharpType::Void,
             return_kind: CSharpReturnKind::Void,
             wire_writers: vec![],
+            owner_is_blittable,
         }
     }
 
@@ -275,6 +290,27 @@ mod tests {
         assert_eq!(
             m.native_param_list(&owner, false).to_string(),
             "byte[] self, UIntPtr selfLen, int count",
+        );
+    }
+
+    /// Blittable record instance methods pass `this` directly: the C#
+    /// body calls `NativeMethods.PointAdd(this, other)`, mirroring the
+    /// `Point self, …` native param shape on the corresponding DllImport.
+    #[test]
+    fn full_native_call_args_instance_native_blittable_passes_this() {
+        let m = method_with_owner(CSharpReceiver::InstanceNative, true);
+        assert_eq!(m.full_native_call_args().to_string(), "this, count",);
+    }
+
+    /// Wire-encoded receivers pass the pre-encoded `_selfBytes` buffer
+    /// and its length, matching the `(byte[] self, UIntPtr selfLen)`
+    /// native param shape.
+    #[test]
+    fn full_native_call_args_instance_native_wire_passes_selfbytes_pair() {
+        let m = method_with_owner(CSharpReceiver::InstanceNative, false);
+        assert_eq!(
+            m.full_native_call_args().to_string(),
+            "_selfBytes, (UIntPtr)_selfBytes.Length, count",
         );
     }
 }

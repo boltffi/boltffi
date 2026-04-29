@@ -20,4 +20,5 @@ export async function run() {
   };
   assert.deepEqual(demo.echoServiceConfig(explicitConfig), explicitConfig);
   assert.equal(demo.ServiceConfig.describe(explicitConfig), "worker:9:eu-west:https://edge:https://backup");
+  assert.equal(demo.ServiceConfig.describeWithPrefix(explicitConfig, "cfg"), "cfg:worker:9:eu-west:https://edge:https://backup");
 }

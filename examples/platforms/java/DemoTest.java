@@ -165,6 +165,11 @@ public final class DemoTest {
         Point addedPoint = point.add(new Point(10.0, 20.0));
         assert addedPoint.x() == 11.0 : "Point.add.x";
         assert addedPoint.y() == 22.0 : "Point.add.y";
+        assert Math.abs(Point.pathLength(Arrays.asList(
+            new Point(0.0, 0.0),
+            new Point(3.0, 4.0),
+            new Point(6.0, 8.0)
+        )) - 10.0) < 0.0001 : "Point.pathLength";
         assert Point.dimensions() == 2 : "Point.dimensions";
         Point echoedPoint = Demo.echoPoint(point);
         assert echoedPoint.x() == 1.0 : "echoPoint.x";
@@ -247,6 +252,7 @@ public final class DemoTest {
         assert explicitRegion.describe().equals("worker:9:eu-west:none:https://default") : "ServiceConfig.describe(explicitRegion)";
         assert explicitEndpoint.describe().equals("worker:9:eu-west:https://edge:https://default") : "ServiceConfig.describe(explicitEndpoint)";
         assert explicitBackupEndpoint.describe().equals("worker:9:eu-west:https://edge:https://backup") : "ServiceConfig.describe(explicitBackupEndpoint)";
+        assert explicitBackupEndpoint.describeWithPrefix("cfg").equals("cfg:worker:9:eu-west:https://edge:https://backup") : "ServiceConfig.describeWithPrefix";
         System.out.println("  PASS\n");
     }
 

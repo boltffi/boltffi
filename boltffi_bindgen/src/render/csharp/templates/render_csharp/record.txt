@@ -7,7 +7,10 @@ using System;
 {%- if record.is_blittable %}
 using System.Runtime.InteropServices;
 {%- endif %}
-{%- if record.has_string_fields() %}
+{%- if record.has_pinned_params() %}
+using System.Runtime.CompilerServices;
+{%- endif %}
+{%- if record.needs_system_text() %}
 using System.Text;
 {%- endif %}
 
@@ -46,5 +49,8 @@ namespace {{ namespace }}
 {%- endfor %}
 {%- endfor %}
         }
+{%- for method in record.methods %}
+{% include "render_csharp/record_method.txt" %}
+{%- endfor %}
     }
 }

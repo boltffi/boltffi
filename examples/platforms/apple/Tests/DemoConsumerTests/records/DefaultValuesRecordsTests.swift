@@ -52,5 +52,6 @@ final class DefaultValuesRecordsTests: XCTestCase {
         XCTAssertEqual(explicitRegion.describe(), "worker:9:eu-west:none:https://default")
         XCTAssertEqual(explicitEndpoint.describe(), "worker:9:eu-west:https://edge:https://default")
         XCTAssertEqual(explicitBackupEndpoint.describe(), "worker:9:eu-west:https://edge:https://backup")
+        XCTAssertEqual(explicitBackupEndpoint.describeWithPrefix(prefix: "cfg"), "cfg:worker:9:eu-west:https://edge:https://backup")
     }
 }

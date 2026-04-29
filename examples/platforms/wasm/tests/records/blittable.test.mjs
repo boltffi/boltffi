@@ -16,6 +16,7 @@ export async function run() {
   assert.equal(demo.Point.distance({ x: 3, y: 4 }), 5);
   assertPoint(demo.Point.scale({ x: 3, y: 4 }, 2), { x: 6, y: 8 });
   assertPoint(demo.Point.add({ x: 3, y: 4 }, { x: 5, y: 6 }), { x: 8, y: 10 });
+  assert.equal(demo.Point.pathLength([{ x: 0, y: 0 }, { x: 3, y: 4 }, { x: 6, y: 8 }]), 10);
   assert.equal(demo.Point.dimensions(), 2);
 
   const color = { r: 1, g: 2, b: 3, a: 255 };

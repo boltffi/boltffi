@@ -15,6 +15,11 @@ final class BlittableRecordsTests: XCTestCase {
         scaledPoint.scale(factor: 2.0)
         XCTAssertEqual(scaledPoint, Point(x: 6.0, y: 8.0))
         XCTAssertEqual(Point(x: 1.0, y: 2.0).add(other: Point(x: 3.0, y: 4.0)), Point(x: 4.0, y: 6.0))
+        XCTAssertEqual(
+            Point.pathLength(points: [Point(x: 0.0, y: 0.0), Point(x: 3.0, y: 4.0), Point(x: 6.0, y: 8.0)]),
+            10.0,
+            accuracy: 1e-6
+        )
         XCTAssertEqual(Point.dimensions(), 2)
         XCTAssertEqual(echoPoint(p: Point(x: 1.5, y: 2.5)), Point(x: 1.5, y: 2.5))
         XCTAssertEqual(tryMakePoint(x: 1.0, y: 2.0), Point(x: 1.0, y: 2.0))

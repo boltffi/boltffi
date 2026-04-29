@@ -24,6 +24,10 @@ impl ServiceConfig {
             self.name, self.retries, self.region, endpoint, backup_endpoint
         )
     }
+
+    pub fn describe_with_prefix(&self, prefix: String) -> String {
+        format!("{}:{}", prefix, self.describe())
+    }
 }
 
 #[export]

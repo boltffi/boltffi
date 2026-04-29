@@ -479,6 +479,16 @@
         internal static extern {% if method.return_kind.native_returns_ffi_buf() %}FfiBuf{% else %}{{ method.return_type }}{% endif %} {{ method.native_method_name }}({{ method.native_param_list(enumeration.class_name, false) }});
 {%- endfor %}
 {%- endfor %}
+{%- for record in module.records %}
+{%- for method in record.methods %}
+
+        [DllImport(LibName, EntryPoint = "{{ method.ffi_name }}")]
+{%- if method.return_type.is_bool() %}
+        [return: MarshalAs(UnmanagedType.I1)]
+{%- endif %}
+        internal static extern {% if method.return_kind.native_returns_ffi_buf() %}FfiBuf{% else %}{{ method.return_type }}{% endif %} {{ method.native_method_name }}({{ method.native_param_list(record.class_name, *record.is_blittable) }});
+{%- endfor %}
+{%- endfor %}
 {%- for class in module.classes %}
 
         [DllImport(LibName, EntryPoint = "{{ class.ffi_free }}")]

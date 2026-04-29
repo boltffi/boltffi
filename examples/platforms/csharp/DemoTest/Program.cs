@@ -27,6 +27,7 @@ public static class DemoTest
         TestCustomTypes();
         TestBlittableRecords();
         TestRecordsWithStrings();
+        TestRecordsWithDefaults();
         TestNestedRecords();
         TestCStyleEnums();
         TestDataEnums();
@@ -239,6 +240,27 @@ public static class DemoTest
         Color echoedColor = EchoColor(new Color(255, 0, 0, 128));
         Require(echoedColor == new Color(255, 0, 0, 128), "EchoColor value equality");
 
+        // Static factories on a blittable record — return by value across
+        // the ABI as a [StructLayout(Sequential)] struct.
+        Require(Point.Origin() == new Point(0.0, 0.0), "Point.Origin()");
+        Point fromPolar = Point.FromPolar(2.0, Math.PI / 2.0);
+        Require(Math.Abs(fromPolar.X) < 1e-9 && Math.Abs(fromPolar.Y - 2.0) < 1e-9, "Point.FromPolar");
+        Require(Point.Dimensions() == 2u, "Point.Dimensions() == 2");
+
+        // Instance methods on a blittable record — `this` passes by value
+        // through P/Invoke (no wire encode), exercising the
+        // owner_is_blittable branch of CSharpReceiver::InstanceNative.
+        Require(Math.Abs(new Point(3.0, 4.0).Distance() - 5.0) < 1e-9, "Point(3,4).Distance() == 5");
+        Require(new Point(0.0, 0.0).Distance() == 0.0, "Point.Origin.Distance() == 0");
+        Require(
+            new Point(1.0, 2.0).Add(new Point(10.0, 20.0)) == new Point(11.0, 22.0),
+            "Point.Add returns Point"
+        );
+        Require(
+            Math.Abs(Point.PathLength(new[] { new Point(0.0, 0.0), new Point(3.0, 4.0), new Point(6.0, 8.0) }) - 10.0) < 1e-9,
+            "Point.PathLength(Point[])"
+        );
+
         Console.WriteLine("  PASS\n");
     }
 
@@ -280,6 +302,38 @@ public static class DemoTest
         Require(
             FormatAddress(home) == "221B Baker Street, London, NW1 6XE",
             "FormatAddress concatenation"
+        );
+
+        Console.WriteLine("  PASS\n");
+    }
+
+    /// <summary>
+    /// Non-blittable records with `#[data(impl)]` instance methods. The
+    /// receiver wire-encodes `this` into a `byte[] self, UIntPtr selfLen`
+    /// pair before the native call — the same shape as a non-blittable
+    /// record passed as a regular parameter.
+    /// </summary>
+    private static void TestRecordsWithDefaults()
+    {
+        Console.WriteLine("Testing records with defaults and instance methods (ServiceConfig)...");
+
+        ServiceConfig config = new ServiceConfig("worker", 3, "standard", null, "https://default");
+        ServiceConfig echoed = EchoServiceConfig(config);
+        Require(echoed == config, "EchoServiceConfig round-trip");
+
+        Require(
+            config.Describe() == "worker:3:standard:none:https://default",
+            "ServiceConfig.Describe() with defaults"
+        );
+        Require(
+            config.DescribeWithPrefix("cfg") == "cfg:worker:3:standard:none:https://default",
+            "ServiceConfig.DescribeWithPrefix() string param"
+        );
+
+        ServiceConfig withEndpoint = new ServiceConfig("api", 5, "us-east", "https://primary", "https://backup");
+        Require(
+            withEndpoint.Describe() == "api:5:us-east:https://primary:https://backup",
+            "ServiceConfig.Describe() with endpoints"
         );
 
         Console.WriteLine("  PASS\n");
