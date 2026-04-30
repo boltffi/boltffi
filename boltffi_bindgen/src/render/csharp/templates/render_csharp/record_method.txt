@@ -1,9 +1,5 @@
 
-{%- if method.receiver.is_static() %}
-{{ self::summary_doc_block(method.summary_doc, "        ") }}        public static {{ method.return_type }} {{ method.name }}({% for p in method.params %}{{ p.csharp_type }} {{ p.name }}{% if !loop.last %}, {% endif %}{% endfor %})
-{%- else %}
-{{ self::summary_doc_block(method.summary_doc, "        ") }}        public {{ method.return_type }} {{ method.name }}({% for p in method.params %}{{ p.csharp_type }} {{ p.name }}{% if !loop.last %}, {% endif %}{% endfor %})
-{%- endif %}
+{{ self::summary_doc_block(method.summary_doc, "        ") }}        public {% if method.receiver.is_static() %}static {% endif %}{{ method.return_type }} {{ method.name }}({% for p in method.params %}{{ p.csharp_type }} {{ p.name }}{% if !loop.last %}, {% endif %}{% endfor %})
         {
 {%- for param in method.params %}
 {%- if let Some(decl) = param.setup_declaration() %}
