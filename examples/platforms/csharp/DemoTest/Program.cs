@@ -41,6 +41,9 @@ public static class DemoTest
         TestOptionsInRecords();
         TestOptionsWithVec();
         TestClasses();
+        TestResultFunctions();
+        TestResultClassMethods();
+        TestResultEnumErrors();
         Console.WriteLine("All tests passed!");
         return 0;
     }
@@ -1603,6 +1606,203 @@ public static class DemoTest
             Require(m.Summary() == "filter=name:query;message=text:hello;task=title#low", "WithEnumMix.Summary");
             Require(m.PayloadChecksum() == 0u, "WithEnumMix.PayloadChecksum");
             Require(m.VectorCount() == 1u, "WithEnumMix.VectorCount");
+        }
+
+        Console.WriteLine("  PASS\n");
+    }
+
+    private static void TestResultFunctions()
+    {
+        Console.WriteLine("Testing result functions (String error)...");
+
+        // Result<i32, String> ok path returns the value directly.
+        Require(SafeDivide(10, 2) == 5, "SafeDivide(10, 2) returns 5");
+        // Err path throws BoltException carrying the Rust error string.
+        try
+        {
+            SafeDivide(10, 0);
+            Require(false, "SafeDivide(10, 0) should throw");
+        }
+        catch (BoltException e)
+        {
+            Require(e.Message.Contains("division by zero"), "SafeDivide error message");
+        }
+
+        Require(AlwaysOk(21) == 42, "AlwaysOk doubles its input");
+        try
+        {
+            AlwaysErr("boom");
+            Require(false, "AlwaysErr should throw");
+        }
+        catch (BoltException e)
+        {
+            Require(e.Message.Contains("boom"), "AlwaysErr error message");
+        }
+
+        // Result<Point, String> with Ok carrying a record.
+        Point p = ParsePoint("3.0,4.0");
+        Require(p.X == 3.0 && p.Y == 4.0, "ParsePoint round-trips x,y");
+        try
+        {
+            ParsePoint("bad");
+            Require(false, "ParsePoint(bad) should throw");
+        }
+        catch (BoltException) { }
+
+        // Result<String, String> with Ok carrying a wire-decoded String.
+        Require(ResultOfString(1) == "item_1", "ResultOfString ok");
+        try
+        {
+            ResultOfString(-1);
+            Require(false, "ResultOfString(-1) should throw");
+        }
+        catch (BoltException) { }
+
+        // Result<Option<i32>, String>: Some, None, then Err.
+        Require(ResultOfOption(5) == 10, "ResultOfOption(5) returns Some(10)");
+        Require(ResultOfOption(0) == null, "ResultOfOption(0) returns None");
+        try
+        {
+            ResultOfOption(-1);
+            Require(false, "ResultOfOption(-1) should throw");
+        }
+        catch (BoltException) { }
+
+        // Result<Vec<i32>, String> Ok and Err.
+        int[] vec = ResultOfVec(3);
+        Require(vec.Length == 3 && vec[0] == 0 && vec[1] == 1 && vec[2] == 2, "ResultOfVec ok");
+        try
+        {
+            ResultOfVec(-1);
+            Require(false, "ResultOfVec(-1) should throw");
+        }
+        catch (BoltException) { }
+
+        Console.WriteLine("  PASS\n");
+    }
+
+    private static void TestResultClassMethods()
+    {
+        Console.WriteLine("Testing result class methods...");
+
+        using (var counter = new Counter(0))
+        {
+            counter.Increment();
+            counter.Increment();
+            counter.Increment();
+            Require(counter.TryGetPositive() == 3, "Counter.TryGetPositive after 3 increments");
+        }
+
+        using (var counter = new Counter(0))
+        {
+            try
+            {
+                counter.TryGetPositive();
+                Require(false, "Counter.TryGetPositive should throw at zero");
+            }
+            catch (BoltException) { }
+        }
+
+        Console.WriteLine("  PASS\n");
+    }
+
+    private static void TestResultEnumErrors()
+    {
+        Console.WriteLine("Testing result enum/record errors (typed exceptions)...");
+
+        // C-style #[error] enum -> dedicated MathErrorException with
+        // an Error property that exposes the underlying enum value.
+        Require(CheckedDivide(10, 2) == 5, "CheckedDivide(10, 2) ok");
+        try
+        {
+            CheckedDivide(10, 0);
+            Require(false, "CheckedDivide(10, 0) should throw");
+        }
+        catch (MathErrorException e)
+        {
+            Require(e.Error == MathError.DivisionByZero, "CheckedDivide typed error");
+        }
+
+        Require(CheckedSqrt(9.0) == 3.0, "CheckedSqrt(9) ok");
+        try
+        {
+            CheckedSqrt(-1.0);
+            Require(false, "CheckedSqrt(-1) should throw");
+        }
+        catch (MathErrorException e)
+        {
+            Require(e.Error == MathError.NegativeInput, "CheckedSqrt typed error");
+        }
+
+        Require(CheckedAdd(1, 2) == 3, "CheckedAdd(1, 2) ok");
+        try
+        {
+            CheckedAdd(int.MaxValue, 1);
+            Require(false, "CheckedAdd(MAX, 1) should throw");
+        }
+        catch (MathErrorException e)
+        {
+            Require(e.Error == MathError.Overflow, "CheckedAdd typed error");
+        }
+
+        // ValidationError uses an explicit #[repr(i32)] with non-zero
+        // discriminants — make sure the wire decode keeps mapping each
+        // tag to the right variant on the throw path.
+        Require(ValidateUsername("alice") == "alice", "ValidateUsername ok");
+        try
+        {
+            ValidateUsername("ab");
+            Require(false, "ValidateUsername short should throw");
+        }
+        catch (ValidationErrorException e)
+        {
+            Require(e.Error == ValidationError.TooShort, "ValidateUsername TooShort");
+        }
+        try
+        {
+            ValidateUsername("a]bcdefghijklmnopqrstu");
+            Require(false, "ValidateUsername long should throw");
+        }
+        catch (ValidationErrorException e)
+        {
+            Require(e.Error == ValidationError.TooLong, "ValidateUsername TooLong");
+        }
+        try
+        {
+            ValidateUsername("has space");
+            Require(false, "ValidateUsername spaces should throw");
+        }
+        catch (ValidationErrorException e)
+        {
+            Require(e.Error == ValidationError.InvalidFormat, "ValidateUsername InvalidFormat");
+        }
+
+        // Structured (record) #[error] -> AppErrorException wraps the
+        // record so the caller can both `catch` it as an exception and
+        // access the original fields via the Error property.
+        Require(MayFail(true) == "Success!", "MayFail(true) ok");
+        try
+        {
+            MayFail(false);
+            Require(false, "MayFail(false) should throw");
+        }
+        catch (AppErrorException e)
+        {
+            Require(e.Error.Code == 400, "MayFail AppError.Code");
+            Require(e.Error.Message == "Invalid input", "MayFail AppError.Message");
+            Require(e.Message == "Invalid input", "MayFail Exception.Message mirrors AppError.Message");
+        }
+
+        Require(DivideApp(10, 2) == 5, "DivideApp ok");
+        try
+        {
+            DivideApp(10, 0);
+            Require(false, "DivideApp(10, 0) should throw");
+        }
+        catch (AppErrorException e)
+        {
+            Require(e.Error.Code == 500, "DivideApp AppError.Code");
+            Require(e.Error.Message == "Division by zero", "DivideApp AppError.Message");
         }
 
         Console.WriteLine("  PASS\n");
