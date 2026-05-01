@@ -119,6 +119,18 @@ pub enum CSharpReturnKind {
     /// and we reuse the same `var reader = ...; return ...;` shape as
     /// `WireDecodeOption` with a pre-rendered single-op decode.
     WireDecodeValue { decode_expr: CSharpExpression },
+    /// `FfiBuf` carrying a wire-encoded `Result<T, E>`: a 1-byte tag
+    /// (0 = Ok, non-zero = Err) followed by either the Ok payload or
+    /// the Err payload. The wrapper body reads the tag, throws on Err,
+    /// and otherwise returns the decoded Ok value. Both expressions
+    /// are evaluated against a `reader` local the template introduces.
+    ///
+    /// `ok_decode_expr` is `None` when the Ok type is `Void`
+    /// (`Result<(), E>`); the template emits no `return` for that case.
+    WireDecodeResult {
+        ok_decode_expr: Option<CSharpExpression>,
+        err_throw_expr: CSharpExpression,
+    },
 }
 
 impl CSharpReturnKind {
@@ -141,7 +153,15 @@ impl CSharpReturnKind {
                 | Self::WireDecodeEncodedArray { .. }
                 | Self::WireDecodeOption { .. }
                 | Self::WireDecodeValue { .. }
+                | Self::WireDecodeResult { .. }
         )
+    }
+
+    /// Whether the wrapper body throws on Err. Templates use this to
+    /// pick the `if (reader.ReadU8() != 0) throw ...; return ...;`
+    /// shape over the plain wire-decode shape.
+    pub fn is_result(&self) -> bool {
+        matches!(self, Self::WireDecodeResult { .. })
     }
 }
 
@@ -237,5 +257,52 @@ mod tests {
             f.native_call_args().to_string(),
             "_vBytes, (UIntPtr)_vBytes.Length, count",
         );
+    }
+
+    fn dummy_throw_expr() -> CSharpExpression {
+        CSharpExpression::Identity(super::super::super::super::ast::CSharpIdentity::Local(
+            CSharpLocalName::new("placeholder"),
+        ))
+    }
+
+    /// `is_result` is true exactly for `WireDecodeResult`. Templates pivot on it
+    /// to pick the throw-on-tag wrapper body over the plain decode body, so
+    /// flipping any other arm to true would route a non-result return through
+    /// the throwing template and emit `if (reader.ReadU8() != 0) throw …`
+    /// against bytes that have no error tag.
+    #[test]
+    fn is_result_is_true_only_for_wire_decode_result() {
+        let result = CSharpReturnKind::WireDecodeResult {
+            ok_decode_expr: None,
+            err_throw_expr: dummy_throw_expr(),
+        };
+        assert!(result.is_result(), "WireDecodeResult is the throwing shape");
+
+        for kind in [
+            CSharpReturnKind::Void,
+            CSharpReturnKind::Direct,
+            CSharpReturnKind::WireDecodeString,
+            CSharpReturnKind::WireDecodeOption {
+                decode_expr: dummy_throw_expr(),
+            },
+        ] {
+            assert!(
+                !kind.is_result(),
+                "non-result return kind {kind:?} must not opt into the throwing template",
+            );
+        }
+    }
+
+    /// `Result<_, _>` returns travel as `FfiBuf` on the wire, so they must
+    /// satisfy `native_returns_ffi_buf` alongside the other wire-decoded
+    /// shapes — otherwise the DllImport signature would be generated as a
+    /// primitive return.
+    #[test]
+    fn wire_decode_result_native_returns_ffi_buf() {
+        let kind = CSharpReturnKind::WireDecodeResult {
+            ok_decode_expr: None,
+            err_throw_expr: dummy_throw_expr(),
+        };
+        assert!(kind.native_returns_ffi_buf());
     }
 }

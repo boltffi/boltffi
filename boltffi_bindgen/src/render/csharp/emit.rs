@@ -2822,4 +2822,137 @@ mod tests {
             "Vec<Custom<i64>> DllImport takes a byte buffer regardless of repr blittability",
         );
     }
+
+    /// End-to-end pin for throwing methods (issue #146): scanning the
+    /// demo crate emits the runtime `BoltException` class, the typed
+    /// exception companions for each `#[error]` enum and record, and
+    /// wrapper bodies that branch on the wire tag and throw the right
+    /// shape. Pins all four Err transports — string, primitive, typed
+    /// enum, typed record — so silent regressions in any of them fail
+    /// `cargo test` without needing the C# acceptance harness.
+    #[test]
+    fn emit_demo_crate_throwing_methods_render_typed_exceptions() {
+        use std::path::PathBuf;
+
+        let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .to_path_buf();
+        let demo_crate_path = repo_root.join("examples").join("demo");
+        let mut module = crate::scan::scan_crate(&demo_crate_path, "demo").unwrap();
+        let contract = crate::ir::build_contract(&mut module);
+        let abi = IrLowerer::new(&contract).to_abi_contract();
+        let output = CSharpEmitter::emit(&contract, &abi, &CSharpOptions::default());
+
+        // BoltException is bundled into the main wrapper file (alongside
+        // FfiBuf / WireReader). Anything emitting the runtime class has
+        // to gate on `module.needs_bolt_exception()`; the demo crate has
+        // string-Err results, so the predicate fires and the class lands.
+        let main = output
+            .files
+            .iter()
+            .find(|f| f.file_name.ends_with(".cs") && f.source.contains("class NativeMethods"))
+            .expect("main wrapper file with NativeMethods");
+        assert_source_contains(
+            &main.source,
+            "public sealed class BoltException : Exception",
+            "BoltException is emitted at module scope when any Err transport is non-typed",
+        );
+
+        // String-Err function: the wrapper reads the tag and throws the
+        // runtime `BoltException` carrying the wire-decoded message.
+        // Mirrors the demo's `safe_divide(i32, i32) -> Result<i32, String>`.
+        assert_source_contains(
+            &main.source,
+            "if (reader.ReadU8() != 0) throw new BoltException(reader.ReadString());",
+            "String-Err result wrappers throw BoltException with the wire-decoded message",
+        );
+
+        // Primitive-Err function (`result_with_int_error: Result<i32, i32>`):
+        // the Err side isn't a `#[error]` type, so the lowerer falls
+        // back to BoltException with `value.ToString()` after wire-
+        // decoding the int. Pins the documented fallback path.
+        assert_source_contains(
+            &main.source,
+            "throw new BoltException(reader.ReadI32().ToString());",
+            "Primitive-Err result wrappers wrap the value as BoltException(value.ToString())",
+        );
+
+        // Typed enum Err: the demo's `MathError` is `#[error]`, so the
+        // generated `MathError.cs` carries a companion `MathErrorException`
+        // with an `Error` property bound to the wrapped variant.
+        let math_error_file = output
+            .files
+            .iter()
+            .find(|f| f.file_name == "MathError.cs")
+            .expect("MathError.cs from demo crate");
+        assert_source_contains(
+            &math_error_file.source,
+            "public sealed class MathErrorException : Exception",
+            "#[error] enums emit a typed exception alongside the enum itself",
+        );
+        assert_source_contains(
+            &math_error_file.source,
+            "public MathError Error { get; }",
+            "Typed exceptions expose the wrapped value through an Error property",
+        );
+
+        // Throwing function whose Err is the typed enum: the wrapper
+        // body decodes the wire-encoded enum value and throws the typed
+        // exception. Pins `throw new MathErrorException(MathErrorWire.Decode(reader))`
+        // — the canonical shape produced by the typed-exception path.
+        assert_source_contains(
+            &main.source,
+            "throw new MathErrorException(MathErrorWire.Decode(reader));",
+            "Typed enum Err wrappers throw <Name>Exception(<Name>Wire.Decode(reader))",
+        );
+
+        // Typed record Err: same shape but the wrapped value is a
+        // record. AppError has a `Message: string` field, so the
+        // exception's base `Exception.Message` forwards from
+        // `error.Message` rather than the verbose record `ToString()`.
+        let app_error_file = output
+            .files
+            .iter()
+            .find(|f| f.file_name == "AppError.cs")
+            .expect("AppError.cs from demo crate");
+        assert_source_contains(
+            &app_error_file.source,
+            "public sealed class AppErrorException : Exception",
+            "#[error] records emit a typed exception alongside the record itself",
+        );
+        assert_source_contains(
+            &app_error_file.source,
+            "public AppErrorException(AppError error) : base(error.Message)",
+            "AppError forwards its Message field through to the base Exception ctor \
+             so callers see a focused message instead of the auto record ToString",
+        );
+        assert_source_contains(
+            &main.source,
+            "throw new AppErrorException(AppError.Decode(reader));",
+            "Typed record Err wrappers decode the record and throw <Name>Exception",
+        );
+
+        // Class method that returns Result: pins the throwing-body
+        // shape inside a class wrapper. `Counter::try_get_positive`
+        // returns `Result<i32, String>`, so the body reads the tag,
+        // throws `BoltException` on Err, and returns the decoded int
+        // on Ok.
+        let counter_file = output
+            .files
+            .iter()
+            .find(|f| f.file_name == "Counter.cs")
+            .expect("Counter.cs from demo crate");
+        assert_source_contains(
+            &counter_file.source,
+            "public int TryGetPositive()",
+            "Counter::try_get_positive lifts to a public throwing method returning int",
+        );
+        assert_source_contains(
+            &counter_file.source,
+            "if (reader.ReadU8() != 0) throw new BoltException(reader.ReadString());",
+            "Class throwing methods reuse the same WireDecodeResult body shape \
+             as top-level functions",
+        );
+    }
 }

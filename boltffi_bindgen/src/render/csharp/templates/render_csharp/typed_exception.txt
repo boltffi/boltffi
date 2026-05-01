@@ -1,0 +1,16 @@
+    /// <summary>
+    /// Thrown by generated wrapper methods when the Rust side returns
+    /// a <c>{{ wrapped_name }}</c> as the error. The original value is
+    /// exposed through <c>Error</c>; the inherited <c>Message</c>
+    /// derives from it (forwarded from a <c>Message</c> field when the
+    /// wrapped type has one, otherwise the value's <c>ToString()</c>).
+    /// </summary>
+    public sealed class {{ wrapped_name }}Exception : Exception
+    {
+        public {{ wrapped_name }} Error { get; }
+
+        public {{ wrapped_name }}Exception({{ wrapped_name }} error) : base({{ message_expr }})
+        {
+            Error = error;
+        }
+    }

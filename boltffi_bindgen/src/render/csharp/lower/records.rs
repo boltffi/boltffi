@@ -1,5 +1,5 @@
 use crate::ir::abi::{AbiCall, CallId};
-use crate::ir::definitions::{ConstructorDef, FieldDef, MethodDef, Receiver, RecordDef, ReturnDef};
+use crate::ir::definitions::{ConstructorDef, FieldDef, MethodDef, Receiver, RecordDef};
 use crate::ir::ids::{FieldName, RecordId};
 use crate::ir::ops::{ReadOp, ReadSeq, WriteOp, WriteSeq};
 
@@ -46,6 +46,7 @@ impl<'a> CSharpLowerer<'a> {
             fields,
             is_blittable,
             methods,
+            is_error: record.is_error,
         }
     }
 
@@ -88,9 +89,6 @@ impl<'a> CSharpLowerer<'a> {
                 method_def.receiver,
                 Receiver::RefMutSelf | Receiver::OwnedSelf
             ) {
-                continue;
-            }
-            if matches!(method_def.returns, ReturnDef::Result { .. }) {
                 continue;
             }
             let call_id = CallId::RecordMethod {
@@ -176,11 +174,7 @@ impl<'a> CSharpLowerer<'a> {
         owner_is_blittable: bool,
     ) -> Option<CSharpMethodPlan> {
         let name: CSharpMethodName = (&method_def.id).into();
-        let return_type = match &method_def.returns {
-            ReturnDef::Void => CSharpType::Void,
-            ReturnDef::Value(type_expr) => self.lower_type(type_expr)?,
-            ReturnDef::Result { .. } => return None,
-        };
+        let return_type = self.lower_return(&method_def.returns)?;
         let return_kind = self.return_kind(
             &method_def.returns,
             &return_type,

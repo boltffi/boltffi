@@ -45,4 +45,10 @@ namespace {{ namespace }}
 {%- endfor %}
     }
 {%- endif %}
+{%- if enumeration.is_error %}
+
+{%- let wrapped_name = enumeration.class_name %}
+{%- let message_expr = enumeration.exception_message_expr() %}
+{% include "render_csharp/typed_exception.txt" %}
+{%- endif %}
 }

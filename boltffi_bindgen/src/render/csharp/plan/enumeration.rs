@@ -1,4 +1,7 @@
-use super::super::ast::{CSharpClassName, CSharpComment, CSharpEnumUnderlyingType};
+use super::super::ast::{
+    CSharpClassName, CSharpComment, CSharpEnumUnderlyingType, CSharpExpression,
+};
+use super::record::{error_param_expr, to_string_call};
 use super::{CSharpFieldPlan, CSharpMethodPlan};
 
 /// A Rust enum exposed in C# as either a C-style `enum` or a data
@@ -48,6 +51,11 @@ pub struct CSharpEnumPlan {
     /// enums render these in `methods_class_name`; data enums put them on
     /// the abstract record directly.
     pub methods: Vec<CSharpMethodPlan>,
+    /// Whether the enum is marked `#[error]` on the Rust side. Drives
+    /// emission of a companion `<Name>Exception` class in the same file
+    /// so callers can `catch` a typed exception whose `Error` property
+    /// exposes the variant.
+    pub is_error: bool,
 }
 
 /// Which rendering shape the enum takes.
@@ -116,6 +124,22 @@ impl CSharpEnumPlan {
             .flat_map(|v| v.fields.iter())
             .any(|f| f.csharp_type.contains_string())
     }
+
+    /// Whether any method on this enum returns `Result<_, _>`. Used by
+    /// the module-level predicate that decides whether to emit the
+    /// runtime `BoltException` class.
+    pub fn has_throwing_methods(&self) -> bool {
+        self.methods.iter().any(|m| m.return_kind.is_result())
+    }
+
+    /// Expression passed as the `Exception.Message` base argument when
+    /// emitting the typed exception class for an `is_error` enum.
+    /// Always `error.ToString()` — C-style enums render their variant
+    /// name and data enums fall back to the auto-generated record
+    /// formatting, both of which are reasonable defaults.
+    pub(crate) fn exception_message_expr(&self) -> CSharpExpression {
+        to_string_call(error_param_expr())
+    }
 }
 
 impl CSharpEnumVariantPlan {
@@ -132,7 +156,41 @@ mod tests {
         CSharpArgumentList, CSharpExpression, CSharpIdentity, CSharpLiteral, CSharpLocalName,
         CSharpMethodName, CSharpPropertyName, CSharpStatement, CSharpType,
     };
+    use super::super::{CFunctionName, CSharpReceiver, CSharpReturnKind};
     use super::*;
+
+    fn dummy_throw_expr() -> CSharpExpression {
+        CSharpExpression::Identity(CSharpIdentity::Local(CSharpLocalName::new("placeholder")))
+    }
+
+    fn enum_with_methods(methods: Vec<CSharpMethodPlan>) -> CSharpEnumPlan {
+        CSharpEnumPlan {
+            summary_doc: None,
+            class_name: CSharpClassName::from_source("status"),
+            wire_class_name: CSharpClassName::from_source("status_wire"),
+            methods_class_name: None,
+            kind: CSharpEnumKind::CStyle,
+            underlying_type: None,
+            variants: vec![],
+            methods,
+            is_error: false,
+        }
+    }
+
+    fn method_with_return_kind(return_kind: CSharpReturnKind) -> CSharpMethodPlan {
+        CSharpMethodPlan {
+            summary_doc: None,
+            name: CSharpMethodName::from_source("test"),
+            native_method_name: CSharpMethodName::from_source("OwnerTest"),
+            ffi_name: CFunctionName::new("boltffi_test".to_string()),
+            receiver: CSharpReceiver::Static,
+            params: vec![],
+            return_type: CSharpType::Void,
+            return_kind,
+            wire_writers: vec![],
+            owner_is_blittable: false,
+        }
+    }
 
     /// A variant with no payload fields is a unit: true for every C-style
     /// variant and for data-enum unit variants like `Shape::Point`.
@@ -146,6 +204,46 @@ mod tests {
             fields: vec![],
         };
         assert!(variant.is_unit());
+    }
+
+    /// Enums always render the typed exception's `Message` argument as
+    /// `error.ToString()`. C-style enums get the variant name, data
+    /// enums get the auto-generated record formatting; both are
+    /// reasonable defaults without enum-specific introspection.
+    #[test]
+    fn enum_exception_message_expr_is_error_to_string() {
+        let enumeration = enum_with_methods(vec![]);
+        assert_eq!(
+            enumeration.exception_message_expr().to_string(),
+            "error.ToString()",
+        );
+    }
+
+    /// An enum method whose return_kind is `WireDecodeResult` flips
+    /// `has_throwing_methods` so the module predicate emits the runtime
+    /// `BoltException` class. Mirrors the Java backend's per-class
+    /// throwing-methods check.
+    #[test]
+    fn has_throwing_methods_is_true_when_an_enum_method_is_a_result() {
+        let enumeration = enum_with_methods(vec![method_with_return_kind(
+            CSharpReturnKind::WireDecodeResult {
+                ok_decode_expr: None,
+                err_throw_expr: dummy_throw_expr(),
+            },
+        )]);
+        assert!(enumeration.has_throwing_methods());
+    }
+
+    /// Non-result return kinds don't flip the predicate, including
+    /// other wire-decoded shapes. Pins that the predicate keys on the
+    /// throwing shape specifically rather than wire decoding generally.
+    #[test]
+    fn has_throwing_methods_is_false_when_no_enum_method_is_a_result() {
+        let enumeration = enum_with_methods(vec![
+            method_with_return_kind(CSharpReturnKind::Direct),
+            method_with_return_kind(CSharpReturnKind::WireDecodeString),
+        ]);
+        assert!(!enumeration.has_throwing_methods());
     }
 
     /// A variant with at least one payload field is not a unit. The

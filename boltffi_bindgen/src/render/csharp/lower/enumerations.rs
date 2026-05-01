@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use crate::ir::abi::{AbiCall, AbiEnum, AbiEnumField, AbiEnumPayload, AbiEnumVariant, CallId};
-use crate::ir::definitions::{ConstructorDef, EnumDef, EnumRepr, MethodDef, Receiver, ReturnDef};
+use crate::ir::definitions::{ConstructorDef, EnumDef, EnumRepr, MethodDef, Receiver};
 
 use super::super::ast::{
     CSharpClassName, CSharpComment, CSharpEnumUnderlyingType, CSharpExpression, CSharpIdentity,
@@ -81,6 +81,7 @@ impl<'a> CSharpLowerer<'a> {
                     ),
                     variants: lowered_variants,
                     methods,
+                    is_error: enum_def.is_error,
                 })
             }
             EnumRepr::Data { .. } => {
@@ -122,6 +123,7 @@ impl<'a> CSharpLowerer<'a> {
                     underlying_type: None,
                     variants,
                     methods,
+                    is_error: enum_def.is_error,
                 })
             }
         }
@@ -251,9 +253,6 @@ impl<'a> CSharpLowerer<'a> {
             ) {
                 continue;
             }
-            if matches!(method_def.returns, ReturnDef::Result { .. }) {
-                continue;
-            }
             let call_id = CallId::EnumMethod {
                 enum_id: enum_def.id.clone(),
                 method_id: method_def.id.clone(),
@@ -337,13 +336,9 @@ impl<'a> CSharpLowerer<'a> {
         shadowed: Option<&HashSet<CSharpClassName>>,
     ) -> Option<CSharpMethodPlan> {
         let name: CSharpMethodName = (&method_def.id).into();
-        let return_type = match &method_def.returns {
-            ReturnDef::Void => CSharpType::Void,
-            ReturnDef::Value(type_expr) => self
-                .lower_type(type_expr)?
-                .qualify_if_shadowed_opt(shadowed, &self.namespace),
-            ReturnDef::Result { .. } => return None,
-        };
+        let return_type = self
+            .lower_return(&method_def.returns)?
+            .qualify_if_shadowed_opt(shadowed, &self.namespace);
         let return_kind = self.return_kind(
             &method_def.returns,
             &return_type,

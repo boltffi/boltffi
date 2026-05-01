@@ -453,6 +453,22 @@
     }
 
 {% endif %}
+{%- if module.needs_bolt_exception() %}
+    /// <summary>
+    /// Thrown by generated wrapper methods when a Rust <c>Result</c>
+    /// returns an <c>Err</c> whose payload isn't a typed
+    /// <c>#[error]</c> enum or record. The message is the underlying
+    /// error rendered as a string. Catch this to handle plain
+    /// <c>Result&lt;_, String&gt;</c> errors and untyped <c>Err</c>
+    /// payloads; catch a typed <c>&lt;Name&gt;Exception</c> instead
+    /// when the Rust side declared an <c>#[error]</c> type.
+    /// </summary>
+    public sealed class BoltException : Exception
+    {
+        public BoltException(string message) : base(message) { }
+    }
+
+{% endif %}
     internal static class NativeMethods
     {
         private const string LibName = "{{ module.lib_name }}";

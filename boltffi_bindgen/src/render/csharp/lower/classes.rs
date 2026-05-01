@@ -1,9 +1,9 @@
 use boltffi_ffi_rules::naming;
 
 use crate::ir::abi::{AbiCall, CallId};
-use crate::ir::definitions::{ClassDef, ConstructorDef, MethodDef, Receiver, ReturnDef};
+use crate::ir::definitions::{ClassDef, ConstructorDef, MethodDef, Receiver};
 
-use super::super::ast::{CSharpClassName, CSharpComment, CSharpMethodName, CSharpType};
+use super::super::ast::{CSharpClassName, CSharpComment, CSharpMethodName};
 use super::super::plan::{
     CSharpClassPlan, CSharpConstructorKind, CSharpConstructorPlan, CSharpMethodPlan,
     CSharpParamPlan, CSharpReceiver,
@@ -116,7 +116,6 @@ impl<'a> CSharpLowerer<'a> {
     /// Walks `class.methods` and produces the corresponding
     /// [`CSharpMethodPlan`]s. Skips:
     /// - `async` methods (no async runtime support yet)
-    /// - `Result<_, _>` returns (no error transport)
     /// - `OwnedSelf` receivers (consume the wrapper, complex lifecycle)
     fn lower_class_methods(
         &self,
@@ -128,7 +127,6 @@ impl<'a> CSharpLowerer<'a> {
             .iter()
             .filter(|m| !m.is_async())
             .filter(|m| !matches!(m.receiver, Receiver::OwnedSelf))
-            .filter(|m| !matches!(m.returns, ReturnDef::Result { .. }))
             .filter_map(|method_def| {
                 let call = self.abi.calls.iter().find(|c| {
                     c.id == CallId::Method {
@@ -157,11 +155,7 @@ impl<'a> CSharpLowerer<'a> {
             Receiver::OwnedSelf => return None,
         };
 
-        let return_type = match &method_def.returns {
-            ReturnDef::Void => CSharpType::Void,
-            ReturnDef::Value(type_expr) => self.lower_type(type_expr)?,
-            ReturnDef::Result { .. } => return None,
-        };
+        let return_type = self.lower_return(&method_def.returns)?;
         let return_kind = self.return_kind(
             &method_def.returns,
             &return_type,

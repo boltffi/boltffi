@@ -53,4 +53,10 @@ namespace {{ namespace }}
 {% include "render_csharp/record_method.txt" %}
 {%- endfor %}
     }
+{%- if record.is_error %}
+
+{%- let wrapped_name = record.class_name %}
+{%- let message_expr = record.exception_message_expr() %}
+{% include "render_csharp/typed_exception.txt" %}
+{%- endif %}
 }

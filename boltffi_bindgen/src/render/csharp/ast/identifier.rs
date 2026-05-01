@@ -46,6 +46,14 @@ impl CSharpClassName {
         Self(format!("{}Methods", base.0))
     }
 
+    /// `{base}Exception`: the generated exception class wrapping a
+    /// `#[error]` enum or record on the throwing-method path. The
+    /// trailing `Exception` keeps the type discoverable in IDE catch
+    /// lists and avoids colliding with the underlying value type.
+    pub(crate) fn exception_for(base: &CSharpClassName) -> Self {
+        Self(format!("{}Exception", base.0))
+    }
+
     pub(crate) fn as_str(&self) -> &str {
         &self.0
     }
@@ -214,6 +222,10 @@ impl CSharpPropertyName {
     /// Builds from a snake_case source name. `my_prop` → `"MyProp"`.
     pub(crate) fn from_source(source: &str) -> Self {
         Self(naming::to_upper_camel_case(source))
+    }
+
+    pub(crate) fn as_str(&self) -> &str {
+        &self.0
     }
 }
 
@@ -530,6 +542,17 @@ mod tests {
         let id = RecordId::new("point");
         let name: CSharpClassName = (&id).into();
         assert_eq!(name.as_str(), "Point");
+    }
+
+    /// Typed exception classes are named `<Name>Exception` so they
+    /// stay discoverable in IDE catch lists alongside other
+    /// `*Exception` types and don't collide with the underlying value
+    /// type.
+    #[test]
+    fn csharp_class_name_exception_for_appends_exception_suffix() {
+        let base = CSharpClassName::from_source("math_error");
+        let exception = CSharpClassName::exception_for(&base);
+        assert_eq!(exception.as_str(), "MathErrorException");
     }
 
     #[test]

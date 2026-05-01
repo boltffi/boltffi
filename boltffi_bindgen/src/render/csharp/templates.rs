@@ -348,6 +348,7 @@ mod tests {
                 ),
             ],
             methods: vec![],
+            is_error: false,
         };
         let template = RecordTemplate {
             record: &record,
@@ -383,6 +384,7 @@ mod tests {
                 ),
             ],
             methods: vec![],
+            is_error: false,
         };
         let template = RecordTemplate {
             record: &record,
@@ -418,6 +420,7 @@ mod tests {
                 ),
             ],
             methods: vec![],
+            is_error: false,
         };
         let template = RecordTemplate {
             record: &record,
@@ -436,6 +439,7 @@ mod tests {
             is_blittable: true,
             fields: vec![],
             methods: vec![],
+            is_error: false,
         };
         let template = RecordTemplate {
             record: &record,
@@ -473,6 +477,7 @@ mod tests {
                 ),
             ],
             methods: vec![],
+            is_error: false,
         };
         let template = RecordTemplate {
             record: &record,
@@ -544,6 +549,7 @@ mod tests {
                 ),
             ],
             methods,
+            is_error: false,
         };
         let template = RecordTemplate {
             record: &record,
@@ -591,6 +597,7 @@ mod tests {
                 ),
             ],
             methods: vec![describe],
+            is_error: false,
         };
         let template = RecordTemplate {
             record: &record,
@@ -699,6 +706,7 @@ mod tests {
             underlying_type,
             variants,
             methods,
+            is_error: false,
         }
     }
 
@@ -1151,6 +1159,7 @@ mod tests {
                 },
             ],
             methods: vec![],
+            is_error: false,
         };
         let template = RecordTemplate {
             record: &record,
@@ -1305,6 +1314,330 @@ mod tests {
             ffi_free: CFunctionName::new("boltffi_counter_free".to_string()),
             constructors: vec![primary],
             methods: vec![get, increment, zero],
+        };
+        let template = ClassTemplate {
+            class: &class,
+            namespace: &demo_namespace(),
+        };
+        insta::assert_snapshot!(template.render().unwrap());
+    }
+
+    /// `error` parameter expression used as the receiver of typed-
+    /// exception decode arguments. Mirrors what the lowerer emits for
+    /// `error.Decode(reader)` inside the `WireDecodeResult.err_throw_expr`
+    /// for typed-exception paths.
+    fn error_local() -> CSharpExpression {
+        CSharpExpression::Identity(CSharpIdentity::Local(CSharpLocalName::new("error")))
+    }
+
+    /// MathError as an `is_error` C-style enum: pins the typed-exception
+    /// `MathErrorException` rendered alongside the enum, with the
+    /// `error.ToString()` message expression and the `Error` property
+    /// exposing the wrapped variant.
+    #[test]
+    fn snapshot_c_style_enum_with_error_math_error() {
+        let variants = vec![
+            variant("DivisionByZero", 0, 0, vec![]),
+            variant("NegativeInput", 1, 1, vec![]),
+            variant("Overflow", 2, 2, vec![]),
+        ];
+        let mut enumeration = build_enum(
+            "math_error",
+            CSharpEnumKind::CStyle,
+            Some(CSharpEnumUnderlyingType::Int),
+            variants,
+            vec![],
+        );
+        enumeration.is_error = true;
+        let template = EnumCStyleTemplate {
+            enumeration: &enumeration,
+            namespace: &demo_namespace(),
+        };
+        insta::assert_snapshot!(template.render().unwrap());
+    }
+
+    /// ComputeError as an `is_error` data enum: the typed exception
+    /// emits beneath the abstract record. Pins the `ComputeErrorException`
+    /// shape and the `error.ToString()` message expression for data enums
+    /// (which produce auto-generated record formatting at runtime).
+    #[test]
+    fn snapshot_data_enum_with_error_compute_error() {
+        let variants = vec![
+            variant(
+                "InvalidInput",
+                0,
+                0,
+                vec![record_field(
+                    "Value",
+                    CSharpType::Int,
+                    read_call("read_i32"),
+                    int_lit(4),
+                    wire_write_local_field("write_i32", "_v", "Value"),
+                )],
+            ),
+            variant(
+                "Overflow",
+                1,
+                1,
+                vec![
+                    record_field(
+                        "Value",
+                        CSharpType::Int,
+                        read_call("read_i32"),
+                        int_lit(4),
+                        wire_write_local_field("write_i32", "_v", "Value"),
+                    ),
+                    record_field(
+                        "Limit",
+                        CSharpType::Int,
+                        read_call("read_i32"),
+                        int_lit(4),
+                        wire_write_local_field("write_i32", "_v", "Limit"),
+                    ),
+                ],
+            ),
+        ];
+        let mut enumeration = build_enum(
+            "compute_error",
+            CSharpEnumKind::Data,
+            None,
+            variants,
+            vec![],
+        );
+        enumeration.is_error = true;
+        let template = EnumDataTemplate {
+            enumeration: &enumeration,
+            namespace: &demo_namespace(),
+        };
+        insta::assert_snapshot!(template.render().unwrap());
+    }
+
+    /// AppError as an `is_error` record with a `Message: string` field.
+    /// Pins the `Exception.Message` forwarding path: the constructor
+    /// passes `error.Message` to the base `Exception` ctor so consumers
+    /// see a focused message rather than the auto-generated record
+    /// formatting.
+    #[test]
+    fn snapshot_record_with_error_app_error_message_field() {
+        let record = CSharpRecordPlan {
+            summary_doc: None,
+            class_name: CSharpClassName::from_source("app_error"),
+            is_blittable: false,
+            fields: vec![
+                record_field(
+                    "Code",
+                    CSharpType::Int,
+                    read_call("read_i32"),
+                    int_lit(4),
+                    wire_write_this("write_i32", "Code"),
+                ),
+                record_field(
+                    "Message",
+                    CSharpType::String,
+                    read_call("read_string"),
+                    string_size_this("Message"),
+                    wire_write_this("write_string", "Message"),
+                ),
+            ],
+            methods: vec![],
+            is_error: true,
+        };
+        let template = RecordTemplate {
+            record: &record,
+            namespace: &demo_namespace(),
+        };
+        insta::assert_snapshot!(template.render().unwrap());
+    }
+
+    /// An `is_error` record without a `Message: string` field falls
+    /// back to passing `error.ToString()` to the base `Exception`
+    /// constructor. Pins the fallback path so the absence of `Message`
+    /// produces a syntactically valid wrapper instead of a missing
+    /// field reference.
+    #[test]
+    fn snapshot_record_with_error_no_message_field() {
+        let record = CSharpRecordPlan {
+            summary_doc: None,
+            class_name: CSharpClassName::from_source("boundary_error"),
+            is_blittable: false,
+            fields: vec![
+                record_field(
+                    "Lo",
+                    CSharpType::Int,
+                    read_call("read_i32"),
+                    int_lit(4),
+                    wire_write_this("write_i32", "Lo"),
+                ),
+                record_field(
+                    "Hi",
+                    CSharpType::Int,
+                    read_call("read_i32"),
+                    int_lit(4),
+                    wire_write_this("write_i32", "Hi"),
+                ),
+            ],
+            methods: vec![],
+            is_error: true,
+        };
+        let template = RecordTemplate {
+            record: &record,
+            namespace: &demo_namespace(),
+        };
+        insta::assert_snapshot!(template.render().unwrap());
+    }
+
+    /// Class with a `WireDecodeResult` method whose Err is `String` and
+    /// Ok is a primitive: pins the throwing wrapper body shape
+    /// (`if (reader.ReadU8() != 0) throw new BoltException(...);
+    /// return reader.ReadI32();`) end-to-end through the class template.
+    /// This is the shape the demo crate's `Counter::try_get_positive`
+    /// emits.
+    #[test]
+    fn snapshot_class_counter_with_throwing_method_string_err() {
+        let class_name = CSharpClassName::from_source("counter");
+        let try_get_positive_name = CSharpMethodName::from_source("try_get_positive");
+        let err_throw_expr = CSharpExpression::New {
+            target: CSharpType::Record(CSharpTypeReference::Plain(CSharpClassName::new(
+                "BoltException",
+            ))),
+            args: vec![read_call("read_string")].into(),
+        };
+        let try_get_positive = CSharpMethodPlan {
+            summary_doc: None,
+            name: try_get_positive_name.clone(),
+            native_method_name: CSharpMethodName::native_for_owner(
+                &class_name,
+                &try_get_positive_name,
+            ),
+            ffi_name: CFunctionName::new("boltffi_counter_try_get_positive".to_string()),
+            receiver: CSharpReceiver::ClassInstance,
+            params: vec![],
+            return_type: CSharpType::Int,
+            return_kind: CSharpReturnKind::WireDecodeResult {
+                ok_decode_expr: Some(read_call("read_i32")),
+                err_throw_expr,
+            },
+            wire_writers: vec![],
+            owner_is_blittable: false,
+        };
+        let class = CSharpClassPlan {
+            summary_doc: None,
+            native_free_method_name: CSharpMethodName::native_for_owner(
+                &class_name,
+                &CSharpMethodName::new("Free"),
+            ),
+            class_name,
+            ffi_free: CFunctionName::new("boltffi_counter_free".to_string()),
+            constructors: vec![],
+            methods: vec![try_get_positive],
+        };
+        let template = ClassTemplate {
+            class: &class,
+            namespace: &demo_namespace(),
+        };
+        insta::assert_snapshot!(template.render().unwrap());
+    }
+
+    /// Class with a `WireDecodeResult` method whose Err is a typed
+    /// `#[error]` enum: the throw expression decodes the wire-encoded
+    /// error and constructs the typed `<Name>Exception`. Pins the
+    /// `throw new MathErrorException(MathErrorWire.Decode(reader))`
+    /// shape that the demo crate's `CheckedDivide`-on-a-class flavor
+    /// would emit if a class method exposed a typed error.
+    #[test]
+    fn snapshot_class_with_throwing_method_typed_exception_err() {
+        let class_name = CSharpClassName::from_source("calculator");
+        let divide_name = CSharpMethodName::from_source("divide");
+        let error_decode = CSharpExpression::MethodCall {
+            receiver: Box::new(CSharpExpression::TypeRef(CSharpTypeReference::Plain(
+                CSharpClassName::new("MathErrorWire"),
+            ))),
+            method: CSharpMethodName::new("Decode"),
+            type_args: vec![],
+            args: vec![local_ident("reader")].into(),
+        };
+        let err_throw_expr = CSharpExpression::New {
+            target: CSharpType::Record(CSharpTypeReference::Plain(CSharpClassName::new(
+                "MathErrorException",
+            ))),
+            args: vec![error_decode].into(),
+        };
+        // Suppress unused-fn warning: error_local is part of the test
+        // helper surface for typed-exception fixtures, even if this
+        // particular test happens not to invoke it.
+        let _ = error_local();
+        let divide = CSharpMethodPlan {
+            summary_doc: None,
+            name: divide_name.clone(),
+            native_method_name: CSharpMethodName::native_for_owner(&class_name, &divide_name),
+            ffi_name: CFunctionName::new("boltffi_calculator_divide".to_string()),
+            receiver: CSharpReceiver::ClassInstance,
+            params: vec![param("b", CSharpType::Int)],
+            return_type: CSharpType::Int,
+            return_kind: CSharpReturnKind::WireDecodeResult {
+                ok_decode_expr: Some(read_call("read_i32")),
+                err_throw_expr,
+            },
+            wire_writers: vec![],
+            owner_is_blittable: false,
+        };
+        let class = CSharpClassPlan {
+            summary_doc: None,
+            native_free_method_name: CSharpMethodName::native_for_owner(
+                &class_name,
+                &CSharpMethodName::new("Free"),
+            ),
+            class_name,
+            ffi_free: CFunctionName::new("boltffi_calculator_free".to_string()),
+            constructors: vec![],
+            methods: vec![divide],
+        };
+        let template = ClassTemplate {
+            class: &class,
+            namespace: &demo_namespace(),
+        };
+        insta::assert_snapshot!(template.render().unwrap());
+    }
+
+    /// Class method with `WireDecodeResult { ok_decode_expr: None, .. }`
+    /// — the `Result<(), E>` Ok-Void shape. Pins that the wrapper body
+    /// ends after the throw branch with no `return` statement, matching
+    /// the `void` public signature.
+    #[test]
+    fn snapshot_class_with_throwing_method_void_ok() {
+        let class_name = CSharpClassName::from_source("validator");
+        let validate_name = CSharpMethodName::from_source("validate");
+        let err_throw_expr = CSharpExpression::New {
+            target: CSharpType::Record(CSharpTypeReference::Plain(CSharpClassName::new(
+                "BoltException",
+            ))),
+            args: vec![read_call("read_string")].into(),
+        };
+        let validate = CSharpMethodPlan {
+            summary_doc: None,
+            name: validate_name.clone(),
+            native_method_name: CSharpMethodName::native_for_owner(&class_name, &validate_name),
+            ffi_name: CFunctionName::new("boltffi_validator_validate".to_string()),
+            receiver: CSharpReceiver::ClassInstance,
+            params: vec![],
+            return_type: CSharpType::Void,
+            return_kind: CSharpReturnKind::WireDecodeResult {
+                ok_decode_expr: None,
+                err_throw_expr,
+            },
+            wire_writers: vec![],
+            owner_is_blittable: false,
+        };
+        let class = CSharpClassPlan {
+            summary_doc: None,
+            native_free_method_name: CSharpMethodName::native_for_owner(
+                &class_name,
+                &CSharpMethodName::new("Free"),
+            ),
+            class_name,
+            ffi_free: CFunctionName::new("boltffi_validator_free".to_string()),
+            constructors: vec![],
+            methods: vec![validate],
         };
         let template = ClassTemplate {
             class: &class,

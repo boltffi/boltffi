@@ -49,6 +49,17 @@ impl<'a> CSharpLowerer<'a> {
         }
     }
 
+    /// Whether `ty` is admissible as the Ok or Err side of a
+    /// `Result<Ok, Err>` return. Same gate as [`is_supported_type`]
+    /// plus an explicit allow for `Void` (a `Result<(), E>` Ok is
+    /// legal even though void isn't a normal return).
+    pub(super) fn is_supported_result_type(&self, ty: &TypeExpr) -> bool {
+        match ty {
+            TypeExpr::Void => true,
+            other => self.is_supported_type(other),
+        }
+    }
+
     /// Which element types the C# backend currently admits inside a
     /// top-level `Vec<_>` param or return. This is only the admission
     /// gate: primitives and blittable records can use the blittable
@@ -86,5 +97,87 @@ impl<'a> CSharpLowerer<'a> {
             TypeExpr::Custom(id) => self.is_blittable_vec_element(self.custom_repr_type(id)),
             _ => false,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::lowerer::CSharpLowerer;
+    use super::*;
+    use crate::ir::FfiContract;
+    use crate::ir::Lowerer as IrLowerer;
+    use crate::ir::contract::PackageInfo;
+    use crate::ir::types::PrimitiveType;
+
+    use super::super::super::CSharpOptions;
+
+    fn empty_lowerer_inputs() -> FfiContract {
+        FfiContract {
+            package: PackageInfo {
+                name: "demo_lib".to_string(),
+                version: None,
+            },
+            functions: vec![],
+            catalog: Default::default(),
+        }
+    }
+
+    /// `Result<(), E>` is legal — Java exposes it as a `void` returning
+    /// throwing method, and C# does the same. The Ok-side admission gate
+    /// has to allow `Void` even though plain `Void` returns can't carry
+    /// a `Result` payload.
+    #[test]
+    fn is_supported_result_type_admits_void() {
+        let contract = empty_lowerer_inputs();
+        let abi = IrLowerer::new(&contract).to_abi_contract();
+        let options = CSharpOptions::default();
+        let lowerer = CSharpLowerer::new(&contract, &abi, &options);
+
+        assert!(
+            lowerer.is_supported_result_type(&TypeExpr::Void),
+            "expecting Result<(), E> Ok side to admit Void",
+        );
+    }
+
+    /// Anything `is_supported_type` allows on a normal return is also
+    /// admissible inside a `Result<_, _>`, so the wrapper can wire-decode
+    /// the same shapes the rest of the backend already handles.
+    #[test]
+    fn is_supported_result_type_accepts_supported_types() {
+        let contract = empty_lowerer_inputs();
+        let abi = IrLowerer::new(&contract).to_abi_contract();
+        let options = CSharpOptions::default();
+        let lowerer = CSharpLowerer::new(&contract, &abi, &options);
+
+        for ty in [
+            TypeExpr::Primitive(PrimitiveType::I32),
+            TypeExpr::String,
+            TypeExpr::Vec(Box::new(TypeExpr::Primitive(PrimitiveType::I32))),
+            TypeExpr::Option(Box::new(TypeExpr::Primitive(PrimitiveType::I32))),
+        ] {
+            assert!(
+                lowerer.is_supported_result_type(&ty),
+                "expecting {ty:?} to admit as a Result Ok/Err type",
+            );
+        }
+    }
+
+    /// The shapes `is_supported_type` rejects also fail the Result gate
+    /// — the Result branch is a thin Void-tolerant wrapper around the
+    /// plain support gate, not an escape hatch for unsupported types.
+    #[test]
+    fn is_supported_result_type_rejects_nested_options_and_results() {
+        let contract = empty_lowerer_inputs();
+        let abi = IrLowerer::new(&contract).to_abi_contract();
+        let options = CSharpOptions::default();
+        let lowerer = CSharpLowerer::new(&contract, &abi, &options);
+
+        let nested_option = TypeExpr::Option(Box::new(TypeExpr::Option(Box::new(
+            TypeExpr::Primitive(PrimitiveType::I32),
+        ))));
+        assert!(
+            !lowerer.is_supported_result_type(&nested_option),
+            "expecting Option<Option<i32>> to fail the Result admission gate",
+        );
     }
 }

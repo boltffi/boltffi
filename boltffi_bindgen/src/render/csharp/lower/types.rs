@@ -98,13 +98,23 @@ impl<'a> CSharpLowerer<'a> {
         })
     }
 
-    /// Lowers a return signature to its C# type. `Result<_, _>` returns
-    /// aren't supported yet.
+    /// Lowers a return signature to its C# type. For `Result<T, E>`
+    /// the C# return type is `T`: errors travel as exceptions, so the
+    /// public method signature only carries the success type. Returns
+    /// `None` if the ok or err type isn't admissible.
     pub(super) fn lower_return(&self, return_def: &ReturnDef) -> Option<CSharpType> {
         match return_def {
             ReturnDef::Void => Some(CSharpType::Void),
             ReturnDef::Value(type_expr) => self.lower_type(type_expr),
-            ReturnDef::Result { .. } => None,
+            ReturnDef::Result { ok, err } => {
+                if !self.is_supported_result_type(ok) || !self.is_supported_result_type(err) {
+                    return None;
+                }
+                match ok {
+                    TypeExpr::Void => Some(CSharpType::Void),
+                    other => self.lower_type(other),
+                }
+            }
         }
     }
 

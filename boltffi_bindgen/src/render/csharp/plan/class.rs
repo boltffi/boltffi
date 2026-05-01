@@ -178,6 +178,13 @@ impl CSharpClassPlan {
         self.constructors.iter().any(|c| !c.wire_writers.is_empty())
             || self.methods.iter().any(|m| !m.wire_writers.is_empty())
     }
+
+    /// Whether any method returns `Result<_, _>`. Used by the
+    /// module-level predicate that decides whether to emit the runtime
+    /// `BoltException` class.
+    pub fn has_throwing_methods(&self) -> bool {
+        self.methods.iter().any(|m| m.return_kind.is_result())
+    }
 }
 
 /// Whether a class method needs `using System.Text;`: true if any
@@ -193,4 +200,68 @@ fn method_needs_system_text(method: &CSharpMethodPlan) -> bool {
         .iter()
         .any(|p| p.csharp_type.contains_string())
         || method.return_type.contains_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::super::ast::{CSharpExpression, CSharpIdentity, CSharpLocalName, CSharpType};
+    use super::super::CSharpReturnKind;
+    use super::*;
+
+    fn dummy_throw_expr() -> CSharpExpression {
+        CSharpExpression::Identity(CSharpIdentity::Local(CSharpLocalName::new("placeholder")))
+    }
+
+    fn class_with_methods(methods: Vec<CSharpMethodPlan>) -> CSharpClassPlan {
+        CSharpClassPlan {
+            summary_doc: None,
+            class_name: CSharpClassName::from_source("counter"),
+            ffi_free: CFunctionName::new("boltffi_counter_free".to_string()),
+            native_free_method_name: CSharpMethodName::from_source("CounterFree"),
+            constructors: vec![],
+            methods,
+        }
+    }
+
+    fn method_with_return_kind(return_kind: CSharpReturnKind) -> CSharpMethodPlan {
+        CSharpMethodPlan {
+            summary_doc: None,
+            name: CSharpMethodName::from_source("test"),
+            native_method_name: CSharpMethodName::from_source("CounterTest"),
+            ffi_name: CFunctionName::new("boltffi_test".to_string()),
+            receiver: super::super::CSharpReceiver::ClassInstance,
+            params: vec![],
+            return_type: CSharpType::Void,
+            return_kind,
+            wire_writers: vec![],
+            owner_is_blittable: false,
+        }
+    }
+
+    /// A class method whose return_kind is `WireDecodeResult` flips
+    /// `has_throwing_methods` so the module predicate emits the runtime
+    /// `BoltException` class. This is the path the demo crate's
+    /// `Counter::try_get_positive` exercises.
+    #[test]
+    fn has_throwing_methods_is_true_when_a_class_method_is_a_result() {
+        let class = class_with_methods(vec![method_with_return_kind(
+            CSharpReturnKind::WireDecodeResult {
+                ok_decode_expr: None,
+                err_throw_expr: dummy_throw_expr(),
+            },
+        )]);
+        assert!(class.has_throwing_methods());
+    }
+
+    /// Non-result return kinds don't flip the predicate. Pins that the
+    /// throwing-methods check keys on the throwing shape specifically,
+    /// not on wire decoding generally.
+    #[test]
+    fn has_throwing_methods_is_false_when_no_class_method_is_a_result() {
+        let class = class_with_methods(vec![
+            method_with_return_kind(CSharpReturnKind::Direct),
+            method_with_return_kind(CSharpReturnKind::WireDecodeString),
+        ]);
+        assert!(!class.has_throwing_methods());
+    }
 }

@@ -167,6 +167,11 @@ pub(crate) enum CSharpExpression {
         value: Box<CSharpExpression>,
         binding: CSharpLocalName,
     },
+    /// `new {target}({arg0}, {arg1}, ...)`: object-creation expression.
+    New {
+        target: CSharpType,
+        args: CSharpArgumentList,
+    },
 }
 
 impl fmt::Display for CSharpExpression {
@@ -205,6 +210,7 @@ impl fmt::Display for CSharpExpression {
             } => write!(f, "{cond} ? {then} : {otherwise}"),
             Self::Lambda { param, body } => write!(f, "{param} => {body}"),
             Self::IsBindingPattern { value, binding } => write!(f, "{value} is {{ }} {binding}"),
+            Self::New { target, args } => write!(f, "new {target}({args})"),
         }
     }
 }

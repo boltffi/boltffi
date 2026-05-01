@@ -55,6 +55,12 @@
                 var reader = new WireReader(_buf); return {{ decode_expr }};
                 {%- when CSharpReturnKind::WireDecodeValue with { decode_expr } %}
                 var reader = new WireReader(_buf); return {{ decode_expr }};
+                {%- when CSharpReturnKind::WireDecodeResult with { ok_decode_expr, err_throw_expr } %}
+                var reader = new WireReader(_buf);
+                if (reader.ReadU8() != 0) throw {{ err_throw_expr }};
+                {%- if let Some(decode) = ok_decode_expr %}
+                return {{ decode }};
+                {%- endif %}
                 {%- when _ %}
                 {%- endmatch %}
             }

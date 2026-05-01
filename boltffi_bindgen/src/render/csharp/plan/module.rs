@@ -98,4 +98,172 @@ impl CSharpModulePlan {
     pub fn needs_wire_writer(&self) -> bool {
         self.has_wire_params() || !self.records.is_empty() || !self.enums.is_empty()
     }
+
+    /// Whether the runtime `BoltException` class is emitted. True when
+    /// any throwing function or method in the module ends up calling
+    /// `new BoltException(...)` — i.e., any `Result<_, _>` whose Err
+    /// type isn't a typed `#[error]` enum or record. Mirrors the
+    /// Kotlin/Swift/Dart pattern of a generated runtime FFI exception
+    /// type; Java reuses the built-in `RuntimeException` instead and
+    /// has no equivalent.
+    pub fn needs_bolt_exception(&self) -> bool {
+        self.functions.iter().any(|f| f.return_kind.is_result())
+            || self
+                .classes
+                .iter()
+                .any(CSharpClassPlan::has_throwing_methods)
+            || self
+                .records
+                .iter()
+                .any(CSharpRecordPlan::has_throwing_methods)
+            || self.enums.iter().any(CSharpEnumPlan::has_throwing_methods)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::super::ast::{
+        CSharpExpression, CSharpIdentity, CSharpLocalName, CSharpMethodName, CSharpType,
+    };
+    use super::super::{
+        CFunctionName, CSharpEnumKind, CSharpFunctionPlan, CSharpMethodPlan, CSharpReceiver,
+        CSharpReturnKind,
+    };
+    use super::*;
+
+    fn dummy_throw_expr() -> CSharpExpression {
+        CSharpExpression::Identity(CSharpIdentity::Local(CSharpLocalName::new("placeholder")))
+    }
+
+    fn empty_module() -> CSharpModulePlan {
+        CSharpModulePlan {
+            namespace: CSharpNamespace::from_source("Demo"),
+            class_name: CSharpClassName::from_source("demo"),
+            lib_name: Name::new("demo".to_string()),
+            free_buf_ffi_name: CFunctionName::new("boltffi_free_buf".to_string()),
+            records: vec![],
+            enums: vec![],
+            functions: vec![],
+            classes: vec![],
+        }
+    }
+
+    fn throwing_function() -> CSharpFunctionPlan {
+        CSharpFunctionPlan {
+            summary_doc: None,
+            name: CSharpMethodName::from_source("test"),
+            params: vec![],
+            return_type: CSharpType::Int,
+            return_kind: CSharpReturnKind::WireDecodeResult {
+                ok_decode_expr: None,
+                err_throw_expr: dummy_throw_expr(),
+            },
+            ffi_name: CFunctionName::new("boltffi_test".to_string()),
+            wire_writers: vec![],
+        }
+    }
+
+    fn throwing_method() -> CSharpMethodPlan {
+        CSharpMethodPlan {
+            summary_doc: None,
+            name: CSharpMethodName::from_source("test"),
+            native_method_name: CSharpMethodName::from_source("OwnerTest"),
+            ffi_name: CFunctionName::new("boltffi_test".to_string()),
+            receiver: CSharpReceiver::ClassInstance,
+            params: vec![],
+            return_type: CSharpType::Void,
+            return_kind: CSharpReturnKind::WireDecodeResult {
+                ok_decode_expr: None,
+                err_throw_expr: dummy_throw_expr(),
+            },
+            wire_writers: vec![],
+            owner_is_blittable: false,
+        }
+    }
+
+    fn throwing_class_plan() -> CSharpClassPlan {
+        CSharpClassPlan {
+            summary_doc: None,
+            class_name: CSharpClassName::from_source("counter"),
+            ffi_free: CFunctionName::new("boltffi_counter_free".to_string()),
+            native_free_method_name: CSharpMethodName::from_source("CounterFree"),
+            constructors: vec![],
+            methods: vec![throwing_method()],
+        }
+    }
+
+    fn throwing_record_plan() -> CSharpRecordPlan {
+        CSharpRecordPlan {
+            summary_doc: None,
+            class_name: CSharpClassName::from_source("dataset"),
+            is_blittable: false,
+            fields: vec![],
+            methods: vec![throwing_method()],
+            is_error: false,
+        }
+    }
+
+    fn throwing_enum_plan() -> CSharpEnumPlan {
+        CSharpEnumPlan {
+            summary_doc: None,
+            class_name: CSharpClassName::from_source("status"),
+            wire_class_name: CSharpClassName::from_source("status_wire"),
+            methods_class_name: None,
+            kind: CSharpEnumKind::CStyle,
+            underlying_type: None,
+            variants: vec![],
+            methods: vec![throwing_method()],
+            is_error: false,
+        }
+    }
+
+    /// A module with no throwing functions or members doesn't need the
+    /// runtime `BoltException` class. Pinning the negative case prevents
+    /// the predicate from drifting into "always true" and unconditionally
+    /// emitting the class.
+    #[test]
+    fn needs_bolt_exception_is_false_for_empty_module() {
+        assert!(!empty_module().needs_bolt_exception());
+    }
+
+    /// A throwing top-level function flips the predicate. Function
+    /// wrappers can throw `BoltException` directly even when no class /
+    /// record / enum has a throwing method, so the function path has to
+    /// trigger the runtime class on its own.
+    #[test]
+    fn needs_bolt_exception_is_true_when_a_function_returns_result() {
+        let mut module = empty_module();
+        module.functions.push(throwing_function());
+        assert!(module.needs_bolt_exception());
+    }
+
+    /// A class with a throwing method flips the predicate. The
+    /// generated wrapper reaches `throw new BoltException(...)` from
+    /// inside the class even if no top-level function does.
+    #[test]
+    fn needs_bolt_exception_is_true_when_a_class_method_returns_result() {
+        let mut module = empty_module();
+        module.classes.push(throwing_class_plan());
+        assert!(module.needs_bolt_exception());
+    }
+
+    /// A record method that returns `Result<_, _>` flips the predicate
+    /// — record methods aren't on classes, so the class-only check
+    /// would miss them and the runtime class would silently not emit.
+    #[test]
+    fn needs_bolt_exception_is_true_when_a_record_method_returns_result() {
+        let mut module = empty_module();
+        module.records.push(throwing_record_plan());
+        assert!(module.needs_bolt_exception());
+    }
+
+    /// Same for enum methods. Pinning all four input sources separately
+    /// catches the case where someone refactors the predicate and
+    /// forgets one branch.
+    #[test]
+    fn needs_bolt_exception_is_true_when_an_enum_method_returns_result() {
+        let mut module = empty_module();
+        module.enums.push(throwing_enum_plan());
+        assert!(module.needs_bolt_exception());
+    }
 }
