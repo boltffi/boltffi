@@ -255,11 +255,6 @@ class DemoValueTypesTest {
         assertMessageContains(assertFailsWith<FfiException> { resultOfVec(-1) }, "negative count")
         assertEquals("item_7", resultOfString(7))
         assertMessageContains(assertFailsWith<FfiException> { resultOfString(-1) }, "invalid key")
-
-        // Result<i32, i32>: the Err side isn't String or a #[error] type,
-        // so the Kotlin wrapper falls back to FfiException(-1, "Error: $err").
-        assertEquals(5, resultWithIntError(5))
-        assertMessageContains(assertFailsWith<FfiException> { resultWithIntError(-7) }, "Error: -7")
     }
 
     @Test

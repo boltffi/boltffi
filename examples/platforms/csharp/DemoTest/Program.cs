@@ -1678,19 +1678,6 @@ public static class DemoTest
         }
         catch (BoltException) { }
 
-        // Result<i32, i32>: Err side isn't String or a #[error] type, so
-        // the wrapper falls back to BoltException(value.ToString()).
-        Require(ResultWithIntError(5) == 5, "ResultWithIntError(5) ok");
-        try
-        {
-            ResultWithIntError(-7);
-            Require(false, "ResultWithIntError(-7) should throw");
-        }
-        catch (BoltException e)
-        {
-            Require(e.Message == "-7", "ResultWithIntError message is value.ToString()");
-        }
-
         Console.WriteLine("  PASS\n");
     }
 

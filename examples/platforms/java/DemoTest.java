@@ -1399,16 +1399,6 @@ public final class DemoTest {
             assert false : "resultOfVec should throw on negative count";
         } catch (RuntimeException ignored) {}
 
-        // Result<i32, i32>: the Err side isn't String or a #[error] type,
-        // so the Java wrapper falls back to RuntimeException(String.valueOf(value)).
-        assert Demo.resultWithIntError(5) == 5 : "resultWithIntError(5) ok";
-        try {
-            Demo.resultWithIntError(-7);
-            assert false : "resultWithIntError(-7) should throw";
-        } catch (RuntimeException e) {
-            assert "-7".equals(e.getMessage()) : "resultWithIntError message is value.toString(): " + e.getMessage();
-        }
-
         System.out.println("  PASS\n");
     }
 

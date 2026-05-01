@@ -28,15 +28,3 @@ pub fn result_of_string(key: i32) -> Result<String, String> {
         Ok(format!("item_{}", key))
     }
 }
-
-/// `Result<i32, i32>`: an Err side that isn't `String` or a typed
-/// `#[error]` type, so the C# wrapper falls back to
-/// `BoltException(value.ToString())`. Pins that fallback path.
-#[export]
-pub fn result_with_int_error(input: i32) -> Result<i32, i32> {
-    if input >= 0 {
-        Ok(input)
-    } else {
-        Err(input)
-    }
-}

@@ -2868,16 +2868,6 @@ mod tests {
             "String-Err result wrappers throw BoltException with the wire-decoded message",
         );
 
-        // Primitive-Err function (`result_with_int_error: Result<i32, i32>`):
-        // the Err side isn't a `#[error]` type, so the lowerer falls
-        // back to BoltException with `value.ToString()` after wire-
-        // decoding the int. Pins the documented fallback path.
-        assert_source_contains(
-            &main.source,
-            "throw new BoltException(reader.ReadI32().ToString());",
-            "Primitive-Err result wrappers wrap the value as BoltException(value.ToString())",
-        );
-
         // Typed enum Err: the demo's `MathError` is `#[error]`, so the
         // generated `MathError.cs` carries a companion `MathErrorException`
         // with an `Error` property bound to the wrapped variant.

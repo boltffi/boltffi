@@ -515,9 +515,6 @@ mod tests {
 
     /// Primitive Err (`Result<i32, i32>`): the documented fallback
     /// path. The wrapper renders `BoltException(value.ToString())`.
-    /// The demo's `result_with_int_error` exercises this end-to-end;
-    /// this test pins the predicate inputs directly so the unit gate
-    /// catches a regression even without the demo binary.
     #[test]
     fn result_err_path_for_primitive_uses_bolt_exception_with_to_string() {
         let contract = contract_with_error_types();
