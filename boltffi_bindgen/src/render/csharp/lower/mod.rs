@@ -14,6 +14,7 @@ mod lowerer;
 mod predicates;
 mod prefix;
 mod records;
+mod result;
 mod size;
 #[cfg(test)]
 mod test_support;
