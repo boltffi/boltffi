@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Threading;
 using Demo;
 using static Demo.Demo;
 
@@ -7,7 +8,7 @@ namespace BoltFFI.Demo.Tests;
 
 public static class DemoTest
 {
-    public static int Main()
+    public static async System.Threading.Tasks.Task<int> Main()
     {
         Console.WriteLine("Testing C# bindings...\n");
         TestBool();
@@ -44,6 +45,10 @@ public static class DemoTest
         TestResultFunctions();
         TestResultClassMethods();
         TestResultEnumErrors();
+        await TestAsyncFunctions();
+        await TestAsyncResults();
+        await TestAsyncClassMethods();
+        await TestAsyncCancellation();
         Console.WriteLine("All tests passed!");
         return 0;
     }
@@ -1371,10 +1376,8 @@ public static class DemoTest
         // hit.
         using (var worker = new AsyncWorker("hello"))
         {
-            // GetPrefix is the only sync method on AsyncWorker (the
-            // async ones are filtered out upstream). Round-tripping the
-            // ctor arg through it confirms the Encoding.UTF8.GetBytes
-            // path in the primary helper actually wrote the right bytes.
+            // GetPrefix is the sync method on AsyncWorker. The async
+            // methods are exercised in TestAsyncClassMethods.
             Require(worker.GetPrefix() == "hello", "AsyncWorker.GetPrefix round-trips ctor arg");
         }
         // StateHolder drives `&mut self` mutators end to end: a primary
@@ -1804,6 +1807,228 @@ public static class DemoTest
             Require(e.Error.Code == 500, "DivideApp AppError.Code");
             Require(e.Error.Message == "Division by zero", "DivideApp AppError.Message");
         }
+
+        Console.WriteLine("  PASS\n");
+    }
+
+    private static async System.Threading.Tasks.Task TestAsyncFunctions()
+    {
+        Console.WriteLine("Testing async functions...");
+
+        Require(await AsyncAdd(3, 7) == 10, "AsyncAdd(3, 7)");
+        Require(await AsyncEcho("hello async") == "Echo: hello async", "AsyncEcho string return");
+        Require((await AsyncDoubleAll(new[] { 1, 2, 3 })).SequenceEqual(new[] { 2, 4, 6 }),
+            "AsyncDoubleAll primitive vec return");
+        Require(await AsyncFindPositive(new[] { -1, 0, 5, 3 }) == 5, "AsyncFindPositive finds first positive");
+        Require(await AsyncFindPositive(new[] { -3, -2, -1 }) == null, "AsyncFindPositive all-negative returns null");
+        Require(await AsyncConcat(new[] { "a", "b", "c" }) == "a, b, c", "AsyncConcat Vec<String> param");
+        Require((await AsyncGetNumbers(4)).SequenceEqual(new[] { 0, 1, 2, 3 }), "AsyncGetNumbers(4)");
+
+        MixedRecordParameters parameters = new MixedRecordParameters(
+            new[] { "async", "record" },
+            new[] { new Point(1.0, 1.0), new Point(2.0, 2.0) },
+            new Point(9.0, 10.0),
+            8u,
+            true
+        );
+        MixedRecord record = new MixedRecord(
+            "async-record",
+            new Point(3.0, 4.0),
+            Priority.Critical,
+            new Shape.Circle(2.0),
+            parameters
+        );
+
+        MixedRecord echoed = await AsyncEchoMixedRecord(record);
+        Require(echoed.Name == record.Name, "AsyncEchoMixedRecord.Name");
+        Require(echoed.Anchor == record.Anchor, "AsyncEchoMixedRecord.Anchor");
+        Require(echoed.Priority == record.Priority, "AsyncEchoMixedRecord.Priority");
+        Require(echoed.Shape is Shape.Circle echoedCircle && echoedCircle.Radius == 2.0,
+            "AsyncEchoMixedRecord.Shape");
+        Require(echoed.Parameters.Tags.SequenceEqual(record.Parameters.Tags),
+            "AsyncEchoMixedRecord.Parameters.Tags");
+
+        MixedRecord made = await AsyncMakeMixedRecord(
+            "made-async",
+            new Point(5.0, 6.0),
+            Priority.High,
+            new Shape.Rectangle(7.0, 8.0),
+            parameters
+        );
+        Require(made.Name == "made-async", "AsyncMakeMixedRecord.Name");
+        Require(made.Anchor == new Point(5.0, 6.0), "AsyncMakeMixedRecord.Anchor");
+        Require(made.Priority == Priority.High, "AsyncMakeMixedRecord.Priority");
+        Require(made.Shape is Shape.Rectangle rect && rect.Width == 7.0 && rect.Height == 8.0,
+            "AsyncMakeMixedRecord.Shape");
+        Require(made.Parameters.Tags.SequenceEqual(parameters.Tags), "AsyncMakeMixedRecord.Parameters");
+
+        Console.WriteLine("  PASS\n");
+    }
+
+    private static async System.Threading.Tasks.Task TestAsyncResults()
+    {
+        Console.WriteLine("Testing async result functions...");
+
+        Require(await TryComputeAsync(6) == 12, "TryComputeAsync success");
+        try
+        {
+            await TryComputeAsync(0);
+            Require(false, "TryComputeAsync(0) should throw");
+        }
+        catch (ComputeErrorException e)
+        {
+            Require(e.Error is ComputeError.InvalidInput invalid && invalid.Value0 == -999,
+                "TryComputeAsync typed ComputeError");
+        }
+
+        Require(await FetchData(2) == 20, "FetchData(2) success");
+        try
+        {
+            await FetchData(-1);
+            Require(false, "FetchData(-1) should throw");
+        }
+        catch (BoltException e)
+        {
+            Require(e.Message.Contains("invalid id"), "FetchData(-1) BoltException");
+        }
+
+        Require(await AsyncSafeDivide(10, 2) == 5, "AsyncSafeDivide(10, 2)");
+        try
+        {
+            await AsyncSafeDivide(10, 0);
+            Require(false, "AsyncSafeDivide(10, 0) should throw");
+        }
+        catch (MathErrorException e)
+        {
+            Require(e.Error == MathError.DivisionByZero, "AsyncSafeDivide typed MathError");
+        }
+
+        Require(await AsyncFallibleFetch(3) == "value_3", "AsyncFallibleFetch(3)");
+        try
+        {
+            await AsyncFallibleFetch(-1);
+            Require(false, "AsyncFallibleFetch(-1) should throw");
+        }
+        catch (BoltException e)
+        {
+            Require(e.Message.Contains("invalid key"), "AsyncFallibleFetch negative-key BoltException");
+        }
+
+        Require(await AsyncFindValue(2) == 20, "AsyncFindValue(2)");
+        Require(await AsyncFindValue(0) == null, "AsyncFindValue(0) returns null");
+        try
+        {
+            await AsyncFindValue(-1);
+            Require(false, "AsyncFindValue(-1) should throw");
+        }
+        catch (BoltException e)
+        {
+            Require(e.Message.Contains("invalid key"), "AsyncFindValue negative-key BoltException");
+        }
+
+        Console.WriteLine("  PASS\n");
+    }
+
+    private static async System.Threading.Tasks.Task TestAsyncClassMethods()
+    {
+        Console.WriteLine("Testing async class methods...");
+
+        using (var worker = new AsyncWorker("worker"))
+        {
+            Require(await worker.Process("item") == "worker: item", "AsyncWorker.Process");
+            Require(await worker.TryProcess("ok") == "worker: ok", "AsyncWorker.TryProcess success");
+            try
+            {
+                await worker.TryProcess("");
+                Require(false, "AsyncWorker.TryProcess(empty) should throw");
+            }
+            catch (BoltException e)
+            {
+                Require(e.Message.Contains("input must not be empty"), "AsyncWorker.TryProcess error");
+            }
+            Require(await worker.FindItem(3) == "worker_3", "AsyncWorker.FindItem Some");
+            Require(await worker.FindItem(0) == null, "AsyncWorker.FindItem None");
+            Require((await worker.ProcessBatch(new[] { "a", "b" })).SequenceEqual(new[] { "worker: a", "worker: b" }),
+                "AsyncWorker.ProcessBatch");
+        }
+
+        using (var shared = new SharedCounter(5))
+        {
+            Require(await shared.AsyncGet() == 5, "SharedCounter.AsyncGet");
+            Require(await shared.AsyncAdd(7) == 12, "SharedCounter.AsyncAdd");
+            Require(await shared.AsyncGet() == 12, "SharedCounter.AsyncGet after add");
+        }
+
+        using (var holder = new StateHolder("async-holder"))
+        {
+            Require(await holder.AsyncGetValue() == 0, "StateHolder.AsyncGetValue default");
+            await holder.AsyncSetValue(41);
+            Require(await holder.AsyncGetValue() == 41, "StateHolder.AsyncSetValue");
+            Require(await holder.AsyncAddItem("alpha") == 1u, "StateHolder.AsyncAddItem first");
+            Require(await holder.AsyncAddItem("beta") == 2u, "StateHolder.AsyncAddItem second");
+        }
+
+        using (var ds = new DataStore())
+        {
+            ds.Add(new DataPoint(1.0, 2.0, 100L));
+            ds.Add(new DataPoint(3.0, 4.0, 200L));
+            Require(Math.Abs(await ds.AsyncSum() - 10.0) < 1e-9, "DataStore.AsyncSum");
+            Require(await ds.AsyncLen() == (nuint)2, "DataStore.AsyncLen");
+        }
+
+        using (var svc = new MixedRecordService("async-svc"))
+        {
+            MixedRecordParameters parameters = new MixedRecordParameters(
+                new[] { "svc", "async" },
+                new[] { new Point(0.0, 0.0) },
+                new Point(1.0, 2.0),
+                4u,
+                false
+            );
+            MixedRecord record = new MixedRecord(
+                "svc-record",
+                new Point(2.0, 3.0),
+                Priority.Low,
+                new Shape.Point(),
+                parameters
+            );
+            MixedRecord echoed = await svc.AsyncEchoRecord(record);
+            Require(echoed.Name == record.Name, "MixedRecordService.AsyncEchoRecord.Name");
+            Require(echoed.Anchor == record.Anchor, "MixedRecordService.AsyncEchoRecord.Anchor");
+            Require(echoed.Priority == record.Priority, "MixedRecordService.AsyncEchoRecord.Priority");
+            Require(echoed.Shape is Shape.Point, "MixedRecordService.AsyncEchoRecord.Shape");
+            Require(echoed.Parameters.Tags.SequenceEqual(record.Parameters.Tags),
+                "MixedRecordService.AsyncEchoRecord.Parameters.Tags");
+            MixedRecord stored = await svc.AsyncStoreRecordParts(
+                "stored-async",
+                new Point(8.0, 9.0),
+                Priority.Critical,
+                new Shape.Circle(3.0),
+                parameters
+            );
+            Require(stored.Name == "stored-async", "MixedRecordService.AsyncStoreRecordParts.Name");
+            Require(stored.Anchor == new Point(8.0, 9.0), "MixedRecordService.AsyncStoreRecordParts.Anchor");
+            Require(stored.Priority == Priority.Critical, "MixedRecordService.AsyncStoreRecordParts.Priority");
+            Require(stored.Shape is Shape.Circle circle && circle.Radius == 3.0,
+                "MixedRecordService.AsyncStoreRecordParts.Shape");
+            Require(svc.StoredCount() == 1u, "MixedRecordService.AsyncStoreRecordParts stored count");
+        }
+
+        Console.WriteLine("  PASS\n");
+    }
+
+    private static async System.Threading.Tasks.Task TestAsyncCancellation()
+    {
+        Console.WriteLine("Testing async cancellation...");
+
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+        try
+        {
+            await AsyncAdd(1, 2, cts.Token);
+            Require(false, "AsyncAdd with pre-canceled token should throw");
+        }
+        catch (OperationCanceledException) { }
 
         Console.WriteLine("  PASS\n");
     }

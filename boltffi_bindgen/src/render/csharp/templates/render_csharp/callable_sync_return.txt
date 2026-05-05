@@ -1,0 +1,16 @@
+{%- if callable.return_kind.is_void() %}
+            NativeMethods.{{ native_method_name }}({{ native_call_args }});
+{%- else if callable.return_kind.is_direct() %}
+            return NativeMethods.{{ native_method_name }}({{ native_call_args }});
+{%- else %}
+            FfiBuf _buf = NativeMethods.{{ native_method_name }}({{ native_call_args }});
+            try
+            {
+{%- let wire_decode_statement_indent = "                " %}
+{%- include "render_csharp/callable_wire_decode_return.txt" %}
+            }
+            finally
+            {
+                NativeMethods.FreeBuf(_buf);
+            }
+{%- endif %}

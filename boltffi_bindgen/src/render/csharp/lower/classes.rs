@@ -1,6 +1,6 @@
 use boltffi_ffi_rules::naming;
 
-use crate::ir::abi::{AbiCall, CallId};
+use crate::ir::abi::{AbiCall, CallId, CallMode};
 use crate::ir::definitions::{ClassDef, ConstructorDef, MethodDef, Receiver};
 
 use super::super::ast::{CSharpClassName, CSharpComment, CSharpMethodName};
@@ -8,6 +8,7 @@ use super::super::plan::{
     CSharpClassPlan, CSharpConstructorKind, CSharpConstructorPlan, CSharpMethodPlan,
     CSharpParamPlan, CSharpReceiver,
 };
+use super::functions::csharp_async_call_plan;
 use super::lowerer::CSharpLowerer;
 use super::{encode, size};
 
@@ -114,9 +115,8 @@ impl<'a> CSharpLowerer<'a> {
     }
 
     /// Walks `class.methods` and produces the corresponding
-    /// [`CSharpMethodPlan`]s. Skips:
-    /// - `async` methods (no async runtime support yet)
-    /// - `OwnedSelf` receivers (consume the wrapper, complex lifecycle)
+    /// [`CSharpMethodPlan`]s. Skips `OwnedSelf` receivers (consume the
+    /// wrapper, complex lifecycle).
     fn lower_class_methods(
         &self,
         class: &ClassDef,
@@ -125,7 +125,6 @@ impl<'a> CSharpLowerer<'a> {
         class
             .methods
             .iter()
-            .filter(|m| !m.is_async())
             .filter(|m| !matches!(m.receiver, Receiver::OwnedSelf))
             .filter_map(|method_def| {
                 let call = self.abi.calls.iter().find(|c| {
@@ -156,12 +155,12 @@ impl<'a> CSharpLowerer<'a> {
         };
 
         let return_type = self.lower_return(&method_def.returns)?;
-        let return_kind = self.return_kind(
-            &method_def.returns,
-            &return_type,
-            call.returns.decode_ops.as_ref(),
-            None,
-        );
+        let complete_decode_ops = match &call.mode {
+            CallMode::Sync => call.returns.decode_ops.as_ref(),
+            CallMode::Async(async_call) => async_call.result.decode_ops.as_ref(),
+        };
+        let return_kind =
+            self.return_kind(&method_def.returns, &return_type, complete_decode_ops, None);
 
         // Instance methods carry a synthetic `self` at the head of the
         // ABI param list. Skip it when building wire writers and when
@@ -186,11 +185,19 @@ impl<'a> CSharpLowerer<'a> {
             .collect::<Option<_>>()?;
 
         let name: CSharpMethodName = (&method_def.id).into();
+        let native_method_name = CSharpMethodName::native_for_owner(class_name, &name);
+        let async_call = match &call.mode {
+            CallMode::Sync => None,
+            CallMode::Async(async_call) => {
+                Some(csharp_async_call_plan(async_call, &native_method_name))
+            }
+        };
         Some(CSharpMethodPlan {
             summary_doc: CSharpComment::from_str_option(method_def.doc.as_deref()),
-            native_method_name: CSharpMethodName::native_for_owner(class_name, &name),
+            native_method_name,
             name,
             ffi_name: (&call.symbol).into(),
+            async_call,
             receiver,
             params,
             return_type,

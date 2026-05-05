@@ -15,8 +15,8 @@ use askama::Template;
 
 use super::ast::{CSharpComment, CSharpNamespace};
 use super::plan::{
-    CSharpClassPlan, CSharpConstructorKind, CSharpEnumPlan, CSharpFieldPlan, CSharpModulePlan,
-    CSharpParamKind, CSharpRecordPlan, CSharpReturnKind,
+    CSharpCallablePlan, CSharpClassPlan, CSharpConstructorKind, CSharpEnumPlan, CSharpFieldPlan,
+    CSharpModulePlan, CSharpParamKind, CSharpRecordPlan, CSharpReturnKind,
 };
 
 /// Renders a `<summary>` doc block at `indent`, ending with a
@@ -174,10 +174,12 @@ mod tests {
         CSharpParamName, CSharpPropertyName, CSharpStatement, CSharpType, CSharpTypeReference,
     };
     use crate::render::csharp::plan::{
-        CFunctionName, CSharpClassPlan, CSharpConstructorKind, CSharpConstructorPlan,
-        CSharpEnumKind, CSharpEnumPlan, CSharpEnumVariantPlan, CSharpFieldPlan, CSharpMethodPlan,
-        CSharpParamKind, CSharpParamPlan, CSharpReceiver, CSharpRecordPlan, CSharpReturnKind,
+        CFunctionName, CSharpAsyncCallPlan, CSharpClassPlan, CSharpConstructorKind,
+        CSharpConstructorPlan, CSharpEnumKind, CSharpEnumPlan, CSharpEnumVariantPlan,
+        CSharpFieldPlan, CSharpFunctionPlan, CSharpMethodPlan, CSharpParamKind, CSharpParamPlan,
+        CSharpReceiver, CSharpRecordPlan, CSharpReturnKind,
     };
+    use boltffi_ffi_rules::naming::{LibraryName, Name};
 
     fn demo_namespace() -> CSharpNamespace {
         CSharpNamespace::from_source("demo")
@@ -662,6 +664,7 @@ mod tests {
             native_method_name: CSharpMethodName::native_for_owner(&owner, &method_name),
             name: method_name,
             ffi_name: CFunctionName::new(ffi_name.to_string()),
+            async_call: None,
             receiver,
             params,
             return_type,
@@ -677,6 +680,255 @@ mod tests {
             csharp_type,
             kind: CSharpParamKind::Direct,
         }
+    }
+
+    fn method_name(source: &str) -> CSharpMethodName {
+        CSharpMethodName::from_source(source)
+    }
+
+    fn csharp_class_name(source: &str) -> CSharpClassName {
+        CSharpClassName::from_source(source)
+    }
+
+    fn c_function_name(name: &str) -> CFunctionName {
+        CFunctionName::new(name.to_string())
+    }
+
+    fn param_with_kind(
+        name: &str,
+        csharp_type: CSharpType,
+        kind: CSharpParamKind,
+    ) -> CSharpParamPlan {
+        CSharpParamPlan {
+            name: CSharpParamName::from_source(name),
+            csharp_type,
+            kind,
+        }
+    }
+
+    fn async_call_for(
+        native_method_name: &CSharpMethodName,
+        ffi_name: &CFunctionName,
+    ) -> CSharpAsyncCallPlan {
+        CSharpAsyncCallPlan {
+            poll_ffi_name: CFunctionName::new(format!("{ffi_name}_poll")),
+            complete_ffi_name: CFunctionName::new(format!("{ffi_name}_complete")),
+            cancel_ffi_name: CFunctionName::new(format!("{ffi_name}_cancel")),
+            free_ffi_name: CFunctionName::new(format!("{ffi_name}_free")),
+            poll_method_name: CSharpMethodName::new(format!("{native_method_name}Poll")),
+            complete_method_name: CSharpMethodName::new(format!("{native_method_name}Complete")),
+            cancel_method_name: CSharpMethodName::new(format!("{native_method_name}Cancel")),
+            free_method_name: CSharpMethodName::new(format!("{native_method_name}Free")),
+        }
+    }
+
+    fn async_function(
+        name: CSharpMethodName,
+        ffi_name: CFunctionName,
+        params: Vec<CSharpParamPlan>,
+        return_type: CSharpType,
+        return_kind: CSharpReturnKind,
+    ) -> CSharpFunctionPlan {
+        let async_call = async_call_for(&name, &ffi_name);
+        CSharpFunctionPlan {
+            summary_doc: None,
+            name,
+            params,
+            return_type,
+            return_kind,
+            async_call: Some(async_call),
+            ffi_name,
+            wire_writers: vec![],
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn async_method_with_owner(
+        owner_class_name: CSharpClassName,
+        name: CSharpMethodName,
+        ffi_name: CFunctionName,
+        receiver: CSharpReceiver,
+        params: Vec<CSharpParamPlan>,
+        return_type: CSharpType,
+        return_kind: CSharpReturnKind,
+        owner_is_blittable: bool,
+    ) -> CSharpMethodPlan {
+        let native_method_name = CSharpMethodName::native_for_owner(&owner_class_name, &name);
+        let async_call = async_call_for(&native_method_name, &ffi_name);
+        let wire_writers =
+            if matches!(receiver, CSharpReceiver::InstanceNative) && !owner_is_blittable {
+                vec![crate::render::csharp::lower::self_wire_writer()]
+            } else {
+                vec![]
+            };
+        CSharpMethodPlan {
+            summary_doc: None,
+            native_method_name,
+            name,
+            ffi_name,
+            async_call: Some(async_call),
+            receiver,
+            params,
+            return_type,
+            return_kind,
+            wire_writers,
+            owner_is_blittable,
+        }
+    }
+
+    fn module_with_async_functions(functions: Vec<CSharpFunctionPlan>) -> CSharpModulePlan {
+        CSharpModulePlan {
+            namespace: demo_namespace(),
+            class_name: CSharpClassName::from_source("demo_lib"),
+            lib_name: Name::<LibraryName>::new("demo".to_string()),
+            free_buf_ffi_name: CFunctionName::new("boltffi_free_buf".to_string()),
+            records: vec![],
+            enums: vec![],
+            functions,
+            classes: vec![],
+        }
+    }
+
+    fn option_i32_decode_expr() -> CSharpExpression {
+        CSharpExpression::Ternary {
+            cond: Box::new(CSharpExpression::Binary {
+                op: CSharpBinaryOp::Eq,
+                left: Box::new(read_call("read_u8")),
+                right: Box::new(CSharpExpression::Literal(CSharpLiteral::Int(0))),
+            }),
+            then: Box::new(CSharpExpression::Cast {
+                target: CSharpType::Nullable(Box::new(CSharpType::Int)),
+                inner: Box::new(CSharpExpression::Literal(CSharpLiteral::Null)),
+            }),
+            otherwise: Box::new(read_call("read_i32")),
+        }
+    }
+
+    fn bolt_exception_from_reader() -> CSharpExpression {
+        CSharpExpression::New {
+            target: CSharpType::Record(CSharpTypeReference::Plain(CSharpClassName::new(
+                "BoltException",
+            ))),
+            args: vec![read_call("read_string")].into(),
+        }
+    }
+
+    #[test]
+    fn snapshot_async_functions_task_overloads_and_return_shapes() {
+        let functions = vec![
+            async_function(
+                method_name("async_add"),
+                c_function_name("boltffi_async_add"),
+                vec![param("a", CSharpType::Int), param("b", CSharpType::Int)],
+                CSharpType::Int,
+                CSharpReturnKind::Direct,
+            ),
+            async_function(
+                method_name("async_notify"),
+                c_function_name("boltffi_async_notify"),
+                vec![],
+                CSharpType::Void,
+                CSharpReturnKind::Void,
+            ),
+            async_function(
+                method_name("async_echo"),
+                c_function_name("boltffi_async_echo"),
+                vec![param_with_kind(
+                    "value",
+                    CSharpType::String,
+                    CSharpParamKind::Utf8Bytes,
+                )],
+                CSharpType::String,
+                CSharpReturnKind::WireDecodeString,
+            ),
+            async_function(
+                method_name("async_double_all"),
+                c_function_name("boltffi_async_double_all"),
+                vec![param_with_kind(
+                    "values",
+                    CSharpType::Array(Box::new(CSharpType::Int)),
+                    CSharpParamKind::DirectArray,
+                )],
+                CSharpType::Array(Box::new(CSharpType::Int)),
+                CSharpReturnKind::WireDecodeBlittablePrimitiveArray {
+                    method: CSharpMethodName::new("ReadBlittableArray"),
+                    type_arg: Some(CSharpType::Int),
+                },
+            ),
+            async_function(
+                method_name("async_find_positive"),
+                c_function_name("boltffi_async_find_positive"),
+                vec![param_with_kind(
+                    "values",
+                    CSharpType::Array(Box::new(CSharpType::Int)),
+                    CSharpParamKind::DirectArray,
+                )],
+                CSharpType::Nullable(Box::new(CSharpType::Int)),
+                CSharpReturnKind::WireDecodeOption {
+                    decode_expr: option_i32_decode_expr(),
+                },
+            ),
+            async_function(
+                method_name("try_compute_async"),
+                c_function_name("boltffi_try_compute_async"),
+                vec![param("value", CSharpType::Int)],
+                CSharpType::Int,
+                CSharpReturnKind::WireDecodeResult {
+                    ok_decode_expr: Some(read_call("read_i32")),
+                    err_throw_expr: bolt_exception_from_reader(),
+                },
+            ),
+        ];
+        let module = module_with_async_functions(functions);
+        let template = FunctionsTemplate { module: &module };
+
+        insta::assert_snapshot!(template.render().unwrap());
+    }
+
+    #[test]
+    fn snapshot_async_native_runtime_and_pinvoke_declarations() {
+        let module = module_with_async_functions(vec![async_function(
+            method_name("async_add"),
+            c_function_name("boltffi_async_add"),
+            vec![param("a", CSharpType::Int), param("b", CSharpType::Int)],
+            CSharpType::Int,
+            CSharpReturnKind::Direct,
+        )]);
+        let template = NativeTemplate { module: &module };
+
+        insta::assert_snapshot!(template.render().unwrap());
+    }
+
+    #[test]
+    fn snapshot_class_counter_with_async_method() {
+        let class_name = CSharpClassName::from_source("counter");
+        let method = async_method_with_owner(
+            csharp_class_name("counter"),
+            CSharpMethodName::new("AsyncGet"),
+            c_function_name("boltffi_counter_async_get"),
+            CSharpReceiver::ClassInstance,
+            vec![],
+            CSharpType::Int,
+            CSharpReturnKind::Direct,
+            false,
+        );
+        let class = CSharpClassPlan {
+            summary_doc: None,
+            native_free_method_name: CSharpMethodName::native_for_owner(
+                &class_name,
+                &CSharpMethodName::new("Free"),
+            ),
+            class_name,
+            ffi_free: CFunctionName::new("boltffi_counter_free".to_string()),
+            constructors: vec![],
+            methods: vec![method],
+        };
+        let template = ClassTemplate {
+            class: &class,
+            namespace: &demo_namespace(),
+        };
+
+        insta::assert_snapshot!(template.render().unwrap());
     }
 
     /// Build a CSharpEnumPlan for the snapshot fixtures. Accepts the
@@ -1068,6 +1320,7 @@ mod tests {
             name: get_name.clone(),
             native_method_name: CSharpMethodName::native_for_owner(&class_name, &get_name),
             ffi_name: CFunctionName::new("boltffi_counter_get".to_string()),
+            async_call: None,
             receiver: CSharpReceiver::ClassInstance,
             params: vec![],
             return_type: CSharpType::Int,
@@ -1081,6 +1334,7 @@ mod tests {
             name: increment_name.clone(),
             native_method_name: CSharpMethodName::native_for_owner(&class_name, &increment_name),
             ffi_name: CFunctionName::new("boltffi_counter_increment".to_string()),
+            async_call: None,
             receiver: CSharpReceiver::ClassInstance,
             params: vec![],
             return_type: CSharpType::Void,
@@ -1094,6 +1348,7 @@ mod tests {
             name: zero_name.clone(),
             native_method_name: CSharpMethodName::native_for_owner(&class_name, &zero_name),
             ffi_name: CFunctionName::new("boltffi_counter_zero".to_string()),
+            async_call: None,
             receiver: CSharpReceiver::Static,
             params: vec![],
             return_type: CSharpType::Int,
@@ -1271,6 +1526,7 @@ mod tests {
             name: get_name.clone(),
             native_method_name: CSharpMethodName::native_for_owner(&class_name, &get_name),
             ffi_name: CFunctionName::new("boltffi_counter_get".to_string()),
+            async_call: None,
             receiver: CSharpReceiver::ClassInstance,
             params: vec![],
             return_type: CSharpType::Int,
@@ -1284,6 +1540,7 @@ mod tests {
             name: increment_name.clone(),
             native_method_name: CSharpMethodName::native_for_owner(&class_name, &increment_name),
             ffi_name: CFunctionName::new("boltffi_counter_increment".to_string()),
+            async_call: None,
             receiver: CSharpReceiver::ClassInstance,
             params: vec![],
             return_type: CSharpType::Void,
@@ -1297,6 +1554,7 @@ mod tests {
             name: zero_name.clone(),
             native_method_name: CSharpMethodName::native_for_owner(&class_name, &zero_name),
             ffi_name: CFunctionName::new("boltffi_counter_zero".to_string()),
+            async_call: None,
             receiver: CSharpReceiver::Static,
             params: vec![],
             return_type: CSharpType::Int,
@@ -1510,6 +1768,7 @@ mod tests {
                 &try_get_positive_name,
             ),
             ffi_name: CFunctionName::new("boltffi_counter_try_get_positive".to_string()),
+            async_call: None,
             receiver: CSharpReceiver::ClassInstance,
             params: vec![],
             return_type: CSharpType::Int,
@@ -1571,6 +1830,7 @@ mod tests {
             name: divide_name.clone(),
             native_method_name: CSharpMethodName::native_for_owner(&class_name, &divide_name),
             ffi_name: CFunctionName::new("boltffi_calculator_divide".to_string()),
+            async_call: None,
             receiver: CSharpReceiver::ClassInstance,
             params: vec![param("b", CSharpType::Int)],
             return_type: CSharpType::Int,
@@ -1618,6 +1878,7 @@ mod tests {
             name: validate_name.clone(),
             native_method_name: CSharpMethodName::native_for_owner(&class_name, &validate_name),
             ffi_name: CFunctionName::new("boltffi_validator_validate".to_string()),
+            async_call: None,
             receiver: CSharpReceiver::ClassInstance,
             params: vec![],
             return_type: CSharpType::Void,

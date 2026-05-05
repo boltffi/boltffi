@@ -1,0 +1,8 @@
+{%- if callable.has_pinned_params() %}
+{%- for param in callable.params %}
+{%- if param.is_pinned() %}
+                }
+{%- endif %}
+{%- endfor %}
+            }
+{%- endif %}

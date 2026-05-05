@@ -176,6 +176,19 @@ mod tests {
         CSharpEmitter::emit(contract, &abi, &CSharpOptions::default())
     }
 
+    fn dotnet_target_framework() -> Option<String> {
+        let output = std::process::Command::new("dotnet")
+            .arg("--version")
+            .output()
+            .ok()?;
+        if !output.status.success() {
+            return None;
+        }
+        let version = String::from_utf8_lossy(&output.stdout);
+        let major = version.trim().split('.').next()?.parse::<u32>().ok()?;
+        (major >= 6).then(|| format!("net{major}.0"))
+    }
+
     fn assert_source_contains(source: &str, snippet: &str, expecting: &str) {
         assert!(
             source.contains(snippet),
@@ -285,6 +298,16 @@ mod tests {
         }
     }
 
+    fn async_function_with_types(
+        name: &str,
+        params: Vec<(&str, TypeExpr)>,
+        returns: ReturnDef,
+    ) -> FunctionDef {
+        let mut function = function_with_types(name, params, returns);
+        function.execution_kind = ExecutionKind::Async;
+        function
+    }
+
     /// C# P/Invoke marshals `bool` as a 4-byte Win32 BOOL by default, but
     /// BoltFFI's C ABI uses a 1-byte native bool, so the generated native
     /// signature must force `UnmanagedType.I1` for both param and return.
@@ -304,6 +327,215 @@ mod tests {
         assert!(src.contains(
             "internal static extern bool Flip([MarshalAs(UnmanagedType.I1)] bool value);"
         ));
+    }
+
+    #[test]
+    fn emit_async_function_generates_task_overloads_and_native_future_methods() {
+        let mut contract = empty_contract();
+        contract.functions.push(async_function_with_types(
+            "async_add",
+            vec![
+                ("a", TypeExpr::Primitive(PrimitiveType::I32)),
+                ("b", TypeExpr::Primitive(PrimitiveType::I32)),
+            ],
+            ReturnDef::Value(TypeExpr::Primitive(PrimitiveType::I32)),
+        ));
+        contract.functions.push(async_function_with_types(
+            "async_echo",
+            vec![("value", TypeExpr::String)],
+            ReturnDef::Value(TypeExpr::String),
+        ));
+
+        let src = emit_contract(&contract).combined_source();
+
+        assert_source_contains(
+            &src,
+            "public static global::System.Threading.Tasks.Task<int> AsyncAdd(int a, int b)",
+            "exact-argument async overload to return Task<T>",
+        );
+        assert_source_contains(
+            &src,
+            "public static global::System.Threading.Tasks.Task<int> AsyncAdd(int a, int b, global::System.Threading.CancellationToken cancellationToken)",
+            "cancellation overload to expose CancellationToken without relying on namespace imports",
+        );
+        assert_source_contains(
+            &src,
+            "=> AsyncAdd(a, b, global::System.Threading.CancellationToken.None);",
+            "exact-argument overload to delegate to the token overload",
+        );
+        assert_source_contains(
+            &src,
+            "return BoltFFIAsync.CallAsync<int>(",
+            "primitive async returns to run through the generated Task runtime",
+        );
+        assert_source_contains(
+            &src,
+            "public static global::System.Threading.Tasks.Task<string> AsyncEcho(string value)",
+            "wire/string async returns to still expose Task<string>",
+        );
+        assert_source_contains(
+            &src,
+            "FfiBuf _buf = NativeMethods.AsyncEchoComplete(future, out status);",
+            "wire/string async completion to decode from the complete FfiBuf",
+        );
+        assert_source_contains(
+            &src,
+            "internal struct FfiStatus",
+            "async modules to emit the completion-status ABI struct",
+        );
+        assert_source_contains(
+            &src,
+            "internal static class BoltFFIAsync",
+            "async modules to emit the shared Task runtime",
+        );
+        assert_source_contains(
+            &src,
+            r#"[DllImport(LibName, EntryPoint = "boltffi_async_add")]"#,
+            "async start P/Invoke declaration",
+        );
+        assert_source_contains(
+            &src,
+            "internal static extern IntPtr AsyncAdd(int a, int b);",
+            "async start to return the native future handle",
+        );
+        assert_source_contains(
+            &src,
+            r#"[DllImport(LibName, EntryPoint = "boltffi_async_add_poll")]"#,
+            "async poll P/Invoke declaration",
+        );
+        assert_source_contains(
+            &src,
+            r#"[DllImport(LibName, EntryPoint = "boltffi_async_add_complete")]"#,
+            "async complete P/Invoke declaration",
+        );
+        assert_source_contains(
+            &src,
+            r#"[DllImport(LibName, EntryPoint = "boltffi_async_add_cancel")]"#,
+            "async cancel P/Invoke declaration",
+        );
+        assert_source_contains(
+            &src,
+            r#"[DllImport(LibName, EntryPoint = "boltffi_async_add_free")]"#,
+            "async free P/Invoke declaration",
+        );
+    }
+
+    #[test]
+    fn emit_async_class_methods_are_lowered_to_task_returns() {
+        let mut worker = empty_class("async_worker");
+        worker.methods.push(MethodDef {
+            id: MethodId::new("process"),
+            receiver: Receiver::RefSelf,
+            params: vec![ParamDef {
+                name: ParamName::new("value"),
+                type_expr: TypeExpr::Primitive(PrimitiveType::I32),
+                passing: ParamPassing::Value,
+                doc: None,
+            }],
+            returns: ReturnDef::Value(TypeExpr::Primitive(PrimitiveType::I32)),
+            execution_kind: ExecutionKind::Async,
+            doc: None,
+            deprecated: None,
+        });
+
+        let mut contract = empty_contract();
+        contract.catalog.insert_class(worker);
+
+        let src = emit_contract(&contract).combined_source();
+
+        assert_source_contains(
+            &src,
+            "public global::System.Threading.Tasks.Task<int> Process(int value)",
+            "async class methods to be admitted and rendered as Task<T>",
+        );
+        assert_source_contains(
+            &src,
+            "internal static extern IntPtr AsyncWorkerProcess(IntPtr self, int value);",
+            "async class methods to start with the class handle",
+        );
+    }
+
+    #[test]
+    fn emit_generated_csharp_async_smoke_compiles_with_dotnet_when_available() {
+        let Some(target_framework) = dotnet_target_framework() else {
+            return;
+        };
+
+        let mut task_record = record_with_fields("task", true, vec![]);
+        task_record.doc = Some("Named Task to catch System.Threading.Tasks shadowing.".to_string());
+
+        let mut worker = empty_class("async_worker");
+        worker.methods.push(MethodDef {
+            id: MethodId::new("process"),
+            receiver: Receiver::RefSelf,
+            params: vec![ParamDef {
+                name: ParamName::new("value"),
+                type_expr: TypeExpr::Primitive(PrimitiveType::I32),
+                passing: ParamPassing::Value,
+                doc: None,
+            }],
+            returns: ReturnDef::Value(TypeExpr::Primitive(PrimitiveType::I32)),
+            execution_kind: ExecutionKind::Async,
+            doc: None,
+            deprecated: None,
+        });
+
+        let mut contract = empty_contract();
+        contract.catalog.insert_record(task_record);
+        contract.catalog.insert_class(worker);
+        contract.functions.push(async_function_with_types(
+            "async_add",
+            vec![
+                ("a", TypeExpr::Primitive(PrimitiveType::I32)),
+                ("b", TypeExpr::Primitive(PrimitiveType::I32)),
+            ],
+            ReturnDef::Value(TypeExpr::Primitive(PrimitiveType::I32)),
+        ));
+
+        let output = emit_contract(&contract);
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system time before epoch")
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("boltffi-csharp-async-smoke-{now}"));
+        std::fs::create_dir_all(&dir).expect("create smoke test directory");
+
+        let csproj = format!(
+            r#"<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>{target_framework}</TargetFramework>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+</Project>
+"#
+        );
+        std::fs::write(dir.join("Smoke.csproj"), csproj).expect("write smoke csproj");
+        std::fs::write(
+            dir.join("Program.cs"),
+            "namespace DemoLib;\ninternal static class Program { private static void Main() { } }\n",
+        )
+        .expect("write smoke program");
+        for file in output.files {
+            std::fs::write(dir.join(file.file_name), file.source).expect("write generated C#");
+        }
+
+        let build = std::process::Command::new("dotnet")
+            .arg("build")
+            .arg(&dir)
+            .arg("--nologo")
+            .output()
+            .expect("dotnet build should execute");
+        let _ = std::fs::remove_dir_all(&dir);
+
+        assert!(
+            build.status.success(),
+            "generated async C# should compile with dotnet\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&build.stdout),
+            String::from_utf8_lossy(&build.stderr)
+        );
     }
 
     /// The C ABI for a `String` parameter is `(const uint8_t* ptr, uintptr_t len)`,
@@ -1931,10 +2163,14 @@ mod tests {
         );
         assert_source_contains(
             &src,
-            "var reader = new WireReader(_buf); \
-             return reader.ReadU8() == 0 ? (int?)null : reader.ReadI32();",
-            "the return body binds a reader local, reads the 1-byte tag, and casts null on \
-             the missing branch so the conditional resolves to int? rather than bare null",
+            "var reader = new WireReader(_buf);",
+            "the return body binds a reader local before decoding the tagged option response",
+        );
+        assert_source_contains(
+            &src,
+            "return reader.ReadU8() == 0 ? (int?)null : reader.ReadI32();",
+            "the return body reads the 1-byte tag and casts null on the missing branch so the \
+             conditional resolves to int? rather than bare null",
         );
         assert_source_contains(
             &src,
@@ -1973,8 +2209,12 @@ mod tests {
         );
         assert_source_contains(
             &src,
-            "var reader = new WireReader(_buf); \
-             return reader.ReadU8() == 0 ? (int?)null : reader.ReadI32();",
+            "var reader = new WireReader(_buf);",
+            "the return body binds a reader local before decoding the tagged option response",
+        );
+        assert_source_contains(
+            &src,
+            "return reader.ReadU8() == 0 ? (int?)null : reader.ReadI32();",
             "the return body reads the option tag and either returns null or the decoded i32",
         );
         assert_source_lacks(
@@ -2089,7 +2329,12 @@ mod tests {
         );
         assert_source_contains(
             &src,
-            "var reader = new WireReader(_buf); return reader.ReadU8() == 0 ? (string?)null : reader.ReadString();",
+            "var reader = new WireReader(_buf);",
+            "the decode binds a reader local before reading the tagged string option",
+        );
+        assert_source_contains(
+            &src,
+            "return reader.ReadU8() == 0 ? (string?)null : reader.ReadString();",
             "the decode casts the null branch to string? so the conditional resolves to the nullable reference type",
         );
     }
@@ -2140,7 +2385,12 @@ mod tests {
         );
         assert_source_contains(
             &src,
-            "var reader = new WireReader(_buf); return reader.ReadU8() == 0 ? (Point?)null : Point.Decode(reader);",
+            "var reader = new WireReader(_buf);",
+            "decode binds a reader local before reconstructing the optional Point",
+        );
+        assert_source_contains(
+            &src,
+            "return reader.ReadU8() == 0 ? (Point?)null : Point.Decode(reader);",
             "decode casts the null branch to Point? and otherwise reconstructs through Point.Decode",
         );
     }
@@ -2201,7 +2451,12 @@ mod tests {
         );
         assert_source_contains(
             &src,
-            "var reader = new WireReader(_buf); return reader.ReadU8() == 0 ? (Status?)null : StatusWire.Decode(reader);",
+            "var reader = new WireReader(_buf);",
+            "decode binds a reader local before reconstructing the optional C-style enum",
+        );
+        assert_source_contains(
+            &src,
+            "return reader.ReadU8() == 0 ? (Status?)null : StatusWire.Decode(reader);",
             "decode calls StatusWire.Decode on the Some branch, null-casts on the None branch",
         );
     }
@@ -2260,7 +2515,12 @@ mod tests {
         );
         assert_source_contains(
             &src,
-            "var reader = new WireReader(_buf); return reader.ReadU8() == 0 ? (Shape?)null : Shape.Decode(reader);",
+            "var reader = new WireReader(_buf);",
+            "decode binds a reader local before reconstructing the optional data enum",
+        );
+        assert_source_contains(
+            &src,
+            "return reader.ReadU8() == 0 ? (Shape?)null : Shape.Decode(reader);",
             "decode reads the present tag, then either null-casts or dispatches to the enum's Decode",
         );
     }
@@ -2379,7 +2639,12 @@ mod tests {
         );
         assert_source_contains(
             &src,
-            "var reader = new WireReader(_buf); return reader.ReadU8() == 0 ? (int[]?)null : reader.ReadLengthPrefixedBlittableArray<int>();",
+            "var reader = new WireReader(_buf);",
+            "decode binds a reader local before reading the optional primitive vector",
+        );
+        assert_source_contains(
+            &src,
+            "return reader.ReadU8() == 0 ? (int[]?)null : reader.ReadLengthPrefixedBlittableArray<int>();",
             "decode null-casts to int[]? and otherwise reads through the length-prefixed blittable helper",
         );
     }
@@ -2744,7 +3009,7 @@ mod tests {
         // UtcDateTime (Custom<i64>): public surface is `long`, but the
         // boundary still wire-encodes to keep the C ABI uniform across
         // Custom types. Return decode goes through the new
-        // WireDecodeValue path: `var reader = ...; return reader.ReadI64();`
+        // WireDecodeValue path: `var reader = ...;` followed by `return reader.ReadI64();`
         assert_source_contains(
             &main.source,
             "public static long EchoDatetime(long dt)",
@@ -2757,7 +3022,12 @@ mod tests {
         );
         assert_source_contains(
             &main.source,
-            "var reader = new WireReader(_buf); return reader.ReadI64();",
+            "var reader = new WireReader(_buf);",
+            "Custom<Primitive> return binds a WireReader before decoding the wrapped primitive",
+        );
+        assert_source_contains(
+            &main.source,
+            "return reader.ReadI64();",
             "Custom<Primitive> return reads through WireReader, not the direct primitive path",
         );
         assert_source_contains(

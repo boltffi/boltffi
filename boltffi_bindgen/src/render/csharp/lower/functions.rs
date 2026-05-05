@@ -2,38 +2,38 @@ use std::collections::HashSet;
 
 use boltffi_ffi_rules::naming;
 
+use crate::ir::abi::{AbiCall, AsyncCall, CallMode};
 use crate::ir::definitions::{FunctionDef, ReturnDef};
 use crate::ir::ops::{ReadOp, ReadSeq};
 use crate::ir::types::TypeExpr;
 
 use super::super::ast::{
-    CSharpClassName, CSharpComment, CSharpExpression, CSharpIdentity, CSharpLocalName, CSharpType,
+    CSharpClassName, CSharpComment, CSharpExpression, CSharpIdentity, CSharpLocalName,
+    CSharpMethodName, CSharpType,
 };
-use super::super::plan::{CSharpFunctionPlan, CSharpParamPlan, CSharpReturnKind};
+use super::super::plan::{
+    CSharpAsyncCallPlan, CSharpFunctionPlan, CSharpParamPlan, CSharpReturnKind,
+};
 use super::decode;
 use super::lowerer::CSharpLowerer;
 
 impl<'a> CSharpLowerer<'a> {
     /// Lowers a Rust function definition to a [`CSharpFunctionPlan`].
-    /// Returns `None` if the function is async or any param/return type
-    /// isn't yet supported by the C# backend.
+    /// Returns `None` if any param/return type isn't yet supported by the
+    /// C# backend.
     pub(super) fn lower_function(&self, function: &FunctionDef) -> Option<CSharpFunctionPlan> {
-        if function.is_async() {
-            return None;
-        }
-
         if !function.params.iter().all(|p| self.is_supported_param(p)) {
             return None;
         }
 
         let return_type = self.lower_return(&function.returns)?;
         let call = self.abi_call_for_function(function)?;
-        let return_kind = self.return_kind(
-            &function.returns,
-            &return_type,
-            call.returns.decode_ops.as_ref(),
-            None,
-        );
+        let complete_decode_ops = match &call.mode {
+            CallMode::Sync => call.returns.decode_ops.as_ref(),
+            CallMode::Async(async_call) => async_call.result.decode_ops.as_ref(),
+        };
+        let return_kind =
+            self.return_kind(&function.returns, &return_type, complete_decode_ops, None);
 
         let wire_writers = self.wire_writers_for_params(function)?;
 
@@ -43,15 +43,30 @@ impl<'a> CSharpLowerer<'a> {
             .map(|p| self.lower_param(p, &wire_writers))
             .collect::<Option<Vec<_>>>()?;
 
+        let name = (&function.id).into();
+        let async_call = self.async_call_from_mode(call, &name);
+
         Some(CSharpFunctionPlan {
             summary_doc: CSharpComment::from_str_option(function.doc.as_deref()),
-            name: (&function.id).into(),
+            name,
             ffi_name: naming::function_ffi_name(function.id.as_str()).into(),
+            async_call,
             params,
             return_type,
             return_kind,
             wire_writers,
         })
+    }
+
+    pub(super) fn async_call_from_mode(
+        &self,
+        call: &AbiCall,
+        native_method_name: &CSharpMethodName,
+    ) -> Option<CSharpAsyncCallPlan> {
+        let CallMode::Async(async_call) = &call.mode else {
+            return None;
+        };
+        Some(csharp_async_call_plan(async_call, native_method_name))
     }
 
     /// Selects the [`CSharpReturnKind`] and pre-renders the inner decode
@@ -193,6 +208,22 @@ impl<'a> CSharpLowerer<'a> {
             // without any wrapper help.
             _ => CSharpReturnKind::Direct,
         }
+    }
+}
+
+pub(super) fn csharp_async_call_plan(
+    async_call: &AsyncCall,
+    native_method_name: &CSharpMethodName,
+) -> CSharpAsyncCallPlan {
+    CSharpAsyncCallPlan {
+        poll_ffi_name: (&async_call.poll).into(),
+        complete_ffi_name: (&async_call.complete).into(),
+        cancel_ffi_name: (&async_call.cancel).into(),
+        free_ffi_name: (&async_call.free).into(),
+        poll_method_name: CSharpMethodName::new(format!("{native_method_name}Poll")),
+        complete_method_name: CSharpMethodName::new(format!("{native_method_name}Complete")),
+        cancel_method_name: CSharpMethodName::new(format!("{native_method_name}Cancel")),
+        free_method_name: CSharpMethodName::new(format!("{native_method_name}FreeFuture")),
     }
 }
 

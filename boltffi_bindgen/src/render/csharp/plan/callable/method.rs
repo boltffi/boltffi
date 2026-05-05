@@ -10,8 +10,9 @@ use super::super::super::ast::{
     CSharpPropertyName, CSharpType, CSharpTypeReference,
 };
 use super::super::CFunctionName;
+use super::callable_plan::CSharpCallablePlan;
 use super::param::{native_call_arg_list, native_param_list};
-use super::{CSharpParamPlan, CSharpReturnKind, CSharpWireWriterPlan};
+use super::{CSharpAsyncCallPlan, CSharpParamPlan, CSharpReturnKind, CSharpWireWriterPlan};
 
 /// A method or factory constructor on a value type, today always an
 /// enum, eventually also records. The dispatch is driven by [`CSharpReceiver`].
@@ -42,6 +43,9 @@ pub struct CSharpMethodPlan {
     pub native_method_name: CSharpMethodName,
     /// The C function implementing this method.
     pub ffi_name: CFunctionName,
+    /// Async poll / complete / cancel / free entry points when this
+    /// wrapper starts a Rust future instead of completing synchronously.
+    pub async_call: Option<CSharpAsyncCallPlan>,
     /// How `self` (if any) participates in the call.
     pub receiver: CSharpReceiver,
     /// Explicit params. Does not include `self` for instance methods.
@@ -198,6 +202,45 @@ impl CSharpMethodPlan {
         list.extend(native_call_arg_list(&self.params));
         list
     }
+
+    pub fn full_native_call_args_async(&self) -> CSharpArgumentList {
+        let mut list = CSharpArgumentList::empty();
+        match self.receiver {
+            CSharpReceiver::Static => {}
+            CSharpReceiver::InstanceExtension => {
+                list.push(local_ident("self"));
+            }
+            CSharpReceiver::InstanceNative if self.owner_is_blittable => {
+                list.push(local_ident("_self"));
+            }
+            CSharpReceiver::InstanceNative => {
+                let buf = local_ident("_selfBytes");
+                list.push(buf.clone());
+                list.push(uintptr_length_member(buf));
+            }
+            CSharpReceiver::ClassInstance => {
+                list.push(CSharpExpression::Identity(CSharpIdentity::Local(
+                    CSharpLocalName::new("_handle"),
+                )));
+            }
+        }
+        list.extend(native_call_arg_list(&self.params));
+        list
+    }
+}
+
+impl CSharpCallablePlan for CSharpMethodPlan {
+    fn async_call(&self) -> Option<&CSharpAsyncCallPlan> {
+        self.async_call.as_ref()
+    }
+
+    fn return_type(&self) -> &CSharpType {
+        &self.return_type
+    }
+
+    fn return_kind(&self) -> &CSharpReturnKind {
+        &self.return_kind
+    }
 }
 
 fn local_ident(name: &str) -> CSharpExpression {
@@ -234,6 +277,7 @@ mod tests {
             name: CSharpMethodName::from_source("test"),
             native_method_name: CSharpMethodName::from_source("OwnerTest"),
             ffi_name: CFunctionName::new("boltffi_test".to_string()),
+            async_call: None,
             receiver,
             params: vec![CSharpParamPlan {
                 name: CSharpParamName::from_source("count"),

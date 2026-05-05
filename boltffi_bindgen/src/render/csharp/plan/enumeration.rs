@@ -2,7 +2,7 @@ use super::super::ast::{
     CSharpClassName, CSharpComment, CSharpEnumUnderlyingType, CSharpExpression,
 };
 use super::record::{error_param_expr, to_string_call};
-use super::{CSharpFieldPlan, CSharpMethodPlan};
+use super::{CSharpCallablePlan, CSharpFieldPlan, CSharpMethodPlan};
 
 /// A Rust enum exposed in C# as either a C-style `enum` or a data
 /// `abstract record` hierarchy, emitted to its own `.cs` file.
@@ -132,6 +132,10 @@ impl CSharpEnumPlan {
         self.methods.iter().any(|m| m.return_kind.is_result())
     }
 
+    pub fn has_async_methods(&self) -> bool {
+        self.methods.iter().any(CSharpMethodPlan::is_async)
+    }
+
     /// Expression passed as the `Exception.Message` base argument when
     /// emitting the typed exception class for an `is_error` enum.
     /// Always `error.ToString()` — C-style enums render their variant
@@ -183,6 +187,7 @@ mod tests {
             name: CSharpMethodName::from_source("test"),
             native_method_name: CSharpMethodName::from_source("OwnerTest"),
             ffi_name: CFunctionName::new("boltffi_test".to_string()),
+            async_call: None,
             receiver: CSharpReceiver::Static,
             params: vec![],
             return_type: CSharpType::Void,

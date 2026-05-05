@@ -12,9 +12,6 @@ using System.Threading;
 
 namespace Demo
 {
-    /// <summary>
-    /// Mutable counter held over FFI.
-    /// </summary>
     public sealed class Counter : IDisposable
     {
         private IntPtr _handle;
@@ -25,41 +22,25 @@ namespace Demo
             _handle = handle;
         }
 
-        /// <summary>
-        /// Creates a counter starting at zero.
-        /// </summary>
-        public Counter()
-            : this(CounterNewHandle()) { }
+        public global::System.Threading.Tasks.Task<int> AsyncGet()
+            => AsyncGet(global::System.Threading.CancellationToken.None);
 
-        private static IntPtr CounterNewHandle()
-        {
-            return NativeMethods.CounterNew();
-        }
-
-        /// <summary>
-        /// Returns the current value.
-        /// </summary>
-        public int Get()
+        public global::System.Threading.Tasks.Task<int> AsyncGet(global::System.Threading.CancellationToken cancellationToken)
         {
             ThrowIfDisposed();
-            return NativeMethods.CounterGet(_handle);
-        }
-
-        /// <summary>
-        /// Adds one to the current value.
-        /// </summary>
-        public void Increment()
-        {
-            ThrowIfDisposed();
-            NativeMethods.CounterIncrement(_handle);
-        }
-
-        /// <summary>
-        /// Static factory returning zero.
-        /// </summary>
-        public static int Zero()
-        {
-            return NativeMethods.CounterZero();
+            return BoltFFIAsync.CallAsync<int>(
+                () => NativeMethods.CounterAsyncGet(_handle),
+                (future, callbackData, callback) => NativeMethods.CounterAsyncGetPoll(future, callbackData, callback),
+                future =>
+                {
+                    FfiStatus status;
+                    int result = NativeMethods.CounterAsyncGetComplete(future, out status);
+                    BoltFFIAsync.ThrowIfStatus(status, cancellationToken);
+                    return result;
+                },
+                future => NativeMethods.CounterAsyncGetCancel(future),
+                future => NativeMethods.CounterAsyncGetFree(future),
+                cancellationToken);
         }
 
         internal IntPtr RawHandle => _handle;

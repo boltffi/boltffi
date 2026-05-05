@@ -2,7 +2,7 @@ use super::super::ast::{
     CSharpArgumentList, CSharpClassName, CSharpComment, CSharpExpression, CSharpIdentity,
     CSharpMethodName, CSharpParamName, CSharpType,
 };
-use super::{CSharpFieldPlan, CSharpMethodPlan};
+use super::{CSharpCallablePlan, CSharpFieldPlan, CSharpMethodPlan};
 
 /// A Rust struct exposed as a C# `readonly record struct`, emitted to its own `.cs` file.
 ///
@@ -81,6 +81,10 @@ impl CSharpRecordPlan {
     /// runtime `BoltException` class.
     pub fn has_throwing_methods(&self) -> bool {
         self.methods.iter().any(|m| m.return_kind.is_result())
+    }
+
+    pub fn has_async_methods(&self) -> bool {
+        self.methods.iter().any(CSharpMethodPlan::is_async)
     }
 
     /// Expression passed as the `Exception.Message` base argument when
@@ -169,6 +173,7 @@ mod tests {
             name: CSharpMethodName::from_source("test"),
             native_method_name: CSharpMethodName::from_source("OwnerTest"),
             ffi_name: CFunctionName::new("boltffi_test".to_string()),
+            async_call: None,
             receiver: CSharpReceiver::InstanceNative,
             params: vec![],
             return_type: CSharpType::Void,

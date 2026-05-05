@@ -1,0 +1,42 @@
+{%- if callable.returns_task_value() %}
+            return BoltFFIAsync.CallAsync<{{ callable.return_type }}>(
+{%- else %}
+            return BoltFFIAsync.CallAsyncVoid(
+{%- endif %}
+                () => NativeMethods.{{ native_method_name }}({{ native_call_args_async }}),
+                (future, callbackData, callback) => NativeMethods.{{ ac.poll_method_name }}(future, callbackData, callback),
+{%- if callable.return_kind.is_void() %}
+                future =>
+                {
+                    FfiStatus status;
+                    NativeMethods.{{ ac.complete_method_name }}(future, out status);
+                    BoltFFIAsync.ThrowIfStatus(status, cancellationToken);
+                },
+{%- else if callable.return_kind.is_direct() %}
+                future =>
+                {
+                    FfiStatus status;
+                    {{ callable.return_type }} result = NativeMethods.{{ ac.complete_method_name }}(future, out status);
+                    BoltFFIAsync.ThrowIfStatus(status, cancellationToken);
+                    return result;
+                },
+{%- else %}
+                future =>
+                {
+                    FfiStatus status;
+                    FfiBuf _buf = NativeMethods.{{ ac.complete_method_name }}(future, out status);
+                    try
+                    {
+                        BoltFFIAsync.ThrowIfStatus(status, cancellationToken);
+{%- let wire_decode_statement_indent = "                        " %}
+{%- include "render_csharp/callable_wire_decode_return.txt" %}
+                    }
+                    finally
+                    {
+                        NativeMethods.FreeBuf(_buf);
+                    }
+                },
+{%- endif %}
+                future => NativeMethods.{{ ac.cancel_method_name }}(future),
+                future => NativeMethods.{{ ac.free_method_name }}(future),
+                cancellationToken);

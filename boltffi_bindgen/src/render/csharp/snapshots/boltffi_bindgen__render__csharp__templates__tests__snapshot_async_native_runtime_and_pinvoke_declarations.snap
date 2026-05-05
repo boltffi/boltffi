@@ -1,0 +1,274 @@
+---
+source: boltffi_bindgen/src/render/csharp/templates.rs
+expression: template.render().unwrap()
+---
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct FfiStatus
+    {
+        public int code;
+    }
+
+
+    internal static class BoltFFIAsync
+    {
+        private const sbyte PollReady = 0;
+        private const int StatusOk = 0;
+        private const int StatusCancelled = 4;
+
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        internal delegate void RustFutureContinuationCallback(ulong callbackData, sbyte pollResult);
+
+        private static readonly RustFutureContinuationCallback Continuation = OnFutureContinuation;
+        private static readonly global::System.Collections.Concurrent.ConcurrentDictionary<ulong, global::System.Threading.Tasks.TaskCompletionSource<sbyte>> Continuations = new();
+        private static long _nextContinuationId;
+
+        internal static async global::System.Threading.Tasks.Task<T> CallAsync<T>(
+            global::System.Func<IntPtr> start,
+            global::System.Action<IntPtr, ulong, RustFutureContinuationCallback> poll,
+            global::System.Func<IntPtr, T> complete,
+            global::System.Action<IntPtr> cancel,
+            global::System.Action<IntPtr> free,
+            global::System.Threading.CancellationToken cancellationToken)
+        {
+            var future = new RustFutureOwner(start(), cancel, free);
+            global::System.Threading.CancellationTokenRegistration cancellationRegistration = cancellationToken.Register(static state =>
+            {
+                ((RustFutureOwner)state!).Cancel();
+            }, future);
+
+            try
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                while (true)
+                {
+                    sbyte pollResult = await PollOnceAsync(future, poll, cancellationToken).ConfigureAwait(false);
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (pollResult == PollReady)
+                    {
+                        break;
+                    }
+                    await RepollOnThreadPoolAsync().ConfigureAwait(false);
+                    cancellationToken.ThrowIfCancellationRequested();
+                }
+
+                cancellationRegistration.Dispose();
+                return complete(future.Handle);
+            }
+            catch (global::System.OperationCanceledException)
+            {
+                future.Cancel();
+                throw;
+            }
+            finally
+            {
+                cancellationRegistration.Dispose();
+                future.Release();
+            }
+        }
+
+        internal static global::System.Threading.Tasks.Task CallAsyncVoid(
+            global::System.Func<IntPtr> start,
+            global::System.Action<IntPtr, ulong, RustFutureContinuationCallback> poll,
+            global::System.Action<IntPtr> complete,
+            global::System.Action<IntPtr> cancel,
+            global::System.Action<IntPtr> free,
+            global::System.Threading.CancellationToken cancellationToken)
+        {
+            return CallAsync<VoidResult>(
+                start,
+                poll,
+                future =>
+                {
+                    complete(future);
+                    return default;
+                },
+                cancel,
+                free,
+                cancellationToken);
+        }
+
+        internal static void ThrowIfStatus(FfiStatus status, global::System.Threading.CancellationToken cancellationToken)
+        {
+            switch (status.code)
+            {
+                case StatusOk:
+                    return;
+                case StatusCancelled:
+                    throw new global::System.OperationCanceledException(cancellationToken);
+                default:
+                    throw new global::System.InvalidOperationException($"FFI async completion failed with status code {status.code}");
+            }
+        }
+
+        private static global::System.Threading.Tasks.Task<sbyte> PollOnceAsync(
+            RustFutureOwner future,
+            global::System.Action<IntPtr, ulong, RustFutureContinuationCallback> poll,
+            global::System.Threading.CancellationToken cancellationToken)
+        {
+            var completion = new global::System.Threading.Tasks.TaskCompletionSource<sbyte>(global::System.Threading.Tasks.TaskCreationOptions.RunContinuationsAsynchronously);
+            ulong callbackData = RegisterContinuation(completion);
+            try
+            {
+                poll(future.Handle, callbackData, Continuation);
+            }
+            catch
+            {
+                Continuations.TryRemove(callbackData, out _);
+                throw;
+            }
+
+            var pollState = new PollState(callbackData, cancellationToken);
+            global::System.Threading.CancellationTokenRegistration cancellationRegistration = cancellationToken.Register(static state =>
+            {
+                var current = (PollState)state!;
+                if (Continuations.TryRemove(current.CallbackData, out var pending))
+                {
+                    pending.TrySetCanceled(current.CancellationToken);
+                }
+            }, pollState);
+
+            return AwaitPollAsync(completion.Task, cancellationRegistration);
+        }
+
+        private static async global::System.Threading.Tasks.Task<sbyte> AwaitPollAsync(
+            global::System.Threading.Tasks.Task<sbyte> pollTask,
+            global::System.Threading.CancellationTokenRegistration cancellationRegistration)
+        {
+            try
+            {
+                return await pollTask.ConfigureAwait(false);
+            }
+            finally
+            {
+                cancellationRegistration.Dispose();
+            }
+        }
+
+        private static global::System.Threading.Tasks.Task RepollOnThreadPoolAsync()
+        {
+            var completion = new global::System.Threading.Tasks.TaskCompletionSource<object?>(global::System.Threading.Tasks.TaskCreationOptions.RunContinuationsAsynchronously);
+            global::System.Threading.ThreadPool.QueueUserWorkItem(static state =>
+            {
+                ((global::System.Threading.Tasks.TaskCompletionSource<object?>)state!).TrySetResult(null);
+            }, completion);
+            return completion.Task;
+        }
+
+        private static ulong RegisterContinuation(global::System.Threading.Tasks.TaskCompletionSource<sbyte> completion)
+        {
+            while (true)
+            {
+                ulong callbackData = unchecked((ulong)global::System.Threading.Interlocked.Increment(ref _nextContinuationId));
+                if (callbackData != 0 && Continuations.TryAdd(callbackData, completion))
+                {
+                    return callbackData;
+                }
+            }
+        }
+
+        private static void OnFutureContinuation(ulong callbackData, sbyte pollResult)
+        {
+            if (Continuations.TryRemove(callbackData, out var completion))
+            {
+                completion.TrySetResult(pollResult);
+            }
+        }
+
+        private sealed class PollState
+        {
+            internal PollState(ulong callbackData, global::System.Threading.CancellationToken cancellationToken)
+            {
+                CallbackData = callbackData;
+                CancellationToken = cancellationToken;
+            }
+
+            internal ulong CallbackData { get; }
+            internal global::System.Threading.CancellationToken CancellationToken { get; }
+        }
+
+        private sealed class RustFutureOwner
+        {
+            private readonly global::System.Action<IntPtr> _cancel;
+            private readonly global::System.Action<IntPtr> _free;
+            private readonly object _gate = new();
+            private IntPtr _handle;
+            private bool _cancelled;
+            private bool _released;
+
+            internal RustFutureOwner(IntPtr handle, global::System.Action<IntPtr> cancel, global::System.Action<IntPtr> free)
+            {
+                _handle = handle;
+                _cancel = cancel;
+                _free = free;
+            }
+
+            internal IntPtr Handle
+            {
+                get
+                {
+                    lock (_gate)
+                    {
+                        if (_released || _handle == IntPtr.Zero)
+                        {
+                            throw new global::System.ObjectDisposedException(nameof(RustFutureOwner));
+                        }
+                        return _handle;
+                    }
+                }
+            }
+
+            internal void Cancel()
+            {
+                lock (_gate)
+                {
+                    if (_cancelled || _released || _handle == IntPtr.Zero)
+                    {
+                        return;
+                    }
+                    _cancelled = true;
+                    _cancel(_handle);
+                }
+            }
+
+            internal void Release()
+            {
+                lock (_gate)
+                {
+                    if (_released || _handle == IntPtr.Zero)
+                    {
+                        return;
+                    }
+                    _released = true;
+                    IntPtr handle = _handle;
+                    _handle = IntPtr.Zero;
+                    _free(handle);
+                }
+            }
+        }
+
+        private readonly struct VoidResult
+        {
+        }
+    }
+
+
+    internal static class NativeMethods
+    {
+        private const string LibName = "demo";
+        [DllImport(LibName, EntryPoint = "boltffi_async_add")]
+        internal static extern IntPtr AsyncAdd(int a, int b);
+
+        [DllImport(LibName, EntryPoint = "boltffi_async_add_poll")]
+        internal static extern void AsyncAddPoll(IntPtr future, ulong callbackData, BoltFFIAsync.RustFutureContinuationCallback callback);
+
+        [DllImport(LibName, EntryPoint = "boltffi_async_add_complete")]
+        internal static extern int AsyncAddComplete(IntPtr future, out FfiStatus status);
+
+        [DllImport(LibName, EntryPoint = "boltffi_async_add_cancel")]
+        internal static extern void AsyncAddCancel(IntPtr future);
+
+        [DllImport(LibName, EntryPoint = "boltffi_async_add_free")]
+        internal static extern void AsyncAddFree(IntPtr future);
+    }
+}

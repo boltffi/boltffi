@@ -18,8 +18,8 @@ mod module;
 mod record;
 
 pub use callable::{
-    CSharpFunctionPlan, CSharpMethodPlan, CSharpParamKind, CSharpParamPlan, CSharpReceiver,
-    CSharpReturnKind, CSharpWireWriterPlan,
+    CSharpAsyncCallPlan, CSharpCallablePlan, CSharpFunctionPlan, CSharpMethodPlan, CSharpParamKind,
+    CSharpParamPlan, CSharpReceiver, CSharpReturnKind, CSharpWireWriterPlan,
 };
 pub use class::{CSharpClassPlan, CSharpConstructorKind, CSharpConstructorPlan};
 pub use enumeration::{CSharpEnumKind, CSharpEnumPlan, CSharpEnumVariantPlan};

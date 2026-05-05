@@ -5,14 +5,20 @@
 //! [`CSharpWireWriterPlan`] carries the setup block for wire-encoded
 //! record params.
 
+mod async_call;
+mod callable_plan;
 mod function;
 mod method;
 mod param;
+mod return_kind;
 
-pub use function::{CSharpFunctionPlan, CSharpReturnKind};
+pub use async_call::CSharpAsyncCallPlan;
+pub use callable_plan::CSharpCallablePlan;
+pub use function::CSharpFunctionPlan;
 pub use method::{CSharpMethodPlan, CSharpReceiver};
 pub use param::{CSharpParamKind, CSharpParamPlan};
 pub(crate) use param::{native_call_arg_list, native_param_list};
+pub use return_kind::CSharpReturnKind;
 
 use super::super::ast::{CSharpExpression, CSharpLocalName, CSharpParamName, CSharpStatement};
 

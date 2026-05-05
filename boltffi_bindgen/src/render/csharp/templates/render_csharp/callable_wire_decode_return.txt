@@ -1,0 +1,30 @@
+{%- match callable.return_kind %}
+{%- when CSharpReturnKind::WireDecodeString %}
+{{ wire_decode_statement_indent }}return new WireReader(_buf).ReadString();
+{%- when CSharpReturnKind::WireDecodeObject with { class_name } %}
+{{ wire_decode_statement_indent }}return {{ class_name }}.Decode(new WireReader(_buf));
+{%- when CSharpReturnKind::WireDecodeBlittablePrimitiveArray with { method, type_arg } %}
+{%- if let Some(t) = type_arg %}
+{{ wire_decode_statement_indent }}return new WireReader(_buf).{{ method }}<{{ t }}>();
+{%- else %}
+{{ wire_decode_statement_indent }}return new WireReader(_buf).{{ method }}();
+{%- endif %}
+{%- when CSharpReturnKind::WireDecodeBlittableRecordArray with { element } %}
+{{ wire_decode_statement_indent }}return new WireReader(_buf).ReadBlittableArray<{{ element }}>();
+{%- when CSharpReturnKind::WireDecodeEncodedArray with { element_type, decode_lambda } %}
+{{ wire_decode_statement_indent }}return new WireReader(_buf).ReadEncodedArray<{{ element_type }}>({{ decode_lambda }});
+{%- when CSharpReturnKind::WireDecodeOption with { decode_expr } %}
+{{ wire_decode_statement_indent }}var reader = new WireReader(_buf);
+{{ wire_decode_statement_indent }}return {{ decode_expr }};
+{%- when CSharpReturnKind::WireDecodeValue with { decode_expr } %}
+{{ wire_decode_statement_indent }}var reader = new WireReader(_buf);
+{{ wire_decode_statement_indent }}return {{ decode_expr }};
+{%- when CSharpReturnKind::WireDecodeResult with { ok_decode_expr, err_throw_expr } %}
+{{ wire_decode_statement_indent }}var reader = new WireReader(_buf);
+{{ wire_decode_statement_indent }}if (reader.ReadU8() != 0) throw {{ err_throw_expr }};
+{%- if let Some(decode) = ok_decode_expr %}
+{{ wire_decode_statement_indent }}return {{ decode }};
+{%- endif %}
+{%- when CSharpReturnKind::Void %}
+{%- when CSharpReturnKind::Direct %}
+{%- endmatch %}

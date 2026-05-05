@@ -1,7 +1,10 @@
 use boltffi_ffi_rules::naming::{LibraryName, Name};
 
 use super::super::ast::{CSharpClassName, CSharpNamespace};
-use super::{CFunctionName, CSharpClassPlan, CSharpEnumPlan, CSharpFunctionPlan, CSharpRecordPlan};
+use super::{
+    CFunctionName, CSharpCallablePlan, CSharpClassPlan, CSharpEnumPlan, CSharpFunctionPlan,
+    CSharpRecordPlan,
+};
 
 /// A whole C# module: namespace, library binding, and every record, enum,
 /// and function it exposes. Renders into a `namespace` spread across
@@ -48,12 +51,23 @@ impl CSharpModulePlan {
         !self.classes.is_empty()
     }
 
+    pub fn has_async(&self) -> bool {
+        self.functions.iter().any(CSharpFunctionPlan::is_async)
+            || self.classes.iter().any(CSharpClassPlan::has_async_methods)
+            || self.records.iter().any(CSharpRecordPlan::has_async_methods)
+            || self.enums.iter().any(CSharpEnumPlan::has_async_methods)
+    }
+
     /// Whether the module needs `using System.Text;`. True when any function
     /// or class member touches a string (param or wire-decoded return), or
     /// any record has a string field, since `Encoding.UTF8.GetBytes` lives
     /// there. Decoding does not need `System.Text`; `WireReader` reads
     /// strings via `Marshal.PtrToStringUTF8`.
     pub fn needs_system_text(&self) -> bool {
+        if self.needs_wire_writer() {
+            return true;
+        }
+
         self.functions
             .iter()
             .any(|f| f.params.iter().any(|p| p.csharp_type.contains_string()))
@@ -76,6 +90,21 @@ impl CSharpModulePlan {
         self.functions
             .iter()
             .any(|f| f.return_kind.native_returns_ffi_buf())
+            || self
+                .classes
+                .iter()
+                .flat_map(|c| c.methods.iter())
+                .any(|m| m.return_kind.native_returns_ffi_buf())
+            || self
+                .records
+                .iter()
+                .flat_map(|r| r.methods.iter())
+                .any(|m| m.return_kind.native_returns_ffi_buf())
+            || self
+                .enums
+                .iter()
+                .flat_map(|e| e.methods.iter())
+                .any(|m| m.return_kind.native_returns_ffi_buf())
     }
 
     /// Whether the `FfiBuf` struct and `FreeBuf` DllImport are emitted.
@@ -159,6 +188,7 @@ mod tests {
                 err_throw_expr: dummy_throw_expr(),
             },
             ffi_name: CFunctionName::new("boltffi_test".to_string()),
+            async_call: None,
             wire_writers: vec![],
         }
     }
@@ -169,6 +199,7 @@ mod tests {
             name: CSharpMethodName::from_source("test"),
             native_method_name: CSharpMethodName::from_source("OwnerTest"),
             ffi_name: CFunctionName::new("boltffi_test".to_string()),
+            async_call: None,
             receiver: CSharpReceiver::ClassInstance,
             params: vec![],
             return_type: CSharpType::Void,

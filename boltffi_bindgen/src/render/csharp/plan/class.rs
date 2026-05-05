@@ -2,7 +2,9 @@ use super::super::ast::{
     CSharpArgumentList, CSharpClassName, CSharpComment, CSharpMethodName, CSharpParameterList,
 };
 use super::callable::{native_call_arg_list, native_param_list};
-use super::{CFunctionName, CSharpMethodPlan, CSharpParamPlan, CSharpWireWriterPlan};
+use super::{
+    CFunctionName, CSharpCallablePlan, CSharpMethodPlan, CSharpParamPlan, CSharpWireWriterPlan,
+};
 
 /// A Rust object exposed as a C# `IDisposable` wrapper around an
 /// opaque native handle (`IntPtr`), emitted to its own `.cs` file.
@@ -185,6 +187,10 @@ impl CSharpClassPlan {
     pub fn has_throwing_methods(&self) -> bool {
         self.methods.iter().any(|m| m.return_kind.is_result())
     }
+
+    pub fn has_async_methods(&self) -> bool {
+        self.methods.iter().any(CSharpMethodPlan::is_async)
+    }
 }
 
 /// Whether a class method needs `using System.Text;`: true if any
@@ -229,6 +235,7 @@ mod tests {
             name: CSharpMethodName::from_source("test"),
             native_method_name: CSharpMethodName::from_source("CounterTest"),
             ffi_name: CFunctionName::new("boltffi_test".to_string()),
+            async_call: None,
             receiver: super::super::CSharpReceiver::ClassInstance,
             params: vec![],
             return_type: CSharpType::Void,

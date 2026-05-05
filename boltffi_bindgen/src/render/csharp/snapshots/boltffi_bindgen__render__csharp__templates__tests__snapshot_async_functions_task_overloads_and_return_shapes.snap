@@ -1,0 +1,159 @@
+---
+source: boltffi_bindgen/src/render/csharp/templates.rs
+expression: template.render().unwrap()
+---
+
+    public static class DemoLib
+    {
+        public static global::System.Threading.Tasks.Task<int> AsyncAdd(int a, int b)
+            => AsyncAdd(a, b, global::System.Threading.CancellationToken.None);
+
+        public static global::System.Threading.Tasks.Task<int> AsyncAdd(int a, int b, global::System.Threading.CancellationToken cancellationToken)
+        {
+            return BoltFFIAsync.CallAsync<int>(
+                () => NativeMethods.AsyncAdd(a, b),
+                (future, callbackData, callback) => NativeMethods.AsyncAddPoll(future, callbackData, callback),
+                future =>
+                {
+                    FfiStatus status;
+                    int result = NativeMethods.AsyncAddComplete(future, out status);
+                    BoltFFIAsync.ThrowIfStatus(status, cancellationToken);
+                    return result;
+                },
+                future => NativeMethods.AsyncAddCancel(future),
+                future => NativeMethods.AsyncAddFree(future),
+                cancellationToken);
+        }
+
+        public static global::System.Threading.Tasks.Task AsyncNotify()
+            => AsyncNotify(global::System.Threading.CancellationToken.None);
+
+        public static global::System.Threading.Tasks.Task AsyncNotify(global::System.Threading.CancellationToken cancellationToken)
+        {
+            return BoltFFIAsync.CallAsyncVoid(
+                () => NativeMethods.AsyncNotify(),
+                (future, callbackData, callback) => NativeMethods.AsyncNotifyPoll(future, callbackData, callback),
+                future =>
+                {
+                    FfiStatus status;
+                    NativeMethods.AsyncNotifyComplete(future, out status);
+                    BoltFFIAsync.ThrowIfStatus(status, cancellationToken);
+                },
+                future => NativeMethods.AsyncNotifyCancel(future),
+                future => NativeMethods.AsyncNotifyFree(future),
+                cancellationToken);
+        }
+
+        public static global::System.Threading.Tasks.Task<string> AsyncEcho(string value)
+            => AsyncEcho(value, global::System.Threading.CancellationToken.None);
+
+        public static global::System.Threading.Tasks.Task<string> AsyncEcho(string value, global::System.Threading.CancellationToken cancellationToken)
+        {
+            byte[] _valueBytes = Encoding.UTF8.GetBytes(value);
+            return BoltFFIAsync.CallAsync<string>(
+                () => NativeMethods.AsyncEcho(_valueBytes, (UIntPtr)_valueBytes.Length),
+                (future, callbackData, callback) => NativeMethods.AsyncEchoPoll(future, callbackData, callback),
+                future =>
+                {
+                    FfiStatus status;
+                    FfiBuf _buf = NativeMethods.AsyncEchoComplete(future, out status);
+                    try
+                    {
+                        BoltFFIAsync.ThrowIfStatus(status, cancellationToken);
+                        return new WireReader(_buf).ReadString();
+                    }
+                    finally
+                    {
+                        NativeMethods.FreeBuf(_buf);
+                    }
+                },
+                future => NativeMethods.AsyncEchoCancel(future),
+                future => NativeMethods.AsyncEchoFree(future),
+                cancellationToken);
+        }
+
+        public static global::System.Threading.Tasks.Task<int[]> AsyncDoubleAll(int[] values)
+            => AsyncDoubleAll(values, global::System.Threading.CancellationToken.None);
+
+        public static global::System.Threading.Tasks.Task<int[]> AsyncDoubleAll(int[] values, global::System.Threading.CancellationToken cancellationToken)
+        {
+            return BoltFFIAsync.CallAsync<int[]>(
+                () => NativeMethods.AsyncDoubleAll(values, (UIntPtr)values.Length),
+                (future, callbackData, callback) => NativeMethods.AsyncDoubleAllPoll(future, callbackData, callback),
+                future =>
+                {
+                    FfiStatus status;
+                    FfiBuf _buf = NativeMethods.AsyncDoubleAllComplete(future, out status);
+                    try
+                    {
+                        BoltFFIAsync.ThrowIfStatus(status, cancellationToken);
+                        return new WireReader(_buf).ReadBlittableArray<int>();
+                    }
+                    finally
+                    {
+                        NativeMethods.FreeBuf(_buf);
+                    }
+                },
+                future => NativeMethods.AsyncDoubleAllCancel(future),
+                future => NativeMethods.AsyncDoubleAllFree(future),
+                cancellationToken);
+        }
+
+        public static global::System.Threading.Tasks.Task<int?> AsyncFindPositive(int[] values)
+            => AsyncFindPositive(values, global::System.Threading.CancellationToken.None);
+
+        public static global::System.Threading.Tasks.Task<int?> AsyncFindPositive(int[] values, global::System.Threading.CancellationToken cancellationToken)
+        {
+            return BoltFFIAsync.CallAsync<int?>(
+                () => NativeMethods.AsyncFindPositive(values, (UIntPtr)values.Length),
+                (future, callbackData, callback) => NativeMethods.AsyncFindPositivePoll(future, callbackData, callback),
+                future =>
+                {
+                    FfiStatus status;
+                    FfiBuf _buf = NativeMethods.AsyncFindPositiveComplete(future, out status);
+                    try
+                    {
+                        BoltFFIAsync.ThrowIfStatus(status, cancellationToken);
+                        var reader = new WireReader(_buf);
+                        return reader.ReadU8() == 0 ? (int?)null : reader.ReadI32();
+                    }
+                    finally
+                    {
+                        NativeMethods.FreeBuf(_buf);
+                    }
+                },
+                future => NativeMethods.AsyncFindPositiveCancel(future),
+                future => NativeMethods.AsyncFindPositiveFree(future),
+                cancellationToken);
+        }
+
+        public static global::System.Threading.Tasks.Task<int> TryComputeAsync(int value)
+            => TryComputeAsync(value, global::System.Threading.CancellationToken.None);
+
+        public static global::System.Threading.Tasks.Task<int> TryComputeAsync(int value, global::System.Threading.CancellationToken cancellationToken)
+        {
+            return BoltFFIAsync.CallAsync<int>(
+                () => NativeMethods.TryComputeAsync(value),
+                (future, callbackData, callback) => NativeMethods.TryComputeAsyncPoll(future, callbackData, callback),
+                future =>
+                {
+                    FfiStatus status;
+                    FfiBuf _buf = NativeMethods.TryComputeAsyncComplete(future, out status);
+                    try
+                    {
+                        BoltFFIAsync.ThrowIfStatus(status, cancellationToken);
+                        var reader = new WireReader(_buf);
+                        if (reader.ReadU8() != 0) throw new BoltException(reader.ReadString());
+                        return reader.ReadI32();
+                    }
+                    finally
+                    {
+                        NativeMethods.FreeBuf(_buf);
+                    }
+                },
+                future => NativeMethods.TryComputeAsyncCancel(future),
+                future => NativeMethods.TryComputeAsyncFree(future),
+                cancellationToken);
+        }
+
+    }

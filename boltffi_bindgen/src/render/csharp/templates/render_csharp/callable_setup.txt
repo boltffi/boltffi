@@ -1,0 +1,12 @@
+{%- for param in callable.params %}
+{%- if let Some(decl) = param.setup_declaration() %}
+            {{ decl }}
+{%- endif %}
+{%- endfor %}
+{%- for writer in callable.wire_writers %}
+            using var {{ writer.binding_name }} = new WireWriter({{ writer.size_expr }});
+{%- for stmt in writer.encode_stmts %}
+            {{ stmt }};
+{%- endfor %}
+            byte[] {{ writer.bytes_binding_name }} = {{ writer.binding_name }}.ToArray();
+{%- endfor %}

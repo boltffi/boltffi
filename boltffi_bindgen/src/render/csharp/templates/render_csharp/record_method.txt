@@ -1,77 +1,11 @@
 
+{%- let callable = method %}
+{%- let native_method_name = method.native_method_name %}
+{%- let native_call_args = method.full_native_call_args() %}
 {{ self::summary_doc_block(method.summary_doc, "        ") }}        public {% if method.receiver.is_static() %}static {% endif %}{{ method.return_type }} {{ method.name }}({% for p in method.params %}{{ p.csharp_type }} {{ p.name }}{% if !loop.last %}, {% endif %}{% endfor %})
         {
-{%- for param in method.params %}
-{%- if let Some(decl) = param.setup_declaration() %}
-            {{ decl }}
-{%- endif %}
-{%- endfor %}
-{%- for writer in method.wire_writers %}
-            using var {{ writer.binding_name }} = new WireWriter({{ writer.size_expr }});
-{%- for stmt in writer.encode_stmts %}
-            {{ stmt }};
-{%- endfor %}
-            byte[] {{ writer.bytes_binding_name }} = {{ writer.binding_name }}.ToArray();
-{%- endfor %}
-{%- if method.has_pinned_params() %}
-            unsafe
-            {
-{%- for param in method.params %}
-{%- match param.kind %}
-{%- when CSharpParamKind::PinnedArray with { element_type, ptr_local } %}
-                fixed ({{ element_type }}* {{ ptr_local }} = {{ param.name }})
-                {
-{%- when _ %}
-{%- endmatch %}
-{%- endfor %}
-{%- endif %}
-{%- if method.return_kind.is_void() %}
-            NativeMethods.{{ method.native_method_name }}({{ method.full_native_call_args() }});
-{%- else if method.return_kind.is_direct() %}
-            return NativeMethods.{{ method.native_method_name }}({{ method.full_native_call_args() }});
-{%- else %}
-            FfiBuf _buf = NativeMethods.{{ method.native_method_name }}({{ method.full_native_call_args() }});
-            try
-            {
-                {%- match method.return_kind %}
-                {%- when CSharpReturnKind::WireDecodeString %}
-                return new WireReader(_buf).ReadString();
-                {%- when CSharpReturnKind::WireDecodeObject with { class_name } %}
-                return {{ class_name }}.Decode(new WireReader(_buf));
-                {%- when CSharpReturnKind::WireDecodeBlittablePrimitiveArray with { method: m, type_arg } %}
-                {%- if let Some(t) = type_arg %}
-                return new WireReader(_buf).{{ m }}<{{ t }}>();
-                {%- else %}
-                return new WireReader(_buf).{{ m }}();
-                {%- endif %}
-                {%- when CSharpReturnKind::WireDecodeBlittableRecordArray with { element } %}
-                return new WireReader(_buf).ReadBlittableArray<{{ element }}>();
-                {%- when CSharpReturnKind::WireDecodeEncodedArray with { element_type, decode_lambda } %}
-                return new WireReader(_buf).ReadEncodedArray<{{ element_type }}>({{ decode_lambda }});
-                {%- when CSharpReturnKind::WireDecodeOption with { decode_expr } %}
-                var reader = new WireReader(_buf); return {{ decode_expr }};
-                {%- when CSharpReturnKind::WireDecodeValue with { decode_expr } %}
-                var reader = new WireReader(_buf); return {{ decode_expr }};
-                {%- when CSharpReturnKind::WireDecodeResult with { ok_decode_expr, err_throw_expr } %}
-                var reader = new WireReader(_buf);
-                if (reader.ReadU8() != 0) throw {{ err_throw_expr }};
-                {%- if let Some(decode) = ok_decode_expr %}
-                return {{ decode }};
-                {%- endif %}
-                {%- when _ %}
-                {%- endmatch %}
-            }
-            finally
-            {
-                NativeMethods.FreeBuf(_buf);
-            }
-{%- endif %}
-{%- if method.has_pinned_params() %}
-{%- for param in method.params %}
-{%- if param.is_pinned() %}
-                }
-{%- endif %}
-{%- endfor %}
-            }
-{%- endif %}
+{%- include "render_csharp/callable_setup.txt" -%}
+{%- include "render_csharp/callable_open_pins.txt" -%}
+{%- include "render_csharp/callable_sync_return.txt" -%}
+{%- include "render_csharp/callable_close_pins.txt" %}
         }

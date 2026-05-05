@@ -52,9 +52,8 @@ impl<'a> CSharpLowerer<'a> {
 
     /// Walks a record's `#[data(impl)]` constructors and methods and
     /// produces the corresponding [`CSharpMethodPlan`]s. Same filter as
-    /// the enum lowerer: fallible/optional constructors, `Result`-
-    /// returning methods, async methods, and `&mut self` / `self`
-    /// receivers are dropped silently — those phases land in later PRs.
+    /// the enum lowerer: fallible/optional constructors, async methods,
+    /// and `&mut self` / `self` receivers are dropped silently.
     fn lower_record_methods(
         &self,
         record: &RecordDef,
@@ -151,6 +150,7 @@ impl<'a> CSharpLowerer<'a> {
             native_method_name: CSharpMethodName::native_for_owner(record_class_name, &name),
             name,
             ffi_name: (&call.symbol).into(),
+            async_call: None,
             receiver: CSharpReceiver::Static,
             params,
             return_type,
@@ -220,6 +220,7 @@ impl<'a> CSharpLowerer<'a> {
             native_method_name: CSharpMethodName::native_for_owner(record_class_name, &name),
             name,
             ffi_name: (&call.symbol).into(),
+            async_call: None,
             receiver,
             params,
             return_type,
