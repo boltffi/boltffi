@@ -8,12 +8,16 @@ use crate::ir::types::{PrimitiveType, TypeExpr};
 use super::super::ast::{
     CSharpArgumentList, CSharpAttribute, CSharpAttributeArg, CSharpClassName, CSharpExpression,
     CSharpIdentity, CSharpLocalName, CSharpMethodName, CSharpParamName, CSharpParameter,
-    CSharpPropertyName, CSharpType, CSharpTypeReference,
+    CSharpParameterList, CSharpPropertyName, CSharpType, CSharpTypeReference,
 };
 use super::super::plan::{
-    CFunctionName, CSharpCallbackBridgeParamPlan, CSharpCallbackMethodPlan,
-    CSharpCallbackParamPlan, CSharpCallbackPlan, CSharpClosureMethodPlan, CSharpClosurePlan,
-    CSharpWireWriterPlan,
+    CFunctionName, CSharpAsyncCallbackEntryPlan, CSharpAsyncCallbackFailurePlan,
+    CSharpAsyncCallbackFaultPlan, CSharpAsyncCallbackSuccessPlan, CSharpCallbackBridgeParamPlan,
+    CSharpCallbackDelegatePlan, CSharpCallbackEntryPlan, CSharpCallbackMethodPlan,
+    CSharpCallbackParamPlan, CSharpCallbackPlan, CSharpCallbackProxyCallPlan,
+    CSharpCallbackProxyPlan, CSharpClosureInvokePlan, CSharpClosureMethodPlan, CSharpClosurePlan,
+    CSharpSyncCallbackEntryPlan, CSharpSyncCallbackOutInitializerPlan, CSharpSyncCallbackProxyPlan,
+    CSharpSyncCallbackSuccessPlan, CSharpWireWriterPlan,
 };
 use super::lowerer::CSharpLowerer;
 use super::{decode, encode, size, value};
@@ -28,7 +32,6 @@ const RESULT_VALUE: &str = "__boltffiResult";
 const ERROR_RESULT_VALUE: &str = "__boltffiErrorResult";
 const RETURN_READER: &str = "__boltffiReader";
 const INVOKE_LOCAL: &str = "__boltffiInvoke";
-const ASYNC_TASK: &str = "__boltffiTask";
 const ASYNC_COMPLETED: &str = "__boltffiCompleted";
 const ASYNC_EXCEPTION: &str = "__boltffiException";
 const ERROR_OUT_PTR: &str = "__boltffiErrorOutPtr";
@@ -39,8 +42,8 @@ enum CallbackReturn {
     Void,
     Direct {
         public_type: String,
-        native_type: String,
-        native_out_type: String,
+        native_type: CSharpType,
+        native_out_type: CSharpType,
         default_value: String,
         native_expr: String,
         public_expr: String,
@@ -108,7 +111,7 @@ impl<'a> CSharpLowerer<'a> {
                 let abi_method = self
                     .abi_method_for(abi_callback, method)
                     .expect("callback abi method missing");
-                self.lower_callback_method(callback, method, abi_method)
+                self.lower_callback_method(method, abi_method)
             })
             .collect();
         CSharpCallbackPlan {
@@ -177,25 +180,18 @@ impl<'a> CSharpLowerer<'a> {
 
     fn lower_callback_method(
         &self,
-        callback: &CallbackTraitDef,
         method: &CallbackMethodDef,
         abi_method: &AbiCallbackMethod,
     ) -> CSharpCallbackMethodPlan {
-        let entry_source = if method.is_async() {
-            self.render_async_callback_entry(callback, method, abi_method)
-        } else {
-            self.render_sync_callback_entry(callback, method, abi_method)
-        };
-
         CSharpCallbackMethodPlan {
             name: (&method.id).into(),
             vtable_field: CSharpLocalName::new(abi_method.vtable_field.as_str()),
             return_type: self.callback_public_return_type(&method.returns),
             is_async: method.is_async(),
             public_params: self.public_param_plans(&method.params),
-            entry_source,
-            proxy_source: self.render_proxy_method(method, abi_method),
-            delegate_source: self.render_callback_delegate_types(method, abi_method),
+            entry: self.lower_callback_entry(method, abi_method),
+            proxy: self.lower_callback_proxy(method, abi_method),
+            delegates: self.lower_callback_delegates(method, abi_method),
         }
     }
 
@@ -211,14 +207,14 @@ impl<'a> CSharpLowerer<'a> {
             CallbackReturnMode::InlineClosure,
         );
         let native_return_type = self.inline_callback_native_return_type(&ret);
-        let native_decls = std::iter::once("IntPtr context".to_string())
-            .chain(
-                params
-                    .iter()
-                    .flat_map(|p| p.native_params().into_iter().map(|param| param.to_string())),
-            )
-            .collect::<Vec<_>>();
-        let decoded_args = decoded_arg_list(&params).to_string();
+        let mut native_params = CSharpParameterList::empty();
+        native_params.push(CSharpParameter::bare(
+            CSharpType::IntPtr,
+            CSharpParamName::new("context"),
+        ));
+        for param in &params {
+            native_params.extend(param.native_params());
+        }
         let marshals_return_bool = matches!(
             ret,
             CallbackReturn::Direct {
@@ -231,13 +227,10 @@ impl<'a> CSharpLowerer<'a> {
             return_type: self.callback_public_return_type(&method.returns),
             public_params: self.public_param_plans(&method.params),
             native_return_type,
-            native_decls,
+            native_params,
             marshals_return_bool,
-            decode_setup: params
-                .iter()
-                .flat_map(CSharpCallbackBridgeParamPlan::decode_setup_lines)
-                .collect(),
-            invoke_body: self.render_closure_invoke_return(&ret, &decoded_args),
+            bridge_params: params.clone(),
+            invoke: self.closure_invoke(&ret, &params),
         }
     }
 
@@ -272,464 +265,168 @@ impl<'a> CSharpLowerer<'a> {
         }
     }
 
-    fn render_closure_invoke_return(&self, ret: &CallbackReturn, decoded_args: &str) -> String {
+    fn lower_callback_entry(
+        &self,
+        method: &CallbackMethodDef,
+        abi_method: &AbiCallbackMethod,
+    ) -> CSharpCallbackEntryPlan {
+        let method_name: CSharpMethodName = (&method.id).into();
+        let params = self.bridge_params(method, abi_method);
+        let ret = self.callback_return(
+            &method.returns,
+            &abi_method.returns,
+            CallbackReturnMode::CallbackVtable,
+        );
+        if method.is_async() {
+            CSharpCallbackEntryPlan::Async(CSharpAsyncCallbackEntryPlan {
+                native_params: self.async_callback_native_params(&method_name, &params),
+                bridge_params: params.clone(),
+                decoded_args: decoded_arg_list(&params),
+                invalid_handle_completion: self.async_failure_completion(&ret),
+                canceled_completion: self.async_failure_completion(&ret),
+                faulted_completion: self.async_fault_completion(&ret),
+                success_completion: self.async_success_completion(&ret),
+                catch_completion: self.async_failure_completion(&ret),
+            })
+        } else {
+            let success = self.sync_callback_success(&method_name, &params, &ret);
+            CSharpCallbackEntryPlan::Sync(CSharpSyncCallbackEntryPlan {
+                native_params: self.sync_callback_native_params(&params, &ret),
+                out_initializer: self.sync_out_initializer(&ret),
+                bridge_params: params,
+                success,
+            })
+        }
+    }
+
+    fn lower_callback_proxy(
+        &self,
+        method: &CallbackMethodDef,
+        abi_method: &AbiCallbackMethod,
+    ) -> CSharpCallbackProxyPlan {
+        let params = self.bridge_params(method, abi_method);
+        let ret = self.callback_return(
+            &method.returns,
+            &abi_method.returns,
+            CallbackReturnMode::CallbackVtable,
+        );
+        let public_params = callback_public_param_list(&params);
+        if method.is_async() {
+            return CSharpCallbackProxyPlan::AsyncUnsupported {
+                public_params,
+                return_type: ret.async_task_type(),
+                result_type: if matches!(ret, CallbackReturn::Void) {
+                    None
+                } else {
+                    Some(self.callback_public_return_type(&method.returns))
+                },
+                not_supported_expr:
+                    "new NotSupportedException(\"async callback proxies are not implemented for C# yet\")"
+                        .to_string(),
+            };
+        }
+
+        let has_cleanup = params
+            .iter()
+            .any(CSharpCallbackBridgeParamPlan::needs_wire_writer);
+        let call = self.proxy_call(&params, &ret);
+        CSharpCallbackProxyPlan::Sync(CSharpSyncCallbackProxyPlan {
+            public_params,
+            return_type: ret.public_type(),
+            bridge_params: params,
+            has_cleanup,
+            call,
+        })
+    }
+
+    fn lower_callback_delegates(
+        &self,
+        method: &CallbackMethodDef,
+        abi_method: &AbiCallbackMethod,
+    ) -> CSharpCallbackDelegatePlan {
+        let method_name: CSharpMethodName = (&method.id).into();
+        let params = self.bridge_params(method, abi_method);
+        let ret = self.callback_return(
+            &method.returns,
+            &abi_method.returns,
+            CallbackReturnMode::CallbackVtable,
+        );
+        CSharpCallbackDelegatePlan {
+            entry_params: if method.is_async() {
+                self.async_callback_native_params(&method_name, &params)
+            } else {
+                self.sync_callback_native_params(&params, &ret)
+            },
+            completion_params: method
+                .is_async()
+                .then(|| self.async_completion_params(&ret)),
+            proxy_params: (!method.is_async())
+                .then(|| self.sync_callback_native_params(&params, &ret)),
+        }
+    }
+
+    fn closure_invoke(
+        &self,
+        ret: &CallbackReturn,
+        params: &[CSharpCallbackBridgeParamPlan],
+    ) -> CSharpClosureInvokePlan {
+        let decoded_args = decoded_arg_list(params);
         match ret {
-            CallbackReturn::Void => {
-                format!("            impl_({decoded_args});\n")
-            }
+            CallbackReturn::Void => CSharpClosureInvokePlan::Void { decoded_args },
             CallbackReturn::Direct {
                 native_expr,
                 marshals_bool,
                 ..
             } => {
-                let return_expr = if *marshals_bool {
+                let native_value_expr = if *marshals_bool {
                     RETURN_VALUE.to_string()
                 } else {
                     native_expr.replace("value", RETURN_VALUE)
                 };
-                format!(
-                    "            var {RETURN_VALUE} = impl_({decoded_args});\n            return {return_expr};\n"
-                )
-            }
-            CallbackReturn::Encoded {
-                encode_ops,
-                is_result,
-                ..
-            } => {
-                let mut out = String::new();
-                if *is_result {
-                    out.push_str(&self.render_result_assignment(
-                        "impl_",
-                        "Invoke",
-                        decoded_args,
-                        encode_ops,
-                    ));
-                } else {
-                    out.push_str(&format!(
-                        "            var {RETURN_VALUE} = impl_({decoded_args});\n"
-                    ));
+                CSharpClosureInvokePlan::Direct {
+                    decoded_args,
+                    native_value_expr,
                 }
-                out.push_str(&indent_block(
-                    &self.render_encode_to_bytes_with_renames(
-                        encode_ops,
-                        "_returnWire",
-                        "_returnBytes",
-                        "            ",
-                        &root_local_rename(
-                            if *is_result { "result" } else { "value" },
-                            if *is_result {
-                                RESULT_VALUE
-                            } else {
-                                RETURN_VALUE
-                            },
-                        ),
-                    ),
-                    "",
-                ));
-                out.push_str("            return FfiBuf.FromBytes(_returnBytes);\n");
-                out
-            }
-        }
-    }
-
-    fn render_sync_callback_entry(
-        &self,
-        _callback: &CallbackTraitDef,
-        method: &CallbackMethodDef,
-        abi_method: &AbiCallbackMethod,
-    ) -> String {
-        let method_name: CSharpMethodName = (&method.id).into();
-        let params = self.bridge_params(method, abi_method);
-        let ret = self.callback_return(
-            &method.returns,
-            &abi_method.returns,
-            CallbackReturnMode::CallbackVtable,
-        );
-        let native_decls = self.sync_callback_native_decls(&params, &ret);
-        let decoded_args = decoded_arg_list(&params).to_string();
-        let mut out =
-            format!("        private static void {method_name}({native_decls})\n        {{\n");
-        for line in self.sync_out_initializers(&ret) {
-            out.push_str(&format!("            {line}\n"));
-        }
-        out.push_str(&format!(
-            "            {STATUS_OUT} = {STATUS_INTERNAL_ERROR};\n"
-        ));
-        out.push_str("            try\n            {\n");
-        out.push_str("                if (!Handles.TryGetValue(handle, out var impl_)) throw new InvalidOperationException(\"invalid callback handle\");\n");
-        for param in &params {
-            for line in param.decode_setup_lines() {
-                out.push_str(&format!("                {line}\n"));
-            }
-        }
-        match &ret {
-            CallbackReturn::Void => {
-                out.push_str(&format!(
-                    "                impl_.{method_name}({decoded_args});\n"
-                ));
-                out.push_str(&format!("                {STATUS_OUT} = {STATUS_OK};\n"));
-            }
-            CallbackReturn::Direct { native_expr, .. } => {
-                out.push_str(&format!(
-                    "                var {RETURN_VALUE} = impl_.{method_name}({decoded_args});\n"
-                ));
-                out.push_str(&format!(
-                    "                {OUT_PTR} = {};\n",
-                    native_expr.replace("value", RETURN_VALUE)
-                ));
-                out.push_str(&format!("                {STATUS_OUT} = {STATUS_OK};\n"));
             }
             CallbackReturn::Encoded {
                 encode_ops,
                 is_result,
                 ..
             } => {
-                if *is_result {
-                    out.push_str(&indent_block(
+                let result_assignment_lines = if *is_result {
+                    unindented_lines(
                         &self.render_result_assignment(
                             "impl_",
-                            &method_name.to_string(),
-                            &decoded_args,
+                            "Invoke",
+                            &decoded_args.to_string(),
                             encode_ops,
                         ),
-                        "                ",
-                    ));
+                        "            ",
+                    )
                 } else {
-                    out.push_str(&format!(
-                        "                var {RETURN_VALUE} = impl_.{method_name}({decoded_args});\n"
-                    ));
-                }
-                out.push_str(&indent_block(
-                    &self.render_encode_to_bytes_with_renames(
-                        encode_ops,
-                        "_returnWire",
-                        "_returnBytes",
-                        "                ",
-                        &root_local_rename(
-                            if *is_result { "result" } else { "value" },
-                            if *is_result {
-                                RESULT_VALUE
-                            } else {
-                                RETURN_VALUE
-                            },
-                        ),
+                    vec![]
+                };
+                let writer = self.return_wire_writer_plan(
+                    encode_ops,
+                    "_returnWire",
+                    "_returnBytes",
+                    &root_local_rename(
+                        if *is_result { "result" } else { "value" },
+                        if *is_result {
+                            RESULT_VALUE
+                        } else {
+                            RETURN_VALUE
+                        },
                     ),
-                    "",
-                ));
-                out.push_str(&format!(
-                    "                BoltFFICallbackReturn.Store(_returnBytes, out {OUT_PTR}, out {OUT_LEN});\n"
-                ));
-                out.push_str(&format!("                {STATUS_OUT} = {STATUS_OK};\n"));
-            }
-        }
-        out.push_str("            }\n");
-        out.push_str("            catch\n            {\n");
-        for line in self.sync_out_initializers(&ret) {
-            out.push_str(&format!("                {line}\n"));
-        }
-        out.push_str(&format!(
-            "                {STATUS_OUT} = {STATUS_INTERNAL_ERROR};\n"
-        ));
-        out.push_str("            }\n");
-        out.push_str("        }\n");
-        out
-    }
-
-    fn render_async_callback_entry(
-        &self,
-        _callback: &CallbackTraitDef,
-        method: &CallbackMethodDef,
-        abi_method: &AbiCallbackMethod,
-    ) -> String {
-        let method_name: CSharpMethodName = (&method.id).into();
-        let params = self.bridge_params(method, abi_method);
-        let ret = self.callback_return(
-            &method.returns,
-            &abi_method.returns,
-            CallbackReturnMode::CallbackVtable,
-        );
-        let mut native_decls = vec!["ulong handle".to_string()];
-        native_decls.extend(
-            params
-                .iter()
-                .flat_map(|p| p.native_params().into_iter().map(|param| param.to_string())),
-        );
-        native_decls.push(format!("{method_name}Completion callback"));
-        native_decls.push("ulong callbackData".to_string());
-        let decoded_args = decoded_arg_list(&params).to_string();
-        let mut out = format!(
-            "        private static void {method_name}({})\n        {{\n",
-            native_decls.join(", ")
-        );
-        out.push_str(
-            "            if (!Handles.TryGetValue(handle, out var impl_))\n            {\n",
-        );
-        out.push_str(&self.async_complete_failure(
-            &ret,
-            "callback",
-            "callbackData",
-            "                ",
-        ));
-        out.push_str("                return;\n            }\n");
-        out.push_str("            try\n            {\n");
-        for param in &params {
-            for line in param.decode_setup_lines() {
-                out.push_str(&format!("                {line}\n"));
-            }
-        }
-        out.push_str(&format!(
-            "                var {ASYNC_TASK} = impl_.{method_name}({decoded_args});\n"
-        ));
-        out.push_str(&format!(
-            "                _ = {ASYNC_TASK}.ContinueWith({ASYNC_COMPLETED} =>\n                {{\n"
-        ));
-        out.push_str(&format!(
-            "                    if ({ASYNC_COMPLETED}.IsCanceled)\n                    {{\n"
-        ));
-        out.push_str(&self.async_complete_failure(
-            &ret,
-            "callback",
-            "callbackData",
-            "                        ",
-        ));
-        out.push_str("                        return;\n                    }\n");
-        out.push_str(&format!(
-            "                    if ({ASYNC_COMPLETED}.IsFaulted)\n                    {{\n"
-        ));
-        out.push_str(&format!(
-            "                        Exception {ASYNC_EXCEPTION} = UnwrapTaskException({ASYNC_COMPLETED}.Exception!);\n"
-        ));
-        out.push_str(&self.async_complete_exception(
-            &ret,
-            "callback",
-            "callbackData",
-            "                        ",
-        ));
-        out.push_str("                        return;\n                    }\n");
-        out.push_str(&self.async_complete_success(
-            &ret,
-            "callback",
-            "callbackData",
-            ASYNC_COMPLETED,
-            "                    ",
-        ));
-        out.push_str("                }, global::System.Threading.Tasks.TaskScheduler.Default);\n");
-        out.push_str("            }\n");
-        out.push_str("            catch\n            {\n");
-        out.push_str(&self.async_complete_failure(
-            &ret,
-            "callback",
-            "callbackData",
-            "                ",
-        ));
-        out.push_str("            }\n");
-        out.push_str("        }\n");
-        out
-    }
-
-    fn render_proxy_method(
-        &self,
-        method: &CallbackMethodDef,
-        abi_method: &AbiCallbackMethod,
-    ) -> String {
-        let method_name: CSharpMethodName = (&method.id).into();
-        let params = self.bridge_params(method, abi_method);
-        let ret = self.callback_return(
-            &method.returns,
-            &abi_method.returns,
-            CallbackReturnMode::CallbackVtable,
-        );
-        let public_params = params
-            .iter()
-            .map(|p| p.public_param().to_string())
-            .collect::<Vec<_>>()
-            .join(", ");
-        if method.is_async() {
-            let return_type = ret.async_task_type();
-            let not_supported = "new NotSupportedException(\"async callback proxies are not implemented for C# yet\")";
-            return match ret {
-                CallbackReturn::Void => format!(
-                    "            public {return_type} {method_name}({public_params}) => global::System.Threading.Tasks.Task.FromException({not_supported});\n"
-                ),
-                _ => format!(
-                    "            public {return_type} {method_name}({public_params}) => global::System.Threading.Tasks.Task.FromException<{}>({not_supported});\n",
-                    ret.public_type()
-                ),
-            };
-        }
-
-        let mut out = format!(
-            "            public {} {method_name}({public_params})\n            {{\n",
-            ret.public_type()
-        );
-        out.push_str("                if (_handle.IsNull) throw new ObjectDisposedException(nameof(Proxy));\n");
-        out.push_str(
-            "                VTable __boltffiTable = Marshal.PtrToStructure<VTable>(_handle.vtable);\n",
-        );
-        out.push_str(&format!(
-            "                var {INVOKE_LOCAL} = Marshal.GetDelegateForFunctionPointer<{method_name}ProxyFn>(__boltffiTable.{});\n",
-            abi_method.vtable_field.as_str()
-        ));
-        for param in &params {
-            for line in param.proxy_setup_lines() {
-                out.push_str(&format!("                {line}\n"));
-            }
-        }
-        let has_cleanup = params
-            .iter()
-            .any(|param| !param.proxy_cleanup_lines().is_empty());
-        if has_cleanup {
-            out.push_str("                try\n                {\n");
-        }
-        for param in &params {
-            for line in param.proxy_pin_lines() {
-                out.push_str(&format!(
-                    "{}{line}\n",
-                    if has_cleanup {
-                        "                    "
-                    } else {
-                        "                "
-                    }
-                ));
-            }
-        }
-        let call_indent = if has_cleanup {
-            "                    "
-        } else {
-            "                "
-        };
-        let args = std::iter::once("_handle.handle".to_string())
-            .chain(
-                params
-                    .iter()
-                    .flat_map(|p| p.proxy_args().into_iter().map(|expr| expr.to_string())),
-            )
-            .collect::<Vec<_>>()
-            .join(", ");
-        match &ret {
-            CallbackReturn::Void => {
-                out.push_str(&format!("{call_indent}FfiStatus {STATUS_OUT};\n"));
-                out.push_str(&format!(
-                    "{call_indent}{INVOKE_LOCAL}({args}, out {STATUS_OUT});\n"
-                ));
-                out.push_str(&format!(
-                    "{call_indent}ThrowIfCallbackStatus({STATUS_OUT});\n"
-                ));
-            }
-            CallbackReturn::Direct {
-                native_out_type,
-                public_expr,
-                ..
-            } => {
-                out.push_str(&format!("{call_indent}{native_out_type} {OUT_PTR};\n"));
-                out.push_str(&format!("{call_indent}FfiStatus {STATUS_OUT};\n"));
-                out.push_str(&format!(
-                    "{call_indent}{INVOKE_LOCAL}({args}, out {OUT_PTR}, out {STATUS_OUT});\n"
-                ));
-                out.push_str(&format!(
-                    "{call_indent}ThrowIfCallbackStatus({STATUS_OUT});\n"
-                ));
-                out.push_str(&format!("{call_indent}return {public_expr};\n"));
-            }
-            CallbackReturn::Encoded {
-                decode_expr,
-                decode_ops,
-                is_result,
-                ..
-            } => {
-                out.push_str(&format!("{call_indent}IntPtr {OUT_PTR};\n"));
-                out.push_str(&format!("{call_indent}UIntPtr {OUT_LEN};\n"));
-                out.push_str(&format!("{call_indent}FfiStatus {STATUS_OUT};\n"));
-                out.push_str(&format!(
-                    "{call_indent}{INVOKE_LOCAL}({args}, out {OUT_PTR}, out {OUT_LEN}, out {STATUS_OUT});\n"
-                ));
-                out.push_str(&format!("{call_indent}try\n{call_indent}{{\n"));
-                out.push_str(&format!(
-                    "{call_indent}    ThrowIfCallbackStatus({STATUS_OUT});\n"
-                ));
-                out.push_str(&format!(
-                    "{call_indent}    var {RETURN_READER} = new WireReader({OUT_PTR}, {OUT_LEN});\n"
-                ));
-                if *is_result {
-                    let result_body = self.render_result_decode_from_ops(
-                        decode_ops
-                            .as_ref()
-                            .expect("result callback return decode ops"),
-                        RETURN_READER,
-                        &(call_indent.to_string() + "    "),
-                    );
-                    out.push_str(&result_body);
-                } else if let Some(expr) = decode_expr {
-                    out.push_str(&format!("{call_indent}    return {expr};\n"));
-                }
-                out.push_str(&format!("{call_indent}}}\n"));
-                out.push_str(&format!("{call_indent}finally\n{call_indent}{{\n"));
-                out.push_str(&format!(
-                    "{call_indent}    BoltFFICallbackReturn.Free({OUT_PTR});\n"
-                ));
-                out.push_str(&format!("{call_indent}}}\n"));
-            }
-        }
-        if has_cleanup {
-            out.push_str("                }\n                finally\n                {\n");
-            for param in &params {
-                for line in param.proxy_cleanup_lines() {
-                    out.push_str(&format!("                    {line}\n"));
-                }
-            }
-            out.push_str("                }\n");
-        }
-        out.push_str("            }\n");
-        out
-    }
-
-    fn render_callback_delegate_types(
-        &self,
-        method: &CallbackMethodDef,
-        abi_method: &AbiCallbackMethod,
-    ) -> String {
-        let method_name: CSharpMethodName = (&method.id).into();
-        let params = self.bridge_params(method, abi_method);
-        let ret = self.callback_return(
-            &method.returns,
-            &abi_method.returns,
-            CallbackReturnMode::CallbackVtable,
-        );
-        let mut out = String::new();
-        out.push_str("        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]\n");
-        out.push_str(&format!(
-            "        private delegate void {method_name}Fn({});\n",
-            if method.is_async() {
-                let mut decls = vec!["ulong handle".to_string()];
-                decls.extend(
-                    params
-                        .iter()
-                        .flat_map(|p| p.native_params().into_iter().map(|param| param.to_string())),
                 );
-                decls.push(format!("{method_name}Completion callback"));
-                decls.push("ulong callbackData".to_string());
-                decls.join(", ")
-            } else {
-                self.sync_callback_native_decls(&params, &ret)
+                CSharpClosureInvokePlan::Encoded {
+                    is_result: *is_result,
+                    decoded_args,
+                    result_assignment_lines,
+                    writer,
+                }
             }
-        ));
-        out.push_str(&format!(
-            "        private static readonly {method_name}Fn {method_name}Delegate = {method_name};\n\n"
-        ));
-        if method.is_async() {
-            out.push_str("        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]\n");
-            out.push_str(&format!(
-                "        private delegate void {method_name}Completion({});\n\n",
-                self.async_completion_decls(&ret)
-            ));
-        } else {
-            out.push_str("        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]\n");
-            out.push_str(&format!(
-                "        private delegate void {method_name}ProxyFn({});\n\n",
-                self.sync_proxy_native_decls(&params, &ret)
-            ));
         }
-        out
     }
 
     fn bridge_params(
@@ -874,10 +571,10 @@ impl<'a> CSharpLowerer<'a> {
             None => CallbackReturn::Void,
             Some(Transport::Scalar(origin)) => {
                 let primitive = origin.primitive();
-                let native_type = self.native_type_for_primitive(primitive).to_string();
+                let native_type = CSharpType::from(primitive);
                 let marshals_bool = primitive == PrimitiveType::Bool;
                 let native_out_type = if marshals_bool {
-                    "byte".to_string()
+                    CSharpType::Byte
                 } else {
                     native_type.clone()
                 };
@@ -901,8 +598,8 @@ impl<'a> CSharpLowerer<'a> {
                 let native_type = CSharpClassName::from(&layout.record_id).to_string();
                 CallbackReturn::Direct {
                     public_type,
-                    native_type: native_type.clone(),
-                    native_out_type: native_type,
+                    native_type: named_type(&native_type),
+                    native_out_type: named_type(&native_type),
                     default_value: "default".to_string(),
                     native_expr: "value".to_string(),
                     public_expr: OUT_PTR.to_string(),
@@ -936,8 +633,8 @@ impl<'a> CSharpLowerer<'a> {
                 let bridge = self.callback_bridge_class_name(callback_id);
                 CallbackReturn::Direct {
                     public_type,
-                    native_type: "BoltFFICallbackHandle".to_string(),
-                    native_out_type: "BoltFFICallbackHandle".to_string(),
+                    native_type: named_type("BoltFFICallbackHandle"),
+                    native_out_type: named_type("BoltFFICallbackHandle"),
                     default_value: "BoltFFICallbackHandle.Null".to_string(),
                     native_expr: format!("{bridge}.Create(value)"),
                     public_expr: format!("{bridge}.Wrap({OUT_PTR})"),
@@ -946,8 +643,8 @@ impl<'a> CSharpLowerer<'a> {
             }
             Some(Transport::Handle { .. }) => CallbackReturn::Direct {
                 public_type,
-                native_type: "IntPtr".to_string(),
-                native_out_type: "IntPtr".to_string(),
+                native_type: CSharpType::IntPtr,
+                native_out_type: CSharpType::IntPtr,
                 default_value: "IntPtr.Zero".to_string(),
                 native_expr: "value.Handle".to_string(),
                 public_expr: OUT_PTR.to_string(),
@@ -1147,57 +844,56 @@ impl<'a> CSharpLowerer<'a> {
         encode_ops: &WriteSeq,
         name: &CSharpParamName,
     ) -> CSharpWireWriterPlan {
-        let writer_name = CSharpLocalName::new(format!("_{}Wire", stripped_name(name)));
-        let bytes_name = CSharpLocalName::new(format!("_{}Bytes", stripped_name(name)));
+        self.wire_writer_plan_with_renames(
+            encode_ops,
+            &format!("_{}Wire", stripped_name(name)),
+            &format!("_{}Bytes", stripped_name(name)),
+            name,
+            &value::Renames::new(),
+        )
+    }
+
+    fn return_wire_writer_plan(
+        &self,
+        encode_ops: &WriteSeq,
+        writer_name: &str,
+        bytes_name: &str,
+        renames: &value::Renames,
+    ) -> CSharpWireWriterPlan {
+        self.wire_writer_plan_with_renames(
+            encode_ops,
+            writer_name,
+            bytes_name,
+            &CSharpParamName::new(RETURN_VALUE),
+            renames,
+        )
+    }
+
+    fn wire_writer_plan_with_renames(
+        &self,
+        encode_ops: &WriteSeq,
+        writer_name: &str,
+        bytes_name: &str,
+        param_name: &CSharpParamName,
+        renames: &value::Renames,
+    ) -> CSharpWireWriterPlan {
+        let writer_name = CSharpLocalName::new(writer_name);
+        let bytes_name = CSharpLocalName::new(bytes_name);
         let mut size_locals = size::SizeLocalCounters::default();
         let mut encode_locals = encode::EncodeLocalCounters::default();
         let writer = CSharpExpression::Identity(CSharpIdentity::Local(writer_name.clone()));
         CSharpWireWriterPlan {
             binding_name: writer_name,
             bytes_binding_name: bytes_name,
-            param_name: name.clone(),
-            size_expr: size::lower_size_expr(
-                &encode_ops.size,
-                &value::Renames::new(),
-                &mut size_locals,
-            ),
+            param_name: param_name.clone(),
+            size_expr: size::lower_size_expr(&encode_ops.size, renames, &mut size_locals),
             encode_stmts: encode::lower_encode_expr(
                 encode_ops,
                 &writer,
-                &value::Renames::new(),
+                renames,
                 &mut encode_locals,
             ),
         }
-    }
-
-    fn render_encode_to_bytes_with_renames(
-        &self,
-        encode_ops: &WriteSeq,
-        writer_name: &str,
-        bytes_name: &str,
-        indent: &str,
-        renames: &value::Renames,
-    ) -> String {
-        let mut size_locals = size::SizeLocalCounters::default();
-        let mut encode_locals = encode::EncodeLocalCounters::default();
-        let writer =
-            CSharpExpression::Identity(CSharpIdentity::Local(CSharpLocalName::new(writer_name)));
-        let size_expr = size::lower_size_expr(&encode_ops.size, renames, &mut size_locals);
-        let stmts = encode::lower_encode_expr(encode_ops, &writer, renames, &mut encode_locals);
-        let mut out = String::new();
-        out.push_str(&format!("{indent}byte[] {bytes_name};\n"));
-        out.push_str(&format!(
-            "{indent}using (var {writer_name} = new WireWriter({size_expr}))\n"
-        ));
-        out.push_str(&format!("{indent}{{\n"));
-        for stmt in stmts {
-            out.push_str(&format!("{indent}    {stmt};\n"));
-        }
-        out.push_str(&format!(
-            "{indent}    {bytes_name} = {writer_name}.ToArray();\n"
-        ));
-        out.push_str(&format!("{indent}}}\n"));
-        out
     }
 
     fn render_result_decode_from_ops(
@@ -1245,143 +941,41 @@ impl<'a> CSharpLowerer<'a> {
         decode::lower_decode_expr(decode_ops, &reader, None, &self.namespace, &mut locals)
     }
 
-    fn sync_callback_native_decls(
+    fn sync_callback_success(
         &self,
+        method_name: &CSharpMethodName,
         params: &[CSharpCallbackBridgeParamPlan],
         ret: &CallbackReturn,
-    ) -> String {
-        let mut decls = vec!["ulong handle".to_string()];
-        decls.extend(
-            params
-                .iter()
-                .flat_map(|p| p.native_params().into_iter().map(|param| param.to_string())),
-        );
+    ) -> CSharpSyncCallbackSuccessPlan {
+        let decoded_args = decoded_arg_list(params);
         match ret {
-            CallbackReturn::Void => {}
-            CallbackReturn::Direct {
-                native_out_type, ..
-            } => {
-                decls.push(format!("out {native_out_type} {OUT_PTR}"));
-            }
-            CallbackReturn::Encoded { .. } => {
-                decls.push(format!("out IntPtr {OUT_PTR}"));
-                decls.push(format!("out UIntPtr {OUT_LEN}"));
-            }
-        }
-        decls.push(format!("out FfiStatus {STATUS_OUT}"));
-        decls.join(", ")
-    }
-
-    fn sync_proxy_native_decls(
-        &self,
-        params: &[CSharpCallbackBridgeParamPlan],
-        ret: &CallbackReturn,
-    ) -> String {
-        self.sync_callback_native_decls(params, ret)
-    }
-
-    fn sync_out_initializers(&self, ret: &CallbackReturn) -> Vec<String> {
-        match ret {
-            CallbackReturn::Void => vec![],
-            CallbackReturn::Direct { default_value, .. } => {
-                vec![format!("{OUT_PTR} = {default_value};")]
-            }
-            CallbackReturn::Encoded { .. } => vec![
-                format!("{OUT_PTR} = IntPtr.Zero;"),
-                format!("{OUT_LEN} = UIntPtr.Zero;"),
-            ],
-        }
-    }
-
-    fn async_completion_decls(&self, ret: &CallbackReturn) -> String {
-        let mut decls = vec!["ulong callbackData".to_string()];
-        match ret {
-            CallbackReturn::Void => {}
-            CallbackReturn::Direct {
-                native_type,
-                marshals_bool,
-                ..
-            } => {
-                if *marshals_bool {
-                    decls.push("[MarshalAs(UnmanagedType.I1)] bool value".to_string());
-                } else {
-                    decls.push(format!("{native_type} value"));
-                }
-            }
-            CallbackReturn::Encoded { .. } => {
-                decls.push("IntPtr valuePtr".to_string());
-                decls.push("UIntPtr valueLen".to_string());
-            }
-        }
-        decls.push(format!("FfiStatus {STATUS_OUT}"));
-        decls.join(", ")
-    }
-
-    fn async_complete_failure(
-        &self,
-        ret: &CallbackReturn,
-        callback_name: &str,
-        callback_data: &str,
-        indent: &str,
-    ) -> String {
-        match ret {
-            CallbackReturn::Void => {
-                format!("{indent}{callback_name}({callback_data}, {STATUS_INTERNAL_ERROR});\n")
-            }
-            CallbackReturn::Direct { default_value, .. } => format!(
-                "{indent}{callback_name}({callback_data}, {default_value}, {STATUS_INTERNAL_ERROR});\n"
-            ),
-            CallbackReturn::Encoded { .. } => format!(
-                "{indent}{callback_name}({callback_data}, IntPtr.Zero, UIntPtr.Zero, {STATUS_INTERNAL_ERROR});\n"
-            ),
-        }
-    }
-
-    fn async_complete_success(
-        &self,
-        ret: &CallbackReturn,
-        callback_name: &str,
-        callback_data: &str,
-        task_name: &str,
-        indent: &str,
-    ) -> String {
-        match ret {
-            CallbackReturn::Void => {
-                format!("{indent}{callback_name}({callback_data}, {STATUS_OK});\n")
-            }
-            CallbackReturn::Direct {
-                native_expr,
-                marshals_bool,
-                ..
-            } => {
-                let native_expr = if *marshals_bool {
-                    format!("{task_name}.Result")
-                } else {
-                    native_expr.replace("value", &format!("{task_name}.Result"))
-                };
-                format!("{indent}{callback_name}({callback_data}, {native_expr}, {STATUS_OK});\n")
-            }
+            CallbackReturn::Void => CSharpSyncCallbackSuccessPlan::Void { decoded_args },
+            CallbackReturn::Direct { native_expr, .. } => CSharpSyncCallbackSuccessPlan::Direct {
+                decoded_args,
+                native_value_expr: native_expr.replace("value", RETURN_VALUE),
+            },
             CallbackReturn::Encoded {
                 encode_ops,
                 is_result,
                 ..
             } => {
-                let mut out = String::new();
-                if *is_result {
-                    out.push_str(&format!(
-                        "{indent}var {RESULT_VALUE} = {}.Ok({task_name}.Result);\n",
-                        self.result_type_for_encode_ops(encode_ops)
-                    ));
+                let result_assignment_lines = if *is_result {
+                    unindented_lines(
+                        &self.render_result_assignment(
+                            "impl_",
+                            &method_name.to_string(),
+                            &decoded_args.to_string(),
+                            encode_ops,
+                        ),
+                        "            ",
+                    )
                 } else {
-                    out.push_str(&format!(
-                        "{indent}var {RETURN_VALUE} = {task_name}.Result;\n"
-                    ));
-                }
-                out.push_str(&self.render_encode_to_bytes_with_renames(
+                    vec![]
+                };
+                let writer = self.return_wire_writer_plan(
                     encode_ops,
                     "_returnWire",
                     "_returnBytes",
-                    indent,
                     &root_local_rename(
                         if *is_result { "result" } else { "value" },
                         if *is_result {
@@ -1390,96 +984,311 @@ impl<'a> CSharpLowerer<'a> {
                             RETURN_VALUE
                         },
                     ),
-                ));
-                out.push_str(&format!(
-                    "{indent}BoltFFICallbackReturn.Store(_returnBytes, out var {OUT_PTR}, out var {OUT_LEN});\n"
-                ));
-                out.push_str(&format!("{indent}try\n{indent}{{\n"));
-                out.push_str(&format!(
-                    "{indent}    {callback_name}({callback_data}, {OUT_PTR}, {OUT_LEN}, {STATUS_OK});\n"
-                ));
-                out.push_str(&format!("{indent}}}\n{indent}finally\n{indent}{{\n"));
-                out.push_str(&format!(
-                    "{indent}    BoltFFICallbackReturn.Free({OUT_PTR});\n"
-                ));
-                out.push_str(&format!("{indent}}}\n"));
-                out
+                );
+                CSharpSyncCallbackSuccessPlan::Encoded {
+                    is_result: *is_result,
+                    decoded_args,
+                    result_assignment_lines,
+                    writer,
+                }
             }
         }
     }
 
-    fn async_complete_exception(
+    fn proxy_call(
         &self,
+        params: &[CSharpCallbackBridgeParamPlan],
         ret: &CallbackReturn,
-        callback_name: &str,
-        callback_data: &str,
-        indent: &str,
-    ) -> String {
+    ) -> CSharpCallbackProxyCallPlan {
+        let mut args = CSharpArgumentList::empty();
+        args.push(CSharpExpression::MemberAccess {
+            receiver: Box::new(CSharpExpression::Identity(CSharpIdentity::Local(
+                CSharpLocalName::new("_handle"),
+            ))),
+            name: CSharpPropertyName::new("handle"),
+        });
+        for expr in params.iter().flat_map(|p| p.proxy_args()) {
+            args.push(expr);
+        }
+        match ret {
+            CallbackReturn::Void => CSharpCallbackProxyCallPlan::Void { args },
+            CallbackReturn::Direct {
+                native_out_type,
+                public_expr,
+                ..
+            } => CSharpCallbackProxyCallPlan::Direct {
+                args,
+                native_out_type: native_out_type.clone(),
+                public_expr: public_expr.clone(),
+            },
+            CallbackReturn::Encoded {
+                decode_expr,
+                decode_ops,
+                is_result,
+                ..
+            } => {
+                let result_decode_lines = if *is_result {
+                    source_lines(
+                        &self.render_result_decode_from_ops(
+                            decode_ops
+                                .as_ref()
+                                .expect("result callback return decode ops"),
+                            RETURN_READER,
+                            "",
+                        ),
+                    )
+                } else {
+                    vec![]
+                };
+                CSharpCallbackProxyCallPlan::Encoded {
+                    args,
+                    decode_expr: decode_expr.clone(),
+                    result_decode_lines,
+                }
+            }
+        }
+    }
+
+    fn sync_callback_native_params(
+        &self,
+        params: &[CSharpCallbackBridgeParamPlan],
+        ret: &CallbackReturn,
+    ) -> CSharpParameterList {
+        let mut decls = CSharpParameterList::empty();
+        decls.push(CSharpParameter::bare(
+            CSharpType::ULong,
+            CSharpParamName::new("handle"),
+        ));
+        for param in params {
+            decls.extend(param.native_params());
+        }
+        match ret {
+            CallbackReturn::Void => {}
+            CallbackReturn::Direct {
+                native_out_type, ..
+            } => {
+                decls.push(CSharpParameter::out(
+                    native_out_type.clone(),
+                    CSharpParamName::new(OUT_PTR),
+                ));
+            }
+            CallbackReturn::Encoded { .. } => {
+                decls.push(CSharpParameter::out(
+                    CSharpType::IntPtr,
+                    CSharpParamName::new(OUT_PTR),
+                ));
+                decls.push(CSharpParameter::out(
+                    CSharpType::UIntPtr,
+                    CSharpParamName::new(OUT_LEN),
+                ));
+            }
+        }
+        decls.push(CSharpParameter::out(
+            named_type("FfiStatus"),
+            CSharpParamName::new(STATUS_OUT),
+        ));
+        decls
+    }
+
+    fn async_callback_native_params(
+        &self,
+        method_name: &CSharpMethodName,
+        params: &[CSharpCallbackBridgeParamPlan],
+    ) -> CSharpParameterList {
+        let mut decls = CSharpParameterList::empty();
+        decls.push(CSharpParameter::bare(
+            CSharpType::ULong,
+            CSharpParamName::new("handle"),
+        ));
+        for param in params {
+            decls.extend(param.native_params());
+        }
+        decls.push(CSharpParameter::bare(
+            named_type(&format!("{method_name}Completion")),
+            CSharpParamName::new("callback"),
+        ));
+        decls.push(CSharpParameter::bare(
+            CSharpType::ULong,
+            CSharpParamName::new("callbackData"),
+        ));
+        decls
+    }
+
+    fn async_completion_params(&self, ret: &CallbackReturn) -> CSharpParameterList {
+        let mut decls = CSharpParameterList::empty();
+        decls.push(CSharpParameter::bare(
+            CSharpType::ULong,
+            CSharpParamName::new("callbackData"),
+        ));
+        match ret {
+            CallbackReturn::Void => {}
+            CallbackReturn::Direct {
+                native_type,
+                marshals_bool,
+                ..
+            } => {
+                if *marshals_bool {
+                    decls.push(CSharpParameter {
+                        attributes: vec![marshal_as_i1()],
+                        modifier: None,
+                        csharp_type: CSharpType::Bool,
+                        name: CSharpParamName::new("value"),
+                    });
+                } else {
+                    decls.push(CSharpParameter::bare(
+                        native_type.clone(),
+                        CSharpParamName::new("value"),
+                    ));
+                }
+            }
+            CallbackReturn::Encoded { .. } => {
+                decls.push(CSharpParameter::bare(
+                    CSharpType::IntPtr,
+                    CSharpParamName::new("valuePtr"),
+                ));
+                decls.push(CSharpParameter::bare(
+                    CSharpType::UIntPtr,
+                    CSharpParamName::new("valueLen"),
+                ));
+            }
+        }
+        decls.push(CSharpParameter::bare(
+            named_type("FfiStatus"),
+            CSharpParamName::new(STATUS_OUT),
+        ));
+        decls
+    }
+
+    fn sync_out_initializer(&self, ret: &CallbackReturn) -> CSharpSyncCallbackOutInitializerPlan {
+        match ret {
+            CallbackReturn::Void => CSharpSyncCallbackOutInitializerPlan::Void,
+            CallbackReturn::Direct { default_value, .. } => {
+                CSharpSyncCallbackOutInitializerPlan::Direct {
+                    default_value: default_value.clone(),
+                }
+            }
+            CallbackReturn::Encoded { .. } => CSharpSyncCallbackOutInitializerPlan::Encoded,
+        }
+    }
+
+    fn async_failure_completion(&self, ret: &CallbackReturn) -> CSharpAsyncCallbackFailurePlan {
+        match ret {
+            CallbackReturn::Void => CSharpAsyncCallbackFailurePlan::Void,
+            CallbackReturn::Direct { default_value, .. } => {
+                CSharpAsyncCallbackFailurePlan::Direct {
+                    default_value: default_value.clone(),
+                }
+            }
+            CallbackReturn::Encoded { .. } => CSharpAsyncCallbackFailurePlan::Encoded,
+        }
+    }
+
+    fn async_success_completion(&self, ret: &CallbackReturn) -> CSharpAsyncCallbackSuccessPlan {
+        match ret {
+            CallbackReturn::Void => CSharpAsyncCallbackSuccessPlan::Void,
+            CallbackReturn::Direct {
+                native_expr,
+                marshals_bool,
+                ..
+            } => {
+                let native_expr = if *marshals_bool {
+                    format!("{ASYNC_COMPLETED}.Result")
+                } else {
+                    native_expr.replace("value", &format!("{ASYNC_COMPLETED}.Result"))
+                };
+                CSharpAsyncCallbackSuccessPlan::Direct {
+                    native_value_expr: native_expr,
+                }
+            }
+            CallbackReturn::Encoded {
+                encode_ops,
+                is_result,
+                ..
+            } => {
+                let writer = self.return_wire_writer_plan(
+                    encode_ops,
+                    "_returnWire",
+                    "_returnBytes",
+                    &root_local_rename(
+                        if *is_result { "result" } else { "value" },
+                        if *is_result {
+                            RESULT_VALUE
+                        } else {
+                            RETURN_VALUE
+                        },
+                    ),
+                );
+                CSharpAsyncCallbackSuccessPlan::Encoded {
+                    is_result: *is_result,
+                    result_type: self.result_type_for_encode_ops(encode_ops),
+                    writer,
+                }
+            }
+        }
+    }
+
+    fn async_fault_completion(&self, ret: &CallbackReturn) -> CSharpAsyncCallbackFaultPlan {
         let CallbackReturn::Encoded {
             encode_ops,
             is_result: true,
             ..
         } = ret
         else {
-            return self.async_complete_failure(ret, callback_name, callback_data, indent);
+            return CSharpAsyncCallbackFaultPlan::Failure(self.async_failure_completion(ret));
         };
-        let mut out = String::new();
         let result_ty = self.result_type_for_encode_ops(encode_ops);
         let Some(crate::ir::ops::WriteOp::Result { err, .. }) = encode_ops.ops.first() else {
-            return self.async_complete_failure(ret, callback_name, callback_data, indent);
+            return CSharpAsyncCallbackFaultPlan::Failure(self.async_failure_completion(ret));
         };
         let err_type = self
             .result_branch_type(err)
             .unwrap_or_else(|| "object".to_string());
-        if let Some(exception_ty) = self.error_exception_for_write_seq(err) {
-            out.push_str(&format!(
-                "{indent}if ({ASYNC_EXCEPTION} is {exception_ty} __boltffiTypedException)\n{indent}{{\n"
-            ));
-            out.push_str(&format!(
-                "{indent}    var {ERROR_RESULT_VALUE} = {result_ty}.Err(__boltffiTypedException.Error);\n"
-            ));
-        } else if err_type == "string" {
-            out.push_str(&format!("{indent}{{\n"));
-            out.push_str(&format!(
-                "{indent}    var {ERROR_RESULT_VALUE} = {result_ty}.Err({ASYNC_EXCEPTION}.Message);\n"
-            ));
-        } else {
-            return self.async_complete_failure(ret, callback_name, callback_data, indent);
-        }
-        out.push_str(&self.render_encode_to_bytes_with_renames(
+        let (exception_type, error_value_expr, fallback) =
+            if let Some(exception_ty) = self.error_exception_for_write_seq(err) {
+                (
+                    Some(exception_ty),
+                    CSharpExpression::MemberAccess {
+                        receiver: Box::new(CSharpExpression::Identity(CSharpIdentity::Local(
+                            CSharpLocalName::new("__boltffiTypedException"),
+                        ))),
+                        name: CSharpPropertyName::from_source("error"),
+                    },
+                    Some(self.async_failure_completion(ret)),
+                )
+            } else if err_type == "string" {
+                (
+                    None,
+                    CSharpExpression::MemberAccess {
+                        receiver: Box::new(CSharpExpression::Identity(CSharpIdentity::Local(
+                            CSharpLocalName::new(ASYNC_EXCEPTION),
+                        ))),
+                        name: CSharpPropertyName::from_source("message"),
+                    },
+                    None,
+                )
+            } else {
+                return CSharpAsyncCallbackFaultPlan::Failure(self.async_failure_completion(ret));
+            };
+        let writer = self.return_wire_writer_plan(
             encode_ops,
             "_returnErrorWire",
             "_returnErrorBytes",
-            &(indent.to_string() + "    "),
             &root_local_rename("result", ERROR_RESULT_VALUE),
-        ));
-        out.push_str(&format!(
-            "{indent}    BoltFFICallbackReturn.Store(_returnErrorBytes, out var {ERROR_OUT_PTR}, out var {ERROR_OUT_LEN});\n"
-        ));
-        out.push_str(&format!("{indent}    try\n{indent}    {{\n"));
-        out.push_str(&format!(
-            "{indent}        {callback_name}({callback_data}, {ERROR_OUT_PTR}, {ERROR_OUT_LEN}, {STATUS_OK});\n"
-        ));
-        out.push_str(&format!(
-            "{indent}    }}\n{indent}    finally\n{indent}    {{\n"
-        ));
-        out.push_str(&format!(
-            "{indent}        BoltFFICallbackReturn.Free({ERROR_OUT_PTR});\n"
-        ));
-        out.push_str(&format!("{indent}    }}\n"));
-        out.push_str(&format!("{indent}    return;\n"));
-        out.push_str(&format!("{indent}}}\n"));
-        if self.error_exception_for_write_seq(err).is_some() {
-            out.push_str(&self.async_complete_failure(ret, callback_name, callback_data, indent));
+        );
+        CSharpAsyncCallbackFaultPlan::EncodedResult {
+            exception_type,
+            error_value_expr,
+            result_type: result_ty,
+            writer,
+            fallback,
         }
-        out
     }
 
-    fn inline_callback_native_return_type(&self, ret: &CallbackReturn) -> String {
+    fn inline_callback_native_return_type(&self, ret: &CallbackReturn) -> CSharpType {
         match ret {
-            CallbackReturn::Void => "void".to_string(),
+            CallbackReturn::Void => CSharpType::Void,
             CallbackReturn::Direct { native_type, .. } => native_type.clone(),
-            CallbackReturn::Encoded { .. } => "FfiBuf".to_string(),
+            CallbackReturn::Encoded { .. } => named_type("FfiBuf"),
         }
     }
 
@@ -1487,6 +1296,7 @@ impl<'a> CSharpLowerer<'a> {
         match abi_type {
             AbiType::Bool => CSharpParameter {
                 attributes: vec![marshal_as_i1()],
+                modifier: None,
                 csharp_type: CSharpType::Bool,
                 name: name.clone(),
             },
@@ -1494,10 +1304,6 @@ impl<'a> CSharpLowerer<'a> {
                 CSharpParameter::bare(self.native_csharp_type_for_abi_type(abi_type), name.clone())
             }
         }
-    }
-
-    fn native_type_for_abi_type(&self, abi_type: &AbiType) -> String {
-        self.native_csharp_type_for_abi_type(abi_type).to_string()
     }
 
     fn native_csharp_type_for_abi_type(&self, abi_type: &AbiType) -> CSharpType {
@@ -1687,18 +1493,30 @@ impl<'a> CSharpLowerer<'a> {
     }
 }
 
-fn indent_block(text: &str, prefix: &str) -> String {
-    text.lines()
-        .map(|line| format!("{prefix}{line}\n"))
-        .collect::<String>()
-}
-
 fn decoded_arg_list(params: &[CSharpCallbackBridgeParamPlan]) -> CSharpArgumentList {
     params
         .iter()
         .map(|param| param.decoded_arg().clone())
         .collect::<Vec<_>>()
         .into()
+}
+
+fn callback_public_param_list(params: &[CSharpCallbackBridgeParamPlan]) -> CSharpParameterList {
+    params
+        .iter()
+        .map(|param| param.public_param().clone())
+        .collect::<Vec<_>>()
+        .into()
+}
+
+fn source_lines(text: &str) -> Vec<String> {
+    text.lines().map(str::to_string).collect()
+}
+
+fn unindented_lines(text: &str, prefix: &str) -> Vec<String> {
+    text.lines()
+        .map(|line| line.strip_prefix(prefix).unwrap_or(line).to_string())
+        .collect()
 }
 
 fn stripped_name(name: &CSharpParamName) -> &str {

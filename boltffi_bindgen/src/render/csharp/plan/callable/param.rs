@@ -42,6 +42,7 @@ impl CSharpParamPlan {
                 attributes: vec![marshal_as(CSharpAttributeArg::Positional(
                     unmanaged_type_member("I1"),
                 ))],
+                modifier: None,
                 csharp_type: CSharpType::Bool,
                 name: self.name.clone(),
             }],
@@ -66,6 +67,7 @@ impl CSharpParamPlan {
                     } else {
                         vec![]
                     },
+                    modifier: None,
                     csharp_type: CSharpType::Array(Box::new(element)),
                     name: self.name.clone(),
                 };
@@ -275,20 +277,6 @@ impl CSharpParamPlan {
                     .into(),
                 },
             }),
-            _ => None,
-        }
-    }
-
-    pub fn setup_statement(&self) -> Option<String> {
-        match &self.kind {
-            CSharpParamKind::InlineClosure {
-                bridge_class,
-                scope_local,
-                ..
-            } => Some(format!(
-                "using var {scope_local} = {bridge_class}.Pin({});",
-                self.name
-            )),
             _ => None,
         }
     }

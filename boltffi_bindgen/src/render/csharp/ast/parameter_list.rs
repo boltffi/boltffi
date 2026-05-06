@@ -17,6 +17,7 @@ use super::{CSharpAttribute, CSharpParamName, CSharpType};
 #[derive(Debug, Clone)]
 pub(crate) struct CSharpParameter {
     pub(crate) attributes: Vec<CSharpAttribute>,
+    pub(crate) modifier: Option<CSharpParameterModifier>,
     pub(crate) csharp_type: CSharpType,
     pub(crate) name: CSharpParamName,
 }
@@ -27,8 +28,32 @@ impl CSharpParameter {
     pub(crate) fn bare(csharp_type: CSharpType, name: CSharpParamName) -> Self {
         Self {
             attributes: vec![],
+            modifier: None,
             csharp_type,
             name,
+        }
+    }
+
+    /// An `out` parameter in a generated native delegate signature.
+    pub(crate) fn out(csharp_type: CSharpType, name: CSharpParamName) -> Self {
+        Self {
+            attributes: vec![],
+            modifier: Some(CSharpParameterModifier::Out),
+            csharp_type,
+            name,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CSharpParameterModifier {
+    Out,
+}
+
+impl fmt::Display for CSharpParameterModifier {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Out => f.write_str("out"),
         }
     }
 }
@@ -37,6 +62,9 @@ impl fmt::Display for CSharpParameter {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for attr in &self.attributes {
             write!(f, "{attr} ")?;
+        }
+        if let Some(modifier) = self.modifier {
+            write!(f, "{modifier} ")?;
         }
         write!(f, "{} {}", self.csharp_type, self.name)
     }
@@ -137,10 +165,17 @@ mod tests {
     fn parameter_with_attribute_renders_attribute_then_type_name() {
         let p = CSharpParameter {
             attributes: vec![marshal_as("I1")],
+            modifier: None,
             csharp_type: CSharpType::Bool,
             name: CSharpParamName::from_source("flag"),
         };
         assert_eq!(p.to_string(), "[MarshalAs(UnmanagedType.I1)] bool flag");
+    }
+
+    #[test]
+    fn out_parameter_renders_modifier_before_type() {
+        let p = CSharpParameter::out(CSharpType::IntPtr, CSharpParamName::from_source("ptr"));
+        assert_eq!(p.to_string(), "out IntPtr ptr");
     }
 
     #[test]
@@ -162,6 +197,7 @@ mod tests {
         let list: CSharpParameterList = vec![
             CSharpParameter {
                 attributes: vec![marshal_as("I1")],
+                modifier: None,
                 csharp_type: CSharpType::Bool,
                 name: CSharpParamName::from_source("flag"),
             },

@@ -15,9 +15,12 @@ use askama::Template;
 
 use super::ast::{CSharpComment, CSharpNamespace};
 use super::plan::{
-    CSharpCallablePlan, CSharpCallbackPlan, CSharpClassPlan, CSharpClosurePlan,
-    CSharpConstructorKind, CSharpEnumPlan, CSharpFieldPlan, CSharpModulePlan, CSharpParamKind,
-    CSharpRecordPlan, CSharpReturnKind,
+    CSharpAsyncCallbackFailurePlan, CSharpAsyncCallbackFaultPlan, CSharpAsyncCallbackSuccessPlan,
+    CSharpCallablePlan, CSharpCallbackBridgeParamPlan, CSharpCallbackEntryPlan, CSharpCallbackPlan,
+    CSharpCallbackProxyCallPlan, CSharpCallbackProxyPlan, CSharpClassPlan, CSharpClosureInvokePlan,
+    CSharpClosurePlan, CSharpConstructorKind, CSharpEnumPlan, CSharpFieldPlan, CSharpModulePlan,
+    CSharpParamKind, CSharpRecordPlan, CSharpReturnKind, CSharpSyncCallbackOutInitializerPlan,
+    CSharpSyncCallbackSuccessPlan,
 };
 
 /// Renders a `<summary>` doc block at `indent`, ending with a

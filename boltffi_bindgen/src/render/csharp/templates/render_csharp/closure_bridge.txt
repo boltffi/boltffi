@@ -4,7 +4,7 @@
 {% if closure.method.marshals_return_bool %}
         [return: MarshalAs(UnmanagedType.I1)]
 {% endif %}
-        internal delegate {{ closure.method.native_return_type }} NativeInvoke({% for decl in closure.method.native_decls %}{{ decl }}{% if !loop.last %}, {% endif %}{% endfor %});
+        internal delegate {{ closure.method.native_return_type }} NativeInvoke({{ closure.method.native_params }});
 
         private static readonly NativeInvoke InvokeDelegate = Invoke;
 
@@ -33,11 +33,39 @@
             }
         }
 
-        private static {{ closure.method.native_return_type }} Invoke({% for decl in closure.method.native_decls %}{{ decl }}{% if !loop.last %}, {% endif %}{% endfor %})
+        private static {{ closure.method.native_return_type }} Invoke({{ closure.method.native_params }})
         {
             var impl_ = ({{ closure.public_name }})((GCHandle)context).Target!;
-{% for line in closure.method.decode_setup %}
+{%- for param in closure.method.bridge_params %}
+{%- match param %}
+{%- when CSharpCallbackBridgeParamPlan::Direct with { public_param, native_param, decoded_arg, proxy_arg } %}
+{%- when CSharpCallbackBridgeParamPlan::WireEncoded with { public_param, native_ptr_param, native_len_param, reader_local, decoded_arg, writer, pin_local, ptr_local } %}
+            var {{ reader_local }} = new WireReader({{ native_ptr_param.name }}, {{ native_len_param.name }});
+{%- endmatch %}
+{%- endfor %}
+{%- match closure.method.invoke %}
+{%- when CSharpClosureInvokePlan::Void with { decoded_args } %}
+            impl_({{ decoded_args }});
+{%- when CSharpClosureInvokePlan::Direct with { decoded_args, native_value_expr } %}
+            var __boltffiValue = impl_({{ decoded_args }});
+            return {{ native_value_expr }};
+{%- when CSharpClosureInvokePlan::Encoded with { is_result, decoded_args, result_assignment_lines, writer } %}
+{%- if is_result %}
+{%- for line in result_assignment_lines %}
             {{ line }}
-{% endfor %}
-{{ closure.method.invoke_body }}        }
+{%- endfor %}
+{%- else %}
+            var __boltffiValue = impl_({{ decoded_args }});
+{%- endif %}
+            byte[] {{ writer.bytes_binding_name }};
+            using (var {{ writer.binding_name }} = new WireWriter({{ writer.size_expr }}))
+            {
+{%- for stmt in writer.encode_stmts %}
+                {{ stmt }};
+{%- endfor %}
+                {{ writer.bytes_binding_name }} = {{ writer.binding_name }}.ToArray();
+            }
+            return FfiBuf.FromBytes({{ writer.bytes_binding_name }});
+{%- endmatch %}
+        }
     }

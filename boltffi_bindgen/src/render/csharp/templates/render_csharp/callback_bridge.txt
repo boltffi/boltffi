@@ -52,7 +52,206 @@
         }
 
 {% for method in callback.methods %}
-{{ method.entry_source }}
+{%- match method.entry %}
+{%- when CSharpCallbackEntryPlan::Sync with (entry) %}
+        private static void {{ method.name }}({{ entry.native_params }})
+        {
+{%- match entry.out_initializer %}
+{%- when CSharpSyncCallbackOutInitializerPlan::Void %}
+{%- when CSharpSyncCallbackOutInitializerPlan::Direct with { default_value } %}
+            __boltffiOutPtr = {{ default_value }};
+{%- when CSharpSyncCallbackOutInitializerPlan::Encoded %}
+            __boltffiOutPtr = IntPtr.Zero;
+            __boltffiOutLen = UIntPtr.Zero;
+{%- endmatch %}
+            __boltffiStatus = new FfiStatus { code = 100 };
+            try
+            {
+                if (!Handles.TryGetValue(handle, out var impl_)) throw new InvalidOperationException("invalid callback handle");
+{%- for param in entry.bridge_params %}
+{%- match param %}
+{%- when CSharpCallbackBridgeParamPlan::Direct with { public_param, native_param, decoded_arg, proxy_arg } %}
+{%- when CSharpCallbackBridgeParamPlan::WireEncoded with { public_param, native_ptr_param, native_len_param, reader_local, decoded_arg, writer, pin_local, ptr_local } %}
+                var {{ reader_local }} = new WireReader({{ native_ptr_param.name }}, {{ native_len_param.name }});
+{%- endmatch %}
+{%- endfor %}
+{%- match entry.success %}
+{%- when CSharpSyncCallbackSuccessPlan::Void with { decoded_args } %}
+                impl_.{{ method.name }}({{ decoded_args }});
+                __boltffiStatus = new FfiStatus { code = 0 };
+{%- when CSharpSyncCallbackSuccessPlan::Direct with { decoded_args, native_value_expr } %}
+                var __boltffiValue = impl_.{{ method.name }}({{ decoded_args }});
+                __boltffiOutPtr = {{ native_value_expr }};
+                __boltffiStatus = new FfiStatus { code = 0 };
+{%- when CSharpSyncCallbackSuccessPlan::Encoded with { is_result, decoded_args, result_assignment_lines, writer } %}
+{%- if is_result %}
+{%- for line in result_assignment_lines %}
+                {{ line }}
+{%- endfor %}
+{%- else %}
+                var __boltffiValue = impl_.{{ method.name }}({{ decoded_args }});
+{%- endif %}
+                byte[] {{ writer.bytes_binding_name }};
+                using (var {{ writer.binding_name }} = new WireWriter({{ writer.size_expr }}))
+                {
+{%- for stmt in writer.encode_stmts %}
+                    {{ stmt }};
+{%- endfor %}
+                    {{ writer.bytes_binding_name }} = {{ writer.binding_name }}.ToArray();
+                }
+                BoltFFICallbackReturn.Store({{ writer.bytes_binding_name }}, out __boltffiOutPtr, out __boltffiOutLen);
+                __boltffiStatus = new FfiStatus { code = 0 };
+{%- endmatch %}
+            }
+            catch
+            {
+{%- match entry.out_initializer %}
+{%- when CSharpSyncCallbackOutInitializerPlan::Void %}
+{%- when CSharpSyncCallbackOutInitializerPlan::Direct with { default_value } %}
+                __boltffiOutPtr = {{ default_value }};
+{%- when CSharpSyncCallbackOutInitializerPlan::Encoded %}
+                __boltffiOutPtr = IntPtr.Zero;
+                __boltffiOutLen = UIntPtr.Zero;
+{%- endmatch %}
+                __boltffiStatus = new FfiStatus { code = 100 };
+            }
+        }
+{%- when CSharpCallbackEntryPlan::Async with (entry) %}
+        private static void {{ method.name }}({{ entry.native_params }})
+        {
+            if (!Handles.TryGetValue(handle, out var impl_))
+            {
+{%- match entry.invalid_handle_completion %}
+{%- when CSharpAsyncCallbackFailurePlan::Void %}
+                callback(callbackData, new FfiStatus { code = 100 });
+{%- when CSharpAsyncCallbackFailurePlan::Direct with { default_value } %}
+                callback(callbackData, {{ default_value }}, new FfiStatus { code = 100 });
+{%- when CSharpAsyncCallbackFailurePlan::Encoded %}
+                callback(callbackData, IntPtr.Zero, UIntPtr.Zero, new FfiStatus { code = 100 });
+{%- endmatch %}
+                return;
+            }
+            try
+            {
+{%- for param in entry.bridge_params %}
+{%- match param %}
+{%- when CSharpCallbackBridgeParamPlan::Direct with { public_param, native_param, decoded_arg, proxy_arg } %}
+{%- when CSharpCallbackBridgeParamPlan::WireEncoded with { public_param, native_ptr_param, native_len_param, reader_local, decoded_arg, writer, pin_local, ptr_local } %}
+                var {{ reader_local }} = new WireReader({{ native_ptr_param.name }}, {{ native_len_param.name }});
+{%- endmatch %}
+{%- endfor %}
+                var __boltffiTask = impl_.{{ method.name }}({{ entry.decoded_args }});
+                _ = __boltffiTask.ContinueWith(__boltffiCompleted =>
+                {
+                    if (__boltffiCompleted.IsCanceled)
+                    {
+{%- match entry.canceled_completion %}
+{%- when CSharpAsyncCallbackFailurePlan::Void %}
+                        callback(callbackData, new FfiStatus { code = 100 });
+{%- when CSharpAsyncCallbackFailurePlan::Direct with { default_value } %}
+                        callback(callbackData, {{ default_value }}, new FfiStatus { code = 100 });
+{%- when CSharpAsyncCallbackFailurePlan::Encoded %}
+                        callback(callbackData, IntPtr.Zero, UIntPtr.Zero, new FfiStatus { code = 100 });
+{%- endmatch %}
+                        return;
+                    }
+                    if (__boltffiCompleted.IsFaulted)
+                    {
+                        Exception __boltffiException = UnwrapTaskException(__boltffiCompleted.Exception!);
+{%- match entry.faulted_completion %}
+{%- when CSharpAsyncCallbackFaultPlan::Failure with (failure) %}
+{%- match failure %}
+{%- when CSharpAsyncCallbackFailurePlan::Void %}
+                        callback(callbackData, new FfiStatus { code = 100 });
+{%- when CSharpAsyncCallbackFailurePlan::Direct with { default_value } %}
+                        callback(callbackData, {{ default_value }}, new FfiStatus { code = 100 });
+{%- when CSharpAsyncCallbackFailurePlan::Encoded %}
+                        callback(callbackData, IntPtr.Zero, UIntPtr.Zero, new FfiStatus { code = 100 });
+{%- endmatch %}
+{%- when CSharpAsyncCallbackFaultPlan::EncodedResult with { exception_type, error_value_expr, result_type, writer, fallback } %}
+{%- if let Some(exception_type) = exception_type %}
+                        if (__boltffiException is {{ exception_type }} __boltffiTypedException)
+                        {
+{%- else %}
+                        {
+{%- endif %}
+                            var __boltffiErrorResult = {{ result_type }}.Err({{ error_value_expr }});
+                            byte[] {{ writer.bytes_binding_name }};
+                            using (var {{ writer.binding_name }} = new WireWriter({{ writer.size_expr }}))
+                            {
+{%- for stmt in writer.encode_stmts %}
+                                {{ stmt }};
+{%- endfor %}
+                                {{ writer.bytes_binding_name }} = {{ writer.binding_name }}.ToArray();
+                            }
+                            BoltFFICallbackReturn.Store({{ writer.bytes_binding_name }}, out var __boltffiErrorOutPtr, out var __boltffiErrorOutLen);
+                            try
+                            {
+                                callback(callbackData, __boltffiErrorOutPtr, __boltffiErrorOutLen, new FfiStatus { code = 0 });
+                            }
+                            finally
+                            {
+                                BoltFFICallbackReturn.Free(__boltffiErrorOutPtr);
+                            }
+                            return;
+                        }
+{%- if let Some(fallback) = fallback %}
+{%- match fallback %}
+{%- when CSharpAsyncCallbackFailurePlan::Void %}
+                        callback(callbackData, new FfiStatus { code = 100 });
+{%- when CSharpAsyncCallbackFailurePlan::Direct with { default_value } %}
+                        callback(callbackData, {{ default_value }}, new FfiStatus { code = 100 });
+{%- when CSharpAsyncCallbackFailurePlan::Encoded %}
+                        callback(callbackData, IntPtr.Zero, UIntPtr.Zero, new FfiStatus { code = 100 });
+{%- endmatch %}
+{%- endif %}
+{%- endmatch %}
+                        return;
+                    }
+{%- match entry.success_completion %}
+{%- when CSharpAsyncCallbackSuccessPlan::Void %}
+                    callback(callbackData, new FfiStatus { code = 0 });
+{%- when CSharpAsyncCallbackSuccessPlan::Direct with { native_value_expr } %}
+                    callback(callbackData, {{ native_value_expr }}, new FfiStatus { code = 0 });
+{%- when CSharpAsyncCallbackSuccessPlan::Encoded with { is_result, result_type, writer } %}
+{%- if is_result %}
+                    var __boltffiResult = {{ result_type }}.Ok(__boltffiCompleted.Result);
+{%- else %}
+                    var __boltffiValue = __boltffiCompleted.Result;
+{%- endif %}
+                    byte[] {{ writer.bytes_binding_name }};
+                    using (var {{ writer.binding_name }} = new WireWriter({{ writer.size_expr }}))
+                    {
+{%- for stmt in writer.encode_stmts %}
+                        {{ stmt }};
+{%- endfor %}
+                        {{ writer.bytes_binding_name }} = {{ writer.binding_name }}.ToArray();
+                    }
+                    BoltFFICallbackReturn.Store({{ writer.bytes_binding_name }}, out var __boltffiOutPtr, out var __boltffiOutLen);
+                    try
+                    {
+                        callback(callbackData, __boltffiOutPtr, __boltffiOutLen, new FfiStatus { code = 0 });
+                    }
+                    finally
+                    {
+                        BoltFFICallbackReturn.Free(__boltffiOutPtr);
+                    }
+{%- endmatch %}
+                }, global::System.Threading.Tasks.TaskScheduler.Default);
+            }
+            catch
+            {
+{%- match entry.catch_completion %}
+{%- when CSharpAsyncCallbackFailurePlan::Void %}
+                callback(callbackData, new FfiStatus { code = 100 });
+{%- when CSharpAsyncCallbackFailurePlan::Direct with { default_value } %}
+                callback(callbackData, {{ default_value }}, new FfiStatus { code = 100 });
+{%- when CSharpAsyncCallbackFailurePlan::Encoded %}
+                callback(callbackData, IntPtr.Zero, UIntPtr.Zero, new FfiStatus { code = 100 });
+{%- endmatch %}
+            }
+        }
+{%- endmatch %}
 {% endfor %}
         private sealed class Proxy : {{ callback.public_name }}
         {
@@ -88,7 +287,140 @@
             }
 
 {% for method in callback.methods %}
-{{ method.proxy_source }}
+{%- match method.proxy %}
+{%- when CSharpCallbackProxyPlan::AsyncUnsupported with { public_params, return_type, result_type, not_supported_expr } %}
+{%- match result_type %}
+{%- when Some with (ty) %}
+            public {{ return_type }} {{ method.name }}({{ public_params }}) => global::System.Threading.Tasks.Task.FromException<{{ ty }}>({{ not_supported_expr }});
+{%- when None %}
+            public {{ return_type }} {{ method.name }}({{ public_params }}) => global::System.Threading.Tasks.Task.FromException({{ not_supported_expr }});
+{%- endmatch %}
+{%- when CSharpCallbackProxyPlan::Sync with (proxy) %}
+            public {{ proxy.return_type }} {{ method.name }}({{ proxy.public_params }})
+            {
+                if (_handle.IsNull) throw new ObjectDisposedException(nameof(Proxy));
+                VTable __boltffiTable = Marshal.PtrToStructure<VTable>(_handle.vtable);
+                var __boltffiInvoke = Marshal.GetDelegateForFunctionPointer<{{ method.name }}ProxyFn>(__boltffiTable.{{ method.vtable_field }});
+{%- for param in proxy.bridge_params %}
+{%- match param %}
+{%- when CSharpCallbackBridgeParamPlan::Direct with { public_param, native_param, decoded_arg, proxy_arg } %}
+{%- when CSharpCallbackBridgeParamPlan::WireEncoded with { public_param, native_ptr_param, native_len_param, reader_local, decoded_arg, writer, pin_local, ptr_local } %}
+                byte[] {{ writer.bytes_binding_name }};
+                using (var {{ writer.binding_name }} = new WireWriter({{ writer.size_expr }}))
+                {
+{%- for stmt in writer.encode_stmts %}
+                    {{ stmt }};
+{%- endfor %}
+                    {{ writer.bytes_binding_name }} = {{ writer.binding_name }}.ToArray();
+                }
+                GCHandle {{ pin_local }} = default;
+                IntPtr {{ ptr_local }} = IntPtr.Zero;
+{%- endmatch %}
+{%- endfor %}
+{%- if proxy.has_cleanup %}
+                try
+                {
+{%- for param in proxy.bridge_params %}
+{%- match param %}
+{%- when CSharpCallbackBridgeParamPlan::Direct with { public_param, native_param, decoded_arg, proxy_arg } %}
+{%- when CSharpCallbackBridgeParamPlan::WireEncoded with { public_param, native_ptr_param, native_len_param, reader_local, decoded_arg, writer, pin_local, ptr_local } %}
+                    if ({{ writer.bytes_binding_name }}.Length != 0)
+                    {
+                        {{ pin_local }} = GCHandle.Alloc({{ writer.bytes_binding_name }}, GCHandleType.Pinned);
+                        {{ ptr_local }} = {{ pin_local }}.AddrOfPinnedObject();
+                    }
+{%- endmatch %}
+{%- endfor %}
+{%- match proxy.call %}
+{%- when CSharpCallbackProxyCallPlan::Void with { args } %}
+                    FfiStatus __boltffiStatus;
+                    __boltffiInvoke({{ args }}, out __boltffiStatus);
+                    ThrowIfCallbackStatus(__boltffiStatus);
+{%- when CSharpCallbackProxyCallPlan::Direct with { args, native_out_type, public_expr } %}
+                    {{ native_out_type }} __boltffiOutPtr;
+                    FfiStatus __boltffiStatus;
+                    __boltffiInvoke({{ args }}, out __boltffiOutPtr, out __boltffiStatus);
+                    ThrowIfCallbackStatus(__boltffiStatus);
+                    return {{ public_expr }};
+{%- when CSharpCallbackProxyCallPlan::Encoded with { args, decode_expr, result_decode_lines } %}
+                    IntPtr __boltffiOutPtr;
+                    UIntPtr __boltffiOutLen;
+                    FfiStatus __boltffiStatus;
+                    __boltffiInvoke({{ args }}, out __boltffiOutPtr, out __boltffiOutLen, out __boltffiStatus);
+                    try
+                    {
+                        ThrowIfCallbackStatus(__boltffiStatus);
+                        var __boltffiReader = new WireReader(__boltffiOutPtr, __boltffiOutLen);
+{%- for line in result_decode_lines %}
+                        {{ line }}
+{%- endfor %}
+{%- if let Some(expr) = decode_expr %}
+                        return {{ expr }};
+{%- endif %}
+                    }
+                    finally
+                    {
+                        BoltFFICallbackReturn.Free(__boltffiOutPtr);
+                    }
+{%- endmatch %}
+                }
+                finally
+                {
+{%- for param in proxy.bridge_params %}
+{%- match param %}
+{%- when CSharpCallbackBridgeParamPlan::Direct with { public_param, native_param, decoded_arg, proxy_arg } %}
+{%- when CSharpCallbackBridgeParamPlan::WireEncoded with { public_param, native_ptr_param, native_len_param, reader_local, decoded_arg, writer, pin_local, ptr_local } %}
+                    if ({{ pin_local }}.IsAllocated) {{ pin_local }}.Free();
+{%- endmatch %}
+{%- endfor %}
+                }
+{%- else %}
+{%- for param in proxy.bridge_params %}
+{%- match param %}
+{%- when CSharpCallbackBridgeParamPlan::Direct with { public_param, native_param, decoded_arg, proxy_arg } %}
+{%- when CSharpCallbackBridgeParamPlan::WireEncoded with { public_param, native_ptr_param, native_len_param, reader_local, decoded_arg, writer, pin_local, ptr_local } %}
+                if ({{ writer.bytes_binding_name }}.Length != 0)
+                {
+                    {{ pin_local }} = GCHandle.Alloc({{ writer.bytes_binding_name }}, GCHandleType.Pinned);
+                    {{ ptr_local }} = {{ pin_local }}.AddrOfPinnedObject();
+                }
+{%- endmatch %}
+{%- endfor %}
+{%- match proxy.call %}
+{%- when CSharpCallbackProxyCallPlan::Void with { args } %}
+                FfiStatus __boltffiStatus;
+                __boltffiInvoke({{ args }}, out __boltffiStatus);
+                ThrowIfCallbackStatus(__boltffiStatus);
+{%- when CSharpCallbackProxyCallPlan::Direct with { args, native_out_type, public_expr } %}
+                {{ native_out_type }} __boltffiOutPtr;
+                FfiStatus __boltffiStatus;
+                __boltffiInvoke({{ args }}, out __boltffiOutPtr, out __boltffiStatus);
+                ThrowIfCallbackStatus(__boltffiStatus);
+                return {{ public_expr }};
+{%- when CSharpCallbackProxyCallPlan::Encoded with { args, decode_expr, result_decode_lines } %}
+                IntPtr __boltffiOutPtr;
+                UIntPtr __boltffiOutLen;
+                FfiStatus __boltffiStatus;
+                __boltffiInvoke({{ args }}, out __boltffiOutPtr, out __boltffiOutLen, out __boltffiStatus);
+                try
+                {
+                    ThrowIfCallbackStatus(__boltffiStatus);
+                    var __boltffiReader = new WireReader(__boltffiOutPtr, __boltffiOutLen);
+{%- for line in result_decode_lines %}
+                    {{ line }}
+{%- endfor %}
+{%- if let Some(expr) = decode_expr %}
+                    return {{ expr }};
+{%- endif %}
+                }
+                finally
+                {
+                    BoltFFICallbackReturn.Free(__boltffiOutPtr);
+                }
+{%- endmatch %}
+{%- endif %}
+            }
+{%- endmatch %}
 {% endfor %}
         }
 
@@ -122,7 +454,20 @@
         private static readonly CloneFn CloneDelegate = Clone;
 
 {% for method in callback.methods %}
-{{ method.delegate_source }}
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        private delegate void {{ method.name }}Fn({{ method.delegates.entry_params }});
+        private static readonly {{ method.name }}Fn {{ method.name }}Delegate = {{ method.name }};
+
+{%- if let Some(completion_params) = method.delegates.completion_params %}
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        private delegate void {{ method.name }}Completion({{ completion_params }});
+
+{%- endif %}
+{%- if let Some(proxy_params) = method.delegates.proxy_params %}
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        private delegate void {{ method.name }}ProxyFn({{ proxy_params }});
+
+{%- endif %}
 {% endfor %}
         [DllImport(NativeMethods.LibName, EntryPoint = "{{ callback.register_fn }}")]
         private static extern void RegisterNative(IntPtr vtable);

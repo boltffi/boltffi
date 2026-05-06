@@ -1,7 +1,7 @@
 use super::super::ast::{
-    CSharpArgumentList, CSharpBinaryOp, CSharpClassName, CSharpExpression, CSharpIdentity,
-    CSharpLiteral, CSharpLocalName, CSharpMethodName, CSharpParamName, CSharpParameter,
-    CSharpPropertyName, CSharpType, CSharpTypeReference,
+    CSharpArgumentList, CSharpClassName, CSharpExpression, CSharpIdentity, CSharpLocalName,
+    CSharpMethodName, CSharpParamName, CSharpParameter, CSharpParameterList, CSharpPropertyName,
+    CSharpType,
 };
 use super::CFunctionName;
 use super::callable::CSharpWireWriterPlan;
@@ -36,26 +36,169 @@ pub struct CSharpCallbackMethodPlan {
     pub return_type: CSharpType,
     pub is_async: bool,
     pub public_params: Vec<CSharpCallbackParamPlan>,
-    pub entry_source: String,
-    pub proxy_source: String,
-    pub delegate_source: String,
+    pub entry: CSharpCallbackEntryPlan,
+    pub proxy: CSharpCallbackProxyPlan,
+    pub delegates: CSharpCallbackDelegatePlan,
 }
 
 #[derive(Debug, Clone)]
 pub struct CSharpClosureMethodPlan {
     pub return_type: CSharpType,
     pub public_params: Vec<CSharpCallbackParamPlan>,
-    pub native_return_type: String,
-    pub native_decls: Vec<String>,
+    pub native_return_type: CSharpType,
+    pub native_params: CSharpParameterList,
     pub marshals_return_bool: bool,
-    pub decode_setup: Vec<String>,
-    pub invoke_body: String,
+    pub bridge_params: Vec<CSharpCallbackBridgeParamPlan>,
+    pub invoke: CSharpClosureInvokePlan,
 }
 
 #[derive(Debug, Clone)]
 pub struct CSharpCallbackParamPlan {
     pub csharp_type: CSharpType,
     pub name: CSharpParamName,
+}
+
+#[derive(Debug, Clone)]
+pub enum CSharpClosureInvokePlan {
+    Void {
+        decoded_args: CSharpArgumentList,
+    },
+    Direct {
+        decoded_args: CSharpArgumentList,
+        native_value_expr: String,
+    },
+    Encoded {
+        is_result: bool,
+        decoded_args: CSharpArgumentList,
+        result_assignment_lines: Vec<String>,
+        writer: CSharpWireWriterPlan,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub enum CSharpCallbackEntryPlan {
+    Sync(CSharpSyncCallbackEntryPlan),
+    Async(CSharpAsyncCallbackEntryPlan),
+}
+
+#[derive(Debug, Clone)]
+pub struct CSharpSyncCallbackEntryPlan {
+    pub native_params: CSharpParameterList,
+    pub out_initializer: CSharpSyncCallbackOutInitializerPlan,
+    pub bridge_params: Vec<CSharpCallbackBridgeParamPlan>,
+    pub success: CSharpSyncCallbackSuccessPlan,
+}
+
+#[derive(Debug, Clone)]
+pub enum CSharpSyncCallbackOutInitializerPlan {
+    Void,
+    Direct { default_value: String },
+    Encoded,
+}
+
+#[derive(Debug, Clone)]
+pub enum CSharpSyncCallbackSuccessPlan {
+    Void {
+        decoded_args: CSharpArgumentList,
+    },
+    Direct {
+        decoded_args: CSharpArgumentList,
+        native_value_expr: String,
+    },
+    Encoded {
+        is_result: bool,
+        decoded_args: CSharpArgumentList,
+        result_assignment_lines: Vec<String>,
+        writer: CSharpWireWriterPlan,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub struct CSharpAsyncCallbackEntryPlan {
+    pub native_params: CSharpParameterList,
+    pub bridge_params: Vec<CSharpCallbackBridgeParamPlan>,
+    pub decoded_args: CSharpArgumentList,
+    pub invalid_handle_completion: CSharpAsyncCallbackFailurePlan,
+    pub canceled_completion: CSharpAsyncCallbackFailurePlan,
+    pub faulted_completion: CSharpAsyncCallbackFaultPlan,
+    pub success_completion: CSharpAsyncCallbackSuccessPlan,
+    pub catch_completion: CSharpAsyncCallbackFailurePlan,
+}
+
+#[derive(Debug, Clone)]
+pub enum CSharpAsyncCallbackFailurePlan {
+    Void,
+    Direct { default_value: String },
+    Encoded,
+}
+
+#[derive(Debug, Clone)]
+pub enum CSharpAsyncCallbackSuccessPlan {
+    Void,
+    Direct {
+        native_value_expr: String,
+    },
+    Encoded {
+        is_result: bool,
+        result_type: String,
+        writer: CSharpWireWriterPlan,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub enum CSharpAsyncCallbackFaultPlan {
+    Failure(CSharpAsyncCallbackFailurePlan),
+    EncodedResult {
+        exception_type: Option<String>,
+        error_value_expr: CSharpExpression,
+        result_type: String,
+        writer: CSharpWireWriterPlan,
+        fallback: Option<CSharpAsyncCallbackFailurePlan>,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub enum CSharpCallbackProxyPlan {
+    AsyncUnsupported {
+        public_params: CSharpParameterList,
+        return_type: String,
+        result_type: Option<CSharpType>,
+        not_supported_expr: String,
+    },
+    Sync(CSharpSyncCallbackProxyPlan),
+}
+
+#[derive(Debug, Clone)]
+pub struct CSharpSyncCallbackProxyPlan {
+    pub public_params: CSharpParameterList,
+    pub return_type: String,
+    pub bridge_params: Vec<CSharpCallbackBridgeParamPlan>,
+    pub has_cleanup: bool,
+    pub call: CSharpCallbackProxyCallPlan,
+}
+
+#[derive(Debug, Clone)]
+pub enum CSharpCallbackProxyCallPlan {
+    Void {
+        args: CSharpArgumentList,
+    },
+    Direct {
+        args: CSharpArgumentList,
+        native_out_type: CSharpType,
+        public_expr: String,
+    },
+    Encoded {
+        args: CSharpArgumentList,
+        decode_expr: Option<CSharpExpression>,
+        result_decode_lines: Vec<String>,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub struct CSharpCallbackDelegatePlan {
+    pub entry_params: CSharpParameterList,
+    pub completion_params: Option<CSharpParameterList>,
+    pub proxy_params: Option<CSharpParameterList>,
 }
 
 #[derive(Debug, Clone)]
@@ -133,131 +276,6 @@ impl CSharpCallbackBridgeParamPlan {
         }
     }
 
-    pub fn decode_setup_lines(&self) -> Vec<String> {
-        match self {
-            Self::Direct { .. } => vec![],
-            Self::WireEncoded {
-                native_ptr_param,
-                native_len_param,
-                reader_local,
-                ..
-            } => vec![format!(
-                "var {reader_local} = new WireReader({}, {});",
-                native_ptr_param.name, native_len_param.name
-            )],
-        }
-    }
-
-    pub fn proxy_setup_lines(&self) -> Vec<String> {
-        match self {
-            Self::Direct { .. } => vec![],
-            Self::WireEncoded {
-                writer,
-                pin_local,
-                ptr_local,
-                ..
-            } => {
-                let mut lines = vec![
-                    format!("byte[] {};", writer.bytes_binding_name),
-                    format!(
-                        "using (var {} = new WireWriter({}))",
-                        writer.binding_name, writer.size_expr
-                    ),
-                    "{".to_string(),
-                ];
-                for stmt in &writer.encode_stmts {
-                    lines.push(format!("    {stmt};"));
-                }
-                lines.push(format!(
-                    "    {} = {};",
-                    writer.bytes_binding_name,
-                    CSharpExpression::MethodCall {
-                        receiver: Box::new(local_expr(&writer.binding_name)),
-                        method: CSharpMethodName::new("ToArray"),
-                        type_args: vec![],
-                        args: CSharpArgumentList::empty(),
-                    }
-                ));
-                lines.push("}".to_string());
-                lines.push(format!(
-                    "{} {pin_local} = {};",
-                    named_type("GCHandle"),
-                    CSharpExpression::Literal(CSharpLiteral::Default)
-                ));
-                lines.push(format!(
-                    "{} {ptr_local} = {};",
-                    CSharpType::IntPtr,
-                    int_ptr_zero()
-                ));
-                lines
-            }
-        }
-    }
-
-    pub fn proxy_pin_lines(&self) -> Vec<String> {
-        match self {
-            Self::Direct { .. } => vec![],
-            Self::WireEncoded {
-                writer,
-                pin_local,
-                ptr_local,
-                ..
-            } => {
-                let bytes = local_expr(&writer.bytes_binding_name);
-                let cond = CSharpExpression::Binary {
-                    op: CSharpBinaryOp::Ne,
-                    left: Box::new(bytes_length_expr(&writer.bytes_binding_name)),
-                    right: Box::new(CSharpExpression::Literal(CSharpLiteral::Int(0))),
-                };
-                let alloc = CSharpExpression::MethodCall {
-                    receiver: Box::new(type_expr("GCHandle")),
-                    method: CSharpMethodName::new("Alloc"),
-                    type_args: vec![],
-                    args: vec![
-                        bytes,
-                        CSharpExpression::MemberAccess {
-                            receiver: Box::new(type_expr("GCHandleType")),
-                            name: CSharpPropertyName::from_source("pinned"),
-                        },
-                    ]
-                    .into(),
-                };
-                let addr = CSharpExpression::MethodCall {
-                    receiver: Box::new(local_expr(pin_local)),
-                    method: CSharpMethodName::new("AddrOfPinnedObject"),
-                    type_args: vec![],
-                    args: CSharpArgumentList::empty(),
-                };
-                vec![
-                    format!("if ({cond})"),
-                    "{".to_string(),
-                    format!("    {pin_local} = {alloc};"),
-                    format!("    {ptr_local} = {addr};"),
-                    "}".to_string(),
-                ]
-            }
-        }
-    }
-
-    pub fn proxy_cleanup_lines(&self) -> Vec<String> {
-        match self {
-            Self::Direct { .. } => vec![],
-            Self::WireEncoded { pin_local, .. } => {
-                let cond = CSharpExpression::MemberAccess {
-                    receiver: Box::new(local_expr(pin_local)),
-                    name: CSharpPropertyName::from_source("is_allocated"),
-                };
-                let free = CSharpExpression::MethodCall {
-                    receiver: Box::new(local_expr(pin_local)),
-                    method: CSharpMethodName::new("Free"),
-                    type_args: vec![],
-                    args: CSharpArgumentList::empty(),
-                };
-                vec![format!("if ({cond}) {free};")]
-            }
-        }
-    }
-
     pub fn needs_wire_reader(&self) -> bool {
         matches!(self, Self::WireEncoded { .. })
     }
@@ -271,14 +289,6 @@ fn local_expr(name: &CSharpLocalName) -> CSharpExpression {
     CSharpExpression::Identity(CSharpIdentity::Local(name.clone()))
 }
 
-fn type_expr(name: &str) -> CSharpExpression {
-    CSharpExpression::TypeRef(CSharpTypeReference::Plain(CSharpClassName::new(name)))
-}
-
-fn named_type(name: &str) -> CSharpType {
-    CSharpType::Named(CSharpTypeReference::Plain(CSharpClassName::new(name)))
-}
-
 fn bytes_length_expr(bytes_local: &CSharpLocalName) -> CSharpExpression {
     CSharpExpression::MemberAccess {
         receiver: Box::new(local_expr(bytes_local)),
@@ -286,16 +296,9 @@ fn bytes_length_expr(bytes_local: &CSharpLocalName) -> CSharpExpression {
     }
 }
 
-fn int_ptr_zero() -> CSharpExpression {
-    CSharpExpression::MemberAccess {
-        receiver: Box::new(type_expr("IntPtr")),
-        name: CSharpPropertyName::from_source("zero"),
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::super::super::ast::CSharpStatement;
+    use super::super::super::ast::{CSharpLiteral, CSharpStatement};
     use super::*;
 
     fn param_expr(name: &CSharpParamName) -> CSharpExpression {
@@ -326,14 +329,12 @@ mod tests {
         );
         assert_eq!(plan.decoded_arg().to_string(), "value");
         assert_eq!(plan.proxy_args().to_string(), "value");
-        assert!(plan.decode_setup_lines().is_empty());
-        assert!(plan.proxy_setup_lines().is_empty());
         assert!(!plan.needs_wire_reader());
         assert!(!plan.needs_wire_writer());
     }
 
     #[test]
-    fn wire_encoded_bridge_param_derives_reader_writer_pin_and_cleanup_lines() {
+    fn wire_encoded_bridge_param_exposes_reader_writer_pin_and_cleanup_parts() {
         let value = CSharpParamName::from_source("value");
         let value_len = CSharpParamName::new("valueLen");
         let writer = CSharpWireWriterPlan {
@@ -368,40 +369,24 @@ mod tests {
             vec!["IntPtr value", "UIntPtr valueLen"]
         );
         assert_eq!(
-            plan.decode_setup_lines(),
-            vec!["var __boltffiValueReader = new WireReader(value, valueLen);"]
-        );
-        assert_eq!(
             plan.proxy_args().to_string(),
             "_valuePtr, (UIntPtr)_valueBytes.Length"
         );
-        assert_eq!(
-            plan.proxy_setup_lines(),
-            vec![
-                "byte[] _valueBytes;",
-                "using (var _valueWire = new WireWriter(4))",
-                "{",
-                "    _valueWire.WriteI32(value);",
-                "    _valueBytes = _valueWire.ToArray();",
-                "}",
-                "GCHandle _valuePin = default;",
-                "IntPtr _valuePtr = IntPtr.Zero;",
-            ]
-        );
-        assert_eq!(
-            plan.proxy_pin_lines(),
-            vec![
-                "if (_valueBytes.Length != 0)",
-                "{",
-                "    _valuePin = GCHandle.Alloc(_valueBytes, GCHandleType.Pinned);",
-                "    _valuePtr = _valuePin.AddrOfPinnedObject();",
-                "}",
-            ]
-        );
-        assert_eq!(
-            plan.proxy_cleanup_lines(),
-            vec!["if (_valuePin.IsAllocated) _valuePin.Free();"]
-        );
+        let CSharpCallbackBridgeParamPlan::WireEncoded {
+            reader_local,
+            writer,
+            pin_local,
+            ptr_local,
+            ..
+        } = &plan
+        else {
+            panic!("expected wire-encoded bridge param");
+        };
+        assert_eq!(reader_local.to_string(), "__boltffiValueReader");
+        assert_eq!(writer.binding_name.to_string(), "_valueWire");
+        assert_eq!(writer.bytes_binding_name.to_string(), "_valueBytes");
+        assert_eq!(pin_local.to_string(), "_valuePin");
+        assert_eq!(ptr_local.to_string(), "_valuePtr");
         assert!(plan.needs_wire_reader());
         assert!(plan.needs_wire_writer());
     }
