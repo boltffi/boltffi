@@ -23,8 +23,8 @@ pub use callable::{
     CSharpParamPlan, CSharpReceiver, CSharpReturnKind, CSharpWireWriterPlan,
 };
 pub use callback::{
-    CSharpCallbackMethodPlan, CSharpCallbackParamPlan, CSharpCallbackPlan, CSharpClosureMethodPlan,
-    CSharpClosurePlan,
+    CSharpCallbackBridgeParamPlan, CSharpCallbackMethodPlan, CSharpCallbackParamPlan,
+    CSharpCallbackPlan, CSharpClosureMethodPlan, CSharpClosurePlan,
 };
 pub use class::{CSharpClassPlan, CSharpConstructorKind, CSharpConstructorPlan};
 pub use enumeration::{CSharpEnumKind, CSharpEnumPlan, CSharpEnumVariantPlan};

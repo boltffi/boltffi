@@ -6,12 +6,14 @@ use crate::ir::plan::{AbiType, Transport};
 use crate::ir::types::{PrimitiveType, TypeExpr};
 
 use super::super::ast::{
-    CSharpClassName, CSharpExpression, CSharpIdentity, CSharpLocalName, CSharpMethodName,
-    CSharpParamName, CSharpType,
+    CSharpArgumentList, CSharpAttribute, CSharpAttributeArg, CSharpClassName, CSharpExpression,
+    CSharpIdentity, CSharpLocalName, CSharpMethodName, CSharpParamName, CSharpParameter,
+    CSharpPropertyName, CSharpType, CSharpTypeReference,
 };
 use super::super::plan::{
-    CFunctionName, CSharpCallbackMethodPlan, CSharpCallbackParamPlan, CSharpCallbackPlan,
-    CSharpClosureMethodPlan, CSharpClosurePlan,
+    CFunctionName, CSharpCallbackBridgeParamPlan, CSharpCallbackMethodPlan,
+    CSharpCallbackParamPlan, CSharpCallbackPlan, CSharpClosureMethodPlan, CSharpClosurePlan,
+    CSharpWireWriterPlan,
 };
 use super::lowerer::CSharpLowerer;
 use super::{decode, encode, size, value};
@@ -33,20 +35,6 @@ const ERROR_OUT_PTR: &str = "__boltffiErrorOutPtr";
 const ERROR_OUT_LEN: &str = "__boltffiErrorOutLen";
 
 #[derive(Debug, Clone)]
-struct BridgeParam {
-    public_decl: String,
-    native_decls: Vec<String>,
-    decode_setup: Vec<String>,
-    decode_expr: String,
-    proxy_arg_exprs: Vec<String>,
-    proxy_setup: Vec<String>,
-    proxy_pin: Vec<String>,
-    proxy_cleanup: Vec<String>,
-    needs_wire_reader: bool,
-    needs_wire_writer: bool,
-}
-
-#[derive(Debug, Clone)]
 enum CallbackReturn {
     Void,
     Direct {
@@ -60,7 +48,7 @@ enum CallbackReturn {
     },
     Encoded {
         public_type: String,
-        decode_expr: Option<String>,
+        decode_expr: Option<CSharpExpression>,
         encode_ops: WriteSeq,
         decode_ops: Option<ReadSeq>,
         is_result: bool,
@@ -224,13 +212,13 @@ impl<'a> CSharpLowerer<'a> {
         );
         let native_return_type = self.inline_callback_native_return_type(&ret);
         let native_decls = std::iter::once("IntPtr context".to_string())
-            .chain(params.iter().flat_map(|p| p.native_decls.clone()))
+            .chain(
+                params
+                    .iter()
+                    .flat_map(|p| p.native_params().into_iter().map(|param| param.to_string())),
+            )
             .collect::<Vec<_>>();
-        let decoded_args = params
-            .iter()
-            .map(|p| p.decode_expr.clone())
-            .collect::<Vec<_>>()
-            .join(", ");
+        let decoded_args = decoded_arg_list(&params).to_string();
         let marshals_return_bool = matches!(
             ret,
             CallbackReturn::Direct {
@@ -247,7 +235,7 @@ impl<'a> CSharpLowerer<'a> {
             marshals_return_bool,
             decode_setup: params
                 .iter()
-                .flat_map(|param| param.decode_setup.clone())
+                .flat_map(CSharpCallbackBridgeParamPlan::decode_setup_lines)
                 .collect(),
             invoke_body: self.render_closure_invoke_return(&ret, &decoded_args),
         }
@@ -358,11 +346,7 @@ impl<'a> CSharpLowerer<'a> {
             CallbackReturnMode::CallbackVtable,
         );
         let native_decls = self.sync_callback_native_decls(&params, &ret);
-        let decoded_args = params
-            .iter()
-            .map(|p| p.decode_expr.clone())
-            .collect::<Vec<_>>()
-            .join(", ");
+        let decoded_args = decoded_arg_list(&params).to_string();
         let mut out =
             format!("        private static void {method_name}({native_decls})\n        {{\n");
         for line in self.sync_out_initializers(&ret) {
@@ -374,7 +358,7 @@ impl<'a> CSharpLowerer<'a> {
         out.push_str("            try\n            {\n");
         out.push_str("                if (!Handles.TryGetValue(handle, out var impl_)) throw new InvalidOperationException(\"invalid callback handle\");\n");
         for param in &params {
-            for line in &param.decode_setup {
+            for line in param.decode_setup_lines() {
                 out.push_str(&format!("                {line}\n"));
             }
         }
@@ -465,14 +449,14 @@ impl<'a> CSharpLowerer<'a> {
             CallbackReturnMode::CallbackVtable,
         );
         let mut native_decls = vec!["ulong handle".to_string()];
-        native_decls.extend(params.iter().flat_map(|p| p.native_decls.clone()));
+        native_decls.extend(
+            params
+                .iter()
+                .flat_map(|p| p.native_params().into_iter().map(|param| param.to_string())),
+        );
         native_decls.push(format!("{method_name}Completion callback"));
         native_decls.push("ulong callbackData".to_string());
-        let decoded_args = params
-            .iter()
-            .map(|p| p.decode_expr.clone())
-            .collect::<Vec<_>>()
-            .join(", ");
+        let decoded_args = decoded_arg_list(&params).to_string();
         let mut out = format!(
             "        private static void {method_name}({})\n        {{\n",
             native_decls.join(", ")
@@ -489,7 +473,7 @@ impl<'a> CSharpLowerer<'a> {
         out.push_str("                return;\n            }\n");
         out.push_str("            try\n            {\n");
         for param in &params {
-            for line in &param.decode_setup {
+            for line in param.decode_setup_lines() {
                 out.push_str(&format!("                {line}\n"));
             }
         }
@@ -557,7 +541,7 @@ impl<'a> CSharpLowerer<'a> {
         );
         let public_params = params
             .iter()
-            .map(|p| p.public_decl.clone())
+            .map(|p| p.public_param().to_string())
             .collect::<Vec<_>>()
             .join(", ");
         if method.is_async() {
@@ -587,16 +571,18 @@ impl<'a> CSharpLowerer<'a> {
             abi_method.vtable_field.as_str()
         ));
         for param in &params {
-            for line in &param.proxy_setup {
+            for line in param.proxy_setup_lines() {
                 out.push_str(&format!("                {line}\n"));
             }
         }
-        let has_cleanup = params.iter().any(|p| !p.proxy_cleanup.is_empty());
+        let has_cleanup = params
+            .iter()
+            .any(|param| !param.proxy_cleanup_lines().is_empty());
         if has_cleanup {
             out.push_str("                try\n                {\n");
         }
         for param in &params {
-            for line in &param.proxy_pin {
+            for line in param.proxy_pin_lines() {
                 out.push_str(&format!(
                     "{}{line}\n",
                     if has_cleanup {
@@ -613,7 +599,11 @@ impl<'a> CSharpLowerer<'a> {
             "                "
         };
         let args = std::iter::once("_handle.handle".to_string())
-            .chain(params.iter().flat_map(|p| p.proxy_arg_exprs.clone()))
+            .chain(
+                params
+                    .iter()
+                    .flat_map(|p| p.proxy_args().into_iter().map(|expr| expr.to_string())),
+            )
             .collect::<Vec<_>>()
             .join(", ");
         match &ret {
@@ -683,7 +673,7 @@ impl<'a> CSharpLowerer<'a> {
         if has_cleanup {
             out.push_str("                }\n                finally\n                {\n");
             for param in &params {
-                for line in &param.proxy_cleanup {
+                for line in param.proxy_cleanup_lines() {
                     out.push_str(&format!("                    {line}\n"));
                 }
             }
@@ -711,7 +701,11 @@ impl<'a> CSharpLowerer<'a> {
             "        private delegate void {method_name}Fn({});\n",
             if method.is_async() {
                 let mut decls = vec!["ulong handle".to_string()];
-                decls.extend(params.iter().flat_map(|p| p.native_decls.clone()));
+                decls.extend(
+                    params
+                        .iter()
+                        .flat_map(|p| p.native_params().into_iter().map(|param| param.to_string())),
+                );
                 decls.push(format!("{method_name}Completion callback"));
                 decls.push("ulong callbackData".to_string());
                 decls.join(", ")
@@ -742,7 +736,7 @@ impl<'a> CSharpLowerer<'a> {
         &self,
         method: &CallbackMethodDef,
         abi_method: &AbiCallbackMethod,
-    ) -> Vec<BridgeParam> {
+    ) -> Vec<CSharpCallbackBridgeParamPlan> {
         method
             .params
             .iter()
@@ -760,13 +754,12 @@ impl<'a> CSharpLowerer<'a> {
         &self,
         param: &crate::ir::definitions::ParamDef,
         abi_param: &AbiParam,
-    ) -> BridgeParam {
+    ) -> CSharpCallbackBridgeParamPlan {
         let name: CSharpParamName = (&param.name).into();
         let public_type = self
             .lower_type(&param.type_expr)
-            .expect("callback param type")
-            .to_string();
-        let public_decl = format!("{public_type} {name}");
+            .expect("callback param type");
+        let public_param = CSharpParameter::bare(public_type, name.clone());
         let ParamRole::Input {
             transport,
             len_param,
@@ -786,69 +779,43 @@ impl<'a> CSharpLowerer<'a> {
             let decode_ops = decode_ops
                 .as_ref()
                 .expect("encoded callback param must have decode ops");
-            let reader_name = format!("__boltffi{}Reader", name.as_str().trim_start_matches('@'));
+            let reader_name =
+                CSharpLocalName::new(format!("__boltffi{}Reader", stripped_name(&name)));
             let decode_expr = self.decode_expr_from_reader(
                 &self.normalize_custom_read_seq(decode_ops),
-                CSharpExpression::Identity(CSharpIdentity::Local(CSharpLocalName::new(
-                    reader_name.clone(),
-                ))),
+                CSharpExpression::Identity(CSharpIdentity::Local(reader_name.clone())),
             );
             let encode_ops = self.normalize_custom_write_seq(
                 encode_ops
                     .as_ref()
                     .expect("encoded callback param must have encode ops"),
             );
-            let bytes_name = format!("_{}Bytes", name.as_str().trim_start_matches('@'));
-            let pin_name = format!("_{}Pin", name.as_str().trim_start_matches('@'));
-            let ptr_name = format!("_{}Ptr", name.as_str().trim_start_matches('@'));
-            let mut setup = self
-                .render_encode_to_bytes(
-                    &encode_ops,
-                    &format!("_{}Wire", name.as_str().trim_start_matches('@')),
-                    &bytes_name,
-                    "                ",
-                )
-                .lines()
-                .map(str::to_string)
-                .collect::<Vec<_>>();
-            setup.push(format!("GCHandle {pin_name} = default;"));
-            setup.push(format!("IntPtr {ptr_name} = IntPtr.Zero;"));
-            BridgeParam {
-                public_decl,
-                native_decls: vec![format!("IntPtr {name}"), format!("UIntPtr {len_name}")],
-                decode_setup: vec![format!(
-                    "var {reader_name} = new WireReader({name}, {len_name});"
-                )],
-                decode_expr,
-                proxy_arg_exprs: vec![ptr_name.clone(), format!("(UIntPtr){bytes_name}.Length")],
-                proxy_setup: setup,
-                proxy_pin: vec![
-                    format!("if ({bytes_name}.Length != 0)"),
-                    "{".to_string(),
-                    format!("    {pin_name} = GCHandle.Alloc({bytes_name}, GCHandleType.Pinned);"),
-                    format!("    {ptr_name} = {pin_name}.AddrOfPinnedObject();"),
-                    "}".to_string(),
-                ],
-                proxy_cleanup: vec![format!("if ({pin_name}.IsAllocated) {pin_name}.Free();")],
-                needs_wire_reader: true,
-                needs_wire_writer: true,
+            let writer = self.callback_param_wire_writer_plan(&encode_ops, &name);
+            CSharpCallbackBridgeParamPlan::WireEncoded {
+                public_param,
+                native_ptr_param: CSharpParameter::bare(CSharpType::IntPtr, name),
+                native_len_param: CSharpParameter::bare(CSharpType::UIntPtr, len_name),
+                reader_local: reader_name,
+                decoded_arg: decode_expr,
+                pin_local: CSharpLocalName::new(format!(
+                    "_{}Pin",
+                    stripped_name(&writer.param_name)
+                )),
+                ptr_local: CSharpLocalName::new(format!(
+                    "_{}Ptr",
+                    stripped_name(&writer.param_name)
+                )),
+                writer,
             }
         } else {
-            let native_decl = self.native_param_decl(&abi_param.abi_type, &name);
             let decode_expr = self.direct_decode_expr(&param.type_expr, &name);
             let proxy_expr =
                 self.direct_proxy_arg_expr(&param.type_expr, &abi_param.abi_type, &name);
-            BridgeParam {
-                public_decl,
-                native_decls: vec![native_decl],
-                decode_setup: vec![],
-                decode_expr,
-                proxy_arg_exprs: vec![proxy_expr],
-                proxy_setup: vec![],
-                proxy_pin: vec![],
-                proxy_cleanup: vec![],
-                needs_wire_reader: false,
-                needs_wire_writer: false,
+            CSharpCallbackBridgeParamPlan::Direct {
+                public_param,
+                native_param: self.native_param(&abi_param.abi_type, &name),
+                decoded_arg: decode_expr,
+                proxy_arg: proxy_expr,
             }
         }
     }
@@ -1175,20 +1142,32 @@ impl<'a> CSharpLowerer<'a> {
         }
     }
 
-    fn render_encode_to_bytes(
+    fn callback_param_wire_writer_plan(
         &self,
         encode_ops: &WriteSeq,
-        writer_name: &str,
-        bytes_name: &str,
-        indent: &str,
-    ) -> String {
-        self.render_encode_to_bytes_with_renames(
-            encode_ops,
-            writer_name,
-            bytes_name,
-            indent,
-            &value::Renames::new(),
-        )
+        name: &CSharpParamName,
+    ) -> CSharpWireWriterPlan {
+        let writer_name = CSharpLocalName::new(format!("_{}Wire", stripped_name(name)));
+        let bytes_name = CSharpLocalName::new(format!("_{}Bytes", stripped_name(name)));
+        let mut size_locals = size::SizeLocalCounters::default();
+        let mut encode_locals = encode::EncodeLocalCounters::default();
+        let writer = CSharpExpression::Identity(CSharpIdentity::Local(writer_name.clone()));
+        CSharpWireWriterPlan {
+            binding_name: writer_name,
+            bytes_binding_name: bytes_name,
+            param_name: name.clone(),
+            size_expr: size::lower_size_expr(
+                &encode_ops.size,
+                &value::Renames::new(),
+                &mut size_locals,
+            ),
+            encode_stmts: encode::lower_encode_expr(
+                encode_ops,
+                &writer,
+                &value::Renames::new(),
+                &mut encode_locals,
+            ),
+        }
     }
 
     fn render_encode_to_bytes_with_renames(
@@ -1257,15 +1236,26 @@ impl<'a> CSharpLowerer<'a> {
         out
     }
 
-    fn decode_expr_from_reader(&self, decode_ops: &ReadSeq, reader: CSharpExpression) -> String {
+    fn decode_expr_from_reader(
+        &self,
+        decode_ops: &ReadSeq,
+        reader: CSharpExpression,
+    ) -> CSharpExpression {
         let mut locals = decode::DecodeLocalCounters::default();
         decode::lower_decode_expr(decode_ops, &reader, None, &self.namespace, &mut locals)
-            .to_string()
     }
 
-    fn sync_callback_native_decls(&self, params: &[BridgeParam], ret: &CallbackReturn) -> String {
+    fn sync_callback_native_decls(
+        &self,
+        params: &[CSharpCallbackBridgeParamPlan],
+        ret: &CallbackReturn,
+    ) -> String {
         let mut decls = vec!["ulong handle".to_string()];
-        decls.extend(params.iter().flat_map(|p| p.native_decls.clone()));
+        decls.extend(
+            params
+                .iter()
+                .flat_map(|p| p.native_params().into_iter().map(|param| param.to_string())),
+        );
         match ret {
             CallbackReturn::Void => {}
             CallbackReturn::Direct {
@@ -1282,7 +1272,11 @@ impl<'a> CSharpLowerer<'a> {
         decls.join(", ")
     }
 
-    fn sync_proxy_native_decls(&self, params: &[BridgeParam], ret: &CallbackReturn) -> String {
+    fn sync_proxy_native_decls(
+        &self,
+        params: &[CSharpCallbackBridgeParamPlan],
+        ret: &CallbackReturn,
+    ) -> String {
         self.sync_callback_native_decls(params, ret)
     }
 
@@ -1489,35 +1483,45 @@ impl<'a> CSharpLowerer<'a> {
         }
     }
 
-    fn native_param_decl(&self, abi_type: &AbiType, name: &CSharpParamName) -> String {
+    fn native_param(&self, abi_type: &AbiType, name: &CSharpParamName) -> CSharpParameter {
         match abi_type {
-            AbiType::Bool => format!("[MarshalAs(UnmanagedType.I1)] bool {name}"),
-            _ => format!("{} {name}", self.native_type_for_abi_type(abi_type)),
+            AbiType::Bool => CSharpParameter {
+                attributes: vec![marshal_as_i1()],
+                csharp_type: CSharpType::Bool,
+                name: name.clone(),
+            },
+            _ => {
+                CSharpParameter::bare(self.native_csharp_type_for_abi_type(abi_type), name.clone())
+            }
         }
     }
 
     fn native_type_for_abi_type(&self, abi_type: &AbiType) -> String {
+        self.native_csharp_type_for_abi_type(abi_type).to_string()
+    }
+
+    fn native_csharp_type_for_abi_type(&self, abi_type: &AbiType) -> CSharpType {
         match abi_type {
-            AbiType::Void => "void".to_string(),
-            AbiType::Bool => "bool".to_string(),
-            AbiType::I8 => "sbyte".to_string(),
-            AbiType::U8 => "byte".to_string(),
-            AbiType::I16 => "short".to_string(),
-            AbiType::U16 => "ushort".to_string(),
-            AbiType::I32 => "int".to_string(),
-            AbiType::U32 => "uint".to_string(),
-            AbiType::I64 => "long".to_string(),
-            AbiType::U64 => "ulong".to_string(),
-            AbiType::ISize => "nint".to_string(),
-            AbiType::USize => "nuint".to_string(),
-            AbiType::F32 => "float".to_string(),
-            AbiType::F64 => "double".to_string(),
-            AbiType::Pointer(_) => "IntPtr".to_string(),
-            AbiType::OwnedBuffer => "FfiBuf".to_string(),
-            AbiType::Handle(_) => "IntPtr".to_string(),
-            AbiType::CallbackHandle => "BoltFFICallbackHandle".to_string(),
-            AbiType::Struct(id) => CSharpClassName::from(id).to_string(),
-            AbiType::InlineCallbackFn { .. } => "IntPtr".to_string(),
+            AbiType::Void => CSharpType::Void,
+            AbiType::Bool => CSharpType::Bool,
+            AbiType::I8 => CSharpType::SByte,
+            AbiType::U8 => CSharpType::Byte,
+            AbiType::I16 => CSharpType::Short,
+            AbiType::U16 => CSharpType::UShort,
+            AbiType::I32 => CSharpType::Int,
+            AbiType::U32 => CSharpType::UInt,
+            AbiType::I64 => CSharpType::Long,
+            AbiType::U64 => CSharpType::ULong,
+            AbiType::ISize => CSharpType::NInt,
+            AbiType::USize => CSharpType::NUInt,
+            AbiType::F32 => CSharpType::Float,
+            AbiType::F64 => CSharpType::Double,
+            AbiType::Pointer(_) => CSharpType::IntPtr,
+            AbiType::OwnedBuffer => named_type("FfiBuf"),
+            AbiType::Handle(_) => CSharpType::IntPtr,
+            AbiType::CallbackHandle => named_type("BoltFFICallbackHandle"),
+            AbiType::Struct(id) => CSharpType::Record(CSharpClassName::from(id).into()),
+            AbiType::InlineCallbackFn { .. } => CSharpType::IntPtr,
         }
     }
 
@@ -1539,12 +1543,16 @@ impl<'a> CSharpLowerer<'a> {
         }
     }
 
-    fn direct_decode_expr(&self, type_expr: &TypeExpr, name: &CSharpParamName) -> String {
+    fn direct_decode_expr(&self, type_expr: &TypeExpr, name: &CSharpParamName) -> CSharpExpression {
+        let param = CSharpExpression::Identity(CSharpIdentity::Param(name.clone()));
         if self.is_c_style_enum_type(type_expr) {
             let ty = self.lower_type(type_expr).expect("enum type");
-            format!("({ty}){name}")
+            CSharpExpression::Cast {
+                target: ty,
+                inner: Box::new(param),
+            }
         } else {
-            name.to_string()
+            param
         }
     }
 
@@ -1553,11 +1561,15 @@ impl<'a> CSharpLowerer<'a> {
         type_expr: &TypeExpr,
         abi_type: &AbiType,
         name: &CSharpParamName,
-    ) -> String {
+    ) -> CSharpExpression {
+        let param = CSharpExpression::Identity(CSharpIdentity::Param(name.clone()));
         if self.is_c_style_enum_type(type_expr) {
-            format!("({}){name}", self.native_type_for_abi_type(abi_type))
+            CSharpExpression::Cast {
+                target: self.native_csharp_type_for_abi_type(abi_type),
+                inner: Box::new(param),
+            }
         } else {
-            name.to_string()
+            param
         }
     }
 
@@ -1636,7 +1648,10 @@ impl<'a> CSharpLowerer<'a> {
         };
         let params = self.bridge_params(method, abi_method);
         let ret = self.callback_return(&method.returns, &abi_method.returns, mode);
-        params.iter().any(|param| param.needs_wire_reader) || ret.needs_wire_reader()
+        params
+            .iter()
+            .any(CSharpCallbackBridgeParamPlan::needs_wire_reader)
+            || ret.needs_wire_reader()
     }
 
     fn callback_method_needs_wire_writer(
@@ -1650,7 +1665,10 @@ impl<'a> CSharpLowerer<'a> {
         };
         let params = self.bridge_params(method, abi_method);
         let ret = self.callback_return(&method.returns, &abi_method.returns, mode);
-        params.iter().any(|param| param.needs_wire_writer) || ret.needs_wire_writer()
+        params
+            .iter()
+            .any(CSharpCallbackBridgeParamPlan::needs_wire_writer)
+            || ret.needs_wire_writer()
     }
 
     fn callback_method_needs_ffi_buf(
@@ -1673,6 +1691,36 @@ fn indent_block(text: &str, prefix: &str) -> String {
     text.lines()
         .map(|line| format!("{prefix}{line}\n"))
         .collect::<String>()
+}
+
+fn decoded_arg_list(params: &[CSharpCallbackBridgeParamPlan]) -> CSharpArgumentList {
+    params
+        .iter()
+        .map(|param| param.decoded_arg().clone())
+        .collect::<Vec<_>>()
+        .into()
+}
+
+fn stripped_name(name: &CSharpParamName) -> &str {
+    name.as_str().strip_prefix('@').unwrap_or(name.as_str())
+}
+
+fn named_type(name: &str) -> CSharpType {
+    CSharpType::Named(CSharpTypeReference::Plain(CSharpClassName::new(name)))
+}
+
+fn marshal_as_i1() -> CSharpAttribute {
+    CSharpAttribute {
+        name: CSharpClassName::new("MarshalAs"),
+        args: vec![CSharpAttributeArg::Positional(
+            CSharpExpression::MemberAccess {
+                receiver: Box::new(CSharpExpression::TypeRef(CSharpTypeReference::Plain(
+                    CSharpClassName::new("UnmanagedType"),
+                ))),
+                name: CSharpPropertyName::from_source("i1"),
+            },
+        )],
+    }
 }
 
 fn root_local_rename(ir_name: &str, csharp_name: &str) -> value::Renames {

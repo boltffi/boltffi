@@ -50,6 +50,9 @@ pub(crate) enum CSharpType {
     /// A user-defined enum whose variants carry payload data, modeled as
     /// an `abstract record` with nested `sealed record` variants.
     DataEnum(CSharpTypeReference),
+    /// A named runtime/helper type that is not sourced from user IR, such as
+    /// `GCHandle` or `WireReader`.
+    Named(CSharpTypeReference),
     /// `T[]`: a single-dimensional array of `T`.
     Array(Box<CSharpType>),
     /// `T?`: a value or reference type that may be `null`.
@@ -98,6 +101,7 @@ impl CSharpType {
             Self::Record(r) => Self::Record(r.qualify_if_shadowed(shadowed, namespace)),
             Self::CStyleEnum(r) => Self::CStyleEnum(r.qualify_if_shadowed(shadowed, namespace)),
             Self::DataEnum(r) => Self::DataEnum(r.qualify_if_shadowed(shadowed, namespace)),
+            Self::Named(r) => Self::Named(r.qualify_if_shadowed(shadowed, namespace)),
             Self::Array(inner) => {
                 Self::Array(Box::new((*inner).qualify_if_shadowed(shadowed, namespace)))
             }
@@ -244,7 +248,7 @@ impl fmt::Display for CSharpType {
             Self::Float => f.write_str("float"),
             Self::Double => f.write_str("double"),
             Self::String => f.write_str("string"),
-            Self::Record(r) | Self::CStyleEnum(r) | Self::DataEnum(r) => r.fmt(f),
+            Self::Record(r) | Self::CStyleEnum(r) | Self::DataEnum(r) | Self::Named(r) => r.fmt(f),
             Self::Array(inner) => write!(f, "{inner}[]"),
             Self::Nullable(inner) => write!(f, "{inner}?"),
         }
@@ -267,6 +271,10 @@ mod tests {
         CSharpType::DataEnum(CSharpClassName::from_source(name).into())
     }
 
+    fn named_type(name: &str) -> CSharpType {
+        CSharpType::Named(CSharpTypeReference::Plain(CSharpClassName::new(name)))
+    }
+
     #[test]
     fn record_type_display_uses_class_name() {
         assert_eq!(record_type("point").to_string(), "Point");
@@ -280,6 +288,24 @@ mod tests {
     #[test]
     fn data_enum_type_display_uses_class_name() {
         assert_eq!(data_enum_type("shape").to_string(), "Shape");
+    }
+
+    #[test]
+    fn named_runtime_type_display_uses_class_name() {
+        assert_eq!(named_type("GCHandle").to_string(), "GCHandle");
+    }
+
+    #[test]
+    fn named_runtime_type_qualifies_when_shadowed() {
+        let shadowed: HashSet<CSharpClassName> =
+            std::iter::once(CSharpClassName::new("WireReader")).collect();
+        let namespace = CSharpNamespace::from_source("demo");
+        assert_eq!(
+            named_type("WireReader")
+                .qualify_if_shadowed(&shadowed, &namespace)
+                .to_string(),
+            "global::Demo.WireReader"
+        );
     }
 
     /// `Nullable` renders as `{inner}?`, uniform for value-type inners

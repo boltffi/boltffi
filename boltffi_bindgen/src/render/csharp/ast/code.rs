@@ -65,6 +65,7 @@ impl From<CSharpParamName> for CSharpIdentity {
 pub(crate) enum CSharpLiteral {
     Int(i64),
     Null,
+    Default,
 }
 
 impl fmt::Display for CSharpLiteral {
@@ -72,6 +73,7 @@ impl fmt::Display for CSharpLiteral {
         match self {
             Self::Int(v) => write!(f, "{v}"),
             Self::Null => f.write_str("null"),
+            Self::Default => f.write_str("default"),
         }
     }
 }
@@ -87,6 +89,7 @@ impl fmt::Display for CSharpLiteral {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum CSharpBinaryOp {
     Eq,
+    Ne,
     Add,
     Mul,
 }
@@ -95,6 +98,7 @@ impl fmt::Display for CSharpBinaryOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Eq => f.write_str("=="),
+            Self::Ne => f.write_str("!="),
             Self::Add => f.write_str("+"),
             Self::Mul => f.write_str("*"),
         }
@@ -390,6 +394,11 @@ mod tests {
         fn null_literal_renders_as_keyword() {
             assert_eq!(CSharpLiteral::Null.to_string(), "null");
         }
+
+        #[test]
+        fn default_literal_renders_as_keyword() {
+            assert_eq!(CSharpLiteral::Default.to_string(), "default");
+        }
     }
 
     mod binary_op {
@@ -397,6 +406,7 @@ mod tests {
 
         #[rstest]
         #[case(CSharpBinaryOp::Eq, "==")]
+        #[case(CSharpBinaryOp::Ne, "!=")]
         #[case(CSharpBinaryOp::Add, "+")]
         #[case(CSharpBinaryOp::Mul, "*")]
         fn operator_renders_as_source_token(#[case] op: CSharpBinaryOp, #[case] expected: &str) {
