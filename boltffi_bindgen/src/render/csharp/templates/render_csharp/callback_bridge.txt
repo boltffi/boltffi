@@ -316,12 +316,12 @@
 
 {% for method in callback.methods %}
 {%- match method.proxy %}
-{%- when CSharpCallbackProxyPlan::AsyncUnsupported with { public_params, result_type, not_supported_expr } %}
+{%- when CSharpCallbackProxyPlan::AsyncUnsupported with { public_params, result_type } %}
 {%- match result_type %}
 {%- when Some with (ty) %}
-            public {{ method.public_return_type() }} {{ method.name }}({{ public_params }}) => global::System.Threading.Tasks.Task.FromException<{{ ty }}>({{ not_supported_expr }});
+            public global::System.Threading.Tasks.Task<{{ method.return_type }}> {{ method.name }}({{ public_params }}) => global::System.Threading.Tasks.Task.FromException<{{ ty }}>(new NotSupportedException("async callback proxies are not implemented for C# yet"));
 {%- when None %}
-            public {{ method.public_return_type() }} {{ method.name }}({{ public_params }}) => global::System.Threading.Tasks.Task.FromException({{ not_supported_expr }});
+            public global::System.Threading.Tasks.Task {{ method.name }}({{ public_params }}) => global::System.Threading.Tasks.Task.FromException(new NotSupportedException("async callback proxies are not implemented for C# yet"));
 {%- endmatch %}
 {%- when CSharpCallbackProxyPlan::Sync with (proxy) %}
             public {{ proxy.return_type }} {{ method.name }}({{ proxy.public_params }})

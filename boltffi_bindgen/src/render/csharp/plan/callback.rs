@@ -65,7 +65,7 @@ pub enum CSharpClosureInvokePlan {
     },
     Direct {
         decoded_args: CSharpArgumentList,
-        native_value_expr: String,
+        native_value_expr: CSharpExpression,
     },
     Encoded {
         is_result: bool,
@@ -92,7 +92,7 @@ pub struct CSharpSyncCallbackEntryPlan {
 #[derive(Debug, Clone)]
 pub enum CSharpSyncCallbackOutInitializerPlan {
     Void,
-    Direct { default_value: String },
+    Direct { default_value: CSharpExpression },
     Encoded,
 }
 
@@ -103,7 +103,7 @@ pub enum CSharpSyncCallbackSuccessPlan {
     },
     Direct {
         decoded_args: CSharpArgumentList,
-        native_value_expr: String,
+        native_value_expr: CSharpExpression,
     },
     Encoded {
         is_result: bool,
@@ -128,7 +128,7 @@ pub struct CSharpAsyncCallbackEntryPlan {
 #[derive(Debug, Clone)]
 pub enum CSharpAsyncCallbackFailurePlan {
     Void,
-    Direct { default_value: String },
+    Direct { default_value: CSharpExpression },
     Encoded,
 }
 
@@ -136,7 +136,7 @@ pub enum CSharpAsyncCallbackFailurePlan {
 pub enum CSharpAsyncCallbackSuccessPlan {
     Void,
     Direct {
-        native_value_expr: String,
+        native_value_expr: CSharpExpression,
     },
     Encoded {
         is_result: bool,
@@ -162,7 +162,6 @@ pub enum CSharpCallbackProxyPlan {
     AsyncUnsupported {
         public_params: CSharpParameterList,
         result_type: Option<CSharpType>,
-        not_supported_expr: String,
     },
     Sync(CSharpSyncCallbackProxyPlan),
 }
@@ -184,7 +183,7 @@ pub enum CSharpCallbackProxyCallPlan {
     Direct {
         args: CSharpArgumentList,
         native_out_type: CSharpType,
-        public_expr: String,
+        public_expr: CSharpExpression,
     },
     Encoded {
         args: CSharpArgumentList,
@@ -257,19 +256,6 @@ pub enum CSharpCallbackBridgeParamPlan {
         pin_local: CSharpLocalName,
         ptr_local: CSharpLocalName,
     },
-}
-
-impl CSharpCallbackMethodPlan {
-    pub fn public_return_type(&self) -> String {
-        if !self.is_async {
-            return self.return_type.to_string();
-        }
-        if self.return_type.is_void() {
-            "global::System.Threading.Tasks.Task".to_string()
-        } else {
-            format!("global::System.Threading.Tasks.Task<{}>", self.return_type)
-        }
-    }
 }
 
 impl CSharpCallbackBridgeParamPlan {

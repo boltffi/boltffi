@@ -24,8 +24,6 @@ use super::super::plan::{
 use super::lowerer::CSharpLowerer;
 use super::{decode, encode, size, value};
 
-const STATUS_OK: &str = "new FfiStatus { code = 0 }";
-const STATUS_INTERNAL_ERROR: &str = "new FfiStatus { code = 100 }";
 const STATUS_OUT: &str = "__boltffiStatus";
 const OUT_PTR: &str = "__boltffiOutPtr";
 const OUT_LEN: &str = "__boltffiOutLen";
@@ -46,9 +44,10 @@ enum CallbackReturn {
         public_type: CSharpType,
         native_type: CSharpType,
         native_out_type: CSharpType,
-        default_value: String,
-        native_expr: String,
-        public_expr: String,
+        sync_default_value: CSharpExpression,
+        async_default_value: CSharpExpression,
+        native_value: CallbackNativeValuePlan,
+        public_value: CallbackPublicValuePlan,
         marshals_bool: bool,
     },
     Encoded {
@@ -64,6 +63,23 @@ enum CallbackReturn {
 enum CallbackReturnMode {
     CallbackVtable,
     InlineClosure,
+}
+
+#[derive(Debug, Clone)]
+enum CallbackNativeValuePlan {
+    Identity,
+    BoolToByte,
+    Cast(CSharpType),
+    CallbackHandleCreate { bridge: CSharpClassName },
+    HandleField,
+}
+
+#[derive(Debug, Clone)]
+enum CallbackPublicValuePlan {
+    Identity,
+    ByteToBool,
+    Cast(CSharpType),
+    CallbackHandleWrap { bridge: CSharpClassName },
 }
 
 impl CallbackReturn {
@@ -89,7 +105,6 @@ impl CallbackReturn {
             }
         }
     }
-
 }
 
 impl<'a> CSharpLowerer<'a> {
@@ -312,9 +327,6 @@ impl<'a> CSharpLowerer<'a> {
                 } else {
                     Some(self.callback_public_return_type(&method.returns))
                 },
-                not_supported_expr:
-                    "new NotSupportedException(\"async callback proxies are not implemented for C# yet\")"
-                        .to_string(),
             };
         }
 
@@ -366,14 +378,15 @@ impl<'a> CSharpLowerer<'a> {
         match ret {
             CallbackReturn::Void => CSharpClosureInvokePlan::Void { decoded_args },
             CallbackReturn::Direct {
-                native_expr,
+                native_value,
                 marshals_bool,
                 ..
             } => {
+                let value_expr = local_expr(RETURN_VALUE);
                 let native_value_expr = if *marshals_bool {
-                    RETURN_VALUE.to_string()
+                    value_expr
                 } else {
-                    native_expr.replace("value", RETURN_VALUE)
+                    self.native_value_expr(native_value, value_expr)
                 };
                 CSharpClosureInvokePlan::Direct {
                     decoded_args,
@@ -566,31 +579,36 @@ impl<'a> CSharpLowerer<'a> {
                 } else {
                     native_type.clone()
                 };
-                let native_expr = self.direct_return_native_expr(ty, primitive, "value");
-                let public_expr = self.direct_return_public_expr(ty, primitive, OUT_PTR);
                 CallbackReturn::Direct {
                     public_type,
                     native_type,
                     native_out_type,
-                    default_value: if marshals_bool {
-                        "0".to_string()
+                    sync_default_value: if marshals_bool {
+                        CSharpExpression::Literal(CSharpLiteral::Int(0))
                     } else {
-                        "default".to_string()
+                        CSharpExpression::Literal(CSharpLiteral::Default)
                     },
-                    native_expr,
-                    public_expr,
+                    async_default_value: if marshals_bool {
+                        CSharpExpression::Literal(CSharpLiteral::Bool(false))
+                    } else {
+                        CSharpExpression::Literal(CSharpLiteral::Default)
+                    },
+                    native_value: self.direct_return_native_value_plan(ty, primitive),
+                    public_value: self.direct_return_public_value_plan(ty, primitive),
                     marshals_bool,
                 }
             }
             Some(Transport::Composite(layout)) if mode == CallbackReturnMode::InlineClosure => {
-                let native_type = CSharpClassName::from(&layout.record_id).to_string();
+                let native_type =
+                    CSharpType::Record(CSharpClassName::from(&layout.record_id).into());
                 CallbackReturn::Direct {
                     public_type,
-                    native_type: named_type(&native_type),
-                    native_out_type: named_type(&native_type),
-                    default_value: "default".to_string(),
-                    native_expr: "value".to_string(),
-                    public_expr: OUT_PTR.to_string(),
+                    native_type: native_type.clone(),
+                    native_out_type: native_type,
+                    sync_default_value: CSharpExpression::Literal(CSharpLiteral::Default),
+                    async_default_value: CSharpExpression::Literal(CSharpLiteral::Default),
+                    native_value: CallbackNativeValuePlan::Identity,
+                    public_value: CallbackPublicValuePlan::Identity,
                     marshals_bool: false,
                 }
             }
@@ -623,9 +641,12 @@ impl<'a> CSharpLowerer<'a> {
                     public_type,
                     native_type: named_type("BoltFFICallbackHandle"),
                     native_out_type: named_type("BoltFFICallbackHandle"),
-                    default_value: "BoltFFICallbackHandle.Null".to_string(),
-                    native_expr: format!("{bridge}.Create(value)"),
-                    public_expr: format!("{bridge}.Wrap({OUT_PTR})"),
+                    sync_default_value: type_member_expr("BoltFFICallbackHandle", "Null"),
+                    async_default_value: type_member_expr("BoltFFICallbackHandle", "Null"),
+                    native_value: CallbackNativeValuePlan::CallbackHandleCreate {
+                        bridge: bridge.clone(),
+                    },
+                    public_value: CallbackPublicValuePlan::CallbackHandleWrap { bridge },
                     marshals_bool: false,
                 }
             }
@@ -633,9 +654,10 @@ impl<'a> CSharpLowerer<'a> {
                 public_type,
                 native_type: CSharpType::IntPtr,
                 native_out_type: CSharpType::IntPtr,
-                default_value: "IntPtr.Zero".to_string(),
-                native_expr: "value.Handle".to_string(),
-                public_expr: OUT_PTR.to_string(),
+                sync_default_value: type_member_expr("IntPtr", "Zero"),
+                async_default_value: type_member_expr("IntPtr", "Zero"),
+                native_value: CallbackNativeValuePlan::HandleField,
+                public_value: CallbackPublicValuePlan::Identity,
                 marshals_bool: false,
             },
             Some(Transport::Span(_)) => {
@@ -912,9 +934,9 @@ impl<'a> CSharpLowerer<'a> {
         let decoded_args = decoded_arg_list(params);
         match ret {
             CallbackReturn::Void => CSharpSyncCallbackSuccessPlan::Void { decoded_args },
-            CallbackReturn::Direct { native_expr, .. } => CSharpSyncCallbackSuccessPlan::Direct {
+            CallbackReturn::Direct { native_value, .. } => CSharpSyncCallbackSuccessPlan::Direct {
                 decoded_args,
-                native_value_expr: native_expr.replace("value", RETURN_VALUE),
+                native_value_expr: self.native_value_expr(native_value, local_expr(RETURN_VALUE)),
             },
             CallbackReturn::Encoded {
                 encode_ops,
@@ -975,12 +997,12 @@ impl<'a> CSharpLowerer<'a> {
             CallbackReturn::Void => CSharpCallbackProxyCallPlan::Void { args },
             CallbackReturn::Direct {
                 native_out_type,
-                public_expr,
+                public_value,
                 ..
             } => CSharpCallbackProxyCallPlan::Direct {
                 args,
                 native_out_type: native_out_type.clone(),
-                public_expr: public_expr.clone(),
+                public_expr: self.public_value_expr(public_value, local_expr(OUT_PTR)),
             },
             CallbackReturn::Encoded {
                 decode_expr,
@@ -1122,11 +1144,11 @@ impl<'a> CSharpLowerer<'a> {
     fn sync_out_initializer(&self, ret: &CallbackReturn) -> CSharpSyncCallbackOutInitializerPlan {
         match ret {
             CallbackReturn::Void => CSharpSyncCallbackOutInitializerPlan::Void,
-            CallbackReturn::Direct { default_value, .. } => {
-                CSharpSyncCallbackOutInitializerPlan::Direct {
-                    default_value: default_value.clone(),
-                }
-            }
+            CallbackReturn::Direct {
+                sync_default_value, ..
+            } => CSharpSyncCallbackOutInitializerPlan::Direct {
+                default_value: sync_default_value.clone(),
+            },
             CallbackReturn::Encoded { .. } => CSharpSyncCallbackOutInitializerPlan::Encoded,
         }
     }
@@ -1134,11 +1156,12 @@ impl<'a> CSharpLowerer<'a> {
     fn async_failure_completion(&self, ret: &CallbackReturn) -> CSharpAsyncCallbackFailurePlan {
         match ret {
             CallbackReturn::Void => CSharpAsyncCallbackFailurePlan::Void,
-            CallbackReturn::Direct { default_value, .. } => {
-                CSharpAsyncCallbackFailurePlan::Direct {
-                    default_value: default_value.clone(),
-                }
-            }
+            CallbackReturn::Direct {
+                async_default_value,
+                ..
+            } => CSharpAsyncCallbackFailurePlan::Direct {
+                default_value: async_default_value.clone(),
+            },
             CallbackReturn::Encoded { .. } => CSharpAsyncCallbackFailurePlan::Encoded,
         }
     }
@@ -1147,18 +1170,20 @@ impl<'a> CSharpLowerer<'a> {
         match ret {
             CallbackReturn::Void => CSharpAsyncCallbackSuccessPlan::Void,
             CallbackReturn::Direct {
-                native_expr,
+                native_value,
                 marshals_bool,
                 ..
             } => {
-                let native_expr = if *marshals_bool {
-                    format!("{ASYNC_COMPLETED}.Result")
-                } else {
-                    native_expr.replace("value", &format!("{ASYNC_COMPLETED}.Result"))
+                let task_result = CSharpExpression::MemberAccess {
+                    receiver: Box::new(local_expr(ASYNC_COMPLETED)),
+                    name: CSharpPropertyName::from_source("result"),
                 };
-                CSharpAsyncCallbackSuccessPlan::Direct {
-                    native_value_expr: native_expr,
-                }
+                let native_value_expr = if *marshals_bool {
+                    task_result
+                } else {
+                    self.native_value_expr(native_value, task_result)
+                };
+                CSharpAsyncCallbackSuccessPlan::Direct { native_value_expr }
             }
             CallbackReturn::Encoded {
                 encode_ops,
@@ -1291,24 +1316,6 @@ impl<'a> CSharpLowerer<'a> {
         }
     }
 
-    fn native_type_for_primitive(&self, primitive: PrimitiveType) -> &'static str {
-        match primitive {
-            PrimitiveType::Bool => "bool",
-            PrimitiveType::I8 => "sbyte",
-            PrimitiveType::U8 => "byte",
-            PrimitiveType::I16 => "short",
-            PrimitiveType::U16 => "ushort",
-            PrimitiveType::I32 => "int",
-            PrimitiveType::U32 => "uint",
-            PrimitiveType::I64 => "long",
-            PrimitiveType::U64 => "ulong",
-            PrimitiveType::ISize => "nint",
-            PrimitiveType::USize => "nuint",
-            PrimitiveType::F32 => "float",
-            PrimitiveType::F64 => "double",
-        }
-    }
-
     fn direct_decode_expr(&self, type_expr: &TypeExpr, name: &CSharpParamName) -> CSharpExpression {
         let param = CSharpExpression::Identity(CSharpIdentity::Param(name.clone()));
         if self.is_c_style_enum_type(type_expr) {
@@ -1339,37 +1346,96 @@ impl<'a> CSharpLowerer<'a> {
         }
     }
 
-    fn direct_return_native_expr(
+    fn direct_return_native_value_plan(
         &self,
         type_expr: &TypeExpr,
         primitive: PrimitiveType,
-        value_name: &str,
-    ) -> String {
+    ) -> CallbackNativeValuePlan {
         if primitive == PrimitiveType::Bool {
-            format!("{value_name} ? (byte)1 : (byte)0")
+            CallbackNativeValuePlan::BoolToByte
         } else if self.is_c_style_enum_type(type_expr) {
-            format!(
-                "({}){value_name}",
-                self.native_type_for_primitive(primitive)
-            )
+            CallbackNativeValuePlan::Cast(CSharpType::from(primitive))
         } else {
-            value_name.to_string()
+            CallbackNativeValuePlan::Identity
         }
     }
 
-    fn direct_return_public_expr(
+    fn direct_return_public_value_plan(
         &self,
         type_expr: &TypeExpr,
         primitive: PrimitiveType,
-        value_name: &str,
-    ) -> String {
+    ) -> CallbackPublicValuePlan {
         if primitive == PrimitiveType::Bool {
-            format!("{value_name} != 0")
+            CallbackPublicValuePlan::ByteToBool
         } else if self.is_c_style_enum_type(type_expr) {
             let ty = self.lower_type(type_expr).expect("enum type");
-            format!("({ty}){value_name}")
+            CallbackPublicValuePlan::Cast(ty)
         } else {
-            value_name.to_string()
+            CallbackPublicValuePlan::Identity
+        }
+    }
+
+    fn native_value_expr(
+        &self,
+        plan: &CallbackNativeValuePlan,
+        value: CSharpExpression,
+    ) -> CSharpExpression {
+        match plan {
+            CallbackNativeValuePlan::Identity => value,
+            CallbackNativeValuePlan::BoolToByte => CSharpExpression::Ternary {
+                cond: Box::new(value),
+                then: Box::new(CSharpExpression::Cast {
+                    target: CSharpType::Byte,
+                    inner: Box::new(CSharpExpression::Literal(CSharpLiteral::Int(1))),
+                }),
+                otherwise: Box::new(CSharpExpression::Cast {
+                    target: CSharpType::Byte,
+                    inner: Box::new(CSharpExpression::Literal(CSharpLiteral::Int(0))),
+                }),
+            },
+            CallbackNativeValuePlan::Cast(target) => CSharpExpression::Cast {
+                target: target.clone(),
+                inner: Box::new(value),
+            },
+            CallbackNativeValuePlan::CallbackHandleCreate { bridge } => {
+                CSharpExpression::MethodCall {
+                    receiver: Box::new(type_ref_expr(bridge.clone())),
+                    method: CSharpMethodName::new("Create"),
+                    type_args: vec![],
+                    args: vec![value].into(),
+                }
+            }
+            CallbackNativeValuePlan::HandleField => CSharpExpression::MemberAccess {
+                receiver: Box::new(value),
+                name: CSharpPropertyName::from_source("handle"),
+            },
+        }
+    }
+
+    fn public_value_expr(
+        &self,
+        plan: &CallbackPublicValuePlan,
+        value: CSharpExpression,
+    ) -> CSharpExpression {
+        match plan {
+            CallbackPublicValuePlan::Identity => value,
+            CallbackPublicValuePlan::ByteToBool => CSharpExpression::Binary {
+                op: super::super::ast::CSharpBinaryOp::Ne,
+                left: Box::new(value),
+                right: Box::new(CSharpExpression::Literal(CSharpLiteral::Int(0))),
+            },
+            CallbackPublicValuePlan::Cast(target) => CSharpExpression::Cast {
+                target: target.clone(),
+                inner: Box::new(value),
+            },
+            CallbackPublicValuePlan::CallbackHandleWrap { bridge } => {
+                CSharpExpression::MethodCall {
+                    receiver: Box::new(type_ref_expr(bridge.clone())),
+                    method: CSharpMethodName::new("Wrap"),
+                    type_args: vec![],
+                    args: vec![value].into(),
+                }
+            }
         }
     }
 
@@ -1467,6 +1533,21 @@ fn callback_public_param_list(params: &[CSharpCallbackBridgeParamPlan]) -> CShar
         .map(|param| param.public_param().clone())
         .collect::<Vec<_>>()
         .into()
+}
+
+fn local_expr(name: &str) -> CSharpExpression {
+    CSharpExpression::Identity(CSharpIdentity::Local(CSharpLocalName::new(name)))
+}
+
+fn type_ref_expr(name: CSharpClassName) -> CSharpExpression {
+    CSharpExpression::TypeRef(CSharpTypeReference::Plain(name))
+}
+
+fn type_member_expr(type_name: &str, member_name: &str) -> CSharpExpression {
+    CSharpExpression::MemberAccess {
+        receiver: Box::new(type_ref_expr(CSharpClassName::new(type_name))),
+        name: CSharpPropertyName::new(member_name),
+    }
 }
 
 fn stripped_name(name: &CSharpParamName) -> &str {

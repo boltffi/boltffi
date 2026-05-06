@@ -64,6 +64,7 @@ impl From<CSharpParamName> for CSharpIdentity {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum CSharpLiteral {
     Int(i64),
+    Bool(bool),
     Null,
     Default,
 }
@@ -72,6 +73,7 @@ impl fmt::Display for CSharpLiteral {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Int(v) => write!(f, "{v}"),
+            Self::Bool(v) => write!(f, "{v}"),
             Self::Null => f.write_str("null"),
             Self::Default => f.write_str("default"),
         }
@@ -216,6 +218,17 @@ impl fmt::Display for CSharpExpression {
             Self::IsBindingPattern { value, binding } => write!(f, "{value} is {{ }} {binding}"),
             Self::New { target, args } => write!(f, "new {target}({args})"),
         }
+    }
+}
+
+#[cfg(test)]
+mod expression_tests {
+    use super::*;
+
+    #[test]
+    fn bool_literals_render_as_csharp_keywords() {
+        assert_eq!(CSharpLiteral::Bool(false).to_string(), "false");
+        assert_eq!(CSharpLiteral::Bool(true).to_string(), "true");
     }
 }
 
