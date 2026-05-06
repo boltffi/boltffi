@@ -70,7 +70,7 @@ pub enum CSharpClosureInvokePlan {
     Encoded {
         is_result: bool,
         decoded_args: CSharpArgumentList,
-        result_assignment_lines: Vec<String>,
+        result_assignment: Option<CSharpCallbackResultAssignmentPlan>,
         writer: CSharpWireWriterPlan,
     },
 }
@@ -108,7 +108,7 @@ pub enum CSharpSyncCallbackSuccessPlan {
     Encoded {
         is_result: bool,
         decoded_args: CSharpArgumentList,
-        result_assignment_lines: Vec<String>,
+        result_assignment: Option<CSharpCallbackResultAssignmentPlan>,
         writer: CSharpWireWriterPlan,
     },
 }
@@ -140,7 +140,7 @@ pub enum CSharpAsyncCallbackSuccessPlan {
     },
     Encoded {
         is_result: bool,
-        result_type: String,
+        result_type: CSharpResultTypePlan,
         writer: CSharpWireWriterPlan,
     },
 }
@@ -149,9 +149,9 @@ pub enum CSharpAsyncCallbackSuccessPlan {
 pub enum CSharpAsyncCallbackFaultPlan {
     Failure(CSharpAsyncCallbackFailurePlan),
     EncodedResult {
-        exception_type: Option<String>,
+        exception_type: Option<CSharpType>,
         error_value_expr: CSharpExpression,
-        result_type: String,
+        result_type: CSharpResultTypePlan,
         writer: CSharpWireWriterPlan,
         fallback: Option<CSharpAsyncCallbackFailurePlan>,
     },
@@ -161,7 +161,6 @@ pub enum CSharpAsyncCallbackFaultPlan {
 pub enum CSharpCallbackProxyPlan {
     AsyncUnsupported {
         public_params: CSharpParameterList,
-        return_type: String,
         result_type: Option<CSharpType>,
         not_supported_expr: String,
     },
@@ -171,7 +170,7 @@ pub enum CSharpCallbackProxyPlan {
 #[derive(Debug, Clone)]
 pub struct CSharpSyncCallbackProxyPlan {
     pub public_params: CSharpParameterList,
-    pub return_type: String,
+    pub return_type: CSharpType,
     pub bridge_params: Vec<CSharpCallbackBridgeParamPlan>,
     pub has_cleanup: bool,
     pub call: CSharpCallbackProxyCallPlan,
@@ -190,7 +189,7 @@ pub enum CSharpCallbackProxyCallPlan {
     Encoded {
         args: CSharpArgumentList,
         decode_expr: Option<CSharpExpression>,
-        result_decode_lines: Vec<String>,
+        result_decode: Option<CSharpCallbackResultDecodePlan>,
     },
 }
 
@@ -199,6 +198,45 @@ pub struct CSharpCallbackDelegatePlan {
     pub entry_params: CSharpParameterList,
     pub completion_params: Option<CSharpParameterList>,
     pub proxy_params: Option<CSharpParameterList>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CSharpResultTypePlan {
+    pub ok_type: CSharpType,
+    pub err_type: CSharpType,
+}
+
+#[derive(Debug, Clone)]
+pub struct CSharpCallbackResultAssignmentPlan {
+    pub result_type: CSharpResultTypePlan,
+    pub ok: CSharpCallbackResultOkPlan,
+    pub catch: Option<CSharpCallbackResultCatchPlan>,
+}
+
+#[derive(Debug, Clone)]
+pub enum CSharpCallbackResultOkPlan {
+    Void {
+        receiver: CSharpExpression,
+        method_name: CSharpMethodName,
+        args: CSharpArgumentList,
+    },
+    Value {
+        receiver: CSharpExpression,
+        method_name: CSharpMethodName,
+        args: CSharpArgumentList,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub enum CSharpCallbackResultCatchPlan {
+    TypedException { exception_type: CSharpType },
+    ExceptionMessage,
+}
+
+#[derive(Debug, Clone)]
+pub struct CSharpCallbackResultDecodePlan {
+    pub err_expr: CSharpExpression,
+    pub ok_expr: Option<CSharpExpression>,
 }
 
 #[derive(Debug, Clone)]

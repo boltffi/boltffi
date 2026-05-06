@@ -49,11 +49,39 @@
 {%- when CSharpClosureInvokePlan::Direct with { decoded_args, native_value_expr } %}
             var __boltffiValue = impl_({{ decoded_args }});
             return {{ native_value_expr }};
-{%- when CSharpClosureInvokePlan::Encoded with { is_result, decoded_args, result_assignment_lines, writer } %}
-{%- if is_result %}
-{%- for line in result_assignment_lines %}
-            {{ line }}
-{%- endfor %}
+{%- when CSharpClosureInvokePlan::Encoded with { is_result, decoded_args, result_assignment, writer } %}
+{%- if let Some(result_assignment) = result_assignment %}
+            BoltFFIResult<{{ result_assignment.result_type.ok_type }}, {{ result_assignment.result_type.err_type }}> __boltffiResult;
+            try
+            {
+{%- match result_assignment.ok %}
+{%- when CSharpCallbackResultOkPlan::Void with { receiver, method_name, args } %}
+                {{ receiver }}.{{ method_name }}({{ args }});
+                __boltffiResult = BoltFFIResult<{{ result_assignment.result_type.ok_type }}, {{ result_assignment.result_type.err_type }}>.Ok(default);
+{%- when CSharpCallbackResultOkPlan::Value with { receiver, method_name, args } %}
+                __boltffiResult = BoltFFIResult<{{ result_assignment.result_type.ok_type }}, {{ result_assignment.result_type.err_type }}>.Ok({{ receiver }}.{{ method_name }}({{ args }}));
+{%- endmatch %}
+            }
+{%- match result_assignment.catch %}
+{%- when Some with (catch_plan) %}
+{%- match catch_plan %}
+{%- when CSharpCallbackResultCatchPlan::TypedException with { exception_type } %}
+            catch ({{ exception_type }} __boltffiException)
+            {
+                __boltffiResult = BoltFFIResult<{{ result_assignment.result_type.ok_type }}, {{ result_assignment.result_type.err_type }}>.Err(__boltffiException.Error);
+            }
+{%- when CSharpCallbackResultCatchPlan::ExceptionMessage %}
+            catch (Exception __boltffiException)
+            {
+                __boltffiResult = BoltFFIResult<{{ result_assignment.result_type.ok_type }}, {{ result_assignment.result_type.err_type }}>.Err(__boltffiException.Message);
+            }
+{%- endmatch %}
+{%- when None %}
+            catch
+            {
+                throw;
+            }
+{%- endmatch %}
 {%- else %}
             var __boltffiValue = impl_({{ decoded_args }});
 {%- endif %}

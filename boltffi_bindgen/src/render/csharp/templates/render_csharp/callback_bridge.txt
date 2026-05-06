@@ -83,11 +83,39 @@
                 var __boltffiValue = impl_.{{ method.name }}({{ decoded_args }});
                 __boltffiOutPtr = {{ native_value_expr }};
                 __boltffiStatus = new FfiStatus { code = 0 };
-{%- when CSharpSyncCallbackSuccessPlan::Encoded with { is_result, decoded_args, result_assignment_lines, writer } %}
-{%- if is_result %}
-{%- for line in result_assignment_lines %}
-                {{ line }}
-{%- endfor %}
+{%- when CSharpSyncCallbackSuccessPlan::Encoded with { is_result, decoded_args, result_assignment, writer } %}
+{%- if let Some(result_assignment) = result_assignment %}
+                BoltFFIResult<{{ result_assignment.result_type.ok_type }}, {{ result_assignment.result_type.err_type }}> __boltffiResult;
+                try
+                {
+{%- match result_assignment.ok %}
+{%- when CSharpCallbackResultOkPlan::Void with { receiver, method_name, args } %}
+                    {{ receiver }}.{{ method_name }}({{ args }});
+                    __boltffiResult = BoltFFIResult<{{ result_assignment.result_type.ok_type }}, {{ result_assignment.result_type.err_type }}>.Ok(default);
+{%- when CSharpCallbackResultOkPlan::Value with { receiver, method_name, args } %}
+                    __boltffiResult = BoltFFIResult<{{ result_assignment.result_type.ok_type }}, {{ result_assignment.result_type.err_type }}>.Ok({{ receiver }}.{{ method_name }}({{ args }}));
+{%- endmatch %}
+                }
+{%- match result_assignment.catch %}
+{%- when Some with (catch_plan) %}
+{%- match catch_plan %}
+{%- when CSharpCallbackResultCatchPlan::TypedException with { exception_type } %}
+                catch ({{ exception_type }} __boltffiException)
+                {
+                    __boltffiResult = BoltFFIResult<{{ result_assignment.result_type.ok_type }}, {{ result_assignment.result_type.err_type }}>.Err(__boltffiException.Error);
+                }
+{%- when CSharpCallbackResultCatchPlan::ExceptionMessage %}
+                catch (Exception __boltffiException)
+                {
+                    __boltffiResult = BoltFFIResult<{{ result_assignment.result_type.ok_type }}, {{ result_assignment.result_type.err_type }}>.Err(__boltffiException.Message);
+                }
+{%- endmatch %}
+{%- when None %}
+                catch
+                {
+                    throw;
+                }
+{%- endmatch %}
 {%- else %}
                 var __boltffiValue = impl_.{{ method.name }}({{ decoded_args }});
 {%- endif %}
@@ -175,7 +203,7 @@
 {%- else %}
                         {
 {%- endif %}
-                            var __boltffiErrorResult = {{ result_type }}.Err({{ error_value_expr }});
+                            var __boltffiErrorResult = BoltFFIResult<{{ result_type.ok_type }}, {{ result_type.err_type }}>.Err({{ error_value_expr }});
                             byte[] {{ writer.bytes_binding_name }};
                             using (var {{ writer.binding_name }} = new WireWriter({{ writer.size_expr }}))
                             {
@@ -215,7 +243,7 @@
                     callback(callbackData, {{ native_value_expr }}, new FfiStatus { code = 0 });
 {%- when CSharpAsyncCallbackSuccessPlan::Encoded with { is_result, result_type, writer } %}
 {%- if is_result %}
-                    var __boltffiResult = {{ result_type }}.Ok(__boltffiCompleted.Result);
+                    var __boltffiResult = BoltFFIResult<{{ result_type.ok_type }}, {{ result_type.err_type }}>.Ok(__boltffiCompleted.Result);
 {%- else %}
                     var __boltffiValue = __boltffiCompleted.Result;
 {%- endif %}
@@ -288,12 +316,12 @@
 
 {% for method in callback.methods %}
 {%- match method.proxy %}
-{%- when CSharpCallbackProxyPlan::AsyncUnsupported with { public_params, return_type, result_type, not_supported_expr } %}
+{%- when CSharpCallbackProxyPlan::AsyncUnsupported with { public_params, result_type, not_supported_expr } %}
 {%- match result_type %}
 {%- when Some with (ty) %}
-            public {{ return_type }} {{ method.name }}({{ public_params }}) => global::System.Threading.Tasks.Task.FromException<{{ ty }}>({{ not_supported_expr }});
+            public {{ method.public_return_type() }} {{ method.name }}({{ public_params }}) => global::System.Threading.Tasks.Task.FromException<{{ ty }}>({{ not_supported_expr }});
 {%- when None %}
-            public {{ return_type }} {{ method.name }}({{ public_params }}) => global::System.Threading.Tasks.Task.FromException({{ not_supported_expr }});
+            public {{ method.public_return_type() }} {{ method.name }}({{ public_params }}) => global::System.Threading.Tasks.Task.FromException({{ not_supported_expr }});
 {%- endmatch %}
 {%- when CSharpCallbackProxyPlan::Sync with (proxy) %}
             public {{ proxy.return_type }} {{ method.name }}({{ proxy.public_params }})
@@ -342,7 +370,7 @@
                     __boltffiInvoke({{ args }}, out __boltffiOutPtr, out __boltffiStatus);
                     ThrowIfCallbackStatus(__boltffiStatus);
                     return {{ public_expr }};
-{%- when CSharpCallbackProxyCallPlan::Encoded with { args, decode_expr, result_decode_lines } %}
+{%- when CSharpCallbackProxyCallPlan::Encoded with { args, decode_expr, result_decode } %}
                     IntPtr __boltffiOutPtr;
                     UIntPtr __boltffiOutLen;
                     FfiStatus __boltffiStatus;
@@ -351,9 +379,15 @@
                     {
                         ThrowIfCallbackStatus(__boltffiStatus);
                         var __boltffiReader = new WireReader(__boltffiOutPtr, __boltffiOutLen);
-{%- for line in result_decode_lines %}
-                        {{ line }}
-{%- endfor %}
+{%- if let Some(result_decode) = result_decode %}
+                        if (__boltffiReader.ReadU8() != 0)
+                        {
+                            throw new InvalidOperationException({{ result_decode.err_expr }}.ToString());
+                        }
+{%- if let Some(ok_expr) = result_decode.ok_expr %}
+                        return {{ ok_expr }};
+{%- endif %}
+{%- endif %}
 {%- if let Some(expr) = decode_expr %}
                         return {{ expr }};
 {%- endif %}
@@ -397,7 +431,7 @@
                 __boltffiInvoke({{ args }}, out __boltffiOutPtr, out __boltffiStatus);
                 ThrowIfCallbackStatus(__boltffiStatus);
                 return {{ public_expr }};
-{%- when CSharpCallbackProxyCallPlan::Encoded with { args, decode_expr, result_decode_lines } %}
+{%- when CSharpCallbackProxyCallPlan::Encoded with { args, decode_expr, result_decode } %}
                 IntPtr __boltffiOutPtr;
                 UIntPtr __boltffiOutLen;
                 FfiStatus __boltffiStatus;
@@ -406,9 +440,15 @@
                 {
                     ThrowIfCallbackStatus(__boltffiStatus);
                     var __boltffiReader = new WireReader(__boltffiOutPtr, __boltffiOutLen);
-{%- for line in result_decode_lines %}
-                    {{ line }}
-{%- endfor %}
+{%- if let Some(result_decode) = result_decode %}
+                    if (__boltffiReader.ReadU8() != 0)
+                    {
+                        throw new InvalidOperationException({{ result_decode.err_expr }}.ToString());
+                    }
+{%- if let Some(ok_expr) = result_decode.ok_expr %}
+                    return {{ ok_expr }};
+{%- endif %}
+{%- endif %}
 {%- if let Some(expr) = decode_expr %}
                     return {{ expr }};
 {%- endif %}

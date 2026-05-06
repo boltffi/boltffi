@@ -7,16 +7,18 @@ use crate::ir::types::{PrimitiveType, TypeExpr};
 
 use super::super::ast::{
     CSharpArgumentList, CSharpAttribute, CSharpAttributeArg, CSharpClassName, CSharpExpression,
-    CSharpIdentity, CSharpLocalName, CSharpMethodName, CSharpParamName, CSharpParameter,
-    CSharpParameterList, CSharpPropertyName, CSharpType, CSharpTypeReference,
+    CSharpIdentity, CSharpLiteral, CSharpLocalName, CSharpMethodName, CSharpParamName,
+    CSharpParameter, CSharpParameterList, CSharpPropertyName, CSharpType, CSharpTypeReference,
 };
 use super::super::plan::{
     CFunctionName, CSharpAsyncCallbackEntryPlan, CSharpAsyncCallbackFailurePlan,
     CSharpAsyncCallbackFaultPlan, CSharpAsyncCallbackSuccessPlan, CSharpCallbackBridgeParamPlan,
     CSharpCallbackDelegatePlan, CSharpCallbackEntryPlan, CSharpCallbackMethodPlan,
     CSharpCallbackParamPlan, CSharpCallbackPlan, CSharpCallbackProxyCallPlan,
-    CSharpCallbackProxyPlan, CSharpClosureInvokePlan, CSharpClosureMethodPlan, CSharpClosurePlan,
-    CSharpSyncCallbackEntryPlan, CSharpSyncCallbackOutInitializerPlan, CSharpSyncCallbackProxyPlan,
+    CSharpCallbackProxyPlan, CSharpCallbackResultAssignmentPlan, CSharpCallbackResultCatchPlan,
+    CSharpCallbackResultDecodePlan, CSharpCallbackResultOkPlan, CSharpClosureInvokePlan,
+    CSharpClosureMethodPlan, CSharpClosurePlan, CSharpResultTypePlan, CSharpSyncCallbackEntryPlan,
+    CSharpSyncCallbackOutInitializerPlan, CSharpSyncCallbackProxyPlan,
     CSharpSyncCallbackSuccessPlan, CSharpWireWriterPlan,
 };
 use super::lowerer::CSharpLowerer;
@@ -41,7 +43,7 @@ const ERROR_OUT_LEN: &str = "__boltffiErrorOutLen";
 enum CallbackReturn {
     Void,
     Direct {
-        public_type: String,
+        public_type: CSharpType,
         native_type: CSharpType,
         native_out_type: CSharpType,
         default_value: String,
@@ -50,7 +52,7 @@ enum CallbackReturn {
         marshals_bool: bool,
     },
     Encoded {
-        public_type: String,
+        public_type: CSharpType,
         decode_expr: Option<CSharpExpression>,
         encode_ops: WriteSeq,
         decode_ops: Option<ReadSeq>,
@@ -79,24 +81,15 @@ impl CallbackReturn {
         matches!(self, Self::Encoded { .. })
     }
 
-    fn public_type(&self) -> String {
+    fn public_type(&self) -> CSharpType {
         match self {
-            Self::Void => "void".to_string(),
+            Self::Void => CSharpType::Void,
             Self::Direct { public_type, .. } | Self::Encoded { public_type, .. } => {
                 public_type.clone()
             }
         }
     }
 
-    fn async_task_type(&self) -> String {
-        match self {
-            Self::Void => "global::System.Threading.Tasks.Task".to_string(),
-            other => format!(
-                "global::System.Threading.Tasks.Task<{}>",
-                other.public_type()
-            ),
-        }
-    }
 }
 
 impl<'a> CSharpLowerer<'a> {
@@ -314,7 +307,6 @@ impl<'a> CSharpLowerer<'a> {
         if method.is_async() {
             return CSharpCallbackProxyPlan::AsyncUnsupported {
                 public_params,
-                return_type: ret.async_task_type(),
                 result_type: if matches!(ret, CallbackReturn::Void) {
                     None
                 } else {
@@ -393,18 +385,17 @@ impl<'a> CSharpLowerer<'a> {
                 is_result,
                 ..
             } => {
-                let result_assignment_lines = if *is_result {
-                    unindented_lines(
-                        &self.render_result_assignment(
+                let result_assignment = if *is_result {
+                    Some(self.result_assignment_plan(
+                        CSharpExpression::Identity(CSharpIdentity::Local(CSharpLocalName::new(
                             "impl_",
-                            "Invoke",
-                            &decoded_args.to_string(),
-                            encode_ops,
-                        ),
-                        "            ",
-                    )
+                        ))),
+                        CSharpMethodName::new("Invoke"),
+                        decoded_args.clone(),
+                        encode_ops,
+                    ))
                 } else {
-                    vec![]
+                    None
                 };
                 let writer = self.return_wire_writer_plan(
                     encode_ops,
@@ -422,7 +413,7 @@ impl<'a> CSharpLowerer<'a> {
                 CSharpClosureInvokePlan::Encoded {
                     is_result: *is_result,
                     decoded_args,
-                    result_assignment_lines,
+                    result_assignment,
                     writer,
                 }
             }
@@ -528,9 +519,9 @@ impl<'a> CSharpLowerer<'a> {
             ReturnDef::Value(ty) => self.callback_value_return(ty, ret_shape, mode),
             ReturnDef::Result { ok, err: _ } => {
                 let public_type = if matches!(ok, TypeExpr::Void) {
-                    "void".to_string()
+                    CSharpType::Void
                 } else {
-                    self.lower_type(ok).expect("result ok type").to_string()
+                    self.lower_type(ok).expect("result ok type")
                 };
                 CallbackReturn::Encoded {
                     public_type,
@@ -563,10 +554,7 @@ impl<'a> CSharpLowerer<'a> {
         ret_shape: &ReturnShape,
         mode: CallbackReturnMode,
     ) -> CallbackReturn {
-        let public_type = self
-            .lower_type(ty)
-            .expect("callback return type")
-            .to_string();
+        let public_type = self.lower_type(ty).expect("callback return type");
         match &ret_shape.transport {
             None => CallbackReturn::Void,
             Some(Transport::Scalar(origin)) => {
@@ -691,76 +679,73 @@ impl<'a> CSharpLowerer<'a> {
             .collect()
     }
 
-    fn render_result_assignment(
+    fn result_assignment_plan(
         &self,
-        receiver: &str,
-        method_name: &str,
-        decoded_args: &str,
+        receiver: CSharpExpression,
+        method_name: CSharpMethodName,
+        decoded_args: CSharpArgumentList,
         encode_ops: &WriteSeq,
-    ) -> String {
-        let mut out = String::new();
-        let result_ty = self.result_type_for_encode_ops(encode_ops);
-        out.push_str(&format!("            {result_ty} {RESULT_VALUE};\n"));
-        out.push_str("            try\n            {\n");
-        if result_ty.starts_with("BoltFFIResult<BoltFFIUnit,") {
-            out.push_str(&format!(
-                "                {receiver}.{method_name}({decoded_args});\n"
-            ));
-            out.push_str(&format!(
-                "                {RESULT_VALUE} = BoltFFIResult<BoltFFIUnit, "
-            ));
-            out.push_str(
-                result_ty
-                    .split_once(", ")
-                    .map(|(_, tail)| tail.trim_end_matches('>'))
-                    .unwrap_or("object"),
-            );
-            out.push_str(">.Ok(default);\n");
-        } else {
-            out.push_str(&format!(
-                "                {RESULT_VALUE} = {result_ty}.Ok({receiver}.{method_name}({decoded_args}));\n"
-            ));
+    ) -> CSharpCallbackResultAssignmentPlan {
+        let result_type = self.result_type_for_encode_ops(encode_ops);
+        let ok =
+            if result_type.ok_type.is_void() || result_type.ok_type == named_type("BoltFFIUnit") {
+                CSharpCallbackResultOkPlan::Void {
+                    receiver,
+                    method_name,
+                    args: decoded_args,
+                }
+            } else {
+                CSharpCallbackResultOkPlan::Value {
+                    receiver,
+                    method_name,
+                    args: decoded_args,
+                }
+            };
+        CSharpCallbackResultAssignmentPlan {
+            result_type,
+            ok,
+            catch: self.result_catch_for_encode_ops(encode_ops),
         }
-        out.push_str("            }\n");
-        out.push_str(&self.result_expected_catches_from_encode_ops(
-            encode_ops,
-            RESULT_VALUE,
-            "            ",
-        ));
-        out
     }
 
-    fn result_type_for_encode_ops(&self, encode_ops: &WriteSeq) -> String {
+    fn result_type_for_encode_ops(&self, encode_ops: &WriteSeq) -> CSharpResultTypePlan {
         let Some(crate::ir::ops::WriteOp::Result { ok, err, .. }) = encode_ops.ops.first() else {
-            return "BoltFFIResult<object, object>".to_string();
+            return CSharpResultTypePlan {
+                ok_type: named_type("object"),
+                err_type: named_type("object"),
+            };
         };
         let ok_type = self
             .result_branch_type(ok)
-            .unwrap_or_else(|| "BoltFFIUnit".to_string());
+            .unwrap_or_else(|| named_type("BoltFFIUnit"));
         let err_type = self
             .result_branch_type(err)
-            .unwrap_or_else(|| "object".to_string());
-        format!("BoltFFIResult<{ok_type}, {err_type}>")
+            .unwrap_or_else(|| named_type("object"));
+        CSharpResultTypePlan { ok_type, err_type }
     }
 
-    fn result_branch_type(&self, seq: &WriteSeq) -> Option<String> {
+    fn result_branch_type(&self, seq: &WriteSeq) -> Option<CSharpType> {
         let op = seq.ops.first()?;
         match op {
             crate::ir::ops::WriteOp::Primitive { primitive, .. } => {
-                Some(CSharpType::from(*primitive).to_string())
+                Some(CSharpType::from(*primitive))
             }
-            crate::ir::ops::WriteOp::String { .. } => Some("string".to_string()),
-            crate::ir::ops::WriteOp::Bytes { .. } => Some("byte[]".to_string()),
+            crate::ir::ops::WriteOp::String { .. } => Some(CSharpType::String),
+            crate::ir::ops::WriteOp::Bytes { .. } => {
+                Some(CSharpType::Array(Box::new(CSharpType::Byte)))
+            }
             crate::ir::ops::WriteOp::Record { id, .. } => {
-                Some(CSharpClassName::from(id).to_string())
+                Some(CSharpType::Record(CSharpClassName::from(id).into()))
             }
-            crate::ir::ops::WriteOp::Enum { id, .. } => Some(CSharpClassName::from(id).to_string()),
+            crate::ir::ops::WriteOp::Enum { id, .. } => {
+                Some(CSharpType::DataEnum(CSharpClassName::from(id).into()))
+            }
             crate::ir::ops::WriteOp::Option { some, .. } => self
                 .result_branch_type(some)
-                .map(|inner| format!("{inner}?")),
+                .map(|inner| CSharpType::Nullable(Box::new(inner))),
             crate::ir::ops::WriteOp::Vec { element_type, .. } => {
-                let inner = self.lower_type(element_type)?.to_string();
-                Some(format!("{inner}[]"))
+                let inner = self.lower_type(element_type)?;
+                Some(CSharpType::Array(Box::new(inner)))
             }
             crate::ir::ops::WriteOp::Custom { underlying, .. } => {
                 self.result_branch_type(underlying)
@@ -769,50 +754,28 @@ impl<'a> CSharpLowerer<'a> {
         }
     }
 
-    fn result_expected_catches_from_encode_ops(
+    fn result_catch_for_encode_ops(
         &self,
         encode_ops: &WriteSeq,
-        result_name: &str,
-        indent: &str,
-    ) -> String {
+    ) -> Option<CSharpCallbackResultCatchPlan> {
         let Some(crate::ir::ops::WriteOp::Result { err, .. }) = encode_ops.ops.first() else {
-            return String::new();
+            return None;
         };
         let err_type = self
             .result_branch_type(err)
-            .unwrap_or_else(|| "object".to_string());
-        let mut out = String::new();
+            .unwrap_or_else(|| named_type("object"));
         if let Some(exception) = self.error_exception_for_write_seq(err) {
-            out.push_str(&format!(
-                "{indent}catch ({exception} {ASYNC_EXCEPTION})\n{indent}{{\n"
-            ));
-            out.push_str(&format!(
-                "{indent}    {result_name} = BoltFFIResult<{}, {err_type}>.Err({ASYNC_EXCEPTION}.Error);\n",
-                self.result_type_for_encode_ops(encode_ops)
-                    .trim_start_matches("BoltFFIResult<")
-                    .split_once(", ")
-                    .map(|(ok, _)| ok)
-                    .unwrap_or("object")
-            ));
-            out.push_str(&format!("{indent}}}\n"));
-        } else if err_type == "string" {
-            out.push_str(&format!(
-                "{indent}catch (Exception {ASYNC_EXCEPTION})\n{indent}{{\n"
-            ));
-            out.push_str(&format!(
-                "{indent}    {result_name} = BoltFFIResult<{}, string>.Err({ASYNC_EXCEPTION}.Message);\n",
-                self.result_type_for_encode_ops(encode_ops)
-                    .trim_start_matches("BoltFFIResult<")
-                    .split_once(", ")
-                    .map(|(ok, _)| ok)
-                    .unwrap_or("object")
-            ));
-            out.push_str(&format!("{indent}}}\n"));
+            Some(CSharpCallbackResultCatchPlan::TypedException {
+                exception_type: exception,
+            })
+        } else if err_type == CSharpType::String {
+            Some(CSharpCallbackResultCatchPlan::ExceptionMessage)
+        } else {
+            None
         }
-        out
     }
 
-    fn error_exception_for_write_seq(&self, seq: &WriteSeq) -> Option<String> {
+    fn error_exception_for_write_seq(&self, seq: &WriteSeq) -> Option<CSharpType> {
         match seq.ops.first()? {
             crate::ir::ops::WriteOp::Record { id, .. }
                 if self
@@ -821,7 +784,10 @@ impl<'a> CSharpLowerer<'a> {
                     .resolve_record(id)
                     .is_some_and(|record| record.is_error) =>
             {
-                Some(format!("{}Exception", CSharpClassName::from(id)))
+                Some(named_type(&format!(
+                    "{}Exception",
+                    CSharpClassName::from(id)
+                )))
             }
             crate::ir::ops::WriteOp::Enum { id, .. }
                 if self
@@ -830,7 +796,10 @@ impl<'a> CSharpLowerer<'a> {
                     .resolve_enum(id)
                     .is_some_and(|enumeration| enumeration.is_error) =>
             {
-                Some(format!("{}Exception", CSharpClassName::from(id)))
+                Some(named_type(&format!(
+                    "{}Exception",
+                    CSharpClassName::from(id)
+                )))
             }
             crate::ir::ops::WriteOp::Custom { underlying, .. } => {
                 self.error_exception_for_write_seq(underlying)
@@ -896,40 +865,33 @@ impl<'a> CSharpLowerer<'a> {
         }
     }
 
-    fn render_result_decode_from_ops(
+    fn result_decode_plan(
         &self,
         decode_ops: &ReadSeq,
         reader_name: &str,
-        indent: &str,
-    ) -> String {
+    ) -> CSharpCallbackResultDecodePlan {
         let Some(crate::ir::ops::ReadOp::Result { ok, err, .. }) = decode_ops.ops.first() else {
-            return String::new();
+            return CSharpCallbackResultDecodePlan {
+                err_expr: CSharpExpression::Literal(CSharpLiteral::Null),
+                ok_expr: None,
+            };
         };
         let reader =
             CSharpExpression::Identity(CSharpIdentity::Local(CSharpLocalName::new(reader_name)));
         let mut locals = decode::DecodeLocalCounters::default();
-        let err_expr =
-            decode::lower_decode_expr(err, &reader, None, &self.namespace, &mut locals).to_string();
+        let err_expr = decode::lower_decode_expr(err, &reader, None, &self.namespace, &mut locals);
         let ok_expr = if matches!(ok.ops.first(), None) {
             None
         } else {
-            Some(
-                decode::lower_decode_expr(ok, &reader, None, &self.namespace, &mut locals)
-                    .to_string(),
-            )
+            Some(decode::lower_decode_expr(
+                ok,
+                &reader,
+                None,
+                &self.namespace,
+                &mut locals,
+            ))
         };
-        let mut out = String::new();
-        out.push_str(&format!(
-            "{indent}if ({reader_name}.ReadU8() != 0)\n{indent}{{\n"
-        ));
-        out.push_str(&format!(
-            "{indent}    throw new InvalidOperationException({err_expr}.ToString());\n"
-        ));
-        out.push_str(&format!("{indent}}}\n"));
-        if let Some(ok_expr) = ok_expr {
-            out.push_str(&format!("{indent}return {ok_expr};\n"));
-        }
-        out
+        CSharpCallbackResultDecodePlan { err_expr, ok_expr }
     }
 
     fn decode_expr_from_reader(
@@ -959,18 +921,17 @@ impl<'a> CSharpLowerer<'a> {
                 is_result,
                 ..
             } => {
-                let result_assignment_lines = if *is_result {
-                    unindented_lines(
-                        &self.render_result_assignment(
+                let result_assignment = if *is_result {
+                    Some(self.result_assignment_plan(
+                        CSharpExpression::Identity(CSharpIdentity::Local(CSharpLocalName::new(
                             "impl_",
-                            &method_name.to_string(),
-                            &decoded_args.to_string(),
-                            encode_ops,
-                        ),
-                        "            ",
-                    )
+                        ))),
+                        method_name.clone(),
+                        decoded_args.clone(),
+                        encode_ops,
+                    ))
                 } else {
-                    vec![]
+                    None
                 };
                 let writer = self.return_wire_writer_plan(
                     encode_ops,
@@ -988,7 +949,7 @@ impl<'a> CSharpLowerer<'a> {
                 CSharpSyncCallbackSuccessPlan::Encoded {
                     is_result: *is_result,
                     decoded_args,
-                    result_assignment_lines,
+                    result_assignment,
                     writer,
                 }
             }
@@ -1027,23 +988,22 @@ impl<'a> CSharpLowerer<'a> {
                 is_result,
                 ..
             } => {
-                let result_decode_lines = if *is_result {
-                    source_lines(
-                        &self.render_result_decode_from_ops(
+                let result_decode = if *is_result {
+                    Some(
+                        self.result_decode_plan(
                             decode_ops
                                 .as_ref()
                                 .expect("result callback return decode ops"),
                             RETURN_READER,
-                            "",
                         ),
                     )
                 } else {
-                    vec![]
+                    None
                 };
                 CSharpCallbackProxyCallPlan::Encoded {
                     args,
                     decode_expr: decode_expr.clone(),
-                    result_decode_lines,
+                    result_decode,
                 }
             }
         }
@@ -1242,7 +1202,7 @@ impl<'a> CSharpLowerer<'a> {
         };
         let err_type = self
             .result_branch_type(err)
-            .unwrap_or_else(|| "object".to_string());
+            .unwrap_or_else(|| named_type("object"));
         let (exception_type, error_value_expr, fallback) =
             if let Some(exception_ty) = self.error_exception_for_write_seq(err) {
                 (
@@ -1255,7 +1215,7 @@ impl<'a> CSharpLowerer<'a> {
                     },
                     Some(self.async_failure_completion(ret)),
                 )
-            } else if err_type == "string" {
+            } else if err_type == CSharpType::String {
                 (
                     None,
                     CSharpExpression::MemberAccess {
@@ -1507,16 +1467,6 @@ fn callback_public_param_list(params: &[CSharpCallbackBridgeParamPlan]) -> CShar
         .map(|param| param.public_param().clone())
         .collect::<Vec<_>>()
         .into()
-}
-
-fn source_lines(text: &str) -> Vec<String> {
-    text.lines().map(str::to_string).collect()
-}
-
-fn unindented_lines(text: &str, prefix: &str) -> Vec<String> {
-    text.lines()
-        .map(|line| line.strip_prefix(prefix).unwrap_or(line).to_string())
-        .collect()
 }
 
 fn stripped_name(name: &CSharpParamName) -> &str {

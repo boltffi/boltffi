@@ -26,9 +26,10 @@ pub use callback::{
     CSharpAsyncCallbackEntryPlan, CSharpAsyncCallbackFailurePlan, CSharpAsyncCallbackFaultPlan,
     CSharpAsyncCallbackSuccessPlan, CSharpCallbackBridgeParamPlan, CSharpCallbackDelegatePlan,
     CSharpCallbackEntryPlan, CSharpCallbackMethodPlan, CSharpCallbackParamPlan, CSharpCallbackPlan,
-    CSharpCallbackProxyCallPlan, CSharpCallbackProxyPlan, CSharpClosureInvokePlan,
-    CSharpClosureMethodPlan, CSharpClosurePlan, CSharpSyncCallbackEntryPlan,
-    CSharpSyncCallbackOutInitializerPlan, CSharpSyncCallbackProxyPlan,
+    CSharpCallbackProxyCallPlan, CSharpCallbackProxyPlan, CSharpCallbackResultAssignmentPlan,
+    CSharpCallbackResultCatchPlan, CSharpCallbackResultDecodePlan, CSharpCallbackResultOkPlan,
+    CSharpClosureInvokePlan, CSharpClosureMethodPlan, CSharpClosurePlan, CSharpResultTypePlan,
+    CSharpSyncCallbackEntryPlan, CSharpSyncCallbackOutInitializerPlan, CSharpSyncCallbackProxyPlan,
     CSharpSyncCallbackSuccessPlan,
 };
 pub use class::{CSharpClassPlan, CSharpConstructorKind, CSharpConstructorPlan};

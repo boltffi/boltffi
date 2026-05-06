@@ -17,9 +17,10 @@ use super::ast::{CSharpComment, CSharpNamespace};
 use super::plan::{
     CSharpAsyncCallbackFailurePlan, CSharpAsyncCallbackFaultPlan, CSharpAsyncCallbackSuccessPlan,
     CSharpCallablePlan, CSharpCallbackBridgeParamPlan, CSharpCallbackEntryPlan, CSharpCallbackPlan,
-    CSharpCallbackProxyCallPlan, CSharpCallbackProxyPlan, CSharpClassPlan, CSharpClosureInvokePlan,
-    CSharpClosurePlan, CSharpConstructorKind, CSharpEnumPlan, CSharpFieldPlan, CSharpModulePlan,
-    CSharpParamKind, CSharpRecordPlan, CSharpReturnKind, CSharpSyncCallbackOutInitializerPlan,
+    CSharpCallbackProxyCallPlan, CSharpCallbackProxyPlan, CSharpCallbackResultCatchPlan,
+    CSharpCallbackResultOkPlan, CSharpClassPlan, CSharpClosureInvokePlan, CSharpClosurePlan,
+    CSharpConstructorKind, CSharpEnumPlan, CSharpFieldPlan, CSharpModulePlan, CSharpParamKind,
+    CSharpRecordPlan, CSharpReturnKind, CSharpSyncCallbackOutInitializerPlan,
     CSharpSyncCallbackSuccessPlan,
 };
 
