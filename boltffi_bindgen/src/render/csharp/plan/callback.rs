@@ -70,15 +70,15 @@ pub enum CSharpClosureInvokePlan {
     Encoded {
         is_result: bool,
         decoded_args: CSharpArgumentList,
-        result_assignment: Option<CSharpCallbackResultAssignmentPlan>,
-        writer: CSharpWireWriterPlan,
+        result_assignment: Option<Box<CSharpCallbackResultAssignmentPlan>>,
+        writer: Box<CSharpWireWriterPlan>,
     },
 }
 
 #[derive(Debug, Clone)]
 pub enum CSharpCallbackEntryPlan {
-    Sync(CSharpSyncCallbackEntryPlan),
-    Async(CSharpAsyncCallbackEntryPlan),
+    Sync(Box<CSharpSyncCallbackEntryPlan>),
+    Async(Box<CSharpAsyncCallbackEntryPlan>),
 }
 
 #[derive(Debug, Clone)]
@@ -108,8 +108,8 @@ pub enum CSharpSyncCallbackSuccessPlan {
     Encoded {
         is_result: bool,
         decoded_args: CSharpArgumentList,
-        result_assignment: Option<CSharpCallbackResultAssignmentPlan>,
-        writer: CSharpWireWriterPlan,
+        result_assignment: Option<Box<CSharpCallbackResultAssignmentPlan>>,
+        writer: Box<CSharpWireWriterPlan>,
     },
 }
 
@@ -141,7 +141,7 @@ pub enum CSharpAsyncCallbackSuccessPlan {
     Encoded {
         is_result: bool,
         result_type: CSharpResultTypePlan,
-        writer: CSharpWireWriterPlan,
+        writer: Box<CSharpWireWriterPlan>,
     },
 }
 
@@ -150,9 +150,9 @@ pub enum CSharpAsyncCallbackFaultPlan {
     Failure(CSharpAsyncCallbackFailurePlan),
     EncodedResult {
         exception_type: Option<CSharpType>,
-        error_value_expr: CSharpExpression,
-        result_type: CSharpResultTypePlan,
-        writer: CSharpWireWriterPlan,
+        error_value_expr: Box<CSharpExpression>,
+        result_type: Box<CSharpResultTypePlan>,
+        writer: Box<CSharpWireWriterPlan>,
         fallback: Option<CSharpAsyncCallbackFailurePlan>,
     },
 }
@@ -163,7 +163,7 @@ pub enum CSharpCallbackProxyPlan {
         public_params: CSharpParameterList,
         result_type: Option<CSharpType>,
     },
-    Sync(CSharpSyncCallbackProxyPlan),
+    Sync(Box<CSharpSyncCallbackProxyPlan>),
 }
 
 #[derive(Debug, Clone)]
@@ -252,7 +252,7 @@ pub enum CSharpCallbackBridgeParamPlan {
         native_len_param: CSharpParameter,
         reader_local: CSharpLocalName,
         decoded_arg: CSharpExpression,
-        writer: CSharpWireWriterPlan,
+        writer: Box<CSharpWireWriterPlan>,
         pin_local: CSharpLocalName,
         ptr_local: CSharpLocalName,
     },
@@ -379,7 +379,7 @@ mod tests {
             native_len_param: CSharpParameter::bare(CSharpType::UIntPtr, value_len),
             reader_local: local("__boltffiValueReader"),
             decoded_arg: local_expr(&local("__boltffiValueReader")),
-            writer,
+            writer: Box::new(writer),
             pin_local: local("_valuePin"),
             ptr_local: local("_valuePtr"),
         };

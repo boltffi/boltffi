@@ -286,7 +286,7 @@ impl<'a> CSharpLowerer<'a> {
             CallbackReturnMode::CallbackVtable,
         );
         if method.is_async() {
-            CSharpCallbackEntryPlan::Async(CSharpAsyncCallbackEntryPlan {
+            CSharpCallbackEntryPlan::Async(Box::new(CSharpAsyncCallbackEntryPlan {
                 native_params: self.async_callback_native_params(&method_name, &params),
                 bridge_params: params.clone(),
                 decoded_args: decoded_arg_list(&params),
@@ -295,15 +295,15 @@ impl<'a> CSharpLowerer<'a> {
                 faulted_completion: self.async_fault_completion(&ret),
                 success_completion: self.async_success_completion(&ret),
                 catch_completion: self.async_failure_completion(&ret),
-            })
+            }))
         } else {
             let success = self.sync_callback_success(&method_name, &params, &ret);
-            CSharpCallbackEntryPlan::Sync(CSharpSyncCallbackEntryPlan {
+            CSharpCallbackEntryPlan::Sync(Box::new(CSharpSyncCallbackEntryPlan {
                 native_params: self.sync_callback_native_params(&params, &ret),
                 out_initializer: self.sync_out_initializer(&ret),
                 bridge_params: params,
                 success,
-            })
+            }))
         }
     }
 
@@ -334,13 +334,13 @@ impl<'a> CSharpLowerer<'a> {
             .iter()
             .any(CSharpCallbackBridgeParamPlan::needs_wire_writer);
         let call = self.proxy_call(&params, &ret);
-        CSharpCallbackProxyPlan::Sync(CSharpSyncCallbackProxyPlan {
+        CSharpCallbackProxyPlan::Sync(Box::new(CSharpSyncCallbackProxyPlan {
             public_params,
             return_type: ret.public_type(),
             bridge_params: params,
             has_cleanup,
             call,
-        })
+        }))
     }
 
     fn lower_callback_delegates(
@@ -426,8 +426,8 @@ impl<'a> CSharpLowerer<'a> {
                 CSharpClosureInvokePlan::Encoded {
                     is_result: *is_result,
                     decoded_args,
-                    result_assignment,
-                    writer,
+                    result_assignment: result_assignment.map(Box::new),
+                    writer: Box::new(writer),
                 }
             }
         }
@@ -492,21 +492,19 @@ impl<'a> CSharpLowerer<'a> {
                     .expect("encoded callback param must have encode ops"),
             );
             let writer = self.callback_param_wire_writer_plan(&encode_ops, &name);
+            let pin_local =
+                CSharpLocalName::new(format!("_{}Pin", stripped_name(&writer.param_name)));
+            let ptr_local =
+                CSharpLocalName::new(format!("_{}Ptr", stripped_name(&writer.param_name)));
             CSharpCallbackBridgeParamPlan::WireEncoded {
                 public_param,
                 native_ptr_param: CSharpParameter::bare(CSharpType::IntPtr, name),
                 native_len_param: CSharpParameter::bare(CSharpType::UIntPtr, len_name),
                 reader_local: reader_name,
                 decoded_arg: decode_expr,
-                pin_local: CSharpLocalName::new(format!(
-                    "_{}Pin",
-                    stripped_name(&writer.param_name)
-                )),
-                ptr_local: CSharpLocalName::new(format!(
-                    "_{}Ptr",
-                    stripped_name(&writer.param_name)
-                )),
-                writer,
+                writer: Box::new(writer),
+                pin_local,
+                ptr_local,
             }
         } else {
             let decode_expr = self.direct_decode_expr(&param.type_expr, &name);
@@ -556,8 +554,10 @@ impl<'a> CSharpLowerer<'a> {
         match returns {
             ReturnDef::Void => CSharpType::Void,
             ReturnDef::Value(ty) => self.lower_type(ty).expect("callback return type"),
-            ReturnDef::Result { ok, .. } if matches!(ok, TypeExpr::Void) => CSharpType::Void,
-            ReturnDef::Result { ok, .. } => self.lower_type(ok).expect("result ok type"),
+            ReturnDef::Result { ok, .. } => match ok {
+                TypeExpr::Void => CSharpType::Void,
+                ok => self.lower_type(ok).expect("result ok type"),
+            },
         }
     }
 
@@ -902,7 +902,7 @@ impl<'a> CSharpLowerer<'a> {
             CSharpExpression::Identity(CSharpIdentity::Local(CSharpLocalName::new(reader_name)));
         let mut locals = decode::DecodeLocalCounters::default();
         let err_expr = decode::lower_decode_expr(err, &reader, None, &self.namespace, &mut locals);
-        let ok_expr = if matches!(ok.ops.first(), None) {
+        let ok_expr = if ok.ops.is_empty() {
             None
         } else {
             Some(decode::lower_decode_expr(
@@ -971,8 +971,8 @@ impl<'a> CSharpLowerer<'a> {
                 CSharpSyncCallbackSuccessPlan::Encoded {
                     is_result: *is_result,
                     decoded_args,
-                    result_assignment,
-                    writer,
+                    result_assignment: result_assignment.map(Box::new),
+                    writer: Box::new(writer),
                 }
             }
         }
@@ -1206,7 +1206,7 @@ impl<'a> CSharpLowerer<'a> {
                 CSharpAsyncCallbackSuccessPlan::Encoded {
                     is_result: *is_result,
                     result_type: self.result_type_for_encode_ops(encode_ops),
-                    writer,
+                    writer: Box::new(writer),
                 }
             }
         }
@@ -1232,23 +1232,23 @@ impl<'a> CSharpLowerer<'a> {
             if let Some(exception_ty) = self.error_exception_for_write_seq(err) {
                 (
                     Some(exception_ty),
-                    CSharpExpression::MemberAccess {
+                    Box::new(CSharpExpression::MemberAccess {
                         receiver: Box::new(CSharpExpression::Identity(CSharpIdentity::Local(
                             CSharpLocalName::new("__boltffiTypedException"),
                         ))),
                         name: CSharpPropertyName::from_source("error"),
-                    },
+                    }),
                     Some(self.async_failure_completion(ret)),
                 )
             } else if err_type == CSharpType::String {
                 (
                     None,
-                    CSharpExpression::MemberAccess {
+                    Box::new(CSharpExpression::MemberAccess {
                         receiver: Box::new(CSharpExpression::Identity(CSharpIdentity::Local(
                             CSharpLocalName::new(ASYNC_EXCEPTION),
                         ))),
                         name: CSharpPropertyName::from_source("message"),
-                    },
+                    }),
                     None,
                 )
             } else {
@@ -1263,8 +1263,8 @@ impl<'a> CSharpLowerer<'a> {
         CSharpAsyncCallbackFaultPlan::EncodedResult {
             exception_type,
             error_value_expr,
-            result_type: result_ty,
-            writer,
+            result_type: Box::new(result_ty),
+            writer: Box::new(writer),
             fallback,
         }
     }

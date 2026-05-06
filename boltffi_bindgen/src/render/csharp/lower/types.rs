@@ -18,7 +18,7 @@ impl<'a> CSharpLowerer<'a> {
     ) -> Option<CSharpParamPlan> {
         if param.passing != ParamPassing::Value {
             if let TypeExpr::Callback(id) = &param.type_expr {
-                return Some(self.lower_callback_param(param, id)?);
+                return self.lower_callback_param(param, id);
             }
             return None;
         }
@@ -26,7 +26,7 @@ impl<'a> CSharpLowerer<'a> {
         let csharp_type = self.lower_type(&param.type_expr)?;
         let csharp_param_name: CSharpParamName = (&param.name).into();
         if let TypeExpr::Callback(id) = &param.type_expr {
-            return Some(self.lower_callback_param(param, id)?);
+            return self.lower_callback_param(param, id);
         }
         if let TypeExpr::Option(inner) = &param.type_expr
             && let TypeExpr::Callback(id) = inner.as_ref()
