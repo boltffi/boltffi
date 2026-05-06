@@ -1,0 +1,6 @@
+    public interface {{ callback.public_name }}
+    {
+{% for method in callback.methods %}
+        {{ method.public_return_type() }} {{ method.name }}({% for param in method.public_params %}{{ param.csharp_type }} {{ param.name }}{% if !loop.last %}, {% endif %}{% endfor %});
+{% endfor %}
+    }

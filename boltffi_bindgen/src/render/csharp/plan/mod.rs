@@ -10,6 +10,7 @@
 //! Plans are created by the `lower` module, and consumed by the `templates` module.
 
 mod callable;
+mod callback;
 mod class;
 mod enumeration;
 mod field;
@@ -20,6 +21,10 @@ mod record;
 pub use callable::{
     CSharpAsyncCallPlan, CSharpCallablePlan, CSharpFunctionPlan, CSharpMethodPlan, CSharpParamKind,
     CSharpParamPlan, CSharpReceiver, CSharpReturnKind, CSharpWireWriterPlan,
+};
+pub use callback::{
+    CSharpCallbackMethodPlan, CSharpCallbackParamPlan, CSharpCallbackPlan, CSharpClosureMethodPlan,
+    CSharpClosurePlan,
 };
 pub use class::{CSharpClassPlan, CSharpConstructorKind, CSharpConstructorPlan};
 pub use enumeration::{CSharpEnumKind, CSharpEnumPlan, CSharpEnumVariantPlan};

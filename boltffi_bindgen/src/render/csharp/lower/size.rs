@@ -119,6 +119,38 @@ pub(crate) fn lower_size_expr(
                 right: Box::new(ternary),
             }))
         }
+        SizeExpr::ResultSize { value, ok, err } => {
+            let result_expr = render_value(value, renames);
+            let mut ok_renames = renames.clone();
+            ok_renames.insert(
+                "okVal".to_string(),
+                CSharpExpression::MemberAccess {
+                    receiver: Box::new(result_expr.clone()),
+                    name: CSharpPropertyName::from_source("ok_value"),
+                },
+            );
+            let mut err_renames = renames.clone();
+            err_renames.insert(
+                "errVal".to_string(),
+                CSharpExpression::MemberAccess {
+                    receiver: Box::new(result_expr.clone()),
+                    name: CSharpPropertyName::from_source("err_value"),
+                },
+            );
+            let branch_size = CSharpExpression::Paren(Box::new(CSharpExpression::Ternary {
+                cond: Box::new(CSharpExpression::MemberAccess {
+                    receiver: Box::new(result_expr),
+                    name: CSharpPropertyName::from_source("is_ok"),
+                }),
+                then: Box::new(lower_size_expr(ok, &ok_renames, locals)),
+                otherwise: Box::new(lower_size_expr(err, &err_renames, locals)),
+            }));
+            CSharpExpression::Paren(Box::new(CSharpExpression::Binary {
+                op: CSharpBinaryOp::Add,
+                left: Box::new(CSharpExpression::Literal(CSharpLiteral::Int(1))),
+                right: Box::new(branch_size),
+            }))
+        }
         SizeExpr::VecSize {
             value,
             layout: VecLayout::Blittable { element_size },

@@ -27,4 +27,5 @@
 {%- endif %}
 {%- when CSharpReturnKind::Void %}
 {%- when CSharpReturnKind::Direct %}
+{%- when CSharpReturnKind::CallbackHandle with { .. } %}
 {%- endmatch %}

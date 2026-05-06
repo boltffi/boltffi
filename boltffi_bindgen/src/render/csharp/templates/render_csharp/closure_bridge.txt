@@ -1,0 +1,43 @@
+    internal static unsafe class {{ closure.bridge_name }}
+    {
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+{% if closure.method.marshals_return_bool %}
+        [return: MarshalAs(UnmanagedType.I1)]
+{% endif %}
+        internal delegate {{ closure.method.native_return_type }} NativeInvoke({% for decl in closure.method.native_decls %}{{ decl }}{% if !loop.last %}, {% endif %}{% endfor %});
+
+        private static readonly NativeInvoke InvokeDelegate = Invoke;
+
+        internal static Scope Pin({{ closure.public_name }} impl_) => new(impl_);
+
+        internal sealed class Scope : IDisposable
+        {
+            private GCHandle _handle;
+            private bool _disposed;
+
+            internal Scope({{ closure.public_name }} impl_)
+            {
+                _handle = GCHandle.Alloc(impl_);
+                Function = InvokeDelegate;
+                Context = GCHandle.ToIntPtr(_handle);
+            }
+
+            internal NativeInvoke Function { get; }
+            internal IntPtr Context { get; }
+
+            public void Dispose()
+            {
+                if (_disposed) return;
+                _disposed = true;
+                if (_handle.IsAllocated) _handle.Free();
+            }
+        }
+
+        private static {{ closure.method.native_return_type }} Invoke({% for decl in closure.method.native_decls %}{{ decl }}{% if !loop.last %}, {% endif %}{% endfor %})
+        {
+            var impl_ = ({{ closure.public_name }})((GCHandle)context).Target!;
+{% for line in closure.method.decode_setup %}
+            {{ line }}
+{% endfor %}
+{{ closure.method.invoke_body }}        }
+    }

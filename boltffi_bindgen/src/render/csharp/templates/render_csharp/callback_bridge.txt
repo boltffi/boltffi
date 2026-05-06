@@ -1,0 +1,132 @@
+    internal static unsafe class {{ callback.bridge_name }}
+    {
+        private static readonly global::System.Collections.Concurrent.ConcurrentDictionary<ulong, {{ callback.public_name }}> Handles = new();
+        private static long _nextHandle = -1;
+        private static readonly IntPtr VTablePtr;
+
+        static {{ callback.bridge_name }}()
+        {
+            VTable table = new VTable
+            {
+                free = Marshal.GetFunctionPointerForDelegate(FreeDelegate),
+                clone = Marshal.GetFunctionPointerForDelegate(CloneDelegate){% for method in callback.methods %},
+                {{ method.vtable_field }} = Marshal.GetFunctionPointerForDelegate({{ method.name }}Delegate){% endfor %}
+            };
+            VTablePtr = (IntPtr)NativeMemory.Alloc((nuint)Marshal.SizeOf<VTable>());
+            Marshal.StructureToPtr(table, VTablePtr, false);
+            RegisterNative(VTablePtr);
+        }
+
+        internal static BoltFFICallbackHandle Create({{ callback.public_name }}? impl_)
+        {
+            _ = VTablePtr;
+            if (impl_ is null) return BoltFFICallbackHandle.Null;
+            if (impl_ is Proxy proxy) return proxy.CloneHandle();
+            return CreateNative(Insert(impl_));
+        }
+
+        internal static {{ callback.public_name }} Wrap(BoltFFICallbackHandle handle)
+        {
+            if (handle.IsNull) throw new InvalidOperationException("callback handle is null");
+            if (Handles.TryGetValue(handle.handle, out var existing)) return existing;
+            return new Proxy(handle);
+        }
+
+        private static ulong Insert({{ callback.public_name }} impl_)
+        {
+            ulong handle = unchecked((ulong)global::System.Threading.Interlocked.Add(ref _nextHandle, 2));
+            Handles[handle] = impl_;
+            return handle;
+        }
+
+        private static void Free(ulong handle) => Handles.TryRemove(handle, out _);
+
+        private static ulong Clone(ulong handle)
+        {
+            return Handles.TryGetValue(handle, out {{ callback.public_name }}? impl_) ? Insert(impl_) : 0;
+        }
+
+        private static void ThrowIfCallbackStatus(FfiStatus status)
+        {
+            if (status.code != 0) throw new InvalidOperationException($"callback failed with status code {status.code}");
+        }
+
+{% for method in callback.methods %}
+{{ method.entry_source }}
+{% endfor %}
+        private sealed class Proxy : {{ callback.public_name }}
+        {
+            private BoltFFICallbackHandle _handle;
+
+            internal Proxy(BoltFFICallbackHandle handle)
+            {
+                _handle = handle;
+            }
+
+            ~Proxy()
+            {
+                Release();
+            }
+
+            internal BoltFFICallbackHandle CloneHandle()
+            {
+                if (_handle.IsNull) return BoltFFICallbackHandle.Null;
+                VTable table = Marshal.PtrToStructure<VTable>(_handle.vtable);
+                var clone = Marshal.GetDelegateForFunctionPointer<CloneFn>(table.clone);
+                ulong cloned = clone(_handle.handle);
+                return cloned == 0 ? BoltFFICallbackHandle.Null : new BoltFFICallbackHandle { handle = cloned, vtable = _handle.vtable };
+            }
+
+            private void Release()
+            {
+                if (_handle.IsNull) return;
+                VTable table = Marshal.PtrToStructure<VTable>(_handle.vtable);
+                var free = Marshal.GetDelegateForFunctionPointer<FreeFn>(table.free);
+                ulong handle = _handle.handle;
+                _handle = BoltFFICallbackHandle.Null;
+                free(handle);
+            }
+
+{% for method in callback.methods %}
+{{ method.proxy_source }}
+{% endfor %}
+        }
+
+{% if callback.has_async_methods %}
+        private static Exception UnwrapTaskException(Exception exception)
+        {
+            while (exception is AggregateException aggregate && aggregate.InnerException is { } inner)
+            {
+                exception = inner;
+            }
+            return exception;
+        }
+
+{% endif %}
+        [StructLayout(LayoutKind.Sequential)]
+        private struct VTable
+        {
+            public IntPtr free;
+            public IntPtr clone;
+{% for method in callback.methods %}
+            public IntPtr {{ method.vtable_field }};
+{% endfor %}
+        }
+
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        private delegate void FreeFn(ulong handle);
+        private static readonly FreeFn FreeDelegate = Free;
+
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        private delegate ulong CloneFn(ulong handle);
+        private static readonly CloneFn CloneDelegate = Clone;
+
+{% for method in callback.methods %}
+{{ method.delegate_source }}
+{% endfor %}
+        [DllImport(NativeMethods.LibName, EntryPoint = "{{ callback.register_fn }}")]
+        private static extern void RegisterNative(IntPtr vtable);
+
+        [DllImport(NativeMethods.LibName, EntryPoint = "{{ callback.create_fn }}")]
+        private static extern BoltFFICallbackHandle CreateNative(ulong handle);
+    }

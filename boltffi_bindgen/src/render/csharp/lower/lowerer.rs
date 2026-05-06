@@ -2,14 +2,15 @@ use std::collections::HashSet;
 
 use boltffi_ffi_rules::naming;
 
+use crate::ir::definitions::CallbackKind;
 use crate::ir::ids::{EnumId, RecordId};
 use crate::ir::{AbiContract, FfiContract};
 
 use super::super::CSharpOptions;
 use super::super::ast::{CSharpClassName, CSharpNamespace};
 use super::super::plan::{
-    CFunctionName, CSharpClassPlan, CSharpEnumPlan, CSharpFunctionPlan, CSharpModulePlan,
-    CSharpRecordPlan,
+    CFunctionName, CSharpCallbackPlan, CSharpClassPlan, CSharpClosurePlan, CSharpEnumPlan,
+    CSharpFunctionPlan, CSharpModulePlan, CSharpRecordPlan,
 };
 
 /// Produces a [`CSharpModulePlan`] from the IR contracts.
@@ -85,6 +86,22 @@ impl<'a> CSharpLowerer<'a> {
             .map(|c| self.lower_class(c))
             .collect();
 
+        let callbacks: Vec<CSharpCallbackPlan> = self
+            .ffi
+            .catalog
+            .all_callbacks()
+            .filter(|c| matches!(c.kind, CallbackKind::Trait))
+            .map(|c| self.lower_callback(c))
+            .collect();
+
+        let closures: Vec<CSharpClosurePlan> = self
+            .ffi
+            .catalog
+            .all_callbacks()
+            .filter(|c| matches!(c.kind, CallbackKind::Closure))
+            .map(|c| self.lower_closure(c))
+            .collect();
+
         CSharpModulePlan {
             namespace,
             class_name,
@@ -94,6 +111,8 @@ impl<'a> CSharpLowerer<'a> {
             enums,
             functions,
             classes,
+            callbacks,
+            closures,
         }
     }
 }

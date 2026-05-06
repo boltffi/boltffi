@@ -2,8 +2,8 @@ use boltffi_ffi_rules::naming::{LibraryName, Name};
 
 use super::super::ast::{CSharpClassName, CSharpNamespace};
 use super::{
-    CFunctionName, CSharpCallablePlan, CSharpClassPlan, CSharpEnumPlan, CSharpFunctionPlan,
-    CSharpRecordPlan,
+    CFunctionName, CSharpCallablePlan, CSharpCallbackPlan, CSharpClassPlan, CSharpClosurePlan,
+    CSharpEnumPlan, CSharpFunctionPlan, CSharpRecordPlan,
 };
 
 /// A whole C# module: namespace, library binding, and every record, enum,
@@ -36,6 +36,10 @@ pub struct CSharpModulePlan {
     /// own `.cs` file as a `sealed class` implementing `IDisposable`
     /// around an opaque native handle.
     pub classes: Vec<CSharpClassPlan>,
+    /// Callback trait interfaces and bridges.
+    pub callbacks: Vec<CSharpCallbackPlan>,
+    /// Closure delegate types and bridges.
+    pub closures: Vec<CSharpClosurePlan>,
 }
 
 impl CSharpModulePlan {
@@ -56,6 +60,28 @@ impl CSharpModulePlan {
             || self.classes.iter().any(CSharpClassPlan::has_async_methods)
             || self.records.iter().any(CSharpRecordPlan::has_async_methods)
             || self.enums.iter().any(CSharpEnumPlan::has_async_methods)
+    }
+
+    pub fn has_callbacks(&self) -> bool {
+        !self.callbacks.is_empty()
+    }
+
+    pub fn has_closures(&self) -> bool {
+        !self.closures.is_empty()
+    }
+
+    pub fn has_async_callbacks(&self) -> bool {
+        self.callbacks
+            .iter()
+            .any(|callback| callback.has_async_methods)
+    }
+
+    pub fn needs_callback_runtime(&self) -> bool {
+        self.has_callbacks() || self.has_closures()
+    }
+
+    pub fn needs_ffi_status(&self) -> bool {
+        self.has_async() || self.needs_callback_runtime()
     }
 
     /// Whether the module needs `using System.Text;`. True when any function
@@ -111,21 +137,45 @@ impl CSharpModulePlan {
     /// Needed for wire-encoded returns, and pulled in whenever a record or
     /// enum exists so the `WireReader` (which takes `FfiBuf`) compiles.
     pub fn needs_ffi_buf(&self) -> bool {
-        self.has_ffi_buf_returns() || !self.records.is_empty() || !self.enums.is_empty()
+        self.has_ffi_buf_returns()
+            || !self.records.is_empty()
+            || !self.enums.is_empty()
+            || self.callbacks.iter().any(|callback| callback.needs_ffi_buf)
+            || self.closures.iter().any(|closure| closure.needs_ffi_buf)
     }
 
     /// Whether the stateful `WireReader` helper is emitted. Needed for
     /// wire-decoded returns, for any record's `Decode` method, and for the
     /// enum wire helpers (`StatusWire.Decode`, `Shape.Decode`).
     pub fn needs_wire_reader(&self) -> bool {
-        self.has_ffi_buf_returns() || !self.records.is_empty() || !self.enums.is_empty()
+        self.has_ffi_buf_returns()
+            || !self.records.is_empty()
+            || !self.enums.is_empty()
+            || self
+                .callbacks
+                .iter()
+                .any(|callback| callback.needs_wire_reader)
+            || self
+                .closures
+                .iter()
+                .any(|closure| closure.needs_wire_reader)
     }
 
     /// Whether the `WireWriter` helper is emitted. Needed for wire-encoded
     /// params, for any record's `WireEncodeTo` method, and for the enum
     /// encode helpers.
     pub fn needs_wire_writer(&self) -> bool {
-        self.has_wire_params() || !self.records.is_empty() || !self.enums.is_empty()
+        self.has_wire_params()
+            || !self.records.is_empty()
+            || !self.enums.is_empty()
+            || self
+                .callbacks
+                .iter()
+                .any(|callback| callback.needs_wire_writer)
+            || self
+                .closures
+                .iter()
+                .any(|closure| closure.needs_wire_writer)
     }
 
     /// Whether the runtime `BoltException` class is emitted. True when
@@ -174,6 +224,8 @@ mod tests {
             enums: vec![],
             functions: vec![],
             classes: vec![],
+            callbacks: vec![],
+            closures: vec![],
         }
     }
 

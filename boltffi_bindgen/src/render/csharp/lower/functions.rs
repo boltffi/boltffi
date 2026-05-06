@@ -90,6 +90,12 @@ impl<'a> CSharpLowerer<'a> {
             ReturnDef::Value(t) => t,
             _ => return CSharpReturnKind::Direct,
         };
+        if let TypeExpr::Callback(id) = raw_type {
+            return CSharpReturnKind::CallbackHandle {
+                bridge_class: self.callback_bridge_class_name(id),
+                nullable: false,
+            };
+        }
         // Custom returns always cross as wire-encoded FfiBuf (the macro
         // wraps the underlying value uniformly). For repr shapes that
         // already have a wire-decode path (String, Record, Enum, Vec,

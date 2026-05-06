@@ -135,6 +135,52 @@ pub(crate) fn lower_encode_expr(
                 otherwise: Some(vec![tag_byte(0)]),
             }]
         }
+        WriteOp::Result { value, ok, err } => {
+            let result_expr = render_value(value, renames);
+            let tag_byte = |byte: i64| {
+                CSharpStatement::Expression(CSharpExpression::MethodCall {
+                    receiver: Box::new(writer.clone()),
+                    method: CSharpMethodName::from_source("write_u8"),
+                    type_args: vec![],
+                    args: vec![CSharpExpression::Cast {
+                        target: CSharpType::Byte,
+                        inner: Box::new(CSharpExpression::Literal(CSharpLiteral::Int(byte))),
+                    }]
+                    .into(),
+                })
+            };
+
+            let mut ok_renames = renames.clone();
+            ok_renames.insert(
+                "okVal".to_string(),
+                CSharpExpression::MemberAccess {
+                    receiver: Box::new(result_expr.clone()),
+                    name: CSharpPropertyName::from_source("ok_value"),
+                },
+            );
+            let mut err_renames = renames.clone();
+            err_renames.insert(
+                "errVal".to_string(),
+                CSharpExpression::MemberAccess {
+                    receiver: Box::new(result_expr.clone()),
+                    name: CSharpPropertyName::from_source("err_value"),
+                },
+            );
+
+            let mut then = vec![tag_byte(0)];
+            then.extend(lower_encode_expr(ok, writer, &ok_renames, locals));
+            let mut otherwise = vec![tag_byte(1)];
+            otherwise.extend(lower_encode_expr(err, writer, &err_renames, locals));
+
+            vec![CSharpStatement::If {
+                cond: CSharpExpression::MemberAccess {
+                    receiver: Box::new(result_expr),
+                    name: CSharpPropertyName::from_source("is_ok"),
+                },
+                then,
+                otherwise: Some(otherwise),
+            }]
+        }
         WriteOp::Vec {
             value,
             element_type: TypeExpr::Primitive(p),

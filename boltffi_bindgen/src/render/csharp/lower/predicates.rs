@@ -1,5 +1,5 @@
-use crate::ir::definitions::{EnumRepr, ParamDef, ParamPassing};
-use crate::ir::ids::{EnumId, RecordId};
+use crate::ir::definitions::{CallbackKind, EnumRepr, ParamDef, ParamPassing};
+use crate::ir::ids::{CallbackId, EnumId, RecordId};
 use crate::ir::types::TypeExpr;
 
 use super::lowerer::CSharpLowerer;
@@ -27,7 +27,18 @@ impl<'a> CSharpLowerer<'a> {
     /// Whether the param can be handled by the C# backend. Today only
     /// by-value passing is supported (no `&` / `&mut`).
     pub(super) fn is_supported_param(&self, param: &ParamDef) -> bool {
-        param.passing == ParamPassing::Value && self.is_supported_type(&param.type_expr)
+        match (&param.passing, &param.type_expr) {
+            (ParamPassing::Value, TypeExpr::Option(inner))
+                if matches!(inner.as_ref(), TypeExpr::Callback(_)) =>
+            {
+                self.is_supported_type(&param.type_expr)
+            }
+            (ParamPassing::ImplTrait | ParamPassing::BoxedDyn, TypeExpr::Callback(id)) => {
+                self.is_supported_callback(id)
+            }
+            (ParamPassing::Value, _) => self.is_supported_type(&param.type_expr),
+            _ => false,
+        }
     }
 
     /// Whether the type can appear as a function param or return today.
@@ -45,8 +56,18 @@ impl<'a> CSharpLowerer<'a> {
             TypeExpr::Option(inner) => {
                 !matches!(inner.as_ref(), TypeExpr::Option(_)) && self.is_supported_type(inner)
             }
+            TypeExpr::Callback(id) => self.is_supported_callback(id),
             _ => false,
         }
+    }
+
+    pub(super) fn is_supported_callback(&self, id: &CallbackId) -> bool {
+        self.ffi
+            .catalog
+            .resolve_callback(id)
+            .is_some_and(|callback| match callback.kind {
+                CallbackKind::Trait | CallbackKind::Closure => true,
+            })
     }
 
     /// Whether `ty` is admissible as the Ok or Err side of a

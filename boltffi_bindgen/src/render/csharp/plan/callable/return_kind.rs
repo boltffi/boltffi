@@ -11,6 +11,12 @@ pub enum CSharpReturnKind {
     /// Returned directly. Primitives, bools, and blittable records share
     /// this path.
     Direct,
+    /// Returned as a `BoltFFICallbackHandle` and wrapped into the generated
+    /// C# callback interface/delegate proxy.
+    CallbackHandle {
+        bridge_class: CSharpClassName,
+        nullable: bool,
+    },
     /// `FfiBuf` carrying a wire-encoded `string`.
     WireDecodeString,
     /// `FfiBuf` carrying a wire-encoded value with a static
@@ -75,6 +81,17 @@ impl CSharpReturnKind {
         matches!(self, Self::Direct)
     }
 
+    pub fn is_callback_handle(&self) -> bool {
+        matches!(self, Self::CallbackHandle { .. })
+    }
+
+    pub fn callback_bridge_class(&self) -> &CSharpClassName {
+        match self {
+            Self::CallbackHandle { bridge_class, .. } => bridge_class,
+            _ => panic!("callback_bridge_class called for non-callback return"),
+        }
+    }
+
     /// Whether the native (DllImport) signature returns an `FfiBuf`.
     pub fn native_returns_ffi_buf(&self) -> bool {
         matches!(
@@ -104,6 +121,8 @@ pub(crate) fn native_return_type(
 ) -> String {
     if return_kind.native_returns_ffi_buf() {
         "FfiBuf".to_string()
+    } else if return_kind.is_callback_handle() {
+        "BoltFFICallbackHandle".to_string()
     } else {
         return_type.to_string()
     }

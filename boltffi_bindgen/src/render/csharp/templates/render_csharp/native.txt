@@ -1,4 +1,4 @@
-{%- if module.has_async() %}
+{%- if module.needs_ffi_status() %}
     [StructLayout(LayoutKind.Sequential)]
     internal struct FfiStatus
     {
@@ -14,6 +14,24 @@
         public UIntPtr len;
         public UIntPtr cap;
         public UIntPtr align;
+
+        internal static unsafe FfiBuf FromBytes(byte[] bytes)
+        {
+            if (bytes.Length == 0)
+            {
+                return default;
+            }
+
+            void* allocated = NativeMemory.Alloc((nuint)bytes.Length);
+            Marshal.Copy(bytes, 0, (IntPtr)allocated, bytes.Length);
+            return new FfiBuf
+            {
+                ptr = (IntPtr)allocated,
+                len = (UIntPtr)bytes.Length,
+                cap = (UIntPtr)bytes.Length,
+                align = (UIntPtr)1,
+            };
+        }
     }
 
 {% endif %}
@@ -34,6 +52,13 @@
         {
             _ptr = buf.ptr;
             _length = buf.ptr == IntPtr.Zero ? 0 : checked((int)(nuint)buf.len);
+            _pos = 0;
+        }
+
+        internal WireReader(IntPtr ptr, UIntPtr len)
+        {
+            _ptr = ptr;
+            _length = ptr == IntPtr.Zero ? 0 : checked((int)(nuint)len);
             _pos = 0;
         }
 
@@ -477,6 +502,68 @@
     }
 
 {% endif %}
+{%- if module.needs_callback_runtime() %}
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct BoltFFICallbackHandle
+    {
+        public ulong handle;
+        public IntPtr vtable;
+
+        internal static BoltFFICallbackHandle Null => default;
+        internal bool IsNull => handle == 0 || vtable == IntPtr.Zero;
+    }
+
+    internal readonly struct BoltFFIUnit
+    {
+    }
+
+    internal readonly struct BoltFFIResult<TOk, TErr>
+    {
+        private readonly TOk _okValue;
+        private readonly TErr _errValue;
+
+        private BoltFFIResult(TOk okValue, TErr errValue, bool isOk)
+        {
+            _okValue = okValue;
+            _errValue = errValue;
+            IsOk = isOk;
+        }
+
+        internal bool IsOk { get; }
+        internal TOk OkValue => _okValue;
+        internal TErr ErrValue => _errValue;
+
+        internal static BoltFFIResult<TOk, TErr> Ok(TOk value) => new(value, default!, true);
+        internal static BoltFFIResult<TOk, TErr> Err(TErr value) => new(default!, value, false);
+    }
+
+    internal static class BoltFFICallbackReturn
+    {
+        internal static unsafe void Store(byte[] bytes, out IntPtr outPtr, out UIntPtr outLen)
+        {
+            if (bytes.Length == 0)
+            {
+                outPtr = IntPtr.Zero;
+                outLen = UIntPtr.Zero;
+                return;
+            }
+
+            void* allocated = NativeMemory.Alloc((nuint)bytes.Length);
+            Marshal.Copy(bytes, 0, (IntPtr)allocated, bytes.Length);
+            outPtr = (IntPtr)allocated;
+            outLen = (UIntPtr)bytes.Length;
+        }
+
+        internal static unsafe void Free(IntPtr ptr)
+        {
+            if (ptr != IntPtr.Zero)
+            {
+                NativeMemory.Free((void*)ptr);
+            }
+        }
+    }
+
+{% endif %}
 {%- if module.has_async() %}
     internal static class BoltFFIAsync
     {
@@ -723,7 +810,7 @@
 {% endif %}
     internal static class NativeMethods
     {
-        private const string LibName = "{{ module.lib_name }}";
+        internal const string LibName = "{{ module.lib_name }}";
 {%- if module.needs_ffi_buf() %}
 
         [DllImport(LibName, EntryPoint = "{{ module.free_buf_ffi_name }}")]

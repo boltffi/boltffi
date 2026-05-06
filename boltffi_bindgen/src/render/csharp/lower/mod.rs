@@ -4,6 +4,7 @@
 
 mod abi;
 mod admission;
+mod callbacks;
 mod classes;
 mod custom;
 mod decode;

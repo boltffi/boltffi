@@ -2,6 +2,8 @@
             NativeMethods.{{ native_method_name }}({{ native_call_args }});
 {%- else if callable.return_kind.is_direct() %}
             return NativeMethods.{{ native_method_name }}({{ native_call_args }});
+{%- else if callable.return_kind.is_callback_handle() %}
+            return {{ callable.return_kind.callback_bridge_class() }}.Wrap(NativeMethods.{{ native_method_name }}({{ native_call_args }}));
 {%- else %}
             FfiBuf _buf = NativeMethods.{{ native_method_name }}({{ native_call_args }});
             try

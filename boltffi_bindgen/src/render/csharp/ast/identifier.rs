@@ -348,6 +348,12 @@ impl CSharpLocalName {
         Self(format!("_{}Ptr", param.stripped()))
     }
 
+    /// `_{param}Callback`: the scoped owner that keeps an inline closure
+    /// rooted while the native call executes.
+    pub(crate) fn for_inline_callback_scope(param: &CSharpParamName) -> Self {
+        Self(format!("_{}Callback", param.stripped()))
+    }
+
     /// `sizeOpt{n}`: the pattern binding introduced inside a
     /// `SizeExpr::OptionSize` ternary so the option's non-null payload
     /// can be referenced while summing its byte size. The prefix is

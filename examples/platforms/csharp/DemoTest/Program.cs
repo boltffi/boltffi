@@ -49,6 +49,9 @@ public static class DemoTest
         await TestAsyncResults();
         await TestAsyncClassMethods();
         await TestAsyncCancellation();
+        TestCallbackTraits();
+        TestClosures();
+        await TestAsyncCallbackTraits();
         Console.WriteLine("All tests passed!");
         return 0;
     }
@@ -2031,6 +2034,236 @@ public static class DemoTest
         catch (OperationCanceledException) { }
 
         Console.WriteLine("  PASS\n");
+    }
+
+    private static void TestCallbackTraits()
+    {
+        Console.WriteLine("Testing callback traits...");
+
+        ValueCallback doubler = new ValueCallbackImpl(v => v * 2);
+        Require(InvokeValueCallback(doubler, 4) == 8, "InvokeValueCallback local");
+        Require(InvokeValueCallbackTwice(doubler, 3, 4) == 14, "InvokeValueCallbackTwice local");
+        Require(InvokeBoxedValueCallback(doubler, 5) == 10, "InvokeBoxedValueCallback local");
+        Require(InvokeTwoCallbacks(doubler, new ValueCallbackImpl(v => v * 3), 5) == 25,
+            "InvokeTwoCallbacks local");
+        Require(InvokeOptionalValueCallback(null, 4) == 4, "InvokeOptionalValueCallback null");
+
+        ValueCallback incrementer = MakeIncrementingCallback(5);
+        Require(InvokeValueCallback(incrementer, 4) == 9, "returned ValueCallback proxy");
+
+        MessageFormatter formatter = new MessageFormatterImpl();
+        Require(FormatMessageWithCallback(formatter, "sync", "formatter") == "sync::formatter",
+            "FormatMessageWithCallback local");
+        Require(FormatMessageWithOptionalCallback(null, "fallback", "message") == "fallback::message",
+            "FormatMessageWithOptionalCallback null");
+        MessageFormatter prefixer = MakeMessagePrefixer("prefix");
+        Require(FormatMessageWithCallback(prefixer, "sync", "formatter") == "prefix::sync::formatter",
+            "returned MessageFormatter proxy");
+
+        Require(ProcessVec(new VecProcessorImpl(), new[] { 1, 2, 3 }).SequenceEqual(new[] { 2, 4, 6 }),
+            "ProcessVec callback");
+        Require(InvokeOptionCallback(new OptionCallbackImpl(), 7) == 70, "InvokeOptionCallback Some");
+        Require(InvokeOptionCallback(new OptionCallbackImpl(), 0) == null, "InvokeOptionCallback None");
+        Require(InvokeResultCallback(new ResultCallbackImpl(), 7) == 70, "InvokeResultCallback Ok");
+        try
+        {
+            InvokeResultCallback(new ResultCallbackImpl(), -1);
+            Require(false, "InvokeResultCallback Err should throw");
+        }
+        catch (MathErrorException e)
+        {
+            Require(e.Error == MathError.NegativeInput, "InvokeResultCallback Err type");
+        }
+
+        Require(InvokeOffsetCallback(new OffsetCallbackImpl(), (nint)(-5), (nuint)8) == (nint)3,
+            "InvokeOffsetCallback pointer-sized params");
+
+        using (var consumer = new DataConsumer())
+        {
+            consumer.SetProvider(new DataProviderImpl());
+            Require(consumer.ComputeSum() == 10UL, "stored DataProvider callback");
+        }
+
+        Console.WriteLine("  PASS\n");
+    }
+
+    private static void TestClosures()
+    {
+        Console.WriteLine("Testing closures...");
+
+        Require(ApplyClosure(v => v * 3, 4) == 12, "ApplyClosure");
+        Require(ApplyBinaryClosure((a, b) => a + b, 3, 4) == 7, "ApplyBinaryClosure");
+        int observed = 0;
+        ApplyVoidClosure(v => observed = v, 42);
+        Require(observed == 42, "ApplyVoidClosure");
+        Require(ApplyNullaryClosure(() => 7) == 7, "ApplyNullaryClosure");
+        Require(ApplyPointClosure(p => new Point(p.X + 1.0, p.Y + 2.0), new Point(3.0, 4.0))
+                == new Point(4.0, 6.0),
+            "ApplyPointClosure");
+        Require(ApplyStringClosure(s => s + "!", "hello") == "hello!", "ApplyStringClosure");
+        Require(!ApplyBoolClosure(v => !v, true), "ApplyBoolClosure");
+        Require(Math.Abs(ApplyF64Closure(v => v + 0.5, 1.25) - 1.75) < 1e-9, "ApplyF64Closure");
+        Require(MapVecWithClosure(v => v * 2, new[] { 1, 2, 3 }).SequenceEqual(new[] { 2, 4, 6 }),
+            "MapVecWithClosure");
+        Require(FilterVecWithClosure(v => v > 1, new[] { 0, 1, 2, 3 }).SequenceEqual(new[] { 2, 3 }),
+            "FilterVecWithClosure");
+        Require(ApplyOffsetClosure((value, delta) => value + (nint)delta, (nint)10, (nuint)4) == (nint)14,
+            "ApplyOffsetClosure");
+        Require(ApplyStatusClosure(status => status == Status.Active ? Status.Inactive : Status.Active,
+                Status.Active) == Status.Inactive,
+            "ApplyStatusClosure");
+        Require(ApplyOptionalPointClosure(point => point is null ? null : new Point(point.Value.X + 1.0, point.Value.Y),
+                new Point(1.0, 2.0)) == new Point(2.0, 2.0),
+            "ApplyOptionalPointClosure Some");
+        Require(ApplyOptionalPointClosure(point => point, null) == null, "ApplyOptionalPointClosure None");
+        Require(ApplyResultClosure(v => v * 2, 6) == 12, "ApplyResultClosure Ok");
+        try
+        {
+            ApplyResultClosure(_ => throw new MathErrorException(MathError.NegativeInput), 6);
+            Require(false, "ApplyResultClosure Err should throw");
+        }
+        catch (MathErrorException e)
+        {
+            Require(e.Error == MathError.NegativeInput, "ApplyResultClosure Err type");
+        }
+
+        Console.WriteLine("  PASS\n");
+    }
+
+    private static async System.Threading.Tasks.Task TestAsyncCallbackTraits()
+    {
+        Console.WriteLine("Testing async callback traits...");
+
+        AsyncFetcher fetcher = new AsyncFetcherImpl();
+        Require(await FetchWithAsyncCallback(fetcher, 5) == 15, "FetchWithAsyncCallback");
+        Require(await FetchStringWithAsyncCallback(fetcher, "hello") == "HELLO", "FetchStringWithAsyncCallback");
+        Require(await FetchJoinedMessageWithAsyncCallback(fetcher, "async", "callback") == "async::callback",
+            "FetchJoinedMessageWithAsyncCallback");
+
+        Require(await TransformPointWithAsyncCallback(new AsyncPointTransformerImpl(), new Point(1.0, 2.0))
+                == new Point(2.0, 4.0),
+            "TransformPointWithAsyncCallback");
+
+        AsyncResultFormatter resultFormatter = new AsyncResultFormatterImpl();
+        Require(await RenderMessageWithAsyncResultCallback(resultFormatter, "async", "result") == "async::result",
+            "RenderMessageWithAsyncResultCallback Ok");
+        Require(await TransformPointWithAsyncResultCallback(resultFormatter, new Point(3.0, 4.0), Status.Active)
+                == new Point(4.0, 5.0),
+            "TransformPointWithAsyncResultCallback Ok");
+        try
+        {
+            await RenderMessageWithAsyncResultCallback(resultFormatter, "", "result");
+            Require(false, "RenderMessageWithAsyncResultCallback Err should throw");
+        }
+        catch (MathErrorException e)
+        {
+            Require(e.Error == MathError.NegativeInput, "RenderMessageWithAsyncResultCallback Err type");
+        }
+
+        Console.WriteLine("  PASS\n");
+    }
+
+    private sealed class ValueCallbackImpl : ValueCallback
+    {
+        private readonly Func<int, int> _onValue;
+
+        internal ValueCallbackImpl(Func<int, int> onValue)
+        {
+            _onValue = onValue;
+        }
+
+        public int OnValue(int value) => _onValue(value);
+    }
+
+    private sealed class MessageFormatterImpl : MessageFormatter
+    {
+        public string FormatMessage(string scope, string message) => $"{scope}::{message}";
+    }
+
+    private sealed class VecProcessorImpl : VecProcessor
+    {
+        public int[] Process(int[] values) => values.Select(v => v * 2).ToArray();
+    }
+
+    private sealed class OptionCallbackImpl : OptionCallback
+    {
+        public int? FindValue(int key) => key == 0 ? null : key * 10;
+    }
+
+    private sealed class ResultCallbackImpl : ResultCallback
+    {
+        public int Compute(int value)
+        {
+            if (value < 0) throw new MathErrorException(MathError.NegativeInput);
+            return value * 10;
+        }
+    }
+
+    private sealed class OffsetCallbackImpl : OffsetCallback
+    {
+        public nint Offset(nint value, nuint delta) => value + (nint)delta;
+    }
+
+    private sealed class DataProviderImpl : DataProvider
+    {
+        public uint GetCount() => 2u;
+
+        public DataPoint GetItem(uint index)
+        {
+            return index switch
+            {
+                0u => new DataPoint(1.0, 2.0, 100L),
+                1u => new DataPoint(3.0, 4.0, 200L),
+                _ => new DataPoint(0.0, 0.0, 0L),
+            };
+        }
+    }
+
+    private sealed class AsyncFetcherImpl : AsyncFetcher
+    {
+        public async global::System.Threading.Tasks.Task<int> FetchValue(int key)
+        {
+            await global::System.Threading.Tasks.Task.Yield();
+            return key + 10;
+        }
+
+        public async global::System.Threading.Tasks.Task<string> FetchString(string input)
+        {
+            await global::System.Threading.Tasks.Task.Yield();
+            return input.ToUpperInvariant();
+        }
+
+        public async global::System.Threading.Tasks.Task<string> FetchJoinedMessage(string scope, string message)
+        {
+            await global::System.Threading.Tasks.Task.Yield();
+            return $"{scope}::{message}";
+        }
+    }
+
+    private sealed class AsyncPointTransformerImpl : AsyncPointTransformer
+    {
+        public async global::System.Threading.Tasks.Task<Point> TransformPoint(Point point)
+        {
+            await global::System.Threading.Tasks.Task.Yield();
+            return new Point(point.X + 1.0, point.Y + 2.0);
+        }
+    }
+
+    private sealed class AsyncResultFormatterImpl : AsyncResultFormatter
+    {
+        public async global::System.Threading.Tasks.Task<string> RenderMessage(string scope, string message)
+        {
+            await global::System.Threading.Tasks.Task.Yield();
+            if (scope.Length == 0) throw new MathErrorException(MathError.NegativeInput);
+            return $"{scope}::{message}";
+        }
+
+        public async global::System.Threading.Tasks.Task<Point> TransformPoint(Point point, Status status)
+        {
+            await global::System.Threading.Tasks.Task.Yield();
+            if (status == Status.Inactive) throw new MathErrorException(MathError.NegativeInput);
+            return new Point(point.X + 1.0, point.Y + 1.0);
+        }
     }
 
     private static void Require(bool condition, string label)

@@ -15,8 +15,9 @@ use askama::Template;
 
 use super::ast::{CSharpComment, CSharpNamespace};
 use super::plan::{
-    CSharpCallablePlan, CSharpClassPlan, CSharpConstructorKind, CSharpEnumPlan, CSharpFieldPlan,
-    CSharpModulePlan, CSharpParamKind, CSharpRecordPlan, CSharpReturnKind,
+    CSharpCallablePlan, CSharpCallbackPlan, CSharpClassPlan, CSharpClosurePlan,
+    CSharpConstructorKind, CSharpEnumPlan, CSharpFieldPlan, CSharpModulePlan, CSharpParamKind,
+    CSharpRecordPlan, CSharpReturnKind,
 };
 
 /// Renders a `<summary>` doc block at `indent`, ending with a
@@ -100,6 +101,34 @@ fn push_text_line(out: &mut String, indent: &str, line: &str) {
 #[template(path = "render_csharp/preamble.txt", escape = "none")]
 pub struct PreambleTemplate<'a> {
     pub module: &'a CSharpModulePlan,
+}
+
+/// Renders a public callback interface.
+#[derive(Template)]
+#[template(path = "render_csharp/callback_interface.txt", escape = "none")]
+pub struct CallbackInterfaceTemplate<'a> {
+    pub callback: &'a CSharpCallbackPlan,
+}
+
+/// Renders the managed vtable bridge for a callback interface.
+#[derive(Template)]
+#[template(path = "render_csharp/callback_bridge.txt", escape = "none")]
+pub struct CallbackBridgeTemplate<'a> {
+    pub callback: &'a CSharpCallbackPlan,
+}
+
+/// Renders a public closure delegate.
+#[derive(Template)]
+#[template(path = "render_csharp/closure_delegate.txt", escape = "none")]
+pub struct ClosureDelegateTemplate<'a> {
+    pub closure: &'a CSharpClosurePlan,
+}
+
+/// Renders the managed bridge used to pin and invoke a closure delegate.
+#[derive(Template)]
+#[template(path = "render_csharp/closure_bridge.txt", escape = "none")]
+pub struct ClosureBridgeTemplate<'a> {
+    pub closure: &'a CSharpClosurePlan,
 }
 
 /// Renders the public static wrapper class with methods that delegate
@@ -786,6 +815,8 @@ mod tests {
             enums: vec![],
             functions,
             classes: vec![],
+            callbacks: vec![],
+            closures: vec![],
         }
     }
 

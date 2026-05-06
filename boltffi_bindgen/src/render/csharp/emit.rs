@@ -13,8 +13,9 @@ use super::{
     lower::CSharpLowerer,
     plan::CSharpEnumKind,
     templates::{
-        ClassTemplate, EnumCStyleTemplate, EnumDataTemplate, FunctionsTemplate, NativeTemplate,
-        PreambleTemplate, RecordTemplate,
+        CallbackBridgeTemplate, CallbackInterfaceTemplate, ClassTemplate, ClosureBridgeTemplate,
+        ClosureDelegateTemplate, EnumCStyleTemplate, EnumDataTemplate, FunctionsTemplate,
+        NativeTemplate, PreambleTemplate, RecordTemplate,
     },
 };
 
@@ -111,6 +112,18 @@ impl CSharpEmitter {
         let mut main_source = String::new();
         main_source.push_str(&PreambleTemplate { module: &module }.render().unwrap());
         main_source.push('\n');
+        for closure in &module.closures {
+            main_source.push_str(&ClosureDelegateTemplate { closure }.render().unwrap());
+            main_source.push('\n');
+            main_source.push_str(&ClosureBridgeTemplate { closure }.render().unwrap());
+            main_source.push('\n');
+        }
+        for callback in &module.callbacks {
+            main_source.push_str(&CallbackInterfaceTemplate { callback }.render().unwrap());
+            main_source.push('\n');
+            main_source.push_str(&CallbackBridgeTemplate { callback }.render().unwrap());
+            main_source.push('\n');
+        }
         main_source.push_str(&FunctionsTemplate { module: &module }.render().unwrap());
         main_source.push_str(&NativeTemplate { module: &module }.render().unwrap());
         main_source.push('\n');

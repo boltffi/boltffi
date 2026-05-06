@@ -2,6 +2,9 @@
 {%- if let Some(decl) = param.setup_declaration() %}
             {{ decl }}
 {%- endif %}
+{%- if let Some(stmt) = param.setup_statement() %}
+            {{ stmt }}
+{%- endif %}
 {%- endfor %}
 {%- for writer in callable.wire_writers %}
             using var {{ writer.binding_name }} = new WireWriter({{ writer.size_expr }});

@@ -1,5 +1,6 @@
 ---
 source: boltffi_bindgen/src/render/csharp/templates.rs
+assertion_line: 901
 expression: template.render().unwrap()
 ---
 
@@ -255,7 +256,7 @@ expression: template.render().unwrap()
 
     internal static class NativeMethods
     {
-        private const string LibName = "demo";
+        internal const string LibName = "demo";
         [DllImport(LibName, EntryPoint = "boltffi_async_add")]
         internal static extern IntPtr AsyncAdd(int a, int b);
 
