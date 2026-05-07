@@ -1,9 +1,9 @@
     internal static unsafe class {{ closure.bridge_name }}
     {
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-{% if closure.method.marshals_return_bool %}
+{%- if closure.method.native_return_type.is_bool() %}
         [return: MarshalAs(UnmanagedType.I1)]
-{% endif %}
+{%- endif %}
         internal delegate {{ closure.method.native_return_type }} NativeInvoke({{ closure.method.native_params }});
 
         private static readonly NativeInvoke InvokeDelegate = Invoke;

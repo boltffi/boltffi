@@ -223,20 +223,12 @@ impl<'a> CSharpLowerer<'a> {
         for param in &params {
             native_params.extend(param.native_params());
         }
-        let marshals_return_bool = matches!(
-            ret,
-            CallbackReturn::Direct {
-                marshals_bool: true,
-                ..
-            }
-        );
 
         CSharpClosureMethodPlan {
             return_type: self.callback_public_return_type(&method.returns),
             public_params: self.public_param_plans(&method.params),
             native_return_type,
             native_params,
-            marshals_return_bool,
             bridge_params: params.clone(),
             invoke: self.closure_invoke(&ret, &params),
         }

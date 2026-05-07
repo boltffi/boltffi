@@ -47,7 +47,6 @@ pub struct CSharpClosureMethodPlan {
     pub public_params: Vec<CSharpCallbackParamPlan>,
     pub native_return_type: CSharpType,
     pub native_params: CSharpParameterList,
-    pub marshals_return_bool: bool,
     pub bridge_params: Vec<CSharpCallbackBridgeParamPlan>,
     pub invoke: CSharpClosureInvokePlan,
 }
