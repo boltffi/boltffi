@@ -10,50 +10,58 @@ public static class DemoTest
 {
     public static async System.Threading.Tasks.Task<int> Main()
     {
-        Console.WriteLine("Testing C# bindings...\n");
-        TestBool();
-        TestI8();
-        TestU8();
-        TestI16();
-        TestU16();
-        TestI32();
-        TestU32();
-        TestI64();
-        TestU64();
-        TestF32();
-        TestF64();
-        TestUsize();
-        TestIsize();
-        TestStrings();
-        TestCustomTypes();
-        TestBlittableRecords();
-        TestRecordsWithStrings();
-        TestRecordsWithDefaults();
-        TestNestedRecords();
-        TestCStyleEnums();
-        TestDataEnums();
-        TestRecordsWithEnumFields();
-        TestPrimitiveVecs();
-        TestStringAndNestedVecs();
-        TestBlittableRecordVecs();
-        TestEnumVecs();
-        TestVecFields();
-        TestOptions();
-        TestOptionsInRecords();
-        TestOptionsWithVec();
-        TestClasses();
-        TestResultFunctions();
-        TestResultClassMethods();
-        TestResultEnumErrors();
-        await TestAsyncFunctions();
-        await TestAsyncResults();
-        await TestAsyncClassMethods();
-        await TestAsyncCancellation();
-        TestCallbackTraits();
-        TestClosures();
-        await TestAsyncCallbackTraits();
-        Console.WriteLine("All tests passed!");
-        return 0;
+        try
+        {
+            Console.WriteLine("Testing C# bindings...\n");
+            TestBool();
+            TestI8();
+            TestU8();
+            TestI16();
+            TestU16();
+            TestI32();
+            TestU32();
+            TestI64();
+            TestU64();
+            TestF32();
+            TestF64();
+            TestUsize();
+            TestIsize();
+            TestStrings();
+            TestCustomTypes();
+            TestBlittableRecords();
+            TestRecordsWithStrings();
+            TestRecordsWithDefaults();
+            TestNestedRecords();
+            TestCStyleEnums();
+            TestDataEnums();
+            TestRecordsWithEnumFields();
+            TestPrimitiveVecs();
+            TestStringAndNestedVecs();
+            TestBlittableRecordVecs();
+            TestEnumVecs();
+            TestVecFields();
+            TestOptions();
+            TestOptionsInRecords();
+            TestOptionsWithVec();
+            TestClasses();
+            TestResultFunctions();
+            TestResultClassMethods();
+            TestResultEnumErrors();
+            await TestAsyncFunctions();
+            await TestAsyncResults();
+            await TestAsyncClassMethods();
+            await TestAsyncCancellation();
+            TestCallbackTraits();
+            TestClosures();
+            await TestAsyncCallbackTraits();
+            Console.WriteLine("All tests passed!");
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"FAIL: {ex}");
+            return 1;
+        }
     }
 
     private static void TestBool()
