@@ -148,14 +148,9 @@
         {
             if (!Handles.TryGetValue(handle, out var impl_))
             {
-{%- match entry.invalid_handle_completion %}
-{%- when CSharpAsyncCallbackFailurePlan::Void %}
-                callback(callbackData, new FfiStatus { code = 100 });
-{%- when CSharpAsyncCallbackFailurePlan::Direct with { default_value } %}
-                callback(callbackData, {{ default_value }}, new FfiStatus { code = 100 });
-{%- when CSharpAsyncCallbackFailurePlan::Encoded %}
-                callback(callbackData, IntPtr.Zero, UIntPtr.Zero, new FfiStatus { code = 100 });
-{%- endmatch %}
+{%- let completion = entry.invalid_handle_completion %}
+{%- let completion_indent = "                " %}
+{%- include "render_csharp/callback_async_failure_completion.txt" %}
                 return;
             }
             try
@@ -172,14 +167,9 @@
                 {
                     if (__boltffiCompleted.IsCanceled)
                     {
-{%- match entry.canceled_completion %}
-{%- when CSharpAsyncCallbackFailurePlan::Void %}
-                        callback(callbackData, new FfiStatus { code = 100 });
-{%- when CSharpAsyncCallbackFailurePlan::Direct with { default_value } %}
-                        callback(callbackData, {{ default_value }}, new FfiStatus { code = 100 });
-{%- when CSharpAsyncCallbackFailurePlan::Encoded %}
-                        callback(callbackData, IntPtr.Zero, UIntPtr.Zero, new FfiStatus { code = 100 });
-{%- endmatch %}
+{%- let completion = entry.canceled_completion %}
+{%- let completion_indent = "                        " %}
+{%- include "render_csharp/callback_async_failure_completion.txt" %}
                         return;
                     }
                     if (__boltffiCompleted.IsFaulted)
@@ -187,14 +177,9 @@
                         Exception __boltffiException = UnwrapTaskException(__boltffiCompleted.Exception!);
 {%- match entry.faulted_completion %}
 {%- when CSharpAsyncCallbackFaultPlan::Failure with (failure) %}
-{%- match failure %}
-{%- when CSharpAsyncCallbackFailurePlan::Void %}
-                        callback(callbackData, new FfiStatus { code = 100 });
-{%- when CSharpAsyncCallbackFailurePlan::Direct with { default_value } %}
-                        callback(callbackData, {{ default_value }}, new FfiStatus { code = 100 });
-{%- when CSharpAsyncCallbackFailurePlan::Encoded %}
-                        callback(callbackData, IntPtr.Zero, UIntPtr.Zero, new FfiStatus { code = 100 });
-{%- endmatch %}
+{%- let completion = failure %}
+{%- let completion_indent = "                        " %}
+{%- include "render_csharp/callback_async_failure_completion.txt" %}
 {%- when CSharpAsyncCallbackFaultPlan::EncodedResult with { exception_type, error_value_expr, result_type, writer, fallback } %}
 {%- if let Some(exception_type) = exception_type %}
                         if (__boltffiException is {{ exception_type }} __boltffiTypedException)
@@ -223,14 +208,9 @@
                             return;
                         }
 {%- if let Some(fallback) = fallback %}
-{%- match fallback %}
-{%- when CSharpAsyncCallbackFailurePlan::Void %}
-                        callback(callbackData, new FfiStatus { code = 100 });
-{%- when CSharpAsyncCallbackFailurePlan::Direct with { default_value } %}
-                        callback(callbackData, {{ default_value }}, new FfiStatus { code = 100 });
-{%- when CSharpAsyncCallbackFailurePlan::Encoded %}
-                        callback(callbackData, IntPtr.Zero, UIntPtr.Zero, new FfiStatus { code = 100 });
-{%- endmatch %}
+{%- let completion = fallback %}
+{%- let completion_indent = "                        " %}
+{%- include "render_csharp/callback_async_failure_completion.txt" %}
 {%- endif %}
 {%- endmatch %}
                         return;
@@ -268,14 +248,9 @@
             }
             catch
             {
-{%- match entry.catch_completion %}
-{%- when CSharpAsyncCallbackFailurePlan::Void %}
-                callback(callbackData, new FfiStatus { code = 100 });
-{%- when CSharpAsyncCallbackFailurePlan::Direct with { default_value } %}
-                callback(callbackData, {{ default_value }}, new FfiStatus { code = 100 });
-{%- when CSharpAsyncCallbackFailurePlan::Encoded %}
-                callback(callbackData, IntPtr.Zero, UIntPtr.Zero, new FfiStatus { code = 100 });
-{%- endmatch %}
+{%- let completion = entry.catch_completion %}
+{%- let completion_indent = "                " %}
+{%- include "render_csharp/callback_async_failure_completion.txt" %}
             }
         }
 {%- endmatch %}

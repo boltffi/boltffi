@@ -1,0 +1,8 @@
+{%- match completion %}
+{%- when CSharpAsyncCallbackFailurePlan::Void %}
+{{ completion_indent }}callback(callbackData, new FfiStatus { code = 100 });
+{%- when CSharpAsyncCallbackFailurePlan::Direct with { default_value } %}
+{{ completion_indent }}callback(callbackData, {{ default_value }}, new FfiStatus { code = 100 });
+{%- when CSharpAsyncCallbackFailurePlan::Encoded %}
+{{ completion_indent }}callback(callbackData, IntPtr.Zero, UIntPtr.Zero, new FfiStatus { code = 100 });
+{%- endmatch %}
