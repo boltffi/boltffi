@@ -66,6 +66,38 @@ enum CallbackReturnMode {
 }
 
 #[derive(Debug, Clone)]
+struct CallbackMethodShape {
+    name: CSharpMethodName,
+    vtable_field: CSharpLocalName,
+    is_async: bool,
+    bridge_params: Vec<CSharpCallbackBridgeParamPlan>,
+    ret: CallbackReturn,
+}
+
+impl CallbackMethodShape {
+    fn public_return_type(&self) -> CSharpType {
+        self.ret.public_type()
+    }
+
+    fn public_param_plans(&self) -> Vec<CSharpCallbackParamPlan> {
+        self.bridge_params
+            .iter()
+            .map(|param| {
+                let public_param = param.public_param();
+                CSharpCallbackParamPlan {
+                    csharp_type: public_param.csharp_type.clone(),
+                    name: public_param.name.clone(),
+                }
+            })
+            .collect()
+    }
+
+    fn public_param_list(&self) -> CSharpParameterList {
+        callback_public_param_list(&self.bridge_params)
+    }
+}
+
+#[derive(Debug, Clone)]
 enum CallbackNativeValuePlan {
     Identity,
     BoolToByte,
@@ -192,16 +224,12 @@ impl<'a> CSharpLowerer<'a> {
         method: &CallbackMethodDef,
         abi_method: &AbiCallbackMethod,
     ) -> CSharpCallbackMethodPlan {
-        CSharpCallbackMethodPlan {
-            name: (&method.id).into(),
-            vtable_field: CSharpLocalName::new(abi_method.vtable_field.as_str()),
-            return_type: self.callback_public_return_type(&method.returns),
-            is_async: method.is_async(),
-            public_params: self.public_param_plans(&method.params),
-            entry: self.lower_callback_entry(method, abi_method),
-            proxy: self.lower_callback_proxy(method, abi_method),
-            delegates: self.lower_callback_delegates(method, abi_method),
-        }
+        let shape = self.lower_callback_method_shape(
+            method,
+            abi_method,
+            CallbackReturnMode::CallbackVtable,
+        );
+        self.callback_method_plan_from_shape(&shape)
     }
 
     fn lower_closure_method(
@@ -209,29 +237,48 @@ impl<'a> CSharpLowerer<'a> {
         method: &CallbackMethodDef,
         abi_method: &AbiCallbackMethod,
     ) -> CSharpClosureMethodPlan {
-        let params = self.bridge_params(method, abi_method);
-        let ret = self.callback_return(
-            &method.returns,
-            &abi_method.returns,
-            CallbackReturnMode::InlineClosure,
-        );
-        let native_return_type = self.inline_callback_native_return_type(&ret);
+        let shape =
+            self.lower_callback_method_shape(method, abi_method, CallbackReturnMode::InlineClosure);
+        self.closure_method_plan_from_shape(&shape)
+    }
+
+    fn callback_method_plan_from_shape(
+        &self,
+        shape: &CallbackMethodShape,
+    ) -> CSharpCallbackMethodPlan {
+        CSharpCallbackMethodPlan {
+            name: shape.name.clone(),
+            vtable_field: shape.vtable_field.clone(),
+            return_type: shape.public_return_type(),
+            is_async: shape.is_async,
+            public_params: shape.public_param_plans(),
+            entry: self.lower_callback_entry(shape),
+            proxy: self.lower_callback_proxy(shape),
+            delegates: self.lower_callback_delegates(shape),
+        }
+    }
+
+    fn closure_method_plan_from_shape(
+        &self,
+        shape: &CallbackMethodShape,
+    ) -> CSharpClosureMethodPlan {
+        let native_return_type = self.inline_callback_native_return_type(&shape.ret);
         let mut native_params = CSharpParameterList::empty();
         native_params.push(CSharpParameter::bare(
             CSharpType::IntPtr,
             CSharpParamName::new("context"),
         ));
-        for param in &params {
+        for param in &shape.bridge_params {
             native_params.extend(param.native_params());
         }
 
         CSharpClosureMethodPlan {
-            return_type: self.callback_public_return_type(&method.returns),
-            public_params: self.public_param_plans(&method.params),
+            return_type: shape.public_return_type(),
+            public_params: shape.public_param_plans(),
             native_return_type,
             native_params,
-            bridge_params: params.clone(),
-            invoke: self.closure_invoke(&ret, &params),
+            bridge_params: shape.bridge_params.clone(),
+            invoke: self.closure_invoke(&shape.ret, &shape.bridge_params),
         }
     }
 
@@ -271,99 +318,83 @@ impl<'a> CSharpLowerer<'a> {
         CSharpClassName::new(format!("{}Proxy", public_name.as_str()))
     }
 
-    fn lower_callback_entry(
+    fn lower_callback_method_shape(
         &self,
         method: &CallbackMethodDef,
         abi_method: &AbiCallbackMethod,
-    ) -> CSharpCallbackEntryPlan {
-        let method_name: CSharpMethodName = (&method.id).into();
-        let params = self.bridge_params(method, abi_method);
-        let ret = self.callback_return(
-            &method.returns,
-            &abi_method.returns,
-            CallbackReturnMode::CallbackVtable,
-        );
-        if method.is_async() {
+        mode: CallbackReturnMode,
+    ) -> CallbackMethodShape {
+        CallbackMethodShape {
+            name: (&method.id).into(),
+            vtable_field: CSharpLocalName::new(abi_method.vtable_field.as_str()),
+            is_async: method.is_async(),
+            bridge_params: self.bridge_params(method, abi_method),
+            ret: self.callback_return(&method.returns, &abi_method.returns, mode),
+        }
+    }
+
+    fn lower_callback_entry(&self, shape: &CallbackMethodShape) -> CSharpCallbackEntryPlan {
+        if shape.is_async {
             CSharpCallbackEntryPlan::Async(Box::new(CSharpAsyncCallbackEntryPlan {
-                native_params: self.async_callback_native_params(&method_name, &params),
-                bridge_params: params.clone(),
-                decoded_args: decoded_arg_list(&params),
-                invalid_handle_completion: self.async_failure_completion(&ret),
-                canceled_completion: self.async_failure_completion(&ret),
-                faulted_completion: self.async_fault_completion(&ret),
-                success_completion: self.async_success_completion(&ret),
-                catch_completion: self.async_failure_completion(&ret),
+                native_params: self.async_callback_native_params(&shape.name, &shape.bridge_params),
+                bridge_params: shape.bridge_params.clone(),
+                decoded_args: decoded_arg_list(&shape.bridge_params),
+                invalid_handle_completion: self.async_failure_completion(&shape.ret),
+                canceled_completion: self.async_failure_completion(&shape.ret),
+                faulted_completion: self.async_fault_completion(&shape.ret),
+                success_completion: self.async_success_completion(&shape.ret),
+                catch_completion: self.async_failure_completion(&shape.ret),
             }))
         } else {
-            let success = self.sync_callback_success(&method_name, &params, &ret);
+            let success = self.sync_callback_success(&shape.name, &shape.bridge_params, &shape.ret);
             CSharpCallbackEntryPlan::Sync(Box::new(CSharpSyncCallbackEntryPlan {
-                native_params: self.sync_callback_native_params(&params, &ret),
-                out_initializer: self.sync_out_initializer(&ret),
-                bridge_params: params,
+                native_params: self.sync_callback_native_params(&shape.bridge_params, &shape.ret),
+                out_initializer: self.sync_out_initializer(&shape.ret),
+                bridge_params: shape.bridge_params.clone(),
                 success,
             }))
         }
     }
 
-    fn lower_callback_proxy(
-        &self,
-        method: &CallbackMethodDef,
-        abi_method: &AbiCallbackMethod,
-    ) -> CSharpCallbackProxyPlan {
-        let params = self.bridge_params(method, abi_method);
-        let ret = self.callback_return(
-            &method.returns,
-            &abi_method.returns,
-            CallbackReturnMode::CallbackVtable,
-        );
-        let public_params = callback_public_param_list(&params);
-        if method.is_async() {
+    fn lower_callback_proxy(&self, shape: &CallbackMethodShape) -> CSharpCallbackProxyPlan {
+        let public_params = shape.public_param_list();
+        if shape.is_async {
             return CSharpCallbackProxyPlan::AsyncUnsupported {
                 public_params,
-                result_type: if matches!(ret, CallbackReturn::Void) {
+                result_type: if matches!(shape.ret, CallbackReturn::Void) {
                     None
                 } else {
-                    Some(self.callback_public_return_type(&method.returns))
+                    Some(shape.public_return_type())
                 },
             };
         }
 
-        let has_cleanup = params
+        let has_cleanup = shape
+            .bridge_params
             .iter()
             .any(CSharpCallbackBridgeParamPlan::needs_wire_writer);
-        let call = self.proxy_call(&params, &ret);
+        let call = self.proxy_call(&shape.bridge_params, &shape.ret);
         CSharpCallbackProxyPlan::Sync(Box::new(CSharpSyncCallbackProxyPlan {
             public_params,
-            return_type: ret.public_type(),
-            bridge_params: params,
+            return_type: shape.ret.public_type(),
+            bridge_params: shape.bridge_params.clone(),
             has_cleanup,
             call,
         }))
     }
 
-    fn lower_callback_delegates(
-        &self,
-        method: &CallbackMethodDef,
-        abi_method: &AbiCallbackMethod,
-    ) -> CSharpCallbackDelegatePlan {
-        let method_name: CSharpMethodName = (&method.id).into();
-        let params = self.bridge_params(method, abi_method);
-        let ret = self.callback_return(
-            &method.returns,
-            &abi_method.returns,
-            CallbackReturnMode::CallbackVtable,
-        );
+    fn lower_callback_delegates(&self, shape: &CallbackMethodShape) -> CSharpCallbackDelegatePlan {
         CSharpCallbackDelegatePlan {
-            entry_params: if method.is_async() {
-                self.async_callback_native_params(&method_name, &params)
+            entry_params: if shape.is_async {
+                self.async_callback_native_params(&shape.name, &shape.bridge_params)
             } else {
-                self.sync_callback_native_params(&params, &ret)
+                self.sync_callback_native_params(&shape.bridge_params, &shape.ret)
             },
-            completion_params: method
-                .is_async()
-                .then(|| self.async_completion_params(&ret)),
-            proxy_params: (!method.is_async())
-                .then(|| self.sync_callback_native_params(&params, &ret)),
+            completion_params: shape
+                .is_async
+                .then(|| self.async_completion_params(&shape.ret)),
+            proxy_params: (!shape.is_async)
+                .then(|| self.sync_callback_native_params(&shape.bridge_params, &shape.ret)),
         }
     }
 
@@ -548,17 +579,6 @@ impl<'a> CSharpLowerer<'a> {
         }
     }
 
-    fn callback_public_return_type(&self, returns: &ReturnDef) -> CSharpType {
-        match returns {
-            ReturnDef::Void => CSharpType::Void,
-            ReturnDef::Value(ty) => self.lower_type(ty).expect("callback return type"),
-            ReturnDef::Result { ok, .. } => match ok {
-                TypeExpr::Void => CSharpType::Void,
-                ok => self.lower_type(ok).expect("result ok type"),
-            },
-        }
-    }
-
     fn callback_value_return(
         &self,
         ty: &TypeExpr,
@@ -682,21 +702,6 @@ impl<'a> CSharpLowerer<'a> {
                 }
             }
         }
-    }
-
-    fn public_param_plans(
-        &self,
-        params: &[crate::ir::definitions::ParamDef],
-    ) -> Vec<CSharpCallbackParamPlan> {
-        params
-            .iter()
-            .map(|param| CSharpCallbackParamPlan {
-                csharp_type: self
-                    .lower_type(&param.type_expr)
-                    .expect("callback param type"),
-                name: (&param.name).into(),
-            })
-            .collect()
     }
 
     fn result_assignment_plan(
