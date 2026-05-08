@@ -55,6 +55,10 @@ impl CSharpModulePlan {
         !self.classes.is_empty()
     }
 
+    pub fn has_streams(&self) -> bool {
+        self.classes.iter().any(CSharpClassPlan::has_streams)
+    }
+
     pub fn has_async(&self) -> bool {
         self.functions.iter().any(CSharpFunctionPlan::is_async)
             || self.classes.iter().any(CSharpClassPlan::has_async_methods)
@@ -121,6 +125,7 @@ impl CSharpModulePlan {
                 .iter()
                 .flat_map(|c| c.methods.iter())
                 .any(|m| m.return_kind.native_returns_ffi_buf())
+            || self.classes.iter().any(CSharpClassPlan::has_wire_streams)
             || self
                 .records
                 .iter()
@@ -155,6 +160,7 @@ impl CSharpModulePlan {
                 .callbacks
                 .iter()
                 .any(|callback| callback.needs_wire_reader)
+            || self.classes.iter().any(CSharpClassPlan::has_wire_streams)
             || self
                 .closures
                 .iter()
@@ -272,6 +278,7 @@ mod tests {
             native_free_method_name: CSharpMethodName::from_source("CounterFree"),
             constructors: vec![],
             methods: vec![throwing_method()],
+            streams: vec![],
         }
     }
 

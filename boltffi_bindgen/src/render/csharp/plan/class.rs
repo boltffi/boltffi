@@ -3,7 +3,8 @@ use super::super::ast::{
 };
 use super::callable::{native_call_arg_list, native_param_list};
 use super::{
-    CFunctionName, CSharpCallablePlan, CSharpMethodPlan, CSharpParamPlan, CSharpWireWriterPlan,
+    CFunctionName, CSharpCallablePlan, CSharpMethodPlan, CSharpParamPlan, CSharpStreamPlan,
+    CSharpWireWriterPlan,
 };
 
 /// A Rust object exposed as a C# `IDisposable` wrapper around an
@@ -52,6 +53,8 @@ pub struct CSharpClassPlan {
     /// [`super::CSharpReceiver::Static`] and behave like free functions
     /// scoped to the class.
     pub methods: Vec<CSharpMethodPlan>,
+    /// Public stream subscriptions exposed on the wrapper.
+    pub streams: Vec<CSharpStreamPlan>,
 }
 
 /// One public way to construct an instance of the wrapper. Calls the
@@ -191,6 +194,16 @@ impl CSharpClassPlan {
     pub fn has_async_methods(&self) -> bool {
         self.methods.iter().any(CSharpMethodPlan::is_async)
     }
+
+    pub fn has_streams(&self) -> bool {
+        !self.streams.is_empty()
+    }
+
+    pub fn has_wire_streams(&self) -> bool {
+        self.streams
+            .iter()
+            .any(CSharpStreamPlan::has_wire_item_delivery)
+    }
 }
 
 /// Whether a class method needs `using System.Text;`: true if any
@@ -226,6 +239,7 @@ mod tests {
             native_free_method_name: CSharpMethodName::from_source("CounterFree"),
             constructors: vec![],
             methods,
+            streams: vec![],
         }
     }
 

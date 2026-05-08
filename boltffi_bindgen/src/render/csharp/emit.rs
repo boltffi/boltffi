@@ -147,10 +147,10 @@ mod tests {
     use crate::ir::definitions::{
         CStyleVariant, CallbackKind, CallbackMethodDef, CallbackTraitDef, ClassDef, DataVariant,
         EnumDef, EnumRepr, FieldDef, FunctionDef, MethodDef, ParamDef, ParamPassing, Receiver,
-        RecordDef, ReturnDef, VariantPayload,
+        RecordDef, ReturnDef, StreamDef, StreamMode, VariantPayload,
     };
     use crate::ir::ids::{
-        CallbackId, ClassId, EnumId, FieldName, FunctionId, MethodId, ParamName, RecordId,
+        CallbackId, ClassId, EnumId, FieldName, FunctionId, MethodId, ParamName, RecordId, StreamId,
     };
     use crate::ir::types::{PrimitiveType, TypeExpr};
     use boltffi_ffi_rules::callable::ExecutionKind;
@@ -2827,6 +2827,16 @@ mod tests {
         }
     }
 
+    fn stream_def(name: &str, item_type: TypeExpr, mode: StreamMode) -> StreamDef {
+        StreamDef {
+            id: StreamId::new(name),
+            item_type,
+            mode,
+            doc: None,
+            deprecated: None,
+        }
+    }
+
     /// A class in the contract emits its own `.cs` file with the
     /// IDisposable wrapper around an opaque `IntPtr` handle. Snake-case
     /// class IDs render as PascalCase C# class and file names.
@@ -2909,6 +2919,105 @@ mod tests {
             &main.source,
             "internal static extern void InventoryFree(IntPtr handle);",
             "P/Invoke takes the IntPtr directly: void InventoryFree(IntPtr)",
+        );
+    }
+
+    #[test]
+    fn emit_class_streams_as_async_enumerables_for_all_modes() {
+        let mut contract = empty_contract();
+        contract.catalog.insert_record(record_with_fields(
+            "point",
+            true,
+            vec![
+                ("x", TypeExpr::Primitive(PrimitiveType::F64)),
+                ("y", TypeExpr::Primitive(PrimitiveType::F64)),
+            ],
+        ));
+        contract.catalog.insert_class(ClassDef {
+            id: ClassId::new("event_bus"),
+            constructors: vec![],
+            methods: vec![],
+            streams: vec![
+                stream_def(
+                    "subscribe_values",
+                    TypeExpr::Primitive(PrimitiveType::I32),
+                    StreamMode::Async,
+                ),
+                stream_def(
+                    "subscribe_values_batch",
+                    TypeExpr::Primitive(PrimitiveType::I32),
+                    StreamMode::Batch,
+                ),
+                stream_def(
+                    "subscribe_values_callback",
+                    TypeExpr::Primitive(PrimitiveType::I32),
+                    StreamMode::Callback,
+                ),
+                stream_def(
+                    "subscribe_points",
+                    TypeExpr::Record(RecordId::new("point")),
+                    StreamMode::Async,
+                ),
+            ],
+            doc: None,
+            deprecated: None,
+        });
+
+        let output = emit_contract(&contract);
+        let class_source = output
+            .files
+            .iter()
+            .find(|f| f.file_name == "EventBus.cs")
+            .expect("EventBus.cs")
+            .source
+            .as_str();
+        let main_source = output
+            .files
+            .iter()
+            .find(|f| f.file_name == "DemoLib.cs")
+            .expect("DemoLib.cs")
+            .source
+            .as_str();
+
+        assert_source_contains(
+            class_source,
+            "public async IAsyncEnumerable<int> SubscribeValues([EnumeratorCancellation] CancellationToken cancellationToken = default)",
+            "async stream mode renders as IAsyncEnumerable<int>",
+        );
+        assert_source_contains(
+            class_source,
+            "public async IAsyncEnumerable<int> SubscribeValuesBatch([EnumeratorCancellation] CancellationToken cancellationToken = default)",
+            "batch stream mode uses the same C# async enumerable projection",
+        );
+        assert_source_contains(
+            class_source,
+            "public async IAsyncEnumerable<int> SubscribeValuesCallback([EnumeratorCancellation] CancellationToken cancellationToken = default)",
+            "callback stream mode uses the same C# async enumerable projection",
+        );
+        assert_source_contains(
+            class_source,
+            "public async IAsyncEnumerable<Point> SubscribePoints([EnumeratorCancellation] CancellationToken cancellationToken = default)",
+            "record stream items render with their generated record type",
+        );
+        assert_source_contains(
+            class_source,
+            "fixed (int* _itemsPtr = _items)",
+            "direct primitive stream batches pin the managed output buffer",
+        );
+        assert_source_contains(
+            class_source,
+            "fixed (Point* _itemsPtr = _items)",
+            "direct record stream batches pin the managed output buffer",
+        );
+        assert_source_contains(
+            main_source,
+            "internal static extern UIntPtr EventBusSubscribeValuesPopBatch(IntPtr subscription, IntPtr outputPtr, UIntPtr outputCapacity);",
+            "direct stream native signature follows the C ABI output-buffer shape",
+        );
+        assert_source_lacks(
+            class_source,
+            "pop_batch_items_expr",
+            "stream plans/templates do not expose Java-style pre-rendered decode snippets",
         );
     }
 

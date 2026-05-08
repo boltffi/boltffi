@@ -1,12 +1,13 @@
 use boltffi_ffi_rules::naming;
 
-use crate::ir::abi::{AbiCall, CallId, CallMode};
-use crate::ir::definitions::{ClassDef, ConstructorDef, MethodDef, Receiver};
+use crate::ir::abi::{AbiCall, AbiStream, CallId, CallMode, StreamItemTransport};
+use crate::ir::definitions::{ClassDef, ConstructorDef, MethodDef, Receiver, StreamDef};
+use crate::ir::plan::Transport;
 
 use super::super::ast::{CSharpClassName, CSharpComment, CSharpMethodName};
 use super::super::plan::{
     CSharpClassPlan, CSharpConstructorKind, CSharpConstructorPlan, CSharpMethodPlan,
-    CSharpParamPlan, CSharpReceiver,
+    CSharpParamPlan, CSharpReceiver, CSharpStreamItemDelivery, CSharpStreamPlan,
 };
 use super::functions::csharp_async_call_plan;
 use super::lowerer::CSharpLowerer;
@@ -16,8 +17,7 @@ impl<'a> CSharpLowerer<'a> {
     /// Lowers a Rust class definition to a [`CSharpClassPlan`].
     ///
     /// The plan carries the names needed to emit the `IDisposable`
-    /// wrapper plus any public constructors. Method and stream
-    /// lowering are tracked as follow-up work.
+    /// wrapper plus public constructors, methods, and streams.
     pub(super) fn lower_class(&self, class: &ClassDef) -> CSharpClassPlan {
         let class_name = CSharpClassName::from_source(class.id.as_str());
         let ffi_free = naming::class_ffi_free(class.id.as_str()).into();
@@ -25,6 +25,7 @@ impl<'a> CSharpLowerer<'a> {
             CSharpMethodName::native_for_owner(&class_name, &CSharpMethodName::new("Free"));
         let constructors = self.lower_class_constructors(class, &class_name);
         let methods = self.lower_class_methods(class, &class_name);
+        let streams = self.lower_class_streams(class, &class_name);
 
         CSharpClassPlan {
             summary_doc: CSharpComment::from_str_option(class.doc.as_deref()),
@@ -33,6 +34,7 @@ impl<'a> CSharpLowerer<'a> {
             native_free_method_name,
             constructors,
             methods,
+            streams,
         }
     }
 
@@ -204,6 +206,63 @@ impl<'a> CSharpLowerer<'a> {
             return_kind,
             wire_writers,
             owner_is_blittable: false,
+        })
+    }
+
+    fn lower_class_streams(
+        &self,
+        class: &ClassDef,
+        class_name: &CSharpClassName,
+    ) -> Vec<CSharpStreamPlan> {
+        class
+            .streams
+            .iter()
+            .filter_map(|stream_def| {
+                let abi_stream = self.abi_stream_for(&class.id, stream_def)?;
+                self.lower_class_stream(stream_def, abi_stream, class_name)
+            })
+            .collect()
+    }
+
+    fn lower_class_stream(
+        &self,
+        stream_def: &StreamDef,
+        abi_stream: &AbiStream,
+        class_name: &CSharpClassName,
+    ) -> Option<CSharpStreamPlan> {
+        let item_type = self.lower_type(&stream_def.item_type)?;
+        let name: CSharpMethodName = (&stream_def.id).into();
+        let subscribe_method_name = CSharpMethodName::native_for_owner(class_name, &name);
+        let item_delivery = match &abi_stream.item_transport {
+            Transport::Scalar(_) | Transport::Composite(_) => CSharpStreamItemDelivery::Direct,
+            _ => {
+                let StreamItemTransport::WireEncoded { decode_ops } = &abi_stream.item;
+                CSharpStreamItemDelivery::WireEncoded {
+                    item_decode: decode_ops.clone(),
+                }
+            }
+        };
+
+        Some(CSharpStreamPlan {
+            summary_doc: CSharpComment::from_str_option(stream_def.doc.as_deref()),
+            name,
+            item_type,
+            mode: abi_stream.mode,
+            item_delivery,
+            subscribe_method_name: subscribe_method_name.clone(),
+            subscribe_ffi_name: (&abi_stream.subscribe).into(),
+            pop_batch_method_name: CSharpMethodName::new(format!(
+                "{subscribe_method_name}PopBatch"
+            )),
+            pop_batch_ffi_name: (&abi_stream.pop_batch).into(),
+            wait_method_name: CSharpMethodName::new(format!("{subscribe_method_name}Wait")),
+            wait_ffi_name: (&abi_stream.wait).into(),
+            unsubscribe_method_name: CSharpMethodName::new(format!(
+                "{subscribe_method_name}Unsubscribe"
+            )),
+            unsubscribe_ffi_name: (&abi_stream.unsubscribe).into(),
+            free_method_name: CSharpMethodName::new(format!("{subscribe_method_name}Free")),
+            free_ffi_name: (&abi_stream.free).into(),
         })
     }
 }

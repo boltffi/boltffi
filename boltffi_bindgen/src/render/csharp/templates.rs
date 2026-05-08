@@ -2,9 +2,10 @@
 //! `render_csharp/*.txt` Askama file and renders a plan node as C#
 //! source.
 //!
-//! Templates do no decision-making themselves; all branching and
-//! conditional logic lives upstream in `lower`. Templates only
-//! interpolate values that the plan and its `ast` primitives carry.
+//! Templates render the C# syntax from semantic plan facts and typed
+//! `ast` primitives. Lowering avoids carrying pre-rendered method
+//! bodies; template helpers own syntax-heavy shapes such as stream
+//! batch decoding.
 //!
 //! Snapshot tests pin the rendered shape against curated plan
 //! fixtures.
@@ -13,15 +14,18 @@
 
 use askama::Template;
 
-use super::ast::{CSharpComment, CSharpNamespace};
+use super::ast::{
+    CSharpComment, CSharpExpression, CSharpIdentity, CSharpLocalName, CSharpNamespace,
+};
+use super::lower::decode;
 use super::plan::{
     CSharpAsyncCallbackFailurePlan, CSharpAsyncCallbackFaultPlan, CSharpAsyncCallbackSuccessPlan,
     CSharpCallablePlan, CSharpCallbackBridgeParamPlan, CSharpCallbackEntryPlan, CSharpCallbackPlan,
     CSharpCallbackProxyCallPlan, CSharpCallbackProxyPlan, CSharpCallbackResultCatchPlan,
     CSharpCallbackResultOkPlan, CSharpClassPlan, CSharpClosureInvokePlan, CSharpClosurePlan,
     CSharpConstructorKind, CSharpEnumPlan, CSharpFieldPlan, CSharpModulePlan, CSharpParamKind,
-    CSharpRecordPlan, CSharpReturnKind, CSharpSyncCallbackOutInitializerPlan,
-    CSharpSyncCallbackSuccessPlan,
+    CSharpRecordPlan, CSharpReturnKind, CSharpStreamItemDelivery, CSharpStreamPlan,
+    CSharpSyncCallbackOutInitializerPlan, CSharpSyncCallbackSuccessPlan,
 };
 
 /// Renders a `<summary>` doc block at `indent`, ending with a
@@ -97,6 +101,18 @@ fn push_text_line(out: &mut String, indent: &str, line: &str) {
         out.push_str(line);
         out.push('\n');
     }
+}
+
+pub fn stream_wire_item_decode_expr(
+    stream: &CSharpStreamPlan,
+    namespace: &CSharpNamespace,
+) -> String {
+    let CSharpStreamItemDelivery::WireEncoded { item_decode } = &stream.item_delivery else {
+        return String::new();
+    };
+    let reader = CSharpExpression::Identity(CSharpIdentity::Local(CSharpLocalName::new("_reader")));
+    let mut locals = decode::DecodeLocalCounters::default();
+    decode::lower_decode_expr(item_decode, &reader, None, namespace, &mut locals).to_string()
 }
 
 /// Renders the file header: auto-generated comment, `using` directives,
@@ -208,6 +224,8 @@ pub struct ClassTemplate<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ir::definitions::StreamMode;
+    use crate::ir::ops::{OffsetExpr, ReadOp, ReadSeq, SizeExpr, WireShape};
     use crate::render::csharp::ast::{
         CSharpArgumentList, CSharpBinaryOp, CSharpClassName, CSharpEnumUnderlyingType,
         CSharpExpression, CSharpIdentity, CSharpLiteral, CSharpLocalName, CSharpMethodName,
@@ -217,7 +235,8 @@ mod tests {
         CFunctionName, CSharpAsyncCallPlan, CSharpClassPlan, CSharpConstructorKind,
         CSharpConstructorPlan, CSharpEnumKind, CSharpEnumPlan, CSharpEnumVariantPlan,
         CSharpFieldPlan, CSharpFunctionPlan, CSharpMethodPlan, CSharpParamKind, CSharpParamPlan,
-        CSharpReceiver, CSharpRecordPlan, CSharpReturnKind,
+        CSharpReceiver, CSharpRecordPlan, CSharpReturnKind, CSharpStreamItemDelivery,
+        CSharpStreamPlan,
     };
     use boltffi_ffi_rules::naming::{LibraryName, Name};
 
@@ -831,6 +850,55 @@ mod tests {
         }
     }
 
+    fn module_with_classes(classes: Vec<CSharpClassPlan>) -> CSharpModulePlan {
+        let mut module = module_with_async_functions(vec![]);
+        module.classes = classes;
+        module
+    }
+
+    fn stream(
+        owner: &CSharpClassName,
+        name: &str,
+        item_type: CSharpType,
+        item_delivery: CSharpStreamItemDelivery,
+    ) -> CSharpStreamPlan {
+        let stream_name = CSharpMethodName::from_source(name);
+        let subscribe_method_name = CSharpMethodName::native_for_owner(owner, &stream_name);
+        CSharpStreamPlan {
+            summary_doc: None,
+            name: stream_name,
+            item_type,
+            mode: StreamMode::Async,
+            item_delivery,
+            subscribe_method_name: subscribe_method_name.clone(),
+            subscribe_ffi_name: CFunctionName::new(format!("boltffi_event_bus_{name}")),
+            pop_batch_method_name: CSharpMethodName::new(format!(
+                "{subscribe_method_name}PopBatch"
+            )),
+            pop_batch_ffi_name: CFunctionName::new(format!("boltffi_event_bus_{name}_pop_batch")),
+            wait_method_name: CSharpMethodName::new(format!("{subscribe_method_name}Wait")),
+            wait_ffi_name: CFunctionName::new(format!("boltffi_event_bus_{name}_wait")),
+            unsubscribe_method_name: CSharpMethodName::new(format!(
+                "{subscribe_method_name}Unsubscribe"
+            )),
+            unsubscribe_ffi_name: CFunctionName::new(format!(
+                "boltffi_event_bus_{name}_unsubscribe"
+            )),
+            free_method_name: CSharpMethodName::new(format!("{subscribe_method_name}Free")),
+            free_ffi_name: CFunctionName::new(format!("boltffi_event_bus_{name}_free")),
+        }
+    }
+
+    fn string_read_seq() -> ReadSeq {
+        ReadSeq {
+            size: SizeExpr::Runtime,
+            ops: vec![ReadOp::String {
+                offset: OffsetExpr::Base,
+            }],
+            shape: WireShape::Value,
+        }
+    }
+
     fn option_i32_decode_expr() -> CSharpExpression {
         CSharpExpression::Ternary {
             cond: Box::new(CSharpExpression::Binary {
@@ -964,6 +1032,7 @@ mod tests {
             ffi_free: CFunctionName::new("boltffi_counter_free".to_string()),
             constructors: vec![],
             methods: vec![method],
+            streams: vec![],
         };
         let template = ClassTemplate {
             class: &class,
@@ -1280,6 +1349,7 @@ mod tests {
             ffi_free: CFunctionName::new("boltffi_inventory_free".to_string()),
             constructors: vec![],
             methods: vec![],
+            streams: vec![],
         };
         let template = ClassTemplate {
             class: &class,
@@ -1338,6 +1408,7 @@ mod tests {
             ffi_free: CFunctionName::new("boltffi_inventory_free".to_string()),
             constructors: vec![primary, factory],
             methods: vec![],
+            streams: vec![],
         };
         let template = ClassTemplate {
             class: &class,
@@ -1408,11 +1479,92 @@ mod tests {
             ffi_free: CFunctionName::new("boltffi_counter_free".to_string()),
             constructors: vec![],
             methods: vec![get, increment, zero],
+            streams: vec![],
         };
         let template = ClassTemplate {
             class: &class,
             namespace: &demo_namespace(),
         };
+        insta::assert_snapshot!(template.render().unwrap());
+    }
+
+    #[test]
+    fn snapshot_class_event_bus_with_streams() {
+        let class_name = CSharpClassName::from_source("event_bus");
+        let class = CSharpClassPlan {
+            summary_doc: None,
+            native_free_method_name: CSharpMethodName::native_for_owner(
+                &class_name,
+                &CSharpMethodName::new("Free"),
+            ),
+            class_name: class_name.clone(),
+            ffi_free: CFunctionName::new("boltffi_event_bus_free".to_string()),
+            constructors: vec![],
+            methods: vec![],
+            streams: vec![
+                stream(
+                    &class_name,
+                    "subscribe_values",
+                    CSharpType::Int,
+                    CSharpStreamItemDelivery::Direct,
+                ),
+                stream(
+                    &class_name,
+                    "subscribe_points",
+                    record_type("point"),
+                    CSharpStreamItemDelivery::Direct,
+                ),
+                stream(
+                    &class_name,
+                    "subscribe_labels",
+                    CSharpType::String,
+                    CSharpStreamItemDelivery::WireEncoded {
+                        item_decode: string_read_seq(),
+                    },
+                ),
+            ],
+        };
+        let template = ClassTemplate {
+            class: &class,
+            namespace: &demo_namespace(),
+        };
+
+        insta::assert_snapshot!(template.render().unwrap());
+    }
+
+    #[test]
+    fn snapshot_native_stream_declarations() {
+        let class_name = CSharpClassName::from_source("event_bus");
+        let class = CSharpClassPlan {
+            summary_doc: None,
+            native_free_method_name: CSharpMethodName::native_for_owner(
+                &class_name,
+                &CSharpMethodName::new("Free"),
+            ),
+            class_name: class_name.clone(),
+            ffi_free: CFunctionName::new("boltffi_event_bus_free".to_string()),
+            constructors: vec![],
+            methods: vec![],
+            streams: vec![
+                stream(
+                    &class_name,
+                    "subscribe_values",
+                    CSharpType::Int,
+                    CSharpStreamItemDelivery::Direct,
+                ),
+                stream(
+                    &class_name,
+                    "subscribe_labels",
+                    CSharpType::String,
+                    CSharpStreamItemDelivery::WireEncoded {
+                        item_decode: string_read_seq(),
+                    },
+                ),
+            ],
+        };
+        let module = module_with_classes(vec![class]);
+        let template = NativeTemplate { module: &module };
+
         insta::assert_snapshot!(template.render().unwrap());
     }
 
@@ -1614,6 +1766,7 @@ mod tests {
             ffi_free: CFunctionName::new("boltffi_counter_free".to_string()),
             constructors: vec![primary],
             methods: vec![get, increment, zero],
+            streams: vec![],
         };
         let template = ClassTemplate {
             class: &class,
@@ -1831,6 +1984,7 @@ mod tests {
             ffi_free: CFunctionName::new("boltffi_counter_free".to_string()),
             constructors: vec![],
             methods: vec![try_get_positive],
+            streams: vec![],
         };
         let template = ClassTemplate {
             class: &class,
@@ -1893,6 +2047,7 @@ mod tests {
             ffi_free: CFunctionName::new("boltffi_calculator_free".to_string()),
             constructors: vec![],
             methods: vec![divide],
+            streams: vec![],
         };
         let template = ClassTemplate {
             class: &class,
@@ -1941,6 +2096,7 @@ mod tests {
             ffi_free: CFunctionName::new("boltffi_validator_free".to_string()),
             constructors: vec![],
             methods: vec![validate],
+            streams: vec![],
         };
         let template = ClassTemplate {
             class: &class,

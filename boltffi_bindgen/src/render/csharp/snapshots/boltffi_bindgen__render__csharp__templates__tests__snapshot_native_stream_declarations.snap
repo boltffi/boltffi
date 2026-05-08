@@ -1,0 +1,399 @@
+---
+source: boltffi_bindgen/src/render/csharp/templates.rs
+expression: template.render().unwrap()
+---
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct FfiBuf
+    {
+        public IntPtr ptr;
+        public UIntPtr len;
+        public UIntPtr cap;
+        public UIntPtr align;
+
+        internal static unsafe FfiBuf FromBytes(byte[] bytes)
+        {
+            if (bytes.Length == 0)
+            {
+                return default;
+            }
+
+            void* allocated = NativeMemory.Alloc((nuint)bytes.Length);
+            Marshal.Copy(bytes, 0, (IntPtr)allocated, bytes.Length);
+            return new FfiBuf
+            {
+                ptr = (IntPtr)allocated,
+                len = (UIntPtr)bytes.Length,
+                cap = (UIntPtr)bytes.Length,
+                align = (UIntPtr)1,
+            };
+        }
+    }
+
+
+    internal sealed class WireReader
+    {
+        // Reads directly from the unmanaged FfiBuf pointer — no eager copy into
+        // a managed byte[]. Safe APIs only: Marshal.Read* for primitives,
+        // Marshal.PtrToStringUTF8 for length-prefixed UTF-8, Marshal.Copy for
+        // bytes. BitConverter.IsLittleEndian is a JIT intrinsic that folds the
+        // byte-swap branch away on little-endian hosts (all our supported
+        // targets).
+        private readonly IntPtr _ptr;
+        private readonly int _length;
+        private int _pos;
+
+        internal WireReader(FfiBuf buf)
+        {
+            _ptr = buf.ptr;
+            _length = buf.ptr == IntPtr.Zero ? 0 : checked((int)(nuint)buf.len);
+            _pos = 0;
+        }
+
+        internal WireReader(IntPtr ptr, UIntPtr len)
+        {
+            _ptr = ptr;
+            _length = ptr == IntPtr.Zero ? 0 : checked((int)(nuint)len);
+            _pos = 0;
+        }
+
+        internal bool ReadBool() => ReadU8() != 0;
+
+        internal sbyte ReadI8()
+        {
+            Require(1, "i8");
+            sbyte v = (sbyte)Marshal.ReadByte(_ptr, _pos);
+            _pos += 1;
+            return v;
+        }
+
+        internal byte ReadU8()
+        {
+            Require(1, "u8");
+            byte v = Marshal.ReadByte(_ptr, _pos);
+            _pos += 1;
+            return v;
+        }
+
+        internal short ReadI16()
+        {
+            Require(2, "i16");
+            short v = Marshal.ReadInt16(_ptr, _pos);
+            _pos += 2;
+            return BitConverter.IsLittleEndian ? v : BinaryPrimitives.ReverseEndianness(v);
+        }
+
+        internal ushort ReadU16()
+        {
+            Require(2, "u16");
+            ushort v = (ushort)Marshal.ReadInt16(_ptr, _pos);
+            _pos += 2;
+            return BitConverter.IsLittleEndian ? v : BinaryPrimitives.ReverseEndianness(v);
+        }
+
+        internal int ReadI32()
+        {
+            Require(4, "i32");
+            int v = Marshal.ReadInt32(_ptr, _pos);
+            _pos += 4;
+            return BitConverter.IsLittleEndian ? v : BinaryPrimitives.ReverseEndianness(v);
+        }
+
+        internal uint ReadU32()
+        {
+            Require(4, "u32");
+            uint v = (uint)Marshal.ReadInt32(_ptr, _pos);
+            _pos += 4;
+            return BitConverter.IsLittleEndian ? v : BinaryPrimitives.ReverseEndianness(v);
+        }
+
+        internal long ReadI64()
+        {
+            Require(8, "i64");
+            long v = Marshal.ReadInt64(_ptr, _pos);
+            _pos += 8;
+            return BitConverter.IsLittleEndian ? v : BinaryPrimitives.ReverseEndianness(v);
+        }
+
+        internal ulong ReadU64()
+        {
+            Require(8, "u64");
+            ulong v = (ulong)Marshal.ReadInt64(_ptr, _pos);
+            _pos += 8;
+            return BitConverter.IsLittleEndian ? v : BinaryPrimitives.ReverseEndianness(v);
+        }
+
+        internal float ReadF32()
+        {
+            Require(4, "f32");
+            int bits = Marshal.ReadInt32(_ptr, _pos);
+            _pos += 4;
+            return BitConverter.Int32BitsToSingle(BitConverter.IsLittleEndian ? bits : BinaryPrimitives.ReverseEndianness(bits));
+        }
+
+        internal double ReadF64()
+        {
+            Require(8, "f64");
+            long bits = Marshal.ReadInt64(_ptr, _pos);
+            _pos += 8;
+            return BitConverter.Int64BitsToDouble(BitConverter.IsLittleEndian ? bits : BinaryPrimitives.ReverseEndianness(bits));
+        }
+
+        // usize/isize travel as 64-bit integers on the wire so the wire
+        // layout stays stable across pointer widths.
+        internal nint ReadNInt() => (nint)ReadI64();
+        internal nuint ReadNUInt() => (nuint)ReadU64();
+
+        internal string ReadString()
+        {
+            int len = ReadI32();
+            if (len == 0) return "";
+            if (len < 0) throw new InvalidOperationException("corrupt wire: negative string length");
+            Require(len, "string payload");
+            string v = Marshal.PtrToStringUTF8(_ptr + _pos, len)
+                ?? throw new InvalidOperationException("PtrToStringUTF8 returned null");
+            _pos += len;
+            return v;
+        }
+
+        internal byte[] ReadBytes()
+        {
+            int len = ReadI32();
+            if (len == 0) return Array.Empty<byte>();
+            if (len < 0) throw new InvalidOperationException("corrupt wire: negative bytes length");
+            Require(len, "bytes payload");
+            byte[] v = new byte[len];
+            Marshal.Copy(_ptr + _pos, v, 0, len);
+            _pos += len;
+            return v;
+        }
+
+        /// Reads the remaining bytes of this buffer as a `T[]`, assuming
+        /// the buffer holds a raw element array with no length prefix.
+        /// This matches the wire shape of a top-level `Vec<T>` return,
+        /// where the FfiBuf's own `len` provides the element count.
+        internal T[] ReadBlittableArray<T>() where T : unmanaged
+        {
+            int byteCount = _length - _pos;
+            if (byteCount < 0)
+                throw new InvalidOperationException("corrupt wire: read position past end");
+            int elementSize = Unsafe.SizeOf<T>();
+            if (byteCount % elementSize != 0)
+                throw new InvalidOperationException(
+                    "corrupt wire: blittable array byte count is not a multiple of element size");
+            if (byteCount == 0) return Array.Empty<T>();
+            int count = byteCount / elementSize;
+            T[] result = new T[count];
+            // Fast path via Marshal.Copy's per-type overloads for the types
+            // that ship with one (byte, short, int, long, float, double).
+            // Unsigned primitives and any other unmanaged T fall through to
+            // a byte scratch buffer reinterpreted via MemoryMarshal.AsBytes.
+            // Little-endian hosts only; big-endian would need byte-swap.
+            switch (result)
+            {
+                case byte[] dst:
+                    Marshal.Copy(_ptr + _pos, dst, 0, byteCount);
+                    break;
+                case short[] dst:
+                    Marshal.Copy(_ptr + _pos, dst, 0, count);
+                    break;
+                case int[] dst:
+                    Marshal.Copy(_ptr + _pos, dst, 0, count);
+                    break;
+                case long[] dst:
+                    Marshal.Copy(_ptr + _pos, dst, 0, count);
+                    break;
+                case float[] dst:
+                    Marshal.Copy(_ptr + _pos, dst, 0, count);
+                    break;
+                case double[] dst:
+                    Marshal.Copy(_ptr + _pos, dst, 0, count);
+                    break;
+                default:
+                    byte[] scratch = new byte[byteCount];
+                    Marshal.Copy(_ptr + _pos, scratch, 0, byteCount);
+                    scratch.AsSpan().CopyTo(MemoryMarshal.AsBytes(result.AsSpan()));
+                    break;
+            }
+            _pos += byteCount;
+            return result;
+        }
+
+        internal bool[] ReadBoolArray()
+        {
+            int count = _length - _pos;
+            if (count < 0)
+                throw new InvalidOperationException("corrupt wire: read position past end");
+            if (count == 0) return Array.Empty<bool>();
+            bool[] result = new bool[count];
+            for (int i = 0; i < count; i++)
+            {
+                result[i] = Marshal.ReadByte(_ptr, _pos + i) != 0;
+            }
+            _pos += count;
+            return result;
+        }
+
+        internal nint[] ReadNIntArray()
+        {
+            long[] raw = ReadBlittableArray<long>();
+            nint[] result = new nint[raw.Length];
+            for (int i = 0; i < raw.Length; i++) result[i] = (nint)raw[i];
+            return result;
+        }
+
+        internal nuint[] ReadNUIntArray()
+        {
+            long[] raw = ReadBlittableArray<long>();
+            nuint[] result = new nuint[raw.Length];
+            for (int i = 0; i < raw.Length; i++) result[i] = (nuint)(ulong)raw[i];
+            return result;
+        }
+
+        /// Reads a length-prefixed `T[]` whose bytes follow the 4-byte count.
+        /// Used for `Vec<T>` nested inside an encoded outer container, where
+        /// the outer codec needs an explicit count to know how far to advance
+        /// the cursor between sibling elements.
+        internal T[] ReadLengthPrefixedBlittableArray<T>() where T : unmanaged
+        {
+            int count = ReadI32();
+            if (count < 0) throw new InvalidOperationException("corrupt wire: negative array length");
+            if (count == 0) return Array.Empty<T>();
+            int elementSize = Unsafe.SizeOf<T>();
+            int byteCount = checked(count * elementSize);
+            Require(byteCount, "blittable array payload");
+            T[] result = new T[count];
+            switch (result)
+            {
+                case byte[] dst:
+                    Marshal.Copy(_ptr + _pos, dst, 0, byteCount);
+                    break;
+                case short[] dst:
+                    Marshal.Copy(_ptr + _pos, dst, 0, count);
+                    break;
+                case int[] dst:
+                    Marshal.Copy(_ptr + _pos, dst, 0, count);
+                    break;
+                case long[] dst:
+                    Marshal.Copy(_ptr + _pos, dst, 0, count);
+                    break;
+                case float[] dst:
+                    Marshal.Copy(_ptr + _pos, dst, 0, count);
+                    break;
+                case double[] dst:
+                    Marshal.Copy(_ptr + _pos, dst, 0, count);
+                    break;
+                default:
+                    byte[] scratch = new byte[byteCount];
+                    Marshal.Copy(_ptr + _pos, scratch, 0, byteCount);
+                    scratch.AsSpan().CopyTo(MemoryMarshal.AsBytes(result.AsSpan()));
+                    break;
+            }
+            _pos += byteCount;
+            return result;
+        }
+
+        internal bool[] ReadLengthPrefixedBoolArray()
+        {
+            int count = ReadI32();
+            if (count < 0) throw new InvalidOperationException("corrupt wire: negative array length");
+            if (count == 0) return Array.Empty<bool>();
+            Require(count, "bool array payload");
+            bool[] result = new bool[count];
+            for (int i = 0; i < count; i++)
+            {
+                result[i] = Marshal.ReadByte(_ptr, _pos + i) != 0;
+            }
+            _pos += count;
+            return result;
+        }
+
+        internal nint[] ReadLengthPrefixedNIntArray()
+        {
+            long[] raw = ReadLengthPrefixedBlittableArray<long>();
+            nint[] result = new nint[raw.Length];
+            for (int i = 0; i < raw.Length; i++) result[i] = (nint)raw[i];
+            return result;
+        }
+
+        internal nuint[] ReadLengthPrefixedNUIntArray()
+        {
+            long[] raw = ReadLengthPrefixedBlittableArray<long>();
+            nuint[] result = new nuint[raw.Length];
+            for (int i = 0; i < raw.Length; i++) result[i] = (nuint)(ulong)raw[i];
+            return result;
+        }
+
+        /// Reads a length-prefixed array whose elements are decoded by
+        /// invoking `read` once per slot. Used for `Vec<T>` where each
+        /// element has variable wire width (strings, nested encoded vecs,
+        /// records).
+        internal T[] ReadEncodedArray<T>(Func<WireReader, T> read)
+        {
+            int count = ReadI32();
+            if (count < 0) throw new InvalidOperationException("corrupt wire: negative array length");
+            if (count == 0) return Array.Empty<T>();
+            T[] result = new T[count];
+            for (int i = 0; i < count; i++)
+            {
+                result[i] = read(this);
+            }
+            return result;
+        }
+
+        private void Require(int n, string kind)
+        {
+            if (n < 0 || n > _length - _pos) throw new InvalidOperationException("corrupt wire: truncated " + kind);
+        }
+    }
+
+
+    internal static class BoltFFIStream
+    {
+        internal const int DefaultBatchSize = 16;
+        internal const int WaitTimeoutMilliseconds = 50;
+        internal const int WaitTimeout = 0;
+    }
+
+
+    internal static class NativeMethods
+    {
+        internal const string LibName = "demo";
+
+        [DllImport(LibName, EntryPoint = "boltffi_free_buf")]
+        internal static extern void FreeBuf(FfiBuf buf);
+
+        [DllImport(LibName, EntryPoint = "boltffi_event_bus_free")]
+        internal static extern void EventBusFree(IntPtr handle);
+
+        [DllImport(LibName, EntryPoint = "boltffi_event_bus_subscribe_values")]
+        internal static extern IntPtr EventBusSubscribeValues(IntPtr handle);
+
+        [DllImport(LibName, EntryPoint = "boltffi_event_bus_subscribe_values_pop_batch")]
+        internal static extern UIntPtr EventBusSubscribeValuesPopBatch(IntPtr subscription, IntPtr outputPtr, UIntPtr outputCapacity);
+
+        [DllImport(LibName, EntryPoint = "boltffi_event_bus_subscribe_values_wait")]
+        internal static extern int EventBusSubscribeValuesWait(IntPtr subscription, int timeoutMilliseconds);
+
+        [DllImport(LibName, EntryPoint = "boltffi_event_bus_subscribe_values_unsubscribe")]
+        internal static extern void EventBusSubscribeValuesUnsubscribe(IntPtr subscription);
+
+        [DllImport(LibName, EntryPoint = "boltffi_event_bus_subscribe_values_free")]
+        internal static extern void EventBusSubscribeValuesFree(IntPtr subscription);
+
+        [DllImport(LibName, EntryPoint = "boltffi_event_bus_subscribe_labels")]
+        internal static extern IntPtr EventBusSubscribeLabels(IntPtr handle);
+
+        [DllImport(LibName, EntryPoint = "boltffi_event_bus_subscribe_labels_pop_batch")]
+        internal static extern FfiBuf EventBusSubscribeLabelsPopBatch(IntPtr subscription, UIntPtr maxCount);
+
+        [DllImport(LibName, EntryPoint = "boltffi_event_bus_subscribe_labels_wait")]
+        internal static extern int EventBusSubscribeLabelsWait(IntPtr subscription, int timeoutMilliseconds);
+
+        [DllImport(LibName, EntryPoint = "boltffi_event_bus_subscribe_labels_unsubscribe")]
+        internal static extern void EventBusSubscribeLabelsUnsubscribe(IntPtr subscription);
+
+        [DllImport(LibName, EntryPoint = "boltffi_event_bus_subscribe_labels_free")]
+        internal static extern void EventBusSubscribeLabelsFree(IntPtr subscription);
+    }
+}

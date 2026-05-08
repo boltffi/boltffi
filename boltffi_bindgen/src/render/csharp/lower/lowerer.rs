@@ -124,13 +124,15 @@ mod tests {
     use crate::ir::contract::{FfiContract, PackageInfo};
     use crate::ir::definitions::{
         ClassDef, ConstructorDef, FieldDef, FunctionDef, MethodDef, ParamDef, ParamPassing,
-        Receiver, RecordDef, ReturnDef,
+        Receiver, RecordDef, ReturnDef, StreamDef, StreamMode,
     };
-    use crate::ir::ids::{ClassId, FieldName, FunctionId, MethodId, ParamName, RecordId};
+    use crate::ir::ids::{ClassId, FieldName, FunctionId, MethodId, ParamName, RecordId, StreamId};
+    use crate::ir::ops::ReadOp;
     use crate::ir::types::{PrimitiveType, TypeExpr};
     use boltffi_ffi_rules::callable::ExecutionKind;
 
     use super::super::super::CSharpOptions;
+    use crate::render::csharp::plan::CSharpStreamItemDelivery;
 
     fn empty_contract() -> FfiContract {
         FfiContract {
@@ -246,6 +248,38 @@ mod tests {
                 .as_ref()
                 .map(ToString::to_string),
             Some("Returns the current value.".to_string())
+        );
+    }
+
+    #[test]
+    fn lowerer_stream_plan_keeps_wire_decode_as_read_seq_metadata() {
+        let mut contract = empty_contract();
+        contract.catalog.insert_class(ClassDef {
+            id: ClassId::new("event_bus"),
+            constructors: vec![],
+            methods: vec![],
+            streams: vec![StreamDef {
+                id: StreamId::new("subscribe_labels"),
+                item_type: TypeExpr::String,
+                mode: StreamMode::Async,
+                doc: None,
+                deprecated: None,
+            }],
+            doc: None,
+            deprecated: None,
+        });
+
+        let abi = IrLowerer::new(&contract).to_abi_contract();
+        let options = CSharpOptions::default();
+        let module = CSharpLowerer::new(&contract, &abi, &options).lower();
+
+        let stream = &module.classes[0].streams[0];
+        let CSharpStreamItemDelivery::WireEncoded { item_decode } = &stream.item_delivery else {
+            panic!("string streams should carry wire decode metadata");
+        };
+        assert!(
+            matches!(item_decode.ops.first(), Some(ReadOp::String { .. })),
+            "the stream plan should preserve IR ReadSeq metadata for the template layer to render"
         );
     }
 }

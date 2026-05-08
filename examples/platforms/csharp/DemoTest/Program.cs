@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 using Demo;
 using static Demo.Demo;
 
@@ -54,6 +56,7 @@ public static class DemoTest
             TestCallbackTraits();
             TestClosures();
             await TestAsyncCallbackTraits();
+            await TestStreams();
             Console.WriteLine("All tests passed!");
             return 0;
         }
@@ -2172,6 +2175,105 @@ public static class DemoTest
         }
 
         Console.WriteLine("  PASS\n");
+    }
+
+    private static async System.Threading.Tasks.Task TestStreams()
+    {
+        Console.WriteLine("Testing streams (async mode)...");
+        using (var bus = new EventBus())
+        {
+            global::System.Threading.Tasks.Task<List<int>> receivedTask =
+                CollectStreamItems(bus.SubscribeValues(), 3, "async stream");
+
+            bus.EmitValue(10);
+            bus.EmitValue(20);
+            bus.EmitValue(30);
+
+            List<int> received = await receivedTask;
+            Require(received.Count >= 3, $"async stream received {received.Count} items, expected >= 3");
+            Require(received.Contains(10), "async stream should contain 10");
+            Require(received.Contains(20), "async stream should contain 20");
+            Require(received.Contains(30), "async stream should contain 30");
+        }
+        Console.WriteLine("  PASS\n");
+
+        Console.WriteLine("Testing streams (batch mode)...");
+        using (var bus = new EventBus())
+        {
+            global::System.Threading.Tasks.Task<List<int>> receivedTask =
+                CollectStreamItems(bus.SubscribeValuesBatch(), 3, "batch stream");
+
+            bus.EmitValue(100);
+            bus.EmitValue(200);
+            bus.EmitValue(300);
+
+            List<int> received = await receivedTask;
+            Require(received.Count >= 3, $"batch stream received {received.Count} items, expected >= 3");
+            Require(received.Contains(100), "batch stream should contain 100");
+            Require(received.Contains(200), "batch stream should contain 200");
+            Require(received.Contains(300), "batch stream should contain 300");
+        }
+        Console.WriteLine("  PASS\n");
+
+        Console.WriteLine("Testing streams (callback mode)...");
+        using (var bus = new EventBus())
+        {
+            global::System.Threading.Tasks.Task<List<int>> receivedTask =
+                CollectStreamItems(bus.SubscribeValuesCallback(), 3, "callback stream");
+
+            bus.EmitValue(1000);
+            bus.EmitValue(2000);
+            bus.EmitValue(3000);
+
+            List<int> received = await receivedTask;
+            Require(received.Count >= 3, $"callback stream received {received.Count} items, expected >= 3");
+            Require(received.Contains(1000), "callback stream should contain 1000");
+            Require(received.Contains(2000), "callback stream should contain 2000");
+            Require(received.Contains(3000), "callback stream should contain 3000");
+        }
+        Console.WriteLine("  PASS\n");
+
+        Console.WriteLine("Testing streams (record items)...");
+        using (var bus = new EventBus())
+        {
+            Point first = new Point(1.0, 2.0);
+            Point second = new Point(3.0, 4.0);
+            global::System.Threading.Tasks.Task<List<Point>> receivedTask =
+                CollectStreamItems(bus.SubscribePoints(), 2, "point stream");
+
+            bus.EmitPoint(first);
+            bus.EmitPoint(second);
+
+            List<Point> received = await receivedTask;
+            Require(received.Count >= 2, $"point stream received {received.Count} items, expected >= 2");
+            Require(received.Contains(first), "point stream should contain first point");
+            Require(received.Contains(second), "point stream should contain second point");
+        }
+        Console.WriteLine("  PASS\n");
+    }
+
+    private static async System.Threading.Tasks.Task<List<T>> CollectStreamItems<T>(
+        IAsyncEnumerable<T> stream,
+        int expectedCount,
+        string label)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        List<T> received = new List<T>();
+
+        try
+        {
+            await foreach (T item in stream.WithCancellation(timeout.Token))
+            {
+                received.Add(item);
+                if (received.Count >= expectedCount) break;
+            }
+        }
+        catch (OperationCanceledException ex) when (timeout.IsCancellationRequested)
+        {
+            throw new TimeoutException($"{label} should deliver {expectedCount} items within 5 seconds", ex);
+        }
+
+        return received;
     }
 
     private sealed class ValueCallbackImpl : ValueCallback

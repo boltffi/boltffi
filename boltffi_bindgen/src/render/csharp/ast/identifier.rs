@@ -7,7 +7,9 @@ use std::fmt;
 
 use boltffi_ffi_rules::naming;
 
-use crate::ir::ids::{EnumId, FieldName, FunctionId, MethodId, ParamName, RecordId, VariantName};
+use crate::ir::ids::{
+    EnumId, FieldName, FunctionId, MethodId, ParamName, RecordId, StreamId, VariantName,
+};
 
 /// A C# class, struct, or record name in PascalCase.
 ///
@@ -203,6 +205,12 @@ impl From<&FunctionId> for CSharpMethodName {
 
 impl From<&MethodId> for CSharpMethodName {
     fn from(id: &MethodId) -> Self {
+        Self::from_source(id.as_str())
+    }
+}
+
+impl From<&StreamId> for CSharpMethodName {
+    fn from(id: &StreamId) -> Self {
         Self::from_source(id.as_str())
     }
 }

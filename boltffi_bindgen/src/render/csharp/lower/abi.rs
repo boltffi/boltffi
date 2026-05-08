@@ -1,6 +1,6 @@
-use crate::ir::abi::{AbiCall, AbiRecord, CallId};
-use crate::ir::definitions::FunctionDef;
-use crate::ir::ids::RecordId;
+use crate::ir::abi::{AbiCall, AbiRecord, AbiStream, CallId};
+use crate::ir::definitions::{FunctionDef, StreamDef};
+use crate::ir::ids::{ClassId, RecordId};
 
 use super::lowerer::CSharpLowerer;
 
@@ -19,5 +19,16 @@ impl<'a> CSharpLowerer<'a> {
             .records
             .iter()
             .find(|record| record.id == *record_id)
+    }
+
+    /// Linear lookup of an ABI stream by owning class and stream ID.
+    pub(super) fn abi_stream_for(
+        &self,
+        class_id: &ClassId,
+        stream: &StreamDef,
+    ) -> Option<&AbiStream> {
+        self.abi.streams.iter().find(|abi_stream| {
+            abi_stream.class_id == *class_id && abi_stream.stream_id == stream.id
+        })
     }
 }

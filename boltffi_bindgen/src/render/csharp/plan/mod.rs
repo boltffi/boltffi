@@ -17,6 +17,7 @@ mod field;
 mod identifier;
 mod module;
 mod record;
+mod stream;
 
 pub use callable::{
     CSharpAsyncCallPlan, CSharpCallablePlan, CSharpFunctionPlan, CSharpMethodPlan, CSharpParamKind,
@@ -38,3 +39,4 @@ pub use field::CSharpFieldPlan;
 pub use identifier::CFunctionName;
 pub use module::CSharpModulePlan;
 pub use record::CSharpRecordPlan;
+pub use stream::{CSharpStreamItemDelivery, CSharpStreamPlan};
