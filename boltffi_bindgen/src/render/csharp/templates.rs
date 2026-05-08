@@ -14,18 +14,15 @@
 
 use askama::Template;
 
-use super::ast::{
-    CSharpComment, CSharpExpression, CSharpIdentity, CSharpLocalName, CSharpNamespace,
-};
-use super::lower::decode;
+use super::ast::{CSharpComment, CSharpNamespace};
 use super::plan::{
     CSharpAsyncCallbackFailurePlan, CSharpAsyncCallbackFaultPlan, CSharpAsyncCallbackSuccessPlan,
     CSharpCallablePlan, CSharpCallbackBridgeParamPlan, CSharpCallbackEntryPlan, CSharpCallbackPlan,
     CSharpCallbackProxyCallPlan, CSharpCallbackProxyPlan, CSharpCallbackResultCatchPlan,
     CSharpCallbackResultOkPlan, CSharpClassPlan, CSharpClosureInvokePlan, CSharpClosurePlan,
     CSharpConstructorKind, CSharpEnumPlan, CSharpFieldPlan, CSharpModulePlan, CSharpParamKind,
-    CSharpRecordPlan, CSharpReturnKind, CSharpStreamItemDelivery, CSharpStreamPlan,
-    CSharpSyncCallbackOutInitializerPlan, CSharpSyncCallbackSuccessPlan,
+    CSharpRecordPlan, CSharpReturnKind, CSharpSyncCallbackOutInitializerPlan,
+    CSharpSyncCallbackSuccessPlan,
 };
 
 /// Renders a `<summary>` doc block at `indent`, ending with a
@@ -101,18 +98,6 @@ fn push_text_line(out: &mut String, indent: &str, line: &str) {
         out.push_str(line);
         out.push('\n');
     }
-}
-
-pub fn stream_wire_item_decode_expr(
-    stream: &CSharpStreamPlan,
-    namespace: &CSharpNamespace,
-) -> String {
-    let CSharpStreamItemDelivery::WireEncoded { item_decode } = &stream.item_delivery else {
-        return String::new();
-    };
-    let reader = CSharpExpression::Identity(CSharpIdentity::Local(CSharpLocalName::new("_reader")));
-    let mut locals = decode::DecodeLocalCounters::default();
-    decode::lower_decode_expr(item_decode, &reader, None, namespace, &mut locals).to_string()
 }
 
 /// Renders the file header: auto-generated comment, `using` directives,
@@ -225,7 +210,6 @@ pub struct ClassTemplate<'a> {
 mod tests {
     use super::*;
     use crate::ir::definitions::StreamMode;
-    use crate::ir::ops::{OffsetExpr, ReadOp, ReadSeq, SizeExpr, WireShape};
     use crate::render::csharp::ast::{
         CSharpArgumentList, CSharpBinaryOp, CSharpClassName, CSharpEnumUnderlyingType,
         CSharpExpression, CSharpIdentity, CSharpLiteral, CSharpLocalName, CSharpMethodName,
@@ -235,8 +219,7 @@ mod tests {
         CFunctionName, CSharpAsyncCallPlan, CSharpClassPlan, CSharpConstructorKind,
         CSharpConstructorPlan, CSharpEnumKind, CSharpEnumPlan, CSharpEnumVariantPlan,
         CSharpFieldPlan, CSharpFunctionPlan, CSharpMethodPlan, CSharpParamKind, CSharpParamPlan,
-        CSharpReceiver, CSharpRecordPlan, CSharpReturnKind, CSharpStreamItemDelivery,
-        CSharpStreamPlan,
+        CSharpReceiver, CSharpRecordPlan, CSharpReturnKind, CSharpStreamPlan,
     };
     use boltffi_ffi_rules::naming::{LibraryName, Name};
 
@@ -856,12 +839,7 @@ mod tests {
         module
     }
 
-    fn stream(
-        owner: &CSharpClassName,
-        name: &str,
-        item_type: CSharpType,
-        item_delivery: CSharpStreamItemDelivery,
-    ) -> CSharpStreamPlan {
+    fn stream(owner: &CSharpClassName, name: &str, item_type: CSharpType) -> CSharpStreamPlan {
         let stream_name = CSharpMethodName::from_source(name);
         let subscribe_method_name = CSharpMethodName::native_for_owner(owner, &stream_name);
         CSharpStreamPlan {
@@ -869,7 +847,6 @@ mod tests {
             name: stream_name,
             item_type,
             mode: StreamMode::Async,
-            item_delivery,
             subscribe_method_name: subscribe_method_name.clone(),
             subscribe_ffi_name: CFunctionName::new(format!("boltffi_event_bus_{name}")),
             pop_batch_method_name: CSharpMethodName::new(format!(
@@ -886,16 +863,6 @@ mod tests {
             )),
             free_method_name: CSharpMethodName::new(format!("{subscribe_method_name}Free")),
             free_ffi_name: CFunctionName::new(format!("boltffi_event_bus_{name}_free")),
-        }
-    }
-
-    fn string_read_seq() -> ReadSeq {
-        ReadSeq {
-            size: SizeExpr::Runtime,
-            ops: vec![ReadOp::String {
-                offset: OffsetExpr::Base,
-            }],
-            shape: WireShape::Value,
         }
     }
 
@@ -1502,26 +1469,8 @@ mod tests {
             constructors: vec![],
             methods: vec![],
             streams: vec![
-                stream(
-                    &class_name,
-                    "subscribe_values",
-                    CSharpType::Int,
-                    CSharpStreamItemDelivery::Direct,
-                ),
-                stream(
-                    &class_name,
-                    "subscribe_points",
-                    record_type("point"),
-                    CSharpStreamItemDelivery::Direct,
-                ),
-                stream(
-                    &class_name,
-                    "subscribe_labels",
-                    CSharpType::String,
-                    CSharpStreamItemDelivery::WireEncoded {
-                        item_decode: string_read_seq(),
-                    },
-                ),
+                stream(&class_name, "subscribe_values", CSharpType::Int),
+                stream(&class_name, "subscribe_points", record_type("point")),
             ],
         };
         let template = ClassTemplate {
@@ -1545,22 +1494,7 @@ mod tests {
             ffi_free: CFunctionName::new("boltffi_event_bus_free".to_string()),
             constructors: vec![],
             methods: vec![],
-            streams: vec![
-                stream(
-                    &class_name,
-                    "subscribe_values",
-                    CSharpType::Int,
-                    CSharpStreamItemDelivery::Direct,
-                ),
-                stream(
-                    &class_name,
-                    "subscribe_labels",
-                    CSharpType::String,
-                    CSharpStreamItemDelivery::WireEncoded {
-                        item_decode: string_read_seq(),
-                    },
-                ),
-            ],
+            streams: vec![stream(&class_name, "subscribe_values", CSharpType::Int)],
         };
         let module = module_with_classes(vec![class]);
         let template = NativeTemplate { module: &module };

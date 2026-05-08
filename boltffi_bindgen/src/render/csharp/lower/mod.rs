@@ -7,7 +7,7 @@ mod admission;
 mod callbacks;
 mod classes;
 mod custom;
-pub(super) mod decode;
+mod decode;
 mod encode;
 mod enumerations;
 mod functions;

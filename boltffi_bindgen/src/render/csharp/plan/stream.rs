@@ -1,5 +1,4 @@
 use crate::ir::definitions::StreamMode;
-use crate::ir::ops::ReadSeq;
 
 use super::super::ast::{CSharpComment, CSharpMethodName, CSharpType};
 use super::CFunctionName;
@@ -10,7 +9,6 @@ pub struct CSharpStreamPlan {
     pub name: CSharpMethodName,
     pub item_type: CSharpType,
     pub mode: StreamMode,
-    pub item_delivery: CSharpStreamItemDelivery,
     pub subscribe_method_name: CSharpMethodName,
     pub subscribe_ffi_name: CFunctionName,
     pub pop_batch_method_name: CSharpMethodName,
@@ -21,19 +19,4 @@ pub struct CSharpStreamPlan {
     pub unsubscribe_ffi_name: CFunctionName,
     pub free_method_name: CSharpMethodName,
     pub free_ffi_name: CFunctionName,
-}
-
-#[derive(Debug, Clone)]
-pub enum CSharpStreamItemDelivery {
-    Direct,
-    WireEncoded { item_decode: ReadSeq },
-}
-
-impl CSharpStreamPlan {
-    pub fn has_wire_item_delivery(&self) -> bool {
-        matches!(
-            self.item_delivery,
-            CSharpStreamItemDelivery::WireEncoded { .. }
-        )
-    }
 }

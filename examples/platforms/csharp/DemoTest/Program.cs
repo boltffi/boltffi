@@ -2250,6 +2250,62 @@ public static class DemoTest
             Require(received.Contains(second), "point stream should contain second point");
         }
         Console.WriteLine("  PASS\n");
+
+        Console.WriteLine("Testing streams (cancellation mid-stream)...");
+        using (var bus = new EventBus())
+        {
+            using var cts = new CancellationTokenSource();
+            var received = new List<int>();
+
+            var pump = global::System.Threading.Tasks.Task.Run(async () =>
+            {
+                try
+                {
+                    await foreach (int v in bus.SubscribeValues().WithCancellation(cts.Token))
+                    {
+                        received.Add(v);
+                        if (received.Count == 1) cts.Cancel();
+                    }
+                }
+                catch (OperationCanceledException) { /* expected */ }
+            });
+
+            await global::System.Threading.Tasks.Task.Delay(50);
+            bus.EmitValue(7);
+            bus.EmitValue(8);
+            bus.EmitValue(9);
+
+            var completed = await global::System.Threading.Tasks.Task.WhenAny(
+                pump, global::System.Threading.Tasks.Task.Delay(TimeSpan.FromSeconds(5)));
+            Require(completed == pump, "cancelled stream pump should terminate within 5 seconds");
+            Require(received.Count >= 1, "cancelled stream should have observed at least 1 item");
+        }
+        Console.WriteLine("  PASS\n");
+
+        Console.WriteLine("Testing streams (early break)...");
+        using (var bus = new EventBus())
+        {
+            var received = new List<int>();
+            var pump = global::System.Threading.Tasks.Task.Run(async () =>
+            {
+                await foreach (int v in bus.SubscribeValues())
+                {
+                    received.Add(v);
+                    if (received.Count == 1) break;
+                }
+            });
+
+            await global::System.Threading.Tasks.Task.Delay(50);
+            bus.EmitValue(11);
+            bus.EmitValue(12);
+            bus.EmitValue(13);
+
+            var completed = await global::System.Threading.Tasks.Task.WhenAny(
+                pump, global::System.Threading.Tasks.Task.Delay(TimeSpan.FromSeconds(5)));
+            Require(completed == pump, "early-break stream pump should terminate within 5 seconds");
+            Require(received.Count == 1, "early-break stream should have observed exactly 1 item");
+        }
+        Console.WriteLine("  PASS\n");
     }
 
     private static async System.Threading.Tasks.Task<List<T>> CollectStreamItems<T>(

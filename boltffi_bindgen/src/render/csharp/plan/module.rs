@@ -125,7 +125,6 @@ impl CSharpModulePlan {
                 .iter()
                 .flat_map(|c| c.methods.iter())
                 .any(|m| m.return_kind.native_returns_ffi_buf())
-            || self.classes.iter().any(CSharpClassPlan::has_wire_streams)
             || self
                 .records
                 .iter()
@@ -160,7 +159,6 @@ impl CSharpModulePlan {
                 .callbacks
                 .iter()
                 .any(|callback| callback.needs_wire_reader)
-            || self.classes.iter().any(CSharpClassPlan::has_wire_streams)
             || self
                 .closures
                 .iter()

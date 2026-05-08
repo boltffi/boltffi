@@ -198,12 +198,6 @@ impl CSharpClassPlan {
     pub fn has_streams(&self) -> bool {
         !self.streams.is_empty()
     }
-
-    pub fn has_wire_streams(&self) -> bool {
-        self.streams
-            .iter()
-            .any(CSharpStreamPlan::has_wire_item_delivery)
-    }
 }
 
 /// Whether a class method needs `using System.Text;`: true if any

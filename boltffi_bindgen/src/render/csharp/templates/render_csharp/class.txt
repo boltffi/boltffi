@@ -117,12 +117,21 @@ namespace {{ namespace }}
 {%- endfor %}
 {%- for stream in class.streams %}
 
-{{ self::summary_doc_block(stream.summary_doc, "        ") }}        public async IAsyncEnumerable<{{ stream.item_type }}> {{ stream.name }}([EnumeratorCancellation] CancellationToken cancellationToken = default)
+{{ self::summary_doc_block(stream.summary_doc, "        ") }}        /// <remarks>
+        /// The returned <see cref="IAsyncEnumerable{T}"/> owns the underlying
+        /// subscription. Disposing the owning <see cref="{{ class.class_name }}"/>
+        /// instance does not, by itself, end iteration - the producer simply
+        /// stops emitting events. Callers must either cancel the supplied
+        /// <see cref="CancellationToken"/> or break out of <c>await foreach</c>
+        /// to release the subscription.
+        /// </remarks>
+        public async IAsyncEnumerable<{{ stream.item_type }}> {{ stream.name }}([EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             ThrowIfDisposed();
             IntPtr subscription = NativeMethods.{{ stream.subscribe_method_name }}(_handle);
             if (subscription == IntPtr.Zero) yield break;
 
+            global::System.Threading.Tasks.Task<int>? _pendingWait = null;
             try
             {
                 while (true)
@@ -131,11 +140,8 @@ namespace {{ namespace }}
 
                     while (true)
                     {
-                        {{ stream.item_type }}[] _items;
+                        {{ stream.item_type }}[] _items = new {{ stream.item_type }}[BoltFFIStream.DefaultBatchSize];
                         int _itemCount;
-{%- match stream.item_delivery %}
-{%- when CSharpStreamItemDelivery::Direct %}
-                        _items = new {{ stream.item_type }}[BoltFFIStream.DefaultBatchSize];
                         UIntPtr _count;
                         unsafe
                         {
@@ -145,24 +151,6 @@ namespace {{ namespace }}
                             }
                         }
                         _itemCount = checked((int)(nuint)_count);
-{%- when CSharpStreamItemDelivery::WireEncoded with { .. } %}
-                        FfiBuf _buf = NativeMethods.{{ stream.pop_batch_method_name }}(subscription, (UIntPtr)BoltFFIStream.DefaultBatchSize);
-                        try
-                        {
-                            if (_buf.len == UIntPtr.Zero) break;
-                            var _reader = new WireReader(_buf);
-                            _itemCount = _reader.ReadI32();
-                            _items = new {{ stream.item_type }}[_itemCount];
-                            for (int _i = 0; _i < _itemCount; _i++)
-                            {
-                                _items[_i] = {{ self::stream_wire_item_decode_expr(stream, namespace) }};
-                            }
-                        }
-                        finally
-                        {
-                            NativeMethods.FreeBuf(_buf);
-                        }
-{%- endmatch %}
                         if (_itemCount == 0) break;
 
                         for (int _i = 0; _i < _itemCount; _i++)
@@ -174,15 +162,22 @@ namespace {{ namespace }}
                         if (_itemCount < BoltFFIStream.DefaultBatchSize) break;
                     }
 
-                    int _waitResult = await global::System.Threading.Tasks.Task.Run(
+                    _pendingWait = global::System.Threading.Tasks.Task.Run(
                         () => NativeMethods.{{ stream.wait_method_name }}(subscription, BoltFFIStream.WaitTimeoutMilliseconds),
-                        cancellationToken).ConfigureAwait(false);
-                    if (_waitResult < BoltFFIStream.WaitTimeout) yield break;
+                        cancellationToken);
+                    int _waitResult = await _pendingWait.ConfigureAwait(false);
+                    _pendingWait = null;
+                    if (_waitResult == BoltFFIStream.WaitResultUnsubscribed) yield break;
                 }
             }
             finally
             {
                 NativeMethods.{{ stream.unsubscribe_method_name }}(subscription);
+                if (_pendingWait is not null)
+                {
+                    try { await _pendingWait.ConfigureAwait(false); }
+                    catch { /* wait may have observed cancellation; ignore */ }
+                }
                 NativeMethods.{{ stream.free_method_name }}(subscription);
             }
         }

@@ -39,4 +39,4 @@ pub use field::CSharpFieldPlan;
 pub use identifier::CFunctionName;
 pub use module::CSharpModulePlan;
 pub use record::CSharpRecordPlan;
-pub use stream::{CSharpStreamItemDelivery, CSharpStreamPlan};
+pub use stream::CSharpStreamPlan;

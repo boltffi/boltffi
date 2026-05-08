@@ -813,7 +813,7 @@
     {
         internal const int DefaultBatchSize = 16;
         internal const int WaitTimeoutMilliseconds = 50;
-        internal const int WaitTimeout = 0;
+        internal const int WaitResultUnsubscribed = -1;
     }
 
 {% endif %}
@@ -972,12 +972,7 @@
         internal static extern IntPtr {{ stream.subscribe_method_name }}(IntPtr handle);
 
         [DllImport(LibName, EntryPoint = "{{ stream.pop_batch_ffi_name }}")]
-{%- match stream.item_delivery %}
-{%- when CSharpStreamItemDelivery::Direct %}
         internal static extern UIntPtr {{ stream.pop_batch_method_name }}(IntPtr subscription, IntPtr outputPtr, UIntPtr outputCapacity);
-{%- when CSharpStreamItemDelivery::WireEncoded with { .. } %}
-        internal static extern FfiBuf {{ stream.pop_batch_method_name }}(IntPtr subscription, UIntPtr maxCount);
-{%- endmatch %}
 
         [DllImport(LibName, EntryPoint = "{{ stream.wait_ffi_name }}")]
         internal static extern int {{ stream.wait_method_name }}(IntPtr subscription, int timeoutMilliseconds);

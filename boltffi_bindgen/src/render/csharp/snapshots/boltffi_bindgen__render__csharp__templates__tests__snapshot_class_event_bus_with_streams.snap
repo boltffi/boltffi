@@ -25,12 +25,21 @@ namespace Demo
             _handle = handle;
         }
 
+        /// <remarks>
+        /// The returned <see cref="IAsyncEnumerable{T}"/> owns the underlying
+        /// subscription. Disposing the owning <see cref="EventBus"/>
+        /// instance does not, by itself, end iteration - the producer simply
+        /// stops emitting events. Callers must either cancel the supplied
+        /// <see cref="CancellationToken"/> or break out of <c>await foreach</c>
+        /// to release the subscription.
+        /// </remarks>
         public async IAsyncEnumerable<int> SubscribeValues([EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             ThrowIfDisposed();
             IntPtr subscription = NativeMethods.EventBusSubscribeValues(_handle);
             if (subscription == IntPtr.Zero) yield break;
 
+            global::System.Threading.Tasks.Task<int>? _pendingWait = null;
             try
             {
                 while (true)
@@ -39,9 +48,8 @@ namespace Demo
 
                     while (true)
                     {
-                        int[] _items;
+                        int[] _items = new int[BoltFFIStream.DefaultBatchSize];
                         int _itemCount;
-                        _items = new int[BoltFFIStream.DefaultBatchSize];
                         UIntPtr _count;
                         unsafe
                         {
@@ -62,25 +70,41 @@ namespace Demo
                         if (_itemCount < BoltFFIStream.DefaultBatchSize) break;
                     }
 
-                    int _waitResult = await global::System.Threading.Tasks.Task.Run(
+                    _pendingWait = global::System.Threading.Tasks.Task.Run(
                         () => NativeMethods.EventBusSubscribeValuesWait(subscription, BoltFFIStream.WaitTimeoutMilliseconds),
-                        cancellationToken).ConfigureAwait(false);
-                    if (_waitResult < BoltFFIStream.WaitTimeout) yield break;
+                        cancellationToken);
+                    int _waitResult = await _pendingWait.ConfigureAwait(false);
+                    _pendingWait = null;
+                    if (_waitResult == BoltFFIStream.WaitResultUnsubscribed) yield break;
                 }
             }
             finally
             {
                 NativeMethods.EventBusSubscribeValuesUnsubscribe(subscription);
+                if (_pendingWait is not null)
+                {
+                    try { await _pendingWait.ConfigureAwait(false); }
+                    catch { /* wait may have observed cancellation; ignore */ }
+                }
                 NativeMethods.EventBusSubscribeValuesFree(subscription);
             }
         }
 
+        /// <remarks>
+        /// The returned <see cref="IAsyncEnumerable{T}"/> owns the underlying
+        /// subscription. Disposing the owning <see cref="EventBus"/>
+        /// instance does not, by itself, end iteration - the producer simply
+        /// stops emitting events. Callers must either cancel the supplied
+        /// <see cref="CancellationToken"/> or break out of <c>await foreach</c>
+        /// to release the subscription.
+        /// </remarks>
         public async IAsyncEnumerable<Point> SubscribePoints([EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             ThrowIfDisposed();
             IntPtr subscription = NativeMethods.EventBusSubscribePoints(_handle);
             if (subscription == IntPtr.Zero) yield break;
 
+            global::System.Threading.Tasks.Task<int>? _pendingWait = null;
             try
             {
                 while (true)
@@ -89,9 +113,8 @@ namespace Demo
 
                     while (true)
                     {
-                        Point[] _items;
+                        Point[] _items = new Point[BoltFFIStream.DefaultBatchSize];
                         int _itemCount;
-                        _items = new Point[BoltFFIStream.DefaultBatchSize];
                         UIntPtr _count;
                         unsafe
                         {
@@ -112,72 +135,23 @@ namespace Demo
                         if (_itemCount < BoltFFIStream.DefaultBatchSize) break;
                     }
 
-                    int _waitResult = await global::System.Threading.Tasks.Task.Run(
+                    _pendingWait = global::System.Threading.Tasks.Task.Run(
                         () => NativeMethods.EventBusSubscribePointsWait(subscription, BoltFFIStream.WaitTimeoutMilliseconds),
-                        cancellationToken).ConfigureAwait(false);
-                    if (_waitResult < BoltFFIStream.WaitTimeout) yield break;
+                        cancellationToken);
+                    int _waitResult = await _pendingWait.ConfigureAwait(false);
+                    _pendingWait = null;
+                    if (_waitResult == BoltFFIStream.WaitResultUnsubscribed) yield break;
                 }
             }
             finally
             {
                 NativeMethods.EventBusSubscribePointsUnsubscribe(subscription);
-                NativeMethods.EventBusSubscribePointsFree(subscription);
-            }
-        }
-
-        public async IAsyncEnumerable<string> SubscribeLabels([EnumeratorCancellation] CancellationToken cancellationToken = default)
-        {
-            ThrowIfDisposed();
-            IntPtr subscription = NativeMethods.EventBusSubscribeLabels(_handle);
-            if (subscription == IntPtr.Zero) yield break;
-
-            try
-            {
-                while (true)
+                if (_pendingWait is not null)
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
-
-                    while (true)
-                    {
-                        string[] _items;
-                        int _itemCount;
-                        FfiBuf _buf = NativeMethods.EventBusSubscribeLabelsPopBatch(subscription, (UIntPtr)BoltFFIStream.DefaultBatchSize);
-                        try
-                        {
-                            if (_buf.len == UIntPtr.Zero) break;
-                            var _reader = new WireReader(_buf);
-                            _itemCount = _reader.ReadI32();
-                            _items = new string[_itemCount];
-                            for (int _i = 0; _i < _itemCount; _i++)
-                            {
-                                _items[_i] = _reader.ReadString();
-                            }
-                        }
-                        finally
-                        {
-                            NativeMethods.FreeBuf(_buf);
-                        }
-                        if (_itemCount == 0) break;
-
-                        for (int _i = 0; _i < _itemCount; _i++)
-                        {
-                            cancellationToken.ThrowIfCancellationRequested();
-                            yield return _items[_i];
-                        }
-
-                        if (_itemCount < BoltFFIStream.DefaultBatchSize) break;
-                    }
-
-                    int _waitResult = await global::System.Threading.Tasks.Task.Run(
-                        () => NativeMethods.EventBusSubscribeLabelsWait(subscription, BoltFFIStream.WaitTimeoutMilliseconds),
-                        cancellationToken).ConfigureAwait(false);
-                    if (_waitResult < BoltFFIStream.WaitTimeout) yield break;
+                    try { await _pendingWait.ConfigureAwait(false); }
+                    catch { /* wait may have observed cancellation; ignore */ }
                 }
-            }
-            finally
-            {
-                NativeMethods.EventBusSubscribeLabelsUnsubscribe(subscription);
-                NativeMethods.EventBusSubscribeLabelsFree(subscription);
+                NativeMethods.EventBusSubscribePointsFree(subscription);
             }
         }
 
