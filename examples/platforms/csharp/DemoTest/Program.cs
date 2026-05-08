@@ -2056,7 +2056,9 @@ public static class DemoTest
             "InvokeTwoCallbacks local");
         Require(InvokeOptionalValueCallback(null, 4) == 4, "InvokeOptionalValueCallback null");
 
-        ValueCallback incrementer = MakeIncrementingCallback(5);
+        // Returned callbacks are owning proxies; `using` releases the native
+        // callback handle deterministically instead of waiting for finalization.
+        using ValueCallbackProxy incrementer = MakeIncrementingCallback(5);
         Require(InvokeValueCallback(incrementer, 4) == 9, "returned ValueCallback proxy");
 
         MessageFormatter formatter = new MessageFormatterImpl();
@@ -2064,7 +2066,8 @@ public static class DemoTest
             "FormatMessageWithCallback local");
         Require(FormatMessageWithOptionalCallback(null, "fallback", "message") == "fallback::message",
             "FormatMessageWithOptionalCallback null");
-        MessageFormatter prefixer = MakeMessagePrefixer("prefix");
+        // Same ownership contract for returned multi-method callback proxies.
+        using MessageFormatterProxy prefixer = MakeMessagePrefixer("prefix");
         Require(FormatMessageWithCallback(prefixer, "sync", "formatter") == "prefix::sync::formatter",
             "returned MessageFormatter proxy");
 

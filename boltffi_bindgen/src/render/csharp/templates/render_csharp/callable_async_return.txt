@@ -20,6 +20,14 @@
                     BoltFFIAsync.ThrowIfStatus(status, cancellationToken);
                     return result;
                 },
+{%- else if callable.return_kind.is_callback_handle() %}
+                future =>
+                {
+                    FfiStatus status;
+                    BoltFFICallbackHandle handle = NativeMethods.{{ ac.complete_method_name }}(future, out status);
+                    BoltFFIAsync.ThrowIfStatus(status, cancellationToken);
+                    return {{ callable.return_kind.callback_bridge_class() }}.Wrap(handle);
+                },
 {%- else %}
                 future =>
                 {

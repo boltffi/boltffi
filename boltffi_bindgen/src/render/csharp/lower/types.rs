@@ -122,7 +122,7 @@ impl<'a> CSharpLowerer<'a> {
     pub(super) fn lower_return(&self, return_def: &ReturnDef) -> Option<CSharpType> {
         match return_def {
             ReturnDef::Void => Some(CSharpType::Void),
-            ReturnDef::Value(type_expr) => self.lower_type(type_expr),
+            ReturnDef::Value(type_expr) => self.lower_return_value(type_expr),
             ReturnDef::Result { ok, err } => {
                 if !self.is_supported_result_type(ok) || !self.is_supported_result_type(err) {
                     return None;
@@ -132,6 +132,15 @@ impl<'a> CSharpLowerer<'a> {
                     other => self.lower_type(other),
                 }
             }
+        }
+    }
+
+    fn lower_return_value(&self, type_expr: &TypeExpr) -> Option<CSharpType> {
+        match type_expr {
+            TypeExpr::Callback(id) => Some(CSharpType::Record(
+                self.callback_proxy_class_name(id).into(),
+            )),
+            other => self.lower_type(other),
         }
     }
 

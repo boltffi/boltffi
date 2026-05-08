@@ -13,9 +13,9 @@ use super::{
     lower::CSharpLowerer,
     plan::CSharpEnumKind,
     templates::{
-        CallbackBridgeTemplate, CallbackInterfaceTemplate, ClassTemplate, ClosureBridgeTemplate,
-        ClosureDelegateTemplate, EnumCStyleTemplate, EnumDataTemplate, FunctionsTemplate,
-        NativeTemplate, PreambleTemplate, RecordTemplate,
+        CallbackBridgeTemplate, CallbackInterfaceTemplate, CallbackProxyTemplate, ClassTemplate,
+        ClosureBridgeTemplate, ClosureDelegateTemplate, EnumCStyleTemplate, EnumDataTemplate,
+        FunctionsTemplate, NativeTemplate, PreambleTemplate, RecordTemplate,
     },
 };
 
@@ -121,6 +121,8 @@ impl CSharpEmitter {
         for callback in &module.callbacks {
             main_source.push_str(&CallbackInterfaceTemplate { callback }.render().unwrap());
             main_source.push('\n');
+            main_source.push_str(&CallbackProxyTemplate { callback }.render().unwrap());
+            main_source.push('\n');
             main_source.push_str(&CallbackBridgeTemplate { callback }.render().unwrap());
             main_source.push('\n');
         }
@@ -143,10 +145,13 @@ mod tests {
     use crate::ir::Lowerer as IrLowerer;
     use crate::ir::contract::{FfiContract, PackageInfo};
     use crate::ir::definitions::{
-        CStyleVariant, ClassDef, DataVariant, EnumDef, EnumRepr, FieldDef, FunctionDef, MethodDef,
-        ParamDef, ParamPassing, Receiver, RecordDef, ReturnDef, VariantPayload,
+        CStyleVariant, CallbackKind, CallbackMethodDef, CallbackTraitDef, ClassDef, DataVariant,
+        EnumDef, EnumRepr, FieldDef, FunctionDef, MethodDef, ParamDef, ParamPassing, Receiver,
+        RecordDef, ReturnDef, VariantPayload,
     };
-    use crate::ir::ids::{ClassId, EnumId, FieldName, FunctionId, MethodId, ParamName, RecordId};
+    use crate::ir::ids::{
+        CallbackId, ClassId, EnumId, FieldName, FunctionId, MethodId, ParamName, RecordId,
+    };
     use crate::ir::types::{PrimitiveType, TypeExpr};
     use boltffi_ffi_rules::callable::ExecutionKind;
 
@@ -319,6 +324,101 @@ mod tests {
         let mut function = function_with_types(name, params, returns);
         function.execution_kind = ExecutionKind::Async;
         function
+    }
+
+    #[test]
+    fn emit_callback_return_uses_disposable_proxy_surface() {
+        let callback_id = CallbackId::new("ValueCallback");
+        let callback_type = TypeExpr::Callback(callback_id.clone());
+        let callback = CallbackTraitDef {
+            id: callback_id,
+            methods: vec![CallbackMethodDef {
+                id: MethodId::new("on_value"),
+                params: vec![ParamDef {
+                    name: ParamName::new("value"),
+                    type_expr: TypeExpr::Primitive(PrimitiveType::I32),
+                    passing: ParamPassing::Value,
+                    doc: None,
+                }],
+                returns: ReturnDef::Value(TypeExpr::Primitive(PrimitiveType::I32)),
+                execution_kind: ExecutionKind::Sync,
+                doc: None,
+            }],
+            kind: CallbackKind::Trait,
+            doc: None,
+        };
+
+        let mut contract = empty_contract();
+        contract.catalog.insert_callback(callback);
+        contract.functions.push(function_with_types(
+            "make_value_callback",
+            vec![],
+            ReturnDef::Value(callback_type.clone()),
+        ));
+        contract.functions.push(FunctionDef {
+            id: FunctionId::new("invoke_value_callback"),
+            params: vec![
+                ParamDef {
+                    name: ParamName::new("callback"),
+                    type_expr: callback_type,
+                    passing: ParamPassing::ImplTrait,
+                    doc: None,
+                },
+                ParamDef {
+                    name: ParamName::new("input"),
+                    type_expr: TypeExpr::Primitive(PrimitiveType::I32),
+                    passing: ParamPassing::Value,
+                    doc: None,
+                },
+            ],
+            returns: ReturnDef::Value(TypeExpr::Primitive(PrimitiveType::I32)),
+            execution_kind: ExecutionKind::Sync,
+            doc: None,
+            deprecated: None,
+        });
+
+        let src = emit_contract(&contract).combined_source();
+
+        assert_source_contains(
+            &src,
+            "public sealed class ValueCallbackProxy : ValueCallback, global::System.IDisposable",
+            "returned callbacks to expose an owning disposable proxy",
+        );
+        assert_source_contains(
+            &src,
+            "public static ValueCallbackProxy MakeValueCallback()",
+            "callback-returning functions to return the concrete proxy type",
+        );
+        assert_source_contains(
+            &src,
+            "return ValueCallbackBridge.Wrap(NativeMethods.MakeValueCallback());",
+            "callback handles to be wrapped into the owning proxy",
+        );
+        assert_source_contains(
+            &src,
+            "internal static ValueCallbackProxy Wrap(BoltFFICallbackHandle handle)",
+            "bridge Wrap to return the concrete proxy",
+        );
+        assert_source_contains(
+            &src,
+            "if (impl_ is ValueCallbackProxy proxy) return proxy.CloneHandle();",
+            "passing a returned proxy back to Rust to clone its native handle",
+        );
+        assert_source_contains(
+            &src,
+            "public void Dispose()",
+            "proxy to provide explicit release",
+        );
+        assert_source_contains(
+            &src,
+            "public static int InvokeValueCallback(ValueCallback callback, int input)",
+            "callback params to keep accepting the public callback interface",
+        );
+        assert_source_contains(
+            &src,
+            "internal static extern BoltFFICallbackHandle MakeValueCallback();",
+            "native return to remain a callback handle under the public proxy surface",
+        );
     }
 
     /// C# P/Invoke marshals `bool` as a 4-byte Win32 BOOL by default, but

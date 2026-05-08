@@ -9,6 +9,7 @@ use super::callable::CSharpWireWriterPlan;
 #[derive(Debug, Clone)]
 pub struct CSharpCallbackPlan {
     pub public_name: CSharpClassName,
+    pub proxy_name: CSharpClassName,
     pub bridge_name: CSharpClassName,
     pub methods: Vec<CSharpCallbackMethodPlan>,
     pub register_fn: CFunctionName,

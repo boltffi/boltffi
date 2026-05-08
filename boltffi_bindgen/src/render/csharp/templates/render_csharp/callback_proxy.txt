@@ -1,0 +1,188 @@
+    public sealed class {{ callback.proxy_name }} : {{ callback.public_name }}, global::System.IDisposable
+    {
+        private BoltFFICallbackHandle _handle;
+
+        internal {{ callback.proxy_name }}(BoltFFICallbackHandle handle)
+        {
+            _handle = handle;
+        }
+
+        ~{{ callback.proxy_name }}()
+        {
+            Release();
+        }
+
+        public void Dispose()
+        {
+            Release();
+            global::System.GC.SuppressFinalize(this);
+        }
+
+        internal BoltFFICallbackHandle CloneHandle()
+        {
+            if (_handle.IsNull) return BoltFFICallbackHandle.Null;
+            {{ callback.bridge_name }}.VTable table = Marshal.PtrToStructure<{{ callback.bridge_name }}.VTable>(_handle.vtable);
+            var clone = Marshal.GetDelegateForFunctionPointer<{{ callback.bridge_name }}.CloneFn>(table.clone);
+            ulong cloned = clone(_handle.handle);
+            return cloned == 0 ? BoltFFICallbackHandle.Null : new BoltFFICallbackHandle { handle = cloned, vtable = _handle.vtable };
+        }
+
+        private void Release()
+        {
+            if (_handle.IsNull) return;
+            {{ callback.bridge_name }}.VTable table = Marshal.PtrToStructure<{{ callback.bridge_name }}.VTable>(_handle.vtable);
+            var free = Marshal.GetDelegateForFunctionPointer<{{ callback.bridge_name }}.FreeFn>(table.free);
+            ulong handle = _handle.handle;
+            _handle = BoltFFICallbackHandle.Null;
+            free(handle);
+        }
+
+{% for method in callback.methods %}
+{%- match method.proxy %}
+{%- when CSharpCallbackProxyPlan::AsyncUnsupported with { public_params, result_type } %}
+{%- match result_type %}
+{%- when Some with (ty) %}
+        public global::System.Threading.Tasks.Task<{{ method.return_type }}> {{ method.name }}({{ public_params }}) => global::System.Threading.Tasks.Task.FromException<{{ ty }}>(new NotSupportedException("async callback proxies are not implemented for C# yet"));
+{%- when None %}
+        public global::System.Threading.Tasks.Task {{ method.name }}({{ public_params }}) => global::System.Threading.Tasks.Task.FromException(new NotSupportedException("async callback proxies are not implemented for C# yet"));
+{%- endmatch %}
+{%- when CSharpCallbackProxyPlan::Sync with (proxy) %}
+        public {{ proxy.return_type }} {{ method.name }}({{ proxy.public_params }})
+        {
+            if (_handle.IsNull) throw new ObjectDisposedException(nameof({{ callback.proxy_name }}));
+            {{ callback.bridge_name }}.VTable __boltffiTable = Marshal.PtrToStructure<{{ callback.bridge_name }}.VTable>(_handle.vtable);
+            var __boltffiInvoke = Marshal.GetDelegateForFunctionPointer<{{ callback.bridge_name }}.{{ method.name }}ProxyFn>(__boltffiTable.{{ method.vtable_field }});
+{%- for param in proxy.bridge_params %}
+{%- match param %}
+{%- when CSharpCallbackBridgeParamPlan::Direct with { public_param, native_param, decoded_arg, proxy_arg } %}
+{%- when CSharpCallbackBridgeParamPlan::WireEncoded with { public_param, native_ptr_param, native_len_param, reader_local, decoded_arg, writer, pin_local, ptr_local } %}
+            byte[] {{ writer.bytes_binding_name }};
+            using (var {{ writer.binding_name }} = new WireWriter({{ writer.size_expr }}))
+            {
+{%- for stmt in writer.encode_stmts %}
+                {{ stmt }};
+{%- endfor %}
+                {{ writer.bytes_binding_name }} = {{ writer.binding_name }}.ToArray();
+            }
+            GCHandle {{ pin_local }} = default;
+            IntPtr {{ ptr_local }} = IntPtr.Zero;
+{%- endmatch %}
+{%- endfor %}
+{%- if proxy.has_cleanup %}
+            try
+            {
+{%- for param in proxy.bridge_params %}
+{%- match param %}
+{%- when CSharpCallbackBridgeParamPlan::Direct with { public_param, native_param, decoded_arg, proxy_arg } %}
+{%- when CSharpCallbackBridgeParamPlan::WireEncoded with { public_param, native_ptr_param, native_len_param, reader_local, decoded_arg, writer, pin_local, ptr_local } %}
+                if ({{ writer.bytes_binding_name }}.Length != 0)
+                {
+                    {{ pin_local }} = GCHandle.Alloc({{ writer.bytes_binding_name }}, GCHandleType.Pinned);
+                    {{ ptr_local }} = {{ pin_local }}.AddrOfPinnedObject();
+                }
+{%- endmatch %}
+{%- endfor %}
+{%- match proxy.call %}
+{%- when CSharpCallbackProxyCallPlan::Void with { args } %}
+                FfiStatus __boltffiStatus;
+                __boltffiInvoke({{ args }}, out __boltffiStatus);
+                {{ callback.bridge_name }}.ThrowIfCallbackStatus(__boltffiStatus);
+{%- when CSharpCallbackProxyCallPlan::Direct with { args, native_out_type, public_expr } %}
+                {{ native_out_type }} __boltffiOutPtr;
+                FfiStatus __boltffiStatus;
+                __boltffiInvoke({{ args }}, out __boltffiOutPtr, out __boltffiStatus);
+                {{ callback.bridge_name }}.ThrowIfCallbackStatus(__boltffiStatus);
+                return {{ public_expr }};
+{%- when CSharpCallbackProxyCallPlan::Encoded with { args, decode_expr, result_decode } %}
+                IntPtr __boltffiOutPtr;
+                UIntPtr __boltffiOutLen;
+                FfiStatus __boltffiStatus;
+                __boltffiInvoke({{ args }}, out __boltffiOutPtr, out __boltffiOutLen, out __boltffiStatus);
+                try
+                {
+                    {{ callback.bridge_name }}.ThrowIfCallbackStatus(__boltffiStatus);
+                    var __boltffiReader = new WireReader(__boltffiOutPtr, __boltffiOutLen);
+{%- if let Some(result_decode) = result_decode %}
+                    if (__boltffiReader.ReadU8() != 0)
+                    {
+                        throw new InvalidOperationException({{ result_decode.err_expr }}.ToString());
+                    }
+{%- if let Some(ok_expr) = result_decode.ok_expr %}
+                    return {{ ok_expr }};
+{%- endif %}
+{%- endif %}
+{%- if let Some(expr) = decode_expr %}
+                    return {{ expr }};
+{%- endif %}
+                }
+                finally
+                {
+                    BoltFFICallbackReturn.Free(__boltffiOutPtr);
+                }
+{%- endmatch %}
+            }
+            finally
+            {
+{%- for param in proxy.bridge_params %}
+{%- match param %}
+{%- when CSharpCallbackBridgeParamPlan::Direct with { public_param, native_param, decoded_arg, proxy_arg } %}
+{%- when CSharpCallbackBridgeParamPlan::WireEncoded with { public_param, native_ptr_param, native_len_param, reader_local, decoded_arg, writer, pin_local, ptr_local } %}
+                if ({{ pin_local }}.IsAllocated) {{ pin_local }}.Free();
+{%- endmatch %}
+{%- endfor %}
+            }
+{%- else %}
+{%- for param in proxy.bridge_params %}
+{%- match param %}
+{%- when CSharpCallbackBridgeParamPlan::Direct with { public_param, native_param, decoded_arg, proxy_arg } %}
+{%- when CSharpCallbackBridgeParamPlan::WireEncoded with { public_param, native_ptr_param, native_len_param, reader_local, decoded_arg, writer, pin_local, ptr_local } %}
+            if ({{ writer.bytes_binding_name }}.Length != 0)
+            {
+                {{ pin_local }} = GCHandle.Alloc({{ writer.bytes_binding_name }}, GCHandleType.Pinned);
+                {{ ptr_local }} = {{ pin_local }}.AddrOfPinnedObject();
+            }
+{%- endmatch %}
+{%- endfor %}
+{%- match proxy.call %}
+{%- when CSharpCallbackProxyCallPlan::Void with { args } %}
+            FfiStatus __boltffiStatus;
+            __boltffiInvoke({{ args }}, out __boltffiStatus);
+            {{ callback.bridge_name }}.ThrowIfCallbackStatus(__boltffiStatus);
+{%- when CSharpCallbackProxyCallPlan::Direct with { args, native_out_type, public_expr } %}
+            {{ native_out_type }} __boltffiOutPtr;
+            FfiStatus __boltffiStatus;
+            __boltffiInvoke({{ args }}, out __boltffiOutPtr, out __boltffiStatus);
+            {{ callback.bridge_name }}.ThrowIfCallbackStatus(__boltffiStatus);
+            return {{ public_expr }};
+{%- when CSharpCallbackProxyCallPlan::Encoded with { args, decode_expr, result_decode } %}
+            IntPtr __boltffiOutPtr;
+            UIntPtr __boltffiOutLen;
+            FfiStatus __boltffiStatus;
+            __boltffiInvoke({{ args }}, out __boltffiOutPtr, out __boltffiOutLen, out __boltffiStatus);
+            try
+            {
+                {{ callback.bridge_name }}.ThrowIfCallbackStatus(__boltffiStatus);
+                var __boltffiReader = new WireReader(__boltffiOutPtr, __boltffiOutLen);
+{%- if let Some(result_decode) = result_decode %}
+                if (__boltffiReader.ReadU8() != 0)
+                {
+                    throw new InvalidOperationException({{ result_decode.err_expr }}.ToString());
+                }
+{%- if let Some(ok_expr) = result_decode.ok_expr %}
+                return {{ ok_expr }};
+{%- endif %}
+{%- endif %}
+{%- if let Some(expr) = decode_expr %}
+                return {{ expr }};
+{%- endif %}
+            }
+            finally
+            {
+                BoltFFICallbackReturn.Free(__boltffiOutPtr);
+            }
+{%- endmatch %}
+{%- endif %}
+        }
+{%- endmatch %}
+{% endfor %}
+    }

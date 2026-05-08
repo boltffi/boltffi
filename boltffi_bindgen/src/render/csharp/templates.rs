@@ -114,6 +114,13 @@ pub struct CallbackInterfaceTemplate<'a> {
     pub callback: &'a CSharpCallbackPlan,
 }
 
+/// Renders the public owning proxy for callback handles returned from Rust.
+#[derive(Template)]
+#[template(path = "render_csharp/callback_proxy.txt", escape = "none")]
+pub struct CallbackProxyTemplate<'a> {
+    pub callback: &'a CSharpCallbackPlan,
+}
+
 /// Renders the managed vtable bridge for a callback interface.
 #[derive(Template)]
 #[template(path = "render_csharp/callback_bridge.txt", escape = "none")]

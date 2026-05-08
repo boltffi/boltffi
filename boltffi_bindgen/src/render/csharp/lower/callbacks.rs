@@ -124,6 +124,7 @@ impl<'a> CSharpLowerer<'a> {
             .collect();
         CSharpCallbackPlan {
             public_name: self.callback_public_class_name(&callback.id),
+            proxy_name: self.callback_proxy_class_name(&callback.id),
             bridge_name: self.callback_bridge_class_name(&callback.id),
             methods,
             register_fn: CFunctionName::new(abi_callback.register_fn.as_str().to_string()),
@@ -263,6 +264,11 @@ impl<'a> CSharpLowerer<'a> {
                 CSharpClassName::from_source(callback_id.as_str())
             )),
         }
+    }
+
+    pub(super) fn callback_proxy_class_name(&self, callback_id: &CallbackId) -> CSharpClassName {
+        let public_name = self.callback_public_class_name(callback_id);
+        CSharpClassName::new(format!("{}Proxy", public_name.as_str()))
     }
 
     fn lower_callback_entry(

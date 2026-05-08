@@ -12,7 +12,7 @@ pub enum CSharpReturnKind {
     /// this path.
     Direct,
     /// Returned as a `BoltFFICallbackHandle` and wrapped into the generated
-    /// C# callback interface/delegate proxy.
+    /// C# callback proxy that owns the native handle.
     CallbackHandle {
         bridge_class: CSharpClassName,
         nullable: bool,
