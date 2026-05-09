@@ -79,20 +79,8 @@ This creates:
 - `dist/apple/` - XCFramework + Swift bindings
 - `dist/android/` - JNI libraries + Kotlin bindings
 - `dist/java/` - JNI library + Java bindings
+- `dist/csharp/` - NuGet package + native runtime assets
 - `dist/wasm/` - WASM module + TypeScript bindings
-
-C# currently uses a generate-and-integrate flow rather than `pack`:
-
-```bash
-cargo build
-boltffi generate csharp
-```
-
-This creates `dist/csharp/` with generated C# source bindings.
-
-`pack` is for targets where BoltFFI creates a platform package, such as an XCFramework,
-jniLibs/JNI output, or an npm package. C# already has generated bindings, but BoltFFI leaves the
-.NET project or NuGet layout to your app, so the command is `generate csharp`.
 
 To build for a single platform:
 
@@ -100,7 +88,7 @@ To build for a single platform:
 boltffi pack apple 
 boltffi pack android
 boltffi pack java
-boltffi generate csharp
+boltffi pack csharp
 boltffi pack wasm
 ```
 
@@ -144,14 +132,15 @@ On Java 16+ with `min_version = 16` in `boltffi.toml`, records are used instead 
 
 ## Use in C#
 
-Build the host dynamic library, generate the C# bindings, and include the generated `.cs` files in your .NET project:
+Build the NuGet package and add it to your .NET project from a local package source:
 
 ```bash
-cargo build
-boltffi generate csharp
+boltffi pack csharp
 ```
 
-Copy the host native library next to your .NET output or make it discoverable by the runtime, then:
+This produces a `.nupkg` under `dist/csharp/packages/` with the bindings and the native runtime
+assets bundled under `runtimes/<rid>/native/`. Reference it from your project just like any other
+NuGet dependency, then:
 
 ```csharp
 using MyLib;

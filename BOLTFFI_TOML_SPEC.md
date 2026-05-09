@@ -288,19 +288,6 @@ Android target configuration for Java (not Kotlin).
 - `min_sdk` (integer): Android minSdkVersion.
   - Default: `24`
 
-## C#
-
-### `[targets.csharp]` (optional)
-
-- `enabled` (bool): Whether C# source generation is active.
-  - Default: `false`
-- `output` (path): Output directory for generated C# sources.
-  - Default: `dist/csharp`
-
-C# generation is source-only. Unlike `pack` targets, BoltFFI does not create a platform package
-for C#: run `boltffi generate csharp`, include the generated `.cs` files in your .NET project,
-and distribute the matching Rust `cdylib` with your app.
-
 ## WASM
 
 ### `[targets.wasm]` (optional)

@@ -86,11 +86,10 @@ boltffi pack android
 For C#:
 
 ```bash
-cargo build
-boltffi generate csharp
+boltffi pack csharp
 ```
 
-Apple and Android produce packages you can import directly. C# currently generates source files that you include in your .NET project alongside the host Rust `cdylib`.
+This produces a `.nupkg` in `dist/csharp/packages/` that you can reference from your .NET project as a local NuGet feed. The package bundles the bindings and the native runtime assets together.
 
 ## Use from Swift
 

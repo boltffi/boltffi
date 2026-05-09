@@ -524,11 +524,11 @@ Both JVM and Android targets can be enabled simultaneously. They share the same 
 
 <h2 id="c-sharp-configuration">C# Configuration</h2>
 
-The `[targets.csharp]` section controls C# source generation.
+The `[targets.csharp]` section controls C# generation and NuGet packaging.
 
 ### Output Directory
 
-Generated C# files go into `dist/csharp` by default:
+C# artifacts go into `dist/csharp` by default:
 
 ```toml
 [targets.csharp]
@@ -536,13 +536,26 @@ enabled = true
 output = "dist/csharp"
 ```
 
-Run generation with:
+Run generation or packaging with:
 
 ```bash
-boltffi generate csharp
+boltffi generate csharp   # writes .cs files only
+boltffi pack csharp       # builds the NuGet package with native runtime assets
 ```
 
-The output contains one `.cs` file for the top-level module/runtime helpers and additional `.cs` files for generated records, enums, classes, callbacks, and stream-owning types. Include those files in your .NET project and ship the matching Rust `cdylib` next to your application or in a runtime-discoverable native library path.
+`generate csharp` writes one `.cs` file for the top-level module/runtime helpers plus additional `.cs` files for generated records, enums, classes, callbacks, and stream-owning types directly under `output`. `pack csharp` writes the generated sources under `{output}/src`, builds the Rust `cdylib` for each configured runtime identifier into `{output}/runtimes/<rid>/native/`, and emits a `.nupkg` under `{output}/packages/` that bundles everything together.
+
+### Runtime Identifiers
+
+Choose which .NET runtime identifiers `pack csharp` builds native assets for:
+
+```toml
+[targets.csharp]
+enabled = true
+runtime_identifiers = ["osx-arm64", "linux-x64", "win-x64"]
+```
+
+`current` resolves to the active host RID. Supported canonical values are `osx-arm64`, `osx-x64`, `linux-x64`, `linux-arm64`, and `win-x64`. See [BOLTFFI_TOML_SPEC.md](https://github.com/boltffi/boltffi/blob/main/BOLTFFI_TOML_SPEC.md) for the full list of options including `package_id`, `target_framework`, and `package_output`.
 
 ## WASM Configuration
 

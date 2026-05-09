@@ -5,13 +5,12 @@ description: "Understand the BoltFFI packaging pipeline for compiling Rust artif
 
 # Packaging
 
-Packaging takes your Rust library and produces artifacts ready for each packaged platform. For packaged targets, a single command handles everything: compiling for each target architecture, generating bindings, and bundling the results into the format each platform expects. C# uses a source-generation flow described below.
+Packaging takes your Rust library and produces artifacts ready for each packaged platform. A single command handles everything: compiling for each target architecture, generating bindings, and bundling the results into the format each platform expects.
 
-`pack` and `generate` mean different things in the CLI. `pack` is for targets where BoltFFI owns the
-platform package layout, such as an Apple XCFramework/SwiftPM package, Android jniLibs, Java JNI
-output, WASM npm package, or Python wheel. `generate csharp` writes the C# source bindings only;
-you build the host Rust `cdylib` and include both the `.cs` files and native library in your .NET
-project.
+`pack` is for targets where BoltFFI owns the platform package layout, such as an Apple
+XCFramework/SwiftPM package, Android jniLibs, Java JNI output, a C# NuGet package, a WASM npm
+package, or a Python wheel. `generate` writes only the source bindings for a single language and is
+useful when you want to integrate them into an existing project layout yourself.
 
 ## Overview
 
@@ -21,7 +20,7 @@ The packaging process has three stages:
 2. **Generate** - Create Swift/Kotlin/Java/C#/TypeScript/Python bindings and C headers from your exported API
 3. **Package** - Bundle everything into platform-specific formats
 
-For Apple, this produces an xcframework and SwiftPM package. For Android, this produces jniLibs and Kotlin sources. For Java (JVM), this produces a JNI shared library and Java sources. For C#, the current flow generates C# sources that P/Invoke into a host `cdylib`. For WASM, this produces an npm package with TypeScript bindings. For Python, this produces a generated source package plus one or more wheels for the current host.
+For Apple, this produces an xcframework and SwiftPM package. For Android, this produces jniLibs and Kotlin sources. For Java (JVM), this produces a JNI shared library and Java sources. For C#, this produces a NuGet package containing the bindings and native runtime assets. For WASM, this produces an npm package with TypeScript bindings. For Python, this produces a generated source package plus one or more wheels for the current host.
 
 ## Getting Started
 
@@ -53,6 +52,7 @@ Package each platform with its own command:
 boltffi pack apple
 boltffi pack android
 boltffi pack java
+boltffi pack csharp
 boltffi pack wasm
 boltffi pack python --experimental
 ```
@@ -63,6 +63,7 @@ Add `--release` for optimized builds:
 boltffi pack apple --release
 boltffi pack android --release
 boltffi pack java --release
+boltffi pack csharp --release
 boltffi pack wasm --release
 boltffi pack python --release --experimental
 ```
@@ -115,9 +116,17 @@ dist/
 │   │   └── mylib.h
 │   └── libmylib_jni.dylib (or .so)
 ├── csharp/
-│   ├── MyLib.cs
-│   ├── Point.cs
-│   └── ... (records, enums, classes, callbacks, streams)
+│   ├── BoltFFI.CSharp.csproj
+│   ├── src/
+│   │   ├── MyLib.cs
+│   │   ├── Point.cs
+│   │   └── ... (records, enums, classes, callbacks, streams)
+│   ├── runtimes/
+│   │   ├── osx-arm64/native/libmylib.dylib
+│   │   ├── linux-x64/native/libmylib.so
+│   │   └── win-x64/native/mylib.dll
+│   └── packages/
+│       └── MyLib.0.1.0.nupkg
 ├── wasm/
 │   └── pkg/
 │       ├── mylib_bg.wasm
@@ -169,9 +178,12 @@ boltffi pack java --release --no-build
 
 **C#:**
 ```bash
-cargo build --release
 boltffi generate csharp
+boltffi pack csharp --release
 ```
+
+`pack csharp` builds the Rust `cdylib` for each runtime identifier configured in
+`targets.csharp.runtime_identifiers`, so it does not accept Cargo `--target` passthrough args.
 
 **WASM:**
 ```bash
@@ -486,15 +498,16 @@ tasks.test {
 }
 ```
 
-<h2 id="c-sharp-generation">C# Generation</h2>
+<h2 id="c-sharp-packaging">C# Packaging</h2>
 
-C# uses a source-generation flow because BoltFFI does not create a .NET project or NuGet package.
-Build your Rust library as a host dynamic library and generate C# sources:
+Package everything for .NET:
 
 ```bash
-cargo build --release
-boltffi generate csharp
+boltffi pack csharp --release
 ```
+
+This generates the C# bindings, builds the Rust `cdylib` for each configured runtime identifier,
+and bundles the bindings and native runtime assets into a single NuGet package.
 
 Your Rust crate must include `cdylib` in `crate-type`:
 
@@ -511,30 +524,41 @@ Enable C# in `boltffi.toml`:
 [targets.csharp]
 enabled = true
 output = "dist/csharp"
+package_id = "MyOrg.MyLib"
+target_framework = "net10.0"
+runtime_identifiers = ["osx-arm64", "linux-x64", "win-x64"]
 ```
+
+`runtime_identifiers` controls which native assets are built and bundled into the NuGet package.
+`current` resolves to the active host RID; canonical values are `osx-arm64`, `osx-x64`,
+`linux-x64`, `linux-arm64`, and `win-x64`.
 
 ### Output Structure
 
 ```
 dist/csharp/
-├── MyLib.cs            # Functions, native declarations, and runtime helpers
-├── Point.cs            # Generated records
-├── Status.cs           # Generated enums
-└── Sensor.cs           # Generated classes and stream methods
+├── BoltFFI.CSharp.csproj
+├── src/
+│   ├── MyLib.cs            # Functions, native declarations, and runtime helpers
+│   ├── Point.cs            # Generated records
+│   ├── Status.cs           # Generated enums
+│   └── Sensor.cs           # Generated classes and stream methods
+├── runtimes/
+│   ├── osx-arm64/native/libmylib.dylib
+│   ├── linux-x64/native/libmylib.so
+│   └── win-x64/native/mylib.dll
+└── packages/
+    └── MyLib.0.1.0.nupkg
 ```
 
-### Using in a .NET Project
+### Using the NuGet Package
 
-Include the generated `.cs` files in your project, allow unsafe blocks, and copy the matching native library next to your application output.
+Add the package output directory as a local NuGet source and reference the package from your
+.NET project:
 
-```xml
-<PropertyGroup>
-  <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-</PropertyGroup>
-
-<ItemGroup>
-  <Compile Include="dist/csharp/*.cs" LinkBase="Generated/BoltFFI" />
-</ItemGroup>
+```bash
+dotnet nuget add source ./dist/csharp/packages --name boltffi-local
+dotnet add package MyLib
 ```
 
 Then call the generated bindings from C#:
@@ -547,7 +571,21 @@ Point b = new Point(3.0, 4.0);
 double distance = MyLib.Distance(a, b);
 ```
 
-Classes implement `IDisposable`; streams return `IAsyncEnumerable<T>` and can be consumed with `await foreach`.
+The native runtime assets are loaded automatically from the NuGet `runtimes/<rid>/native/`
+folder. Classes implement `IDisposable`; streams return `IAsyncEnumerable<T>` and can be consumed
+with `await foreach`.
+
+### Source-Only Generation
+
+If you prefer to integrate the bindings into an existing .NET project without using the NuGet
+package, run:
+
+```bash
+boltffi generate csharp
+```
+
+This writes only the `.cs` files to `dist/csharp/`. You are responsible for building and shipping
+the matching Rust `cdylib` alongside your application.
 
 ## WASM Packaging
 
