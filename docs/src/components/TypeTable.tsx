@@ -6,6 +6,7 @@ interface TypeMapping {
   swift: string;
   kotlin: string;
   java?: string;
+  csharp?: string;
   typescript?: string;
 }
 
@@ -16,17 +17,20 @@ interface TypeTableProps {
 
 const TypeTable = ({ title, mappings }: TypeTableProps) => {
   const hasJava = mappings.some(m => m.java);
+  const hasCSharp = mappings.some(m => m.csharp);
   const hasTypeScript = mappings.some(m => m.typescript);
-  const langs: ("Swift" | "Kotlin" | "Java" | "TypeScript")[] = ["Swift", "Kotlin"];
+  const langs: ("Swift" | "Kotlin" | "Java" | "C#" | "TypeScript")[] = ["Swift", "Kotlin"];
   if (hasJava) langs.push("Java");
+  if (hasCSharp) langs.push("C#");
   if (hasTypeScript) langs.push("TypeScript");
 
-  const [activeLang, setActiveLang] = useState<"Swift" | "Kotlin" | "Java" | "TypeScript">("Swift");
+  const [activeLang, setActiveLang] = useState<"Swift" | "Kotlin" | "Java" | "C#" | "TypeScript">("Swift");
 
   const getValue = (mapping: TypeMapping) => {
     if (activeLang === "Swift") return mapping.swift;
     if (activeLang === "Kotlin") return mapping.kotlin;
     if (activeLang === "Java") return mapping.java || mapping.kotlin;
+    if (activeLang === "C#") return mapping.csharp || mapping.java || mapping.kotlin;
     return mapping.typescript || mapping.kotlin;
   };
 

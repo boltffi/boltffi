@@ -7,12 +7,14 @@ import "prismjs/components/prism-swift";
 import "prismjs/components/prism-kotlin";
 import "prismjs/components/prism-typescript";
 import "prismjs/components/prism-java";
+import "prismjs/components/prism-csharp";
 
 interface CodeComparisonProps {
   rust: string;
   swift: string;
   kotlin: string;
   java?: string;
+  csharp?: string;
   typescript?: string;
   title?: string;
 }
@@ -23,18 +25,24 @@ function highlight(code: string, lang: string): string {
   return code;
 }
 
-const CodeComparison = ({ rust, swift, kotlin, java, typescript, title }: CodeComparisonProps) => {
-  const [activeLang, setActiveLang] = useState<"Swift" | "Kotlin" | "Java" | "TypeScript">("Swift");
+const CodeComparison = ({ rust, swift, kotlin, java, csharp, typescript, title }: CodeComparisonProps) => {
+  const [activeLang, setActiveLang] = useState<"Swift" | "Kotlin" | "Java" | "C#" | "TypeScript">("Swift");
   const [copiedSide, setCopiedSide] = useState<"left" | "right" | null>(null);
 
   const bindings: Record<string, string> = { Swift: swift, Kotlin: kotlin };
   const langMap: Record<string, string> = { Swift: "swift", Kotlin: "kotlin" };
-  const availableLangs: ("Swift" | "Kotlin" | "Java" | "TypeScript")[] = ["Swift", "Kotlin"];
+  const availableLangs: ("Swift" | "Kotlin" | "Java" | "C#" | "TypeScript")[] = ["Swift", "Kotlin"];
 
   if (java) {
     bindings.Java = java;
     langMap.Java = "java";
     availableLangs.push("Java");
+  }
+
+  if (csharp) {
+    bindings["C#"] = csharp;
+    langMap["C#"] = "csharp";
+    availableLangs.push("C#");
   }
 
   if (typescript) {
@@ -46,7 +54,7 @@ const CodeComparison = ({ rust, swift, kotlin, java, typescript, title }: CodeCo
   const rustHighlighted = useMemo(() => highlight(rust, "rust"), [rust]);
   const bindingHighlighted = useMemo(
     () => highlight(bindings[activeLang], langMap[activeLang]),
-    [activeLang, swift, kotlin, java, typescript]
+    [activeLang, swift, kotlin, java, csharp, typescript]
   );
 
   const handleCopy = (code: string, side: "left" | "right") => {

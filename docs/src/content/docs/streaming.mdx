@@ -29,7 +29,14 @@ BoltFFI supports three consumption modes. Each mode generates different bindings
 
 ### Async Mode
 
-The default mode. Generates `AsyncStream` in Swift, `Flow` in Kotlin, and a callback-driven `StreamSubscription<T>` in Java. Cancellation propagates automatically.
+The default mode. Generated bindings use:
+
+- Swift: `AsyncStream`
+- Kotlin: `Flow`
+- Java: callback-driven `StreamSubscription<T>`
+- C#: `IAsyncEnumerable<T>`
+
+Cancellation propagates automatically.
 
 <CodeComparison
   title=""
@@ -55,11 +62,18 @@ StreamSubscription<Reading> sub =
         System.out.println(reading.value()));
 // later
 sub.close();`}
+  csharp={`public IAsyncEnumerable<Reading> Readings(
+    CancellationToken cancellationToken = default)
+
+await foreach (Reading reading in
+    sensor.Readings(cancellationToken)) {
+    Console.WriteLine(reading.Value);
+}`}
 />
 
 ### Callback Mode
 
-Generates a method that takes a callback and returns a cancellable handle.
+Generates a method that takes a callback and returns a cancellable handle on targets with callback stream support. C# currently exposes stream methods as `IAsyncEnumerable<T>`, so consumers use `await foreach` and cancel with a `CancellationToken` or by breaking the loop.
 
 <CodeComparison
   title=""
@@ -93,11 +107,18 @@ StreamSubscription<Reading> sub =
         System.out.println(reading.value()));
 // later
 sub.close();`}
+  csharp={`public IAsyncEnumerable<Reading> Readings(
+    CancellationToken cancellationToken = default)
+
+await foreach (Reading reading in
+    sensor.Readings(cancellationToken)) {
+    Console.WriteLine(reading.Value);
+}`}
 />
 
 ### Batch Mode
 
-Generates a subscription object that lets consumers pull batches of events on their own schedule.
+Generates a subscription object that lets consumers pull batches of events on their own schedule on targets with batch stream support. C# hides the batch polling behind `IAsyncEnumerable<T>`.
 
 <CodeComparison
   title=""
@@ -128,6 +149,13 @@ for (Reading reading : batch) {
     process(reading);
 }
 sub.close();`}
+  csharp={`public IAsyncEnumerable<Reading> Readings(
+    CancellationToken cancellationToken = default)
+
+await foreach (Reading reading in
+    sensor.Readings(cancellationToken)) {
+    Process(reading);
+}`}
 />
 
 ## Creating Streams
@@ -202,6 +230,16 @@ StreamSubscription<Reading> sub =
 // later
 sub.close();
 sensor.close();`}
+  csharp={`public sealed class Sensor : IDisposable {
+    public Sensor()
+    public IAsyncEnumerable<Reading> Readings(
+        CancellationToken cancellationToken = default)
+}
+
+using Sensor sensor = new Sensor();
+await foreach (Reading reading in sensor.Readings()) {
+    Console.WriteLine(reading.Value);
+}`}
 />
 
 ### StreamProducer
@@ -275,6 +313,15 @@ StreamSubscription<Event> sub2 =
 sub1.close();
 sub2.close();
 bus.close();`}
+  csharp={`using EventBus bus = new EventBus();
+
+await foreach (Event ev in bus.Events()) {
+    Console.WriteLine("Sub 1: " + ev);
+}
+
+await foreach (Event ev in bus.Events()) {
+    Console.WriteLine("Sub 2: " + ev);
+}`}
 />
 
 ## Buffer Capacity
@@ -358,6 +405,16 @@ StreamSubscription<Reading> sub =
     sensor.readings();
 sub.popBatch(100);
 sub.close();`}
+  csharp={`using var cts = new CancellationTokenSource();
+
+await foreach (Reading reading in
+    sensor.Readings(cts.Token)) {
+    if (reading.Value > threshold) {
+        break;
+    }
+}
+
+cts.Cancel();`}
 />
 
 ## How It Works

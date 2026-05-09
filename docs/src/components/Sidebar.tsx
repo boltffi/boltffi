@@ -155,6 +155,7 @@ const sections: Section[] = [
       { id: "apple-packaging", label: "Apple" },
       { id: "android-packaging", label: "Android" },
       { id: "java-packaging", label: "Java" },
+      { id: "c-sharp-generation", label: "C#" },
       { id: "wasm-packaging", label: "WASM" },
     ]
   },
@@ -168,6 +169,7 @@ const sections: Section[] = [
       { id: "swiftpm-layouts", label: "SwiftPM Layouts" },
       { id: "android-configuration", label: "Android" },
       { id: "java-configuration", label: "Java" },
+      { id: "c-sharp-configuration", label: "C#" },
       { id: "wasm-configuration", label: "WASM" },
     ]
   },

@@ -5,6 +5,7 @@ import 'prismjs/components/prism-swift';
 import 'prismjs/components/prism-kotlin';
 import 'prismjs/components/prism-typescript';
 import 'prismjs/components/prism-javascript';
+import 'prismjs/components/prism-csharp';
 import 'prismjs/components/prism-toml';
 import 'prismjs/components/prism-bash';
 
@@ -18,6 +19,7 @@ const { code, lang = 'text' } = Astro.props;
 const langMap: Record<string, string> = {
   shell: 'bash',
   sh: 'bash',
+  cs: 'csharp',
   text: 'markup',
 };
 

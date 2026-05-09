@@ -1,6 +1,6 @@
 ---
 title: "Configuration"
-description: "Configure boltffi.toml package names, target outputs, and platform packaging behavior for generated Swift, Kotlin, Java, TypeScript, and Python bindings."
+description: "Configure boltffi.toml package names, target outputs, and platform packaging behavior for generated Swift, Kotlin, Java, C#, TypeScript, and Python bindings."
 ---
 
 # Configuration
@@ -522,6 +522,28 @@ The default output is `dist/java/android`. The `min_sdk` sets the minimum Androi
 
 Both JVM and Android targets can be enabled simultaneously. They share the same `package`, `module_name`, and `min_version` settings but produce separate output.
 
+<h2 id="c-sharp-configuration">C# Configuration</h2>
+
+The `[targets.csharp]` section controls C# source generation.
+
+### Output Directory
+
+Generated C# files go into `dist/csharp` by default:
+
+```toml
+[targets.csharp]
+enabled = true
+output = "dist/csharp"
+```
+
+Run generation with:
+
+```bash
+boltffi generate csharp
+```
+
+The output contains one `.cs` file for the top-level module/runtime helpers and additional `.cs` files for generated records, enums, classes, callbacks, and stream-owning types. Include those files in your .NET project and ship the matching Rust `cdylib` next to your application or in a runtime-discoverable native library path.
+
 ## WASM Configuration
 
 The `[targets.wasm]` section controls WebAssembly builds and npm package generation.
@@ -728,6 +750,10 @@ min_version = 8
 
 [targets.java.jvm]
 enabled = true
+
+[targets.csharp]
+enabled = true
+output = "dist/csharp"
 
 [targets.wasm]
 output = "dist/wasm"

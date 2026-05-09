@@ -23,7 +23,7 @@ version = "0.1.0"
 edition = "2021"
 
 [lib]
-crate-type = ["staticlib"]
+crate-type = ["staticlib", "cdylib"]
 
 [dependencies]
 boltffi = "0.1"
@@ -83,6 +83,10 @@ boltffi generate swift
 
 # Package as XCFramework
 boltffi pack ios
+
+# Or generate C# sources for the host library
+cargo build
+boltffi generate csharp
 ```
 
 ## 6. Use from Swift
@@ -97,4 +101,18 @@ print(message)  // "Hello, World!"
 let p1 = Point(x: 0, y: 0)
 let p2 = Point(x: 3, y: 4)
 print("Distance: \(distance(a: p1, b: p2))")  // "Distance: 5.0"
+```
+
+## 7. Use from C#
+
+```csharp
+int sum = MyLib.Add(2, 3);
+Console.WriteLine($"2 + 3 = {sum}");
+
+string message = MyLib.Greet("World");
+Console.WriteLine(message);
+
+Point p1 = new Point(0.0, 0.0);
+Point p2 = new Point(3.0, 4.0);
+Console.WriteLine(MyLib.Distance(p1, p2));
 ```

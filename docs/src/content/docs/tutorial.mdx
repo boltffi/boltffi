@@ -1,11 +1,11 @@
 ---
 title: "Tutorial"
-description: "Build a complete counter library with BoltFFI from Rust code to Swift and Kotlin usage, including exports, records, classes, and packaging."
+description: "Build a complete counter library with BoltFFI from Rust code to Swift, Kotlin, and C# usage, including exports, records, classes, and packaging."
 ---
 
 # Tutorial
 
-This tutorial walks through building a counter library in Rust and using it from Swift and Kotlin.
+This tutorial walks through building a counter library in Rust and using it from Swift, Kotlin, and C#.
 
 ## Create the Rust library
 
@@ -23,7 +23,7 @@ version = "0.1.0"
 edition = "2021"
 
 [lib]
-crate-type = ["staticlib"]
+crate-type = ["staticlib", "cdylib"]
 
 [dependencies]
 boltffi = "0.1"
@@ -83,7 +83,14 @@ For Android (Kotlin):
 boltffi pack android
 ```
 
-This produces a framework you can import directly.
+For C#:
+
+```bash
+cargo build
+boltffi generate csharp
+```
+
+Apple and Android produce packages you can import directly. C# currently generates source files that you include in your .NET project alongside the host Rust `cdylib`.
 
 ## Use from Swift
 
@@ -113,6 +120,19 @@ println(counter.get())        // 2
 println(counter.decrement())  // 1
 counter.reset()
 println(counter.get())        // 0
+```
+
+## Use from C#
+
+```csharp
+using Counter counter = new Counter(0);
+
+Console.WriteLine(counter.Increment());  // 1
+Console.WriteLine(counter.Increment());  // 2
+Console.WriteLine(counter.Get());        // 2
+Console.WriteLine(counter.Decrement());  // 1
+counter.Reset();
+Console.WriteLine(counter.Get());        // 0
 ```
 
 ## Adding error handling
@@ -178,6 +198,17 @@ try {
     counter.decrement()  // throws CounterError
 } catch (e: CounterError) {
     println(e.message)
+}
+```
+
+In C#:
+
+```csharp
+try {
+    using Counter counter = new Counter(0, 0);
+    counter.Decrement();  // throws CounterErrorException
+} catch (CounterErrorException e) {
+    Console.WriteLine(e.Error.Message);
 }
 ```
 
@@ -248,6 +279,19 @@ counter.increment()
 counter.save()
 val loaded = counter.load()
 println(loaded)  // 2
+```
+
+In C#, they return `Task`:
+
+```csharp
+using PersistentCounter counter =
+    new PersistentCounter("/tmp/counter.txt");
+counter.Increment();
+counter.Increment();
+
+await counter.Save();
+long loaded = await counter.Load();
+Console.WriteLine(loaded);  // 2
 ```
 
 ## Next steps

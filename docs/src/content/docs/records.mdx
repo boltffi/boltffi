@@ -106,6 +106,24 @@ public final class Rect {
 Rect r = new Rect(0.0, 0.0, 100.0, 100.0);
 Point p = new Point(50.0, 50.0);
 boolean inside = r.contains(p);`}
+  csharp={`public readonly record struct Point(
+    double X,
+    double Y
+);
+
+public readonly record struct Rect(
+    double X,
+    double Y,
+    double Width,
+    double Height
+)
+{
+    public bool Contains(Point point)
+}
+
+Rect r = new Rect(0.0, 0.0, 100.0, 100.0);
+Point p = new Point(50.0, 50.0);
+bool inside = r.Contains(p);`}
   typescript={`interface Point {
     readonly x: number
     readonly y: number
@@ -211,6 +229,22 @@ public final class SearchResult {
 static SearchResult searchUsers(String query)
 
 SearchResult result = searchUsers("alice");`}
+  csharp={`public readonly record struct User(
+    ulong Id,
+    string Name,
+    string Email
+);
+
+public readonly record struct SearchResult(
+    string Query,
+    User[] Matches,
+    ulong TotalCount
+);
+
+static SearchResult SearchUsers(string query)
+
+SearchResult result =
+    MyLib.SearchUsers("alice");`}
   typescript={`interface User {
     readonly id: bigint
     readonly name: string
@@ -327,6 +361,24 @@ Address addr = new Address(
     "123 Main", "Seattle", "98101");
 Company co = new Company("Acme", addr, 50);
 String summary = companySummary(co);`}
+  csharp={`public readonly record struct Address(
+    string Street,
+    string City,
+    string Zip
+);
+
+public readonly record struct Company(
+    string Name,
+    Address Address,
+    uint EmployeeCount
+);
+
+static string CompanySummary(Company c)
+
+Address addr = new Address(
+    "123 Main", "Seattle", "98101");
+Company co = new Company("Acme", addr, 50);
+string summary = MyLib.CompanySummary(co);`}
   typescript={`interface Address {
     readonly street: string
     readonly city: string
@@ -424,6 +476,21 @@ Profile p = new Profile(
     java.util.Optional.empty(),
     1000L);
 String label = displayLabel(p);`}
+  csharp={`public readonly record struct Profile(
+    string Username,
+    string? DisplayName,
+    string? Bio,
+    ulong FollowerCount
+);
+
+static string DisplayLabel(Profile p)
+
+Profile p = new Profile(
+    "alice",
+    "Alice Smith",
+    null,
+    1000);
+string label = MyLib.DisplayLabel(p);`}
   typescript={`interface Profile {
     readonly username: string
     readonly displayName: string | null
@@ -498,6 +565,14 @@ public final class Config {
 // host="localhost"
 Config cfg = new Config(
     "myapp", 3, true, "localhost");`}
+  csharp={`public readonly record struct Config(
+    string Name,
+    int Retries = 3,
+    bool Enabled = true,
+    string Host = "localhost"
+);
+
+Config cfg = new Config("myapp");`}
   typescript={`interface Config {
     readonly name: string
     readonly retries: number      // default: 3
@@ -580,6 +655,17 @@ val label = statusLabel(Status.Active)`}
 static String statusLabel(Status s)
 
 String label = statusLabel(Status.ACTIVE);`}
+  csharp={`public enum Status
+{
+    Pending,
+    Active,
+    Completed,
+    Failed,
+}
+
+static string StatusLabel(Status s)
+
+string label = MyLib.StatusLabel(Status.Active);`}
   typescript={`enum Status {
     Pending = 0,
     Active = 1,
@@ -682,6 +768,21 @@ static String describeState(LoadState s)
 
 LoadState s = new LoadState.Loading(0.5);
 String desc = describeState(s);`}
+  csharp={`public abstract record LoadState
+{
+    public sealed record Idle : LoadState;
+    public sealed record Loading(
+        double Progress) : LoadState;
+    public sealed record Loaded(
+        string Data) : LoadState;
+    public sealed record Error(
+        string Message, int Code) : LoadState;
+}
+
+static string DescribeState(LoadState s)
+
+LoadState s = new LoadState.Loading(0.5);
+string desc = MyLib.DescribeState(s);`}
   typescript={`type LoadState =
     | { readonly tag: "Idle" }
     | { readonly tag: "Loading"; readonly progress: number }
@@ -902,7 +1003,7 @@ const sum = Point.add(p, q)`}
 
 ### Mutating methods
 
-Functions that take `&mut self` modify the value in place. In Swift this generates a `mutating` method that reassigns `self`. In Kotlin, Java, and TypeScript the method returns a new copy with the updated values. The same value-copy cost from instance methods applies here since the record is copied both in and out.
+Functions that take `&mut self` modify the value in place. In Swift this generates a `mutating` method that reassigns `self`. In Kotlin, Java, C#, and TypeScript the method returns a new copy with the updated values. The same value-copy cost from instance methods applies here since the record is copied both in and out.
 
 <CodeComparison
   title=""

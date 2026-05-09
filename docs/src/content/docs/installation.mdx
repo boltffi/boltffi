@@ -11,6 +11,7 @@ description: "Install the BoltFFI CLI and crate dependencies, configure Cargo ou
 - **For iOS**: Xcode 15+ with command line tools
 - **For Android**: Android Studio with NDK installed
 - **For Java**: JDK 8+ with `javac` and a C compiler for the JNI bridge
+- **For C#**: .NET SDK 10.0+ for the current C# demo and generated binding tests
 
 ## Install the CLI
 
@@ -38,7 +39,12 @@ boltffi = "0.1"
 boltffi = "0.1"
 ```
 
-Add `cdylib` only if you also need a standalone Rust shared library outside BoltFFI packaging.
+Add `cdylib` if you also need a standalone Rust shared library outside BoltFFI packaging, including the current C# generate-and-integrate flow:
+
+```toml
+[lib]
+crate-type = ["staticlib", "cdylib"]
+```
 
 ## Create build.rs
 

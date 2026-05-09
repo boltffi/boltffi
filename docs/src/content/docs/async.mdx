@@ -1,6 +1,6 @@
 ---
 title: "Async"
-description: "Export async Rust functions and methods with BoltFFI and bridge futures to native async APIs in Swift, Kotlin, Java, and TypeScript."
+description: "Export async Rust functions and methods with BoltFFI and bridge futures to native async APIs in Swift, Kotlin, Java, C#, and TypeScript."
 ---
 
 import CodeComparison from "../../components/CodeComparisonWrapper.astro";
@@ -36,6 +36,14 @@ static CompletableFuture<User> fetchUser(
     int id)
 
 User user = fetchUser(42).join();`}
+  csharp={`// Generated
+static Task<User> FetchUser(int id)
+static Task<User> FetchUser(
+    int id,
+    CancellationToken cancellationToken)
+
+// Usage
+User user = await MyLib.FetchUser(42);`}
   typescript={`// Generated
 async function fetchUser(id: number): Promise<User>
 
@@ -80,6 +88,15 @@ static CompletableFuture<Config> loadConfig(
 
 Config config =
     loadConfig("settings.json").join();`}
+  csharp={`// Generated
+static Task<Config> LoadConfig(string path)
+static Task<Config> LoadConfig(
+    string path,
+    CancellationToken cancellationToken)
+
+// Usage
+Config config =
+    await MyLib.LoadConfig("settings.json");`}
   typescript={`// Generated
 async function loadConfig(path: string): Promise<Config>
 
@@ -147,6 +164,18 @@ public CompletableFuture<java.util.List<Row>>
 db.query("SELECT * FROM users")
     .thenAccept(rows ->
         System.out.println(rows.size()));`}
+  csharp={`// Generated
+public sealed class Database : IDisposable
+{
+    public static Database Connect(string url)
+    public Task<Row[]> Query(string sql)
+}
+
+// Usage
+using Database db =
+    Database.Connect("postgres://...");
+Row[] rows =
+    await db.Query("SELECT * FROM users");`}
   typescript={`// Generated
 declare class Database {
     private constructor()
@@ -209,6 +238,15 @@ fetchUser(42)
         System.out.println("Failed: " + e);
         return null;
     });`}
+  csharp={`// Generated
+static Task<User> FetchUser(int id)
+
+// Usage
+try {
+    User user = await MyLib.FetchUser(42);
+} catch (DbErrorException e) {
+    Console.WriteLine("Failed: " + e.Error);
+}`}
   typescript={`// Generated
 async function fetchUser(id: number): Promise<User>  // throws
 
@@ -263,6 +301,16 @@ CompletableFuture<SyncResult> future =
     syncAll();
 // later
 future.cancel(true);`}
+  csharp={`// Generated
+static Task<SyncResult> SyncAll()
+static Task<SyncResult> SyncAll(
+    CancellationToken cancellationToken)
+
+// Usage
+using var cts = new CancellationTokenSource();
+Task<SyncResult> task = MyLib.SyncAll(cts.Token);
+// later
+cts.Cancel();`}
   typescript={`// Generated
 async function syncAll(): Promise<SyncResult>
 

@@ -1,6 +1,6 @@
 ---
 title: "Errors"
-description: "Map Rust Result<T, E> into native error handling in Swift, Kotlin, Java, and TypeScript with BoltFFI using string errors and structured error types."
+description: "Map Rust Result<T, E> into native error handling in Swift, Kotlin, Java, C#, and TypeScript with BoltFFI using string errors and structured error types."
 ---
 
 import CodeComparison from "../../components/CodeComparisonWrapper.astro";
@@ -8,7 +8,7 @@ import TypeTable from "../../components/TypeTableWrapper.astro";
 
 # Errors
 
-Rust represents fallible operations with `Result<T, E>`. Target languages have different conventions: Swift uses `throws`, Kotlin and Java use exceptions, and TypeScript uses try/catch. BoltFFI converts `Result` return types into the native error handling mechanism of each platform. When a function returns `Err`, it becomes a thrown error or exception in the target language.
+Rust represents fallible operations with `Result<T, E>`. Target languages have different conventions: Swift uses `throws`, Kotlin, Java, and C# use exceptions, and TypeScript uses try/catch. BoltFFI converts `Result` return types into the native error handling mechanism of each platform. When a function returns `Err`, it becomes a thrown error or exception in the target language.
 
 ## Supported Error Types
 
@@ -18,11 +18,24 @@ The error type in `Result<T, E>` can be:
 - A struct marked with `#[error]` - becomes a structured error type
 - An enum marked with `#[error]` - becomes an error enum
 
-The `#[error]` attribute marks types as error types. In Swift, these types conform to `Error`. In Kotlin, they extend `Exception`. In Java, they become enums or classes with a nested `Exception` class that extends `RuntimeException`.
+The `#[error]` attribute marks types as error types. Generated bindings expose them through each target's native error model:
+
+- Swift: error types conform to `Error`
+- Kotlin: error types extend `Exception`
+- Java: error enums and classes include a nested `Exception` type that extends `RuntimeException`
+- C#: generated methods throw `BoltException` for string errors or typed `*Exception` wrappers that expose the original error value
 
 ## String Errors
 
-String errors are wrapped in `FfiError` (Swift), `FfiException` (Kotlin), `RuntimeException` (Java), or `FfiException` (TypeScript). Custom error types are thrown directly since they conform to `Error` (Swift), extend `Exception` (Kotlin), extend `RuntimeException` via a nested `Exception` class (Java), or extend `Error` (TypeScript).
+String errors use generic wrapper types:
+
+- Swift: `FfiError`
+- Kotlin: `FfiException`
+- Java: `RuntimeException`
+- C#: `BoltException`
+- TypeScript: `FfiException`
+
+Custom error types are thrown directly or wrapped as the native target requires.
 
 The simplest approach is returning `Result<T, String>` or `Result<T, &'static str>`. The error message is captured in a generic error type.
 
@@ -64,6 +77,14 @@ try {
     int n = parseInt("42");
 } catch (RuntimeException e) {
     System.out.println(e.getMessage());
+}`}
+  csharp={`// String errors become BoltException
+static int ParseInt(string s)
+
+try {
+    int n = MyLib.ParseInt("42");
+} catch (BoltException e) {
+    Console.WriteLine(e.Message);
 }`}
   typescript={`class FfiException extends Error {
     readonly message: string
@@ -159,6 +180,27 @@ try {
     System.out.println(
         err.line() + ":" + err.column()
         + ": " + err.message());
+}`}
+  csharp={`public readonly record struct ParseError(
+    uint Line,
+    uint Column,
+    string Message
+);
+
+public sealed class ParseErrorException : Exception
+{
+    public ParseError Error { get; }
+}
+
+static Config ParseConfig(string input)
+
+try {
+    Config config = MyLib.ParseConfig(src);
+} catch (ParseErrorException e) {
+    ParseError err = e.Error;
+    Console.WriteLine(
+        err.Line + ":" + err.Column + ": "
+        + err.Message);
 }`}
   typescript={`interface ParseError {
     readonly line: number
@@ -268,6 +310,35 @@ try {
             break;
         case ACCOUNT_LOCKED:
             System.out.println("Account is locked");
+            break;
+    }
+}`}
+  csharp={`public enum AuthError
+{
+    InvalidCredentials,
+    SessionExpired,
+    AccountLocked,
+}
+
+public sealed class AuthErrorException : Exception
+{
+    public AuthError Error { get; }
+}
+
+static Session Login(string user, string pass)
+
+try {
+    Session session = MyLib.Login(u, p);
+} catch (AuthErrorException e) {
+    switch (e.Error) {
+        case AuthError.InvalidCredentials:
+            Console.WriteLine("Wrong credentials");
+            break;
+        case AuthError.SessionExpired:
+            Console.WriteLine("Please log in again");
+            break;
+        case AuthError.AccountLocked:
+            Console.WriteLine("Account is locked");
             break;
     }
 }`}
@@ -406,6 +477,30 @@ try {
     else if (err instanceof ApiError.RateLimited r)
         System.out.println(r.retryAfter());
 }`}
+  csharp={`public abstract record ApiError
+{
+    public sealed record Network(
+        string Message) : ApiError;
+    public sealed record NotFound : ApiError;
+    public sealed record RateLimited(
+        uint RetryAfter) : ApiError;
+}
+
+public sealed class ApiErrorException : Exception
+{
+    public ApiError Error { get; }
+}
+
+static User FetchUser(ulong id)
+
+try {
+    User user = MyLib.FetchUser(42);
+} catch (ApiErrorException e) {
+    if (e.Error is ApiError.Network n)
+        Console.WriteLine(n.Message);
+    else if (e.Error is ApiError.RateLimited r)
+        Console.WriteLine(r.RetryAfter);
+}`}
   typescript={`type ApiError =
     | { readonly tag: "Network";
         readonly message: string }
@@ -482,6 +577,14 @@ try {
 } catch (FetchError.Exception e) {
     handle(e);
 }`}
+  csharp={`static Task<byte[]> FetchData(string url)
+
+try {
+    byte[] data = await MyLib.FetchData(endpoint);
+    Process(data);
+} catch (FetchErrorException e) {
+    Handle(e);
+}`}
   typescript={`async function fetchData(
     url: string): Promise<Uint8Array>
 
@@ -494,5 +597,3 @@ try {
     }
 }`}
 />
-
-

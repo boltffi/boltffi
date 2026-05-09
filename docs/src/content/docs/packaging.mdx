@@ -5,17 +5,23 @@ description: "Understand the BoltFFI packaging pipeline for compiling Rust artif
 
 # Packaging
 
-Packaging takes your Rust library and produces artifacts ready for each platform. A single command handles everything: compiling for each target architecture, generating bindings, and bundling the results into the format each platform expects.
+Packaging takes your Rust library and produces artifacts ready for each packaged platform. For packaged targets, a single command handles everything: compiling for each target architecture, generating bindings, and bundling the results into the format each platform expects. C# uses a source-generation flow described below.
+
+`pack` and `generate` mean different things in the CLI. `pack` is for targets where BoltFFI owns the
+platform package layout, such as an Apple XCFramework/SwiftPM package, Android jniLibs, Java JNI
+output, WASM npm package, or Python wheel. `generate csharp` writes the C# source bindings only;
+you build the host Rust `cdylib` and include both the `.cs` files and native library in your .NET
+project.
 
 ## Overview
 
 The packaging process has three stages:
 
 1. **Build** - Compile your Rust library for each target architecture (arm64, x86_64, etc.)
-2. **Generate** - Create Swift/Kotlin bindings and C headers from your exported API
+2. **Generate** - Create Swift/Kotlin/Java/C#/TypeScript/Python bindings and C headers from your exported API
 3. **Package** - Bundle everything into platform-specific formats
 
-For Apple, this produces an xcframework and SwiftPM package. For Android, this produces jniLibs and Kotlin sources. For Java (JVM), this produces a JNI shared library and Java sources. For WASM, this produces an npm package with TypeScript bindings. For Python, this produces a generated source package plus one or more wheels for the current host.
+For Apple, this produces an xcframework and SwiftPM package. For Android, this produces jniLibs and Kotlin sources. For Java (JVM), this produces a JNI shared library and Java sources. For C#, the current flow generates C# sources that P/Invoke into a host `cdylib`. For WASM, this produces an npm package with TypeScript bindings. For Python, this produces a generated source package plus one or more wheels for the current host.
 
 ## Getting Started
 
@@ -108,6 +114,10 @@ dist/
 │   │   ├── jni_glue.c
 │   │   └── mylib.h
 │   └── libmylib_jni.dylib (or .so)
+├── csharp/
+│   ├── MyLib.cs
+│   ├── Point.cs
+│   └── ... (records, enums, classes, callbacks, streams)
 ├── wasm/
 │   └── pkg/
 │       ├── mylib_bg.wasm
@@ -155,6 +165,12 @@ boltffi build java --release
 boltffi generate java
 boltffi generate header
 boltffi pack java --release --no-build
+```
+
+**C#:**
+```bash
+cargo build --release
+boltffi generate csharp
 ```
 
 **WASM:**
@@ -469,6 +485,69 @@ tasks.test {
     jvmArgs("-Djava.library.path=libs/native")
 }
 ```
+
+<h2 id="c-sharp-generation">C# Generation</h2>
+
+C# uses a source-generation flow because BoltFFI does not create a .NET project or NuGet package.
+Build your Rust library as a host dynamic library and generate C# sources:
+
+```bash
+cargo build --release
+boltffi generate csharp
+```
+
+Your Rust crate must include `cdylib` in `crate-type`:
+
+```toml
+[lib]
+crate-type = ["staticlib", "cdylib"]
+```
+
+### Configuration
+
+Enable C# in `boltffi.toml`:
+
+```toml
+[targets.csharp]
+enabled = true
+output = "dist/csharp"
+```
+
+### Output Structure
+
+```
+dist/csharp/
+├── MyLib.cs            # Functions, native declarations, and runtime helpers
+├── Point.cs            # Generated records
+├── Status.cs           # Generated enums
+└── Sensor.cs           # Generated classes and stream methods
+```
+
+### Using in a .NET Project
+
+Include the generated `.cs` files in your project, allow unsafe blocks, and copy the matching native library next to your application output.
+
+```xml
+<PropertyGroup>
+  <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+</PropertyGroup>
+
+<ItemGroup>
+  <Compile Include="dist/csharp/*.cs" LinkBase="Generated/BoltFFI" />
+</ItemGroup>
+```
+
+Then call the generated bindings from C#:
+
+```csharp
+using MyLib;
+
+Point a = new Point(0.0, 0.0);
+Point b = new Point(3.0, 4.0);
+double distance = MyLib.Distance(a, b);
+```
+
+Classes implement `IDisposable`; streams return `IAsyncEnumerable<T>` and can be consumed with `await foreach`.
 
 ## WASM Packaging
 

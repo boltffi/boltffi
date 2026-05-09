@@ -1,6 +1,6 @@
 ---
 title: "Types"
-description: "Reference how Rust types map to Swift, Kotlin, Java, and TypeScript in BoltFFI, including supported primitives, collections, and performance notes."
+description: "Reference how Rust types map to Swift, Kotlin, Java, C#, and TypeScript in BoltFFI, including supported primitives, collections, and performance notes."
 ---
 
 import CodeComparison from "../../components/CodeComparisonWrapper.astro";
@@ -17,24 +17,24 @@ When you design a Rust API for BoltFFI, you need to know what happens to your ty
 <TypeTable
   title="Integers"
   mappings={[
-    { rust: "i8", swift: "Int8", kotlin: "Byte", java: "byte", typescript: "number" },
-    { rust: "i16", swift: "Int16", kotlin: "Short", java: "short", typescript: "number" },
-    { rust: "i32", swift: "Int32", kotlin: "Int", java: "int", typescript: "number" },
-    { rust: "i64", swift: "Int64", kotlin: "Long", java: "long", typescript: "bigint" },
-    { rust: "u8", swift: "UInt8", kotlin: "UByte", java: "byte", typescript: "number" },
-    { rust: "u16", swift: "UInt16", kotlin: "UShort", java: "short", typescript: "number" },
-    { rust: "u32", swift: "UInt32", kotlin: "UInt", java: "int", typescript: "number" },
-    { rust: "u64", swift: "UInt64", kotlin: "ULong", java: "long", typescript: "bigint" },
+    { rust: "i8", swift: "Int8", kotlin: "Byte", java: "byte", csharp: "sbyte", typescript: "number" },
+    { rust: "i16", swift: "Int16", kotlin: "Short", java: "short", csharp: "short", typescript: "number" },
+    { rust: "i32", swift: "Int32", kotlin: "Int", java: "int", csharp: "int", typescript: "number" },
+    { rust: "i64", swift: "Int64", kotlin: "Long", java: "long", csharp: "long", typescript: "bigint" },
+    { rust: "u8", swift: "UInt8", kotlin: "UByte", java: "byte", csharp: "byte", typescript: "number" },
+    { rust: "u16", swift: "UInt16", kotlin: "UShort", java: "short", csharp: "ushort", typescript: "number" },
+    { rust: "u32", swift: "UInt32", kotlin: "UInt", java: "int", csharp: "uint", typescript: "number" },
+    { rust: "u64", swift: "UInt64", kotlin: "ULong", java: "long", csharp: "ulong", typescript: "bigint" },
   ]}
 />
 
 <TypeTable
   title="Floats & Primitives"
   mappings={[
-    { rust: "f32", swift: "Float", kotlin: "Float", java: "float", typescript: "number" },
-    { rust: "f64", swift: "Double", kotlin: "Double", java: "double", typescript: "number" },
-    { rust: "bool", swift: "Bool", kotlin: "Boolean", java: "boolean", typescript: "boolean" },
-    { rust: "String", swift: "String", kotlin: "String", java: "String", typescript: "string" },
+    { rust: "f32", swift: "Float", kotlin: "Float", java: "float", csharp: "float", typescript: "number" },
+    { rust: "f64", swift: "Double", kotlin: "Double", java: "double", csharp: "double", typescript: "number" },
+    { rust: "bool", swift: "Bool", kotlin: "Boolean", java: "boolean", csharp: "bool", typescript: "boolean" },
+    { rust: "String", swift: "String", kotlin: "String", java: "String", csharp: "string", typescript: "string" },
   ]}
 />
 
@@ -43,9 +43,9 @@ When you design a Rust API for BoltFFI, you need to know what happens to your ty
 <TypeTable
   title=""
   mappings={[
-    { rust: "Vec<T>", swift: "[T]", kotlin: "List<T>", java: "List<T>", typescript: "T[]" },
-    { rust: "Option<T>", swift: "T?", kotlin: "T?", java: "T (nullable)", typescript: "T | null" },
-    { rust: "Result<T, E>", swift: "throws", kotlin: "throws", java: "throws", typescript: "throws" },
+    { rust: "Vec<T>", swift: "[T]", kotlin: "List<T>", java: "List<T>", csharp: "T[]", typescript: "T[]" },
+    { rust: "Option<T>", swift: "T?", kotlin: "T?", java: "T (nullable)", csharp: "T?", typescript: "T | null" },
+    { rust: "Result<T, E>", swift: "throws", kotlin: "throws", java: "throws", csharp: "throws", typescript: "throws" },
   ]}
 />
 
@@ -54,11 +54,11 @@ When you design a Rust API for BoltFFI, you need to know what happens to your ty
 <TypeTable
   title=""
   mappings={[
-    { rust: "Duration", swift: "TimeInterval", kotlin: "Duration", java: "Duration", typescript: "Duration" },
-    { rust: "SystemTime", swift: "Date", kotlin: "Instant", java: "Instant", typescript: "Date" },
-    { rust: "Uuid", swift: "UUID", kotlin: "UUID", java: "UUID", typescript: "string" },
-    { rust: "Url", swift: "URL", kotlin: "URI", java: "URI", typescript: "string" },
-    { rust: "Vec<u8>", swift: "Data", kotlin: "ByteArray", java: "byte[]", typescript: "Uint8Array" },
+    { rust: "Duration", swift: "TimeInterval", kotlin: "Duration", java: "Duration", csharp: "long", typescript: "Duration" },
+    { rust: "SystemTime", swift: "Date", kotlin: "Instant", java: "Instant", csharp: "long", typescript: "Date" },
+    { rust: "Uuid", swift: "UUID", kotlin: "UUID", java: "UUID", csharp: "string", typescript: "string" },
+    { rust: "Url", swift: "URL", kotlin: "URI", java: "URI", csharp: "string", typescript: "string" },
+    { rust: "Vec<u8>", swift: "Data", kotlin: "ByteArray", java: "byte[]", csharp: "byte[]", typescript: "Uint8Array" },
   ]}
 />
 
@@ -113,6 +113,13 @@ static byte byteAt(byte[] data, long index)
 int sum = add(5, 3);
 long ts = timestampMs();
 byte b = byteAt(new byte[]{0x48, 0x69}, 0L);`}
+  csharp={`static int Add(int a, int b)
+static long TimestampMs()
+static byte ByteAt(byte[] data, nuint index)
+
+int sum = MyLib.Add(5, 3);
+long ts = MyLib.TimestampMs();
+byte b = MyLib.ByteAt(new byte[] { 0x48, 0x69 }, 0);`}
   typescript={`function add(a: number, b: number): number
 function timestampMs(): bigint
 function byteAt(data: Uint8Array, index: number): number
@@ -150,6 +157,11 @@ static float lerp(float a, float b, float t)
 
 double area = circleArea(5.0);
 float mid = lerp(0.0f, 10.0f, 0.5f);`}
+  csharp={`static double CircleArea(double radius)
+static float Lerp(float a, float b, float t)
+
+double area = MyLib.CircleArea(5.0);
+float mid = MyLib.Lerp(0.0f, 10.0f, 0.5f);`}
   typescript={`function circleArea(radius: number): number
 function lerp(a: number, b: number, t: number): number
 
@@ -205,6 +217,13 @@ static String firstWord(String s)
 String msg = greet("World");
 String ha = repeat("ha", 3L);  // "hahaha"
 String word = firstWord("hello world");`}
+  csharp={`static string Greet(string name)
+static string Repeat(string s, nuint n)
+static string FirstWord(string s)
+
+string msg = MyLib.Greet("World");
+string ha = MyLib.Repeat("ha", 3);  // "hahaha"
+string word = MyLib.FirstWord("hello world");`}
   typescript={`function greet(name: string): string
 function repeat(s: string, n: number): string
 function firstWord(s: string): string
@@ -293,6 +312,12 @@ static java.util.Optional<Integer> parseInt(String s)
 String user = findUser(42L);  // "alice"
 Optional<Integer> num = parseInt("123"); // 123
 Optional<Integer> bad = parseInt("abc"); // empty`}
+  csharp={`static string? FindUser(ulong id)
+static int? ParseInt(string s)
+
+string? user = MyLib.FindUser(42UL);  // "alice"
+int? num = MyLib.ParseInt("123");     // 123
+int? bad = MyLib.ParseInt("abc");     // null`}
   typescript={`function findUser(id: bigint): string | null
 function parseInt(s: string): number | null
 
@@ -372,6 +397,20 @@ try {
 } catch (RuntimeException e) {
     System.out.println(e.getMessage());
 }`}
+  csharp={`public enum ParseError
+{
+    Empty = 0,
+    InvalidFormat = 1,
+    OutOfRange = 2,
+}
+
+static ushort ParsePort(string s) // throws
+
+try {
+    ushort port = MyLib.ParsePort("8080");
+} catch (ParseErrorException e) {
+    Console.WriteLine(e.Error);
+}`}
   typescript={`enum ParseError {
     Empty = 0,
     InvalidFormat = 1,
@@ -447,6 +486,13 @@ static int[] filterPositive(int[] values)
 int total = sum(new int[]{1, 2, 3, 4, 5});
 int[] nums = range(0, 10);
 int[] pos = filterPositive(new int[]{-1, 2, -3, 4});`}
+  csharp={`static int Sum(int[] values)
+static int[] Range(int start, int end)
+static int[] FilterPositive(int[] values)
+
+int total = MyLib.Sum(new[] { 1, 2, 3, 4, 5 });
+int[] nums = MyLib.Range(0, 10);
+int[] pos = MyLib.FilterPositive(new[] { -1, 2, -3, 4 });`}
   typescript={`function sum(values: number[]): number
 function range(start: number, end: number): number[]
 function filterPositive(values: number[]): number[]
@@ -496,6 +542,14 @@ List<int[]> m = List.of(
     new int[]{4, 5, 6}
 );
 List<int[]> t = transpose(m);
+// [[1, 4], [2, 5], [3, 6]]`}
+  csharp={`static int[][] Transpose(int[][] matrix)
+
+int[][] m = {
+    new[] { 1, 2, 3 },
+    new[] { 4, 5, 6 },
+};
+int[][] t = MyLib.Transpose(m);
 // [[1, 4], [2, 5], [3, 6]]`}
   typescript={`function transpose(matrix: number[][]): number[][]
 
@@ -548,17 +602,17 @@ BoltFFI recognizes certain standard library and common crate types and maps them
 <TypeTable
   title="Built-in Type Mappings"
   mappings={[
-    { rust: "std::time::Duration", swift: "TimeInterval", kotlin: "Duration", java: "Duration", typescript: "Duration" },
-    { rust: "std::time::SystemTime", swift: "Date", kotlin: "Instant", java: "Instant", typescript: "Date" },
-    { rust: "uuid::Uuid", swift: "UUID", kotlin: "UUID", java: "UUID", typescript: "string" },
-    { rust: "url::Url", swift: "URL", kotlin: "URI", java: "URI", typescript: "string" },
-    { rust: "Vec<u8>", swift: "Data", kotlin: "ByteArray", java: "byte[]", typescript: "Uint8Array" },
+    { rust: "std::time::Duration", swift: "TimeInterval", kotlin: "Duration", java: "Duration", csharp: "long", typescript: "Duration" },
+    { rust: "std::time::SystemTime", swift: "Date", kotlin: "Instant", java: "Instant", csharp: "long", typescript: "Date" },
+    { rust: "uuid::Uuid", swift: "UUID", kotlin: "UUID", java: "UUID", csharp: "string", typescript: "string" },
+    { rust: "url::Url", swift: "URL", kotlin: "URI", java: "URI", csharp: "string", typescript: "string" },
+    { rust: "Vec<u8>", swift: "Data", kotlin: "ByteArray", java: "byte[]", csharp: "byte[]", typescript: "Uint8Array" },
   ]}
 />
 
 ### Duration
 
-`std::time::Duration` represents a span of time. BoltFFI encodes it as seconds plus nanoseconds (12 bytes total). Swift uses `TimeInterval` (a `Double` of seconds), Kotlin uses `java.time.Duration`, and TypeScript uses a `{ secs: bigint, nanos: number }` object.
+`std::time::Duration` represents a span of time. BoltFFI encodes it as seconds plus nanoseconds (12 bytes total). Swift uses `TimeInterval` (a `Double` of seconds), Kotlin and Java use `java.time.Duration`, C# uses a `long`, and TypeScript uses a `{ secs: bigint, nanos: number }` object.
 
 <CodeComparison
   title=""
@@ -588,6 +642,11 @@ static Duration doubleDuration(Duration d)
 
 Duration half = sleepDuration();
 Duration full = doubleDuration(half);`}
+  csharp={`static long SleepDuration()
+static long DoubleDuration(long d)
+
+long half = MyLib.SleepDuration();
+long full = MyLib.DoubleDuration(half);`}
   typescript={`function sleepDuration(): Duration
 function doubleDuration(d: Duration): Duration
 
@@ -597,7 +656,7 @@ const full = doubleDuration(half)`}
 
 ### SystemTime
 
-`std::time::SystemTime` represents a point in time. BoltFFI encodes it as seconds since Unix epoch plus nanoseconds (12 bytes). Negative values represent times before 1970.
+`std::time::SystemTime` represents a point in time. BoltFFI encodes it as seconds since Unix epoch plus nanoseconds (12 bytes). Swift uses `Date`, Kotlin and Java use `Instant`, C# uses a `long`, and TypeScript uses `Date`. Negative values represent times before 1970.
 
 <CodeComparison
   title=""
@@ -627,6 +686,11 @@ static Instant epoch()
 
 Instant current = now();
 Instant unix = epoch();`}
+  csharp={`static long Now()
+static long Epoch()
+
+long current = MyLib.Now();
+long unix = MyLib.Epoch();`}
   typescript={`function now(): Date
 function epoch(): Date
 
@@ -636,7 +700,7 @@ const unix = epoch()  // 1970-01-01T00:00:00.000Z`}
 
 ### UUID
 
-`uuid::Uuid` from the [uuid](https://crates.io/crates/uuid) crate maps to native UUID types in Swift and Kotlin. TypeScript receives it as a string since JavaScript has no built-in UUID type.
+`uuid::Uuid` from the [uuid](https://crates.io/crates/uuid) crate maps to native UUID types in Swift, Kotlin, and Java. C# and TypeScript receive it as a string since those bindings do not use a generated UUID wrapper.
 
 <CodeComparison
   title=""
@@ -666,6 +730,11 @@ static UUID parseId(String s)
 
 UUID id = newId();
 UUID parsed = parseId("550e8400-e29b-41d4-a716-446655440000");`}
+  csharp={`static string NewId()
+static string? ParseId(string s)
+
+string id = MyLib.NewId();
+string? parsed = MyLib.ParseId("550e8400-e29b-41d4-a716-446655440000");`}
   typescript={`function newId(): string
 function parseId(s: string): string | null
 
@@ -675,7 +744,7 @@ const parsed = parseId("550e8400-e29b-41d4-a716-446655440000")`}
 
 ### URL
 
-`url::Url` from the [url](https://crates.io/crates/url) crate maps to `URL` in Swift, `URI` in Kotlin, and `string` in TypeScript. The URL is serialized as its string representation.
+`url::Url` from the [url](https://crates.io/crates/url) crate maps to `URL` in Swift, `URI` in Kotlin and Java, and `string` in C# and TypeScript. The URL is serialized as its string representation.
 
 <CodeComparison
   title=""
@@ -705,6 +774,11 @@ static URI withPath(URI base, String path)
 
 URI base = baseUrl();
 URI full = withPath(base, "/api/v1");`}
+  csharp={`static string BaseUrl()
+static string WithPath(string baseUrl, string path)
+
+string baseUrl = MyLib.BaseUrl();  // "https://example.com/"
+string full = MyLib.WithPath(baseUrl, "/api/v1");`}
   typescript={`function baseUrl(): string
 function withPath(base: string, path: string): string
 
@@ -714,7 +788,7 @@ const full = withPath(base, "/api/v1")`}
 
 ### Bytes
 
-`Vec<u8>` and `&[u8]` represent raw binary data. Unlike other collections, bytes get special treatment: they map to `Data` in Swift, `ByteArray` in Kotlin, and `Uint8Array` in TypeScript.
+`Vec<u8>` and `&[u8]` represent raw binary data. Unlike other collections, bytes get special treatment: they map to `Data` in Swift, `ByteArray` in Kotlin, `byte[]` in Java and C#, and `Uint8Array` in TypeScript.
 
 <CodeComparison
   title=""
@@ -744,6 +818,11 @@ static byte[] hash(byte[] data)
 
 byte[] compressed = compress(originalData);
 byte[] digest = hash(message);`}
+  csharp={`static byte[] Compress(byte[] data)
+static byte[] Hash(byte[] data)
+
+byte[] compressed = MyLib.Compress(originalData);
+byte[] digest = MyLib.Hash(message);`}
   typescript={`function compress(data: Uint8Array): Uint8Array
 function hash(data: Uint8Array): Uint8Array
 

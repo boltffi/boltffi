@@ -66,7 +66,7 @@ pub fn distance(a: Point, b: Point) -> f64 {
 }
 ```
 
-Run `boltffi pack`:
+Run BoltFFI for the targets you need:
 
 ```bash
 boltffi pack apple
@@ -74,6 +74,9 @@ boltffi pack apple
 
 boltffi pack android
 # Produces: ./dist/android/jniLibs/<abi>/libyour_crate.so + Kotlin bindings
+
+boltffi pack java
+# Produces: ./dist/java/native/<host-target>/libyour_crate_jni.* + Java bindings
 
 boltffi pack wasm
 # Produces: ./dist/wasm/pkg/*.wasm + TypeScript bindings + npm package
@@ -119,7 +122,7 @@ boltffi --overlay boltffi.release.toml pack all --release
 This is useful for CI, release builds, or machine-local overrides. `boltffi init` does not accept
 `--overlay`.
 
-Use it from Swift, Kotlin, or TypeScript:
+Use it from Swift, Kotlin, Java, C#, or TypeScript:
 
 ```swift
 let d = distance(a: Point(x: 0, y: 0), b: Point(x: 3, y: 4)) // 5.0
@@ -129,12 +132,20 @@ let d = distance(a: Point(x: 0, y: 0), b: Point(x: 3, y: 4)) // 5.0
 val d = distance(a = Point(x = 0.0, y = 0.0), b = Point(x = 3.0, y = 4.0)) // 5.0
 ```
 
+```java
+double d = MyLib.distance(new Point(0.0, 0.0), new Point(3.0, 4.0)); // 5.0
+```
+
+```csharp
+double d = MyLib.Distance(new Point(0.0, 0.0), new Point(3.0, 4.0)); // 5.0
+```
+
 ```typescript
 import { distance } from 'your-crate';
 const d = distance({ x: 0, y: 0 }, { x: 3, y: 4 }); // 5.0
 ```
 
-The generated bindings use each language's idioms. Swift gets async/await. Kotlin gets coroutines. TypeScript gets Promises. Errors become native exceptions.
+The generated bindings use each language's idioms. Swift gets async/await. Kotlin gets coroutines. Java gets CompletableFuture and functional interfaces. C# gets Tasks and async enumerables. TypeScript gets Promises. Errors become native exceptions.
 
 ## Supported languages
 
@@ -143,13 +154,13 @@ The generated bindings use each language's idioms. Swift gets async/await. Kotli
 | Swift    | Full support |
 | Kotlin   | Full support |
 | Java     | Full support |
+| C#       | Full support |
 | WASM/TypeScript | Full support |
 | C        | Partial      |
 | Python   | In progress  |
 | C++      | Planned      |
-| C#       | Full support |
 | Ruby     | Planned      |
-| Dart     | Planned      |
+| Dart     | In progress  |
 | Scala    | Planned      |
 | Go       | Planned      |
 | Lua      | Potential    |

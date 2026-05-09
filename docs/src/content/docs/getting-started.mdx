@@ -1,6 +1,6 @@
 ---
 title: "Getting Started"
-description: "Set up a BoltFFI Rust library, install prerequisites, configure packaging, and generate bindings for Apple, Android, Java, and WASM targets."
+description: "Set up a BoltFFI Rust library, install prerequisites, configure packaging, and generate bindings for Apple, Android, Java, C#, and WASM targets."
 ---
 
 # Getting Started
@@ -13,6 +13,7 @@ This guide walks you through creating a Rust library and packaging it for use in
 - For Apple: Xcode 15+ with command line tools
 - For Android: Android Studio with NDK
 - For Java: JDK 8+ with `javac` and a C compiler for the JNI bridge
+- For C#: .NET SDK 10.0+ for the current C# demo and generated binding tests
 - For WASM: Node.js 18+ and wasm-pack (`cargo install wasm-pack`)
 
 ## Install BoltFFI
@@ -37,7 +38,7 @@ version = "0.1.0"
 edition = "2021"
 
 [lib]
-crate-type = ["staticlib"]
+crate-type = ["staticlib", "cdylib"]
 
 [dependencies]
 boltffi = "0.1"
@@ -67,11 +68,11 @@ pub fn distance(a: Point, b: Point) -> f64 {
 }
 ```
 
-## Build and package
+## Build, package, or generate
 
 ```bash
 boltffi init              # creates boltffi.toml
-boltffi pack all --release    # builds for all platforms
+boltffi pack all --release    # packages all enabled packaged targets
 ```
 
 This creates:
@@ -80,12 +81,26 @@ This creates:
 - `dist/java/` - JNI library + Java bindings
 - `dist/wasm/` - WASM module + TypeScript bindings
 
+C# currently uses a generate-and-integrate flow rather than `pack`:
+
+```bash
+cargo build
+boltffi generate csharp
+```
+
+This creates `dist/csharp/` with generated C# source bindings.
+
+`pack` is for targets where BoltFFI creates a platform package, such as an XCFramework,
+jniLibs/JNI output, or an npm package. C# already has generated bindings, but BoltFFI leaves the
+.NET project or NuGet layout to your app, so the command is `generate csharp`.
+
 To build for a single platform:
 
 ```bash
 boltffi pack apple 
 boltffi pack android
 boltffi pack java
+boltffi generate csharp
 boltffi pack wasm
 ```
 
@@ -126,6 +141,25 @@ System.out.println(distance(p1, p2));  // 5.0
 ```
 
 On Java 16+ with `min_version = 16` in `boltffi.toml`, records are used instead of classes. On Java 8+, the same API works with generated final classes.
+
+## Use in C#
+
+Build the host dynamic library, generate the C# bindings, and include the generated `.cs` files in your .NET project:
+
+```bash
+cargo build
+boltffi generate csharp
+```
+
+Copy the host native library next to your .NET output or make it discoverable by the runtime, then:
+
+```csharp
+using MyLib;
+
+var p1 = new Point(0.0, 0.0);
+var p2 = new Point(3.0, 4.0);
+Console.WriteLine(MyLib.Distance(p1, p2));  // 5.0
+```
 
 ## Use in TypeScript
 

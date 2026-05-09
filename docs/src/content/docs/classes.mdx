@@ -75,6 +75,18 @@ counter.increment();
 counter.increment();
 System.out.println(counter.get()); // 2
 counter.close();`}
+  csharp={`public sealed class Counter : IDisposable
+{
+    public Counter()
+    public void Increment()
+    public int Get()
+    public void Dispose()
+}
+
+using Counter counter = new Counter();
+counter.Increment();
+counter.Increment();
+Console.WriteLine(counter.Get()); // 2`}
   typescript={`declare class Counter {
     private constructor()
     static new(): Counter
@@ -122,6 +134,12 @@ val c = Counter()`}
 }
 
 Counter c = new Counter();`}
+  csharp={`public sealed class Counter : IDisposable
+{
+    public Counter()
+}
+
+using Counter c = new Counter();`}
   typescript={`declare class Counter {
     private constructor()
     static new(): Counter
@@ -133,7 +151,7 @@ const c = Counter.new()`}
 
 ### Named constructors with parameters
 
-Methods with parameters that return `Self` become additional constructors. In Swift, they become `convenience init`. In Kotlin, they go in the companion object.
+Methods with parameters that return `Self` become additional constructors. In Swift, they become `convenience init`. In Kotlin, they go in the companion object. Java and C# expose them as static factory methods on the generated class.
 
 <CodeComparison
   title=""
@@ -189,6 +207,18 @@ val db3 = Database.withOptions("data.db", true)`}
 Database db1 = new Database();
 Database db2 = Database.open("data.db");
 Database db3 = Database.withOptions(
+    "data.db", true);`}
+  csharp={`public sealed class Database : IDisposable
+{
+    public Database()
+    public static Database Open(string path)
+    public static Database WithOptions(
+        string path, bool readOnly)
+}
+
+using Database db1 = new Database();
+using Database db2 = Database.Open("data.db");
+using Database db3 = Database.WithOptions(
     "data.db", true);`}
   typescript={`declare class Database {
     private constructor()
@@ -248,6 +278,14 @@ val cfg = Config.production()`}
 }
 
 Config cfg = Config.production();`}
+  csharp={`public sealed class Config : IDisposable
+{
+    public Config()
+    public static Config Production()
+    public static Config Development()
+}
+
+using Config cfg = Config.Production();`}
   typescript={`declare class Config {
     private constructor()
     static new(): Config
@@ -312,6 +350,17 @@ try {
 } catch (DbError.Exception e) {
     if (e.getError() == DbError.NOT_FOUND)
         System.out.println("file not found");
+}`}
+  csharp={`public sealed class Database : IDisposable
+{
+    public static Database Open(string path)
+}
+
+try {
+    using Database db = Database.Open("data.db");
+} catch (DbErrorException e) {
+    if (e.Error == DbError.NotFound)
+        Console.WriteLine("file not found");
 }`}
   typescript={`declare enum DbError {
     NotFound = 0,
@@ -421,6 +470,22 @@ try {
 } catch (AccountError.Exception e) {
     System.out.println(e.getError());
 }`}
+  csharp={`public sealed class Account : IDisposable
+{
+    public long Balance()
+    public void Deposit(long amount)
+    public void Withdraw(long amount)
+}
+
+using Account acc = new Account();
+acc.Deposit(100);
+Console.WriteLine(acc.Balance());
+
+try {
+    acc.Withdraw(50);
+} catch (AccountErrorException e) {
+    Console.WriteLine(e.Error);
+}`}
   typescript={`declare class Account {
     private constructor()
     static new(): Account
@@ -443,7 +508,7 @@ try {
 
 ### &self vs &mut self
 
-When the target language calls a method, there's no guarantee which thread it comes from. Swift might dispatch from the main thread, a GCD queue, or a `Task`. Kotlin might call from a coroutine on any dispatcher. Java might call from any thread in a thread pool. You don't control this.
+When the target language calls a method, there's no guarantee which thread it comes from. Swift might dispatch from the main thread, a GCD queue, or a `Task`. Kotlin might call from a coroutine on any dispatcher. Java might call from any thread in a thread pool. C# might call from the thread pool or any `Task` continuation. You don't control this.
 
 That's the problem with `&mut self`. It requires exclusive access to the object. If two threads call a `&mut self` method at the same time, you get undefined behavior. BoltFFI catches this at compile time:
 
@@ -531,6 +596,13 @@ val t = Config.defaultTimeout()`}
 }
 
 int t = Config.defaultTimeout();`}
+  csharp={`public sealed class Config : IDisposable
+{
+    public static uint DefaultTimeout()
+    public static uint MaxConnections()
+}
+
+uint t = Config.DefaultTimeout();`}
   typescript={`declare class Config {
     private constructor()
     static defaultTimeout(): number
@@ -607,6 +679,16 @@ val data = client.get("https://api.example.com")`}
 HttpClient client = new HttpClient();
 String data = client.get(
     "https://api.example.com");`}
+  csharp={`public sealed class HttpClient : IDisposable
+{
+    public HttpClient()
+    public Task<string> Get(string url)
+    public Task<string> Post(string url, string body)
+}
+
+using HttpClient client = new HttpClient();
+string data = await client.Get(
+    "https://api.example.com");`}
   typescript={`declare class HttpClient {
     private constructor()
     static new(): HttpClient
@@ -667,6 +749,15 @@ val u = session.user()`}
 User user = new User("alice");
 Session session = new Session(user);
 User u = session.user();`}
+  csharp={`public sealed class Session : IDisposable
+{
+    public Session(User user)
+    public User User()
+}
+
+using User user = new User("alice");
+using Session session = new Session(user);
+User u = session.User();`}
   typescript={`declare class Session {
     private constructor()
     static new(user: User): Session
@@ -723,6 +814,14 @@ println(obj.exported()) // 84`}
 
 MyClass obj = new MyClass();
 System.out.println(obj.exported()); // 84`}
+  csharp={`public sealed class MyClass : IDisposable
+{
+    public int Exported()
+    // Helper() is not exposed
+}
+
+using MyClass obj = new MyClass();
+Console.WriteLine(obj.Exported()); // 84`}
   typescript={`declare class MyClass {
     private constructor()
     exported(): number
@@ -799,6 +898,15 @@ SafeCounter counter = new SafeCounter();
 for (int i = 0; i < 100; i++) {
     new Thread(counter::increment).start();
 }`}
+  csharp={`public sealed class SafeCounter : IDisposable
+{
+    public SafeCounter()
+    public void Increment()
+    public int Get()
+}
+
+using SafeCounter counter = new SafeCounter();
+Parallel.For(0, 100, _ => counter.Increment());`}
   typescript={`declare class SafeCounter {
     private constructor()
     static new(): SafeCounter

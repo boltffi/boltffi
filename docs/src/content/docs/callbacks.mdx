@@ -54,6 +54,16 @@ int[] sum = {0};
 foreachItem(
     new int[]{1, 2, 3},
     v -> sum[0] += v);`}
+  csharp={`public delegate void ForeachItemCallback(int value);
+
+static void ForeachItem(
+    int[] items,
+    ForeachItemCallback callback)
+
+int sum = 0;
+MyLib.ForeachItem(
+    new[] {1, 2, 3},
+    value => sum += value);`}
   typescript={`type ForeachCallback = (value: number) => void
 
 function foreachItem(
@@ -102,6 +112,13 @@ static int[] transform(
 
 int[] doubled = transform(
     new int[]{1, 2, 3}, v -> v * 2);`}
+  csharp={`public delegate int TransformF(int value);
+
+static int[] Transform(
+    int[] items, TransformF f)
+
+int[] doubled = MyLib.Transform(
+    new[] {1, 2, 3}, v => v * 2);`}
   typescript={`type TransformFn = (value: number) => number
 
 function transform(
@@ -204,6 +221,32 @@ download("https://example.com",
             System.out.println("Error: " + error);
         }
     });`}
+  csharp={`public interface ProgressHandler
+{
+    void OnProgress(double percent);
+    void OnComplete(string result);
+    void OnError(string error);
+}
+
+static void Download(
+    string url, ProgressHandler handler)
+
+public sealed class MyHandler : ProgressHandler
+{
+    public void OnProgress(double percent) {
+        Console.WriteLine("Progress: " + percent + "%");
+    }
+    public void OnComplete(string result) {
+        Console.WriteLine("Done: " + result);
+    }
+    public void OnError(string error) {
+        Console.WriteLine("Error: " + error);
+    }
+}
+
+MyLib.Download(
+    "https://example.com",
+    new MyHandler());`}
   typescript={`interface ProgressHandler {
     onProgress(percent: number): void
     onComplete(result: string): void
@@ -263,6 +306,12 @@ static void sharedUse(ProgressHandler handler)
 
 singleUse(myHandler);
 sharedUse(myHandler);`}
+  csharp={`// Both accept the same interface
+static void SingleUse(ProgressHandler handler)
+static void SharedUse(ProgressHandler handler)
+
+MyLib.SingleUse(new MyHandler());
+MyLib.SharedUse(new MyHandler());`}
   typescript={`// Both accept the same interface
 function singleUse(handler: ProgressHandler): void
 function sharedUse(handler: ProgressHandler): void
@@ -341,6 +390,22 @@ static CompletableFuture<String> process(
 String result = process(key ->
     CompletableFuture.completedFuture(
         "value for " + key));`}
+  csharp={`public interface DataProvider
+{
+    Task<string> Fetch(string key);
+}
+
+static Task<string> Process(
+    DataProvider provider)
+
+public sealed class MyProvider : DataProvider
+{
+    public Task<string> Fetch(string key) =>
+        Task.FromResult("value for " + key);
+}
+
+string result =
+    await MyLib.Process(new MyProvider());`}
   typescript={`interface DataProvider {
     fetch(key: string): Promise<string>
 }
@@ -398,6 +463,19 @@ engine.doWork()`}
 Engine engine = new Engine(myLogger);
 engine.doWork();
 engine.close();`}
+  csharp={`public interface Logger
+{
+    void Log(string message);
+}
+
+public sealed class Engine : IDisposable
+{
+    public Engine(Logger logger)
+    public void DoWork()
+}
+
+using Engine engine = new Engine(myLogger);
+engine.DoWork();`}
   typescript={`interface Logger {
     log(message: string): void
 }

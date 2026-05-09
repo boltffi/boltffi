@@ -12,7 +12,7 @@ This page covers free functions - standalone functions that aren't attached to a
 
 Mark a Rust function with `#[export]` and BoltFFI generates a corresponding function in each target language. The function signature, parameter types, and return type all map according to the rules in [Types](/docs/types).
 
-Function names may be renamed to match target language conventions. For example, `get_user` becomes `getUser` in languages that use camelCase.
+Function names may be renamed to match target language conventions. For example, `get_user` becomes `getUser` in languages that use camelCase and `GetUser` in C#.
 
 ## Basic export
 
@@ -44,6 +44,11 @@ static double multiply(double x, double y)
 
 int sum = add(5, 3);
 double product = multiply(2.5, 4.0);`}
+  csharp={`static int Add(int a, int b)
+static double Multiply(double x, double y)
+
+int sum = MyLib.Add(5, 3);
+double product = MyLib.Multiply(2.5, 4.0);`}
   typescript={`function add(a: number, b: number): number
 function multiply(x: number, y: number): number
 
@@ -83,6 +88,11 @@ static long charCount(String s)
 
 String msg = greet("World");
 long len = charCount("hello");`}
+  csharp={`static string Greet(string name)
+static nuint CharCount(string s)
+
+string msg = MyLib.Greet("World");
+nuint len = MyLib.CharCount("hello");`}
   typescript={`function greet(name: string): string
 function charCount(s: string): number
 
@@ -163,6 +173,24 @@ double d = distance(
     new Point(0.0, 0.0),
     new Point(3.0, 4.0),
     Unit.METERS);`}
+  csharp={`public readonly record struct Point(
+    double X,
+    double Y
+);
+
+public enum Unit
+{
+    Meters,
+    Feet,
+}
+
+static double Distance(
+    Point a, Point b, Unit unit)
+
+double d = MyLib.Distance(
+    new Point(0.0, 0.0),
+    new Point(3.0, 4.0),
+    Unit.Meters);`}
   typescript={`interface Point {
     readonly x: number
     readonly y: number
@@ -216,6 +244,12 @@ static double average(double[] values)
 int total = sum(new int[]{1, 2, 3, 4, 5});
 double avg = average(
     new double[]{1.0, 2.0, 3.0});`}
+  csharp={`static int Sum(int[] values)
+static double Average(double[] values)
+
+int total = MyLib.Sum(new[] {1, 2, 3, 4, 5});
+double avg = MyLib.Average(
+    new[] {1.0, 2.0, 3.0});`}
   typescript={`function sum(values: number[]): number
 function average(values: number[]): number
 
@@ -283,6 +317,16 @@ String formal = greetUser(
     "Smith", java.util.Optional.of("Dr."));
 String casual = greetUser(
     "John", java.util.Optional.empty());`}
+  csharp={`static string GreetUser(
+    string name,
+    string? title)
+
+static void SetTimeout(
+    ulong ms,
+    ulong? callbackId)
+
+string formal = MyLib.GreetUser("Smith", "Dr.");
+string casual = MyLib.GreetUser("John", null);`}
   typescript={`function greetUser(
     name: string,
     title: string | null
@@ -330,6 +374,11 @@ logMessage(logger, "started")`}
 
 Logger logger = new Logger("app");
 logMessage(logger, "started");`}
+  csharp={`static void LogMessage(
+    Logger logger, string message)
+
+using Logger logger = new Logger("app");
+MyLib.LogMessage(logger, "started");`}
   typescript={`function logMessage(
     logger: Logger, message: string): void
 
@@ -414,6 +463,26 @@ runTask(new EventListener() {
         System.out.println(result);
     }
 });`}
+  csharp={`public interface EventListener
+{
+    void OnStart();
+    void OnProgress(double percent);
+    void OnComplete(string result);
+}
+
+static void RunTask(EventListener listener)
+
+public sealed class MyListener : EventListener
+{
+    public void OnStart() =>
+        Console.WriteLine("started");
+    public void OnProgress(double percent) =>
+        Console.WriteLine(percent * 100 + "%");
+    public void OnComplete(string result) =>
+        Console.WriteLine(result);
+}
+
+MyLib.RunTask(new MyListener());`}
   typescript={`interface EventListener {
     onStart(): void
     onProgress(percent: number): void
@@ -476,6 +545,16 @@ findUser(42L).ifPresent(user ->
 
 java.util.Optional<Integer> pos =
     firstPositive(new int[]{-1, -2, 3});`}
+  csharp={`static User? FindUser(ulong id)
+static int? FirstPositive(int[] values)
+
+User? user = MyLib.FindUser(42);
+if (user is not null) {
+    Console.WriteLine(user.Name);
+}
+
+int? pos = MyLib.FirstPositive(
+    new[] {-1, -2, 3});`}
   typescript={`function findUser(id: bigint): User | null
 function firstPositive(values: number[]): number | null
 
@@ -558,6 +637,27 @@ try {
     else if (e.getError() == ParseError.OUT_OF_RANGE)
         System.out.println("too large");
 }`}
+  csharp={`public enum ParseError
+{
+    InvalidFormat,
+    OutOfRange,
+}
+
+public sealed class ParseErrorException : Exception
+{
+    public ParseError Error { get; }
+}
+
+static ushort ParsePort(string s)
+
+try {
+    ushort port = MyLib.ParsePort("8080");
+} catch (ParseErrorException e) {
+    if (e.Error == ParseError.InvalidFormat)
+        Console.WriteLine("bad format");
+    else if (e.Error == ParseError.OutOfRange)
+        Console.WriteLine("too large");
+}`}
   typescript={`enum ParseError {
     InvalidFormat = 0,
     OutOfRange = 1
@@ -615,6 +715,12 @@ static int[] filterPositive(int[] values)
 int[] nums = range(0, 10);
 int[] pos = filterPositive(
     new int[]{-1, 2, -3, 4});`}
+  csharp={`static int[] Range(int start, int end)
+static int[] FilterPositive(int[] values)
+
+int[] nums = MyLib.Range(0, 10);
+int[] pos = MyLib.FilterPositive(
+    new[] {-1, 2, -3, 4});`}
   typescript={`function range(start: number, end: number): number[]
 function filterPositive(values: number[]): number[]
 
@@ -624,7 +730,13 @@ const pos = filterPositive([-1, 2, -3, 4])`}
 
 ## Async functions
 
-Mark a function `async` and BoltFFI generates an async function in the target language. Swift gets `async`, Kotlin gets `suspend`, Java gets `CompletableFuture` (Java 8+) or virtual-thread blocking calls (Java 21+), and TypeScript gets `Promise`.
+Mark a function `async` and BoltFFI generates an async function in the target language:
+
+- Swift: `async`
+- Kotlin: `suspend`
+- Java: `CompletableFuture` on Java 8+, with virtual-thread blocking calls on Java 21+
+- C#: `Task`
+- TypeScript: `Promise`
 
 <CodeComparison
   title=""
@@ -666,6 +778,12 @@ static CompletableFuture<Config> loadConfig()
 
 String data = fetchData(
     "https://api.example.com");`}
+  csharp={`static Task<string> FetchData(string url)
+static Task<Config> LoadConfig()
+
+string data = await MyLib.FetchData(
+    "https://api.example.com");
+Config config = await MyLib.LoadConfig();`}
   typescript={`async function fetchData(url: string): Promise<string>
 async function loadConfig(): Promise<Config>
 
@@ -741,6 +859,21 @@ foreachRange(1, 5, v -> sum[0] += v);
 
 int[] doubled = mapValues(
     new int[]{1, 2, 3}, v -> v * 2);`}
+  csharp={`public delegate void ForeachRangeCallback(int value);
+public delegate int MapValuesTransform(int value);
+
+static void ForeachRange(
+    int start, int end,
+    ForeachRangeCallback callback)
+static int[] MapValues(
+    int[] values,
+    MapValuesTransform transform)
+
+int sum = 0;
+MyLib.ForeachRange(1, 5, v => sum += v);
+
+int[] doubled = MyLib.MapValues(
+    new[] {1, 2, 3}, v => v * 2);`}
   typescript={`function foreachRange(
     start: number,
     end: number,
