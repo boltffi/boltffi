@@ -364,6 +364,98 @@ impl From<NativeHostPlatform> for JavaHostTarget {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum CSharpRuntimeIdentifier {
+    #[serde(rename = "current")]
+    Current,
+    #[serde(rename = "osx-arm64", alias = "darwin-arm64", alias = "osx-aarch64")]
+    OsxArm64,
+    #[serde(rename = "osx-x64", alias = "darwin-x86_64", alias = "osx-x86_64")]
+    OsxX64,
+    #[serde(rename = "linux-x64", alias = "linux-x86_64")]
+    LinuxX64,
+    #[serde(rename = "linux-arm64", alias = "linux-aarch64")]
+    LinuxArm64,
+    #[serde(rename = "win-x64", alias = "windows-x86_64", alias = "win-x86_64")]
+    WinX64,
+}
+
+impl CSharpRuntimeIdentifier {
+    pub const DEFAULTS: &'static [Self] = &[Self::Current];
+    pub const EXPLICIT_TARGETS: &'static [Self] = &[
+        Self::OsxArm64,
+        Self::OsxX64,
+        Self::LinuxX64,
+        Self::LinuxArm64,
+        Self::WinX64,
+    ];
+
+    pub fn canonical_name(self) -> &'static str {
+        match self {
+            Self::Current => "current",
+            Self::OsxArm64 => "osx-arm64",
+            Self::OsxX64 => "osx-x64",
+            Self::LinuxX64 => "linux-x64",
+            Self::LinuxArm64 => "linux-arm64",
+            Self::WinX64 => "win-x64",
+        }
+    }
+
+    pub fn current() -> Option<Self> {
+        NativeHostPlatform::current().map(Into::into)
+    }
+
+    pub fn resolve_requested(targets: &[Self]) -> Result<Vec<Self>, String> {
+        let current_host = Self::current().ok_or_else(Self::unsupported_host_message)?;
+        let mut resolved = Vec::new();
+
+        targets.iter().copied().for_each(|target| {
+            let target = match target {
+                Self::Current => current_host,
+                explicit => explicit,
+            };
+
+            if !resolved.contains(&target) {
+                resolved.push(target);
+            }
+        });
+
+        Ok(resolved)
+    }
+
+    pub fn native_host_platform(self) -> NativeHostPlatform {
+        match self {
+            Self::Current => unreachable!("resolved C# runtime identifier required"),
+            Self::OsxArm64 => NativeHostPlatform::DarwinArm64,
+            Self::OsxX64 => NativeHostPlatform::DarwinX86_64,
+            Self::LinuxX64 => NativeHostPlatform::LinuxX86_64,
+            Self::LinuxArm64 => NativeHostPlatform::LinuxAarch64,
+            Self::WinX64 => NativeHostPlatform::WindowsX86_64,
+        }
+    }
+
+    pub fn native_library_filename(self, artifact_name: &str) -> String {
+        self.native_host_platform()
+            .shared_library_filename(artifact_name)
+    }
+
+    fn unsupported_host_message() -> String {
+        "C# packaging is only supported on osx-arm64, osx-x64, linux-x64, linux-arm64, and win-x64 hosts".to_string()
+    }
+}
+
+impl From<NativeHostPlatform> for CSharpRuntimeIdentifier {
+    fn from(value: NativeHostPlatform) -> Self {
+        match value {
+            NativeHostPlatform::DarwinArm64 => Self::OsxArm64,
+            NativeHostPlatform::DarwinX86_64 => Self::OsxX64,
+            NativeHostPlatform::LinuxX86_64 => Self::LinuxX64,
+            NativeHostPlatform::LinuxAarch64 => Self::LinuxArm64,
+            NativeHostPlatform::WindowsX86_64 => Self::WinX64,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct RustTarget {
     triple: &'static str,

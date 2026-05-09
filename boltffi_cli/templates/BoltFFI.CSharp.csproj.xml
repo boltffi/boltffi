@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>{{ target_framework }}</TargetFramework>
+    <RuntimeIdentifiers>{{ runtime_identifiers }}</RuntimeIdentifiers>
+    <PackageId>{{ package_id }}</PackageId>
+    <Version>{{ package_version }}</Version>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+{% if has_description %}    <Description>{{ description }}</Description>
+{% endif %}{% if has_license %}    <PackageLicenseExpression>{{ license }}</PackageLicenseExpression>
+{% endif %}{% if has_repository %}    <RepositoryUrl>{{ repository }}</RepositoryUrl>
+{% endif %}  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="src/**/*.cs" />
+    <None Include="runtimes/**/*" Pack="true" PackagePath="%(Identity)" />
+  </ItemGroup>
+
+</Project>

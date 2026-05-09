@@ -8,6 +8,7 @@ pub enum PackCommand {
     Java(PackJavaOptions),
     Python(PackPythonOptions),
     Dart(PackDartOptions),
+    CSharp(PackCSharpOptions),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -54,4 +55,8 @@ pub struct PackPythonOptions {
 pub struct PackDartOptions {
     pub execution: PackExecutionOptions,
     pub experimental: bool,
+}
+
+pub struct PackCSharpOptions {
+    pub execution: PackExecutionOptions,
 }

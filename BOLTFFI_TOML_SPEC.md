@@ -357,6 +357,30 @@ Controls npm package generation in `boltffi pack wasm`.
 - `repository` (string, optional): Package repository URL.
   - Default: `{package.repository}`
 
+## C#
+
+### `[targets.csharp]` (optional)
+
+- `enabled` (bool): Whether C# generation and packaging are active.
+  - Default: `false`
+- `output` (path): C# artifact root directory.
+  - Default: `dist/csharp`
+  - `boltffi generate csharp` writes `.cs` files directly here.
+  - `boltffi pack csharp` writes generated sources under `{output}/src`, native assets under `{output}/runtimes/<rid>/native`, and a generated project file at `{output}/BoltFFI.CSharp.csproj`.
+- `package_id` (string, optional): NuGet package ID.
+  - Default: `{package.name}`
+- `target_framework` (string, optional): Target framework for the generated NuGet package project.
+  - Default: `net10.0`
+- `package_output` (path, optional): Directory where `boltffi pack csharp` writes `.nupkg` files.
+  - Default: `{targets.csharp.output}/packages`
+- `runtime_identifiers` (array of strings, optional): Desired .NET native runtime asset outputs.
+  - Supported canonical values: `current`, `osx-arm64`, `osx-x64`, `linux-x64`, `linux-arm64`, `win-x64`
+  - Supported aliases: `darwin-arm64`, `darwin-x86_64`, `linux-x86_64`, `linux-aarch64`, `windows-x86_64`
+  - Default: `["current"]`
+  - Behavior: `current` resolves to the active host RID, repeated values are deduped after resolution, and native libraries are packaged under NuGet `runtimes/{rid}/native/`.
+
+`boltffi pack csharp` rejects explicit Cargo `--target` passthrough args because the native asset matrix is controlled by `targets.csharp.runtime_identifiers`. Current-host packaging works on `osx-arm64`, `osx-x64`, `linux-x64`, `linux-arm64`, and `win-x64`. Cross-host support follows the shared desktop toolchain support used by JVM packaging; unsupported host/target pairs fail during preflight.
+
 ## Apple SwiftPM layouts
 
 `boltffi pack apple` always produces an xcframework (unless `--spm-only`) and can generate `Package.swift` (unless `--xcframework-only`).

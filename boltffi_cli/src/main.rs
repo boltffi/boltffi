@@ -19,8 +19,8 @@ use commands::doctor::{ConfigSummary, DoctorOptions};
 use commands::generate::{GenerateOptions, GenerateTarget, run_generate_with_output};
 use commands::init::InitOptions;
 use commands::pack::{
-    PackAllOptions, PackAndroidOptions, PackAppleOptions, PackCommand, PackDartOptions,
-    PackExecutionOptions, PackJavaOptions, PackPythonOptions, PackWasmOptions,
+    PackAllOptions, PackAndroidOptions, PackAppleOptions, PackCSharpOptions, PackCommand,
+    PackDartOptions, PackExecutionOptions, PackJavaOptions, PackPythonOptions, PackWasmOptions,
     check_java_packaging_prereqs,
 };
 use commands::verify::VerifyOptions;
@@ -31,7 +31,7 @@ use config::{Config, Target};
 #[command(name = "boltffi")]
 #[command(about = "BoltFFI - Rust FFI toolchain (Apple + Android + WASM)")]
 #[command(
-    after_help = "Examples:\n  boltffi init\n  boltffi check --apple\n  boltffi generate swift\n  boltffi build apple --release\n  boltffi build wasm --release\n  boltffi pack apple --layout bundled\n  boltffi pack wasm --release\n  boltffi --overlay boltffi.ci.toml pack android\n\nConfig:\n  boltffi reads ./boltffi.toml\n  Use --overlay PATH to load a merged overlay config on top of it\n  Settings live under [targets.apple.*], [targets.android.*], [targets.wasm.*], [targets.java.*], [targets.dart.*], and [targets.python.*]\n"
+    after_help = "Examples:\n  boltffi init\n  boltffi check --apple\n  boltffi generate swift\n  boltffi build apple --release\n  boltffi build wasm --release\n  boltffi pack apple --layout bundled\n  boltffi pack wasm --release\n  boltffi pack csharp\n  boltffi --overlay boltffi.ci.toml pack android\n\nConfig:\n  boltffi reads ./boltffi.toml\n  Use --overlay PATH to load a merged overlay config on top of it\n  Settings live under [targets.apple.*], [targets.android.*], [targets.wasm.*], [targets.java.*], [targets.dart.*], [targets.python.*], and [targets.csharp.*]\n"
 )]
 #[command(version)]
 struct Cli {
@@ -136,8 +136,8 @@ enum Commands {
     },
 
     #[command(
-        about = "Package platform artifacts (xcframework/SPM/jniLibs/npm)",
-        long_about = "Package platform artifacts.\n\nExamples:\n  boltffi pack apple\n  boltffi pack apple --layout bundled\n  boltffi pack android --release\n  boltffi pack wasm --release\n  boltffi pack python --experimental\n"
+        about = "Package platform artifacts (xcframework/SPM/jniLibs/npm/NuGet)",
+        long_about = "Package platform artifacts.\n\nExamples:\n  boltffi pack apple\n  boltffi pack apple --layout bundled\n  boltffi pack android --release\n  boltffi pack wasm --release\n  boltffi pack python --experimental\n  boltffi pack csharp\n"
     )]
     Pack {
         #[command(subcommand)]
@@ -334,6 +334,21 @@ enum PackTargetArg {
 
         #[arg(long, help = "Enable experimental targets/features")]
         experimental: bool,
+    },
+
+    #[command(
+        about = "Build + package C# artifacts",
+        long_about = "Build + package C# artifacts.\n\nOutputs:\n  - C# package project: {targets.csharp.output}\n  - NuGet package:      {targets.csharp.package_output}\n  - Native assets:      runtimes/<rid>/native inside the .nupkg\n"
+    )]
+    Csharp {
+        #[arg(long)]
+        release: bool,
+
+        #[arg(long, default_value = "true")]
+        regenerate: bool,
+
+        #[arg(long)]
+        no_build: bool,
     },
 }
 
@@ -601,6 +616,13 @@ fn execute_command(
                 } => PackCommand::Dart(PackDartOptions {
                     execution: pack_execution_options(release, regenerate, no_build, cargo_args),
                     experimental,
+                }),
+                PackTargetArg::Csharp {
+                    release,
+                    regenerate,
+                    no_build,
+                } => PackCommand::CSharp(PackCSharpOptions {
+                    execution: pack_execution_options(release, regenerate, no_build, cargo_args),
                 }),
             };
             run_pack(&config, command, reporter)
@@ -917,6 +939,12 @@ fn release_pack_commands(
                     experimental: false,
                 }));
             }
+
+            if config.is_csharp_enabled() {
+                commands.push(PackCommand::CSharp(PackCSharpOptions {
+                    execution: pack_execution_options(true, true, false, cargo_args.to_vec()),
+                }));
+            }
         }
     }
 
@@ -1209,6 +1237,29 @@ enabled = true
     }
 
     #[test]
+    fn release_all_includes_csharp_packaging_when_enabled() {
+        let config = parse_config(
+            r#"
+[package]
+name = "mylib"
+
+[targets.csharp]
+enabled = true
+"#,
+        );
+
+        let commands = release_pack_commands(&config, Some(BuildPlatformArg::All), &[]);
+
+        assert!(commands.iter().any(|command| matches!(
+            command,
+            PackCommand::CSharp(options)
+                if options.execution.release
+                    && options.execution.regenerate
+                    && !options.execution.no_build
+        )));
+    }
+
+    #[test]
     fn cli_parses_generate_python_target() {
         let cli = Cli::try_parse_from(["boltffi", "generate", "python", "--experimental"])
             .expect("cli parse should succeed");
@@ -1235,6 +1286,19 @@ enabled = true
                     experimental: true,
                     ..
                 }
+            }
+        ));
+    }
+
+    #[test]
+    fn cli_parses_pack_csharp_target() {
+        let cli =
+            Cli::try_parse_from(["boltffi", "pack", "csharp"]).expect("cli parse should succeed");
+
+        assert!(matches!(
+            cli.command,
+            Commands::Pack {
+                target: PackTargetArg::Csharp { .. }
             }
         ));
     }

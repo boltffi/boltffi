@@ -1,10 +1,30 @@
+use std::path::{Path, PathBuf};
+
 use boltffi_bindgen::render::csharp::{CSharpEmitter, CSharpOptions};
 
 use crate::cli::{CliError, Result};
-use crate::commands::generate::generator::{GenerateRequest, LanguageGenerator, ScanPointerWidth};
-use crate::config::Target;
+use crate::commands::generate::generator::{
+    GenerateRequest, LanguageGenerator, ScanPointerWidth, SourceCrate,
+};
+use crate::config::{Config, Target};
 
 pub struct CSharpGenerator;
+
+impl CSharpGenerator {
+    pub fn generate_from_source_directory(
+        config: &Config,
+        output: Option<PathBuf>,
+        source_directory: &Path,
+        crate_name: &str,
+    ) -> Result<()> {
+        let request = GenerateRequest::new(
+            config,
+            output,
+            SourceCrate::new(source_directory, crate_name),
+        );
+        Self::generate(&request)
+    }
+}
 
 impl LanguageGenerator for CSharpGenerator {
     const TARGET: Target = Target::CSharp;

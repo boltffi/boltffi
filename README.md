@@ -77,6 +77,9 @@ boltffi pack android
 
 boltffi pack wasm
 # Produces: ./dist/wasm/pkg/*.wasm + TypeScript bindings + npm package
+
+boltffi pack csharp
+# Produces: ./dist/csharp/packages/*.nupkg with RID native assets
 ```
 
 Android ABI selection is configurable in `boltffi.toml`:
@@ -144,7 +147,7 @@ The generated bindings use each language's idioms. Swift gets async/await. Kotli
 | C        | Partial      |
 | Python   | In progress  |
 | C++      | Planned      |
-| C#       | In progress  |
+| C#       | Full support |
 | Ruby     | Planned      |
 | Dart     | Planned      |
 | Scala    | Planned      |

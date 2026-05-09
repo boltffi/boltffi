@@ -7,7 +7,7 @@ use crate::cargo::config::{
     extract_cargo_config_args, resolve_cargo_config_path,
 };
 use crate::cli::{CliError, Result};
-use crate::target::JavaHostTarget;
+use crate::target::{JavaHostTarget, NativeHostPlatform};
 
 #[cfg(test)]
 use crate::cargo::config::{
@@ -91,7 +91,32 @@ impl NativeHostToolchain {
         target: JavaHostTarget,
         current_host: JavaHostTarget,
     ) -> Result<Self> {
-        ensure_supported_jvm_host_pair(current_host, target)?;
+        Self::discover_for_platform(toolchain_selector, cargo_args, target, current_host, "JVM")
+    }
+
+    pub fn discover_csharp(
+        toolchain_selector: Option<&str>,
+        cargo_args: &[String],
+        target: NativeHostPlatform,
+        current_host: NativeHostPlatform,
+    ) -> Result<Self> {
+        Self::discover_for_platform(
+            toolchain_selector,
+            cargo_args,
+            target.into(),
+            current_host.into(),
+            "C#",
+        )
+    }
+
+    fn discover_for_platform(
+        toolchain_selector: Option<&str>,
+        cargo_args: &[String],
+        target: JavaHostTarget,
+        current_host: JavaHostTarget,
+        platform_name: &str,
+    ) -> Result<Self> {
+        ensure_supported_native_host_pair(current_host, target, platform_name)?;
         let rust_target_triple =
             resolve_rust_target_triple(target, current_host, toolchain_selector, cargo_args)?;
         ensure_rust_target_installed(
@@ -220,9 +245,10 @@ impl NativeHostToolchain {
     }
 }
 
-fn ensure_supported_jvm_host_pair(
+fn ensure_supported_native_host_pair(
     current_host: JavaHostTarget,
     target: JavaHostTarget,
+    platform_name: &str,
 ) -> Result<()> {
     let supported = matches!(
         (current_host, target),
@@ -246,7 +272,7 @@ fn ensure_supported_jvm_host_pair(
 
     Err(CliError::CommandFailed {
         command: format!(
-            "JVM host target '{}' is not supported from current host '{}' in Phase 4",
+            "{platform_name} host target '{}' is not supported from current host '{}' in Phase 4",
             target.canonical_name(),
             current_host.canonical_name()
         ),
@@ -1536,7 +1562,7 @@ mod tests {
         configured_linux_build_target, configured_linux_x86_64_cross_linker_values_with_sources,
         configured_target_linker_values, configured_target_rustflag_linker_args,
         configured_target_rustflag_linker_args_with_sources, configured_windows_build_target,
-        default_windows_jni_compiler_candidates, ensure_supported_jvm_host_pair,
+        default_windows_jni_compiler_candidates, ensure_supported_native_host_pair,
         extract_cargo_config_args, fallback_without_rustup, linux_cross_linker_args,
         linux_host_linker_args, parse_build_target_from_config_file,
         parse_build_target_from_inline_config, parse_rustc_host_triple,
@@ -2277,9 +2303,10 @@ unix
 
     #[test]
     fn rejects_unsupported_jvm_host_pairs_before_toolchain_probing() {
-        let error = ensure_supported_jvm_host_pair(
+        let error = ensure_supported_native_host_pair(
             JavaHostTarget::DarwinArm64,
             JavaHostTarget::WindowsX86_64,
+            "JVM",
         )
         .expect_err("unsupported host pair should fail");
 

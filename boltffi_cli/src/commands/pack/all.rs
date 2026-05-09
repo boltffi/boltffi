@@ -3,9 +3,9 @@ use crate::config::{Config, Target};
 use crate::reporter::Reporter;
 
 use super::{
-    PackAllOptions, PackAndroidOptions, PackAppleOptions, PackDartOptions, PackJavaOptions,
-    PackPythonOptions, PackWasmOptions, pack_android, pack_apple, pack_dart, pack_java,
-    pack_python, pack_wasm, prepare_java_packaging,
+    PackAllOptions, PackAndroidOptions, PackAppleOptions, PackCSharpOptions, PackDartOptions,
+    PackJavaOptions, PackPythonOptions, PackWasmOptions, pack_android, pack_apple, pack_csharp,
+    pack_dart, pack_java, pack_python, pack_wasm, prepare_java_packaging,
 };
 
 pub(super) fn pack_all(
@@ -99,8 +99,19 @@ pub(super) fn pack_all(
         pack_dart(
             config,
             PackDartOptions {
-                execution: options.execution,
+                execution: options.execution.clone(),
                 experimental: options.experimental,
+            },
+            reporter,
+        )?;
+        packed_any = true;
+    }
+
+    if config.is_csharp_enabled() {
+        pack_csharp(
+            config,
+            PackCSharpOptions {
+                execution: options.execution,
             },
             reporter,
         )?;

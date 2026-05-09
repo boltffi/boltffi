@@ -1,5 +1,6 @@
 pub mod android;
 pub mod apple;
+pub mod csharp;
 pub mod dart;
 pub mod java;
 pub mod python;

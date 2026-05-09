@@ -140,7 +140,7 @@ Per-platform entry points (all invoked for you by `verify-platform-demos.sh`):
 | Java     | `boltffi pack java && examples/platforms/java/test-demo.sh --auto`          |
 | WASM     | `boltffi pack wasm && examples/platforms/wasm/test-demo.sh`                 |
 | Python   | `boltffi pack python --release --experimental && examples/platforms/python/test-demo.sh` |
-| C#       | `examples/platforms/csharp/test-demo.sh`                                    |
+| C#       | `examples/platforms/csharp/test-demo.sh` (runs `boltffi pack csharp`) |
 
 Rust-side tests (the lib itself) still run via `cargo test -p demo` from this directory or `just test` from the repo root.
 

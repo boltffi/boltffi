@@ -1,8 +1,8 @@
 use crate::target::{
-    AndroidArchitecture, AppleArchitecture, AppleIosArchitecture, DartNativeArchitecture,
-    JavaHostTarget, RustTarget, resolve_android_targets, resolve_apple_ios_targets,
-    resolve_apple_macos_targets, resolve_apple_simulator_targets, resolve_dart_native_targets,
-    resolve_java_host_targets,
+    AndroidArchitecture, AppleArchitecture, AppleIosArchitecture, CSharpRuntimeIdentifier,
+    DartNativeArchitecture, JavaHostTarget, RustTarget, resolve_android_targets,
+    resolve_apple_ios_targets, resolve_apple_macos_targets, resolve_apple_simulator_targets,
+    resolve_dart_native_targets, resolve_java_host_targets,
 };
 use boltffi_bindgen::render::python::NamingConvention;
 use serde::{Deserialize, Serialize};
@@ -50,7 +50,6 @@ impl Experimental {
         },
         Experimental::WholeTarget(Target::Dart),
         Experimental::WholeTarget(Target::Python),
-        Experimental::WholeTarget(Target::CSharp),
     ];
 
     pub fn is_target_experimental(target: Target) -> bool {
@@ -162,6 +161,10 @@ pub struct PythonWheelConfig {
 pub struct CSharpConfig {
     #[serde(default = "default_csharp_output")]
     pub output: PathBuf,
+    pub package_id: Option<String>,
+    pub target_framework: Option<String>,
+    pub package_output: Option<PathBuf>,
+    pub runtime_identifiers: Option<Vec<CSharpRuntimeIdentifier>>,
     #[serde(default)]
     pub enabled: bool,
 }
@@ -170,6 +173,10 @@ impl Default for CSharpConfig {
     fn default() -> Self {
         Self {
             output: default_csharp_output(),
+            package_id: None,
+            target_framework: None,
+            package_output: None,
+            runtime_identifiers: None,
             enabled: false,
         }
     }
@@ -820,6 +827,43 @@ impl Config {
             )));
         }
 
+        if self.is_csharp_enabled() {
+            if let Some(runtime_identifiers) = self.targets.csharp.runtime_identifiers.as_ref() {
+                if runtime_identifiers.is_empty() {
+                    return Err(ConfigError::Validation(
+                        "targets.csharp.runtime_identifiers must be non-empty when provided"
+                            .to_string(),
+                    ));
+                }
+
+                let mut seen = HashSet::new();
+                for runtime_identifier in runtime_identifiers {
+                    if !seen.insert(*runtime_identifier) {
+                        return Err(ConfigError::Validation(format!(
+                            "targets.csharp.runtime_identifiers contains duplicate runtime identifier '{}'",
+                            runtime_identifier.canonical_name()
+                        )));
+                    }
+                }
+            }
+
+            if let Some(package_id) = self.targets.csharp.package_id.as_deref()
+                && package_id.trim().is_empty()
+            {
+                return Err(ConfigError::Validation(
+                    "targets.csharp.package_id must not be empty".to_string(),
+                ));
+            }
+
+            if let Some(target_framework) = self.targets.csharp.target_framework.as_deref()
+                && target_framework.trim().is_empty()
+            {
+                return Err(ConfigError::Validation(
+                    "targets.csharp.target_framework must not be empty".to_string(),
+                ));
+            }
+        }
+
         Ok(())
     }
 
@@ -1304,6 +1348,44 @@ impl Config {
 
     pub fn csharp_output(&self) -> PathBuf {
         self.targets.csharp.output.clone()
+    }
+
+    pub fn csharp_package_id(&self) -> String {
+        self.targets
+            .csharp
+            .package_id
+            .clone()
+            .unwrap_or_else(|| self.package.name.clone())
+    }
+
+    pub fn csharp_target_framework(&self) -> String {
+        self.targets
+            .csharp
+            .target_framework
+            .clone()
+            .unwrap_or_else(|| "net10.0".to_string())
+    }
+
+    pub fn csharp_package_output(&self) -> PathBuf {
+        self.targets
+            .csharp
+            .package_output
+            .clone()
+            .unwrap_or_else(|| self.csharp_output().join("packages"))
+    }
+
+    pub fn csharp_requested_runtime_identifiers(&self) -> &[CSharpRuntimeIdentifier] {
+        self.targets
+            .csharp
+            .runtime_identifiers
+            .as_deref()
+            .unwrap_or(CSharpRuntimeIdentifier::DEFAULTS)
+    }
+
+    pub fn csharp_runtime_identifiers(
+        &self,
+    ) -> std::result::Result<Vec<CSharpRuntimeIdentifier>, String> {
+        CSharpRuntimeIdentifier::resolve_requested(self.csharp_requested_runtime_identifiers())
     }
 
     pub fn wasm_triple(&self) -> &str {
@@ -2555,5 +2637,107 @@ interpreters = ["python3.11"]
             config.python_wheel_interpreters(),
             Some(["python3.11".to_string()].as_slice())
         );
+    }
+
+    #[test]
+    fn csharp_configuration_defaults_for_packaging() {
+        let config = parse_config(
+            r#"
+[package]
+name = "my-lib"
+
+[targets.csharp]
+enabled = true
+"#,
+        );
+
+        assert_eq!(config.csharp_output(), PathBuf::from("dist/csharp"));
+        assert_eq!(
+            config.csharp_package_output(),
+            PathBuf::from("dist/csharp/packages")
+        );
+        assert_eq!(config.csharp_package_id(), "my-lib");
+        assert_eq!(config.csharp_target_framework(), "net10.0");
+        assert_eq!(
+            config.csharp_requested_runtime_identifiers(),
+            crate::target::CSharpRuntimeIdentifier::DEFAULTS
+        );
+        assert!(config.should_process(Target::CSharp, false));
+    }
+
+    #[test]
+    fn csharp_configuration_supports_package_and_runtime_matrix() {
+        let config = parse_config(
+            r#"
+[package]
+name = "my-lib"
+
+[targets.csharp]
+enabled = true
+output = "artifacts/csharp"
+package_output = "artifacts/nuget"
+package_id = "Company.MyLib"
+target_framework = "net9.0"
+runtime_identifiers = ["current", "linux-x64"]
+"#,
+        );
+
+        assert_eq!(config.csharp_output(), PathBuf::from("artifacts/csharp"));
+        assert_eq!(
+            config.csharp_package_output(),
+            PathBuf::from("artifacts/nuget")
+        );
+        assert_eq!(config.csharp_package_id(), "Company.MyLib");
+        assert_eq!(config.csharp_target_framework(), "net9.0");
+        assert_eq!(
+            config.csharp_requested_runtime_identifiers(),
+            &[
+                crate::target::CSharpRuntimeIdentifier::Current,
+                crate::target::CSharpRuntimeIdentifier::LinuxX64
+            ]
+        );
+        assert!(config.should_process(Target::CSharp, false));
+    }
+
+    #[test]
+    fn rejects_empty_csharp_runtime_identifier_matrix() {
+        let parsed: Config = toml::from_str(
+            r#"
+[package]
+name = "my-lib"
+
+[targets.csharp]
+enabled = true
+runtime_identifiers = []
+"#,
+        )
+        .expect("toml parse failed");
+
+        assert!(matches!(
+            parsed.validate(),
+            Err(ConfigError::Validation(message))
+                if message.contains("targets.csharp.runtime_identifiers must be non-empty")
+        ));
+    }
+
+    #[test]
+    fn rejects_duplicate_csharp_runtime_identifiers() {
+        let parsed: Config = toml::from_str(
+            r#"
+[package]
+name = "my-lib"
+
+[targets.csharp]
+enabled = true
+runtime_identifiers = ["linux-x64", "linux-x64"]
+"#,
+        )
+        .expect("toml parse failed");
+
+        assert!(matches!(
+            parsed.validate(),
+            Err(ConfigError::Validation(message))
+                if message.contains("targets.csharp.runtime_identifiers contains duplicate runtime identifier")
+        ));
     }
 }
