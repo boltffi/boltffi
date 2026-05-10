@@ -2466,6 +2466,11 @@ package_name = "OverlayKit"
     }
 
     #[test]
+    fn does_not_mark_csharp_as_experimental_target() {
+        assert!(!Experimental::is_target_experimental(Target::CSharp));
+    }
+
+    #[test]
     fn python_should_process_requires_opt_in() {
         let config = parse_config(
             r#"

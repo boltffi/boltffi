@@ -175,7 +175,7 @@ enum GenerateTargetArg {
     Dart,
     #[value(help = "Generate experimental Python bindings")]
     Python,
-    #[value(help = "Generate experimental C# bindings")]
+    #[value(help = "Generate C# bindings")]
     Csharp,
     #[value(help = "Generate all bindings")]
     All,
@@ -1269,6 +1269,21 @@ enabled = true
             Commands::Generate {
                 target: Some(GenerateTargetArg::Python),
                 experimental: true,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn cli_parses_generate_csharp_target_without_experimental_flag() {
+        let cli = Cli::try_parse_from(["boltffi", "generate", "csharp"])
+            .expect("cli parse should succeed");
+
+        assert!(matches!(
+            cli.command,
+            Commands::Generate {
+                target: Some(GenerateTargetArg::Csharp),
+                experimental: false,
                 ..
             }
         ));
