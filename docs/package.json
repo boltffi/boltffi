@@ -20,12 +20,12 @@
     "@radix-ui/react-tabs": "^1.1.13",
     "@radix-ui/react-tooltip": "^1.2.8",
     "@tailwindcss/typography": "^0.5.19",
+    "@tailwindcss/vite": "4.2.4",
     "@types/prismjs": "^1.26.5",
     "@types/react": "^19.2.13",
     "@types/react-dom": "^19.2.3",
     "@vercel/analytics": "^2.0.0",
     "astro": "^6.0.0",
-    "autoprefixer": "^10.4.24",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "embla-carousel-react": "^8.6.0",
@@ -38,7 +38,7 @@
     "react-hook-form": "^7.71.1",
     "sharp": "^0.34.5",
     "tailwind-merge": "^3.4.0",
-    "tailwindcss": "^4.0.0",
+    "tailwindcss": "4.2.4",
     "tailwindcss-animate": "^1.0.7"
   }
 }

@@ -1,0 +1,27 @@
+name: Docs CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'docs/**'
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: docs/package-lock.json
+      - working-directory: docs
+        run: npm ci
+      - working-directory: docs
+        run: npm run build
