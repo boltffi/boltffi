@@ -26,6 +26,9 @@ resolve_bindgen_cs() {
 
     local install_root="$SCRIPT_DIR/target/uniffi-bindgen-cs"
     local install_binary="$install_root/bin/uniffi-bindgen-cs"
+    if [[ "$(uname -s)" == MINGW* || "$(uname -s)" == MSYS* || "$(uname -s)" == CYGWIN* ]]; then
+        install_binary="${install_binary}.exe"
+    fi
     local install_stamp="$install_root/.rev"
 
     if [[ -x "$install_binary" && -f "$install_stamp" && "$(cat "$install_stamp")" == "$UNIFFI_BINDGEN_CS_REV" ]]; then

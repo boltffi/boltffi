@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Runtime.InteropServices;
 using BenchmarkDotNet.Attributes;
 using BoltffiAccumulator = Demo.Accumulator;
 using BoltffiAccumulatorSingleThreaded = Demo.AccumulatorSingleThreaded;
@@ -42,6 +43,7 @@ public interface ISharedSurfaceBindings<TDirection, TTaskStatus, TLocation, TTra
     double EchoF64(double value);
     double AddF64(double left, double right);
     double Multiply(double left, double right);
+    ulong IncU64(ulong[] values);
     ulong IncU64Value(ulong value);
     string EchoString(string value);
     byte[] EchoBytes(byte[] data);
@@ -88,6 +90,12 @@ public interface ISharedSurfaceBindings<TDirection, TTaskStatus, TLocation, TTra
     TLocation[]? FindLocations(int count);
 }
 
+internal static class BoltffiSharedSurfaceNativeMethods
+{
+    [DllImport("demo", EntryPoint = "boltffi_inc_u64")]
+    internal static extern void IncU64(ulong[] values, UIntPtr valuesLen);
+}
+
 public sealed class BoltffiSharedSurfaceBindings :
     ISharedSurfaceBindings<BoltffiDirection, BoltffiTaskStatus, BoltffiLocation, BoltffiTrade, BoltffiParticle, BoltffiSensorReading, BoltffiBenchmarkUserProfile, BoltffiDataProvider>
 {
@@ -100,6 +108,11 @@ public sealed class BoltffiSharedSurfaceBindings :
     public double EchoF64(double value) => BoltffiBindings.EchoF64(value);
     public double AddF64(double left, double right) => BoltffiBindings.AddF64(left, right);
     public double Multiply(double left, double right) => BoltffiBindings.Multiply(left, right);
+    public ulong IncU64(ulong[] values)
+    {
+        BoltffiSharedSurfaceNativeMethods.IncU64(values, (UIntPtr)values.Length);
+        return values[0];
+    }
     public ulong IncU64Value(ulong value) => BoltffiBindings.IncU64Value(value);
     public string EchoString(string value) => BoltffiBindings.EchoString(value);
     public byte[] EchoBytes(byte[] data) => BoltffiBindings.EchoBytes(data);
@@ -208,6 +221,7 @@ public sealed class UniffiSharedSurfaceBindings :
     public double EchoF64(double value) => UniffiBindings.EchoF64(value);
     public double AddF64(double left, double right) => UniffiBindings.AddF64(left, right);
     public double Multiply(double left, double right) => UniffiBindings.Multiply(left, right);
+    public ulong IncU64(ulong[] values) => UniffiBindings.IncU64Value(values[0]);
     public ulong IncU64Value(ulong value) => UniffiBindings.IncU64Value(value);
     public string EchoString(string value) => UniffiBindings.EchoString(value);
     public byte[] EchoBytes(byte[] data) => UniffiBindings.EchoBytes(data);
@@ -327,6 +341,7 @@ public abstract class SharedSurfaceBenchmarks<TDirection, TTaskStatus, TLocation
     private TUserProfile[] _users1K = null!;
     private TProvider _provider100 = default!;
     private TProvider _provider1K = default!;
+    private ulong[] _incU64Values = null!;
 
     protected abstract ISharedSurfaceBindings<TDirection, TTaskStatus, TLocation, TTrade, TParticle, TSensorReading, TUserProfile, TProvider> Bindings { get; }
 
@@ -354,6 +369,7 @@ public abstract class SharedSurfaceBenchmarks<TDirection, TTaskStatus, TLocation
         _users1K = Bindings.GenerateUserProfiles(1000);
         _provider100 = Bindings.CreateProvider(100);
         _provider1K = Bindings.CreateProvider(1000);
+        _incU64Values = new[] { 0UL };
     }
 
     [Benchmark]
@@ -372,7 +388,7 @@ public abstract class SharedSurfaceBenchmarks<TDirection, TTaskStatus, TLocation
     public double Multiply() => Bindings.Multiply(2.5, 4.0);
 
     [Benchmark]
-    public ulong IncU64() => Bindings.IncU64Value(0UL);
+    public ulong IncU64() => Bindings.IncU64(_incU64Values);
 
     [Benchmark]
     public ulong IncU64Value() => Bindings.IncU64Value(0UL);
