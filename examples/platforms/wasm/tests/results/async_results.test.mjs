@@ -6,6 +6,7 @@ import {
 } from "../support/index.mjs";
 
 export async function run() {
+  // case:results.async_results.math_fetch_find
   assert.equal(await demo.asyncSafeDivide(10, 2), 5);
   await assertRejectsWithCode(
     () => demo.asyncSafeDivide(1, 0),

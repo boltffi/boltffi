@@ -1,6 +1,7 @@
 import { assert, demo } from "../support/index.mjs";
 
 export async function run() {
+  // case:results.error_enums.app_error.basic
   assert.equal(demo.mayFail(true), "Success!");
 
   try {

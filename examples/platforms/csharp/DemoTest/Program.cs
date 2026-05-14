@@ -1716,6 +1716,7 @@ public static class DemoTest
         }
         catch (BoltException) { }
 
+        // case:results.nested_results.option_vec_string
         // Result<String, String> with Ok carrying a wire-decoded String.
         Require(ResultOfString(1) == "item_1", "ResultOfString ok");
         try
@@ -1777,6 +1778,7 @@ public static class DemoTest
     {
         Console.WriteLine("Testing result enum/record errors (typed exceptions)...");
 
+        // case:results.error_enums.math.checked
         // C-style #[error] enum -> dedicated MathErrorException with
         // an Error property that exposes the underlying enum value.
         Require(CheckedDivide(10, 2) == 5, "CheckedDivide(10, 2) ok");
@@ -1812,6 +1814,7 @@ public static class DemoTest
             Require(e.Error == MathError.Overflow, "CheckedAdd typed error");
         }
 
+        // case:results.error_enums.validation.username
         // ValidationError uses an explicit #[repr(i32)] with non-zero
         // discriminants — make sure the wire decode keeps mapping each
         // tag to the right variant on the throw path.
@@ -1844,6 +1847,7 @@ public static class DemoTest
             Require(e.Error == ValidationError.InvalidFormat, "ValidateUsername InvalidFormat");
         }
 
+        // case:results.error_enums.app_error.basic
         // Structured (record) #[error] -> AppErrorException wraps the
         // record so the caller can both `catch` it as an exception and
         // access the original fields via the Error property.
@@ -1959,6 +1963,7 @@ public static class DemoTest
             Require(e.Message.Contains("invalid id"), "FetchData(-1) BoltException");
         }
 
+        // case:results.async_results.math_fetch_find
         Require(await AsyncSafeDivide(10, 2) == 5, "AsyncSafeDivide(10, 2)");
         try
         {

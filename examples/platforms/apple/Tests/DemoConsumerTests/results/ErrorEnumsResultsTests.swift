@@ -3,6 +3,8 @@ import XCTest
 
 final class ErrorEnumsResultsTests: XCTestCase {
     func testTypedErrorResultFns() throws {
+        // case:results.error_enums.math.checked
+        // case:results.error_enums.validation.username
         XCTAssertEqual(try checkedDivide(a: 10, b: 2), 5)
         XCTAssertEqual(try checkedSqrt(x: 9.0), 3.0, accuracy: 1e-9)
         XCTAssertEqual(try checkedAdd(a: 2, b: 3), 5)
@@ -27,6 +29,7 @@ final class ErrorEnumsResultsTests: XCTestCase {
             XCTAssertEqual(error as? ValidationError, ValidationError.invalidFormat)
         }
 
+        // case:results.error_enums.app_error.basic
         XCTAssertEqual(try mayFail(valid: true), "Success!")
         XCTAssertThrowsError(try mayFail(valid: false)) { error in
             XCTAssertEqual(
@@ -43,6 +46,7 @@ final class ErrorEnumsResultsTests: XCTestCase {
             )
         }
 
+        // case:results.error_enums.api_result.basic
         XCTAssertEqual(processValue(value: 3), .success)
         XCTAssertEqual(processValue(value: 0), .errorCode(-1))
         XCTAssertEqual(processValue(value: -2), .errorWithData(code: -2, detail: -4))
@@ -54,6 +58,7 @@ final class ErrorEnumsResultsTests: XCTestCase {
             XCTAssertEqual(error as? ComputeError, .overflow(value: -1, limit: 0))
         }
 
+        // case:results.error_enums.benchmark_response.basic
         let point = DataPoint(x: 1, y: 2, timestamp: 3)
         let okResponse = createSuccessResponse(requestId: 7, point: point)
         XCTAssertEqual(

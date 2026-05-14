@@ -1428,6 +1428,7 @@ public final class DemoTest {
             assert false : "parsePoint should throw on bad input";
         } catch (RuntimeException ignored) {}
 
+        // case:results.nested_results.option_vec_string
         assert Demo.resultOfString(1).equals("item_1") : "resultOfString ok";
         try {
             Demo.resultOfString(-1);
@@ -1488,6 +1489,7 @@ public final class DemoTest {
     private static void testResultEnumErrors() {
         System.out.println("Testing result enum errors...");
 
+        // case:results.error_enums.math.checked
         assert Demo.checkedDivide(10, 2) == 5 : "checkedDivide ok";
         try {
             Demo.checkedDivide(10, 0);
@@ -1512,6 +1514,7 @@ public final class DemoTest {
             assert e.getError() == MathError.OVERFLOW : "checkedAdd typed error";
         }
 
+        // case:results.error_enums.validation.username
         assert Demo.validateUsername("alice").equals("alice") : "validateUsername ok";
         try {
             Demo.validateUsername("ab");
@@ -1532,6 +1535,7 @@ public final class DemoTest {
             assert e.getError() == ValidationError.INVALID_FORMAT : "validateUsername typed error";
         }
 
+        // case:results.error_enums.app_error.basic
         assert Demo.mayFail(true).equals("Success!") : "mayFail ok";
         try {
             Demo.mayFail(false);

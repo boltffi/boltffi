@@ -186,6 +186,7 @@ class DemoCallbacksAndAsyncTest {
     @Test
     fun asyncResultFunctionsRoundTripThroughKotlin() = runBlocking {
         withTimeout(10_000) {
+            // case:results.async_results.math_fetch_find
             assertEquals(5, asyncSafeDivide(10, 2))
             assertTrue(assertFailsWith<MathError> { asyncSafeDivide(1, 0) } is MathError.DivisionByZero)
             assertEquals("value_7", asyncFallibleFetch(7))

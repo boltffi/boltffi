@@ -44,3 +44,90 @@ exercises = ["results::basic::result_to_string"]
 csharp = "The C# demo result tests do not currently include host-created Result input values."
 java = "The Java demo result tests do not currently include host-created Result input values."
 python = "The Python demo tests do not currently cover Result surfaces."
+
+[cases."results.error_enums.math.checked"]
+summary = "Typed math errors preserve enum variants"
+description = "Checked math helpers return successful values and typed MathError variants for division by zero, negative input, and overflow."
+exercises = [
+  "results::error_enums::checked_divide",
+  "results::error_enums::checked_sqrt",
+  "results::error_enums::checked_add",
+]
+
+[cases."results.error_enums.math.checked".excluded_platforms]
+python = "The Python demo tests do not currently cover Result surfaces."
+
+[cases."results.error_enums.validation.username"]
+summary = "Validation errors preserve repr-int variants"
+description = "Username validation returns valid names and typed ValidationError variants for length and format failures."
+exercises = ["results::error_enums::validate_username"]
+
+[cases."results.error_enums.validation.username".excluded_platforms]
+python = "The Python demo tests do not currently cover Result surfaces."
+
+[cases."results.error_enums.app_error.basic"]
+summary = "Structured app errors preserve fields"
+description = "AppError results return successful values or structured error objects with code and message fields."
+exercises = [
+  "results::error_enums::may_fail",
+  "results::error_enums::divide_app",
+]
+
+[cases."results.error_enums.app_error.basic".excluded_platforms]
+python = "The Python demo tests do not currently cover Result surfaces."
+
+[cases."results.error_enums.api_result.basic"]
+summary = "Result-adjacent data enums preserve variants"
+description = "ApiResult and ComputeError values cross the wire as data-enum values and typed errors."
+exercises = [
+  "results::error_enums::process_value",
+  "results::error_enums::api_result_is_success",
+  "results::error_enums::try_compute",
+]
+
+[cases."results.error_enums.api_result.basic".excluded_platforms]
+csharp = "The C# demo result tests do not currently cover ApiResult helpers or the sync try_compute helper."
+java = "The Java demo result tests do not currently cover ApiResult helpers or the sync try_compute helper."
+kotlin = "The Kotlin demo result tests do not currently cover ApiResult helpers or the sync try_compute helper."
+python = "The Python demo tests do not currently cover Result surfaces."
+
+[cases."results.error_enums.benchmark_response.basic"]
+summary = "Records can contain Result fields"
+description = "Benchmark response records carry Ok and Err Result values and expose helpers for success checks and value extraction."
+exercises = [
+  "results::error_enums::create_success_response",
+  "results::error_enums::create_error_response",
+  "results::error_enums::is_response_success",
+  "results::error_enums::get_response_value",
+]
+
+[cases."results.error_enums.benchmark_response.basic".excluded_platforms]
+csharp = "The C# demo result tests do not currently cover BenchmarkResponse records."
+java = "The Java demo result tests do not currently cover BenchmarkResponse records."
+kotlin = "The Kotlin demo result tests do not currently cover BenchmarkResponse records."
+python = "The Python demo tests do not currently cover Result surfaces."
+
+[cases."results.nested_results.option_vec_string"]
+summary = "Results can wrap options, vectors, and strings"
+description = "Nested Result values preserve successful optional, vector, and string payloads and string-error failures."
+exercises = [
+  "results::nested_results::result_of_option",
+  "results::nested_results::result_of_vec",
+  "results::nested_results::result_of_string",
+]
+
+[cases."results.nested_results.option_vec_string".excluded_platforms]
+python = "The Python demo tests do not currently cover Result surfaces."
+
+[cases."results.async_results.math_fetch_find"]
+summary = "Async results preserve values, options, and errors"
+description = "Async result helpers return successful math, string, and optional values, and report typed or string errors."
+exercises = [
+  "results::async_results::async_safe_divide",
+  "results::async_results::async_fallible_fetch",
+  "results::async_results::async_find_value",
+]
+
+[cases."results.async_results.math_fetch_find".excluded_platforms]
+java = "The Java demo result tests do not currently cover async result helpers."
+python = "The Python demo tests do not currently cover Result surfaces."

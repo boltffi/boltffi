@@ -248,12 +248,14 @@ class DemoValueTypesTest {
 
     @Test
     fun typedErrorResultFunctionsUseCorrectKotlinSurface() {
+        // case:results.error_enums.math.checked
         assertEquals(5, checkedDivide(10, 2))
         assertTrue(assertFailsWith<MathError> { checkedDivide(1, 0) } is MathError.DivisionByZero)
         assertDoubleEquals(3.0, checkedSqrt(9.0))
         assertTrue(assertFailsWith<MathError> { checkedSqrt(-1.0) } is MathError.NegativeInput)
         assertTrue(assertFailsWith<MathError> { checkedAdd(Int.MAX_VALUE, 1) } is MathError.Overflow)
 
+        // case:results.error_enums.app_error.basic
         assertEquals("Success!", mayFail(true))
         val invalidInputError = assertFailsWith<AppError> { mayFail(false) }
         assertEquals(400, invalidInputError.code)
@@ -264,6 +266,7 @@ class DemoValueTypesTest {
         assertEquals(500, divideByZeroError.code)
         assertEquals("Division by zero", divideByZeroError.message)
 
+        // case:results.error_enums.validation.username
         assertEquals("valid_name", validateUsername("valid_name"))
         assertTrue(assertFailsWith<ValidationError> { validateUsername("ab") } is ValidationError.TooShort)
         assertTrue(
@@ -276,6 +279,7 @@ class DemoValueTypesTest {
 
     @Test
     fun nestedResultFunctionsUseCorrectKotlinSurface() {
+        // case:results.nested_results.option_vec_string
         assertEquals(8, resultOfOption(4))
         assertNull(resultOfOption(0))
         assertMessageContains(assertFailsWith<FfiException> { resultOfOption(-1) }, "invalid key")
