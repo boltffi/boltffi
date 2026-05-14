@@ -1,0 +1,29 @@
+[cases."primitives.strings.echo.empty"]
+summary = "Empty strings round-trip"
+description = "An empty host string crosses the wire and returns as an empty string."
+exercises = ["primitives::strings::echo_string"]
+
+[cases."primitives.strings.echo.emoji"]
+summary = "Emoji strings round-trip"
+description = "A host string containing an emoji crosses the wire and returns unchanged."
+exercises = ["primitives::strings::echo_string"]
+
+[cases."primitives.strings.concat.basic"]
+summary = "Strings concatenate"
+description = "Two non-empty host strings cross the wire and return as one concatenated string."
+exercises = ["primitives::strings::concat_strings"]
+
+[cases."primitives.strings.length.utf8_bytes"]
+summary = "String length counts UTF-8 bytes"
+description = "A string containing a non-ASCII code point reports its UTF-8 byte length."
+exercises = ["primitives::strings::string_length"]
+
+[cases."primitives.strings.is_empty.empty"]
+summary = "Empty strings are detected"
+description = "An empty host string crosses the wire and is reported as empty."
+exercises = ["primitives::strings::string_is_empty"]
+
+[cases."primitives.strings.repeat.basic"]
+summary = "Strings repeat"
+description = "A host string and repeat count cross the wire and return the repeated string."
+exercises = ["primitives::strings::repeat_string"]

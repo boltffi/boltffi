@@ -179,25 +179,25 @@ public static class DemoTest
     {
         Console.WriteLine("Testing strings...");
         Require(EchoString("hello") == "hello", "echoString(hello)");
-        Require(EchoString("") == "", "echoString(empty)");
+        Require(EchoString("") == "", "case:primitives.strings.echo.empty echoString(empty)");
         Require(EchoString("café") == "café", "echoString(unicode)");
         Require(EchoString("日本語") == "日本語", "echoString(cjk)");
-        Require(EchoString("hello 🌍 world") == "hello 🌍 world", "echoString(emoji)");
+        Require(EchoString("hello 🌍 world") == "hello 🌍 world", "case:primitives.strings.echo.emoji echoString(emoji)");
 
-        Require(ConcatStrings("foo", "bar") == "foobar", "concatStrings(foo, bar)");
+        Require(ConcatStrings("foo", "bar") == "foobar", "case:primitives.strings.concat.basic concatStrings(foo, bar)");
         Require(ConcatStrings("", "bar") == "bar", "concatStrings(empty, bar)");
         Require(ConcatStrings("foo", "") == "foo", "concatStrings(foo, empty)");
         Require(ConcatStrings("🎉", "🎊") == "🎉🎊", "concatStrings(emoji)");
 
         Require(StringLength("hello") == 5u, "stringLength(hello)");
         Require(StringLength("") == 0u, "stringLength(empty)");
-        Require(StringLength("café") == 5u, "stringLength(utf8 bytes)");
+        Require(StringLength("café") == 5u, "case:primitives.strings.length.utf8_bytes stringLength(utf8 bytes)");
         Require(StringLength("🌍") == 4u, "stringLength(emoji 4 bytes)");
 
-        Require(StringIsEmpty(""), "stringIsEmpty(empty)");
+        Require(StringIsEmpty(""), "case:primitives.strings.is_empty.empty stringIsEmpty(empty)");
         Require(!StringIsEmpty("x"), "stringIsEmpty(nonempty)");
 
-        Require(RepeatString("ab", 3u) == "ababab", "repeatString(ab, 3)");
+        Require(RepeatString("ab", 3u) == "ababab", "case:primitives.strings.repeat.basic repeatString(ab, 3)");
         Require(RepeatString("x", 0u) == "", "repeatString(x, 0)");
         Require(RepeatString("🌟", 2u) == "🌟🌟", "repeatString(emoji, 2)");
         Console.WriteLine("  PASS\n");

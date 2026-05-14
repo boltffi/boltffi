@@ -1,0 +1,9 @@
+schema_version = "demo_tests_v1"
+
+# Platforms are required for every case unless the case declares an exclusion
+# with a reason in its category file.
+platforms = ["apple", "kotlin", "java", "csharp", "wasm", "python"]
+
+case_files = [
+  "tests/primitives.toml",
+]

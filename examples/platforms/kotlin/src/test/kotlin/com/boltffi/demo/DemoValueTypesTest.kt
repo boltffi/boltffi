@@ -69,11 +69,12 @@ class DemoValueTypesTest {
         assertEquals(123uL, echoUsize(123uL))
         assertEquals(-123L, echoIsize(-123L))
 
-        assertEquals("hello 🌍", echoString("hello 🌍"))
-        assertEquals("foobar", concatStrings("foo", "bar"))
-        assertEquals(5u, stringLength("café"))
-        assertEquals(true, stringIsEmpty(""))
-        assertEquals("ababab", repeatString("ab", 3u))
+        assertEquals("", echoString(""), "case:primitives.strings.echo.empty")
+        assertEquals("hello 🌍", echoString("hello 🌍"), "case:primitives.strings.echo.emoji")
+        assertEquals("foobar", concatStrings("foo", "bar"), "case:primitives.strings.concat.basic")
+        assertEquals(5u, stringLength("café"), "case:primitives.strings.length.utf8_bytes")
+        assertEquals(true, stringIsEmpty(""), "case:primitives.strings.is_empty.empty")
+        assertEquals("ababab", repeatString("ab", 3u), "case:primitives.strings.repeat.basic")
 
         assertContentEquals(byteArrayOf(1, 2, 3, 4), echoBytes(byteArrayOf(1, 2, 3, 4)))
         assertEquals(3u, bytesLength(byteArrayOf(9, 8, 7)))

@@ -87,18 +87,20 @@ public final class DemoTest {
     private static void testStrings() {
         System.out.println("Testing strings...");
         assert Demo.echoString("hello").equals("hello") : "echoString(hello)";
-        assert Demo.echoString("").equals("") : "echoString(empty)";
+        assert Demo.echoString("").equals("") : "case:primitives.strings.echo.empty echoString(empty)";
         assert Demo.echoString("café").equals("café") : "echoString(unicode)";
         assert Demo.echoString("日本語").equals("日本語") : "echoString(cjk)";
-        assert Demo.echoString("hello 🌍 world").equals("hello 🌍 world") : "echoString(emoji)";
-        assert Demo.concatStrings("foo", "bar").equals("foobar") : "concatStrings(foo, bar)";
+        assert Demo.echoString("hello 🌍 world").equals("hello 🌍 world") : "case:primitives.strings.echo.emoji echoString(emoji)";
+        assert Demo.concatStrings("foo", "bar").equals("foobar") : "case:primitives.strings.concat.basic concatStrings(foo, bar)";
         assert Demo.concatStrings("", "bar").equals("bar") : "concatStrings(empty, bar)";
         assert Demo.concatStrings("foo", "").equals("foo") : "concatStrings(foo, empty)";
         assert Demo.concatStrings("🎉", "🎊").equals("🎉🎊") : "concatStrings(emoji)";
         assert Demo.stringLength("hello") == 5 : "stringLength(hello)";
         assert Demo.stringLength("") == 0 : "stringLength(empty)";
-        assert Demo.stringLength("café") == 5 : "stringLength(utf8 bytes)";
+        assert Demo.stringLength("café") == 5 : "case:primitives.strings.length.utf8_bytes stringLength(utf8 bytes)";
         assert Demo.stringLength("🌍") == 4 : "stringLength(emoji 4 bytes)";
+        assert Demo.stringIsEmpty("") : "case:primitives.strings.is_empty.empty stringIsEmpty(empty)";
+        assert Demo.repeatString("ab", 3).equals("ababab") : "case:primitives.strings.repeat.basic repeatString(ab, 3)";
         System.out.println("  PASS\n");
     }
 

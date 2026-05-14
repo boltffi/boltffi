@@ -61,6 +61,10 @@ test:
 demo-verify:
     ./examples/demo/verify-platform-demos.sh
 
+# Audit semantic demo test cases against platform test markers
+demo-test-audit:
+    python3 examples/demo/scripts/audit_demo_tests.py
+
 # Run tests with cargo-nextest (parallel, faster)
 test-nextest:
     cargo nextest run --workspace
