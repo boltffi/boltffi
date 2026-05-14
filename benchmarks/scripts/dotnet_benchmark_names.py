@@ -29,5 +29,7 @@ def method_name_to_case_id(method_name: str) -> str:
         return known_case_id
 
     normalized_name = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", method_name).lower()
-    normalized_name = normalized_name.replace("64_k", "64k").replace("1_k", "1k")
+    normalized_name = re.sub(r"([a-z])((?:100|64|10|1)_k)\b", r"\1_\2", normalized_name)
+    for scale in ("100", "64", "10", "1"):
+        normalized_name = normalized_name.replace(f"{scale}_k", f"{scale}k")
     return normalized_name

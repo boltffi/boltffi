@@ -103,7 +103,7 @@ public abstract class WireReaderBenchmarks<TPoint, TAddress, TPerson, TLine>
     [GlobalSetup]
     public void Setup()
     {
-        _smallString = "hello world";
+        _smallString = "hello";
         _largeString = new string('x', 64 * 1024);
         _address = Bindings.MakeAddress("123 Main St", "Seattle", "98101");
         _person = Bindings.MakePerson("Alice", 30);
@@ -126,7 +126,7 @@ public abstract class WireReaderBenchmarks<TPoint, TAddress, TPerson, TLine>
     public string EchoString64K() => Bindings.EchoString(_largeString);
 
     [Benchmark]
-    public string GenerateString1K() => Bindings.GenerateString(1024);
+    public string GenerateString1K() => Bindings.GenerateString(1000);
 
     [Benchmark]
     public string GenerateString64K() => Bindings.GenerateString(64 * 1024);
