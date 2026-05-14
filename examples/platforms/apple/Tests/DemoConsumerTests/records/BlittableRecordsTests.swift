@@ -3,6 +3,8 @@ import XCTest
 
 final class BlittableRecordsTests: XCTestCase {
     func testPointFnsAndMethods() throws {
+        // case:records.blittable.point.functions
+        // case:records.blittable.point.try_make
         XCTAssertEqual(Point.new(x: 1.0, y: 2.0), Point(x: 1.0, y: 2.0))
         assertPointEquals(Point.origin(), 0.0, 0.0)
         assertPointEquals(Point(fromPolar: 2.0, theta: .pi / 2.0), 0.0, 2.0, accuracy: 1e-6)
@@ -29,11 +31,16 @@ final class BlittableRecordsTests: XCTestCase {
     }
 
     func testColorFns() {
+        // case:records.blittable.color.basic
         XCTAssertEqual(echoColor(c: Color(r: 1, g: 2, b: 3, a: 4)), Color(r: 1, g: 2, b: 3, a: 4))
         XCTAssertEqual(makeColor(r: 10, g: 20, b: 30, a: 40), Color(r: 10, g: 20, b: 30, a: 40))
     }
 
     func testBenchmarkRecordFns() {
+        // case:records.blittable.locations.vector_stats
+        // case:records.blittable.trades.vector_stats
+        // case:records.blittable.particles.vector_stats
+        // case:records.blittable.sensor_readings.vector_stats
         let locations = generateLocations(count: 3)
         XCTAssertEqual(locations.count, 3)
         XCTAssertEqual(processLocations(locations: locations), 3)

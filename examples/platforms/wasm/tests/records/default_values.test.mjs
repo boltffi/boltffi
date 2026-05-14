@@ -1,6 +1,7 @@
 import { assert, demo } from "../support/index.mjs";
 
 export async function run() {
+  // case:records.default_values.service_config.echo
   const implicitDefaults = {
     name: "worker",
     retries: 3,

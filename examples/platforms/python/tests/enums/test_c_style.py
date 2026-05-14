@@ -6,6 +6,8 @@ import demo
 
 class CStyleEnumsTests(unittest.TestCase):
     def test_status_functions(self) -> None:
+        # case:enums.c_style.status.basic
+        # case:enums.c_style.status.vec
         self.assertEqual(demo.echo_status(demo.Status.ACTIVE), demo.Status.ACTIVE)
         self.assertEqual(demo.status_to_string(demo.Status.ACTIVE), "active")
         self.assertIs(demo.is_active(demo.Status.PENDING), False)
@@ -15,6 +17,7 @@ class CStyleEnumsTests(unittest.TestCase):
         )
 
     def test_direction_surface(self) -> None:
+        # case:enums.c_style.direction.basic
         self.assertEqual(demo.Direction.new(3), demo.Direction.WEST)
         self.assertEqual(demo.Direction.cardinal(), demo.Direction.NORTH)
         self.assertEqual(demo.Direction.from_degrees(90.0), demo.Direction.EAST)
@@ -31,6 +34,9 @@ class CStyleEnumsTests(unittest.TestCase):
         )
 
     def test_repr_int_enums(self) -> None:
+        # case:enums.repr_int.priority.basic
+        # case:enums.repr_int.log_level.basic
+        # case:enums.repr_int.log_level.vec
         self.assertEqual(demo.echo_priority(demo.Priority.HIGH), demo.Priority.HIGH)
         self.assertEqual(demo.priority_label(demo.Priority.LOW), "low")
         self.assertIs(demo.is_high_priority(demo.Priority.CRITICAL), True)

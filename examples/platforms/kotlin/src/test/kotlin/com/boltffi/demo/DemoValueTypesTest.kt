@@ -150,6 +150,10 @@ class DemoValueTypesTest {
 
     @Test
     fun blittableRecordVecsRoundTrip() {
+        // case:records.blittable.locations.vector_stats
+        // case:records.blittable.trades.vector_stats
+        // case:records.blittable.particles.vector_stats
+        // case:records.blittable.sensor_readings.vector_stats
         val locations = generateLocations(3)
         assertEquals(3, locations.size)
         assertEquals(3, processLocations(locations))
@@ -276,11 +280,14 @@ class DemoValueTypesTest {
 
     @Test
     fun enumAndDataEnumExportsBehaveCorrectly() {
+        // case:enums.c_style.status.basic
+        // case:enums.c_style.status.vec
         assertEquals(Status.ACTIVE, echoStatus(Status.ACTIVE))
         assertEquals("active", statusToString(Status.ACTIVE))
         assertEquals(false, isActive(Status.PENDING))
         assertEquals(listOf(Status.ACTIVE, Status.PENDING), echoVecStatus(listOf(Status.ACTIVE, Status.PENDING)))
 
+        // case:enums.c_style.direction.basic
         assertEquals(Direction.WEST, Direction.new(3))
         assertEquals(Direction.NORTH, Direction.cardinal())
         assertEquals(Direction.EAST, Direction.fromDegrees(90.0))
@@ -291,6 +298,7 @@ class DemoValueTypesTest {
         assertEquals(Direction.EAST, echoDirection(Direction.EAST))
         assertEquals(Direction.WEST, oppositeDirection(Direction.EAST))
 
+        // case:enums.complex_variants.filter.basic
         val nameFilter = Filter.ByName("ali")
         val pointFilter = Filter.ByPoints(listOf(Point(0.0, 0.0), Point(1.0, 1.0)))
         val groupFilter = Filter.ByGroups(listOf(listOf("café", "🌍"), emptyList(), listOf("common")))
@@ -303,6 +311,7 @@ class DemoValueTypesTest {
         assertEquals("filter by 3 groups", describeFilter(groupFilter))
         assertEquals("filter by range: 1..5", describeFilter(Filter.ByRange(1.0, 5.0)))
 
+        // case:enums.complex_variants.api_response.basic
         val success = ApiResponse.Success("ok")
         val redirect = ApiResponse.Redirect("https://example.com")
         assertEquals(success, echoApiResponse(success))
@@ -310,10 +319,13 @@ class DemoValueTypesTest {
         assertEquals(true, isSuccess(success))
         assertEquals(false, isSuccess(ApiResponse.Empty))
 
+        // case:enums.repr_int.priority.basic
         assertEquals(Priority.HIGH, echoPriority(Priority.HIGH))
         assertEquals("low", priorityLabel(Priority.LOW))
         assertEquals(true, isHighPriority(Priority.CRITICAL))
         assertEquals(false, isHighPriority(Priority.LOW))
+        // case:enums.repr_int.log_level.basic
+        // case:enums.repr_int.log_level.vec
         assertEquals(LogLevel.INFO, echoLogLevel(LogLevel.INFO))
         assertEquals(true, shouldLog(LogLevel.ERROR, LogLevel.WARN))
         assertEquals(
@@ -321,6 +333,7 @@ class DemoValueTypesTest {
             echoVecLogLevel(listOf(LogLevel.TRACE, LogLevel.INFO, LogLevel.ERROR))
         )
 
+        // case:enums.repr_int.http_code.discriminants
         assertEquals(200.toShort(), HttpCode.OK.value)
         assertEquals(404.toShort(), HttpCode.NOT_FOUND.value)
         assertEquals(500.toShort(), HttpCode.SERVER_ERROR.value)
@@ -328,6 +341,7 @@ class DemoValueTypesTest {
         assertEquals(HttpCode.OK, echoHttpCode(HttpCode.OK))
         assertEquals(HttpCode.SERVER_ERROR, echoHttpCode(HttpCode.SERVER_ERROR))
 
+        // case:enums.repr_int.sign.discriminants
         assertEquals((-1).toByte(), Sign.NEGATIVE.value)
         assertEquals(0.toByte(), Sign.ZERO.value)
         assertEquals(1.toByte(), Sign.POSITIVE.value)
@@ -335,6 +349,8 @@ class DemoValueTypesTest {
         assertEquals(Sign.NEGATIVE, echoSign(Sign.NEGATIVE))
         assertEquals(Sign.POSITIVE, echoSign(Sign.POSITIVE))
 
+        // case:enums.data_enum.shape.basic
+        // case:enums.data_enum.shape.vec
         val circle = Shape.new(5.0)
         assertIs<Shape.Circle>(circle)
         assertIs<Shape.Circle>(Shape.unitCircle())
@@ -348,6 +364,7 @@ class DemoValueTypesTest {
         assertIs<Shape.Rectangle>(echoShape(makeRectangle(3.0, 4.0)))
         assertEquals(3, echoVecShape(listOf(Shape.Circle(2.0), Shape.Rectangle(3.0, 4.0), Shape.Point)).size)
 
+        // case:enums.data_enum.message.basic
         assertEquals(Message.Text("hello"), echoMessage(Message.Text("hello")))
         assertEquals(
             Message.Image("https://example.com/image.png", 640u, 480u),
@@ -360,6 +377,7 @@ class DemoValueTypesTest {
         )
         assertEquals("ping", messageSummary(Message.Ping))
 
+        // case:enums.data_enum.animal.basic
         assertEquals(Animal.Dog("Rex", "Labrador"), echoAnimal(Animal.Dog("Rex", "Labrador")))
         assertEquals(Animal.Cat("Milo", true), echoAnimal(Animal.Cat("Milo", true)))
         assertEquals("5 fish", animalName(Animal.Fish(5u)))
@@ -368,6 +386,8 @@ class DemoValueTypesTest {
 
     @Test
     fun pointAndRecordMethodExportsBehaveCorrectly() {
+        // case:records.blittable.point.functions
+        // case:records.blittable.point.try_make
         assertEquals(Point(1.0, 2.0), Point.new(1.0, 2.0))
         assertPointEquals(0.0, 0.0, Point.origin())
         assertPointEquals(0.0, 2.0, Point.fromPolar(2.0, PI / 2.0), 1e-6)
@@ -390,56 +410,69 @@ class DemoValueTypesTest {
         assertEquals(Point(8.0, 10.0), addPoints(Point(3.0, 4.0), Point(5.0, 6.0)))
 
         val color = Color(1u, 2u, 3u, 255u)
+        // case:records.blittable.color.basic
         assertEquals(color, echoColor(color))
         assertEquals(Color(9u, 8u, 7u, 6u), makeColor(9u, 8u, 7u, 6u))
 
         val line = makeLine(0.0, 0.0, 3.0, 4.0)
+        // case:records.nested.line.basic
         assertEquals(line, echoLine(line))
         assertDoubleEquals(5.0, lineLength(line))
 
         val rect = Rect(Point(1.0, 2.0), Dimensions(3.0, 4.0))
+        // case:records.nested.rect.basic
         assertEquals(rect, echoRect(rect))
         assertDoubleEquals(12.0, rectArea(rect))
     }
 
     @Test
     fun collectionAndNestedRecordExportsBehaveCorrectly() {
+        // case:records.with_collections.polygon.basic
         val polygon = makePolygon(listOf(Point(0.0, 0.0), Point(1.0, 0.0), Point(0.0, 1.0)))
         assertEquals(polygon, echoPolygon(polygon))
         assertEquals(3u, polygonVertexCount(polygon))
         assertPointEquals(1.0 / 3.0, 1.0 / 3.0, polygonCentroid(polygon), 1e-6)
 
+        // case:records.with_collections.team.basic
         val team = makeTeam("devs", listOf("Ali", "Mia"))
         assertEquals(team, echoTeam(team))
         assertEquals(2u, teamSize(team))
 
+        // case:records.with_collections.classroom.basic
         val classroom = makeClassroom(listOf(Person("Mia", 10u), Person("Leo", 11u)))
         assertEquals(classroom, echoClassroom(classroom))
 
+        // case:records.with_collections.tagged_scores.basic
         val taggedScores = TaggedScores("math", doubleArrayOf(90.0, 85.5))
         val echoedTaggedScores = echoTaggedScores(taggedScores)
         assertEquals("math", echoedTaggedScores.label)
         assertContentEquals(doubleArrayOf(90.0, 85.5), echoedTaggedScores.scores)
         assertDoubleEquals(90.0, averageScore(TaggedScores("x", doubleArrayOf(80.0, 100.0))))
 
+        // case:records.with_enums.task.echo
+        // case:records.with_enums.task.make_urgent
         val task = makeTask("ship bindings", Priority.CRITICAL)
         assertEquals(task, echoTask(task))
         assertEquals(false, task.completed)
         assertEquals(true, isUrgent(task))
 
+        // case:records.with_enums.notification.echo
         val notification = Notification("heads up", Priority.HIGH, false)
         assertEquals(notification, echoNotification(notification))
 
+        // case:records.with_enums.holder.triangle
         val triangleHolder = makeTriangleHolder()
         assertIs<Shape.Triangle>(triangleHolder.shape)
         assertEquals(triangleHolder, echoHolder(triangleHolder))
 
+        // case:records.with_enums.task_header.roundtrip
         val header = makeCriticalTaskHeader(42L)
         assertEquals(42L, header.id)
         assertEquals(Priority.CRITICAL, header.priority)
         assertEquals(false, header.completed)
         assertEquals(header, echoTaskHeader(header))
 
+        // case:enums.data_enum.lifecycle_event.priority_payload
         val started = makeCriticalLifecycleEvent(7L)
         assertIs<LifecycleEvent.TaskStarted>(started)
         assertEquals(Priority.CRITICAL, started.priority)
@@ -447,26 +480,31 @@ class DemoValueTypesTest {
         assertEquals(started, echoLifecycleEvent(started))
         assertEquals(LifecycleEvent.Tick, echoLifecycleEvent(LifecycleEvent.Tick))
 
+        // case:records.with_enums.log_entry.roundtrip
         val logEntry = makeErrorLogEntry(1234567890L, 42.toUShort())
         assertEquals(1234567890L, logEntry.timestamp)
         assertEquals(LogLevel.ERROR, logEntry.level)
         assertEquals(42.toUShort(), logEntry.code)
         assertEquals(logEntry, echoLogEntry(logEntry))
 
+        // case:records.with_options.user_profile.some_none
         val userProfile = makeUserProfile("Alice", 30u, "alice@example.com", 98.5)
         assertEquals(userProfile, echoUserProfile(userProfile))
         assertEquals("Alice <alice@example.com>", userDisplayName(userProfile))
         assertEquals("Bob", userDisplayName(makeUserProfile("Bob", 22u, null, null)))
 
+        // case:records.with_options.search_result.some_none
         val searchResult = SearchResult("rust ffi", 12u, "cursor-1", 0.99)
         assertEquals(searchResult, echoSearchResult(searchResult))
         assertEquals(true, hasMoreResults(searchResult))
         assertEquals(false, hasMoreResults(SearchResult("rust ffi", 12u, null, null)))
 
+        // case:records.with_strings.person.basic
         val person = makePerson("Ali", 30u)
         assertEquals(person, echoPerson(person))
         assertEquals("Hello, Ali! You are 30 years old.", greetPerson(person))
 
+        // case:records.with_strings.address.basic
         val address = Address("Main St", "Amsterdam", "1000AA")
         assertEquals(address, echoAddress(address))
         assertEquals("Main St, Amsterdam, 1000AA", formatAddress(address))
@@ -474,6 +512,7 @@ class DemoValueTypesTest {
 
     @Test
     fun recordDefaultValuesSurfaceCorrectly() {
+        // case:records.default_values.service_config.echo
         val implicitDefaults = ServiceConfig("worker")
         assertEquals("worker", implicitDefaults.name)
         assertEquals(3, implicitDefaults.retries)

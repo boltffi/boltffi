@@ -3,6 +3,7 @@ import XCTest
 
 final class DefaultValuesRecordsTests: XCTestCase {
     func testServiceConfigDefaults() {
+        // case:records.default_values.service_config.echo
         let implicitDefaults = ServiceConfig(name: "worker")
         XCTAssertEqual(
             implicitDefaults,

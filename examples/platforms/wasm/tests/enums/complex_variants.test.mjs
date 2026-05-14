@@ -1,6 +1,7 @@
 import { assert, demo } from "../support/index.mjs";
 
 export async function run() {
+  // case:enums.complex_variants.filter.basic
   const nameFilter = { tag: "ByName", name: "ali" };
   const pointFilter = {
     tag: "ByPoints",
@@ -20,6 +21,7 @@ export async function run() {
   assert.equal(demo.describeFilter(groupFilter), "filter by 3 groups");
   assert.equal(demo.describeFilter({ tag: "ByRange", min: 1, max: 5 }), "filter by range: 1..5");
 
+  // case:enums.complex_variants.api_response.basic
   const success = { tag: "Success", data: "ok" };
   const redirect = { tag: "Redirect", url: "https://example.com" };
   assert.deepEqual(demo.echoApiResponse(success), success);

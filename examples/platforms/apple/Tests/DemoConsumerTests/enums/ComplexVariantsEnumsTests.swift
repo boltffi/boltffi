@@ -3,6 +3,7 @@ import XCTest
 
 final class ComplexVariantsEnumsTests: XCTestCase {
     func testFilterFns() {
+        // case:enums.complex_variants.filter.basic
         let nameFilter = Filter.byName(name: "ali")
         let pointFilter = Filter.byPoints(anchors: [Point(x: 0.0, y: 0.0), Point(x: 1.0, y: 1.0)])
         let groupFilter = Filter.byGroups(groups: [["café", "🌍"], [], ["common"]])
@@ -17,6 +18,7 @@ final class ComplexVariantsEnumsTests: XCTestCase {
     }
 
     func testApiResponseFns() {
+        // case:enums.complex_variants.api_response.basic
         let success = ApiResponse.success(data: "ok")
         let redirect = ApiResponse.redirect(url: "https://example.com")
         XCTAssertEqual(echoApiResponse(response: success), success)

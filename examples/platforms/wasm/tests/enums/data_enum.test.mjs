@@ -1,6 +1,7 @@
 import { assert, assertThrowsWithMessage, demo } from "../support/index.mjs";
 
 export async function run() {
+  // case:enums.data_enum.shape.basic
   const circle = demo.makeCircle(5);
   assert.equal(circle.tag, "Circle");
   assert.equal(circle.radius, 5);
@@ -20,6 +21,7 @@ export async function run() {
 
   assert.deepEqual(demo.echoShape(demo.makeCircle(2)), demo.makeCircle(2));
   assert.deepEqual(demo.echoShape(demo.makeRectangle(3, 4)), demo.makeRectangle(3, 4));
+  // case:enums.data_enum.shape.vec
   assert.equal(demo.echoVecShape([demo.makeCircle(2), demo.makeRectangle(3, 4), { tag: "Point" }]).length, 3);
   assert.deepEqual(demo.Shape.tryApexPoint(2.5), { x: 0, y: 2.5 });
   assert.equal(demo.Shape.tryApexPoint(-1), null);
@@ -27,6 +29,7 @@ export async function run() {
   assert.deepEqual(demo.echoShape({ tag: "Apex", tip: null }), { tag: "Apex", tip: null });
   assert.deepEqual(demo.echoShape({ tag: "Cluster", members: [{ x: 1, y: 2 }] }), { tag: "Cluster", members: [{ x: 1, y: 2 }] });
 
+  // case:enums.data_enum.message.basic
   const textMessage = { tag: "Text", body: "hello" };
   const imageMessage = { tag: "Image", url: "https://example.com/image.png", width: 640, height: 480 };
   assert.deepEqual(demo.echoMessage(textMessage), textMessage);
@@ -38,6 +41,7 @@ export async function run() {
   );
   assert.equal(demo.messageSummary({ tag: "Ping" }), "ping");
 
+  // case:enums.data_enum.animal.basic
   const dog = { tag: "Dog", name: "Rex", breed: "Labrador" };
   const cat = { tag: "Cat", name: "Milo", indoor: true };
   assert.deepEqual(demo.echoAnimal(dog), dog);
@@ -45,6 +49,7 @@ export async function run() {
   assert.equal(demo.animalName({ tag: "Fish", count: 5 }), "5 fish");
   assert.equal(demo.animalName(cat), "Milo");
 
+  // case:enums.data_enum.lifecycle_event.priority_payload
   const started = demo.makeCriticalLifecycleEvent(7n);
   assert.equal(started.tag, "TaskStarted");
   assert.equal(started.priority, demo.Priority.Critical);

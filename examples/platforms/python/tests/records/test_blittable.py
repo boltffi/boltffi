@@ -31,6 +31,7 @@ class BlittableRecordsTests(unittest.TestCase):
         self.assert_point(point.add(demo.Point(5.0, 6.0)), x=8.0, y=10.0)
 
     def test_point_functions(self) -> None:
+        # case:records.blittable.point.functions
         point = demo.Point(1.0, 2.0)
 
         self.assert_point(demo.echo_point(point), x=1.0, y=2.0)
@@ -42,6 +43,7 @@ class BlittableRecordsTests(unittest.TestCase):
         )
 
     def test_color_functions(self) -> None:
+        # case:records.blittable.color.basic
         color = demo.Color(1, 2, 3, 255)
 
         self.assertEqual(demo.echo_color(color), color)

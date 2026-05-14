@@ -3,6 +3,8 @@ import XCTest
 
 final class CStyleEnumsTests: XCTestCase {
     func testStatusFns() {
+        // case:enums.c_style.status.basic
+        // case:enums.c_style.status.vec
         XCTAssertEqual(echoStatus(s: .active), .active)
         XCTAssertEqual(statusToString(s: .active), "active")
         XCTAssertEqual(isActive(s: .pending), false)
@@ -10,6 +12,7 @@ final class CStyleEnumsTests: XCTestCase {
     }
 
     func testDirectionFns() {
+        // case:enums.c_style.direction.basic
         XCTAssertEqual(Direction(raw: 3), .west)
         XCTAssertEqual(Direction.cardinal(), .north)
         XCTAssertEqual(Direction(fromDegrees: 90.0), .east)

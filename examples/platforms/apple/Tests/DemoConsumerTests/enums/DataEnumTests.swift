@@ -3,6 +3,8 @@ import XCTest
 
 final class DataEnumTests: XCTestCase {
     func testShapeFns() throws {
+        // case:enums.data_enum.shape.basic
+        // case:enums.data_enum.shape.vec
         let circle = Shape(radius: 5.0)
         XCTAssertEqual(Shape.unitCircle(), Shape.circle(radius: 1.0))
         XCTAssertEqual(Shape(square: 3.0), Shape.rectangle(width: 3.0, height: 3.0))
@@ -22,6 +24,7 @@ final class DataEnumTests: XCTestCase {
     }
 
     func testMessageFns() {
+        // case:enums.data_enum.message.basic
         XCTAssertEqual(echoMessage(m: Message.text(body: "hello")), Message.text(body: "hello"))
         XCTAssertEqual(
             echoMessage(m: Message.image(url: "https://example.com/image.png", width: 640, height: 480)),
@@ -33,6 +36,7 @@ final class DataEnumTests: XCTestCase {
     }
 
     func testAnimalFns() {
+        // case:enums.data_enum.animal.basic
         XCTAssertEqual(echoAnimal(a: Animal.dog(name: "Rex", breed: "Labrador")), Animal.dog(name: "Rex", breed: "Labrador"))
         XCTAssertEqual(echoAnimal(a: Animal.cat(name: "Milo", indoor: true)), Animal.cat(name: "Milo", indoor: true))
         XCTAssertEqual(animalName(a: Animal.fish(count: 5)), "5 fish")
@@ -52,6 +56,7 @@ final class DataEnumTests: XCTestCase {
     }
 
     func testLifecycleEventFns() {
+        // case:enums.data_enum.lifecycle_event.priority_payload
         let started = makeCriticalLifecycleEvent(id: 7)
         XCTAssertEqual(started, LifecycleEvent.taskStarted(priority: .critical, id: 7))
         XCTAssertEqual(echoLifecycleEvent(ev: started), started)

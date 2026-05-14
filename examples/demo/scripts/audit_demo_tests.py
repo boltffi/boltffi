@@ -69,7 +69,7 @@ class DemoTestCase:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Audit semantic demo test cases against platform test markers."
+        description="Audit semantic demo test documentation markers against platform tests."
     )
     parser.add_argument(
         "--manifest",
@@ -262,9 +262,9 @@ def validate_platform_markers(
             present = case_id in markers[platform]
             excluded = platform in case.excluded_platforms
             if excluded and present:
-                errors.append(f"{platform}: case {case_id!r} is excluded but has a test marker")
+                errors.append(f"{platform}: case {case_id!r} is excluded but has a documentation marker")
             elif not excluded and not present:
-                errors.append(f"{platform}: missing required marker for case {case_id!r}")
+                errors.append(f"{platform}: missing documentation marker for case {case_id!r}")
 
     return errors
 
@@ -277,8 +277,8 @@ def print_summary(platforms: list[str], cases: dict[str, DemoTestCase], markers:
         required_cases = {
             case_id for case_id, case in cases.items() if platform not in case.excluded_platforms
         }
-        covered = markers[platform] & required_cases
-        print(f"{platform}: {len(covered)}/{len(required_cases)} required cases marked")
+        documented = markers[platform] & required_cases
+        print(f"{platform}: {len(documented)}/{len(required_cases)} expected cases documented")
 
 
 def print_unexercised_exports(cases: dict[str, DemoTestCase]) -> None:
@@ -311,13 +311,13 @@ def main() -> int:
 
     if errors:
         print()
-        print("demo test audit failures:", file=sys.stderr)
+        print("demo test documentation audit failures:", file=sys.stderr)
         for error in errors:
             print(f"  {error}", file=sys.stderr)
         return 1
 
     print()
-    print("demo test audit passed")
+    print("demo test documentation audit passed")
     return 0
 
 

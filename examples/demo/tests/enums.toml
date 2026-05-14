@@ -1,0 +1,144 @@
+[cases."enums.c_style.status.basic"]
+summary = "C-style status enums round-trip and branch"
+description = "Status enum values cross the wire, render to strings, and drive boolean helper logic."
+exercises = [
+  "enums::c_style::echo_status",
+  "enums::c_style::status_to_string",
+  "enums::c_style::is_active",
+]
+
+[cases."enums.c_style.status.vec"]
+summary = "Vectors of status enums round-trip"
+description = "A vector of C-style status enum values preserves variant order and values."
+exercises = ["enums::c_style::echo_vec_status"]
+
+[cases."enums.c_style.direction.basic"]
+summary = "Direction enums round-trip and transform"
+description = "Direction enum values cross the wire and can be transformed to their opposite direction."
+exercises = [
+  "enums::c_style::echo_direction",
+  "enums::c_style::opposite_direction",
+]
+
+[cases."enums.repr_int.priority.basic"]
+summary = "repr(i32) priority enums round-trip and classify"
+description = "Explicitly represented priority enum values preserve their identity and drive label and threshold helpers."
+exercises = [
+  "enums::repr_int::echo_priority",
+  "enums::repr_int::priority_label",
+  "enums::repr_int::is_high_priority",
+]
+
+[cases."enums.repr_int.priority.basic".excluded_platforms]
+csharp = "The C# demo currently covers Priority as record and data-enum fields, not through the repr_int priority helper functions."
+
+[cases."enums.repr_int.log_level.basic"]
+summary = "repr(u8) log level enums round-trip and compare"
+description = "Log level enum values with a non-i32 backing type cross the wire and compare against a minimum level."
+exercises = [
+  "enums::repr_int::echo_log_level",
+  "enums::repr_int::should_log",
+]
+
+[cases."enums.repr_int.log_level.vec"]
+summary = "Vectors of repr(u8) log levels round-trip"
+description = "A vector of u8-backed enum values preserves variant order and values."
+exercises = ["enums::repr_int::echo_vec_log_level"]
+
+[cases."enums.repr_int.http_code.discriminants"]
+summary = "repr(u16) HTTP enum discriminants are preserved"
+description = "Gapped u16-backed enum discriminants survive construction and round-trip without positional renumbering."
+exercises = [
+  "enums::repr_int::echo_http_code",
+  "enums::repr_int::http_code_not_found",
+]
+
+[cases."enums.repr_int.http_code.discriminants".excluded_platforms]
+python = "The Python enum demo tests do not currently cover HttpCode discriminants."
+
+[cases."enums.repr_int.sign.discriminants"]
+summary = "repr(i8) signed enum discriminants are preserved"
+description = "Negative i8-backed enum discriminants survive construction and round-trip without unsigned reinterpretation."
+exercises = [
+  "enums::repr_int::echo_sign",
+  "enums::repr_int::sign_negative",
+]
+
+[cases."enums.repr_int.sign.discriminants".excluded_platforms]
+python = "The Python enum demo tests do not currently cover Sign discriminants."
+
+[cases."enums.data_enum.shape.basic"]
+summary = "Shape data enums round-trip and construct variants"
+description = "Shape data-enum variants with primitive, record, optional-record, vector-record, and unit payloads cross the wire."
+exercises = [
+  "enums::data_enum::echo_shape",
+  "enums::data_enum::make_circle",
+  "enums::data_enum::make_rectangle",
+]
+
+[cases."enums.data_enum.shape.basic".excluded_platforms]
+python = "The Python demo tests do not currently cover data-enum surfaces."
+
+[cases."enums.data_enum.shape.vec"]
+summary = "Vectors of shape data enums round-trip"
+description = "A vector of data-enum shape values preserves variant order and payloads."
+exercises = ["enums::data_enum::echo_vec_shape"]
+
+[cases."enums.data_enum.shape.vec".excluded_platforms]
+python = "The Python demo tests do not currently cover data-enum surfaces."
+
+[cases."enums.data_enum.message.basic"]
+summary = "Message data enums round-trip and summarize"
+description = "Message variants with string, mixed primitive, and unit payloads cross the wire and render summaries."
+exercises = [
+  "enums::data_enum::echo_message",
+  "enums::data_enum::message_summary",
+]
+
+[cases."enums.data_enum.message.basic".excluded_platforms]
+python = "The Python demo tests do not currently cover data-enum surfaces."
+
+[cases."enums.data_enum.animal.basic"]
+summary = "Animal data enums round-trip and derive names"
+description = "Animal variants with string, boolean, and integer payloads cross the wire and derive display names."
+exercises = [
+  "enums::data_enum::echo_animal",
+  "enums::data_enum::animal_name",
+]
+
+[cases."enums.data_enum.animal.basic".excluded_platforms]
+python = "The Python demo tests do not currently cover data-enum surfaces."
+
+[cases."enums.data_enum.lifecycle_event.priority_payload"]
+summary = "Data-enum variants can carry repr-int enum payloads"
+description = "A lifecycle event variant embeds a Priority enum payload and round-trips both the variant tag and inner enum value."
+exercises = [
+  "enums::data_enum::echo_lifecycle_event",
+  "enums::data_enum::make_critical_lifecycle_event",
+]
+
+[cases."enums.data_enum.lifecycle_event.priority_payload".excluded_platforms]
+python = "The Python demo tests do not currently cover data-enum surfaces."
+
+[cases."enums.complex_variants.filter.basic"]
+summary = "Complex filter variants round-trip and summarize"
+description = "Filter variants with nested strings, nested vectors, record vectors, and primitive fields cross the wire and render summaries."
+exercises = [
+  "enums::complex_variants::echo_filter",
+  "enums::complex_variants::describe_filter",
+]
+
+[cases."enums.complex_variants.filter.basic".excluded_platforms]
+python = "The Python demo tests do not currently cover complex data-enum variants."
+
+[cases."enums.complex_variants.api_response.basic"]
+summary = "API response variants round-trip and classify success"
+description = "API response variants with success, redirect, and empty payload shapes cross the wire and drive success classification."
+exercises = [
+  "enums::complex_variants::echo_api_response",
+  "enums::complex_variants::is_success",
+]
+
+[cases."enums.complex_variants.api_response.basic".excluded_platforms]
+csharp = "The C# demo currently covers Filter complex variants but not ApiResponse helpers."
+python = "The Python demo tests do not currently cover complex data-enum variants."
