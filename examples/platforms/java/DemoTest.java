@@ -48,39 +48,39 @@ public final class DemoTest {
 
     private static void testBool() {
         System.out.println("Testing bool...");
-        assert Demo.echoBool(true);
+        assert Demo.echoBool(true) : "case:primitives.scalars.echo_bool.true";
         assert !Demo.echoBool(false);
         assert !Demo.negateBool(true);
-        assert Demo.negateBool(false);
+        assert Demo.negateBool(false) : "case:primitives.scalars.negate_bool.false";
         System.out.println("  PASS\n");
     }
 
     private static void testI32() {
         System.out.println("Testing i32...");
         assert Demo.echoI32(42) == 42 : "echoI32(42)";
-        assert Demo.echoI32(-100) == -100 : "echoI32(-100)";
-        assert Demo.addI32(10, 20) == 30 : "addI32(10, 20)";
+        assert Demo.echoI32(-100) == -100 : "case:primitives.scalars.echo_i32.negative echoI32(-100)";
+        assert Demo.addI32(10, 20) == 30 : "case:primitives.scalars.add_i32.basic addI32(10, 20)";
         System.out.println("  PASS\n");
     }
 
     private static void testI64() {
         System.out.println("Testing i64...");
         assert Demo.echoI64(9999999999L) == 9999999999L : "echoI64(large)";
-        assert Demo.echoI64(-9999999999L) == -9999999999L : "echoI64(negative large)";
+        assert Demo.echoI64(-9999999999L) == -9999999999L : "case:primitives.scalars.echo_i64.negative_large echoI64(negative large)";
         System.out.println("  PASS\n");
     }
 
     private static void testF32() {
         System.out.println("Testing f32...");
-        assert Math.abs(Demo.echoF32(3.14f) - 3.14f) < 0.001f : "echoF32(3.14)";
-        assert Math.abs(Demo.addF32(1.5f, 2.5f) - 4.0f) < 0.001f : "addF32(1.5, 2.5)";
+        assert Math.abs(Demo.echoF32(3.14f) - 3.14f) < 0.001f : "case:primitives.scalars.echo_f32.basic echoF32(3.14)";
+        assert Math.abs(Demo.addF32(1.5f, 2.5f) - 4.0f) < 0.001f : "case:primitives.scalars.add_f32.basic addF32(1.5, 2.5)";
         System.out.println("  PASS\n");
     }
 
     private static void testF64() {
         System.out.println("Testing f64...");
-        assert Math.abs(Demo.echoF64(3.14159265359) - 3.14159265359) < 0.0000001 : "echoF64(pi)";
-        assert Math.abs(Demo.addF64(1.5, 2.5) - 4.0) < 0.0000001 : "addF64(1.5, 2.5)";
+        assert Math.abs(Demo.echoF64(3.14159265359) - 3.14159265359) < 0.0000001 : "case:primitives.scalars.echo_f64.pi echoF64(pi)";
+        assert Math.abs(Demo.addF64(1.5, 2.5) - 4.0) < 0.0000001 : "case:primitives.scalars.add_f64.basic addF64(1.5, 2.5)";
         System.out.println("  PASS\n");
     }
 
@@ -452,18 +452,18 @@ public final class DemoTest {
         System.out.println("Testing vec bytes...\n");
 
         byte[] echoed = Demo.echoBytes(new byte[]{1, 2, 3, 4});
-        assert echoed.length == 4 : "echoBytes length";
+        assert echoed.length == 4 : "case:bytes.echo.basic echoBytes length";
         assert echoed[0] == 1 && echoed[3] == 4 : "echoBytes values";
 
-        assert Demo.bytesLength(new byte[]{10, 20, 30}) == 3 : "bytesLength";
-        assert Demo.bytesSum(new byte[]{1, 2, 3, 4}) == 10 : "bytesSum";
+        assert Demo.bytesLength(new byte[]{10, 20, 30}) == 3 : "case:bytes.length.basic bytesLength";
+        assert Demo.bytesSum(new byte[]{1, 2, 3, 4}) == 10 : "case:bytes.sum.basic bytesSum";
 
         byte[] made = Demo.makeBytes(5);
-        assert made.length == 5 : "makeBytes length";
+        assert made.length == 5 : "case:bytes.make.basic makeBytes length";
         assert made[0] == 0 && made[4] == 4 : "makeBytes values";
 
         byte[] reversed = Demo.reverseBytes(new byte[]{5, 6, 7});
-        assert reversed.length == 3 : "reverseBytes length";
+        assert reversed.length == 3 : "case:bytes.reverse.basic reverseBytes length";
         assert reversed[0] == 7 && reversed[2] == 5 : "reverseBytes values";
 
         System.out.println("  PASS\n");
@@ -473,30 +473,30 @@ public final class DemoTest {
         System.out.println("Testing primitive vecs...");
 
         int[] ints = Demo.echoVecI32(new int[]{1, 2, 3});
-        assert ints.length == 3 : "echoVecI32 length";
+        assert ints.length == 3 : "case:primitives.vecs.echo_i32.basic echoVecI32 length";
         assert ints[0] == 1 && ints[1] == 2 && ints[2] == 3 : "echoVecI32 values";
 
         int[] empty = Demo.echoVecI32(new int[0]);
-        assert empty.length == 0 : "echoVecI32 empty";
+        assert empty.length == 0 : "case:primitives.vecs.echo_i32.empty echoVecI32 empty";
 
-        assert Demo.sumVecI32(new int[]{10, 20, 30}) == 60L : "sumVecI32";
+        assert Demo.sumVecI32(new int[]{10, 20, 30}) == 60L : "case:primitives.vecs.sum_i32.basic sumVecI32";
         assert Demo.sumVecI32(new int[0]) == 0L : "sumVecI32 empty";
 
         double[] doubles = Demo.echoVecF64(new double[]{1.5, 2.5});
-        assert doubles.length == 2 : "echoVecF64 length";
+        assert doubles.length == 2 : "case:primitives.vecs.echo_f64.basic echoVecF64 length";
         assert Math.abs(doubles[0] - 1.5) < 0.0001 : "echoVecF64[0]";
         assert Math.abs(doubles[1] - 2.5) < 0.0001 : "echoVecF64[1]";
 
         boolean[] bools = Demo.echoVecBool(new boolean[]{true, false, true});
-        assert bools.length == 3 : "echoVecBool length";
+        assert bools.length == 3 : "case:primitives.vecs.echo_bool.basic echoVecBool length";
         assert bools[0] && !bools[1] && bools[2] : "echoVecBool values";
 
         byte[] i8s = Demo.echoVecI8(new byte[]{-1, 0, 7});
-        assert i8s.length == 3 : "echoVecI8 length";
+        assert i8s.length == 3 : "case:primitives.vecs.echo_i8.basic echoVecI8 length";
         assert i8s[0] == -1 && i8s[2] == 7 : "echoVecI8 values";
 
         byte[] u8s = Demo.echoVecU8(new byte[]{0, 1, 2, 3});
-        assert u8s.length == 4 : "echoVecU8 length";
+        assert u8s.length == 4 : "case:primitives.vecs.echo_u8.basic echoVecU8 length";
         assert u8s[0] == 0 && u8s[3] == 3 : "echoVecU8 values";
 
         short[] i16s = Demo.echoVecI16(new short[]{-3, 0, 9});
@@ -528,16 +528,16 @@ public final class DemoTest {
         assert usizes[0] == 0L && usizes[2] == 4L : "echoVecUsize values";
 
         float[] f32s = Demo.echoVecF32(new float[]{1.25f, -2.5f});
-        assert f32s.length == 2 : "echoVecF32 length";
+        assert f32s.length == 2 : "case:primitives.vecs.echo_f32.basic echoVecF32 length";
         assert Math.abs(f32s[0] - 1.25f) < 0.0001f : "echoVecF32[0]";
         assert Math.abs(f32s[1] + 2.5f) < 0.0001f : "echoVecF32[1]";
 
         int[] range = Demo.makeRange(0, 5);
-        assert range.length == 5 : "makeRange length";
+        assert range.length == 5 : "case:primitives.vecs.make_range.basic makeRange length";
         assert range[0] == 0 && range[4] == 4 : "makeRange values";
 
         int[] reversed = Demo.reverseVecI32(new int[]{1, 2, 3});
-        assert reversed[0] == 3 && reversed[1] == 2 && reversed[2] == 1 : "reverseVecI32";
+        assert reversed[0] == 3 && reversed[1] == 2 && reversed[2] == 1 : "case:primitives.vecs.reverse_i32.basic reverseVecI32";
 
         System.out.println("  PASS\n");
     }
@@ -546,7 +546,7 @@ public final class DemoTest {
         System.out.println("Testing vec strings...");
 
         List<String> strings = Demo.echoVecString(Arrays.asList("hello", "world"));
-        assert strings.size() == 2 : "echoVecString size";
+        assert strings.size() == 2 : "case:primitives.vecs.echo_string.basic echoVecString size";
         assert strings.get(0).equals("hello") : "echoVecString[0]";
         assert strings.get(1).equals("world") : "echoVecString[1]";
 
@@ -554,7 +554,7 @@ public final class DemoTest {
         assert emptyStrings.isEmpty() : "echoVecString empty";
 
         int[] lengths = Demo.vecStringLengths(Arrays.asList("hi", "café"));
-        assert lengths.length == 2 : "vecStringLengths size";
+        assert lengths.length == 2 : "case:primitives.vecs.string_lengths.utf8 vecStringLengths size";
         assert lengths[0] == 2 : "vecStringLengths[0]";
         assert lengths[1] == 5 : "vecStringLengths[1] (utf8)";
 

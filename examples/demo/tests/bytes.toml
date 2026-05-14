@@ -1,0 +1,39 @@
+[cases."bytes.echo.basic"]
+summary = "Byte buffers round-trip"
+description = "A non-empty byte buffer crosses the wire and returns unchanged."
+exercises = ["bytes::echo_bytes"]
+
+[cases."bytes.echo.basic".excluded_platforms]
+csharp = "The C# demo currently exercises byte buffers through primitives::vecs::echo_vec_u8, not the dedicated bytes module."
+
+[cases."bytes.length.basic"]
+summary = "Byte buffer length is reported"
+description = "A byte buffer crosses the wire and returns its element count."
+exercises = ["bytes::bytes_length"]
+
+[cases."bytes.length.basic".excluded_platforms]
+csharp = "The C# demo currently exercises byte buffers through primitives::vecs::echo_vec_u8, not the dedicated bytes module."
+
+[cases."bytes.sum.basic"]
+summary = "Byte buffers sum"
+description = "A byte buffer crosses the wire and returns the sum of its values."
+exercises = ["bytes::bytes_sum"]
+
+[cases."bytes.sum.basic".excluded_platforms]
+csharp = "The C# demo currently exercises byte buffers through primitives::vecs::echo_vec_u8, not the dedicated bytes module."
+
+[cases."bytes.make.basic"]
+summary = "Byte buffers are generated"
+description = "A requested length crosses the wire and returns a byte buffer with sequential values."
+exercises = ["bytes::make_bytes"]
+
+[cases."bytes.make.basic".excluded_platforms]
+csharp = "The C# demo currently exercises byte buffers through primitives::vecs::echo_vec_u8, not the dedicated bytes module."
+
+[cases."bytes.reverse.basic"]
+summary = "Byte buffers reverse"
+description = "A byte buffer crosses the wire and returns in reverse order."
+exercises = ["bytes::reverse_bytes"]
+
+[cases."bytes.reverse.basic".excluded_platforms]
+csharp = "The C# demo currently exercises byte buffers through primitives::vecs::echo_vec_u8, not the dedicated bytes module."

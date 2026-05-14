@@ -70,10 +70,10 @@ public static class DemoTest
     private static void TestBool()
     {
         Console.WriteLine("Testing bool...");
-        Require(EchoBool(true), "echoBool(true)");
+        Require(EchoBool(true), "case:primitives.scalars.echo_bool.true echoBool(true)");
         Require(!EchoBool(false), "echoBool(false)");
         Require(!NegateBool(true), "negateBool(true)");
-        Require(NegateBool(false), "negateBool(false)");
+        Require(NegateBool(false), "case:primitives.scalars.negate_bool.false negateBool(false)");
         Console.WriteLine("  PASS\n");
     }
 
@@ -114,8 +114,8 @@ public static class DemoTest
     {
         Console.WriteLine("Testing i32...");
         Require(EchoI32(42) == 42, "echoI32(42)");
-        Require(EchoI32(-100) == -100, "echoI32(-100)");
-        Require(AddI32(10, 20) == 30, "addI32(10, 20)");
+        Require(EchoI32(-100) == -100, "case:primitives.scalars.echo_i32.negative echoI32(-100)");
+        Require(AddI32(10, 20) == 30, "case:primitives.scalars.add_i32.basic addI32(10, 20)");
         Console.WriteLine("  PASS\n");
     }
 
@@ -131,7 +131,7 @@ public static class DemoTest
     {
         Console.WriteLine("Testing i64...");
         Require(EchoI64(9999999999L) == 9999999999L, "echoI64(large)");
-        Require(EchoI64(-9999999999L) == -9999999999L, "echoI64(negative large)");
+        Require(EchoI64(-9999999999L) == -9999999999L, "case:primitives.scalars.echo_i64.negative_large echoI64(negative large)");
         Console.WriteLine("  PASS\n");
     }
 
@@ -146,16 +146,16 @@ public static class DemoTest
     private static void TestF32()
     {
         Console.WriteLine("Testing f32...");
-        Require(Math.Abs(EchoF32(3.14f) - 3.14f) < 0.001f, "echoF32(3.14)");
-        Require(Math.Abs(AddF32(1.5f, 2.5f) - 4.0f) < 0.001f, "addF32(1.5, 2.5)");
+        Require(Math.Abs(EchoF32(3.14f) - 3.14f) < 0.001f, "case:primitives.scalars.echo_f32.basic echoF32(3.14)");
+        Require(Math.Abs(AddF32(1.5f, 2.5f) - 4.0f) < 0.001f, "case:primitives.scalars.add_f32.basic addF32(1.5, 2.5)");
         Console.WriteLine("  PASS\n");
     }
 
     private static void TestF64()
     {
         Console.WriteLine("Testing f64...");
-        Require(Math.Abs(EchoF64(3.14159265359) - 3.14159265359) < 0.0000001, "echoF64(pi)");
-        Require(Math.Abs(AddF64(1.5, 2.5) - 4.0) < 0.0000001, "addF64(1.5, 2.5)");
+        Require(Math.Abs(EchoF64(3.14159265359) - 3.14159265359) < 0.0000001, "case:primitives.scalars.echo_f64.pi echoF64(pi)");
+        Require(Math.Abs(AddF64(1.5, 2.5) - 4.0) < 0.0000001, "case:primitives.scalars.add_f64.basic addF64(1.5, 2.5)");
         Console.WriteLine("  PASS\n");
     }
 
@@ -710,11 +710,11 @@ public static class DemoTest
         Console.WriteLine("Testing primitive vecs...");
 
         int[] echoedI32 = EchoVecI32(new int[] { 1, 2, 3 });
-        Require(echoedI32.SequenceEqual(new[] { 1, 2, 3 }), "echoVecI32");
-        Require(EchoVecI32(Array.Empty<int>()).Length == 0, "echoVecI32 empty");
+        Require(echoedI32.SequenceEqual(new[] { 1, 2, 3 }), "case:primitives.vecs.echo_i32.basic echoVecI32");
+        Require(EchoVecI32(Array.Empty<int>()).Length == 0, "case:primitives.vecs.echo_i32.empty echoVecI32 empty");
 
-        Require(EchoVecI8(new sbyte[] { -1, 0, 7 }).SequenceEqual(new sbyte[] { -1, 0, 7 }), "echoVecI8");
-        Require(EchoVecU8(new byte[] { 0, 1, 2, 3 }).SequenceEqual(new byte[] { 0, 1, 2, 3 }), "echoVecU8");
+        Require(EchoVecI8(new sbyte[] { -1, 0, 7 }).SequenceEqual(new sbyte[] { -1, 0, 7 }), "case:primitives.vecs.echo_i8.basic echoVecI8");
+        Require(EchoVecU8(new byte[] { 0, 1, 2, 3 }).SequenceEqual(new byte[] { 0, 1, 2, 3 }), "case:primitives.vecs.echo_u8.basic echoVecU8");
         Require(EchoVecI16(new short[] { -3, 0, 9 }).SequenceEqual(new short[] { -3, 0, 9 }), "echoVecI16");
         Require(EchoVecU16(new ushort[] { 0, 10, 20 }).SequenceEqual(new ushort[] { 0, 10, 20 }), "echoVecU16");
         Require(EchoVecU32(new uint[] { 0, 10, 20 }).SequenceEqual(new uint[] { 0, 10, 20 }), "echoVecU32");
@@ -722,15 +722,15 @@ public static class DemoTest
         Require(EchoVecU64(new ulong[] { 0UL, 1UL, 2UL }).SequenceEqual(new ulong[] { 0UL, 1UL, 2UL }), "echoVecU64");
         Require(EchoVecIsize(new nint[] { -2, 0, 5 }).SequenceEqual(new nint[] { -2, 0, 5 }), "echoVecIsize");
         Require(EchoVecUsize(new nuint[] { 0, 2, 4 }).SequenceEqual(new nuint[] { 0, 2, 4 }), "echoVecUsize");
-        Require(EchoVecF32(new float[] { 1.25f, -2.5f }).SequenceEqual(new float[] { 1.25f, -2.5f }), "echoVecF32");
-        Require(EchoVecF64(new double[] { 1.5, 2.5 }).SequenceEqual(new double[] { 1.5, 2.5 }), "echoVecF64");
-        Require(EchoVecBool(new bool[] { true, false, true }).SequenceEqual(new bool[] { true, false, true }), "echoVecBool");
+        Require(EchoVecF32(new float[] { 1.25f, -2.5f }).SequenceEqual(new float[] { 1.25f, -2.5f }), "case:primitives.vecs.echo_f32.basic echoVecF32");
+        Require(EchoVecF64(new double[] { 1.5, 2.5 }).SequenceEqual(new double[] { 1.5, 2.5 }), "case:primitives.vecs.echo_f64.basic echoVecF64");
+        Require(EchoVecBool(new bool[] { true, false, true }).SequenceEqual(new bool[] { true, false, true }), "case:primitives.vecs.echo_bool.basic echoVecBool");
 
-        Require(SumVecI32(new int[] { 10, 20, 30 }) == 60L, "sumVecI32");
+        Require(SumVecI32(new int[] { 10, 20, 30 }) == 60L, "case:primitives.vecs.sum_i32.basic sumVecI32");
         Require(SumVecI32(Array.Empty<int>()) == 0L, "sumVecI32 empty");
 
-        Require(MakeRange(0, 5).SequenceEqual(new int[] { 0, 1, 2, 3, 4 }), "makeRange");
-        Require(ReverseVecI32(new int[] { 1, 2, 3 }).SequenceEqual(new int[] { 3, 2, 1 }), "reverseVecI32");
+        Require(MakeRange(0, 5).SequenceEqual(new int[] { 0, 1, 2, 3, 4 }), "case:primitives.vecs.make_range.basic makeRange");
+        Require(ReverseVecI32(new int[] { 1, 2, 3 }).SequenceEqual(new int[] { 3, 2, 1 }), "case:primitives.vecs.reverse_i32.basic reverseVecI32");
         Require(GenerateI32Vec(4).SequenceEqual(new int[] { 0, 1, 2, 3 }), "generateI32Vec");
         Require(GenerateF64Vec(3).Length == 3, "generateF64Vec length");
         Require(Math.Abs(SumF64Vec(new double[] { 0.5, 1.5, 2.0 }) - 4.0) < 1e-9, "sumF64Vec");
@@ -751,11 +751,11 @@ public static class DemoTest
 
         string[] words = new[] { "hello", "", "café", "🌍" };
         string[] echoedWords = EchoVecString(words);
-        Require(echoedWords.SequenceEqual(words), "echoVecString round-trip");
+        Require(echoedWords.SequenceEqual(words), "case:primitives.vecs.echo_string.basic echoVecString round-trip");
         Require(EchoVecString(Array.Empty<string>()).Length == 0, "echoVecString empty");
 
         uint[] lengths = VecStringLengths(new[] { "", "a", "café", "🌍" });
-        Require(lengths.SequenceEqual(new uint[] { 0u, 1u, 5u, 4u }), "vecStringLengths UTF-8 byte counts");
+        Require(lengths.SequenceEqual(new uint[] { 0u, 1u, 5u, 4u }), "case:primitives.vecs.string_lengths.utf8 vecStringLengths UTF-8 byte counts");
 
         int[][] nestedInts = new[]
         {

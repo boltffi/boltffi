@@ -51,20 +51,24 @@ class DemoValueTypesTest {
 
     @Test
     fun primitivesStringsBytesAndVectorsRoundTrip() {
-        assertEquals(true, echoBool(true))
-        assertEquals(true, negateBool(false))
+        assertEquals(true, echoBool(true), "case:primitives.scalars.echo_bool.true")
+        assertEquals(true, negateBool(false), "case:primitives.scalars.negate_bool.false")
         assertEquals((-7).toByte(), echoI8((-7).toByte()))
         assertEquals(255u.toUByte(), echoU8(255u.toUByte()))
         assertEquals((-1234).toShort(), echoI16((-1234).toShort()))
         assertEquals(55_000u.toUShort(), echoU16(55_000u.toUShort()))
-        assertEquals(-42, echoI32(-42))
-        assertEquals(30, addI32(10, 20))
+        assertEquals(-42, echoI32(-42), "case:primitives.scalars.echo_i32.negative")
+        assertEquals(30, addI32(10, 20), "case:primitives.scalars.add_i32.basic")
         assertEquals(4_000_000_000u, echoU32(4_000_000_000u))
-        assertEquals(-9_999_999_999L, echoI64(-9_999_999_999L))
+        assertEquals(-9_999_999_999L, echoI64(-9_999_999_999L), "case:primitives.scalars.echo_i64.negative_large")
         assertEquals(9_999_999_999uL, echoU64(9_999_999_999uL))
+        // case:primitives.scalars.echo_f32.basic
         assertFloatEquals(3.5f, echoF32(3.5f))
+        // case:primitives.scalars.add_f32.basic
         assertFloatEquals(4.0f, addF32(1.5f, 2.5f))
+        // case:primitives.scalars.echo_f64.pi
         assertDoubleEquals(3.14159265359, echoF64(3.14159265359))
+        // case:primitives.scalars.add_f64.basic
         assertDoubleEquals(4.0, addF64(1.5, 2.5))
         assertEquals(123uL, echoUsize(123uL))
         assertEquals(-123L, echoIsize(-123L))
@@ -76,15 +80,16 @@ class DemoValueTypesTest {
         assertEquals(true, stringIsEmpty(""), "case:primitives.strings.is_empty.empty")
         assertEquals("ababab", repeatString("ab", 3u), "case:primitives.strings.repeat.basic")
 
-        assertContentEquals(byteArrayOf(1, 2, 3, 4), echoBytes(byteArrayOf(1, 2, 3, 4)))
-        assertEquals(3u, bytesLength(byteArrayOf(9, 8, 7)))
-        assertEquals(10u, bytesSum(byteArrayOf(1, 2, 3, 4)))
-        assertContentEquals(byteArrayOf(0, 1, 2, 3), makeBytes(4u))
-        assertContentEquals(byteArrayOf(4, 3, 2, 1), reverseBytes(byteArrayOf(1, 2, 3, 4)))
+        assertContentEquals(byteArrayOf(1, 2, 3, 4), echoBytes(byteArrayOf(1, 2, 3, 4)), "case:bytes.echo.basic")
+        assertEquals(3u, bytesLength(byteArrayOf(9, 8, 7)), "case:bytes.length.basic")
+        assertEquals(10u, bytesSum(byteArrayOf(1, 2, 3, 4)), "case:bytes.sum.basic")
+        assertContentEquals(byteArrayOf(0, 1, 2, 3), makeBytes(4u), "case:bytes.make.basic")
+        assertContentEquals(byteArrayOf(4, 3, 2, 1), reverseBytes(byteArrayOf(1, 2, 3, 4)), "case:bytes.reverse.basic")
 
-        assertContentEquals(intArrayOf(1, 2, 3), echoVecI32(intArrayOf(1, 2, 3)))
-        assertContentEquals(byteArrayOf(-1, 0, 7), echoVecI8(byteArrayOf(-1, 0, 7)))
-        assertContentEquals(byteArrayOf(0, 1, 2, 3), echoVecU8(byteArrayOf(0, 1, 2, 3)))
+        assertContentEquals(intArrayOf(1, 2, 3), echoVecI32(intArrayOf(1, 2, 3)), "case:primitives.vecs.echo_i32.basic")
+        assertContentEquals(intArrayOf(), echoVecI32(intArrayOf()), "case:primitives.vecs.echo_i32.empty")
+        assertContentEquals(byteArrayOf(-1, 0, 7), echoVecI8(byteArrayOf(-1, 0, 7)), "case:primitives.vecs.echo_i8.basic")
+        assertContentEquals(byteArrayOf(0, 1, 2, 3), echoVecU8(byteArrayOf(0, 1, 2, 3)), "case:primitives.vecs.echo_u8.basic")
         assertContentEquals(shortArrayOf(-3, 0, 9), echoVecI16(shortArrayOf(-3, 0, 9)))
         assertContentEquals(shortArrayOf(0, 10, 20), echoVecU16(shortArrayOf(0, 10, 20)))
         assertContentEquals(intArrayOf(0, 10, 20), echoVecU32(intArrayOf(0, 10, 20)))
@@ -92,14 +97,14 @@ class DemoValueTypesTest {
         assertContentEquals(longArrayOf(0L, 1L, 2L), echoVecU64(longArrayOf(0L, 1L, 2L)))
         assertContentEquals(longArrayOf(-2L, 0L, 5L), echoVecIsize(longArrayOf(-2L, 0L, 5L)))
         assertContentEquals(longArrayOf(0L, 2L, 4L), echoVecUsize(longArrayOf(0L, 2L, 4L)))
-        assertContentEquals(floatArrayOf(1.25f, -2.5f), echoVecF32(floatArrayOf(1.25f, -2.5f)))
-        assertContentEquals(doubleArrayOf(1.5, 2.5), echoVecF64(doubleArrayOf(1.5, 2.5)))
-        assertContentEquals(booleanArrayOf(true, false, true), echoVecBool(booleanArrayOf(true, false, true)))
-        assertContentEquals(listOf("hello", "world"), echoVecString(listOf("hello", "world")))
-        assertContentEquals(intArrayOf(2, 5), vecStringLengths(listOf("hi", "café")))
-        assertEquals(60L, sumVecI32(intArrayOf(10, 20, 30)))
-        assertContentEquals(intArrayOf(0, 1, 2, 3, 4), makeRange(0, 5))
-        assertContentEquals(intArrayOf(3, 2, 1), reverseVecI32(intArrayOf(1, 2, 3)))
+        assertContentEquals(floatArrayOf(1.25f, -2.5f), echoVecF32(floatArrayOf(1.25f, -2.5f)), "case:primitives.vecs.echo_f32.basic")
+        assertContentEquals(doubleArrayOf(1.5, 2.5), echoVecF64(doubleArrayOf(1.5, 2.5)), "case:primitives.vecs.echo_f64.basic")
+        assertContentEquals(booleanArrayOf(true, false, true), echoVecBool(booleanArrayOf(true, false, true)), "case:primitives.vecs.echo_bool.basic")
+        assertContentEquals(listOf("hello", "world"), echoVecString(listOf("hello", "world")), "case:primitives.vecs.echo_string.basic")
+        assertContentEquals(intArrayOf(2, 5), vecStringLengths(listOf("hi", "café")), "case:primitives.vecs.string_lengths.utf8")
+        assertEquals(60L, sumVecI32(intArrayOf(10, 20, 30)), "case:primitives.vecs.sum_i32.basic")
+        assertContentEquals(intArrayOf(0, 1, 2, 3, 4), makeRange(0, 5), "case:primitives.vecs.make_range.basic")
+        assertContentEquals(intArrayOf(3, 2, 1), reverseVecI32(intArrayOf(1, 2, 3)), "case:primitives.vecs.reverse_i32.basic")
     }
 
     @Test

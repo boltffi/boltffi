@@ -6,4 +6,5 @@ platforms = ["apple", "kotlin", "java", "csharp", "wasm", "python"]
 
 case_files = [
   "tests/primitives.toml",
+  "tests/bytes.toml",
 ]
