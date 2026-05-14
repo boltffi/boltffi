@@ -1,0 +1,55 @@
+[cases."custom_types.email.basic"]
+summary = "Email custom types round-trip and expose domains"
+description = "An email custom type validates through its string representation, round-trips, and derives its domain."
+exercises = [
+  "custom_types::echo_email",
+  "custom_types::email_domain",
+]
+
+[cases."custom_types.email.basic".excluded_platforms]
+python = "The Python demo tests do not currently cover custom types."
+
+[cases."custom_types.datetime.roundtrip"]
+summary = "DateTime custom types round-trip and convert"
+description = "A DateTime custom type crosses the wire through millisecond representation."
+exercises = [
+  "custom_types::echo_datetime",
+  "custom_types::datetime_to_millis",
+]
+
+[cases."custom_types.datetime.roundtrip".excluded_platforms]
+python = "The Python demo tests do not currently cover custom types."
+
+[cases."custom_types.datetime.format"]
+summary = "DateTime custom types format as timestamps"
+description = "A DateTime custom type formats as an RFC3339 timestamp string."
+exercises = [
+  "custom_types::format_timestamp",
+]
+
+[cases."custom_types.datetime.format".excluded_platforms]
+kotlin = "The Kotlin custom type demo does not currently cover the standalone timestamp formatting helper."
+python = "The Python demo tests do not currently cover custom types."
+
+[cases."custom_types.event.basic"]
+summary = "Event records carry DateTime custom type fields"
+description = "An event record containing a custom DateTime field round-trips and exposes the embedded timestamp."
+exercises = [
+  "custom_types::echo_event",
+  "custom_types::event_timestamp",
+]
+
+[cases."custom_types.event.basic".excluded_platforms]
+kotlin = "The Kotlin custom type demo does not currently cover Event records."
+python = "The Python demo tests do not currently cover custom types."
+
+[cases."custom_types.vectors.basic"]
+summary = "Vectors of custom types round-trip"
+description = "Vectors of email and DateTime custom types cross the wire while preserving order and values."
+exercises = [
+  "custom_types::echo_emails",
+  "custom_types::echo_datetimes",
+]
+
+[cases."custom_types.vectors.basic".excluded_platforms]
+python = "The Python demo tests do not currently cover custom types."

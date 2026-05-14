@@ -207,21 +207,26 @@ public static class DemoTest
     {
         Console.WriteLine("Testing custom types (Email, UtcDateTime, Event)...");
 
+        // case:custom_types.email.basic
         string email = "café@example.com";
         Require(EchoEmail(email) == email, "EchoEmail roundtrip");
         Require(EmailDomain(email) == "example.com", "EmailDomain");
 
         long ts = 1_710_000_000_000L;
+        // case:custom_types.datetime.roundtrip
+        // case:custom_types.datetime.format
         Require(EchoDatetime(ts) == ts, "EchoDatetime");
         Require(DatetimeToMillis(ts) == ts, "DatetimeToMillis");
         Require(FormatTimestamp(ts).StartsWith("2024-03-"), "FormatTimestamp");
 
+        // case:custom_types.event.basic
         Event evt = new Event("launch", ts);
         Event echoed = EchoEvent(evt);
         Require(echoed.Name == "launch", "EchoEvent.Name");
         Require(echoed.Timestamp == ts, "EchoEvent.Timestamp");
         Require(EventTimestamp(evt) == ts, "EventTimestamp");
 
+        // case:custom_types.vectors.basic
         string[] emails = new[] { "café@example.com", "user@example.org" };
         string[] echoedEmails = EchoEmails(emails);
         Require(echoedEmails.Length == 2, "EchoEmails length");
@@ -1874,6 +1879,7 @@ public static class DemoTest
     {
         Console.WriteLine("Testing async functions...");
 
+        // case:async_fns.basic.scalar_string_vec
         Require(await AsyncAdd(3, 7) == 10, "AsyncAdd(3, 7)");
         Require(await AsyncEcho("hello async") == "Echo: hello async", "AsyncEcho string return");
         Require((await AsyncDoubleAll(new[] { 1, 2, 3 })).SequenceEqual(new[] { 2, 4, 6 }),
@@ -1881,7 +1887,7 @@ public static class DemoTest
         Require(await AsyncFindPositive(new[] { -1, 0, 5, 3 }) == 5, "AsyncFindPositive finds first positive");
         Require(await AsyncFindPositive(new[] { -3, -2, -1 }) == null, "AsyncFindPositive all-negative returns null");
         Require(await AsyncConcat(new[] { "a", "b", "c" }) == "a, b, c", "AsyncConcat Vec<String> param");
-        Require((await AsyncGetNumbers(4)).SequenceEqual(new[] { 0, 1, 2, 3 }), "AsyncGetNumbers(4)");
+        Require((await AsyncGetNumbers(4)).SequenceEqual(new[] { 0, 1, 2, 3 }), "case:async_fns.basic.get_numbers AsyncGetNumbers(4)");
 
         MixedRecordParameters parameters = new MixedRecordParameters(
             new[] { "async", "record" },
@@ -1898,6 +1904,7 @@ public static class DemoTest
             parameters
         );
 
+        // case:async_fns.mixed_record.roundtrip
         MixedRecord echoed = await AsyncEchoMixedRecord(record);
         Require(echoed.Name == record.Name, "AsyncEchoMixedRecord.Name");
         Require(echoed.Anchor == record.Anchor, "AsyncEchoMixedRecord.Anchor");
@@ -1928,6 +1935,7 @@ public static class DemoTest
     {
         Console.WriteLine("Testing async result functions...");
 
+        // case:async_fns.results.compute_fetch
         Require(await TryComputeAsync(6) == 12, "TryComputeAsync success");
         try
         {

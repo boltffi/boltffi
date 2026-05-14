@@ -42,6 +42,7 @@ class DemoMixedRecordTest {
     @Test
     fun asyncMixedRecordFunctionsRoundTripThroughKotlin() = runBlocking {
         withTimeout(10_000) {
+            // case:async_fns.mixed_record.roundtrip
             val record = sampleMixedRecord()
 
             assertEquals(record, asyncEchoMixedRecord(record))

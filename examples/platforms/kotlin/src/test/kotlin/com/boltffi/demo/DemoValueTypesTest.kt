@@ -16,32 +16,39 @@ import kotlin.test.assertTrue
 class DemoValueTypesTest {
     @Test
     fun builtinsAndCustomTypesRoundTrip() {
+        // case:builtins.duration.basic
         val duration = Duration.ofSeconds(2).plusMillis(500)
         assertEquals(duration, echoDuration(duration))
         assertEquals(Duration.ofSeconds(3).plusNanos(25), makeDuration(3uL, 25u))
         assertEquals(2_500uL, durationAsMillis(duration))
 
+        // case:builtins.system_time.basic
         val instant = Instant.ofEpochMilli(1_701_234_567_890L)
         assertEquals(instant, echoSystemTime(instant))
         assertEquals(1_701_234_567_890uL, systemTimeToMillis(instant))
         assertEquals(instant, millisToSystemTime(1_701_234_567_890uL))
 
+        // case:builtins.uuid.basic
         val uuid = UUID.fromString("123e4567-e89b-12d3-a456-426614174000")
         assertEquals(uuid, echoUuid(uuid))
         assertEquals(uuid.toString(), uuidToString(uuid))
 
+        // case:builtins.url.basic
         val url = URI("https://example.com/demo?q=boltffi")
         assertEquals(url, echoUrl(url))
         assertEquals(url.toString(), urlToString(url))
 
+        // case:custom_types.email.basic
         val email = "café@example.com"
         assertEquals(email, echoEmail(email))
         assertEquals("example.com", emailDomain(email))
 
+        // case:custom_types.datetime.roundtrip
         val datetime: UtcDateTime = 1_701_234_567_890L
         assertEquals(datetime, echoDatetime(datetime))
         assertEquals(1_701_234_567_890L, datetimeToMillis(datetime))
 
+        // case:custom_types.vectors.basic
         val emails = listOf("café@example.com", "user@example.org")
         assertContentEquals(emails, echoEmails(emails))
 

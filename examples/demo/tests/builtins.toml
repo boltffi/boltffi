@@ -1,0 +1,53 @@
+[cases."builtins.duration.basic"]
+summary = "Duration values round-trip and convert"
+description = "Duration values cross the wire, can be constructed from seconds and nanoseconds, and convert to milliseconds."
+exercises = [
+  "builtins::echo_duration",
+  "builtins::make_duration",
+  "builtins::duration_as_millis",
+]
+
+[cases."builtins.duration.basic".excluded_platforms]
+csharp = "The C# demo tests do not currently cover built-in Duration values."
+java = "The Java demo tests do not currently cover built-in Duration values."
+python = "The Python demo tests do not currently cover built-in values."
+
+[cases."builtins.system_time.basic"]
+summary = "SystemTime values round-trip and convert"
+description = "SystemTime values cross the wire and convert to and from Unix epoch milliseconds."
+exercises = [
+  "builtins::echo_system_time",
+  "builtins::system_time_to_millis",
+  "builtins::millis_to_system_time",
+]
+
+[cases."builtins.system_time.basic".excluded_platforms]
+csharp = "The C# demo tests do not currently cover built-in SystemTime values."
+java = "The Java demo tests do not currently cover built-in SystemTime values."
+python = "The Python demo tests do not currently cover built-in values."
+
+[cases."builtins.uuid.basic"]
+summary = "UUID values round-trip and stringify"
+description = "UUID values cross the wire and render to their canonical string representation."
+exercises = [
+  "builtins::echo_uuid",
+  "builtins::uuid_to_string",
+]
+
+[cases."builtins.uuid.basic".excluded_platforms]
+csharp = "The C# demo tests do not currently cover built-in UUID values."
+java = "The Java demo tests do not currently cover built-in UUID values."
+python = "The Python demo tests do not currently cover built-in values."
+
+[cases."builtins.url.basic"]
+summary = "URL values round-trip and stringify"
+description = "URL values cross the wire and render to their string representation."
+exercises = [
+  "builtins::echo_url",
+  "builtins::url_to_string",
+]
+
+[cases."builtins.url.basic".excluded_platforms]
+csharp = "The C# demo tests do not currently cover built-in URL values."
+java = "The Java demo tests do not currently cover built-in URL values."
+python = "The Python demo tests do not currently cover built-in values."

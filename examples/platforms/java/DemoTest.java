@@ -107,10 +107,13 @@ public final class DemoTest {
     private static void testCustomTypes() {
         System.out.println("Testing custom types...");
         long timestamp = 1_710_000_000_000L;
+        // case:custom_types.datetime.roundtrip
+        // case:custom_types.datetime.format
         assert Demo.echoDatetime(timestamp) == timestamp : "echoDatetime";
         assert Demo.datetimeToMillis(timestamp) == timestamp : "datetimeToMillis";
         assert Demo.formatTimestamp(timestamp).startsWith("2024-03-") : "formatTimestamp";
 
+        // case:custom_types.event.basic
         Event event = new Event("launch", timestamp);
         assert event.name().equals("launch") : "Event.name";
         assert event.timestamp() == timestamp : "Event.timestamp";
@@ -120,10 +123,12 @@ public final class DemoTest {
         assert echoed.timestamp() == timestamp : "echoEvent.timestamp";
         assert Demo.eventTimestamp(event) == timestamp : "eventTimestamp";
 
+        // case:custom_types.email.basic
         String email = "café@example.com";
         assert Demo.echoEmail(email).equals(email) : "echoEmail roundtrip";
         assert Demo.emailDomain(email).equals("example.com") : "emailDomain";
 
+        // case:custom_types.vectors.basic
         List<String> emails = Arrays.asList("café@example.com", "user@example.org");
         List<String> echoedEmails = Demo.echoEmails(emails);
         assert echoedEmails.size() == 2 : "echoEmails length";
@@ -1285,6 +1290,7 @@ public final class DemoTest {
         System.out.println("Testing async functions...");
         try {
             CompletableFuture<Integer> addFuture = Demo.asyncAdd(3, 7);
+            // case:async_fns.basic.scalar_string_vec
             assert addFuture.get() == 10 : "asyncAdd(3, 7)";
 
             CompletableFuture<String> echoFuture = Demo.asyncEcho("hello async");
@@ -1305,6 +1311,7 @@ public final class DemoTest {
             assert concatFuture.get().equals("a, b, c") : "asyncConcat";
 
             MixedRecord record = sampleMixedRecord();
+            // case:async_fns.mixed_record.roundtrip
             assert Demo.asyncEchoMixedRecord(record).get().equals(record) : "asyncEchoMixedRecord";
             assert Demo.asyncMakeMixedRecord(
                 record.name(),

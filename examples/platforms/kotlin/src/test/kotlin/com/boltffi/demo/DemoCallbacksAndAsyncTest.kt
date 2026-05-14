@@ -173,6 +173,7 @@ class DemoCallbacksAndAsyncTest {
     @Test
     fun topLevelAsyncFunctionsRoundTripThroughKotlin() = runBlocking {
         withTimeout(10_000) {
+            // case:async_fns.basic.scalar_string_vec
             assertEquals(10, asyncAdd(3, 7))
             assertEquals("Echo: hello async", asyncEcho("hello async"))
             assertContentEquals(intArrayOf(2, 4, 6), asyncDoubleAll(intArrayOf(1, 2, 3)))

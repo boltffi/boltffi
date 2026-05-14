@@ -7,8 +7,11 @@ platforms = ["apple", "kotlin", "java", "csharp", "wasm", "python"]
 case_files = [
   "tests/primitives.toml",
   "tests/bytes.toml",
+  "tests/builtins.toml",
+  "tests/custom_types.toml",
   "tests/enums.toml",
   "tests/options.toml",
   "tests/records.toml",
   "tests/results.toml",
+  "tests/async_fns.toml",
 ]
