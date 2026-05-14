@@ -1,9 +1,9 @@
-import unittest
+from tests.support import DemoTestCase
 
 import demo
 
 
-class StringsTests(unittest.TestCase):
+class StringsTests(DemoTestCase):
     def test_echo_string(self) -> None:
         self.assertEqual(demo.echo_string("hello"), "hello")
         self.assertEqual(demo.echo_string(""), "", "case:primitives.strings.echo.empty")

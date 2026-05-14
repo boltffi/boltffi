@@ -1,7 +1,7 @@
 import { assert, assertArrayEqual, assertThrowsWithMessage, demo } from "../support/index.mjs";
 
 export async function run() {
-  // case:results.nested_results.option_vec_string
+  globalThis.demoCase("case:results.nested_results.option_vec_string");
   assert.equal(demo.resultOfOption(4), 8);
   assert.equal(demo.resultOfOption(0), null);
   assertThrowsWithMessage(() => demo.resultOfOption(-1), "invalid key");

@@ -1,7 +1,7 @@
 import Demo
 import XCTest
 
-final class StaticMethodsTests: XCTestCase {
+final class StaticMethodsTests: DemoTestCase {
     func testMathUtilsInstanceAndStaticMethods() throws {
         let mathUtils = MathUtils(precision: 2)
         XCTAssertEqual(mathUtils.round(value: 3.14159), 3.14, accuracy: 1e-9)

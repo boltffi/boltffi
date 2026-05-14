@@ -173,7 +173,7 @@ class DemoCallbacksAndAsyncTest {
     @Test
     fun topLevelAsyncFunctionsRoundTripThroughKotlin() = runBlocking {
         withTimeout(10_000) {
-            // case:async_fns.basic.scalar_string_vec
+            demoCase("case:async_fns.basic.scalar_string_vec")
             assertEquals(10, asyncAdd(3, 7))
             assertEquals("Echo: hello async", asyncEcho("hello async"))
             assertContentEquals(intArrayOf(2, 4, 6), asyncDoubleAll(intArrayOf(1, 2, 3)))
@@ -186,7 +186,7 @@ class DemoCallbacksAndAsyncTest {
     @Test
     fun asyncResultFunctionsRoundTripThroughKotlin() = runBlocking {
         withTimeout(10_000) {
-            // case:results.async_results.math_fetch_find
+            demoCase("case:results.async_results.math_fetch_find")
             assertEquals(5, asyncSafeDivide(10, 2))
             assertTrue(assertFailsWith<MathError> { asyncSafeDivide(1, 0) } is MathError.DivisionByZero)
             assertEquals("value_7", asyncFallibleFetch(7))

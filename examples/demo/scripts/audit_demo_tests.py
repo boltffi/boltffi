@@ -21,6 +21,10 @@ from demo_export_inventory import iter_demo_exports  # noqa: E402
 
 CASE_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_.-]*$")
 CASE_MARKER_RE = re.compile(r"\bcase:([A-Za-z0-9_.-]+)\b")
+CASE_MARKER_CALL_RE = re.compile(
+    r'^\s*(?:demoCase|DemoCase|self\.demo_case|globalThis\.demoCase)\("case:[A-Za-z0-9_.-]+"\);?\s*$'
+)
+LINE_COMMENT_RE = re.compile(r"(?://|#).*")
 
 
 @dataclass(frozen=True)
@@ -227,9 +231,17 @@ def collect_platform_markers(platforms: list[str]) -> dict[str, set[str]]:
                 continue
             for path in sorted(root.rglob("*")):
                 if path.is_file() and path.suffix in scan.file_suffixes:
-                    platform_markers.update(CASE_MARKER_RE.findall(path.read_text(encoding="utf-8")))
+                    platform_markers.update(collect_failure_visible_markers(path))
         markers[platform] = platform_markers
     return markers
+
+
+def collect_failure_visible_markers(path: Path) -> set[str]:
+    text = path.read_text(encoding="utf-8")
+    executable_text = "\n".join(
+        LINE_COMMENT_RE.sub("", line) for line in text.splitlines()
+    )
+    return set(CASE_MARKER_RE.findall(executable_text))
 
 
 def validate_exercises(cases: dict[str, DemoTestCase]) -> list[str]:
@@ -269,6 +281,37 @@ def validate_platform_markers(
     return errors
 
 
+def validate_marker_scopes(platforms: list[str]) -> list[str]:
+    errors: list[str] = []
+    for platform in platforms:
+        scan = PLATFORM_SCANS[platform]
+        for root in scan.test_roots:
+            if not root.exists():
+                continue
+            for path in sorted(root.rglob("*")):
+                if path.is_file() and path.suffix in scan.file_suffixes:
+                    errors.extend(validate_marker_scope_file(path))
+    return errors
+
+
+def validate_marker_scope_file(path: Path) -> list[str]:
+    errors: list[str] = []
+    previous_marker: tuple[int, str] | None = None
+    for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        stripped = line.strip()
+        if not stripped or stripped.startswith(("//", "#")):
+            continue
+        is_marker_call = bool(CASE_MARKER_CALL_RE.match(line))
+        if is_marker_call and previous_marker is not None:
+            previous_line_number, previous_line = previous_marker
+            errors.append(
+                f"{path}: marker calls on lines {previous_line_number} and {line_number} "
+                f"are adjacent; split the assertions they document ({previous_line!r}, {stripped!r})"
+            )
+        previous_marker = (line_number, stripped) if is_marker_call else None
+    return errors
+
+
 def print_summary(platforms: list[str], cases: dict[str, DemoTestCase], markers: dict[str, set[str]]) -> None:
     print(f"demo test cases: {len(cases)}")
     print(f"platforms: {', '.join(platforms)}")
@@ -299,6 +342,7 @@ def main() -> int:
         markers = collect_platform_markers(platforms)
         errors = [
             *validate_exercises(cases),
+            *validate_marker_scopes(platforms),
             *validate_platform_markers(platforms, cases, markers),
         ]
     except ValueError as error:

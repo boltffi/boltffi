@@ -1,7 +1,7 @@
 import Demo
 import XCTest
 
-final class ThreadSafeTests: XCTestCase {
+final class ThreadSafeTests: DemoTestCase {
     func testSharedCounterSyncAndAsyncMethods() async throws {
         let sharedCounter = SharedCounter(initial: 5)
         XCTAssertEqual(sharedCounter.get(), 5)

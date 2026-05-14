@@ -1,7 +1,7 @@
 import Demo
 import XCTest
 
-final class AsyncTraitsTests: XCTestCase {
+final class AsyncTraitsTests: DemoTestCase {
     final class SwiftAsyncFetcher: AsyncFetcher {
         func fetchValue(key: Int32) async -> Int32 { key * 100 }
         func fetchString(input: String) async -> String { input.uppercased() }

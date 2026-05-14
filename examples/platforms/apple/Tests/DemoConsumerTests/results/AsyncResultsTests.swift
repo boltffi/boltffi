@@ -1,9 +1,9 @@
 import Demo
 import XCTest
 
-final class AsyncResultsTests: XCTestCase {
+final class AsyncResultsTests: DemoTestCase {
     func testAsyncSafeDivide() async throws {
-        // case:results.async_results.math_fetch_find
+        demoCase("case:results.async_results.math_fetch_find")
         let quotient = try await asyncSafeDivide(a: 10, b: 2)
         XCTAssertEqual(quotient, 5)
 

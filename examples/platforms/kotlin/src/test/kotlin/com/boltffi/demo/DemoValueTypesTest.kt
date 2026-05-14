@@ -16,39 +16,39 @@ import kotlin.test.assertTrue
 class DemoValueTypesTest {
     @Test
     fun builtinsAndCustomTypesRoundTrip() {
-        // case:builtins.duration.basic
+        demoCase("case:builtins.duration.basic")
         val duration = Duration.ofSeconds(2).plusMillis(500)
         assertEquals(duration, echoDuration(duration))
         assertEquals(Duration.ofSeconds(3).plusNanos(25), makeDuration(3uL, 25u))
         assertEquals(2_500uL, durationAsMillis(duration))
 
-        // case:builtins.system_time.basic
+        demoCase("case:builtins.system_time.basic")
         val instant = Instant.ofEpochMilli(1_701_234_567_890L)
         assertEquals(instant, echoSystemTime(instant))
         assertEquals(1_701_234_567_890uL, systemTimeToMillis(instant))
         assertEquals(instant, millisToSystemTime(1_701_234_567_890uL))
 
-        // case:builtins.uuid.basic
+        demoCase("case:builtins.uuid.basic")
         val uuid = UUID.fromString("123e4567-e89b-12d3-a456-426614174000")
         assertEquals(uuid, echoUuid(uuid))
         assertEquals(uuid.toString(), uuidToString(uuid))
 
-        // case:builtins.url.basic
+        demoCase("case:builtins.url.basic")
         val url = URI("https://example.com/demo?q=boltffi")
         assertEquals(url, echoUrl(url))
         assertEquals(url.toString(), urlToString(url))
 
-        // case:custom_types.email.basic
+        demoCase("case:custom_types.email.basic")
         val email = "café@example.com"
         assertEquals(email, echoEmail(email))
         assertEquals("example.com", emailDomain(email))
 
-        // case:custom_types.datetime.roundtrip
+        demoCase("case:custom_types.datetime.roundtrip")
         val datetime: UtcDateTime = 1_701_234_567_890L
         assertEquals(datetime, echoDatetime(datetime))
         assertEquals(1_701_234_567_890L, datetimeToMillis(datetime))
 
-        // case:custom_types.vectors.basic
+        demoCase("case:custom_types.vectors.basic")
         val emails = listOf("café@example.com", "user@example.org")
         assertContentEquals(emails, echoEmails(emails))
 
@@ -69,13 +69,13 @@ class DemoValueTypesTest {
         assertEquals(4_000_000_000u, echoU32(4_000_000_000u))
         assertEquals(-9_999_999_999L, echoI64(-9_999_999_999L), "case:primitives.scalars.echo_i64.negative_large")
         assertEquals(9_999_999_999uL, echoU64(9_999_999_999uL))
-        // case:primitives.scalars.echo_f32.basic
+        demoCase("case:primitives.scalars.echo_f32.basic")
         assertFloatEquals(3.5f, echoF32(3.5f))
-        // case:primitives.scalars.add_f32.basic
+        demoCase("case:primitives.scalars.add_f32.basic")
         assertFloatEquals(4.0f, addF32(1.5f, 2.5f))
-        // case:primitives.scalars.echo_f64.pi
+        demoCase("case:primitives.scalars.echo_f64.pi")
         assertDoubleEquals(3.14159265359, echoF64(3.14159265359))
-        // case:primitives.scalars.add_f64.basic
+        demoCase("case:primitives.scalars.add_f64.basic")
         assertDoubleEquals(4.0, addF64(1.5, 2.5))
         assertEquals(123uL, echoUsize(123uL))
         assertEquals(-123L, echoIsize(-123L))
@@ -157,24 +157,24 @@ class DemoValueTypesTest {
 
     @Test
     fun blittableRecordVecsRoundTrip() {
-        // case:records.blittable.locations.vector_stats
-        // case:records.blittable.trades.vector_stats
-        // case:records.blittable.particles.vector_stats
-        // case:records.blittable.sensor_readings.vector_stats
+        demoCase("case:records.blittable.locations.vector_stats")
         val locations = generateLocations(3)
         assertEquals(3, locations.size)
         assertEquals(3, processLocations(locations))
         assertDoubleEquals(9.3, sumRatings(locations))
 
+        demoCase("case:records.blittable.trades.vector_stats")
         val trades = generateTrades(3)
         assertEquals(3, trades.size)
         assertEquals(3000L, sumTradeVolumes(trades))
         assertEquals(3002L, aggregateLocationTradeStats(locations, trades))
 
+        demoCase("case:records.blittable.particles.vector_stats")
         val particles = generateParticles(3)
         assertEquals(3, particles.size)
         assertDoubleEquals(3.003, sumParticleMasses(particles))
 
+        demoCase("case:records.blittable.sensor_readings.vector_stats")
         val readings = generateSensorReadings(3)
         assertEquals(3, readings.size)
         assertDoubleEquals(21.0, avgSensorTemperature(readings))
@@ -182,7 +182,7 @@ class DemoValueTypesTest {
 
     @Test
     fun optionFunctionsUseCorrectKotlinSurface() {
-        // case:options.primitives.i32.some_none_and_helpers
+        demoCase("case:options.primitives.i32.some_none_and_helpers")
         assertEquals(7, echoOptionalI32(7))
         assertNull(echoOptionalI32(null))
         assertDoubleEquals(4.5, echoOptionalF64(4.5)!!)
@@ -196,22 +196,22 @@ class DemoValueTypesTest {
         assertEquals(16, doubleIfSome(8))
         assertNull(doubleIfSome(null))
 
-        // case:options.complex.string.some_none
+        demoCase("case:options.complex.string.some_none")
         assertEquals("hello", echoOptionalString("hello"))
         assertNull(echoOptionalString(null))
         assertEquals(true, isSomeString("x"))
         assertEquals(false, isSomeString(null))
 
-        // case:options.complex.point.some_none
+        demoCase("case:options.complex.point.some_none")
         assertPointEquals(1.0, 2.0, echoOptionalPoint(Point(1.0, 2.0))!!)
         assertNull(echoOptionalPoint(null))
         assertPointEquals(3.0, 4.0, makeSomePoint(3.0, 4.0)!!)
         assertNull(makeNonePoint())
 
-        // case:options.complex.status.some_none
+        demoCase("case:options.complex.status.some_none")
         assertEquals(Status.ACTIVE, echoOptionalStatus(Status.ACTIVE))
         assertNull(echoOptionalStatus(null))
-        // case:options.complex.vec.some_none
+        demoCase("case:options.complex.vec.some_none")
         assertContentEquals(intArrayOf(1, 2, 3), echoOptionalVec(intArrayOf(1, 2, 3)))
         assertNull(echoOptionalVec(null))
         assertEquals(2u, optionalVecLength(intArrayOf(9, 8)))
@@ -220,7 +220,7 @@ class DemoValueTypesTest {
         // Vec<Option<T>>: each element carries its own present/absent tag.
         // Mixed positions surface any off-by-one errors in the per-slot
         // Option encoding inside the encoded-array wire path.
-        // case:options.complex.vec_optional_i32.mixed
+        demoCase("case:options.complex.vec_optional_i32.mixed")
         val mixedOptionals = listOf(1, null, 3, null, 5)
         assertEquals(mixedOptionals, echoVecOptionalI32(mixedOptionals))
         assertEquals(emptyList(), echoVecOptionalI32(emptyList()))
@@ -229,33 +229,33 @@ class DemoValueTypesTest {
 
     @Test
     fun basicStringResultFunctionsUseCorrectKotlinSurface() {
-        // case:results.basic.safe_divide.ok_err
+        demoCase("case:results.basic.safe_divide.ok_err")
         assertEquals(5, safeDivide(10, 2))
         assertMessageContains(assertFailsWith<FfiException> { safeDivide(1, 0) }, "division by zero")
-        // case:results.basic.safe_sqrt.ok_err
+        demoCase("case:results.basic.safe_sqrt.ok_err")
         assertDoubleEquals(3.0, safeSqrt(9.0))
         assertMessageContains(assertFailsWith<FfiException> { safeSqrt(-1.0) }, "negative input")
-        // case:results.basic.parse_point.ok_err
+        demoCase("case:results.basic.parse_point.ok_err")
         assertPointEquals(1.5, 2.5, parsePoint("1.5, 2.5"))
         assertMessageContains(assertFailsWith<FfiException> { parsePoint("wat") }, "expected format")
-        // case:results.basic.always_ok_err
+        demoCase("case:results.basic.always_ok_err")
         assertEquals(42, alwaysOk(21))
         assertMessageContains(assertFailsWith<FfiException> { alwaysErr("boom") }, "boom")
-        // case:results.basic.result_to_string.ok_err
+        demoCase("case:results.basic.result_to_string.ok_err")
         assertEquals("ok: 7", resultToString(BoltFFIResult.Ok(7)))
         assertEquals("err: bad", resultToString(BoltFFIResult.Err("bad")))
     }
 
     @Test
     fun typedErrorResultFunctionsUseCorrectKotlinSurface() {
-        // case:results.error_enums.math.checked
+        demoCase("case:results.error_enums.math.checked")
         assertEquals(5, checkedDivide(10, 2))
         assertTrue(assertFailsWith<MathError> { checkedDivide(1, 0) } is MathError.DivisionByZero)
         assertDoubleEquals(3.0, checkedSqrt(9.0))
         assertTrue(assertFailsWith<MathError> { checkedSqrt(-1.0) } is MathError.NegativeInput)
         assertTrue(assertFailsWith<MathError> { checkedAdd(Int.MAX_VALUE, 1) } is MathError.Overflow)
 
-        // case:results.error_enums.app_error.basic
+        demoCase("case:results.error_enums.app_error.basic")
         assertEquals("Success!", mayFail(true))
         val invalidInputError = assertFailsWith<AppError> { mayFail(false) }
         assertEquals(400, invalidInputError.code)
@@ -266,7 +266,7 @@ class DemoValueTypesTest {
         assertEquals(500, divideByZeroError.code)
         assertEquals("Division by zero", divideByZeroError.message)
 
-        // case:results.error_enums.validation.username
+        demoCase("case:results.error_enums.validation.username")
         assertEquals("valid_name", validateUsername("valid_name"))
         assertTrue(assertFailsWith<ValidationError> { validateUsername("ab") } is ValidationError.TooShort)
         assertTrue(
@@ -279,7 +279,7 @@ class DemoValueTypesTest {
 
     @Test
     fun nestedResultFunctionsUseCorrectKotlinSurface() {
-        // case:results.nested_results.option_vec_string
+        demoCase("case:results.nested_results.option_vec_string")
         assertEquals(8, resultOfOption(4))
         assertNull(resultOfOption(0))
         assertMessageContains(assertFailsWith<FfiException> { resultOfOption(-1) }, "invalid key")
@@ -291,14 +291,15 @@ class DemoValueTypesTest {
 
     @Test
     fun enumAndDataEnumExportsBehaveCorrectly() {
-        // case:enums.c_style.status.basic
-        // case:enums.c_style.status.vec
+        demoCase("case:enums.c_style.status.basic")
         assertEquals(Status.ACTIVE, echoStatus(Status.ACTIVE))
         assertEquals("active", statusToString(Status.ACTIVE))
         assertEquals(false, isActive(Status.PENDING))
+
+        demoCase("case:enums.c_style.status.vec")
         assertEquals(listOf(Status.ACTIVE, Status.PENDING), echoVecStatus(listOf(Status.ACTIVE, Status.PENDING)))
 
-        // case:enums.c_style.direction.basic
+        demoCase("case:enums.c_style.direction.basic")
         assertEquals(Direction.WEST, Direction.new(3))
         assertEquals(Direction.NORTH, Direction.cardinal())
         assertEquals(Direction.EAST, Direction.fromDegrees(90.0))
@@ -309,7 +310,7 @@ class DemoValueTypesTest {
         assertEquals(Direction.EAST, echoDirection(Direction.EAST))
         assertEquals(Direction.WEST, oppositeDirection(Direction.EAST))
 
-        // case:enums.complex_variants.filter.basic
+        demoCase("case:enums.complex_variants.filter.basic")
         val nameFilter = Filter.ByName("ali")
         val pointFilter = Filter.ByPoints(listOf(Point(0.0, 0.0), Point(1.0, 1.0)))
         val groupFilter = Filter.ByGroups(listOf(listOf("café", "🌍"), emptyList(), listOf("common")))
@@ -322,7 +323,7 @@ class DemoValueTypesTest {
         assertEquals("filter by 3 groups", describeFilter(groupFilter))
         assertEquals("filter by range: 1..5", describeFilter(Filter.ByRange(1.0, 5.0)))
 
-        // case:enums.complex_variants.api_response.basic
+        demoCase("case:enums.complex_variants.api_response.basic")
         val success = ApiResponse.Success("ok")
         val redirect = ApiResponse.Redirect("https://example.com")
         assertEquals(success, echoApiResponse(success))
@@ -330,21 +331,22 @@ class DemoValueTypesTest {
         assertEquals(true, isSuccess(success))
         assertEquals(false, isSuccess(ApiResponse.Empty))
 
-        // case:enums.repr_int.priority.basic
+        demoCase("case:enums.repr_int.priority.basic")
         assertEquals(Priority.HIGH, echoPriority(Priority.HIGH))
         assertEquals("low", priorityLabel(Priority.LOW))
         assertEquals(true, isHighPriority(Priority.CRITICAL))
         assertEquals(false, isHighPriority(Priority.LOW))
-        // case:enums.repr_int.log_level.basic
-        // case:enums.repr_int.log_level.vec
+        demoCase("case:enums.repr_int.log_level.basic")
         assertEquals(LogLevel.INFO, echoLogLevel(LogLevel.INFO))
         assertEquals(true, shouldLog(LogLevel.ERROR, LogLevel.WARN))
+
+        demoCase("case:enums.repr_int.log_level.vec")
         assertEquals(
             listOf(LogLevel.TRACE, LogLevel.INFO, LogLevel.ERROR),
             echoVecLogLevel(listOf(LogLevel.TRACE, LogLevel.INFO, LogLevel.ERROR))
         )
 
-        // case:enums.repr_int.http_code.discriminants
+        demoCase("case:enums.repr_int.http_code.discriminants")
         assertEquals(200.toShort(), HttpCode.OK.value)
         assertEquals(404.toShort(), HttpCode.NOT_FOUND.value)
         assertEquals(500.toShort(), HttpCode.SERVER_ERROR.value)
@@ -352,7 +354,7 @@ class DemoValueTypesTest {
         assertEquals(HttpCode.OK, echoHttpCode(HttpCode.OK))
         assertEquals(HttpCode.SERVER_ERROR, echoHttpCode(HttpCode.SERVER_ERROR))
 
-        // case:enums.repr_int.sign.discriminants
+        demoCase("case:enums.repr_int.sign.discriminants")
         assertEquals((-1).toByte(), Sign.NEGATIVE.value)
         assertEquals(0.toByte(), Sign.ZERO.value)
         assertEquals(1.toByte(), Sign.POSITIVE.value)
@@ -360,22 +362,52 @@ class DemoValueTypesTest {
         assertEquals(Sign.NEGATIVE, echoSign(Sign.NEGATIVE))
         assertEquals(Sign.POSITIVE, echoSign(Sign.POSITIVE))
 
-        // case:enums.data_enum.shape.basic
-        // case:enums.data_enum.shape.vec
+        demoCase("case:enums.data_enum.shape.should_support_primary_constructor")
         val circle = Shape.new(5.0)
         assertIs<Shape.Circle>(circle)
+
+        demoCase("case:enums.data_enum.shape.should_support_static_constructors")
         assertIs<Shape.Circle>(Shape.unitCircle())
         assertIs<Shape.Rectangle>(Shape.square(3.0))
         assertIs<Shape.Circle>(Shape.tryCircle(2.0))
+
+        demoCase("case:enums.data_enum.shape.should_reject_invalid_circle_constructor_input")
         assertMessageContains(assertFailsWith<FfiException> { Shape.tryCircle(-1.0) }, "radius must be positive")
+
+        demoCase("case:enums.data_enum.shape.should_report_variant_count")
         assertEquals(6u, Shape.variantCount())
+
+        demoCase("case:enums.data_enum.shape.should_support_numeric_instance_methods")
         assertDoubleEquals(PI * 25.0, circle.area(), 1e-6)
+
+        demoCase("case:enums.data_enum.shape.should_support_string_instance_methods")
         assertEquals("circle r=5", circle.describe())
-        assertIs<Shape.Circle>(echoShape(makeCircle(2.0)))
-        assertIs<Shape.Rectangle>(echoShape(makeRectangle(3.0, 4.0)))
+
+        demoCase("case:enums.data_enum.shape.should_support_free_function_factories")
+        assertIs<Shape.Circle>(makeCircle(2.0))
+        assertIs<Shape.Rectangle>(makeRectangle(3.0, 4.0))
+
+        demoCase("case:enums.data_enum.shape.should_roundtrip_core_variants")
+        assertIs<Shape.Circle>(echoShape(Shape.Circle(2.0)))
+        assertIs<Shape.Rectangle>(echoShape(Shape.Rectangle(3.0, 4.0)))
+        assertIs<Shape.Triangle>(echoShape(Shape.Triangle(Point(0.0, 0.0), Point(3.0, 0.0), Point(0.0, 4.0))))
+        assertEquals(Shape.Point, echoShape(Shape.Point))
+
+        demoCase("case:enums.data_enum.shape.should_roundtrip_optional_record_fields")
+        assertEquals(Shape.Apex(Point(3.0, 4.0)), echoShape(Shape.Apex(Point(3.0, 4.0))))
+        assertEquals(Shape.Apex(null), echoShape(Shape.Apex(null)))
+
+        demoCase("case:enums.data_enum.shape.should_roundtrip_vector_record_fields")
+        assertEquals(Shape.Cluster(listOf(Point(1.0, 2.0))), echoShape(Shape.Cluster(listOf(Point(1.0, 2.0)))))
+
+        demoCase("case:enums.data_enum.shape.should_return_optional_records_from_static_methods")
+        assertEquals(Point(0.0, 2.5), Shape.tryApexPoint(2.5))
+        assertNull(Shape.tryApexPoint(-1.0))
+
+        demoCase("case:enums.data_enum.shape.should_roundtrip_vectors")
         assertEquals(3, echoVecShape(listOf(Shape.Circle(2.0), Shape.Rectangle(3.0, 4.0), Shape.Point)).size)
 
-        // case:enums.data_enum.message.basic
+        demoCase("case:enums.data_enum.message.basic")
         assertEquals(Message.Text("hello"), echoMessage(Message.Text("hello")))
         assertEquals(
             Message.Image("https://example.com/image.png", 640u, 480u),
@@ -388,7 +420,7 @@ class DemoValueTypesTest {
         )
         assertEquals("ping", messageSummary(Message.Ping))
 
-        // case:enums.data_enum.animal.basic
+        demoCase("case:enums.data_enum.animal.basic")
         assertEquals(Animal.Dog("Rex", "Labrador"), echoAnimal(Animal.Dog("Rex", "Labrador")))
         assertEquals(Animal.Cat("Milo", true), echoAnimal(Animal.Cat("Milo", true)))
         assertEquals("5 fish", animalName(Animal.Fish(5u)))
@@ -397,8 +429,6 @@ class DemoValueTypesTest {
 
     @Test
     fun pointAndRecordMethodExportsBehaveCorrectly() {
-        // case:records.blittable.point.functions
-        // case:records.blittable.point.try_make
         assertEquals(Point(1.0, 2.0), Point.new(1.0, 2.0))
         assertPointEquals(0.0, 0.0, Point.origin())
         assertPointEquals(0.0, 2.0, Point.fromPolar(2.0, PI / 2.0), 1e-6)
@@ -414,76 +444,80 @@ class DemoValueTypesTest {
             10.0,
             Point.pathLength(listOf(Point(0.0, 0.0), Point(3.0, 4.0), Point(6.0, 8.0)))
         )
+        demoCase("case:records.blittable.point.functions")
         assertEquals(Point(1.0, 2.0), echoPoint(Point(1.0, 2.0)))
-        assertEquals(Point(2.0, 3.0), tryMakePoint(2.0, 3.0))
-        assertNull(tryMakePoint(0.0, 0.0))
         assertEquals(Point(1.0, 2.0), makePoint(1.0, 2.0))
         assertEquals(Point(8.0, 10.0), addPoints(Point(3.0, 4.0), Point(5.0, 6.0)))
 
+        demoCase("case:records.blittable.point.try_make")
+        assertEquals(Point(2.0, 3.0), tryMakePoint(2.0, 3.0))
+        assertNull(tryMakePoint(0.0, 0.0))
+
         val color = Color(1u, 2u, 3u, 255u)
-        // case:records.blittable.color.basic
+        demoCase("case:records.blittable.color.basic")
         assertEquals(color, echoColor(color))
         assertEquals(Color(9u, 8u, 7u, 6u), makeColor(9u, 8u, 7u, 6u))
 
         val line = makeLine(0.0, 0.0, 3.0, 4.0)
-        // case:records.nested.line.basic
+        demoCase("case:records.nested.line.basic")
         assertEquals(line, echoLine(line))
         assertDoubleEquals(5.0, lineLength(line))
 
         val rect = Rect(Point(1.0, 2.0), Dimensions(3.0, 4.0))
-        // case:records.nested.rect.basic
+        demoCase("case:records.nested.rect.basic")
         assertEquals(rect, echoRect(rect))
         assertDoubleEquals(12.0, rectArea(rect))
     }
 
     @Test
     fun collectionAndNestedRecordExportsBehaveCorrectly() {
-        // case:records.with_collections.polygon.basic
+        demoCase("case:records.with_collections.polygon.basic")
         val polygon = makePolygon(listOf(Point(0.0, 0.0), Point(1.0, 0.0), Point(0.0, 1.0)))
         assertEquals(polygon, echoPolygon(polygon))
         assertEquals(3u, polygonVertexCount(polygon))
         assertPointEquals(1.0 / 3.0, 1.0 / 3.0, polygonCentroid(polygon), 1e-6)
 
-        // case:records.with_collections.team.basic
+        demoCase("case:records.with_collections.team.basic")
         val team = makeTeam("devs", listOf("Ali", "Mia"))
         assertEquals(team, echoTeam(team))
         assertEquals(2u, teamSize(team))
 
-        // case:records.with_collections.classroom.basic
+        demoCase("case:records.with_collections.classroom.basic")
         val classroom = makeClassroom(listOf(Person("Mia", 10u), Person("Leo", 11u)))
         assertEquals(classroom, echoClassroom(classroom))
 
-        // case:records.with_collections.tagged_scores.basic
+        demoCase("case:records.with_collections.tagged_scores.basic")
         val taggedScores = TaggedScores("math", doubleArrayOf(90.0, 85.5))
         val echoedTaggedScores = echoTaggedScores(taggedScores)
         assertEquals("math", echoedTaggedScores.label)
         assertContentEquals(doubleArrayOf(90.0, 85.5), echoedTaggedScores.scores)
         assertDoubleEquals(90.0, averageScore(TaggedScores("x", doubleArrayOf(80.0, 100.0))))
 
-        // case:records.with_enums.task.echo
-        // case:records.with_enums.task.make_urgent
+        demoCase("case:records.with_enums.task.make_urgent")
         val task = makeTask("ship bindings", Priority.CRITICAL)
-        assertEquals(task, echoTask(task))
         assertEquals(false, task.completed)
         assertEquals(true, isUrgent(task))
 
-        // case:records.with_enums.notification.echo
+        demoCase("case:records.with_enums.task.echo")
+        assertEquals(task, echoTask(task))
+
+        demoCase("case:records.with_enums.notification.echo")
         val notification = Notification("heads up", Priority.HIGH, false)
         assertEquals(notification, echoNotification(notification))
 
-        // case:records.with_enums.holder.triangle
+        demoCase("case:records.with_enums.holder.triangle")
         val triangleHolder = makeTriangleHolder()
         assertIs<Shape.Triangle>(triangleHolder.shape)
         assertEquals(triangleHolder, echoHolder(triangleHolder))
 
-        // case:records.with_enums.task_header.roundtrip
+        demoCase("case:records.with_enums.task_header.roundtrip")
         val header = makeCriticalTaskHeader(42L)
         assertEquals(42L, header.id)
         assertEquals(Priority.CRITICAL, header.priority)
         assertEquals(false, header.completed)
         assertEquals(header, echoTaskHeader(header))
 
-        // case:enums.data_enum.lifecycle_event.priority_payload
+        demoCase("case:enums.data_enum.lifecycle_event.priority_payload")
         val started = makeCriticalLifecycleEvent(7L)
         assertIs<LifecycleEvent.TaskStarted>(started)
         assertEquals(Priority.CRITICAL, started.priority)
@@ -491,31 +525,31 @@ class DemoValueTypesTest {
         assertEquals(started, echoLifecycleEvent(started))
         assertEquals(LifecycleEvent.Tick, echoLifecycleEvent(LifecycleEvent.Tick))
 
-        // case:records.with_enums.log_entry.roundtrip
+        demoCase("case:records.with_enums.log_entry.roundtrip")
         val logEntry = makeErrorLogEntry(1234567890L, 42.toUShort())
         assertEquals(1234567890L, logEntry.timestamp)
         assertEquals(LogLevel.ERROR, logEntry.level)
         assertEquals(42.toUShort(), logEntry.code)
         assertEquals(logEntry, echoLogEntry(logEntry))
 
-        // case:records.with_options.user_profile.some_none
+        demoCase("case:records.with_options.user_profile.some_none")
         val userProfile = makeUserProfile("Alice", 30u, "alice@example.com", 98.5)
         assertEquals(userProfile, echoUserProfile(userProfile))
         assertEquals("Alice <alice@example.com>", userDisplayName(userProfile))
         assertEquals("Bob", userDisplayName(makeUserProfile("Bob", 22u, null, null)))
 
-        // case:records.with_options.search_result.some_none
+        demoCase("case:records.with_options.search_result.some_none")
         val searchResult = SearchResult("rust ffi", 12u, "cursor-1", 0.99)
         assertEquals(searchResult, echoSearchResult(searchResult))
         assertEquals(true, hasMoreResults(searchResult))
         assertEquals(false, hasMoreResults(SearchResult("rust ffi", 12u, null, null)))
 
-        // case:records.with_strings.person.basic
+        demoCase("case:records.with_strings.person.basic")
         val person = makePerson("Ali", 30u)
         assertEquals(person, echoPerson(person))
         assertEquals("Hello, Ali! You are 30 years old.", greetPerson(person))
 
-        // case:records.with_strings.address.basic
+        demoCase("case:records.with_strings.address.basic")
         val address = Address("Main St", "Amsterdam", "1000AA")
         assertEquals(address, echoAddress(address))
         assertEquals("Main St, Amsterdam, 1000AA", formatAddress(address))
@@ -523,7 +557,7 @@ class DemoValueTypesTest {
 
     @Test
     fun recordDefaultValuesSurfaceCorrectly() {
-        // case:records.default_values.service_config.echo
+        demoCase("case:records.default_values.service_config.echo")
         val implicitDefaults = ServiceConfig("worker")
         assertEquals("worker", implicitDefaults.name)
         assertEquals(3, implicitDefaults.retries)

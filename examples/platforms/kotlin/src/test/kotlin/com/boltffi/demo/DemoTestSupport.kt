@@ -5,6 +5,46 @@ import java.util.concurrent.TimeUnit
 import kotlin.math.abs
 import kotlin.test.assertEquals
 import kotlin.test.fail
+import org.junit.jupiter.api.extension.AfterEachCallback
+import org.junit.jupiter.api.extension.BeforeEachCallback
+import org.junit.jupiter.api.extension.ExtensionContext
+import org.junit.jupiter.api.extension.TestExecutionExceptionHandler
+
+private object DemoCaseContext {
+    private val currentCase = ThreadLocal<String?>()
+
+    fun set(caseId: String) {
+        currentCase.set(caseId)
+    }
+
+    fun clear() {
+        currentCase.remove()
+    }
+
+    fun get(): String? = currentCase.get()
+}
+
+class DemoCaseFailureExtension : BeforeEachCallback, AfterEachCallback, TestExecutionExceptionHandler {
+    override fun beforeEach(context: ExtensionContext) {
+        DemoCaseContext.clear()
+    }
+
+    override fun afterEach(context: ExtensionContext) {
+        DemoCaseContext.clear()
+    }
+
+    override fun handleTestExecutionException(context: ExtensionContext, throwable: Throwable) {
+        val caseId = DemoCaseContext.get()
+        if (caseId != null && !throwable.message.orEmpty().contains("case:")) {
+            throw AssertionError("$caseId: ${throwable.message ?: throwable::class.qualifiedName}", throwable)
+        }
+        throw throwable
+    }
+}
+
+internal fun demoCase(caseId: String) {
+    DemoCaseContext.set(caseId)
+}
 
 internal fun assertDoubleEquals(expected: Double, actual: Double, epsilon: Double = 1e-9) {
     assert(abs(expected - actual) <= epsilon) {

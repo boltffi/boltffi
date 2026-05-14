@@ -67,24 +67,107 @@ exercises = [
 [cases."enums.repr_int.sign.discriminants".excluded_platforms]
 python = "The Python enum demo tests do not currently cover Sign discriminants."
 
-[cases."enums.data_enum.shape.basic"]
-summary = "Shape data enums round-trip and construct variants"
-description = "Shape data-enum variants with primitive, record, optional-record, vector-record, and unit payloads cross the wire."
+[cases."enums.data_enum.shape.should_support_free_function_factories"]
+summary = "Shape free-function factories construct variants"
+description = "Free functions construct Circle and Rectangle Shape variants with the requested primitive fields."
 exercises = [
-  "enums::data_enum::echo_shape",
   "enums::data_enum::make_circle",
   "enums::data_enum::make_rectangle",
 ]
 
-[cases."enums.data_enum.shape.basic".excluded_platforms]
+[cases."enums.data_enum.shape.should_support_free_function_factories".excluded_platforms]
 python = "The Python demo tests do not currently cover data-enum surfaces."
 
-[cases."enums.data_enum.shape.vec"]
+[cases."enums.data_enum.shape.should_support_primary_constructor"]
+summary = "Shape primary constructor builds a circle"
+description = "The generated Shape primary constructor builds a Circle variant with the requested radius."
+exercises = ["enums::data_enum::Shape::new"]
+
+[cases."enums.data_enum.shape.should_support_primary_constructor".excluded_platforms]
+java = "The Java demo surface does not expose the Shape::new constructor because new is a Java keyword; Java covers equivalent Circle construction through free functions and variant constructors."
+python = "The Python demo tests do not currently cover data-enum surfaces."
+
+[cases."enums.data_enum.shape.should_support_static_constructors"]
+summary = "Shape static constructors build expected variants"
+description = "Static constructors on Shape build Circle and Rectangle variants without crossing through a free function."
+exercises = [
+  "enums::data_enum::Shape::unit_circle",
+  "enums::data_enum::Shape::square",
+]
+
+[cases."enums.data_enum.shape.should_support_static_constructors".excluded_platforms]
+python = "The Python demo tests do not currently cover data-enum surfaces."
+
+[cases."enums.data_enum.shape.should_reject_invalid_circle_constructor_input"]
+summary = "Shape fallible constructors reject invalid circles"
+description = "The fallible Shape circle constructor returns a language-native failure for a non-positive radius."
+exercises = ["enums::data_enum::Shape::try_circle"]
+
+[cases."enums.data_enum.shape.should_reject_invalid_circle_constructor_input".excluded_platforms]
+python = "The Python demo tests do not currently cover data-enum surfaces."
+
+[cases."enums.data_enum.shape.should_report_variant_count"]
+summary = "Shape reports its variant count"
+description = "The generated Shape static method can return primitive metadata about the data enum."
+exercises = ["enums::data_enum::Shape::variant_count"]
+
+[cases."enums.data_enum.shape.should_report_variant_count".excluded_platforms]
+python = "The Python demo tests do not currently cover data-enum surfaces."
+
+[cases."enums.data_enum.shape.should_support_numeric_instance_methods"]
+summary = "Shape numeric instance methods work"
+description = "Shape instance methods can wire-encode the receiver and return numeric results."
+exercises = ["enums::data_enum::Shape::area"]
+
+[cases."enums.data_enum.shape.should_support_numeric_instance_methods".excluded_platforms]
+python = "The Python demo tests do not currently cover data-enum surfaces."
+
+[cases."enums.data_enum.shape.should_support_string_instance_methods"]
+summary = "Shape string instance methods work"
+description = "Shape instance methods can wire-encode the receiver and return string results."
+exercises = ["enums::data_enum::Shape::describe"]
+
+[cases."enums.data_enum.shape.should_support_string_instance_methods".excluded_platforms]
+python = "The Python demo tests do not currently cover data-enum surfaces."
+
+[cases."enums.data_enum.shape.should_roundtrip_core_variants"]
+summary = "Shape core variants round-trip"
+description = "Circle, Rectangle, Triangle, and Point Shape variants preserve their tags and payload fields."
+exercises = ["enums::data_enum::echo_shape"]
+
+[cases."enums.data_enum.shape.should_roundtrip_core_variants".excluded_platforms]
+python = "The Python demo tests do not currently cover data-enum surfaces."
+
+[cases."enums.data_enum.shape.should_roundtrip_optional_record_fields"]
+summary = "Shape optional record fields round-trip"
+description = "A Shape variant can carry Some(Point) and None payloads even when Point is also a sibling variant name."
+exercises = ["enums::data_enum::echo_shape"]
+
+[cases."enums.data_enum.shape.should_roundtrip_optional_record_fields".excluded_platforms]
+python = "The Python demo tests do not currently cover data-enum surfaces."
+
+[cases."enums.data_enum.shape.should_roundtrip_vector_record_fields"]
+summary = "Shape vector record fields round-trip"
+description = "A Shape variant can carry a vector of Point records even when Point is also a sibling variant name."
+exercises = ["enums::data_enum::echo_shape"]
+
+[cases."enums.data_enum.shape.should_roundtrip_vector_record_fields".excluded_platforms]
+python = "The Python demo tests do not currently cover data-enum surfaces."
+
+[cases."enums.data_enum.shape.should_return_optional_records_from_static_methods"]
+summary = "Shape static methods return optional records"
+description = "A Shape static method can return Some(Point) or None while resolving Point as the record type."
+exercises = ["enums::data_enum::Shape::try_apex_point"]
+
+[cases."enums.data_enum.shape.should_return_optional_records_from_static_methods".excluded_platforms]
+python = "The Python demo tests do not currently cover data-enum surfaces."
+
+[cases."enums.data_enum.shape.should_roundtrip_vectors"]
 summary = "Vectors of shape data enums round-trip"
 description = "A vector of data-enum shape values preserves variant order and payloads."
 exercises = ["enums::data_enum::echo_vec_shape"]
 
-[cases."enums.data_enum.shape.vec".excluded_platforms]
+[cases."enums.data_enum.shape.should_roundtrip_vectors".excluded_platforms]
 python = "The Python demo tests do not currently cover data-enum surfaces."
 
 [cases."enums.data_enum.message.basic"]

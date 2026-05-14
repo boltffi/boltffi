@@ -47,7 +47,15 @@ const requestedSuiteModule = process.argv[2];
 
 if (requestedSuiteModule) {
   const requestedSuite = await import(requestedSuiteModule);
-  await requestedSuite.run();
+  try {
+    await requestedSuite.run();
+  } catch (error) {
+    const caseId = globalThis.__boltffiDemoCase;
+    if (caseId && error instanceof Error && !error.message.includes("case:")) {
+      error.message = `${caseId}: ${error.message}`;
+    }
+    throw error;
+  }
   process.exit(0);
 }
 

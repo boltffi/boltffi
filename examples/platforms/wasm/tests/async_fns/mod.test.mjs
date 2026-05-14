@@ -7,14 +7,14 @@ import {
 } from "../support/index.mjs";
 
 export async function run() {
-  // case:async_fns.basic.scalar_string_vec
+  globalThis.demoCase("case:async_fns.basic.scalar_string_vec");
   assert.equal(await demo.asyncAdd(3, 7), 10);
   assert.equal(await demo.asyncEcho("hello async"), "Echo: hello async");
   assertArrayEqual(await demo.asyncDoubleAll([1, 2, 3]), [2, 4, 6]);
   assert.equal(await demo.asyncFindPositive([-1, 0, 5, 3]), 5);
   assert.equal(await demo.asyncFindPositive([-1, -2, -3]), null);
   assert.equal(await demo.asyncConcat(["a", "b", "c"]), "a, b, c");
-  // case:async_fns.results.compute_fetch
+  globalThis.demoCase("case:async_fns.results.compute_fetch");
   assert.equal(await demo.tryComputeAsync(4), 8);
   try {
     await demo.tryComputeAsync(-1);
@@ -25,7 +25,7 @@ export async function run() {
   }
   assert.equal(await demo.fetchData(7), 70);
   await assertRejectsWithMessage(() => demo.fetchData(0), "invalid id");
-  // case:async_fns.mixed_record.roundtrip
+  globalThis.demoCase("case:async_fns.mixed_record.roundtrip");
   const record = sampleMixedRecord();
   assert.deepEqual(await demo.asyncEchoMixedRecord(record), record);
   assert.deepEqual(

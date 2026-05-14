@@ -1,7 +1,7 @@
 import { assert, demo } from "../support/index.mjs";
 
 export async function run() {
-  // case:options.primitives.i32.some_none_and_helpers
+  globalThis.demoCase("case:options.primitives.i32.some_none_and_helpers");
   assert.equal(demo.echoOptionalI32(7), 7);
   assert.equal(demo.echoOptionalI32(null), null);
   assert.equal(demo.echoOptionalF64(4.5), 4.5);

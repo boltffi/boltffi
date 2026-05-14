@@ -1,7 +1,7 @@
 import Demo
 import XCTest
 
-final class AsyncMethodsTests: XCTestCase {
+final class AsyncMethodsTests: DemoTestCase {
     func testAsyncWorkerMethodsAndErrorPaths() async throws {
         let worker = AsyncWorker(prefix: "test")
         XCTAssertEqual(worker.getPrefix(), "test")

@@ -13,7 +13,7 @@ private final class CallbackCollector: @unchecked Sendable {
     }
 }
 
-final class StreamsTests: XCTestCase {
+final class StreamsTests: DemoTestCase {
     func testEventBusStreamsDeliverValuesAndPoints() async throws {
         let bus = EventBus()
         async let values: [Int32] = collectPrefix(bus.subscribeValues(), count: 4)

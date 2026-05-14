@@ -7,43 +7,63 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 public final class DemoTest {
+    private static String currentDemoCase = null;
+
     public static void main(String[] args) {
-        System.out.println("Testing Java bindings...\n");
-        testBool();
-        testI32();
-        testI64();
-        testF32();
-        testF64();
-        testStrings();
-        testCustomTypes();
-        testPointRecords();
-        testLineRecords();
-        testPersonRecords();
-        testRecordDefaultValues();
-        testCStyleEnums();
-        testDataEnums();
-        testCStyleEnumVecs();
-        testDataEnumVecs();
-        testBytesVecs();
-        testPrimitiveVecs();
-        testVecStrings();
-        testNestedVecs();
-        testBlittableRecordVecs();
-        testOptions();
-        testRecordsWithVecs();
-        testConstructorCoverageMatrix();
-        testClosures();
-        testSyncCallbacks();
-        testAsyncCallbacks();
-        testAsyncFunctions();
-        testAsyncClassMethods();
-        testSingleThreadedStateHolder();
-        testResultFunctions();
-        testBorrowedClassRef();
-        testResultClassMethods();
-        testResultEnumErrors();
-        testStreams();
-        System.out.println("All tests passed!");
+        try {
+            System.out.println("Testing Java bindings...\n");
+            testBool();
+            testI32();
+            testI64();
+            testF32();
+            testF64();
+            testStrings();
+            testCustomTypes();
+            testPointRecords();
+            testLineRecords();
+            testPersonRecords();
+            testRecordDefaultValues();
+            testCStyleEnums();
+            testDataEnums();
+            testCStyleEnumVecs();
+            testDataEnumVecs();
+            testBytesVecs();
+            testPrimitiveVecs();
+            testVecStrings();
+            testNestedVecs();
+            testBlittableRecordVecs();
+            testOptions();
+            testRecordsWithVecs();
+            testConstructorCoverageMatrix();
+            testClosures();
+            testSyncCallbacks();
+            testAsyncCallbacks();
+            testAsyncFunctions();
+            testAsyncClassMethods();
+            testSingleThreadedStateHolder();
+            testResultFunctions();
+            testBorrowedClassRef();
+            testResultClassMethods();
+            testResultEnumErrors();
+            testStreams();
+            System.out.println("All tests passed!");
+        } catch (Throwable error) {
+            throw withDemoCase(error);
+        }
+    }
+
+    private static void demoCase(String caseId) {
+        currentDemoCase = caseId;
+    }
+
+    private static AssertionError withDemoCase(Throwable error) {
+        String message = String.valueOf(error.getMessage());
+        if (currentDemoCase == null || message.contains("case:")) {
+            return error instanceof AssertionError
+                ? (AssertionError) error
+                : new AssertionError(error);
+        }
+        return new AssertionError(currentDemoCase + ": " + message, error);
     }
 
     private static void testBool() {
@@ -107,13 +127,14 @@ public final class DemoTest {
     private static void testCustomTypes() {
         System.out.println("Testing custom types...");
         long timestamp = 1_710_000_000_000L;
-        // case:custom_types.datetime.roundtrip
-        // case:custom_types.datetime.format
+        demoCase("case:custom_types.datetime.roundtrip");
         assert Demo.echoDatetime(timestamp) == timestamp : "echoDatetime";
         assert Demo.datetimeToMillis(timestamp) == timestamp : "datetimeToMillis";
+
+        demoCase("case:custom_types.datetime.format");
         assert Demo.formatTimestamp(timestamp).startsWith("2024-03-") : "formatTimestamp";
 
-        // case:custom_types.event.basic
+        demoCase("case:custom_types.event.basic");
         Event event = new Event("launch", timestamp);
         assert event.name().equals("launch") : "Event.name";
         assert event.timestamp() == timestamp : "Event.timestamp";
@@ -123,12 +144,12 @@ public final class DemoTest {
         assert echoed.timestamp() == timestamp : "echoEvent.timestamp";
         assert Demo.eventTimestamp(event) == timestamp : "eventTimestamp";
 
-        // case:custom_types.email.basic
+        demoCase("case:custom_types.email.basic");
         String email = "café@example.com";
         assert Demo.echoEmail(email).equals(email) : "echoEmail roundtrip";
         assert Demo.emailDomain(email).equals("example.com") : "emailDomain";
 
-        // case:custom_types.vectors.basic
+        demoCase("case:custom_types.vectors.basic");
         List<String> emails = Arrays.asList("café@example.com", "user@example.org");
         List<String> echoedEmails = Demo.echoEmails(emails);
         assert echoedEmails.size() == 2 : "echoEmails length";
@@ -147,7 +168,7 @@ public final class DemoTest {
     private static void testPointRecords() {
         System.out.println("Testing records (Point)...");
         Point point = Demo.makePoint(1.0, 2.0);
-        // case:records.blittable.point.functions
+        demoCase("case:records.blittable.point.functions");
         assert point.x() == 1.0 : "makePoint.x";
         assert point.y() == 2.0 : "makePoint.y";
         Point origin = Point.origin();
@@ -196,7 +217,7 @@ public final class DemoTest {
     private static void testLineRecords() {
         System.out.println("Testing records (Line)...");
         Line line = Demo.makeLine(0.0, 0.0, 3.0, 4.0);
-        // case:records.nested.line.basic
+        demoCase("case:records.nested.line.basic");
         assert line.start().x() == 0.0 : "makeLine.start.x";
         assert line.end().y() == 4.0 : "makeLine.end.y";
         Line echoedLine = Demo.echoLine(line);
@@ -209,7 +230,7 @@ public final class DemoTest {
     private static void testPersonRecords() {
         System.out.println("Testing records (Person)...");
         Person person = Demo.makePerson("Alice", 30);
-        // case:records.with_strings.person.basic
+        demoCase("case:records.with_strings.person.basic");
         assert person.name().equals("Alice") : "makePerson.name";
         assert person.age() == 30 : "makePerson.age";
         Person echoedPerson = Demo.echoPerson(person);
@@ -257,7 +278,7 @@ public final class DemoTest {
             Optional.of("https://edge"),
             Optional.of("https://backup")
         );
-        // case:records.default_values.service_config.echo
+        demoCase("case:records.default_values.service_config.echo");
         assert Demo.echoServiceConfig(explicitBackupEndpoint).equals(explicitBackupEndpoint) : "echoServiceConfig";
         assert implicitDefaults.describe().equals("worker:3:standard:none:https://default") : "ServiceConfig.describe(defaults)";
         assert customRetries.describe().equals("worker:7:standard:none:https://default") : "ServiceConfig.describe(customRetries)";
@@ -271,7 +292,7 @@ public final class DemoTest {
     private static void testCStyleEnums() {
         System.out.println("Testing C-style enums...");
 
-        // case:enums.c_style.status.basic
+        demoCase("case:enums.c_style.status.basic");
         assert Demo.echoStatus(Status.ACTIVE) == Status.ACTIVE : "echoStatus(Active)";
         assert Demo.echoStatus(Status.INACTIVE) == Status.INACTIVE : "echoStatus(Inactive)";
         assert Demo.echoStatus(Status.PENDING) == Status.PENDING : "echoStatus(Pending)";
@@ -280,7 +301,7 @@ public final class DemoTest {
         assert Demo.isActive(Status.ACTIVE) : "isActive(Active)";
         assert !Demo.isActive(Status.PENDING) : "isActive(Pending)";
 
-        // case:enums.c_style.direction.basic
+        demoCase("case:enums.c_style.direction.basic");
         assert Demo.echoDirection(Direction.NORTH) == Direction.NORTH : "echoDirection(North)";
         assert Demo.oppositeDirection(Direction.NORTH) == Direction.SOUTH : "oppositeDirection(North)";
         assert Demo.oppositeDirection(Direction.EAST) == Direction.WEST : "oppositeDirection(East)";
@@ -293,18 +314,18 @@ public final class DemoTest {
         assert Direction.SOUTH.label().equals("S") : "Direction.label";
         assert Direction.count() == 4 : "Direction.count";
 
-        // case:enums.repr_int.priority.basic
+        demoCase("case:enums.repr_int.priority.basic");
         assert Demo.echoPriority(Priority.HIGH) == Priority.HIGH : "echoPriority(High)";
         assert Demo.priorityLabel(Priority.LOW).equals("low") : "priorityLabel(Low)";
         assert Demo.isHighPriority(Priority.CRITICAL) : "isHighPriority(Critical)";
         assert !Demo.isHighPriority(Priority.LOW) : "isHighPriority(Low)";
 
-        // case:enums.repr_int.log_level.basic
+        demoCase("case:enums.repr_int.log_level.basic");
         assert Demo.echoLogLevel(LogLevel.INFO) == LogLevel.INFO : "echoLogLevel(Info)";
         assert Demo.shouldLog(LogLevel.ERROR, LogLevel.WARN) : "shouldLog(Error >= Warn)";
         assert !Demo.shouldLog(LogLevel.DEBUG, LogLevel.INFO) : "shouldLog(Debug < Info)";
 
-        // case:enums.repr_int.http_code.discriminants
+        demoCase("case:enums.repr_int.http_code.discriminants");
         assert HttpCode.OK.value == (short) 200 : "HttpCode.OK.value == 200";
         assert HttpCode.NOT_FOUND.value == (short) 404 : "HttpCode.NOT_FOUND.value == 404";
         assert HttpCode.SERVER_ERROR.value == (short) 500 : "HttpCode.SERVER_ERROR.value == 500";
@@ -312,7 +333,7 @@ public final class DemoTest {
         assert Demo.echoHttpCode(HttpCode.OK) == HttpCode.OK : "echoHttpCode(OK)";
         assert Demo.echoHttpCode(HttpCode.SERVER_ERROR) == HttpCode.SERVER_ERROR : "echoHttpCode(SERVER_ERROR)";
 
-        // case:enums.repr_int.sign.discriminants
+        demoCase("case:enums.repr_int.sign.discriminants");
         assert Sign.NEGATIVE.value == (byte) -1 : "Sign.NEGATIVE.value == -1";
         assert Sign.ZERO.value == (byte) 0 : "Sign.ZERO.value == 0";
         assert Sign.POSITIVE.value == (byte) 1 : "Sign.POSITIVE.value == 1";
@@ -326,13 +347,13 @@ public final class DemoTest {
     private static void testDataEnums() {
         System.out.println("Testing data enums...");
 
-        // case:records.with_enums.holder.triangle
+        demoCase("case:records.with_enums.holder.triangle");
         Holder triangleHolder = Demo.makeTriangleHolder();
         assert triangleHolder.shape() instanceof Shape.Triangle : "Holder.shape is Triangle";
         Holder echoedHolder = Demo.echoHolder(triangleHolder);
         assert echoedHolder.equals(triangleHolder) : "echoHolder round-trip";
 
-        // case:records.with_enums.task_header.roundtrip
+        demoCase("case:records.with_enums.task_header.roundtrip");
         TaskHeader header = Demo.makeCriticalTaskHeader(42L);
         assert header.id() == 42L : "TaskHeader.id";
         assert header.priority() == Priority.CRITICAL : "TaskHeader.priority";
@@ -340,7 +361,7 @@ public final class DemoTest {
         TaskHeader echoedHeader = Demo.echoTaskHeader(header);
         assert echoedHeader.equals(header) : "echoTaskHeader round-trip";
 
-        // case:enums.data_enum.lifecycle_event.priority_payload
+        demoCase("case:enums.data_enum.lifecycle_event.priority_payload");
         LifecycleEvent started = Demo.makeCriticalLifecycleEvent(7L);
         assert started instanceof LifecycleEvent.TaskStarted : "LifecycleEvent.TaskStarted variant";
         LifecycleEvent.TaskStarted startedTs = (LifecycleEvent.TaskStarted) started;
@@ -349,14 +370,14 @@ public final class DemoTest {
         assert Demo.echoLifecycleEvent(started).equals(started) : "echoLifecycleEvent(TaskStarted)";
         assert Demo.echoLifecycleEvent(LifecycleEvent.Tick.INSTANCE) instanceof LifecycleEvent.Tick : "echoLifecycleEvent(Tick)";
 
-        // case:records.with_enums.log_entry.roundtrip
+        demoCase("case:records.with_enums.log_entry.roundtrip");
         LogEntry logEntry = Demo.makeErrorLogEntry(1234567890L, (short) 42);
         assert logEntry.timestamp() == 1234567890L : "LogEntry.timestamp";
         assert logEntry.level() == LogLevel.ERROR : "LogEntry.level";
         assert logEntry.code() == (short) 42 : "LogEntry.code";
         assert Demo.echoLogEntry(logEntry).equals(logEntry) : "echoLogEntry round-trip";
 
-        // case:enums.complex_variants.filter.basic
+        demoCase("case:enums.complex_variants.filter.basic");
         Filter groupFilter = new Filter.ByGroups(
             Arrays.asList(
                 Arrays.asList("café", "🌍"),
@@ -367,13 +388,14 @@ public final class DemoTest {
         assert Demo.echoFilter(groupFilter).equals(groupFilter) : "echoFilter(ByGroups)";
         assert Demo.describeFilter(groupFilter).equals("filter by 3 groups") : "describeFilter(ByGroups)";
 
-        // case:enums.data_enum.shape.basic
+        demoCase("case:enums.data_enum.shape.should_support_free_function_factories");
         Shape circle = Demo.makeCircle(5.0);
         assert circle instanceof Shape.Circle : "makeCircle returns Circle";
         assert ((Shape.Circle) circle).radius == 5.0 : "makeCircle.radius";
-
         Shape rect = Demo.makeRectangle(3.0, 4.0);
         assert rect instanceof Shape.Rectangle : "makeRectangle returns Rectangle";
+
+        demoCase("case:enums.data_enum.shape.should_support_static_constructors");
         Shape unitCircle = Shape.unitCircle();
         assert unitCircle instanceof Shape.Circle : "Shape.unitCircle type";
         assert Math.abs(((Shape.Circle) unitCircle).radius - 1.0) < 0.0001 : "Shape.unitCircle.radius";
@@ -383,18 +405,27 @@ public final class DemoTest {
         assert Math.abs(((Shape.Rectangle) square).height - 3.0) < 0.0001 : "Shape.square.height";
         Shape checkedCircle = Shape.tryCircle(2.0);
         assert checkedCircle instanceof Shape.Circle : "Shape.tryCircle type";
+
+        demoCase("case:enums.data_enum.shape.should_reject_invalid_circle_constructor_input");
         try {
             Shape.tryCircle(0.0);
             assert false : "Shape.tryCircle should throw on non-positive radius";
         } catch (RuntimeException expected) {
             assert expected.getMessage().contains("radius must be positive") : "Shape.tryCircle error";
         }
+
+        demoCase("case:enums.data_enum.shape.should_support_numeric_instance_methods");
         assert Math.abs(circle.area() - (Math.PI * 25.0)) < 0.0001 : "Shape.area circle";
         assert Math.abs(rect.area() - 12.0) < 0.0001 : "Shape.area rectangle";
+
+        demoCase("case:enums.data_enum.shape.should_support_string_instance_methods");
         assert circle.describe().equals("circle r=5") : "Shape.describe circle";
         assert rect.describe().equals("rect 3x4") : "Shape.describe rectangle";
+
+        demoCase("case:enums.data_enum.shape.should_report_variant_count");
         assert Shape.variantCount() == 6 : "Shape.variantCount";
 
+        demoCase("case:enums.data_enum.shape.should_roundtrip_core_variants");
         Shape echoedCircle = Demo.echoShape(circle);
         assert echoedCircle instanceof Shape.Circle : "echoShape(circle) type";
         assert ((Shape.Circle) echoedCircle).radius == 5.0 : "echoShape(circle).radius";
@@ -410,20 +441,41 @@ public final class DemoTest {
         Shape point = Demo.echoShape(Shape.Point.INSTANCE);
         assert point instanceof Shape.Point : "echoShape(point) type";
 
-        // case:enums.data_enum.message.basic
+        demoCase("case:enums.data_enum.shape.should_roundtrip_optional_record_fields");
+        Shape apexSome = Demo.echoShape(new Shape.Apex(Optional.of(new Point(3.0, 4.0))));
+        assert apexSome instanceof Shape.Apex : "echoShape(apex Some) type";
+        assert ((Shape.Apex) apexSome).tip.isPresent() : "echoShape(apex Some).tip";
+        assert ((Shape.Apex) apexSome).tip.get().equals(new Point(3.0, 4.0)) : "echoShape(apex Some).point";
+        Shape apexNone = Demo.echoShape(new Shape.Apex(Optional.empty()));
+        assert apexNone instanceof Shape.Apex : "echoShape(apex None) type";
+        assert !((Shape.Apex) apexNone).tip.isPresent() : "echoShape(apex None).tip";
+
+        demoCase("case:enums.data_enum.shape.should_roundtrip_vector_record_fields");
+        Shape cluster = Demo.echoShape(new Shape.Cluster(Arrays.asList(new Point(1.0, 2.0))));
+        assert cluster instanceof Shape.Cluster : "echoShape(cluster) type";
+        assert ((Shape.Cluster) cluster).members.size() == 1 : "echoShape(cluster).members size";
+        assert ((Shape.Cluster) cluster).members.get(0).equals(new Point(1.0, 2.0)) : "echoShape(cluster).member";
+
+        demoCase("case:enums.data_enum.shape.should_return_optional_records_from_static_methods");
+        Optional<Point> apexPoint = Shape.tryApexPoint(2.5);
+        assert apexPoint.isPresent() : "Shape.tryApexPoint positive";
+        assert apexPoint.get().equals(new Point(0.0, 2.5)) : "Shape.tryApexPoint point";
+        assert !Shape.tryApexPoint(-1.0).isPresent() : "Shape.tryApexPoint negative";
+
+        demoCase("case:enums.data_enum.message.basic");
         Message text = Demo.echoMessage(new Message.Text("hello"));
         assert text instanceof Message.Text : "echoMessage(Text) type";
         assert ((Message.Text) text).body.equals("hello") : "echoMessage(Text).body";
         assert Demo.messageSummary(new Message.Text("hi")).equals("text: hi") : "messageSummary(Text)";
         assert Demo.messageSummary(Message.Ping.INSTANCE).equals("ping") : "messageSummary(Ping)";
 
-        // case:enums.data_enum.animal.basic
+        demoCase("case:enums.data_enum.animal.basic");
         Animal dog = Demo.echoAnimal(new Animal.Dog("Rex", "Labrador"));
         assert dog instanceof Animal.Dog : "echoAnimal(Dog) type";
         assert ((Animal.Dog) dog).name.equals("Rex") : "echoAnimal(Dog).name";
         assert Demo.animalName(new Animal.Fish(5)).equals("5 fish") : "animalName(Fish)";
 
-        // case:enums.complex_variants.api_response.basic
+        demoCase("case:enums.complex_variants.api_response.basic");
         ApiResponse success = Demo.echoApiResponse(new ApiResponse.Success("ok"));
         assert success instanceof ApiResponse.Success : "echoApiResponse(Success) type";
         assert Demo.isSuccess(new ApiResponse.Success("data")) : "isSuccess(Success)";
@@ -435,7 +487,7 @@ public final class DemoTest {
     private static void testCStyleEnumVecs() {
         System.out.println("Testing vec C-style enums...");
 
-        // case:enums.c_style.status.vec
+        demoCase("case:enums.c_style.status.vec");
         List<Status> statuses = Demo.echoVecStatus(
             Arrays.asList(Status.ACTIVE, Status.PENDING, Status.INACTIVE)
         );
@@ -444,7 +496,7 @@ public final class DemoTest {
         assert statuses.get(1) == Status.PENDING : "echoVecStatus[1]";
         assert statuses.get(2) == Status.INACTIVE : "echoVecStatus[2]";
 
-        // case:enums.repr_int.log_level.vec
+        demoCase("case:enums.repr_int.log_level.vec");
         List<LogLevel> levels = Demo.echoVecLogLevel(
             Arrays.asList(LogLevel.TRACE, LogLevel.INFO, LogLevel.ERROR)
         );
@@ -459,7 +511,7 @@ public final class DemoTest {
     private static void testDataEnumVecs() {
         System.out.println("Testing vec data enums...");
 
-        // case:enums.data_enum.shape.vec
+        demoCase("case:enums.data_enum.shape.should_roundtrip_vectors");
         List<Shape> shapes = Demo.echoVecShape(Arrays.asList(
             new Shape.Circle(2.0),
             new Shape.Rectangle(3.0, 4.0),
@@ -648,24 +700,24 @@ public final class DemoTest {
     private static void testBlittableRecordVecs() {
         System.out.println("Testing blittable record vecs...");
 
-        // case:records.blittable.locations.vector_stats
+        demoCase("case:records.blittable.locations.vector_stats");
         List<Location> locations = Demo.generateLocations(3);
         assert locations.size() == 3 : "generateLocations size";
         assert Demo.processLocations(locations) == 3 : "processLocations";
         assert Math.abs(Demo.sumRatings(locations) - 9.3) < 0.0001 : "sumRatings";
 
-        // case:records.blittable.trades.vector_stats
+        demoCase("case:records.blittable.trades.vector_stats");
         List<Trade> trades = Demo.generateTrades(3);
         assert trades.size() == 3 : "generateTrades size";
         assert Demo.sumTradeVolumes(trades) == 3000L : "sumTradeVolumes";
         assert Demo.aggregateLocationTradeStats(locations, trades) == 3002L : "aggregateLocationTradeStats";
 
-        // case:records.blittable.particles.vector_stats
+        demoCase("case:records.blittable.particles.vector_stats");
         List<Particle> particles = Demo.generateParticles(3);
         assert particles.size() == 3 : "generateParticles size";
         assert Math.abs(Demo.sumParticleMasses(particles) - 3.003) < 0.0001 : "sumParticleMasses";
 
-        // case:records.blittable.sensor_readings.vector_stats
+        demoCase("case:records.blittable.sensor_readings.vector_stats");
         List<SensorReading> readings = Demo.generateSensorReadings(3);
         assert readings.size() == 3 : "generateSensorReadings size";
         assert Math.abs(Demo.avgSensorTemperature(readings) - 21.0) < 0.0001 : "avgSensorTemperature";
@@ -676,7 +728,7 @@ public final class DemoTest {
     private static void testOptions() {
         System.out.println("Testing options...");
 
-        // case:options.primitives.i32.some_none_and_helpers
+        demoCase("case:options.primitives.i32.some_none_and_helpers");
         Optional<Integer> optI32 = Demo.echoOptionalI32(Optional.of(7));
         assert optI32.isPresent() && optI32.get() == 7 : "echoOptionalI32 some";
         assert !Demo.echoOptionalI32(Optional.empty()).isPresent() : "echoOptionalI32 none";
@@ -690,26 +742,26 @@ public final class DemoTest {
         assert Demo.doubleIfSome(Optional.of(8)).orElse(-1) == 16 : "doubleIfSome some";
         assert !Demo.doubleIfSome(Optional.empty()).isPresent() : "doubleIfSome none";
 
-        // case:options.complex.string.some_none
+        demoCase("case:options.complex.string.some_none");
         Optional<String> optString = Demo.echoOptionalString(Optional.of("hello"));
         assert optString.isPresent() && optString.get().equals("hello") : "echoOptionalString some";
         assert !Demo.echoOptionalString(Optional.empty()).isPresent() : "echoOptionalString none";
         assert Demo.isSomeString(Optional.of("x")) : "isSomeString some";
         assert !Demo.isSomeString(Optional.empty()) : "isSomeString none";
 
-        // case:options.complex.point.some_none
+        demoCase("case:options.complex.point.some_none");
         Optional<Point> optPoint = Demo.echoOptionalPoint(Optional.of(new Point(1.0, 2.0)));
         assert optPoint.isPresent() : "echoOptionalPoint some";
         assert optPoint.get().x() == 1.0 && optPoint.get().y() == 2.0 : "echoOptionalPoint value";
         assert Demo.makeSomePoint(3.0, 4.0).isPresent() : "makeSomePoint";
         assert !Demo.makeNonePoint().isPresent() : "makeNonePoint";
 
-        // case:options.complex.status.some_none
+        demoCase("case:options.complex.status.some_none");
         Optional<Status> optStatus = Demo.echoOptionalStatus(Optional.of(Status.ACTIVE));
         assert optStatus.isPresent() && optStatus.get() == Status.ACTIVE : "echoOptionalStatus some";
         assert !Demo.echoOptionalStatus(Optional.empty()).isPresent() : "echoOptionalStatus none";
 
-        // case:options.complex.vec.some_none
+        demoCase("case:options.complex.vec.some_none");
         Optional<int[]> optVec = Demo.echoOptionalVec(Optional.of(new int[]{1, 2, 3}));
         assert optVec.isPresent() : "echoOptionalVec some";
         assert optVec.get().length == 3 && optVec.get()[0] == 1 && optVec.get()[2] == 3 : "echoOptionalVec value";
@@ -725,7 +777,7 @@ public final class DemoTest {
             Optional.of("alice@example.com"),
             Optional.of(98.5)
         );
-        // case:records.with_options.user_profile.some_none
+        demoCase("case:records.with_options.user_profile.some_none");
         assert withEmail.email().isPresent() : "makeUserProfile email present";
         assert withEmail.score().isPresent() : "makeUserProfile score present";
         assert Demo.userDisplayName(withEmail).equals("Alice <alice@example.com>") : "userDisplayName with email";
@@ -744,7 +796,7 @@ public final class DemoTest {
         assert echoedProfile.email().isPresent() : "echoUserProfile email";
         assert echoedProfile.email().get().equals("alice@example.com") : "echoUserProfile email value";
 
-        // case:records.with_options.search_result.some_none
+        demoCase("case:records.with_options.search_result.some_none");
         SearchResult withCursor = Demo.echoSearchResult(
             new SearchResult("rust ffi", 12, Optional.of("cursor-1"), Optional.of(0.99))
         );
@@ -759,7 +811,7 @@ public final class DemoTest {
         assert !withoutCursor.maxScore().isPresent() : "echoSearchResult score none";
         assert !Demo.hasMoreResults(withoutCursor) : "hasMoreResults false";
 
-        // case:options.complex.vec_optional_i32.mixed
+        demoCase("case:options.complex.vec_optional_i32.mixed");
         java.util.List<Optional<Integer>> mixed = java.util.Arrays.asList(
             Optional.of(1), Optional.empty(), Optional.of(3), Optional.empty(), Optional.of(5)
         );
@@ -778,7 +830,7 @@ public final class DemoTest {
     private static void testRecordsWithVecs() {
         System.out.println("Testing records with vecs...");
 
-        // case:records.with_collections.polygon.basic
+        demoCase("case:records.with_collections.polygon.basic");
         Polygon polygon = Demo.makePolygon(Arrays.asList(
             new Point(0.0, 0.0), new Point(1.0, 0.0), new Point(0.0, 1.0)
         ));
@@ -792,7 +844,7 @@ public final class DemoTest {
         assert Math.abs(centroid.x() - 1.0 / 3.0) < 0.0001 : "polygonCentroid.x";
         assert Math.abs(centroid.y() - 1.0 / 3.0) < 0.0001 : "polygonCentroid.y";
 
-        // case:records.with_collections.team.basic
+        demoCase("case:records.with_collections.team.basic");
         Team team = Demo.makeTeam("devs", Arrays.asList("Alice", "Bob"));
         assert team.name().equals("devs") : "makeTeam.name";
         assert team.members().size() == 2 : "makeTeam.members.size";
@@ -801,7 +853,7 @@ public final class DemoTest {
         assert echoedTeam.members().get(0).equals("Alice") : "echoTeam.members[0]";
         assert Demo.teamSize(team) == 2 : "teamSize";
 
-        // case:records.with_collections.classroom.basic
+        demoCase("case:records.with_collections.classroom.basic");
         Classroom classroom = Demo.makeClassroom(Arrays.asList(
             new Person("Mia", 10),
             new Person("Leo", 11)
@@ -813,13 +865,13 @@ public final class DemoTest {
         assert echoedClassroom.students().size() == 2 : "echoClassroom.students.size";
         assert echoedClassroom.students().get(1).name().equals("Leo") : "echoClassroom.students[1].name";
 
-        // case:records.with_collections.tagged_scores.basic
+        demoCase("case:records.with_collections.tagged_scores.basic");
         TaggedScores ts = Demo.echoTaggedScores(new TaggedScores("math", new double[]{90.0, 85.5}));
         assert ts.label().equals("math") : "echoTaggedScores.label";
         assert ts.scores().length == 2 : "echoTaggedScores.scores.length";
         assert Math.abs(Demo.averageScore(new TaggedScores("x", new double[]{80.0, 100.0})) - 90.0) < 0.0001 : "averageScore";
 
-        // case:records.mixed.basic
+        demoCase("case:records.mixed.basic");
         MixedRecord record = sampleMixedRecord();
         assert Demo.echoMixedRecord(record).equals(record) : "echoMixedRecord";
         assert Demo.makeMixedRecord(
@@ -1290,7 +1342,7 @@ public final class DemoTest {
         System.out.println("Testing async functions...");
         try {
             CompletableFuture<Integer> addFuture = Demo.asyncAdd(3, 7);
-            // case:async_fns.basic.scalar_string_vec
+            demoCase("case:async_fns.basic.scalar_string_vec");
             assert addFuture.get() == 10 : "asyncAdd(3, 7)";
 
             CompletableFuture<String> echoFuture = Demo.asyncEcho("hello async");
@@ -1311,7 +1363,7 @@ public final class DemoTest {
             assert concatFuture.get().equals("a, b, c") : "asyncConcat";
 
             MixedRecord record = sampleMixedRecord();
-            // case:async_fns.mixed_record.roundtrip
+            demoCase("case:async_fns.mixed_record.roundtrip");
             assert Demo.asyncEchoMixedRecord(record).get().equals(record) : "asyncEchoMixedRecord";
             assert Demo.asyncMakeMixedRecord(
                 record.name(),
@@ -1401,7 +1453,7 @@ public final class DemoTest {
     private static void testResultFunctions() {
         System.out.println("Testing result functions...");
 
-        // case:results.basic.safe_divide.ok_err
+        demoCase("case:results.basic.safe_divide.ok_err");
         assert Demo.safeDivide(10, 2) == 5 : "safeDivide ok";
         try {
             Demo.safeDivide(10, 0);
@@ -1410,7 +1462,7 @@ public final class DemoTest {
             assert e.getMessage().contains("division by zero") : "safeDivide error message";
         }
 
-        // case:results.basic.always_ok_err
+        demoCase("case:results.basic.always_ok_err");
         assert Demo.alwaysOk(21) == 42 : "alwaysOk";
         try {
             Demo.alwaysErr("boom");
@@ -1419,7 +1471,7 @@ public final class DemoTest {
             assert e.getMessage().contains("boom") : "alwaysErr error message";
         }
 
-        // case:results.basic.parse_point.ok_err
+        demoCase("case:results.basic.parse_point.ok_err");
         Point p = Demo.parsePoint("3.0,4.0");
         assert p.x() == 3.0 : "parsePoint x";
         assert p.y() == 4.0 : "parsePoint y";
@@ -1428,7 +1480,7 @@ public final class DemoTest {
             assert false : "parsePoint should throw on bad input";
         } catch (RuntimeException ignored) {}
 
-        // case:results.nested_results.option_vec_string
+        demoCase("case:results.nested_results.option_vec_string");
         assert Demo.resultOfString(1).equals("item_1") : "resultOfString ok";
         try {
             Demo.resultOfString(-1);
@@ -1489,7 +1541,7 @@ public final class DemoTest {
     private static void testResultEnumErrors() {
         System.out.println("Testing result enum errors...");
 
-        // case:results.error_enums.math.checked
+        demoCase("case:results.error_enums.math.checked");
         assert Demo.checkedDivide(10, 2) == 5 : "checkedDivide ok";
         try {
             Demo.checkedDivide(10, 0);
@@ -1514,7 +1566,7 @@ public final class DemoTest {
             assert e.getError() == MathError.OVERFLOW : "checkedAdd typed error";
         }
 
-        // case:results.error_enums.validation.username
+        demoCase("case:results.error_enums.validation.username");
         assert Demo.validateUsername("alice").equals("alice") : "validateUsername ok";
         try {
             Demo.validateUsername("ab");
@@ -1535,7 +1587,7 @@ public final class DemoTest {
             assert e.getError() == ValidationError.INVALID_FORMAT : "validateUsername typed error";
         }
 
-        // case:results.error_enums.app_error.basic
+        demoCase("case:results.error_enums.app_error.basic");
         assert Demo.mayFail(true).equals("Success!") : "mayFail ok";
         try {
             Demo.mayFail(false);

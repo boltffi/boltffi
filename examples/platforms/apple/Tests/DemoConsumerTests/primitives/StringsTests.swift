@@ -1,7 +1,7 @@
 import Demo
 import XCTest
 
-final class StringsTests: XCTestCase {
+final class StringsTests: DemoTestCase {
     func testStringFns() {
         XCTAssertEqual(echoString(v: ""), "", "case:primitives.strings.echo.empty")
         XCTAssertEqual(echoString(v: "hello 🌍"), "hello 🌍", "case:primitives.strings.echo.emoji")

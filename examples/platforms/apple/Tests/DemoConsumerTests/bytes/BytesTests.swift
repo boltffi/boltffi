@@ -2,7 +2,7 @@ import Demo
 import Foundation
 import XCTest
 
-final class BytesTests: XCTestCase {
+final class BytesTests: DemoTestCase {
     func testBytesFns() {
         XCTAssertEqual(echoBytes(data: Data([1, 2, 3, 4])), Data([1, 2, 3, 4]), "case:bytes.echo.basic")
         XCTAssertEqual(bytesLength(data: Data([9, 8, 7])), 3, "case:bytes.length.basic")

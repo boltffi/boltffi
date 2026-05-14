@@ -1,7 +1,7 @@
 import Demo
 import XCTest
 
-final class ClosuresTests: XCTestCase {
+final class ClosuresTests: DemoTestCase {
     func testClosureFns() {
         var observedValue: Int32?
 

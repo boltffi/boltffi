@@ -1,10 +1,10 @@
 import math
-import unittest
+from tests.support import DemoTestCase
 
 import demo
 
 
-class PrimitiveVecsTests(unittest.TestCase):
+class PrimitiveVecsTests(DemoTestCase):
     def test_echo_vec_i32(self) -> None:
         self.assertEqual(demo.echo_vec_i32([1, 2, 3]), [1, 2, 3], "case:primitives.vecs.echo_i32.basic")
         self.assertEqual(demo.echo_vec_i32([]), [], "case:primitives.vecs.echo_i32.empty")

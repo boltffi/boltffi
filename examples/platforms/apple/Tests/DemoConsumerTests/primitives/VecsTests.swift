@@ -2,7 +2,7 @@ import Demo
 import Foundation
 import XCTest
 
-final class VecsTests: XCTestCase {
+final class VecsTests: DemoTestCase {
     func testVecFns() {
         XCTAssertEqual(echoVecI32(v: [1, 2, 3]), [1, 2, 3], "case:primitives.vecs.echo_i32.basic")
         XCTAssertEqual(echoVecI32(v: []), [], "case:primitives.vecs.echo_i32.empty")

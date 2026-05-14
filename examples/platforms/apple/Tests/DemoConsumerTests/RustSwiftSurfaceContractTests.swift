@@ -34,7 +34,7 @@ private struct SwiftGeneratedSurface {
     let publicTypeBlocks: [String: String]
 }
 
-final class RustSwiftSurfaceContractTests: XCTestCase {
+final class RustSwiftSurfaceContractTests: DemoTestCase {
     func testGeneratedSwiftContainsAllRustTopLevelExports() throws {
         let rustExportInventory = try loadRustExportInventory()
         let swiftGeneratedSurface = try loadSwiftGeneratedSurface()

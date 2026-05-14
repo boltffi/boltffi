@@ -1,9 +1,9 @@
 import Demo
 import XCTest
 
-final class PrimitivesOptionsTests: XCTestCase {
+final class PrimitivesOptionsTests: DemoTestCase {
     func testPrimitiveOptionFns() {
-        // case:options.primitives.i32.some_none_and_helpers
+        demoCase("case:options.primitives.i32.some_none_and_helpers")
         XCTAssertEqual(echoOptionalI32(v: 7), 7)
         XCTAssertNil(echoOptionalI32(v: nil))
         XCTAssertEqual(echoOptionalF64(v: 4.5), Optional(4.5))

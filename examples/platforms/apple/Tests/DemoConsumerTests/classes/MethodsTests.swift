@@ -1,7 +1,7 @@
 import Demo
 import XCTest
 
-final class MethodsTests: XCTestCase {
+final class MethodsTests: DemoTestCase {
     func testCounterValueAndErrorMethods() throws {
         let counter = Counter(initial: 2)
         XCTAssertEqual(counter.get(), 2)

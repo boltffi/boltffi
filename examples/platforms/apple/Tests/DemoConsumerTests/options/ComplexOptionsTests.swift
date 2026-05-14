@@ -1,24 +1,24 @@
 import Demo
 import XCTest
 
-final class ComplexOptionsTests: XCTestCase {
+final class ComplexOptionsTests: DemoTestCase {
     func testComplexOptionFns() {
-        // case:options.complex.string.some_none
+        demoCase("case:options.complex.string.some_none")
         XCTAssertEqual(echoOptionalString(v: "hello"), "hello")
         XCTAssertNil(echoOptionalString(v: nil))
         XCTAssertEqual(isSomeString(v: "x"), true)
         XCTAssertEqual(isSomeString(v: nil), false)
 
-        // case:options.complex.point.some_none
+        demoCase("case:options.complex.point.some_none")
         XCTAssertEqual(echoOptionalPoint(v: Point(x: 1.0, y: 2.0)), Point(x: 1.0, y: 2.0))
         XCTAssertNil(echoOptionalPoint(v: nil))
         XCTAssertEqual(makeSomePoint(x: 3.0, y: 4.0), Point(x: 3.0, y: 4.0))
         XCTAssertNil(makeNonePoint())
 
-        // case:options.complex.status.some_none
+        demoCase("case:options.complex.status.some_none")
         XCTAssertEqual(echoOptionalStatus(v: .active), .active)
         XCTAssertNil(echoOptionalStatus(v: nil))
-        // case:options.complex.vec.some_none
+        demoCase("case:options.complex.vec.some_none")
         XCTAssertEqual(echoOptionalVec(v: [1, 2, 3]), [1, 2, 3])
         XCTAssertNil(echoOptionalVec(v: nil))
         XCTAssertEqual(optionalVecLength(v: [9, 8]), 2)
@@ -37,7 +37,7 @@ final class ComplexOptionsTests: XCTestCase {
         // Vec<Option<T>>: each element carries its own present/absent
         // tag, exercising the encoded-array path composed with the
         // Option codec inside a single wire payload.
-        // case:options.complex.vec_optional_i32.mixed
+        demoCase("case:options.complex.vec_optional_i32.mixed")
         let mixed: [Int32?] = [1, nil, 3, nil, 5]
         XCTAssertEqual(echoVecOptionalI32(v: mixed), mixed)
         let empty: [Int32?] = []

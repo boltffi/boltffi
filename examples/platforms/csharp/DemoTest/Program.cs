@@ -10,6 +10,8 @@ namespace BoltFFI.Demo.Tests;
 
 public static class DemoTest
 {
+    private static string currentDemoCase;
+
     public static async System.Threading.Tasks.Task<int> Main()
     {
         try
@@ -62,7 +64,7 @@ public static class DemoTest
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"FAIL: {ex}");
+            Console.Error.WriteLine($"FAIL: {DescribeFailure(ex)}");
             return 1;
         }
     }
@@ -207,26 +209,27 @@ public static class DemoTest
     {
         Console.WriteLine("Testing custom types (Email, UtcDateTime, Event)...");
 
-        // case:custom_types.email.basic
+        DemoCase("case:custom_types.email.basic");
         string email = "café@example.com";
         Require(EchoEmail(email) == email, "EchoEmail roundtrip");
         Require(EmailDomain(email) == "example.com", "EmailDomain");
 
         long ts = 1_710_000_000_000L;
-        // case:custom_types.datetime.roundtrip
-        // case:custom_types.datetime.format
+        DemoCase("case:custom_types.datetime.roundtrip");
         Require(EchoDatetime(ts) == ts, "EchoDatetime");
         Require(DatetimeToMillis(ts) == ts, "DatetimeToMillis");
+
+        DemoCase("case:custom_types.datetime.format");
         Require(FormatTimestamp(ts).StartsWith("2024-03-"), "FormatTimestamp");
 
-        // case:custom_types.event.basic
+        DemoCase("case:custom_types.event.basic");
         Event evt = new Event("launch", ts);
         Event echoed = EchoEvent(evt);
         Require(echoed.Name == "launch", "EchoEvent.Name");
         Require(echoed.Timestamp == ts, "EchoEvent.Timestamp");
         Require(EventTimestamp(evt) == ts, "EventTimestamp");
 
-        // case:custom_types.vectors.basic
+        DemoCase("case:custom_types.vectors.basic");
         string[] emails = new[] { "café@example.com", "user@example.org" };
         string[] echoedEmails = EchoEmails(emails);
         Require(echoedEmails.Length == 2, "EchoEmails length");
@@ -251,7 +254,7 @@ public static class DemoTest
     {
         Console.WriteLine("Testing blittable records (Point, Color)...");
 
-        // case:records.blittable.point.functions
+        DemoCase("case:records.blittable.point.functions");
         Point p = MakePoint(1.5, 2.5);
         Require(p.X == 1.5, "MakePoint.X");
         Require(p.Y == 2.5, "MakePoint.Y");
@@ -262,7 +265,7 @@ public static class DemoTest
         Point sum = AddPoints(new Point(1.0, 2.0), new Point(3.0, 4.0));
         Require(sum == new Point(4.0, 6.0), "AddPoints");
 
-        // case:records.blittable.color.basic
+        DemoCase("case:records.blittable.color.basic");
         Color c = MakeColor(10, 20, 30, 255);
         Require(c.R == 10 && c.G == 20 && c.B == 30 && c.A == 255, "MakeColor fields");
 
@@ -302,7 +305,7 @@ public static class DemoTest
     {
         Console.WriteLine("Testing records with strings (Person, Address)...");
 
-        // case:records.with_strings.person.basic
+        DemoCase("case:records.with_strings.person.basic");
         Person alice = MakePerson("Alice", 30);
         Require(alice.Name == "Alice", "MakePerson.Name");
         Require(alice.Age == 30u, "MakePerson.Age");
@@ -325,7 +328,7 @@ public static class DemoTest
 
         // Address has three string fields back-to-back — exercises multiple
         // length-prefixed slices in one wire buffer.
-        // case:records.with_strings.address.basic
+        DemoCase("case:records.with_strings.address.basic");
         Address home = new Address("221B Baker Street", "London", "NW1 6XE");
         Address echoedAddress = EchoAddress(home);
         Require(echoedAddress == home, "EchoAddress round-trip");
@@ -348,7 +351,7 @@ public static class DemoTest
     {
         Console.WriteLine("Testing records with defaults and instance methods (ServiceConfig)...");
 
-        // case:records.default_values.service_config.echo
+        DemoCase("case:records.default_values.service_config.echo");
         ServiceConfig config = new ServiceConfig("worker", 3, "standard", null, "https://default");
         ServiceConfig echoed = EchoServiceConfig(config);
         Require(echoed == config, "EchoServiceConfig round-trip");
@@ -379,7 +382,7 @@ public static class DemoTest
     {
         Console.WriteLine("Testing nested records (Line, Rect)...");
 
-        // case:records.nested.line.basic
+        DemoCase("case:records.nested.line.basic");
         Line line = MakeLine(0.0, 0.0, 3.0, 4.0);
         Require(line.Start == new Point(0.0, 0.0), "MakeLine.Start");
         Require(line.End == new Point(3.0, 4.0), "MakeLine.End");
@@ -389,7 +392,7 @@ public static class DemoTest
 
         Require(Math.Abs(LineLength(line) - 5.0) < 1e-9, "LineLength 3-4-5");
 
-        // case:records.nested.rect.basic
+        DemoCase("case:records.nested.rect.basic");
         Rect rect = new Rect(
             new Point(1.0, 2.0),
             new Dimensions(10.0, 20.0)
@@ -414,14 +417,14 @@ public static class DemoTest
 
         // Direct P/Invoke round-trip — the CLR marshals the enum as its
         // declared backing type.
-        // case:enums.c_style.status.basic
+        DemoCase("case:enums.c_style.status.basic");
         Require(EchoStatus(Status.Active) == Status.Active, "EchoStatus(Active)");
         Require(EchoStatus(Status.Pending) == Status.Pending, "EchoStatus(Pending)");
         Require(StatusToString(Status.Active) == "active", "StatusToString(Active)");
         Require(IsActive(Status.Active), "IsActive(Active)");
         Require(!IsActive(Status.Inactive), "IsActive(Inactive) false");
 
-        // case:enums.c_style.direction.basic
+        DemoCase("case:enums.c_style.direction.basic");
         Require(EchoDirection(Direction.North) == Direction.North, "EchoDirection(North)");
         Require(
             OppositeDirection(Direction.East) == Direction.West,
@@ -444,7 +447,7 @@ public static class DemoTest
         // Non-default backing type: LogLevel is #[repr(u8)] on the Rust side,
         // so these direct P/Invoke calls catch any accidental `enum : int`
         // projection in the generated C# surface.
-        // case:enums.repr_int.log_level.basic
+        DemoCase("case:enums.repr_int.log_level.basic");
         Require(EchoLogLevel(LogLevel.Trace) == LogLevel.Trace, "EchoLogLevel(Trace)");
         Require(EchoLogLevel(LogLevel.Error) == LogLevel.Error, "EchoLogLevel(Error)");
         Require(ShouldLog(LogLevel.Error, LogLevel.Warn), "ShouldLog(Error, Warn)");
@@ -454,7 +457,7 @@ public static class DemoTest
         // The raw value of each C# member must equal the Rust discriminant,
         // and a value constructed on the Rust side must map back to the
         // corresponding named member on the C# side.
-        // case:enums.repr_int.http_code.discriminants
+        DemoCase("case:enums.repr_int.http_code.discriminants");
         Require((ushort)HttpCode.Ok == 200, "HttpCode.Ok == 200");
         Require((ushort)HttpCode.NotFound == 404, "HttpCode.NotFound == 404");
         Require((ushort)HttpCode.ServerError == 500, "HttpCode.ServerError == 500");
@@ -465,7 +468,7 @@ public static class DemoTest
         // Sign has a #[repr(i8)] with a negative discriminant. The CLR
         // marshals sbyte across P/Invoke; the bit pattern must stay signed
         // in both directions.
-        // case:enums.repr_int.sign.discriminants
+        DemoCase("case:enums.repr_int.sign.discriminants");
         Require((sbyte)Sign.Negative == -1, "Sign.Negative == -1");
         Require((sbyte)Sign.Zero == 0, "Sign.Zero == 0");
         Require((sbyte)Sign.Positive == 1, "Sign.Positive == 1");
@@ -491,7 +494,7 @@ public static class DemoTest
         // Shape — named-field variants, a nested-record variant with a
         // shadowed outer Point, and a unit variant that collides with
         // the outer Point record name.
-        // case:enums.data_enum.shape.basic
+        DemoCase("case:enums.data_enum.shape.should_roundtrip_core_variants");
         Shape circle = new Shape.Circle(5.0);
         Shape echoedCircle = EchoShape(circle);
         Require(echoedCircle is Shape.Circle c && c.Radius == 5.0, "EchoShape(Circle)");
@@ -524,6 +527,7 @@ public static class DemoTest
         // Apex — Option<Point> as a variant field where Point is shadowed
         // by the sibling Shape.Point unit variant. Drives the scoped
         // rendering of the nullable cast inside the Shape scope.
+        DemoCase("case:enums.data_enum.shape.should_roundtrip_optional_record_fields");
         Shape apexSome = new Shape.Apex(new Point(3.0, 4.0));
         Shape echoedApexSome = EchoShape(apexSome);
         Require(
@@ -541,6 +545,7 @@ public static class DemoTest
         // Cluster — Vec<Point> as a variant field, same shadow setup.
         // Drives the scoped rendering of the ReadEncodedArray / blittable
         // array element type inside the Shape scope.
+        DemoCase("case:enums.data_enum.shape.should_roundtrip_vector_record_fields");
         Shape cluster = new Shape.Cluster(new[]
         {
             new Point(1.0, 2.0),
@@ -561,6 +566,7 @@ public static class DemoTest
         );
 
         // Free-function factories producing Shape.
+        DemoCase("case:enums.data_enum.shape.should_support_free_function_factories");
         Require(MakeCircle(2.0) is Shape.Circle c2 && c2.Radius == 2.0, "MakeCircle");
         Require(
             MakeRectangle(5.0, 10.0) is Shape.Rectangle r2 && r2.Width == 5.0 && r2.Height == 10.0,
@@ -569,30 +575,50 @@ public static class DemoTest
 
         // Instance methods on the data enum — wire-encode self, call
         // native, decode return.
+        DemoCase("case:enums.data_enum.shape.should_support_numeric_instance_methods");
         Require(Math.Abs(new Shape.Circle(1.0).Area() - Math.PI) < 1e-9, "Circle(1).Area() == PI");
         Require(new Shape.Rectangle(3.0, 4.0).Area() == 12.0, "Rectangle(3,4).Area()");
         Require(new Shape.Point().Area() == 0.0, "Point.Area() == 0");
+
+        DemoCase("case:enums.data_enum.shape.should_support_string_instance_methods");
         Require(new Shape.Circle(2.0).Describe() == "circle r=2", "Circle.Describe()");
         Require(new Shape.Point().Describe() == "point", "Point.Describe()");
 
         // Static methods / factories on the data enum.
+        DemoCase("case:enums.data_enum.shape.should_support_static_constructors");
         Require(Shape.UnitCircle() is Shape.Circle uc && uc.Radius == 1.0, "Shape.UnitCircle()");
         Require(
             Shape.Square(7.0) is Shape.Rectangle sq && sq.Width == 7.0 && sq.Height == 7.0,
             "Shape.Square(7)"
         );
+
+        DemoCase("case:enums.data_enum.shape.should_report_variant_count");
         Require(Shape.VariantCount() == 6u, "Shape.VariantCount() == 6");
+
+        DemoCase("case:enums.data_enum.shape.should_support_primary_constructor");
         Require(Shape.New(3.0) is Shape.Circle sn && sn.Radius == 3.0, "Shape.New(3)");
+
+        DemoCase("case:enums.data_enum.shape.should_reject_invalid_circle_constructor_input");
+        try
+        {
+            Shape.TryCircle(0.0);
+            Require(false, "Shape.TryCircle(0) should throw");
+        }
+        catch (BoltException e)
+        {
+            Require(e.Message.Contains("radius must be positive"), "Shape.TryCircle(0) error");
+        }
 
         // TryApexPoint — static method whose return type is Option<Point>
         // where Point is shadowed by a sibling variant. Drives scoped
         // rendering of the Option decode inside the Shape scope.
+        DemoCase("case:enums.data_enum.shape.should_return_optional_records_from_static_methods");
         Point? apexPt = Shape.TryApexPoint(2.5);
         Require(apexPt is { } pt && pt.X == 0.0 && pt.Y == 2.5, "Shape.TryApexPoint(positive)");
         Require(Shape.TryApexPoint(-1.0) is null, "Shape.TryApexPoint(negative) == null");
 
         // Message — mixes string, primitive, and unit variants.
-        // case:enums.data_enum.message.basic
+        DemoCase("case:enums.data_enum.message.basic");
         Message text = new Message.Text("hello");
         Require(
             EchoMessage(text) is Message.Text et && et.Body == "hello",
@@ -618,7 +644,7 @@ public static class DemoTest
         Require(MessageSummary(new Message.Ping()) == "ping", "MessageSummary(Ping)");
 
         // Animal — three struct variants, one with a bool field.
-        // case:enums.data_enum.animal.basic
+        DemoCase("case:enums.data_enum.animal.basic");
         Animal dog = new Animal.Dog("Rex", "Labrador");
         Require(
             EchoAnimal(dog) is Animal.Dog d && d.Name == "Rex" && d.Breed == "Labrador",
@@ -643,7 +669,7 @@ public static class DemoTest
         // LifecycleEvent — a data enum whose variant payload carries a
         // C-style enum (Priority). The codec must wire-encode the outer
         // variant tag and the inner enum's backing integer together.
-        // case:enums.data_enum.lifecycle_event.priority_payload
+        DemoCase("case:enums.data_enum.lifecycle_event.priority_payload");
         LifecycleEvent started = MakeCriticalLifecycleEvent(7);
         Require(
             started is LifecycleEvent.TaskStarted ts
@@ -674,13 +700,13 @@ public static class DemoTest
         // record fully qualifies to avoid collision when addressing it
         // directly. Using the namespace-qualified form makes the intent
         // explicit here too.
-        // case:records.with_enums.task.echo
+        DemoCase("case:records.with_enums.task.echo");
         global::Demo.Task task = new global::Demo.Task("Write docs", Priority.High, false);
         global::Demo.Task echoedTask = EchoTask(task);
         Require(echoedTask == task, "EchoTask round-trip");
         Require(echoedTask.Priority == Priority.High, "Task.Priority preserved");
 
-        // case:records.with_enums.notification.echo
+        DemoCase("case:records.with_enums.notification.echo");
         Notification notification = new Notification("Build failed", Priority.Critical, false);
         Notification echoedNotification = EchoNotification(notification);
         Require(echoedNotification == notification, "EchoNotification round-trip");
@@ -691,7 +717,7 @@ public static class DemoTest
         // have a variable-width on-the-wire representation — this record
         // must ride the wire codec, not direct P/Invoke, despite the
         // repr(C) decoration.
-        // case:records.with_enums.holder.triangle
+        DemoCase("case:records.with_enums.holder.triangle");
         Holder triangle = MakeTriangleHolder();
         Require(
             triangle.Shape is Shape.Triangle t
@@ -709,7 +735,7 @@ public static class DemoTest
         // as layout-compatible primitives, so both sides agree on wire
         // encoding. Follow-up work (see TaskHeader doc) can widen both
         // sides together to lift this onto direct P/Invoke.
-        // case:records.with_enums.task_header.roundtrip
+        DemoCase("case:records.with_enums.task_header.roundtrip");
         TaskHeader header = MakeCriticalTaskHeader(42);
         Require(header.Id == 42, "MakeCriticalTaskHeader.Id");
         Require(header.Priority == Priority.Critical, "MakeCriticalTaskHeader.Priority");
@@ -720,7 +746,7 @@ public static class DemoTest
         // LogEntry — same family as TaskHeader but the C-style enum field
         // is u8-backed, so field alignment matters. Wire-encoded today for
         // the same reason TaskHeader is.
-        // case:records.with_enums.log_entry.roundtrip
+        DemoCase("case:records.with_enums.log_entry.roundtrip");
         LogEntry entry = MakeErrorLogEntry(1234567890, 42);
         Require(entry.Timestamp == 1234567890, "MakeErrorLogEntry.Timestamp");
         Require(entry.Level == LogLevel.Error, "MakeErrorLogEntry.Level");
@@ -869,7 +895,7 @@ public static class DemoTest
     {
         Console.WriteLine("Testing blittable record vecs (Location, Trade, Particle, SensorReading)...");
 
-        // case:records.blittable.locations.vector_stats
+        DemoCase("case:records.blittable.locations.vector_stats");
         Location[] locations = GenerateLocations(3);
         Require(locations.Length == 3, "generateLocations length");
         Require(locations[0].Id == 0L, "locations[0].Id");
@@ -883,19 +909,19 @@ public static class DemoTest
         Require(ProcessLocations(Array.Empty<Location>()) == 0, "processLocations empty");
         Require(Math.Abs(SumRatings(locations) - (3.0 + 3.1 + 3.2)) < 1e-9, "sumRatings roundtrip");
 
-        // case:records.blittable.trades.vector_stats
+        DemoCase("case:records.blittable.trades.vector_stats");
         Trade[] trades = GenerateTrades(3);
         Require(trades.Length == 3, "generateTrades length");
         Require(trades[0].Volume == 0L && trades[1].Volume == 1000L && trades[2].Volume == 2000L, "trades volumes");
         Require(SumTradeVolumes(trades) == 3000L, "sumTradeVolumes roundtrip");
         Require(AggregateLocationTradeStats(locations, trades) == 3002L, "aggregateLocationTradeStats two pinned arrays");
 
-        // case:records.blittable.particles.vector_stats
+        DemoCase("case:records.blittable.particles.vector_stats");
         Particle[] particles = GenerateParticles(3);
         Require(particles.Length == 3, "generateParticles length");
         Require(Math.Abs(SumParticleMasses(particles) - (1.0 + 1.001 + 1.002)) < 1e-9, "sumParticleMasses roundtrip");
 
-        // case:records.blittable.sensor_readings.vector_stats
+        DemoCase("case:records.blittable.sensor_readings.vector_stats");
         SensorReading[] readings = GenerateSensorReadings(3);
         Require(readings.Length == 3, "generateSensorReadings length");
         Require(Math.Abs(AvgSensorTemperature(readings) - 21.0) < 1e-9, "avgSensorTemperature roundtrip");
@@ -928,7 +954,7 @@ public static class DemoTest
         Console.WriteLine("Testing Vec<CStyleEnum> and Vec<DataEnum>...");
 
         Status[] statuses = new[] { Status.Active, Status.Inactive, Status.Pending, Status.Active };
-        // case:enums.c_style.status.vec
+        DemoCase("case:enums.c_style.status.vec");
         Status[] echoedStatuses = EchoVecStatus(statuses);
         Require(echoedStatuses.SequenceEqual(statuses), "echoVecStatus round-trip");
         Require(EchoVecStatus(Array.Empty<Status>()).Length == 0, "echoVecStatus empty");
@@ -940,7 +966,7 @@ public static class DemoTest
         Require(CountNorth(Array.Empty<Direction>()) == 0, "countNorth empty");
 
         LogLevel[] levels = new[] { LogLevel.Trace, LogLevel.Warn, LogLevel.Error, LogLevel.Debug };
-        // case:enums.repr_int.log_level.vec
+        DemoCase("case:enums.repr_int.log_level.vec");
         LogLevel[] echoedLevels = EchoVecLogLevel(levels);
         Require(echoedLevels.SequenceEqual(levels), "echoVecLogLevel round-trip");
         Require(EchoVecLogLevel(Array.Empty<LogLevel>()).Length == 0, "echoVecLogLevel empty");
@@ -954,7 +980,7 @@ public static class DemoTest
             new Shape.Apex(new Point(7.0, 8.0)),
             new Shape.Apex(null),
         };
-        // case:enums.data_enum.shape.vec
+        DemoCase("case:enums.data_enum.shape.should_roundtrip_vectors");
         Shape[] echoedShapes = EchoVecShape(shapes);
         Require(echoedShapes.Length == shapes.Length, "echoVecShape length");
         Require(echoedShapes.SequenceEqual(shapes), "echoVecShape round-trip preserves each variant");
@@ -988,7 +1014,7 @@ public static class DemoTest
     {
         Console.WriteLine("Testing Vec fields inside records and enum variants...");
 
-        // case:records.with_collections.polygon.basic
+        DemoCase("case:records.with_collections.polygon.basic");
         Polygon triangle = new Polygon(new[]
         {
             new Point(0.0, 0.0),
@@ -1004,7 +1030,7 @@ public static class DemoTest
         Require(built.Points.SequenceEqual(triangle.Points), "makePolygon");
         Require(EchoPolygon(new Polygon(Array.Empty<Point>())).Points.Length == 0, "echoPolygon empty");
 
-        // case:records.with_collections.team.basic
+        DemoCase("case:records.with_collections.team.basic");
         Team team = new Team("Alpha", new[] { "café", "🌍", "common" });
         Team echoedTeam = EchoTeam(team);
         Require(echoedTeam.Name == team.Name, "echoTeam name");
@@ -1014,7 +1040,7 @@ public static class DemoTest
         Require(built2.Name == "Beta" && built2.Members.SequenceEqual(new[] { "x", "y" }), "makeTeam");
         Require(EchoTeam(new Team("Empty", Array.Empty<string>())).Members.Length == 0, "echoTeam empty members");
 
-        // case:records.with_collections.classroom.basic
+        DemoCase("case:records.with_collections.classroom.basic");
         Classroom classroom = new Classroom(new[]
         {
             new Person("café", 7u),
@@ -1026,14 +1052,14 @@ public static class DemoTest
         Require(built3.Students.SequenceEqual(classroom.Students), "makeClassroom (Vec<NonBlittableRecord> param)");
         Require(EchoClassroom(new Classroom(Array.Empty<Person>())).Students.Length == 0, "echoClassroom empty");
 
-        // case:records.with_collections.tagged_scores.basic
+        DemoCase("case:records.with_collections.tagged_scores.basic");
         TaggedScores scores = new TaggedScores("quiz", new[] { 10.0, 20.0, 30.0 });
         TaggedScores echoedScores = EchoTaggedScores(scores);
         Require(echoedScores.Label == "quiz" && echoedScores.Scores.SequenceEqual(scores.Scores), "echoTaggedScores");
         Require(Math.Abs(AverageScore(scores) - 20.0) < 1e-9, "averageScore");
         Require(AverageScore(new TaggedScores("empty", Array.Empty<double>())) == 0.0, "averageScore empty");
 
-        // case:enums.complex_variants.filter.basic
+        DemoCase("case:enums.complex_variants.filter.basic");
         Filter byTags = new Filter.ByTags(new[] { "café", "🌍" });
         Filter echoedTags = EchoFilter(byTags);
         Require(echoedTags is Filter.ByTags t && t.Tags.SequenceEqual(((Filter.ByTags)byTags).Tags), "echoFilter ByTags");
@@ -1063,7 +1089,7 @@ public static class DemoTest
         Require(echoedPts is Filter.ByPoints p2 && p2.Anchors.SequenceEqual(((Filter.ByPoints)byPoints).Anchors), "echoFilter ByPoints");
         Require(DescribeFilter(byPoints) == "filter by 2 anchor points", "describeFilter ByPoints");
 
-        // case:records.with_collections.user_profiles.vector_stats
+        DemoCase("case:records.with_collections.user_profiles.vector_stats");
         BenchmarkUserProfile[] profiles = GenerateUserProfiles(4);
         Require(profiles.Length == 4, "generateUserProfiles length");
         Require(profiles[0].Tags.Length == 3 && profiles[0].Scores.Length == 3, "generateUserProfiles inner vec shapes");
@@ -1091,7 +1117,7 @@ public static class DemoTest
     {
         Console.WriteLine("Testing Option types...");
 
-        // case:options.primitives.i32.some_none_and_helpers
+        DemoCase("case:options.primitives.i32.some_none_and_helpers");
         Require(EchoOptionalI32(42) == 42, "EchoOptionalI32(Some)");
         Require(EchoOptionalI32(null) == null, "EchoOptionalI32(None)");
         Require(EchoOptionalI32(int.MinValue) == int.MinValue, "EchoOptionalI32(min)");
@@ -1126,7 +1152,7 @@ public static class DemoTest
         // Option<String>: reference-type inner rides the same 1-byte tag
         // path; the payload is a length-prefixed UTF-8 buffer. café
         // exercises 2-byte codepoints, 🌍 exercises 4-byte ones.
-        // case:options.complex.string.some_none
+        DemoCase("case:options.complex.string.some_none");
         Require(EchoOptionalString("hello") == "hello", "EchoOptionalString(Some ascii)");
         Require(EchoOptionalString("café") == "café", "EchoOptionalString(2-byte UTF-8)");
         Require(EchoOptionalString("🌍") == "🌍", "EchoOptionalString(4-byte UTF-8)");
@@ -1143,7 +1169,7 @@ public static class DemoTest
         // fields, so the inner payload is 16 raw bytes written via
         // Point.WireEncodeTo and read via Point.Decode — no layout
         // shortcut, because the 1-byte tag forces the wire path.
-        // case:options.complex.point.some_none
+        DemoCase("case:options.complex.point.some_none");
         Require(EchoOptionalPoint(new Point(1.5, 2.5)) == new Point(1.5, 2.5), "EchoOptionalPoint(Some)");
         Require(EchoOptionalPoint(null) == null, "EchoOptionalPoint(None)");
 
@@ -1153,7 +1179,7 @@ public static class DemoTest
         // Option<CStyleEnum>: Status crosses the wire as a 4-byte i32
         // tag under an Option — the CLR can't reuse its direct
         // marshaling path because of the outer 1-byte present tag.
-        // case:options.complex.status.some_none
+        DemoCase("case:options.complex.status.some_none");
         Require(EchoOptionalStatus(Status.Active) == Status.Active, "EchoOptionalStatus(Active)");
         Require(EchoOptionalStatus(Status.Pending) == Status.Pending, "EchoOptionalStatus(Pending)");
         Require(EchoOptionalStatus(null) == null, "EchoOptionalStatus(None)");
@@ -1193,7 +1219,7 @@ public static class DemoTest
 
         // UserProfile: one optional string field, one optional f64.
         // The record round-trip exercises encode + decode together.
-        // case:records.with_options.user_profile.some_none
+        DemoCase("case:records.with_options.user_profile.some_none");
         UserProfile alice = MakeUserProfile("Alice", 30u, "alice@example.com", 92.5);
         Require(alice.Name == "Alice", "MakeUserProfile.Name");
         Require(alice.Age == 30u, "MakeUserProfile.Age");
@@ -1230,7 +1256,7 @@ public static class DemoTest
         // SearchResult: second record shape with Option fields, exercises
         // the same code path through a different record class name to
         // catch any accidental per-record coupling in the generator.
-        // case:records.with_options.search_result.some_none
+        DemoCase("case:records.with_options.search_result.some_none");
         SearchResult hits = new SearchResult("cats", 42u, "cursor_abc", 0.97);
         Require(EchoSearchResult(hits) == hits, "EchoSearchResult round-trip (all Some)");
         Require(HasMoreResults(hits), "HasMoreResults true when NextCursor is Some");
@@ -1254,7 +1280,7 @@ public static class DemoTest
 
         // Option<Vec<T>>: the Option tag guards an entire length-prefixed
         // array. Some(vec) and Some(empty_vec) are distinct from None.
-        // case:options.complex.vec.some_none
+        DemoCase("case:options.complex.vec.some_none");
         var numbers = EchoOptionalVec(new[] { 1, 2, 3 });
         Require(numbers != null && numbers.SequenceEqual(new[] { 1, 2, 3 }), "EchoOptionalVec(Some)");
         Require(
@@ -1286,7 +1312,7 @@ public static class DemoTest
         // Option tag, so the wire shape is: count (i32), then for each
         // slot, 1-byte tag + optional i32 payload. Mixed Some/None
         // positions in one vec surface any off-by-one errors.
-        // case:options.complex.vec_optional_i32.mixed
+        DemoCase("case:options.complex.vec_optional_i32.mixed");
         int?[] mixed = new int?[] { 1, null, 3, null, 5 };
         int?[] echoed = EchoVecOptionalI32(mixed);
         Require(echoed.Length == mixed.Length, "EchoVecOptionalI32 preserves length");
@@ -1680,7 +1706,7 @@ public static class DemoTest
         Console.WriteLine("Testing result functions (String error)...");
 
         // Result<i32, String> ok path returns the value directly.
-        // case:results.basic.safe_divide.ok_err
+        DemoCase("case:results.basic.safe_divide.ok_err");
         Require(SafeDivide(10, 2) == 5, "SafeDivide(10, 2) returns 5");
         // Err path throws BoltException carrying the Rust error string.
         try
@@ -1693,7 +1719,7 @@ public static class DemoTest
             Require(e.Message.Contains("division by zero"), "SafeDivide error message");
         }
 
-        // case:results.basic.always_ok_err
+        DemoCase("case:results.basic.always_ok_err");
         Require(AlwaysOk(21) == 42, "AlwaysOk doubles its input");
         try
         {
@@ -1706,7 +1732,7 @@ public static class DemoTest
         }
 
         // Result<Point, String> with Ok carrying a record.
-        // case:results.basic.parse_point.ok_err
+        DemoCase("case:results.basic.parse_point.ok_err");
         Point p = ParsePoint("3.0,4.0");
         Require(p.X == 3.0 && p.Y == 4.0, "ParsePoint round-trips x,y");
         try
@@ -1716,7 +1742,7 @@ public static class DemoTest
         }
         catch (BoltException) { }
 
-        // case:results.nested_results.option_vec_string
+        DemoCase("case:results.nested_results.option_vec_string");
         // Result<String, String> with Ok carrying a wire-decoded String.
         Require(ResultOfString(1) == "item_1", "ResultOfString ok");
         try
@@ -1778,7 +1804,7 @@ public static class DemoTest
     {
         Console.WriteLine("Testing result enum/record errors (typed exceptions)...");
 
-        // case:results.error_enums.math.checked
+        DemoCase("case:results.error_enums.math.checked");
         // C-style #[error] enum -> dedicated MathErrorException with
         // an Error property that exposes the underlying enum value.
         Require(CheckedDivide(10, 2) == 5, "CheckedDivide(10, 2) ok");
@@ -1814,7 +1840,7 @@ public static class DemoTest
             Require(e.Error == MathError.Overflow, "CheckedAdd typed error");
         }
 
-        // case:results.error_enums.validation.username
+        DemoCase("case:results.error_enums.validation.username");
         // ValidationError uses an explicit #[repr(i32)] with non-zero
         // discriminants — make sure the wire decode keeps mapping each
         // tag to the right variant on the throw path.
@@ -1847,7 +1873,7 @@ public static class DemoTest
             Require(e.Error == ValidationError.InvalidFormat, "ValidateUsername InvalidFormat");
         }
 
-        // case:results.error_enums.app_error.basic
+        DemoCase("case:results.error_enums.app_error.basic");
         // Structured (record) #[error] -> AppErrorException wraps the
         // record so the caller can both `catch` it as an exception and
         // access the original fields via the Error property.
@@ -1883,7 +1909,7 @@ public static class DemoTest
     {
         Console.WriteLine("Testing async functions...");
 
-        // case:async_fns.basic.scalar_string_vec
+        DemoCase("case:async_fns.basic.scalar_string_vec");
         Require(await AsyncAdd(3, 7) == 10, "AsyncAdd(3, 7)");
         Require(await AsyncEcho("hello async") == "Echo: hello async", "AsyncEcho string return");
         Require((await AsyncDoubleAll(new[] { 1, 2, 3 })).SequenceEqual(new[] { 2, 4, 6 }),
@@ -1908,7 +1934,7 @@ public static class DemoTest
             parameters
         );
 
-        // case:async_fns.mixed_record.roundtrip
+        DemoCase("case:async_fns.mixed_record.roundtrip");
         MixedRecord echoed = await AsyncEchoMixedRecord(record);
         Require(echoed.Name == record.Name, "AsyncEchoMixedRecord.Name");
         Require(echoed.Anchor == record.Anchor, "AsyncEchoMixedRecord.Anchor");
@@ -1939,7 +1965,7 @@ public static class DemoTest
     {
         Console.WriteLine("Testing async result functions...");
 
-        // case:async_fns.results.compute_fetch
+        DemoCase("case:async_fns.results.compute_fetch");
         Require(await TryComputeAsync(6) == 12, "TryComputeAsync success");
         try
         {
@@ -1963,7 +1989,7 @@ public static class DemoTest
             Require(e.Message.Contains("invalid id"), "FetchData(-1) BoltException");
         }
 
-        // case:results.async_results.math_fetch_find
+        DemoCase("case:results.async_results.math_fetch_find");
         Require(await AsyncSafeDivide(10, 2) == 5, "AsyncSafeDivide(10, 2)");
         try
         {
@@ -2496,5 +2522,20 @@ public static class DemoTest
     private static void Require(bool condition, string label)
     {
         if (!condition) throw new InvalidOperationException($"FAIL: {label}");
+    }
+
+    private static void DemoCase(string caseId)
+    {
+        currentDemoCase = caseId;
+    }
+
+    private static string DescribeFailure(Exception ex)
+    {
+        if (currentDemoCase is null || ex.ToString().Contains("case:"))
+        {
+            return ex.ToString();
+        }
+
+        return $"{currentDemoCase}: {ex}";
     }
 }

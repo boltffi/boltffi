@@ -1,10 +1,10 @@
 import math
-import unittest
+from tests.support import DemoTestCase
 
 import demo
 
 
-class ScalarsTests(unittest.TestCase):
+class ScalarsTests(DemoTestCase):
     def test_echo_bool(self) -> None:
         self.assertIs(demo.echo_bool(True), True, "case:primitives.scalars.echo_bool.true")
 

@@ -2,6 +2,47 @@ import Demo
 import Foundation
 import XCTest
 
+class DemoTestCase: XCTestCase {
+    private var currentDemoCase: String?
+
+    func demoCase(_ caseId: String) {
+        currentDemoCase = caseId
+    }
+
+    override func recordFailure(withDescription description: String, inFile filePath: String, atLine lineNumber: Int, expected: Bool) {
+        super.recordFailure(
+            withDescription: prefixDemoCase(description),
+            inFile: filePath,
+            atLine: lineNumber,
+            expected: expected
+        )
+    }
+
+    override func record(_ issue: XCTIssue) {
+        guard let caseId = currentDemoCase, !issue.compactDescription.contains("case:") else {
+            super.record(issue)
+            return
+        }
+
+        let prefixedIssue = XCTIssue(
+            type: issue.type,
+            compactDescription: "\(caseId): \(issue.compactDescription)",
+            detailedDescription: issue.detailedDescription,
+            sourceCodeContext: issue.sourceCodeContext,
+            associatedError: issue.associatedError,
+            attachments: issue.attachments
+        )
+        super.record(prefixedIssue)
+    }
+
+    private func prefixDemoCase(_ description: String) -> String {
+        guard let caseId = currentDemoCase, !description.contains("case:") else {
+            return description
+        }
+        return "\(caseId): \(description)"
+    }
+}
+
 func assertPointEquals(_ point: Point, _ expectedX: Double, _ expectedY: Double, accuracy: Double = 1e-9, file: StaticString = #filePath, line: UInt = #line) {
     XCTAssertEqual(point.x, expectedX, accuracy: accuracy, file: file, line: line)
     XCTAssertEqual(point.y, expectedY, accuracy: accuracy, file: file, line: line)

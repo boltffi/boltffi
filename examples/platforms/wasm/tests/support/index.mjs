@@ -5,6 +5,11 @@ await demo.initialized;
 
 export { assert, demo };
 
+globalThis.__boltffiDemoCase = null;
+globalThis.demoCase = (caseId) => {
+  globalThis.__boltffiDemoCase = caseId;
+};
+
 export function assertApprox(actual, expected, epsilon = 1e-9) {
   assert.ok(
     Math.abs(actual - expected) <= epsilon,

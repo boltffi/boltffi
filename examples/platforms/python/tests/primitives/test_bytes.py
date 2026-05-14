@@ -1,9 +1,9 @@
-import unittest
+from tests.support import DemoTestCase
 
 import demo
 
 
-class BytesTests(unittest.TestCase):
+class BytesTests(DemoTestCase):
     def test_echo_bytes(self) -> None:
         self.assertEqual(demo.echo_bytes(bytes([1, 2, 3, 4])), bytes([1, 2, 3, 4]), "case:bytes.echo.basic")
 

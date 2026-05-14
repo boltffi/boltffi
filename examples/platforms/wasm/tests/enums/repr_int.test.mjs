@@ -1,21 +1,21 @@
 import { assert, assertArrayEqual, demo } from "../support/index.mjs";
 
 export async function run() {
-  // case:enums.repr_int.priority.basic
+  globalThis.demoCase("case:enums.repr_int.priority.basic");
   assert.equal(demo.echoPriority(demo.Priority.High), demo.Priority.High);
   assert.equal(demo.priorityLabel(demo.Priority.Low), "low");
   assert.equal(demo.isHighPriority(demo.Priority.Critical), true);
   assert.equal(demo.isHighPriority(demo.Priority.Low), false);
-  // case:enums.repr_int.log_level.basic
+  globalThis.demoCase("case:enums.repr_int.log_level.basic");
   assert.equal(demo.echoLogLevel(demo.LogLevel.Info), demo.LogLevel.Info);
   assert.equal(demo.shouldLog(demo.LogLevel.Error, demo.LogLevel.Warn), true);
-  // case:enums.repr_int.log_level.vec
+  globalThis.demoCase("case:enums.repr_int.log_level.vec");
   assertArrayEqual(
     demo.echoVecLogLevel(Uint8Array.from([demo.LogLevel.Trace, demo.LogLevel.Info, demo.LogLevel.Error])),
     [demo.LogLevel.Trace, demo.LogLevel.Info, demo.LogLevel.Error],
   );
 
-  // case:enums.repr_int.http_code.discriminants
+  globalThis.demoCase("case:enums.repr_int.http_code.discriminants");
   assert.equal(demo.HttpCode.Ok, 200);
   assert.equal(demo.HttpCode.NotFound, 404);
   assert.equal(demo.HttpCode.ServerError, 500);
@@ -23,7 +23,7 @@ export async function run() {
   assert.equal(demo.echoHttpCode(demo.HttpCode.Ok), demo.HttpCode.Ok);
   assert.equal(demo.echoHttpCode(demo.HttpCode.ServerError), demo.HttpCode.ServerError);
 
-  // case:enums.repr_int.sign.discriminants
+  globalThis.demoCase("case:enums.repr_int.sign.discriminants");
   assert.equal(demo.Sign.Negative, -1);
   assert.equal(demo.Sign.Zero, 0);
   assert.equal(demo.Sign.Positive, 1);

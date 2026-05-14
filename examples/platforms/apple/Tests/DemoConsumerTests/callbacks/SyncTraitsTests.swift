@@ -1,7 +1,7 @@
 import Demo
 import XCTest
 
-final class SyncTraitsTests: XCTestCase {
+final class SyncTraitsTests: DemoTestCase {
     final class Doubler: ValueCallback {
         func onValue(value: Int32) -> Int32 { value * 2 }
     }

@@ -1,7 +1,7 @@
 import Demo
 import XCTest
 
-final class ScalarsTests: XCTestCase {
+final class ScalarsTests: DemoTestCase {
     func testScalarFns() {
         XCTAssertEqual(echoBool(v: true), true, "case:primitives.scalars.echo_bool.true")
         XCTAssertEqual(negateBool(v: false), true, "case:primitives.scalars.negate_bool.false")

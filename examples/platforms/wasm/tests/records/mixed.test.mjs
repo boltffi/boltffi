@@ -1,7 +1,7 @@
 import { assert, demo, sampleMixedRecord } from "../support/index.mjs";
 
 export async function run() {
-  // case:records.mixed.basic
+  globalThis.demoCase("case:records.mixed.basic");
   const record = sampleMixedRecord();
 
   assert.deepEqual(demo.echoMixedRecord(record), record);

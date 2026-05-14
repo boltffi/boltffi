@@ -46,6 +46,10 @@ def is_export_attr(line: str) -> bool:
     return ("#[export" in line or "uniffi::export" in line) and "callback_interface" not in line
 
 
+def is_data_impl_attr(line: str) -> bool:
+    return "#[data(impl)]" in line
+
+
 def module_name_for(path: Path) -> str:
     relative = path.relative_to(DEMO_SRC)
     if relative.name == "lib.rs":
@@ -97,6 +101,7 @@ def iter_demo_exports() -> tuple[DemoExport, ...]:
                 pass
             else:
                 export_attrs = any(is_export_attr(attribute) for attribute in pending_attrs)
+                data_impl_attrs = any(is_data_impl_attr(attribute) for attribute in pending_attrs)
 
                 if export_attrs:
                     if function_match := FUNCTION_RE.match(line):
@@ -121,6 +126,13 @@ def iter_demo_exports() -> tuple[DemoExport, ...]:
                         current_block = ExportBlock(
                             kind="trait",
                             owner=trait_match.group(1),
+                            depth=brace_depth + line.count("{") - line.count("}"),
+                        )
+                elif data_impl_attrs:
+                    if impl_match := IMPL_RE.match(line):
+                        current_block = ExportBlock(
+                            kind="impl",
+                            owner=impl_match.group(1).split("::")[-1],
                             depth=brace_depth + line.count("{") - line.count("}"),
                         )
 

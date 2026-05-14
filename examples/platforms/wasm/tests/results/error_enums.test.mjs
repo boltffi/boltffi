@@ -6,7 +6,7 @@ import {
 import { wireErr, wireOk } from "@boltffi/runtime";
 
 export async function run() {
-  // case:results.error_enums.math.checked
+  globalThis.demoCase("case:results.error_enums.math.checked");
   assert.equal(demo.checkedDivide(10, 2), 5);
   assertThrowsWithCode(
     () => demo.checkedDivide(1, 0),
@@ -24,7 +24,7 @@ export async function run() {
     demo.MathErrorException,
     demo.MathError.Overflow,
   );
-  // case:results.error_enums.validation.username
+  globalThis.demoCase("case:results.error_enums.validation.username");
   assert.equal(demo.validateUsername("valid_name"), "valid_name");
   assertThrowsWithCode(
     () => demo.validateUsername("ab"),
@@ -45,7 +45,7 @@ export async function run() {
   assert.equal(demo.mayFail(true), "Success!");
   assert.equal(demo.divideApp(10, 2), 5);
 
-  // case:results.error_enums.api_result.basic
+  globalThis.demoCase("case:results.error_enums.api_result.basic");
   assert.deepEqual(demo.processValue(3), { tag: "Success" });
   assert.deepEqual(demo.processValue(0), { tag: "ErrorCode", value0: -1 });
   assert.equal(demo.apiResultIsSuccess({ tag: "Success" }), true);
@@ -59,7 +59,7 @@ export async function run() {
     assert.deepEqual(error.value, { tag: "Overflow", value: -1, limit: 0 });
   }
 
-  // case:results.error_enums.benchmark_response.basic
+  globalThis.demoCase("case:results.error_enums.benchmark_response.basic");
   const okResponse = demo.createSuccessResponse(7n, { x: 1, y: 2, timestamp: 3n });
   assert.deepEqual(okResponse, {
     requestId: 7n,

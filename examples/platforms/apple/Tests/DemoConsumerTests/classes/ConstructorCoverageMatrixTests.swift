@@ -1,7 +1,7 @@
 import Demo
 import XCTest
 
-final class ConstructorCoverageMatrixTests: XCTestCase {
+final class ConstructorCoverageMatrixTests: DemoTestCase {
     func testConstructorCoverageMatrixConstructors() throws {
         let base = ConstructorCoverageMatrix()
         XCTAssertEqual(base.constructorVariant(), "new")

@@ -1,9 +1,9 @@
 import Demo
 import XCTest
 
-final class NestedResultsTests: XCTestCase {
+final class NestedResultsTests: DemoTestCase {
     func testNestedResultFns() throws {
-        // case:results.nested_results.option_vec_string
+        demoCase("case:results.nested_results.option_vec_string")
         XCTAssertEqual(try resultOfOption(key: 4), 8)
         XCTAssertNil(try resultOfOption(key: 0))
         assertThrowsMessageContains("invalid key", try resultOfOption(key: -1))

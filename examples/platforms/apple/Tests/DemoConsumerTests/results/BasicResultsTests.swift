@@ -1,7 +1,7 @@
 import Demo
 import XCTest
 
-final class BasicResultsTests: XCTestCase {
+final class BasicResultsTests: DemoTestCase {
     func testBasicResultFns() throws {
         XCTAssertEqual(try safeDivide(a: 10, b: 2), 5, "case:results.basic.safe_divide.ok_err")
         assertThrowsMessageContains("division by zero", try safeDivide(a: 1, b: 0))

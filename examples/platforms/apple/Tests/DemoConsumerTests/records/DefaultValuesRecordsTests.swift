@@ -1,9 +1,9 @@
 import Demo
 import XCTest
 
-final class DefaultValuesRecordsTests: XCTestCase {
+final class DefaultValuesRecordsTests: DemoTestCase {
     func testServiceConfigDefaults() {
-        // case:records.default_values.service_config.echo
+        demoCase("case:records.default_values.service_config.echo")
         let implicitDefaults = ServiceConfig(name: "worker")
         XCTAssertEqual(
             implicitDefaults,

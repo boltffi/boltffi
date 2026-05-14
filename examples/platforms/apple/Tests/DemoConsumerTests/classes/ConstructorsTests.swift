@@ -1,7 +1,7 @@
 import Demo
 import XCTest
 
-final class ConstructorsTests: XCTestCase {
+final class ConstructorsTests: DemoTestCase {
     func testInventoryConstructorsAndCollectionMethods() throws {
         let inventory = Inventory()
         XCTAssertEqual(inventory.capacity(), 100)

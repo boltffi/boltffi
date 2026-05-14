@@ -25,9 +25,9 @@ extension MixedRecord {
     }
 }
 
-final class MixedRecordsTests: XCTestCase {
+final class MixedRecordsTests: DemoTestCase {
     func testMixedRecordFns() {
-        // case:records.mixed.basic
+        demoCase("case:records.mixed.basic")
         let record = MixedRecord.sample()
 
         XCTAssertEqual(echoMixedRecord(record: record), record)

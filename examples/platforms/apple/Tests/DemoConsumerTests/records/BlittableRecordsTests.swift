@@ -1,10 +1,8 @@
 import Demo
 import XCTest
 
-final class BlittableRecordsTests: XCTestCase {
+final class BlittableRecordsTests: DemoTestCase {
     func testPointFnsAndMethods() throws {
-        // case:records.blittable.point.functions
-        // case:records.blittable.point.try_make
         XCTAssertEqual(Point.new(x: 1.0, y: 2.0), Point(x: 1.0, y: 2.0))
         assertPointEquals(Point.origin(), 0.0, 0.0)
         assertPointEquals(Point(fromPolar: 2.0, theta: .pi / 2.0), 0.0, 2.0, accuracy: 1e-6)
@@ -23,38 +21,41 @@ final class BlittableRecordsTests: XCTestCase {
             accuracy: 1e-6
         )
         XCTAssertEqual(Point.dimensions(), 2)
+        demoCase("case:records.blittable.point.functions")
         XCTAssertEqual(echoPoint(p: Point(x: 1.5, y: 2.5)), Point(x: 1.5, y: 2.5))
-        XCTAssertEqual(tryMakePoint(x: 1.0, y: 2.0), Point(x: 1.0, y: 2.0))
-        XCTAssertNil(tryMakePoint(x: 0.0, y: 0.0))
         XCTAssertEqual(makePoint(x: 3.0, y: 4.0), Point(x: 3.0, y: 4.0))
         XCTAssertEqual(addPoints(a: Point(x: 1.0, y: 2.0), b: Point(x: 3.0, y: 4.0)), Point(x: 4.0, y: 6.0))
+
+        demoCase("case:records.blittable.point.try_make")
+        XCTAssertEqual(tryMakePoint(x: 1.0, y: 2.0), Point(x: 1.0, y: 2.0))
+        XCTAssertNil(tryMakePoint(x: 0.0, y: 0.0))
     }
 
     func testColorFns() {
-        // case:records.blittable.color.basic
+        demoCase("case:records.blittable.color.basic")
         XCTAssertEqual(echoColor(c: Color(r: 1, g: 2, b: 3, a: 4)), Color(r: 1, g: 2, b: 3, a: 4))
         XCTAssertEqual(makeColor(r: 10, g: 20, b: 30, a: 40), Color(r: 10, g: 20, b: 30, a: 40))
     }
 
     func testBenchmarkRecordFns() {
-        // case:records.blittable.locations.vector_stats
-        // case:records.blittable.trades.vector_stats
-        // case:records.blittable.particles.vector_stats
-        // case:records.blittable.sensor_readings.vector_stats
+        demoCase("case:records.blittable.locations.vector_stats")
         let locations = generateLocations(count: 3)
         XCTAssertEqual(locations.count, 3)
         XCTAssertEqual(processLocations(locations: locations), 3)
         XCTAssertEqual(sumRatings(locations: locations), 9.3, accuracy: 1e-9)
 
+        demoCase("case:records.blittable.trades.vector_stats")
         let trades = generateTrades(count: 3)
         XCTAssertEqual(trades.count, 3)
         XCTAssertEqual(sumTradeVolumes(trades: trades), 3000)
         XCTAssertEqual(aggregateLocationTradeStats(locations: locations, trades: trades), 3002)
 
+        demoCase("case:records.blittable.particles.vector_stats")
         let particles = generateParticles(count: 3)
         XCTAssertEqual(particles.count, 3)
         XCTAssertEqual(sumParticleMasses(particles: particles), 3.003, accuracy: 1e-9)
 
+        demoCase("case:records.blittable.sensor_readings.vector_stats")
         let readings = generateSensorReadings(count: 3)
         XCTAssertEqual(readings.count, 3)
         XCTAssertEqual(avgSensorTemperature(readings: readings), 21.0, accuracy: 1e-9)
