@@ -645,6 +645,7 @@ public final class DemoTest {
     private static void testOptions() {
         System.out.println("Testing options...");
 
+        // case:options.primitives.i32.some_none_and_helpers
         Optional<Integer> optI32 = Demo.echoOptionalI32(Optional.of(7));
         assert optI32.isPresent() && optI32.get() == 7 : "echoOptionalI32 some";
         assert !Demo.echoOptionalI32(Optional.empty()).isPresent() : "echoOptionalI32 none";
@@ -658,22 +659,26 @@ public final class DemoTest {
         assert Demo.doubleIfSome(Optional.of(8)).orElse(-1) == 16 : "doubleIfSome some";
         assert !Demo.doubleIfSome(Optional.empty()).isPresent() : "doubleIfSome none";
 
+        // case:options.complex.string.some_none
         Optional<String> optString = Demo.echoOptionalString(Optional.of("hello"));
         assert optString.isPresent() && optString.get().equals("hello") : "echoOptionalString some";
         assert !Demo.echoOptionalString(Optional.empty()).isPresent() : "echoOptionalString none";
         assert Demo.isSomeString(Optional.of("x")) : "isSomeString some";
         assert !Demo.isSomeString(Optional.empty()) : "isSomeString none";
 
+        // case:options.complex.point.some_none
         Optional<Point> optPoint = Demo.echoOptionalPoint(Optional.of(new Point(1.0, 2.0)));
         assert optPoint.isPresent() : "echoOptionalPoint some";
         assert optPoint.get().x() == 1.0 && optPoint.get().y() == 2.0 : "echoOptionalPoint value";
         assert Demo.makeSomePoint(3.0, 4.0).isPresent() : "makeSomePoint";
         assert !Demo.makeNonePoint().isPresent() : "makeNonePoint";
 
+        // case:options.complex.status.some_none
         Optional<Status> optStatus = Demo.echoOptionalStatus(Optional.of(Status.ACTIVE));
         assert optStatus.isPresent() && optStatus.get() == Status.ACTIVE : "echoOptionalStatus some";
         assert !Demo.echoOptionalStatus(Optional.empty()).isPresent() : "echoOptionalStatus none";
 
+        // case:options.complex.vec.some_none
         Optional<int[]> optVec = Demo.echoOptionalVec(Optional.of(new int[]{1, 2, 3}));
         assert optVec.isPresent() : "echoOptionalVec some";
         assert optVec.get().length == 3 && optVec.get()[0] == 1 && optVec.get()[2] == 3 : "echoOptionalVec value";
@@ -721,6 +726,7 @@ public final class DemoTest {
         assert !withoutCursor.maxScore().isPresent() : "echoSearchResult score none";
         assert !Demo.hasMoreResults(withoutCursor) : "hasMoreResults false";
 
+        // case:options.complex.vec_optional_i32.mixed
         java.util.List<Optional<Integer>> mixed = java.util.Arrays.asList(
             Optional.of(1), Optional.empty(), Optional.of(3), Optional.empty(), Optional.of(5)
         );
@@ -1355,6 +1361,7 @@ public final class DemoTest {
     private static void testResultFunctions() {
         System.out.println("Testing result functions...");
 
+        // case:results.basic.safe_divide.ok_err
         assert Demo.safeDivide(10, 2) == 5 : "safeDivide ok";
         try {
             Demo.safeDivide(10, 0);
@@ -1363,6 +1370,7 @@ public final class DemoTest {
             assert e.getMessage().contains("division by zero") : "safeDivide error message";
         }
 
+        // case:results.basic.always_ok_err
         assert Demo.alwaysOk(21) == 42 : "alwaysOk";
         try {
             Demo.alwaysErr("boom");
@@ -1371,6 +1379,7 @@ public final class DemoTest {
             assert e.getMessage().contains("boom") : "alwaysErr error message";
         }
 
+        // case:results.basic.parse_point.ok_err
         Point p = Demo.parsePoint("3.0,4.0");
         assert p.x() == 3.0 : "parsePoint x";
         assert p.y() == 4.0 : "parsePoint y";

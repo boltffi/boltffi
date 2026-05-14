@@ -171,6 +171,7 @@ class DemoValueTypesTest {
 
     @Test
     fun optionFunctionsUseCorrectKotlinSurface() {
+        // case:options.primitives.i32.some_none_and_helpers
         assertEquals(7, echoOptionalI32(7))
         assertNull(echoOptionalI32(null))
         assertDoubleEquals(4.5, echoOptionalF64(4.5)!!)
@@ -184,18 +185,22 @@ class DemoValueTypesTest {
         assertEquals(16, doubleIfSome(8))
         assertNull(doubleIfSome(null))
 
+        // case:options.complex.string.some_none
         assertEquals("hello", echoOptionalString("hello"))
         assertNull(echoOptionalString(null))
         assertEquals(true, isSomeString("x"))
         assertEquals(false, isSomeString(null))
 
+        // case:options.complex.point.some_none
         assertPointEquals(1.0, 2.0, echoOptionalPoint(Point(1.0, 2.0))!!)
         assertNull(echoOptionalPoint(null))
         assertPointEquals(3.0, 4.0, makeSomePoint(3.0, 4.0)!!)
         assertNull(makeNonePoint())
 
+        // case:options.complex.status.some_none
         assertEquals(Status.ACTIVE, echoOptionalStatus(Status.ACTIVE))
         assertNull(echoOptionalStatus(null))
+        // case:options.complex.vec.some_none
         assertContentEquals(intArrayOf(1, 2, 3), echoOptionalVec(intArrayOf(1, 2, 3)))
         assertNull(echoOptionalVec(null))
         assertEquals(2u, optionalVecLength(intArrayOf(9, 8)))
@@ -204,6 +209,7 @@ class DemoValueTypesTest {
         // Vec<Option<T>>: each element carries its own present/absent tag.
         // Mixed positions surface any off-by-one errors in the per-slot
         // Option encoding inside the encoded-array wire path.
+        // case:options.complex.vec_optional_i32.mixed
         val mixedOptionals = listOf(1, null, 3, null, 5)
         assertEquals(mixedOptionals, echoVecOptionalI32(mixedOptionals))
         assertEquals(emptyList(), echoVecOptionalI32(emptyList()))
@@ -212,14 +218,19 @@ class DemoValueTypesTest {
 
     @Test
     fun basicStringResultFunctionsUseCorrectKotlinSurface() {
+        // case:results.basic.safe_divide.ok_err
         assertEquals(5, safeDivide(10, 2))
         assertMessageContains(assertFailsWith<FfiException> { safeDivide(1, 0) }, "division by zero")
+        // case:results.basic.safe_sqrt.ok_err
         assertDoubleEquals(3.0, safeSqrt(9.0))
         assertMessageContains(assertFailsWith<FfiException> { safeSqrt(-1.0) }, "negative input")
+        // case:results.basic.parse_point.ok_err
         assertPointEquals(1.5, 2.5, parsePoint("1.5, 2.5"))
         assertMessageContains(assertFailsWith<FfiException> { parsePoint("wat") }, "expected format")
+        // case:results.basic.always_ok_err
         assertEquals(42, alwaysOk(21))
         assertMessageContains(assertFailsWith<FfiException> { alwaysErr("boom") }, "boom")
+        // case:results.basic.result_to_string.ok_err
         assertEquals("ok: 7", resultToString(BoltFFIResult.Ok(7)))
         assertEquals("err: bad", resultToString(BoltFFIResult.Err("bad")))
     }

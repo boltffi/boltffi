@@ -1,0 +1,63 @@
+[cases."options.primitives.i32.some_none_and_helpers"]
+summary = "Primitive i32 options support present and absent values"
+description = "i32 options round-trip through Some and None branches and support defaulting, construction, and transformation helpers."
+exercises = [
+  "options::primitives::echo_optional_i32",
+  "options::primitives::unwrap_or_default_i32",
+  "options::primitives::make_some_i32",
+  "options::primitives::make_none_i32",
+  "options::primitives::double_if_some",
+]
+
+[cases."options.primitives.i32.some_none_and_helpers".excluded_platforms]
+python = "The Python demo tests do not currently cover Option surfaces."
+
+[cases."options.complex.string.some_none"]
+summary = "String options support present and absent values"
+description = "String options cross the wire as either a UTF-8 payload or None, and the presence helper reports both branches."
+exercises = [
+  "options::complex::echo_optional_string",
+  "options::complex::is_some_string",
+]
+
+[cases."options.complex.string.some_none".excluded_platforms]
+python = "The Python demo tests do not currently cover Option surfaces."
+
+[cases."options.complex.point.some_none"]
+summary = "Point options support present and absent values"
+description = "Blittable record options cross the wire through Some and None branches and can be constructed on the Rust side."
+exercises = [
+  "options::complex::echo_optional_point",
+  "options::complex::make_some_point",
+  "options::complex::make_none_point",
+]
+
+[cases."options.complex.point.some_none".excluded_platforms]
+python = "The Python demo tests do not currently cover Option surfaces."
+
+[cases."options.complex.status.some_none"]
+summary = "Enum options support present and absent values"
+description = "C-style enum options cross the wire through Some and None branches."
+exercises = ["options::complex::echo_optional_status"]
+
+[cases."options.complex.status.some_none".excluded_platforms]
+python = "The Python demo tests do not currently cover Option surfaces."
+
+[cases."options.complex.vec.some_none"]
+summary = "Vector options support present and absent values"
+description = "Vector options preserve the difference between a present vector payload and None, including length inspection."
+exercises = [
+  "options::complex::echo_optional_vec",
+  "options::complex::optional_vec_length",
+]
+
+[cases."options.complex.vec.some_none".excluded_platforms]
+python = "The Python demo tests do not currently cover Option surfaces."
+
+[cases."options.complex.vec_optional_i32.mixed"]
+summary = "Vectors of optional i32 values preserve per-element presence"
+description = "Each element of a vector of optional i32 values carries its own Some/None tag across the wire."
+exercises = ["options::complex::echo_vec_optional_i32"]
+
+[cases."options.complex.vec_optional_i32.mixed".excluded_platforms]
+python = "The Python demo tests do not currently cover Option surfaces."

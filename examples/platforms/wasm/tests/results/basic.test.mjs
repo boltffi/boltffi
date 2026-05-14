@@ -2,14 +2,19 @@ import { assert, assertPoint, assertThrowsWithMessage, demo } from "../support/i
 import { wireErr, wireOk } from "@boltffi/runtime";
 
 export async function run() {
+  // case:results.basic.safe_divide.ok_err
   assert.equal(demo.safeDivide(10, 2), 5);
   assertThrowsWithMessage(() => demo.safeDivide(1, 0), "division by zero");
+  // case:results.basic.safe_sqrt.ok_err
   assert.equal(demo.safeSqrt(9), 3);
   assertThrowsWithMessage(() => demo.safeSqrt(-1), "negative input");
+  // case:results.basic.parse_point.ok_err
   assertPoint(demo.parsePoint("1.5, 2.5"), { x: 1.5, y: 2.5 });
   assertThrowsWithMessage(() => demo.parsePoint("wat"), "expected format");
+  // case:results.basic.always_ok_err
   assert.equal(demo.alwaysOk(21), 42);
   assertThrowsWithMessage(() => demo.alwaysErr("boom"), "boom");
+  // case:results.basic.result_to_string.ok_err
   assert.equal(demo.resultToString(wireOk(7)), "ok: 7");
   assert.equal(demo.resultToString(wireErr("bad")), "err: bad");
   assert.equal(demo.divide(10, 2), 5);

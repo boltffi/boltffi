@@ -1,0 +1,46 @@
+[cases."results.basic.safe_divide.ok_err"]
+summary = "safe_divide returns values and errors"
+description = "A successful division returns its quotient, while division by zero reports an error."
+exercises = ["results::basic::safe_divide"]
+
+[cases."results.basic.safe_divide.ok_err".excluded_platforms]
+python = "The Python demo tests do not currently cover Result surfaces."
+
+[cases."results.basic.safe_sqrt.ok_err"]
+summary = "safe_sqrt returns values and errors"
+description = "A non-negative input returns its square root, while a negative input reports an error."
+exercises = ["results::basic::safe_sqrt"]
+
+[cases."results.basic.safe_sqrt.ok_err".excluded_platforms]
+csharp = "The C# demo result tests do not currently include the safe_sqrt free function."
+java = "The Java demo result tests do not currently include the safe_sqrt free function."
+python = "The Python demo tests do not currently cover Result surfaces."
+
+[cases."results.basic.parse_point.ok_err"]
+summary = "parse_point returns values and errors"
+description = "A valid point string returns a point record, while malformed input reports an error."
+exercises = ["results::basic::parse_point"]
+
+[cases."results.basic.parse_point.ok_err".excluded_platforms]
+python = "The Python demo tests do not currently cover Result surfaces."
+
+[cases."results.basic.always_ok_err"]
+summary = "Basic result helpers expose Ok and Err branches"
+description = "The always-ok helper returns a value, and the always-err helper reports its message as an error."
+exercises = [
+  "results::basic::always_ok",
+  "results::basic::always_err",
+]
+
+[cases."results.basic.always_ok_err".excluded_platforms]
+python = "The Python demo tests do not currently cover Result surfaces."
+
+[cases."results.basic.result_to_string.ok_err"]
+summary = "Result values can be passed as inputs"
+description = "Host-created Ok and Err result values cross into Rust and render as strings."
+exercises = ["results::basic::result_to_string"]
+
+[cases."results.basic.result_to_string.ok_err".excluded_platforms]
+csharp = "The C# demo result tests do not currently include host-created Result input values."
+java = "The Java demo result tests do not currently include host-created Result input values."
+python = "The Python demo tests do not currently cover Result surfaces."

@@ -1052,6 +1052,7 @@ public static class DemoTest
     {
         Console.WriteLine("Testing Option types...");
 
+        // case:options.primitives.i32.some_none_and_helpers
         Require(EchoOptionalI32(42) == 42, "EchoOptionalI32(Some)");
         Require(EchoOptionalI32(null) == null, "EchoOptionalI32(None)");
         Require(EchoOptionalI32(int.MinValue) == int.MinValue, "EchoOptionalI32(min)");
@@ -1086,6 +1087,7 @@ public static class DemoTest
         // Option<String>: reference-type inner rides the same 1-byte tag
         // path; the payload is a length-prefixed UTF-8 buffer. café
         // exercises 2-byte codepoints, 🌍 exercises 4-byte ones.
+        // case:options.complex.string.some_none
         Require(EchoOptionalString("hello") == "hello", "EchoOptionalString(Some ascii)");
         Require(EchoOptionalString("café") == "café", "EchoOptionalString(2-byte UTF-8)");
         Require(EchoOptionalString("🌍") == "🌍", "EchoOptionalString(4-byte UTF-8)");
@@ -1102,6 +1104,7 @@ public static class DemoTest
         // fields, so the inner payload is 16 raw bytes written via
         // Point.WireEncodeTo and read via Point.Decode — no layout
         // shortcut, because the 1-byte tag forces the wire path.
+        // case:options.complex.point.some_none
         Require(EchoOptionalPoint(new Point(1.5, 2.5)) == new Point(1.5, 2.5), "EchoOptionalPoint(Some)");
         Require(EchoOptionalPoint(null) == null, "EchoOptionalPoint(None)");
 
@@ -1111,6 +1114,7 @@ public static class DemoTest
         // Option<CStyleEnum>: Status crosses the wire as a 4-byte i32
         // tag under an Option — the CLR can't reuse its direct
         // marshaling path because of the outer 1-byte present tag.
+        // case:options.complex.status.some_none
         Require(EchoOptionalStatus(Status.Active) == Status.Active, "EchoOptionalStatus(Active)");
         Require(EchoOptionalStatus(Status.Pending) == Status.Pending, "EchoOptionalStatus(Pending)");
         Require(EchoOptionalStatus(null) == null, "EchoOptionalStatus(None)");
@@ -1209,6 +1213,7 @@ public static class DemoTest
 
         // Option<Vec<T>>: the Option tag guards an entire length-prefixed
         // array. Some(vec) and Some(empty_vec) are distinct from None.
+        // case:options.complex.vec.some_none
         var numbers = EchoOptionalVec(new[] { 1, 2, 3 });
         Require(numbers != null && numbers.SequenceEqual(new[] { 1, 2, 3 }), "EchoOptionalVec(Some)");
         Require(
@@ -1240,6 +1245,7 @@ public static class DemoTest
         // Option tag, so the wire shape is: count (i32), then for each
         // slot, 1-byte tag + optional i32 payload. Mixed Some/None
         // positions in one vec surface any off-by-one errors.
+        // case:options.complex.vec_optional_i32.mixed
         int?[] mixed = new int?[] { 1, null, 3, null, 5 };
         int?[] echoed = EchoVecOptionalI32(mixed);
         Require(echoed.Length == mixed.Length, "EchoVecOptionalI32 preserves length");
@@ -1633,6 +1639,7 @@ public static class DemoTest
         Console.WriteLine("Testing result functions (String error)...");
 
         // Result<i32, String> ok path returns the value directly.
+        // case:results.basic.safe_divide.ok_err
         Require(SafeDivide(10, 2) == 5, "SafeDivide(10, 2) returns 5");
         // Err path throws BoltException carrying the Rust error string.
         try
@@ -1645,6 +1652,7 @@ public static class DemoTest
             Require(e.Message.Contains("division by zero"), "SafeDivide error message");
         }
 
+        // case:results.basic.always_ok_err
         Require(AlwaysOk(21) == 42, "AlwaysOk doubles its input");
         try
         {
@@ -1657,6 +1665,7 @@ public static class DemoTest
         }
 
         // Result<Point, String> with Ok carrying a record.
+        // case:results.basic.parse_point.ok_err
         Point p = ParsePoint("3.0,4.0");
         Require(p.X == 3.0 && p.Y == 4.0, "ParsePoint round-trips x,y");
         try
