@@ -33,6 +33,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
+          cache-bin: false
+          prefix-key: v1-rust
       - run: cargo clippy --workspace --all-targets -- -D warnings
 
   test:
@@ -51,6 +53,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
+          cache-bin: false
+          prefix-key: v1-rust
       - run: cargo test --workspace --all-features
 
   build:
@@ -76,6 +80,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
+          cache-bin: false
+          prefix-key: v1-rust
           key: ${{ matrix.target }}
       - run: cargo build --release --target ${{ matrix.target }} -p boltffi_cli
 
@@ -92,6 +98,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
+          cache-bin: false
+          prefix-key: v1-rust
       - run: cargo build --release -p boltffi_cli
       - run: ./target/release/boltffi --version
 
@@ -107,6 +115,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
+          cache-bin: false
+          prefix-key: v1-rust
       - run: cargo doc --workspace --no-deps
 
   miri:
@@ -141,6 +151,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
+          cache-bin: false
+          prefix-key: v1-rust
           key: android-packaging-${{ matrix.os }}
           workspaces: .
       - run: cargo run -p boltffi_cli --manifest-path ../../Cargo.toml -- check --android --fix
@@ -166,6 +178,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
+          cache-bin: false
+          prefix-key: v1-rust
           key: demo-platforms-${{ matrix.os }}-${{ matrix.python-version }}
       - if: matrix.python-version == '3.13'
         uses: actions/setup-node@v6
