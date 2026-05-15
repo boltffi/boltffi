@@ -785,47 +785,65 @@ public final class DemoTest {
     private static void testOptions() {
         System.out.println("Testing options...");
 
-        demoCase("case:options.primitives.i32.some_none_and_helpers");
+        demoCase("case:options.primitives.i32.should_roundtrip_some");
         Optional<Integer> optI32 = Demo.echoOptionalI32(Optional.of(7));
         assert optI32.isPresent() && optI32.get() == 7 : "echoOptionalI32 some";
+        demoCase("case:options.primitives.i32.should_roundtrip_none");
         assert !Demo.echoOptionalI32(Optional.empty()).isPresent() : "echoOptionalI32 none";
 
+        demoCase("case:options.primitives.i32.should_unwrap_some");
         assert Demo.unwrapOrDefaultI32(Optional.of(9), 4) == 9 : "unwrapOrDefaultI32 some";
+        demoCase("case:options.primitives.i32.should_use_default_for_none");
         assert Demo.unwrapOrDefaultI32(Optional.empty(), 4) == 4 : "unwrapOrDefaultI32 none";
 
+        demoCase("case:options.primitives.i32.should_make_some");
         assert Demo.makeSomeI32(12).orElse(-1) == 12 : "makeSomeI32";
+        demoCase("case:options.primitives.i32.should_make_none");
         assert !Demo.makeNoneI32().isPresent() : "makeNoneI32";
 
+        demoCase("case:options.primitives.i32.should_double_some");
         assert Demo.doubleIfSome(Optional.of(8)).orElse(-1) == 16 : "doubleIfSome some";
+        demoCase("case:options.primitives.i32.should_preserve_none_when_doubling");
         assert !Demo.doubleIfSome(Optional.empty()).isPresent() : "doubleIfSome none";
 
-        demoCase("case:options.complex.string.some_none");
+        demoCase("case:options.complex.string.should_roundtrip_some");
         Optional<String> optString = Demo.echoOptionalString(Optional.of("hello"));
         assert optString.isPresent() && optString.get().equals("hello") : "echoOptionalString some";
+        demoCase("case:options.complex.string.should_roundtrip_none");
         assert !Demo.echoOptionalString(Optional.empty()).isPresent() : "echoOptionalString none";
+        demoCase("case:options.complex.string.should_report_some");
         assert Demo.isSomeString(Optional.of("x")) : "isSomeString some";
+        demoCase("case:options.complex.string.should_report_none");
         assert !Demo.isSomeString(Optional.empty()) : "isSomeString none";
 
-        demoCase("case:options.complex.point.some_none");
+        demoCase("case:options.complex.point.should_roundtrip_some");
         Optional<Point> optPoint = Demo.echoOptionalPoint(Optional.of(new Point(1.0, 2.0)));
         assert optPoint.isPresent() : "echoOptionalPoint some";
         assert optPoint.get().x() == 1.0 && optPoint.get().y() == 2.0 : "echoOptionalPoint value";
+        demoCase("case:options.complex.point.should_roundtrip_none");
+        assert !Demo.echoOptionalPoint(Optional.empty()).isPresent() : "echoOptionalPoint none";
+        demoCase("case:options.complex.point.should_make_some");
         assert Demo.makeSomePoint(3.0, 4.0).isPresent() : "makeSomePoint";
+        demoCase("case:options.complex.point.should_make_none");
         assert !Demo.makeNonePoint().isPresent() : "makeNonePoint";
 
-        demoCase("case:options.complex.status.some_none");
+        demoCase("case:options.complex.status.should_roundtrip_some");
         Optional<Status> optStatus = Demo.echoOptionalStatus(Optional.of(Status.ACTIVE));
         assert optStatus.isPresent() && optStatus.get() == Status.ACTIVE : "echoOptionalStatus some";
+        demoCase("case:options.complex.status.should_roundtrip_none");
         assert !Demo.echoOptionalStatus(Optional.empty()).isPresent() : "echoOptionalStatus none";
 
-        demoCase("case:options.complex.vec.some_none");
+        demoCase("case:options.complex.vec.should_roundtrip_some");
         Optional<int[]> optVec = Demo.echoOptionalVec(Optional.of(new int[]{1, 2, 3}));
         assert optVec.isPresent() : "echoOptionalVec some";
         assert optVec.get().length == 3 && optVec.get()[0] == 1 && optVec.get()[2] == 3 : "echoOptionalVec value";
+        demoCase("case:options.complex.vec.should_roundtrip_none");
         assert !Demo.echoOptionalVec(Optional.empty()).isPresent() : "echoOptionalVec none";
 
+        demoCase("case:options.complex.vec.should_report_length_for_some");
         Optional<Integer> optVecLen = Demo.optionalVecLength(Optional.of(new int[]{9, 8}));
         assert optVecLen.isPresent() && optVecLen.get() == 2 : "optionalVecLength some";
+        demoCase("case:options.complex.vec.should_return_none_for_absent_length");
         assert !Demo.optionalVecLength(Optional.empty()).isPresent() : "optionalVecLength none";
 
         demoCase("case:records.with_options.user_profile.should_make_with_present_options");
@@ -875,7 +893,7 @@ public final class DemoTest {
         demoCase("case:records.with_options.search_result.should_report_no_more_results_without_cursor");
         assert !Demo.hasMoreResults(withoutCursor) : "hasMoreResults false";
 
-        demoCase("case:options.complex.vec_optional_i32.mixed");
+        demoCase("case:options.complex.vec_optional_i32.should_roundtrip_mixed_presence");
         java.util.List<Optional<Integer>> mixed = java.util.Arrays.asList(
             Optional.of(1), Optional.empty(), Optional.of(3), Optional.empty(), Optional.of(5)
         );
@@ -885,6 +903,7 @@ public final class DemoTest {
             assert echoedMixed.get(i).equals(mixed.get(i))
                 : "echoVecOptionalI32[" + i + "] preserves presence and value";
         }
+        demoCase("case:options.complex.vec_optional_i32.should_roundtrip_empty");
         assert Demo.echoVecOptionalI32(java.util.Collections.emptyList()).isEmpty()
             : "echoVecOptionalI32 empty";
 

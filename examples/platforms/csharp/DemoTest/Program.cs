@@ -1184,88 +1184,119 @@ public static class DemoTest
     {
         Console.WriteLine("Testing Option types...");
 
-        DemoCase("case:options.primitives.i32.some_none_and_helpers");
+        DemoCase("case:options.primitives.i32.should_roundtrip_some");
         Require(EchoOptionalI32(42) == 42, "EchoOptionalI32(Some)");
+        DemoCase("case:options.primitives.i32.should_roundtrip_none");
         Require(EchoOptionalI32(null) == null, "EchoOptionalI32(None)");
+        DemoCase("case:options.primitives.i32.should_roundtrip_some");
         Require(EchoOptionalI32(int.MinValue) == int.MinValue, "EchoOptionalI32(min)");
         Require(EchoOptionalI32(int.MaxValue) == int.MaxValue, "EchoOptionalI32(max)");
 
+        DemoCase("case:options.primitives.f64.should_roundtrip_some");
         Require(EchoOptionalF64(3.14) == 3.14, "EchoOptionalF64(Some)");
+        DemoCase("case:options.primitives.f64.should_roundtrip_none");
         Require(EchoOptionalF64(null) == null, "EchoOptionalF64(None)");
 
+        DemoCase("case:options.primitives.bool.should_roundtrip_some");
         Require(EchoOptionalBool(true) == true, "EchoOptionalBool(true)");
         Require(EchoOptionalBool(false) == false, "EchoOptionalBool(false)");
+        DemoCase("case:options.primitives.bool.should_roundtrip_none");
         Require(EchoOptionalBool(null) == null, "EchoOptionalBool(None)");
 
+        DemoCase("case:options.primitives.i32.should_unwrap_some");
         Require(UnwrapOrDefaultI32(10, 99) == 10, "UnwrapOrDefaultI32(Some)");
+        DemoCase("case:options.primitives.i32.should_use_default_for_none");
         Require(UnwrapOrDefaultI32(null, 99) == 99, "UnwrapOrDefaultI32(None) falls back");
 
+        DemoCase("case:options.primitives.i32.should_make_some");
         Require(MakeSomeI32(7) == 7, "MakeSomeI32 returns Some");
+        DemoCase("case:options.primitives.i32.should_make_none");
         Require(MakeNoneI32() == null, "MakeNoneI32 returns null");
 
+        DemoCase("case:options.primitives.i32.should_double_some");
         Require(DoubleIfSome(5) == 10, "DoubleIfSome(Some)");
+        DemoCase("case:options.primitives.i32.should_preserve_none_when_doubling");
         Require(DoubleIfSome(null) == null, "DoubleIfSome(None) stays None");
 
+        DemoCase("case:options.primitives.i32.should_find_even_value");
         Require(FindEven(4) == 4, "FindEven(4) == Some(4)");
+        DemoCase("case:options.primitives.i32.should_return_none_for_odd_value");
         Require(FindEven(3) == null, "FindEven(3) == None");
 
+        DemoCase("case:options.primitives.i64.should_find_positive_value");
         Require(FindPositiveI64(100L) == 100L, "FindPositiveI64(100)");
+        DemoCase("case:options.primitives.i64.should_return_none_for_non_positive_value");
         Require(FindPositiveI64(-1L) == null, "FindPositiveI64(-1) == None");
         Require(FindPositiveI64(0L) == null, "FindPositiveI64(0) == None");
 
+        DemoCase("case:options.primitives.f64.should_find_positive_value");
         Require(FindPositiveF64(1.5) == 1.5, "FindPositiveF64(1.5)");
+        DemoCase("case:options.primitives.f64.should_return_none_for_non_positive_value");
         Require(FindPositiveF64(-0.5) == null, "FindPositiveF64(-0.5) == None");
 
         // Option<String>: reference-type inner rides the same 1-byte tag
         // path; the payload is a length-prefixed UTF-8 buffer. café
         // exercises 2-byte codepoints, 🌍 exercises 4-byte ones.
-        DemoCase("case:options.complex.string.some_none");
+        DemoCase("case:options.complex.string.should_roundtrip_some");
         Require(EchoOptionalString("hello") == "hello", "EchoOptionalString(Some ascii)");
         Require(EchoOptionalString("café") == "café", "EchoOptionalString(2-byte UTF-8)");
         Require(EchoOptionalString("🌍") == "🌍", "EchoOptionalString(4-byte UTF-8)");
         Require(EchoOptionalString("") == "", "EchoOptionalString(empty Some)");
+        DemoCase("case:options.complex.string.should_roundtrip_none");
         Require(EchoOptionalString(null) == null, "EchoOptionalString(None)");
 
+        DemoCase("case:options.complex.string.should_report_some");
         Require(IsSomeString("x"), "IsSomeString(Some)");
+        DemoCase("case:options.complex.string.should_report_none");
         Require(!IsSomeString(null), "IsSomeString(None)");
 
+        DemoCase("case:options.complex.string.should_find_name_for_positive_id");
         Require(FindName(7) == "Name_7", "FindName(positive) returns Some");
+        DemoCase("case:options.complex.string.should_return_none_for_non_positive_id");
         Require(FindName(-1) == null, "FindName(non-positive) returns null");
 
         // Option<BlittableRecord>: Point is #[repr(C)] with two f64
         // fields, so the inner payload is 16 raw bytes written via
         // Point.WireEncodeTo and read via Point.Decode — no layout
         // shortcut, because the 1-byte tag forces the wire path.
-        DemoCase("case:options.complex.point.some_none");
+        DemoCase("case:options.complex.point.should_roundtrip_some");
         Require(EchoOptionalPoint(new Point(1.5, 2.5)) == new Point(1.5, 2.5), "EchoOptionalPoint(Some)");
+        DemoCase("case:options.complex.point.should_roundtrip_none");
         Require(EchoOptionalPoint(null) == null, "EchoOptionalPoint(None)");
 
+        DemoCase("case:options.complex.point.should_make_some");
         Require(MakeSomePoint(3.0, 4.0) == new Point(3.0, 4.0), "MakeSomePoint returns Some");
+        DemoCase("case:options.complex.point.should_make_none");
         Require(MakeNonePoint() == null, "MakeNonePoint returns null");
 
         // Option<CStyleEnum>: Status crosses the wire as a 4-byte i32
         // tag under an Option — the CLR can't reuse its direct
         // marshaling path because of the outer 1-byte present tag.
-        DemoCase("case:options.complex.status.some_none");
+        DemoCase("case:options.complex.status.should_roundtrip_some");
         Require(EchoOptionalStatus(Status.Active) == Status.Active, "EchoOptionalStatus(Active)");
         Require(EchoOptionalStatus(Status.Pending) == Status.Pending, "EchoOptionalStatus(Pending)");
+        DemoCase("case:options.complex.status.should_roundtrip_none");
         Require(EchoOptionalStatus(null) == null, "EchoOptionalStatus(None)");
 
         // Option<DataEnum>: ApiResult has unit, tuple, and struct
         // variants — the decode inside the Option's ternary must
         // still dispatch to the right variant.
+        DemoCase("case:options.complex.api_result.should_find_success_variant");
         Require(
             FindApiResult(0) is ApiResult.Success,
             "FindApiResult(0) returns Success"
         );
+        DemoCase("case:options.complex.api_result.should_find_error_code_variant");
         Require(
             FindApiResult(1) is ApiResult.ErrorCode ec && ec.Value0 == -1,
             "FindApiResult(1) returns ErrorCode(-1)"
         );
+        DemoCase("case:options.complex.api_result.should_find_error_with_data_variant");
         Require(
             FindApiResult(2) is ApiResult.ErrorWithData ewd && ewd.Code == -1 && ewd.Detail == -2,
             "FindApiResult(2) returns ErrorWithData"
         );
+        DemoCase("case:options.complex.api_result.should_return_none_for_unknown_code");
         Require(FindApiResult(9) == null, "FindApiResult(unknown) returns null");
 
         Console.WriteLine("  PASS\n");
@@ -1357,39 +1388,47 @@ public static class DemoTest
 
         // Option<Vec<T>>: the Option tag guards an entire length-prefixed
         // array. Some(vec) and Some(empty_vec) are distinct from None.
-        DemoCase("case:options.complex.vec.some_none");
+        DemoCase("case:options.complex.vec.should_roundtrip_some");
         var numbers = EchoOptionalVec(new[] { 1, 2, 3 });
         Require(numbers != null && numbers.SequenceEqual(new[] { 1, 2, 3 }), "EchoOptionalVec(Some)");
+        DemoCase("case:options.complex.vec.should_roundtrip_empty_some");
         Require(
             EchoOptionalVec(Array.Empty<int>())!.Length == 0,
             "EchoOptionalVec(Some empty) stays Some"
         );
+        DemoCase("case:options.complex.vec.should_roundtrip_none");
         Require(EchoOptionalVec(null) == null, "EchoOptionalVec(None)");
 
+        DemoCase("case:options.complex.vec.should_report_length_for_some");
         Require(OptionalVecLength(new[] { 10, 20, 30 }) == 3u, "OptionalVecLength(Some)");
+        DemoCase("case:options.complex.vec.should_return_none_for_absent_length");
         Require(OptionalVecLength(null) == null, "OptionalVecLength(None)");
 
         // Option<Vec<_>>-returning functions: the wire return is
         // FfiBuf, decoded through ReadU8() + ReadLengthPrefixedBlittableArray
         // (primitive elements) or ReadEncodedArray (variable-width).
+        DemoCase("case:options.complex.vec.should_find_numbers_for_positive_count");
         Require(
             FindNumbers(3)!.SequenceEqual(new[] { 0, 1, 2 }),
             "FindNumbers(positive) returns Some(vec)"
         );
+        DemoCase("case:options.complex.vec.should_return_none_for_non_positive_number_count");
         Require(FindNumbers(-1) == null, "FindNumbers(non-positive) returns null");
 
         var names = FindNames(3);
+        DemoCase("case:options.complex.vec_string.should_find_names_for_positive_count");
         Require(
             names != null && names.SequenceEqual(new[] { "Name_0", "Name_1", "Name_2" }),
             "FindNames(positive) returns Some(vec of strings)"
         );
+        DemoCase("case:options.complex.vec_string.should_return_none_for_non_positive_name_count");
         Require(FindNames(0) == null, "FindNames(zero) returns null");
 
         // Vec<Option<T>>: new fixture. Each element carries its own
         // Option tag, so the wire shape is: count (i32), then for each
         // slot, 1-byte tag + optional i32 payload. Mixed Some/None
         // positions in one vec surface any off-by-one errors.
-        DemoCase("case:options.complex.vec_optional_i32.mixed");
+        DemoCase("case:options.complex.vec_optional_i32.should_roundtrip_mixed_presence");
         int?[] mixed = new int?[] { 1, null, 3, null, 5 };
         int?[] echoed = EchoVecOptionalI32(mixed);
         Require(echoed.Length == mixed.Length, "EchoVecOptionalI32 preserves length");
@@ -1398,7 +1437,9 @@ public static class DemoTest
             Require(echoed[i] == mixed[i], $"EchoVecOptionalI32[{i}] preserves presence and value");
         }
 
+        DemoCase("case:options.complex.vec_optional_i32.should_roundtrip_empty");
         Require(EchoVecOptionalI32(Array.Empty<int?>()).Length == 0, "EchoVecOptionalI32 empty");
+        DemoCase("case:options.complex.vec_optional_i32.should_roundtrip_all_none");
         Require(
             EchoVecOptionalI32(new int?[] { null, null, null }).All(v => v == null),
             "EchoVecOptionalI32 all-None preserved"

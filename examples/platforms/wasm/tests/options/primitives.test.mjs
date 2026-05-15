@@ -1,17 +1,28 @@
 import { assert, demo } from "../support/index.mjs";
 
 export async function run() {
-  globalThis.demoCase("case:options.primitives.i32.some_none_and_helpers");
+  globalThis.demoCase("case:options.primitives.i32.should_roundtrip_some");
   assert.equal(demo.echoOptionalI32(7), 7);
+  globalThis.demoCase("case:options.primitives.i32.should_roundtrip_none");
   assert.equal(demo.echoOptionalI32(null), null);
+  globalThis.demoCase("case:options.primitives.f64.should_roundtrip_some");
   assert.equal(demo.echoOptionalF64(4.5), 4.5);
+  globalThis.demoCase("case:options.primitives.f64.should_roundtrip_none");
   assert.equal(demo.echoOptionalF64(null), null);
+  globalThis.demoCase("case:options.primitives.bool.should_roundtrip_some");
   assert.equal(demo.echoOptionalBool(true), true);
+  globalThis.demoCase("case:options.primitives.bool.should_roundtrip_none");
   assert.equal(demo.echoOptionalBool(null), null);
+  globalThis.demoCase("case:options.primitives.i32.should_unwrap_some");
   assert.equal(demo.unwrapOrDefaultI32(9, 4), 9);
+  globalThis.demoCase("case:options.primitives.i32.should_use_default_for_none");
   assert.equal(demo.unwrapOrDefaultI32(null, 4), 4);
+  globalThis.demoCase("case:options.primitives.i32.should_make_some");
   assert.equal(demo.makeSomeI32(12), 12);
+  globalThis.demoCase("case:options.primitives.i32.should_make_none");
   assert.equal(demo.makeNoneI32(), null);
+  globalThis.demoCase("case:options.primitives.i32.should_double_some");
   assert.equal(demo.doubleIfSome(8), 16);
+  globalThis.demoCase("case:options.primitives.i32.should_preserve_none_when_doubling");
   assert.equal(demo.doubleIfSome(null), null);
 }
