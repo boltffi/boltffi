@@ -146,6 +146,20 @@ jobs:
       - run: cargo run -p boltffi_cli --manifest-path ../../Cargo.toml -- check --android --fix
       - run: cargo run -p boltffi_cli --manifest-path ../../Cargo.toml -- -v pack android
 
+  demo-test-audit:
+    name: Demo Test Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          # caching handled by Swatinem/rust-cache below
+          cache: false
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+      - run: cargo run --manifest-path examples/demo/Cargo.toml --bin demo-tests -- audit
+
   demo-platforms:
     name: Demo Platforms (${{ matrix.os }}, py${{ matrix.python-version }})
     runs-on: ${{ matrix.os }}
