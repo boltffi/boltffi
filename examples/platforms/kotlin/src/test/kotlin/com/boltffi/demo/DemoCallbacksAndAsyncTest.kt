@@ -186,13 +186,19 @@ class DemoCallbacksAndAsyncTest {
     @Test
     fun asyncResultFunctionsRoundTripThroughKotlin() = runBlocking {
         withTimeout(10_000) {
-            demoCase("case:results.async_results.math_fetch_find")
+            demoCase("case:results.async_results.safe_divide.should_return_quotient")
             assertEquals(5, asyncSafeDivide(10, 2))
+            demoCase("case:results.async_results.safe_divide.should_reject_division_by_zero")
             assertTrue(assertFailsWith<MathError> { asyncSafeDivide(1, 0) } is MathError.DivisionByZero)
+            demoCase("case:results.async_results.fallible_fetch.should_return_value_for_non_negative_key")
             assertEquals("value_7", asyncFallibleFetch(7))
+            demoCase("case:results.async_results.fallible_fetch.should_reject_negative_key")
             assertMessageContains(assertFailsWith<FfiException> { asyncFallibleFetch(-1) }, "invalid key")
+            demoCase("case:results.async_results.find_value.should_return_some_for_positive_key")
             assertEquals(40, asyncFindValue(4))
+            demoCase("case:results.async_results.find_value.should_return_none_for_zero_key")
             assertNull(asyncFindValue(0))
+            demoCase("case:results.async_results.find_value.should_reject_negative_key")
             assertMessageContains(assertFailsWith<FfiException> { asyncFindValue(-1) }, "invalid key")
         }
     }

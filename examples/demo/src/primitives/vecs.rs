@@ -138,7 +138,10 @@ pub fn echo_vec_bool(v: Vec<bool>) -> Vec<bool> {
 #[demo_bench_macros::demo_case(
     "primitives.vecs.string.should_roundtrip_values",
     description = "A non-empty string vector crosses the wire and returns unchanged.",
-    exclude(python, reason = "The Python demo does not currently include string vector tests.")
+    exclude(
+        python,
+        reason = "The Python demo does not currently include string vector tests."
+    )
 )]
 #[export]
 pub fn echo_vec_string(v: Vec<String>) -> Vec<String> {
@@ -148,7 +151,10 @@ pub fn echo_vec_string(v: Vec<String>) -> Vec<String> {
 #[demo_bench_macros::demo_case(
     "primitives.vecs.string.should_report_utf8_byte_lengths",
     description = "A string vector crosses the wire and returns UTF-8 byte lengths for each string.",
-    exclude(python, reason = "The Python demo does not currently include string vector tests.")
+    exclude(
+        python,
+        reason = "The Python demo does not currently include string vector tests."
+    )
 )]
 #[export]
 pub fn vec_string_lengths(v: Vec<String>) -> Vec<u32> {
@@ -176,10 +182,22 @@ pub fn reverse_vec_i32(v: Vec<i32>) -> Vec<i32> {
 #[demo_bench_macros::demo_case(
     "primitives.vecs.i32.should_generate_sequence",
     description = "An i32 count crosses the wire and returns a generated i32 sequence.",
-    exclude(java, reason = "The Java demo tests do not currently cover benchmark vector generators."),
-    exclude(kotlin, reason = "The Kotlin demo tests do not currently cover benchmark vector generators."),
-    exclude(python, reason = "The Python demo tests do not currently cover benchmark vector generators."),
-    exclude(wasm, reason = "The WASM demo tests do not currently cover benchmark vector generators.")
+    exclude(
+        java,
+        reason = "The Java demo tests do not currently cover benchmark vector generators."
+    ),
+    exclude(
+        kotlin,
+        reason = "The Kotlin demo tests do not currently cover benchmark vector generators."
+    ),
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover benchmark vector generators."
+    ),
+    exclude(
+        wasm,
+        reason = "The WASM demo tests do not currently cover benchmark vector generators."
+    )
 )]
 #[export]
 #[benchmark_candidate(function, uniffi, wasm_bindgen)]
@@ -190,11 +208,26 @@ pub fn generate_i32_vec(count: i32) -> Vec<i32> {
 #[demo_bench_macros::demo_case(
     "primitives.vecs.i32.should_sum_benchmark_values",
     description = "An i32 vector crosses the wire through the benchmark sum helper and returns as an i64 sum.",
-    exclude(csharp, reason = "The C# demo tests do not currently cover the i32 benchmark sum helper."),
-    exclude(java, reason = "The Java demo tests do not currently cover the i32 benchmark sum helper."),
-    exclude(kotlin, reason = "The Kotlin demo tests do not currently cover the i32 benchmark sum helper."),
-    exclude(python, reason = "The Python demo tests do not currently cover the i32 benchmark sum helper."),
-    exclude(wasm, reason = "The WASM demo tests do not currently cover the i32 benchmark sum helper.")
+    exclude(
+        csharp,
+        reason = "The C# demo tests do not currently cover the i32 benchmark sum helper."
+    ),
+    exclude(
+        java,
+        reason = "The Java demo tests do not currently cover the i32 benchmark sum helper."
+    ),
+    exclude(
+        kotlin,
+        reason = "The Kotlin demo tests do not currently cover the i32 benchmark sum helper."
+    ),
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover the i32 benchmark sum helper."
+    ),
+    exclude(
+        wasm,
+        reason = "The WASM demo tests do not currently cover the i32 benchmark sum helper."
+    )
 )]
 #[export]
 #[benchmark_candidate(function, uniffi, wasm_bindgen)]
@@ -205,10 +238,22 @@ pub fn sum_i32_vec(values: Vec<i32>) -> i64 {
 #[demo_bench_macros::demo_case(
     "primitives.vecs.f64.should_generate_sequence",
     description = "An i32 count crosses the wire and returns a generated f64 sequence.",
-    exclude(java, reason = "The Java demo tests do not currently cover benchmark vector generators."),
-    exclude(kotlin, reason = "The Kotlin demo tests do not currently cover benchmark vector generators."),
-    exclude(python, reason = "The Python demo tests do not currently cover benchmark vector generators."),
-    exclude(wasm, reason = "The WASM demo tests do not currently cover benchmark vector generators.")
+    exclude(
+        java,
+        reason = "The Java demo tests do not currently cover benchmark vector generators."
+    ),
+    exclude(
+        kotlin,
+        reason = "The Kotlin demo tests do not currently cover benchmark vector generators."
+    ),
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover benchmark vector generators."
+    ),
+    exclude(
+        wasm,
+        reason = "The WASM demo tests do not currently cover benchmark vector generators."
+    )
 )]
 #[export]
 #[benchmark_candidate(function, uniffi, wasm_bindgen)]
@@ -219,10 +264,22 @@ pub fn generate_f64_vec(count: i32) -> Vec<f64> {
 #[demo_bench_macros::demo_case(
     "primitives.vecs.f64.should_sum_values",
     description = "A f64 vector crosses the wire and returns as a f64 sum.",
-    exclude(java, reason = "The Java demo tests do not currently cover f64 vector sums."),
-    exclude(kotlin, reason = "The Kotlin demo tests do not currently cover f64 vector sums."),
-    exclude(python, reason = "The Python demo tests do not currently cover f64 vector sums."),
-    exclude(wasm, reason = "The WASM demo tests do not currently cover f64 vector sums.")
+    exclude(
+        java,
+        reason = "The Java demo tests do not currently cover f64 vector sums."
+    ),
+    exclude(
+        kotlin,
+        reason = "The Kotlin demo tests do not currently cover f64 vector sums."
+    ),
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover f64 vector sums."
+    ),
+    exclude(
+        wasm,
+        reason = "The WASM demo tests do not currently cover f64 vector sums."
+    )
 )]
 #[export]
 #[benchmark_candidate(function, uniffi, wasm_bindgen)]
@@ -234,10 +291,22 @@ pub fn sum_f64_vec(values: Vec<f64>) -> f64 {
 #[demo_bench_macros::demo_case(
     "primitives.vecs.u64.should_increment_first_value_in_place",
     description = "A mutable u64 slice crosses the wire and increments its first value in place.",
-    exclude(csharp, reason = "The C# demo tests do not currently cover the in-place u64 slice helper."),
-    exclude(java, reason = "The Java demo tests do not currently cover the in-place u64 slice helper."),
-    exclude(kotlin, reason = "The Kotlin demo tests do not currently cover the in-place u64 slice helper."),
-    exclude(python, reason = "The Python demo tests do not currently cover the in-place u64 slice helper.")
+    exclude(
+        csharp,
+        reason = "The C# demo tests do not currently cover the in-place u64 slice helper."
+    ),
+    exclude(
+        java,
+        reason = "The Java demo tests do not currently cover the in-place u64 slice helper."
+    ),
+    exclude(
+        kotlin,
+        reason = "The Kotlin demo tests do not currently cover the in-place u64 slice helper."
+    ),
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover the in-place u64 slice helper."
+    )
 )]
 #[export]
 pub fn inc_u64(values: &mut [u64]) {
@@ -249,11 +318,26 @@ pub fn inc_u64(values: &mut [u64]) {
 #[demo_bench_macros::demo_case(
     "primitives.vecs.u64.should_increment_value",
     description = "A u64 value crosses the wire and returns incremented by one.",
-    exclude(csharp, reason = "The C# demo tests do not currently cover the u64 value increment helper."),
-    exclude(java, reason = "The Java demo tests do not currently cover the u64 value increment helper."),
-    exclude(kotlin, reason = "The Kotlin demo tests do not currently cover the u64 value increment helper."),
-    exclude(python, reason = "The Python demo tests do not currently cover the u64 value increment helper."),
-    exclude(wasm, reason = "The WASM demo tests do not currently cover the u64 value increment helper.")
+    exclude(
+        csharp,
+        reason = "The C# demo tests do not currently cover the u64 value increment helper."
+    ),
+    exclude(
+        java,
+        reason = "The Java demo tests do not currently cover the u64 value increment helper."
+    ),
+    exclude(
+        kotlin,
+        reason = "The Kotlin demo tests do not currently cover the u64 value increment helper."
+    ),
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover the u64 value increment helper."
+    ),
+    exclude(
+        wasm,
+        reason = "The WASM demo tests do not currently cover the u64 value increment helper."
+    )
 )]
 #[export]
 #[benchmark_candidate(function, uniffi, wasm_bindgen)]
@@ -264,12 +348,18 @@ pub fn inc_u64_value(value: u64) -> u64 {
 #[demo_bench_macros::demo_case(
     "primitives.vecs.nested_i32.should_roundtrip_values",
     description = "A nested i32 vector crosses the wire and returns unchanged.",
-    exclude(python, reason = "The Python demo tests do not currently cover nested vectors.")
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover nested vectors."
+    )
 )]
 #[demo_bench_macros::demo_case(
     "primitives.vecs.nested_i32.should_roundtrip_empty_outer",
     description = "An empty outer i32 vector crosses the wire and returns as an empty nested vector.",
-    exclude(python, reason = "The Python demo tests do not currently cover nested vectors.")
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover nested vectors."
+    )
 )]
 #[export]
 pub fn echo_vec_vec_i32(v: Vec<Vec<i32>>) -> Vec<Vec<i32>> {
@@ -279,7 +369,10 @@ pub fn echo_vec_vec_i32(v: Vec<Vec<i32>>) -> Vec<Vec<i32>> {
 #[demo_bench_macros::demo_case(
     "primitives.vecs.nested_bool.should_roundtrip_values",
     description = "A nested boolean vector crosses the wire and returns unchanged.",
-    exclude(python, reason = "The Python demo tests do not currently cover nested vectors.")
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover nested vectors."
+    )
 )]
 #[export]
 pub fn echo_vec_vec_bool(v: Vec<Vec<bool>>) -> Vec<Vec<bool>> {
@@ -289,8 +382,14 @@ pub fn echo_vec_vec_bool(v: Vec<Vec<bool>>) -> Vec<Vec<bool>> {
 #[demo_bench_macros::demo_case(
     "primitives.vecs.nested_isize.should_roundtrip_values",
     description = "A nested isize vector crosses the wire and returns unchanged.",
-    exclude(python, reason = "The Python demo tests do not currently cover nested vectors."),
-    exclude(wasm, reason = "The WASM demo tests do not currently cover nested isize vectors.")
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover nested vectors."
+    ),
+    exclude(
+        wasm,
+        reason = "The WASM demo tests do not currently cover nested isize vectors."
+    )
 )]
 #[export]
 pub fn echo_vec_vec_isize(v: Vec<Vec<isize>>) -> Vec<Vec<isize>> {
@@ -300,8 +399,14 @@ pub fn echo_vec_vec_isize(v: Vec<Vec<isize>>) -> Vec<Vec<isize>> {
 #[demo_bench_macros::demo_case(
     "primitives.vecs.nested_usize.should_roundtrip_values",
     description = "A nested usize vector crosses the wire and returns unchanged.",
-    exclude(python, reason = "The Python demo tests do not currently cover nested vectors."),
-    exclude(wasm, reason = "The WASM demo tests do not currently cover nested usize vectors.")
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover nested vectors."
+    ),
+    exclude(
+        wasm,
+        reason = "The WASM demo tests do not currently cover nested usize vectors."
+    )
 )]
 #[export]
 pub fn echo_vec_vec_usize(v: Vec<Vec<usize>>) -> Vec<Vec<usize>> {
@@ -311,7 +416,10 @@ pub fn echo_vec_vec_usize(v: Vec<Vec<usize>>) -> Vec<Vec<usize>> {
 #[demo_bench_macros::demo_case(
     "primitives.vecs.nested_string.should_roundtrip_utf8_values",
     description = "A nested string vector with UTF-8 values crosses the wire and returns unchanged.",
-    exclude(python, reason = "The Python demo tests do not currently cover nested vectors.")
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover nested vectors."
+    )
 )]
 #[export]
 pub fn echo_vec_vec_string(v: Vec<Vec<String>>) -> Vec<Vec<String>> {
@@ -321,14 +429,26 @@ pub fn echo_vec_vec_string(v: Vec<Vec<String>>) -> Vec<Vec<String>> {
 #[demo_bench_macros::demo_case(
     "primitives.vecs.nested_i32.should_flatten_values",
     description = "A nested i32 vector crosses the wire and returns as a flattened i32 vector.",
-    exclude(python, reason = "The Python demo tests do not currently cover nested vectors.")
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover nested vectors."
+    )
 )]
 #[demo_bench_macros::demo_case(
     "primitives.vecs.nested_i32.should_flatten_empty",
     description = "An empty nested i32 vector crosses the wire and returns as an empty i32 vector.",
-    exclude(csharp, reason = "The C# demo tests do not currently cover flattening an empty nested vector."),
-    exclude(java, reason = "The Java demo tests do not currently cover flattening an empty nested vector."),
-    exclude(python, reason = "The Python demo tests do not currently cover nested vectors.")
+    exclude(
+        csharp,
+        reason = "The C# demo tests do not currently cover flattening an empty nested vector."
+    ),
+    exclude(
+        java,
+        reason = "The Java demo tests do not currently cover flattening an empty nested vector."
+    ),
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover nested vectors."
+    )
 )]
 #[export]
 pub fn flatten_vec_vec_i32(v: Vec<Vec<i32>>) -> Vec<i32> {

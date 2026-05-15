@@ -1,7 +1,7 @@
 use demo_bench_macros::benchmark_candidate;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
-use wasm_bindgen::prelude::{JsValue, wasm_bindgen};
 use wasm_bindgen::JsCast;
+use wasm_bindgen::prelude::{JsValue, wasm_bindgen};
 
 use crate::callbacks::sync_traits::{DataConsumer as DemoDataConsumer, DataProvider};
 use crate::classes::methods::Counter as DemoCounter;
@@ -65,8 +65,12 @@ impl From<UserProfilePayload> for BenchmarkUserProfile {
 #[serde(tag = "tag")]
 enum TaskStatusPayload {
     Pending,
-    InProgress { progress: i32 },
-    Completed { result: i32 },
+    InProgress {
+        progress: i32,
+    },
+    Completed {
+        result: i32,
+    },
     Failed {
         #[serde(rename = "errorCode")]
         error_code: i32,
@@ -155,7 +159,10 @@ impl DataProvider for DataProviderBridge {
     }
 
     fn get_item(&self, index: u32) -> DataPoint {
-        let item = self.provider.unchecked_ref::<JsDataProvider>().get_item(index);
+        let item = self
+            .provider
+            .unchecked_ref::<JsDataProvider>()
+            .get_item(index);
         let point: DataPointPayload = deserialize_js(item, "data point");
         point.into()
     }
@@ -313,7 +320,8 @@ impl DataConsumer {
     }
 
     pub fn set_provider(&self, provider: JsValue) {
-        self.inner.set_provider(Box::new(DataProviderBridge::new(provider)));
+        self.inner
+            .set_provider(Box::new(DataProviderBridge::new(provider)));
     }
 
     pub fn compute_sum(&self) -> u64 {
@@ -354,13 +362,23 @@ pub fn generate_user_profiles(count: i32) -> JsValue {
 #[benchmark_candidate(function, wasm_bindgen)]
 pub fn sum_user_scores(users: JsValue) -> f64 {
     let profiles: Vec<UserProfilePayload> = deserialize_js(users, "user profiles");
-    crate::sum_user_scores(profiles.into_iter().map(BenchmarkUserProfile::from).collect())
+    crate::sum_user_scores(
+        profiles
+            .into_iter()
+            .map(BenchmarkUserProfile::from)
+            .collect(),
+    )
 }
 
 #[benchmark_candidate(function, wasm_bindgen)]
 pub fn count_active_users(users: JsValue) -> i32 {
     let profiles: Vec<UserProfilePayload> = deserialize_js(users, "user profiles");
-    crate::count_active_users(profiles.into_iter().map(BenchmarkUserProfile::from).collect())
+    crate::count_active_users(
+        profiles
+            .into_iter()
+            .map(BenchmarkUserProfile::from)
+            .collect(),
+    )
 }
 
 #[benchmark_candidate(function, wasm_bindgen)]

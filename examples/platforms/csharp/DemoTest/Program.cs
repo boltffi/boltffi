@@ -1824,9 +1824,10 @@ public static class DemoTest
         Console.WriteLine("Testing result functions (String error)...");
 
         // Result<i32, String> ok path returns the value directly.
-        DemoCase("case:results.basic.safe_divide.ok_err");
+        DemoCase("case:results.basic.safe_divide.should_return_quotient");
         Require(SafeDivide(10, 2) == 5, "SafeDivide(10, 2) returns 5");
         // Err path throws BoltException carrying the Rust error string.
+        DemoCase("case:results.basic.safe_divide.should_reject_division_by_zero");
         try
         {
             SafeDivide(10, 0);
@@ -1837,8 +1838,9 @@ public static class DemoTest
             Require(e.Message.Contains("division by zero"), "SafeDivide error message");
         }
 
-        DemoCase("case:results.basic.always_ok_err");
+        DemoCase("case:results.basic.always_ok.should_return_doubled_value");
         Require(AlwaysOk(21) == 42, "AlwaysOk doubles its input");
+        DemoCase("case:results.basic.always_err.should_return_message_error");
         try
         {
             AlwaysErr("boom");
@@ -1850,9 +1852,10 @@ public static class DemoTest
         }
 
         // Result<Point, String> with Ok carrying a record.
-        DemoCase("case:results.basic.parse_point.ok_err");
+        DemoCase("case:results.basic.parse_point.should_parse_coordinates");
         Point p = ParsePoint("3.0,4.0");
         Require(p.X == 3.0 && p.Y == 4.0, "ParsePoint round-trips x,y");
+        DemoCase("case:results.basic.parse_point.should_reject_malformed_input");
         try
         {
             ParsePoint("bad");
@@ -1860,9 +1863,10 @@ public static class DemoTest
         }
         catch (BoltException) { }
 
-        DemoCase("case:results.nested_results.option_vec_string");
         // Result<String, String> with Ok carrying a wire-decoded String.
+        DemoCase("case:results.nested_results.string.should_return_value_for_non_negative_key");
         Require(ResultOfString(1) == "item_1", "ResultOfString ok");
+        DemoCase("case:results.nested_results.string.should_reject_negative_key");
         try
         {
             ResultOfString(-1);
@@ -1871,8 +1875,11 @@ public static class DemoTest
         catch (BoltException) { }
 
         // Result<Option<i32>, String>: Some, None, then Err.
+        DemoCase("case:results.nested_results.option.should_return_some_for_positive_key");
         Require(ResultOfOption(5) == 10, "ResultOfOption(5) returns Some(10)");
+        DemoCase("case:results.nested_results.option.should_return_none_for_zero_key");
         Require(ResultOfOption(0) == null, "ResultOfOption(0) returns None");
+        DemoCase("case:results.nested_results.option.should_reject_negative_key");
         try
         {
             ResultOfOption(-1);
@@ -1881,8 +1888,10 @@ public static class DemoTest
         catch (BoltException) { }
 
         // Result<Vec<i32>, String> Ok and Err.
+        DemoCase("case:results.nested_results.vec.should_return_values_for_non_negative_count");
         int[] vec = ResultOfVec(3);
         Require(vec.Length == 3 && vec[0] == 0 && vec[1] == 1 && vec[2] == 2, "ResultOfVec ok");
+        DemoCase("case:results.nested_results.vec.should_reject_negative_count");
         try
         {
             ResultOfVec(-1);
@@ -1922,10 +1931,11 @@ public static class DemoTest
     {
         Console.WriteLine("Testing result enum/record errors (typed exceptions)...");
 
-        DemoCase("case:results.error_enums.math.checked");
         // C-style #[error] enum -> dedicated MathErrorException with
         // an Error property that exposes the underlying enum value.
+        DemoCase("case:results.error_enums.checked_divide.should_return_quotient");
         Require(CheckedDivide(10, 2) == 5, "CheckedDivide(10, 2) ok");
+        DemoCase("case:results.error_enums.checked_divide.should_reject_division_by_zero");
         try
         {
             CheckedDivide(10, 0);
@@ -1936,7 +1946,9 @@ public static class DemoTest
             Require(e.Error == MathError.DivisionByZero, "CheckedDivide typed error");
         }
 
+        DemoCase("case:results.error_enums.checked_sqrt.should_return_square_root");
         Require(CheckedSqrt(9.0) == 3.0, "CheckedSqrt(9) ok");
+        DemoCase("case:results.error_enums.checked_sqrt.should_reject_negative_input");
         try
         {
             CheckedSqrt(-1.0);
@@ -1947,7 +1959,9 @@ public static class DemoTest
             Require(e.Error == MathError.NegativeInput, "CheckedSqrt typed error");
         }
 
+        DemoCase("case:results.error_enums.checked_add.should_return_sum");
         Require(CheckedAdd(1, 2) == 3, "CheckedAdd(1, 2) ok");
+        DemoCase("case:results.error_enums.checked_add.should_reject_overflow");
         try
         {
             CheckedAdd(int.MaxValue, 1);
@@ -1958,11 +1972,12 @@ public static class DemoTest
             Require(e.Error == MathError.Overflow, "CheckedAdd typed error");
         }
 
-        DemoCase("case:results.error_enums.validation.username");
         // ValidationError uses an explicit #[repr(i32)] with non-zero
         // discriminants — make sure the wire decode keeps mapping each
         // tag to the right variant on the throw path.
+        DemoCase("case:results.error_enums.validate_username.should_accept_valid_name");
         Require(ValidateUsername("alice") == "alice", "ValidateUsername ok");
+        DemoCase("case:results.error_enums.validate_username.should_reject_too_short_name");
         try
         {
             ValidateUsername("ab");
@@ -1972,6 +1987,7 @@ public static class DemoTest
         {
             Require(e.Error == ValidationError.TooShort, "ValidateUsername TooShort");
         }
+        DemoCase("case:results.error_enums.validate_username.should_reject_too_long_name");
         try
         {
             ValidateUsername("a]bcdefghijklmnopqrstu");
@@ -1981,6 +1997,7 @@ public static class DemoTest
         {
             Require(e.Error == ValidationError.TooLong, "ValidateUsername TooLong");
         }
+        DemoCase("case:results.error_enums.validate_username.should_reject_invalid_format");
         try
         {
             ValidateUsername("has space");
@@ -1991,11 +2008,12 @@ public static class DemoTest
             Require(e.Error == ValidationError.InvalidFormat, "ValidateUsername InvalidFormat");
         }
 
-        DemoCase("case:results.error_enums.app_error.basic");
         // Structured (record) #[error] -> AppErrorException wraps the
         // record so the caller can both `catch` it as an exception and
         // access the original fields via the Error property.
+        DemoCase("case:results.error_enums.may_fail.should_return_success_when_valid");
         Require(MayFail(true) == "Success!", "MayFail(true) ok");
+        DemoCase("case:results.error_enums.may_fail.should_return_app_error_when_invalid");
         try
         {
             MayFail(false);
@@ -2008,7 +2026,9 @@ public static class DemoTest
             Require(e.Message == "Invalid input", "MayFail Exception.Message mirrors AppError.Message");
         }
 
+        DemoCase("case:results.error_enums.divide_app.should_return_quotient");
         Require(DivideApp(10, 2) == 5, "DivideApp ok");
+        DemoCase("case:results.error_enums.divide_app.should_return_app_error_for_division_by_zero");
         try
         {
             DivideApp(10, 0);
@@ -2107,8 +2127,9 @@ public static class DemoTest
             Require(e.Message.Contains("invalid id"), "FetchData(-1) BoltException");
         }
 
-        DemoCase("case:results.async_results.math_fetch_find");
+        DemoCase("case:results.async_results.safe_divide.should_return_quotient");
         Require(await AsyncSafeDivide(10, 2) == 5, "AsyncSafeDivide(10, 2)");
+        DemoCase("case:results.async_results.safe_divide.should_reject_division_by_zero");
         try
         {
             await AsyncSafeDivide(10, 0);
@@ -2119,7 +2140,9 @@ public static class DemoTest
             Require(e.Error == MathError.DivisionByZero, "AsyncSafeDivide typed MathError");
         }
 
+        DemoCase("case:results.async_results.fallible_fetch.should_return_value_for_non_negative_key");
         Require(await AsyncFallibleFetch(3) == "value_3", "AsyncFallibleFetch(3)");
+        DemoCase("case:results.async_results.fallible_fetch.should_reject_negative_key");
         try
         {
             await AsyncFallibleFetch(-1);
@@ -2130,8 +2153,11 @@ public static class DemoTest
             Require(e.Message.Contains("invalid key"), "AsyncFallibleFetch negative-key BoltException");
         }
 
+        DemoCase("case:results.async_results.find_value.should_return_some_for_positive_key");
         Require(await AsyncFindValue(2) == 20, "AsyncFindValue(2)");
+        DemoCase("case:results.async_results.find_value.should_return_none_for_zero_key");
         Require(await AsyncFindValue(0) == null, "AsyncFindValue(0) returns null");
+        DemoCase("case:results.async_results.find_value.should_reject_negative_key");
         try
         {
             await AsyncFindValue(-1);

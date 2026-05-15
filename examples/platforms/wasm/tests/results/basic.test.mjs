@@ -2,25 +2,36 @@ import { assert, assertPoint, assertThrowsWithMessage, demo } from "../support/i
 import { wireErr, wireOk } from "@boltffi/runtime";
 
 export async function run() {
-  globalThis.demoCase("case:results.basic.safe_divide.ok_err");
+  globalThis.demoCase("case:results.basic.safe_divide.should_return_quotient");
   assert.equal(demo.safeDivide(10, 2), 5);
+  globalThis.demoCase("case:results.basic.safe_divide.should_reject_division_by_zero");
   assertThrowsWithMessage(() => demo.safeDivide(1, 0), "division by zero");
-  globalThis.demoCase("case:results.basic.safe_sqrt.ok_err");
+  globalThis.demoCase("case:results.basic.safe_sqrt.should_return_square_root");
   assert.equal(demo.safeSqrt(9), 3);
+  globalThis.demoCase("case:results.basic.safe_sqrt.should_reject_negative_input");
   assertThrowsWithMessage(() => demo.safeSqrt(-1), "negative input");
-  globalThis.demoCase("case:results.basic.parse_point.ok_err");
+  globalThis.demoCase("case:results.basic.parse_point.should_parse_coordinates");
   assertPoint(demo.parsePoint("1.5, 2.5"), { x: 1.5, y: 2.5 });
+  globalThis.demoCase("case:results.basic.parse_point.should_reject_malformed_input");
   assertThrowsWithMessage(() => demo.parsePoint("wat"), "expected format");
-  globalThis.demoCase("case:results.basic.always_ok_err");
+  globalThis.demoCase("case:results.basic.always_ok.should_return_doubled_value");
   assert.equal(demo.alwaysOk(21), 42);
+  globalThis.demoCase("case:results.basic.always_err.should_return_message_error");
   assertThrowsWithMessage(() => demo.alwaysErr("boom"), "boom");
-  globalThis.demoCase("case:results.basic.result_to_string.ok_err");
+  globalThis.demoCase("case:results.basic.result_to_string.should_render_ok");
   assert.equal(demo.resultToString(wireOk(7)), "ok: 7");
+  globalThis.demoCase("case:results.basic.result_to_string.should_render_err");
   assert.equal(demo.resultToString(wireErr("bad")), "err: bad");
+  globalThis.demoCase("case:results.basic.divide.should_return_quotient");
   assert.equal(demo.divide(10, 2), 5);
+  globalThis.demoCase("case:results.basic.divide.should_reject_division_by_zero");
   assertThrowsWithMessage(() => demo.divide(10, 0), "division by zero");
+  globalThis.demoCase("case:results.basic.parse_int.should_parse_integer");
   assert.equal(demo.parseInt("42"), 42);
+  globalThis.demoCase("case:results.basic.parse_int.should_reject_invalid_integer");
   assertThrowsWithMessage(() => demo.parseInt("nope"), "invalid integer");
+  globalThis.demoCase("case:results.basic.validate_name.should_greet_valid_name");
   assert.equal(demo.validateName("Ali"), "Hello, Ali!");
+  globalThis.demoCase("case:results.basic.validate_name.should_reject_empty_name");
   assertThrowsWithMessage(() => demo.validateName(""), "name cannot be empty");
 }

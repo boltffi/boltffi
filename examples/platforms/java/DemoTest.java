@@ -1544,8 +1544,9 @@ public final class DemoTest {
     private static void testResultFunctions() {
         System.out.println("Testing result functions...");
 
-        demoCase("case:results.basic.safe_divide.ok_err");
+        demoCase("case:results.basic.safe_divide.should_return_quotient");
         assert Demo.safeDivide(10, 2) == 5 : "safeDivide ok";
+        demoCase("case:results.basic.safe_divide.should_reject_division_by_zero");
         try {
             Demo.safeDivide(10, 0);
             assert false : "safeDivide should throw on zero divisor";
@@ -1553,8 +1554,9 @@ public final class DemoTest {
             assert e.getMessage().contains("division by zero") : "safeDivide error message";
         }
 
-        demoCase("case:results.basic.always_ok_err");
+        demoCase("case:results.basic.always_ok.should_return_doubled_value");
         assert Demo.alwaysOk(21) == 42 : "alwaysOk";
+        demoCase("case:results.basic.always_err.should_return_message_error");
         try {
             Demo.alwaysErr("boom");
             assert false : "alwaysErr should throw";
@@ -1562,34 +1564,41 @@ public final class DemoTest {
             assert e.getMessage().contains("boom") : "alwaysErr error message";
         }
 
-        demoCase("case:results.basic.parse_point.ok_err");
+        demoCase("case:results.basic.parse_point.should_parse_coordinates");
         Point p = Demo.parsePoint("3.0,4.0");
         assert p.x() == 3.0 : "parsePoint x";
         assert p.y() == 4.0 : "parsePoint y";
+        demoCase("case:results.basic.parse_point.should_reject_malformed_input");
         try {
             Demo.parsePoint("bad");
             assert false : "parsePoint should throw on bad input";
         } catch (RuntimeException ignored) {}
 
-        demoCase("case:results.nested_results.option_vec_string");
+        demoCase("case:results.nested_results.string.should_return_value_for_non_negative_key");
         assert Demo.resultOfString(1).equals("item_1") : "resultOfString ok";
+        demoCase("case:results.nested_results.string.should_reject_negative_key");
         try {
             Demo.resultOfString(-1);
             assert false : "resultOfString should throw on negative key";
         } catch (RuntimeException ignored) {}
 
+        demoCase("case:results.nested_results.option.should_return_some_for_positive_key");
         Optional<Integer> some = Demo.resultOfOption(5);
         assert some.isPresent() && some.get() == 10 : "resultOfOption present";
+        demoCase("case:results.nested_results.option.should_return_none_for_zero_key");
         Optional<Integer> none = Demo.resultOfOption(0);
         assert !none.isPresent() : "resultOfOption empty";
+        demoCase("case:results.nested_results.option.should_reject_negative_key");
         try {
             Demo.resultOfOption(-1);
             assert false : "resultOfOption should throw on negative key";
         } catch (RuntimeException ignored) {}
 
+        demoCase("case:results.nested_results.vec.should_return_values_for_non_negative_count");
         int[] vec = Demo.resultOfVec(3);
         assert vec.length == 3 : "resultOfVec length";
         assert vec[0] == 0 && vec[1] == 1 && vec[2] == 2 : "resultOfVec values";
+        demoCase("case:results.nested_results.vec.should_reject_negative_count");
         try {
             Demo.resultOfVec(-1);
             assert false : "resultOfVec should throw on negative count";
@@ -1632,8 +1641,9 @@ public final class DemoTest {
     private static void testResultEnumErrors() {
         System.out.println("Testing result enum errors...");
 
-        demoCase("case:results.error_enums.math.checked");
+        demoCase("case:results.error_enums.checked_divide.should_return_quotient");
         assert Demo.checkedDivide(10, 2) == 5 : "checkedDivide ok";
+        demoCase("case:results.error_enums.checked_divide.should_reject_division_by_zero");
         try {
             Demo.checkedDivide(10, 0);
             assert false : "checkedDivide should throw on zero divisor";
@@ -1641,7 +1651,9 @@ public final class DemoTest {
             assert e.getError() == MathError.DIVISION_BY_ZERO : "checkedDivide typed error";
         }
 
+        demoCase("case:results.error_enums.checked_sqrt.should_return_square_root");
         assert Demo.checkedSqrt(9.0) == 3.0 : "checkedSqrt ok";
+        demoCase("case:results.error_enums.checked_sqrt.should_reject_negative_input");
         try {
             Demo.checkedSqrt(-1.0);
             assert false : "checkedSqrt should throw on negative";
@@ -1649,7 +1661,9 @@ public final class DemoTest {
             assert e.getError() == MathError.NEGATIVE_INPUT : "checkedSqrt typed error";
         }
 
+        demoCase("case:results.error_enums.checked_add.should_return_sum");
         assert Demo.checkedAdd(1, 2) == 3 : "checkedAdd ok";
+        demoCase("case:results.error_enums.checked_add.should_reject_overflow");
         try {
             Demo.checkedAdd(Integer.MAX_VALUE, 1);
             assert false : "checkedAdd should throw on overflow";
@@ -1657,20 +1671,23 @@ public final class DemoTest {
             assert e.getError() == MathError.OVERFLOW : "checkedAdd typed error";
         }
 
-        demoCase("case:results.error_enums.validation.username");
+        demoCase("case:results.error_enums.validate_username.should_accept_valid_name");
         assert Demo.validateUsername("alice").equals("alice") : "validateUsername ok";
+        demoCase("case:results.error_enums.validate_username.should_reject_too_short_name");
         try {
             Demo.validateUsername("ab");
             assert false : "validateUsername should throw on short name";
         } catch (ValidationError.Exception e) {
             assert e.getError() == ValidationError.TOO_SHORT : "validateUsername typed error";
         }
+        demoCase("case:results.error_enums.validate_username.should_reject_too_long_name");
         try {
             Demo.validateUsername("a]bcdefghijklmnopqrstu");
             assert false : "validateUsername should throw on long name";
         } catch (ValidationError.Exception e) {
             assert e.getError() == ValidationError.TOO_LONG : "validateUsername typed error";
         }
+        demoCase("case:results.error_enums.validate_username.should_reject_invalid_format");
         try {
             Demo.validateUsername("has space");
             assert false : "validateUsername should throw on spaces";
@@ -1678,8 +1695,9 @@ public final class DemoTest {
             assert e.getError() == ValidationError.INVALID_FORMAT : "validateUsername typed error";
         }
 
-        demoCase("case:results.error_enums.app_error.basic");
+        demoCase("case:results.error_enums.may_fail.should_return_success_when_valid");
         assert Demo.mayFail(true).equals("Success!") : "mayFail ok";
+        demoCase("case:results.error_enums.may_fail.should_return_app_error_when_invalid");
         try {
             Demo.mayFail(false);
             assert false : "mayFail should throw structured AppError";
@@ -1689,7 +1707,9 @@ public final class DemoTest {
             assert e.getMessage().equals("Invalid input") : "mayFail exception message";
         }
 
+        demoCase("case:results.error_enums.divide_app.should_return_quotient");
         assert Demo.divideApp(10, 2) == 5 : "divideApp ok";
+        demoCase("case:results.error_enums.divide_app.should_return_app_error_for_division_by_zero");
         try {
             Demo.divideApp(10, 0);
             assert false : "divideApp should throw structured AppError";

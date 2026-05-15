@@ -24,7 +24,10 @@ pub fn negate_bool(v: bool) -> bool {
 #[demo_bench_macros::demo_case(
     "primitives.scalars.i8.should_roundtrip_negative_value",
     description = "A negative i8 value crosses the wire and returns unchanged.",
-    exclude(java, reason = "The Java demo tests do not currently cover i8 scalar values.")
+    exclude(
+        java,
+        reason = "The Java demo tests do not currently cover i8 scalar values."
+    )
 )]
 #[export]
 pub fn echo_i8(v: i8) -> i8 {
@@ -34,7 +37,10 @@ pub fn echo_i8(v: i8) -> i8 {
 #[demo_bench_macros::demo_case(
     "primitives.scalars.u8.should_roundtrip_max_value",
     description = "A maximum u8 value crosses the wire and returns unchanged.",
-    exclude(java, reason = "The Java demo tests do not currently cover u8 scalar values.")
+    exclude(
+        java,
+        reason = "The Java demo tests do not currently cover u8 scalar values."
+    )
 )]
 #[export]
 pub fn echo_u8(v: u8) -> u8 {
@@ -44,7 +50,10 @@ pub fn echo_u8(v: u8) -> u8 {
 #[demo_bench_macros::demo_case(
     "primitives.scalars.i16.should_roundtrip_negative_value",
     description = "A negative i16 value crosses the wire and returns unchanged.",
-    exclude(java, reason = "The Java demo tests do not currently cover i16 scalar values.")
+    exclude(
+        java,
+        reason = "The Java demo tests do not currently cover i16 scalar values."
+    )
 )]
 #[export]
 pub fn echo_i16(v: i16) -> i16 {
@@ -54,7 +63,10 @@ pub fn echo_i16(v: i16) -> i16 {
 #[demo_bench_macros::demo_case(
     "primitives.scalars.u16.should_roundtrip_large_value",
     description = "A large u16 value crosses the wire and returns unchanged.",
-    exclude(java, reason = "The Java demo tests do not currently cover u16 scalar values.")
+    exclude(
+        java,
+        reason = "The Java demo tests do not currently cover u16 scalar values."
+    )
 )]
 #[export]
 pub fn echo_u16(v: u16) -> u16 {
@@ -85,7 +97,10 @@ pub fn add_i32(a: i32, b: i32) -> i32 {
 #[demo_bench_macros::demo_case(
     "primitives.scalars.u32.should_roundtrip_large_value",
     description = "A large u32 value crosses the wire and returns unchanged.",
-    exclude(java, reason = "The Java demo tests do not currently cover u32 scalar values.")
+    exclude(
+        java,
+        reason = "The Java demo tests do not currently cover u32 scalar values."
+    )
 )]
 #[export]
 pub fn echo_u32(v: u32) -> u32 {
@@ -104,7 +119,10 @@ pub fn echo_i64(v: i64) -> i64 {
 #[demo_bench_macros::demo_case(
     "primitives.scalars.u64.should_roundtrip_large_value",
     description = "A large u64 value crosses the wire and returns unchanged.",
-    exclude(java, reason = "The Java demo tests do not currently cover u64 scalar values.")
+    exclude(
+        java,
+        reason = "The Java demo tests do not currently cover u64 scalar values."
+    )
 )]
 #[export]
 pub fn echo_u64(v: u64) -> u64 {
@@ -152,7 +170,10 @@ pub fn add_f64(a: f64, b: f64) -> f64 {
 #[demo_bench_macros::demo_case(
     "primitives.scalars.usize.should_roundtrip_value",
     description = "A usize value crosses the wire and returns unchanged.",
-    exclude(java, reason = "The Java demo tests do not currently cover usize scalar values.")
+    exclude(
+        java,
+        reason = "The Java demo tests do not currently cover usize scalar values."
+    )
 )]
 #[export]
 pub fn echo_usize(v: usize) -> usize {
@@ -162,7 +183,10 @@ pub fn echo_usize(v: usize) -> usize {
 #[demo_bench_macros::demo_case(
     "primitives.scalars.isize.should_roundtrip_negative_value",
     description = "A negative isize value crosses the wire and returns unchanged.",
-    exclude(java, reason = "The Java demo tests do not currently cover isize scalar values.")
+    exclude(
+        java,
+        reason = "The Java demo tests do not currently cover isize scalar values."
+    )
 )]
 #[export]
 pub fn echo_isize(v: isize) -> isize {
@@ -173,11 +197,26 @@ pub fn echo_isize(v: isize) -> isize {
 #[demo_bench_macros::demo_case(
     "primitives.scalars.noop.should_cross_without_values",
     description = "A no-argument no-op call crosses the wire without returning a value.",
-    exclude(csharp, reason = "The C# demo tests do not currently cover the scalar noop helper."),
-    exclude(java, reason = "The Java demo tests do not currently cover the scalar noop helper."),
-    exclude(kotlin, reason = "The Kotlin demo tests do not currently cover the scalar noop helper."),
-    exclude(python, reason = "The Python demo tests do not currently cover the scalar noop helper."),
-    exclude(wasm, reason = "The WASM demo tests do not currently cover the scalar noop helper.")
+    exclude(
+        csharp,
+        reason = "The C# demo tests do not currently cover the scalar noop helper."
+    ),
+    exclude(
+        java,
+        reason = "The Java demo tests do not currently cover the scalar noop helper."
+    ),
+    exclude(
+        kotlin,
+        reason = "The Kotlin demo tests do not currently cover the scalar noop helper."
+    ),
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover the scalar noop helper."
+    ),
+    exclude(
+        wasm,
+        reason = "The WASM demo tests do not currently cover the scalar noop helper."
+    )
 )]
 #[export]
 #[benchmark_candidate(function, uniffi, wasm_bindgen)]
@@ -186,11 +225,26 @@ pub fn noop() {}
 #[demo_bench_macros::demo_case(
     "primitives.scalars.i32.should_add_with_benchmark_alias",
     description = "Two i32 values cross the wire through the benchmark add alias and return as their sum.",
-    exclude(csharp, reason = "The C# demo tests do not currently cover the benchmark add alias."),
-    exclude(java, reason = "The Java demo tests do not currently cover the benchmark add alias."),
-    exclude(kotlin, reason = "The Kotlin demo tests do not currently cover the benchmark add alias."),
-    exclude(python, reason = "The Python demo tests do not currently cover the benchmark add alias."),
-    exclude(wasm, reason = "The WASM demo tests do not currently cover the benchmark add alias.")
+    exclude(
+        csharp,
+        reason = "The C# demo tests do not currently cover the benchmark add alias."
+    ),
+    exclude(
+        java,
+        reason = "The Java demo tests do not currently cover the benchmark add alias."
+    ),
+    exclude(
+        kotlin,
+        reason = "The Kotlin demo tests do not currently cover the benchmark add alias."
+    ),
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover the benchmark add alias."
+    ),
+    exclude(
+        wasm,
+        reason = "The WASM demo tests do not currently cover the benchmark add alias."
+    )
 )]
 #[export]
 #[benchmark_candidate(function, uniffi, wasm_bindgen)]
@@ -201,11 +255,26 @@ pub fn add(a: i32, b: i32) -> i32 {
 #[demo_bench_macros::demo_case(
     "primitives.scalars.f64.should_multiply_two_values",
     description = "Two f64 values cross the wire and return as their product.",
-    exclude(csharp, reason = "The C# demo tests do not currently cover the scalar multiply helper."),
-    exclude(java, reason = "The Java demo tests do not currently cover the scalar multiply helper."),
-    exclude(kotlin, reason = "The Kotlin demo tests do not currently cover the scalar multiply helper."),
-    exclude(python, reason = "The Python demo tests do not currently cover the scalar multiply helper."),
-    exclude(wasm, reason = "The WASM demo tests do not currently cover the scalar multiply helper.")
+    exclude(
+        csharp,
+        reason = "The C# demo tests do not currently cover the scalar multiply helper."
+    ),
+    exclude(
+        java,
+        reason = "The Java demo tests do not currently cover the scalar multiply helper."
+    ),
+    exclude(
+        kotlin,
+        reason = "The Kotlin demo tests do not currently cover the scalar multiply helper."
+    ),
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover the scalar multiply helper."
+    ),
+    exclude(
+        wasm,
+        reason = "The WASM demo tests do not currently cover the scalar multiply helper."
+    )
 )]
 #[export]
 #[benchmark_candidate(function, uniffi, wasm_bindgen)]

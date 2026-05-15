@@ -268,49 +268,64 @@ class DemoValueTypesTest {
 
     @Test
     fun basicStringResultFunctionsUseCorrectKotlinSurface() {
-        demoCase("case:results.basic.safe_divide.ok_err")
+        demoCase("case:results.basic.safe_divide.should_return_quotient")
         assertEquals(5, safeDivide(10, 2))
+        demoCase("case:results.basic.safe_divide.should_reject_division_by_zero")
         assertMessageContains(assertFailsWith<FfiException> { safeDivide(1, 0) }, "division by zero")
-        demoCase("case:results.basic.safe_sqrt.ok_err")
+        demoCase("case:results.basic.safe_sqrt.should_return_square_root")
         assertDoubleEquals(3.0, safeSqrt(9.0))
+        demoCase("case:results.basic.safe_sqrt.should_reject_negative_input")
         assertMessageContains(assertFailsWith<FfiException> { safeSqrt(-1.0) }, "negative input")
-        demoCase("case:results.basic.parse_point.ok_err")
+        demoCase("case:results.basic.parse_point.should_parse_coordinates")
         assertPointEquals(1.5, 2.5, parsePoint("1.5, 2.5"))
+        demoCase("case:results.basic.parse_point.should_reject_malformed_input")
         assertMessageContains(assertFailsWith<FfiException> { parsePoint("wat") }, "expected format")
-        demoCase("case:results.basic.always_ok_err")
+        demoCase("case:results.basic.always_ok.should_return_doubled_value")
         assertEquals(42, alwaysOk(21))
+        demoCase("case:results.basic.always_err.should_return_message_error")
         assertMessageContains(assertFailsWith<FfiException> { alwaysErr("boom") }, "boom")
-        demoCase("case:results.basic.result_to_string.ok_err")
+        demoCase("case:results.basic.result_to_string.should_render_ok")
         assertEquals("ok: 7", resultToString(BoltFFIResult.Ok(7)))
+        demoCase("case:results.basic.result_to_string.should_render_err")
         assertEquals("err: bad", resultToString(BoltFFIResult.Err("bad")))
     }
 
     @Test
     fun typedErrorResultFunctionsUseCorrectKotlinSurface() {
-        demoCase("case:results.error_enums.math.checked")
+        demoCase("case:results.error_enums.checked_divide.should_return_quotient")
         assertEquals(5, checkedDivide(10, 2))
+        demoCase("case:results.error_enums.checked_divide.should_reject_division_by_zero")
         assertTrue(assertFailsWith<MathError> { checkedDivide(1, 0) } is MathError.DivisionByZero)
+        demoCase("case:results.error_enums.checked_sqrt.should_return_square_root")
         assertDoubleEquals(3.0, checkedSqrt(9.0))
+        demoCase("case:results.error_enums.checked_sqrt.should_reject_negative_input")
         assertTrue(assertFailsWith<MathError> { checkedSqrt(-1.0) } is MathError.NegativeInput)
+        demoCase("case:results.error_enums.checked_add.should_reject_overflow")
         assertTrue(assertFailsWith<MathError> { checkedAdd(Int.MAX_VALUE, 1) } is MathError.Overflow)
 
-        demoCase("case:results.error_enums.app_error.basic")
+        demoCase("case:results.error_enums.may_fail.should_return_success_when_valid")
         assertEquals("Success!", mayFail(true))
+        demoCase("case:results.error_enums.may_fail.should_return_app_error_when_invalid")
         val invalidInputError = assertFailsWith<AppError> { mayFail(false) }
         assertEquals(400, invalidInputError.code)
         assertEquals("Invalid input", invalidInputError.message)
 
+        demoCase("case:results.error_enums.divide_app.should_return_quotient")
         assertEquals(5, divideApp(10, 2))
+        demoCase("case:results.error_enums.divide_app.should_return_app_error_for_division_by_zero")
         val divideByZeroError = assertFailsWith<AppError> { divideApp(10, 0) }
         assertEquals(500, divideByZeroError.code)
         assertEquals("Division by zero", divideByZeroError.message)
 
-        demoCase("case:results.error_enums.validation.username")
+        demoCase("case:results.error_enums.validate_username.should_accept_valid_name")
         assertEquals("valid_name", validateUsername("valid_name"))
+        demoCase("case:results.error_enums.validate_username.should_reject_too_short_name")
         assertTrue(assertFailsWith<ValidationError> { validateUsername("ab") } is ValidationError.TooShort)
+        demoCase("case:results.error_enums.validate_username.should_reject_too_long_name")
         assertTrue(
             assertFailsWith<ValidationError> { validateUsername("a".repeat(21)) } is ValidationError.TooLong
         )
+        demoCase("case:results.error_enums.validate_username.should_reject_invalid_format")
         assertTrue(
             assertFailsWith<ValidationError> { validateUsername("has space") } is ValidationError.InvalidFormat
         )
@@ -318,13 +333,19 @@ class DemoValueTypesTest {
 
     @Test
     fun nestedResultFunctionsUseCorrectKotlinSurface() {
-        demoCase("case:results.nested_results.option_vec_string")
+        demoCase("case:results.nested_results.option.should_return_some_for_positive_key")
         assertEquals(8, resultOfOption(4))
+        demoCase("case:results.nested_results.option.should_return_none_for_zero_key")
         assertNull(resultOfOption(0))
+        demoCase("case:results.nested_results.option.should_reject_negative_key")
         assertMessageContains(assertFailsWith<FfiException> { resultOfOption(-1) }, "invalid key")
+        demoCase("case:results.nested_results.vec.should_return_values_for_non_negative_count")
         assertContentEquals(intArrayOf(0, 1, 2), resultOfVec(3))
+        demoCase("case:results.nested_results.vec.should_reject_negative_count")
         assertMessageContains(assertFailsWith<FfiException> { resultOfVec(-1) }, "negative count")
+        demoCase("case:results.nested_results.string.should_return_value_for_non_negative_key")
         assertEquals("item_7", resultOfString(7))
+        demoCase("case:results.nested_results.string.should_reject_negative_key")
         assertMessageContains(assertFailsWith<FfiException> { resultOfString(-1) }, "invalid key")
     }
 
