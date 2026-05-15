@@ -14,14 +14,34 @@ pub struct Point {
 
 #[data(impl)]
 impl Point {
+    #[demo_bench_macros::demo_case(
+        "records.blittable.point.should_construct_with_static_new",
+        description = "Point::new returns a blittable Point containing the provided coordinates.",
+        exclude(
+            csharp,
+            reason = "The C# demo tests do not currently cover the Point::new constructor."
+        ),
+        exclude(
+            java,
+            reason = "The Java demo tests use the generated Point data constructor rather than the Point::new method."
+        )
+    )]
     pub fn new(x: f64, y: f64) -> Self {
         Point { x, y }
     }
 
+    #[demo_bench_macros::demo_case(
+        "records.blittable.point.should_return_origin",
+        description = "Point::origin returns a Point at zero coordinates."
+    )]
     pub fn origin() -> Self {
         Point { x: 0.0, y: 0.0 }
     }
 
+    #[demo_bench_macros::demo_case(
+        "records.blittable.point.should_construct_from_polar_coordinates",
+        description = "Point::from_polar converts polar coordinates into Cartesian point fields."
+    )]
     pub fn from_polar(r: f64, theta: f64) -> Self {
         Point {
             x: r * theta.cos(),
@@ -29,6 +49,30 @@ impl Point {
         }
     }
 
+    #[demo_bench_macros::demo_case(
+        "records.blittable.point.should_normalize_unit_vector",
+        description = "Point::try_unit returns a normalized Point for non-zero coordinates.",
+        exclude(
+            csharp,
+            reason = "The C# demo tests do not currently cover the fallible Point::try_unit method."
+        ),
+        exclude(
+            python,
+            reason = "The Python demo tests do not currently cover fallible Point methods."
+        )
+    )]
+    #[demo_bench_macros::demo_case(
+        "records.blittable.point.should_reject_zero_unit_vector",
+        description = "Point::try_unit rejects zero coordinates instead of returning an invalid unit vector.",
+        exclude(
+            csharp,
+            reason = "The C# demo tests do not currently cover the fallible Point::try_unit method."
+        ),
+        exclude(
+            python,
+            reason = "The Python demo tests do not currently cover fallible Point methods."
+        )
+    )]
     pub fn try_unit(x: f64, y: f64) -> Result<Self, String> {
         let len = (x * x + y * y).sqrt();
         if len == 0.0 {
@@ -41,6 +85,30 @@ impl Point {
         }
     }
 
+    #[demo_bench_macros::demo_case(
+        "records.blittable.point.should_return_some_for_checked_unit",
+        description = "Point::checked_unit returns Some normalized Point for non-zero coordinates.",
+        exclude(
+            csharp,
+            reason = "The C# demo tests do not currently cover the optional Point::checked_unit method."
+        ),
+        exclude(
+            python,
+            reason = "The Python demo tests do not currently cover optional Point methods."
+        )
+    )]
+    #[demo_bench_macros::demo_case(
+        "records.blittable.point.should_return_none_for_zero_checked_unit",
+        description = "Point::checked_unit returns None for zero coordinates.",
+        exclude(
+            csharp,
+            reason = "The C# demo tests do not currently cover the optional Point::checked_unit method."
+        ),
+        exclude(
+            python,
+            reason = "The Python demo tests do not currently cover optional Point methods."
+        )
+    )]
     pub fn checked_unit(x: f64, y: f64) -> Option<Self> {
         let len = (x * x + y * y).sqrt();
         if len == 0.0 {
@@ -53,15 +121,31 @@ impl Point {
         }
     }
 
+    #[demo_bench_macros::demo_case(
+        "records.blittable.point.should_compute_distance",
+        description = "Point::distance computes the Euclidean distance from the origin."
+    )]
     pub fn distance(&self) -> f64 {
         (self.x * self.x + self.y * self.y).sqrt()
     }
 
+    #[demo_bench_macros::demo_case(
+        "records.blittable.point.should_scale_coordinates",
+        description = "Point::scale multiplies both coordinates by the provided factor.",
+        exclude(
+            csharp,
+            reason = "The C# demo tests do not currently cover the Point::scale method."
+        )
+    )]
     pub fn scale(&mut self, factor: f64) {
         self.x *= factor;
         self.y *= factor;
     }
 
+    #[demo_bench_macros::demo_case(
+        "records.blittable.point.should_add_coordinates",
+        description = "Point::add returns a Point whose coordinates are the pairwise sums."
+    )]
     pub fn add(&self, other: Point) -> Point {
         Point {
             x: self.x + other.x,
@@ -69,6 +153,14 @@ impl Point {
         }
     }
 
+    #[demo_bench_macros::demo_case(
+        "records.blittable.point.should_compute_path_length",
+        description = "Point::path_length sums the segment lengths across a vector of Points.",
+        exclude(
+            python,
+            reason = "The Python demo tests do not currently cover Point::path_length."
+        )
+    )]
     pub fn path_length(points: Vec<Point>) -> f64 {
         points
             .windows(2)
@@ -80,16 +172,56 @@ impl Point {
             .sum()
     }
 
+    #[demo_bench_macros::demo_case(
+        "records.blittable.point.should_report_dimension_count",
+        description = "Point::dimensions reports the fixed two-dimensional shape of Point."
+    )]
     pub fn dimensions() -> u32 {
         2
     }
 }
 
+#[demo_bench_macros::demo_case(
+    "records.blittable.point.should_roundtrip_value",
+    description = "A blittable Point crosses the wire and returns unchanged."
+)]
 #[export]
 pub fn echo_point(p: Point) -> Point {
     p
 }
 
+#[demo_bench_macros::demo_case(
+    "records.blittable.point.should_return_some_for_nonzero_coordinates",
+    description = "try_make_point returns Some Point when the provided coordinates are not both zero.",
+    exclude(
+        csharp,
+        reason = "The C# demo tests do not currently cover try_make_point."
+    ),
+    exclude(
+        java,
+        reason = "The Java demo tests do not currently cover try_make_point."
+    ),
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover try_make_point."
+    )
+)]
+#[demo_bench_macros::demo_case(
+    "records.blittable.point.should_return_none_for_origin_coordinates",
+    description = "try_make_point returns None when both coordinates are zero.",
+    exclude(
+        csharp,
+        reason = "The C# demo tests do not currently cover try_make_point."
+    ),
+    exclude(
+        java,
+        reason = "The Java demo tests do not currently cover try_make_point."
+    ),
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover try_make_point."
+    )
+)]
 #[export]
 pub fn try_make_point(x: f64, y: f64) -> Option<Point> {
     if x == 0.0 && y == 0.0 {
@@ -99,12 +231,20 @@ pub fn try_make_point(x: f64, y: f64) -> Option<Point> {
     }
 }
 
+#[demo_bench_macros::demo_case(
+    "records.blittable.point.should_make_from_coordinates",
+    description = "make_point returns a blittable Point containing the provided coordinates."
+)]
 #[export]
 #[benchmark_candidate(function, uniffi)]
 pub fn make_point(x: f64, y: f64) -> Point {
     Point { x, y }
 }
 
+#[demo_bench_macros::demo_case(
+    "records.blittable.point.should_add_values",
+    description = "add_points returns a blittable Point whose fields are the pairwise coordinate sums."
+)]
 #[export]
 pub fn add_points(a: Point, b: Point) -> Point {
     Point {
@@ -122,11 +262,27 @@ pub struct Color {
     pub a: u8,
 }
 
+#[demo_bench_macros::demo_case(
+    "records.blittable.color.should_roundtrip_value",
+    description = "A blittable Color crosses the wire and returns unchanged.",
+    exclude(
+        java,
+        reason = "The Java demo tests do not currently cover Color records."
+    )
+)]
 #[export]
 pub fn echo_color(c: Color) -> Color {
     c
 }
 
+#[demo_bench_macros::demo_case(
+    "records.blittable.color.should_make_from_channels",
+    description = "make_color returns a Color containing the provided channel values.",
+    exclude(
+        java,
+        reason = "The Java demo tests do not currently cover Color records."
+    )
+)]
 #[export]
 pub fn make_color(r: u8, g: u8, b: u8, a: u8) -> Color {
     Color { r, g, b, a }

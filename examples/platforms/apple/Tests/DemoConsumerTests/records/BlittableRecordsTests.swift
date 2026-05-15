@@ -3,37 +3,53 @@ import XCTest
 
 final class BlittableRecordsTests: DemoTestCase {
     func testPointFnsAndMethods() throws {
+        demoCase("case:records.blittable.point.should_construct_with_static_new")
         XCTAssertEqual(Point.new(x: 1.0, y: 2.0), Point(x: 1.0, y: 2.0))
+        demoCase("case:records.blittable.point.should_return_origin")
         assertPointEquals(Point.origin(), 0.0, 0.0)
+        demoCase("case:records.blittable.point.should_construct_from_polar_coordinates")
         assertPointEquals(Point(fromPolar: 2.0, theta: .pi / 2.0), 0.0, 2.0, accuracy: 1e-6)
+        demoCase("case:records.blittable.point.should_normalize_unit_vector")
         assertPointEquals(try Point(tryUnit: 3.0, y: 4.0), 0.6, 0.8, accuracy: 1e-6)
+        demoCase("case:records.blittable.point.should_reject_zero_unit_vector")
         assertThrowsMessageContains("cannot normalize zero vector", try Point(tryUnit: 0.0, y: 0.0))
+        demoCase("case:records.blittable.point.should_return_some_for_checked_unit")
         XCTAssertEqual(Point(checkedUnit: 2.0, y: 0.0), Point(x: 1.0, y: 0.0))
+        demoCase("case:records.blittable.point.should_return_none_for_zero_checked_unit")
         XCTAssertNil(Point(checkedUnit: 0.0, y: 0.0))
+        demoCase("case:records.blittable.point.should_compute_distance")
         XCTAssertEqual(Point(x: 3.0, y: 4.0).distance(), 5.0, accuracy: 1e-6)
         var scaledPoint = Point(x: 3.0, y: 4.0)
+        demoCase("case:records.blittable.point.should_scale_coordinates")
         scaledPoint.scale(factor: 2.0)
         XCTAssertEqual(scaledPoint, Point(x: 6.0, y: 8.0))
+        demoCase("case:records.blittable.point.should_add_coordinates")
         XCTAssertEqual(Point(x: 1.0, y: 2.0).add(other: Point(x: 3.0, y: 4.0)), Point(x: 4.0, y: 6.0))
+        demoCase("case:records.blittable.point.should_compute_path_length")
         XCTAssertEqual(
             Point.pathLength(points: [Point(x: 0.0, y: 0.0), Point(x: 3.0, y: 4.0), Point(x: 6.0, y: 8.0)]),
             10.0,
             accuracy: 1e-6
         )
+        demoCase("case:records.blittable.point.should_report_dimension_count")
         XCTAssertEqual(Point.dimensions(), 2)
-        demoCase("case:records.blittable.point.functions")
+        demoCase("case:records.blittable.point.should_roundtrip_value")
         XCTAssertEqual(echoPoint(p: Point(x: 1.5, y: 2.5)), Point(x: 1.5, y: 2.5))
+        demoCase("case:records.blittable.point.should_make_from_coordinates")
         XCTAssertEqual(makePoint(x: 3.0, y: 4.0), Point(x: 3.0, y: 4.0))
+        demoCase("case:records.blittable.point.should_add_values")
         XCTAssertEqual(addPoints(a: Point(x: 1.0, y: 2.0), b: Point(x: 3.0, y: 4.0)), Point(x: 4.0, y: 6.0))
 
-        demoCase("case:records.blittable.point.try_make")
+        demoCase("case:records.blittable.point.should_return_some_for_nonzero_coordinates")
         XCTAssertEqual(tryMakePoint(x: 1.0, y: 2.0), Point(x: 1.0, y: 2.0))
+        demoCase("case:records.blittable.point.should_return_none_for_origin_coordinates")
         XCTAssertNil(tryMakePoint(x: 0.0, y: 0.0))
     }
 
     func testColorFns() {
-        demoCase("case:records.blittable.color.basic")
+        demoCase("case:records.blittable.color.should_roundtrip_value")
         XCTAssertEqual(echoColor(c: Color(r: 1, g: 2, b: 3, a: 4)), Color(r: 1, g: 2, b: 3, a: 4))
+        demoCase("case:records.blittable.color.should_make_from_channels")
         XCTAssertEqual(makeColor(r: 10, g: 20, b: 30, a: 40), Color(r: 10, g: 20, b: 30, a: 40))
     }
 

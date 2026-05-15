@@ -169,43 +169,56 @@ public final class DemoTest {
 
     private static void testPointRecords() {
         System.out.println("Testing records (Point)...");
+        demoCase("case:records.blittable.point.should_make_from_coordinates");
         Point point = Demo.makePoint(1.0, 2.0);
-        demoCase("case:records.blittable.point.functions");
         assert point.x() == 1.0 : "makePoint.x";
         assert point.y() == 2.0 : "makePoint.y";
+        demoCase("case:records.blittable.point.should_return_origin");
         Point origin = Point.origin();
         assert origin.x() == 0.0 : "Point.origin.x";
         assert origin.y() == 0.0 : "Point.origin.y";
+        demoCase("case:records.blittable.point.should_construct_from_polar_coordinates");
         Point fromPolar = Point.fromPolar(2.0, Math.PI / 2.0);
         assert Math.abs(fromPolar.x()) < 0.0001 : "Point.fromPolar.x";
         assert Math.abs(fromPolar.y() - 2.0) < 0.0001 : "Point.fromPolar.y";
+        demoCase("case:records.blittable.point.should_normalize_unit_vector");
         Point unit = Point.tryUnit(3.0, 4.0);
         assert Math.abs(unit.x() - 0.6) < 0.0001 : "Point.tryUnit.x";
         assert Math.abs(unit.y() - 0.8) < 0.0001 : "Point.tryUnit.y";
+        demoCase("case:records.blittable.point.should_reject_zero_unit_vector");
         try {
             Point.tryUnit(0.0, 0.0);
             assert false : "Point.tryUnit should throw for zero vector";
         } catch (RuntimeException expected) {
             assert expected.getMessage().contains("cannot normalize zero vector") : "Point.tryUnit error";
         }
+        demoCase("case:records.blittable.point.should_return_some_for_checked_unit");
         assert Point.checkedUnit(3.0, 4.0).isPresent() : "Point.checkedUnit some";
+        demoCase("case:records.blittable.point.should_return_none_for_zero_checked_unit");
         assert !Point.checkedUnit(0.0, 0.0).isPresent() : "Point.checkedUnit none";
+        demoCase("case:records.blittable.point.should_compute_distance");
         assert Math.abs(point.distance() - Math.sqrt(5.0)) < 0.0001 : "Point.distance";
+        demoCase("case:records.blittable.point.should_scale_coordinates");
         Point scaledPoint = point.scale(2.5);
         assert scaledPoint.x() == 2.5 : "Point.scale.x";
         assert scaledPoint.y() == 5.0 : "Point.scale.y";
+        demoCase("case:records.blittable.point.should_add_coordinates");
         Point addedPoint = point.add(new Point(10.0, 20.0));
         assert addedPoint.x() == 11.0 : "Point.add.x";
         assert addedPoint.y() == 22.0 : "Point.add.y";
+        demoCase("case:records.blittable.point.should_compute_path_length");
         assert Math.abs(Point.pathLength(Arrays.asList(
             new Point(0.0, 0.0),
             new Point(3.0, 4.0),
             new Point(6.0, 8.0)
         )) - 10.0) < 0.0001 : "Point.pathLength";
+        demoCase("case:records.blittable.point.should_report_dimension_count");
         assert Point.dimensions() == 2 : "Point.dimensions";
+        demoCase("case:records.blittable.point.should_roundtrip_value");
         Point echoedPoint = Demo.echoPoint(point);
         assert echoedPoint.x() == 1.0 : "echoPoint.x";
         assert echoedPoint.y() == 2.0 : "echoPoint.y";
+        demoCase("case:records.blittable.point.should_add_values");
         Point sumPoint = Demo.addPoints(new Point(3.0, 4.0), new Point(5.0, 6.0));
         assert sumPoint.x() == 8.0 : "addPoints.x";
         assert sumPoint.y() == 10.0 : "addPoints.y";
@@ -218,29 +231,35 @@ public final class DemoTest {
 
     private static void testLineRecords() {
         System.out.println("Testing records (Line)...");
+        demoCase("case:records.nested.line.should_make_from_coordinates");
         Line line = Demo.makeLine(0.0, 0.0, 3.0, 4.0);
-        demoCase("case:records.nested.line.basic");
         assert line.start().x() == 0.0 : "makeLine.start.x";
         assert line.end().y() == 4.0 : "makeLine.end.y";
+        demoCase("case:records.nested.line.should_roundtrip_nested_points");
         Line echoedLine = Demo.echoLine(line);
         assert echoedLine.start().x() == 0.0 : "echoLine.start.x";
         assert echoedLine.end().x() == 3.0 : "echoLine.end.x";
+        demoCase("case:records.nested.line.should_compute_length");
         assert Math.abs(Demo.lineLength(line) - 5.0) < 0.0001 : "lineLength";
         System.out.println("  PASS\n");
     }
 
     private static void testPersonRecords() {
         System.out.println("Testing records (Person)...");
+        demoCase("case:records.with_strings.person.should_make_from_fields");
         Person person = Demo.makePerson("Alice", 30);
-        demoCase("case:records.with_strings.person.basic");
         assert person.name().equals("Alice") : "makePerson.name";
         assert person.age() == 30 : "makePerson.age";
+        demoCase("case:records.with_strings.person.should_roundtrip_value");
         Person echoedPerson = Demo.echoPerson(person);
         assert echoedPerson.name().equals("Alice") : "echoPerson.name";
         assert echoedPerson.age() == 30 : "echoPerson.age";
+        demoCase("case:records.with_strings.person.should_format_greeting");
         assert Demo.greetPerson(person).equals("Hello, Alice! You are 30 years old.") : "greetPerson";
+        demoCase("case:records.with_strings.person.should_make_from_fields");
         Person emojiPerson = Demo.makePerson("🎉 Party", 25);
         assert emojiPerson.name().equals("🎉 Party") : "makePerson(emoji)";
+        demoCase("case:records.with_strings.person.should_roundtrip_value");
         Person echoedEmojiPerson = Demo.echoPerson(emojiPerson);
         assert echoedEmojiPerson.name().equals("🎉 Party") : "echoPerson(emoji)";
         System.out.println("  PASS\n");
@@ -280,13 +299,15 @@ public final class DemoTest {
             Optional.of("https://edge"),
             Optional.of("https://backup")
         );
-        demoCase("case:records.default_values.service_config.echo");
+        demoCase("case:records.default_values.service_config.should_roundtrip_value");
         assert Demo.echoServiceConfig(explicitBackupEndpoint).equals(explicitBackupEndpoint) : "echoServiceConfig";
+        demoCase("case:records.default_values.service_config.should_describe_values");
         assert implicitDefaults.describe().equals("worker:3:standard:none:https://default") : "ServiceConfig.describe(defaults)";
         assert customRetries.describe().equals("worker:7:standard:none:https://default") : "ServiceConfig.describe(customRetries)";
         assert explicitRegion.describe().equals("worker:9:eu-west:none:https://default") : "ServiceConfig.describe(explicitRegion)";
         assert explicitEndpoint.describe().equals("worker:9:eu-west:https://edge:https://default") : "ServiceConfig.describe(explicitEndpoint)";
         assert explicitBackupEndpoint.describe().equals("worker:9:eu-west:https://edge:https://backup") : "ServiceConfig.describe(explicitBackupEndpoint)";
+        demoCase("case:records.default_values.service_config.should_describe_with_prefix");
         assert explicitBackupEndpoint.describeWithPrefix("cfg").equals("cfg:worker:9:eu-west:https://edge:https://backup") : "ServiceConfig.describeWithPrefix";
         System.out.println("  PASS\n");
     }
@@ -863,30 +884,35 @@ public final class DemoTest {
     private static void testRecordsWithVecs() {
         System.out.println("Testing records with vecs...");
 
-        demoCase("case:records.with_collections.polygon.basic");
+        demoCase("case:records.with_collections.polygon.should_make_from_points");
         Polygon polygon = Demo.makePolygon(Arrays.asList(
             new Point(0.0, 0.0), new Point(1.0, 0.0), new Point(0.0, 1.0)
         ));
+        demoCase("case:records.with_collections.polygon.should_report_vertex_count");
         assert Demo.polygonVertexCount(polygon) == 3 : "polygonVertexCount";
 
+        demoCase("case:records.with_collections.polygon.should_roundtrip_point_vector");
         Polygon echoed = Demo.echoPolygon(polygon);
         assert echoed.points().size() == 3 : "echoPolygon size";
         assert echoed.points().get(0).x() == 0.0 : "echoPolygon[0].x";
 
+        demoCase("case:records.with_collections.polygon.should_compute_centroid");
         Point centroid = Demo.polygonCentroid(polygon);
         assert Math.abs(centroid.x() - 1.0 / 3.0) < 0.0001 : "polygonCentroid.x";
         assert Math.abs(centroid.y() - 1.0 / 3.0) < 0.0001 : "polygonCentroid.y";
 
-        demoCase("case:records.with_collections.team.basic");
+        demoCase("case:records.with_collections.team.should_make_from_members");
         Team team = Demo.makeTeam("devs", Arrays.asList("Alice", "Bob"));
         assert team.name().equals("devs") : "makeTeam.name";
         assert team.members().size() == 2 : "makeTeam.members.size";
 
+        demoCase("case:records.with_collections.team.should_roundtrip_member_vector");
         Team echoedTeam = Demo.echoTeam(team);
         assert echoedTeam.members().get(0).equals("Alice") : "echoTeam.members[0]";
+        demoCase("case:records.with_collections.team.should_report_member_count");
         assert Demo.teamSize(team) == 2 : "teamSize";
 
-        demoCase("case:records.with_collections.classroom.basic");
+        demoCase("case:records.with_collections.classroom.should_make_from_students");
         Classroom classroom = Demo.makeClassroom(Arrays.asList(
             new Person("Mia", 10),
             new Person("Leo", 11)
@@ -894,14 +920,16 @@ public final class DemoTest {
         assert classroom.students().size() == 2 : "makeClassroom.students.size";
         assert classroom.students().get(0).name().equals("Mia") : "makeClassroom.students[0].name";
 
+        demoCase("case:records.with_collections.classroom.should_roundtrip_student_vector");
         Classroom echoedClassroom = Demo.echoClassroom(classroom);
         assert echoedClassroom.students().size() == 2 : "echoClassroom.students.size";
         assert echoedClassroom.students().get(1).name().equals("Leo") : "echoClassroom.students[1].name";
 
-        demoCase("case:records.with_collections.tagged_scores.basic");
+        demoCase("case:records.with_collections.tagged_scores.should_roundtrip_score_vector");
         TaggedScores ts = Demo.echoTaggedScores(new TaggedScores("math", new double[]{90.0, 85.5}));
         assert ts.label().equals("math") : "echoTaggedScores.label";
         assert ts.scores().length == 2 : "echoTaggedScores.scores.length";
+        demoCase("case:records.with_collections.tagged_scores.should_average_scores");
         assert Math.abs(Demo.averageScore(new TaggedScores("x", new double[]{80.0, 100.0})) - 90.0) < 0.0001 : "averageScore";
 
         demoCase("case:records.mixed.basic");

@@ -445,68 +445,94 @@ class DemoValueTypesTest {
 
     @Test
     fun pointAndRecordMethodExportsBehaveCorrectly() {
+        demoCase("case:records.blittable.point.should_construct_with_static_new")
         assertEquals(Point(1.0, 2.0), Point.new(1.0, 2.0))
+        demoCase("case:records.blittable.point.should_return_origin")
         assertPointEquals(0.0, 0.0, Point.origin())
+        demoCase("case:records.blittable.point.should_construct_from_polar_coordinates")
         assertPointEquals(0.0, 2.0, Point.fromPolar(2.0, PI / 2.0), 1e-6)
+        demoCase("case:records.blittable.point.should_normalize_unit_vector")
         assertPointEquals(0.6, 0.8, Point.tryUnit(3.0, 4.0), 1e-6)
+        demoCase("case:records.blittable.point.should_reject_zero_unit_vector")
         assertMessageContains(assertFailsWith<FfiException> { Point.tryUnit(0.0, 0.0) }, "cannot normalize zero vector")
+        demoCase("case:records.blittable.point.should_return_some_for_checked_unit")
         assertPointEquals(1.0, 0.0, Point.checkedUnit(2.0, 0.0)!!, 1e-6)
+        demoCase("case:records.blittable.point.should_return_none_for_zero_checked_unit")
         assertNull(Point.checkedUnit(0.0, 0.0))
+        demoCase("case:records.blittable.point.should_report_dimension_count")
         assertEquals(2u, Point.dimensions())
+        demoCase("case:records.blittable.point.should_compute_distance")
         assertDoubleEquals(5.0, Point(3.0, 4.0).distance())
+        demoCase("case:records.blittable.point.should_scale_coordinates")
         assertPointEquals(6.0, 8.0, Point(3.0, 4.0).scale(2.0))
+        demoCase("case:records.blittable.point.should_add_coordinates")
         assertPointEquals(4.0, 6.0, Point(1.0, 2.0).add(Point(3.0, 4.0)))
+        demoCase("case:records.blittable.point.should_compute_path_length")
         assertDoubleEquals(
             10.0,
             Point.pathLength(listOf(Point(0.0, 0.0), Point(3.0, 4.0), Point(6.0, 8.0)))
         )
-        demoCase("case:records.blittable.point.functions")
+        demoCase("case:records.blittable.point.should_roundtrip_value")
         assertEquals(Point(1.0, 2.0), echoPoint(Point(1.0, 2.0)))
+        demoCase("case:records.blittable.point.should_make_from_coordinates")
         assertEquals(Point(1.0, 2.0), makePoint(1.0, 2.0))
+        demoCase("case:records.blittable.point.should_add_values")
         assertEquals(Point(8.0, 10.0), addPoints(Point(3.0, 4.0), Point(5.0, 6.0)))
 
-        demoCase("case:records.blittable.point.try_make")
+        demoCase("case:records.blittable.point.should_return_some_for_nonzero_coordinates")
         assertEquals(Point(2.0, 3.0), tryMakePoint(2.0, 3.0))
+        demoCase("case:records.blittable.point.should_return_none_for_origin_coordinates")
         assertNull(tryMakePoint(0.0, 0.0))
 
         val color = Color(1u, 2u, 3u, 255u)
-        demoCase("case:records.blittable.color.basic")
+        demoCase("case:records.blittable.color.should_roundtrip_value")
         assertEquals(color, echoColor(color))
+        demoCase("case:records.blittable.color.should_make_from_channels")
         assertEquals(Color(9u, 8u, 7u, 6u), makeColor(9u, 8u, 7u, 6u))
 
+        demoCase("case:records.nested.line.should_make_from_coordinates")
         val line = makeLine(0.0, 0.0, 3.0, 4.0)
-        demoCase("case:records.nested.line.basic")
+        demoCase("case:records.nested.line.should_roundtrip_nested_points")
         assertEquals(line, echoLine(line))
+        demoCase("case:records.nested.line.should_compute_length")
         assertDoubleEquals(5.0, lineLength(line))
 
         val rect = Rect(Point(1.0, 2.0), Dimensions(3.0, 4.0))
-        demoCase("case:records.nested.rect.basic")
+        demoCase("case:records.nested.rect.should_roundtrip_nested_records")
         assertEquals(rect, echoRect(rect))
+        demoCase("case:records.nested.rect.should_compute_area")
         assertDoubleEquals(12.0, rectArea(rect))
     }
 
     @Test
     fun collectionAndNestedRecordExportsBehaveCorrectly() {
-        demoCase("case:records.with_collections.polygon.basic")
+        demoCase("case:records.with_collections.polygon.should_make_from_points")
         val polygon = makePolygon(listOf(Point(0.0, 0.0), Point(1.0, 0.0), Point(0.0, 1.0)))
+        demoCase("case:records.with_collections.polygon.should_roundtrip_point_vector")
         assertEquals(polygon, echoPolygon(polygon))
+        demoCase("case:records.with_collections.polygon.should_report_vertex_count")
         assertEquals(3u, polygonVertexCount(polygon))
+        demoCase("case:records.with_collections.polygon.should_compute_centroid")
         assertPointEquals(1.0 / 3.0, 1.0 / 3.0, polygonCentroid(polygon), 1e-6)
 
-        demoCase("case:records.with_collections.team.basic")
+        demoCase("case:records.with_collections.team.should_make_from_members")
         val team = makeTeam("devs", listOf("Ali", "Mia"))
+        demoCase("case:records.with_collections.team.should_roundtrip_member_vector")
         assertEquals(team, echoTeam(team))
+        demoCase("case:records.with_collections.team.should_report_member_count")
         assertEquals(2u, teamSize(team))
 
-        demoCase("case:records.with_collections.classroom.basic")
+        demoCase("case:records.with_collections.classroom.should_make_from_students")
         val classroom = makeClassroom(listOf(Person("Mia", 10u), Person("Leo", 11u)))
+        demoCase("case:records.with_collections.classroom.should_roundtrip_student_vector")
         assertEquals(classroom, echoClassroom(classroom))
 
-        demoCase("case:records.with_collections.tagged_scores.basic")
+        demoCase("case:records.with_collections.tagged_scores.should_roundtrip_score_vector")
         val taggedScores = TaggedScores("math", doubleArrayOf(90.0, 85.5))
         val echoedTaggedScores = echoTaggedScores(taggedScores)
         assertEquals("math", echoedTaggedScores.label)
         assertContentEquals(doubleArrayOf(90.0, 85.5), echoedTaggedScores.scores)
+        demoCase("case:records.with_collections.tagged_scores.should_average_scores")
         assertDoubleEquals(90.0, averageScore(TaggedScores("x", doubleArrayOf(80.0, 100.0))))
 
         demoCase("case:records.with_enums.task.make_urgent")
@@ -560,20 +586,22 @@ class DemoValueTypesTest {
         assertEquals(true, hasMoreResults(searchResult))
         assertEquals(false, hasMoreResults(SearchResult("rust ffi", 12u, null, null)))
 
-        demoCase("case:records.with_strings.person.basic")
+        demoCase("case:records.with_strings.person.should_make_from_fields")
         val person = makePerson("Ali", 30u)
+        demoCase("case:records.with_strings.person.should_roundtrip_value")
         assertEquals(person, echoPerson(person))
+        demoCase("case:records.with_strings.person.should_format_greeting")
         assertEquals("Hello, Ali! You are 30 years old.", greetPerson(person))
 
-        demoCase("case:records.with_strings.address.basic")
+        demoCase("case:records.with_strings.address.should_roundtrip_value")
         val address = Address("Main St", "Amsterdam", "1000AA")
         assertEquals(address, echoAddress(address))
+        demoCase("case:records.with_strings.address.should_format_value")
         assertEquals("Main St, Amsterdam, 1000AA", formatAddress(address))
     }
 
     @Test
     fun recordDefaultValuesSurfaceCorrectly() {
-        demoCase("case:records.default_values.service_config.echo")
         val implicitDefaults = ServiceConfig("worker")
         assertEquals("worker", implicitDefaults.name)
         assertEquals(3, implicitDefaults.retries)
@@ -602,12 +630,15 @@ class DemoValueTypesTest {
             "https://edge",
             "https://backup"
         )
+        demoCase("case:records.default_values.service_config.should_roundtrip_value")
         assertEquals(explicitBackupEndpoint, echoServiceConfig(explicitBackupEndpoint))
+        demoCase("case:records.default_values.service_config.should_describe_values")
         assertEquals("worker:3:standard:none:https://default", implicitDefaults.describe())
         assertEquals("worker:7:standard:none:https://default", customRetries.describe())
         assertEquals("worker:9:eu-west:none:https://default", explicitRegion.describe())
         assertEquals("worker:9:eu-west:https://edge:https://default", explicitEndpoint.describe())
         assertEquals("worker:9:eu-west:https://edge:https://backup", explicitBackupEndpoint.describe())
+        demoCase("case:records.default_values.service_config.should_describe_with_prefix")
         assertEquals("cfg:worker:9:eu-west:https://edge:https://backup", explicitBackupEndpoint.describeWithPrefix("cfg"))
     }
 }

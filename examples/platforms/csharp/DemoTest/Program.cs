@@ -256,40 +256,49 @@ public static class DemoTest
     {
         Console.WriteLine("Testing blittable records (Point, Color)...");
 
-        DemoCase("case:records.blittable.point.functions");
+        DemoCase("case:records.blittable.point.should_make_from_coordinates");
         Point p = MakePoint(1.5, 2.5);
         Require(p.X == 1.5, "MakePoint.X");
         Require(p.Y == 2.5, "MakePoint.Y");
 
+        DemoCase("case:records.blittable.point.should_roundtrip_value");
         Point echoed = EchoPoint(new Point(3.0, 4.0));
         Require(echoed == new Point(3.0, 4.0), "EchoPoint value equality");
 
+        DemoCase("case:records.blittable.point.should_add_values");
         Point sum = AddPoints(new Point(1.0, 2.0), new Point(3.0, 4.0));
         Require(sum == new Point(4.0, 6.0), "AddPoints");
 
-        DemoCase("case:records.blittable.color.basic");
+        DemoCase("case:records.blittable.color.should_make_from_channels");
         Color c = MakeColor(10, 20, 30, 255);
         Require(c.R == 10 && c.G == 20 && c.B == 30 && c.A == 255, "MakeColor fields");
 
+        DemoCase("case:records.blittable.color.should_roundtrip_value");
         Color echoedColor = EchoColor(new Color(255, 0, 0, 128));
         Require(echoedColor == new Color(255, 0, 0, 128), "EchoColor value equality");
 
         // Static factories on a blittable record — return by value across
         // the ABI as a [StructLayout(Sequential)] struct.
+        DemoCase("case:records.blittable.point.should_return_origin");
         Require(Point.Origin() == new Point(0.0, 0.0), "Point.Origin()");
+        DemoCase("case:records.blittable.point.should_construct_from_polar_coordinates");
         Point fromPolar = Point.FromPolar(2.0, Math.PI / 2.0);
         Require(Math.Abs(fromPolar.X) < 1e-9 && Math.Abs(fromPolar.Y - 2.0) < 1e-9, "Point.FromPolar");
+        DemoCase("case:records.blittable.point.should_report_dimension_count");
         Require(Point.Dimensions() == 2u, "Point.Dimensions() == 2");
 
         // Instance methods on a blittable record — `this` passes by value
         // through P/Invoke (no wire encode), exercising the
         // owner_is_blittable branch of CSharpReceiver::InstanceNative.
+        DemoCase("case:records.blittable.point.should_compute_distance");
         Require(Math.Abs(new Point(3.0, 4.0).Distance() - 5.0) < 1e-9, "Point(3,4).Distance() == 5");
         Require(new Point(0.0, 0.0).Distance() == 0.0, "Point.Origin.Distance() == 0");
+        DemoCase("case:records.blittable.point.should_add_coordinates");
         Require(
             new Point(1.0, 2.0).Add(new Point(10.0, 20.0)) == new Point(11.0, 22.0),
             "Point.Add returns Point"
         );
+        DemoCase("case:records.blittable.point.should_compute_path_length");
         Require(
             Math.Abs(Point.PathLength(new[] { new Point(0.0, 0.0), new Point(3.0, 4.0), new Point(6.0, 8.0) }) - 10.0) < 1e-9,
             "Point.PathLength(Point[])"
@@ -307,22 +316,26 @@ public static class DemoTest
     {
         Console.WriteLine("Testing records with strings (Person, Address)...");
 
-        DemoCase("case:records.with_strings.person.basic");
+        DemoCase("case:records.with_strings.person.should_make_from_fields");
         Person alice = MakePerson("Alice", 30);
         Require(alice.Name == "Alice", "MakePerson.Name");
         Require(alice.Age == 30u, "MakePerson.Age");
 
+        DemoCase("case:records.with_strings.person.should_roundtrip_value");
         Person echoed = EchoPerson(new Person("Bob", 42));
         Require(echoed == new Person("Bob", 42), "EchoPerson value equality");
 
         // Empty string boundary — the wire length prefix is 0.
+        DemoCase("case:records.with_strings.person.should_roundtrip_value");
         Person empty = EchoPerson(new Person("", 0));
         Require(empty.Name == "", "EchoPerson empty name");
 
         // Multi-byte UTF-8 boundary — one code point that encodes as 4 bytes.
+        DemoCase("case:records.with_strings.person.should_roundtrip_value");
         Person emoji = EchoPerson(new Person("\ud83c\udf89 Party", 25));
         Require(emoji.Name == "\ud83c\udf89 Party", "EchoPerson emoji round-trip");
 
+        DemoCase("case:records.with_strings.person.should_format_greeting");
         Require(
             GreetPerson(new Person("Alice", 30)) == "Hello, Alice! You are 30 years old.",
             "GreetPerson format"
@@ -330,11 +343,12 @@ public static class DemoTest
 
         // Address has three string fields back-to-back — exercises multiple
         // length-prefixed slices in one wire buffer.
-        DemoCase("case:records.with_strings.address.basic");
+        DemoCase("case:records.with_strings.address.should_roundtrip_value");
         Address home = new Address("221B Baker Street", "London", "NW1 6XE");
         Address echoedAddress = EchoAddress(home);
         Require(echoedAddress == home, "EchoAddress round-trip");
 
+        DemoCase("case:records.with_strings.address.should_format_value");
         Require(
             FormatAddress(home) == "221B Baker Street, London, NW1 6XE",
             "FormatAddress concatenation"
@@ -353,21 +367,24 @@ public static class DemoTest
     {
         Console.WriteLine("Testing records with defaults and instance methods (ServiceConfig)...");
 
-        DemoCase("case:records.default_values.service_config.echo");
+        DemoCase("case:records.default_values.service_config.should_roundtrip_value");
         ServiceConfig config = new ServiceConfig("worker", 3, "standard", null, "https://default");
         ServiceConfig echoed = EchoServiceConfig(config);
         Require(echoed == config, "EchoServiceConfig round-trip");
 
+        DemoCase("case:records.default_values.service_config.should_describe_values");
         Require(
             config.Describe() == "worker:3:standard:none:https://default",
             "ServiceConfig.Describe() with defaults"
         );
+        DemoCase("case:records.default_values.service_config.should_describe_with_prefix");
         Require(
             config.DescribeWithPrefix("cfg") == "cfg:worker:3:standard:none:https://default",
             "ServiceConfig.DescribeWithPrefix() string param"
         );
 
         ServiceConfig withEndpoint = new ServiceConfig("api", 5, "us-east", "https://primary", "https://backup");
+        DemoCase("case:records.default_values.service_config.should_describe_values");
         Require(
             withEndpoint.Describe() == "api:5:us-east:https://primary:https://backup",
             "ServiceConfig.Describe() with endpoints"
@@ -384,17 +401,19 @@ public static class DemoTest
     {
         Console.WriteLine("Testing nested records (Line, Rect)...");
 
-        DemoCase("case:records.nested.line.basic");
+        DemoCase("case:records.nested.line.should_make_from_coordinates");
         Line line = MakeLine(0.0, 0.0, 3.0, 4.0);
         Require(line.Start == new Point(0.0, 0.0), "MakeLine.Start");
         Require(line.End == new Point(3.0, 4.0), "MakeLine.End");
 
+        DemoCase("case:records.nested.line.should_roundtrip_nested_points");
         Line echoed = EchoLine(line);
         Require(echoed == line, "EchoLine round-trip");
 
+        DemoCase("case:records.nested.line.should_compute_length");
         Require(Math.Abs(LineLength(line) - 5.0) < 1e-9, "LineLength 3-4-5");
 
-        DemoCase("case:records.nested.rect.basic");
+        DemoCase("case:records.nested.rect.should_roundtrip_nested_records");
         Rect rect = new Rect(
             new Point(1.0, 2.0),
             new Dimensions(10.0, 20.0)
@@ -402,6 +421,7 @@ public static class DemoTest
         Rect echoedRect = EchoRect(rect);
         Require(echoedRect == rect, "EchoRect round-trip");
 
+        DemoCase("case:records.nested.rect.should_compute_area");
         Require(Math.Abs(RectArea(rect) - 200.0) < 1e-9, "RectArea 10*20");
 
         Console.WriteLine("  PASS\n");
@@ -1045,7 +1065,7 @@ public static class DemoTest
     {
         Console.WriteLine("Testing Vec fields inside records and enum variants...");
 
-        DemoCase("case:records.with_collections.polygon.basic");
+        DemoCase("case:records.with_collections.polygon.should_roundtrip_point_vector");
         Polygon triangle = new Polygon(new[]
         {
             new Point(0.0, 0.0),
@@ -1054,24 +1074,31 @@ public static class DemoTest
         });
         Polygon echoedTriangle = EchoPolygon(triangle);
         Require(echoedTriangle.Points.SequenceEqual(triangle.Points), "echoPolygon round-trip");
+        DemoCase("case:records.with_collections.polygon.should_report_vertex_count");
         Require(PolygonVertexCount(triangle) == 3u, "polygonVertexCount");
+        DemoCase("case:records.with_collections.polygon.should_compute_centroid");
         Point centroid = PolygonCentroid(triangle);
         Require(Math.Abs(centroid.X - 4.0 / 3.0) < 1e-9 && Math.Abs(centroid.Y - 1.0) < 1e-9, "polygonCentroid");
+        DemoCase("case:records.with_collections.polygon.should_make_from_points");
         Polygon built = MakePolygon(triangle.Points);
         Require(built.Points.SequenceEqual(triangle.Points), "makePolygon");
+        DemoCase("case:records.with_collections.polygon.should_roundtrip_point_vector");
         Require(EchoPolygon(new Polygon(Array.Empty<Point>())).Points.Length == 0, "echoPolygon empty");
 
-        DemoCase("case:records.with_collections.team.basic");
+        DemoCase("case:records.with_collections.team.should_roundtrip_member_vector");
         Team team = new Team("Alpha", new[] { "café", "🌍", "common" });
         Team echoedTeam = EchoTeam(team);
         Require(echoedTeam.Name == team.Name, "echoTeam name");
         Require(echoedTeam.Members.SequenceEqual(team.Members), "echoTeam members utf-8 round-trip");
+        DemoCase("case:records.with_collections.team.should_report_member_count");
         Require(TeamSize(team) == 3u, "teamSize");
+        DemoCase("case:records.with_collections.team.should_make_from_members");
         Team built2 = MakeTeam("Beta", new[] { "x", "y" });
         Require(built2.Name == "Beta" && built2.Members.SequenceEqual(new[] { "x", "y" }), "makeTeam");
+        DemoCase("case:records.with_collections.team.should_roundtrip_member_vector");
         Require(EchoTeam(new Team("Empty", Array.Empty<string>())).Members.Length == 0, "echoTeam empty members");
 
-        DemoCase("case:records.with_collections.classroom.basic");
+        DemoCase("case:records.with_collections.classroom.should_roundtrip_student_vector");
         Classroom classroom = new Classroom(new[]
         {
             new Person("café", 7u),
@@ -1079,14 +1106,17 @@ public static class DemoTest
         });
         Classroom echoedClass = EchoClassroom(classroom);
         Require(echoedClass.Students.SequenceEqual(classroom.Students), "echoClassroom utf-8 round-trip");
+        DemoCase("case:records.with_collections.classroom.should_make_from_students");
         Classroom built3 = MakeClassroom(classroom.Students);
         Require(built3.Students.SequenceEqual(classroom.Students), "makeClassroom (Vec<NonBlittableRecord> param)");
+        DemoCase("case:records.with_collections.classroom.should_roundtrip_student_vector");
         Require(EchoClassroom(new Classroom(Array.Empty<Person>())).Students.Length == 0, "echoClassroom empty");
 
-        DemoCase("case:records.with_collections.tagged_scores.basic");
+        DemoCase("case:records.with_collections.tagged_scores.should_roundtrip_score_vector");
         TaggedScores scores = new TaggedScores("quiz", new[] { 10.0, 20.0, 30.0 });
         TaggedScores echoedScores = EchoTaggedScores(scores);
         Require(echoedScores.Label == "quiz" && echoedScores.Scores.SequenceEqual(scores.Scores), "echoTaggedScores");
+        DemoCase("case:records.with_collections.tagged_scores.should_average_scores");
         Require(Math.Abs(AverageScore(scores) - 20.0) < 1e-9, "averageScore");
         Require(AverageScore(new TaggedScores("empty", Array.Empty<double>())) == 0.0, "averageScore empty");
 
@@ -1120,14 +1150,17 @@ public static class DemoTest
         Require(echoedPts is Filter.ByPoints p2 && p2.Anchors.SequenceEqual(((Filter.ByPoints)byPoints).Anchors), "echoFilter ByPoints");
         Require(DescribeFilter(byPoints) == "filter by 2 anchor points", "describeFilter ByPoints");
 
-        DemoCase("case:records.with_collections.user_profiles.vector_stats");
+        DemoCase("case:records.with_collections.user_profiles.should_generate_profiles");
         BenchmarkUserProfile[] profiles = GenerateUserProfiles(4);
         Require(profiles.Length == 4, "generateUserProfiles length");
         Require(profiles[0].Tags.Length == 3 && profiles[0].Scores.Length == 3, "generateUserProfiles inner vec shapes");
         Require(profiles[0].IsActive && !profiles[1].IsActive, "generateUserProfiles is_active pattern");
         double expectedSum = 0.0 + 1.5 + 3.0 + 4.5;
+        DemoCase("case:records.with_collections.user_profiles.should_sum_scores");
         Require(Math.Abs(SumUserScores(profiles) - expectedSum) < 1e-9, "sumUserScores round-trip");
+        DemoCase("case:records.with_collections.user_profiles.should_count_active_users");
         Require(CountActiveUsers(profiles) == 2, "countActiveUsers (even indices active)");
+        DemoCase("case:records.with_collections.user_profiles.should_sum_scores");
         Require(SumUserScores(Array.Empty<BenchmarkUserProfile>()) == 0.0, "sumUserScores empty");
 
         Console.WriteLine("  PASS\n");
