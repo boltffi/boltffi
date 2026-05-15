@@ -639,17 +639,6 @@ public static class DemoTest
         DemoCase("case:enums.data_enum.shape.should_support_primary_constructor");
         Require(Shape.New(3.0) is Shape.Circle sn && sn.Radius == 3.0, "Shape.New(3)");
 
-        DemoCase("case:enums.data_enum.shape.should_reject_non_positive_circle_radius");
-        try
-        {
-            Shape.TryCircle(0.0);
-            Require(false, "Shape.TryCircle(0) should throw");
-        }
-        catch (BoltException e)
-        {
-            Require(e.Message.Contains("radius must be positive"), "Shape.TryCircle(0) error");
-        }
-
         // TryApexPoint — static method whose return type is Option<Point>
         // where Point is shadowed by a sibling variant. Drives scoped
         // rendering of the Option decode inside the Shape scope.

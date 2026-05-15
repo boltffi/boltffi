@@ -93,8 +93,8 @@ impl Shape {
         directions = "Call `enums::data_enum::Shape::try_circle` through the generated binding and assert Shape::try_circle returns a Circle variant for a positive radius.",
         exclude(
             csharp,
-            reason = ExclusionReason::CoverageGap,
-            details = "The C# data-enum demo covers Shape::try_circle rejection but not the positive-radius success path."
+            reason = ExclusionReason::ImplementationGap,
+            details = "C# does not currently emit Result-returning data-enum static methods, so Shape::try_circle is absent from the generated surface. Include this case when fallible data-enum factories are implemented for C#."
         ),
         exclude(
             python,
@@ -106,6 +106,11 @@ impl Shape {
         "enums.data_enum.shape.should_reject_non_positive_circle_radius",
         justification = "Ensure Shape::try_circle returns a language-native error when radius is zero or negative.",
         directions = "Call `enums::data_enum::Shape::try_circle` through the generated binding and assert Shape::try_circle returns a language-native error when radius is zero or negative.",
+        exclude(
+            csharp,
+            reason = ExclusionReason::ImplementationGap,
+            details = "C# does not currently emit Result-returning data-enum static methods, so Shape::try_circle is absent from the generated surface. Include this case when fallible data-enum factories are implemented for C#."
+        ),
         exclude(
             python,
             reason = ExclusionReason::ImplementationGap,
