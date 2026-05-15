@@ -11,11 +11,16 @@ wasm-bench = ["dep:serde", "dep:serde-wasm-bindgen", "dep:wasm-bindgen", "dep:wa
 [lib]
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[[bin]]
+name = "demo-tests"
+path = "src/bin/demo_tests.rs"
+
 [dependencies]
 boltffi = { path = "../../boltffi", features = ["chrono"] }
 boltffi_core = { path = "../../boltffi_core", features = ["chrono"] }
 chrono = "0.4"
 demo_bench_macros = { path = "bench_macros" }
+syn = { version = "2.0", features = ["full", "parsing"] }
 serde = { version = "1.0", features = ["derive"], optional = true }
 serde-wasm-bindgen = { version = "0.6.5", optional = true }
 uniffi = { version = "0.31", optional = true }

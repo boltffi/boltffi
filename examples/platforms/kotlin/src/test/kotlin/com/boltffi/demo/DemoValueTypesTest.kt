@@ -58,16 +58,16 @@ class DemoValueTypesTest {
 
     @Test
     fun primitivesStringsBytesAndVectorsRoundTrip() {
-        assertEquals(true, echoBool(true), "case:primitives.scalars.echo_bool.true")
-        assertEquals(true, negateBool(false), "case:primitives.scalars.negate_bool.false")
+        assertEquals(true, echoBool(true), "case:primitives.scalars.bool.should_roundtrip_true")
+        assertEquals(true, negateBool(false), "case:primitives.scalars.bool.should_negate_false_to_true")
         assertEquals((-7).toByte(), echoI8((-7).toByte()))
         assertEquals(255u.toUByte(), echoU8(255u.toUByte()))
         assertEquals((-1234).toShort(), echoI16((-1234).toShort()))
         assertEquals(55_000u.toUShort(), echoU16(55_000u.toUShort()))
-        assertEquals(-42, echoI32(-42), "case:primitives.scalars.echo_i32.negative")
-        assertEquals(30, addI32(10, 20), "case:primitives.scalars.add_i32.basic")
+        assertEquals(-42, echoI32(-42), "case:primitives.scalars.i32.should_roundtrip_negative_value")
+        assertEquals(30, addI32(10, 20), "case:primitives.scalars.i32.should_add_two_values")
         assertEquals(4_000_000_000u, echoU32(4_000_000_000u))
-        assertEquals(-9_999_999_999L, echoI64(-9_999_999_999L), "case:primitives.scalars.echo_i64.negative_large")
+        assertEquals(-9_999_999_999L, echoI64(-9_999_999_999L), "case:primitives.scalars.i64.should_roundtrip_large_negative_value")
         assertEquals(9_999_999_999uL, echoU64(9_999_999_999uL))
         demoCase("case:primitives.scalars.echo_f32.basic")
         assertFloatEquals(3.5f, echoF32(3.5f))
@@ -371,7 +371,7 @@ class DemoValueTypesTest {
         assertIs<Shape.Rectangle>(Shape.square(3.0))
         assertIs<Shape.Circle>(Shape.tryCircle(2.0))
 
-        demoCase("case:enums.data_enum.shape.should_reject_invalid_circle_constructor_input")
+        demoCase("case:enums.data_enum.shape.should_reject_non_positive_circle_radius")
         assertMessageContains(assertFailsWith<FfiException> { Shape.tryCircle(-1.0) }, "radius must be positive")
 
         demoCase("case:enums.data_enum.shape.should_report_variant_count")

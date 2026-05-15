@@ -6,10 +6,10 @@ import demo
 
 class ScalarsTests(DemoTestCase):
     def test_echo_bool(self) -> None:
-        self.assertIs(demo.echo_bool(True), True, "case:primitives.scalars.echo_bool.true")
+        self.assertIs(demo.echo_bool(True), True, "case:primitives.scalars.bool.should_roundtrip_true")
 
     def test_negate_bool(self) -> None:
-        self.assertIs(demo.negate_bool(False), True, "case:primitives.scalars.negate_bool.false")
+        self.assertIs(demo.negate_bool(False), True, "case:primitives.scalars.bool.should_negate_false_to_true")
 
     def test_echo_i8(self) -> None:
         self.assertEqual(demo.echo_i8(-7), -7)
@@ -24,16 +24,16 @@ class ScalarsTests(DemoTestCase):
         self.assertEqual(demo.echo_u16(55_000), 55_000)
 
     def test_echo_i32(self) -> None:
-        self.assertEqual(demo.echo_i32(-42), -42, "case:primitives.scalars.echo_i32.negative")
+        self.assertEqual(demo.echo_i32(-42), -42, "case:primitives.scalars.i32.should_roundtrip_negative_value")
 
     def test_add_i32(self) -> None:
-        self.assertEqual(demo.add_i32(10, 20), 30, "case:primitives.scalars.add_i32.basic")
+        self.assertEqual(demo.add_i32(10, 20), 30, "case:primitives.scalars.i32.should_add_two_values")
 
     def test_echo_u32(self) -> None:
         self.assertEqual(demo.echo_u32(4_000_000_000), 4_000_000_000)
 
     def test_echo_i64(self) -> None:
-        self.assertEqual(demo.echo_i64(-9_999_999_999), -9_999_999_999, "case:primitives.scalars.echo_i64.negative_large")
+        self.assertEqual(demo.echo_i64(-9_999_999_999), -9_999_999_999, "case:primitives.scalars.i64.should_roundtrip_large_negative_value")
 
     def test_echo_u64(self) -> None:
         self.assertEqual(demo.echo_u64(9_999_999_999), 9_999_999_999)

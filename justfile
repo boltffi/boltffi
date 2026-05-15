@@ -63,7 +63,11 @@ demo-verify:
 
 # Audit semantic demo test cases against platform test markers
 demo-test-audit:
-    python3 examples/demo/scripts/audit_demo_tests.py
+    cargo run --manifest-path examples/demo/Cargo.toml --bin demo-tests -- audit
+
+# Report semantic demo test cases and platform support
+demo-test-report:
+    cargo run --manifest-path examples/demo/Cargo.toml --bin demo-tests -- report
 
 # Run tests with cargo-nextest (parallel, faster)
 test-nextest:

@@ -72,10 +72,10 @@ public static class DemoTest
     private static void TestBool()
     {
         Console.WriteLine("Testing bool...");
-        Require(EchoBool(true), "case:primitives.scalars.echo_bool.true echoBool(true)");
+        Require(EchoBool(true), "case:primitives.scalars.bool.should_roundtrip_true echoBool(true)");
         Require(!EchoBool(false), "echoBool(false)");
         Require(!NegateBool(true), "negateBool(true)");
-        Require(NegateBool(false), "case:primitives.scalars.negate_bool.false negateBool(false)");
+        Require(NegateBool(false), "case:primitives.scalars.bool.should_negate_false_to_true negateBool(false)");
         Console.WriteLine("  PASS\n");
     }
 
@@ -116,8 +116,8 @@ public static class DemoTest
     {
         Console.WriteLine("Testing i32...");
         Require(EchoI32(42) == 42, "echoI32(42)");
-        Require(EchoI32(-100) == -100, "case:primitives.scalars.echo_i32.negative echoI32(-100)");
-        Require(AddI32(10, 20) == 30, "case:primitives.scalars.add_i32.basic addI32(10, 20)");
+        Require(EchoI32(-100) == -100, "case:primitives.scalars.i32.should_roundtrip_negative_value echoI32(-100)");
+        Require(AddI32(10, 20) == 30, "case:primitives.scalars.i32.should_add_two_values addI32(10, 20)");
         Console.WriteLine("  PASS\n");
     }
 
@@ -133,7 +133,7 @@ public static class DemoTest
     {
         Console.WriteLine("Testing i64...");
         Require(EchoI64(9999999999L) == 9999999999L, "echoI64(large)");
-        Require(EchoI64(-9999999999L) == -9999999999L, "case:primitives.scalars.echo_i64.negative_large echoI64(negative large)");
+        Require(EchoI64(-9999999999L) == -9999999999L, "case:primitives.scalars.i64.should_roundtrip_large_negative_value echoI64(negative large)");
         Console.WriteLine("  PASS\n");
     }
 
@@ -598,7 +598,7 @@ public static class DemoTest
         DemoCase("case:enums.data_enum.shape.should_support_primary_constructor");
         Require(Shape.New(3.0) is Shape.Circle sn && sn.Radius == 3.0, "Shape.New(3)");
 
-        DemoCase("case:enums.data_enum.shape.should_reject_invalid_circle_constructor_input");
+        DemoCase("case:enums.data_enum.shape.should_reject_non_positive_circle_radius");
         try
         {
             Shape.TryCircle(0.0);

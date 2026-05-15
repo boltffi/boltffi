@@ -9,7 +9,7 @@ export async function run() {
   assert.deepEqual(demo.Shape.square(3), { tag: "Rectangle", width: 3, height: 3 });
   assert.deepEqual(demo.Shape.tryCircle(2), { tag: "Circle", radius: 2 });
 
-  globalThis.demoCase("case:enums.data_enum.shape.should_reject_invalid_circle_constructor_input");
+  globalThis.demoCase("case:enums.data_enum.shape.should_reject_non_positive_circle_radius");
   assertThrowsWithMessage(() => demo.Shape.tryCircle(0), "radius must be positive");
 
   globalThis.demoCase("case:enums.data_enum.shape.should_support_numeric_instance_methods");

@@ -69,6 +69,11 @@ pub fn benchmark_candidate(args: TokenStream, item: TokenStream) -> TokenStream 
         .into()
 }
 
+#[proc_macro_attribute]
+pub fn demo_case(_args: TokenStream, item: TokenStream) -> TokenStream {
+    item
+}
+
 fn expand_candidate(args: CandidateArgs, item: Item) -> Result<proc_macro2::TokenStream> {
     match (args.kind, item) {
         (CandidateKind::Function, Item::Fn(mut item_function)) => {

@@ -52,6 +52,14 @@ impl Shape {
         }
     }
 
+    #[demo_bench_macros::demo_case(
+        "enums.data_enum.shape.should_reject_non_positive_circle_radius",
+        description = "Shape::try_circle returns a language-native error when radius is zero or negative.",
+        exclude(
+            python,
+            reason = "The Python demo tests do not currently cover data-enum surfaces."
+        )
+    )]
     pub fn try_circle(radius: f64) -> Result<Self, String> {
         if radius <= 0.0 {
             Err("radius must be positive".to_string())

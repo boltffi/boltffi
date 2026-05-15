@@ -98,14 +98,6 @@ exercises = [
 [cases."enums.data_enum.shape.should_support_static_constructors".excluded_platforms]
 python = "The Python demo tests do not currently cover data-enum surfaces."
 
-[cases."enums.data_enum.shape.should_reject_invalid_circle_constructor_input"]
-summary = "Shape fallible constructors reject invalid circles"
-description = "The fallible Shape circle constructor returns a language-native failure for a non-positive radius."
-exercises = ["enums::data_enum::Shape::try_circle"]
-
-[cases."enums.data_enum.shape.should_reject_invalid_circle_constructor_input".excluded_platforms]
-python = "The Python demo tests do not currently cover data-enum surfaces."
-
 [cases."enums.data_enum.shape.should_report_variant_count"]
 summary = "Shape reports its variant count"
 description = "The generated Shape static method can return primitive metadata about the data enum."

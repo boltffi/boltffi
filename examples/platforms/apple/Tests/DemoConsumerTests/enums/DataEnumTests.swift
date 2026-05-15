@@ -12,7 +12,7 @@ final class DataEnumTests: DemoTestCase {
         XCTAssertEqual(Shape(square: 3.0), Shape.rectangle(width: 3.0, height: 3.0))
         XCTAssertEqual(try Shape(tryCircle: 2.0), Shape.circle(radius: 2.0))
 
-        demoCase("case:enums.data_enum.shape.should_reject_invalid_circle_constructor_input")
+        demoCase("case:enums.data_enum.shape.should_reject_non_positive_circle_radius")
         assertThrowsMessageContains("radius must be positive", try Shape(tryCircle: -1.0))
 
         demoCase("case:enums.data_enum.shape.should_report_variant_count")

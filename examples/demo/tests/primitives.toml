@@ -1,28 +1,3 @@
-[cases."primitives.scalars.echo_bool.true"]
-summary = "Booleans round-trip true"
-description = "A true boolean crosses the wire and returns unchanged."
-exercises = ["primitives::scalars::echo_bool"]
-
-[cases."primitives.scalars.negate_bool.false"]
-summary = "Booleans can be negated"
-description = "A false boolean crosses the wire and returns as true through the negation helper."
-exercises = ["primitives::scalars::negate_bool"]
-
-[cases."primitives.scalars.echo_i32.negative"]
-summary = "i32 values round-trip"
-description = "A negative i32 crosses the wire and returns unchanged."
-exercises = ["primitives::scalars::echo_i32"]
-
-[cases."primitives.scalars.add_i32.basic"]
-summary = "i32 values add"
-description = "Two i32 values cross the wire and return as their sum."
-exercises = ["primitives::scalars::add_i32"]
-
-[cases."primitives.scalars.echo_i64.negative_large"]
-summary = "i64 values round-trip"
-description = "A large negative i64 crosses the wire and returns unchanged."
-exercises = ["primitives::scalars::echo_i64"]
-
 [cases."primitives.scalars.echo_f32.basic"]
 summary = "f32 values round-trip"
 description = "An f32 crosses the wire and returns within the expected floating-point tolerance."

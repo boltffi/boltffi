@@ -68,25 +68,25 @@ public final class DemoTest {
 
     private static void testBool() {
         System.out.println("Testing bool...");
-        assert Demo.echoBool(true) : "case:primitives.scalars.echo_bool.true";
+        assert Demo.echoBool(true) : "case:primitives.scalars.bool.should_roundtrip_true";
         assert !Demo.echoBool(false);
         assert !Demo.negateBool(true);
-        assert Demo.negateBool(false) : "case:primitives.scalars.negate_bool.false";
+        assert Demo.negateBool(false) : "case:primitives.scalars.bool.should_negate_false_to_true";
         System.out.println("  PASS\n");
     }
 
     private static void testI32() {
         System.out.println("Testing i32...");
         assert Demo.echoI32(42) == 42 : "echoI32(42)";
-        assert Demo.echoI32(-100) == -100 : "case:primitives.scalars.echo_i32.negative echoI32(-100)";
-        assert Demo.addI32(10, 20) == 30 : "case:primitives.scalars.add_i32.basic addI32(10, 20)";
+        assert Demo.echoI32(-100) == -100 : "case:primitives.scalars.i32.should_roundtrip_negative_value echoI32(-100)";
+        assert Demo.addI32(10, 20) == 30 : "case:primitives.scalars.i32.should_add_two_values addI32(10, 20)";
         System.out.println("  PASS\n");
     }
 
     private static void testI64() {
         System.out.println("Testing i64...");
         assert Demo.echoI64(9999999999L) == 9999999999L : "echoI64(large)";
-        assert Demo.echoI64(-9999999999L) == -9999999999L : "case:primitives.scalars.echo_i64.negative_large echoI64(negative large)";
+        assert Demo.echoI64(-9999999999L) == -9999999999L : "case:primitives.scalars.i64.should_roundtrip_large_negative_value echoI64(negative large)";
         System.out.println("  PASS\n");
     }
 
@@ -406,7 +406,7 @@ public final class DemoTest {
         Shape checkedCircle = Shape.tryCircle(2.0);
         assert checkedCircle instanceof Shape.Circle : "Shape.tryCircle type";
 
-        demoCase("case:enums.data_enum.shape.should_reject_invalid_circle_constructor_input");
+        demoCase("case:enums.data_enum.shape.should_reject_non_positive_circle_radius");
         try {
             Shape.tryCircle(0.0);
             assert false : "Shape.tryCircle should throw on non-positive radius";
