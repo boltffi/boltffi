@@ -15,7 +15,8 @@ type AppResult<T> = Result<T, String>;
 #[derive(Debug)]
 struct DemoCase {
     id: String,
-    description: String,
+    justification: String,
+    directions: String,
     exercises: Vec<String>,
     exclusions: BTreeMap<String, String>,
     source: PathBuf,
@@ -24,7 +25,8 @@ struct DemoCase {
 #[derive(Debug)]
 struct DemoCaseArgs {
     id: String,
-    description: Option<String>,
+    justification: String,
+    directions: String,
     exercises: Vec<String>,
     exclusions: Vec<(String, String)>,
 }
@@ -86,7 +88,8 @@ fn usage() -> String {
 impl Parse for DemoCaseArgs {
     fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
         let id = input.parse::<LitStr>()?.value();
-        let mut description = None;
+        let mut justification = None;
+        let mut directions = None;
         let mut exercises = Vec::new();
         let mut exclusions = Vec::new();
 
@@ -98,20 +101,36 @@ impl Parse for DemoCaseArgs {
 
             let key = input.call(Ident::parse_any)?;
             match key.to_string().as_str() {
-                "description" => {
+                "justification" => {
                     input.parse::<Token![=]>()?;
-                    if description
+                    if justification
                         .replace(input.parse::<LitStr>()?.value())
                         .is_some()
                     {
                         return Err(
-                            input.error("demo_case description was provided more than once")
+                            input.error("demo_case justification was provided more than once")
                         );
                     }
                 }
+                "directions" => {
+                    input.parse::<Token![=]>()?;
+                    if directions
+                        .replace(input.parse::<LitStr>()?.value())
+                        .is_some()
+                    {
+                        return Err(
+                            input.error("demo_case directions were provided more than once")
+                        );
+                    }
+                }
+                "description" => {
+                    return Err(input.error(
+                        "demo_case description has been removed; provide justification and directions",
+                    ));
+                }
                 "summary" => {
                     return Err(input.error(
-                        "demo_case uses the case id as its summary; provide description only",
+                        "demo_case uses the case id as its summary; provide justification and directions only",
                     ));
                 }
                 "exercise" => {
@@ -152,11 +171,23 @@ impl Parse for DemoCaseArgs {
 
         Ok(Self {
             id,
-            description,
+            justification: required_string(input, "justification", justification)?,
+            directions: required_string(input, "directions", directions)?,
             exercises,
             exclusions,
         })
     }
+}
+
+fn required_string(
+    input: ParseStream<'_>,
+    name: &'static str,
+    value: Option<String>,
+) -> syn::Result<String> {
+    value
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| input.error(format!("demo_case must include non-empty {name}")))
 }
 
 fn report(repo_root: &Path) -> AppResult<()> {
@@ -169,7 +200,8 @@ fn report(repo_root: &Path) -> AppResult<()> {
     for case in cases.values() {
         let supported = supported_platforms(case, &markers);
         println!("  {}", case.id);
-        println!("    description: {}", case.description);
+        println!("    justification: {}", case.justification);
+        println!("    directions: {}", case.directions);
         println!("    exercises: {}", case.exercises.join(", "));
         println!("    supported: {}", display_list(&supported));
         if !case.exclusions.is_empty() {
@@ -369,17 +401,15 @@ fn demo_case_from_args(
     if !is_case_id(&id) {
         return Err(format!("{}: invalid demo case id {:?}", path.display(), id));
     }
+    if !has_should_segment(&id) {
+        return Err(format!(
+            "{}: case {id:?} must include a should_ scenario segment",
+            path.display()
+        ));
+    }
 
-    let description = args
-        .description
-        .map(|description| description.trim().to_string())
-        .filter(|description| !description.is_empty())
-        .ok_or_else(|| {
-            format!(
-                "{}: case {id:?} must include a non-empty description",
-                path.display()
-            )
-        })?;
+    let justification = args.justification;
+    let directions = args.directions;
 
     let mut exercises = args.exercises;
     if exercises.is_empty() {
@@ -424,7 +454,8 @@ fn demo_case_from_args(
 
     Ok(DemoCase {
         id,
-        description,
+        justification,
+        directions,
         exercises,
         exclusions,
         source: path.to_path_buf(),
@@ -778,6 +809,12 @@ fn is_case_id(value: &str) -> bool {
         && chars.all(|ch| {
             ch.is_ascii_lowercase() || ch.is_ascii_digit() || matches!(ch, '_' | '.' | '-')
         })
+}
+
+fn has_should_segment(value: &str) -> bool {
+    value
+        .split('.')
+        .any(|segment| segment.starts_with("should_"))
 }
 
 fn display_list(values: &[&str]) -> String {

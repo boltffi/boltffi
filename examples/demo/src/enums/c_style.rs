@@ -13,7 +13,8 @@ pub enum Status {
 
 #[demo_bench_macros::demo_case(
     "enums.c_style.status.should_roundtrip_values",
-    description = "Status enum values cross the FFI boundary and return unchanged."
+    justification = "Ensure Status enum values cross the FFI boundary and return unchanged.",
+    directions = "Call `enums::c_style::echo_status` through the generated binding and assert Status enum values cross the FFI boundary and return unchanged."
 )]
 #[export]
 pub fn echo_status(s: Status) -> Status {
@@ -22,7 +23,8 @@ pub fn echo_status(s: Status) -> Status {
 
 #[demo_bench_macros::demo_case(
     "enums.c_style.status.should_render_labels",
-    description = "status_to_string maps Status enum values to their string labels."
+    justification = "Ensure status_to_string maps Status enum values to their string labels.",
+    directions = "Call `enums::c_style::status_to_string` through the generated binding and assert status_to_string maps Status enum values to their string labels."
 )]
 #[export]
 pub fn status_to_string(s: Status) -> String {
@@ -35,7 +37,8 @@ pub fn status_to_string(s: Status) -> String {
 
 #[demo_bench_macros::demo_case(
     "enums.c_style.status.should_identify_active_values",
-    description = "is_active returns true only for the active Status variant."
+    justification = "Ensure is_active returns true only for the active Status variant.",
+    directions = "Call `enums::c_style::is_active` through the generated binding and assert is_active returns true only for the active Status variant."
 )]
 #[export]
 pub fn is_active(s: Status) -> bool {
@@ -44,7 +47,8 @@ pub fn is_active(s: Status) -> bool {
 
 #[demo_bench_macros::demo_case(
     "enums.c_style.status.should_roundtrip_vectors",
-    description = "A vector of Status enum values preserves variant order and values."
+    justification = "Ensure a vector of Status enum values preserves variant order and values.",
+    directions = "Call `enums::c_style::echo_vec_status` through the generated binding and assert a vector of Status enum values preserves variant order and values."
 )]
 #[export]
 pub fn echo_vec_status(values: Vec<Status>) -> Vec<Status> {
@@ -66,7 +70,8 @@ pub enum Direction {
 impl Direction {
     #[demo_bench_macros::demo_case(
         "enums.c_style.direction.should_construct_from_raw_value",
-        description = "Direction::new maps raw integer values to Direction variants.",
+        justification = "Ensure Direction::new maps raw integer values to Direction variants.",
+        directions = "Call `enums::c_style::Direction::new` through the generated binding and assert Direction::new maps raw integer values to Direction variants.",
         exclude(
             java,
             reason = "The Java demo tests do not currently cover Direction::new."
@@ -84,7 +89,8 @@ impl Direction {
 
     #[demo_bench_macros::demo_case(
         "enums.c_style.direction.should_return_cardinal_value",
-        description = "Direction::cardinal returns the North direction variant."
+        justification = "Ensure Direction::cardinal returns the North direction variant.",
+        directions = "Call `enums::c_style::Direction::cardinal` through the generated binding and assert Direction::cardinal returns the North direction variant."
     )]
     pub fn cardinal() -> Self {
         Direction::North
@@ -92,7 +98,8 @@ impl Direction {
 
     #[demo_bench_macros::demo_case(
         "enums.c_style.direction.should_construct_from_degrees",
-        description = "Direction::from_degrees maps compass degrees to Direction variants."
+        justification = "Ensure Direction::from_degrees maps compass degrees to Direction variants.",
+        directions = "Call `enums::c_style::Direction::from_degrees` through the generated binding and assert Direction::from_degrees maps compass degrees to Direction variants."
     )]
     pub fn from_degrees(degrees: f64) -> Self {
         let normalized = ((degrees % 360.0) + 360.0) % 360.0;
@@ -109,7 +116,8 @@ impl Direction {
 
     #[demo_bench_macros::demo_case(
         "enums.c_style.direction.should_return_opposite_from_method",
-        description = "Direction::opposite returns the opposite compass direction."
+        justification = "Ensure Direction::opposite returns the opposite compass direction.",
+        directions = "Call `enums::c_style::Direction::opposite` through the generated binding and assert Direction::opposite returns the opposite compass direction."
     )]
     pub fn opposite(&self) -> Direction {
         match self {
@@ -122,7 +130,8 @@ impl Direction {
 
     #[demo_bench_macros::demo_case(
         "enums.c_style.direction.should_identify_horizontal_values",
-        description = "Direction::is_horizontal returns true for East and West."
+        justification = "Ensure Direction::is_horizontal returns true for East and West.",
+        directions = "Call `enums::c_style::Direction::is_horizontal` through the generated binding and assert Direction::is_horizontal returns true for East and West."
     )]
     pub fn is_horizontal(&self) -> bool {
         matches!(self, Direction::East | Direction::West)
@@ -130,7 +139,8 @@ impl Direction {
 
     #[demo_bench_macros::demo_case(
         "enums.c_style.direction.should_render_compass_label",
-        description = "Direction::label returns the single-letter compass label."
+        justification = "Ensure Direction::label returns the single-letter compass label.",
+        directions = "Call `enums::c_style::Direction::label` through the generated binding and assert Direction::label returns the single-letter compass label."
     )]
     pub fn label(&self) -> String {
         match self {
@@ -143,7 +153,8 @@ impl Direction {
 
     #[demo_bench_macros::demo_case(
         "enums.c_style.direction.should_report_variant_count",
-        description = "Direction::count returns the number of Direction variants."
+        justification = "Ensure Direction::count returns the number of Direction variants.",
+        directions = "Call `enums::c_style::Direction::count` through the generated binding and assert Direction::count returns the number of Direction variants."
     )]
     pub fn count() -> u32 {
         4
@@ -152,7 +163,8 @@ impl Direction {
 
 #[demo_bench_macros::demo_case(
     "enums.c_style.direction.should_roundtrip_value",
-    description = "A Direction enum value crosses the FFI boundary and returns unchanged."
+    justification = "Ensure a Direction enum value crosses the FFI boundary and returns unchanged.",
+    directions = "Call `enums::c_style::echo_direction` through the generated binding and assert a Direction enum value crosses the FFI boundary and returns unchanged."
 )]
 #[export]
 #[benchmark_candidate(function, uniffi, wasm_bindgen)]
@@ -162,7 +174,8 @@ pub fn echo_direction(d: Direction) -> Direction {
 
 #[demo_bench_macros::demo_case(
     "enums.c_style.direction.should_return_opposite_from_free_function",
-    description = "opposite_direction returns the opposite compass direction for a Direction argument."
+    justification = "Ensure opposite_direction returns the opposite compass direction for a Direction argument.",
+    directions = "Call `enums::c_style::opposite_direction` through the generated binding and assert opposite_direction returns the opposite compass direction for a Direction argument."
 )]
 #[export]
 #[benchmark_candidate(function, uniffi, wasm_bindgen)]
@@ -177,7 +190,8 @@ pub fn opposite_direction(d: Direction) -> Direction {
 
 #[demo_bench_macros::demo_case(
     "enums.c_style.direction.should_return_degrees",
-    description = "direction_to_degrees maps Direction variants to compass degrees.",
+    justification = "Ensure direction_to_degrees maps Direction variants to compass degrees.",
+    directions = "Call `enums::c_style::direction_to_degrees` through the generated binding and assert direction_to_degrees maps Direction variants to compass degrees.",
     exclude(
         csharp,
         reason = "The C# demo tests do not currently cover direction_to_degrees."
@@ -212,7 +226,8 @@ pub fn direction_to_degrees(direction: Direction) -> i32 {
 
 #[demo_bench_macros::demo_case(
     "enums.c_style.direction.should_generate_sequence",
-    description = "generate_directions returns a cyclic sequence of Direction values.",
+    justification = "Ensure generate_directions returns a cyclic sequence of Direction values.",
+    directions = "Call `enums::c_style::generate_directions` through the generated binding and assert generate_directions returns a cyclic sequence of Direction values.",
     exclude(
         java,
         reason = "The Java demo tests do not currently cover direction sequence helpers."
@@ -246,7 +261,8 @@ pub fn generate_directions(count: i32) -> Vec<Direction> {
 
 #[demo_bench_macros::demo_case(
     "enums.c_style.direction.should_count_north_values",
-    description = "count_north returns the number of North variants in a Direction vector.",
+    justification = "Ensure count_north returns the number of North variants in a Direction vector.",
+    directions = "Call `enums::c_style::count_north` through the generated binding and assert count_north returns the number of North variants in a Direction vector.",
     exclude(
         java,
         reason = "The Java demo tests do not currently cover direction sequence helpers."
@@ -275,7 +291,8 @@ pub fn count_north(directions: Vec<Direction>) -> i32 {
 
 #[demo_bench_macros::demo_case(
     "enums.c_style.direction.find_direction.should_return_some_for_known_id",
-    description = "find_direction returns Some(Direction) for a known id.",
+    justification = "Ensure find_direction returns Some(Direction) for a known id.",
+    directions = "Call `enums::c_style::find_direction` through the generated binding and assert find_direction returns Some(Direction) for a known id.",
     exclude(
         csharp,
         reason = "The C# demo tests do not currently cover find_direction."
@@ -299,7 +316,8 @@ pub fn count_north(directions: Vec<Direction>) -> i32 {
 )]
 #[demo_bench_macros::demo_case(
     "enums.c_style.direction.find_direction.should_return_none_for_unknown_id",
-    description = "find_direction returns None for an unknown id.",
+    justification = "Ensure find_direction returns None for an unknown id.",
+    directions = "Call `enums::c_style::find_direction` through the generated binding and assert find_direction returns None for an unknown id.",
     exclude(
         csharp,
         reason = "The C# demo tests do not currently cover find_direction."
@@ -335,7 +353,8 @@ pub fn find_direction(id: i32) -> Option<Direction> {
 
 #[demo_bench_macros::demo_case(
     "enums.c_style.direction.find_directions.should_return_sequence_for_positive_count",
-    description = "find_directions returns Some generated directions for a positive count.",
+    justification = "Ensure find_directions returns Some generated directions for a positive count.",
+    directions = "Call `enums::c_style::find_directions` through the generated binding and assert find_directions returns Some generated directions for a positive count.",
     exclude(
         csharp,
         reason = "The C# demo tests do not currently cover find_directions."
@@ -359,7 +378,8 @@ pub fn find_direction(id: i32) -> Option<Direction> {
 )]
 #[demo_bench_macros::demo_case(
     "enums.c_style.direction.find_directions.should_return_none_for_non_positive_count",
-    description = "find_directions returns None for a non-positive count.",
+    justification = "Ensure find_directions returns None for a non-positive count.",
+    directions = "Call `enums::c_style::find_directions` through the generated binding and assert find_directions returns None for a non-positive count.",
     exclude(
         csharp,
         reason = "The C# demo tests do not currently cover find_directions."

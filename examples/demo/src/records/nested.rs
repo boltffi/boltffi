@@ -15,7 +15,8 @@ pub struct Line {
 #[benchmark_candidate(function, uniffi)]
 #[demo_bench_macros::demo_case(
     "records.nested.line.should_roundtrip_nested_points",
-    description = "A Line record containing two Point records crosses the wire and returns unchanged.",
+    justification = "Ensure a Line record containing two Point records crosses the wire and returns unchanged.",
+    directions = "Call `records::nested::echo_line` through the generated binding and assert a Line record containing two Point records crosses the wire and returns unchanged.",
     exclude(
         python,
         reason = "The Python demo tests do not currently cover nested records."
@@ -29,7 +30,8 @@ pub fn echo_line(l: Line) -> Line {
 #[benchmark_candidate(function, uniffi)]
 #[demo_bench_macros::demo_case(
     "records.nested.line.should_make_from_coordinates",
-    description = "make_line builds a Line with nested Point fields from four coordinate values.",
+    justification = "Ensure make_line builds a Line with nested Point fields from four coordinate values.",
+    directions = "Call `records::nested::make_line` through the generated binding and assert make_line builds a Line with nested Point fields from four coordinate values.",
     exclude(
         python,
         reason = "The Python demo tests do not currently cover nested records."
@@ -46,7 +48,8 @@ pub fn make_line(x1: f64, y1: f64, x2: f64, y2: f64) -> Line {
 #[benchmark_candidate(function, uniffi)]
 #[demo_bench_macros::demo_case(
     "records.nested.line.should_compute_length",
-    description = "line_length receives a Line record and returns the distance between its nested Points.",
+    justification = "Ensure line_length receives a Line record and returns the distance between its nested Points.",
+    directions = "Call `records::nested::line_length` through the generated binding and assert line_length receives a Line record and returns the distance between its nested Points.",
     exclude(
         python,
         reason = "The Python demo tests do not currently cover nested records."
@@ -78,7 +81,8 @@ pub struct Rect {
 #[benchmark_candidate(function, uniffi)]
 #[demo_bench_macros::demo_case(
     "records.nested.rect.should_roundtrip_nested_records",
-    description = "A Rect record containing Point and Dimensions records crosses the wire and returns unchanged.",
+    justification = "Ensure a Rect record containing Point and Dimensions records crosses the wire and returns unchanged.",
+    directions = "Call `records::nested::echo_rect` through the generated binding and assert a Rect record containing Point and Dimensions records crosses the wire and returns unchanged.",
     exclude(
         java,
         reason = "The Java demo tests do not currently cover Rect records."
@@ -96,7 +100,8 @@ pub fn echo_rect(r: Rect) -> Rect {
 #[benchmark_candidate(function, uniffi)]
 #[demo_bench_macros::demo_case(
     "records.nested.rect.should_compute_area",
-    description = "rect_area receives a Rect record and multiplies its nested width and height fields.",
+    justification = "Ensure rect_area receives a Rect record and multiplies its nested width and height fields.",
+    directions = "Call `records::nested::rect_area` through the generated binding and assert rect_area receives a Rect record and multiplies its nested width and height fields.",
     exclude(
         java,
         reason = "The Java demo tests do not currently cover Rect records."

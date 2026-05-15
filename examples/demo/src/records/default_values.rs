@@ -18,7 +18,8 @@ pub struct ServiceConfig {
 impl ServiceConfig {
     #[demo_bench_macros::demo_case(
         "records.default_values.service_config.should_describe_values",
-        description = "ServiceConfig::describe formats defaulted and explicit fields into a stable string.",
+        justification = "Ensure ServiceConfig::describe formats defaulted and explicit fields into a stable string.",
+        directions = "Call `records::default_values::ServiceConfig::describe` through the generated binding and assert ServiceConfig::describe formats defaulted and explicit fields into a stable string.",
         exclude(
             python,
             reason = "The Python demo tests do not currently cover ServiceConfig records."
@@ -35,7 +36,8 @@ impl ServiceConfig {
 
     #[demo_bench_macros::demo_case(
         "records.default_values.service_config.should_describe_with_prefix",
-        description = "ServiceConfig::describe_with_prefix prepends a caller-provided string to the description.",
+        justification = "Ensure ServiceConfig::describe_with_prefix prepends a caller-provided string to the description.",
+        directions = "Call `records::default_values::ServiceConfig::describe_with_prefix` through the generated binding and assert ServiceConfig::describe_with_prefix prepends a caller-provided string to the description.",
         exclude(
             python,
             reason = "The Python demo tests do not currently cover ServiceConfig records."
@@ -48,7 +50,8 @@ impl ServiceConfig {
 
 #[demo_bench_macros::demo_case(
     "records.default_values.service_config.should_roundtrip_value",
-    description = "A ServiceConfig record with defaulted and explicit fields crosses the wire and returns unchanged.",
+    justification = "Ensure a ServiceConfig record with defaulted and explicit fields crosses the wire and returns unchanged.",
+    directions = "Call `records::default_values::echo_service_config` through the generated binding and assert a ServiceConfig record with defaulted and explicit fields crosses the wire and returns unchanged.",
     exclude(
         python,
         reason = "The Python demo tests do not currently cover ServiceConfig records."

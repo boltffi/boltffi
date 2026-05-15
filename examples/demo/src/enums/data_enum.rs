@@ -39,7 +39,8 @@ pub enum Shape {
 impl Shape {
     #[demo_bench_macros::demo_case(
         "enums.data_enum.shape.should_support_primary_constructor",
-        description = "The generated Shape primary constructor builds a Circle variant with the requested radius.",
+        justification = "Ensure the generated Shape primary constructor builds a Circle variant with the requested radius.",
+        directions = "Call `enums::data_enum::Shape::new` through the generated binding and assert the generated Shape primary constructor builds a Circle variant with the requested radius.",
         exclude(
             java,
             reason = "The Java demo surface does not expose Shape::new because new is a Java keyword."
@@ -55,7 +56,8 @@ impl Shape {
 
     #[demo_bench_macros::demo_case(
         "enums.data_enum.shape.unit_circle.should_construct_circle",
-        description = "Shape::unit_circle constructs a Circle variant with unit radius.",
+        justification = "Ensure Shape::unit_circle constructs a Circle variant with unit radius.",
+        directions = "Call `enums::data_enum::Shape::unit_circle` through the generated binding and assert Shape::unit_circle constructs a Circle variant with unit radius.",
         exclude(
             python,
             reason = "The Python demo tests do not currently cover data-enum surfaces."
@@ -67,7 +69,8 @@ impl Shape {
 
     #[demo_bench_macros::demo_case(
         "enums.data_enum.shape.square.should_construct_rectangle",
-        description = "Shape::square constructs a Rectangle variant whose width and height match the side length.",
+        justification = "Ensure Shape::square constructs a Rectangle variant whose width and height match the side length.",
+        directions = "Call `enums::data_enum::Shape::square` through the generated binding and assert Shape::square constructs a Rectangle variant whose width and height match the side length.",
         exclude(
             python,
             reason = "The Python demo tests do not currently cover data-enum surfaces."
@@ -82,7 +85,8 @@ impl Shape {
 
     #[demo_bench_macros::demo_case(
         "enums.data_enum.shape.try_circle.should_return_circle_for_positive_radius",
-        description = "Shape::try_circle returns a Circle variant for a positive radius.",
+        justification = "Ensure Shape::try_circle returns a Circle variant for a positive radius.",
+        directions = "Call `enums::data_enum::Shape::try_circle` through the generated binding and assert Shape::try_circle returns a Circle variant for a positive radius.",
         exclude(
             csharp,
             reason = "The C# data-enum demo covers Shape::try_circle rejection but not the positive-radius success path."
@@ -94,7 +98,8 @@ impl Shape {
     )]
     #[demo_bench_macros::demo_case(
         "enums.data_enum.shape.should_reject_non_positive_circle_radius",
-        description = "Shape::try_circle returns a language-native error when radius is zero or negative.",
+        justification = "Ensure Shape::try_circle returns a language-native error when radius is zero or negative.",
+        directions = "Call `enums::data_enum::Shape::try_circle` through the generated binding and assert Shape::try_circle returns a language-native error when radius is zero or negative.",
         exclude(
             python,
             reason = "The Python demo tests do not currently cover data-enum surfaces."
@@ -110,7 +115,8 @@ impl Shape {
 
     #[demo_bench_macros::demo_case(
         "enums.data_enum.shape.should_support_numeric_instance_methods",
-        description = "Shape instance methods can wire-encode the receiver and return numeric results.",
+        justification = "Ensure Shape instance methods can wire-encode the receiver and return numeric results.",
+        directions = "Call `enums::data_enum::Shape::area` through the generated binding and assert Shape instance methods can wire-encode the receiver and return numeric results.",
         exclude(
             python,
             reason = "The Python demo tests do not currently cover data-enum surfaces."
@@ -131,7 +137,8 @@ impl Shape {
 
     #[demo_bench_macros::demo_case(
         "enums.data_enum.shape.should_support_string_instance_methods",
-        description = "Shape instance methods can wire-encode the receiver and return string results.",
+        justification = "Ensure Shape instance methods can wire-encode the receiver and return string results.",
+        directions = "Call `enums::data_enum::Shape::describe` through the generated binding and assert Shape instance methods can wire-encode the receiver and return string results.",
         exclude(
             python,
             reason = "The Python demo tests do not currently cover data-enum surfaces."
@@ -151,7 +158,8 @@ impl Shape {
 
     #[demo_bench_macros::demo_case(
         "enums.data_enum.shape.should_report_variant_count",
-        description = "The generated Shape static method can return primitive metadata about the data enum.",
+        justification = "Ensure the generated Shape static method can return primitive metadata about the data enum.",
+        directions = "Call `enums::data_enum::Shape::variant_count` through the generated binding and assert the generated Shape static method can return primitive metadata about the data enum.",
         exclude(
             python,
             reason = "The Python demo tests do not currently cover data-enum surfaces."
@@ -167,7 +175,8 @@ impl Shape {
     /// variant on the same enum.
     #[demo_bench_macros::demo_case(
         "enums.data_enum.shape.try_apex_point.should_return_some_for_positive_radius",
-        description = "Shape::try_apex_point returns Some(Point) for a positive radius while resolving Point as the record type.",
+        justification = "Ensure Shape::try_apex_point returns Some(Point) for a positive radius while resolving Point as the record type.",
+        directions = "Call `enums::data_enum::Shape::try_apex_point` through the generated binding and assert Shape::try_apex_point returns Some(Point) for a positive radius while resolving Point as the record type.",
         exclude(
             python,
             reason = "The Python demo tests do not currently cover data-enum surfaces."
@@ -175,7 +184,8 @@ impl Shape {
     )]
     #[demo_bench_macros::demo_case(
         "enums.data_enum.shape.try_apex_point.should_return_none_for_non_positive_radius",
-        description = "Shape::try_apex_point returns None for a non-positive radius while resolving Point as the record type.",
+        justification = "Ensure Shape::try_apex_point returns None for a non-positive radius while resolving Point as the record type.",
+        directions = "Call `enums::data_enum::Shape::try_apex_point` through the generated binding and assert Shape::try_apex_point returns None for a non-positive radius while resolving Point as the record type.",
         exclude(
             python,
             reason = "The Python demo tests do not currently cover data-enum surfaces."
@@ -192,7 +202,8 @@ impl Shape {
 
 #[demo_bench_macros::demo_case(
     "enums.data_enum.shape.should_roundtrip_core_variants",
-    description = "Circle, Rectangle, Triangle, and Point Shape variants preserve their tags and payload fields.",
+    justification = "Ensure Circle, Rectangle, Triangle, and Point Shape variants preserve their tags and payload fields.",
+    directions = "Call `enums::data_enum::echo_shape` through the generated binding and assert Circle, Rectangle, Triangle, and Point Shape variants preserve their tags and payload fields.",
     exclude(
         python,
         reason = "The Python demo tests do not currently cover data-enum surfaces."
@@ -200,7 +211,8 @@ impl Shape {
 )]
 #[demo_bench_macros::demo_case(
     "enums.data_enum.shape.apex.should_roundtrip_some_point_payload",
-    description = "The Shape::Apex variant preserves a Some(Point) payload when Point is also a sibling variant name.",
+    justification = "Ensure the Shape::Apex variant preserves a Some(Point) payload when Point is also a sibling variant name.",
+    directions = "Call `enums::data_enum::echo_shape` through the generated binding and assert the Shape::Apex variant preserves a Some(Point) payload when Point is also a sibling variant name.",
     exclude(
         python,
         reason = "The Python demo tests do not currently cover data-enum surfaces."
@@ -208,7 +220,8 @@ impl Shape {
 )]
 #[demo_bench_macros::demo_case(
     "enums.data_enum.shape.apex.should_roundtrip_none_payload",
-    description = "The Shape::Apex variant preserves a None payload when Point is also a sibling variant name.",
+    justification = "Ensure the Shape::Apex variant preserves a None payload when Point is also a sibling variant name.",
+    directions = "Call `enums::data_enum::echo_shape` through the generated binding and assert the Shape::Apex variant preserves a None payload when Point is also a sibling variant name.",
     exclude(
         python,
         reason = "The Python demo tests do not currently cover data-enum surfaces."
@@ -216,7 +229,8 @@ impl Shape {
 )]
 #[demo_bench_macros::demo_case(
     "enums.data_enum.shape.should_roundtrip_vector_record_fields",
-    description = "A Shape variant can carry a vector of Point records even when Point is also a sibling variant name.",
+    justification = "Ensure a Shape variant can carry a vector of Point records even when Point is also a sibling variant name.",
+    directions = "Call `enums::data_enum::echo_shape` through the generated binding and assert a Shape variant can carry a vector of Point records even when Point is also a sibling variant name.",
     exclude(
         python,
         reason = "The Python demo tests do not currently cover data-enum surfaces."
@@ -229,7 +243,8 @@ pub fn echo_shape(s: Shape) -> Shape {
 
 #[demo_bench_macros::demo_case(
     "enums.data_enum.shape.should_support_free_function_factories",
-    description = "Free functions construct Circle and Rectangle Shape variants with the requested primitive fields.",
+    justification = "Ensure free functions construct Circle and Rectangle Shape variants with the requested primitive fields.",
+    directions = "Call `enums::data_enum::make_circle` and `enums::data_enum::make_rectangle` through the generated bindings and assert free functions construct Circle and Rectangle Shape variants with the requested primitive fields.",
     exercises = [
         "enums::data_enum::make_circle",
         "enums::data_enum::make_rectangle"
@@ -251,7 +266,8 @@ pub fn make_rectangle(width: f64, height: f64) -> Shape {
 
 #[demo_bench_macros::demo_case(
     "enums.data_enum.shape.should_roundtrip_vectors",
-    description = "A vector of data-enum Shape values preserves variant order and payloads.",
+    justification = "Ensure a vector of data-enum Shape values preserves variant order and payloads.",
+    directions = "Call `enums::data_enum::echo_vec_shape` through the generated binding and assert a vector of data-enum Shape values preserves variant order and payloads.",
     exclude(
         python,
         reason = "The Python demo tests do not currently cover data-enum surfaces."
@@ -278,7 +294,8 @@ pub enum Message {
 
 #[demo_bench_macros::demo_case(
     "enums.data_enum.message.text.should_roundtrip_string_payload",
-    description = "The Message::Text variant preserves its string payload when round-tripped.",
+    justification = "Ensure the Message::Text variant preserves its string payload when round-tripped.",
+    directions = "Call `enums::data_enum::echo_message` through the generated binding and assert the Message::Text variant preserves its string payload when round-tripped.",
     exclude(
         python,
         reason = "The Python demo tests do not currently cover data-enum surfaces."
@@ -286,7 +303,8 @@ pub enum Message {
 )]
 #[demo_bench_macros::demo_case(
     "enums.data_enum.message.image.should_roundtrip_url_dimensions_payload",
-    description = "The Message::Image variant preserves its URL and dimension payload fields when round-tripped.",
+    justification = "Ensure the Message::Image variant preserves its URL and dimension payload fields when round-tripped.",
+    directions = "Call `enums::data_enum::echo_message` through the generated binding and assert the Message::Image variant preserves its URL and dimension payload fields when round-tripped.",
     exclude(
         java,
         reason = "The Java data-enum demo does not currently round-trip the Message::Image variant."
@@ -298,7 +316,8 @@ pub enum Message {
 )]
 #[demo_bench_macros::demo_case(
     "enums.data_enum.message.ping.should_roundtrip_unit_variant",
-    description = "The Message::Ping unit variant crosses the FFI boundary unchanged.",
+    justification = "Ensure the Message::Ping unit variant crosses the FFI boundary unchanged.",
+    directions = "Call `enums::data_enum::echo_message` through the generated binding and assert the Message::Ping unit variant crosses the FFI boundary unchanged.",
     exclude(
         apple,
         reason = "The Apple data-enum demo does not currently round-trip the Message::Ping variant."
@@ -327,7 +346,8 @@ pub fn echo_message(m: Message) -> Message {
 
 #[demo_bench_macros::demo_case(
     "enums.data_enum.message.text.should_render_text_summary",
-    description = "message_summary renders the Text string payload in the summary.",
+    justification = "Ensure message_summary renders the Text string payload in the summary.",
+    directions = "Call `enums::data_enum::message_summary` through the generated binding and assert message_summary renders the Text string payload in the summary.",
     exclude(
         python,
         reason = "The Python demo tests do not currently cover data-enum surfaces."
@@ -335,7 +355,8 @@ pub fn echo_message(m: Message) -> Message {
 )]
 #[demo_bench_macros::demo_case(
     "enums.data_enum.message.image.should_render_image_summary",
-    description = "message_summary renders the Image dimensions and URL in the summary.",
+    justification = "Ensure message_summary renders the Image dimensions and URL in the summary.",
+    directions = "Call `enums::data_enum::message_summary` through the generated binding and assert message_summary renders the Image dimensions and URL in the summary.",
     exclude(
         csharp,
         reason = "The C# data-enum demo does not currently summarize the Message::Image variant."
@@ -351,7 +372,8 @@ pub fn echo_message(m: Message) -> Message {
 )]
 #[demo_bench_macros::demo_case(
     "enums.data_enum.message.ping.should_render_ping_summary",
-    description = "message_summary renders the Ping unit variant summary.",
+    justification = "Ensure message_summary renders the Ping unit variant summary.",
+    directions = "Call `enums::data_enum::message_summary` through the generated binding and assert message_summary renders the Ping unit variant summary.",
     exclude(
         python,
         reason = "The Python demo tests do not currently cover data-enum surfaces."
@@ -376,7 +398,8 @@ pub enum Animal {
 
 #[demo_bench_macros::demo_case(
     "enums.data_enum.animal.dog.should_roundtrip_string_payloads",
-    description = "The Animal::Dog variant preserves its name and breed string payloads when round-tripped.",
+    justification = "Ensure the Animal::Dog variant preserves its name and breed string payloads when round-tripped.",
+    directions = "Call `enums::data_enum::echo_animal` through the generated binding and assert the Animal::Dog variant preserves its name and breed string payloads when round-tripped.",
     exclude(
         python,
         reason = "The Python demo tests do not currently cover data-enum surfaces."
@@ -384,7 +407,8 @@ pub enum Animal {
 )]
 #[demo_bench_macros::demo_case(
     "enums.data_enum.animal.cat.should_roundtrip_name_and_bool_payload",
-    description = "The Animal::Cat variant preserves its name string and indoor boolean payloads when round-tripped.",
+    justification = "Ensure the Animal::Cat variant preserves its name string and indoor boolean payloads when round-tripped.",
+    directions = "Call `enums::data_enum::echo_animal` through the generated binding and assert the Animal::Cat variant preserves its name string and indoor boolean payloads when round-tripped.",
     exclude(
         java,
         reason = "The Java data-enum demo does not currently round-trip the Animal::Cat variant."
@@ -396,7 +420,8 @@ pub enum Animal {
 )]
 #[demo_bench_macros::demo_case(
     "enums.data_enum.animal.fish.should_roundtrip_count_payload",
-    description = "The Animal::Fish variant preserves its count payload when round-tripped.",
+    justification = "Ensure the Animal::Fish variant preserves its count payload when round-tripped.",
+    directions = "Call `enums::data_enum::echo_animal` through the generated binding and assert the Animal::Fish variant preserves its count payload when round-tripped.",
     exclude(
         apple,
         reason = "The Apple data-enum demo does not currently round-trip the Animal::Fish variant."
@@ -425,7 +450,8 @@ pub fn echo_animal(a: Animal) -> Animal {
 
 #[demo_bench_macros::demo_case(
     "enums.data_enum.animal.dog.should_derive_name",
-    description = "animal_name derives the dog name from an Animal::Dog payload.",
+    justification = "Ensure animal_name derives the dog name from an Animal::Dog payload.",
+    directions = "Call `enums::data_enum::animal_name` through the generated binding and assert animal_name derives the dog name from an Animal::Dog payload.",
     exclude(
         apple,
         reason = "The Apple data-enum demo does not currently derive a name from Animal::Dog."
@@ -449,7 +475,8 @@ pub fn echo_animal(a: Animal) -> Animal {
 )]
 #[demo_bench_macros::demo_case(
     "enums.data_enum.animal.cat.should_derive_name",
-    description = "animal_name derives the cat name from an Animal::Cat payload.",
+    justification = "Ensure animal_name derives the cat name from an Animal::Cat payload.",
+    directions = "Call `enums::data_enum::animal_name` through the generated binding and assert animal_name derives the cat name from an Animal::Cat payload.",
     exclude(
         csharp,
         reason = "The C# data-enum demo does not currently derive a name from Animal::Cat."
@@ -465,7 +492,8 @@ pub fn echo_animal(a: Animal) -> Animal {
 )]
 #[demo_bench_macros::demo_case(
     "enums.data_enum.animal.fish.should_derive_count_label",
-    description = "animal_name derives a count label from an Animal::Fish payload.",
+    justification = "Ensure animal_name derives a count label from an Animal::Fish payload.",
+    directions = "Call `enums::data_enum::animal_name` through the generated binding and assert animal_name derives a count label from an Animal::Fish payload.",
     exclude(
         python,
         reason = "The Python demo tests do not currently cover data-enum surfaces."
@@ -533,7 +561,8 @@ pub enum LifecycleEvent {
 
 #[demo_bench_macros::demo_case(
     "enums.data_enum.lifecycle_event.should_roundtrip_priority_payload",
-    description = "A LifecycleEvent variant embeds a Priority enum payload and round-trips both the outer tag and inner enum value.",
+    justification = "Ensure a LifecycleEvent variant embeds a Priority enum payload and round-trips both the outer tag and inner enum value.",
+    directions = "Call `enums::data_enum::echo_lifecycle_event` through the generated binding and assert a LifecycleEvent variant embeds a Priority enum payload and round-trips both the outer tag and inner enum value.",
     exclude(
         python,
         reason = "The Python demo tests do not currently cover data-enum surfaces."
@@ -541,7 +570,8 @@ pub enum LifecycleEvent {
 )]
 #[demo_bench_macros::demo_case(
     "enums.data_enum.lifecycle_event.should_roundtrip_tick_variant",
-    description = "The LifecycleEvent::Tick unit variant crosses the FFI boundary unchanged.",
+    justification = "Ensure the LifecycleEvent::Tick unit variant crosses the FFI boundary unchanged.",
+    directions = "Call `enums::data_enum::echo_lifecycle_event` through the generated binding and assert the LifecycleEvent::Tick unit variant crosses the FFI boundary unchanged.",
     exclude(
         python,
         reason = "The Python demo tests do not currently cover data-enum surfaces."
@@ -554,7 +584,8 @@ pub fn echo_lifecycle_event(ev: LifecycleEvent) -> LifecycleEvent {
 
 #[demo_bench_macros::demo_case(
     "enums.data_enum.lifecycle_event.should_make_critical_event",
-    description = "make_critical_lifecycle_event constructs a TaskStarted LifecycleEvent with Critical priority.",
+    justification = "Ensure make_critical_lifecycle_event constructs a TaskStarted LifecycleEvent with Critical priority.",
+    directions = "Call `enums::data_enum::make_critical_lifecycle_event` through the generated binding and assert make_critical_lifecycle_event constructs a TaskStarted LifecycleEvent with Critical priority.",
     exclude(
         python,
         reason = "The Python demo tests do not currently cover data-enum surfaces."

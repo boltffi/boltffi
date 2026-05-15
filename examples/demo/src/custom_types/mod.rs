@@ -50,7 +50,8 @@ custom_type!(
 
 #[demo_bench_macros::demo_case(
     "custom_types.event.should_expose_datetime_field",
-    description = "The generated Event record exposes a custom DateTime field through the host-language surface.",
+    justification = "Ensure the generated Event record exposes a custom DateTime field through the host-language surface.",
+    directions = "Inspect or construct `custom_types::Event` through the generated binding and assert the generated Event record exposes a custom DateTime field through the host-language surface.",
     exclude(
         apple,
         reason = "The Apple custom type demo does not currently assert Event fields before crossing FFI."
@@ -80,7 +81,8 @@ pub struct Event {
 
 #[demo_bench_macros::demo_case(
     "custom_types.email.should_roundtrip_value",
-    description = "An email custom type crosses the wire through its string representation and returns unchanged.",
+    justification = "Ensure an email custom type crosses the wire through its string representation and returns unchanged.",
+    directions = "Call `custom_types::echo_email` through the generated binding and assert an email custom type crosses the wire through its string representation and returns unchanged.",
     exclude(
         python,
         reason = "The Python demo tests do not currently cover custom types."
@@ -93,7 +95,8 @@ pub fn echo_email(email: Email) -> Email {
 
 #[demo_bench_macros::demo_case(
     "custom_types.email.should_extract_domain",
-    description = "An email custom type crosses the wire and returns its domain string.",
+    justification = "Ensure an email custom type crosses the wire and returns its domain string.",
+    directions = "Call `custom_types::email_domain` through the generated binding and assert an email custom type crosses the wire and returns its domain string.",
     exclude(
         python,
         reason = "The Python demo tests do not currently cover custom types."
@@ -106,7 +109,8 @@ pub fn email_domain(email: Email) -> String {
 
 #[demo_bench_macros::demo_case(
     "custom_types.datetime.should_roundtrip_millis",
-    description = "A DateTime custom type crosses the wire through millisecond representation and returns unchanged.",
+    justification = "Ensure a DateTime custom type crosses the wire through millisecond representation and returns unchanged.",
+    directions = "Call `custom_types::echo_datetime` through the generated binding and assert a DateTime custom type crosses the wire through millisecond representation and returns unchanged.",
     exclude(
         python,
         reason = "The Python demo tests do not currently cover custom types."
@@ -119,7 +123,8 @@ pub fn echo_datetime(dt: DateTime<Utc>) -> DateTime<Utc> {
 
 #[demo_bench_macros::demo_case(
     "custom_types.datetime.should_convert_to_millis",
-    description = "A DateTime custom type crosses the wire and returns its millisecond representation.",
+    justification = "Ensure a DateTime custom type crosses the wire and returns its millisecond representation.",
+    directions = "Call `custom_types::datetime_to_millis` through the generated binding and assert a DateTime custom type crosses the wire and returns its millisecond representation.",
     exclude(
         python,
         reason = "The Python demo tests do not currently cover custom types."
@@ -132,7 +137,8 @@ pub fn datetime_to_millis(dt: DateTime<Utc>) -> i64 {
 
 #[demo_bench_macros::demo_case(
     "custom_types.datetime.should_format_rfc3339_timestamp",
-    description = "A DateTime custom type crosses the wire and returns an RFC3339 timestamp string.",
+    justification = "Ensure a DateTime custom type crosses the wire and returns an RFC3339 timestamp string.",
+    directions = "Call `custom_types::format_timestamp` through the generated binding and assert a DateTime custom type crosses the wire and returns an RFC3339 timestamp string.",
     exclude(
         kotlin,
         reason = "The Kotlin custom type demo does not currently cover the standalone timestamp formatting helper."
@@ -149,7 +155,8 @@ pub fn format_timestamp(timestamp: DateTime<Utc>) -> String {
 
 #[demo_bench_macros::demo_case(
     "custom_types.event.should_roundtrip_datetime_field",
-    description = "An Event record containing a DateTime custom type field crosses the FFI boundary unchanged.",
+    justification = "Ensure an Event record containing a DateTime custom type field crosses the FFI boundary unchanged.",
+    directions = "Call `custom_types::echo_event` through the generated binding and assert an Event record containing a DateTime custom type field crosses the FFI boundary unchanged.",
     exclude(
         kotlin,
         reason = "The Kotlin custom type demo does not currently cover Event."
@@ -166,7 +173,8 @@ pub fn echo_event(event: Event) -> Event {
 
 #[demo_bench_macros::demo_case(
     "custom_types.event.should_extract_timestamp_millis",
-    description = "An Event record containing a DateTime custom type field returns its timestamp as milliseconds.",
+    justification = "Ensure an Event record containing a DateTime custom type field returns its timestamp as milliseconds.",
+    directions = "Call `custom_types::event_timestamp` through the generated binding and assert an Event record containing a DateTime custom type field returns its timestamp as milliseconds.",
     exclude(
         kotlin,
         reason = "The Kotlin custom type demo does not currently cover Event."
@@ -183,7 +191,8 @@ pub fn event_timestamp(event: Event) -> i64 {
 
 #[demo_bench_macros::demo_case(
     "custom_types.vectors.emails.should_roundtrip_values",
-    description = "A vector of Email custom types preserves order and UTF-8 values when round-tripped.",
+    justification = "Ensure a vector of Email custom types preserves order and UTF-8 values when round-tripped.",
+    directions = "Call `custom_types::echo_emails` through the generated binding and assert a vector of Email custom types preserves order and UTF-8 values when round-tripped.",
     exclude(
         python,
         reason = "The Python demo tests do not currently cover custom types."
@@ -196,7 +205,8 @@ pub fn echo_emails(emails: Vec<Email>) -> Vec<Email> {
 
 #[demo_bench_macros::demo_case(
     "custom_types.vectors.datetimes.should_roundtrip_millis_values",
-    description = "A vector of DateTime custom types preserves millisecond values when round-tripped.",
+    justification = "Ensure a vector of DateTime custom types preserves millisecond values when round-tripped.",
+    directions = "Call `custom_types::echo_datetimes` through the generated binding and assert a vector of DateTime custom types preserves millisecond values when round-tripped.",
     exclude(
         python,
         reason = "The Python demo tests do not currently cover custom types."

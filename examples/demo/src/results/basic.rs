@@ -4,7 +4,8 @@ use crate::records::blittable::Point;
 
 #[demo_bench_macros::demo_case(
     "results.basic.safe_divide.should_return_quotient",
-    description = "safe_divide returns the integer quotient when the divisor is non-zero.",
+    justification = "Ensure safe_divide returns the integer quotient when the divisor is non-zero.",
+    directions = "Call `results::basic::safe_divide` through the generated binding and assert safe_divide returns the integer quotient when the divisor is non-zero.",
     exclude(
         python,
         reason = "The Python demo tests do not currently cover string-error Result exports."
@@ -12,7 +13,8 @@ use crate::records::blittable::Point;
 )]
 #[demo_bench_macros::demo_case(
     "results.basic.safe_divide.should_reject_division_by_zero",
-    description = "safe_divide returns a language-native error when the divisor is zero.",
+    justification = "Ensure safe_divide returns a language-native error when the divisor is zero.",
+    directions = "Call `results::basic::safe_divide` through the generated binding and assert safe_divide returns a language-native error when the divisor is zero.",
     exclude(
         python,
         reason = "The Python demo tests do not currently cover string-error Result exports."
@@ -29,7 +31,8 @@ pub fn safe_divide(a: i32, b: i32) -> Result<i32, String> {
 
 #[demo_bench_macros::demo_case(
     "results.basic.safe_sqrt.should_return_square_root",
-    description = "safe_sqrt returns the square root for non-negative floating-point input.",
+    justification = "Ensure safe_sqrt returns the square root for non-negative floating-point input.",
+    directions = "Call `results::basic::safe_sqrt` through the generated binding and assert safe_sqrt returns the square root for non-negative floating-point input.",
     exclude(csharp, reason = "The C# demo tests do not currently cover safe_sqrt."),
     exclude(java, reason = "The Java demo tests do not currently cover safe_sqrt."),
     exclude(
@@ -39,7 +42,8 @@ pub fn safe_divide(a: i32, b: i32) -> Result<i32, String> {
 )]
 #[demo_bench_macros::demo_case(
     "results.basic.safe_sqrt.should_reject_negative_input",
-    description = "safe_sqrt returns a language-native error for negative floating-point input.",
+    justification = "Ensure safe_sqrt returns a language-native error for negative floating-point input.",
+    directions = "Call `results::basic::safe_sqrt` through the generated binding and assert safe_sqrt returns a language-native error for negative floating-point input.",
     exclude(csharp, reason = "The C# demo tests do not currently cover safe_sqrt."),
     exclude(java, reason = "The Java demo tests do not currently cover safe_sqrt."),
     exclude(
@@ -58,7 +62,8 @@ pub fn safe_sqrt(x: f64) -> Result<f64, String> {
 
 #[demo_bench_macros::demo_case(
     "results.basic.parse_point.should_parse_coordinates",
-    description = "parse_point parses a comma-separated coordinate string into a Point record.",
+    justification = "Ensure parse_point parses a comma-separated coordinate string into a Point record.",
+    directions = "Call `results::basic::parse_point` through the generated binding and assert parse_point parses a comma-separated coordinate string into a Point record.",
     exclude(
         python,
         reason = "The Python demo tests do not currently cover string-error Result exports."
@@ -66,7 +71,8 @@ pub fn safe_sqrt(x: f64) -> Result<f64, String> {
 )]
 #[demo_bench_macros::demo_case(
     "results.basic.parse_point.should_reject_malformed_input",
-    description = "parse_point returns a language-native error when the input is not a coordinate pair.",
+    justification = "Ensure parse_point returns a language-native error when the input is not a coordinate pair.",
+    directions = "Call `results::basic::parse_point` through the generated binding and assert parse_point returns a language-native error when the input is not a coordinate pair.",
     exclude(
         python,
         reason = "The Python demo tests do not currently cover string-error Result exports."
@@ -91,7 +97,8 @@ pub fn parse_point(s: String) -> Result<Point, String> {
 
 #[demo_bench_macros::demo_case(
     "results.basic.always_ok.should_return_doubled_value",
-    description = "always_ok returns an Ok value containing the input doubled.",
+    justification = "Ensure always_ok returns an Ok value containing the input doubled.",
+    directions = "Call `results::basic::always_ok` through the generated binding and assert always_ok returns an Ok value containing the input doubled.",
     exclude(
         python,
         reason = "The Python demo tests do not currently cover string-error Result exports."
@@ -104,7 +111,8 @@ pub fn always_ok(v: i32) -> Result<i32, String> {
 
 #[demo_bench_macros::demo_case(
     "results.basic.always_err.should_return_message_error",
-    description = "always_err returns an error containing the caller-provided message.",
+    justification = "Ensure always_err returns an error containing the caller-provided message.",
+    directions = "Call `results::basic::always_err` through the generated binding and assert always_err returns an error containing the caller-provided message.",
     exclude(
         python,
         reason = "The Python demo tests do not currently cover string-error Result exports."
@@ -117,7 +125,8 @@ pub fn always_err(msg: String) -> Result<i32, String> {
 
 #[demo_bench_macros::demo_case(
     "results.basic.result_to_string.should_render_ok",
-    description = "result_to_string receives an Ok Result value over FFI and renders its success payload.",
+    justification = "Ensure result_to_string receives an Ok Result value over FFI and renders its success payload.",
+    directions = "Call `results::basic::result_to_string` through the generated binding and assert result_to_string receives an Ok Result value over FFI and renders its success payload.",
     exclude(
         csharp,
         reason = "The C# demo tests do not currently cover Result parameters."
@@ -133,7 +142,8 @@ pub fn always_err(msg: String) -> Result<i32, String> {
 )]
 #[demo_bench_macros::demo_case(
     "results.basic.result_to_string.should_render_err",
-    description = "result_to_string receives an Err Result value over FFI and renders its error payload.",
+    justification = "Ensure result_to_string receives an Err Result value over FFI and renders its error payload.",
+    directions = "Call `results::basic::result_to_string` through the generated binding and assert result_to_string receives an Err Result value over FFI and renders its error payload.",
     exclude(
         csharp,
         reason = "The C# demo tests do not currently cover Result parameters."
@@ -157,7 +167,8 @@ pub fn result_to_string(v: Result<i32, String>) -> String {
 
 #[demo_bench_macros::demo_case(
     "results.basic.divide.should_return_quotient",
-    description = "divide returns the integer quotient when the divisor is non-zero.",
+    justification = "Ensure divide returns the integer quotient when the divisor is non-zero.",
+    directions = "Call `results::basic::divide` through the generated binding and assert divide returns the integer quotient when the divisor is non-zero.",
     exclude(
         csharp,
         reason = "The C# demo tests do not currently cover the divide alias."
@@ -177,7 +188,8 @@ pub fn result_to_string(v: Result<i32, String>) -> String {
 )]
 #[demo_bench_macros::demo_case(
     "results.basic.divide.should_reject_division_by_zero",
-    description = "divide returns a language-native error when the divisor is zero.",
+    justification = "Ensure divide returns a language-native error when the divisor is zero.",
+    directions = "Call `results::basic::divide` through the generated binding and assert divide returns a language-native error when the divisor is zero.",
     exclude(
         csharp,
         reason = "The C# demo tests do not currently cover the divide alias."
@@ -202,7 +214,8 @@ pub fn divide(a: i32, b: i32) -> Result<i32, String> {
 
 #[demo_bench_macros::demo_case(
     "results.basic.parse_int.should_parse_integer",
-    description = "parse_int parses a decimal string into an i32 value.",
+    justification = "Ensure parse_int parses a decimal string into an i32 value.",
+    directions = "Call `results::basic::parse_int` through the generated binding and assert parse_int parses a decimal string into an i32 value.",
     exclude(
         csharp,
         reason = "The C# demo tests do not currently cover the top-level parse_int export."
@@ -222,7 +235,8 @@ pub fn divide(a: i32, b: i32) -> Result<i32, String> {
 )]
 #[demo_bench_macros::demo_case(
     "results.basic.parse_int.should_reject_invalid_integer",
-    description = "parse_int returns a language-native error when the string is not a valid i32.",
+    justification = "Ensure parse_int returns a language-native error when the string is not a valid i32.",
+    directions = "Call `results::basic::parse_int` through the generated binding and assert parse_int returns a language-native error when the string is not a valid i32.",
     exclude(
         csharp,
         reason = "The C# demo tests do not currently cover the top-level parse_int export."
@@ -249,7 +263,8 @@ pub fn parse_int(input: String) -> Result<i32, String> {
 
 #[demo_bench_macros::demo_case(
     "results.basic.validate_name.should_greet_valid_name",
-    description = "validate_name returns a greeting for a non-empty name within the length limit.",
+    justification = "Ensure validate_name returns a greeting for a non-empty name within the length limit.",
+    directions = "Call `results::basic::validate_name` through the generated binding and assert validate_name returns a greeting for a non-empty name within the length limit.",
     exclude(
         csharp,
         reason = "The C# demo tests do not currently cover validate_name."
@@ -269,7 +284,8 @@ pub fn parse_int(input: String) -> Result<i32, String> {
 )]
 #[demo_bench_macros::demo_case(
     "results.basic.validate_name.should_reject_empty_name",
-    description = "validate_name returns a language-native error when the provided name is empty.",
+    justification = "Ensure validate_name returns a language-native error when the provided name is empty.",
+    directions = "Call `results::basic::validate_name` through the generated binding and assert validate_name returns a language-native error when the provided name is empty.",
     exclude(
         csharp,
         reason = "The C# demo tests do not currently cover validate_name."

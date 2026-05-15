@@ -16,7 +16,8 @@ pub struct Point {
 impl Point {
     #[demo_bench_macros::demo_case(
         "records.blittable.point.should_construct_with_static_new",
-        description = "Point::new returns a blittable Point containing the provided coordinates.",
+        justification = "Ensure Point::new returns a blittable Point containing the provided coordinates.",
+        directions = "Call `records::blittable::Point::new` through the generated binding and assert Point::new returns a blittable Point containing the provided coordinates.",
         exclude(
             csharp,
             reason = "The C# demo tests do not currently cover the Point::new constructor."
@@ -32,7 +33,8 @@ impl Point {
 
     #[demo_bench_macros::demo_case(
         "records.blittable.point.should_return_origin",
-        description = "Point::origin returns a Point at zero coordinates."
+        justification = "Ensure Point::origin returns a Point at zero coordinates.",
+        directions = "Call `records::blittable::Point::origin` through the generated binding and assert Point::origin returns a Point at zero coordinates."
     )]
     pub fn origin() -> Self {
         Point { x: 0.0, y: 0.0 }
@@ -40,7 +42,8 @@ impl Point {
 
     #[demo_bench_macros::demo_case(
         "records.blittable.point.should_construct_from_polar_coordinates",
-        description = "Point::from_polar converts polar coordinates into Cartesian point fields."
+        justification = "Ensure Point::from_polar converts polar coordinates into Cartesian point fields.",
+        directions = "Call `records::blittable::Point::from_polar` through the generated binding and assert Point::from_polar converts polar coordinates into Cartesian point fields."
     )]
     pub fn from_polar(r: f64, theta: f64) -> Self {
         Point {
@@ -51,7 +54,8 @@ impl Point {
 
     #[demo_bench_macros::demo_case(
         "records.blittable.point.should_normalize_unit_vector",
-        description = "Point::try_unit returns a normalized Point for non-zero coordinates.",
+        justification = "Ensure Point::try_unit returns a normalized Point for non-zero coordinates.",
+        directions = "Call `records::blittable::Point::try_unit` through the generated binding and assert Point::try_unit returns a normalized Point for non-zero coordinates.",
         exclude(
             csharp,
             reason = "The C# demo tests do not currently cover the fallible Point::try_unit method."
@@ -63,7 +67,8 @@ impl Point {
     )]
     #[demo_bench_macros::demo_case(
         "records.blittable.point.should_reject_zero_unit_vector",
-        description = "Point::try_unit rejects zero coordinates instead of returning an invalid unit vector.",
+        justification = "Ensure Point::try_unit rejects zero coordinates instead of returning an invalid unit vector.",
+        directions = "Call `records::blittable::Point::try_unit` through the generated binding and assert Point::try_unit rejects zero coordinates instead of returning an invalid unit vector.",
         exclude(
             csharp,
             reason = "The C# demo tests do not currently cover the fallible Point::try_unit method."
@@ -87,7 +92,8 @@ impl Point {
 
     #[demo_bench_macros::demo_case(
         "records.blittable.point.should_return_some_for_checked_unit",
-        description = "Point::checked_unit returns Some normalized Point for non-zero coordinates.",
+        justification = "Ensure Point::checked_unit returns Some normalized Point for non-zero coordinates.",
+        directions = "Call `records::blittable::Point::checked_unit` through the generated binding and assert Point::checked_unit returns Some normalized Point for non-zero coordinates.",
         exclude(
             csharp,
             reason = "The C# demo tests do not currently cover the optional Point::checked_unit method."
@@ -99,7 +105,8 @@ impl Point {
     )]
     #[demo_bench_macros::demo_case(
         "records.blittable.point.should_return_none_for_zero_checked_unit",
-        description = "Point::checked_unit returns None for zero coordinates.",
+        justification = "Ensure Point::checked_unit returns None for zero coordinates.",
+        directions = "Call `records::blittable::Point::checked_unit` through the generated binding and assert Point::checked_unit returns None for zero coordinates.",
         exclude(
             csharp,
             reason = "The C# demo tests do not currently cover the optional Point::checked_unit method."
@@ -123,7 +130,8 @@ impl Point {
 
     #[demo_bench_macros::demo_case(
         "records.blittable.point.should_compute_distance",
-        description = "Point::distance computes the Euclidean distance from the origin."
+        justification = "Ensure Point::distance computes the Euclidean distance from the origin.",
+        directions = "Call `records::blittable::Point::distance` through the generated binding and assert Point::distance computes the Euclidean distance from the origin."
     )]
     pub fn distance(&self) -> f64 {
         (self.x * self.x + self.y * self.y).sqrt()
@@ -131,7 +139,8 @@ impl Point {
 
     #[demo_bench_macros::demo_case(
         "records.blittable.point.should_scale_coordinates",
-        description = "Point::scale multiplies both coordinates by the provided factor.",
+        justification = "Ensure Point::scale multiplies both coordinates by the provided factor.",
+        directions = "Call `records::blittable::Point::scale` through the generated binding and assert Point::scale multiplies both coordinates by the provided factor.",
         exclude(
             csharp,
             reason = "The C# demo tests do not currently cover the Point::scale method."
@@ -144,7 +153,8 @@ impl Point {
 
     #[demo_bench_macros::demo_case(
         "records.blittable.point.should_add_coordinates",
-        description = "Point::add returns a Point whose coordinates are the pairwise sums."
+        justification = "Ensure Point::add returns a Point whose coordinates are the pairwise sums.",
+        directions = "Call `records::blittable::Point::add` through the generated binding and assert Point::add returns a Point whose coordinates are the pairwise sums."
     )]
     pub fn add(&self, other: Point) -> Point {
         Point {
@@ -155,7 +165,8 @@ impl Point {
 
     #[demo_bench_macros::demo_case(
         "records.blittable.point.should_compute_path_length",
-        description = "Point::path_length sums the segment lengths across a vector of Points.",
+        justification = "Ensure Point::path_length sums the segment lengths across a vector of Points.",
+        directions = "Call `records::blittable::Point::path_length` through the generated binding and assert Point::path_length sums the segment lengths across a vector of Points.",
         exclude(
             python,
             reason = "The Python demo tests do not currently cover Point::path_length."
@@ -174,7 +185,8 @@ impl Point {
 
     #[demo_bench_macros::demo_case(
         "records.blittable.point.should_report_dimension_count",
-        description = "Point::dimensions reports the fixed two-dimensional shape of Point."
+        justification = "Ensure Point::dimensions reports the fixed two-dimensional shape of Point.",
+        directions = "Call `records::blittable::Point::dimensions` through the generated binding and assert Point::dimensions reports the fixed two-dimensional shape of Point."
     )]
     pub fn dimensions() -> u32 {
         2
@@ -183,7 +195,8 @@ impl Point {
 
 #[demo_bench_macros::demo_case(
     "records.blittable.point.should_roundtrip_value",
-    description = "A blittable Point crosses the wire and returns unchanged."
+    justification = "Ensure a blittable Point crosses the wire and returns unchanged.",
+    directions = "Call `records::blittable::echo_point` through the generated binding and assert a blittable Point crosses the wire and returns unchanged."
 )]
 #[export]
 pub fn echo_point(p: Point) -> Point {
@@ -192,7 +205,8 @@ pub fn echo_point(p: Point) -> Point {
 
 #[demo_bench_macros::demo_case(
     "records.blittable.point.should_return_some_for_nonzero_coordinates",
-    description = "try_make_point returns Some Point when the provided coordinates are not both zero.",
+    justification = "Ensure try_make_point returns Some Point when the provided coordinates are not both zero.",
+    directions = "Call `records::blittable::try_make_point` through the generated binding and assert try_make_point returns Some Point when the provided coordinates are not both zero.",
     exclude(
         csharp,
         reason = "The C# demo tests do not currently cover try_make_point."
@@ -208,7 +222,8 @@ pub fn echo_point(p: Point) -> Point {
 )]
 #[demo_bench_macros::demo_case(
     "records.blittable.point.should_return_none_for_origin_coordinates",
-    description = "try_make_point returns None when both coordinates are zero.",
+    justification = "Ensure try_make_point returns None when both coordinates are zero.",
+    directions = "Call `records::blittable::try_make_point` through the generated binding and assert try_make_point returns None when both coordinates are zero.",
     exclude(
         csharp,
         reason = "The C# demo tests do not currently cover try_make_point."
@@ -233,7 +248,8 @@ pub fn try_make_point(x: f64, y: f64) -> Option<Point> {
 
 #[demo_bench_macros::demo_case(
     "records.blittable.point.should_make_from_coordinates",
-    description = "make_point returns a blittable Point containing the provided coordinates."
+    justification = "Ensure make_point returns a blittable Point containing the provided coordinates.",
+    directions = "Call `records::blittable::make_point` through the generated binding and assert make_point returns a blittable Point containing the provided coordinates."
 )]
 #[export]
 #[benchmark_candidate(function, uniffi)]
@@ -243,7 +259,8 @@ pub fn make_point(x: f64, y: f64) -> Point {
 
 #[demo_bench_macros::demo_case(
     "records.blittable.point.should_add_values",
-    description = "add_points returns a blittable Point whose fields are the pairwise coordinate sums."
+    justification = "Ensure add_points returns a blittable Point whose fields are the pairwise coordinate sums.",
+    directions = "Call `records::blittable::add_points` through the generated binding and assert add_points returns a blittable Point whose fields are the pairwise coordinate sums."
 )]
 #[export]
 pub fn add_points(a: Point, b: Point) -> Point {
@@ -264,7 +281,8 @@ pub struct Color {
 
 #[demo_bench_macros::demo_case(
     "records.blittable.color.should_roundtrip_value",
-    description = "A blittable Color crosses the wire and returns unchanged.",
+    justification = "Ensure a blittable Color crosses the wire and returns unchanged.",
+    directions = "Call `records::blittable::echo_color` through the generated binding and assert a blittable Color crosses the wire and returns unchanged.",
     exclude(
         java,
         reason = "The Java demo tests do not currently cover Color records."
@@ -277,7 +295,8 @@ pub fn echo_color(c: Color) -> Color {
 
 #[demo_bench_macros::demo_case(
     "records.blittable.color.should_make_from_channels",
-    description = "make_color returns a Color containing the provided channel values.",
+    justification = "Ensure make_color returns a Color containing the provided channel values.",
+    directions = "Call `records::blittable::make_color` through the generated binding and assert make_color returns a Color containing the provided channel values.",
     exclude(
         java,
         reason = "The Java demo tests do not currently cover Color records."
@@ -466,7 +485,8 @@ impl DataPoint {
 
 #[demo_bench_macros::demo_case(
     "records.blittable.locations.should_generate_sample_vector",
-    description = "generate_locations returns the requested number of Location records.",
+    justification = "Ensure generate_locations returns the requested number of Location records.",
+    directions = "Call `records::blittable::generate_locations` through the generated binding and assert generate_locations returns the requested number of Location records.",
     exclude(
         wasm,
         reason = "The Wasm demo tests do not currently cover blittable record vector helpers."
@@ -493,7 +513,8 @@ pub fn generate_locations(count: i32) -> Vec<Location> {
 
 #[demo_bench_macros::demo_case(
     "records.blittable.locations.should_count_vector_items",
-    description = "process_locations receives a vector of Location records and returns its item count.",
+    justification = "Ensure process_locations receives a vector of Location records and returns its item count.",
+    directions = "Call `records::blittable::process_locations` through the generated binding and assert process_locations receives a vector of Location records and returns its item count.",
     exclude(
         wasm,
         reason = "The Wasm demo tests do not currently cover blittable record vector helpers."
@@ -505,7 +526,8 @@ pub fn generate_locations(count: i32) -> Vec<Location> {
 )]
 #[demo_bench_macros::demo_case(
     "records.blittable.locations.should_count_empty_vector",
-    description = "process_locations treats an empty Location vector as count zero.",
+    justification = "Ensure process_locations treats an empty Location vector as count zero.",
+    directions = "Call `records::blittable::process_locations` through the generated binding and assert process_locations treats an empty Location vector as count zero.",
     exclude(
         apple,
         reason = "The Apple blittable vector demo does not currently cover the empty Location vector count."
@@ -529,7 +551,8 @@ pub fn generate_locations(count: i32) -> Vec<Location> {
 )]
 #[demo_bench_macros::demo_case(
     "records.blittable.locations.should_count_host_constructed_vector",
-    description = "process_locations receives host-constructed Location records and returns their item count.",
+    justification = "Ensure process_locations receives host-constructed Location records and returns their item count.",
+    directions = "Call `records::blittable::process_locations` through the generated binding and assert process_locations receives host-constructed Location records and returns their item count.",
     exclude(
         apple,
         reason = "The Apple blittable vector demo does not currently cover host-constructed Location vectors."
@@ -559,7 +582,8 @@ pub fn process_locations(locations: Vec<Location>) -> i32 {
 
 #[demo_bench_macros::demo_case(
     "records.blittable.locations.should_sum_generated_ratings",
-    description = "sum_ratings receives generated Location records and sums their f64 rating fields.",
+    justification = "Ensure sum_ratings receives generated Location records and sums their f64 rating fields.",
+    directions = "Call `records::blittable::sum_ratings` through the generated binding and assert sum_ratings receives generated Location records and sums their f64 rating fields.",
     exclude(
         wasm,
         reason = "The Wasm demo tests do not currently cover blittable record vector helpers."
@@ -571,7 +595,8 @@ pub fn process_locations(locations: Vec<Location>) -> i32 {
 )]
 #[demo_bench_macros::demo_case(
     "records.blittable.locations.should_sum_host_constructed_ratings",
-    description = "sum_ratings receives host-constructed Location records and sums their f64 rating fields.",
+    justification = "Ensure sum_ratings receives host-constructed Location records and sums their f64 rating fields.",
+    directions = "Call `records::blittable::sum_ratings` through the generated binding and assert sum_ratings receives host-constructed Location records and sums their f64 rating fields.",
     exclude(
         apple,
         reason = "The Apple blittable vector demo does not currently cover host-constructed Location vectors."
@@ -601,7 +626,8 @@ pub fn sum_ratings(locations: Vec<Location>) -> f64 {
 
 #[demo_bench_macros::demo_case(
     "records.blittable.trades.should_generate_sample_vector",
-    description = "generate_trades returns the requested number of Trade records.",
+    justification = "Ensure generate_trades returns the requested number of Trade records.",
+    directions = "Call `records::blittable::generate_trades` through the generated binding and assert generate_trades returns the requested number of Trade records.",
     exclude(
         wasm,
         reason = "The Wasm demo tests do not currently cover blittable record vector helpers."
@@ -631,7 +657,8 @@ pub fn generate_trades(count: i32) -> Vec<Trade> {
 
 #[demo_bench_macros::demo_case(
     "records.blittable.trades.should_sum_volumes",
-    description = "sum_trade_volumes receives Trade records and sums their i64 volume fields.",
+    justification = "Ensure sum_trade_volumes receives Trade records and sums their i64 volume fields.",
+    directions = "Call `records::blittable::sum_trade_volumes` through the generated binding and assert sum_trade_volumes receives Trade records and sums their i64 volume fields.",
     exclude(
         wasm,
         reason = "The Wasm demo tests do not currently cover blittable record vector helpers."
@@ -649,7 +676,8 @@ pub fn sum_trade_volumes(trades: Vec<Trade>) -> i64 {
 
 #[demo_bench_macros::demo_case(
     "records.blittable.trades.should_aggregate_with_locations",
-    description = "aggregate_location_trade_stats receives Location and Trade vectors together and combines open-location count with total trade volume.",
+    justification = "Ensure aggregate_location_trade_stats receives Location and Trade vectors together and combines open-location count with total trade volume.",
+    directions = "Call `records::blittable::aggregate_location_trade_stats` through the generated binding and assert aggregate_location_trade_stats receives Location and Trade vectors together and combines open-location count with total trade volume.",
     exclude(
         wasm,
         reason = "The Wasm demo tests do not currently cover blittable record vector helpers."
@@ -669,7 +697,8 @@ pub fn aggregate_location_trade_stats(locations: Vec<Location>, trades: Vec<Trad
 
 #[demo_bench_macros::demo_case(
     "records.blittable.particles.should_generate_sample_vector",
-    description = "generate_particles returns the requested number of Particle records.",
+    justification = "Ensure generate_particles returns the requested number of Particle records.",
+    directions = "Call `records::blittable::generate_particles` through the generated binding and assert generate_particles returns the requested number of Particle records.",
     exclude(
         wasm,
         reason = "The Wasm demo tests do not currently cover blittable record vector helpers."
@@ -700,7 +729,8 @@ pub fn generate_particles(count: i32) -> Vec<Particle> {
 
 #[demo_bench_macros::demo_case(
     "records.blittable.particles.should_sum_masses",
-    description = "sum_particle_masses receives Particle records and sums their f64 mass fields.",
+    justification = "Ensure sum_particle_masses receives Particle records and sums their f64 mass fields.",
+    directions = "Call `records::blittable::sum_particle_masses` through the generated binding and assert sum_particle_masses receives Particle records and sums their f64 mass fields.",
     exclude(
         wasm,
         reason = "The Wasm demo tests do not currently cover blittable record vector helpers."
@@ -718,7 +748,8 @@ pub fn sum_particle_masses(particles: Vec<Particle>) -> f64 {
 
 #[demo_bench_macros::demo_case(
     "records.blittable.sensor_readings.should_generate_sample_vector",
-    description = "generate_sensor_readings returns the requested number of SensorReading records.",
+    justification = "Ensure generate_sensor_readings returns the requested number of SensorReading records.",
+    directions = "Call `records::blittable::generate_sensor_readings` through the generated binding and assert generate_sensor_readings returns the requested number of SensorReading records.",
     exclude(
         wasm,
         reason = "The Wasm demo tests do not currently cover blittable record vector helpers."
@@ -748,7 +779,8 @@ pub fn generate_sensor_readings(count: i32) -> Vec<SensorReading> {
 
 #[demo_bench_macros::demo_case(
     "records.blittable.sensor_readings.should_average_generated_temperatures",
-    description = "avg_sensor_temperature receives SensorReading records and averages their f64 temperature fields.",
+    justification = "Ensure avg_sensor_temperature receives SensorReading records and averages their f64 temperature fields.",
+    directions = "Call `records::blittable::avg_sensor_temperature` through the generated binding and assert avg_sensor_temperature receives SensorReading records and averages their f64 temperature fields.",
     exclude(
         wasm,
         reason = "The Wasm demo tests do not currently cover blittable record vector helpers."
@@ -760,7 +792,8 @@ pub fn generate_sensor_readings(count: i32) -> Vec<SensorReading> {
 )]
 #[demo_bench_macros::demo_case(
     "records.blittable.sensor_readings.should_average_empty_vector_as_zero",
-    description = "avg_sensor_temperature treats an empty SensorReading vector as average zero.",
+    justification = "Ensure avg_sensor_temperature treats an empty SensorReading vector as average zero.",
+    directions = "Call `records::blittable::avg_sensor_temperature` through the generated binding and assert avg_sensor_temperature treats an empty SensorReading vector as average zero.",
     exclude(
         apple,
         reason = "The Apple blittable vector demo does not currently cover empty SensorReading vectors."
@@ -799,7 +832,8 @@ pub fn avg_sensor_temperature(readings: Vec<SensorReading>) -> f64 {
 
 #[demo_bench_macros::demo_case(
     "records.blittable.locations.find_location.should_return_some_for_positive_id",
-    description = "find_location returns Some(Location) for a positive id.",
+    justification = "Ensure find_location returns Some(Location) for a positive id.",
+    directions = "Call `records::blittable::find_location` through the generated binding and assert find_location returns Some(Location) for a positive id.",
     exclude(
         csharp,
         reason = "The C# blittable record demo does not currently cover find_location."
@@ -823,7 +857,8 @@ pub fn avg_sensor_temperature(readings: Vec<SensorReading>) -> f64 {
 )]
 #[demo_bench_macros::demo_case(
     "records.blittable.locations.find_location.should_return_none_for_non_positive_id",
-    description = "find_location returns None for a non-positive id.",
+    justification = "Ensure find_location returns None for a non-positive id.",
+    directions = "Call `records::blittable::find_location` through the generated binding and assert find_location returns None for a non-positive id.",
     exclude(
         csharp,
         reason = "The C# blittable record demo does not currently cover find_location."
@@ -864,7 +899,8 @@ pub fn find_location(id: i32) -> Option<Location> {
 
 #[demo_bench_macros::demo_case(
     "records.blittable.locations.find_locations.should_return_some_vector_for_positive_count",
-    description = "find_locations returns Some generated Location vector for a positive count.",
+    justification = "Ensure find_locations returns Some generated Location vector for a positive count.",
+    directions = "Call `records::blittable::find_locations` through the generated binding and assert find_locations returns Some generated Location vector for a positive count.",
     exclude(
         csharp,
         reason = "The C# blittable record demo does not currently cover find_locations."
@@ -888,7 +924,8 @@ pub fn find_location(id: i32) -> Option<Location> {
 )]
 #[demo_bench_macros::demo_case(
     "records.blittable.locations.find_locations.should_return_none_for_non_positive_count",
-    description = "find_locations returns None for a non-positive count.",
+    justification = "Ensure find_locations returns None for a non-positive count.",
+    directions = "Call `records::blittable::find_locations` through the generated binding and assert find_locations returns None for a non-positive count.",
     exclude(
         csharp,
         reason = "The C# blittable record demo does not currently cover find_locations."

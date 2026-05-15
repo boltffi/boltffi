@@ -3,11 +3,13 @@ use demo_bench_macros::benchmark_candidate;
 
 #[demo_bench_macros::demo_case(
     "primitives.strings.string.should_roundtrip_empty",
-    description = "An empty host string crosses the wire and returns as an empty string."
+    justification = "Ensure an empty host string crosses the wire and returns as an empty string.",
+    directions = "Call `primitives::strings::echo_string` through the generated binding and assert an empty host string crosses the wire and returns as an empty string."
 )]
 #[demo_bench_macros::demo_case(
     "primitives.strings.string.should_roundtrip_emoji",
-    description = "A host string containing an emoji crosses the wire and returns unchanged."
+    justification = "Ensure a host string containing an emoji crosses the wire and returns unchanged.",
+    directions = "Call `primitives::strings::echo_string` through the generated binding and assert a host string containing an emoji crosses the wire and returns unchanged."
 )]
 #[export]
 #[benchmark_candidate(function, uniffi, wasm_bindgen)]
@@ -18,7 +20,8 @@ pub fn echo_string(v: String) -> String {
 /// Concatenates two strings and returns the combined result.
 #[demo_bench_macros::demo_case(
     "primitives.strings.string.should_concatenate_values",
-    description = "Two non-empty host strings cross the wire and return as one concatenated string."
+    justification = "Ensure two non-empty host strings cross the wire and return as one concatenated string.",
+    directions = "Call `primitives::strings::concat_strings` through the generated binding and assert two non-empty host strings cross the wire and return as one concatenated string."
 )]
 #[export]
 pub fn concat_strings(a: String, b: String) -> String {
@@ -27,7 +30,8 @@ pub fn concat_strings(a: String, b: String) -> String {
 
 #[demo_bench_macros::demo_case(
     "primitives.strings.string.should_report_utf8_byte_length",
-    description = "A string containing a non-ASCII code point reports its UTF-8 byte length."
+    justification = "Ensure a string containing a non-ASCII code point reports its UTF-8 byte length.",
+    directions = "Call `primitives::strings::string_length` through the generated binding and assert a string containing a non-ASCII code point reports its UTF-8 byte length."
 )]
 #[export]
 pub fn string_length(v: String) -> u32 {
@@ -36,7 +40,8 @@ pub fn string_length(v: String) -> u32 {
 
 #[demo_bench_macros::demo_case(
     "primitives.strings.string.should_detect_empty",
-    description = "An empty host string crosses the wire and is reported as empty."
+    justification = "Ensure an empty host string crosses the wire and is reported as empty.",
+    directions = "Call `primitives::strings::string_is_empty` through the generated binding and assert an empty host string crosses the wire and is reported as empty."
 )]
 #[export]
 pub fn string_is_empty(v: String) -> bool {
@@ -45,7 +50,8 @@ pub fn string_is_empty(v: String) -> bool {
 
 #[demo_bench_macros::demo_case(
     "primitives.strings.string.should_repeat_value",
-    description = "A host string and repeat count cross the wire and return the repeated string."
+    justification = "Ensure a host string and repeat count cross the wire and return the repeated string.",
+    directions = "Call `primitives::strings::repeat_string` through the generated binding and assert a host string and repeat count cross the wire and return the repeated string."
 )]
 #[export]
 pub fn repeat_string(v: String, count: u32) -> String {

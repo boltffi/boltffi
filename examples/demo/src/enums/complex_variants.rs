@@ -15,7 +15,8 @@ pub enum Filter {
 
 #[demo_bench_macros::demo_case(
     "enums.complex_variants.filter.none.should_roundtrip_unit_variant",
-    description = "The unit Filter::None variant crosses the FFI boundary unchanged.",
+    justification = "Ensure the unit Filter::None variant crosses the FFI boundary unchanged.",
+    directions = "Call `enums::complex_variants::echo_filter` through the generated binding and assert the unit Filter::None variant crosses the FFI boundary unchanged.",
     exclude(
         csharp,
         reason = "The C# complex collection tests do not currently round-trip the Filter::None variant."
@@ -31,7 +32,8 @@ pub enum Filter {
 )]
 #[demo_bench_macros::demo_case(
     "enums.complex_variants.filter.by_name.should_roundtrip_string_payload",
-    description = "The Filter::ByName variant preserves its string payload when round-tripped.",
+    justification = "Ensure the Filter::ByName variant preserves its string payload when round-tripped.",
+    directions = "Call `enums::complex_variants::echo_filter` through the generated binding and assert the Filter::ByName variant preserves its string payload when round-tripped.",
     exclude(
         csharp,
         reason = "The C# complex collection tests do not currently round-trip the Filter::ByName variant."
@@ -47,7 +49,8 @@ pub enum Filter {
 )]
 #[demo_bench_macros::demo_case(
     "enums.complex_variants.filter.by_tags.should_roundtrip_string_vector_payload",
-    description = "The Filter::ByTags variant preserves a vector of UTF-8 strings when round-tripped.",
+    justification = "Ensure the Filter::ByTags variant preserves a vector of UTF-8 strings when round-tripped.",
+    directions = "Call `enums::complex_variants::echo_filter` through the generated binding and assert the Filter::ByTags variant preserves a vector of UTF-8 strings when round-tripped.",
     exclude(
         apple,
         reason = "The Apple complex enum tests do not currently round-trip the Filter::ByTags variant."
@@ -71,7 +74,8 @@ pub enum Filter {
 )]
 #[demo_bench_macros::demo_case(
     "enums.complex_variants.filter.by_groups.should_roundtrip_nested_string_vectors",
-    description = "The Filter::ByGroups variant preserves nested UTF-8 string vectors when round-tripped.",
+    justification = "Ensure the Filter::ByGroups variant preserves nested UTF-8 string vectors when round-tripped.",
+    directions = "Call `enums::complex_variants::echo_filter` through the generated binding and assert the Filter::ByGroups variant preserves nested UTF-8 string vectors when round-tripped.",
     exclude(
         python,
         reason = "The Python demo tests do not currently cover complex data-enum variants."
@@ -79,7 +83,8 @@ pub enum Filter {
 )]
 #[demo_bench_macros::demo_case(
     "enums.complex_variants.filter.by_points.should_roundtrip_record_vector_payload",
-    description = "The Filter::ByPoints variant preserves a vector of Point records when round-tripped.",
+    justification = "Ensure the Filter::ByPoints variant preserves a vector of Point records when round-tripped.",
+    directions = "Call `enums::complex_variants::echo_filter` through the generated binding and assert the Filter::ByPoints variant preserves a vector of Point records when round-tripped.",
     exclude(
         apple,
         reason = "The Apple complex enum tests do not currently round-trip the Filter::ByPoints variant."
@@ -108,7 +113,8 @@ pub fn echo_filter(f: Filter) -> Filter {
 
 #[demo_bench_macros::demo_case(
     "enums.complex_variants.filter.by_name.should_describe_string_payload",
-    description = "describe_filter renders a ByName string payload in the summary.",
+    justification = "Ensure describe_filter renders a ByName string payload in the summary.",
+    directions = "Call `enums::complex_variants::describe_filter` through the generated binding and assert describe_filter renders a ByName string payload in the summary.",
     exclude(
         csharp,
         reason = "The C# complex collection tests do not currently describe the Filter::ByName variant."
@@ -124,7 +130,8 @@ pub fn echo_filter(f: Filter) -> Filter {
 )]
 #[demo_bench_macros::demo_case(
     "enums.complex_variants.filter.by_range.should_describe_numeric_bounds",
-    description = "describe_filter renders a ByRange numeric lower and upper bound.",
+    justification = "Ensure describe_filter renders a ByRange numeric lower and upper bound.",
+    directions = "Call `enums::complex_variants::describe_filter` through the generated binding and assert describe_filter renders a ByRange numeric lower and upper bound.",
     exclude(
         csharp,
         reason = "The C# complex collection tests do not currently describe the Filter::ByRange variant."
@@ -140,7 +147,8 @@ pub fn echo_filter(f: Filter) -> Filter {
 )]
 #[demo_bench_macros::demo_case(
     "enums.complex_variants.filter.by_tags.should_describe_string_vector_payload",
-    description = "describe_filter counts the UTF-8 strings in a ByTags vector payload.",
+    justification = "Ensure describe_filter counts the UTF-8 strings in a ByTags vector payload.",
+    directions = "Call `enums::complex_variants::describe_filter` through the generated binding and assert describe_filter counts the UTF-8 strings in a ByTags vector payload.",
     exclude(
         java,
         reason = "The Java complex enum tests do not currently describe the Filter::ByTags variant."
@@ -152,7 +160,8 @@ pub fn echo_filter(f: Filter) -> Filter {
 )]
 #[demo_bench_macros::demo_case(
     "enums.complex_variants.filter.by_groups.should_describe_nested_string_vectors",
-    description = "describe_filter counts the outer vector in a ByGroups nested vector payload.",
+    justification = "Ensure describe_filter counts the outer vector in a ByGroups nested vector payload.",
+    directions = "Call `enums::complex_variants::describe_filter` through the generated binding and assert describe_filter counts the outer vector in a ByGroups nested vector payload.",
     exclude(
         python,
         reason = "The Python demo tests do not currently cover complex data-enum variants."
@@ -160,7 +169,8 @@ pub fn echo_filter(f: Filter) -> Filter {
 )]
 #[demo_bench_macros::demo_case(
     "enums.complex_variants.filter.by_points.should_describe_record_vector_payload",
-    description = "describe_filter counts Point records in a ByPoints vector payload.",
+    justification = "Ensure describe_filter counts Point records in a ByPoints vector payload.",
+    directions = "Call `enums::complex_variants::describe_filter` through the generated binding and assert describe_filter counts Point records in a ByPoints vector payload.",
     exclude(
         java,
         reason = "The Java complex enum tests do not currently describe the Filter::ByPoints variant."
@@ -193,7 +203,8 @@ pub enum ApiResponse {
 
 #[demo_bench_macros::demo_case(
     "enums.complex_variants.api_response.success.should_roundtrip_string_payload",
-    description = "The ApiResponse::Success variant preserves its string payload when round-tripped.",
+    justification = "Ensure the ApiResponse::Success variant preserves its string payload when round-tripped.",
+    directions = "Call `enums::complex_variants::echo_api_response` through the generated binding and assert the ApiResponse::Success variant preserves its string payload when round-tripped.",
     exclude(
         csharp,
         reason = "The C# demo currently covers Filter complex variants but not ApiResponse helpers."
@@ -205,7 +216,8 @@ pub enum ApiResponse {
 )]
 #[demo_bench_macros::demo_case(
     "enums.complex_variants.api_response.redirect.should_roundtrip_url_payload",
-    description = "The ApiResponse::Redirect variant preserves its URL payload when round-tripped.",
+    justification = "Ensure the ApiResponse::Redirect variant preserves its URL payload when round-tripped.",
+    directions = "Call `enums::complex_variants::echo_api_response` through the generated binding and assert the ApiResponse::Redirect variant preserves its URL payload when round-tripped.",
     exclude(
         csharp,
         reason = "The C# demo currently covers Filter complex variants but not ApiResponse helpers."
@@ -226,7 +238,8 @@ pub fn echo_api_response(response: ApiResponse) -> ApiResponse {
 
 #[demo_bench_macros::demo_case(
     "enums.complex_variants.api_response.success.should_identify_success",
-    description = "is_success returns true for the ApiResponse::Success variant.",
+    justification = "Ensure is_success returns true for the ApiResponse::Success variant.",
+    directions = "Call `enums::complex_variants::is_success` through the generated binding and assert is_success returns true for the ApiResponse::Success variant.",
     exclude(
         csharp,
         reason = "The C# demo currently covers Filter complex variants but not ApiResponse helpers."
@@ -238,7 +251,8 @@ pub fn echo_api_response(response: ApiResponse) -> ApiResponse {
 )]
 #[demo_bench_macros::demo_case(
     "enums.complex_variants.api_response.empty.should_not_identify_as_success",
-    description = "is_success returns false for the ApiResponse::Empty variant.",
+    justification = "Ensure is_success returns false for the ApiResponse::Empty variant.",
+    directions = "Call `enums::complex_variants::is_success` through the generated binding and assert is_success returns false for the ApiResponse::Empty variant.",
     exclude(
         csharp,
         reason = "The C# demo currently covers Filter complex variants but not ApiResponse helpers."
