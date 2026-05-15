@@ -761,28 +761,45 @@ public static class DemoTest
     {
         Console.WriteLine("Testing primitive vecs...");
 
+        DemoCase("case:primitives.vecs.i32.should_roundtrip_non_empty");
         int[] echoedI32 = EchoVecI32(new int[] { 1, 2, 3 });
-        Require(echoedI32.SequenceEqual(new[] { 1, 2, 3 }), "case:primitives.vecs.echo_i32.basic echoVecI32");
-        Require(EchoVecI32(Array.Empty<int>()).Length == 0, "case:primitives.vecs.echo_i32.empty echoVecI32 empty");
+        Require(echoedI32.SequenceEqual(new[] { 1, 2, 3 }), "echoVecI32");
+        DemoCase("case:primitives.vecs.i32.should_roundtrip_empty");
+        Require(EchoVecI32(Array.Empty<int>()).Length == 0, "echoVecI32 empty");
 
-        Require(EchoVecI8(new sbyte[] { -1, 0, 7 }).SequenceEqual(new sbyte[] { -1, 0, 7 }), "case:primitives.vecs.echo_i8.basic echoVecI8");
-        Require(EchoVecU8(new byte[] { 0, 1, 2, 3 }).SequenceEqual(new byte[] { 0, 1, 2, 3 }), "case:primitives.vecs.echo_u8.basic echoVecU8");
+        DemoCase("case:primitives.vecs.i8.should_roundtrip_values");
+        Require(EchoVecI8(new sbyte[] { -1, 0, 7 }).SequenceEqual(new sbyte[] { -1, 0, 7 }), "echoVecI8");
+        DemoCase("case:primitives.vecs.u8.should_roundtrip_values");
+        Require(EchoVecU8(new byte[] { 0, 1, 2, 3 }).SequenceEqual(new byte[] { 0, 1, 2, 3 }), "echoVecU8");
+        DemoCase("case:primitives.vecs.i16.should_roundtrip_values");
         Require(EchoVecI16(new short[] { -3, 0, 9 }).SequenceEqual(new short[] { -3, 0, 9 }), "echoVecI16");
+        DemoCase("case:primitives.vecs.u16.should_roundtrip_values");
         Require(EchoVecU16(new ushort[] { 0, 10, 20 }).SequenceEqual(new ushort[] { 0, 10, 20 }), "echoVecU16");
+        DemoCase("case:primitives.vecs.u32.should_roundtrip_values");
         Require(EchoVecU32(new uint[] { 0, 10, 20 }).SequenceEqual(new uint[] { 0, 10, 20 }), "echoVecU32");
+        DemoCase("case:primitives.vecs.i64.should_roundtrip_values");
         Require(EchoVecI64(new long[] { -5L, 0L, 8L }).SequenceEqual(new long[] { -5L, 0L, 8L }), "echoVecI64");
+        DemoCase("case:primitives.vecs.u64.should_roundtrip_values");
         Require(EchoVecU64(new ulong[] { 0UL, 1UL, 2UL }).SequenceEqual(new ulong[] { 0UL, 1UL, 2UL }), "echoVecU64");
+        DemoCase("case:primitives.vecs.isize.should_roundtrip_values");
         Require(EchoVecIsize(new nint[] { -2, 0, 5 }).SequenceEqual(new nint[] { -2, 0, 5 }), "echoVecIsize");
+        DemoCase("case:primitives.vecs.usize.should_roundtrip_values");
         Require(EchoVecUsize(new nuint[] { 0, 2, 4 }).SequenceEqual(new nuint[] { 0, 2, 4 }), "echoVecUsize");
-        Require(EchoVecF32(new float[] { 1.25f, -2.5f }).SequenceEqual(new float[] { 1.25f, -2.5f }), "case:primitives.vecs.echo_f32.basic echoVecF32");
-        Require(EchoVecF64(new double[] { 1.5, 2.5 }).SequenceEqual(new double[] { 1.5, 2.5 }), "case:primitives.vecs.echo_f64.basic echoVecF64");
-        Require(EchoVecBool(new bool[] { true, false, true }).SequenceEqual(new bool[] { true, false, true }), "case:primitives.vecs.echo_bool.basic echoVecBool");
+        DemoCase("case:primitives.vecs.f32.should_roundtrip_values_with_tolerance");
+        Require(EchoVecF32(new float[] { 1.25f, -2.5f }).SequenceEqual(new float[] { 1.25f, -2.5f }), "echoVecF32");
+        DemoCase("case:primitives.vecs.f64.should_roundtrip_values");
+        Require(EchoVecF64(new double[] { 1.5, 2.5 }).SequenceEqual(new double[] { 1.5, 2.5 }), "echoVecF64");
+        DemoCase("case:primitives.vecs.bool.should_roundtrip_values");
+        Require(EchoVecBool(new bool[] { true, false, true }).SequenceEqual(new bool[] { true, false, true }), "echoVecBool");
 
-        Require(SumVecI32(new int[] { 10, 20, 30 }) == 60L, "case:primitives.vecs.sum_i32.basic sumVecI32");
+        DemoCase("case:primitives.vecs.i32.should_sum_values");
+        Require(SumVecI32(new int[] { 10, 20, 30 }) == 60L, "sumVecI32");
         Require(SumVecI32(Array.Empty<int>()) == 0L, "sumVecI32 empty");
 
-        Require(MakeRange(0, 5).SequenceEqual(new int[] { 0, 1, 2, 3, 4 }), "case:primitives.vecs.make_range.basic makeRange");
-        Require(ReverseVecI32(new int[] { 1, 2, 3 }).SequenceEqual(new int[] { 3, 2, 1 }), "case:primitives.vecs.reverse_i32.basic reverseVecI32");
+        DemoCase("case:primitives.vecs.i32.should_make_range");
+        Require(MakeRange(0, 5).SequenceEqual(new int[] { 0, 1, 2, 3, 4 }), "makeRange");
+        DemoCase("case:primitives.vecs.i32.should_reverse_values");
+        Require(ReverseVecI32(new int[] { 1, 2, 3 }).SequenceEqual(new int[] { 3, 2, 1 }), "reverseVecI32");
         Require(GenerateI32Vec(4).SequenceEqual(new int[] { 0, 1, 2, 3 }), "generateI32Vec");
         Require(GenerateF64Vec(3).Length == 3, "generateF64Vec length");
         Require(Math.Abs(SumF64Vec(new double[] { 0.5, 1.5, 2.0 }) - 4.0) < 1e-9, "sumF64Vec");

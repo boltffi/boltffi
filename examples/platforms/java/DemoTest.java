@@ -551,72 +551,89 @@ public final class DemoTest {
     private static void testPrimitiveVecs() {
         System.out.println("Testing primitive vecs...");
 
+        demoCase("case:primitives.vecs.i32.should_roundtrip_non_empty");
         int[] ints = Demo.echoVecI32(new int[]{1, 2, 3});
-        assert ints.length == 3 : "case:primitives.vecs.echo_i32.basic echoVecI32 length";
+        assert ints.length == 3 : "echoVecI32 length";
         assert ints[0] == 1 && ints[1] == 2 && ints[2] == 3 : "echoVecI32 values";
 
+        demoCase("case:primitives.vecs.i32.should_roundtrip_empty");
         int[] empty = Demo.echoVecI32(new int[0]);
-        assert empty.length == 0 : "case:primitives.vecs.echo_i32.empty echoVecI32 empty";
+        assert empty.length == 0 : "echoVecI32 empty";
 
-        assert Demo.sumVecI32(new int[]{10, 20, 30}) == 60L : "case:primitives.vecs.sum_i32.basic sumVecI32";
+        demoCase("case:primitives.vecs.i32.should_sum_values");
+        assert Demo.sumVecI32(new int[]{10, 20, 30}) == 60L : "sumVecI32";
         assert Demo.sumVecI32(new int[0]) == 0L : "sumVecI32 empty";
 
+        demoCase("case:primitives.vecs.f64.should_roundtrip_values");
         double[] doubles = Demo.echoVecF64(new double[]{1.5, 2.5});
-        assert doubles.length == 2 : "case:primitives.vecs.echo_f64.basic echoVecF64 length";
+        assert doubles.length == 2 : "echoVecF64 length";
         assert Math.abs(doubles[0] - 1.5) < 0.0001 : "echoVecF64[0]";
         assert Math.abs(doubles[1] - 2.5) < 0.0001 : "echoVecF64[1]";
 
+        demoCase("case:primitives.vecs.bool.should_roundtrip_values");
         boolean[] bools = Demo.echoVecBool(new boolean[]{true, false, true});
-        assert bools.length == 3 : "case:primitives.vecs.echo_bool.basic echoVecBool length";
+        assert bools.length == 3 : "echoVecBool length";
         assert bools[0] && !bools[1] && bools[2] : "echoVecBool values";
 
+        demoCase("case:primitives.vecs.i8.should_roundtrip_values");
         byte[] i8s = Demo.echoVecI8(new byte[]{-1, 0, 7});
-        assert i8s.length == 3 : "case:primitives.vecs.echo_i8.basic echoVecI8 length";
+        assert i8s.length == 3 : "echoVecI8 length";
         assert i8s[0] == -1 && i8s[2] == 7 : "echoVecI8 values";
 
+        demoCase("case:primitives.vecs.u8.should_roundtrip_values");
         byte[] u8s = Demo.echoVecU8(new byte[]{0, 1, 2, 3});
-        assert u8s.length == 4 : "case:primitives.vecs.echo_u8.basic echoVecU8 length";
+        assert u8s.length == 4 : "echoVecU8 length";
         assert u8s[0] == 0 && u8s[3] == 3 : "echoVecU8 values";
 
+        demoCase("case:primitives.vecs.i16.should_roundtrip_values");
         short[] i16s = Demo.echoVecI16(new short[]{-3, 0, 9});
         assert i16s.length == 3 : "echoVecI16 length";
         assert i16s[0] == -3 && i16s[2] == 9 : "echoVecI16 values";
 
+        demoCase("case:primitives.vecs.u16.should_roundtrip_values");
         short[] u16s = Demo.echoVecU16(new short[]{0, 10, 20});
         assert u16s.length == 3 : "echoVecU16 length";
         assert u16s[0] == 0 && u16s[2] == 20 : "echoVecU16 values";
 
+        demoCase("case:primitives.vecs.u32.should_roundtrip_values");
         int[] u32s = Demo.echoVecU32(new int[]{0, 10, 20});
         assert u32s.length == 3 : "echoVecU32 length";
         assert u32s[0] == 0 && u32s[2] == 20 : "echoVecU32 values";
 
+        demoCase("case:primitives.vecs.i64.should_roundtrip_values");
         long[] i64s = Demo.echoVecI64(new long[]{-5L, 0L, 8L});
         assert i64s.length == 3 : "echoVecI64 length";
         assert i64s[0] == -5L && i64s[2] == 8L : "echoVecI64 values";
 
+        demoCase("case:primitives.vecs.u64.should_roundtrip_values");
         long[] u64s = Demo.echoVecU64(new long[]{0L, 1L, 2L});
         assert u64s.length == 3 : "echoVecU64 length";
         assert u64s[0] == 0L && u64s[2] == 2L : "echoVecU64 values";
 
+        demoCase("case:primitives.vecs.isize.should_roundtrip_values");
         long[] isizes = Demo.echoVecIsize(new long[]{-2L, 0L, 5L});
         assert isizes.length == 3 : "echoVecIsize length";
         assert isizes[0] == -2L && isizes[2] == 5L : "echoVecIsize values";
 
+        demoCase("case:primitives.vecs.usize.should_roundtrip_values");
         long[] usizes = Demo.echoVecUsize(new long[]{0L, 2L, 4L});
         assert usizes.length == 3 : "echoVecUsize length";
         assert usizes[0] == 0L && usizes[2] == 4L : "echoVecUsize values";
 
+        demoCase("case:primitives.vecs.f32.should_roundtrip_values_with_tolerance");
         float[] f32s = Demo.echoVecF32(new float[]{1.25f, -2.5f});
-        assert f32s.length == 2 : "case:primitives.vecs.echo_f32.basic echoVecF32 length";
+        assert f32s.length == 2 : "echoVecF32 length";
         assert Math.abs(f32s[0] - 1.25f) < 0.0001f : "echoVecF32[0]";
         assert Math.abs(f32s[1] + 2.5f) < 0.0001f : "echoVecF32[1]";
 
+        demoCase("case:primitives.vecs.i32.should_make_range");
         int[] range = Demo.makeRange(0, 5);
-        assert range.length == 5 : "case:primitives.vecs.make_range.basic makeRange length";
+        assert range.length == 5 : "makeRange length";
         assert range[0] == 0 && range[4] == 4 : "makeRange values";
 
+        demoCase("case:primitives.vecs.i32.should_reverse_values");
         int[] reversed = Demo.reverseVecI32(new int[]{1, 2, 3});
-        assert reversed[0] == 3 && reversed[1] == 2 && reversed[2] == 1 : "case:primitives.vecs.reverse_i32.basic reverseVecI32";
+        assert reversed[0] == 3 && reversed[1] == 2 && reversed[2] == 1 : "reverseVecI32";
 
         System.out.println("  PASS\n");
     }
