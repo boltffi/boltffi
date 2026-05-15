@@ -1144,10 +1144,10 @@ public static class DemoTest
         Require(AverageScore(new TaggedScores("empty", Array.Empty<double>())) == 0.0, "averageScore empty");
 
         Filter byTags = new Filter.ByTags(new[] { "café", "🌍" });
-        DemoCase("case:enums.complex_variants.filter.should_roundtrip_variants");
+        DemoCase("case:enums.complex_variants.filter.by_tags.should_roundtrip_string_vector_payload");
         Filter echoedTags = EchoFilter(byTags);
         Require(echoedTags is Filter.ByTags t && t.Tags.SequenceEqual(((Filter.ByTags)byTags).Tags), "echoFilter ByTags");
-        DemoCase("case:enums.complex_variants.filter.should_describe_variants");
+        DemoCase("case:enums.complex_variants.filter.by_tags.should_describe_string_vector_payload");
         Require(DescribeFilter(byTags) == "filter by 2 tags", "describeFilter ByTags");
 
         Filter byGroups = new Filter.ByGroups(
@@ -1158,7 +1158,7 @@ public static class DemoTest
                 new[] { "common" },
             }
         );
-        DemoCase("case:enums.complex_variants.filter.should_roundtrip_variants");
+        DemoCase("case:enums.complex_variants.filter.by_groups.should_roundtrip_nested_string_vectors");
         Filter echoedGroups = EchoFilter(byGroups);
         Require(echoedGroups is Filter.ByGroups g && g.Groups.Length == 3, "echoFilter ByGroups outer length");
         Require(
@@ -1168,14 +1168,14 @@ public static class DemoTest
                 && g0.Groups[2].SequenceEqual(((Filter.ByGroups)byGroups).Groups[2]),
             "echoFilter ByGroups nested strings"
         );
-        DemoCase("case:enums.complex_variants.filter.should_describe_variants");
+        DemoCase("case:enums.complex_variants.filter.by_groups.should_describe_nested_string_vectors");
         Require(DescribeFilter(byGroups) == "filter by 3 groups", "describeFilter ByGroups");
 
         Filter byPoints = new Filter.ByPoints(new[] { new Point(1.0, 2.0), new Point(3.0, 4.0) });
-        DemoCase("case:enums.complex_variants.filter.should_roundtrip_variants");
+        DemoCase("case:enums.complex_variants.filter.by_points.should_roundtrip_record_vector_payload");
         Filter echoedPts = EchoFilter(byPoints);
         Require(echoedPts is Filter.ByPoints p2 && p2.Anchors.SequenceEqual(((Filter.ByPoints)byPoints).Anchors), "echoFilter ByPoints");
-        DemoCase("case:enums.complex_variants.filter.should_describe_variants");
+        DemoCase("case:enums.complex_variants.filter.by_points.should_describe_record_vector_payload");
         Require(DescribeFilter(byPoints) == "filter by 2 anchor points", "describeFilter ByPoints");
 
         DemoCase("case:records.with_collections.user_profiles.should_generate_profiles");

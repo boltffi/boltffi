@@ -427,9 +427,9 @@ public final class DemoTest {
                 Arrays.asList("common")
             )
         );
-        demoCase("case:enums.complex_variants.filter.should_roundtrip_variants");
+        demoCase("case:enums.complex_variants.filter.by_groups.should_roundtrip_nested_string_vectors");
         assert Demo.echoFilter(groupFilter).equals(groupFilter) : "echoFilter(ByGroups)";
-        demoCase("case:enums.complex_variants.filter.should_describe_variants");
+        demoCase("case:enums.complex_variants.filter.by_groups.should_describe_nested_string_vectors");
         assert Demo.describeFilter(groupFilter).equals("filter by 3 groups") : "describeFilter(ByGroups)";
 
         demoCase("case:enums.data_enum.shape.should_support_free_function_factories");
@@ -521,11 +521,12 @@ public final class DemoTest {
         demoCase("case:enums.data_enum.animal.should_derive_names");
         assert Demo.animalName(new Animal.Fish(5)).equals("5 fish") : "animalName(Fish)";
 
-        demoCase("case:enums.complex_variants.api_response.should_roundtrip_variants");
+        demoCase("case:enums.complex_variants.api_response.success.should_roundtrip_string_payload");
         ApiResponse success = Demo.echoApiResponse(new ApiResponse.Success("ok"));
         assert success instanceof ApiResponse.Success : "echoApiResponse(Success) type";
-        demoCase("case:enums.complex_variants.api_response.should_identify_success");
+        demoCase("case:enums.complex_variants.api_response.success.should_identify_success");
         assert Demo.isSuccess(new ApiResponse.Success("data")) : "isSuccess(Success)";
+        demoCase("case:enums.complex_variants.api_response.empty.should_not_identify_as_success");
         assert !Demo.isSuccess(ApiResponse.Empty.INSTANCE) : "isSuccess(Empty)";
 
         System.out.println("  PASS\n");

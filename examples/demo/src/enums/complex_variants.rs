@@ -14,8 +14,88 @@ pub enum Filter {
 }
 
 #[demo_bench_macros::demo_case(
-    "enums.complex_variants.filter.should_roundtrip_variants",
-    description = "Complex Filter variants with strings, nested vectors, and record vectors cross the FFI boundary unchanged.",
+    "enums.complex_variants.filter.none.should_roundtrip_unit_variant",
+    description = "The unit Filter::None variant crosses the FFI boundary unchanged.",
+    exclude(
+        csharp,
+        reason = "The C# complex collection tests do not currently round-trip the Filter::None variant."
+    ),
+    exclude(
+        java,
+        reason = "The Java complex enum tests do not currently round-trip the Filter::None variant."
+    ),
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover complex data-enum variants."
+    )
+)]
+#[demo_bench_macros::demo_case(
+    "enums.complex_variants.filter.by_name.should_roundtrip_string_payload",
+    description = "The Filter::ByName variant preserves its string payload when round-tripped.",
+    exclude(
+        csharp,
+        reason = "The C# complex collection tests do not currently round-trip the Filter::ByName variant."
+    ),
+    exclude(
+        java,
+        reason = "The Java complex enum tests do not currently round-trip the Filter::ByName variant."
+    ),
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover complex data-enum variants."
+    )
+)]
+#[demo_bench_macros::demo_case(
+    "enums.complex_variants.filter.by_tags.should_roundtrip_string_vector_payload",
+    description = "The Filter::ByTags variant preserves a vector of UTF-8 strings when round-tripped.",
+    exclude(
+        apple,
+        reason = "The Apple complex enum tests do not currently round-trip the Filter::ByTags variant."
+    ),
+    exclude(
+        java,
+        reason = "The Java complex enum tests do not currently round-trip the Filter::ByTags variant."
+    ),
+    exclude(
+        kotlin,
+        reason = "The Kotlin complex enum tests do not currently round-trip the Filter::ByTags variant."
+    ),
+    exclude(
+        wasm,
+        reason = "The Wasm complex enum tests do not currently round-trip the Filter::ByTags variant."
+    ),
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover complex data-enum variants."
+    )
+)]
+#[demo_bench_macros::demo_case(
+    "enums.complex_variants.filter.by_groups.should_roundtrip_nested_string_vectors",
+    description = "The Filter::ByGroups variant preserves nested UTF-8 string vectors when round-tripped.",
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover complex data-enum variants."
+    )
+)]
+#[demo_bench_macros::demo_case(
+    "enums.complex_variants.filter.by_points.should_roundtrip_record_vector_payload",
+    description = "The Filter::ByPoints variant preserves a vector of Point records when round-tripped.",
+    exclude(
+        apple,
+        reason = "The Apple complex enum tests do not currently round-trip the Filter::ByPoints variant."
+    ),
+    exclude(
+        java,
+        reason = "The Java complex enum tests do not currently round-trip the Filter::ByPoints variant."
+    ),
+    exclude(
+        kotlin,
+        reason = "The Kotlin complex enum tests do not currently round-trip the Filter::ByPoints variant."
+    ),
+    exclude(
+        wasm,
+        reason = "The Wasm complex enum tests do not currently round-trip the Filter::ByPoints variant."
+    ),
     exclude(
         python,
         reason = "The Python demo tests do not currently cover complex data-enum variants."
@@ -27,8 +107,64 @@ pub fn echo_filter(f: Filter) -> Filter {
 }
 
 #[demo_bench_macros::demo_case(
-    "enums.complex_variants.filter.should_describe_variants",
-    description = "describe_filter renders summaries for Filter variants containing primitive, string, vector, and record payloads.",
+    "enums.complex_variants.filter.by_name.should_describe_string_payload",
+    description = "describe_filter renders a ByName string payload in the summary.",
+    exclude(
+        csharp,
+        reason = "The C# complex collection tests do not currently describe the Filter::ByName variant."
+    ),
+    exclude(
+        java,
+        reason = "The Java complex enum tests do not currently describe the Filter::ByName variant."
+    ),
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover complex data-enum variants."
+    )
+)]
+#[demo_bench_macros::demo_case(
+    "enums.complex_variants.filter.by_range.should_describe_numeric_bounds",
+    description = "describe_filter renders a ByRange numeric lower and upper bound.",
+    exclude(
+        csharp,
+        reason = "The C# complex collection tests do not currently describe the Filter::ByRange variant."
+    ),
+    exclude(
+        java,
+        reason = "The Java complex enum tests do not currently describe the Filter::ByRange variant."
+    ),
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover complex data-enum variants."
+    )
+)]
+#[demo_bench_macros::demo_case(
+    "enums.complex_variants.filter.by_tags.should_describe_string_vector_payload",
+    description = "describe_filter counts the UTF-8 strings in a ByTags vector payload.",
+    exclude(
+        java,
+        reason = "The Java complex enum tests do not currently describe the Filter::ByTags variant."
+    ),
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover complex data-enum variants."
+    )
+)]
+#[demo_bench_macros::demo_case(
+    "enums.complex_variants.filter.by_groups.should_describe_nested_string_vectors",
+    description = "describe_filter counts the outer vector in a ByGroups nested vector payload.",
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover complex data-enum variants."
+    )
+)]
+#[demo_bench_macros::demo_case(
+    "enums.complex_variants.filter.by_points.should_describe_record_vector_payload",
+    description = "describe_filter counts Point records in a ByPoints vector payload.",
+    exclude(
+        java,
+        reason = "The Java complex enum tests do not currently describe the Filter::ByPoints variant."
+    ),
     exclude(
         python,
         reason = "The Python demo tests do not currently cover complex data-enum variants."
@@ -56,11 +192,27 @@ pub enum ApiResponse {
 }
 
 #[demo_bench_macros::demo_case(
-    "enums.complex_variants.api_response.should_roundtrip_variants",
-    description = "ApiResponse data enum variants with success, redirect, and empty payload shapes cross the FFI boundary unchanged.",
+    "enums.complex_variants.api_response.success.should_roundtrip_string_payload",
+    description = "The ApiResponse::Success variant preserves its string payload when round-tripped.",
     exclude(
         csharp,
         reason = "The C# demo currently covers Filter complex variants but not ApiResponse helpers."
+    ),
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover complex data-enum variants."
+    )
+)]
+#[demo_bench_macros::demo_case(
+    "enums.complex_variants.api_response.redirect.should_roundtrip_url_payload",
+    description = "The ApiResponse::Redirect variant preserves its URL payload when round-tripped.",
+    exclude(
+        csharp,
+        reason = "The C# demo currently covers Filter complex variants but not ApiResponse helpers."
+    ),
+    exclude(
+        java,
+        reason = "The Java complex enum tests do not currently round-trip the ApiResponse::Redirect variant."
     ),
     exclude(
         python,
@@ -73,8 +225,20 @@ pub fn echo_api_response(response: ApiResponse) -> ApiResponse {
 }
 
 #[demo_bench_macros::demo_case(
-    "enums.complex_variants.api_response.should_identify_success",
-    description = "is_success returns true only for the ApiResponse Success variant.",
+    "enums.complex_variants.api_response.success.should_identify_success",
+    description = "is_success returns true for the ApiResponse::Success variant.",
+    exclude(
+        csharp,
+        reason = "The C# demo currently covers Filter complex variants but not ApiResponse helpers."
+    ),
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover complex data-enum variants."
+    )
+)]
+#[demo_bench_macros::demo_case(
+    "enums.complex_variants.api_response.empty.should_not_identify_as_success",
+    description = "is_success returns false for the ApiResponse::Empty variant.",
     exclude(
         csharp,
         reason = "The C# demo currently covers Filter complex variants but not ApiResponse helpers."
