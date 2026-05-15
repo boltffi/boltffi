@@ -235,11 +235,6 @@ pub fn optional_vec_length(v: Option<Vec<i32>>) -> Option<u32> {
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
-    ),
-    exclude(
-        typescript,
-        reason = ExclusionReason::CoverageGap,
-        details = "TypeScript has no assertion for find_name in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -260,11 +255,6 @@ pub fn optional_vec_length(v: Option<Vec<i32>>) -> Option<u32> {
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
-    ),
-    exclude(
-        typescript,
-        reason = ExclusionReason::CoverageGap,
-        details = "TypeScript has no assertion for find_name in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     )
 )]
 #[export]
@@ -295,11 +285,6 @@ pub fn find_name(id: i32) -> Option<String> {
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
-    ),
-    exclude(
-        typescript,
-        reason = ExclusionReason::CoverageGap,
-        details = "TypeScript has no assertion for find_numbers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -320,11 +305,6 @@ pub fn find_name(id: i32) -> Option<String> {
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
-    ),
-    exclude(
-        typescript,
-        reason = ExclusionReason::CoverageGap,
-        details = "TypeScript has no assertion for find_numbers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     )
 )]
 #[export]
@@ -355,11 +335,6 @@ pub fn find_numbers(count: i32) -> Option<Vec<i32>> {
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
-    ),
-    exclude(
-        typescript,
-        reason = ExclusionReason::CoverageGap,
-        details = "TypeScript has no assertion for find_names in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -380,11 +355,6 @@ pub fn find_numbers(count: i32) -> Option<Vec<i32>> {
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
-    ),
-    exclude(
-        typescript,
-        reason = ExclusionReason::CoverageGap,
-        details = "TypeScript has no assertion for find_names in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     )
 )]
 #[export]

@@ -31,6 +31,18 @@ export async function run() {
   assert.equal(demo.optionalVecLength([9, 8]), 2);
   globalThis.demoCase("case:options.complex.vec.should_return_none_for_absent_length");
   assert.equal(demo.optionalVecLength(null), null);
+  globalThis.demoCase("case:options.complex.string.should_find_name_for_positive_id");
+  assert.equal(demo.findName(7), "Name_7");
+  globalThis.demoCase("case:options.complex.string.should_return_none_for_non_positive_id");
+  assert.equal(demo.findName(0), null);
+  globalThis.demoCase("case:options.complex.vec.should_find_numbers_for_positive_count");
+  assertArrayEqual(demo.findNumbers(3), [0, 1, 2]);
+  globalThis.demoCase("case:options.complex.vec.should_return_none_for_non_positive_number_count");
+  assert.equal(demo.findNumbers(0), null);
+  globalThis.demoCase("case:options.complex.vec_string.should_find_names_for_positive_count");
+  assertArrayEqual(demo.findNames(2), ["Name_0", "Name_1"]);
+  globalThis.demoCase("case:options.complex.vec_string.should_return_none_for_non_positive_name_count");
+  assert.equal(demo.findNames(0), null);
   globalThis.demoCase("case:options.complex.api_result.should_find_success_variant");
   assert.deepEqual(demo.findApiResult(0), { tag: "Success" });
   globalThis.demoCase("case:options.complex.api_result.should_find_error_code_variant");
