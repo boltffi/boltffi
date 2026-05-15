@@ -196,11 +196,6 @@ pub fn double_if_some(v: Option<i32>) -> Option<i32> {
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
-    ),
-    exclude(
-        typescript,
-        reason = ExclusionReason::CoverageGap,
-        details = "TypeScript has no assertion for find_even in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -221,11 +216,6 @@ pub fn double_if_some(v: Option<i32>) -> Option<i32> {
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
-    ),
-    exclude(
-        typescript,
-        reason = ExclusionReason::CoverageGap,
-        details = "TypeScript has no assertion for find_even in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     )
 )]
 #[export]
@@ -252,11 +242,6 @@ pub fn find_even(value: i32) -> Option<i32> {
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
-    ),
-    exclude(
-        typescript,
-        reason = ExclusionReason::CoverageGap,
-        details = "TypeScript has no assertion for find_positive_i64 in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -277,11 +262,6 @@ pub fn find_even(value: i32) -> Option<i32> {
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
-    ),
-    exclude(
-        typescript,
-        reason = ExclusionReason::CoverageGap,
-        details = "TypeScript has no assertion for find_positive_i64 in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     )
 )]
 #[export]
@@ -308,11 +288,6 @@ pub fn find_positive_i64(value: i64) -> Option<i64> {
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
-    ),
-    exclude(
-        typescript,
-        reason = ExclusionReason::CoverageGap,
-        details = "TypeScript has no assertion for find_positive_f64 in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -333,11 +308,6 @@ pub fn find_positive_i64(value: i64) -> Option<i64> {
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
-    ),
-    exclude(
-        typescript,
-        reason = ExclusionReason::CoverageGap,
-        details = "TypeScript has no assertion for find_positive_f64 in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     )
 )]
 #[export]
