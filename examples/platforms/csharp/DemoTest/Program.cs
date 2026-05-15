@@ -209,17 +209,19 @@ public static class DemoTest
     {
         Console.WriteLine("Testing custom types (Email, UtcDateTime, Event)...");
 
-        DemoCase("case:custom_types.email.basic");
         string email = "café@example.com";
+        DemoCase("case:custom_types.email.should_roundtrip_value");
         Require(EchoEmail(email) == email, "EchoEmail roundtrip");
+        DemoCase("case:custom_types.email.should_extract_domain");
         Require(EmailDomain(email) == "example.com", "EmailDomain");
 
         long ts = 1_710_000_000_000L;
-        DemoCase("case:custom_types.datetime.roundtrip");
+        DemoCase("case:custom_types.datetime.should_roundtrip_millis");
         Require(EchoDatetime(ts) == ts, "EchoDatetime");
+        DemoCase("case:custom_types.datetime.should_convert_to_millis");
         Require(DatetimeToMillis(ts) == ts, "DatetimeToMillis");
 
-        DemoCase("case:custom_types.datetime.format");
+        DemoCase("case:custom_types.datetime.should_format_rfc3339_timestamp");
         Require(FormatTimestamp(ts).StartsWith("2024-03-"), "FormatTimestamp");
 
         DemoCase("case:custom_types.event.basic");

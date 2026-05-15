@@ -16,36 +16,44 @@ import kotlin.test.assertTrue
 class DemoValueTypesTest {
     @Test
     fun builtinsAndCustomTypesRoundTrip() {
-        demoCase("case:builtins.duration.basic")
         val duration = Duration.ofSeconds(2).plusMillis(500)
+        demoCase("case:builtins.duration.should_roundtrip_value")
         assertEquals(duration, echoDuration(duration))
+        demoCase("case:builtins.duration.should_construct_from_parts")
         assertEquals(Duration.ofSeconds(3).plusNanos(25), makeDuration(3uL, 25u))
+        demoCase("case:builtins.duration.should_report_milliseconds")
         assertEquals(2_500uL, durationAsMillis(duration))
 
-        demoCase("case:builtins.system_time.basic")
         val instant = Instant.ofEpochMilli(1_701_234_567_890L)
+        demoCase("case:builtins.system_time.should_roundtrip_value")
         assertEquals(instant, echoSystemTime(instant))
+        demoCase("case:builtins.system_time.should_convert_to_epoch_milliseconds")
         assertEquals(1_701_234_567_890uL, systemTimeToMillis(instant))
+        demoCase("case:builtins.system_time.should_construct_from_epoch_milliseconds")
         assertEquals(instant, millisToSystemTime(1_701_234_567_890uL))
 
-        demoCase("case:builtins.uuid.basic")
         val uuid = UUID.fromString("123e4567-e89b-12d3-a456-426614174000")
+        demoCase("case:builtins.uuid.should_roundtrip_value")
         assertEquals(uuid, echoUuid(uuid))
+        demoCase("case:builtins.uuid.should_format_canonical_string")
         assertEquals(uuid.toString(), uuidToString(uuid))
 
-        demoCase("case:builtins.url.basic")
         val url = URI("https://example.com/demo?q=boltffi")
+        demoCase("case:builtins.url.should_roundtrip_value")
         assertEquals(url, echoUrl(url))
+        demoCase("case:builtins.url.should_format_string")
         assertEquals(url.toString(), urlToString(url))
 
-        demoCase("case:custom_types.email.basic")
         val email = "café@example.com"
+        demoCase("case:custom_types.email.should_roundtrip_value")
         assertEquals(email, echoEmail(email))
+        demoCase("case:custom_types.email.should_extract_domain")
         assertEquals("example.com", emailDomain(email))
 
-        demoCase("case:custom_types.datetime.roundtrip")
         val datetime: UtcDateTime = 1_701_234_567_890L
+        demoCase("case:custom_types.datetime.should_roundtrip_millis")
         assertEquals(datetime, echoDatetime(datetime))
+        demoCase("case:custom_types.datetime.should_convert_to_millis")
         assertEquals(1_701_234_567_890L, datetimeToMillis(datetime))
 
         demoCase("case:custom_types.vectors.basic")
@@ -87,11 +95,11 @@ class DemoValueTypesTest {
         assertEquals(true, stringIsEmpty(""), "case:primitives.strings.string.should_detect_empty")
         assertEquals("ababab", repeatString("ab", 3u), "case:primitives.strings.string.should_repeat_value")
 
-        assertContentEquals(byteArrayOf(1, 2, 3, 4), echoBytes(byteArrayOf(1, 2, 3, 4)), "case:bytes.echo.basic")
-        assertEquals(3u, bytesLength(byteArrayOf(9, 8, 7)), "case:bytes.length.basic")
-        assertEquals(10u, bytesSum(byteArrayOf(1, 2, 3, 4)), "case:bytes.sum.basic")
-        assertContentEquals(byteArrayOf(0, 1, 2, 3), makeBytes(4u), "case:bytes.make.basic")
-        assertContentEquals(byteArrayOf(4, 3, 2, 1), reverseBytes(byteArrayOf(1, 2, 3, 4)), "case:bytes.reverse.basic")
+        assertContentEquals(byteArrayOf(1, 2, 3, 4), echoBytes(byteArrayOf(1, 2, 3, 4)), "case:bytes.bytes.should_roundtrip_values")
+        assertEquals(3u, bytesLength(byteArrayOf(9, 8, 7)), "case:bytes.bytes.should_report_length")
+        assertEquals(10u, bytesSum(byteArrayOf(1, 2, 3, 4)), "case:bytes.bytes.should_sum_values")
+        assertContentEquals(byteArrayOf(0, 1, 2, 3), makeBytes(4u), "case:bytes.bytes.should_make_sequential_values")
+        assertContentEquals(byteArrayOf(4, 3, 2, 1), reverseBytes(byteArrayOf(1, 2, 3, 4)), "case:bytes.bytes.should_reverse_values")
 
         assertContentEquals(intArrayOf(1, 2, 3), echoVecI32(intArrayOf(1, 2, 3)), "case:primitives.vecs.i32.should_roundtrip_non_empty")
         assertContentEquals(intArrayOf(), echoVecI32(intArrayOf()), "case:primitives.vecs.i32.should_roundtrip_empty")

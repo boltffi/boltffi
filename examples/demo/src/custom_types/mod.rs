@@ -54,26 +54,70 @@ pub struct Event {
     pub timestamp: DateTime<Utc>,
 }
 
+#[demo_bench_macros::demo_case(
+    "custom_types.email.should_roundtrip_value",
+    description = "An email custom type crosses the wire through its string representation and returns unchanged.",
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover custom types."
+    )
+)]
 #[export]
 pub fn echo_email(email: Email) -> Email {
     email
 }
 
+#[demo_bench_macros::demo_case(
+    "custom_types.email.should_extract_domain",
+    description = "An email custom type crosses the wire and returns its domain string.",
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover custom types."
+    )
+)]
 #[export]
 pub fn email_domain(email: Email) -> String {
     email.as_str().split('@').nth(1).unwrap_or("").to_string()
 }
 
+#[demo_bench_macros::demo_case(
+    "custom_types.datetime.should_roundtrip_millis",
+    description = "A DateTime custom type crosses the wire through millisecond representation and returns unchanged.",
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover custom types."
+    )
+)]
 #[export]
 pub fn echo_datetime(dt: DateTime<Utc>) -> DateTime<Utc> {
     dt
 }
 
+#[demo_bench_macros::demo_case(
+    "custom_types.datetime.should_convert_to_millis",
+    description = "A DateTime custom type crosses the wire and returns its millisecond representation.",
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover custom types."
+    )
+)]
 #[export]
 pub fn datetime_to_millis(dt: DateTime<Utc>) -> i64 {
     dt.timestamp_millis()
 }
 
+#[demo_bench_macros::demo_case(
+    "custom_types.datetime.should_format_rfc3339_timestamp",
+    description = "A DateTime custom type crosses the wire and returns an RFC3339 timestamp string.",
+    exclude(
+        kotlin,
+        reason = "The Kotlin custom type demo does not currently cover the standalone timestamp formatting helper."
+    ),
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover custom types."
+    )
+)]
 #[export]
 pub fn format_timestamp(timestamp: DateTime<Utc>) -> String {
     timestamp.to_rfc3339()

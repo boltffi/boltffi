@@ -1,27 +1,67 @@
 use boltffi::*;
 use demo_bench_macros::benchmark_candidate;
 
+#[demo_bench_macros::demo_case(
+    "bytes.bytes.should_roundtrip_values",
+    description = "A byte buffer crosses the wire and returns unchanged.",
+    exclude(
+        csharp,
+        reason = "The C# demo currently exercises byte buffers through primitives::vecs::echo_vec_u8, not the dedicated bytes module."
+    )
+)]
 #[export]
 #[benchmark_candidate(function, uniffi, wasm_bindgen)]
 pub fn echo_bytes(data: Vec<u8>) -> Vec<u8> {
     data
 }
 
+#[demo_bench_macros::demo_case(
+    "bytes.bytes.should_report_length",
+    description = "A byte buffer crosses the wire and returns its element count.",
+    exclude(
+        csharp,
+        reason = "The C# demo currently exercises byte buffers through primitives::vecs::echo_vec_u8, not the dedicated bytes module."
+    )
+)]
 #[export]
 pub fn bytes_length(data: Vec<u8>) -> u32 {
     data.len() as u32
 }
 
+#[demo_bench_macros::demo_case(
+    "bytes.bytes.should_sum_values",
+    description = "A byte buffer crosses the wire and returns the sum of its values.",
+    exclude(
+        csharp,
+        reason = "The C# demo currently exercises byte buffers through primitives::vecs::echo_vec_u8, not the dedicated bytes module."
+    )
+)]
 #[export]
 pub fn bytes_sum(data: Vec<u8>) -> u32 {
     data.iter().map(|&b| b as u32).sum()
 }
 
+#[demo_bench_macros::demo_case(
+    "bytes.bytes.should_make_sequential_values",
+    description = "A requested byte-buffer length crosses the wire and returns sequential values.",
+    exclude(
+        csharp,
+        reason = "The C# demo currently exercises byte buffers through primitives::vecs::echo_vec_u8, not the dedicated bytes module."
+    )
+)]
 #[export]
 pub fn make_bytes(len: u32) -> Vec<u8> {
     (0..len).map(|i| (i % 256) as u8).collect()
 }
 
+#[demo_bench_macros::demo_case(
+    "bytes.bytes.should_reverse_values",
+    description = "A byte buffer crosses the wire and returns in reverse order.",
+    exclude(
+        csharp,
+        reason = "The C# demo currently exercises byte buffers through primitives::vecs::echo_vec_u8, not the dedicated bytes module."
+    )
+)]
 #[export]
 pub fn reverse_bytes(data: Vec<u8>) -> Vec<u8> {
     data.into_iter().rev().collect()

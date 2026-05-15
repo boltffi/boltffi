@@ -127,11 +127,12 @@ public final class DemoTest {
     private static void testCustomTypes() {
         System.out.println("Testing custom types...");
         long timestamp = 1_710_000_000_000L;
-        demoCase("case:custom_types.datetime.roundtrip");
+        demoCase("case:custom_types.datetime.should_roundtrip_millis");
         assert Demo.echoDatetime(timestamp) == timestamp : "echoDatetime";
+        demoCase("case:custom_types.datetime.should_convert_to_millis");
         assert Demo.datetimeToMillis(timestamp) == timestamp : "datetimeToMillis";
 
-        demoCase("case:custom_types.datetime.format");
+        demoCase("case:custom_types.datetime.should_format_rfc3339_timestamp");
         assert Demo.formatTimestamp(timestamp).startsWith("2024-03-") : "formatTimestamp";
 
         demoCase("case:custom_types.event.basic");
@@ -144,9 +145,10 @@ public final class DemoTest {
         assert echoed.timestamp() == timestamp : "echoEvent.timestamp";
         assert Demo.eventTimestamp(event) == timestamp : "eventTimestamp";
 
-        demoCase("case:custom_types.email.basic");
         String email = "café@example.com";
+        demoCase("case:custom_types.email.should_roundtrip_value");
         assert Demo.echoEmail(email).equals(email) : "echoEmail roundtrip";
+        demoCase("case:custom_types.email.should_extract_domain");
         assert Demo.emailDomain(email).equals("example.com") : "emailDomain";
 
         demoCase("case:custom_types.vectors.basic");
@@ -530,19 +532,24 @@ public final class DemoTest {
     private static void testBytesVecs() {
         System.out.println("Testing vec bytes...\n");
 
+        demoCase("case:bytes.bytes.should_roundtrip_values");
         byte[] echoed = Demo.echoBytes(new byte[]{1, 2, 3, 4});
-        assert echoed.length == 4 : "case:bytes.echo.basic echoBytes length";
+        assert echoed.length == 4 : "echoBytes length";
         assert echoed[0] == 1 && echoed[3] == 4 : "echoBytes values";
 
-        assert Demo.bytesLength(new byte[]{10, 20, 30}) == 3 : "case:bytes.length.basic bytesLength";
-        assert Demo.bytesSum(new byte[]{1, 2, 3, 4}) == 10 : "case:bytes.sum.basic bytesSum";
+        demoCase("case:bytes.bytes.should_report_length");
+        assert Demo.bytesLength(new byte[]{10, 20, 30}) == 3 : "bytesLength";
+        demoCase("case:bytes.bytes.should_sum_values");
+        assert Demo.bytesSum(new byte[]{1, 2, 3, 4}) == 10 : "bytesSum";
 
+        demoCase("case:bytes.bytes.should_make_sequential_values");
         byte[] made = Demo.makeBytes(5);
-        assert made.length == 5 : "case:bytes.make.basic makeBytes length";
+        assert made.length == 5 : "makeBytes length";
         assert made[0] == 0 && made[4] == 4 : "makeBytes values";
 
+        demoCase("case:bytes.bytes.should_reverse_values");
         byte[] reversed = Demo.reverseBytes(new byte[]{5, 6, 7});
-        assert reversed.length == 3 : "case:bytes.reverse.basic reverseBytes length";
+        assert reversed.length == 3 : "reverseBytes length";
         assert reversed[0] == 7 && reversed[2] == 5 : "reverseBytes values";
 
         System.out.println("  PASS\n");
