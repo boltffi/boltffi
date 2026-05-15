@@ -413,6 +413,7 @@ public final class DemoTest {
         assert startedTs.id == 7L : "LifecycleEvent.TaskStarted.id";
         demoCase("case:enums.data_enum.lifecycle_event.should_roundtrip_priority_payload");
         assert Demo.echoLifecycleEvent(started).equals(started) : "echoLifecycleEvent(TaskStarted)";
+        demoCase("case:enums.data_enum.lifecycle_event.should_roundtrip_tick_variant");
         assert Demo.echoLifecycleEvent(LifecycleEvent.Tick.INSTANCE) instanceof LifecycleEvent.Tick : "echoLifecycleEvent(Tick)";
 
         demoCase("case:records.with_enums.log_entry.should_make_error_entry");
@@ -442,14 +443,16 @@ public final class DemoTest {
         Shape rect = Demo.makeRectangle(3.0, 4.0);
         assert rect instanceof Shape.Rectangle : "makeRectangle returns Rectangle";
 
-        demoCase("case:enums.data_enum.shape.should_support_static_constructors");
+        demoCase("case:enums.data_enum.shape.unit_circle.should_construct_circle");
         Shape unitCircle = Shape.unitCircle();
         assert unitCircle instanceof Shape.Circle : "Shape.unitCircle type";
         assert Math.abs(((Shape.Circle) unitCircle).radius - 1.0) < 0.0001 : "Shape.unitCircle.radius";
+        demoCase("case:enums.data_enum.shape.square.should_construct_rectangle");
         Shape square = Shape.square(3.0);
         assert square instanceof Shape.Rectangle : "Shape.square type";
         assert Math.abs(((Shape.Rectangle) square).width - 3.0) < 0.0001 : "Shape.square.width";
         assert Math.abs(((Shape.Rectangle) square).height - 3.0) < 0.0001 : "Shape.square.height";
+        demoCase("case:enums.data_enum.shape.try_circle.should_return_circle_for_positive_radius");
         Shape checkedCircle = Shape.tryCircle(2.0);
         assert checkedCircle instanceof Shape.Circle : "Shape.tryCircle type";
 
@@ -488,11 +491,12 @@ public final class DemoTest {
         Shape point = Demo.echoShape(Shape.Point.INSTANCE);
         assert point instanceof Shape.Point : "echoShape(point) type";
 
-        demoCase("case:enums.data_enum.shape.should_roundtrip_optional_record_fields");
+        demoCase("case:enums.data_enum.shape.apex.should_roundtrip_some_point_payload");
         Shape apexSome = Demo.echoShape(new Shape.Apex(Optional.of(new Point(3.0, 4.0))));
         assert apexSome instanceof Shape.Apex : "echoShape(apex Some) type";
         assert ((Shape.Apex) apexSome).tip.isPresent() : "echoShape(apex Some).tip";
         assert ((Shape.Apex) apexSome).tip.get().equals(new Point(3.0, 4.0)) : "echoShape(apex Some).point";
+        demoCase("case:enums.data_enum.shape.apex.should_roundtrip_none_payload");
         Shape apexNone = Demo.echoShape(new Shape.Apex(Optional.empty()));
         assert apexNone instanceof Shape.Apex : "echoShape(apex None) type";
         assert !((Shape.Apex) apexNone).tip.isPresent() : "echoShape(apex None).tip";
@@ -503,25 +507,27 @@ public final class DemoTest {
         assert ((Shape.Cluster) cluster).members.size() == 1 : "echoShape(cluster).members size";
         assert ((Shape.Cluster) cluster).members.get(0).equals(new Point(1.0, 2.0)) : "echoShape(cluster).member";
 
-        demoCase("case:enums.data_enum.shape.should_return_optional_records_from_static_methods");
+        demoCase("case:enums.data_enum.shape.try_apex_point.should_return_some_for_positive_radius");
         Optional<Point> apexPoint = Shape.tryApexPoint(2.5);
         assert apexPoint.isPresent() : "Shape.tryApexPoint positive";
         assert apexPoint.get().equals(new Point(0.0, 2.5)) : "Shape.tryApexPoint point";
+        demoCase("case:enums.data_enum.shape.try_apex_point.should_return_none_for_non_positive_radius");
         assert !Shape.tryApexPoint(-1.0).isPresent() : "Shape.tryApexPoint negative";
 
-        demoCase("case:enums.data_enum.message.should_roundtrip_variants");
+        demoCase("case:enums.data_enum.message.text.should_roundtrip_string_payload");
         Message text = Demo.echoMessage(new Message.Text("hello"));
         assert text instanceof Message.Text : "echoMessage(Text) type";
         assert ((Message.Text) text).body.equals("hello") : "echoMessage(Text).body";
-        demoCase("case:enums.data_enum.message.should_summarize_variants");
+        demoCase("case:enums.data_enum.message.text.should_render_text_summary");
         assert Demo.messageSummary(new Message.Text("hi")).equals("text: hi") : "messageSummary(Text)";
+        demoCase("case:enums.data_enum.message.ping.should_render_ping_summary");
         assert Demo.messageSummary(Message.Ping.INSTANCE).equals("ping") : "messageSummary(Ping)";
 
-        demoCase("case:enums.data_enum.animal.should_roundtrip_variants");
+        demoCase("case:enums.data_enum.animal.dog.should_roundtrip_string_payloads");
         Animal dog = Demo.echoAnimal(new Animal.Dog("Rex", "Labrador"));
         assert dog instanceof Animal.Dog : "echoAnimal(Dog) type";
         assert ((Animal.Dog) dog).name.equals("Rex") : "echoAnimal(Dog).name";
-        demoCase("case:enums.data_enum.animal.should_derive_names");
+        demoCase("case:enums.data_enum.animal.fish.should_derive_count_label");
         assert Demo.animalName(new Animal.Fish(5)).equals("5 fish") : "animalName(Fish)";
 
         demoCase("case:enums.complex_variants.api_response.success.should_roundtrip_string_payload");

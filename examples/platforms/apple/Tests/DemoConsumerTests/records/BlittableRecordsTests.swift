@@ -82,12 +82,16 @@ final class BlittableRecordsTests: DemoTestCase {
         demoCase("case:records.blittable.sensor_readings.should_average_generated_temperatures")
         XCTAssertEqual(avgSensorTemperature(readings: readings), 21.0, accuracy: 1e-9)
 
+        demoCase("case:records.blittable.locations.find_location.should_return_some_for_positive_id")
         XCTAssertEqual(
             findLocation(id: 7),
             Location(id: 7, lat: 37.7749, lng: -122.4194, rating: 4.5, reviewCount: 100, isOpen: true)
         )
+        demoCase("case:records.blittable.locations.find_location.should_return_none_for_non_positive_id")
         XCTAssertNil(findLocation(id: 0))
+        demoCase("case:records.blittable.locations.find_locations.should_return_some_vector_for_positive_count")
         XCTAssertEqual(findLocations(count: 2)?.count, 2)
+        demoCase("case:records.blittable.locations.find_locations.should_return_none_for_non_positive_count")
         XCTAssertNil(findLocations(count: 0))
     }
 }

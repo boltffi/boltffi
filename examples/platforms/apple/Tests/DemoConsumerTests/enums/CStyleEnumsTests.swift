@@ -39,11 +39,13 @@ final class CStyleEnumsTests: DemoTestCase {
         XCTAssertEqual(generateDirections(count: 5), [.north, .east, .south, .west, .north])
         demoCase("case:enums.c_style.direction.should_count_north_values")
         XCTAssertEqual(countNorth(directions: [.north, .east, .north]), 2)
-        demoCase("case:enums.c_style.direction.should_find_by_id")
+        demoCase("case:enums.c_style.direction.find_direction.should_return_some_for_known_id")
         XCTAssertEqual(findDirection(id: 2), .south)
+        demoCase("case:enums.c_style.direction.find_direction.should_return_none_for_unknown_id")
         XCTAssertNil(findDirection(id: 9))
-        demoCase("case:enums.c_style.direction.should_find_sequence_by_count")
+        demoCase("case:enums.c_style.direction.find_directions.should_return_sequence_for_positive_count")
         XCTAssertEqual(findDirections(count: 3), [.north, .east, .south])
+        demoCase("case:enums.c_style.direction.find_directions.should_return_none_for_non_positive_count")
         XCTAssertNil(findDirections(count: 0))
     }
 }

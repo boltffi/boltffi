@@ -274,8 +274,32 @@ pub fn count_north(directions: Vec<Direction>) -> i32 {
 }
 
 #[demo_bench_macros::demo_case(
-    "enums.c_style.direction.should_find_by_id",
-    description = "find_direction returns Some(Direction) for known ids and None for unknown ids.",
+    "enums.c_style.direction.find_direction.should_return_some_for_known_id",
+    description = "find_direction returns Some(Direction) for a known id.",
+    exclude(
+        csharp,
+        reason = "The C# demo tests do not currently cover find_direction."
+    ),
+    exclude(
+        java,
+        reason = "The Java demo tests do not currently cover find_direction."
+    ),
+    exclude(
+        kotlin,
+        reason = "The Kotlin demo tests do not currently cover find_direction."
+    ),
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover find_direction."
+    ),
+    exclude(
+        wasm,
+        reason = "The WASM demo tests do not currently cover find_direction."
+    )
+)]
+#[demo_bench_macros::demo_case(
+    "enums.c_style.direction.find_direction.should_return_none_for_unknown_id",
+    description = "find_direction returns None for an unknown id.",
     exclude(
         csharp,
         reason = "The C# demo tests do not currently cover find_direction."
@@ -310,8 +334,32 @@ pub fn find_direction(id: i32) -> Option<Direction> {
 }
 
 #[demo_bench_macros::demo_case(
-    "enums.c_style.direction.should_find_sequence_by_count",
-    description = "find_directions returns Some generated directions for positive counts and None otherwise.",
+    "enums.c_style.direction.find_directions.should_return_sequence_for_positive_count",
+    description = "find_directions returns Some generated directions for a positive count.",
+    exclude(
+        csharp,
+        reason = "The C# demo tests do not currently cover find_directions."
+    ),
+    exclude(
+        java,
+        reason = "The Java demo tests do not currently cover find_directions."
+    ),
+    exclude(
+        kotlin,
+        reason = "The Kotlin demo tests do not currently cover find_directions."
+    ),
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover find_directions."
+    ),
+    exclude(
+        wasm,
+        reason = "The WASM demo tests do not currently cover find_directions."
+    )
+)]
+#[demo_bench_macros::demo_case(
+    "enums.c_style.direction.find_directions.should_return_none_for_non_positive_count",
+    description = "find_directions returns None for a non-positive count.",
     exclude(
         csharp,
         reason = "The C# demo tests do not currently cover find_directions."

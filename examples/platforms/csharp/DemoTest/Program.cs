@@ -566,7 +566,7 @@ public static class DemoTest
         // Apex — Option<Point> as a variant field where Point is shadowed
         // by the sibling Shape.Point unit variant. Drives the scoped
         // rendering of the nullable cast inside the Shape scope.
-        DemoCase("case:enums.data_enum.shape.should_roundtrip_optional_record_fields");
+        DemoCase("case:enums.data_enum.shape.apex.should_roundtrip_some_point_payload");
         Shape apexSome = new Shape.Apex(new Point(3.0, 4.0));
         Shape echoedApexSome = EchoShape(apexSome);
         Require(
@@ -574,6 +574,7 @@ public static class DemoTest
             "EchoShape(Apex with Some(Point))"
         );
 
+        DemoCase("case:enums.data_enum.shape.apex.should_roundtrip_none_payload");
         Shape apexNone = new Shape.Apex(null);
         Shape echoedApexNone = EchoShape(apexNone);
         Require(
@@ -624,8 +625,9 @@ public static class DemoTest
         Require(new Shape.Point().Describe() == "point", "Point.Describe()");
 
         // Static methods / factories on the data enum.
-        DemoCase("case:enums.data_enum.shape.should_support_static_constructors");
+        DemoCase("case:enums.data_enum.shape.unit_circle.should_construct_circle");
         Require(Shape.UnitCircle() is Shape.Circle uc && uc.Radius == 1.0, "Shape.UnitCircle()");
+        DemoCase("case:enums.data_enum.shape.square.should_construct_rectangle");
         Require(
             Shape.Square(7.0) is Shape.Rectangle sq && sq.Width == 7.0 && sq.Height == 7.0,
             "Shape.Square(7)"
@@ -651,19 +653,21 @@ public static class DemoTest
         // TryApexPoint — static method whose return type is Option<Point>
         // where Point is shadowed by a sibling variant. Drives scoped
         // rendering of the Option decode inside the Shape scope.
-        DemoCase("case:enums.data_enum.shape.should_return_optional_records_from_static_methods");
+        DemoCase("case:enums.data_enum.shape.try_apex_point.should_return_some_for_positive_radius");
         Point? apexPt = Shape.TryApexPoint(2.5);
         Require(apexPt is { } pt && pt.X == 0.0 && pt.Y == 2.5, "Shape.TryApexPoint(positive)");
+        DemoCase("case:enums.data_enum.shape.try_apex_point.should_return_none_for_non_positive_radius");
         Require(Shape.TryApexPoint(-1.0) is null, "Shape.TryApexPoint(negative) == null");
 
         // Message — mixes string, primitive, and unit variants.
-        DemoCase("case:enums.data_enum.message.should_roundtrip_variants");
+        DemoCase("case:enums.data_enum.message.text.should_roundtrip_string_payload");
         Message text = new Message.Text("hello");
         Require(
             EchoMessage(text) is Message.Text et && et.Body == "hello",
             "EchoMessage(Text)"
         );
 
+        DemoCase("case:enums.data_enum.message.image.should_roundtrip_url_dimensions_payload");
         Message image = new Message.Image("https://example.com/a.png", 1920, 1080);
         Require(
             EchoMessage(image) is Message.Image ei
@@ -673,38 +677,43 @@ public static class DemoTest
             "EchoMessage(Image)"
         );
 
+        DemoCase("case:enums.data_enum.message.ping.should_roundtrip_unit_variant");
         Message ping = new Message.Ping();
         Require(EchoMessage(ping) is Message.Ping, "EchoMessage(Ping)");
 
-        DemoCase("case:enums.data_enum.message.should_summarize_variants");
+        DemoCase("case:enums.data_enum.message.text.should_render_text_summary");
         Require(
             MessageSummary(new Message.Text("hi")) == "text: hi",
             "MessageSummary(Text)"
         );
+        DemoCase("case:enums.data_enum.message.ping.should_render_ping_summary");
         Require(MessageSummary(new Message.Ping()) == "ping", "MessageSummary(Ping)");
 
         // Animal — three struct variants, one with a bool field.
-        DemoCase("case:enums.data_enum.animal.should_roundtrip_variants");
+        DemoCase("case:enums.data_enum.animal.dog.should_roundtrip_string_payloads");
         Animal dog = new Animal.Dog("Rex", "Labrador");
         Require(
             EchoAnimal(dog) is Animal.Dog d && d.Name == "Rex" && d.Breed == "Labrador",
             "EchoAnimal(Dog)"
         );
 
+        DemoCase("case:enums.data_enum.animal.cat.should_roundtrip_name_and_bool_payload");
         Animal cat = new Animal.Cat("Whiskers", true);
         Require(
             EchoAnimal(cat) is Animal.Cat ca && ca.Name == "Whiskers" && ca.Indoor,
             "EchoAnimal(Cat indoor)"
         );
 
+        DemoCase("case:enums.data_enum.animal.fish.should_roundtrip_count_payload");
         Animal fish = new Animal.Fish(3u);
         Require(
             EchoAnimal(fish) is Animal.Fish f && f.Count == 3u,
             "EchoAnimal(Fish)"
         );
 
-        DemoCase("case:enums.data_enum.animal.should_derive_names");
+        DemoCase("case:enums.data_enum.animal.dog.should_derive_name");
         Require(AnimalName(new Animal.Dog("Rex", "Lab")) == "Rex", "AnimalName(Dog)");
+        DemoCase("case:enums.data_enum.animal.fish.should_derive_count_label");
         Require(AnimalName(new Animal.Fish(5u)) == "5 fish", "AnimalName(Fish)");
 
         // LifecycleEvent — a data enum whose variant payload carries a
@@ -721,6 +730,7 @@ public static class DemoTest
         DemoCase("case:enums.data_enum.lifecycle_event.should_roundtrip_priority_payload");
         LifecycleEvent echoedStarted = EchoLifecycleEvent(started);
         Require(echoedStarted == started, "EchoLifecycleEvent(TaskStarted) round-trip");
+        DemoCase("case:enums.data_enum.lifecycle_event.should_roundtrip_tick_variant");
         LifecycleEvent tick = new LifecycleEvent.Tick();
         Require(EchoLifecycleEvent(tick) is LifecycleEvent.Tick, "EchoLifecycleEvent(Tick)");
 

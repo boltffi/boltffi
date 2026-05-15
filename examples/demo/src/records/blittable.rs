@@ -466,7 +466,7 @@ impl DataPoint {
 
 #[demo_bench_macros::demo_case(
     "records.blittable.locations.should_generate_sample_vector",
-    description = "generate_locations returns a vector of Location records with predictable repr(C) field values.",
+    description = "generate_locations returns the requested number of Location records.",
     exclude(
         wasm,
         reason = "The Wasm demo tests do not currently cover blittable record vector helpers."
@@ -601,7 +601,7 @@ pub fn sum_ratings(locations: Vec<Location>) -> f64 {
 
 #[demo_bench_macros::demo_case(
     "records.blittable.trades.should_generate_sample_vector",
-    description = "generate_trades returns a vector of Trade records with predictable repr(C) field values.",
+    description = "generate_trades returns the requested number of Trade records.",
     exclude(
         wasm,
         reason = "The Wasm demo tests do not currently cover blittable record vector helpers."
@@ -669,7 +669,7 @@ pub fn aggregate_location_trade_stats(locations: Vec<Location>, trades: Vec<Trad
 
 #[demo_bench_macros::demo_case(
     "records.blittable.particles.should_generate_sample_vector",
-    description = "generate_particles returns a vector of Particle records with predictable repr(C) field values.",
+    description = "generate_particles returns the requested number of Particle records.",
     exclude(
         wasm,
         reason = "The Wasm demo tests do not currently cover blittable record vector helpers."
@@ -718,7 +718,7 @@ pub fn sum_particle_masses(particles: Vec<Particle>) -> f64 {
 
 #[demo_bench_macros::demo_case(
     "records.blittable.sensor_readings.should_generate_sample_vector",
-    description = "generate_sensor_readings returns a vector of SensorReading records with predictable repr(C) field values.",
+    description = "generate_sensor_readings returns the requested number of SensorReading records.",
     exclude(
         wasm,
         reason = "The Wasm demo tests do not currently cover blittable record vector helpers."
@@ -797,6 +797,54 @@ pub fn avg_sensor_temperature(readings: Vec<SensorReading>) -> f64 {
     }
 }
 
+#[demo_bench_macros::demo_case(
+    "records.blittable.locations.find_location.should_return_some_for_positive_id",
+    description = "find_location returns Some(Location) for a positive id.",
+    exclude(
+        csharp,
+        reason = "The C# blittable record demo does not currently cover find_location."
+    ),
+    exclude(
+        java,
+        reason = "The Java blittable record demo does not currently cover find_location."
+    ),
+    exclude(
+        kotlin,
+        reason = "The Kotlin blittable record demo does not currently cover find_location."
+    ),
+    exclude(
+        wasm,
+        reason = "The Wasm blittable record demo does not currently cover find_location."
+    ),
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover blittable record vector helpers."
+    )
+)]
+#[demo_bench_macros::demo_case(
+    "records.blittable.locations.find_location.should_return_none_for_non_positive_id",
+    description = "find_location returns None for a non-positive id.",
+    exclude(
+        csharp,
+        reason = "The C# blittable record demo does not currently cover find_location."
+    ),
+    exclude(
+        java,
+        reason = "The Java blittable record demo does not currently cover find_location."
+    ),
+    exclude(
+        kotlin,
+        reason = "The Kotlin blittable record demo does not currently cover find_location."
+    ),
+    exclude(
+        wasm,
+        reason = "The Wasm blittable record demo does not currently cover find_location."
+    ),
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover blittable record vector helpers."
+    )
+)]
 #[export]
 #[benchmark_candidate(function, uniffi)]
 pub fn find_location(id: i32) -> Option<Location> {
@@ -814,6 +862,54 @@ pub fn find_location(id: i32) -> Option<Location> {
     }
 }
 
+#[demo_bench_macros::demo_case(
+    "records.blittable.locations.find_locations.should_return_some_vector_for_positive_count",
+    description = "find_locations returns Some generated Location vector for a positive count.",
+    exclude(
+        csharp,
+        reason = "The C# blittable record demo does not currently cover find_locations."
+    ),
+    exclude(
+        java,
+        reason = "The Java blittable record demo does not currently cover find_locations."
+    ),
+    exclude(
+        kotlin,
+        reason = "The Kotlin blittable record demo does not currently cover find_locations."
+    ),
+    exclude(
+        wasm,
+        reason = "The Wasm blittable record demo does not currently cover find_locations."
+    ),
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover blittable record vector helpers."
+    )
+)]
+#[demo_bench_macros::demo_case(
+    "records.blittable.locations.find_locations.should_return_none_for_non_positive_count",
+    description = "find_locations returns None for a non-positive count.",
+    exclude(
+        csharp,
+        reason = "The C# blittable record demo does not currently cover find_locations."
+    ),
+    exclude(
+        java,
+        reason = "The Java blittable record demo does not currently cover find_locations."
+    ),
+    exclude(
+        kotlin,
+        reason = "The Kotlin blittable record demo does not currently cover find_locations."
+    ),
+    exclude(
+        wasm,
+        reason = "The Wasm blittable record demo does not currently cover find_locations."
+    ),
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover blittable record vector helpers."
+    )
+)]
 #[export]
 #[benchmark_candidate(function, uniffi)]
 pub fn find_locations(count: i32) -> Option<Vec<Location>> {

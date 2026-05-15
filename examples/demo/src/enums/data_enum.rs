@@ -54,13 +54,8 @@ impl Shape {
     }
 
     #[demo_bench_macros::demo_case(
-        "enums.data_enum.shape.should_support_static_constructors",
-        description = "Static constructors on Shape build Circle and Rectangle variants without crossing through a free function.",
-        exercises = [
-            "enums::data_enum::Shape::unit_circle",
-            "enums::data_enum::Shape::square",
-            "enums::data_enum::Shape::try_circle"
-        ],
+        "enums.data_enum.shape.unit_circle.should_construct_circle",
+        description = "Shape::unit_circle constructs a Circle variant with unit radius.",
         exclude(
             python,
             reason = "The Python demo tests do not currently cover data-enum surfaces."
@@ -70,6 +65,14 @@ impl Shape {
         Shape::Circle { radius: 1.0 }
     }
 
+    #[demo_bench_macros::demo_case(
+        "enums.data_enum.shape.square.should_construct_rectangle",
+        description = "Shape::square constructs a Rectangle variant whose width and height match the side length.",
+        exclude(
+            python,
+            reason = "The Python demo tests do not currently cover data-enum surfaces."
+        )
+    )]
     pub fn square(side: f64) -> Self {
         Shape::Rectangle {
             width: side,
@@ -77,6 +80,18 @@ impl Shape {
         }
     }
 
+    #[demo_bench_macros::demo_case(
+        "enums.data_enum.shape.try_circle.should_return_circle_for_positive_radius",
+        description = "Shape::try_circle returns a Circle variant for a positive radius.",
+        exclude(
+            csharp,
+            reason = "The C# data-enum demo covers Shape::try_circle rejection but not the positive-radius success path."
+        ),
+        exclude(
+            python,
+            reason = "The Python demo tests do not currently cover data-enum surfaces."
+        )
+    )]
     #[demo_bench_macros::demo_case(
         "enums.data_enum.shape.should_reject_non_positive_circle_radius",
         description = "Shape::try_circle returns a language-native error when radius is zero or negative.",
@@ -151,8 +166,16 @@ impl Shape {
     /// `Option<Record>` where the record type is shadowed by another
     /// variant on the same enum.
     #[demo_bench_macros::demo_case(
-        "enums.data_enum.shape.should_return_optional_records_from_static_methods",
-        description = "A Shape static method can return Some(Point) or None while resolving Point as the record type.",
+        "enums.data_enum.shape.try_apex_point.should_return_some_for_positive_radius",
+        description = "Shape::try_apex_point returns Some(Point) for a positive radius while resolving Point as the record type.",
+        exclude(
+            python,
+            reason = "The Python demo tests do not currently cover data-enum surfaces."
+        )
+    )]
+    #[demo_bench_macros::demo_case(
+        "enums.data_enum.shape.try_apex_point.should_return_none_for_non_positive_radius",
+        description = "Shape::try_apex_point returns None for a non-positive radius while resolving Point as the record type.",
         exclude(
             python,
             reason = "The Python demo tests do not currently cover data-enum surfaces."
@@ -176,8 +199,16 @@ impl Shape {
     )
 )]
 #[demo_bench_macros::demo_case(
-    "enums.data_enum.shape.should_roundtrip_optional_record_fields",
-    description = "A Shape variant can carry Some(Point) and None payloads even when Point is also a sibling variant name.",
+    "enums.data_enum.shape.apex.should_roundtrip_some_point_payload",
+    description = "The Shape::Apex variant preserves a Some(Point) payload when Point is also a sibling variant name.",
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover data-enum surfaces."
+    )
+)]
+#[demo_bench_macros::demo_case(
+    "enums.data_enum.shape.apex.should_roundtrip_none_payload",
+    description = "The Shape::Apex variant preserves a None payload when Point is also a sibling variant name.",
     exclude(
         python,
         reason = "The Python demo tests do not currently cover data-enum surfaces."
@@ -246,8 +277,44 @@ pub enum Message {
 }
 
 #[demo_bench_macros::demo_case(
-    "enums.data_enum.message.should_roundtrip_variants",
-    description = "Message variants with string, mixed primitive, and unit payloads cross the FFI boundary unchanged.",
+    "enums.data_enum.message.text.should_roundtrip_string_payload",
+    description = "The Message::Text variant preserves its string payload when round-tripped.",
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover data-enum surfaces."
+    )
+)]
+#[demo_bench_macros::demo_case(
+    "enums.data_enum.message.image.should_roundtrip_url_dimensions_payload",
+    description = "The Message::Image variant preserves its URL and dimension payload fields when round-tripped.",
+    exclude(
+        java,
+        reason = "The Java data-enum demo does not currently round-trip the Message::Image variant."
+    ),
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover data-enum surfaces."
+    )
+)]
+#[demo_bench_macros::demo_case(
+    "enums.data_enum.message.ping.should_roundtrip_unit_variant",
+    description = "The Message::Ping unit variant crosses the FFI boundary unchanged.",
+    exclude(
+        apple,
+        reason = "The Apple data-enum demo does not currently round-trip the Message::Ping variant."
+    ),
+    exclude(
+        java,
+        reason = "The Java data-enum demo does not currently round-trip the Message::Ping variant."
+    ),
+    exclude(
+        kotlin,
+        reason = "The Kotlin data-enum demo does not currently round-trip the Message::Ping variant."
+    ),
+    exclude(
+        wasm,
+        reason = "The Wasm data-enum demo does not currently round-trip the Message::Ping variant."
+    ),
     exclude(
         python,
         reason = "The Python demo tests do not currently cover data-enum surfaces."
@@ -259,8 +326,32 @@ pub fn echo_message(m: Message) -> Message {
 }
 
 #[demo_bench_macros::demo_case(
-    "enums.data_enum.message.should_summarize_variants",
-    description = "message_summary renders summaries for Message variants with text, image, and unit payloads.",
+    "enums.data_enum.message.text.should_render_text_summary",
+    description = "message_summary renders the Text string payload in the summary.",
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover data-enum surfaces."
+    )
+)]
+#[demo_bench_macros::demo_case(
+    "enums.data_enum.message.image.should_render_image_summary",
+    description = "message_summary renders the Image dimensions and URL in the summary.",
+    exclude(
+        csharp,
+        reason = "The C# data-enum demo does not currently summarize the Message::Image variant."
+    ),
+    exclude(
+        java,
+        reason = "The Java data-enum demo does not currently summarize the Message::Image variant."
+    ),
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover data-enum surfaces."
+    )
+)]
+#[demo_bench_macros::demo_case(
+    "enums.data_enum.message.ping.should_render_ping_summary",
+    description = "message_summary renders the Ping unit variant summary.",
     exclude(
         python,
         reason = "The Python demo tests do not currently cover data-enum surfaces."
@@ -284,8 +375,44 @@ pub enum Animal {
 }
 
 #[demo_bench_macros::demo_case(
-    "enums.data_enum.animal.should_roundtrip_variants",
-    description = "Animal variants with string, boolean, and integer payloads cross the FFI boundary unchanged.",
+    "enums.data_enum.animal.dog.should_roundtrip_string_payloads",
+    description = "The Animal::Dog variant preserves its name and breed string payloads when round-tripped.",
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover data-enum surfaces."
+    )
+)]
+#[demo_bench_macros::demo_case(
+    "enums.data_enum.animal.cat.should_roundtrip_name_and_bool_payload",
+    description = "The Animal::Cat variant preserves its name string and indoor boolean payloads when round-tripped.",
+    exclude(
+        java,
+        reason = "The Java data-enum demo does not currently round-trip the Animal::Cat variant."
+    ),
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover data-enum surfaces."
+    )
+)]
+#[demo_bench_macros::demo_case(
+    "enums.data_enum.animal.fish.should_roundtrip_count_payload",
+    description = "The Animal::Fish variant preserves its count payload when round-tripped.",
+    exclude(
+        apple,
+        reason = "The Apple data-enum demo does not currently round-trip the Animal::Fish variant."
+    ),
+    exclude(
+        java,
+        reason = "The Java data-enum demo does not currently round-trip the Animal::Fish variant."
+    ),
+    exclude(
+        kotlin,
+        reason = "The Kotlin data-enum demo does not currently round-trip the Animal::Fish variant."
+    ),
+    exclude(
+        wasm,
+        reason = "The Wasm data-enum demo does not currently round-trip the Animal::Fish variant."
+    ),
     exclude(
         python,
         reason = "The Python demo tests do not currently cover data-enum surfaces."
@@ -297,8 +424,48 @@ pub fn echo_animal(a: Animal) -> Animal {
 }
 
 #[demo_bench_macros::demo_case(
-    "enums.data_enum.animal.should_derive_names",
-    description = "animal_name derives display names from Animal variants with string and integer payloads.",
+    "enums.data_enum.animal.dog.should_derive_name",
+    description = "animal_name derives the dog name from an Animal::Dog payload.",
+    exclude(
+        apple,
+        reason = "The Apple data-enum demo does not currently derive a name from Animal::Dog."
+    ),
+    exclude(
+        java,
+        reason = "The Java data-enum demo does not currently derive a name from Animal::Dog."
+    ),
+    exclude(
+        kotlin,
+        reason = "The Kotlin data-enum demo does not currently derive a name from Animal::Dog."
+    ),
+    exclude(
+        wasm,
+        reason = "The Wasm data-enum demo does not currently derive a name from Animal::Dog."
+    ),
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover data-enum surfaces."
+    )
+)]
+#[demo_bench_macros::demo_case(
+    "enums.data_enum.animal.cat.should_derive_name",
+    description = "animal_name derives the cat name from an Animal::Cat payload.",
+    exclude(
+        csharp,
+        reason = "The C# data-enum demo does not currently derive a name from Animal::Cat."
+    ),
+    exclude(
+        java,
+        reason = "The Java data-enum demo does not currently derive a name from Animal::Cat."
+    ),
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover data-enum surfaces."
+    )
+)]
+#[demo_bench_macros::demo_case(
+    "enums.data_enum.animal.fish.should_derive_count_label",
+    description = "animal_name derives a count label from an Animal::Fish payload.",
     exclude(
         python,
         reason = "The Python demo tests do not currently cover data-enum surfaces."
@@ -367,6 +534,14 @@ pub enum LifecycleEvent {
 #[demo_bench_macros::demo_case(
     "enums.data_enum.lifecycle_event.should_roundtrip_priority_payload",
     description = "A LifecycleEvent variant embeds a Priority enum payload and round-trips both the outer tag and inner enum value.",
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover data-enum surfaces."
+    )
+)]
+#[demo_bench_macros::demo_case(
+    "enums.data_enum.lifecycle_event.should_roundtrip_tick_variant",
+    description = "The LifecycleEvent::Tick unit variant crosses the FFI boundary unchanged.",
     exclude(
         python,
         reason = "The Python demo tests do not currently cover data-enum surfaces."

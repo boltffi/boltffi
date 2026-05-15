@@ -460,9 +460,11 @@ class DemoValueTypesTest {
         val circle = Shape.new(5.0)
         assertIs<Shape.Circle>(circle)
 
-        demoCase("case:enums.data_enum.shape.should_support_static_constructors")
+        demoCase("case:enums.data_enum.shape.unit_circle.should_construct_circle")
         assertIs<Shape.Circle>(Shape.unitCircle())
+        demoCase("case:enums.data_enum.shape.square.should_construct_rectangle")
         assertIs<Shape.Rectangle>(Shape.square(3.0))
+        demoCase("case:enums.data_enum.shape.try_circle.should_return_circle_for_positive_radius")
         assertIs<Shape.Circle>(Shape.tryCircle(2.0))
 
         demoCase("case:enums.data_enum.shape.should_reject_non_positive_circle_radius")
@@ -487,39 +489,46 @@ class DemoValueTypesTest {
         assertIs<Shape.Triangle>(echoShape(Shape.Triangle(Point(0.0, 0.0), Point(3.0, 0.0), Point(0.0, 4.0))))
         assertEquals(Shape.Point, echoShape(Shape.Point))
 
-        demoCase("case:enums.data_enum.shape.should_roundtrip_optional_record_fields")
+        demoCase("case:enums.data_enum.shape.apex.should_roundtrip_some_point_payload")
         assertEquals(Shape.Apex(Point(3.0, 4.0)), echoShape(Shape.Apex(Point(3.0, 4.0))))
+        demoCase("case:enums.data_enum.shape.apex.should_roundtrip_none_payload")
         assertEquals(Shape.Apex(null), echoShape(Shape.Apex(null)))
 
         demoCase("case:enums.data_enum.shape.should_roundtrip_vector_record_fields")
         assertEquals(Shape.Cluster(listOf(Point(1.0, 2.0))), echoShape(Shape.Cluster(listOf(Point(1.0, 2.0)))))
 
-        demoCase("case:enums.data_enum.shape.should_return_optional_records_from_static_methods")
+        demoCase("case:enums.data_enum.shape.try_apex_point.should_return_some_for_positive_radius")
         assertEquals(Point(0.0, 2.5), Shape.tryApexPoint(2.5))
+        demoCase("case:enums.data_enum.shape.try_apex_point.should_return_none_for_non_positive_radius")
         assertNull(Shape.tryApexPoint(-1.0))
 
         demoCase("case:enums.data_enum.shape.should_roundtrip_vectors")
         assertEquals(3, echoVecShape(listOf(Shape.Circle(2.0), Shape.Rectangle(3.0, 4.0), Shape.Point)).size)
 
-        demoCase("case:enums.data_enum.message.should_roundtrip_variants")
+        demoCase("case:enums.data_enum.message.text.should_roundtrip_string_payload")
         assertEquals(Message.Text("hello"), echoMessage(Message.Text("hello")))
+        demoCase("case:enums.data_enum.message.image.should_roundtrip_url_dimensions_payload")
         assertEquals(
             Message.Image("https://example.com/image.png", 640u, 480u),
             echoMessage(Message.Image("https://example.com/image.png", 640u, 480u))
         )
-        demoCase("case:enums.data_enum.message.should_summarize_variants")
+        demoCase("case:enums.data_enum.message.text.should_render_text_summary")
         assertEquals("text: hi", messageSummary(Message.Text("hi")))
+        demoCase("case:enums.data_enum.message.image.should_render_image_summary")
         assertEquals(
             "image: 640x480 at https://example.com/image.png",
             messageSummary(Message.Image("https://example.com/image.png", 640u, 480u))
         )
+        demoCase("case:enums.data_enum.message.ping.should_render_ping_summary")
         assertEquals("ping", messageSummary(Message.Ping))
 
-        demoCase("case:enums.data_enum.animal.should_roundtrip_variants")
+        demoCase("case:enums.data_enum.animal.dog.should_roundtrip_string_payloads")
         assertEquals(Animal.Dog("Rex", "Labrador"), echoAnimal(Animal.Dog("Rex", "Labrador")))
+        demoCase("case:enums.data_enum.animal.cat.should_roundtrip_name_and_bool_payload")
         assertEquals(Animal.Cat("Milo", true), echoAnimal(Animal.Cat("Milo", true)))
-        demoCase("case:enums.data_enum.animal.should_derive_names")
+        demoCase("case:enums.data_enum.animal.fish.should_derive_count_label")
         assertEquals("5 fish", animalName(Animal.Fish(5u)))
+        demoCase("case:enums.data_enum.animal.cat.should_derive_name")
         assertEquals("Milo", animalName(Animal.Cat("Milo", true)))
     }
 
@@ -649,6 +658,7 @@ class DemoValueTypesTest {
         assertEquals(7L, started.id)
         demoCase("case:enums.data_enum.lifecycle_event.should_roundtrip_priority_payload")
         assertEquals(started, echoLifecycleEvent(started))
+        demoCase("case:enums.data_enum.lifecycle_event.should_roundtrip_tick_variant")
         assertEquals(LifecycleEvent.Tick, echoLifecycleEvent(LifecycleEvent.Tick))
 
         demoCase("case:records.with_enums.log_entry.should_make_error_entry")
