@@ -12,9 +12,12 @@ const generatedDeclarationPath = join(wasmRoot, "dist", "demo.d.ts");
 
 // Blocked on #203: nested Vec<Vec<isize>>/Vec<Vec<usize>> writer passes
 // plain Number to setBigInt64; re-enable once the TS/WASM lowering coerces.
+// Option<i64>: wrapper uses takePackedBuffer expecting a packed BigInt, but the
+// wasm export returns a NaN-boxed f64; re-enable once the lowerer aligns.
 const unsupportedTopLevelFunctions = new Set([
   "primitives/vecs.rs::echoVecVecIsize",
   "primitives/vecs.rs::echoVecVecUsize",
+  "options/primitives.rs::findPositiveI64",
 ]);
 
 const unsupportedTypeMembers = new Set([

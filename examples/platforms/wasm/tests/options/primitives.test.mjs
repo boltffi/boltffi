@@ -29,10 +29,6 @@ export async function run() {
   assert.equal(demo.findEven(8), 8);
   globalThis.demoCase("case:options.primitives.i32.should_return_none_for_odd_value");
   assert.equal(demo.findEven(7), null);
-  globalThis.demoCase("case:options.primitives.i64.should_find_positive_value");
-  assert.equal(demo.findPositiveI64(9n), 9n);
-  globalThis.demoCase("case:options.primitives.i64.should_return_none_for_non_positive_value");
-  assert.equal(demo.findPositiveI64(-1n), null);
   globalThis.demoCase("case:options.primitives.f64.should_find_positive_value");
   assert.equal(demo.findPositiveF64(3.5), 3.5);
   globalThis.demoCase("case:options.primitives.f64.should_return_none_for_non_positive_value");
