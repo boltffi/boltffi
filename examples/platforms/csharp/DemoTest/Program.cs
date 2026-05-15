@@ -83,7 +83,7 @@ public static class DemoTest
     {
         Console.WriteLine("Testing i8...");
         Require(EchoI8(42) == 42, "echoI8(42)");
-        Require(EchoI8(-128) == -128, "echoI8(min)");
+        Require(EchoI8(-128) == -128, "case:primitives.scalars.i8.should_roundtrip_negative_value echoI8(min)");
         Require(EchoI8(127) == 127, "echoI8(max)");
         Console.WriteLine("  PASS\n");
     }
@@ -92,14 +92,14 @@ public static class DemoTest
     {
         Console.WriteLine("Testing u8...");
         Require(EchoU8(0) == 0, "echoU8(0)");
-        Require(EchoU8(255) == 255, "echoU8(max)");
+        Require(EchoU8(255) == 255, "case:primitives.scalars.u8.should_roundtrip_max_value echoU8(max)");
         Console.WriteLine("  PASS\n");
     }
 
     private static void TestI16()
     {
         Console.WriteLine("Testing i16...");
-        Require(EchoI16(-32768) == -32768, "echoI16(min)");
+        Require(EchoI16(-32768) == -32768, "case:primitives.scalars.i16.should_roundtrip_negative_value echoI16(min)");
         Require(EchoI16(32767) == 32767, "echoI16(max)");
         Console.WriteLine("  PASS\n");
     }
@@ -108,7 +108,7 @@ public static class DemoTest
     {
         Console.WriteLine("Testing u16...");
         Require(EchoU16(0) == 0, "echoU16(0)");
-        Require(EchoU16(65535) == 65535, "echoU16(max)");
+        Require(EchoU16(65535) == 65535, "case:primitives.scalars.u16.should_roundtrip_large_value echoU16(max)");
         Console.WriteLine("  PASS\n");
     }
 
@@ -125,7 +125,7 @@ public static class DemoTest
     {
         Console.WriteLine("Testing u32...");
         Require(EchoU32(0u) == 0u, "echoU32(0)");
-        Require(EchoU32(uint.MaxValue) == uint.MaxValue, "echoU32(max)");
+        Require(EchoU32(uint.MaxValue) == uint.MaxValue, "case:primitives.scalars.u32.should_roundtrip_large_value echoU32(max)");
         Console.WriteLine("  PASS\n");
     }
 
@@ -141,7 +141,7 @@ public static class DemoTest
     {
         Console.WriteLine("Testing u64...");
         Require(EchoU64(0UL) == 0UL, "echoU64(0)");
-        Require(EchoU64(ulong.MaxValue) == ulong.MaxValue, "echoU64(max)");
+        Require(EchoU64(ulong.MaxValue) == ulong.MaxValue, "case:primitives.scalars.u64.should_roundtrip_large_value echoU64(max)");
         Console.WriteLine("  PASS\n");
     }
 
@@ -164,7 +164,7 @@ public static class DemoTest
     private static void TestUsize()
     {
         Console.WriteLine("Testing usize...");
-        Require(EchoUsize((nuint)42) == (nuint)42, "echoUsize(42)");
+        Require(EchoUsize((nuint)42) == (nuint)42, "case:primitives.scalars.usize.should_roundtrip_value echoUsize(42)");
         Require(EchoUsize((nuint)0) == (nuint)0, "echoUsize(0)");
         Console.WriteLine("  PASS\n");
     }
@@ -173,7 +173,7 @@ public static class DemoTest
     {
         Console.WriteLine("Testing isize...");
         Require(EchoIsize((nint)42) == (nint)42, "echoIsize(42)");
-        Require(EchoIsize((nint)(-100)) == (nint)(-100), "echoIsize(-100)");
+        Require(EchoIsize((nint)(-100)) == (nint)(-100), "case:primitives.scalars.isize.should_roundtrip_negative_value echoIsize(-100)");
         Console.WriteLine("  PASS\n");
     }
 
@@ -802,8 +802,11 @@ public static class DemoTest
         Require(MakeRange(0, 5).SequenceEqual(new int[] { 0, 1, 2, 3, 4 }), "makeRange");
         DemoCase("case:primitives.vecs.i32.should_reverse_values");
         Require(ReverseVecI32(new int[] { 1, 2, 3 }).SequenceEqual(new int[] { 3, 2, 1 }), "reverseVecI32");
+        DemoCase("case:primitives.vecs.i32.should_generate_sequence");
         Require(GenerateI32Vec(4).SequenceEqual(new int[] { 0, 1, 2, 3 }), "generateI32Vec");
+        DemoCase("case:primitives.vecs.f64.should_generate_sequence");
         Require(GenerateF64Vec(3).Length == 3, "generateF64Vec length");
+        DemoCase("case:primitives.vecs.f64.should_sum_values");
         Require(Math.Abs(SumF64Vec(new double[] { 0.5, 1.5, 2.0 }) - 4.0) < 1e-9, "sumF64Vec");
 
         Console.WriteLine("  PASS\n");
@@ -821,13 +824,16 @@ public static class DemoTest
         Console.WriteLine("Testing Vec<String> and Vec<Vec<_>>...");
 
         string[] words = new[] { "hello", "", "café", "🌍" };
+        DemoCase("case:primitives.vecs.string.should_roundtrip_values");
         string[] echoedWords = EchoVecString(words);
-        Require(echoedWords.SequenceEqual(words), "case:primitives.vecs.echo_string.basic echoVecString round-trip");
+        Require(echoedWords.SequenceEqual(words), "echoVecString round-trip");
         Require(EchoVecString(Array.Empty<string>()).Length == 0, "echoVecString empty");
 
+        DemoCase("case:primitives.vecs.string.should_report_utf8_byte_lengths");
         uint[] lengths = VecStringLengths(new[] { "", "a", "café", "🌍" });
-        Require(lengths.SequenceEqual(new uint[] { 0u, 1u, 5u, 4u }), "case:primitives.vecs.string_lengths.utf8 vecStringLengths UTF-8 byte counts");
+        Require(lengths.SequenceEqual(new uint[] { 0u, 1u, 5u, 4u }), "vecStringLengths UTF-8 byte counts");
 
+        DemoCase("case:primitives.vecs.nested_i32.should_roundtrip_values");
         int[][] nestedInts = new[]
         {
             new[] { 1, 2, 3 },
@@ -840,8 +846,10 @@ public static class DemoTest
         {
             Require(echoedInts[i].SequenceEqual(nestedInts[i]), $"echoVecVecI32 inner[{i}]");
         }
+        DemoCase("case:primitives.vecs.nested_i32.should_roundtrip_empty_outer");
         Require(EchoVecVecI32(Array.Empty<int[]>()).Length == 0, "echoVecVecI32 empty outer");
 
+        DemoCase("case:primitives.vecs.nested_bool.should_roundtrip_values");
         bool[][] nestedBools = new[]
         {
             new[] { true, false, true },
@@ -855,6 +863,7 @@ public static class DemoTest
             Require(echoedBools[i].SequenceEqual(nestedBools[i]), $"echoVecVecBool inner[{i}]");
         }
 
+        DemoCase("case:primitives.vecs.nested_isize.should_roundtrip_values");
         nint[][] nestedIsizes = new[]
         {
             new nint[] { -2, 0, 5 },
@@ -868,6 +877,7 @@ public static class DemoTest
             Require(echoedIsizes[i].SequenceEqual(nestedIsizes[i]), $"echoVecVecIsize inner[{i}]");
         }
 
+        DemoCase("case:primitives.vecs.nested_usize.should_roundtrip_values");
         nuint[][] nestedUsizes = new[]
         {
             new nuint[] { 0, 2, 4 },
@@ -881,9 +891,11 @@ public static class DemoTest
             Require(echoedUsizes[i].SequenceEqual(nestedUsizes[i]), $"echoVecVecUsize inner[{i}]");
         }
 
+        DemoCase("case:primitives.vecs.nested_i32.should_flatten_values");
         int[] flattened = FlattenVecVecI32(nestedInts);
         Require(flattened.SequenceEqual(new[] { 1, 2, 3, -1 }), "flattenVecVecI32");
 
+        DemoCase("case:primitives.vecs.nested_string.should_roundtrip_utf8_values");
         string[][] nestedStrings = new[]
         {
             new[] { "café", "🌍" },

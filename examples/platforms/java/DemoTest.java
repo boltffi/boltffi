@@ -648,16 +648,18 @@ public final class DemoTest {
     private static void testVecStrings() {
         System.out.println("Testing vec strings...");
 
+        demoCase("case:primitives.vecs.string.should_roundtrip_values");
         List<String> strings = Demo.echoVecString(Arrays.asList("hello", "world"));
-        assert strings.size() == 2 : "case:primitives.vecs.echo_string.basic echoVecString size";
+        assert strings.size() == 2 : "echoVecString size";
         assert strings.get(0).equals("hello") : "echoVecString[0]";
         assert strings.get(1).equals("world") : "echoVecString[1]";
 
         List<String> emptyStrings = Demo.echoVecString(Collections.emptyList());
         assert emptyStrings.isEmpty() : "echoVecString empty";
 
+        demoCase("case:primitives.vecs.string.should_report_utf8_byte_lengths");
         int[] lengths = Demo.vecStringLengths(Arrays.asList("hi", "café"));
-        assert lengths.length == 2 : "case:primitives.vecs.string_lengths.utf8 vecStringLengths size";
+        assert lengths.length == 2 : "vecStringLengths size";
         assert lengths[0] == 2 : "vecStringLengths[0]";
         assert lengths[1] == 5 : "vecStringLengths[1] (utf8)";
 
@@ -667,15 +669,18 @@ public final class DemoTest {
     private static void testNestedVecs() {
         System.out.println("Testing nested vecs...");
 
+        demoCase("case:primitives.vecs.nested_i32.should_roundtrip_values");
         List<int[]> vvi = Demo.echoVecVecI32(Arrays.asList(new int[]{1, 2, 3}, new int[]{}, new int[]{4, 5}));
         assert vvi.size() == 3 : "echoVecVecI32 outer size";
         assert vvi.get(0).length == 3 && vvi.get(0)[0] == 1 && vvi.get(0)[2] == 3 : "echoVecVecI32[0]";
         assert vvi.get(1).length == 0 : "echoVecVecI32[1] empty";
         assert vvi.get(2).length == 2 && vvi.get(2)[0] == 4 && vvi.get(2)[1] == 5 : "echoVecVecI32[2]";
 
+        demoCase("case:primitives.vecs.nested_i32.should_roundtrip_empty_outer");
         List<int[]> vviEmpty = Demo.echoVecVecI32(Collections.emptyList());
         assert vviEmpty.isEmpty() : "echoVecVecI32 empty outer";
 
+        demoCase("case:primitives.vecs.nested_bool.should_roundtrip_values");
         List<boolean[]> vvb = Demo.echoVecVecBool(Arrays.asList(
                 new boolean[]{true, false, true},
                 new boolean[]{},
@@ -685,6 +690,7 @@ public final class DemoTest {
         assert vvb.get(1).length == 0 : "echoVecVecBool[1] empty";
         assert vvb.get(2).length == 1 && !vvb.get(2)[0] : "echoVecVecBool[2]";
 
+        demoCase("case:primitives.vecs.nested_isize.should_roundtrip_values");
         List<long[]> vvisize = Demo.echoVecVecIsize(Arrays.asList(
                 new long[]{-2L, 0L, 5L},
                 new long[]{},
@@ -694,6 +700,7 @@ public final class DemoTest {
         assert vvisize.get(1).length == 0 : "echoVecVecIsize[1] empty";
         assert vvisize.get(2).length == 1 && vvisize.get(2)[0] == 9L : "echoVecVecIsize[2]";
 
+        demoCase("case:primitives.vecs.nested_usize.should_roundtrip_values");
         List<long[]> vvusize = Demo.echoVecVecUsize(Arrays.asList(
                 new long[]{0L, 2L, 4L},
                 new long[]{},
@@ -703,6 +710,7 @@ public final class DemoTest {
         assert vvusize.get(1).length == 0 : "echoVecVecUsize[1] empty";
         assert vvusize.get(2).length == 1 && vvusize.get(2)[0] == 8L : "echoVecVecUsize[2]";
 
+        demoCase("case:primitives.vecs.nested_string.should_roundtrip_utf8_values");
         List<List<String>> vvs = Demo.echoVecVecString(Arrays.asList(
                 Arrays.asList("hello", "world"),
                 Collections.emptyList(),
@@ -712,6 +720,7 @@ public final class DemoTest {
         assert vvs.get(1).isEmpty() : "echoVecVecString[1] empty";
         assert vvs.get(2).equals(Arrays.asList("café", "🌍")) : "echoVecVecString[2]";
 
+        demoCase("case:primitives.vecs.nested_i32.should_flatten_values");
         int[] flat = Demo.flattenVecVecI32(Arrays.asList(new int[]{1, 2}, new int[]{3}, new int[]{}, new int[]{4, 5}));
         assert flat.length == 5 : "flattenVecVecI32 length";
         assert flat[0] == 1 && flat[1] == 2 && flat[2] == 3 && flat[3] == 4 && flat[4] == 5 : "flattenVecVecI32 values";

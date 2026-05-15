@@ -30,34 +30,40 @@ export async function run() {
   assertArrayEqual(demo.echoVecF64([1.5, 2.5]), [1.5, 2.5]);
   globalThis.demoCase("case:primitives.vecs.bool.should_roundtrip_values");
   assertArrayEqual(demo.echoVecBool([true, false, true]), [true, false, true]);
-  globalThis.demoCase("case:primitives.vecs.echo_string.basic");
+  globalThis.demoCase("case:primitives.vecs.string.should_roundtrip_values");
   assertArrayEqual(demo.echoVecString(["hello", "world"]), ["hello", "world"]);
-  globalThis.demoCase("case:primitives.vecs.string_lengths.utf8");
+  globalThis.demoCase("case:primitives.vecs.string.should_report_utf8_byte_lengths");
   assertArrayEqual(demo.vecStringLengths(["hi", "café"]), [2, 5]);
   globalThis.demoCase("case:primitives.vecs.i32.should_make_range");
   assertArrayEqual(demo.makeRange(0, 5), [0, 1, 2, 3, 4]);
   globalThis.demoCase("case:primitives.vecs.i32.should_reverse_values");
   assertArrayEqual(demo.reverseVecI32([1, 2, 3]), [3, 2, 1]);
-  assert.equal(demo.incU64(BigUint64Array.from([1n, 2n])), undefined);
+  assert.equal(demo.incU64(BigUint64Array.from([1n, 2n])), undefined, "case:primitives.vecs.u64.should_increment_first_value_in_place");
 
+  globalThis.demoCase("case:primitives.vecs.nested_i32.should_roundtrip_values");
   const vvi = demo.echoVecVecI32([[1, 2, 3], [], [4, 5]]);
   assert.equal(vvi.length, 3);
   assertArrayEqual(vvi[0], [1, 2, 3]);
   assertArrayEqual(vvi[1], []);
   assertArrayEqual(vvi[2], [4, 5]);
+  globalThis.demoCase("case:primitives.vecs.nested_i32.should_roundtrip_empty_outer");
   assert.equal(demo.echoVecVecI32([]).length, 0);
 
+  globalThis.demoCase("case:primitives.vecs.nested_bool.should_roundtrip_values");
   const vvb = demo.echoVecVecBool([[true, false, true], [], [false]]);
   assert.equal(vvb.length, 3);
   assertArrayEqual(vvb[0], [true, false, true]);
   assertArrayEqual(vvb[1], []);
   assertArrayEqual(vvb[2], [false]);
 
+  globalThis.demoCase("case:primitives.vecs.nested_string.should_roundtrip_utf8_values");
   assert.deepEqual(
     demo.echoVecVecString([["hello", "world"], [], ["café", "🌍"]]),
     [["hello", "world"], [], ["café", "🌍"]],
   );
 
+  globalThis.demoCase("case:primitives.vecs.nested_i32.should_flatten_values");
   assertArrayEqual(demo.flattenVecVecI32([[1, 2], [3], [], [4, 5]]), [1, 2, 3, 4, 5]);
+  globalThis.demoCase("case:primitives.vecs.nested_i32.should_flatten_empty");
   assertArrayEqual(demo.flattenVecVecI32([]), []);
 }

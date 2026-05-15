@@ -12,16 +12,16 @@ class ScalarsTests(DemoTestCase):
         self.assertIs(demo.negate_bool(False), True, "case:primitives.scalars.bool.should_negate_false_to_true")
 
     def test_echo_i8(self) -> None:
-        self.assertEqual(demo.echo_i8(-7), -7)
+        self.assertEqual(demo.echo_i8(-7), -7, "case:primitives.scalars.i8.should_roundtrip_negative_value")
 
     def test_echo_u8(self) -> None:
-        self.assertEqual(demo.echo_u8(255), 255)
+        self.assertEqual(demo.echo_u8(255), 255, "case:primitives.scalars.u8.should_roundtrip_max_value")
 
     def test_echo_i16(self) -> None:
-        self.assertEqual(demo.echo_i16(-1234), -1234)
+        self.assertEqual(demo.echo_i16(-1234), -1234, "case:primitives.scalars.i16.should_roundtrip_negative_value")
 
     def test_echo_u16(self) -> None:
-        self.assertEqual(demo.echo_u16(55_000), 55_000)
+        self.assertEqual(demo.echo_u16(55_000), 55_000, "case:primitives.scalars.u16.should_roundtrip_large_value")
 
     def test_echo_i32(self) -> None:
         self.assertEqual(demo.echo_i32(-42), -42, "case:primitives.scalars.i32.should_roundtrip_negative_value")
@@ -30,13 +30,13 @@ class ScalarsTests(DemoTestCase):
         self.assertEqual(demo.add_i32(10, 20), 30, "case:primitives.scalars.i32.should_add_two_values")
 
     def test_echo_u32(self) -> None:
-        self.assertEqual(demo.echo_u32(4_000_000_000), 4_000_000_000)
+        self.assertEqual(demo.echo_u32(4_000_000_000), 4_000_000_000, "case:primitives.scalars.u32.should_roundtrip_large_value")
 
     def test_echo_i64(self) -> None:
         self.assertEqual(demo.echo_i64(-9_999_999_999), -9_999_999_999, "case:primitives.scalars.i64.should_roundtrip_large_negative_value")
 
     def test_echo_u64(self) -> None:
-        self.assertEqual(demo.echo_u64(9_999_999_999), 9_999_999_999)
+        self.assertEqual(demo.echo_u64(9_999_999_999), 9_999_999_999, "case:primitives.scalars.u64.should_roundtrip_large_value")
 
     def test_echo_f32(self) -> None:
         self.assertTrue(
@@ -68,7 +68,7 @@ class ScalarsTests(DemoTestCase):
         )
 
     def test_echo_usize(self) -> None:
-        self.assertEqual(demo.echo_usize(123), 123)
+        self.assertEqual(demo.echo_usize(123), 123, "case:primitives.scalars.usize.should_roundtrip_value")
 
     def test_echo_isize(self) -> None:
-        self.assertEqual(demo.echo_isize(-123), -123)
+        self.assertEqual(demo.echo_isize(-123), -123, "case:primitives.scalars.isize.should_roundtrip_negative_value")

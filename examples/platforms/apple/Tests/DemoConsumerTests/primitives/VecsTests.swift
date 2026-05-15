@@ -18,32 +18,32 @@ final class VecsTests: DemoTestCase {
         XCTAssertEqual(echoVecF32(v: [1.25, -2.5]), [1.25, -2.5], "case:primitives.vecs.f32.should_roundtrip_values_with_tolerance")
         XCTAssertEqual(echoVecF64(v: [1.5, 2.5]), [1.5, 2.5], "case:primitives.vecs.f64.should_roundtrip_values")
         XCTAssertEqual(echoVecBool(v: [true, false, true]), [true, false, true], "case:primitives.vecs.bool.should_roundtrip_values")
-        XCTAssertEqual(echoVecString(v: ["hello", "world"]), ["hello", "world"], "case:primitives.vecs.echo_string.basic")
-        XCTAssertEqual(vecStringLengths(v: ["hi", "café"]), [2, 5], "case:primitives.vecs.string_lengths.utf8")
+        XCTAssertEqual(echoVecString(v: ["hello", "world"]), ["hello", "world"], "case:primitives.vecs.string.should_roundtrip_values")
+        XCTAssertEqual(vecStringLengths(v: ["hi", "café"]), [2, 5], "case:primitives.vecs.string.should_report_utf8_byte_lengths")
         XCTAssertEqual(sumVecI32(v: [10, 20, 30]), 60, "case:primitives.vecs.i32.should_sum_values")
         XCTAssertEqual(makeRange(start: 0, end: 5), [0, 1, 2, 3, 4], "case:primitives.vecs.i32.should_make_range")
         XCTAssertEqual(reverseVecI32(v: [1, 2, 3]), [3, 2, 1], "case:primitives.vecs.i32.should_reverse_values")
-        XCTAssertEqual(generateI32Vec(count: 4), [0, 1, 2, 3])
-        XCTAssertEqual(sumI32Vec(values: [1, 2, 3]), 6)
-        XCTAssertEqual(generateF64Vec(count: 3).count, 3)
-        XCTAssertEqual(sumF64Vec(values: [0.5, 1.5, 2.0]), 4.0, accuracy: 1e-9)
+        XCTAssertEqual(generateI32Vec(count: 4), [0, 1, 2, 3], "case:primitives.vecs.i32.should_generate_sequence")
+        XCTAssertEqual(sumI32Vec(values: [1, 2, 3]), 6, "case:primitives.vecs.i32.should_sum_benchmark_values")
+        XCTAssertEqual(generateF64Vec(count: 3).count, 3, "case:primitives.vecs.f64.should_generate_sequence")
+        XCTAssertEqual(sumF64Vec(values: [0.5, 1.5, 2.0]), 4.0, accuracy: 1e-9, "case:primitives.vecs.f64.should_sum_values")
         var incrementedValues: [UInt64] = [1, 2]
         incU64(values: &incrementedValues)
-        XCTAssertEqual(incrementedValues, [2, 2])
-        XCTAssertEqual(incU64Value(value: 9), 10)
+        XCTAssertEqual(incrementedValues, [2, 2], "case:primitives.vecs.u64.should_increment_first_value_in_place")
+        XCTAssertEqual(incU64Value(value: 9), 10, "case:primitives.vecs.u64.should_increment_value")
     }
 
     func testNestedVecFns() {
-        XCTAssertEqual(echoVecVecI32(v: [[1, 2, 3], [], [4, 5]]), [[1, 2, 3], [], [4, 5]])
-        XCTAssertEqual(echoVecVecI32(v: []), [])
-        XCTAssertEqual(echoVecVecBool(v: [[true, false, true], [], [false]]), [[true, false, true], [], [false]])
-        XCTAssertEqual(echoVecVecIsize(v: [[-2, 0, 5], [], [9]]), [[-2, 0, 5], [], [9]])
-        XCTAssertEqual(echoVecVecUsize(v: [[0, 2, 4], [], [8]]), [[0, 2, 4], [], [8]])
+        XCTAssertEqual(echoVecVecI32(v: [[1, 2, 3], [], [4, 5]]), [[1, 2, 3], [], [4, 5]], "case:primitives.vecs.nested_i32.should_roundtrip_values")
+        XCTAssertEqual(echoVecVecI32(v: []), [], "case:primitives.vecs.nested_i32.should_roundtrip_empty_outer")
+        XCTAssertEqual(echoVecVecBool(v: [[true, false, true], [], [false]]), [[true, false, true], [], [false]], "case:primitives.vecs.nested_bool.should_roundtrip_values")
+        XCTAssertEqual(echoVecVecIsize(v: [[-2, 0, 5], [], [9]]), [[-2, 0, 5], [], [9]], "case:primitives.vecs.nested_isize.should_roundtrip_values")
+        XCTAssertEqual(echoVecVecUsize(v: [[0, 2, 4], [], [8]]), [[0, 2, 4], [], [8]], "case:primitives.vecs.nested_usize.should_roundtrip_values")
 
         let strings = [["hello", "world"], [], ["café", "🌍"]]
-        XCTAssertEqual(echoVecVecString(v: strings), strings)
+        XCTAssertEqual(echoVecVecString(v: strings), strings, "case:primitives.vecs.nested_string.should_roundtrip_utf8_values")
 
-        XCTAssertEqual(flattenVecVecI32(v: [[1, 2], [3], [], [4, 5]]), [1, 2, 3, 4, 5])
-        XCTAssertEqual(flattenVecVecI32(v: []), [])
+        XCTAssertEqual(flattenVecVecI32(v: [[1, 2], [3], [], [4, 5]]), [1, 2, 3, 4, 5], "case:primitives.vecs.nested_i32.should_flatten_values")
+        XCTAssertEqual(flattenVecVecI32(v: []), [], "case:primitives.vecs.nested_i32.should_flatten_empty")
     }
 }

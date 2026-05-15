@@ -68,15 +68,15 @@ class DemoValueTypesTest {
     fun primitivesStringsBytesAndVectorsRoundTrip() {
         assertEquals(true, echoBool(true), "case:primitives.scalars.bool.should_roundtrip_true")
         assertEquals(true, negateBool(false), "case:primitives.scalars.bool.should_negate_false_to_true")
-        assertEquals((-7).toByte(), echoI8((-7).toByte()))
-        assertEquals(255u.toUByte(), echoU8(255u.toUByte()))
-        assertEquals((-1234).toShort(), echoI16((-1234).toShort()))
-        assertEquals(55_000u.toUShort(), echoU16(55_000u.toUShort()))
+        assertEquals((-7).toByte(), echoI8((-7).toByte()), "case:primitives.scalars.i8.should_roundtrip_negative_value")
+        assertEquals(255u.toUByte(), echoU8(255u.toUByte()), "case:primitives.scalars.u8.should_roundtrip_max_value")
+        assertEquals((-1234).toShort(), echoI16((-1234).toShort()), "case:primitives.scalars.i16.should_roundtrip_negative_value")
+        assertEquals(55_000u.toUShort(), echoU16(55_000u.toUShort()), "case:primitives.scalars.u16.should_roundtrip_large_value")
         assertEquals(-42, echoI32(-42), "case:primitives.scalars.i32.should_roundtrip_negative_value")
         assertEquals(30, addI32(10, 20), "case:primitives.scalars.i32.should_add_two_values")
-        assertEquals(4_000_000_000u, echoU32(4_000_000_000u))
+        assertEquals(4_000_000_000u, echoU32(4_000_000_000u), "case:primitives.scalars.u32.should_roundtrip_large_value")
         assertEquals(-9_999_999_999L, echoI64(-9_999_999_999L), "case:primitives.scalars.i64.should_roundtrip_large_negative_value")
-        assertEquals(9_999_999_999uL, echoU64(9_999_999_999uL))
+        assertEquals(9_999_999_999uL, echoU64(9_999_999_999uL), "case:primitives.scalars.u64.should_roundtrip_large_value")
         demoCase("case:primitives.scalars.f32.should_roundtrip_value_with_tolerance")
         assertFloatEquals(3.5f, echoF32(3.5f))
         demoCase("case:primitives.scalars.f32.should_add_two_values_with_tolerance")
@@ -85,8 +85,8 @@ class DemoValueTypesTest {
         assertDoubleEquals(3.14159265359, echoF64(3.14159265359))
         demoCase("case:primitives.scalars.f64.should_add_two_values_with_tolerance")
         assertDoubleEquals(4.0, addF64(1.5, 2.5))
-        assertEquals(123uL, echoUsize(123uL))
-        assertEquals(-123L, echoIsize(-123L))
+        assertEquals(123uL, echoUsize(123uL), "case:primitives.scalars.usize.should_roundtrip_value")
+        assertEquals(-123L, echoIsize(-123L), "case:primitives.scalars.isize.should_roundtrip_negative_value")
 
         assertEquals("", echoString(""), "case:primitives.strings.string.should_roundtrip_empty")
         assertEquals("hello 🌍", echoString("hello 🌍"), "case:primitives.strings.string.should_roundtrip_emoji")
@@ -115,8 +115,8 @@ class DemoValueTypesTest {
         assertContentEquals(floatArrayOf(1.25f, -2.5f), echoVecF32(floatArrayOf(1.25f, -2.5f)), "case:primitives.vecs.f32.should_roundtrip_values_with_tolerance")
         assertContentEquals(doubleArrayOf(1.5, 2.5), echoVecF64(doubleArrayOf(1.5, 2.5)), "case:primitives.vecs.f64.should_roundtrip_values")
         assertContentEquals(booleanArrayOf(true, false, true), echoVecBool(booleanArrayOf(true, false, true)), "case:primitives.vecs.bool.should_roundtrip_values")
-        assertContentEquals(listOf("hello", "world"), echoVecString(listOf("hello", "world")), "case:primitives.vecs.echo_string.basic")
-        assertContentEquals(intArrayOf(2, 5), vecStringLengths(listOf("hi", "café")), "case:primitives.vecs.string_lengths.utf8")
+        assertContentEquals(listOf("hello", "world"), echoVecString(listOf("hello", "world")), "case:primitives.vecs.string.should_roundtrip_values")
+        assertContentEquals(intArrayOf(2, 5), vecStringLengths(listOf("hi", "café")), "case:primitives.vecs.string.should_report_utf8_byte_lengths")
         assertEquals(60L, sumVecI32(intArrayOf(10, 20, 30)), "case:primitives.vecs.i32.should_sum_values")
         assertContentEquals(intArrayOf(0, 1, 2, 3, 4), makeRange(0, 5), "case:primitives.vecs.i32.should_make_range")
         assertContentEquals(intArrayOf(3, 2, 1), reverseVecI32(intArrayOf(1, 2, 3)), "case:primitives.vecs.i32.should_reverse_values")
@@ -125,14 +125,17 @@ class DemoValueTypesTest {
     @Test
     fun nestedVecsRoundTrip() {
         val input = listOf(intArrayOf(1, 2, 3), intArrayOf(), intArrayOf(4, 5))
+        demoCase("case:primitives.vecs.nested_i32.should_roundtrip_values")
         val roundTripped = echoVecVecI32(input)
         assertEquals(input.size, roundTripped.size)
         for (i in input.indices) {
             assertContentEquals(input[i], roundTripped[i])
         }
+        demoCase("case:primitives.vecs.nested_i32.should_roundtrip_empty_outer")
         assertEquals(0, echoVecVecI32(emptyList()).size)
 
         val bools = listOf(booleanArrayOf(true, false, true), booleanArrayOf(), booleanArrayOf(false))
+        demoCase("case:primitives.vecs.nested_bool.should_roundtrip_values")
         val roundTrippedBools = echoVecVecBool(bools)
         assertEquals(bools.size, roundTrippedBools.size)
         for (i in bools.indices) {
@@ -140,6 +143,7 @@ class DemoValueTypesTest {
         }
 
         val isizes = listOf(longArrayOf(-2L, 0L, 5L), longArrayOf(), longArrayOf(9L))
+        demoCase("case:primitives.vecs.nested_isize.should_roundtrip_values")
         val roundTrippedIsizes = echoVecVecIsize(isizes)
         assertEquals(isizes.size, roundTrippedIsizes.size)
         for (i in isizes.indices) {
@@ -147,6 +151,7 @@ class DemoValueTypesTest {
         }
 
         val usizes = listOf(longArrayOf(0L, 2L, 4L), longArrayOf(), longArrayOf(8L))
+        demoCase("case:primitives.vecs.nested_usize.should_roundtrip_values")
         val roundTrippedUsizes = echoVecVecUsize(usizes)
         assertEquals(usizes.size, roundTrippedUsizes.size)
         for (i in usizes.indices) {
@@ -154,12 +159,15 @@ class DemoValueTypesTest {
         }
 
         val strings = listOf(listOf("hello", "world"), emptyList(), listOf("café", "🌍"))
+        demoCase("case:primitives.vecs.nested_string.should_roundtrip_utf8_values")
         assertEquals(strings, echoVecVecString(strings))
 
+        demoCase("case:primitives.vecs.nested_i32.should_flatten_values")
         assertContentEquals(
             intArrayOf(1, 2, 3, 4, 5),
             flattenVecVecI32(listOf(intArrayOf(1, 2), intArrayOf(3), intArrayOf(), intArrayOf(4, 5))),
         )
+        demoCase("case:primitives.vecs.nested_i32.should_flatten_empty")
         assertContentEquals(intArrayOf(), flattenVecVecI32(emptyList()))
     }
 
