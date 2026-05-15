@@ -12,13 +12,13 @@ export async function run() {
   assert.equal(demo.echoU32(2_147_483_647), 2_147_483_647);
   assert.equal(demo.echoI64(-9_999_999_999n), -9_999_999_999n, "case:primitives.scalars.i64.should_roundtrip_large_negative_value");
   assert.equal(demo.echoU64(9_999_999_999n), 9_999_999_999n);
-  globalThis.demoCase("case:primitives.scalars.echo_f32.basic");
+  globalThis.demoCase("case:primitives.scalars.f32.should_roundtrip_value_with_tolerance");
   assertApprox(demo.echoF32(3.5), 3.5, 1e-6);
-  globalThis.demoCase("case:primitives.scalars.add_f32.basic");
+  globalThis.demoCase("case:primitives.scalars.f32.should_add_two_values_with_tolerance");
   assertApprox(demo.addF32(1.5, 2.5), 4.0, 1e-6);
-  globalThis.demoCase("case:primitives.scalars.echo_f64.pi");
+  globalThis.demoCase("case:primitives.scalars.f64.should_roundtrip_pi_with_tolerance");
   assertApprox(demo.echoF64(3.14159265359), 3.14159265359, 1e-12);
-  globalThis.demoCase("case:primitives.scalars.add_f64.basic");
+  globalThis.demoCase("case:primitives.scalars.f64.should_add_two_values_with_tolerance");
   assertApprox(demo.addF64(1.5, 2.5), 4.0, 1e-12);
   assert.equal(demo.echoUsize(123), 123);
   assert.equal(demo.echoIsize(-123), -123);

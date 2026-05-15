@@ -81,22 +81,38 @@ pub fn echo_u64(v: u64) -> u64 {
     v
 }
 
+#[demo_bench_macros::demo_case(
+    "primitives.scalars.f32.should_roundtrip_value_with_tolerance",
+    description = "An f32 crosses the wire and returns within the expected floating-point tolerance."
+)]
 #[export]
 pub fn echo_f32(v: f32) -> f32 {
     v
 }
 
+#[demo_bench_macros::demo_case(
+    "primitives.scalars.f32.should_add_two_values_with_tolerance",
+    description = "Two f32 values cross the wire and return as their sum within tolerance."
+)]
 #[export]
 pub fn add_f32(a: f32, b: f32) -> f32 {
     a + b
 }
 
+#[demo_bench_macros::demo_case(
+    "primitives.scalars.f64.should_roundtrip_pi_with_tolerance",
+    description = "A high-precision f64 crosses the wire and returns within tolerance."
+)]
 #[export]
 #[benchmark_candidate(function, uniffi, wasm_bindgen)]
 pub fn echo_f64(v: f64) -> f64 {
     v
 }
 
+#[demo_bench_macros::demo_case(
+    "primitives.scalars.f64.should_add_two_values_with_tolerance",
+    description = "Two f64 values cross the wire and return as their sum within tolerance."
+)]
 #[export]
 #[benchmark_candidate(function, uniffi, wasm_bindgen)]
 pub fn add_f64(a: f64, b: f64) -> f64 {

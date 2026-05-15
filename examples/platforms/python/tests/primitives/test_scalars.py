@@ -41,13 +41,13 @@ class ScalarsTests(DemoTestCase):
     def test_echo_f32(self) -> None:
         self.assertTrue(
             math.isclose(demo.echo_f32(3.5), 3.5, rel_tol=0.0, abs_tol=1e-6),
-            "case:primitives.scalars.echo_f32.basic",
+            "case:primitives.scalars.f32.should_roundtrip_value_with_tolerance",
         )
 
     def test_add_f32(self) -> None:
         self.assertTrue(
             math.isclose(demo.add_f32(1.5, 2.5), 4.0, rel_tol=0.0, abs_tol=1e-6),
-            "case:primitives.scalars.add_f32.basic",
+            "case:primitives.scalars.f32.should_add_two_values_with_tolerance",
         )
 
     def test_echo_f64(self) -> None:
@@ -58,13 +58,13 @@ class ScalarsTests(DemoTestCase):
                 rel_tol=0.0,
                 abs_tol=1e-12,
             ),
-            "case:primitives.scalars.echo_f64.pi",
+            "case:primitives.scalars.f64.should_roundtrip_pi_with_tolerance",
         )
 
     def test_add_f64(self) -> None:
         self.assertTrue(
             math.isclose(demo.add_f64(1.5, 2.5), 4.0, rel_tol=0.0, abs_tol=1e-12),
-            "case:primitives.scalars.add_f64.basic",
+            "case:primitives.scalars.f64.should_add_two_values_with_tolerance",
         )
 
     def test_echo_usize(self) -> None:

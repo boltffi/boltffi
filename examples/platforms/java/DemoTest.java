@@ -92,35 +92,35 @@ public final class DemoTest {
 
     private static void testF32() {
         System.out.println("Testing f32...");
-        assert Math.abs(Demo.echoF32(3.14f) - 3.14f) < 0.001f : "case:primitives.scalars.echo_f32.basic echoF32(3.14)";
-        assert Math.abs(Demo.addF32(1.5f, 2.5f) - 4.0f) < 0.001f : "case:primitives.scalars.add_f32.basic addF32(1.5, 2.5)";
+        assert Math.abs(Demo.echoF32(3.14f) - 3.14f) < 0.001f : "case:primitives.scalars.f32.should_roundtrip_value_with_tolerance echoF32(3.14)";
+        assert Math.abs(Demo.addF32(1.5f, 2.5f) - 4.0f) < 0.001f : "case:primitives.scalars.f32.should_add_two_values_with_tolerance addF32(1.5, 2.5)";
         System.out.println("  PASS\n");
     }
 
     private static void testF64() {
         System.out.println("Testing f64...");
-        assert Math.abs(Demo.echoF64(3.14159265359) - 3.14159265359) < 0.0000001 : "case:primitives.scalars.echo_f64.pi echoF64(pi)";
-        assert Math.abs(Demo.addF64(1.5, 2.5) - 4.0) < 0.0000001 : "case:primitives.scalars.add_f64.basic addF64(1.5, 2.5)";
+        assert Math.abs(Demo.echoF64(3.14159265359) - 3.14159265359) < 0.0000001 : "case:primitives.scalars.f64.should_roundtrip_pi_with_tolerance echoF64(pi)";
+        assert Math.abs(Demo.addF64(1.5, 2.5) - 4.0) < 0.0000001 : "case:primitives.scalars.f64.should_add_two_values_with_tolerance addF64(1.5, 2.5)";
         System.out.println("  PASS\n");
     }
 
     private static void testStrings() {
         System.out.println("Testing strings...");
         assert Demo.echoString("hello").equals("hello") : "echoString(hello)";
-        assert Demo.echoString("").equals("") : "case:primitives.strings.echo.empty echoString(empty)";
+        assert Demo.echoString("").equals("") : "case:primitives.strings.string.should_roundtrip_empty echoString(empty)";
         assert Demo.echoString("café").equals("café") : "echoString(unicode)";
         assert Demo.echoString("日本語").equals("日本語") : "echoString(cjk)";
-        assert Demo.echoString("hello 🌍 world").equals("hello 🌍 world") : "case:primitives.strings.echo.emoji echoString(emoji)";
-        assert Demo.concatStrings("foo", "bar").equals("foobar") : "case:primitives.strings.concat.basic concatStrings(foo, bar)";
+        assert Demo.echoString("hello 🌍 world").equals("hello 🌍 world") : "case:primitives.strings.string.should_roundtrip_emoji echoString(emoji)";
+        assert Demo.concatStrings("foo", "bar").equals("foobar") : "case:primitives.strings.string.should_concatenate_values concatStrings(foo, bar)";
         assert Demo.concatStrings("", "bar").equals("bar") : "concatStrings(empty, bar)";
         assert Demo.concatStrings("foo", "").equals("foo") : "concatStrings(foo, empty)";
         assert Demo.concatStrings("🎉", "🎊").equals("🎉🎊") : "concatStrings(emoji)";
         assert Demo.stringLength("hello") == 5 : "stringLength(hello)";
         assert Demo.stringLength("") == 0 : "stringLength(empty)";
-        assert Demo.stringLength("café") == 5 : "case:primitives.strings.length.utf8_bytes stringLength(utf8 bytes)";
+        assert Demo.stringLength("café") == 5 : "case:primitives.strings.string.should_report_utf8_byte_length stringLength(utf8 bytes)";
         assert Demo.stringLength("🌍") == 4 : "stringLength(emoji 4 bytes)";
-        assert Demo.stringIsEmpty("") : "case:primitives.strings.is_empty.empty stringIsEmpty(empty)";
-        assert Demo.repeatString("ab", 3).equals("ababab") : "case:primitives.strings.repeat.basic repeatString(ab, 3)";
+        assert Demo.stringIsEmpty("") : "case:primitives.strings.string.should_detect_empty stringIsEmpty(empty)";
+        assert Demo.repeatString("ab", 3).equals("ababab") : "case:primitives.strings.string.should_repeat_value repeatString(ab, 3)";
         System.out.println("  PASS\n");
     }
 

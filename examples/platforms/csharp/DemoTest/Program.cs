@@ -148,16 +148,16 @@ public static class DemoTest
     private static void TestF32()
     {
         Console.WriteLine("Testing f32...");
-        Require(Math.Abs(EchoF32(3.14f) - 3.14f) < 0.001f, "case:primitives.scalars.echo_f32.basic echoF32(3.14)");
-        Require(Math.Abs(AddF32(1.5f, 2.5f) - 4.0f) < 0.001f, "case:primitives.scalars.add_f32.basic addF32(1.5, 2.5)");
+        Require(Math.Abs(EchoF32(3.14f) - 3.14f) < 0.001f, "case:primitives.scalars.f32.should_roundtrip_value_with_tolerance echoF32(3.14)");
+        Require(Math.Abs(AddF32(1.5f, 2.5f) - 4.0f) < 0.001f, "case:primitives.scalars.f32.should_add_two_values_with_tolerance addF32(1.5, 2.5)");
         Console.WriteLine("  PASS\n");
     }
 
     private static void TestF64()
     {
         Console.WriteLine("Testing f64...");
-        Require(Math.Abs(EchoF64(3.14159265359) - 3.14159265359) < 0.0000001, "case:primitives.scalars.echo_f64.pi echoF64(pi)");
-        Require(Math.Abs(AddF64(1.5, 2.5) - 4.0) < 0.0000001, "case:primitives.scalars.add_f64.basic addF64(1.5, 2.5)");
+        Require(Math.Abs(EchoF64(3.14159265359) - 3.14159265359) < 0.0000001, "case:primitives.scalars.f64.should_roundtrip_pi_with_tolerance echoF64(pi)");
+        Require(Math.Abs(AddF64(1.5, 2.5) - 4.0) < 0.0000001, "case:primitives.scalars.f64.should_add_two_values_with_tolerance addF64(1.5, 2.5)");
         Console.WriteLine("  PASS\n");
     }
 
@@ -181,25 +181,25 @@ public static class DemoTest
     {
         Console.WriteLine("Testing strings...");
         Require(EchoString("hello") == "hello", "echoString(hello)");
-        Require(EchoString("") == "", "case:primitives.strings.echo.empty echoString(empty)");
+        Require(EchoString("") == "", "case:primitives.strings.string.should_roundtrip_empty echoString(empty)");
         Require(EchoString("café") == "café", "echoString(unicode)");
         Require(EchoString("日本語") == "日本語", "echoString(cjk)");
-        Require(EchoString("hello 🌍 world") == "hello 🌍 world", "case:primitives.strings.echo.emoji echoString(emoji)");
+        Require(EchoString("hello 🌍 world") == "hello 🌍 world", "case:primitives.strings.string.should_roundtrip_emoji echoString(emoji)");
 
-        Require(ConcatStrings("foo", "bar") == "foobar", "case:primitives.strings.concat.basic concatStrings(foo, bar)");
+        Require(ConcatStrings("foo", "bar") == "foobar", "case:primitives.strings.string.should_concatenate_values concatStrings(foo, bar)");
         Require(ConcatStrings("", "bar") == "bar", "concatStrings(empty, bar)");
         Require(ConcatStrings("foo", "") == "foo", "concatStrings(foo, empty)");
         Require(ConcatStrings("🎉", "🎊") == "🎉🎊", "concatStrings(emoji)");
 
         Require(StringLength("hello") == 5u, "stringLength(hello)");
         Require(StringLength("") == 0u, "stringLength(empty)");
-        Require(StringLength("café") == 5u, "case:primitives.strings.length.utf8_bytes stringLength(utf8 bytes)");
+        Require(StringLength("café") == 5u, "case:primitives.strings.string.should_report_utf8_byte_length stringLength(utf8 bytes)");
         Require(StringLength("🌍") == 4u, "stringLength(emoji 4 bytes)");
 
-        Require(StringIsEmpty(""), "case:primitives.strings.is_empty.empty stringIsEmpty(empty)");
+        Require(StringIsEmpty(""), "case:primitives.strings.string.should_detect_empty stringIsEmpty(empty)");
         Require(!StringIsEmpty("x"), "stringIsEmpty(nonempty)");
 
-        Require(RepeatString("ab", 3u) == "ababab", "case:primitives.strings.repeat.basic repeatString(ab, 3)");
+        Require(RepeatString("ab", 3u) == "ababab", "case:primitives.strings.string.should_repeat_value repeatString(ab, 3)");
         Require(RepeatString("x", 0u) == "", "repeatString(x, 0)");
         Require(RepeatString("🌟", 2u) == "🌟🌟", "repeatString(emoji, 2)");
         Console.WriteLine("  PASS\n");
