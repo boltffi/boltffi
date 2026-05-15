@@ -1,10 +1,11 @@
 import { assert, demo, sampleMixedRecord } from "../support/index.mjs";
 
 export async function run() {
-  globalThis.demoCase("case:records.mixed.basic");
   const record = sampleMixedRecord();
 
+  globalThis.demoCase("case:records.mixed.should_roundtrip_composed_record");
   assert.deepEqual(demo.echoMixedRecord(record), record);
+  globalThis.demoCase("case:records.mixed.should_make_from_composed_parts");
   assert.deepEqual(
     demo.makeMixedRecord(
       record.name,

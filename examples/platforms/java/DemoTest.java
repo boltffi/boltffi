@@ -370,17 +370,19 @@ public final class DemoTest {
     private static void testDataEnums() {
         System.out.println("Testing data enums...");
 
-        demoCase("case:records.with_enums.holder.triangle");
+        demoCase("case:records.with_enums.holder.should_make_triangle_variant");
         Holder triangleHolder = Demo.makeTriangleHolder();
         assert triangleHolder.shape() instanceof Shape.Triangle : "Holder.shape is Triangle";
+        demoCase("case:records.with_enums.holder.should_roundtrip_data_enum_field");
         Holder echoedHolder = Demo.echoHolder(triangleHolder);
         assert echoedHolder.equals(triangleHolder) : "echoHolder round-trip";
 
-        demoCase("case:records.with_enums.task_header.roundtrip");
+        demoCase("case:records.with_enums.task_header.should_make_critical_header");
         TaskHeader header = Demo.makeCriticalTaskHeader(42L);
         assert header.id() == 42L : "TaskHeader.id";
         assert header.priority() == Priority.CRITICAL : "TaskHeader.priority";
         assert !header.completed() : "TaskHeader.completed";
+        demoCase("case:records.with_enums.task_header.should_roundtrip_repr_enum_field");
         TaskHeader echoedHeader = Demo.echoTaskHeader(header);
         assert echoedHeader.equals(header) : "echoTaskHeader round-trip";
 
@@ -393,11 +395,12 @@ public final class DemoTest {
         assert Demo.echoLifecycleEvent(started).equals(started) : "echoLifecycleEvent(TaskStarted)";
         assert Demo.echoLifecycleEvent(LifecycleEvent.Tick.INSTANCE) instanceof LifecycleEvent.Tick : "echoLifecycleEvent(Tick)";
 
-        demoCase("case:records.with_enums.log_entry.roundtrip");
+        demoCase("case:records.with_enums.log_entry.should_make_error_entry");
         LogEntry logEntry = Demo.makeErrorLogEntry(1234567890L, (short) 42);
         assert logEntry.timestamp() == 1234567890L : "LogEntry.timestamp";
         assert logEntry.level() == LogLevel.ERROR : "LogEntry.level";
         assert logEntry.code() == (short) 42 : "LogEntry.code";
+        demoCase("case:records.with_enums.log_entry.should_roundtrip_u8_enum_field");
         assert Demo.echoLogEntry(logEntry).equals(logEntry) : "echoLogEntry round-trip";
 
         demoCase("case:enums.complex_variants.filter.basic");
@@ -825,17 +828,19 @@ public final class DemoTest {
         assert optVecLen.isPresent() && optVecLen.get() == 2 : "optionalVecLength some";
         assert !Demo.optionalVecLength(Optional.empty()).isPresent() : "optionalVecLength none";
 
+        demoCase("case:records.with_options.user_profile.should_make_with_present_options");
         UserProfile withEmail = Demo.makeUserProfile(
             "Alice",
             30,
             Optional.of("alice@example.com"),
             Optional.of(98.5)
         );
-        demoCase("case:records.with_options.user_profile.some_none");
         assert withEmail.email().isPresent() : "makeUserProfile email present";
         assert withEmail.score().isPresent() : "makeUserProfile score present";
+        demoCase("case:records.with_options.user_profile.should_display_email_when_present");
         assert Demo.userDisplayName(withEmail).equals("Alice <alice@example.com>") : "userDisplayName with email";
 
+        demoCase("case:records.with_options.user_profile.should_make_with_absent_options");
         UserProfile noEmail = Demo.makeUserProfile(
             "Bob",
             22,
@@ -844,25 +849,30 @@ public final class DemoTest {
         );
         assert !noEmail.email().isPresent() : "makeUserProfile email none";
         assert !noEmail.score().isPresent() : "makeUserProfile score none";
+        demoCase("case:records.with_options.user_profile.should_display_name_when_email_absent");
         assert Demo.userDisplayName(noEmail).equals("Bob") : "userDisplayName without email";
 
+        demoCase("case:records.with_options.user_profile.should_roundtrip_present_options");
         UserProfile echoedProfile = Demo.echoUserProfile(withEmail);
         assert echoedProfile.email().isPresent() : "echoUserProfile email";
         assert echoedProfile.email().get().equals("alice@example.com") : "echoUserProfile email value";
 
-        demoCase("case:records.with_options.search_result.some_none");
+        demoCase("case:records.with_options.search_result.should_roundtrip_present_options");
         SearchResult withCursor = Demo.echoSearchResult(
             new SearchResult("rust ffi", 12, Optional.of("cursor-1"), Optional.of(0.99))
         );
         assert withCursor.nextCursor().isPresent() : "echoSearchResult cursor present";
         assert withCursor.maxScore().isPresent() : "echoSearchResult score present";
+        demoCase("case:records.with_options.search_result.should_report_more_results_when_cursor_present");
         assert Demo.hasMoreResults(withCursor) : "hasMoreResults true";
 
+        demoCase("case:records.with_options.search_result.should_roundtrip_absent_options");
         SearchResult withoutCursor = Demo.echoSearchResult(
             new SearchResult("rust ffi", 12, Optional.empty(), Optional.empty())
         );
         assert !withoutCursor.nextCursor().isPresent() : "echoSearchResult cursor none";
         assert !withoutCursor.maxScore().isPresent() : "echoSearchResult score none";
+        demoCase("case:records.with_options.search_result.should_report_no_more_results_without_cursor");
         assert !Demo.hasMoreResults(withoutCursor) : "hasMoreResults false";
 
         demoCase("case:options.complex.vec_optional_i32.mixed");
@@ -932,9 +942,10 @@ public final class DemoTest {
         demoCase("case:records.with_collections.tagged_scores.should_average_scores");
         assert Math.abs(Demo.averageScore(new TaggedScores("x", new double[]{80.0, 100.0})) - 90.0) < 0.0001 : "averageScore";
 
-        demoCase("case:records.mixed.basic");
         MixedRecord record = sampleMixedRecord();
+        demoCase("case:records.mixed.should_roundtrip_composed_record");
         assert Demo.echoMixedRecord(record).equals(record) : "echoMixedRecord";
+        demoCase("case:records.mixed.should_make_from_composed_parts");
         assert Demo.makeMixedRecord(
             record.name(),
             record.anchor(),

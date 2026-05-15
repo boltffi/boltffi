@@ -27,10 +27,11 @@ extension MixedRecord {
 
 final class MixedRecordsTests: DemoTestCase {
     func testMixedRecordFns() {
-        demoCase("case:records.mixed.basic")
         let record = MixedRecord.sample()
 
+        demoCase("case:records.mixed.should_roundtrip_composed_record")
         XCTAssertEqual(echoMixedRecord(record: record), record)
+        demoCase("case:records.mixed.should_make_from_composed_parts")
         XCTAssertEqual(
             makeMixedRecord(
                 name: record.name,

@@ -722,14 +722,14 @@ public static class DemoTest
         // record fully qualifies to avoid collision when addressing it
         // directly. Using the namespace-qualified form makes the intent
         // explicit here too.
-        DemoCase("case:records.with_enums.task.echo");
         global::Demo.Task task = new global::Demo.Task("Write docs", Priority.High, false);
+        DemoCase("case:records.with_enums.task.should_roundtrip_priority_field");
         global::Demo.Task echoedTask = EchoTask(task);
         Require(echoedTask == task, "EchoTask round-trip");
         Require(echoedTask.Priority == Priority.High, "Task.Priority preserved");
 
-        DemoCase("case:records.with_enums.notification.echo");
         Notification notification = new Notification("Build failed", Priority.Critical, false);
+        DemoCase("case:records.with_enums.notification.should_roundtrip_priority_field");
         Notification echoedNotification = EchoNotification(notification);
         Require(echoedNotification == notification, "EchoNotification round-trip");
         Require(echoedNotification.Priority == Priority.Critical, "Notification.Priority preserved");
@@ -739,7 +739,7 @@ public static class DemoTest
         // have a variable-width on-the-wire representation — this record
         // must ride the wire codec, not direct P/Invoke, despite the
         // repr(C) decoration.
-        DemoCase("case:records.with_enums.holder.triangle");
+        DemoCase("case:records.with_enums.holder.should_make_triangle_variant");
         Holder triangle = MakeTriangleHolder();
         Require(
             triangle.Shape is Shape.Triangle t
@@ -748,6 +748,7 @@ public static class DemoTest
                 && t.C == new Point(0.0, 3.0),
             "MakeTriangleHolder returns Triangle"
         );
+        DemoCase("case:records.with_enums.holder.should_roundtrip_data_enum_field");
         Holder echoedHolder = EchoHolder(triangle);
         Require(echoedHolder == triangle, "EchoHolder round-trip");
 
@@ -757,22 +758,24 @@ public static class DemoTest
         // as layout-compatible primitives, so both sides agree on wire
         // encoding. Follow-up work (see TaskHeader doc) can widen both
         // sides together to lift this onto direct P/Invoke.
-        DemoCase("case:records.with_enums.task_header.roundtrip");
+        DemoCase("case:records.with_enums.task_header.should_make_critical_header");
         TaskHeader header = MakeCriticalTaskHeader(42);
         Require(header.Id == 42, "MakeCriticalTaskHeader.Id");
         Require(header.Priority == Priority.Critical, "MakeCriticalTaskHeader.Priority");
         Require(!header.Completed, "MakeCriticalTaskHeader.Completed");
+        DemoCase("case:records.with_enums.task_header.should_roundtrip_repr_enum_field");
         TaskHeader echoedHeader = EchoTaskHeader(header);
         Require(echoedHeader == header, "EchoTaskHeader round-trip");
 
         // LogEntry — same family as TaskHeader but the C-style enum field
         // is u8-backed, so field alignment matters. Wire-encoded today for
         // the same reason TaskHeader is.
-        DemoCase("case:records.with_enums.log_entry.roundtrip");
+        DemoCase("case:records.with_enums.log_entry.should_make_error_entry");
         LogEntry entry = MakeErrorLogEntry(1234567890, 42);
         Require(entry.Timestamp == 1234567890, "MakeErrorLogEntry.Timestamp");
         Require(entry.Level == LogLevel.Error, "MakeErrorLogEntry.Level");
         Require(entry.Code == 42, "MakeErrorLogEntry.Code");
+        DemoCase("case:records.with_enums.log_entry.should_roundtrip_u8_enum_field");
         LogEntry echoedEntry = EchoLogEntry(entry);
         Require(echoedEntry == entry, "EchoLogEntry round-trip");
 
@@ -1283,20 +1286,23 @@ public static class DemoTest
 
         // UserProfile: one optional string field, one optional f64.
         // The record round-trip exercises encode + decode together.
-        DemoCase("case:records.with_options.user_profile.some_none");
+        DemoCase("case:records.with_options.user_profile.should_make_with_present_options");
         UserProfile alice = MakeUserProfile("Alice", 30u, "alice@example.com", 92.5);
         Require(alice.Name == "Alice", "MakeUserProfile.Name");
         Require(alice.Age == 30u, "MakeUserProfile.Age");
         Require(alice.Email == "alice@example.com", "MakeUserProfile.Email(Some)");
         Require(alice.Score == 92.5, "MakeUserProfile.Score(Some)");
 
+        DemoCase("case:records.with_options.user_profile.should_make_with_absent_options");
         UserProfile newUser = MakeUserProfile("Bob", 25u, null, null);
         Require(newUser.Email == null, "MakeUserProfile.Email(None)");
         Require(newUser.Score == null, "MakeUserProfile.Score(None)");
 
+        DemoCase("case:records.with_options.user_profile.should_roundtrip_present_options");
         UserProfile echoed = EchoUserProfile(alice);
         Require(echoed == alice, "EchoUserProfile round-trip (all fields Some)");
 
+        DemoCase("case:records.with_options.user_profile.should_roundtrip_absent_options");
         UserProfile echoedNew = EchoUserProfile(newUser);
         Require(echoedNew == newUser, "EchoUserProfile round-trip (Option fields None)");
 
@@ -1304,29 +1310,36 @@ public static class DemoTest
         UserProfile mixed = MakeUserProfile("Carol", 40u, "carol@example.com", null);
         Require(mixed.Email == "carol@example.com", "MakeUserProfile.Email(Some) with Score(None)");
         Require(mixed.Score == null, "MakeUserProfile.Score(None) with Email(Some)");
+        DemoCase("case:records.with_options.user_profile.should_roundtrip_mixed_options");
         Require(EchoUserProfile(mixed) == mixed, "EchoUserProfile round-trip (mixed Option fields)");
 
         // UTF-8 sentinels inside the optional string field.
         UserProfile emoji = MakeUserProfile("🌍 User", 42u, "café@example.com", 3.14);
+        DemoCase("case:records.with_options.user_profile.should_roundtrip_utf8_optional_string");
         UserProfile echoedEmoji = EchoUserProfile(emoji);
         Require(echoedEmoji == emoji, "EchoUserProfile round-trip (UTF-8 in Option fields)");
 
+        DemoCase("case:records.with_options.user_profile.should_display_email_when_present");
         Require(
             UserDisplayName(alice) == "Alice <alice@example.com>",
             "UserDisplayName when Email is Some"
         );
+        DemoCase("case:records.with_options.user_profile.should_display_name_when_email_absent");
         Require(UserDisplayName(newUser) == "Bob", "UserDisplayName when Email is None");
 
         // SearchResult: second record shape with Option fields, exercises
         // the same code path through a different record class name to
         // catch any accidental per-record coupling in the generator.
-        DemoCase("case:records.with_options.search_result.some_none");
         SearchResult hits = new SearchResult("cats", 42u, "cursor_abc", 0.97);
+        DemoCase("case:records.with_options.search_result.should_roundtrip_present_options");
         Require(EchoSearchResult(hits) == hits, "EchoSearchResult round-trip (all Some)");
+        DemoCase("case:records.with_options.search_result.should_report_more_results_when_cursor_present");
         Require(HasMoreResults(hits), "HasMoreResults true when NextCursor is Some");
 
         SearchResult tail = new SearchResult("cats", 42u, null, null);
+        DemoCase("case:records.with_options.search_result.should_roundtrip_absent_options");
         Require(EchoSearchResult(tail) == tail, "EchoSearchResult round-trip (Option fields None)");
+        DemoCase("case:records.with_options.search_result.should_report_no_more_results_without_cursor");
         Require(!HasMoreResults(tail), "HasMoreResults false when NextCursor is None");
 
         Console.WriteLine("  PASS\n");

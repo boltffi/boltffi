@@ -13,11 +13,107 @@ pub struct UserProfile {
 }
 
 #[export]
+#[demo_bench_macros::demo_case(
+    "records.with_options.user_profile.should_roundtrip_present_options",
+    description = "A UserProfile record with present optional fields crosses the wire and returns unchanged.",
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover records with optional fields."
+    )
+)]
+#[demo_bench_macros::demo_case(
+    "records.with_options.user_profile.should_roundtrip_absent_options",
+    description = "A UserProfile record with absent optional fields crosses the wire and returns unchanged.",
+    exclude(
+        apple,
+        reason = "The Apple demo tests do not currently round-trip UserProfile with absent options."
+    ),
+    exclude(
+        java,
+        reason = "The Java demo tests do not currently round-trip UserProfile with absent options."
+    ),
+    exclude(
+        kotlin,
+        reason = "The Kotlin demo tests do not currently round-trip UserProfile with absent options."
+    ),
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover records with optional fields."
+    ),
+    exclude(
+        wasm,
+        reason = "The wasm demo tests do not currently round-trip UserProfile with absent options."
+    )
+)]
+#[demo_bench_macros::demo_case(
+    "records.with_options.user_profile.should_roundtrip_mixed_options",
+    description = "A UserProfile record with one present option and one absent option crosses the wire and returns unchanged.",
+    exclude(
+        apple,
+        reason = "The Apple demo tests do not currently round-trip UserProfile with mixed option presence."
+    ),
+    exclude(
+        java,
+        reason = "The Java demo tests do not currently round-trip UserProfile with mixed option presence."
+    ),
+    exclude(
+        kotlin,
+        reason = "The Kotlin demo tests do not currently round-trip UserProfile with mixed option presence."
+    ),
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover records with optional fields."
+    ),
+    exclude(
+        wasm,
+        reason = "The wasm demo tests do not currently round-trip UserProfile with mixed option presence."
+    )
+)]
+#[demo_bench_macros::demo_case(
+    "records.with_options.user_profile.should_roundtrip_utf8_optional_string",
+    description = "A UserProfile record with UTF-8 text inside optional string fields crosses the wire and returns unchanged.",
+    exclude(
+        apple,
+        reason = "The Apple demo tests do not currently round-trip UTF-8 inside UserProfile optional fields."
+    ),
+    exclude(
+        java,
+        reason = "The Java demo tests do not currently round-trip UTF-8 inside UserProfile optional fields."
+    ),
+    exclude(
+        kotlin,
+        reason = "The Kotlin demo tests do not currently round-trip UTF-8 inside UserProfile optional fields."
+    ),
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover records with optional fields."
+    ),
+    exclude(
+        wasm,
+        reason = "The wasm demo tests do not currently round-trip UTF-8 inside UserProfile optional fields."
+    )
+)]
 pub fn echo_user_profile(profile: UserProfile) -> UserProfile {
     profile
 }
 
 #[export]
+#[demo_bench_macros::demo_case(
+    "records.with_options.user_profile.should_make_with_present_options",
+    description = "make_user_profile constructs a UserProfile with present email and score options.",
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover records with optional fields."
+    )
+)]
+#[demo_bench_macros::demo_case(
+    "records.with_options.user_profile.should_make_with_absent_options",
+    description = "make_user_profile constructs a UserProfile with absent email and score options.",
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover records with optional fields."
+    )
+)]
 pub fn make_user_profile(
     name: String,
     age: u32,
@@ -33,6 +129,22 @@ pub fn make_user_profile(
 }
 
 #[export]
+#[demo_bench_macros::demo_case(
+    "records.with_options.user_profile.should_display_email_when_present",
+    description = "user_display_name includes the email address when a UserProfile email option is present.",
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover records with optional fields."
+    )
+)]
+#[demo_bench_macros::demo_case(
+    "records.with_options.user_profile.should_display_name_when_email_absent",
+    description = "user_display_name falls back to the name when a UserProfile email option is absent.",
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover records with optional fields."
+    )
+)]
 pub fn user_display_name(profile: UserProfile) -> String {
     match profile.email {
         Some(email) => format!("{} <{}>", profile.name, email),
@@ -50,11 +162,55 @@ pub struct SearchResult {
 }
 
 #[export]
+#[demo_bench_macros::demo_case(
+    "records.with_options.search_result.should_roundtrip_present_options",
+    description = "A SearchResult record with present cursor and score options crosses the wire and returns unchanged.",
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover records with optional fields."
+    )
+)]
+#[demo_bench_macros::demo_case(
+    "records.with_options.search_result.should_roundtrip_absent_options",
+    description = "A SearchResult record with absent cursor and score options crosses the wire and returns unchanged.",
+    exclude(
+        apple,
+        reason = "The Apple demo tests do not currently round-trip SearchResult with absent options."
+    ),
+    exclude(
+        kotlin,
+        reason = "The Kotlin demo tests do not currently round-trip SearchResult with absent options."
+    ),
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover records with optional fields."
+    ),
+    exclude(
+        wasm,
+        reason = "The wasm demo tests do not currently round-trip SearchResult with absent options."
+    )
+)]
 pub fn echo_search_result(result: SearchResult) -> SearchResult {
     result
 }
 
 #[export]
+#[demo_bench_macros::demo_case(
+    "records.with_options.search_result.should_report_more_results_when_cursor_present",
+    description = "has_more_results returns true when a SearchResult carries a next cursor.",
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover records with optional fields."
+    )
+)]
+#[demo_bench_macros::demo_case(
+    "records.with_options.search_result.should_report_no_more_results_without_cursor",
+    description = "has_more_results returns false when a SearchResult has no next cursor.",
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover records with optional fields."
+    )
+)]
 pub fn has_more_results(result: SearchResult) -> bool {
     result.next_cursor.is_some()
 }

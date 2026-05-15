@@ -26,7 +26,9 @@ class DemoMixedRecordTest {
     fun mixedRecordFunctionsRoundTripThroughKotlin() {
         val record = sampleMixedRecord()
 
+        demoCase("case:records.mixed.should_roundtrip_composed_record")
         assertEquals(record, echoMixedRecord(record))
+        demoCase("case:records.mixed.should_make_from_composed_parts")
         assertEquals(
             record,
             makeMixedRecord(

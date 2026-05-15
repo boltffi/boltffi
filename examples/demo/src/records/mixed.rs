@@ -43,11 +43,35 @@ impl MixedRecord {
 }
 
 #[export]
+#[demo_bench_macros::demo_case(
+    "records.mixed.should_roundtrip_composed_record",
+    description = "A MixedRecord composed from strings, records, enums, options, and vectors crosses the wire and returns unchanged.",
+    exclude(
+        csharp,
+        reason = "The C# demo currently covers MixedRecord through class and async APIs, not the records::mixed free functions."
+    ),
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover mixed records."
+    )
+)]
 pub fn echo_mixed_record(record: MixedRecord) -> MixedRecord {
     record
 }
 
 #[export]
+#[demo_bench_macros::demo_case(
+    "records.mixed.should_make_from_composed_parts",
+    description = "make_mixed_record constructs a MixedRecord from nested records, data enums, repr-int enums, options, and vectors.",
+    exclude(
+        csharp,
+        reason = "The C# demo currently covers MixedRecord through class and async APIs, not the records::mixed free functions."
+    ),
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover mixed records."
+    )
+)]
 pub fn make_mixed_record(
     name: String,
     anchor: Point,
