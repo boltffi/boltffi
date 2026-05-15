@@ -439,39 +439,50 @@ public static class DemoTest
 
         // Direct P/Invoke round-trip — the CLR marshals the enum as its
         // declared backing type.
-        DemoCase("case:enums.c_style.status.basic");
+        DemoCase("case:enums.c_style.status.should_roundtrip_values");
         Require(EchoStatus(Status.Active) == Status.Active, "EchoStatus(Active)");
         Require(EchoStatus(Status.Pending) == Status.Pending, "EchoStatus(Pending)");
+        DemoCase("case:enums.c_style.status.should_render_labels");
         Require(StatusToString(Status.Active) == "active", "StatusToString(Active)");
+        DemoCase("case:enums.c_style.status.should_identify_active_values");
         Require(IsActive(Status.Active), "IsActive(Active)");
         Require(!IsActive(Status.Inactive), "IsActive(Inactive) false");
 
-        DemoCase("case:enums.c_style.direction.basic");
+        DemoCase("case:enums.c_style.direction.should_roundtrip_value");
         Require(EchoDirection(Direction.North) == Direction.North, "EchoDirection(North)");
+        DemoCase("case:enums.c_style.direction.should_return_opposite_from_free_function");
         Require(
             OppositeDirection(Direction.East) == Direction.West,
             "OppositeDirection(East) == West"
         );
 
         // Extension methods generated on the Methods companion class.
+        DemoCase("case:enums.c_style.direction.should_return_opposite_from_method");
         Require(Direction.North.Opposite() == Direction.South, "North.Opposite()");
+        DemoCase("case:enums.c_style.direction.should_identify_horizontal_values");
         Require(Direction.East.IsHorizontal(), "East.IsHorizontal()");
         Require(!Direction.North.IsHorizontal(), "!North.IsHorizontal()");
+        DemoCase("case:enums.c_style.direction.should_render_compass_label");
         Require(Direction.South.Label() == "S", "South.Label()");
 
         // Static factories on the companion class.
+        DemoCase("case:enums.c_style.direction.should_return_cardinal_value");
         Require(DirectionMethods.Cardinal() == Direction.North, "Cardinal() == North");
+        DemoCase("case:enums.c_style.direction.should_construct_from_degrees");
         Require(DirectionMethods.FromDegrees(90.0) == Direction.East, "FromDegrees(90) == East");
         Require(DirectionMethods.FromDegrees(180.0) == Direction.South, "FromDegrees(180) == South");
+        DemoCase("case:enums.c_style.direction.should_report_variant_count");
         Require(DirectionMethods.Count() == 4u, "Count() == 4");
+        DemoCase("case:enums.c_style.direction.should_construct_from_raw_value");
         Require(DirectionMethods.New(2) == Direction.East, "New(2) == East");
 
         // Non-default backing type: LogLevel is #[repr(u8)] on the Rust side,
         // so these direct P/Invoke calls catch any accidental `enum : int`
         // projection in the generated C# surface.
-        DemoCase("case:enums.repr_int.log_level.basic");
+        DemoCase("case:enums.repr_int.log_level.should_roundtrip_value");
         Require(EchoLogLevel(LogLevel.Trace) == LogLevel.Trace, "EchoLogLevel(Trace)");
         Require(EchoLogLevel(LogLevel.Error) == LogLevel.Error, "EchoLogLevel(Error)");
+        DemoCase("case:enums.repr_int.log_level.should_compare_against_minimum");
         Require(ShouldLog(LogLevel.Error, LogLevel.Warn), "ShouldLog(Error, Warn)");
         Require(!ShouldLog(LogLevel.Debug, LogLevel.Info), "!ShouldLog(Debug, Info)");
 
@@ -479,22 +490,26 @@ public static class DemoTest
         // The raw value of each C# member must equal the Rust discriminant,
         // and a value constructed on the Rust side must map back to the
         // corresponding named member on the C# side.
-        DemoCase("case:enums.repr_int.http_code.discriminants");
+        DemoCase("case:enums.repr_int.http_code.should_expose_discriminant_values");
         Require((ushort)HttpCode.Ok == 200, "HttpCode.Ok == 200");
         Require((ushort)HttpCode.NotFound == 404, "HttpCode.NotFound == 404");
         Require((ushort)HttpCode.ServerError == 500, "HttpCode.ServerError == 500");
+        DemoCase("case:enums.repr_int.http_code.should_return_not_found");
         Require(HttpCodeNotFound() == HttpCode.NotFound, "Rust NotFound == C# NotFound");
+        DemoCase("case:enums.repr_int.http_code.should_roundtrip_values");
         Require(EchoHttpCode(HttpCode.Ok) == HttpCode.Ok, "EchoHttpCode(Ok)");
         Require(EchoHttpCode(HttpCode.ServerError) == HttpCode.ServerError, "EchoHttpCode(ServerError)");
 
         // Sign has a #[repr(i8)] with a negative discriminant. The CLR
         // marshals sbyte across P/Invoke; the bit pattern must stay signed
         // in both directions.
-        DemoCase("case:enums.repr_int.sign.discriminants");
+        DemoCase("case:enums.repr_int.sign.should_expose_signed_discriminant_values");
         Require((sbyte)Sign.Negative == -1, "Sign.Negative == -1");
         Require((sbyte)Sign.Zero == 0, "Sign.Zero == 0");
         Require((sbyte)Sign.Positive == 1, "Sign.Positive == 1");
+        DemoCase("case:enums.repr_int.sign.should_return_negative");
         Require(SignNegative() == Sign.Negative, "Rust Negative == C# Negative");
+        DemoCase("case:enums.repr_int.sign.should_roundtrip_signed_values");
         Require(EchoSign(Sign.Negative) == Sign.Negative, "EchoSign(Negative)");
         Require(EchoSign(Sign.Positive) == Sign.Positive, "EchoSign(Positive)");
 
@@ -640,7 +655,7 @@ public static class DemoTest
         Require(Shape.TryApexPoint(-1.0) is null, "Shape.TryApexPoint(negative) == null");
 
         // Message — mixes string, primitive, and unit variants.
-        DemoCase("case:enums.data_enum.message.basic");
+        DemoCase("case:enums.data_enum.message.should_roundtrip_variants");
         Message text = new Message.Text("hello");
         Require(
             EchoMessage(text) is Message.Text et && et.Body == "hello",
@@ -659,6 +674,7 @@ public static class DemoTest
         Message ping = new Message.Ping();
         Require(EchoMessage(ping) is Message.Ping, "EchoMessage(Ping)");
 
+        DemoCase("case:enums.data_enum.message.should_summarize_variants");
         Require(
             MessageSummary(new Message.Text("hi")) == "text: hi",
             "MessageSummary(Text)"
@@ -666,7 +682,7 @@ public static class DemoTest
         Require(MessageSummary(new Message.Ping()) == "ping", "MessageSummary(Ping)");
 
         // Animal — three struct variants, one with a bool field.
-        DemoCase("case:enums.data_enum.animal.basic");
+        DemoCase("case:enums.data_enum.animal.should_roundtrip_variants");
         Animal dog = new Animal.Dog("Rex", "Labrador");
         Require(
             EchoAnimal(dog) is Animal.Dog d && d.Name == "Rex" && d.Breed == "Labrador",
@@ -685,13 +701,14 @@ public static class DemoTest
             "EchoAnimal(Fish)"
         );
 
+        DemoCase("case:enums.data_enum.animal.should_derive_names");
         Require(AnimalName(new Animal.Dog("Rex", "Lab")) == "Rex", "AnimalName(Dog)");
         Require(AnimalName(new Animal.Fish(5u)) == "5 fish", "AnimalName(Fish)");
 
         // LifecycleEvent — a data enum whose variant payload carries a
         // C-style enum (Priority). The codec must wire-encode the outer
         // variant tag and the inner enum's backing integer together.
-        DemoCase("case:enums.data_enum.lifecycle_event.priority_payload");
+        DemoCase("case:enums.data_enum.lifecycle_event.should_make_critical_event");
         LifecycleEvent started = MakeCriticalLifecycleEvent(7);
         Require(
             started is LifecycleEvent.TaskStarted ts
@@ -699,6 +716,7 @@ public static class DemoTest
                 && ts.Id == 7,
             "MakeCriticalLifecycleEvent returns TaskStarted with Critical priority"
         );
+        DemoCase("case:enums.data_enum.lifecycle_event.should_roundtrip_priority_payload");
         LifecycleEvent echoedStarted = EchoLifecycleEvent(started);
         Require(echoedStarted == started, "EchoLifecycleEvent(TaskStarted) round-trip");
         LifecycleEvent tick = new LifecycleEvent.Tick();
@@ -1008,19 +1026,21 @@ public static class DemoTest
         Console.WriteLine("Testing Vec<CStyleEnum> and Vec<DataEnum>...");
 
         Status[] statuses = new[] { Status.Active, Status.Inactive, Status.Pending, Status.Active };
-        DemoCase("case:enums.c_style.status.vec");
+        DemoCase("case:enums.c_style.status.should_roundtrip_vectors");
         Status[] echoedStatuses = EchoVecStatus(statuses);
         Require(echoedStatuses.SequenceEqual(statuses), "echoVecStatus round-trip");
         Require(EchoVecStatus(Array.Empty<Status>()).Length == 0, "echoVecStatus empty");
 
+        DemoCase("case:enums.c_style.direction.should_generate_sequence");
         Direction[] generated = GenerateDirections(6);
         Require(generated.Length == 6, "generateDirections length");
         Require(generated[0] == Direction.North && generated[4] == Direction.North, "generateDirections wraps the 4-direction cycle");
+        DemoCase("case:enums.c_style.direction.should_count_north_values");
         Require(CountNorth(generated) == 2, "countNorth on generateDirections(6)");
         Require(CountNorth(Array.Empty<Direction>()) == 0, "countNorth empty");
 
         LogLevel[] levels = new[] { LogLevel.Trace, LogLevel.Warn, LogLevel.Error, LogLevel.Debug };
-        DemoCase("case:enums.repr_int.log_level.vec");
+        DemoCase("case:enums.repr_int.log_level.should_roundtrip_vectors");
         LogLevel[] echoedLevels = EchoVecLogLevel(levels);
         Require(echoedLevels.SequenceEqual(levels), "echoVecLogLevel round-trip");
         Require(EchoVecLogLevel(Array.Empty<LogLevel>()).Length == 0, "echoVecLogLevel empty");
@@ -1123,10 +1143,11 @@ public static class DemoTest
         Require(Math.Abs(AverageScore(scores) - 20.0) < 1e-9, "averageScore");
         Require(AverageScore(new TaggedScores("empty", Array.Empty<double>())) == 0.0, "averageScore empty");
 
-        DemoCase("case:enums.complex_variants.filter.basic");
         Filter byTags = new Filter.ByTags(new[] { "café", "🌍" });
+        DemoCase("case:enums.complex_variants.filter.should_roundtrip_variants");
         Filter echoedTags = EchoFilter(byTags);
         Require(echoedTags is Filter.ByTags t && t.Tags.SequenceEqual(((Filter.ByTags)byTags).Tags), "echoFilter ByTags");
+        DemoCase("case:enums.complex_variants.filter.should_describe_variants");
         Require(DescribeFilter(byTags) == "filter by 2 tags", "describeFilter ByTags");
 
         Filter byGroups = new Filter.ByGroups(
@@ -1137,6 +1158,7 @@ public static class DemoTest
                 new[] { "common" },
             }
         );
+        DemoCase("case:enums.complex_variants.filter.should_roundtrip_variants");
         Filter echoedGroups = EchoFilter(byGroups);
         Require(echoedGroups is Filter.ByGroups g && g.Groups.Length == 3, "echoFilter ByGroups outer length");
         Require(
@@ -1146,11 +1168,14 @@ public static class DemoTest
                 && g0.Groups[2].SequenceEqual(((Filter.ByGroups)byGroups).Groups[2]),
             "echoFilter ByGroups nested strings"
         );
+        DemoCase("case:enums.complex_variants.filter.should_describe_variants");
         Require(DescribeFilter(byGroups) == "filter by 3 groups", "describeFilter ByGroups");
 
         Filter byPoints = new Filter.ByPoints(new[] { new Point(1.0, 2.0), new Point(3.0, 4.0) });
+        DemoCase("case:enums.complex_variants.filter.should_roundtrip_variants");
         Filter echoedPts = EchoFilter(byPoints);
         Require(echoedPts is Filter.ByPoints p2 && p2.Anchors.SequenceEqual(((Filter.ByPoints)byPoints).Anchors), "echoFilter ByPoints");
+        DemoCase("case:enums.complex_variants.filter.should_describe_variants");
         Require(DescribeFilter(byPoints) == "filter by 2 anchor points", "describeFilter ByPoints");
 
         DemoCase("case:records.with_collections.user_profiles.should_generate_profiles");

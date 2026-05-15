@@ -53,11 +53,12 @@ export async function run() {
   globalThis.demoCase("case:enums.data_enum.shape.should_roundtrip_vectors");
   assert.equal(demo.echoVecShape([demo.makeCircle(2), demo.makeRectangle(3, 4), { tag: "Point" }]).length, 3);
 
-  globalThis.demoCase("case:enums.data_enum.message.basic");
+  globalThis.demoCase("case:enums.data_enum.message.should_roundtrip_variants");
   const textMessage = { tag: "Text", body: "hello" };
   const imageMessage = { tag: "Image", url: "https://example.com/image.png", width: 640, height: 480 };
   assert.deepEqual(demo.echoMessage(textMessage), textMessage);
   assert.deepEqual(demo.echoMessage(imageMessage), imageMessage);
+  globalThis.demoCase("case:enums.data_enum.message.should_summarize_variants");
   assert.equal(demo.messageSummary({ tag: "Text", body: "hi" }), "text: hi");
   assert.equal(
     demo.messageSummary(imageMessage),
@@ -65,19 +66,21 @@ export async function run() {
   );
   assert.equal(demo.messageSummary({ tag: "Ping" }), "ping");
 
-  globalThis.demoCase("case:enums.data_enum.animal.basic");
+  globalThis.demoCase("case:enums.data_enum.animal.should_roundtrip_variants");
   const dog = { tag: "Dog", name: "Rex", breed: "Labrador" };
   const cat = { tag: "Cat", name: "Milo", indoor: true };
   assert.deepEqual(demo.echoAnimal(dog), dog);
   assert.deepEqual(demo.echoAnimal(cat), cat);
+  globalThis.demoCase("case:enums.data_enum.animal.should_derive_names");
   assert.equal(demo.animalName({ tag: "Fish", count: 5 }), "5 fish");
   assert.equal(demo.animalName(cat), "Milo");
 
-  globalThis.demoCase("case:enums.data_enum.lifecycle_event.priority_payload");
+  globalThis.demoCase("case:enums.data_enum.lifecycle_event.should_make_critical_event");
   const started = demo.makeCriticalLifecycleEvent(7n);
   assert.equal(started.tag, "TaskStarted");
   assert.equal(started.priority, demo.Priority.Critical);
   assert.equal(started.id, 7n);
+  globalThis.demoCase("case:enums.data_enum.lifecycle_event.should_roundtrip_priority_payload");
   assert.deepEqual(demo.echoLifecycleEvent(started), started);
   assert.deepEqual(demo.echoLifecycleEvent({ tag: "Tick" }), { tag: "Tick" });
 }

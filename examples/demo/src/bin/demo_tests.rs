@@ -301,6 +301,11 @@ fn collect_item_cases(
                 let inferred = make_export_id(module, &item_fn.sig.ident.to_string(), None);
                 collect_attribute_cases(&item_fn.attrs, Some(inferred), path, cases)?;
             }
+            Item::Enum(item_enum) => {
+                let inferred = (is_public(&item_enum.vis) && has_data_attr(&item_enum.attrs))
+                    .then(|| make_export_id(module, &item_enum.ident.to_string(), None));
+                collect_attribute_cases(&item_enum.attrs, inferred, path, cases)?;
+            }
             Item::Impl(item_impl) => {
                 let owner = type_owner(&item_impl.self_ty);
                 let impl_inferred = owner
@@ -316,6 +321,11 @@ fn collect_item_cases(
                         collect_attribute_cases(&method.attrs, inferred, path, cases)?;
                     }
                 }
+            }
+            Item::Struct(item_struct) => {
+                let inferred = (is_public(&item_struct.vis) && has_data_attr(&item_struct.attrs))
+                    .then(|| make_export_id(module, &item_struct.ident.to_string(), None));
+                collect_attribute_cases(&item_struct.attrs, inferred, path, cases)?;
             }
             _ => collect_attribute_cases(item_attrs(item), None, path, cases)?,
         }
@@ -438,6 +448,11 @@ fn collect_demo_exports(repo_root: &Path) -> AppResult<BTreeSet<String>> {
 fn collect_item_exports(items: &[Item], module: &str, exports: &mut BTreeSet<String>) {
     for item in items {
         match item {
+            Item::Enum(item_enum)
+                if is_public(&item_enum.vis) && has_data_attr(&item_enum.attrs) =>
+            {
+                exports.insert(make_export_id(module, &item_enum.ident.to_string(), None));
+            }
             Item::Fn(item_fn) if is_public(&item_fn.vis) && has_export_attr(&item_fn.attrs) => {
                 exports.insert(make_export_id(module, &item_fn.sig.ident.to_string(), None));
             }
@@ -457,6 +472,11 @@ fn collect_item_exports(items: &[Item], module: &str, exports: &mut BTreeSet<Str
                         }
                     }
                 }
+            }
+            Item::Struct(item_struct)
+                if is_public(&item_struct.vis) && has_data_attr(&item_struct.attrs) =>
+            {
+                exports.insert(make_export_id(module, &item_struct.ident.to_string(), None));
             }
             _ => {}
         }
@@ -644,6 +664,10 @@ fn has_export_attr(attrs: &[Attribute]) -> bool {
             .last()
             .is_some_and(|segment| segment.ident == "export")
     })
+}
+
+fn has_data_attr(attrs: &[Attribute]) -> bool {
+    attrs.iter().any(|attr| attr.path().is_ident("data"))
 }
 
 fn has_data_impl_attr(attrs: &[Attribute]) -> bool {

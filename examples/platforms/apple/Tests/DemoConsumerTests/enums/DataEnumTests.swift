@@ -53,21 +53,23 @@ final class DataEnumTests: DemoTestCase {
     }
 
     func testMessageFns() {
-        demoCase("case:enums.data_enum.message.basic")
+        demoCase("case:enums.data_enum.message.should_roundtrip_variants")
         XCTAssertEqual(echoMessage(m: Message.text(body: "hello")), Message.text(body: "hello"))
         XCTAssertEqual(
             echoMessage(m: Message.image(url: "https://example.com/image.png", width: 640, height: 480)),
             Message.image(url: "https://example.com/image.png", width: 640, height: 480)
         )
+        demoCase("case:enums.data_enum.message.should_summarize_variants")
         XCTAssertEqual(messageSummary(m: Message.text(body: "hi")), "text: hi")
         XCTAssertEqual(messageSummary(m: Message.image(url: "https://example.com/image.png", width: 640, height: 480)), "image: 640x480 at https://example.com/image.png")
         XCTAssertEqual(messageSummary(m: Message.ping), "ping")
     }
 
     func testAnimalFns() {
-        demoCase("case:enums.data_enum.animal.basic")
+        demoCase("case:enums.data_enum.animal.should_roundtrip_variants")
         XCTAssertEqual(echoAnimal(a: Animal.dog(name: "Rex", breed: "Labrador")), Animal.dog(name: "Rex", breed: "Labrador"))
         XCTAssertEqual(echoAnimal(a: Animal.cat(name: "Milo", indoor: true)), Animal.cat(name: "Milo", indoor: true))
+        demoCase("case:enums.data_enum.animal.should_derive_names")
         XCTAssertEqual(animalName(a: Animal.fish(count: 5)), "5 fish")
         XCTAssertEqual(animalName(a: Animal.cat(name: "Milo", indoor: true)), "Milo")
     }
@@ -85,9 +87,10 @@ final class DataEnumTests: DemoTestCase {
     }
 
     func testLifecycleEventFns() {
-        demoCase("case:enums.data_enum.lifecycle_event.priority_payload")
+        demoCase("case:enums.data_enum.lifecycle_event.should_make_critical_event")
         let started = makeCriticalLifecycleEvent(id: 7)
         XCTAssertEqual(started, LifecycleEvent.taskStarted(priority: .critical, id: 7))
+        demoCase("case:enums.data_enum.lifecycle_event.should_roundtrip_priority_payload")
         XCTAssertEqual(echoLifecycleEvent(ev: started), started)
         XCTAssertEqual(echoLifecycleEvent(ev: .tick), .tick)
     }

@@ -315,52 +315,68 @@ public final class DemoTest {
     private static void testCStyleEnums() {
         System.out.println("Testing C-style enums...");
 
-        demoCase("case:enums.c_style.status.basic");
+        demoCase("case:enums.c_style.status.should_roundtrip_values");
         assert Demo.echoStatus(Status.ACTIVE) == Status.ACTIVE : "echoStatus(Active)";
         assert Demo.echoStatus(Status.INACTIVE) == Status.INACTIVE : "echoStatus(Inactive)";
         assert Demo.echoStatus(Status.PENDING) == Status.PENDING : "echoStatus(Pending)";
+        demoCase("case:enums.c_style.status.should_render_labels");
         assert Demo.statusToString(Status.ACTIVE).equals("active") : "statusToString(Active)";
         assert Demo.statusToString(Status.INACTIVE).equals("inactive") : "statusToString(Inactive)";
+        demoCase("case:enums.c_style.status.should_identify_active_values");
         assert Demo.isActive(Status.ACTIVE) : "isActive(Active)";
         assert !Demo.isActive(Status.PENDING) : "isActive(Pending)";
 
-        demoCase("case:enums.c_style.direction.basic");
+        demoCase("case:enums.c_style.direction.should_roundtrip_value");
         assert Demo.echoDirection(Direction.NORTH) == Direction.NORTH : "echoDirection(North)";
+        demoCase("case:enums.c_style.direction.should_return_opposite_from_free_function");
         assert Demo.oppositeDirection(Direction.NORTH) == Direction.SOUTH : "oppositeDirection(North)";
         assert Demo.oppositeDirection(Direction.EAST) == Direction.WEST : "oppositeDirection(East)";
+        demoCase("case:enums.c_style.direction.should_return_cardinal_value");
         assert Direction.cardinal() == Direction.NORTH : "Direction.cardinal";
+        demoCase("case:enums.c_style.direction.should_construct_from_degrees");
         assert Direction.fromDegrees(90.0) == Direction.EAST : "Direction.fromDegrees(90)";
         assert Direction.fromDegrees(225.0) == Direction.WEST : "Direction.fromDegrees(225)";
+        demoCase("case:enums.c_style.direction.should_return_opposite_from_method");
         assert Direction.NORTH.opposite() == Direction.SOUTH : "Direction.opposite";
+        demoCase("case:enums.c_style.direction.should_identify_horizontal_values");
         assert Direction.WEST.isHorizontal() : "Direction.isHorizontal(West)";
         assert !Direction.NORTH.isHorizontal() : "Direction.isHorizontal(North)";
+        demoCase("case:enums.c_style.direction.should_render_compass_label");
         assert Direction.SOUTH.label().equals("S") : "Direction.label";
+        demoCase("case:enums.c_style.direction.should_report_variant_count");
         assert Direction.count() == 4 : "Direction.count";
 
-        demoCase("case:enums.repr_int.priority.basic");
+        demoCase("case:enums.repr_int.priority.should_roundtrip_value");
         assert Demo.echoPriority(Priority.HIGH) == Priority.HIGH : "echoPriority(High)";
+        demoCase("case:enums.repr_int.priority.should_render_label");
         assert Demo.priorityLabel(Priority.LOW).equals("low") : "priorityLabel(Low)";
+        demoCase("case:enums.repr_int.priority.should_identify_high_priority");
         assert Demo.isHighPriority(Priority.CRITICAL) : "isHighPriority(Critical)";
         assert !Demo.isHighPriority(Priority.LOW) : "isHighPriority(Low)";
 
-        demoCase("case:enums.repr_int.log_level.basic");
+        demoCase("case:enums.repr_int.log_level.should_roundtrip_value");
         assert Demo.echoLogLevel(LogLevel.INFO) == LogLevel.INFO : "echoLogLevel(Info)";
+        demoCase("case:enums.repr_int.log_level.should_compare_against_minimum");
         assert Demo.shouldLog(LogLevel.ERROR, LogLevel.WARN) : "shouldLog(Error >= Warn)";
         assert !Demo.shouldLog(LogLevel.DEBUG, LogLevel.INFO) : "shouldLog(Debug < Info)";
 
-        demoCase("case:enums.repr_int.http_code.discriminants");
+        demoCase("case:enums.repr_int.http_code.should_expose_discriminant_values");
         assert HttpCode.OK.value == (short) 200 : "HttpCode.OK.value == 200";
         assert HttpCode.NOT_FOUND.value == (short) 404 : "HttpCode.NOT_FOUND.value == 404";
         assert HttpCode.SERVER_ERROR.value == (short) 500 : "HttpCode.SERVER_ERROR.value == 500";
+        demoCase("case:enums.repr_int.http_code.should_return_not_found");
         assert Demo.httpCodeNotFound() == HttpCode.NOT_FOUND : "httpCodeNotFound() == NOT_FOUND";
+        demoCase("case:enums.repr_int.http_code.should_roundtrip_values");
         assert Demo.echoHttpCode(HttpCode.OK) == HttpCode.OK : "echoHttpCode(OK)";
         assert Demo.echoHttpCode(HttpCode.SERVER_ERROR) == HttpCode.SERVER_ERROR : "echoHttpCode(SERVER_ERROR)";
 
-        demoCase("case:enums.repr_int.sign.discriminants");
+        demoCase("case:enums.repr_int.sign.should_expose_signed_discriminant_values");
         assert Sign.NEGATIVE.value == (byte) -1 : "Sign.NEGATIVE.value == -1";
         assert Sign.ZERO.value == (byte) 0 : "Sign.ZERO.value == 0";
         assert Sign.POSITIVE.value == (byte) 1 : "Sign.POSITIVE.value == 1";
+        demoCase("case:enums.repr_int.sign.should_return_negative");
         assert Demo.signNegative() == Sign.NEGATIVE : "signNegative() == NEGATIVE";
+        demoCase("case:enums.repr_int.sign.should_roundtrip_signed_values");
         assert Demo.echoSign(Sign.NEGATIVE) == Sign.NEGATIVE : "echoSign(NEGATIVE)";
         assert Demo.echoSign(Sign.POSITIVE) == Sign.POSITIVE : "echoSign(POSITIVE)";
 
@@ -386,12 +402,13 @@ public final class DemoTest {
         TaskHeader echoedHeader = Demo.echoTaskHeader(header);
         assert echoedHeader.equals(header) : "echoTaskHeader round-trip";
 
-        demoCase("case:enums.data_enum.lifecycle_event.priority_payload");
+        demoCase("case:enums.data_enum.lifecycle_event.should_make_critical_event");
         LifecycleEvent started = Demo.makeCriticalLifecycleEvent(7L);
         assert started instanceof LifecycleEvent.TaskStarted : "LifecycleEvent.TaskStarted variant";
         LifecycleEvent.TaskStarted startedTs = (LifecycleEvent.TaskStarted) started;
         assert startedTs.priority == Priority.CRITICAL : "LifecycleEvent.TaskStarted.priority";
         assert startedTs.id == 7L : "LifecycleEvent.TaskStarted.id";
+        demoCase("case:enums.data_enum.lifecycle_event.should_roundtrip_priority_payload");
         assert Demo.echoLifecycleEvent(started).equals(started) : "echoLifecycleEvent(TaskStarted)";
         assert Demo.echoLifecycleEvent(LifecycleEvent.Tick.INSTANCE) instanceof LifecycleEvent.Tick : "echoLifecycleEvent(Tick)";
 
@@ -403,7 +420,6 @@ public final class DemoTest {
         demoCase("case:records.with_enums.log_entry.should_roundtrip_u8_enum_field");
         assert Demo.echoLogEntry(logEntry).equals(logEntry) : "echoLogEntry round-trip";
 
-        demoCase("case:enums.complex_variants.filter.basic");
         Filter groupFilter = new Filter.ByGroups(
             Arrays.asList(
                 Arrays.asList("café", "🌍"),
@@ -411,7 +427,9 @@ public final class DemoTest {
                 Arrays.asList("common")
             )
         );
+        demoCase("case:enums.complex_variants.filter.should_roundtrip_variants");
         assert Demo.echoFilter(groupFilter).equals(groupFilter) : "echoFilter(ByGroups)";
+        demoCase("case:enums.complex_variants.filter.should_describe_variants");
         assert Demo.describeFilter(groupFilter).equals("filter by 3 groups") : "describeFilter(ByGroups)";
 
         demoCase("case:enums.data_enum.shape.should_support_free_function_factories");
@@ -488,22 +506,25 @@ public final class DemoTest {
         assert apexPoint.get().equals(new Point(0.0, 2.5)) : "Shape.tryApexPoint point";
         assert !Shape.tryApexPoint(-1.0).isPresent() : "Shape.tryApexPoint negative";
 
-        demoCase("case:enums.data_enum.message.basic");
+        demoCase("case:enums.data_enum.message.should_roundtrip_variants");
         Message text = Demo.echoMessage(new Message.Text("hello"));
         assert text instanceof Message.Text : "echoMessage(Text) type";
         assert ((Message.Text) text).body.equals("hello") : "echoMessage(Text).body";
+        demoCase("case:enums.data_enum.message.should_summarize_variants");
         assert Demo.messageSummary(new Message.Text("hi")).equals("text: hi") : "messageSummary(Text)";
         assert Demo.messageSummary(Message.Ping.INSTANCE).equals("ping") : "messageSummary(Ping)";
 
-        demoCase("case:enums.data_enum.animal.basic");
+        demoCase("case:enums.data_enum.animal.should_roundtrip_variants");
         Animal dog = Demo.echoAnimal(new Animal.Dog("Rex", "Labrador"));
         assert dog instanceof Animal.Dog : "echoAnimal(Dog) type";
         assert ((Animal.Dog) dog).name.equals("Rex") : "echoAnimal(Dog).name";
+        demoCase("case:enums.data_enum.animal.should_derive_names");
         assert Demo.animalName(new Animal.Fish(5)).equals("5 fish") : "animalName(Fish)";
 
-        demoCase("case:enums.complex_variants.api_response.basic");
+        demoCase("case:enums.complex_variants.api_response.should_roundtrip_variants");
         ApiResponse success = Demo.echoApiResponse(new ApiResponse.Success("ok"));
         assert success instanceof ApiResponse.Success : "echoApiResponse(Success) type";
+        demoCase("case:enums.complex_variants.api_response.should_identify_success");
         assert Demo.isSuccess(new ApiResponse.Success("data")) : "isSuccess(Success)";
         assert !Demo.isSuccess(ApiResponse.Empty.INSTANCE) : "isSuccess(Empty)";
 
@@ -513,7 +534,7 @@ public final class DemoTest {
     private static void testCStyleEnumVecs() {
         System.out.println("Testing vec C-style enums...");
 
-        demoCase("case:enums.c_style.status.vec");
+        demoCase("case:enums.c_style.status.should_roundtrip_vectors");
         List<Status> statuses = Demo.echoVecStatus(
             Arrays.asList(Status.ACTIVE, Status.PENDING, Status.INACTIVE)
         );
@@ -522,7 +543,7 @@ public final class DemoTest {
         assert statuses.get(1) == Status.PENDING : "echoVecStatus[1]";
         assert statuses.get(2) == Status.INACTIVE : "echoVecStatus[2]";
 
-        demoCase("case:enums.repr_int.log_level.vec");
+        demoCase("case:enums.repr_int.log_level.should_roundtrip_vectors");
         List<LogLevel> levels = Demo.echoVecLogLevel(
             Arrays.asList(LogLevel.TRACE, LogLevel.INFO, LogLevel.ERROR)
         );

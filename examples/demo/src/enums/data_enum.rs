@@ -37,10 +37,35 @@ pub enum Shape {
 
 #[data(impl)]
 impl Shape {
+    #[demo_bench_macros::demo_case(
+        "enums.data_enum.shape.should_support_primary_constructor",
+        description = "The generated Shape primary constructor builds a Circle variant with the requested radius.",
+        exclude(
+            java,
+            reason = "The Java demo surface does not expose Shape::new because new is a Java keyword."
+        ),
+        exclude(
+            python,
+            reason = "The Python demo tests do not currently cover data-enum surfaces."
+        )
+    )]
     pub fn new(radius: f64) -> Self {
         Shape::Circle { radius }
     }
 
+    #[demo_bench_macros::demo_case(
+        "enums.data_enum.shape.should_support_static_constructors",
+        description = "Static constructors on Shape build Circle and Rectangle variants without crossing through a free function.",
+        exercises = [
+            "enums::data_enum::Shape::unit_circle",
+            "enums::data_enum::Shape::square",
+            "enums::data_enum::Shape::try_circle"
+        ],
+        exclude(
+            python,
+            reason = "The Python demo tests do not currently cover data-enum surfaces."
+        )
+    )]
     pub fn unit_circle() -> Self {
         Shape::Circle { radius: 1.0 }
     }
@@ -68,6 +93,14 @@ impl Shape {
         }
     }
 
+    #[demo_bench_macros::demo_case(
+        "enums.data_enum.shape.should_support_numeric_instance_methods",
+        description = "Shape instance methods can wire-encode the receiver and return numeric results.",
+        exclude(
+            python,
+            reason = "The Python demo tests do not currently cover data-enum surfaces."
+        )
+    )]
     pub fn area(&self) -> f64 {
         match self {
             Shape::Circle { radius } => std::f64::consts::PI * radius * radius,
@@ -81,6 +114,14 @@ impl Shape {
         }
     }
 
+    #[demo_bench_macros::demo_case(
+        "enums.data_enum.shape.should_support_string_instance_methods",
+        description = "Shape instance methods can wire-encode the receiver and return string results.",
+        exclude(
+            python,
+            reason = "The Python demo tests do not currently cover data-enum surfaces."
+        )
+    )]
     pub fn describe(&self) -> String {
         match self {
             Shape::Circle { radius } => format!("circle r={}", radius),
@@ -93,6 +134,14 @@ impl Shape {
         }
     }
 
+    #[demo_bench_macros::demo_case(
+        "enums.data_enum.shape.should_report_variant_count",
+        description = "The generated Shape static method can return primitive metadata about the data enum.",
+        exclude(
+            python,
+            reason = "The Python demo tests do not currently cover data-enum surfaces."
+        )
+    )]
     pub fn variant_count() -> u32 {
         6
     }
@@ -101,6 +150,14 @@ impl Shape {
     /// Exercises a static method on a data enum whose return type is
     /// `Option<Record>` where the record type is shadowed by another
     /// variant on the same enum.
+    #[demo_bench_macros::demo_case(
+        "enums.data_enum.shape.should_return_optional_records_from_static_methods",
+        description = "A Shape static method can return Some(Point) or None while resolving Point as the record type.",
+        exclude(
+            python,
+            reason = "The Python demo tests do not currently cover data-enum surfaces."
+        )
+    )]
     pub fn try_apex_point(radius: f64) -> Option<Point> {
         if radius > 0.0 {
             Some(Point { x: 0.0, y: radius })
@@ -110,11 +167,47 @@ impl Shape {
     }
 }
 
+#[demo_bench_macros::demo_case(
+    "enums.data_enum.shape.should_roundtrip_core_variants",
+    description = "Circle, Rectangle, Triangle, and Point Shape variants preserve their tags and payload fields.",
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover data-enum surfaces."
+    )
+)]
+#[demo_bench_macros::demo_case(
+    "enums.data_enum.shape.should_roundtrip_optional_record_fields",
+    description = "A Shape variant can carry Some(Point) and None payloads even when Point is also a sibling variant name.",
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover data-enum surfaces."
+    )
+)]
+#[demo_bench_macros::demo_case(
+    "enums.data_enum.shape.should_roundtrip_vector_record_fields",
+    description = "A Shape variant can carry a vector of Point records even when Point is also a sibling variant name.",
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover data-enum surfaces."
+    )
+)]
 #[export]
 pub fn echo_shape(s: Shape) -> Shape {
     s
 }
 
+#[demo_bench_macros::demo_case(
+    "enums.data_enum.shape.should_support_free_function_factories",
+    description = "Free functions construct Circle and Rectangle Shape variants with the requested primitive fields.",
+    exercises = [
+        "enums::data_enum::make_circle",
+        "enums::data_enum::make_rectangle"
+    ],
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover data-enum surfaces."
+    )
+)]
 #[export]
 pub fn make_circle(radius: f64) -> Shape {
     Shape::Circle { radius }
@@ -125,6 +218,14 @@ pub fn make_rectangle(width: f64, height: f64) -> Shape {
     Shape::Rectangle { width, height }
 }
 
+#[demo_bench_macros::demo_case(
+    "enums.data_enum.shape.should_roundtrip_vectors",
+    description = "A vector of data-enum Shape values preserves variant order and payloads.",
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover data-enum surfaces."
+    )
+)]
 #[export]
 pub fn echo_vec_shape(values: Vec<Shape>) -> Vec<Shape> {
     values
@@ -144,11 +245,27 @@ pub enum Message {
     Ping,
 }
 
+#[demo_bench_macros::demo_case(
+    "enums.data_enum.message.should_roundtrip_variants",
+    description = "Message variants with string, mixed primitive, and unit payloads cross the FFI boundary unchanged.",
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover data-enum surfaces."
+    )
+)]
 #[export]
 pub fn echo_message(m: Message) -> Message {
     m
 }
 
+#[demo_bench_macros::demo_case(
+    "enums.data_enum.message.should_summarize_variants",
+    description = "message_summary renders summaries for Message variants with text, image, and unit payloads.",
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover data-enum surfaces."
+    )
+)]
 #[export]
 pub fn message_summary(m: Message) -> String {
     match m {
@@ -166,11 +283,27 @@ pub enum Animal {
     Fish { count: u32 },
 }
 
+#[demo_bench_macros::demo_case(
+    "enums.data_enum.animal.should_roundtrip_variants",
+    description = "Animal variants with string, boolean, and integer payloads cross the FFI boundary unchanged.",
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover data-enum surfaces."
+    )
+)]
 #[export]
 pub fn echo_animal(a: Animal) -> Animal {
     a
 }
 
+#[demo_bench_macros::demo_case(
+    "enums.data_enum.animal.should_derive_names",
+    description = "animal_name derives display names from Animal variants with string and integer payloads.",
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover data-enum surfaces."
+    )
+)]
 #[export]
 pub fn animal_name(a: Animal) -> String {
     match a {
@@ -231,11 +364,27 @@ pub enum LifecycleEvent {
     Tick,
 }
 
+#[demo_bench_macros::demo_case(
+    "enums.data_enum.lifecycle_event.should_roundtrip_priority_payload",
+    description = "A LifecycleEvent variant embeds a Priority enum payload and round-trips both the outer tag and inner enum value.",
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover data-enum surfaces."
+    )
+)]
 #[export]
 pub fn echo_lifecycle_event(ev: LifecycleEvent) -> LifecycleEvent {
     ev
 }
 
+#[demo_bench_macros::demo_case(
+    "enums.data_enum.lifecycle_event.should_make_critical_event",
+    description = "make_critical_lifecycle_event constructs a TaskStarted LifecycleEvent with Critical priority.",
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover data-enum surfaces."
+    )
+)]
 #[export]
 pub fn make_critical_lifecycle_event(id: i64) -> LifecycleEvent {
     LifecycleEvent::TaskStarted {
