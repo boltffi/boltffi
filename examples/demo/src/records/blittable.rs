@@ -20,11 +20,13 @@ impl Point {
         directions = "Call `records::blittable::Point::new` through the generated binding and assert Point::new returns a blittable Point containing the provided coordinates.",
         exclude(
             csharp,
-            reason = "The C# demo tests do not currently cover the Point::new constructor."
+            reason = ExclusionReason::CoverageGap,
+            details = "C# has no assertion for the Point::new constructor in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
         ),
         exclude(
             java,
-            reason = "The Java demo tests use the generated Point data constructor rather than the Point::new method."
+            reason = ExclusionReason::CoverageGap,
+            details = "Java validates this area through the generated Point data constructor today; add a direct assertion for the Point::new method before marking this case covered."
         )
     )]
     pub fn new(x: f64, y: f64) -> Self {
@@ -58,11 +60,13 @@ impl Point {
         directions = "Call `records::blittable::Point::try_unit` through the generated binding and assert Point::try_unit returns a normalized Point for non-zero coordinates.",
         exclude(
             csharp,
-            reason = "The C# demo tests do not currently cover the fallible Point::try_unit method."
+            reason = ExclusionReason::CoverageGap,
+            details = "C# has no assertion for the fallible Point::try_unit method in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
         ),
         exclude(
             python,
-            reason = "The Python demo tests do not currently cover fallible Point methods."
+            reason = ExclusionReason::ImplementationGap,
+            details = "Python is experimental; its lowerer currently omits Result-returning record methods. Include this case when fallible record methods are implemented for Python."
         )
     )]
     #[demo_bench_macros::demo_case(
@@ -71,11 +75,13 @@ impl Point {
         directions = "Call `records::blittable::Point::try_unit` through the generated binding and assert Point::try_unit rejects zero coordinates instead of returning an invalid unit vector.",
         exclude(
             csharp,
-            reason = "The C# demo tests do not currently cover the fallible Point::try_unit method."
+            reason = ExclusionReason::CoverageGap,
+            details = "C# has no assertion for the fallible Point::try_unit method in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
         ),
         exclude(
             python,
-            reason = "The Python demo tests do not currently cover fallible Point methods."
+            reason = ExclusionReason::ImplementationGap,
+            details = "Python is experimental; its lowerer currently omits Result-returning record methods. Include this case when fallible record methods are implemented for Python."
         )
     )]
     pub fn try_unit(x: f64, y: f64) -> Result<Self, String> {
@@ -96,11 +102,13 @@ impl Point {
         directions = "Call `records::blittable::Point::checked_unit` through the generated binding and assert Point::checked_unit returns Some normalized Point for non-zero coordinates.",
         exclude(
             csharp,
-            reason = "The C# demo tests do not currently cover the optional Point::checked_unit method."
+            reason = ExclusionReason::CoverageGap,
+            details = "C# has no assertion for the optional Point::checked_unit method in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
         ),
         exclude(
             python,
-            reason = "The Python demo tests do not currently cover optional Point methods."
+            reason = ExclusionReason::ImplementationGap,
+            details = "Python is experimental; its lowerer does not currently handle Option<T> around blittable records. Include this case when optional record returns are implemented for Python."
         )
     )]
     #[demo_bench_macros::demo_case(
@@ -109,11 +117,13 @@ impl Point {
         directions = "Call `records::blittable::Point::checked_unit` through the generated binding and assert Point::checked_unit returns None for zero coordinates.",
         exclude(
             csharp,
-            reason = "The C# demo tests do not currently cover the optional Point::checked_unit method."
+            reason = ExclusionReason::CoverageGap,
+            details = "C# has no assertion for the optional Point::checked_unit method in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
         ),
         exclude(
             python,
-            reason = "The Python demo tests do not currently cover optional Point methods."
+            reason = ExclusionReason::ImplementationGap,
+            details = "Python is experimental; its lowerer does not currently handle Option<T> around blittable records. Include this case when optional record returns are implemented for Python."
         )
     )]
     pub fn checked_unit(x: f64, y: f64) -> Option<Self> {
@@ -143,7 +153,8 @@ impl Point {
         directions = "Call `records::blittable::Point::scale` through the generated binding and assert Point::scale multiplies both coordinates by the provided factor.",
         exclude(
             csharp,
-            reason = "The C# demo tests do not currently cover the Point::scale method."
+            reason = ExclusionReason::CoverageGap,
+            details = "C# has no assertion for the Point::scale method in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
         )
     )]
     pub fn scale(&mut self, factor: f64) {
@@ -169,7 +180,8 @@ impl Point {
         directions = "Call `records::blittable::Point::path_length` through the generated binding and assert Point::path_length sums the segment lengths across a vector of Points.",
         exclude(
             python,
-            reason = "The Python demo tests do not currently cover Point::path_length."
+            reason = ExclusionReason::ImplementationGap,
+            details = "Python is experimental; its lowerer does not currently handle Vec<Record> parameters or returns, even for blittable records. Include this case when record-vector support is implemented for Python."
         )
     )]
     pub fn path_length(points: Vec<Point>) -> f64 {
@@ -209,15 +221,18 @@ pub fn echo_point(p: Point) -> Point {
     directions = "Call `records::blittable::try_make_point` through the generated binding and assert try_make_point returns Some Point when the provided coordinates are not both zero.",
     exclude(
         csharp,
-        reason = "The C# demo tests do not currently cover try_make_point."
+        reason = ExclusionReason::CoverageGap,
+        details = "C# has no assertion for try_make_point in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         java,
-        reason = "The Java demo tests do not currently cover try_make_point."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for try_make_point in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover try_make_point."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Option<T> around blittable records. Include this case when optional record returns are implemented for Python."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -226,15 +241,18 @@ pub fn echo_point(p: Point) -> Point {
     directions = "Call `records::blittable::try_make_point` through the generated binding and assert try_make_point returns None when both coordinates are zero.",
     exclude(
         csharp,
-        reason = "The C# demo tests do not currently cover try_make_point."
+        reason = ExclusionReason::CoverageGap,
+        details = "C# has no assertion for try_make_point in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         java,
-        reason = "The Java demo tests do not currently cover try_make_point."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for try_make_point in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover try_make_point."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Option<T> around blittable records. Include this case when optional record returns are implemented for Python."
     )
 )]
 #[export]
@@ -285,7 +303,8 @@ pub struct Color {
     directions = "Call `records::blittable::echo_color` through the generated binding and assert a blittable Color crosses the wire and returns unchanged.",
     exclude(
         java,
-        reason = "The Java demo tests do not currently cover Color records."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for Color records in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     )
 )]
 #[export]
@@ -299,7 +318,8 @@ pub fn echo_color(c: Color) -> Color {
     directions = "Call `records::blittable::make_color` through the generated binding and assert make_color returns a Color containing the provided channel values.",
     exclude(
         java,
-        reason = "The Java demo tests do not currently cover Color records."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for Color records in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     )
 )]
 #[export]
@@ -488,12 +508,14 @@ impl DataPoint {
     justification = "Ensure generate_locations returns the requested number of Location records.",
     directions = "Call `records::blittable::generate_locations` through the generated binding and assert generate_locations returns the requested number of Location records.",
     exclude(
-        wasm,
-        reason = "The Wasm demo tests do not currently cover blittable record vector helpers."
+        typescript,
+        reason = ExclusionReason::CoverageGap,
+        details = "TypeScript has no assertion for blittable record vector helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover blittable record vector helpers."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Vec<Record> parameters or returns, even for blittable records. Include this case when record-vector support is implemented for Python."
     )
 )]
 #[export]
@@ -516,12 +538,14 @@ pub fn generate_locations(count: i32) -> Vec<Location> {
     justification = "Ensure process_locations receives a vector of Location records and returns its item count.",
     directions = "Call `records::blittable::process_locations` through the generated binding and assert process_locations receives a vector of Location records and returns its item count.",
     exclude(
-        wasm,
-        reason = "The Wasm demo tests do not currently cover blittable record vector helpers."
+        typescript,
+        reason = ExclusionReason::CoverageGap,
+        details = "TypeScript has no assertion for blittable record vector helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover blittable record vector helpers."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Vec<Record> parameters or returns, even for blittable records. Include this case when record-vector support is implemented for Python."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -529,24 +553,29 @@ pub fn generate_locations(count: i32) -> Vec<Location> {
     justification = "Ensure process_locations treats an empty Location vector as count zero.",
     directions = "Call `records::blittable::process_locations` through the generated binding and assert process_locations treats an empty Location vector as count zero.",
     exclude(
-        apple,
-        reason = "The Apple blittable vector demo does not currently cover the empty Location vector count."
+        swift,
+        reason = ExclusionReason::CoverageGap,
+        details = "Swift has no assertion for the empty Location vector count in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         java,
-        reason = "The Java blittable vector demo does not currently cover the empty Location vector count."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for the empty Location vector count in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin blittable vector demo does not currently cover the empty Location vector count."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for the empty Location vector count in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        wasm,
-        reason = "The Wasm demo tests do not currently cover blittable record vector helpers."
+        typescript,
+        reason = ExclusionReason::CoverageGap,
+        details = "TypeScript has no assertion for blittable record vector helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover blittable record vector helpers."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Vec<Record> parameters or returns, even for blittable records. Include this case when record-vector support is implemented for Python."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -554,24 +583,29 @@ pub fn generate_locations(count: i32) -> Vec<Location> {
     justification = "Ensure process_locations receives host-constructed Location records and returns their item count.",
     directions = "Call `records::blittable::process_locations` through the generated binding and assert process_locations receives host-constructed Location records and returns their item count.",
     exclude(
-        apple,
-        reason = "The Apple blittable vector demo does not currently cover host-constructed Location vectors."
+        swift,
+        reason = ExclusionReason::CoverageGap,
+        details = "Swift has no assertion for host-constructed Location vectors in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         java,
-        reason = "The Java blittable vector demo does not currently cover host-constructed Location vectors."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for host-constructed Location vectors in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin blittable vector demo does not currently cover host-constructed Location vectors."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for host-constructed Location vectors in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        wasm,
-        reason = "The Wasm demo tests do not currently cover blittable record vector helpers."
+        typescript,
+        reason = ExclusionReason::CoverageGap,
+        details = "TypeScript has no assertion for blittable record vector helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover blittable record vector helpers."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Vec<Record> parameters or returns, even for blittable records. Include this case when record-vector support is implemented for Python."
     )
 )]
 #[export]
@@ -585,12 +619,14 @@ pub fn process_locations(locations: Vec<Location>) -> i32 {
     justification = "Ensure sum_ratings receives generated Location records and sums their f64 rating fields.",
     directions = "Call `records::blittable::sum_ratings` through the generated binding and assert sum_ratings receives generated Location records and sums their f64 rating fields.",
     exclude(
-        wasm,
-        reason = "The Wasm demo tests do not currently cover blittable record vector helpers."
+        typescript,
+        reason = ExclusionReason::CoverageGap,
+        details = "TypeScript has no assertion for blittable record vector helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover blittable record vector helpers."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Vec<Record> parameters or returns, even for blittable records. Include this case when record-vector support is implemented for Python."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -598,24 +634,29 @@ pub fn process_locations(locations: Vec<Location>) -> i32 {
     justification = "Ensure sum_ratings receives host-constructed Location records and sums their f64 rating fields.",
     directions = "Call `records::blittable::sum_ratings` through the generated binding and assert sum_ratings receives host-constructed Location records and sums their f64 rating fields.",
     exclude(
-        apple,
-        reason = "The Apple blittable vector demo does not currently cover host-constructed Location vectors."
+        swift,
+        reason = ExclusionReason::CoverageGap,
+        details = "Swift has no assertion for host-constructed Location vectors in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         java,
-        reason = "The Java blittable vector demo does not currently cover host-constructed Location vectors."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for host-constructed Location vectors in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin blittable vector demo does not currently cover host-constructed Location vectors."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for host-constructed Location vectors in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        wasm,
-        reason = "The Wasm demo tests do not currently cover blittable record vector helpers."
+        typescript,
+        reason = ExclusionReason::CoverageGap,
+        details = "TypeScript has no assertion for blittable record vector helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover blittable record vector helpers."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Vec<Record> parameters or returns, even for blittable records. Include this case when record-vector support is implemented for Python."
     )
 )]
 #[export]
@@ -629,12 +670,14 @@ pub fn sum_ratings(locations: Vec<Location>) -> f64 {
     justification = "Ensure generate_trades returns the requested number of Trade records.",
     directions = "Call `records::blittable::generate_trades` through the generated binding and assert generate_trades returns the requested number of Trade records.",
     exclude(
-        wasm,
-        reason = "The Wasm demo tests do not currently cover blittable record vector helpers."
+        typescript,
+        reason = ExclusionReason::CoverageGap,
+        details = "TypeScript has no assertion for blittable record vector helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover blittable record vector helpers."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Vec<Record> parameters or returns, even for blittable records. Include this case when record-vector support is implemented for Python."
     )
 )]
 #[export]
@@ -660,12 +703,14 @@ pub fn generate_trades(count: i32) -> Vec<Trade> {
     justification = "Ensure sum_trade_volumes receives Trade records and sums their i64 volume fields.",
     directions = "Call `records::blittable::sum_trade_volumes` through the generated binding and assert sum_trade_volumes receives Trade records and sums their i64 volume fields.",
     exclude(
-        wasm,
-        reason = "The Wasm demo tests do not currently cover blittable record vector helpers."
+        typescript,
+        reason = ExclusionReason::CoverageGap,
+        details = "TypeScript has no assertion for blittable record vector helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover blittable record vector helpers."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Vec<Record> parameters or returns, even for blittable records. Include this case when record-vector support is implemented for Python."
     )
 )]
 #[export]
@@ -679,12 +724,14 @@ pub fn sum_trade_volumes(trades: Vec<Trade>) -> i64 {
     justification = "Ensure aggregate_location_trade_stats receives Location and Trade vectors together and combines open-location count with total trade volume.",
     directions = "Call `records::blittable::aggregate_location_trade_stats` through the generated binding and assert aggregate_location_trade_stats receives Location and Trade vectors together and combines open-location count with total trade volume.",
     exclude(
-        wasm,
-        reason = "The Wasm demo tests do not currently cover blittable record vector helpers."
+        typescript,
+        reason = ExclusionReason::CoverageGap,
+        details = "TypeScript has no assertion for blittable record vector helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover blittable record vector helpers."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Vec<Record> parameters or returns, even for blittable records. Include this case when record-vector support is implemented for Python."
     )
 )]
 #[export]
@@ -700,12 +747,14 @@ pub fn aggregate_location_trade_stats(locations: Vec<Location>, trades: Vec<Trad
     justification = "Ensure generate_particles returns the requested number of Particle records.",
     directions = "Call `records::blittable::generate_particles` through the generated binding and assert generate_particles returns the requested number of Particle records.",
     exclude(
-        wasm,
-        reason = "The Wasm demo tests do not currently cover blittable record vector helpers."
+        typescript,
+        reason = ExclusionReason::CoverageGap,
+        details = "TypeScript has no assertion for blittable record vector helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover blittable record vector helpers."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Vec<Record> parameters or returns, even for blittable records. Include this case when record-vector support is implemented for Python."
     )
 )]
 #[export]
@@ -732,12 +781,14 @@ pub fn generate_particles(count: i32) -> Vec<Particle> {
     justification = "Ensure sum_particle_masses receives Particle records and sums their f64 mass fields.",
     directions = "Call `records::blittable::sum_particle_masses` through the generated binding and assert sum_particle_masses receives Particle records and sums their f64 mass fields.",
     exclude(
-        wasm,
-        reason = "The Wasm demo tests do not currently cover blittable record vector helpers."
+        typescript,
+        reason = ExclusionReason::CoverageGap,
+        details = "TypeScript has no assertion for blittable record vector helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover blittable record vector helpers."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Vec<Record> parameters or returns, even for blittable records. Include this case when record-vector support is implemented for Python."
     )
 )]
 #[export]
@@ -751,12 +802,14 @@ pub fn sum_particle_masses(particles: Vec<Particle>) -> f64 {
     justification = "Ensure generate_sensor_readings returns the requested number of SensorReading records.",
     directions = "Call `records::blittable::generate_sensor_readings` through the generated binding and assert generate_sensor_readings returns the requested number of SensorReading records.",
     exclude(
-        wasm,
-        reason = "The Wasm demo tests do not currently cover blittable record vector helpers."
+        typescript,
+        reason = ExclusionReason::CoverageGap,
+        details = "TypeScript has no assertion for blittable record vector helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover blittable record vector helpers."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Vec<Record> parameters or returns, even for blittable records. Include this case when record-vector support is implemented for Python."
     )
 )]
 #[export]
@@ -782,12 +835,14 @@ pub fn generate_sensor_readings(count: i32) -> Vec<SensorReading> {
     justification = "Ensure avg_sensor_temperature receives SensorReading records and averages their f64 temperature fields.",
     directions = "Call `records::blittable::avg_sensor_temperature` through the generated binding and assert avg_sensor_temperature receives SensorReading records and averages their f64 temperature fields.",
     exclude(
-        wasm,
-        reason = "The Wasm demo tests do not currently cover blittable record vector helpers."
+        typescript,
+        reason = ExclusionReason::CoverageGap,
+        details = "TypeScript has no assertion for blittable record vector helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover blittable record vector helpers."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Vec<Record> parameters or returns, even for blittable records. Include this case when record-vector support is implemented for Python."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -795,24 +850,29 @@ pub fn generate_sensor_readings(count: i32) -> Vec<SensorReading> {
     justification = "Ensure avg_sensor_temperature treats an empty SensorReading vector as average zero.",
     directions = "Call `records::blittable::avg_sensor_temperature` through the generated binding and assert avg_sensor_temperature treats an empty SensorReading vector as average zero.",
     exclude(
-        apple,
-        reason = "The Apple blittable vector demo does not currently cover empty SensorReading vectors."
+        swift,
+        reason = ExclusionReason::CoverageGap,
+        details = "Swift has no assertion for empty SensorReading vectors in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         java,
-        reason = "The Java blittable vector demo does not currently cover empty SensorReading vectors."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for empty SensorReading vectors in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin blittable vector demo does not currently cover empty SensorReading vectors."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for empty SensorReading vectors in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        wasm,
-        reason = "The Wasm demo tests do not currently cover blittable record vector helpers."
+        typescript,
+        reason = ExclusionReason::CoverageGap,
+        details = "TypeScript has no assertion for blittable record vector helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover blittable record vector helpers."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Vec<Record> parameters or returns, even for blittable records. Include this case when record-vector support is implemented for Python."
     )
 )]
 #[export]
@@ -836,23 +896,28 @@ pub fn avg_sensor_temperature(readings: Vec<SensorReading>) -> f64 {
     directions = "Call `records::blittable::find_location` through the generated binding and assert find_location returns Some(Location) for a positive id.",
     exclude(
         csharp,
-        reason = "The C# blittable record demo does not currently cover find_location."
+        reason = ExclusionReason::CoverageGap,
+        details = "C# has no assertion for find_location in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         java,
-        reason = "The Java blittable record demo does not currently cover find_location."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for find_location in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin blittable record demo does not currently cover find_location."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for find_location in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        wasm,
-        reason = "The Wasm blittable record demo does not currently cover find_location."
+        typescript,
+        reason = ExclusionReason::CoverageGap,
+        details = "TypeScript has no assertion for find_location in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover blittable record vector helpers."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Vec<Record> parameters or returns, even for blittable records. Include this case when record-vector support is implemented for Python."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -861,23 +926,28 @@ pub fn avg_sensor_temperature(readings: Vec<SensorReading>) -> f64 {
     directions = "Call `records::blittable::find_location` through the generated binding and assert find_location returns None for a non-positive id.",
     exclude(
         csharp,
-        reason = "The C# blittable record demo does not currently cover find_location."
+        reason = ExclusionReason::CoverageGap,
+        details = "C# has no assertion for find_location in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         java,
-        reason = "The Java blittable record demo does not currently cover find_location."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for find_location in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin blittable record demo does not currently cover find_location."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for find_location in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        wasm,
-        reason = "The Wasm blittable record demo does not currently cover find_location."
+        typescript,
+        reason = ExclusionReason::CoverageGap,
+        details = "TypeScript has no assertion for find_location in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover blittable record vector helpers."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Vec<Record> parameters or returns, even for blittable records. Include this case when record-vector support is implemented for Python."
     )
 )]
 #[export]
@@ -903,23 +973,28 @@ pub fn find_location(id: i32) -> Option<Location> {
     directions = "Call `records::blittable::find_locations` through the generated binding and assert find_locations returns Some generated Location vector for a positive count.",
     exclude(
         csharp,
-        reason = "The C# blittable record demo does not currently cover find_locations."
+        reason = ExclusionReason::CoverageGap,
+        details = "C# has no assertion for find_locations in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         java,
-        reason = "The Java blittable record demo does not currently cover find_locations."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for find_locations in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin blittable record demo does not currently cover find_locations."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for find_locations in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        wasm,
-        reason = "The Wasm blittable record demo does not currently cover find_locations."
+        typescript,
+        reason = ExclusionReason::CoverageGap,
+        details = "TypeScript has no assertion for find_locations in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover blittable record vector helpers."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Vec<Record> parameters or returns, even for blittable records. Include this case when record-vector support is implemented for Python."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -928,23 +1003,28 @@ pub fn find_location(id: i32) -> Option<Location> {
     directions = "Call `records::blittable::find_locations` through the generated binding and assert find_locations returns None for a non-positive count.",
     exclude(
         csharp,
-        reason = "The C# blittable record demo does not currently cover find_locations."
+        reason = ExclusionReason::CoverageGap,
+        details = "C# has no assertion for find_locations in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         java,
-        reason = "The Java blittable record demo does not currently cover find_locations."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for find_locations in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin blittable record demo does not currently cover find_locations."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for find_locations in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        wasm,
-        reason = "The Wasm blittable record demo does not currently cover find_locations."
+        typescript,
+        reason = ExclusionReason::CoverageGap,
+        details = "TypeScript has no assertion for find_locations in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover blittable record vector helpers."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Vec<Record> parameters or returns, even for blittable records. Include this case when record-vector support is implemented for Python."
     )
 )]
 #[export]

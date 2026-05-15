@@ -18,7 +18,8 @@ pub struct Person {
     directions = "Call `records::with_strings::echo_person` through the generated binding and assert a Person record with string and integer fields crosses the wire and returns unchanged.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover records with string fields."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only primitive-field blittable records. Include this case when records with string fields are implemented for Python."
     )
 )]
 pub fn echo_person(p: Person) -> Person {
@@ -33,7 +34,8 @@ pub fn echo_person(p: Person) -> Person {
     directions = "Call `records::with_strings::make_person` through the generated binding and assert make_person returns a Person containing the provided name and age fields.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover records with string fields."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only primitive-field blittable records. Include this case when records with string fields are implemented for Python."
     )
 )]
 pub fn make_person(name: String, age: u32) -> Person {
@@ -48,7 +50,8 @@ pub fn make_person(name: String, age: u32) -> Person {
     directions = "Call `records::with_strings::greet_person` through the generated binding and assert greet_person formats a greeting from a Person record received over FFI.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover records with string fields."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only primitive-field blittable records. Include this case when records with string fields are implemented for Python."
     )
 )]
 pub fn greet_person(p: Person) -> String {
@@ -72,11 +75,13 @@ pub struct Address {
     directions = "Call `records::with_strings::echo_address` through the generated binding and assert an Address record with multiple string fields crosses the wire and returns unchanged.",
     exclude(
         java,
-        reason = "The Java demo tests do not currently cover Address records."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for Address records in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover records with string fields."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only primitive-field blittable records. Include this case when records with string fields are implemented for Python."
     )
 )]
 pub fn echo_address(a: Address) -> Address {
@@ -91,11 +96,13 @@ pub fn echo_address(a: Address) -> Address {
     directions = "Call `records::with_strings::format_address` through the generated binding and assert format_address receives an Address record and returns a formatted string.",
     exclude(
         java,
-        reason = "The Java demo tests do not currently cover Address records."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for Address records in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover records with string fields."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only primitive-field blittable records. Include this case when records with string fields are implemented for Python."
     )
 )]
 pub fn format_address(a: Address) -> String {

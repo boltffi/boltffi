@@ -7,7 +7,8 @@ use demo_bench_macros::benchmark_candidate;
     directions = "Call `bytes::echo_bytes` through the generated binding and assert a byte buffer crosses the wire and returns unchanged.",
     exclude(
         csharp,
-        reason = "The C# demo currently exercises byte buffers through primitives::vecs::echo_vec_u8, not the dedicated bytes module."
+        reason = ExclusionReason::CoverageGap,
+        details = "C# already exercises byte buffers through primitives::vecs::echo_vec_u8; this case is still waiting on a focused assertion for the dedicated bytes module."
     )
 )]
 #[export]
@@ -22,7 +23,8 @@ pub fn echo_bytes(data: Vec<u8>) -> Vec<u8> {
     directions = "Call `bytes::bytes_length` through the generated binding and assert a byte buffer crosses the wire and returns its element count.",
     exclude(
         csharp,
-        reason = "The C# demo currently exercises byte buffers through primitives::vecs::echo_vec_u8, not the dedicated bytes module."
+        reason = ExclusionReason::CoverageGap,
+        details = "C# already exercises byte buffers through primitives::vecs::echo_vec_u8; this case is still waiting on a focused assertion for the dedicated bytes module."
     )
 )]
 #[export]
@@ -36,7 +38,8 @@ pub fn bytes_length(data: Vec<u8>) -> u32 {
     directions = "Call `bytes::bytes_sum` through the generated binding and assert a byte buffer crosses the wire and returns the sum of its values.",
     exclude(
         csharp,
-        reason = "The C# demo currently exercises byte buffers through primitives::vecs::echo_vec_u8, not the dedicated bytes module."
+        reason = ExclusionReason::CoverageGap,
+        details = "C# already exercises byte buffers through primitives::vecs::echo_vec_u8; this case is still waiting on a focused assertion for the dedicated bytes module."
     )
 )]
 #[export]
@@ -50,7 +53,8 @@ pub fn bytes_sum(data: Vec<u8>) -> u32 {
     directions = "Call `bytes::make_bytes` through the generated binding and assert a requested byte-buffer length crosses the wire and returns sequential values.",
     exclude(
         csharp,
-        reason = "The C# demo currently exercises byte buffers through primitives::vecs::echo_vec_u8, not the dedicated bytes module."
+        reason = ExclusionReason::CoverageGap,
+        details = "C# already exercises byte buffers through primitives::vecs::echo_vec_u8; this case is still waiting on a focused assertion for the dedicated bytes module."
     )
 )]
 #[export]
@@ -64,7 +68,8 @@ pub fn make_bytes(len: u32) -> Vec<u8> {
     directions = "Call `bytes::reverse_bytes` through the generated binding and assert a byte buffer crosses the wire and returns in reverse order.",
     exclude(
         csharp,
-        reason = "The C# demo currently exercises byte buffers through primitives::vecs::echo_vec_u8, not the dedicated bytes module."
+        reason = ExclusionReason::CoverageGap,
+        details = "C# already exercises byte buffers through primitives::vecs::echo_vec_u8; this case is still waiting on a focused assertion for the dedicated bytes module."
     )
 )]
 #[export]

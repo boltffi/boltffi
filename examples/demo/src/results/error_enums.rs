@@ -35,7 +35,8 @@ impl From<UnexpectedFfiCallbackError> for MathError {
     directions = "Call `results::error_enums::checked_divide` through the generated binding and assert checked_divide returns the integer quotient when the divisor is non-zero.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover typed result errors."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently emit Result returns or structured error payloads. Include this case when typed Result support is implemented for Python."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -44,7 +45,8 @@ impl From<UnexpectedFfiCallbackError> for MathError {
     directions = "Call `results::error_enums::checked_divide` through the generated binding and assert checked_divide returns a typed MathError when the divisor is zero.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover typed result errors."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently emit Result returns or structured error payloads. Include this case when typed Result support is implemented for Python."
     )
 )]
 #[export]
@@ -62,7 +64,8 @@ pub fn checked_divide(a: i32, b: i32) -> Result<i32, MathError> {
     directions = "Call `results::error_enums::checked_sqrt` through the generated binding and assert checked_sqrt returns the square root for non-negative floating-point input.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover typed result errors."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently emit Result returns or structured error payloads. Include this case when typed Result support is implemented for Python."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -71,7 +74,8 @@ pub fn checked_divide(a: i32, b: i32) -> Result<i32, MathError> {
     directions = "Call `results::error_enums::checked_sqrt` through the generated binding and assert checked_sqrt returns a typed MathError for negative floating-point input.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover typed result errors."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently emit Result returns or structured error payloads. Include this case when typed Result support is implemented for Python."
     )
 )]
 #[export]
@@ -89,15 +93,18 @@ pub fn checked_sqrt(x: f64) -> Result<f64, MathError> {
     directions = "Call `results::error_enums::checked_add` through the generated binding and assert checked_add returns the sum when the i32 addition does not overflow.",
     exclude(
         kotlin,
-        reason = "The Kotlin demo tests do not currently cover the checked_add success path."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for the checked_add success path in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover typed result errors."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently emit Result returns or structured error payloads. Include this case when typed Result support is implemented for Python."
     ),
     exclude(
-        wasm,
-        reason = "The WASM demo tests do not currently cover the checked_add success path."
+        typescript,
+        reason = ExclusionReason::CoverageGap,
+        details = "TypeScript has no assertion for the checked_add success path in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -106,7 +113,8 @@ pub fn checked_sqrt(x: f64) -> Result<f64, MathError> {
     directions = "Call `results::error_enums::checked_add` through the generated binding and assert checked_add returns a typed MathError when i32 addition overflows.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover typed result errors."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently emit Result returns or structured error payloads. Include this case when typed Result support is implemented for Python."
     )
 )]
 #[export]
@@ -135,7 +143,8 @@ impl std::error::Error for AppError {}
     directions = "Call `results::error_enums::may_fail` through the generated binding and assert may_fail returns an Ok success string when the input is valid.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover structured result errors."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently emit Result returns or structured error payloads. Include this case when typed Result support is implemented for Python."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -144,7 +153,8 @@ impl std::error::Error for AppError {}
     directions = "Call `results::error_enums::may_fail` through the generated binding and assert may_fail returns a structured AppError when the input is invalid.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover structured result errors."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently emit Result returns or structured error payloads. Include this case when typed Result support is implemented for Python."
     )
 )]
 #[export]
@@ -165,7 +175,8 @@ pub fn may_fail(valid: bool) -> Result<String, AppError> {
     directions = "Call `results::error_enums::divide_app` through the generated binding and assert divide_app returns the integer quotient when the divisor is non-zero.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover structured result errors."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently emit Result returns or structured error payloads. Include this case when typed Result support is implemented for Python."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -174,7 +185,8 @@ pub fn may_fail(valid: bool) -> Result<String, AppError> {
     directions = "Call `results::error_enums::divide_app` through the generated binding and assert divide_app returns a structured AppError when the divisor is zero.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover structured result errors."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently emit Result returns or structured error payloads. Include this case when typed Result support is implemented for Python."
     )
 )]
 #[export]
@@ -220,7 +232,8 @@ impl std::error::Error for ValidationError {}
     directions = "Call `results::error_enums::validate_username` through the generated binding and assert validate_username returns the provided name when it satisfies all validation rules.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover repr-int result errors."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently emit Result returns or structured error payloads. Include this case when typed Result support is implemented for Python."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -229,7 +242,8 @@ impl std::error::Error for ValidationError {}
     directions = "Call `results::error_enums::validate_username` through the generated binding and assert validate_username returns the TooShort typed error when the name has fewer than three characters.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover repr-int result errors."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently emit Result returns or structured error payloads. Include this case when typed Result support is implemented for Python."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -238,7 +252,8 @@ impl std::error::Error for ValidationError {}
     directions = "Call `results::error_enums::validate_username` through the generated binding and assert validate_username returns the TooLong typed error when the name has more than twenty characters.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover repr-int result errors."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently emit Result returns or structured error payloads. Include this case when typed Result support is implemented for Python."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -247,7 +262,8 @@ impl std::error::Error for ValidationError {}
     directions = "Call `results::error_enums::validate_username` through the generated binding and assert validate_username returns the InvalidFormat typed error when the name contains spaces.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover repr-int result errors."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently emit Result returns or structured error payloads. Include this case when typed Result support is implemented for Python."
     )
 )]
 #[export]
@@ -306,19 +322,23 @@ pub struct BenchmarkResponse {
     directions = "Call `results::error_enums::process_value` through the generated binding and assert process_value returns the Success data enum variant for positive input.",
     exclude(
         csharp,
-        reason = "The C# demo tests do not currently cover ApiResult data enum results."
+        reason = ExclusionReason::CoverageGap,
+        details = "C# has no assertion for ApiResult data enum results in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         java,
-        reason = "The Java demo tests do not currently cover ApiResult data enum results."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for ApiResult data enum results in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin demo tests do not currently cover ApiResult data enum results."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for ApiResult data enum results in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover ApiResult data enum results."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently emit Result returns or structured error payloads. Include this case when typed Result support is implemented for Python."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -327,19 +347,23 @@ pub struct BenchmarkResponse {
     directions = "Call `results::error_enums::process_value` through the generated binding and assert process_value returns the ErrorCode data enum variant for zero input.",
     exclude(
         csharp,
-        reason = "The C# demo tests do not currently cover ApiResult data enum results."
+        reason = ExclusionReason::CoverageGap,
+        details = "C# has no assertion for ApiResult data enum results in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         java,
-        reason = "The Java demo tests do not currently cover ApiResult data enum results."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for ApiResult data enum results in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin demo tests do not currently cover ApiResult data enum results."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for ApiResult data enum results in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover ApiResult data enum results."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently emit Result returns or structured error payloads. Include this case when typed Result support is implemented for Python."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -348,23 +372,28 @@ pub struct BenchmarkResponse {
     directions = "Call `results::error_enums::process_value` through the generated binding and assert process_value returns the ErrorWithData data enum variant for negative input.",
     exclude(
         csharp,
-        reason = "The C# demo tests do not currently cover ApiResult data enum results."
+        reason = ExclusionReason::CoverageGap,
+        details = "C# has no assertion for ApiResult data enum results in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         java,
-        reason = "The Java demo tests do not currently cover ApiResult data enum results."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for ApiResult data enum results in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin demo tests do not currently cover ApiResult data enum results."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for ApiResult data enum results in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover ApiResult data enum results."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently emit Result returns or structured error payloads. Include this case when typed Result support is implemented for Python."
     ),
     exclude(
-        wasm,
-        reason = "The WASM demo tests do not currently cover the ErrorWithData process_value branch."
+        typescript,
+        reason = ExclusionReason::CoverageGap,
+        details = "TypeScript has no assertion for the ErrorWithData process_value branch in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     )
 )]
 #[export]
@@ -387,19 +416,23 @@ pub fn process_value(value: i32) -> ApiResult {
     directions = "Call `results::error_enums::api_result_is_success` through the generated binding and assert api_result_is_success returns true for the Success data enum variant.",
     exclude(
         csharp,
-        reason = "The C# demo tests do not currently cover ApiResult data enum results."
+        reason = ExclusionReason::CoverageGap,
+        details = "C# has no assertion for ApiResult data enum results in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         java,
-        reason = "The Java demo tests do not currently cover ApiResult data enum results."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for ApiResult data enum results in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin demo tests do not currently cover ApiResult data enum results."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for ApiResult data enum results in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover ApiResult data enum results."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently emit Result returns or structured error payloads. Include this case when typed Result support is implemented for Python."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -408,19 +441,23 @@ pub fn process_value(value: i32) -> ApiResult {
     directions = "Call `results::error_enums::api_result_is_success` through the generated binding and assert api_result_is_success returns false for non-success data enum variants.",
     exclude(
         csharp,
-        reason = "The C# demo tests do not currently cover ApiResult data enum results."
+        reason = ExclusionReason::CoverageGap,
+        details = "C# has no assertion for ApiResult data enum results in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         java,
-        reason = "The Java demo tests do not currently cover ApiResult data enum results."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for ApiResult data enum results in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin demo tests do not currently cover ApiResult data enum results."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for ApiResult data enum results in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover ApiResult data enum results."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently emit Result returns or structured error payloads. Include this case when typed Result support is implemented for Python."
     )
 )]
 #[export]
@@ -434,19 +471,23 @@ pub fn api_result_is_success(result: ApiResult) -> bool {
     directions = "Call `results::error_enums::try_compute` through the generated binding and assert try_compute returns an Ok value containing positive input doubled.",
     exclude(
         csharp,
-        reason = "The C# demo tests do not currently cover ComputeError data enum results."
+        reason = ExclusionReason::CoverageGap,
+        details = "C# has no assertion for ComputeError data enum results in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         java,
-        reason = "The Java demo tests do not currently cover ComputeError data enum results."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for ComputeError data enum results in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin demo tests do not currently cover ComputeError data enum results."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for ComputeError data enum results in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover ComputeError data enum results."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently emit Result returns or structured error payloads. Include this case when typed Result support is implemented for Python."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -455,19 +496,23 @@ pub fn api_result_is_success(result: ApiResult) -> bool {
     directions = "Call `results::error_enums::try_compute` through the generated binding and assert try_compute returns the Overflow typed error for negative input.",
     exclude(
         csharp,
-        reason = "The C# demo tests do not currently cover ComputeError data enum results."
+        reason = ExclusionReason::CoverageGap,
+        details = "C# has no assertion for ComputeError data enum results in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         java,
-        reason = "The Java demo tests do not currently cover ComputeError data enum results."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for ComputeError data enum results in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin demo tests do not currently cover ComputeError data enum results."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for ComputeError data enum results in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover ComputeError data enum results."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently emit Result returns or structured error payloads. Include this case when typed Result support is implemented for Python."
     )
 )]
 #[export]
@@ -487,19 +532,23 @@ pub fn try_compute(value: i32) -> Result<i32, ComputeError> {
     directions = "Call `results::error_enums::create_success_response` through the generated binding and assert create_success_response returns a BenchmarkResponse carrying an Ok DataPoint result.",
     exclude(
         csharp,
-        reason = "The C# demo tests do not currently cover BenchmarkResponse result fields."
+        reason = ExclusionReason::CoverageGap,
+        details = "C# has no assertion for BenchmarkResponse result fields in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         java,
-        reason = "The Java demo tests do not currently cover BenchmarkResponse result fields."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for BenchmarkResponse result fields in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin demo tests do not currently cover BenchmarkResponse result fields."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for BenchmarkResponse result fields in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover BenchmarkResponse result fields."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently emit Result returns or structured error payloads. Include this case when typed Result support is implemented for Python."
     )
 )]
 #[export]
@@ -516,19 +565,23 @@ pub fn create_success_response(request_id: i64, point: DataPoint) -> BenchmarkRe
     directions = "Call `results::error_enums::create_error_response` through the generated binding and assert create_error_response returns or surfaces a BenchmarkResponse carrying an Err ComputeError result.",
     exclude(
         csharp,
-        reason = "The C# demo tests do not currently cover BenchmarkResponse result fields."
+        reason = ExclusionReason::CoverageGap,
+        details = "C# has no assertion for BenchmarkResponse result fields in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         java,
-        reason = "The Java demo tests do not currently cover BenchmarkResponse result fields."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for BenchmarkResponse result fields in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin demo tests do not currently cover BenchmarkResponse result fields."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for BenchmarkResponse result fields in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover BenchmarkResponse result fields."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently emit Result returns or structured error payloads. Include this case when typed Result support is implemented for Python."
     )
 )]
 #[export]
@@ -545,19 +598,23 @@ pub fn create_error_response(request_id: i64, error: ComputeError) -> BenchmarkR
     directions = "Call `results::error_enums::is_response_success` through the generated binding and assert is_response_success returns true for a BenchmarkResponse carrying an Ok result.",
     exclude(
         csharp,
-        reason = "The C# demo tests do not currently cover BenchmarkResponse result fields."
+        reason = ExclusionReason::CoverageGap,
+        details = "C# has no assertion for BenchmarkResponse result fields in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         java,
-        reason = "The Java demo tests do not currently cover BenchmarkResponse result fields."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for BenchmarkResponse result fields in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin demo tests do not currently cover BenchmarkResponse result fields."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for BenchmarkResponse result fields in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover BenchmarkResponse result fields."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently emit Result returns or structured error payloads. Include this case when typed Result support is implemented for Python."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -566,19 +623,23 @@ pub fn create_error_response(request_id: i64, error: ComputeError) -> BenchmarkR
     directions = "Call `results::error_enums::is_response_success` through the generated binding and assert is_response_success returns false for a BenchmarkResponse carrying an Err result.",
     exclude(
         csharp,
-        reason = "The C# demo tests do not currently cover BenchmarkResponse result fields."
+        reason = ExclusionReason::CoverageGap,
+        details = "C# has no assertion for BenchmarkResponse result fields in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         java,
-        reason = "The Java demo tests do not currently cover BenchmarkResponse result fields."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for BenchmarkResponse result fields in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin demo tests do not currently cover BenchmarkResponse result fields."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for BenchmarkResponse result fields in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover BenchmarkResponse result fields."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently emit Result returns or structured error payloads. Include this case when typed Result support is implemented for Python."
     )
 )]
 #[export]
@@ -592,19 +653,23 @@ pub fn is_response_success(response: BenchmarkResponse) -> bool {
     directions = "Call `results::error_enums::get_response_value` through the generated binding and assert get_response_value returns Some(DataPoint) for a BenchmarkResponse carrying an Ok result.",
     exclude(
         csharp,
-        reason = "The C# demo tests do not currently cover BenchmarkResponse result fields."
+        reason = ExclusionReason::CoverageGap,
+        details = "C# has no assertion for BenchmarkResponse result fields in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         java,
-        reason = "The Java demo tests do not currently cover BenchmarkResponse result fields."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for BenchmarkResponse result fields in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin demo tests do not currently cover BenchmarkResponse result fields."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for BenchmarkResponse result fields in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover BenchmarkResponse result fields."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently emit Result returns or structured error payloads. Include this case when typed Result support is implemented for Python."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -613,19 +678,23 @@ pub fn is_response_success(response: BenchmarkResponse) -> bool {
     directions = "Call `results::error_enums::get_response_value` through the generated binding and assert get_response_value returns None for a BenchmarkResponse carrying an Err result.",
     exclude(
         csharp,
-        reason = "The C# demo tests do not currently cover BenchmarkResponse result fields."
+        reason = ExclusionReason::CoverageGap,
+        details = "C# has no assertion for BenchmarkResponse result fields in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         java,
-        reason = "The Java demo tests do not currently cover BenchmarkResponse result fields."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for BenchmarkResponse result fields in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin demo tests do not currently cover BenchmarkResponse result fields."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for BenchmarkResponse result fields in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover BenchmarkResponse result fields."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently emit Result returns or structured error payloads. Include this case when typed Result support is implemented for Python."
     )
 )]
 #[export]

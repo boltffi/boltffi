@@ -11,7 +11,8 @@ use crate::results::ApiResult;
     directions = "Call `options::complex::echo_optional_string` through the generated binding and assert an Option<String> carrying Some crosses the wire as UTF-8 and returns unchanged.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover Option surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -20,7 +21,8 @@ use crate::results::ApiResult;
     directions = "Call `options::complex::echo_optional_string` through the generated binding and assert an Option<String> carrying None crosses the wire and returns None.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover Option surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
     )
 )]
 #[export]
@@ -34,7 +36,8 @@ pub fn echo_optional_string(v: Option<String>) -> Option<String> {
     directions = "Call `options::complex::is_some_string` through the generated binding and assert is_some_string returns true when an Option<String> is Some.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover Option surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -43,7 +46,8 @@ pub fn echo_optional_string(v: Option<String>) -> Option<String> {
     directions = "Call `options::complex::is_some_string` through the generated binding and assert is_some_string returns false when an Option<String> is None.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover Option surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
     )
 )]
 #[export]
@@ -57,7 +61,8 @@ pub fn is_some_string(v: Option<String>) -> bool {
     directions = "Call `options::complex::echo_optional_point` through the generated binding and assert an Option<Point> carrying Some crosses the wire and returns the same Point.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover Option surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -66,7 +71,8 @@ pub fn is_some_string(v: Option<String>) -> bool {
     directions = "Call `options::complex::echo_optional_point` through the generated binding and assert an Option<Point> carrying None crosses the wire and returns None.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover Option surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
     )
 )]
 #[export]
@@ -81,7 +87,8 @@ pub fn echo_optional_point(v: Option<Point>) -> Option<Point> {
     directions = "Call `options::complex::make_some_point` through the generated binding and assert make_some_point returns Some containing a Point built from coordinates.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover Option surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
     )
 )]
 #[export]
@@ -95,7 +102,8 @@ pub fn make_some_point(x: f64, y: f64) -> Option<Point> {
     directions = "Call `options::complex::make_none_point` through the generated binding and assert make_none_point returns None for Option<Point>.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover Option surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
     )
 )]
 #[export]
@@ -109,7 +117,8 @@ pub fn make_none_point() -> Option<Point> {
     directions = "Call `options::complex::echo_optional_status` through the generated binding and assert an Option<Status> carrying Some crosses the wire and returns the same enum value.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover Option surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -118,7 +127,8 @@ pub fn make_none_point() -> Option<Point> {
     directions = "Call `options::complex::echo_optional_status` through the generated binding and assert an Option<Status> carrying None crosses the wire and returns None.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover Option surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
     )
 )]
 #[export]
@@ -132,7 +142,8 @@ pub fn echo_optional_status(v: Option<Status>) -> Option<Status> {
     directions = "Call `options::complex::echo_optional_vec` through the generated binding and assert an Option<Vec<i32>> carrying Some crosses the wire and returns the same vector.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover Option surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -141,7 +152,8 @@ pub fn echo_optional_status(v: Option<Status>) -> Option<Status> {
     directions = "Call `options::complex::echo_optional_vec` through the generated binding and assert an Option<Vec<i32>> carrying None crosses the wire and returns None.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover Option surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -149,24 +161,29 @@ pub fn echo_optional_status(v: Option<Status>) -> Option<Status> {
     justification = "Ensure an Option<Vec<i32>> carrying Some(empty vector) remains distinct from None.",
     directions = "Call `options::complex::echo_optional_vec` through the generated binding and assert an Option<Vec<i32>> carrying Some(empty vector) remains distinct from None.",
     exclude(
-        apple,
-        reason = "The Apple option demo does not currently cover Some(empty Vec) for echo_optional_vec."
+        swift,
+        reason = ExclusionReason::CoverageGap,
+        details = "Swift has no assertion for Some(empty Vec) for echo_optional_vec in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         java,
-        reason = "The Java option demo does not currently cover Some(empty Vec) for echo_optional_vec."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for Some(empty Vec) for echo_optional_vec in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin option demo does not currently cover Some(empty Vec) for echo_optional_vec."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for Some(empty Vec) for echo_optional_vec in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover Option surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
     ),
     exclude(
-        wasm,
-        reason = "The wasm option demo does not currently cover Some(empty Vec) for echo_optional_vec."
+        typescript,
+        reason = ExclusionReason::CoverageGap,
+        details = "TypeScript has no assertion for Some(empty Vec) for echo_optional_vec in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     )
 )]
 #[export]
@@ -180,7 +197,8 @@ pub fn echo_optional_vec(v: Option<Vec<i32>>) -> Option<Vec<i32>> {
     directions = "Call `options::complex::optional_vec_length` through the generated binding and assert optional_vec_length returns Some(length) when an Option<Vec<i32>> contains a vector.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover Option surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -189,7 +207,8 @@ pub fn echo_optional_vec(v: Option<Vec<i32>>) -> Option<Vec<i32>> {
     directions = "Call `options::complex::optional_vec_length` through the generated binding and assert optional_vec_length returns None when the vector option is absent.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover Option surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
     )
 )]
 #[export]
@@ -204,19 +223,23 @@ pub fn optional_vec_length(v: Option<Vec<i32>>) -> Option<u32> {
     directions = "Call `options::complex::find_name` through the generated binding and assert find_name returns Some generated string when the id is positive.",
     exclude(
         java,
-        reason = "The Java option demo does not currently cover find_name."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for find_name in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin option demo does not currently cover find_name."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for find_name in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover Option surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
     ),
     exclude(
-        wasm,
-        reason = "The wasm option demo does not currently cover find_name."
+        typescript,
+        reason = ExclusionReason::CoverageGap,
+        details = "TypeScript has no assertion for find_name in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -225,19 +248,23 @@ pub fn optional_vec_length(v: Option<Vec<i32>>) -> Option<u32> {
     directions = "Call `options::complex::find_name` through the generated binding and assert find_name returns None when the id is not positive.",
     exclude(
         java,
-        reason = "The Java option demo does not currently cover find_name."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for find_name in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin option demo does not currently cover find_name."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for find_name in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover Option surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
     ),
     exclude(
-        wasm,
-        reason = "The wasm option demo does not currently cover find_name."
+        typescript,
+        reason = ExclusionReason::CoverageGap,
+        details = "TypeScript has no assertion for find_name in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     )
 )]
 #[export]
@@ -256,19 +283,23 @@ pub fn find_name(id: i32) -> Option<String> {
     directions = "Call `options::complex::find_numbers` through the generated binding and assert find_numbers returns Some vector of i32 values when count is positive.",
     exclude(
         java,
-        reason = "The Java option demo does not currently cover find_numbers."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for find_numbers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin option demo does not currently cover find_numbers."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for find_numbers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover Option surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
     ),
     exclude(
-        wasm,
-        reason = "The wasm option demo does not currently cover find_numbers."
+        typescript,
+        reason = ExclusionReason::CoverageGap,
+        details = "TypeScript has no assertion for find_numbers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -277,19 +308,23 @@ pub fn find_name(id: i32) -> Option<String> {
     directions = "Call `options::complex::find_numbers` through the generated binding and assert find_numbers returns None when count is not positive.",
     exclude(
         java,
-        reason = "The Java option demo does not currently cover find_numbers."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for find_numbers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin option demo does not currently cover find_numbers."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for find_numbers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover Option surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
     ),
     exclude(
-        wasm,
-        reason = "The wasm option demo does not currently cover find_numbers."
+        typescript,
+        reason = ExclusionReason::CoverageGap,
+        details = "TypeScript has no assertion for find_numbers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     )
 )]
 #[export]
@@ -308,19 +343,23 @@ pub fn find_numbers(count: i32) -> Option<Vec<i32>> {
     directions = "Call `options::complex::find_names` through the generated binding and assert find_names returns Some vector of generated strings when count is positive.",
     exclude(
         java,
-        reason = "The Java option demo does not currently cover find_names."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for find_names in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin option demo does not currently cover find_names."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for find_names in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover Option surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
     ),
     exclude(
-        wasm,
-        reason = "The wasm option demo does not currently cover find_names."
+        typescript,
+        reason = ExclusionReason::CoverageGap,
+        details = "TypeScript has no assertion for find_names in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -329,19 +368,23 @@ pub fn find_numbers(count: i32) -> Option<Vec<i32>> {
     directions = "Call `options::complex::find_names` through the generated binding and assert find_names returns None when count is not positive.",
     exclude(
         java,
-        reason = "The Java option demo does not currently cover find_names."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for find_names in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin option demo does not currently cover find_names."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for find_names in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover Option surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
     ),
     exclude(
-        wasm,
-        reason = "The wasm option demo does not currently cover find_names."
+        typescript,
+        reason = ExclusionReason::CoverageGap,
+        details = "TypeScript has no assertion for find_names in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     )
 )]
 #[export]
@@ -359,15 +402,18 @@ pub fn find_names(count: i32) -> Option<Vec<String>> {
     directions = "Call `options::complex::find_api_result` through the generated binding and assert find_api_result returns Some(ApiResult::Success) for code 0.",
     exclude(
         java,
-        reason = "The Java option demo does not currently cover find_api_result."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for find_api_result in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin option demo does not currently cover find_api_result."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for find_api_result in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover Option surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -376,15 +422,18 @@ pub fn find_names(count: i32) -> Option<Vec<String>> {
     directions = "Call `options::complex::find_api_result` through the generated binding and assert find_api_result returns Some(ApiResult::ErrorCode) for code 1.",
     exclude(
         java,
-        reason = "The Java option demo does not currently cover find_api_result."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for find_api_result in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin option demo does not currently cover find_api_result."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for find_api_result in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover Option surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -393,19 +442,23 @@ pub fn find_names(count: i32) -> Option<Vec<String>> {
     directions = "Call `options::complex::find_api_result` through the generated binding and assert find_api_result returns Some(ApiResult::ErrorWithData) for code 2.",
     exclude(
         java,
-        reason = "The Java option demo does not currently cover find_api_result."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for find_api_result in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin option demo does not currently cover find_api_result."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for find_api_result in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover Option surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
     ),
     exclude(
-        wasm,
-        reason = "The wasm option demo does not currently cover the ErrorWithData find_api_result branch."
+        typescript,
+        reason = ExclusionReason::CoverageGap,
+        details = "TypeScript has no assertion for the ErrorWithData find_api_result branch in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -414,15 +467,18 @@ pub fn find_names(count: i32) -> Option<Vec<String>> {
     directions = "Call `options::complex::find_api_result` through the generated binding and assert find_api_result returns None when the code does not map to an ApiResult variant.",
     exclude(
         java,
-        reason = "The Java option demo does not currently cover find_api_result."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for find_api_result in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin option demo does not currently cover find_api_result."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for find_api_result in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover Option surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
     )
 )]
 #[export]
@@ -449,7 +505,8 @@ pub fn find_api_result(code: i32) -> Option<ApiResult> {
     directions = "Call `options::complex::echo_vec_optional_i32` through the generated binding and assert a Vec<Option<i32>> carrying mixed Some and None elements crosses the wire and returns unchanged.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover Option surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -458,7 +515,8 @@ pub fn find_api_result(code: i32) -> Option<ApiResult> {
     directions = "Call `options::complex::echo_vec_optional_i32` through the generated binding and assert an empty Vec<Option<i32>> crosses the wire and returns empty.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover Option surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -467,15 +525,18 @@ pub fn find_api_result(code: i32) -> Option<ApiResult> {
     directions = "Call `options::complex::echo_vec_optional_i32` through the generated binding and assert a Vec<Option<i32>> carrying only None elements crosses the wire and preserves each absent slot.",
     exclude(
         java,
-        reason = "The Java option demo does not currently cover all-None Vec<Option<i32>>."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for all-None Vec<Option<i32>> in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover Option surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
     ),
     exclude(
-        wasm,
-        reason = "The wasm option demo does not currently cover all-None Vec<Option<i32>>."
+        typescript,
+        reason = ExclusionReason::CoverageGap,
+        details = "TypeScript has no assertion for all-None Vec<Option<i32>> in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     )
 )]
 #[export]

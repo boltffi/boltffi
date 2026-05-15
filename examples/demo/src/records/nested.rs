@@ -19,7 +19,8 @@ pub struct Line {
     directions = "Call `records::nested::echo_line` through the generated binding and assert a Line record containing two Point records crosses the wire and returns unchanged.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover nested records."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only primitive-field blittable records. Include this case when nested records are implemented for Python."
     )
 )]
 pub fn echo_line(l: Line) -> Line {
@@ -34,7 +35,8 @@ pub fn echo_line(l: Line) -> Line {
     directions = "Call `records::nested::make_line` through the generated binding and assert make_line builds a Line with nested Point fields from four coordinate values.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover nested records."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only primitive-field blittable records. Include this case when nested records are implemented for Python."
     )
 )]
 pub fn make_line(x1: f64, y1: f64, x2: f64, y2: f64) -> Line {
@@ -52,7 +54,8 @@ pub fn make_line(x1: f64, y1: f64, x2: f64, y2: f64) -> Line {
     directions = "Call `records::nested::line_length` through the generated binding and assert line_length receives a Line record and returns the distance between its nested Points.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover nested records."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only primitive-field blittable records. Include this case when nested records are implemented for Python."
     )
 )]
 pub fn line_length(l: Line) -> f64 {
@@ -85,11 +88,13 @@ pub struct Rect {
     directions = "Call `records::nested::echo_rect` through the generated binding and assert a Rect record containing Point and Dimensions records crosses the wire and returns unchanged.",
     exclude(
         java,
-        reason = "The Java demo tests do not currently cover Rect records."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for Rect records in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover nested records."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only primitive-field blittable records. Include this case when nested records are implemented for Python."
     )
 )]
 pub fn echo_rect(r: Rect) -> Rect {
@@ -104,11 +109,13 @@ pub fn echo_rect(r: Rect) -> Rect {
     directions = "Call `records::nested::rect_area` through the generated binding and assert rect_area receives a Rect record and multiplies its nested width and height fields.",
     exclude(
         java,
-        reason = "The Java demo tests do not currently cover Rect records."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for Rect records in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover nested records."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only primitive-field blittable records. Include this case when nested records are implemented for Python."
     )
 )]
 pub fn rect_area(r: Rect) -> f64 {

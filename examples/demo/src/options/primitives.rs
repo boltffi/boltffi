@@ -8,7 +8,8 @@ use demo_bench_macros::benchmark_candidate;
     directions = "Call `options::primitives::echo_optional_i32` through the generated binding and assert an Option<i32> carrying Some crosses the wire and returns the same value.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover Option surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -17,7 +18,8 @@ use demo_bench_macros::benchmark_candidate;
     directions = "Call `options::primitives::echo_optional_i32` through the generated binding and assert an Option<i32> carrying None crosses the wire and returns None.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover Option surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
     )
 )]
 #[export]
@@ -31,11 +33,13 @@ pub fn echo_optional_i32(v: Option<i32>) -> Option<i32> {
     directions = "Call `options::primitives::echo_optional_f64` through the generated binding and assert an Option<f64> carrying Some crosses the wire and returns the same value.",
     exclude(
         java,
-        reason = "The Java option demo does not currently cover Option<f64>."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for Option<f64> in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover Option surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -44,11 +48,13 @@ pub fn echo_optional_i32(v: Option<i32>) -> Option<i32> {
     directions = "Call `options::primitives::echo_optional_f64` through the generated binding and assert an Option<f64> carrying None crosses the wire and returns None.",
     exclude(
         java,
-        reason = "The Java option demo does not currently cover Option<f64>."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for Option<f64> in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover Option surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
     )
 )]
 #[export]
@@ -62,11 +68,13 @@ pub fn echo_optional_f64(v: Option<f64>) -> Option<f64> {
     directions = "Call `options::primitives::echo_optional_bool` through the generated binding and assert an Option<bool> carrying Some crosses the wire and returns the same value.",
     exclude(
         java,
-        reason = "The Java option demo does not currently cover Option<bool>."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for Option<bool> in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover Option surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -75,11 +83,13 @@ pub fn echo_optional_f64(v: Option<f64>) -> Option<f64> {
     directions = "Call `options::primitives::echo_optional_bool` through the generated binding and assert an Option<bool> carrying None crosses the wire and returns None.",
     exclude(
         java,
-        reason = "The Java option demo does not currently cover Option<bool>."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for Option<bool> in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover Option surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
     )
 )]
 #[export]
@@ -93,7 +103,8 @@ pub fn echo_optional_bool(v: Option<bool>) -> Option<bool> {
     directions = "Call `options::primitives::unwrap_or_default_i32` through the generated binding and assert unwrap_or_default_i32 returns the contained value when Option<i32> is Some.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover Option surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -102,7 +113,8 @@ pub fn echo_optional_bool(v: Option<bool>) -> Option<bool> {
     directions = "Call `options::primitives::unwrap_or_default_i32` through the generated binding and assert unwrap_or_default_i32 returns the fallback when Option<i32> is None.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover Option surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
     )
 )]
 #[export]
@@ -116,7 +128,8 @@ pub fn unwrap_or_default_i32(v: Option<i32>, fallback: i32) -> i32 {
     directions = "Call `options::primitives::make_some_i32` through the generated binding and assert make_some_i32 returns Some containing the provided i32 value.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover Option surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
     )
 )]
 #[export]
@@ -130,7 +143,8 @@ pub fn make_some_i32(v: i32) -> Option<i32> {
     directions = "Call `options::primitives::make_none_i32` through the generated binding and assert make_none_i32 returns None for Option<i32>.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover Option surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
     )
 )]
 #[export]
@@ -144,7 +158,8 @@ pub fn make_none_i32() -> Option<i32> {
     directions = "Call `options::primitives::double_if_some` through the generated binding and assert double_if_some doubles the contained i32 when the option is Some.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover Option surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -153,7 +168,8 @@ pub fn make_none_i32() -> Option<i32> {
     directions = "Call `options::primitives::double_if_some` through the generated binding and assert double_if_some preserves None rather than producing a value.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover Option surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
     )
 )]
 #[export]
@@ -168,19 +184,23 @@ pub fn double_if_some(v: Option<i32>) -> Option<i32> {
     directions = "Call `options::primitives::find_even` through the generated binding and assert find_even returns Some containing the input when the i32 value is even.",
     exclude(
         java,
-        reason = "The Java option demo does not currently cover find_even."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for find_even in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin option demo does not currently cover find_even."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for find_even in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover Option surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
     ),
     exclude(
-        wasm,
-        reason = "The wasm option demo does not currently cover find_even."
+        typescript,
+        reason = ExclusionReason::CoverageGap,
+        details = "TypeScript has no assertion for find_even in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -189,19 +209,23 @@ pub fn double_if_some(v: Option<i32>) -> Option<i32> {
     directions = "Call `options::primitives::find_even` through the generated binding and assert find_even returns None when the i32 value is odd.",
     exclude(
         java,
-        reason = "The Java option demo does not currently cover find_even."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for find_even in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin option demo does not currently cover find_even."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for find_even in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover Option surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
     ),
     exclude(
-        wasm,
-        reason = "The wasm option demo does not currently cover find_even."
+        typescript,
+        reason = ExclusionReason::CoverageGap,
+        details = "TypeScript has no assertion for find_even in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     )
 )]
 #[export]
@@ -216,19 +240,23 @@ pub fn find_even(value: i32) -> Option<i32> {
     directions = "Call `options::primitives::find_positive_i64` through the generated binding and assert find_positive_i64 returns Some containing the input when the i64 value is positive.",
     exclude(
         java,
-        reason = "The Java option demo does not currently cover find_positive_i64."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for find_positive_i64 in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin option demo does not currently cover find_positive_i64."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for find_positive_i64 in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover Option surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
     ),
     exclude(
-        wasm,
-        reason = "The wasm option demo does not currently cover find_positive_i64."
+        typescript,
+        reason = ExclusionReason::CoverageGap,
+        details = "TypeScript has no assertion for find_positive_i64 in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -237,19 +265,23 @@ pub fn find_even(value: i32) -> Option<i32> {
     directions = "Call `options::primitives::find_positive_i64` through the generated binding and assert find_positive_i64 returns None when the i64 value is zero or negative.",
     exclude(
         java,
-        reason = "The Java option demo does not currently cover find_positive_i64."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for find_positive_i64 in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin option demo does not currently cover find_positive_i64."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for find_positive_i64 in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover Option surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
     ),
     exclude(
-        wasm,
-        reason = "The wasm option demo does not currently cover find_positive_i64."
+        typescript,
+        reason = ExclusionReason::CoverageGap,
+        details = "TypeScript has no assertion for find_positive_i64 in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     )
 )]
 #[export]
@@ -264,19 +296,23 @@ pub fn find_positive_i64(value: i64) -> Option<i64> {
     directions = "Call `options::primitives::find_positive_f64` through the generated binding and assert find_positive_f64 returns Some containing the input when the f64 value is positive.",
     exclude(
         java,
-        reason = "The Java option demo does not currently cover find_positive_f64."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for find_positive_f64 in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin option demo does not currently cover find_positive_f64."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for find_positive_f64 in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover Option surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
     ),
     exclude(
-        wasm,
-        reason = "The wasm option demo does not currently cover find_positive_f64."
+        typescript,
+        reason = ExclusionReason::CoverageGap,
+        details = "TypeScript has no assertion for find_positive_f64 in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -285,19 +321,23 @@ pub fn find_positive_i64(value: i64) -> Option<i64> {
     directions = "Call `options::primitives::find_positive_f64` through the generated binding and assert find_positive_f64 returns None when the f64 value is zero or negative.",
     exclude(
         java,
-        reason = "The Java option demo does not currently cover find_positive_f64."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for find_positive_f64 in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin option demo does not currently cover find_positive_f64."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for find_positive_f64 in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover Option surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
     ),
     exclude(
-        wasm,
-        reason = "The wasm option demo does not currently cover find_positive_f64."
+        typescript,
+        reason = ExclusionReason::CoverageGap,
+        details = "TypeScript has no assertion for find_positive_f64 in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     )
 )]
 #[export]

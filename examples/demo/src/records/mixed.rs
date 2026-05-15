@@ -49,11 +49,13 @@ impl MixedRecord {
     directions = "Call `records::mixed::echo_mixed_record` through the generated binding and assert a MixedRecord composed from strings, records, enums, options, and vectors crosses the wire and returns unchanged.",
     exclude(
         csharp,
-        reason = "The C# demo currently covers MixedRecord through class and async APIs, not the records::mixed free functions."
+        reason = ExclusionReason::CoverageGap,
+        details = "C# already exercises MixedRecord through class and async APIs; this case is still waiting on a focused assertion for the records::mixed free functions."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover mixed records."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only primitive-field blittable records. Include this case when non-blittable records are implemented for Python."
     )
 )]
 pub fn echo_mixed_record(record: MixedRecord) -> MixedRecord {
@@ -67,11 +69,13 @@ pub fn echo_mixed_record(record: MixedRecord) -> MixedRecord {
     directions = "Call `records::mixed::make_mixed_record` through the generated binding and assert make_mixed_record constructs a MixedRecord from nested records, data enums, repr-int enums, options, and vectors.",
     exclude(
         csharp,
-        reason = "The C# demo currently covers MixedRecord through class and async APIs, not the records::mixed free functions."
+        reason = ExclusionReason::CoverageGap,
+        details = "C# already exercises MixedRecord through class and async APIs; this case is still waiting on a focused assertion for the records::mixed free functions."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover mixed records."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only primitive-field blittable records. Include this case when non-blittable records are implemented for Python."
     )
 )]
 pub fn make_mixed_record(

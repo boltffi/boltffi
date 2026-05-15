@@ -19,15 +19,18 @@ pub enum Filter {
     directions = "Call `enums::complex_variants::echo_filter` through the generated binding and assert the unit Filter::None variant crosses the FFI boundary unchanged.",
     exclude(
         csharp,
-        reason = "The C# complex collection tests do not currently round-trip the Filter::None variant."
+        reason = ExclusionReason::CoverageGap,
+        details = "C# reaches the surrounding surface but still needs a round-trip assertion for the Filter::None variant."
     ),
     exclude(
         java,
-        reason = "The Java complex enum tests do not currently round-trip the Filter::None variant."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java reaches the surrounding surface but still needs a round-trip assertion for the Filter::None variant."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover complex data-enum variants."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only C-style enums, not data-enum payloads. Include this case when Python data-enum bindings are implemented."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -36,15 +39,18 @@ pub enum Filter {
     directions = "Call `enums::complex_variants::echo_filter` through the generated binding and assert the Filter::ByName variant preserves its string payload when round-tripped.",
     exclude(
         csharp,
-        reason = "The C# complex collection tests do not currently round-trip the Filter::ByName variant."
+        reason = ExclusionReason::CoverageGap,
+        details = "C# reaches the surrounding surface but still needs a round-trip assertion for the Filter::ByName variant."
     ),
     exclude(
         java,
-        reason = "The Java complex enum tests do not currently round-trip the Filter::ByName variant."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java reaches the surrounding surface but still needs a round-trip assertion for the Filter::ByName variant."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover complex data-enum variants."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only C-style enums, not data-enum payloads. Include this case when Python data-enum bindings are implemented."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -52,24 +58,29 @@ pub enum Filter {
     justification = "Ensure the Filter::ByTags variant preserves a vector of UTF-8 strings when round-tripped.",
     directions = "Call `enums::complex_variants::echo_filter` through the generated binding and assert the Filter::ByTags variant preserves a vector of UTF-8 strings when round-tripped.",
     exclude(
-        apple,
-        reason = "The Apple complex enum tests do not currently round-trip the Filter::ByTags variant."
+        swift,
+        reason = ExclusionReason::CoverageGap,
+        details = "Swift reaches the surrounding surface but still needs a round-trip assertion for the Filter::ByTags variant."
     ),
     exclude(
         java,
-        reason = "The Java complex enum tests do not currently round-trip the Filter::ByTags variant."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java reaches the surrounding surface but still needs a round-trip assertion for the Filter::ByTags variant."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin complex enum tests do not currently round-trip the Filter::ByTags variant."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin reaches the surrounding surface but still needs a round-trip assertion for the Filter::ByTags variant."
     ),
     exclude(
-        wasm,
-        reason = "The Wasm complex enum tests do not currently round-trip the Filter::ByTags variant."
+        typescript,
+        reason = ExclusionReason::CoverageGap,
+        details = "TypeScript reaches the surrounding surface but still needs a round-trip assertion for the Filter::ByTags variant."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover complex data-enum variants."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only C-style enums, not data-enum payloads. Include this case when Python data-enum bindings are implemented."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -78,7 +89,8 @@ pub enum Filter {
     directions = "Call `enums::complex_variants::echo_filter` through the generated binding and assert the Filter::ByGroups variant preserves nested UTF-8 string vectors when round-tripped.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover complex data-enum variants."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only C-style enums, not data-enum payloads. Include this case when Python data-enum bindings are implemented."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -86,24 +98,29 @@ pub enum Filter {
     justification = "Ensure the Filter::ByPoints variant preserves a vector of Point records when round-tripped.",
     directions = "Call `enums::complex_variants::echo_filter` through the generated binding and assert the Filter::ByPoints variant preserves a vector of Point records when round-tripped.",
     exclude(
-        apple,
-        reason = "The Apple complex enum tests do not currently round-trip the Filter::ByPoints variant."
+        swift,
+        reason = ExclusionReason::CoverageGap,
+        details = "Swift reaches the surrounding surface but still needs a round-trip assertion for the Filter::ByPoints variant."
     ),
     exclude(
         java,
-        reason = "The Java complex enum tests do not currently round-trip the Filter::ByPoints variant."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java reaches the surrounding surface but still needs a round-trip assertion for the Filter::ByPoints variant."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin complex enum tests do not currently round-trip the Filter::ByPoints variant."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin reaches the surrounding surface but still needs a round-trip assertion for the Filter::ByPoints variant."
     ),
     exclude(
-        wasm,
-        reason = "The Wasm complex enum tests do not currently round-trip the Filter::ByPoints variant."
+        typescript,
+        reason = ExclusionReason::CoverageGap,
+        details = "TypeScript reaches the surrounding surface but still needs a round-trip assertion for the Filter::ByPoints variant."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover complex data-enum variants."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only C-style enums, not data-enum payloads. Include this case when Python data-enum bindings are implemented."
     )
 )]
 #[export]
@@ -117,15 +134,18 @@ pub fn echo_filter(f: Filter) -> Filter {
     directions = "Call `enums::complex_variants::describe_filter` through the generated binding and assert describe_filter renders a ByName string payload in the summary.",
     exclude(
         csharp,
-        reason = "The C# complex collection tests do not currently describe the Filter::ByName variant."
+        reason = ExclusionReason::CoverageGap,
+        details = "C# reaches the complex enum helpers but still needs an assertion for describing the Filter::ByName variant."
     ),
     exclude(
         java,
-        reason = "The Java complex enum tests do not currently describe the Filter::ByName variant."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java reaches the complex enum helpers but still needs an assertion for describing the Filter::ByName variant."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover complex data-enum variants."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only C-style enums, not data-enum payloads. Include this case when Python data-enum bindings are implemented."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -134,15 +154,18 @@ pub fn echo_filter(f: Filter) -> Filter {
     directions = "Call `enums::complex_variants::describe_filter` through the generated binding and assert describe_filter renders a ByRange numeric lower and upper bound.",
     exclude(
         csharp,
-        reason = "The C# complex collection tests do not currently describe the Filter::ByRange variant."
+        reason = ExclusionReason::CoverageGap,
+        details = "C# reaches the complex enum helpers but still needs an assertion for describing the Filter::ByRange variant."
     ),
     exclude(
         java,
-        reason = "The Java complex enum tests do not currently describe the Filter::ByRange variant."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java reaches the complex enum helpers but still needs an assertion for describing the Filter::ByRange variant."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover complex data-enum variants."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only C-style enums, not data-enum payloads. Include this case when Python data-enum bindings are implemented."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -151,11 +174,13 @@ pub fn echo_filter(f: Filter) -> Filter {
     directions = "Call `enums::complex_variants::describe_filter` through the generated binding and assert describe_filter counts the UTF-8 strings in a ByTags vector payload.",
     exclude(
         java,
-        reason = "The Java complex enum tests do not currently describe the Filter::ByTags variant."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java reaches the complex enum helpers but still needs an assertion for describing the Filter::ByTags variant."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover complex data-enum variants."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only C-style enums, not data-enum payloads. Include this case when Python data-enum bindings are implemented."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -164,7 +189,8 @@ pub fn echo_filter(f: Filter) -> Filter {
     directions = "Call `enums::complex_variants::describe_filter` through the generated binding and assert describe_filter counts the outer vector in a ByGroups nested vector payload.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover complex data-enum variants."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only C-style enums, not data-enum payloads. Include this case when Python data-enum bindings are implemented."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -173,11 +199,13 @@ pub fn echo_filter(f: Filter) -> Filter {
     directions = "Call `enums::complex_variants::describe_filter` through the generated binding and assert describe_filter counts Point records in a ByPoints vector payload.",
     exclude(
         java,
-        reason = "The Java complex enum tests do not currently describe the Filter::ByPoints variant."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java reaches the complex enum helpers but still needs an assertion for describing the Filter::ByPoints variant."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover complex data-enum variants."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only C-style enums, not data-enum payloads. Include this case when Python data-enum bindings are implemented."
     )
 )]
 #[export]
@@ -207,11 +235,13 @@ pub enum ApiResponse {
     directions = "Call `enums::complex_variants::echo_api_response` through the generated binding and assert the ApiResponse::Success variant preserves its string payload when round-tripped.",
     exclude(
         csharp,
-        reason = "The C# demo currently covers Filter complex variants but not ApiResponse helpers."
+        reason = ExclusionReason::CoverageGap,
+        details = "C# already exercises Filter complex variants; this case is still waiting on a focused assertion for ApiResponse helpers."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover complex data-enum variants."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only C-style enums, not data-enum payloads. Include this case when Python data-enum bindings are implemented."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -220,15 +250,18 @@ pub enum ApiResponse {
     directions = "Call `enums::complex_variants::echo_api_response` through the generated binding and assert the ApiResponse::Redirect variant preserves its URL payload when round-tripped.",
     exclude(
         csharp,
-        reason = "The C# demo currently covers Filter complex variants but not ApiResponse helpers."
+        reason = ExclusionReason::CoverageGap,
+        details = "C# already exercises Filter complex variants; this case is still waiting on a focused assertion for ApiResponse helpers."
     ),
     exclude(
         java,
-        reason = "The Java complex enum tests do not currently round-trip the ApiResponse::Redirect variant."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java reaches the surrounding surface but still needs a round-trip assertion for the ApiResponse::Redirect variant."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover complex data-enum variants."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only C-style enums, not data-enum payloads. Include this case when Python data-enum bindings are implemented."
     )
 )]
 #[export]
@@ -242,11 +275,13 @@ pub fn echo_api_response(response: ApiResponse) -> ApiResponse {
     directions = "Call `enums::complex_variants::is_success` through the generated binding and assert is_success returns true for the ApiResponse::Success variant.",
     exclude(
         csharp,
-        reason = "The C# demo currently covers Filter complex variants but not ApiResponse helpers."
+        reason = ExclusionReason::CoverageGap,
+        details = "C# already exercises Filter complex variants; this case is still waiting on a focused assertion for ApiResponse helpers."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover complex data-enum variants."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only C-style enums, not data-enum payloads. Include this case when Python data-enum bindings are implemented."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -255,11 +290,13 @@ pub fn echo_api_response(response: ApiResponse) -> ApiResponse {
     directions = "Call `enums::complex_variants::is_success` through the generated binding and assert is_success returns false for the ApiResponse::Empty variant.",
     exclude(
         csharp,
-        reason = "The C# demo currently covers Filter complex variants but not ApiResponse helpers."
+        reason = ExclusionReason::CoverageGap,
+        details = "C# already exercises Filter complex variants; this case is still waiting on a focused assertion for ApiResponse helpers."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover complex data-enum variants."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only C-style enums, not data-enum payloads. Include this case when Python data-enum bindings are implemented."
     )
 )]
 #[export]

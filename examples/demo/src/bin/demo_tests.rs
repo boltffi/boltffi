@@ -8,7 +8,8 @@ use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::{Attribute, Ident, Item, LitStr, Token, Type, Visibility, bracketed, parenthesized};
 
-const PLATFORMS: &[&str] = &["apple", "kotlin", "java", "csharp", "wasm", "python"];
+// These identifiers intentionally match `boltffi_bindgen/src/render/*` folder names.
+const TARGETS: &[&str] = &["swift", "kotlin", "java", "csharp", "typescript", "python"];
 
 type AppResult<T> = Result<T, String>;
 
@@ -18,8 +19,62 @@ struct DemoCase {
     justification: String,
     directions: String,
     exercises: Vec<String>,
-    exclusions: BTreeMap<String, String>,
+    exclusions: BTreeMap<String, Exclusion>,
     source: PathBuf,
+}
+
+#[derive(Debug, Clone)]
+struct Exclusion {
+    reason: ExclusionReason,
+    details: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum ExclusionReason {
+    ImplementationGap,
+    CoverageGap,
+}
+
+impl ExclusionReason {
+    const ALL: [Self; 2] = [Self::ImplementationGap, Self::CoverageGap];
+
+    fn from_path(path: &syn::Path) -> syn::Result<Self> {
+        let segments: Vec<_> = path
+            .segments
+            .iter()
+            .map(|segment| segment.ident.to_string())
+            .collect();
+        match segments.as_slice() {
+            [prefix, variant] if prefix == "ExclusionReason" => match variant.as_str() {
+                "ImplementationGap" => Ok(Self::ImplementationGap),
+                "CoverageGap" => Ok(Self::CoverageGap),
+                _ => Err(syn::Error::new_spanned(
+                    path,
+                    "unknown ExclusionReason variant",
+                )),
+            },
+            _ => Err(syn::Error::new_spanned(
+                path,
+                "expected ExclusionReason::ImplementationGap or ExclusionReason::CoverageGap",
+            )),
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::ImplementationGap => "implementation gap",
+            Self::CoverageGap => "coverage gap",
+        }
+    }
+
+    fn count_label(self, count: usize) -> &'static str {
+        match (self, count) {
+            (Self::ImplementationGap, 1) => "implementation gap",
+            (Self::ImplementationGap, _) => "implementation gaps",
+            (Self::CoverageGap, 1) => "coverage gap",
+            (Self::CoverageGap, _) => "coverage gaps",
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -28,7 +83,7 @@ struct DemoCaseArgs {
     justification: String,
     directions: String,
     exercises: Vec<String>,
-    exclusions: Vec<(String, String)>,
+    exclusions: Vec<(String, Exclusion)>,
 }
 
 #[derive(Debug)]
@@ -155,15 +210,56 @@ impl Parse for DemoCaseArgs {
                     parenthesized!(content in input);
                     let platform = content.call(Ident::parse_any)?.to_string();
                     content.parse::<Token![,]>()?;
-                    let reason_key = content.call(Ident::parse_any)?;
-                    if reason_key != "reason" {
-                        return Err(syn::Error::new_spanned(
-                            reason_key,
-                            "expected reason = \"...\"",
-                        ));
+
+                    let mut reason = None;
+                    let mut details = None;
+                    while !content.is_empty() {
+                        let key = content.call(Ident::parse_any)?;
+                        match key.to_string().as_str() {
+                            "reason" => {
+                                content.parse::<Token![=]>()?;
+                                if content.peek(LitStr) {
+                                    return Err(content.error(
+                                        "exclude reason is now an ExclusionReason; move prose into details = \"...\"",
+                                    ));
+                                }
+                                let path = content.parse::<syn::Path>()?;
+                                if reason.replace(ExclusionReason::from_path(&path)?).is_some() {
+                                    return Err(
+                                        content.error("exclude reason was provided more than once")
+                                    );
+                                }
+                            }
+                            "details" => {
+                                content.parse::<Token![=]>()?;
+                                if details
+                                    .replace(content.parse::<LitStr>()?.value())
+                                    .is_some()
+                                {
+                                    return Err(content
+                                        .error("exclude details were provided more than once"));
+                                }
+                            }
+                            _ => {
+                                return Err(syn::Error::new_spanned(
+                                    key,
+                                    "unknown exclude argument",
+                                ));
+                            }
+                        }
+                        if !content.is_empty() {
+                            content.parse::<Token![,]>()?;
+                        }
                     }
-                    content.parse::<Token![=]>()?;
-                    exclusions.push((platform, content.parse::<LitStr>()?.value()));
+                    exclusions.push((
+                        platform,
+                        Exclusion {
+                            reason: reason.ok_or_else(|| {
+                                content.error("exclude must include reason = ExclusionReason::...")
+                            })?,
+                            details: required_string(&content, "exclude details", details)?,
+                        },
+                    ));
                 }
                 _ => return Err(syn::Error::new_spanned(key, "unknown demo_case argument")),
             }
@@ -206,15 +302,19 @@ fn report(repo_root: &Path) -> AppResult<()> {
         println!("    supported: {}", display_list(&supported));
         if !case.exclusions.is_empty() {
             println!("    excluded:");
-            for (platform, reason) in &case.exclusions {
-                println!("      {platform}: {reason}");
+            for (platform, exclusion) in &case.exclusions {
+                println!(
+                    "      {platform}: {} - {}",
+                    exclusion.reason.label(),
+                    exclusion.details
+                );
             }
         }
     }
 
     println!();
-    println!("by language:");
-    for platform in PLATFORMS {
+    println!("by target:");
+    for platform in TARGETS {
         let mut supported: Vec<&str> = cases
             .keys()
             .filter(|case_id| {
@@ -226,7 +326,11 @@ fn report(repo_root: &Path) -> AppResult<()> {
             .collect();
         supported.sort_unstable();
 
-        println!("  {platform}: {}", supported.len());
+        println!(
+            "  {platform}: {} covered; {}",
+            supported.len(),
+            display_exclusion_counts(&exclusion_counts(cases.values(), platform))
+        );
         for case_id in supported {
             println!("    {case_id}");
         }
@@ -272,7 +376,7 @@ fn audit(repo_root: &Path, allow_unknown_markers: bool) -> AppResult<()> {
     }
 
     for case in cases.values() {
-        for platform in PLATFORMS {
+        for platform in TARGETS {
             let present = markers
                 .get(*platform)
                 .is_some_and(|platform_markers| platform_markers.contains(&case.id));
@@ -430,21 +534,25 @@ fn demo_case_from_args(
     }
 
     let mut exclusions = BTreeMap::new();
-    for (platform, reason) in args.exclusions {
-        if !PLATFORMS.contains(&platform.as_str()) {
+    for (platform, exclusion) in args.exclusions {
+        if !TARGETS.contains(&platform.as_str()) {
             return Err(format!(
-                "{}: case {id:?} excludes unknown platform {platform:?}",
+                "{}: case {id:?} excludes unknown target {platform:?}",
                 path.display()
             ));
         }
-        let reason = reason.trim().to_string();
-        if reason.is_empty() {
+        let details = exclusion.details.trim().to_string();
+        if details.is_empty() {
             return Err(format!(
-                "{}: case {id:?} exclusion for {platform:?} must include a reason",
+                "{}: case {id:?} exclusion for {platform:?} must include details",
                 path.display()
             ));
         }
-        if exclusions.insert(platform.clone(), reason).is_some() {
+        let exclusion = Exclusion {
+            reason: exclusion.reason,
+            details,
+        };
+        if exclusions.insert(platform.clone(), exclusion).is_some() {
             return Err(format!(
                 "{}: case {id:?} repeats exclusion for {platform:?}",
                 path.display()
@@ -535,7 +643,7 @@ fn collect_platform_markers(repo_root: &Path) -> AppResult<BTreeMap<String, BTre
 fn platform_scans(repo_root: &Path) -> Vec<PlatformScan> {
     vec![
         PlatformScan {
-            name: "apple",
+            name: "swift",
             roots: vec![repo_root.join("examples/platforms/apple/Tests")],
             suffixes: &["swift"],
         },
@@ -555,7 +663,7 @@ fn platform_scans(repo_root: &Path) -> Vec<PlatformScan> {
             suffixes: &["cs"],
         },
         PlatformScan {
-            name: "wasm",
+            name: "typescript",
             roots: vec![repo_root.join("examples/platforms/wasm/tests")],
             suffixes: &["js", "mjs", "ts"],
         },
@@ -629,7 +737,7 @@ fn supported_platforms(
     case: &DemoCase,
     markers: &BTreeMap<String, BTreeSet<String>>,
 ) -> Vec<&'static str> {
-    PLATFORMS
+    TARGETS
         .iter()
         .copied()
         .filter(|platform| {
@@ -642,9 +750,9 @@ fn supported_platforms(
 
 fn print_summary(cases: &BTreeMap<String, DemoCase>, markers: &BTreeMap<String, BTreeSet<String>>) {
     println!("demo tests: {}", cases.len());
-    println!("platforms: {}", PLATFORMS.join(", "));
+    println!("targets: {}", TARGETS.join(", "));
     println!();
-    for platform in PLATFORMS {
+    for platform in TARGETS {
         let expected = cases
             .values()
             .filter(|case| !case.exclusions.contains_key(*platform))
@@ -657,8 +765,35 @@ fn print_summary(cases: &BTreeMap<String, DemoCase>, markers: &BTreeMap<String, 
                     .is_some_and(|platform_markers| platform_markers.contains(*case_id))
             })
             .count();
-        println!("{platform}: {documented}/{expected} expected cases documented");
+        println!(
+            "{platform}: {documented}/{expected} expected cases documented; {}",
+            display_exclusion_counts(&exclusion_counts(cases.values(), platform))
+        );
     }
+}
+
+fn exclusion_counts<'a>(
+    cases: impl Iterator<Item = &'a DemoCase>,
+    platform: &str,
+) -> BTreeMap<ExclusionReason, usize> {
+    let mut counts = BTreeMap::new();
+    for case in cases {
+        if let Some(exclusion) = case.exclusions.get(platform) {
+            *counts.entry(exclusion.reason).or_default() += 1;
+        }
+    }
+    counts
+}
+
+fn display_exclusion_counts(counts: &BTreeMap<ExclusionReason, usize>) -> String {
+    ExclusionReason::ALL
+        .iter()
+        .map(|reason| {
+            let count = counts.get(reason).copied().unwrap_or_default();
+            format!("{count} {}", reason.count_label(count))
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn item_attrs(item: &Item) -> &[Attribute] {

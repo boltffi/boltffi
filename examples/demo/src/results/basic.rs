@@ -8,7 +8,8 @@ use crate::records::blittable::Point;
     directions = "Call `results::basic::safe_divide` through the generated binding and assert safe_divide returns the integer quotient when the divisor is non-zero.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover string-error Result exports."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently emit Result-returning functions. Include this case when Result returns are implemented for Python."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -17,7 +18,8 @@ use crate::records::blittable::Point;
     directions = "Call `results::basic::safe_divide` through the generated binding and assert safe_divide returns a language-native error when the divisor is zero.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover string-error Result exports."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently emit Result-returning functions. Include this case when Result returns are implemented for Python."
     )
 )]
 #[export]
@@ -33,22 +35,40 @@ pub fn safe_divide(a: i32, b: i32) -> Result<i32, String> {
     "results.basic.safe_sqrt.should_return_square_root",
     justification = "Ensure safe_sqrt returns the square root for non-negative floating-point input.",
     directions = "Call `results::basic::safe_sqrt` through the generated binding and assert safe_sqrt returns the square root for non-negative floating-point input.",
-    exclude(csharp, reason = "The C# demo tests do not currently cover safe_sqrt."),
-    exclude(java, reason = "The Java demo tests do not currently cover safe_sqrt."),
+    exclude(
+        csharp,
+        reason = ExclusionReason::CoverageGap,
+        details = "C# has no assertion for safe_sqrt in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
+    ),
+    exclude(
+        java,
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for safe_sqrt in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
+    ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover string-error Result exports."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently emit Result-returning functions. Include this case when Result returns are implemented for Python."
     )
 )]
 #[demo_bench_macros::demo_case(
     "results.basic.safe_sqrt.should_reject_negative_input",
     justification = "Ensure safe_sqrt returns a language-native error for negative floating-point input.",
     directions = "Call `results::basic::safe_sqrt` through the generated binding and assert safe_sqrt returns a language-native error for negative floating-point input.",
-    exclude(csharp, reason = "The C# demo tests do not currently cover safe_sqrt."),
-    exclude(java, reason = "The Java demo tests do not currently cover safe_sqrt."),
+    exclude(
+        csharp,
+        reason = ExclusionReason::CoverageGap,
+        details = "C# has no assertion for safe_sqrt in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
+    ),
+    exclude(
+        java,
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for safe_sqrt in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
+    ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover string-error Result exports."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently emit Result-returning functions. Include this case when Result returns are implemented for Python."
     )
 )]
 #[export]
@@ -66,7 +86,8 @@ pub fn safe_sqrt(x: f64) -> Result<f64, String> {
     directions = "Call `results::basic::parse_point` through the generated binding and assert parse_point parses a comma-separated coordinate string into a Point record.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover string-error Result exports."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently emit Result-returning functions. Include this case when Result returns are implemented for Python."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -75,7 +96,8 @@ pub fn safe_sqrt(x: f64) -> Result<f64, String> {
     directions = "Call `results::basic::parse_point` through the generated binding and assert parse_point returns a language-native error when the input is not a coordinate pair.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover string-error Result exports."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently emit Result-returning functions. Include this case when Result returns are implemented for Python."
     )
 )]
 #[export]
@@ -101,7 +123,8 @@ pub fn parse_point(s: String) -> Result<Point, String> {
     directions = "Call `results::basic::always_ok` through the generated binding and assert always_ok returns an Ok value containing the input doubled.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover string-error Result exports."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently emit Result-returning functions. Include this case when Result returns are implemented for Python."
     )
 )]
 #[export]
@@ -115,7 +138,8 @@ pub fn always_ok(v: i32) -> Result<i32, String> {
     directions = "Call `results::basic::always_err` through the generated binding and assert always_err returns an error containing the caller-provided message.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover string-error Result exports."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently emit Result-returning functions. Include this case when Result returns are implemented for Python."
     )
 )]
 #[export]
@@ -129,15 +153,18 @@ pub fn always_err(msg: String) -> Result<i32, String> {
     directions = "Call `results::basic::result_to_string` through the generated binding and assert result_to_string receives an Ok Result value over FFI and renders its success payload.",
     exclude(
         csharp,
-        reason = "The C# demo tests do not currently cover Result parameters."
+        reason = ExclusionReason::CoverageGap,
+        details = "C# has no assertion for Result parameters in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         java,
-        reason = "The Java demo tests do not currently cover Result parameters."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for Result parameters in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover Result parameters."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently accept Result<T, E> parameters. Include this case when Result parameters are implemented for Python."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -146,15 +173,18 @@ pub fn always_err(msg: String) -> Result<i32, String> {
     directions = "Call `results::basic::result_to_string` through the generated binding and assert result_to_string receives an Err Result value over FFI and renders its error payload.",
     exclude(
         csharp,
-        reason = "The C# demo tests do not currently cover Result parameters."
+        reason = ExclusionReason::CoverageGap,
+        details = "C# has no assertion for Result parameters in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         java,
-        reason = "The Java demo tests do not currently cover Result parameters."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for Result parameters in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover Result parameters."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently accept Result<T, E> parameters. Include this case when Result parameters are implemented for Python."
     )
 )]
 #[export]
@@ -171,19 +201,23 @@ pub fn result_to_string(v: Result<i32, String>) -> String {
     directions = "Call `results::basic::divide` through the generated binding and assert divide returns the integer quotient when the divisor is non-zero.",
     exclude(
         csharp,
-        reason = "The C# demo tests do not currently cover the divide alias."
+        reason = ExclusionReason::CoverageGap,
+        details = "C# has no assertion for the divide alias in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         java,
-        reason = "The Java demo tests do not currently cover the divide alias."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for the divide alias in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin demo tests do not currently cover the divide alias."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for the divide alias in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover string-error Result exports."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently emit Result-returning functions. Include this case when Result returns are implemented for Python."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -192,19 +226,23 @@ pub fn result_to_string(v: Result<i32, String>) -> String {
     directions = "Call `results::basic::divide` through the generated binding and assert divide returns a language-native error when the divisor is zero.",
     exclude(
         csharp,
-        reason = "The C# demo tests do not currently cover the divide alias."
+        reason = ExclusionReason::CoverageGap,
+        details = "C# has no assertion for the divide alias in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         java,
-        reason = "The Java demo tests do not currently cover the divide alias."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for the divide alias in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin demo tests do not currently cover the divide alias."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for the divide alias in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover string-error Result exports."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently emit Result-returning functions. Include this case when Result returns are implemented for Python."
     )
 )]
 #[export]
@@ -218,19 +256,23 @@ pub fn divide(a: i32, b: i32) -> Result<i32, String> {
     directions = "Call `results::basic::parse_int` through the generated binding and assert parse_int parses a decimal string into an i32 value.",
     exclude(
         csharp,
-        reason = "The C# demo tests do not currently cover the top-level parse_int export."
+        reason = ExclusionReason::CoverageGap,
+        details = "C# has no assertion for the top-level parse_int export in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         java,
-        reason = "The Java demo tests do not currently cover the top-level parse_int export."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for the top-level parse_int export in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin demo tests cover MathUtils.parseInt rather than the top-level parse_int export."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin validates this area through MathUtils.parseInt today; add a direct assertion for the top-level parse_int export before marking this case covered."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover string-error Result exports."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently emit Result-returning functions. Include this case when Result returns are implemented for Python."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -239,19 +281,23 @@ pub fn divide(a: i32, b: i32) -> Result<i32, String> {
     directions = "Call `results::basic::parse_int` through the generated binding and assert parse_int returns a language-native error when the string is not a valid i32.",
     exclude(
         csharp,
-        reason = "The C# demo tests do not currently cover the top-level parse_int export."
+        reason = ExclusionReason::CoverageGap,
+        details = "C# has no assertion for the top-level parse_int export in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         java,
-        reason = "The Java demo tests do not currently cover the top-level parse_int export."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for the top-level parse_int export in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin demo tests cover MathUtils.parseInt rather than the top-level parse_int export."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin validates this area through MathUtils.parseInt today; add a direct assertion for the top-level parse_int export before marking this case covered."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover string-error Result exports."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently emit Result-returning functions. Include this case when Result returns are implemented for Python."
     )
 )]
 #[export]
@@ -267,19 +313,23 @@ pub fn parse_int(input: String) -> Result<i32, String> {
     directions = "Call `results::basic::validate_name` through the generated binding and assert validate_name returns a greeting for a non-empty name within the length limit.",
     exclude(
         csharp,
-        reason = "The C# demo tests do not currently cover validate_name."
+        reason = ExclusionReason::CoverageGap,
+        details = "C# has no assertion for validate_name in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         java,
-        reason = "The Java demo tests do not currently cover validate_name."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for validate_name in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin demo tests do not currently cover validate_name."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for validate_name in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover string-error Result exports."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently emit Result-returning functions. Include this case when Result returns are implemented for Python."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -288,19 +338,23 @@ pub fn parse_int(input: String) -> Result<i32, String> {
     directions = "Call `results::basic::validate_name` through the generated binding and assert validate_name returns a language-native error when the provided name is empty.",
     exclude(
         csharp,
-        reason = "The C# demo tests do not currently cover validate_name."
+        reason = ExclusionReason::CoverageGap,
+        details = "C# has no assertion for validate_name in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         java,
-        reason = "The Java demo tests do not currently cover validate_name."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for validate_name in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin demo tests do not currently cover validate_name."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for validate_name in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover string-error Result exports."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently emit Result-returning functions. Include this case when Result returns are implemented for Python."
     )
 )]
 #[export]

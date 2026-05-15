@@ -74,7 +74,8 @@ impl Direction {
         directions = "Call `enums::c_style::Direction::new` through the generated binding and assert Direction::new maps raw integer values to Direction variants.",
         exclude(
             java,
-            reason = "The Java demo tests do not currently cover Direction::new."
+            reason = ExclusionReason::CoverageGap,
+            details = "Java has no assertion for Direction::new in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
         )
     )]
     pub fn new(raw: i32) -> Self {
@@ -194,23 +195,28 @@ pub fn opposite_direction(d: Direction) -> Direction {
     directions = "Call `enums::c_style::direction_to_degrees` through the generated binding and assert direction_to_degrees maps Direction variants to compass degrees.",
     exclude(
         csharp,
-        reason = "The C# demo tests do not currently cover direction_to_degrees."
+        reason = ExclusionReason::CoverageGap,
+        details = "C# has no assertion for direction_to_degrees in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         java,
-        reason = "The Java demo tests do not currently cover direction_to_degrees."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for direction_to_degrees in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin demo tests do not currently cover direction_to_degrees."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for direction_to_degrees in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover direction_to_degrees."
+        reason = ExclusionReason::CoverageGap,
+        details = "Python supports C-style enum parameters and primitive returns, but the demo suite has no assertion for direction_to_degrees yet."
     ),
     exclude(
-        wasm,
-        reason = "The WASM demo tests do not currently cover direction_to_degrees."
+        typescript,
+        reason = ExclusionReason::CoverageGap,
+        details = "TypeScript has no assertion for direction_to_degrees in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     )
 )]
 #[export]
@@ -230,19 +236,23 @@ pub fn direction_to_degrees(direction: Direction) -> i32 {
     directions = "Call `enums::c_style::generate_directions` through the generated binding and assert generate_directions returns a cyclic sequence of Direction values.",
     exclude(
         java,
-        reason = "The Java demo tests do not currently cover direction sequence helpers."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for direction sequence helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin demo tests do not currently cover direction sequence helpers."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for direction sequence helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover direction sequence helpers."
+        reason = ExclusionReason::CoverageGap,
+        details = "Python supports C-style enum vectors, but the demo suite has no assertion for direction sequence helpers yet."
     ),
     exclude(
-        wasm,
-        reason = "The WASM demo tests do not currently cover direction sequence helpers."
+        typescript,
+        reason = ExclusionReason::CoverageGap,
+        details = "TypeScript has no assertion for direction sequence helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     )
 )]
 #[export]
@@ -265,19 +275,23 @@ pub fn generate_directions(count: i32) -> Vec<Direction> {
     directions = "Call `enums::c_style::count_north` through the generated binding and assert count_north returns the number of North variants in a Direction vector.",
     exclude(
         java,
-        reason = "The Java demo tests do not currently cover direction sequence helpers."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for direction sequence helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin demo tests do not currently cover direction sequence helpers."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for direction sequence helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover direction sequence helpers."
+        reason = ExclusionReason::CoverageGap,
+        details = "Python supports C-style enum vectors, but the demo suite has no assertion for direction sequence helpers yet."
     ),
     exclude(
-        wasm,
-        reason = "The WASM demo tests do not currently cover direction sequence helpers."
+        typescript,
+        reason = ExclusionReason::CoverageGap,
+        details = "TypeScript has no assertion for direction sequence helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     )
 )]
 #[export]
@@ -295,23 +309,28 @@ pub fn count_north(directions: Vec<Direction>) -> i32 {
     directions = "Call `enums::c_style::find_direction` through the generated binding and assert find_direction returns Some(Direction) for a known id.",
     exclude(
         csharp,
-        reason = "The C# demo tests do not currently cover find_direction."
+        reason = ExclusionReason::CoverageGap,
+        details = "C# has no assertion for find_direction in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         java,
-        reason = "The Java demo tests do not currently cover find_direction."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for find_direction in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin demo tests do not currently cover find_direction."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for find_direction in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover find_direction."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; C-style enums are emitted, but Option<Direction> returns are not. Include this case when optional enum returns are implemented for Python."
     ),
     exclude(
-        wasm,
-        reason = "The WASM demo tests do not currently cover find_direction."
+        typescript,
+        reason = ExclusionReason::CoverageGap,
+        details = "TypeScript has no assertion for find_direction in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -320,23 +339,28 @@ pub fn count_north(directions: Vec<Direction>) -> i32 {
     directions = "Call `enums::c_style::find_direction` through the generated binding and assert find_direction returns None for an unknown id.",
     exclude(
         csharp,
-        reason = "The C# demo tests do not currently cover find_direction."
+        reason = ExclusionReason::CoverageGap,
+        details = "C# has no assertion for find_direction in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         java,
-        reason = "The Java demo tests do not currently cover find_direction."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for find_direction in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin demo tests do not currently cover find_direction."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for find_direction in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover find_direction."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; C-style enums are emitted, but Option<Direction> returns are not. Include this case when optional enum returns are implemented for Python."
     ),
     exclude(
-        wasm,
-        reason = "The WASM demo tests do not currently cover find_direction."
+        typescript,
+        reason = ExclusionReason::CoverageGap,
+        details = "TypeScript has no assertion for find_direction in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     )
 )]
 #[export]
@@ -357,23 +381,28 @@ pub fn find_direction(id: i32) -> Option<Direction> {
     directions = "Call `enums::c_style::find_directions` through the generated binding and assert find_directions returns Some generated directions for a positive count.",
     exclude(
         csharp,
-        reason = "The C# demo tests do not currently cover find_directions."
+        reason = ExclusionReason::CoverageGap,
+        details = "C# has no assertion for find_directions in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         java,
-        reason = "The Java demo tests do not currently cover find_directions."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for find_directions in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin demo tests do not currently cover find_directions."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for find_directions in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover find_directions."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; C-style enum vectors are emitted, but Option<Vec<Direction>> returns are not. Include this case when optional enum-vector returns are implemented for Python."
     ),
     exclude(
-        wasm,
-        reason = "The WASM demo tests do not currently cover find_directions."
+        typescript,
+        reason = ExclusionReason::CoverageGap,
+        details = "TypeScript has no assertion for find_directions in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -382,23 +411,28 @@ pub fn find_direction(id: i32) -> Option<Direction> {
     directions = "Call `enums::c_style::find_directions` through the generated binding and assert find_directions returns None for a non-positive count.",
     exclude(
         csharp,
-        reason = "The C# demo tests do not currently cover find_directions."
+        reason = ExclusionReason::CoverageGap,
+        details = "C# has no assertion for find_directions in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         java,
-        reason = "The Java demo tests do not currently cover find_directions."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for find_directions in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin demo tests do not currently cover find_directions."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for find_directions in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover find_directions."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; C-style enum vectors are emitted, but Option<Vec<Direction>> returns are not. Include this case when optional enum-vector returns are implemented for Python."
     ),
     exclude(
-        wasm,
-        reason = "The WASM demo tests do not currently cover find_directions."
+        typescript,
+        reason = ExclusionReason::CoverageGap,
+        details = "TypeScript has no assertion for find_directions in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     )
 )]
 #[export]

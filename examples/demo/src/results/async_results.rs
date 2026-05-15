@@ -8,11 +8,13 @@ use super::error_enums::MathError;
     directions = "Call `results::async_results::async_safe_divide` through the generated binding and assert async_safe_divide resolves to the integer quotient when the divisor is non-zero.",
     exclude(
         java,
-        reason = "The Java demo tests do not currently cover async result exports."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for async result exports in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover async result exports."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently omits async functions and Result returns. Include this case when async Result support is implemented for Python."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -21,11 +23,13 @@ use super::error_enums::MathError;
     directions = "Call `results::async_results::async_safe_divide` through the generated binding and assert async_safe_divide rejects with a typed MathError when the divisor is zero.",
     exclude(
         java,
-        reason = "The Java demo tests do not currently cover async result exports."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for async result exports in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover async result exports."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently omits async functions and Result returns. Include this case when async Result support is implemented for Python."
     )
 )]
 #[export]
@@ -43,11 +47,13 @@ pub async fn async_safe_divide(a: i32, b: i32) -> Result<i32, MathError> {
     directions = "Call `results::async_results::async_fallible_fetch` through the generated binding and assert async_fallible_fetch resolves to a value string for a non-negative key.",
     exclude(
         java,
-        reason = "The Java demo tests do not currently cover async result exports."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for async result exports in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover async result exports."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently omits async functions and Result returns. Include this case when async Result support is implemented for Python."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -56,11 +62,13 @@ pub async fn async_safe_divide(a: i32, b: i32) -> Result<i32, MathError> {
     directions = "Call `results::async_results::async_fallible_fetch` through the generated binding and assert async_fallible_fetch rejects with a string error for a negative key.",
     exclude(
         java,
-        reason = "The Java demo tests do not currently cover async result exports."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for async result exports in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover async result exports."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently omits async functions and Result returns. Include this case when async Result support is implemented for Python."
     )
 )]
 #[export]
@@ -81,11 +89,13 @@ pub async fn async_fallible_fetch(key: i32) -> Result<String, String> {
     directions = "Call `results::async_results::async_find_value` through the generated binding and assert async_find_value resolves to Ok(Some) for a positive key.",
     exclude(
         java,
-        reason = "The Java demo tests do not currently cover async result exports."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for async result exports in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover async result exports."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently omits async functions and Result returns. Include this case when async Result support is implemented for Python."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -94,11 +104,13 @@ pub async fn async_fallible_fetch(key: i32) -> Result<String, String> {
     directions = "Call `results::async_results::async_find_value` through the generated binding and assert async_find_value resolves to Ok(None) for key zero.",
     exclude(
         java,
-        reason = "The Java demo tests do not currently cover async result exports."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for async result exports in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover async result exports."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently omits async functions and Result returns. Include this case when async Result support is implemented for Python."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -107,11 +119,13 @@ pub async fn async_fallible_fetch(key: i32) -> Result<String, String> {
     directions = "Call `results::async_results::async_find_value` through the generated binding and assert async_find_value rejects with a string error for a negative key.",
     exclude(
         java,
-        reason = "The Java demo tests do not currently cover async result exports."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for async result exports in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover async result exports."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently omits async functions and Result returns. Include this case when async Result support is implemented for Python."
     )
 )]
 #[export]

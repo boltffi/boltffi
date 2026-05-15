@@ -18,11 +18,13 @@ pub struct Task {
     directions = "Call `records::with_enums::echo_task` through the generated binding and assert a Task record with a Priority enum field crosses the wire and returns unchanged.",
     exclude(
         java,
-        reason = "The Java records-with-enums demo currently covers enum-bearing headers and holders, not Task helpers."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java already exercises enum-bearing headers and holders; this case is still waiting on a focused assertion for Task helpers."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover records with enum fields."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only primitive-field blittable records. Include this case when records with enum fields are implemented for Python."
     )
 )]
 pub fn echo_task(task: Task) -> Task {
@@ -36,15 +38,18 @@ pub fn echo_task(task: Task) -> Task {
     directions = "Call `records::with_enums::make_task` through the generated binding and assert make_task constructs a Task with the requested Priority enum and completed set to false.",
     exclude(
         csharp,
-        reason = "The C# records-with-enums demo currently covers Task round-trip but not make_task."
+        reason = ExclusionReason::CoverageGap,
+        details = "C# already exercises Task round-trip; this case is still waiting on a focused assertion for make_task."
     ),
     exclude(
         java,
-        reason = "The Java records-with-enums demo currently covers enum-bearing headers and holders, not Task helpers."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java already exercises enum-bearing headers and holders; this case is still waiting on a focused assertion for Task helpers."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover records with enum fields."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only primitive-field blittable records. Include this case when records with enum fields are implemented for Python."
     )
 )]
 pub fn make_task(title: String, priority: Priority) -> Task {
@@ -62,15 +67,18 @@ pub fn make_task(title: String, priority: Priority) -> Task {
     directions = "Call `records::with_enums::is_urgent` through the generated binding and assert is_urgent reads the Priority enum field from a Task record and classifies urgent priorities.",
     exclude(
         csharp,
-        reason = "The C# records-with-enums demo currently covers Task round-trip but not is_urgent."
+        reason = ExclusionReason::CoverageGap,
+        details = "C# already exercises Task round-trip; this case is still waiting on a focused assertion for is_urgent."
     ),
     exclude(
         java,
-        reason = "The Java records-with-enums demo currently covers enum-bearing headers and holders, not Task helpers."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java already exercises enum-bearing headers and holders; this case is still waiting on a focused assertion for Task helpers."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover records with enum fields."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only primitive-field blittable records. Include this case when records with enum fields are implemented for Python."
     )
 )]
 pub fn is_urgent(task: Task) -> bool {
@@ -92,11 +100,13 @@ pub struct Notification {
     directions = "Call `records::with_enums::echo_notification` through the generated binding and assert a Notification record with a Priority enum field crosses the wire and returns unchanged.",
     exclude(
         java,
-        reason = "The Java records-with-enums demo currently covers enum-bearing headers and holders, not Notification helpers."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java already exercises enum-bearing headers and holders; this case is still waiting on a focused assertion for Notification helpers."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover records with enum fields."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only primitive-field blittable records. Include this case when records with enum fields are implemented for Python."
     )
 )]
 pub fn echo_notification(notification: Notification) -> Notification {
@@ -128,7 +138,8 @@ pub struct Holder {
     directions = "Call `records::with_enums::echo_holder` through the generated binding and assert a Holder record containing a Shape data enum crosses the wire and returns unchanged.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover records with enum fields."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only primitive-field blittable records. Include this case when records with enum fields are implemented for Python."
     )
 )]
 pub fn echo_holder(h: Holder) -> Holder {
@@ -142,7 +153,8 @@ pub fn echo_holder(h: Holder) -> Holder {
     directions = "Call `records::with_enums::make_triangle_holder` through the generated binding and assert make_triangle_holder constructs a Holder whose Shape field is the Triangle data enum variant.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover records with enum fields."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only primitive-field blittable records. Include this case when records with enum fields are implemented for Python."
     )
 )]
 pub fn make_triangle_holder() -> Holder {
@@ -180,7 +192,8 @@ pub struct TaskHeader {
     directions = "Call `records::with_enums::echo_task_header` through the generated binding and assert a TaskHeader record with a repr-int Priority enum field crosses the wire and returns unchanged.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover records with enum fields."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only primitive-field blittable records. Include this case when records with enum fields are implemented for Python."
     )
 )]
 pub fn echo_task_header(header: TaskHeader) -> TaskHeader {
@@ -194,7 +207,8 @@ pub fn echo_task_header(header: TaskHeader) -> TaskHeader {
     directions = "Call `records::with_enums::make_critical_task_header` through the generated binding and assert make_critical_task_header constructs a TaskHeader with Critical priority and completed set to false.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover records with enum fields."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only primitive-field blittable records. Include this case when records with enum fields are implemented for Python."
     )
 )]
 pub fn make_critical_task_header(id: i64) -> TaskHeader {
@@ -232,7 +246,8 @@ pub struct LogEntry {
     directions = "Call `records::with_enums::echo_log_entry` through the generated binding and assert a LogEntry record with a u8-backed LogLevel enum field crosses the wire and returns unchanged.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover records with enum fields."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only primitive-field blittable records. Include this case when records with enum fields are implemented for Python."
     )
 )]
 pub fn echo_log_entry(entry: LogEntry) -> LogEntry {
@@ -246,7 +261,8 @@ pub fn echo_log_entry(entry: LogEntry) -> LogEntry {
     directions = "Call `records::with_enums::make_error_log_entry` through the generated binding and assert make_error_log_entry constructs a LogEntry with an Error log level and caller-provided fields.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover records with enum fields."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only primitive-field blittable records. Include this case when records with enum fields are implemented for Python."
     )
 )]
 pub fn make_error_log_entry(timestamp: i64, code: u16) -> LogEntry {

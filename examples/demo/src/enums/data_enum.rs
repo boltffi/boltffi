@@ -43,11 +43,13 @@ impl Shape {
         directions = "Call `enums::data_enum::Shape::new` through the generated binding and assert the generated Shape primary constructor builds a Circle variant with the requested radius.",
         exclude(
             java,
-            reason = "The Java demo surface does not expose Shape::new because new is a Java keyword."
+            reason = ExclusionReason::ImplementationGap,
+            details = "Java cannot expose Shape::new on the generated surface because new is a Java keyword."
         ),
         exclude(
             python,
-            reason = "The Python demo tests do not currently cover data-enum surfaces."
+            reason = ExclusionReason::ImplementationGap,
+            details = "Python is experimental; its lowerer currently emits only C-style enums, not data-enum payloads. Include this case when Python data-enum bindings are implemented."
         )
     )]
     pub fn new(radius: f64) -> Self {
@@ -60,7 +62,8 @@ impl Shape {
         directions = "Call `enums::data_enum::Shape::unit_circle` through the generated binding and assert Shape::unit_circle constructs a Circle variant with unit radius.",
         exclude(
             python,
-            reason = "The Python demo tests do not currently cover data-enum surfaces."
+            reason = ExclusionReason::ImplementationGap,
+            details = "Python is experimental; its lowerer currently emits only C-style enums, not data-enum payloads. Include this case when Python data-enum bindings are implemented."
         )
     )]
     pub fn unit_circle() -> Self {
@@ -73,7 +76,8 @@ impl Shape {
         directions = "Call `enums::data_enum::Shape::square` through the generated binding and assert Shape::square constructs a Rectangle variant whose width and height match the side length.",
         exclude(
             python,
-            reason = "The Python demo tests do not currently cover data-enum surfaces."
+            reason = ExclusionReason::ImplementationGap,
+            details = "Python is experimental; its lowerer currently emits only C-style enums, not data-enum payloads. Include this case when Python data-enum bindings are implemented."
         )
     )]
     pub fn square(side: f64) -> Self {
@@ -89,11 +93,13 @@ impl Shape {
         directions = "Call `enums::data_enum::Shape::try_circle` through the generated binding and assert Shape::try_circle returns a Circle variant for a positive radius.",
         exclude(
             csharp,
-            reason = "The C# data-enum demo covers Shape::try_circle rejection but not the positive-radius success path."
+            reason = ExclusionReason::CoverageGap,
+            details = "The C# data-enum demo covers Shape::try_circle rejection but not the positive-radius success path."
         ),
         exclude(
             python,
-            reason = "The Python demo tests do not currently cover data-enum surfaces."
+            reason = ExclusionReason::ImplementationGap,
+            details = "Python is experimental; its lowerer currently emits only C-style enums, not data-enum payloads. Include this case when Python data-enum bindings are implemented."
         )
     )]
     #[demo_bench_macros::demo_case(
@@ -102,7 +108,8 @@ impl Shape {
         directions = "Call `enums::data_enum::Shape::try_circle` through the generated binding and assert Shape::try_circle returns a language-native error when radius is zero or negative.",
         exclude(
             python,
-            reason = "The Python demo tests do not currently cover data-enum surfaces."
+            reason = ExclusionReason::ImplementationGap,
+            details = "Python is experimental; its lowerer currently emits only C-style enums, not data-enum payloads. Include this case when Python data-enum bindings are implemented."
         )
     )]
     pub fn try_circle(radius: f64) -> Result<Self, String> {
@@ -119,7 +126,8 @@ impl Shape {
         directions = "Call `enums::data_enum::Shape::area` through the generated binding and assert Shape instance methods can wire-encode the receiver and return numeric results.",
         exclude(
             python,
-            reason = "The Python demo tests do not currently cover data-enum surfaces."
+            reason = ExclusionReason::ImplementationGap,
+            details = "Python is experimental; its lowerer currently emits only C-style enums, not data-enum payloads. Include this case when Python data-enum bindings are implemented."
         )
     )]
     pub fn area(&self) -> f64 {
@@ -141,7 +149,8 @@ impl Shape {
         directions = "Call `enums::data_enum::Shape::describe` through the generated binding and assert Shape instance methods can wire-encode the receiver and return string results.",
         exclude(
             python,
-            reason = "The Python demo tests do not currently cover data-enum surfaces."
+            reason = ExclusionReason::ImplementationGap,
+            details = "Python is experimental; its lowerer currently emits only C-style enums, not data-enum payloads. Include this case when Python data-enum bindings are implemented."
         )
     )]
     pub fn describe(&self) -> String {
@@ -162,7 +171,8 @@ impl Shape {
         directions = "Call `enums::data_enum::Shape::variant_count` through the generated binding and assert the generated Shape static method can return primitive metadata about the data enum.",
         exclude(
             python,
-            reason = "The Python demo tests do not currently cover data-enum surfaces."
+            reason = ExclusionReason::ImplementationGap,
+            details = "Python is experimental; its lowerer currently emits only C-style enums, not data-enum payloads. Include this case when Python data-enum bindings are implemented."
         )
     )]
     pub fn variant_count() -> u32 {
@@ -179,7 +189,8 @@ impl Shape {
         directions = "Call `enums::data_enum::Shape::try_apex_point` through the generated binding and assert Shape::try_apex_point returns Some(Point) for a positive radius while resolving Point as the record type.",
         exclude(
             python,
-            reason = "The Python demo tests do not currently cover data-enum surfaces."
+            reason = ExclusionReason::ImplementationGap,
+            details = "Python is experimental; its lowerer currently emits only C-style enums, not data-enum payloads. Include this case when Python data-enum bindings are implemented."
         )
     )]
     #[demo_bench_macros::demo_case(
@@ -188,7 +199,8 @@ impl Shape {
         directions = "Call `enums::data_enum::Shape::try_apex_point` through the generated binding and assert Shape::try_apex_point returns None for a non-positive radius while resolving Point as the record type.",
         exclude(
             python,
-            reason = "The Python demo tests do not currently cover data-enum surfaces."
+            reason = ExclusionReason::ImplementationGap,
+            details = "Python is experimental; its lowerer currently emits only C-style enums, not data-enum payloads. Include this case when Python data-enum bindings are implemented."
         )
     )]
     pub fn try_apex_point(radius: f64) -> Option<Point> {
@@ -206,7 +218,8 @@ impl Shape {
     directions = "Call `enums::data_enum::echo_shape` through the generated binding and assert Circle, Rectangle, Triangle, and Point Shape variants preserve their tags and payload fields.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover data-enum surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only C-style enums, not data-enum payloads. Include this case when Python data-enum bindings are implemented."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -215,7 +228,8 @@ impl Shape {
     directions = "Call `enums::data_enum::echo_shape` through the generated binding and assert the Shape::Apex variant preserves a Some(Point) payload when Point is also a sibling variant name.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover data-enum surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only C-style enums, not data-enum payloads. Include this case when Python data-enum bindings are implemented."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -224,7 +238,8 @@ impl Shape {
     directions = "Call `enums::data_enum::echo_shape` through the generated binding and assert the Shape::Apex variant preserves a None payload when Point is also a sibling variant name.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover data-enum surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only C-style enums, not data-enum payloads. Include this case when Python data-enum bindings are implemented."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -233,7 +248,8 @@ impl Shape {
     directions = "Call `enums::data_enum::echo_shape` through the generated binding and assert a Shape variant can carry a vector of Point records even when Point is also a sibling variant name.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover data-enum surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only C-style enums, not data-enum payloads. Include this case when Python data-enum bindings are implemented."
     )
 )]
 #[export]
@@ -251,7 +267,8 @@ pub fn echo_shape(s: Shape) -> Shape {
     ],
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover data-enum surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only C-style enums, not data-enum payloads. Include this case when Python data-enum bindings are implemented."
     )
 )]
 #[export]
@@ -270,7 +287,8 @@ pub fn make_rectangle(width: f64, height: f64) -> Shape {
     directions = "Call `enums::data_enum::echo_vec_shape` through the generated binding and assert a vector of data-enum Shape values preserves variant order and payloads.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover data-enum surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only C-style enums, not data-enum payloads. Include this case when Python data-enum bindings are implemented."
     )
 )]
 #[export]
@@ -298,7 +316,8 @@ pub enum Message {
     directions = "Call `enums::data_enum::echo_message` through the generated binding and assert the Message::Text variant preserves its string payload when round-tripped.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover data-enum surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only C-style enums, not data-enum payloads. Include this case when Python data-enum bindings are implemented."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -307,11 +326,13 @@ pub enum Message {
     directions = "Call `enums::data_enum::echo_message` through the generated binding and assert the Message::Image variant preserves its URL and dimension payload fields when round-tripped.",
     exclude(
         java,
-        reason = "The Java data-enum demo does not currently round-trip the Message::Image variant."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java reaches the surrounding surface but still needs a round-trip assertion for the Message::Image variant."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover data-enum surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only C-style enums, not data-enum payloads. Include this case when Python data-enum bindings are implemented."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -319,24 +340,29 @@ pub enum Message {
     justification = "Ensure the Message::Ping unit variant crosses the FFI boundary unchanged.",
     directions = "Call `enums::data_enum::echo_message` through the generated binding and assert the Message::Ping unit variant crosses the FFI boundary unchanged.",
     exclude(
-        apple,
-        reason = "The Apple data-enum demo does not currently round-trip the Message::Ping variant."
+        swift,
+        reason = ExclusionReason::CoverageGap,
+        details = "Swift reaches the surrounding surface but still needs a round-trip assertion for the Message::Ping variant."
     ),
     exclude(
         java,
-        reason = "The Java data-enum demo does not currently round-trip the Message::Ping variant."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java reaches the surrounding surface but still needs a round-trip assertion for the Message::Ping variant."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin data-enum demo does not currently round-trip the Message::Ping variant."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin reaches the surrounding surface but still needs a round-trip assertion for the Message::Ping variant."
     ),
     exclude(
-        wasm,
-        reason = "The Wasm data-enum demo does not currently round-trip the Message::Ping variant."
+        typescript,
+        reason = ExclusionReason::CoverageGap,
+        details = "TypeScript reaches the surrounding surface but still needs a round-trip assertion for the Message::Ping variant."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover data-enum surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only C-style enums, not data-enum payloads. Include this case when Python data-enum bindings are implemented."
     )
 )]
 #[export]
@@ -350,7 +376,8 @@ pub fn echo_message(m: Message) -> Message {
     directions = "Call `enums::data_enum::message_summary` through the generated binding and assert message_summary renders the Text string payload in the summary.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover data-enum surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only C-style enums, not data-enum payloads. Include this case when Python data-enum bindings are implemented."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -359,15 +386,18 @@ pub fn echo_message(m: Message) -> Message {
     directions = "Call `enums::data_enum::message_summary` through the generated binding and assert message_summary renders the Image dimensions and URL in the summary.",
     exclude(
         csharp,
-        reason = "The C# data-enum demo does not currently summarize the Message::Image variant."
+        reason = ExclusionReason::CoverageGap,
+        details = "C# round-trips the value but still needs an assertion for the the Message::Image variant summary."
     ),
     exclude(
         java,
-        reason = "The Java data-enum demo does not currently summarize the Message::Image variant."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java round-trips the value but still needs an assertion for the the Message::Image variant summary."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover data-enum surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only C-style enums, not data-enum payloads. Include this case when Python data-enum bindings are implemented."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -376,7 +406,8 @@ pub fn echo_message(m: Message) -> Message {
     directions = "Call `enums::data_enum::message_summary` through the generated binding and assert message_summary renders the Ping unit variant summary.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover data-enum surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only C-style enums, not data-enum payloads. Include this case when Python data-enum bindings are implemented."
     )
 )]
 #[export]
@@ -402,7 +433,8 @@ pub enum Animal {
     directions = "Call `enums::data_enum::echo_animal` through the generated binding and assert the Animal::Dog variant preserves its name and breed string payloads when round-tripped.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover data-enum surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only C-style enums, not data-enum payloads. Include this case when Python data-enum bindings are implemented."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -411,11 +443,13 @@ pub enum Animal {
     directions = "Call `enums::data_enum::echo_animal` through the generated binding and assert the Animal::Cat variant preserves its name string and indoor boolean payloads when round-tripped.",
     exclude(
         java,
-        reason = "The Java data-enum demo does not currently round-trip the Animal::Cat variant."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java reaches the surrounding surface but still needs a round-trip assertion for the Animal::Cat variant."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover data-enum surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only C-style enums, not data-enum payloads. Include this case when Python data-enum bindings are implemented."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -423,24 +457,29 @@ pub enum Animal {
     justification = "Ensure the Animal::Fish variant preserves its count payload when round-tripped.",
     directions = "Call `enums::data_enum::echo_animal` through the generated binding and assert the Animal::Fish variant preserves its count payload when round-tripped.",
     exclude(
-        apple,
-        reason = "The Apple data-enum demo does not currently round-trip the Animal::Fish variant."
+        swift,
+        reason = ExclusionReason::CoverageGap,
+        details = "Swift reaches the surrounding surface but still needs a round-trip assertion for the Animal::Fish variant."
     ),
     exclude(
         java,
-        reason = "The Java data-enum demo does not currently round-trip the Animal::Fish variant."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java reaches the surrounding surface but still needs a round-trip assertion for the Animal::Fish variant."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin data-enum demo does not currently round-trip the Animal::Fish variant."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin reaches the surrounding surface but still needs a round-trip assertion for the Animal::Fish variant."
     ),
     exclude(
-        wasm,
-        reason = "The Wasm data-enum demo does not currently round-trip the Animal::Fish variant."
+        typescript,
+        reason = ExclusionReason::CoverageGap,
+        details = "TypeScript reaches the surrounding surface but still needs a round-trip assertion for the Animal::Fish variant."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover data-enum surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only C-style enums, not data-enum payloads. Include this case when Python data-enum bindings are implemented."
     )
 )]
 #[export]
@@ -453,24 +492,29 @@ pub fn echo_animal(a: Animal) -> Animal {
     justification = "Ensure animal_name derives the dog name from an Animal::Dog payload.",
     directions = "Call `enums::data_enum::animal_name` through the generated binding and assert animal_name derives the dog name from an Animal::Dog payload.",
     exclude(
-        apple,
-        reason = "The Apple data-enum demo does not currently derive a name from Animal::Dog."
+        swift,
+        reason = ExclusionReason::CoverageGap,
+        details = "Swift round-trips the enum family but still needs an assertion for the derived a name from Animal::Dog behavior."
     ),
     exclude(
         java,
-        reason = "The Java data-enum demo does not currently derive a name from Animal::Dog."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java round-trips the enum family but still needs an assertion for the derived a name from Animal::Dog behavior."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin data-enum demo does not currently derive a name from Animal::Dog."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin round-trips the enum family but still needs an assertion for the derived a name from Animal::Dog behavior."
     ),
     exclude(
-        wasm,
-        reason = "The Wasm data-enum demo does not currently derive a name from Animal::Dog."
+        typescript,
+        reason = ExclusionReason::CoverageGap,
+        details = "TypeScript round-trips the enum family but still needs an assertion for the derived a name from Animal::Dog behavior."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover data-enum surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only C-style enums, not data-enum payloads. Include this case when Python data-enum bindings are implemented."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -479,15 +523,18 @@ pub fn echo_animal(a: Animal) -> Animal {
     directions = "Call `enums::data_enum::animal_name` through the generated binding and assert animal_name derives the cat name from an Animal::Cat payload.",
     exclude(
         csharp,
-        reason = "The C# data-enum demo does not currently derive a name from Animal::Cat."
+        reason = ExclusionReason::CoverageGap,
+        details = "C# round-trips the enum family but still needs an assertion for the derived a name from Animal::Cat behavior."
     ),
     exclude(
         java,
-        reason = "The Java data-enum demo does not currently derive a name from Animal::Cat."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java round-trips the enum family but still needs an assertion for the derived a name from Animal::Cat behavior."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover data-enum surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only C-style enums, not data-enum payloads. Include this case when Python data-enum bindings are implemented."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -496,7 +543,8 @@ pub fn echo_animal(a: Animal) -> Animal {
     directions = "Call `enums::data_enum::animal_name` through the generated binding and assert animal_name derives a count label from an Animal::Fish payload.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover data-enum surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only C-style enums, not data-enum payloads. Include this case when Python data-enum bindings are implemented."
     )
 )]
 #[export]
@@ -565,7 +613,8 @@ pub enum LifecycleEvent {
     directions = "Call `enums::data_enum::echo_lifecycle_event` through the generated binding and assert a LifecycleEvent variant embeds a Priority enum payload and round-trips both the outer tag and inner enum value.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover data-enum surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only C-style enums, not data-enum payloads. Include this case when Python data-enum bindings are implemented."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -574,7 +623,8 @@ pub enum LifecycleEvent {
     directions = "Call `enums::data_enum::echo_lifecycle_event` through the generated binding and assert the LifecycleEvent::Tick unit variant crosses the FFI boundary unchanged.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover data-enum surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only C-style enums, not data-enum payloads. Include this case when Python data-enum bindings are implemented."
     )
 )]
 #[export]
@@ -588,7 +638,8 @@ pub fn echo_lifecycle_event(ev: LifecycleEvent) -> LifecycleEvent {
     directions = "Call `enums::data_enum::make_critical_lifecycle_event` through the generated binding and assert make_critical_lifecycle_event constructs a TaskStarted LifecycleEvent with Critical priority.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover data-enum surfaces."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only C-style enums, not data-enum payloads. Include this case when Python data-enum bindings are implemented."
     )
 )]
 #[export]

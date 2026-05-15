@@ -22,7 +22,8 @@ impl ServiceConfig {
         directions = "Call `records::default_values::ServiceConfig::describe` through the generated binding and assert ServiceConfig::describe formats defaulted and explicit fields into a stable string.",
         exclude(
             python,
-            reason = "The Python demo tests do not currently cover ServiceConfig records."
+            reason = ExclusionReason::ImplementationGap,
+            details = "Python is experimental; its lowerer currently emits only primitive-field blittable records. Include this case when non-blittable records are implemented for Python."
         )
     )]
     pub fn describe(&self) -> String {
@@ -40,7 +41,8 @@ impl ServiceConfig {
         directions = "Call `records::default_values::ServiceConfig::describe_with_prefix` through the generated binding and assert ServiceConfig::describe_with_prefix prepends a caller-provided string to the description.",
         exclude(
             python,
-            reason = "The Python demo tests do not currently cover ServiceConfig records."
+            reason = ExclusionReason::ImplementationGap,
+            details = "Python is experimental; its lowerer currently emits only primitive-field blittable records. Include this case when non-blittable records are implemented for Python."
         )
     )]
     pub fn describe_with_prefix(&self, prefix: String) -> String {
@@ -54,7 +56,8 @@ impl ServiceConfig {
     directions = "Call `records::default_values::echo_service_config` through the generated binding and assert a ServiceConfig record with defaulted and explicit fields crosses the wire and returns unchanged.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover ServiceConfig records."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only primitive-field blittable records. Include this case when non-blittable records are implemented for Python."
     )
 )]
 #[export]

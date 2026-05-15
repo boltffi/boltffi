@@ -17,7 +17,8 @@ pub struct Polygon {
     directions = "Call `records::with_collections::echo_polygon` through the generated binding and assert a Polygon record containing a vector of Point records crosses the wire and returns unchanged.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover records with vector fields."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only primitive-field blittable records and top-level primitive/C-style enum vectors. Include this case when records with collection fields are implemented for Python."
     )
 )]
 pub fn echo_polygon(p: Polygon) -> Polygon {
@@ -31,7 +32,8 @@ pub fn echo_polygon(p: Polygon) -> Polygon {
     directions = "Call `records::with_collections::make_polygon` through the generated binding and assert make_polygon builds a Polygon from a vector of Point records.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover records with vector fields."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only primitive-field blittable records and top-level primitive/C-style enum vectors. Include this case when records with collection fields are implemented for Python."
     )
 )]
 pub fn make_polygon(points: Vec<Point>) -> Polygon {
@@ -45,7 +47,8 @@ pub fn make_polygon(points: Vec<Point>) -> Polygon {
     directions = "Call `records::with_collections::polygon_vertex_count` through the generated binding and assert polygon_vertex_count returns the number of Point records contained in a Polygon.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover records with vector fields."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only primitive-field blittable records and top-level primitive/C-style enum vectors. Include this case when records with collection fields are implemented for Python."
     )
 )]
 pub fn polygon_vertex_count(p: Polygon) -> u32 {
@@ -59,7 +62,8 @@ pub fn polygon_vertex_count(p: Polygon) -> u32 {
     directions = "Call `records::with_collections::polygon_centroid` through the generated binding and assert polygon_centroid receives a Polygon record and returns the average of its Point coordinates.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover records with vector fields."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only primitive-field blittable records and top-level primitive/C-style enum vectors. Include this case when records with collection fields are implemented for Python."
     )
 )]
 pub fn polygon_centroid(p: Polygon) -> Point {
@@ -89,7 +93,8 @@ pub struct Team {
     directions = "Call `records::with_collections::echo_team` through the generated binding and assert a Team record containing a vector of member strings crosses the wire and returns unchanged.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover records with vector fields."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only primitive-field blittable records and top-level primitive/C-style enum vectors. Include this case when records with collection fields are implemented for Python."
     )
 )]
 pub fn echo_team(t: Team) -> Team {
@@ -103,7 +108,8 @@ pub fn echo_team(t: Team) -> Team {
     directions = "Call `records::with_collections::make_team` through the generated binding and assert make_team builds a Team record from a name and vector of member strings.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover records with vector fields."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only primitive-field blittable records and top-level primitive/C-style enum vectors. Include this case when records with collection fields are implemented for Python."
     )
 )]
 pub fn make_team(name: String, members: Vec<String>) -> Team {
@@ -117,7 +123,8 @@ pub fn make_team(name: String, members: Vec<String>) -> Team {
     directions = "Call `records::with_collections::team_size` through the generated binding and assert team_size returns the number of member strings contained in a Team record.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover records with vector fields."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only primitive-field blittable records and top-level primitive/C-style enum vectors. Include this case when records with collection fields are implemented for Python."
     )
 )]
 pub fn team_size(t: Team) -> u32 {
@@ -137,7 +144,8 @@ pub struct Classroom {
     directions = "Call `records::with_collections::echo_classroom` through the generated binding and assert a Classroom record containing a vector of Person records crosses the wire and returns unchanged.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover records with vector fields."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only primitive-field blittable records and top-level primitive/C-style enum vectors. Include this case when records with collection fields are implemented for Python."
     )
 )]
 pub fn echo_classroom(c: Classroom) -> Classroom {
@@ -151,7 +159,8 @@ pub fn echo_classroom(c: Classroom) -> Classroom {
     directions = "Call `records::with_collections::make_classroom` through the generated binding and assert make_classroom builds a Classroom from a vector of Person records.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover records with vector fields."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only primitive-field blittable records and top-level primitive/C-style enum vectors. Include this case when records with collection fields are implemented for Python."
     )
 )]
 pub fn make_classroom(students: Vec<Person>) -> Classroom {
@@ -172,7 +181,8 @@ pub struct TaggedScores {
     directions = "Call `records::with_collections::echo_tagged_scores` through the generated binding and assert a TaggedScores record containing a label and score vector crosses the wire and returns unchanged.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover records with vector fields."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only primitive-field blittable records and top-level primitive/C-style enum vectors. Include this case when records with collection fields are implemented for Python."
     )
 )]
 pub fn echo_tagged_scores(ts: TaggedScores) -> TaggedScores {
@@ -186,7 +196,8 @@ pub fn echo_tagged_scores(ts: TaggedScores) -> TaggedScores {
     directions = "Call `records::with_collections::average_score` through the generated binding and assert average_score receives a TaggedScores record and returns the average of its score vector.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover records with vector fields."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only primitive-field blittable records and top-level primitive/C-style enum vectors. Include this case when records with collection fields are implemented for Python."
     )
 )]
 pub fn average_score(ts: TaggedScores) -> f64 {
@@ -221,19 +232,23 @@ pub struct BenchmarkUserProfile {
     directions = "Call `records::with_collections::generate_user_profiles` through the generated binding and assert generate_user_profiles returns a vector of benchmark profile records with nested vectors.",
     exclude(
         java,
-        reason = "The Java demo tests do not currently cover benchmark user profile helpers."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for benchmark user profile helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin demo tests do not currently cover benchmark user profile helpers."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for benchmark user profile helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover records with vector fields."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only primitive-field blittable records and top-level primitive/C-style enum vectors. Include this case when records with collection fields are implemented for Python."
     ),
     exclude(
-        wasm,
-        reason = "The wasm demo tests do not currently cover benchmark user profile helpers."
+        typescript,
+        reason = ExclusionReason::CoverageGap,
+        details = "TypeScript has no assertion for benchmark user profile helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     )
 )]
 pub fn generate_user_profiles(count: i32) -> Vec<BenchmarkUserProfile> {
@@ -270,19 +285,23 @@ pub fn generate_user_profiles(count: i32) -> Vec<BenchmarkUserProfile> {
     directions = "Call `records::with_collections::sum_user_scores` through the generated binding and assert sum_user_scores receives a vector of benchmark profile records and sums their score fields.",
     exclude(
         java,
-        reason = "The Java demo tests do not currently cover benchmark user profile helpers."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for benchmark user profile helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin demo tests do not currently cover benchmark user profile helpers."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for benchmark user profile helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover records with vector fields."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only primitive-field blittable records and top-level primitive/C-style enum vectors. Include this case when records with collection fields are implemented for Python."
     ),
     exclude(
-        wasm,
-        reason = "The wasm demo tests do not currently cover benchmark user profile helpers."
+        typescript,
+        reason = ExclusionReason::CoverageGap,
+        details = "TypeScript has no assertion for benchmark user profile helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     )
 )]
 pub fn sum_user_scores(users: Vec<BenchmarkUserProfile>) -> f64 {
@@ -297,19 +316,23 @@ pub fn sum_user_scores(users: Vec<BenchmarkUserProfile>) -> f64 {
     directions = "Call `records::with_collections::count_active_users` through the generated binding and assert count_active_users receives a vector of benchmark profile records and counts active users.",
     exclude(
         java,
-        reason = "The Java demo tests do not currently cover benchmark user profile helpers."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for benchmark user profile helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin demo tests do not currently cover benchmark user profile helpers."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for benchmark user profile helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover records with vector fields."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only primitive-field blittable records and top-level primitive/C-style enum vectors. Include this case when records with collection fields are implemented for Python."
     ),
     exclude(
-        wasm,
-        reason = "The wasm demo tests do not currently cover benchmark user profile helpers."
+        typescript,
+        reason = ExclusionReason::CoverageGap,
+        details = "TypeScript has no assertion for benchmark user profile helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     )
 )]
 pub fn count_active_users(users: Vec<BenchmarkUserProfile>) -> i32 {

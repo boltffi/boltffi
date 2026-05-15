@@ -15,7 +15,8 @@ use boltffi::*;
     directions = "Call `async_fns::async_add` through the generated binding and assert an async i32 addition function resolves with the sum.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover async functions."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently omits async functions. Include this case when async Python bindings are implemented."
     )
 )]
 #[export]
@@ -30,7 +31,8 @@ pub async fn async_add(a: i32, b: i32) -> i32 {
     directions = "Call `async_fns::async_echo` through the generated binding and assert an async string function resolves with the expected prefixed message.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover async functions."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently omits async functions. Include this case when async Python bindings are implemented."
     )
 )]
 #[export]
@@ -44,7 +46,8 @@ pub async fn async_echo(message: String) -> String {
     directions = "Call `async_fns::async_double_all` through the generated binding and assert an async vector function resolves with every i32 value doubled.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover async functions."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently omits async functions. Include this case when async Python bindings are implemented."
     )
 )]
 #[export]
@@ -58,7 +61,8 @@ pub async fn async_double_all(values: Vec<i32>) -> Vec<i32> {
     directions = "Call `async_fns::async_find_positive` through the generated binding and assert an async optional result resolves with the first positive i32 in a vector.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover async functions."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently omits async functions. Include this case when async Python bindings are implemented."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -67,7 +71,8 @@ pub async fn async_double_all(values: Vec<i32>) -> Vec<i32> {
     directions = "Call `async_fns::async_find_positive` through the generated binding and assert an async optional result resolves to none when no positive i32 is present.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover async functions."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently omits async functions. Include this case when async Python bindings are implemented."
     )
 )]
 #[export]
@@ -81,7 +86,8 @@ pub async fn async_find_positive(values: Vec<i32>) -> Option<i32> {
     directions = "Call `async_fns::async_concat` through the generated binding and assert an async string-vector function resolves with the values joined by commas.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover async functions."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently omits async functions. Include this case when async Python bindings are implemented."
     )
 )]
 #[export]
@@ -95,15 +101,18 @@ pub async fn async_concat(strings: Vec<String>) -> String {
     directions = "Call `async_fns::try_compute_async` through the generated binding and assert an async Result function resolves with a doubled value for valid input.",
     exclude(
         java,
-        reason = "The Java async demo tests do not currently cover async Result helpers."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for async Result helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin async demo tests do not currently cover async Result helpers."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for async Result helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover async functions."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently omits async functions. Include this case when async Python bindings are implemented."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -112,19 +121,23 @@ pub async fn async_concat(strings: Vec<String>) -> String {
     directions = "Call `async_fns::try_compute_async` through the generated binding and assert an async Result function rejects negative input with the typed overflow error.",
     exclude(
         csharp,
-        reason = "The C# async Result demo covers the zero-input invalid case instead of the negative overflow case."
+        reason = ExclusionReason::CoverageGap,
+        details = "C# covers the zero-input invalid case for that branch today; add a separate assertion for the negative overflow case."
     ),
     exclude(
         java,
-        reason = "The Java async demo tests do not currently cover async Result helpers."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for async Result helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin async demo tests do not currently cover async Result helpers."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for async Result helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover async functions."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently omits async functions. Include this case when async Python bindings are implemented."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -132,24 +145,29 @@ pub async fn async_concat(strings: Vec<String>) -> String {
     justification = "Ensure an async Result function rejects zero input with the typed invalid-input error.",
     directions = "Call `async_fns::try_compute_async` through the generated binding and assert an async Result function rejects zero input with the typed invalid-input error.",
     exclude(
-        apple,
-        reason = "The Apple async Result demo covers the negative overflow case instead of the zero-input invalid case."
+        swift,
+        reason = ExclusionReason::CoverageGap,
+        details = "Swift covers the negative overflow case for that branch today; add a separate assertion for the zero-input invalid case."
     ),
     exclude(
         java,
-        reason = "The Java async demo tests do not currently cover async Result helpers."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for async Result helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin async demo tests do not currently cover async Result helpers."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for async Result helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        wasm,
-        reason = "The Wasm async Result demo covers the negative overflow case instead of the zero-input invalid case."
+        typescript,
+        reason = ExclusionReason::CoverageGap,
+        details = "TypeScript covers the negative overflow case for that branch today; add a separate assertion for the zero-input invalid case."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover async functions."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently omits async functions. Include this case when async Python bindings are implemented."
     )
 )]
 #[export]
@@ -163,15 +181,18 @@ pub async fn try_compute_async(value: i32) -> Result<i32, ComputeError> {
     directions = "Call `async_fns::fetch_data` through the generated binding and assert an async string-error Result function resolves with a scaled positive id.",
     exclude(
         java,
-        reason = "The Java async demo tests do not currently cover async Result helpers."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for async Result helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin async demo tests do not currently cover async Result helpers."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for async Result helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover async functions."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently omits async functions. Include this case when async Python bindings are implemented."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -180,15 +201,18 @@ pub async fn try_compute_async(value: i32) -> Result<i32, ComputeError> {
     directions = "Call `async_fns::fetch_data` through the generated binding and assert an async string-error Result function rejects a non-positive id.",
     exclude(
         java,
-        reason = "The Java async demo tests do not currently cover async Result helpers."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for async Result helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin async demo tests do not currently cover async Result helpers."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for async Result helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover async functions."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently omits async functions. Include this case when async Python bindings are implemented."
     )
 )]
 #[export]
@@ -206,19 +230,23 @@ pub async fn fetch_data(id: i32) -> Result<i32, String> {
     directions = "Call `async_fns::async_get_numbers` through the generated binding and assert an async vector producer resolves with a zero-based counting sequence.",
     exclude(
         java,
-        reason = "The Java async demo tests do not currently cover async_get_numbers."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java has no assertion for async_get_numbers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin async demo tests do not currently cover async_get_numbers."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for async_get_numbers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        wasm,
-        reason = "The Wasm async demo tests do not currently cover async_get_numbers."
+        typescript,
+        reason = ExclusionReason::CoverageGap,
+        details = "TypeScript has no assertion for async_get_numbers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover async functions."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently omits async functions. Include this case when async Python bindings are implemented."
     )
 )]
 #[export]
@@ -233,7 +261,8 @@ pub async fn async_get_numbers(count: i32) -> Vec<i32> {
     directions = "Call `async_fns::async_echo_mixed_record` through the generated binding and assert an async function round-trips a mixed record containing nested records and enums.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover async functions."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently omits async functions. Include this case when async Python bindings are implemented."
     )
 )]
 #[export]
@@ -247,7 +276,8 @@ pub async fn async_echo_mixed_record(record: MixedRecord) -> MixedRecord {
     directions = "Call `async_fns::async_make_mixed_record` through the generated binding and assert an async function constructs a mixed record from scalar, record, enum, and nested parameters.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover async functions."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently omits async functions. Include this case when async Python bindings are implemented."
     )
 )]
 #[export]

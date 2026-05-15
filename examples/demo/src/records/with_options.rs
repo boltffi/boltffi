@@ -19,7 +19,8 @@ pub struct UserProfile {
     directions = "Call `records::with_options::echo_user_profile` through the generated binding and assert a UserProfile record with present optional fields crosses the wire and returns unchanged.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover records with optional fields."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only primitive-field blittable records. Include this case when records with optional fields are implemented for Python."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -27,24 +28,29 @@ pub struct UserProfile {
     justification = "Ensure a UserProfile record with absent optional fields crosses the wire and returns unchanged.",
     directions = "Call `records::with_options::echo_user_profile` through the generated binding and assert a UserProfile record with absent optional fields crosses the wire and returns unchanged.",
     exclude(
-        apple,
-        reason = "The Apple demo tests do not currently round-trip UserProfile with absent options."
+        swift,
+        reason = ExclusionReason::CoverageGap,
+        details = "Swift reaches the surrounding surface but still needs a round-trip assertion for UserProfile with absent options."
     ),
     exclude(
         java,
-        reason = "The Java demo tests do not currently round-trip UserProfile with absent options."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java reaches the surrounding surface but still needs a round-trip assertion for UserProfile with absent options."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin demo tests do not currently round-trip UserProfile with absent options."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin reaches the surrounding surface but still needs a round-trip assertion for UserProfile with absent options."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover records with optional fields."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only primitive-field blittable records. Include this case when records with optional fields are implemented for Python."
     ),
     exclude(
-        wasm,
-        reason = "The wasm demo tests do not currently round-trip UserProfile with absent options."
+        typescript,
+        reason = ExclusionReason::CoverageGap,
+        details = "TypeScript reaches the surrounding surface but still needs a round-trip assertion for UserProfile with absent options."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -52,24 +58,29 @@ pub struct UserProfile {
     justification = "Ensure a UserProfile record with one present option and one absent option crosses the wire and returns unchanged.",
     directions = "Call `records::with_options::echo_user_profile` through the generated binding and assert a UserProfile record with one present option and one absent option crosses the wire and returns unchanged.",
     exclude(
-        apple,
-        reason = "The Apple demo tests do not currently round-trip UserProfile with mixed option presence."
+        swift,
+        reason = ExclusionReason::CoverageGap,
+        details = "Swift reaches the surrounding surface but still needs a round-trip assertion for UserProfile with mixed option presence."
     ),
     exclude(
         java,
-        reason = "The Java demo tests do not currently round-trip UserProfile with mixed option presence."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java reaches the surrounding surface but still needs a round-trip assertion for UserProfile with mixed option presence."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin demo tests do not currently round-trip UserProfile with mixed option presence."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin reaches the surrounding surface but still needs a round-trip assertion for UserProfile with mixed option presence."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover records with optional fields."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only primitive-field blittable records. Include this case when records with optional fields are implemented for Python."
     ),
     exclude(
-        wasm,
-        reason = "The wasm demo tests do not currently round-trip UserProfile with mixed option presence."
+        typescript,
+        reason = ExclusionReason::CoverageGap,
+        details = "TypeScript reaches the surrounding surface but still needs a round-trip assertion for UserProfile with mixed option presence."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -77,24 +88,29 @@ pub struct UserProfile {
     justification = "Ensure a UserProfile record with UTF-8 text inside optional string fields crosses the wire and returns unchanged.",
     directions = "Call `records::with_options::echo_user_profile` through the generated binding and assert a UserProfile record with UTF-8 text inside optional string fields crosses the wire and returns unchanged.",
     exclude(
-        apple,
-        reason = "The Apple demo tests do not currently round-trip UTF-8 inside UserProfile optional fields."
+        swift,
+        reason = ExclusionReason::CoverageGap,
+        details = "Swift reaches the surrounding surface but still needs a round-trip assertion for UTF-8 inside UserProfile optional fields."
     ),
     exclude(
         java,
-        reason = "The Java demo tests do not currently round-trip UTF-8 inside UserProfile optional fields."
+        reason = ExclusionReason::CoverageGap,
+        details = "Java reaches the surrounding surface but still needs a round-trip assertion for UTF-8 inside UserProfile optional fields."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin demo tests do not currently round-trip UTF-8 inside UserProfile optional fields."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin reaches the surrounding surface but still needs a round-trip assertion for UTF-8 inside UserProfile optional fields."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover records with optional fields."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only primitive-field blittable records. Include this case when records with optional fields are implemented for Python."
     ),
     exclude(
-        wasm,
-        reason = "The wasm demo tests do not currently round-trip UTF-8 inside UserProfile optional fields."
+        typescript,
+        reason = ExclusionReason::CoverageGap,
+        details = "TypeScript reaches the surrounding surface but still needs a round-trip assertion for UTF-8 inside UserProfile optional fields."
     )
 )]
 pub fn echo_user_profile(profile: UserProfile) -> UserProfile {
@@ -108,7 +124,8 @@ pub fn echo_user_profile(profile: UserProfile) -> UserProfile {
     directions = "Call `records::with_options::make_user_profile` through the generated binding and assert make_user_profile constructs a UserProfile with present email and score options.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover records with optional fields."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only primitive-field blittable records. Include this case when records with optional fields are implemented for Python."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -117,7 +134,8 @@ pub fn echo_user_profile(profile: UserProfile) -> UserProfile {
     directions = "Call `records::with_options::make_user_profile` through the generated binding and assert make_user_profile constructs a UserProfile with absent email and score options.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover records with optional fields."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only primitive-field blittable records. Include this case when records with optional fields are implemented for Python."
     )
 )]
 pub fn make_user_profile(
@@ -141,7 +159,8 @@ pub fn make_user_profile(
     directions = "Call `records::with_options::user_display_name` through the generated binding and assert user_display_name includes the email address when a UserProfile email option is present.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover records with optional fields."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only primitive-field blittable records. Include this case when records with optional fields are implemented for Python."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -150,7 +169,8 @@ pub fn make_user_profile(
     directions = "Call `records::with_options::user_display_name` through the generated binding and assert user_display_name falls back to the name when a UserProfile email option is absent.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover records with optional fields."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only primitive-field blittable records. Include this case when records with optional fields are implemented for Python."
     )
 )]
 pub fn user_display_name(profile: UserProfile) -> String {
@@ -176,7 +196,8 @@ pub struct SearchResult {
     directions = "Call `records::with_options::echo_search_result` through the generated binding and assert a SearchResult record with present cursor and score options crosses the wire and returns unchanged.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover records with optional fields."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only primitive-field blittable records. Include this case when records with optional fields are implemented for Python."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -184,20 +205,24 @@ pub struct SearchResult {
     justification = "Ensure a SearchResult record with absent cursor and score options crosses the wire and returns unchanged.",
     directions = "Call `records::with_options::echo_search_result` through the generated binding and assert a SearchResult record with absent cursor and score options crosses the wire and returns unchanged.",
     exclude(
-        apple,
-        reason = "The Apple demo tests do not currently round-trip SearchResult with absent options."
+        swift,
+        reason = ExclusionReason::CoverageGap,
+        details = "Swift reaches the surrounding surface but still needs a round-trip assertion for SearchResult with absent options."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin demo tests do not currently round-trip SearchResult with absent options."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin reaches the surrounding surface but still needs a round-trip assertion for SearchResult with absent options."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover records with optional fields."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only primitive-field blittable records. Include this case when records with optional fields are implemented for Python."
     ),
     exclude(
-        wasm,
-        reason = "The wasm demo tests do not currently round-trip SearchResult with absent options."
+        typescript,
+        reason = ExclusionReason::CoverageGap,
+        details = "TypeScript reaches the surrounding surface but still needs a round-trip assertion for SearchResult with absent options."
     )
 )]
 pub fn echo_search_result(result: SearchResult) -> SearchResult {
@@ -211,7 +236,8 @@ pub fn echo_search_result(result: SearchResult) -> SearchResult {
     directions = "Call `records::with_options::has_more_results` through the generated binding and assert has_more_results returns true when a SearchResult carries a next cursor.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover records with optional fields."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only primitive-field blittable records. Include this case when records with optional fields are implemented for Python."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -220,7 +246,8 @@ pub fn echo_search_result(result: SearchResult) -> SearchResult {
     directions = "Call `records::with_options::has_more_results` through the generated binding and assert has_more_results returns false when a SearchResult has no next cursor.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover records with optional fields."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer currently emits only primitive-field blittable records. Include this case when records with optional fields are implemented for Python."
     )
 )]
 pub fn has_more_results(result: SearchResult) -> bool {

@@ -6,7 +6,8 @@ use boltffi::*;
     directions = "Call `results::nested_results::result_of_option` through the generated binding and assert result_of_option returns an Ok(Some) integer for a positive key.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover nested Result exports."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently emit nested Result shapes. Include this case when nested Result support is implemented for Python."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -15,7 +16,8 @@ use boltffi::*;
     directions = "Call `results::nested_results::result_of_option` through the generated binding and assert result_of_option returns Ok(None) for key zero.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover nested Result exports."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently emit nested Result shapes. Include this case when nested Result support is implemented for Python."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -24,7 +26,8 @@ use boltffi::*;
     directions = "Call `results::nested_results::result_of_option` through the generated binding and assert result_of_option returns a language-native error for a negative key.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover nested Result exports."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently emit nested Result shapes. Include this case when nested Result support is implemented for Python."
     )
 )]
 #[export]
@@ -44,7 +47,8 @@ pub fn result_of_option(key: i32) -> Result<Option<i32>, String> {
     directions = "Call `results::nested_results::result_of_vec` through the generated binding and assert result_of_vec returns an Ok vector containing values from zero up to the count.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover nested Result exports."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently emit nested Result shapes. Include this case when nested Result support is implemented for Python."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -53,7 +57,8 @@ pub fn result_of_option(key: i32) -> Result<Option<i32>, String> {
     directions = "Call `results::nested_results::result_of_vec` through the generated binding and assert result_of_vec returns a language-native error for a negative count.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover nested Result exports."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently emit nested Result shapes. Include this case when nested Result support is implemented for Python."
     )
 )]
 #[export]
@@ -71,7 +76,8 @@ pub fn result_of_vec(count: i32) -> Result<Vec<i32>, String> {
     directions = "Call `results::nested_results::result_of_string` through the generated binding and assert result_of_string returns an Ok string value for a non-negative key.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover nested Result exports."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently emit nested Result shapes. Include this case when nested Result support is implemented for Python."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -80,7 +86,8 @@ pub fn result_of_vec(count: i32) -> Result<Vec<i32>, String> {
     directions = "Call `results::nested_results::result_of_string` through the generated binding and assert result_of_string returns a language-native error for a negative key.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover nested Result exports."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently emit nested Result shapes. Include this case when nested Result support is implemented for Python."
     )
 )]
 #[export]

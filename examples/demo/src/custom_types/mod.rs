@@ -53,24 +53,29 @@ custom_type!(
     justification = "Ensure the generated Event record exposes a custom DateTime field through the host-language surface.",
     directions = "Inspect or construct `custom_types::Event` through the generated binding and assert the generated Event record exposes a custom DateTime field through the host-language surface.",
     exclude(
-        apple,
-        reason = "The Apple custom type demo does not currently assert Event fields before crossing FFI."
+        swift,
+        reason = ExclusionReason::CoverageGap,
+        details = "Swift constructs the surrounding value but still needs an assertion for Event fields before crossing FFI."
     ),
     exclude(
         csharp,
-        reason = "The C# custom type demo does not currently assert Event fields before crossing FFI."
+        reason = ExclusionReason::CoverageGap,
+        details = "C# constructs the surrounding value but still needs an assertion for Event fields before crossing FFI."
     ),
     exclude(
         kotlin,
-        reason = "The Kotlin custom type demo does not currently cover Event."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for Event in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        wasm,
-        reason = "The Wasm custom type demo does not currently assert Event fields before crossing FFI."
+        typescript,
+        reason = ExclusionReason::CoverageGap,
+        details = "TypeScript constructs the surrounding value but still needs an assertion for Event fields before crossing FFI."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover custom types."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently map custom FFI types or records containing custom fields. Include this case when custom-type Python bindings are implemented."
     )
 )]
 #[data]
@@ -85,7 +90,8 @@ pub struct Event {
     directions = "Call `custom_types::echo_email` through the generated binding and assert an email custom type crosses the wire through its string representation and returns unchanged.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover custom types."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently map custom FFI types or records containing custom fields. Include this case when custom-type Python bindings are implemented."
     )
 )]
 #[export]
@@ -99,7 +105,8 @@ pub fn echo_email(email: Email) -> Email {
     directions = "Call `custom_types::email_domain` through the generated binding and assert an email custom type crosses the wire and returns its domain string.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover custom types."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently map custom FFI types or records containing custom fields. Include this case when custom-type Python bindings are implemented."
     )
 )]
 #[export]
@@ -113,7 +120,8 @@ pub fn email_domain(email: Email) -> String {
     directions = "Call `custom_types::echo_datetime` through the generated binding and assert a DateTime custom type crosses the wire through millisecond representation and returns unchanged.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover custom types."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently map custom FFI types or records containing custom fields. Include this case when custom-type Python bindings are implemented."
     )
 )]
 #[export]
@@ -127,7 +135,8 @@ pub fn echo_datetime(dt: DateTime<Utc>) -> DateTime<Utc> {
     directions = "Call `custom_types::datetime_to_millis` through the generated binding and assert a DateTime custom type crosses the wire and returns its millisecond representation.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover custom types."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently map custom FFI types or records containing custom fields. Include this case when custom-type Python bindings are implemented."
     )
 )]
 #[export]
@@ -141,11 +150,13 @@ pub fn datetime_to_millis(dt: DateTime<Utc>) -> i64 {
     directions = "Call `custom_types::format_timestamp` through the generated binding and assert a DateTime custom type crosses the wire and returns an RFC3339 timestamp string.",
     exclude(
         kotlin,
-        reason = "The Kotlin custom type demo does not currently cover the standalone timestamp formatting helper."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for the standalone timestamp formatting helper in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover custom types."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently map custom FFI types or records containing custom fields. Include this case when custom-type Python bindings are implemented."
     )
 )]
 #[export]
@@ -159,11 +170,13 @@ pub fn format_timestamp(timestamp: DateTime<Utc>) -> String {
     directions = "Call `custom_types::echo_event` through the generated binding and assert an Event record containing a DateTime custom type field crosses the FFI boundary unchanged.",
     exclude(
         kotlin,
-        reason = "The Kotlin custom type demo does not currently cover Event."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for Event in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover custom types."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently map custom FFI types or records containing custom fields. Include this case when custom-type Python bindings are implemented."
     )
 )]
 #[export]
@@ -177,11 +190,13 @@ pub fn echo_event(event: Event) -> Event {
     directions = "Call `custom_types::event_timestamp` through the generated binding and assert an Event record containing a DateTime custom type field returns its timestamp as milliseconds.",
     exclude(
         kotlin,
-        reason = "The Kotlin custom type demo does not currently cover Event."
+        reason = ExclusionReason::CoverageGap,
+        details = "Kotlin has no assertion for Event in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover custom types."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently map custom FFI types or records containing custom fields. Include this case when custom-type Python bindings are implemented."
     )
 )]
 #[export]
@@ -195,7 +210,8 @@ pub fn event_timestamp(event: Event) -> i64 {
     directions = "Call `custom_types::echo_emails` through the generated binding and assert a vector of Email custom types preserves order and UTF-8 values when round-tripped.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover custom types."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently map custom FFI types or records containing custom fields. Include this case when custom-type Python bindings are implemented."
     )
 )]
 #[export]
@@ -209,7 +225,8 @@ pub fn echo_emails(emails: Vec<Email>) -> Vec<Email> {
     directions = "Call `custom_types::echo_datetimes` through the generated binding and assert a vector of DateTime custom types preserves millisecond values when round-tripped.",
     exclude(
         python,
-        reason = "The Python demo tests do not currently cover custom types."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Python is experimental; its lowerer does not currently map custom FFI types or records containing custom fields. Include this case when custom-type Python bindings are implemented."
     )
 )]
 #[export]
