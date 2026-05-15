@@ -54,26 +54,32 @@ final class BlittableRecordsTests: DemoTestCase {
     }
 
     func testBenchmarkRecordFns() {
-        demoCase("case:records.blittable.locations.vector_stats")
+        demoCase("case:records.blittable.locations.should_generate_sample_vector")
         let locations = generateLocations(count: 3)
         XCTAssertEqual(locations.count, 3)
+        demoCase("case:records.blittable.locations.should_count_vector_items")
         XCTAssertEqual(processLocations(locations: locations), 3)
+        demoCase("case:records.blittable.locations.should_sum_generated_ratings")
         XCTAssertEqual(sumRatings(locations: locations), 9.3, accuracy: 1e-9)
 
-        demoCase("case:records.blittable.trades.vector_stats")
+        demoCase("case:records.blittable.trades.should_generate_sample_vector")
         let trades = generateTrades(count: 3)
         XCTAssertEqual(trades.count, 3)
+        demoCase("case:records.blittable.trades.should_sum_volumes")
         XCTAssertEqual(sumTradeVolumes(trades: trades), 3000)
+        demoCase("case:records.blittable.trades.should_aggregate_with_locations")
         XCTAssertEqual(aggregateLocationTradeStats(locations: locations, trades: trades), 3002)
 
-        demoCase("case:records.blittable.particles.vector_stats")
+        demoCase("case:records.blittable.particles.should_generate_sample_vector")
         let particles = generateParticles(count: 3)
         XCTAssertEqual(particles.count, 3)
+        demoCase("case:records.blittable.particles.should_sum_masses")
         XCTAssertEqual(sumParticleMasses(particles: particles), 3.003, accuracy: 1e-9)
 
-        demoCase("case:records.blittable.sensor_readings.vector_stats")
+        demoCase("case:records.blittable.sensor_readings.should_generate_sample_vector")
         let readings = generateSensorReadings(count: 3)
         XCTAssertEqual(readings.count, 3)
+        demoCase("case:records.blittable.sensor_readings.should_average_generated_temperatures")
         XCTAssertEqual(avgSensorTemperature(readings: readings), 21.0, accuracy: 1e-9)
 
         XCTAssertEqual(

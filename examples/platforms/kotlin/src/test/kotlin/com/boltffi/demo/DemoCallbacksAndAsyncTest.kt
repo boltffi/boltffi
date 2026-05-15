@@ -173,12 +173,17 @@ class DemoCallbacksAndAsyncTest {
     @Test
     fun topLevelAsyncFunctionsRoundTripThroughKotlin() = runBlocking {
         withTimeout(10_000) {
-            demoCase("case:async_fns.basic.scalar_string_vec")
+            demoCase("case:async_fns.basic.add.should_return_sum")
             assertEquals(10, asyncAdd(3, 7))
+            demoCase("case:async_fns.basic.echo.should_prefix_message")
             assertEquals("Echo: hello async", asyncEcho("hello async"))
+            demoCase("case:async_fns.basic.double_all.should_double_i32_vector")
             assertContentEquals(intArrayOf(2, 4, 6), asyncDoubleAll(intArrayOf(1, 2, 3)))
+            demoCase("case:async_fns.basic.find_positive.should_return_first_positive")
             assertEquals(5, asyncFindPositive(intArrayOf(-1, 0, 5, 3)))
+            demoCase("case:async_fns.basic.find_positive.should_return_none_for_all_negative")
             assertNull(asyncFindPositive(intArrayOf(-1, -2, -3)))
+            demoCase("case:async_fns.basic.concat.should_join_string_vector")
             assertEquals("a, b, c", asyncConcat(listOf("a", "b", "c")))
         }
     }

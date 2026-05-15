@@ -135,14 +135,16 @@ public final class DemoTest {
         demoCase("case:custom_types.datetime.should_format_rfc3339_timestamp");
         assert Demo.formatTimestamp(timestamp).startsWith("2024-03-") : "formatTimestamp";
 
-        demoCase("case:custom_types.event.basic");
         Event event = new Event("launch", timestamp);
+        demoCase("case:custom_types.event.should_expose_datetime_field");
         assert event.name().equals("launch") : "Event.name";
         assert event.timestamp() == timestamp : "Event.timestamp";
 
+        demoCase("case:custom_types.event.should_roundtrip_datetime_field");
         Event echoed = Demo.echoEvent(event);
         assert echoed.name().equals("launch") : "echoEvent.name";
         assert echoed.timestamp() == timestamp : "echoEvent.timestamp";
+        demoCase("case:custom_types.event.should_extract_timestamp_millis");
         assert Demo.eventTimestamp(event) == timestamp : "eventTimestamp";
 
         String email = "café@example.com";
@@ -151,14 +153,15 @@ public final class DemoTest {
         demoCase("case:custom_types.email.should_extract_domain");
         assert Demo.emailDomain(email).equals("example.com") : "emailDomain";
 
-        demoCase("case:custom_types.vectors.basic");
         List<String> emails = Arrays.asList("café@example.com", "user@example.org");
+        demoCase("case:custom_types.vectors.emails.should_roundtrip_values");
         List<String> echoedEmails = Demo.echoEmails(emails);
         assert echoedEmails.size() == 2 : "echoEmails length";
         assert echoedEmails.get(0).equals("café@example.com") : "echoEmails[0] (utf-8)";
         assert echoedEmails.get(1).equals("user@example.org") : "echoEmails[1]";
 
         long[] dts = { 1_710_000_000_000L, 1_710_000_001_000L, 1_710_000_002_000L };
+        demoCase("case:custom_types.vectors.datetimes.should_roundtrip_millis_values");
         long[] echoedDts = Demo.echoDatetimes(dts);
         assert echoedDts.length == 3 : "echoDatetimes length";
         assert echoedDts[0] == dts[0] && echoedDts[1] == dts[1] && echoedDts[2] == dts[2]
@@ -779,26 +782,32 @@ public final class DemoTest {
     private static void testBlittableRecordVecs() {
         System.out.println("Testing blittable record vecs...");
 
-        demoCase("case:records.blittable.locations.vector_stats");
+        demoCase("case:records.blittable.locations.should_generate_sample_vector");
         List<Location> locations = Demo.generateLocations(3);
         assert locations.size() == 3 : "generateLocations size";
+        demoCase("case:records.blittable.locations.should_count_vector_items");
         assert Demo.processLocations(locations) == 3 : "processLocations";
+        demoCase("case:records.blittable.locations.should_sum_generated_ratings");
         assert Math.abs(Demo.sumRatings(locations) - 9.3) < 0.0001 : "sumRatings";
 
-        demoCase("case:records.blittable.trades.vector_stats");
+        demoCase("case:records.blittable.trades.should_generate_sample_vector");
         List<Trade> trades = Demo.generateTrades(3);
         assert trades.size() == 3 : "generateTrades size";
+        demoCase("case:records.blittable.trades.should_sum_volumes");
         assert Demo.sumTradeVolumes(trades) == 3000L : "sumTradeVolumes";
+        demoCase("case:records.blittable.trades.should_aggregate_with_locations");
         assert Demo.aggregateLocationTradeStats(locations, trades) == 3002L : "aggregateLocationTradeStats";
 
-        demoCase("case:records.blittable.particles.vector_stats");
+        demoCase("case:records.blittable.particles.should_generate_sample_vector");
         List<Particle> particles = Demo.generateParticles(3);
         assert particles.size() == 3 : "generateParticles size";
+        demoCase("case:records.blittable.particles.should_sum_masses");
         assert Math.abs(Demo.sumParticleMasses(particles) - 3.003) < 0.0001 : "sumParticleMasses";
 
-        demoCase("case:records.blittable.sensor_readings.vector_stats");
+        demoCase("case:records.blittable.sensor_readings.should_generate_sample_vector");
         List<SensorReading> readings = Demo.generateSensorReadings(3);
         assert readings.size() == 3 : "generateSensorReadings size";
+        demoCase("case:records.blittable.sensor_readings.should_average_generated_temperatures");
         assert Math.abs(Demo.avgSensorTemperature(readings) - 21.0) < 0.0001 : "avgSensorTemperature";
 
         System.out.println("  PASS\n");
@@ -1455,29 +1464,35 @@ public final class DemoTest {
         System.out.println("Testing async functions...");
         try {
             CompletableFuture<Integer> addFuture = Demo.asyncAdd(3, 7);
-            demoCase("case:async_fns.basic.scalar_string_vec");
+            demoCase("case:async_fns.basic.add.should_return_sum");
             assert addFuture.get() == 10 : "asyncAdd(3, 7)";
 
             CompletableFuture<String> echoFuture = Demo.asyncEcho("hello async");
+            demoCase("case:async_fns.basic.echo.should_prefix_message");
             assert echoFuture.get().equals("Echo: hello async") : "asyncEcho";
 
             CompletableFuture<int[]> doubleFuture = Demo.asyncDoubleAll(new int[]{1, 2, 3});
             int[] doubled = doubleFuture.get();
+            demoCase("case:async_fns.basic.double_all.should_double_i32_vector");
             assert doubled.length == 3 : "asyncDoubleAll length";
             assert doubled[0] == 2 && doubled[1] == 4 && doubled[2] == 6 : "asyncDoubleAll values";
 
             CompletableFuture<Optional<Integer>> findSome = Demo.asyncFindPositive(new int[]{-1, 0, 5, 3});
+            demoCase("case:async_fns.basic.find_positive.should_return_first_positive");
             assert findSome.get().isPresent() && findSome.get().get() == 5 : "asyncFindPositive some";
 
             CompletableFuture<Optional<Integer>> findNone = Demo.asyncFindPositive(new int[]{-1, -2, -3});
+            demoCase("case:async_fns.basic.find_positive.should_return_none_for_all_negative");
             assert !findNone.get().isPresent() : "asyncFindPositive none";
 
             CompletableFuture<String> concatFuture = Demo.asyncConcat(Arrays.asList("a", "b", "c"));
+            demoCase("case:async_fns.basic.concat.should_join_string_vector");
             assert concatFuture.get().equals("a, b, c") : "asyncConcat";
 
             MixedRecord record = sampleMixedRecord();
-            demoCase("case:async_fns.mixed_record.roundtrip");
+            demoCase("case:async_fns.mixed_record.echo.should_roundtrip_record");
             assert Demo.asyncEchoMixedRecord(record).get().equals(record) : "asyncEchoMixedRecord";
+            demoCase("case:async_fns.mixed_record.make.should_construct_record");
             assert Demo.asyncMakeMixedRecord(
                 record.name(),
                 record.anchor(),

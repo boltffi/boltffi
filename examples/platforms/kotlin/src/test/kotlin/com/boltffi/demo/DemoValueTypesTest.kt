@@ -56,11 +56,12 @@ class DemoValueTypesTest {
         demoCase("case:custom_types.datetime.should_convert_to_millis")
         assertEquals(1_701_234_567_890L, datetimeToMillis(datetime))
 
-        demoCase("case:custom_types.vectors.basic")
         val emails = listOf("café@example.com", "user@example.org")
+        demoCase("case:custom_types.vectors.emails.should_roundtrip_values")
         assertContentEquals(emails, echoEmails(emails))
 
         val datetimes = listOf<Long>(1_710_000_000_000L, 1_710_000_001_000L, 1_710_000_002_000L)
+        demoCase("case:custom_types.vectors.datetimes.should_roundtrip_millis_values")
         assertContentEquals(datetimes, echoDatetimes(datetimes))
     }
 
@@ -173,26 +174,32 @@ class DemoValueTypesTest {
 
     @Test
     fun blittableRecordVecsRoundTrip() {
-        demoCase("case:records.blittable.locations.vector_stats")
+        demoCase("case:records.blittable.locations.should_generate_sample_vector")
         val locations = generateLocations(3)
         assertEquals(3, locations.size)
+        demoCase("case:records.blittable.locations.should_count_vector_items")
         assertEquals(3, processLocations(locations))
+        demoCase("case:records.blittable.locations.should_sum_generated_ratings")
         assertDoubleEquals(9.3, sumRatings(locations))
 
-        demoCase("case:records.blittable.trades.vector_stats")
+        demoCase("case:records.blittable.trades.should_generate_sample_vector")
         val trades = generateTrades(3)
         assertEquals(3, trades.size)
+        demoCase("case:records.blittable.trades.should_sum_volumes")
         assertEquals(3000L, sumTradeVolumes(trades))
+        demoCase("case:records.blittable.trades.should_aggregate_with_locations")
         assertEquals(3002L, aggregateLocationTradeStats(locations, trades))
 
-        demoCase("case:records.blittable.particles.vector_stats")
+        demoCase("case:records.blittable.particles.should_generate_sample_vector")
         val particles = generateParticles(3)
         assertEquals(3, particles.size)
+        demoCase("case:records.blittable.particles.should_sum_masses")
         assertDoubleEquals(3.003, sumParticleMasses(particles))
 
-        demoCase("case:records.blittable.sensor_readings.vector_stats")
+        demoCase("case:records.blittable.sensor_readings.should_generate_sample_vector")
         val readings = generateSensorReadings(3)
         assertEquals(3, readings.size)
+        demoCase("case:records.blittable.sensor_readings.should_average_generated_temperatures")
         assertDoubleEquals(21.0, avgSensorTemperature(readings))
     }
 

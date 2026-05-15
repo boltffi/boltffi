@@ -44,10 +44,11 @@ class DemoMixedRecordTest {
     @Test
     fun asyncMixedRecordFunctionsRoundTripThroughKotlin() = runBlocking {
         withTimeout(10_000) {
-            demoCase("case:async_fns.mixed_record.roundtrip")
             val record = sampleMixedRecord()
 
+            demoCase("case:async_fns.mixed_record.echo.should_roundtrip_record")
             assertEquals(record, asyncEchoMixedRecord(record))
+            demoCase("case:async_fns.mixed_record.make.should_construct_record")
             assertEquals(
                 record,
                 asyncMakeMixedRecord(

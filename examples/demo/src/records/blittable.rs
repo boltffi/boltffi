@@ -464,6 +464,18 @@ impl DataPoint {
     }
 }
 
+#[demo_bench_macros::demo_case(
+    "records.blittable.locations.should_generate_sample_vector",
+    description = "generate_locations returns a vector of Location records with predictable repr(C) field values.",
+    exclude(
+        wasm,
+        reason = "The Wasm demo tests do not currently cover blittable record vector helpers."
+    ),
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover blittable record vector helpers."
+    )
+)]
 #[export]
 #[benchmark_candidate(function, uniffi, wasm_bindgen)]
 pub fn generate_locations(count: i32) -> Vec<Location> {
@@ -479,18 +491,126 @@ pub fn generate_locations(count: i32) -> Vec<Location> {
         .collect()
 }
 
+#[demo_bench_macros::demo_case(
+    "records.blittable.locations.should_count_vector_items",
+    description = "process_locations receives a vector of Location records and returns its item count.",
+    exclude(
+        wasm,
+        reason = "The Wasm demo tests do not currently cover blittable record vector helpers."
+    ),
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover blittable record vector helpers."
+    )
+)]
+#[demo_bench_macros::demo_case(
+    "records.blittable.locations.should_count_empty_vector",
+    description = "process_locations treats an empty Location vector as count zero.",
+    exclude(
+        apple,
+        reason = "The Apple blittable vector demo does not currently cover the empty Location vector count."
+    ),
+    exclude(
+        java,
+        reason = "The Java blittable vector demo does not currently cover the empty Location vector count."
+    ),
+    exclude(
+        kotlin,
+        reason = "The Kotlin blittable vector demo does not currently cover the empty Location vector count."
+    ),
+    exclude(
+        wasm,
+        reason = "The Wasm demo tests do not currently cover blittable record vector helpers."
+    ),
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover blittable record vector helpers."
+    )
+)]
+#[demo_bench_macros::demo_case(
+    "records.blittable.locations.should_count_host_constructed_vector",
+    description = "process_locations receives host-constructed Location records and returns their item count.",
+    exclude(
+        apple,
+        reason = "The Apple blittable vector demo does not currently cover host-constructed Location vectors."
+    ),
+    exclude(
+        java,
+        reason = "The Java blittable vector demo does not currently cover host-constructed Location vectors."
+    ),
+    exclude(
+        kotlin,
+        reason = "The Kotlin blittable vector demo does not currently cover host-constructed Location vectors."
+    ),
+    exclude(
+        wasm,
+        reason = "The Wasm demo tests do not currently cover blittable record vector helpers."
+    ),
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover blittable record vector helpers."
+    )
+)]
 #[export]
 #[benchmark_candidate(function, uniffi, wasm_bindgen)]
 pub fn process_locations(locations: Vec<Location>) -> i32 {
     locations.len() as i32
 }
 
+#[demo_bench_macros::demo_case(
+    "records.blittable.locations.should_sum_generated_ratings",
+    description = "sum_ratings receives generated Location records and sums their f64 rating fields.",
+    exclude(
+        wasm,
+        reason = "The Wasm demo tests do not currently cover blittable record vector helpers."
+    ),
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover blittable record vector helpers."
+    )
+)]
+#[demo_bench_macros::demo_case(
+    "records.blittable.locations.should_sum_host_constructed_ratings",
+    description = "sum_ratings receives host-constructed Location records and sums their f64 rating fields.",
+    exclude(
+        apple,
+        reason = "The Apple blittable vector demo does not currently cover host-constructed Location vectors."
+    ),
+    exclude(
+        java,
+        reason = "The Java blittable vector demo does not currently cover host-constructed Location vectors."
+    ),
+    exclude(
+        kotlin,
+        reason = "The Kotlin blittable vector demo does not currently cover host-constructed Location vectors."
+    ),
+    exclude(
+        wasm,
+        reason = "The Wasm demo tests do not currently cover blittable record vector helpers."
+    ),
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover blittable record vector helpers."
+    )
+)]
 #[export]
 #[benchmark_candidate(function, uniffi, wasm_bindgen)]
 pub fn sum_ratings(locations: Vec<Location>) -> f64 {
     locations.iter().map(|location| location.rating).sum()
 }
 
+#[demo_bench_macros::demo_case(
+    "records.blittable.trades.should_generate_sample_vector",
+    description = "generate_trades returns a vector of Trade records with predictable repr(C) field values.",
+    exclude(
+        wasm,
+        reason = "The Wasm demo tests do not currently cover blittable record vector helpers."
+    ),
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover blittable record vector helpers."
+    )
+)]
 #[export]
 #[benchmark_candidate(function, uniffi, wasm_bindgen)]
 pub fn generate_trades(count: i32) -> Vec<Trade> {
@@ -509,12 +629,36 @@ pub fn generate_trades(count: i32) -> Vec<Trade> {
         .collect()
 }
 
+#[demo_bench_macros::demo_case(
+    "records.blittable.trades.should_sum_volumes",
+    description = "sum_trade_volumes receives Trade records and sums their i64 volume fields.",
+    exclude(
+        wasm,
+        reason = "The Wasm demo tests do not currently cover blittable record vector helpers."
+    ),
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover blittable record vector helpers."
+    )
+)]
 #[export]
 #[benchmark_candidate(function, uniffi, wasm_bindgen)]
 pub fn sum_trade_volumes(trades: Vec<Trade>) -> i64 {
     trades.iter().map(|trade| trade.volume).sum()
 }
 
+#[demo_bench_macros::demo_case(
+    "records.blittable.trades.should_aggregate_with_locations",
+    description = "aggregate_location_trade_stats receives Location and Trade vectors together and combines open-location count with total trade volume.",
+    exclude(
+        wasm,
+        reason = "The Wasm demo tests do not currently cover blittable record vector helpers."
+    ),
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover blittable record vector helpers."
+    )
+)]
 #[export]
 #[benchmark_candidate(function, uniffi, wasm_bindgen)]
 pub fn aggregate_location_trade_stats(locations: Vec<Location>, trades: Vec<Trade>) -> i64 {
@@ -523,6 +667,18 @@ pub fn aggregate_location_trade_stats(locations: Vec<Location>, trades: Vec<Trad
     open_locations + total_trade_volume
 }
 
+#[demo_bench_macros::demo_case(
+    "records.blittable.particles.should_generate_sample_vector",
+    description = "generate_particles returns a vector of Particle records with predictable repr(C) field values.",
+    exclude(
+        wasm,
+        reason = "The Wasm demo tests do not currently cover blittable record vector helpers."
+    ),
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover blittable record vector helpers."
+    )
+)]
 #[export]
 #[benchmark_candidate(function, uniffi, wasm_bindgen)]
 pub fn generate_particles(count: i32) -> Vec<Particle> {
@@ -542,12 +698,36 @@ pub fn generate_particles(count: i32) -> Vec<Particle> {
         .collect()
 }
 
+#[demo_bench_macros::demo_case(
+    "records.blittable.particles.should_sum_masses",
+    description = "sum_particle_masses receives Particle records and sums their f64 mass fields.",
+    exclude(
+        wasm,
+        reason = "The Wasm demo tests do not currently cover blittable record vector helpers."
+    ),
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover blittable record vector helpers."
+    )
+)]
 #[export]
 #[benchmark_candidate(function, uniffi, wasm_bindgen)]
 pub fn sum_particle_masses(particles: Vec<Particle>) -> f64 {
     particles.iter().map(|particle| particle.mass).sum()
 }
 
+#[demo_bench_macros::demo_case(
+    "records.blittable.sensor_readings.should_generate_sample_vector",
+    description = "generate_sensor_readings returns a vector of SensorReading records with predictable repr(C) field values.",
+    exclude(
+        wasm,
+        reason = "The Wasm demo tests do not currently cover blittable record vector helpers."
+    ),
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover blittable record vector helpers."
+    )
+)]
 #[export]
 #[benchmark_candidate(function, uniffi, wasm_bindgen)]
 pub fn generate_sensor_readings(count: i32) -> Vec<SensorReading> {
@@ -566,6 +746,42 @@ pub fn generate_sensor_readings(count: i32) -> Vec<SensorReading> {
         .collect()
 }
 
+#[demo_bench_macros::demo_case(
+    "records.blittable.sensor_readings.should_average_generated_temperatures",
+    description = "avg_sensor_temperature receives SensorReading records and averages their f64 temperature fields.",
+    exclude(
+        wasm,
+        reason = "The Wasm demo tests do not currently cover blittable record vector helpers."
+    ),
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover blittable record vector helpers."
+    )
+)]
+#[demo_bench_macros::demo_case(
+    "records.blittable.sensor_readings.should_average_empty_vector_as_zero",
+    description = "avg_sensor_temperature treats an empty SensorReading vector as average zero.",
+    exclude(
+        apple,
+        reason = "The Apple blittable vector demo does not currently cover empty SensorReading vectors."
+    ),
+    exclude(
+        java,
+        reason = "The Java blittable vector demo does not currently cover empty SensorReading vectors."
+    ),
+    exclude(
+        kotlin,
+        reason = "The Kotlin blittable vector demo does not currently cover empty SensorReading vectors."
+    ),
+    exclude(
+        wasm,
+        reason = "The Wasm demo tests do not currently cover blittable record vector helpers."
+    ),
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover blittable record vector helpers."
+    )
+)]
 #[export]
 #[benchmark_candidate(function, uniffi, wasm_bindgen)]
 pub fn avg_sensor_temperature(readings: Vec<SensorReading>) -> f64 {

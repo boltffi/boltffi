@@ -224,21 +224,23 @@ public static class DemoTest
         DemoCase("case:custom_types.datetime.should_format_rfc3339_timestamp");
         Require(FormatTimestamp(ts).StartsWith("2024-03-"), "FormatTimestamp");
 
-        DemoCase("case:custom_types.event.basic");
         Event evt = new Event("launch", ts);
+        DemoCase("case:custom_types.event.should_roundtrip_datetime_field");
         Event echoed = EchoEvent(evt);
         Require(echoed.Name == "launch", "EchoEvent.Name");
         Require(echoed.Timestamp == ts, "EchoEvent.Timestamp");
+        DemoCase("case:custom_types.event.should_extract_timestamp_millis");
         Require(EventTimestamp(evt) == ts, "EventTimestamp");
 
-        DemoCase("case:custom_types.vectors.basic");
         string[] emails = new[] { "café@example.com", "user@example.org" };
+        DemoCase("case:custom_types.vectors.emails.should_roundtrip_values");
         string[] echoedEmails = EchoEmails(emails);
         Require(echoedEmails.Length == 2, "EchoEmails length");
         Require(echoedEmails[0] == "café@example.com", "EchoEmails[0] roundtrip (utf-8)");
         Require(echoedEmails[1] == "user@example.org", "EchoEmails[1] roundtrip");
 
         long[] dts = new[] { 1_710_000_000_000L, 1_710_000_001_000L, 1_710_000_002_000L };
+        DemoCase("case:custom_types.vectors.datetimes.should_roundtrip_millis_values");
         long[] echoedDts = EchoDatetimes(dts);
         Require(echoedDts.Length == 3, "EchoDatetimes length");
         Require(echoedDts[0] == dts[0] && echoedDts[1] == dts[1] && echoedDts[2] == dts[2],
@@ -967,7 +969,7 @@ public static class DemoTest
     {
         Console.WriteLine("Testing blittable record vecs (Location, Trade, Particle, SensorReading)...");
 
-        DemoCase("case:records.blittable.locations.vector_stats");
+        DemoCase("case:records.blittable.locations.should_generate_sample_vector");
         Location[] locations = GenerateLocations(3);
         Require(locations.Length == 3, "generateLocations length");
         Require(locations[0].Id == 0L, "locations[0].Id");
@@ -977,26 +979,34 @@ public static class DemoTest
         Require(!locations[1].IsOpen, "locations[1].IsOpen");
         Require(locations[2].ReviewCount == 20, "locations[2].ReviewCount");
 
+        DemoCase("case:records.blittable.locations.should_count_vector_items");
         Require(ProcessLocations(locations) == 3, "processLocations roundtrip");
+        DemoCase("case:records.blittable.locations.should_count_empty_vector");
         Require(ProcessLocations(Array.Empty<Location>()) == 0, "processLocations empty");
+        DemoCase("case:records.blittable.locations.should_sum_generated_ratings");
         Require(Math.Abs(SumRatings(locations) - (3.0 + 3.1 + 3.2)) < 1e-9, "sumRatings roundtrip");
 
-        DemoCase("case:records.blittable.trades.vector_stats");
+        DemoCase("case:records.blittable.trades.should_generate_sample_vector");
         Trade[] trades = GenerateTrades(3);
         Require(trades.Length == 3, "generateTrades length");
         Require(trades[0].Volume == 0L && trades[1].Volume == 1000L && trades[2].Volume == 2000L, "trades volumes");
+        DemoCase("case:records.blittable.trades.should_sum_volumes");
         Require(SumTradeVolumes(trades) == 3000L, "sumTradeVolumes roundtrip");
+        DemoCase("case:records.blittable.trades.should_aggregate_with_locations");
         Require(AggregateLocationTradeStats(locations, trades) == 3002L, "aggregateLocationTradeStats two pinned arrays");
 
-        DemoCase("case:records.blittable.particles.vector_stats");
+        DemoCase("case:records.blittable.particles.should_generate_sample_vector");
         Particle[] particles = GenerateParticles(3);
         Require(particles.Length == 3, "generateParticles length");
+        DemoCase("case:records.blittable.particles.should_sum_masses");
         Require(Math.Abs(SumParticleMasses(particles) - (1.0 + 1.001 + 1.002)) < 1e-9, "sumParticleMasses roundtrip");
 
-        DemoCase("case:records.blittable.sensor_readings.vector_stats");
+        DemoCase("case:records.blittable.sensor_readings.should_generate_sample_vector");
         SensorReading[] readings = GenerateSensorReadings(3);
         Require(readings.Length == 3, "generateSensorReadings length");
+        DemoCase("case:records.blittable.sensor_readings.should_average_generated_temperatures");
         Require(Math.Abs(AvgSensorTemperature(readings) - 21.0) < 1e-9, "avgSensorTemperature roundtrip");
+        DemoCase("case:records.blittable.sensor_readings.should_average_empty_vector_as_zero");
         Require(AvgSensorTemperature(Array.Empty<SensorReading>()) == 0.0, "avgSensorTemperature empty");
 
         // Construct a Location[] in C# and pass it to native code. Exercises
@@ -1007,7 +1017,9 @@ public static class DemoTest
             new Location(100L, 40.0, -70.0, 2.5, 5, true),
             new Location(101L, 40.5, -70.5, 4.0, 50, false),
         };
+        DemoCase("case:records.blittable.locations.should_count_host_constructed_vector");
         Require(ProcessLocations(handmade) == 2, "processLocations handmade");
+        DemoCase("case:records.blittable.locations.should_sum_host_constructed_ratings");
         Require(Math.Abs(SumRatings(handmade) - 6.5) < 1e-9, "sumRatings handmade");
 
         Console.WriteLine("  PASS\n");
@@ -2072,15 +2084,21 @@ public static class DemoTest
     {
         Console.WriteLine("Testing async functions...");
 
-        DemoCase("case:async_fns.basic.scalar_string_vec");
+        DemoCase("case:async_fns.basic.add.should_return_sum");
         Require(await AsyncAdd(3, 7) == 10, "AsyncAdd(3, 7)");
+        DemoCase("case:async_fns.basic.echo.should_prefix_message");
         Require(await AsyncEcho("hello async") == "Echo: hello async", "AsyncEcho string return");
+        DemoCase("case:async_fns.basic.double_all.should_double_i32_vector");
         Require((await AsyncDoubleAll(new[] { 1, 2, 3 })).SequenceEqual(new[] { 2, 4, 6 }),
             "AsyncDoubleAll primitive vec return");
+        DemoCase("case:async_fns.basic.find_positive.should_return_first_positive");
         Require(await AsyncFindPositive(new[] { -1, 0, 5, 3 }) == 5, "AsyncFindPositive finds first positive");
+        DemoCase("case:async_fns.basic.find_positive.should_return_none_for_all_negative");
         Require(await AsyncFindPositive(new[] { -3, -2, -1 }) == null, "AsyncFindPositive all-negative returns null");
+        DemoCase("case:async_fns.basic.concat.should_join_string_vector");
         Require(await AsyncConcat(new[] { "a", "b", "c" }) == "a, b, c", "AsyncConcat Vec<String> param");
-        Require((await AsyncGetNumbers(4)).SequenceEqual(new[] { 0, 1, 2, 3 }), "case:async_fns.basic.get_numbers AsyncGetNumbers(4)");
+        DemoCase("case:async_fns.basic.get_numbers.should_return_counting_sequence");
+        Require((await AsyncGetNumbers(4)).SequenceEqual(new[] { 0, 1, 2, 3 }), "AsyncGetNumbers(4)");
 
         MixedRecordParameters parameters = new MixedRecordParameters(
             new[] { "async", "record" },
@@ -2097,7 +2115,7 @@ public static class DemoTest
             parameters
         );
 
-        DemoCase("case:async_fns.mixed_record.roundtrip");
+        DemoCase("case:async_fns.mixed_record.echo.should_roundtrip_record");
         MixedRecord echoed = await AsyncEchoMixedRecord(record);
         Require(echoed.Name == record.Name, "AsyncEchoMixedRecord.Name");
         Require(echoed.Anchor == record.Anchor, "AsyncEchoMixedRecord.Anchor");
@@ -2107,6 +2125,7 @@ public static class DemoTest
         Require(echoed.Parameters.Tags.SequenceEqual(record.Parameters.Tags),
             "AsyncEchoMixedRecord.Parameters.Tags");
 
+        DemoCase("case:async_fns.mixed_record.make.should_construct_record");
         MixedRecord made = await AsyncMakeMixedRecord(
             "made-async",
             new Point(5.0, 6.0),
@@ -2128,8 +2147,9 @@ public static class DemoTest
     {
         Console.WriteLine("Testing async result functions...");
 
-        DemoCase("case:async_fns.results.compute_fetch");
+        DemoCase("case:async_fns.results.try_compute.should_return_doubled_value");
         Require(await TryComputeAsync(6) == 12, "TryComputeAsync success");
+        DemoCase("case:async_fns.results.try_compute.should_return_invalid_input_for_zero");
         try
         {
             await TryComputeAsync(0);
@@ -2141,7 +2161,9 @@ public static class DemoTest
                 "TryComputeAsync typed ComputeError");
         }
 
+        DemoCase("case:async_fns.results.fetch_data.should_return_scaled_positive_id");
         Require(await FetchData(2) == 20, "FetchData(2) success");
+        DemoCase("case:async_fns.results.fetch_data.should_reject_non_positive_id");
         try
         {
             await FetchData(-1);

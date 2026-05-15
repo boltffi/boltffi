@@ -48,6 +48,30 @@ custom_type!(
     },
 );
 
+#[demo_bench_macros::demo_case(
+    "custom_types.event.should_expose_datetime_field",
+    description = "The generated Event record exposes a custom DateTime field through the host-language surface.",
+    exclude(
+        apple,
+        reason = "The Apple custom type demo does not currently assert Event fields before crossing FFI."
+    ),
+    exclude(
+        csharp,
+        reason = "The C# custom type demo does not currently assert Event fields before crossing FFI."
+    ),
+    exclude(
+        kotlin,
+        reason = "The Kotlin custom type demo does not currently cover Event."
+    ),
+    exclude(
+        wasm,
+        reason = "The Wasm custom type demo does not currently assert Event fields before crossing FFI."
+    ),
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover custom types."
+    )
+)]
 #[data]
 pub struct Event {
     pub name: String,
@@ -123,21 +147,61 @@ pub fn format_timestamp(timestamp: DateTime<Utc>) -> String {
     timestamp.to_rfc3339()
 }
 
+#[demo_bench_macros::demo_case(
+    "custom_types.event.should_roundtrip_datetime_field",
+    description = "An Event record containing a DateTime custom type field crosses the FFI boundary unchanged.",
+    exclude(
+        kotlin,
+        reason = "The Kotlin custom type demo does not currently cover Event."
+    ),
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover custom types."
+    )
+)]
 #[export]
 pub fn echo_event(event: Event) -> Event {
     event
 }
 
+#[demo_bench_macros::demo_case(
+    "custom_types.event.should_extract_timestamp_millis",
+    description = "An Event record containing a DateTime custom type field returns its timestamp as milliseconds.",
+    exclude(
+        kotlin,
+        reason = "The Kotlin custom type demo does not currently cover Event."
+    ),
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover custom types."
+    )
+)]
 #[export]
 pub fn event_timestamp(event: Event) -> i64 {
     event.timestamp.timestamp_millis()
 }
 
+#[demo_bench_macros::demo_case(
+    "custom_types.vectors.emails.should_roundtrip_values",
+    description = "A vector of Email custom types preserves order and UTF-8 values when round-tripped.",
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover custom types."
+    )
+)]
 #[export]
 pub fn echo_emails(emails: Vec<Email>) -> Vec<Email> {
     emails
 }
 
+#[demo_bench_macros::demo_case(
+    "custom_types.vectors.datetimes.should_roundtrip_millis_values",
+    description = "A vector of DateTime custom types preserves millisecond values when round-tripped.",
+    exclude(
+        python,
+        reason = "The Python demo tests do not currently cover custom types."
+    )
+)]
 #[export]
 pub fn echo_datetimes(dts: Vec<DateTime<Utc>>) -> Vec<DateTime<Utc>> {
     dts

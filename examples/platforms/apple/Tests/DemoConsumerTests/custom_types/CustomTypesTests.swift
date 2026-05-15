@@ -14,17 +14,19 @@ final class CustomTypesTests: DemoTestCase {
 
         XCTAssertTrue(formatTimestamp(timestamp: datetime).contains("2023"), "case:custom_types.datetime.should_format_rfc3339_timestamp")
 
-        demoCase("case:custom_types.event.basic")
         let event = Event(name: "launch", timestamp: datetime)
+        demoCase("case:custom_types.event.should_roundtrip_datetime_field")
         let echoedEvent = echoEvent(event: event)
         XCTAssertEqual(echoedEvent, event)
+        demoCase("case:custom_types.event.should_extract_timestamp_millis")
         XCTAssertEqual(eventTimestamp(event: event), datetime)
 
-        demoCase("case:custom_types.vectors.basic")
         let emails = ["café@example.com", "user@example.org"]
+        demoCase("case:custom_types.vectors.emails.should_roundtrip_values")
         XCTAssertEqual(echoEmails(emails: emails), emails)
 
         let dts: [UtcDateTime] = [1_710_000_000_000, 1_710_000_001_000, 1_710_000_002_000]
+        demoCase("case:custom_types.vectors.datetimes.should_roundtrip_millis_values")
         XCTAssertEqual(echoDatetimes(dts: dts), dts)
     }
 }
