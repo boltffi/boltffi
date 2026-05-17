@@ -161,11 +161,6 @@ pub fn echo_optional_status(v: Option<Status>) -> Option<Status> {
     justification = "Ensure an Option<Vec<i32>> carrying Some(empty vector) remains distinct from None.",
     directions = "Call `options::complex::echo_optional_vec` through the generated binding and assert an Option<Vec<i32>> carrying Some(empty vector) remains distinct from None.",
     exclude(
-        swift,
-        reason = ExclusionReason::CoverageGap,
-        details = "Swift has no assertion for Some(empty Vec) for echo_optional_vec in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         java,
         reason = ExclusionReason::CoverageGap,
         details = "Java has no assertion for Some(empty Vec) for echo_optional_vec in the demo suite yet; add the marker at the scenario-specific test when coverage lands."

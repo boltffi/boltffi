@@ -15,6 +15,9 @@ final class CustomTypesTests: DemoTestCase {
         XCTAssertTrue(formatTimestamp(timestamp: datetime).contains("2023"), "case:custom_types.datetime.should_format_rfc3339_timestamp")
 
         let event = Event(name: "launch", timestamp: datetime)
+        demoCase("case:custom_types.event.should_expose_datetime_field")
+        XCTAssertEqual(event.name, "launch")
+        XCTAssertEqual(event.timestamp, datetime)
         demoCase("case:custom_types.event.should_roundtrip_datetime_field")
         let echoedEvent = echoEvent(event: event)
         XCTAssertEqual(echoedEvent, event)

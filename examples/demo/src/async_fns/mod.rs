@@ -145,11 +145,6 @@ pub async fn async_concat(strings: Vec<String>) -> String {
     justification = "Ensure an async Result function rejects zero input with the typed invalid-input error.",
     directions = "Call `async_fns::try_compute_async` through the generated binding and assert an async Result function rejects zero input with the typed invalid-input error.",
     exclude(
-        swift,
-        reason = ExclusionReason::CoverageGap,
-        details = "Swift covers the negative overflow case for that branch today; add a separate assertion for the zero-input invalid case."
-    ),
-    exclude(
         java,
         reason = ExclusionReason::CoverageGap,
         details = "Java has no assertion for async Result helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."

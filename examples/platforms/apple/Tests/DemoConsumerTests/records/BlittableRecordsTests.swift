@@ -59,8 +59,19 @@ final class BlittableRecordsTests: DemoTestCase {
         XCTAssertEqual(locations.count, 3)
         demoCase("case:records.blittable.locations.should_count_vector_items")
         XCTAssertEqual(processLocations(locations: locations), 3)
+        demoCase("case:records.blittable.locations.should_count_empty_vector")
+        XCTAssertEqual(processLocations(locations: []), 0)
         demoCase("case:records.blittable.locations.should_sum_generated_ratings")
         XCTAssertEqual(sumRatings(locations: locations), 9.3, accuracy: 1e-9)
+
+        let handmadeLocations = [
+            Location(id: 100, lat: 40.0, lng: -70.0, rating: 2.5, reviewCount: 5, isOpen: true),
+            Location(id: 101, lat: 40.5, lng: -70.5, rating: 4.0, reviewCount: 50, isOpen: false),
+        ]
+        demoCase("case:records.blittable.locations.should_count_host_constructed_vector")
+        XCTAssertEqual(processLocations(locations: handmadeLocations), 2)
+        demoCase("case:records.blittable.locations.should_sum_host_constructed_ratings")
+        XCTAssertEqual(sumRatings(locations: handmadeLocations), 6.5, accuracy: 1e-9)
 
         demoCase("case:records.blittable.trades.should_generate_sample_vector")
         let trades = generateTrades(count: 3)
@@ -81,6 +92,8 @@ final class BlittableRecordsTests: DemoTestCase {
         XCTAssertEqual(readings.count, 3)
         demoCase("case:records.blittable.sensor_readings.should_average_generated_temperatures")
         XCTAssertEqual(avgSensorTemperature(readings: readings), 21.0, accuracy: 1e-9)
+        demoCase("case:records.blittable.sensor_readings.should_average_empty_vector_as_zero")
+        XCTAssertEqual(avgSensorTemperature(readings: []), 0.0)
 
         demoCase("case:records.blittable.locations.find_location.should_return_some_for_positive_id")
         XCTAssertEqual(

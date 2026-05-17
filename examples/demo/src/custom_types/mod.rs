@@ -53,11 +53,6 @@ custom_type!(
     justification = "Ensure the generated Event record exposes a custom DateTime field through the host-language surface.",
     directions = "Inspect or construct `custom_types::Event` through the generated binding and assert the generated Event record exposes a custom DateTime field through the host-language surface.",
     exclude(
-        swift,
-        reason = ExclusionReason::CoverageGap,
-        details = "Swift constructs the surrounding value but still needs an assertion for Event fields before crossing FFI."
-    ),
-    exclude(
         csharp,
         reason = ExclusionReason::CoverageGap,
         details = "C# constructs the surrounding value but still needs an assertion for Event fields before crossing FFI."

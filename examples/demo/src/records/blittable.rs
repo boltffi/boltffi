@@ -553,11 +553,6 @@ pub fn generate_locations(count: i32) -> Vec<Location> {
     justification = "Ensure process_locations treats an empty Location vector as count zero.",
     directions = "Call `records::blittable::process_locations` through the generated binding and assert process_locations treats an empty Location vector as count zero.",
     exclude(
-        swift,
-        reason = ExclusionReason::CoverageGap,
-        details = "Swift has no assertion for the empty Location vector count in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         java,
         reason = ExclusionReason::CoverageGap,
         details = "Java has no assertion for the empty Location vector count in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
@@ -582,11 +577,6 @@ pub fn generate_locations(count: i32) -> Vec<Location> {
     "records.blittable.locations.should_count_host_constructed_vector",
     justification = "Ensure process_locations receives host-constructed Location records and returns their item count.",
     directions = "Call `records::blittable::process_locations` through the generated binding and assert process_locations receives host-constructed Location records and returns their item count.",
-    exclude(
-        swift,
-        reason = ExclusionReason::CoverageGap,
-        details = "Swift has no assertion for host-constructed Location vectors in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
     exclude(
         java,
         reason = ExclusionReason::CoverageGap,
@@ -633,11 +623,6 @@ pub fn process_locations(locations: Vec<Location>) -> i32 {
     "records.blittable.locations.should_sum_host_constructed_ratings",
     justification = "Ensure sum_ratings receives host-constructed Location records and sums their f64 rating fields.",
     directions = "Call `records::blittable::sum_ratings` through the generated binding and assert sum_ratings receives host-constructed Location records and sums their f64 rating fields.",
-    exclude(
-        swift,
-        reason = ExclusionReason::CoverageGap,
-        details = "Swift has no assertion for host-constructed Location vectors in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
     exclude(
         java,
         reason = ExclusionReason::CoverageGap,
@@ -849,11 +834,6 @@ pub fn generate_sensor_readings(count: i32) -> Vec<SensorReading> {
     "records.blittable.sensor_readings.should_average_empty_vector_as_zero",
     justification = "Ensure avg_sensor_temperature treats an empty SensorReading vector as average zero.",
     directions = "Call `records::blittable::avg_sensor_temperature` through the generated binding and assert avg_sensor_temperature treats an empty SensorReading vector as average zero.",
-    exclude(
-        swift,
-        reason = ExclusionReason::CoverageGap,
-        details = "Swift has no assertion for empty SensorReading vectors in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
     exclude(
         java,
         reason = ExclusionReason::CoverageGap,

@@ -70,6 +70,8 @@ final class DataEnumTests: DemoTestCase {
         XCTAssertEqual(messageSummary(m: Message.image(url: "https://example.com/image.png", width: 640, height: 480)), "image: 640x480 at https://example.com/image.png")
         demoCase("case:enums.data_enum.message.ping.should_render_ping_summary")
         XCTAssertEqual(messageSummary(m: Message.ping), "ping")
+        demoCase("case:enums.data_enum.message.ping.should_roundtrip_unit_variant")
+        XCTAssertEqual(echoMessage(m: Message.ping), Message.ping)
     }
 
     func testAnimalFns() {
@@ -77,8 +79,12 @@ final class DataEnumTests: DemoTestCase {
         XCTAssertEqual(echoAnimal(a: Animal.dog(name: "Rex", breed: "Labrador")), Animal.dog(name: "Rex", breed: "Labrador"))
         demoCase("case:enums.data_enum.animal.cat.should_roundtrip_name_and_bool_payload")
         XCTAssertEqual(echoAnimal(a: Animal.cat(name: "Milo", indoor: true)), Animal.cat(name: "Milo", indoor: true))
+        demoCase("case:enums.data_enum.animal.fish.should_roundtrip_count_payload")
+        XCTAssertEqual(echoAnimal(a: Animal.fish(count: 5)), Animal.fish(count: 5))
         demoCase("case:enums.data_enum.animal.fish.should_derive_count_label")
         XCTAssertEqual(animalName(a: Animal.fish(count: 5)), "5 fish")
+        demoCase("case:enums.data_enum.animal.dog.should_derive_name")
+        XCTAssertEqual(animalName(a: Animal.dog(name: "Rex", breed: "Lab")), "Rex")
         demoCase("case:enums.data_enum.animal.cat.should_derive_name")
         XCTAssertEqual(animalName(a: Animal.cat(name: "Milo", indoor: true)), "Milo")
     }

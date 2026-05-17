@@ -27,6 +27,8 @@ final class ComplexOptionsTests: DemoTestCase {
         XCTAssertNil(echoOptionalStatus(v: nil))
         demoCase("case:options.complex.vec.should_roundtrip_some")
         XCTAssertEqual(echoOptionalVec(v: [1, 2, 3]), [1, 2, 3])
+        demoCase("case:options.complex.vec.should_roundtrip_empty_some")
+        XCTAssertEqual(echoOptionalVec(v: []), [])
         demoCase("case:options.complex.vec.should_roundtrip_none")
         XCTAssertNil(echoOptionalVec(v: nil))
         demoCase("case:options.complex.vec.should_report_length_for_some")

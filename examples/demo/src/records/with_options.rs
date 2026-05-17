@@ -28,11 +28,6 @@ pub struct UserProfile {
     justification = "Ensure a UserProfile record with absent optional fields crosses the wire and returns unchanged.",
     directions = "Call `records::with_options::echo_user_profile` through the generated binding and assert a UserProfile record with absent optional fields crosses the wire and returns unchanged.",
     exclude(
-        swift,
-        reason = ExclusionReason::CoverageGap,
-        details = "Swift reaches the surrounding surface but still needs a round-trip assertion for UserProfile with absent options."
-    ),
-    exclude(
         java,
         reason = ExclusionReason::CoverageGap,
         details = "Java reaches the surrounding surface but still needs a round-trip assertion for UserProfile with absent options."
@@ -58,11 +53,6 @@ pub struct UserProfile {
     justification = "Ensure a UserProfile record with one present option and one absent option crosses the wire and returns unchanged.",
     directions = "Call `records::with_options::echo_user_profile` through the generated binding and assert a UserProfile record with one present option and one absent option crosses the wire and returns unchanged.",
     exclude(
-        swift,
-        reason = ExclusionReason::CoverageGap,
-        details = "Swift reaches the surrounding surface but still needs a round-trip assertion for UserProfile with mixed option presence."
-    ),
-    exclude(
         java,
         reason = ExclusionReason::CoverageGap,
         details = "Java reaches the surrounding surface but still needs a round-trip assertion for UserProfile with mixed option presence."
@@ -87,11 +77,6 @@ pub struct UserProfile {
     "records.with_options.user_profile.should_roundtrip_utf8_optional_string",
     justification = "Ensure a UserProfile record with UTF-8 text inside optional string fields crosses the wire and returns unchanged.",
     directions = "Call `records::with_options::echo_user_profile` through the generated binding and assert a UserProfile record with UTF-8 text inside optional string fields crosses the wire and returns unchanged.",
-    exclude(
-        swift,
-        reason = ExclusionReason::CoverageGap,
-        details = "Swift reaches the surrounding surface but still needs a round-trip assertion for UTF-8 inside UserProfile optional fields."
-    ),
     exclude(
         java,
         reason = ExclusionReason::CoverageGap,
@@ -204,11 +189,6 @@ pub struct SearchResult {
     "records.with_options.search_result.should_roundtrip_absent_options",
     justification = "Ensure a SearchResult record with absent cursor and score options crosses the wire and returns unchanged.",
     directions = "Call `records::with_options::echo_search_result` through the generated binding and assert a SearchResult record with absent cursor and score options crosses the wire and returns unchanged.",
-    exclude(
-        swift,
-        reason = ExclusionReason::CoverageGap,
-        details = "Swift reaches the surrounding surface but still needs a round-trip assertion for SearchResult with absent options."
-    ),
     exclude(
         kotlin,
         reason = ExclusionReason::CoverageGap,

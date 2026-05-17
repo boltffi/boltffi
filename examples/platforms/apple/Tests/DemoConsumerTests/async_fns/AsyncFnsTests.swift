@@ -31,6 +31,13 @@ final class AsyncFnsTests: DemoTestCase {
         } catch {
             XCTAssertEqual(error as? ComputeError, .overflow(value: -1, limit: 0))
         }
+        demoCase("case:async_fns.results.try_compute.should_return_invalid_input_for_zero")
+        do {
+            _ = try await tryComputeAsync(value: 0)
+            XCTFail("expected tryComputeAsync to throw")
+        } catch {
+            XCTAssertEqual(error as? ComputeError, .invalidInput(-999))
+        }
         demoCase("case:async_fns.results.fetch_data.should_return_scaled_positive_id")
         let fetchedValue = try await fetchData(id: 7)
         XCTAssertEqual(fetchedValue, 70)
