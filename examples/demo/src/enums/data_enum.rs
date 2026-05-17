@@ -350,11 +350,6 @@ pub enum Message {
         details = "Java reaches the surrounding surface but still needs a round-trip assertion for the Message::Ping variant."
     ),
     exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin reaches the surrounding surface but still needs a round-trip assertion for the Message::Ping variant."
-    ),
-    exclude(
         typescript,
         reason = ExclusionReason::CoverageGap,
         details = "TypeScript reaches the surrounding surface but still needs a round-trip assertion for the Message::Ping variant."
@@ -462,11 +457,6 @@ pub enum Animal {
         details = "Java reaches the surrounding surface but still needs a round-trip assertion for the Animal::Fish variant."
     ),
     exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin reaches the surrounding surface but still needs a round-trip assertion for the Animal::Fish variant."
-    ),
-    exclude(
         typescript,
         reason = ExclusionReason::CoverageGap,
         details = "TypeScript reaches the surrounding surface but still needs a round-trip assertion for the Animal::Fish variant."
@@ -490,11 +480,6 @@ pub fn echo_animal(a: Animal) -> Animal {
         java,
         reason = ExclusionReason::CoverageGap,
         details = "Java round-trips the enum family but still needs an assertion for the derived a name from Animal::Dog behavior."
-    ),
-    exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin round-trips the enum family but still needs an assertion for the derived a name from Animal::Dog behavior."
     ),
     exclude(
         typescript,

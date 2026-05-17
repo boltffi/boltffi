@@ -188,11 +188,6 @@ pub fn double_if_some(v: Option<i32>) -> Option<i32> {
         details = "Java has no assertion for find_even in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for find_even in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
@@ -206,11 +201,6 @@ pub fn double_if_some(v: Option<i32>) -> Option<i32> {
         java,
         reason = ExclusionReason::CoverageGap,
         details = "Java has no assertion for find_even in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for find_even in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
@@ -234,11 +224,6 @@ pub fn find_even(value: i32) -> Option<i32> {
         details = "Java has no assertion for find_positive_i64 in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for find_positive_i64 in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
@@ -257,11 +242,6 @@ pub fn find_even(value: i32) -> Option<i32> {
         java,
         reason = ExclusionReason::CoverageGap,
         details = "Java has no assertion for find_positive_i64 in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for find_positive_i64 in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
@@ -290,11 +270,6 @@ pub fn find_positive_i64(value: i64) -> Option<i64> {
         details = "Java has no assertion for find_positive_f64 in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for find_positive_f64 in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
@@ -308,11 +283,6 @@ pub fn find_positive_i64(value: i64) -> Option<i64> {
         java,
         reason = ExclusionReason::CoverageGap,
         details = "Java has no assertion for find_positive_f64 in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for find_positive_f64 in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,

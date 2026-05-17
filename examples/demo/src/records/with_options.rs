@@ -33,11 +33,6 @@ pub struct UserProfile {
         details = "Java reaches the surrounding surface but still needs a round-trip assertion for UserProfile with absent options."
     ),
     exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin reaches the surrounding surface but still needs a round-trip assertion for UserProfile with absent options."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer currently emits only primitive-field blittable records. Include this case when records with optional fields are implemented for Python."
@@ -58,11 +53,6 @@ pub struct UserProfile {
         details = "Java reaches the surrounding surface but still needs a round-trip assertion for UserProfile with mixed option presence."
     ),
     exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin reaches the surrounding surface but still needs a round-trip assertion for UserProfile with mixed option presence."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer currently emits only primitive-field blittable records. Include this case when records with optional fields are implemented for Python."
@@ -81,11 +71,6 @@ pub struct UserProfile {
         java,
         reason = ExclusionReason::CoverageGap,
         details = "Java reaches the surrounding surface but still needs a round-trip assertion for UTF-8 inside UserProfile optional fields."
-    ),
-    exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin reaches the surrounding surface but still needs a round-trip assertion for UTF-8 inside UserProfile optional fields."
     ),
     exclude(
         python,
@@ -189,11 +174,6 @@ pub struct SearchResult {
     "records.with_options.search_result.should_roundtrip_absent_options",
     justification = "Ensure a SearchResult record with absent cursor and score options crosses the wire and returns unchanged.",
     directions = "Call `records::with_options::echo_search_result` through the generated binding and assert a SearchResult record with absent cursor and score options crosses the wire and returns unchanged.",
-    exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin reaches the surrounding surface but still needs a round-trip assertion for SearchResult with absent options."
-    ),
     exclude(
         python,
         reason = ExclusionReason::ImplementationGap,

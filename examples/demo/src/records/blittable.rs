@@ -558,11 +558,6 @@ pub fn generate_locations(count: i32) -> Vec<Location> {
         details = "Java has no assertion for the empty Location vector count in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for the empty Location vector count in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         typescript,
         reason = ExclusionReason::CoverageGap,
         details = "TypeScript has no assertion for blittable record vector helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
@@ -581,11 +576,6 @@ pub fn generate_locations(count: i32) -> Vec<Location> {
         java,
         reason = ExclusionReason::CoverageGap,
         details = "Java has no assertion for host-constructed Location vectors in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for host-constructed Location vectors in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         typescript,
@@ -627,11 +617,6 @@ pub fn process_locations(locations: Vec<Location>) -> i32 {
         java,
         reason = ExclusionReason::CoverageGap,
         details = "Java has no assertion for host-constructed Location vectors in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for host-constructed Location vectors in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         typescript,
@@ -840,11 +825,6 @@ pub fn generate_sensor_readings(count: i32) -> Vec<SensorReading> {
         details = "Java has no assertion for empty SensorReading vectors in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for empty SensorReading vectors in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         typescript,
         reason = ExclusionReason::CoverageGap,
         details = "TypeScript has no assertion for blittable record vector helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
@@ -885,11 +865,6 @@ pub fn avg_sensor_temperature(readings: Vec<SensorReading>) -> f64 {
         details = "Java has no assertion for find_location in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for find_location in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         typescript,
         reason = ExclusionReason::CoverageGap,
         details = "TypeScript has no assertion for find_location in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
@@ -913,11 +888,6 @@ pub fn avg_sensor_temperature(readings: Vec<SensorReading>) -> f64 {
         java,
         reason = ExclusionReason::CoverageGap,
         details = "Java has no assertion for find_location in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for find_location in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         typescript,
@@ -962,11 +932,6 @@ pub fn find_location(id: i32) -> Option<Location> {
         details = "Java has no assertion for find_locations in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for find_locations in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         typescript,
         reason = ExclusionReason::CoverageGap,
         details = "TypeScript has no assertion for find_locations in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
@@ -990,11 +955,6 @@ pub fn find_location(id: i32) -> Option<Location> {
         java,
         reason = ExclusionReason::CoverageGap,
         details = "Java has no assertion for find_locations in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for find_locations in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         typescript,

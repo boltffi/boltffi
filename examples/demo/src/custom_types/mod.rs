@@ -58,11 +58,6 @@ custom_type!(
         details = "C# constructs the surrounding value but still needs an assertion for Event fields before crossing FFI."
     ),
     exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for Event in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         typescript,
         reason = ExclusionReason::CoverageGap,
         details = "TypeScript constructs the surrounding value but still needs an assertion for Event fields before crossing FFI."
@@ -144,11 +139,6 @@ pub fn datetime_to_millis(dt: DateTime<Utc>) -> i64 {
     justification = "Ensure a DateTime custom type crosses the wire and returns an RFC3339 timestamp string.",
     directions = "Call `custom_types::format_timestamp` through the generated binding and assert a DateTime custom type crosses the wire and returns an RFC3339 timestamp string.",
     exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for the standalone timestamp formatting helper in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently map custom FFI types or records containing custom fields. Include this case when custom-type Python bindings are implemented."
@@ -164,11 +154,6 @@ pub fn format_timestamp(timestamp: DateTime<Utc>) -> String {
     justification = "Ensure an Event record containing a DateTime custom type field crosses the FFI boundary unchanged.",
     directions = "Call `custom_types::echo_event` through the generated binding and assert an Event record containing a DateTime custom type field crosses the FFI boundary unchanged.",
     exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for Event in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently map custom FFI types or records containing custom fields. Include this case when custom-type Python bindings are implemented."
@@ -183,11 +168,6 @@ pub fn echo_event(event: Event) -> Event {
     "custom_types.event.should_extract_timestamp_millis",
     justification = "Ensure an Event record containing a DateTime custom type field returns its timestamp as milliseconds.",
     directions = "Call `custom_types::event_timestamp` through the generated binding and assert an Event record containing a DateTime custom type field returns its timestamp as milliseconds.",
-    exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for Event in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
     exclude(
         python,
         reason = ExclusionReason::ImplementationGap,

@@ -210,11 +210,6 @@ pub fn reverse_vec_i32(v: Vec<i32>) -> Vec<i32> {
         details = "Java has no assertion for benchmark vector generators in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for benchmark vector generators in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::CoverageGap,
         details = "Python supports primitive vector returns, but the demo suite has no assertion for this benchmark vector generator yet."
@@ -246,11 +241,6 @@ pub fn generate_i32_vec(count: i32) -> Vec<i32> {
         details = "Java has no assertion for the i32 benchmark sum helper in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for the i32 benchmark sum helper in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::CoverageGap,
         details = "Python supports primitive vector parameters and primitive returns, but the demo suite has no assertion for this benchmark sum helper yet."
@@ -277,11 +267,6 @@ pub fn sum_i32_vec(values: Vec<i32>) -> i64 {
         details = "Java has no assertion for benchmark vector generators in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for benchmark vector generators in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::CoverageGap,
         details = "Python supports primitive vector returns, but the demo suite has no assertion for this benchmark vector generator yet."
@@ -306,11 +291,6 @@ pub fn generate_f64_vec(count: i32) -> Vec<f64> {
         java,
         reason = ExclusionReason::CoverageGap,
         details = "Java has no assertion for f64 vector sums in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for f64 vector sums in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
@@ -345,11 +325,6 @@ pub fn sum_f64_vec(values: Vec<f64>) -> f64 {
         details = "Java has no assertion for the in-place u64 slice helper in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for the in-place u64 slice helper in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer only accepts value parameters today, so mutable slice parameters are omitted. Include this case when in-place sequence parameters are implemented for Python."
@@ -375,11 +350,6 @@ pub fn inc_u64(values: &mut [u64]) {
         java,
         reason = ExclusionReason::CoverageGap,
         details = "Java has no assertion for the u64 value increment helper in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for the u64 value increment helper in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,

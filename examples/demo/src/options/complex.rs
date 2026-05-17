@@ -166,11 +166,6 @@ pub fn echo_optional_status(v: Option<Status>) -> Option<Status> {
         details = "Java has no assertion for Some(empty Vec) for echo_optional_vec in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for Some(empty Vec) for echo_optional_vec in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
@@ -222,11 +217,6 @@ pub fn optional_vec_length(v: Option<Vec<i32>>) -> Option<u32> {
         details = "Java has no assertion for find_name in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for find_name in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
@@ -240,11 +230,6 @@ pub fn optional_vec_length(v: Option<Vec<i32>>) -> Option<u32> {
         java,
         reason = ExclusionReason::CoverageGap,
         details = "Java has no assertion for find_name in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for find_name in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
@@ -272,11 +257,6 @@ pub fn find_name(id: i32) -> Option<String> {
         details = "Java has no assertion for find_numbers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for find_numbers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
@@ -290,11 +270,6 @@ pub fn find_name(id: i32) -> Option<String> {
         java,
         reason = ExclusionReason::CoverageGap,
         details = "Java has no assertion for find_numbers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for find_numbers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
@@ -322,11 +297,6 @@ pub fn find_numbers(count: i32) -> Option<Vec<i32>> {
         details = "Java has no assertion for find_names in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for find_names in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
@@ -340,11 +310,6 @@ pub fn find_numbers(count: i32) -> Option<Vec<i32>> {
         java,
         reason = ExclusionReason::CoverageGap,
         details = "Java has no assertion for find_names in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for find_names in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
@@ -371,11 +336,6 @@ pub fn find_names(count: i32) -> Option<Vec<String>> {
         details = "Java has no assertion for find_api_result in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for find_api_result in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
@@ -391,11 +351,6 @@ pub fn find_names(count: i32) -> Option<Vec<String>> {
         details = "Java has no assertion for find_api_result in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for find_api_result in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
@@ -409,11 +364,6 @@ pub fn find_names(count: i32) -> Option<Vec<String>> {
         java,
         reason = ExclusionReason::CoverageGap,
         details = "Java has no assertion for find_api_result in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for find_api_result in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
@@ -434,11 +384,6 @@ pub fn find_names(count: i32) -> Option<Vec<String>> {
         java,
         reason = ExclusionReason::CoverageGap,
         details = "Java has no assertion for find_api_result in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for find_api_result in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,

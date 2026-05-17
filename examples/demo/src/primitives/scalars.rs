@@ -234,11 +234,6 @@ pub fn echo_isize(v: isize) -> isize {
         details = "Java has no assertion for the scalar noop helper in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for the scalar noop helper in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::CoverageGap,
         details = "Python supports primitive scalar calls, but the demo suite has no assertion for the scalar noop benchmark helper yet."
@@ -266,11 +261,6 @@ pub fn noop() {}
         java,
         reason = ExclusionReason::CoverageGap,
         details = "Java has no assertion for the benchmark add alias in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for the benchmark add alias in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
@@ -302,11 +292,6 @@ pub fn add(a: i32, b: i32) -> i32 {
         java,
         reason = ExclusionReason::CoverageGap,
         details = "Java has no assertion for the scalar multiply helper in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for the scalar multiply helper in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,

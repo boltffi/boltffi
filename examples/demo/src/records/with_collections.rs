@@ -236,11 +236,6 @@ pub struct BenchmarkUserProfile {
         details = "Java has no assertion for benchmark user profile helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for benchmark user profile helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer currently emits only primitive-field blittable records and top-level primitive/C-style enum vectors. Include this case when records with collection fields are implemented for Python."
@@ -289,11 +284,6 @@ pub fn generate_user_profiles(count: i32) -> Vec<BenchmarkUserProfile> {
         details = "Java has no assertion for benchmark user profile helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for benchmark user profile helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer currently emits only primitive-field blittable records and top-level primitive/C-style enum vectors. Include this case when records with collection fields are implemented for Python."
@@ -318,11 +308,6 @@ pub fn sum_user_scores(users: Vec<BenchmarkUserProfile>) -> f64 {
         java,
         reason = ExclusionReason::CoverageGap,
         details = "Java has no assertion for benchmark user profile helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for benchmark user profile helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,

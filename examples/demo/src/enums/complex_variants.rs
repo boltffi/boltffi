@@ -63,11 +63,6 @@ pub enum Filter {
         details = "Java reaches the surrounding surface but still needs a round-trip assertion for the Filter::ByTags variant."
     ),
     exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin reaches the surrounding surface but still needs a round-trip assertion for the Filter::ByTags variant."
-    ),
-    exclude(
         typescript,
         reason = ExclusionReason::CoverageGap,
         details = "TypeScript reaches the surrounding surface but still needs a round-trip assertion for the Filter::ByTags variant."
@@ -96,11 +91,6 @@ pub enum Filter {
         java,
         reason = ExclusionReason::CoverageGap,
         details = "Java reaches the surrounding surface but still needs a round-trip assertion for the Filter::ByPoints variant."
-    ),
-    exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin reaches the surrounding surface but still needs a round-trip assertion for the Filter::ByPoints variant."
     ),
     exclude(
         typescript,

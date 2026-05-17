@@ -204,11 +204,6 @@ pub fn opposite_direction(d: Direction) -> Direction {
         details = "Java has no assertion for direction_to_degrees in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for direction_to_degrees in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::CoverageGap,
         details = "Python supports C-style enum parameters and primitive returns, but the demo suite has no assertion for direction_to_degrees yet."
@@ -238,11 +233,6 @@ pub fn direction_to_degrees(direction: Direction) -> i32 {
         java,
         reason = ExclusionReason::CoverageGap,
         details = "Java has no assertion for direction sequence helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for direction sequence helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
@@ -279,11 +269,6 @@ pub fn generate_directions(count: i32) -> Vec<Direction> {
         details = "Java has no assertion for direction sequence helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for direction sequence helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::CoverageGap,
         details = "Python supports C-style enum vectors, but the demo suite has no assertion for direction sequence helpers yet."
@@ -318,11 +303,6 @@ pub fn count_north(directions: Vec<Direction>) -> i32 {
         details = "Java has no assertion for find_direction in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for find_direction in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; C-style enums are emitted, but Option<Direction> returns are not. Include this case when optional enum returns are implemented for Python."
@@ -346,11 +326,6 @@ pub fn count_north(directions: Vec<Direction>) -> i32 {
         java,
         reason = ExclusionReason::CoverageGap,
         details = "Java has no assertion for find_direction in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for find_direction in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
@@ -390,11 +365,6 @@ pub fn find_direction(id: i32) -> Option<Direction> {
         details = "Java has no assertion for find_directions in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for find_directions in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; C-style enum vectors are emitted, but Option<Vec<Direction>> returns are not. Include this case when optional enum-vector returns are implemented for Python."
@@ -418,11 +388,6 @@ pub fn find_direction(id: i32) -> Option<Direction> {
         java,
         reason = ExclusionReason::CoverageGap,
         details = "Java has no assertion for find_directions in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for find_directions in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,

@@ -6,6 +6,7 @@ import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -185,6 +186,8 @@ class DemoCallbacksAndAsyncTest {
             assertNull(asyncFindPositive(intArrayOf(-1, -2, -3)))
             demoCase("case:async_fns.basic.concat.should_join_string_vector")
             assertEquals("a, b, c", asyncConcat(listOf("a", "b", "c")))
+            demoCase("case:async_fns.basic.get_numbers.should_return_counting_sequence")
+            assertContentEquals(intArrayOf(0, 1, 2, 3, 4), asyncGetNumbers(5))
         }
     }
 
@@ -205,6 +208,17 @@ class DemoCallbacksAndAsyncTest {
             assertNull(asyncFindValue(0))
             demoCase("case:results.async_results.find_value.should_reject_negative_key")
             assertMessageContains(assertFailsWith<FfiException> { asyncFindValue(-1) }, "invalid key")
+
+            demoCase("case:async_fns.results.try_compute.should_return_doubled_value")
+            assertEquals(14, tryComputeAsync(7))
+            demoCase("case:async_fns.results.try_compute.should_return_invalid_input_for_zero")
+            assertIs<ComputeError.InvalidInput>(assertFailsWith<ComputeError> { tryComputeAsync(0) })
+            demoCase("case:async_fns.results.try_compute.should_return_overflow_for_negative_value")
+            assertIs<ComputeError.Overflow>(assertFailsWith<ComputeError> { tryComputeAsync(-1) })
+            demoCase("case:async_fns.results.fetch_data.should_return_scaled_positive_id")
+            assertEquals(90, fetchData(9))
+            demoCase("case:async_fns.results.fetch_data.should_reject_non_positive_id")
+            assertMessageContains(assertFailsWith<FfiException> { fetchData(-1) }, "invalid id")
         }
     }
 

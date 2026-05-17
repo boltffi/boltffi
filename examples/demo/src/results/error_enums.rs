@@ -92,11 +92,6 @@ pub fn checked_sqrt(x: f64) -> Result<f64, MathError> {
     justification = "Ensure checked_add returns the sum when the i32 addition does not overflow.",
     directions = "Call `results::error_enums::checked_add` through the generated binding and assert checked_add returns the sum when the i32 addition does not overflow.",
     exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for the checked_add success path in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently emit Result returns or structured error payloads. Include this case when typed Result support is implemented for Python."
@@ -331,11 +326,6 @@ pub struct BenchmarkResponse {
         details = "Java has no assertion for ApiResult data enum results in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for ApiResult data enum results in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently emit Result returns or structured error payloads. Include this case when typed Result support is implemented for Python."
@@ -356,11 +346,6 @@ pub struct BenchmarkResponse {
         details = "Java has no assertion for ApiResult data enum results in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for ApiResult data enum results in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently emit Result returns or structured error payloads. Include this case when typed Result support is implemented for Python."
@@ -379,11 +364,6 @@ pub struct BenchmarkResponse {
         java,
         reason = ExclusionReason::CoverageGap,
         details = "Java has no assertion for ApiResult data enum results in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for ApiResult data enum results in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
@@ -425,11 +405,6 @@ pub fn process_value(value: i32) -> ApiResult {
         details = "Java has no assertion for ApiResult data enum results in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for ApiResult data enum results in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently emit Result returns or structured error payloads. Include this case when typed Result support is implemented for Python."
@@ -448,11 +423,6 @@ pub fn process_value(value: i32) -> ApiResult {
         java,
         reason = ExclusionReason::CoverageGap,
         details = "Java has no assertion for ApiResult data enum results in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for ApiResult data enum results in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
@@ -480,11 +450,6 @@ pub fn api_result_is_success(result: ApiResult) -> bool {
         details = "Java has no assertion for ComputeError data enum results in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for ComputeError data enum results in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently emit Result returns or structured error payloads. Include this case when typed Result support is implemented for Python."
@@ -503,11 +468,6 @@ pub fn api_result_is_success(result: ApiResult) -> bool {
         java,
         reason = ExclusionReason::CoverageGap,
         details = "Java has no assertion for ComputeError data enum results in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for ComputeError data enum results in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
@@ -541,11 +501,6 @@ pub fn try_compute(value: i32) -> Result<i32, ComputeError> {
         details = "Java has no assertion for BenchmarkResponse result fields in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for BenchmarkResponse result fields in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently emit Result returns or structured error payloads. Include this case when typed Result support is implemented for Python."
@@ -572,11 +527,6 @@ pub fn create_success_response(request_id: i64, point: DataPoint) -> BenchmarkRe
         java,
         reason = ExclusionReason::CoverageGap,
         details = "Java has no assertion for BenchmarkResponse result fields in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for BenchmarkResponse result fields in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
@@ -607,11 +557,6 @@ pub fn create_error_response(request_id: i64, error: ComputeError) -> BenchmarkR
         details = "Java has no assertion for BenchmarkResponse result fields in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for BenchmarkResponse result fields in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently emit Result returns or structured error payloads. Include this case when typed Result support is implemented for Python."
@@ -630,11 +575,6 @@ pub fn create_error_response(request_id: i64, error: ComputeError) -> BenchmarkR
         java,
         reason = ExclusionReason::CoverageGap,
         details = "Java has no assertion for BenchmarkResponse result fields in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for BenchmarkResponse result fields in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
@@ -662,11 +602,6 @@ pub fn is_response_success(response: BenchmarkResponse) -> bool {
         details = "Java has no assertion for BenchmarkResponse result fields in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for BenchmarkResponse result fields in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently emit Result returns or structured error payloads. Include this case when typed Result support is implemented for Python."
@@ -685,11 +620,6 @@ pub fn is_response_success(response: BenchmarkResponse) -> bool {
         java,
         reason = ExclusionReason::CoverageGap,
         details = "Java has no assertion for BenchmarkResponse result fields in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for BenchmarkResponse result fields in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,

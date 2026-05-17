@@ -210,11 +210,6 @@ pub fn result_to_string(v: Result<i32, String>) -> String {
         details = "Java has no assertion for the divide alias in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for the divide alias in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently emit Result-returning functions. Include this case when Result returns are implemented for Python."
@@ -233,11 +228,6 @@ pub fn result_to_string(v: Result<i32, String>) -> String {
         java,
         reason = ExclusionReason::CoverageGap,
         details = "Java has no assertion for the divide alias in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for the divide alias in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
@@ -265,11 +255,6 @@ pub fn divide(a: i32, b: i32) -> Result<i32, String> {
         details = "Java has no assertion for the top-level parse_int export in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin validates this area through MathUtils.parseInt today; add a direct assertion for the top-level parse_int export before marking this case covered."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently emit Result-returning functions. Include this case when Result returns are implemented for Python."
@@ -288,11 +273,6 @@ pub fn divide(a: i32, b: i32) -> Result<i32, String> {
         java,
         reason = ExclusionReason::CoverageGap,
         details = "Java has no assertion for the top-level parse_int export in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin validates this area through MathUtils.parseInt today; add a direct assertion for the top-level parse_int export before marking this case covered."
     ),
     exclude(
         python,
@@ -322,11 +302,6 @@ pub fn parse_int(input: String) -> Result<i32, String> {
         details = "Java has no assertion for validate_name in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for validate_name in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently emit Result-returning functions. Include this case when Result returns are implemented for Python."
@@ -345,11 +320,6 @@ pub fn parse_int(input: String) -> Result<i32, String> {
         java,
         reason = ExclusionReason::CoverageGap,
         details = "Java has no assertion for validate_name in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for validate_name in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,

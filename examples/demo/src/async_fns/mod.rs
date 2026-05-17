@@ -105,11 +105,6 @@ pub async fn async_concat(strings: Vec<String>) -> String {
         details = "Java has no assertion for async Result helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for async Result helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer currently omits async functions. Include this case when async Python bindings are implemented."
@@ -130,11 +125,6 @@ pub async fn async_concat(strings: Vec<String>) -> String {
         details = "Java has no assertion for async Result helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for async Result helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer currently omits async functions. Include this case when async Python bindings are implemented."
@@ -148,11 +138,6 @@ pub async fn async_concat(strings: Vec<String>) -> String {
         java,
         reason = ExclusionReason::CoverageGap,
         details = "Java has no assertion for async Result helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for async Result helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         typescript,
@@ -180,11 +165,6 @@ pub async fn try_compute_async(value: i32) -> Result<i32, ComputeError> {
         details = "Java has no assertion for async Result helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for async Result helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer currently omits async functions. Include this case when async Python bindings are implemented."
@@ -198,11 +178,6 @@ pub async fn try_compute_async(value: i32) -> Result<i32, ComputeError> {
         java,
         reason = ExclusionReason::CoverageGap,
         details = "Java has no assertion for async Result helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for async Result helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
@@ -227,11 +202,6 @@ pub async fn fetch_data(id: i32) -> Result<i32, String> {
         java,
         reason = ExclusionReason::CoverageGap,
         details = "Java has no assertion for async_get_numbers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
-        kotlin,
-        reason = ExclusionReason::CoverageGap,
-        details = "Kotlin has no assertion for async_get_numbers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         typescript,
