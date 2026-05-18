@@ -164,11 +164,6 @@ pub fn echo_optional_status(v: Option<Status>) -> Option<Status> {
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
-    ),
-    exclude(
-        typescript,
-        reason = ExclusionReason::CoverageGap,
-        details = "TypeScript has no assertion for Some(empty Vec) for echo_optional_vec in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     )
 )]
 #[export]
@@ -319,11 +314,6 @@ pub fn find_names(count: i32) -> Option<Vec<String>> {
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
-    ),
-    exclude(
-        typescript,
-        reason = ExclusionReason::CoverageGap,
-        details = "TypeScript has no assertion for the ErrorWithData find_api_result branch in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -382,11 +372,6 @@ pub fn find_api_result(code: i32) -> Option<ApiResult> {
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
-    ),
-    exclude(
-        typescript,
-        reason = ExclusionReason::CoverageGap,
-        details = "TypeScript has no assertion for all-None Vec<Option<i32>> in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     )
 )]
 #[export]

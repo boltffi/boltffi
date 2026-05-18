@@ -15,6 +15,11 @@ export async function run() {
   assert.deepEqual(demo.echoFilter({ tag: "None" }), { tag: "None" });
   globalThis.demoCase("case:enums.complex_variants.filter.by_name.should_roundtrip_string_payload");
   assert.deepEqual(demo.echoFilter(nameFilter), nameFilter);
+  globalThis.demoCase("case:enums.complex_variants.filter.by_tags.should_roundtrip_string_vector_payload");
+  const tagFilter = { tag: "ByTags", tags: ["ffi", "jni", "café"] };
+  assert.deepEqual(demo.echoFilter(tagFilter), tagFilter);
+  globalThis.demoCase("case:enums.complex_variants.filter.by_points.should_roundtrip_record_vector_payload");
+  assert.deepEqual(demo.echoFilter(pointFilter), pointFilter);
   globalThis.demoCase("case:enums.complex_variants.filter.by_groups.should_roundtrip_nested_string_vectors");
   assert.deepEqual(demo.echoFilter(groupFilter), groupFilter);
   globalThis.demoCase("case:enums.complex_variants.filter.by_name.should_describe_string_payload");

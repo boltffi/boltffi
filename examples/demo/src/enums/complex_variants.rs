@@ -48,11 +48,6 @@ pub enum Filter {
     justification = "Ensure the Filter::ByTags variant preserves a vector of UTF-8 strings when round-tripped.",
     directions = "Call `enums::complex_variants::echo_filter` through the generated binding and assert the Filter::ByTags variant preserves a vector of UTF-8 strings when round-tripped.",
     exclude(
-        typescript,
-        reason = ExclusionReason::CoverageGap,
-        details = "TypeScript reaches the surrounding surface but still needs a round-trip assertion for the Filter::ByTags variant."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer currently emits only C-style enums, not data-enum payloads. Include this case when Python data-enum bindings are implemented."
@@ -72,11 +67,6 @@ pub enum Filter {
     "enums.complex_variants.filter.by_points.should_roundtrip_record_vector_payload",
     justification = "Ensure the Filter::ByPoints variant preserves a vector of Point records when round-tripped.",
     directions = "Call `enums::complex_variants::echo_filter` through the generated binding and assert the Filter::ByPoints variant preserves a vector of Point records when round-tripped.",
-    exclude(
-        typescript,
-        reason = ExclusionReason::CoverageGap,
-        details = "TypeScript reaches the surrounding surface but still needs a round-trip assertion for the Filter::ByPoints variant."
-    ),
     exclude(
         python,
         reason = ExclusionReason::ImplementationGap,

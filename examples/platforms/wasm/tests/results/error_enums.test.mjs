@@ -22,6 +22,8 @@ export async function run() {
     demo.MathErrorException,
     demo.MathError.NegativeInput,
   );
+  globalThis.demoCase("case:results.error_enums.checked_add.should_return_sum");
+  assert.equal(demo.checkedAdd(2, 3), 5);
   globalThis.demoCase("case:results.error_enums.checked_add.should_reject_overflow");
   assertThrowsWithCode(
     () => demo.checkedAdd(2_147_483_647, 1),
@@ -58,6 +60,8 @@ export async function run() {
   assert.deepEqual(demo.processValue(3), { tag: "Success" });
   globalThis.demoCase("case:results.error_enums.process_value.should_return_error_code_variant");
   assert.deepEqual(demo.processValue(0), { tag: "ErrorCode", value0: -1 });
+  globalThis.demoCase("case:results.error_enums.process_value.should_return_error_with_data_variant");
+  assert.deepEqual(demo.processValue(-3), { tag: "ErrorWithData", code: -3, detail: -6 });
   globalThis.demoCase("case:results.error_enums.api_result_is_success.should_report_success_variant");
   assert.equal(demo.apiResultIsSuccess({ tag: "Success" }), true);
   globalThis.demoCase("case:results.error_enums.api_result_is_success.should_report_error_variant");

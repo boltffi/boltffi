@@ -63,6 +63,8 @@ export async function run() {
   assert.deepEqual(demo.echoMessage(textMessage), textMessage);
   globalThis.demoCase("case:enums.data_enum.message.image.should_roundtrip_url_dimensions_payload");
   assert.deepEqual(demo.echoMessage(imageMessage), imageMessage);
+  globalThis.demoCase("case:enums.data_enum.message.ping.should_roundtrip_unit_variant");
+  assert.deepEqual(demo.echoMessage({ tag: "Ping" }), { tag: "Ping" });
   globalThis.demoCase("case:enums.data_enum.message.text.should_render_text_summary");
   assert.equal(demo.messageSummary({ tag: "Text", body: "hi" }), "text: hi");
   globalThis.demoCase("case:enums.data_enum.message.image.should_render_image_summary");
@@ -79,8 +81,13 @@ export async function run() {
   assert.deepEqual(demo.echoAnimal(dog), dog);
   globalThis.demoCase("case:enums.data_enum.animal.cat.should_roundtrip_name_and_bool_payload");
   assert.deepEqual(demo.echoAnimal(cat), cat);
+  globalThis.demoCase("case:enums.data_enum.animal.fish.should_roundtrip_count_payload");
+  const fish = { tag: "Fish", count: 5 };
+  assert.deepEqual(demo.echoAnimal(fish), fish);
   globalThis.demoCase("case:enums.data_enum.animal.fish.should_derive_count_label");
-  assert.equal(demo.animalName({ tag: "Fish", count: 5 }), "5 fish");
+  assert.equal(demo.animalName(fish), "5 fish");
+  globalThis.demoCase("case:enums.data_enum.animal.dog.should_derive_name");
+  assert.equal(demo.animalName(dog), "Rex");
   globalThis.demoCase("case:enums.data_enum.animal.cat.should_derive_name");
   assert.equal(demo.animalName(cat), "Milo");
 

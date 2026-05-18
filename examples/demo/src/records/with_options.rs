@@ -31,11 +31,6 @@ pub struct UserProfile {
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer currently emits only primitive-field blittable records. Include this case when records with optional fields are implemented for Python."
-    ),
-    exclude(
-        typescript,
-        reason = ExclusionReason::CoverageGap,
-        details = "TypeScript reaches the surrounding surface but still needs a round-trip assertion for UserProfile with absent options."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -46,11 +41,6 @@ pub struct UserProfile {
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer currently emits only primitive-field blittable records. Include this case when records with optional fields are implemented for Python."
-    ),
-    exclude(
-        typescript,
-        reason = ExclusionReason::CoverageGap,
-        details = "TypeScript reaches the surrounding surface but still needs a round-trip assertion for UserProfile with mixed option presence."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -61,11 +51,6 @@ pub struct UserProfile {
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer currently emits only primitive-field blittable records. Include this case when records with optional fields are implemented for Python."
-    ),
-    exclude(
-        typescript,
-        reason = ExclusionReason::CoverageGap,
-        details = "TypeScript reaches the surrounding surface but still needs a round-trip assertion for UTF-8 inside UserProfile optional fields."
     )
 )]
 pub fn echo_user_profile(profile: UserProfile) -> UserProfile {
@@ -163,11 +148,6 @@ pub struct SearchResult {
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer currently emits only primitive-field blittable records. Include this case when records with optional fields are implemented for Python."
-    ),
-    exclude(
-        typescript,
-        reason = ExclusionReason::CoverageGap,
-        details = "TypeScript reaches the surrounding surface but still needs a round-trip assertion for SearchResult with absent options."
     )
 )]
 pub fn echo_search_result(result: SearchResult) -> SearchResult {

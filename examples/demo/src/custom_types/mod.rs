@@ -58,11 +58,6 @@ custom_type!(
         details = "C# constructs the surrounding value but still needs an assertion for Event fields before crossing FFI."
     ),
     exclude(
-        typescript,
-        reason = ExclusionReason::CoverageGap,
-        details = "TypeScript constructs the surrounding value but still needs an assertion for Event fields before crossing FFI."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently map custom FFI types or records containing custom fields. Include this case when custom-type Python bindings are implemented."

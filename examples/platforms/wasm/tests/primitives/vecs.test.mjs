@@ -39,6 +39,14 @@ export async function run() {
   globalThis.demoCase("case:primitives.vecs.i32.should_reverse_values");
   assertArrayEqual(demo.reverseVecI32([1, 2, 3]), [3, 2, 1]);
   assert.equal(demo.incU64(BigUint64Array.from([1n, 2n])), undefined, "case:primitives.vecs.u64.should_increment_first_value_in_place");
+  globalThis.demoCase("case:primitives.vecs.i32.should_generate_sequence");
+  assertArrayEqual(demo.generateI32Vec(4), [0, 1, 2, 3]);
+  assert.equal(demo.sumI32Vec([10, 20, 30]), 60n, "case:primitives.vecs.i32.should_sum_benchmark_values");
+  globalThis.demoCase("case:primitives.vecs.f64.should_generate_sequence");
+  assertArrayEqual(demo.generateF64Vec(3), [0.0, 0.1, 0.2]);
+  globalThis.demoCase("case:primitives.vecs.f64.should_sum_values");
+  assert.equal(demo.sumF64Vec([1.5, 2.5, 4.0]), 8.0);
+  assert.equal(demo.incU64Value(41n), 42n, "case:primitives.vecs.u64.should_increment_value");
 
   globalThis.demoCase("case:primitives.vecs.nested_i32.should_roundtrip_values");
   const vvi = demo.echoVecVecI32([[1, 2, 3], [], [4, 5]]);

@@ -340,11 +340,6 @@ pub enum Message {
     justification = "Ensure the Message::Ping unit variant crosses the FFI boundary unchanged.",
     directions = "Call `enums::data_enum::echo_message` through the generated binding and assert the Message::Ping unit variant crosses the FFI boundary unchanged.",
     exclude(
-        typescript,
-        reason = ExclusionReason::CoverageGap,
-        details = "TypeScript reaches the surrounding surface but still needs a round-trip assertion for the Message::Ping variant."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer currently emits only C-style enums, not data-enum payloads. Include this case when Python data-enum bindings are implemented."
@@ -432,11 +427,6 @@ pub enum Animal {
     justification = "Ensure the Animal::Fish variant preserves its count payload when round-tripped.",
     directions = "Call `enums::data_enum::echo_animal` through the generated binding and assert the Animal::Fish variant preserves its count payload when round-tripped.",
     exclude(
-        typescript,
-        reason = ExclusionReason::CoverageGap,
-        details = "TypeScript reaches the surrounding surface but still needs a round-trip assertion for the Animal::Fish variant."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer currently emits only C-style enums, not data-enum payloads. Include this case when Python data-enum bindings are implemented."
@@ -451,11 +441,6 @@ pub fn echo_animal(a: Animal) -> Animal {
     "enums.data_enum.animal.dog.should_derive_name",
     justification = "Ensure animal_name derives the dog name from an Animal::Dog payload.",
     directions = "Call `enums::data_enum::animal_name` through the generated binding and assert animal_name derives the dog name from an Animal::Dog payload.",
-    exclude(
-        typescript,
-        reason = ExclusionReason::CoverageGap,
-        details = "TypeScript round-trips the enum family but still needs an assertion for the derived a name from Animal::Dog behavior."
-    ),
     exclude(
         python,
         reason = ExclusionReason::ImplementationGap,

@@ -17,6 +17,9 @@ export async function run() {
   assert.equal(demo.formatTimestamp(datetime), "2023-11-29T05:09:27.890+00:00");
 
   const event = { name: "launch", timestamp: datetime };
+  globalThis.demoCase("case:custom_types.event.should_expose_datetime_field");
+  assert.equal(event.name, "launch");
+  assert.equal(event.timestamp, datetime);
   globalThis.demoCase("case:custom_types.event.should_roundtrip_datetime_field");
   assert.deepEqual(demo.echoEvent(event), event);
   globalThis.demoCase("case:custom_types.event.should_extract_timestamp_millis");

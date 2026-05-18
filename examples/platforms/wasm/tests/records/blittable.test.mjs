@@ -1,4 +1,4 @@
-import { assert, assertPoint, assertThrowsWithMessage, demo } from "../support/index.mjs";
+import { assert, assertApprox, assertPoint, assertThrowsWithMessage, demo } from "../support/index.mjs";
 
 export async function run() {
   globalThis.demoCase("case:records.blittable.point.should_roundtrip_value");
@@ -43,4 +43,53 @@ export async function run() {
   assert.deepEqual(demo.echoColor(color), color);
   globalThis.demoCase("case:records.blittable.color.should_make_from_channels");
   assert.deepEqual(demo.makeColor(9, 8, 7, 6), { r: 9, g: 8, b: 7, a: 6 });
+
+  globalThis.demoCase("case:records.blittable.locations.should_generate_sample_vector");
+  const locations = demo.generateLocations(3);
+  assert.equal(locations.length, 3);
+  globalThis.demoCase("case:records.blittable.locations.should_count_vector_items");
+  assert.equal(demo.processLocations(locations), 3);
+  globalThis.demoCase("case:records.blittable.locations.should_count_empty_vector");
+  assert.equal(demo.processLocations([]), 0);
+  const hostLocations = [
+    { id: 1n, lat: 1.0, lng: 2.0, rating: 3.5, reviewCount: 4, isOpen: true },
+    { id: 2n, lat: 5.0, lng: 6.0, rating: 2.5, reviewCount: 8, isOpen: false },
+  ];
+  globalThis.demoCase("case:records.blittable.locations.should_count_host_constructed_vector");
+  assert.equal(demo.processLocations(hostLocations), 2);
+  globalThis.demoCase("case:records.blittable.locations.should_sum_generated_ratings");
+  assertApprox(demo.sumRatings(locations), 9.3, 1e-4);
+  globalThis.demoCase("case:records.blittable.locations.should_sum_host_constructed_ratings");
+  assertApprox(demo.sumRatings(hostLocations), 6.0, 1e-4);
+
+  globalThis.demoCase("case:records.blittable.trades.should_generate_sample_vector");
+  const trades = demo.generateTrades(3);
+  assert.equal(trades.length, 3);
+
+  globalThis.demoCase("case:records.blittable.particles.should_generate_sample_vector");
+  const particles = demo.generateParticles(3);
+  assert.equal(particles.length, 3);
+  globalThis.demoCase("case:records.blittable.particles.should_sum_masses");
+  assertApprox(demo.sumParticleMasses(particles), 3.003, 1e-4);
+
+  globalThis.demoCase("case:records.blittable.sensor_readings.should_generate_sample_vector");
+  const readings = demo.generateSensorReadings(3);
+  assert.equal(readings.length, 3);
+  globalThis.demoCase("case:records.blittable.sensor_readings.should_average_generated_temperatures");
+  assertApprox(demo.avgSensorTemperature(readings), 21.0, 1e-4);
+  globalThis.demoCase("case:records.blittable.sensor_readings.should_average_empty_vector_as_zero");
+  assert.equal(demo.avgSensorTemperature([]), 0.0);
+
+  globalThis.demoCase("case:records.blittable.locations.find_location.should_return_some_for_positive_id");
+  const foundLocation = demo.findLocation(7);
+  assert.ok(foundLocation);
+  assert.equal(foundLocation.id, 7n);
+  globalThis.demoCase("case:records.blittable.locations.find_location.should_return_none_for_non_positive_id");
+  assert.equal(demo.findLocation(0), null);
+  globalThis.demoCase("case:records.blittable.locations.find_locations.should_return_some_vector_for_positive_count");
+  const foundLocations = demo.findLocations(3);
+  assert.ok(foundLocations);
+  assert.equal(foundLocations.length, 3);
+  globalThis.demoCase("case:records.blittable.locations.find_locations.should_return_none_for_non_positive_count");
+  assert.equal(demo.findLocations(0), null);
 }

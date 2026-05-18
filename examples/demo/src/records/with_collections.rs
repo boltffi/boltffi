@@ -234,11 +234,6 @@ pub struct BenchmarkUserProfile {
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer currently emits only primitive-field blittable records and top-level primitive/C-style enum vectors. Include this case when records with collection fields are implemented for Python."
-    ),
-    exclude(
-        typescript,
-        reason = ExclusionReason::CoverageGap,
-        details = "TypeScript has no assertion for benchmark user profile helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     )
 )]
 pub fn generate_user_profiles(count: i32) -> Vec<BenchmarkUserProfile> {
@@ -277,11 +272,6 @@ pub fn generate_user_profiles(count: i32) -> Vec<BenchmarkUserProfile> {
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer currently emits only primitive-field blittable records and top-level primitive/C-style enum vectors. Include this case when records with collection fields are implemented for Python."
-    ),
-    exclude(
-        typescript,
-        reason = ExclusionReason::CoverageGap,
-        details = "TypeScript has no assertion for benchmark user profile helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     )
 )]
 pub fn sum_user_scores(users: Vec<BenchmarkUserProfile>) -> f64 {
@@ -298,11 +288,6 @@ pub fn sum_user_scores(users: Vec<BenchmarkUserProfile>) -> f64 {
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer currently emits only primitive-field blittable records and top-level primitive/C-style enum vectors. Include this case when records with collection fields are implemented for Python."
-    ),
-    exclude(
-        typescript,
-        reason = ExclusionReason::CoverageGap,
-        details = "TypeScript has no assertion for benchmark user profile helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     )
 )]
 pub fn count_active_users(users: Vec<BenchmarkUserProfile>) -> i32 {

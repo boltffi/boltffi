@@ -192,11 +192,6 @@ pub fn echo_isize(v: isize) -> isize {
         python,
         reason = ExclusionReason::CoverageGap,
         details = "Python supports primitive scalar calls, but the demo suite has no assertion for the scalar noop benchmark helper yet."
-    ),
-    exclude(
-        typescript,
-        reason = ExclusionReason::CoverageGap,
-        details = "TypeScript has no assertion for the scalar noop helper in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     )
 )]
 #[export]
@@ -216,11 +211,6 @@ pub fn noop() {}
         python,
         reason = ExclusionReason::CoverageGap,
         details = "Python supports primitive scalar calls, but the demo suite has no assertion for the benchmark add alias yet."
-    ),
-    exclude(
-        typescript,
-        reason = ExclusionReason::CoverageGap,
-        details = "TypeScript has no assertion for the benchmark add alias in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     )
 )]
 #[export]
@@ -242,11 +232,6 @@ pub fn add(a: i32, b: i32) -> i32 {
         python,
         reason = ExclusionReason::CoverageGap,
         details = "Python supports primitive scalar calls, but the demo suite has no assertion for the scalar multiply helper yet."
-    ),
-    exclude(
-        typescript,
-        reason = ExclusionReason::CoverageGap,
-        details = "TypeScript has no assertion for the scalar multiply helper in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     )
 )]
 #[export]

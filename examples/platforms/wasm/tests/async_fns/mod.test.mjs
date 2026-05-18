@@ -29,6 +29,16 @@ export async function run() {
     assert.ok(error instanceof demo.ComputeErrorException);
     assert.deepEqual(error.value, { tag: "Overflow", value: -1, limit: 0 });
   }
+  globalThis.demoCase("case:async_fns.results.try_compute.should_return_invalid_input_for_zero");
+  try {
+    await demo.tryComputeAsync(0);
+    assert.fail("expected tryComputeAsync(0) to reject");
+  } catch (error) {
+    assert.ok(error instanceof demo.ComputeErrorException);
+    assert.deepEqual(error.value, { tag: "InvalidInput", value0: -999 });
+  }
+  globalThis.demoCase("case:async_fns.basic.get_numbers.should_return_counting_sequence");
+  assertArrayEqual(await demo.asyncGetNumbers(4), [0, 1, 2, 3]);
   globalThis.demoCase("case:async_fns.results.fetch_data.should_return_scaled_positive_id");
   assert.equal(await demo.fetchData(7), 70);
   globalThis.demoCase("case:async_fns.results.fetch_data.should_reject_non_positive_id");

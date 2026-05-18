@@ -22,4 +22,8 @@ export async function run() {
   assertApprox(demo.addF64(1.5, 2.5), 4.0, 1e-12);
   assert.equal(demo.echoUsize(123), 123, "case:primitives.scalars.usize.should_roundtrip_value");
   assert.equal(demo.echoIsize(-123), -123, "case:primitives.scalars.isize.should_roundtrip_negative_value");
+  assert.equal(demo.noop(), undefined, "case:primitives.scalars.noop.should_cross_without_values");
+  assert.equal(demo.add(2, 3), 5, "case:primitives.scalars.i32.should_add_with_benchmark_alias");
+  globalThis.demoCase("case:primitives.scalars.f64.should_multiply_two_values");
+  assertApprox(demo.multiply(1.5, 4.0), 6.0, 1e-12);
 }

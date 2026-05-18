@@ -208,11 +208,6 @@ pub fn reverse_vec_i32(v: Vec<i32>) -> Vec<i32> {
         python,
         reason = ExclusionReason::CoverageGap,
         details = "Python supports primitive vector returns, but the demo suite has no assertion for this benchmark vector generator yet."
-    ),
-    exclude(
-        typescript,
-        reason = ExclusionReason::CoverageGap,
-        details = "TypeScript has no assertion for benchmark vector generators in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     )
 )]
 #[export]
@@ -234,11 +229,6 @@ pub fn generate_i32_vec(count: i32) -> Vec<i32> {
         python,
         reason = ExclusionReason::CoverageGap,
         details = "Python supports primitive vector parameters and primitive returns, but the demo suite has no assertion for this benchmark sum helper yet."
-    ),
-    exclude(
-        typescript,
-        reason = ExclusionReason::CoverageGap,
-        details = "TypeScript has no assertion for the i32 benchmark sum helper in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     )
 )]
 #[export]
@@ -255,11 +245,6 @@ pub fn sum_i32_vec(values: Vec<i32>) -> i64 {
         python,
         reason = ExclusionReason::CoverageGap,
         details = "Python supports primitive vector returns, but the demo suite has no assertion for this benchmark vector generator yet."
-    ),
-    exclude(
-        typescript,
-        reason = ExclusionReason::CoverageGap,
-        details = "TypeScript has no assertion for benchmark vector generators in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     )
 )]
 #[export]
@@ -276,11 +261,6 @@ pub fn generate_f64_vec(count: i32) -> Vec<f64> {
         python,
         reason = ExclusionReason::CoverageGap,
         details = "Python supports primitive vector parameters and f64 returns, but the demo suite has no assertion for this vector sum helper yet."
-    ),
-    exclude(
-        typescript,
-        reason = ExclusionReason::CoverageGap,
-        details = "TypeScript has no assertion for f64 vector sums in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     )
 )]
 #[export]
@@ -325,11 +305,6 @@ pub fn inc_u64(values: &mut [u64]) {
         python,
         reason = ExclusionReason::CoverageGap,
         details = "Python supports primitive scalar calls, but the demo suite has no assertion for this benchmark increment helper yet."
-    ),
-    exclude(
-        typescript,
-        reason = ExclusionReason::CoverageGap,
-        details = "TypeScript has no assertion for the u64 value increment helper in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     )
 )]
 #[export]
@@ -390,7 +365,7 @@ pub fn echo_vec_vec_bool(v: Vec<Vec<bool>>) -> Vec<Vec<bool>> {
     exclude(
         typescript,
         reason = ExclusionReason::ImplementationGap,
-        details = "TypeScript nested Vec<Vec<isize>> lowering is blocked on #203: the generated writer passes plain Number values to BigInt setters."
+        details = "#203: TypeScript nested Vec<Vec<isize>> lowering passes plain Number values to BigInt setters in the generated writer. Include this case when the nested isize writer coerces elements to BigInt."
     )
 )]
 #[export]
@@ -410,7 +385,7 @@ pub fn echo_vec_vec_isize(v: Vec<Vec<isize>>) -> Vec<Vec<isize>> {
     exclude(
         typescript,
         reason = ExclusionReason::ImplementationGap,
-        details = "TypeScript nested Vec<Vec<usize>> lowering is blocked on #203: the generated writer passes plain Number values to BigInt setters."
+        details = "#203: TypeScript nested Vec<Vec<usize>> lowering passes plain Number values to BigInt setters in the generated writer. Include this case when the nested usize writer coerces elements to BigInt."
     )
 )]
 #[export]

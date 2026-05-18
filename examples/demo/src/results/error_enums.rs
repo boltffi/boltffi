@@ -95,11 +95,6 @@ pub fn checked_sqrt(x: f64) -> Result<f64, MathError> {
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently emit Result returns or structured error payloads. Include this case when typed Result support is implemented for Python."
-    ),
-    exclude(
-        typescript,
-        reason = ExclusionReason::CoverageGap,
-        details = "TypeScript has no assertion for the checked_add success path in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     )
 )]
 #[demo_bench_macros::demo_case(
@@ -354,11 +349,6 @@ pub struct BenchmarkResponse {
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently emit Result returns or structured error payloads. Include this case when typed Result support is implemented for Python."
-    ),
-    exclude(
-        typescript,
-        reason = ExclusionReason::CoverageGap,
-        details = "TypeScript has no assertion for the ErrorWithData process_value branch in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     )
 )]
 #[export]

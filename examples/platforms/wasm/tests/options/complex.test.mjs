@@ -27,6 +27,8 @@ export async function run() {
   assertArrayEqual(demo.echoOptionalVec([1, 2, 3]), [1, 2, 3]);
   globalThis.demoCase("case:options.complex.vec.should_roundtrip_none");
   assert.equal(demo.echoOptionalVec(null), null);
+  globalThis.demoCase("case:options.complex.vec.should_roundtrip_empty_some");
+  assertArrayEqual(demo.echoOptionalVec([]), []);
   globalThis.demoCase("case:options.complex.vec.should_report_length_for_some");
   assert.equal(demo.optionalVecLength([9, 8]), 2);
   globalThis.demoCase("case:options.complex.vec.should_return_none_for_absent_length");
@@ -47,6 +49,8 @@ export async function run() {
   assert.deepEqual(demo.findApiResult(0), { tag: "Success" });
   globalThis.demoCase("case:options.complex.api_result.should_find_error_code_variant");
   assert.deepEqual(demo.findApiResult(1), { tag: "ErrorCode", value0: -1 });
+  globalThis.demoCase("case:options.complex.api_result.should_find_error_with_data_variant");
+  assert.deepEqual(demo.findApiResult(2), { tag: "ErrorWithData", code: -1, detail: -2 });
   globalThis.demoCase("case:options.complex.api_result.should_return_none_for_unknown_code");
   assert.equal(demo.findApiResult(99), null);
 
@@ -54,4 +58,6 @@ export async function run() {
   assert.deepEqual(demo.echoVecOptionalI32([1, null, 2, null, 3]), [1, null, 2, null, 3]);
   globalThis.demoCase("case:options.complex.vec_optional_i32.should_roundtrip_empty");
   assert.deepEqual(demo.echoVecOptionalI32([]), []);
+  globalThis.demoCase("case:options.complex.vec_optional_i32.should_roundtrip_all_none");
+  assert.deepEqual(demo.echoVecOptionalI32([null, null, null]), [null, null, null]);
 }

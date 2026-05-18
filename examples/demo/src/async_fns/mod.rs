@@ -125,11 +125,6 @@ pub async fn async_concat(strings: Vec<String>) -> String {
     justification = "Ensure an async Result function rejects zero input with the typed invalid-input error.",
     directions = "Call `async_fns::try_compute_async` through the generated binding and assert an async Result function rejects zero input with the typed invalid-input error.",
     exclude(
-        typescript,
-        reason = ExclusionReason::CoverageGap,
-        details = "TypeScript covers the negative overflow case for that branch today; add a separate assertion for the zero-input invalid case."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer currently omits async functions. Include this case when async Python bindings are implemented."
@@ -173,11 +168,6 @@ pub async fn fetch_data(id: i32) -> Result<i32, String> {
     "async_fns.basic.get_numbers.should_return_counting_sequence",
     justification = "Ensure an async vector producer resolves with a zero-based counting sequence.",
     directions = "Call `async_fns::async_get_numbers` through the generated binding and assert an async vector producer resolves with a zero-based counting sequence.",
-    exclude(
-        typescript,
-        reason = ExclusionReason::CoverageGap,
-        details = "TypeScript has no assertion for async_get_numbers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
     exclude(
         python,
         reason = ExclusionReason::ImplementationGap,

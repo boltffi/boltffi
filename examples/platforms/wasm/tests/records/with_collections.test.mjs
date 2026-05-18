@@ -29,4 +29,16 @@ export async function run() {
   assertArrayEqual(echoedTaggedScores.scores, [90, 85.5]);
   globalThis.demoCase("case:records.with_collections.tagged_scores.should_average_scores");
   assertApprox(demo.averageScore({ label: "x", scores: [80, 100] }), 90, 1e-12);
+
+  globalThis.demoCase("case:records.with_collections.user_profiles.should_generate_profiles");
+  const profiles = demo.generateUserProfiles(4);
+  assert.equal(profiles.length, 4);
+  assert.equal(profiles[0].id, 0n);
+  assert.equal(profiles[3].id, 3n);
+  globalThis.demoCase("case:records.with_collections.user_profiles.should_sum_scores");
+  const expectedScoreSum = profiles.reduce((acc, p) => acc + p.score, 0);
+  assertApprox(demo.sumUserScores(profiles), expectedScoreSum, 1e-4);
+  globalThis.demoCase("case:records.with_collections.user_profiles.should_count_active_users");
+  const expectedActive = profiles.filter((p) => p.isActive).length;
+  assert.equal(demo.countActiveUsers(profiles), expectedActive);
 }
