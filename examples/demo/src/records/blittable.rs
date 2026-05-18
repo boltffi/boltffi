@@ -26,7 +26,7 @@ impl Point {
         exclude(
             java,
             reason = ExclusionReason::ImplementationGap,
-            details = "#323 - Java bindgen drops static methods whose Rust name collides with a Java keyword. Java cannot expose Point::new because new is a Java keyword. Include this case when Java keyword-safe renaming lands."
+            details = "#323: Java bindgen drops static methods whose Rust name collides with a Java keyword. Java cannot expose Point::new because new is a Java keyword. Include this case when Java keyword-safe renaming lands."
         )
     )]
     pub fn new(x: f64, y: f64) -> Self {

@@ -149,7 +149,7 @@ pub fn always_err(msg: String) -> Result<i32, String> {
     exclude(
         java,
         reason = ExclusionReason::ImplementationGap,
-        details = "#321 - Java bindgen does not currently emit functions that take Result<T, E> as a parameter. Include this case when Java Result-parameter support lands."
+        details = "#321: Java bindgen does not currently emit functions that take Result<T, E> as a parameter. Include this case when Java Result-parameter support lands."
     ),
     exclude(
         python,
@@ -169,7 +169,7 @@ pub fn always_err(msg: String) -> Result<i32, String> {
     exclude(
         java,
         reason = ExclusionReason::ImplementationGap,
-        details = "#321 - Java bindgen does not currently emit functions that take Result<T, E> as a parameter. Include this case when Java Result-parameter support lands."
+        details = "#321: Java bindgen does not currently emit functions that take Result<T, E> as a parameter. Include this case when Java Result-parameter support lands."
     ),
     exclude(
         python,

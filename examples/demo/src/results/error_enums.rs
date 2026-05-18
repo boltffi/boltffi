@@ -463,7 +463,7 @@ pub fn try_compute(value: i32) -> Result<i32, ComputeError> {
     exclude(
         java,
         reason = ExclusionReason::ImplementationGap,
-        details = "#322 - Java bindgen does not currently emit functions whose signatures involve records containing Result<T, E> fields. Include this case when Java nested-Result-in-record support lands."
+        details = "#322: Java bindgen does not currently emit functions whose signatures involve records containing Result<T, E> fields. Include this case when Java nested-Result-in-record support lands."
     ),
     exclude(
         python,
@@ -491,7 +491,7 @@ pub fn create_success_response(request_id: i64, point: DataPoint) -> BenchmarkRe
     exclude(
         java,
         reason = ExclusionReason::ImplementationGap,
-        details = "#322 - Java bindgen does not currently emit functions whose signatures involve records containing Result<T, E> fields. Include this case when Java nested-Result-in-record support lands."
+        details = "#322: Java bindgen does not currently emit functions whose signatures involve records containing Result<T, E> fields. Include this case when Java nested-Result-in-record support lands."
     ),
     exclude(
         python,
@@ -519,7 +519,7 @@ pub fn create_error_response(request_id: i64, error: ComputeError) -> BenchmarkR
     exclude(
         java,
         reason = ExclusionReason::ImplementationGap,
-        details = "#322 - Java bindgen does not currently emit functions whose signatures involve records containing Result<T, E> fields. Include this case when Java nested-Result-in-record support lands."
+        details = "#322: Java bindgen does not currently emit functions whose signatures involve records containing Result<T, E> fields. Include this case when Java nested-Result-in-record support lands."
     ),
     exclude(
         python,
@@ -539,7 +539,7 @@ pub fn create_error_response(request_id: i64, error: ComputeError) -> BenchmarkR
     exclude(
         java,
         reason = ExclusionReason::ImplementationGap,
-        details = "#322 - Java bindgen does not currently emit functions whose signatures involve records containing Result<T, E> fields. Include this case when Java nested-Result-in-record support lands."
+        details = "#322: Java bindgen does not currently emit functions whose signatures involve records containing Result<T, E> fields. Include this case when Java nested-Result-in-record support lands."
     ),
     exclude(
         python,
@@ -564,7 +564,7 @@ pub fn is_response_success(response: BenchmarkResponse) -> bool {
     exclude(
         java,
         reason = ExclusionReason::ImplementationGap,
-        details = "#322 - Java bindgen does not currently emit functions whose signatures involve records containing Result<T, E> fields. Include this case when Java nested-Result-in-record support lands."
+        details = "#322: Java bindgen does not currently emit functions whose signatures involve records containing Result<T, E> fields. Include this case when Java nested-Result-in-record support lands."
     ),
     exclude(
         python,
@@ -584,7 +584,7 @@ pub fn is_response_success(response: BenchmarkResponse) -> bool {
     exclude(
         java,
         reason = ExclusionReason::ImplementationGap,
-        details = "#322 - Java bindgen does not currently emit functions whose signatures involve records containing Result<T, E> fields. Include this case when Java nested-Result-in-record support lands."
+        details = "#322: Java bindgen does not currently emit functions whose signatures involve records containing Result<T, E> fields. Include this case when Java nested-Result-in-record support lands."
     ),
     exclude(
         python,
