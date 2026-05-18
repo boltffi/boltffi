@@ -9,6 +9,7 @@
 //! `foreach`).
 
 use crate::ir::codec::{EnumLayout, VecLayout};
+use crate::ir::ids::BuiltinId;
 use crate::ir::ops::{WriteOp, WriteSeq};
 use crate::ir::types::{PrimitiveType, TypeExpr};
 
@@ -78,6 +79,14 @@ pub(crate) fn lower_encode_expr(
             vec![CSharpStatement::Expression(CSharpExpression::MethodCall {
                 receiver: Box::new(writer.clone()),
                 method: CSharpMethodName::from_source("write_bytes"),
+                type_args: vec![],
+                args: vec![render_value(value, renames)].into(),
+            })]
+        }
+        WriteOp::Builtin { id, value } => {
+            vec![CSharpStatement::Expression(CSharpExpression::MethodCall {
+                receiver: Box::new(writer.clone()),
+                method: builtin_write_method(id),
                 type_args: vec![],
                 args: vec![render_value(value, renames)].into(),
             })]
@@ -274,6 +283,21 @@ fn primitive_write_method(primitive: PrimitiveType) -> CSharpMethodName {
         PrimitiveType::U64 => CSharpMethodName::from_source("write_u64"),
         PrimitiveType::F32 => CSharpMethodName::from_source("write_f32"),
         PrimitiveType::F64 => CSharpMethodName::from_source("write_f64"),
+    }
+}
+
+/// The `WireWriter` method used to encode a BoltFFI built-in value
+/// (`Duration`, `SystemTime`, `Uuid`, `Url`). Each maps to a dedicated
+/// `Write{Name}` helper that handles the wire layout (12-byte fixed
+/// seconds+nanos for time, two i64s for UUID, length-prefixed UTF-8 for
+/// URL).
+fn builtin_write_method(id: &BuiltinId) -> CSharpMethodName {
+    match id.as_str() {
+        "Duration" => CSharpMethodName::from_source("write_duration"),
+        "SystemTime" => CSharpMethodName::from_source("write_date_time"),
+        "Uuid" => CSharpMethodName::from_source("write_uuid"),
+        "Url" => CSharpMethodName::from_source("write_uri"),
+        other => panic!("unsupported C# builtin write: {other}"),
     }
 }
 

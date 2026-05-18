@@ -18,6 +18,7 @@
 use std::collections::HashSet;
 
 use crate::ir::codec::{EnumLayout, VecLayout};
+use crate::ir::ids::BuiltinId;
 use crate::ir::ops::{ReadOp, ReadSeq};
 use crate::ir::types::{PrimitiveType, TypeExpr};
 
@@ -75,6 +76,12 @@ pub(crate) fn lower_decode_expr(
         ReadOp::Bytes { .. } => CSharpExpression::MethodCall {
             receiver: Box::new(reader.clone()),
             method: CSharpMethodName::from_source("read_bytes"),
+            type_args: vec![],
+            args: CSharpArgumentList::default(),
+        },
+        ReadOp::Builtin { id, .. } => CSharpExpression::MethodCall {
+            receiver: Box::new(reader.clone()),
+            method: builtin_read_method(id),
             type_args: vec![],
             args: CSharpArgumentList::default(),
         },
@@ -210,6 +217,19 @@ pub(crate) fn lower_decode_expr(
             "C# backend has not yet implemented decode support for {:?}",
             other
         ),
+    }
+}
+
+/// The `WireReader` method used to decode a BoltFFI built-in value
+/// (`Duration`, `SystemTime`, `Uuid`, `Url`). Mirrors
+/// [`super::encode::builtin_write_method`].
+fn builtin_read_method(id: &BuiltinId) -> CSharpMethodName {
+    match id.as_str() {
+        "Duration" => CSharpMethodName::from_source("read_duration"),
+        "SystemTime" => CSharpMethodName::from_source("read_date_time"),
+        "Uuid" => CSharpMethodName::from_source("read_uuid"),
+        "Url" => CSharpMethodName::from_source("read_uri"),
+        other => panic!("unsupported C# builtin read: {other}"),
     }
 }
 

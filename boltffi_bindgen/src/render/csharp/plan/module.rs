@@ -1,4 +1,8 @@
+use std::collections::HashSet;
+
 use boltffi_ffi_rules::naming::{LibraryName, Name};
+
+use crate::ir::types::BuiltinKind;
 
 use super::super::ast::{CSharpClassName, CSharpNamespace};
 use super::{
@@ -40,6 +44,43 @@ pub struct CSharpModulePlan {
     pub callbacks: Vec<CSharpCallbackPlan>,
     /// Closure delegate types and bridges.
     pub closures: Vec<CSharpClosurePlan>,
+    /// Which BoltFFI built-in value types the contract uses. Gates the
+    /// per-builtin Read/Write helpers in the WireReader/WireWriter
+    /// templates so modules that don't use, say, `Url` don't carry the
+    /// `ReadUri` / `WriteUri` methods (and their `global::System.Uri`
+    /// references) in their generated code.
+    pub builtins: CSharpBuiltinSet,
+}
+
+/// Tracks which BoltFFI built-in value types (`Duration`, `SystemTime`,
+/// `Uuid`, `Url`) the contract references. Empty when the contract has
+/// no builtins; the per-builtin helpers in `WireReader` / `WireWriter`
+/// are then omitted entirely.
+#[derive(Debug, Clone, Default)]
+pub struct CSharpBuiltinSet {
+    kinds: HashSet<BuiltinKind>,
+}
+
+impl CSharpBuiltinSet {
+    pub fn from_kinds(kinds: HashSet<BuiltinKind>) -> Self {
+        Self { kinds }
+    }
+
+    pub fn uses_duration(&self) -> bool {
+        self.kinds.contains(&BuiltinKind::Duration)
+    }
+
+    pub fn uses_system_time(&self) -> bool {
+        self.kinds.contains(&BuiltinKind::SystemTime)
+    }
+
+    pub fn uses_uuid(&self) -> bool {
+        self.kinds.contains(&BuiltinKind::Uuid)
+    }
+
+    pub fn uses_url(&self) -> bool {
+        self.kinds.contains(&BuiltinKind::Url)
+    }
 }
 
 impl CSharpModulePlan {
@@ -189,6 +230,32 @@ impl CSharpModulePlan {
     /// Kotlin/Swift/Dart pattern of a generated runtime FFI exception
     /// type; Java reuses the built-in `RuntimeException` instead and
     /// has no equivalent.
+    /// Whether the module references `std::time::Duration`. Gates the
+    /// `WireReader.ReadDuration` / `WireWriter.WriteDuration` helpers in
+    /// the runtime template — modules that don't take or return a
+    /// `Duration` don't carry those methods in their generated source.
+    pub fn uses_duration_builtin(&self) -> bool {
+        self.builtins.uses_duration()
+    }
+
+    /// Whether the module references `std::time::SystemTime`. Gates the
+    /// `WireReader.ReadDateTime` / `WireWriter.WriteDateTime` helpers.
+    pub fn uses_system_time_builtin(&self) -> bool {
+        self.builtins.uses_system_time()
+    }
+
+    /// Whether the module references `uuid::Uuid`. Gates the
+    /// `WireReader.ReadUuid` / `WireWriter.WriteUuid` helpers.
+    pub fn uses_uuid_builtin(&self) -> bool {
+        self.builtins.uses_uuid()
+    }
+
+    /// Whether the module references `url::Url`. Gates the
+    /// `WireReader.ReadUri` / `WireWriter.WriteUri` helpers.
+    pub fn uses_url_builtin(&self) -> bool {
+        self.builtins.uses_url()
+    }
+
     pub fn needs_bolt_exception(&self) -> bool {
         self.functions.iter().any(|f| f.return_kind.is_result())
             || self
@@ -230,6 +297,7 @@ mod tests {
             classes: vec![],
             callbacks: vec![],
             closures: vec![],
+            builtins: CSharpBuiltinSet::default(),
         }
     }
 

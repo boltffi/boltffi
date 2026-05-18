@@ -106,6 +106,7 @@ fn is_field_type_supported(
 ) -> bool {
     match ty {
         TypeExpr::Primitive(_) | TypeExpr::String | TypeExpr::Void => true,
+        TypeExpr::Builtin(_) => true,
         TypeExpr::Record(id) => records.contains(id),
         TypeExpr::Enum(id) => enums.contains(id),
         TypeExpr::Custom(id) => ffi

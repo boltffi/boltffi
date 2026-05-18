@@ -7,6 +7,7 @@
 //! to [`super::value::render_value`].
 
 use crate::ir::codec::VecLayout;
+use crate::ir::ids::BuiltinId;
 use crate::ir::ops::SizeExpr;
 
 use super::super::ast::{
@@ -73,6 +74,7 @@ pub(crate) fn lower_size_expr(
             receiver: Box::new(render_value(value, renames)),
             name: CSharpPropertyName::from_source("length"),
         },
+        SizeExpr::BuiltinSize { id, value } => lower_builtin_size(id, &render_value(value, renames)),
         SizeExpr::WireSize { value, .. } => CSharpExpression::MethodCall {
             receiver: Box::new(render_value(value, renames)),
             method: CSharpMethodName::from_source("wire_encoded_size"),
@@ -209,6 +211,34 @@ pub(crate) fn lower_size_expr(
             "C# backend has not yet implemented size expression support for {:?}",
             other
         ),
+    }
+}
+
+/// Renders the upper-bound byte size of a BoltFFI built-in value. Only
+/// `Url` reaches here: the other three (`Duration`, `SystemTime`, `Uuid`)
+/// are fixed-size and lower through `SizeExpr::Fixed`. URLs travel as
+/// length-prefixed UTF-8, and we over-estimate the byte count as
+/// `value.ToString().Length * 3` (the per-char upper bound for UTF-8),
+/// matching the bound Java's bindgen picks.
+fn lower_builtin_size(id: &BuiltinId, value: &CSharpExpression) -> CSharpExpression {
+    match id.as_str() {
+        "Url" => {
+            let str_expr = CSharpExpression::MethodCall {
+                receiver: Box::new(value.clone()),
+                method: CSharpMethodName::from_source("to_string"),
+                type_args: vec![],
+                args: CSharpArgumentList::default(),
+            };
+            CSharpExpression::Paren(Box::new(CSharpExpression::Binary {
+                op: CSharpBinaryOp::Mul,
+                left: Box::new(CSharpExpression::MemberAccess {
+                    receiver: Box::new(str_expr),
+                    name: CSharpPropertyName::from_source("length"),
+                }),
+                right: Box::new(CSharpExpression::Literal(CSharpLiteral::Int(3))),
+            }))
+        }
+        other => panic!("unsupported C# builtin size: {other}"),
     }
 }
 

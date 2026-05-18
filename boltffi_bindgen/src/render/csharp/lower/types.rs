@@ -60,6 +60,7 @@ impl<'a> CSharpLowerer<'a> {
         let normalized = self.normalize_custom_type_expr(&param.type_expr);
         let kind = match &normalized {
             TypeExpr::String => CSharpParamKind::Utf8Bytes,
+            TypeExpr::Builtin(_) => wire_encoded_kind(wire_writers, &param.name)?,
             TypeExpr::Record(id) if !self.is_blittable_record(id) => {
                 wire_encoded_kind(wire_writers, &param.name)?
             }
@@ -153,6 +154,7 @@ impl<'a> CSharpLowerer<'a> {
             TypeExpr::Void => Some(CSharpType::Void),
             TypeExpr::Primitive(primitive) => Some(CSharpType::from(*primitive)),
             TypeExpr::String => Some(CSharpType::String),
+            TypeExpr::Builtin(id) => Some(CSharpType::Builtin(id.clone())),
             TypeExpr::Record(id) if self.supported_records.contains(id) => {
                 let class_name: CSharpClassName = id.into();
                 Some(CSharpType::Record(class_name.into()))

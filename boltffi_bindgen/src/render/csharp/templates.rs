@@ -830,6 +830,7 @@ mod tests {
             classes: vec![],
             callbacks: vec![],
             closures: vec![],
+            builtins: crate::render::csharp::plan::CSharpBuiltinSet::default(),
         }
     }
 
@@ -960,6 +961,89 @@ mod tests {
         let template = FunctionsTemplate { module: &module };
 
         insta::assert_snapshot!(template.render().unwrap());
+    }
+
+    /// A module with no BoltFFI built-in value types must not carry any
+    /// `Read{Builtin}` / `Write{Builtin}` helpers in the generated
+    /// `WireReader` / `WireWriter`. Mirrors the gating Java added in
+    /// PR #330 (commit 1a665b9): unused helpers would be dead code in
+    /// every module that doesn't use Duration/SystemTime/UUID/URL,
+    /// and on .NET they'd also drag a `global::System.Uri` reference
+    /// into modules that have no need for it.
+    #[test]
+    fn native_runtime_omits_builtin_helpers_when_module_has_no_builtins() {
+        use crate::render::csharp::plan::CSharpBuiltinSet;
+
+        // A record (no builtin fields) is enough to switch on the
+        // wire-reader/writer emission; the record itself doesn't
+        // reference any builtin types, so the builtin helpers should
+        // stay omitted from the runtime.
+        let mut module = module_with_async_functions(vec![]);
+        module.records.push(CSharpRecordPlan {
+            summary_doc: None,
+            class_name: CSharpClassName::from_source("placeholder"),
+            is_blittable: false,
+            fields: vec![],
+            methods: vec![],
+            is_error: false,
+        });
+        module.builtins = CSharpBuiltinSet::default();
+
+        let source = NativeTemplate { module: &module }.render().unwrap();
+
+        assert!(!source.contains("ReadDuration"));
+        assert!(!source.contains("ReadDateTime"));
+        assert!(!source.contains("ReadUuid"));
+        assert!(!source.contains("ReadUri"));
+        assert!(!source.contains("WriteDuration"));
+        assert!(!source.contains("WriteDateTime"));
+        assert!(!source.contains("WriteUuid"));
+        assert!(!source.contains("WriteUri"));
+        assert!(!source.contains("global::System.TimeSpan"));
+        assert!(!source.contains("global::System.DateTime"));
+        assert!(!source.contains("global::System.Guid"));
+        assert!(!source.contains("global::System.Uri"));
+    }
+
+    /// When the contract uses all four built-in value types, every
+    /// helper appears in the generated runtime and references go
+    /// through `global::System.` so a user-defined same-name record
+    /// can't shadow them.
+    #[test]
+    fn native_runtime_emits_fully_qualified_helpers_when_all_builtins_are_used() {
+        use crate::ir::types::BuiltinKind;
+        use crate::render::csharp::plan::CSharpBuiltinSet;
+
+        let mut module = module_with_async_functions(vec![]);
+        module.records.push(CSharpRecordPlan {
+            summary_doc: None,
+            class_name: CSharpClassName::from_source("placeholder"),
+            is_blittable: false,
+            fields: vec![],
+            methods: vec![],
+            is_error: false,
+        });
+        module.builtins = CSharpBuiltinSet::from_kinds(
+            [
+                BuiltinKind::Duration,
+                BuiltinKind::SystemTime,
+                BuiltinKind::Uuid,
+                BuiltinKind::Url,
+            ]
+            .into_iter()
+            .collect(),
+        );
+
+        let source = NativeTemplate { module: &module }.render().unwrap();
+
+        assert!(source.contains("internal global::System.TimeSpan ReadDuration()"));
+        assert!(source.contains("internal global::System.DateTime ReadDateTime()"));
+        assert!(source.contains("internal global::System.Guid ReadUuid()"));
+        assert!(source.contains("internal global::System.Uri ReadUri()"));
+        assert!(source.contains("internal void WriteDuration(global::System.TimeSpan v)"));
+        assert!(source.contains("internal void WriteDateTime(global::System.DateTime v)"));
+        assert!(source.contains("internal void WriteUuid(global::System.Guid v)"));
+        assert!(source.contains("internal void WriteUri(global::System.Uri v)"));
     }
 
     #[test]

@@ -3,6 +3,7 @@ use std::fmt;
 
 use crate::ir::codec::EnumLayout;
 use crate::ir::definitions::{EnumDef, EnumRepr};
+use crate::ir::ids::BuiltinId;
 use crate::ir::ops::ReadOp;
 use crate::ir::types::{PrimitiveType, TypeExpr};
 
@@ -53,6 +54,10 @@ pub(crate) enum CSharpType {
     /// A named runtime/helper type that is not sourced from user IR, such as
     /// `GCHandle` or `WireReader`.
     Named(CSharpTypeReference),
+    /// A BoltFFI built-in value type (Duration, SystemTime, UUID, URL),
+    /// projected onto the C# standard-library equivalent: `TimeSpan`,
+    /// `DateTime`, `Guid`, `Uri`.
+    Builtin(BuiltinId),
     /// `T[]`: a single-dimensional array of `T`.
     Array(Box<CSharpType>),
     /// `T?`: a value or reference type that may be `null`.
@@ -171,7 +176,8 @@ impl CSharpType {
             ReadOp::Custom { underlying, .. } => {
                 Self::from_read_op(underlying.ops.first().expect("custom underlying read op"))
             }
-            ReadOp::Result { .. } | ReadOp::Builtin { .. } => {
+            ReadOp::Builtin { id, .. } => Self::Builtin(id.clone()),
+            ReadOp::Result { .. } => {
                 todo!("CSharpType::from_read_op: {:?}", op)
             }
         }
@@ -196,10 +202,10 @@ impl CSharpType {
                 let class_name: CSharpClassName = id.into();
                 Self::DataEnum(class_name.into())
             }
+            TypeExpr::Builtin(id) => Self::Builtin(id.clone()),
             TypeExpr::Result { .. }
             | TypeExpr::Callback(_)
             | TypeExpr::Custom(_)
-            | TypeExpr::Builtin(_)
             | TypeExpr::Handle(_) => todo!("CSharpType::from_type_expr: {:?}", expr),
         }
     }
@@ -228,6 +234,22 @@ impl From<PrimitiveType> for CSharpType {
     }
 }
 
+/// Maps a BoltFFI built-in ID to its C# standard-library type name,
+/// fully qualified through `global::System.` so a user contract that
+/// defines a same-named record (e.g. a Rust `TimeSpan` struct lifting
+/// to `namespace Demo.TimeSpan`) can't shadow the builtin: C# resolves
+/// simple names through the current namespace before imported ones, so
+/// a bare `TimeSpan` reference would silently bind to the user type.
+pub(crate) fn builtin_csharp_type_name(id: &BuiltinId) -> &'static str {
+    match id.as_str() {
+        "Duration" => "global::System.TimeSpan",
+        "SystemTime" => "global::System.DateTime",
+        "Uuid" => "global::System.Guid",
+        "Url" => "global::System.Uri",
+        other => panic!("unsupported C# builtin type: {other}"),
+    }
+}
+
 impl fmt::Display for CSharpType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -248,6 +270,7 @@ impl fmt::Display for CSharpType {
             Self::Float => f.write_str("float"),
             Self::Double => f.write_str("double"),
             Self::String => f.write_str("string"),
+            Self::Builtin(id) => f.write_str(builtin_csharp_type_name(id)),
             Self::Record(r) | Self::CStyleEnum(r) | Self::DataEnum(r) | Self::Named(r) => r.fmt(f),
             Self::Array(inner) => write!(f, "{inner}[]"),
             Self::Nullable(inner) => write!(f, "{inner}?"),

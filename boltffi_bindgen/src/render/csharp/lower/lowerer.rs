@@ -9,8 +9,8 @@ use crate::ir::{AbiContract, FfiContract};
 use super::super::CSharpOptions;
 use super::super::ast::{CSharpClassName, CSharpNamespace};
 use super::super::plan::{
-    CFunctionName, CSharpCallbackPlan, CSharpClassPlan, CSharpClosurePlan, CSharpEnumPlan,
-    CSharpFunctionPlan, CSharpModulePlan, CSharpRecordPlan,
+    CFunctionName, CSharpBuiltinSet, CSharpCallbackPlan, CSharpClassPlan, CSharpClosurePlan,
+    CSharpEnumPlan, CSharpFunctionPlan, CSharpModulePlan, CSharpRecordPlan,
 };
 
 /// Produces a [`CSharpModulePlan`] from the IR contracts.
@@ -102,6 +102,14 @@ impl<'a> CSharpLowerer<'a> {
             .map(|c| self.lower_closure(c))
             .collect();
 
+        let builtins = CSharpBuiltinSet::from_kinds(
+            self.ffi
+                .catalog
+                .all_builtins()
+                .map(|builtin| builtin.kind)
+                .collect(),
+        );
+
         CSharpModulePlan {
             namespace,
             class_name,
@@ -113,6 +121,7 @@ impl<'a> CSharpLowerer<'a> {
             classes,
             callbacks,
             closures,
+            builtins,
         }
     }
 }

@@ -32,6 +32,7 @@ public static class DemoTest
             TestIsize();
             TestStrings();
             TestCustomTypes();
+            TestBuiltins();
             TestBlittableRecords();
             TestRecordsWithStrings();
             TestRecordsWithDefaults();
@@ -252,6 +253,54 @@ public static class DemoTest
         Require(echoedDts.Length == 3, "EchoDatetimes length");
         Require(echoedDts[0] == dts[0] && echoedDts[1] == dts[1] && echoedDts[2] == dts[2],
             "EchoDatetimes roundtrip (blittable)");
+
+        Console.WriteLine("  PASS\n");
+    }
+
+    private static void TestBuiltins()
+    {
+        Console.WriteLine("Testing builtins (Duration, SystemTime, UUID, URL)...");
+
+        // TimeSpan has 100ns ticks; we pick a sub-second value that's a
+        // multiple of 100ns so the wire roundtrip is lossless.
+        TimeSpan duration = new TimeSpan(12L * TimeSpan.TicksPerSecond + 3_450_000L);
+        DemoCase("case:builtins.duration.should_roundtrip_value");
+        Require(EchoDuration(duration) == duration, "EchoDuration roundtrip");
+
+        DemoCase("case:builtins.duration.should_construct_from_parts");
+        TimeSpan made = MakeDuration(7UL, 89_000_000U);
+        Require(made == TimeSpan.FromSeconds(7) + TimeSpan.FromMilliseconds(89), "MakeDuration");
+
+        DemoCase("case:builtins.duration.should_report_milliseconds");
+        Require(DurationAsMillis(TimeSpan.FromMilliseconds(1234)) == 1234UL, "DurationAsMillis");
+
+        DateTime instant = DateTime.UnixEpoch.AddMilliseconds(1_710_000_000_123L);
+        DemoCase("case:builtins.system_time.should_roundtrip_value");
+        Require(EchoSystemTime(instant) == instant, "EchoSystemTime roundtrip");
+
+        DemoCase("case:builtins.system_time.should_roundtrip_pre_epoch_value");
+        DateTime preEpochInstant = DateTime.UnixEpoch.AddSeconds(-1).AddMilliseconds(500);
+        Require(EchoSystemTime(preEpochInstant) == preEpochInstant, "EchoSystemTime pre-epoch roundtrip");
+
+        DemoCase("case:builtins.system_time.should_convert_to_epoch_milliseconds");
+        Require(SystemTimeToMillis(instant) == 1_710_000_000_123UL, "SystemTimeToMillis");
+
+        DemoCase("case:builtins.system_time.should_construct_from_epoch_milliseconds");
+        Require(MillisToSystemTime(1_710_000_000_123UL) == instant, "MillisToSystemTime");
+
+        Guid uuid = Guid.Parse("550e8400-e29b-41d4-a716-446655440000");
+        DemoCase("case:builtins.uuid.should_roundtrip_value");
+        Require(EchoUuid(uuid) == uuid, "EchoUuid roundtrip");
+
+        DemoCase("case:builtins.uuid.should_format_canonical_string");
+        Require(UuidToString(uuid) == "550e8400-e29b-41d4-a716-446655440000", "UuidToString");
+
+        Uri url = new Uri("https://example.com/path?q=boltffi");
+        DemoCase("case:builtins.url.should_roundtrip_value");
+        Require(EchoUrl(url) == url, "EchoUrl roundtrip");
+
+        DemoCase("case:builtins.url.should_format_string");
+        Require(UrlToString(url) == "https://example.com/path?q=boltffi", "UrlToString");
 
         Console.WriteLine("  PASS\n");
     }

@@ -149,6 +149,55 @@
         internal nint ReadNInt() => (nint)ReadI64();
         internal nuint ReadNUInt() => (nuint)ReadU64();
 
+        // Built-in value types travel as (seconds, nanos) for Duration and
+        // SystemTime, two i64s for UUID, length-prefixed UTF-8 for URL.
+        // Mirrors Java's WireReader contract; the C# stdlib types
+        // (TimeSpan, DateTime, Guid, Uri) carry 100ns precision so a Rust
+        // Duration / SystemTime whose nanos isn't a multiple of 100 is
+        // rounded toward zero on decode. All references go through
+        // `global::System.` so a user contract that defines a same-named
+        // record can't shadow these signatures. Each helper is gated on
+        // the contract actually using that builtin so unused helpers
+        // don't appear in the generated source.
+{%- if module.uses_duration_builtin() %}
+        internal global::System.TimeSpan ReadDuration()
+        {
+            long seconds = ReadI64();
+            int nanos = ReadI32();
+            if (seconds < 0L) throw new InvalidOperationException("corrupt wire: negative duration seconds");
+            if (nanos < 0) throw new InvalidOperationException("corrupt wire: negative duration nanos");
+            if (nanos >= 1_000_000_000) throw new InvalidOperationException("corrupt wire: duration nanos out of range");
+            return new global::System.TimeSpan(checked(seconds * global::System.TimeSpan.TicksPerSecond + nanos / 100));
+        }
+{%- endif %}
+{%- if module.uses_system_time_builtin() %}
+
+        internal global::System.DateTime ReadDateTime()
+        {
+            long seconds = ReadI64();
+            int nanos = ReadI32();
+            if (nanos < 0) throw new InvalidOperationException("corrupt wire: negative date-time nanos");
+            if (nanos >= 1_000_000_000) throw new InvalidOperationException("corrupt wire: date-time nanos out of range");
+            return global::System.DateTime.UnixEpoch.AddTicks(checked(seconds * global::System.TimeSpan.TicksPerSecond + nanos / 100));
+        }
+{%- endif %}
+{%- if module.uses_uuid_builtin() %}
+
+        internal global::System.Guid ReadUuid()
+        {
+            long msb = ReadI64();
+            long lsb = ReadI64();
+            Span<byte> bytes = stackalloc byte[16];
+            BinaryPrimitives.WriteInt64BigEndian(bytes[0..8], msb);
+            BinaryPrimitives.WriteInt64BigEndian(bytes[8..16], lsb);
+            return new global::System.Guid(bytes, bigEndian: true);
+        }
+{%- endif %}
+{%- if module.uses_url_builtin() %}
+
+        internal global::System.Uri ReadUri() => new global::System.Uri(ReadString());
+{%- endif %}
+
         internal string ReadString()
         {
             int len = ReadI32();
@@ -395,6 +444,56 @@
 
         internal void WriteNInt(nint v) => WriteI64((long)v);
         internal void WriteNUInt(nuint v) => WriteU64((ulong)v);
+
+        // Built-in value-type writers. Floor-divide so a pre-epoch
+        // DateTime (negative tick offset from UnixEpoch) lands at the
+        // floor-second with a positive nanos remainder, matching the
+        // Rust SystemTime wire shape and Java's WriteInstant. All
+        // references go through `global::System.` so a user contract
+        // that defines a same-named record can't shadow the signature.
+        // Each helper is gated on the contract actually using that
+        // builtin so unused helpers don't appear in the generated source.
+{%- if module.uses_duration_builtin() %}
+        internal void WriteDuration(global::System.TimeSpan v)
+        {
+            if (v.Ticks < 0L) throw new ArgumentException("duration must be non-negative", nameof(v));
+            long seconds = v.Ticks / global::System.TimeSpan.TicksPerSecond;
+            long subTicks = v.Ticks % global::System.TimeSpan.TicksPerSecond;
+            WriteI64(seconds);
+            WriteI32(checked((int)(subTicks * 100)));
+        }
+{%- endif %}
+{%- if module.uses_system_time_builtin() %}
+
+        internal void WriteDateTime(global::System.DateTime v)
+        {
+            long ticks = (v.ToUniversalTime() - global::System.DateTime.UnixEpoch).Ticks;
+            long seconds = ticks / global::System.TimeSpan.TicksPerSecond;
+            long subTicks = ticks % global::System.TimeSpan.TicksPerSecond;
+            if (subTicks < 0)
+            {
+                seconds -= 1;
+                subTicks += global::System.TimeSpan.TicksPerSecond;
+            }
+            WriteI64(seconds);
+            WriteI32(checked((int)(subTicks * 100)));
+        }
+{%- endif %}
+{%- if module.uses_uuid_builtin() %}
+
+        internal void WriteUuid(global::System.Guid v)
+        {
+            Span<byte> bytes = stackalloc byte[16];
+            if (!v.TryWriteBytes(bytes, bigEndian: true, out _))
+                throw new InvalidOperationException("Guid.TryWriteBytes failed");
+            WriteI64(BinaryPrimitives.ReadInt64BigEndian(bytes[0..8]));
+            WriteI64(BinaryPrimitives.ReadInt64BigEndian(bytes[8..16]));
+        }
+{%- endif %}
+{%- if module.uses_url_builtin() %}
+
+        internal void WriteUri(global::System.Uri v) => WriteString(v.ToString());
+{%- endif %}
 
         internal void WriteString(string v)
         {

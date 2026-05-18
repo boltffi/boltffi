@@ -108,7 +108,11 @@ impl<'a> CSharpLowerer<'a> {
             // through the wire path. Sending the underlying value raw
             // would misalign the Rust decoder.
             WriteOp::Custom { .. } => true,
-            WriteOp::Result { .. } | WriteOp::Builtin { .. } => {
+            // Built-in value types (Duration, SystemTime, UUID, URL) ride
+            // the wire-encoded path: the macro exposes them as wire-buffer
+            // signatures on the C ABI, matching the param shape Java uses.
+            WriteOp::Builtin { .. } => true,
+            WriteOp::Result { .. } => {
                 todo!("C# backend has not yet implemented param support for {op:?}")
             }
         }

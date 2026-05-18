@@ -118,6 +118,23 @@ impl<'a> CSharpLowerer<'a> {
             );
             return CSharpReturnKind::WireDecodeValue { decode_expr };
         }
+        // Built-in value types (Duration, SystemTime, UUID, URL) ride
+        // the wire-encoded path. The normalized dispatch below has no
+        // arm for them, so synthesize the single-op wire decode here.
+        if matches!(normalized, TypeExpr::Builtin(_)) {
+            let decode_seq = decode_ops.expect("Builtin return must carry decode_ops");
+            let mut locals = decode::DecodeLocalCounters::default();
+            let reader =
+                CSharpExpression::Identity(CSharpIdentity::Local(CSharpLocalName::new("reader")));
+            let decode_expr = decode::lower_decode_expr(
+                decode_seq,
+                &reader,
+                shadowed,
+                &self.namespace,
+                &mut locals,
+            );
+            return CSharpReturnKind::WireDecodeValue { decode_expr };
+        }
         // The macro emits `Vec<Custom<_>>` returns as wire-encoded
         // (length-prefixed) regardless of repr — Custom is treated as
         // opaque on the return path, so even `Vec<Custom<i64>>` ships

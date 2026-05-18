@@ -49,6 +49,7 @@ impl<'a> CSharpLowerer<'a> {
     pub(super) fn is_supported_type(&self, ty: &TypeExpr) -> bool {
         match ty {
             TypeExpr::Primitive(_) | TypeExpr::String | TypeExpr::Void => true,
+            TypeExpr::Builtin(_) => true,
             TypeExpr::Record(id) => self.supported_records.contains(id),
             TypeExpr::Enum(id) => self.supported_enums.contains(id),
             TypeExpr::Custom(id) => self.is_supported_type(self.custom_repr_type(id)),
@@ -89,6 +90,7 @@ impl<'a> CSharpLowerer<'a> {
     pub(super) fn is_supported_vec_element(&self, ty: &TypeExpr) -> bool {
         match ty {
             TypeExpr::Primitive(_) | TypeExpr::String => true,
+            TypeExpr::Builtin(_) => true,
             TypeExpr::Record(id) => self.supported_records.contains(id),
             TypeExpr::Enum(id) => self.supported_enums.contains(id),
             TypeExpr::Custom(id) => self.is_supported_vec_element(self.custom_repr_type(id)),
