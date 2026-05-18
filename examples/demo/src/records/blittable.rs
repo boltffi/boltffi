@@ -25,8 +25,8 @@ impl Point {
         ),
         exclude(
             java,
-            reason = ExclusionReason::CoverageGap,
-            details = "Java validates this area through the generated Point data constructor today; add a direct assertion for the Point::new method before marking this case covered."
+            reason = ExclusionReason::ImplementationGap,
+            details = "#323 - Java bindgen drops static methods whose Rust name collides with a Java keyword. Java cannot expose Point::new because new is a Java keyword. Include this case when Java keyword-safe renaming lands."
         )
     )]
     pub fn new(x: f64, y: f64) -> Self {
@@ -225,11 +225,6 @@ pub fn echo_point(p: Point) -> Point {
         details = "C# has no assertion for try_make_point in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for try_make_point in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently handle Option<T> around blittable records. Include this case when optional record returns are implemented for Python."
@@ -243,11 +238,6 @@ pub fn echo_point(p: Point) -> Point {
         csharp,
         reason = ExclusionReason::CoverageGap,
         details = "C# has no assertion for try_make_point in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for try_make_point in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
@@ -300,12 +290,7 @@ pub struct Color {
 #[demo_bench_macros::demo_case(
     "records.blittable.color.should_roundtrip_value",
     justification = "Ensure a blittable Color crosses the wire and returns unchanged.",
-    directions = "Call `records::blittable::echo_color` through the generated binding and assert a blittable Color crosses the wire and returns unchanged.",
-    exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for Color records in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    )
+    directions = "Call `records::blittable::echo_color` through the generated binding and assert a blittable Color crosses the wire and returns unchanged."
 )]
 #[export]
 pub fn echo_color(c: Color) -> Color {
@@ -315,12 +300,7 @@ pub fn echo_color(c: Color) -> Color {
 #[demo_bench_macros::demo_case(
     "records.blittable.color.should_make_from_channels",
     justification = "Ensure make_color returns a Color containing the provided channel values.",
-    directions = "Call `records::blittable::make_color` through the generated binding and assert make_color returns a Color containing the provided channel values.",
-    exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for Color records in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    )
+    directions = "Call `records::blittable::make_color` through the generated binding and assert make_color returns a Color containing the provided channel values."
 )]
 #[export]
 pub fn make_color(r: u8, g: u8, b: u8, a: u8) -> Color {
@@ -553,11 +533,6 @@ pub fn generate_locations(count: i32) -> Vec<Location> {
     justification = "Ensure process_locations treats an empty Location vector as count zero.",
     directions = "Call `records::blittable::process_locations` through the generated binding and assert process_locations treats an empty Location vector as count zero.",
     exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for the empty Location vector count in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         typescript,
         reason = ExclusionReason::CoverageGap,
         details = "TypeScript has no assertion for blittable record vector helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
@@ -572,11 +547,6 @@ pub fn generate_locations(count: i32) -> Vec<Location> {
     "records.blittable.locations.should_count_host_constructed_vector",
     justification = "Ensure process_locations receives host-constructed Location records and returns their item count.",
     directions = "Call `records::blittable::process_locations` through the generated binding and assert process_locations receives host-constructed Location records and returns their item count.",
-    exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for host-constructed Location vectors in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
     exclude(
         typescript,
         reason = ExclusionReason::CoverageGap,
@@ -613,11 +583,6 @@ pub fn process_locations(locations: Vec<Location>) -> i32 {
     "records.blittable.locations.should_sum_host_constructed_ratings",
     justification = "Ensure sum_ratings receives host-constructed Location records and sums their f64 rating fields.",
     directions = "Call `records::blittable::sum_ratings` through the generated binding and assert sum_ratings receives host-constructed Location records and sums their f64 rating fields.",
-    exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for host-constructed Location vectors in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
     exclude(
         typescript,
         reason = ExclusionReason::CoverageGap,
@@ -820,11 +785,6 @@ pub fn generate_sensor_readings(count: i32) -> Vec<SensorReading> {
     justification = "Ensure avg_sensor_temperature treats an empty SensorReading vector as average zero.",
     directions = "Call `records::blittable::avg_sensor_temperature` through the generated binding and assert avg_sensor_temperature treats an empty SensorReading vector as average zero.",
     exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for empty SensorReading vectors in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         typescript,
         reason = ExclusionReason::CoverageGap,
         details = "TypeScript has no assertion for blittable record vector helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
@@ -860,11 +820,6 @@ pub fn avg_sensor_temperature(readings: Vec<SensorReading>) -> f64 {
         details = "C# has no assertion for find_location in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for find_location in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         typescript,
         reason = ExclusionReason::CoverageGap,
         details = "TypeScript has no assertion for find_location in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
@@ -883,11 +838,6 @@ pub fn avg_sensor_temperature(readings: Vec<SensorReading>) -> f64 {
         csharp,
         reason = ExclusionReason::CoverageGap,
         details = "C# has no assertion for find_location in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for find_location in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         typescript,
@@ -927,11 +877,6 @@ pub fn find_location(id: i32) -> Option<Location> {
         details = "C# has no assertion for find_locations in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for find_locations in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         typescript,
         reason = ExclusionReason::CoverageGap,
         details = "TypeScript has no assertion for find_locations in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
@@ -950,11 +895,6 @@ pub fn find_location(id: i32) -> Option<Location> {
         csharp,
         reason = ExclusionReason::CoverageGap,
         details = "C# has no assertion for find_locations in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for find_locations in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         typescript,

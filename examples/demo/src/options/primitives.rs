@@ -32,11 +32,6 @@ pub fn echo_optional_i32(v: Option<i32>) -> Option<i32> {
     justification = "Ensure an Option<f64> carrying Some crosses the wire and returns the same value.",
     directions = "Call `options::primitives::echo_optional_f64` through the generated binding and assert an Option<f64> carrying Some crosses the wire and returns the same value.",
     exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for Option<f64> in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
@@ -46,11 +41,6 @@ pub fn echo_optional_i32(v: Option<i32>) -> Option<i32> {
     "options.primitives.f64.should_roundtrip_none",
     justification = "Ensure an Option<f64> carrying None crosses the wire and returns None.",
     directions = "Call `options::primitives::echo_optional_f64` through the generated binding and assert an Option<f64> carrying None crosses the wire and returns None.",
-    exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for Option<f64> in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
     exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
@@ -67,11 +57,6 @@ pub fn echo_optional_f64(v: Option<f64>) -> Option<f64> {
     justification = "Ensure an Option<bool> carrying Some crosses the wire and returns the same value.",
     directions = "Call `options::primitives::echo_optional_bool` through the generated binding and assert an Option<bool> carrying Some crosses the wire and returns the same value.",
     exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for Option<bool> in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
@@ -81,11 +66,6 @@ pub fn echo_optional_f64(v: Option<f64>) -> Option<f64> {
     "options.primitives.bool.should_roundtrip_none",
     justification = "Ensure an Option<bool> carrying None crosses the wire and returns None.",
     directions = "Call `options::primitives::echo_optional_bool` through the generated binding and assert an Option<bool> carrying None crosses the wire and returns None.",
-    exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for Option<bool> in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
     exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
@@ -183,11 +163,6 @@ pub fn double_if_some(v: Option<i32>) -> Option<i32> {
     justification = "Ensure find_even returns Some containing the input when the i32 value is even.",
     directions = "Call `options::primitives::find_even` through the generated binding and assert find_even returns Some containing the input when the i32 value is even.",
     exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for find_even in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
@@ -197,11 +172,6 @@ pub fn double_if_some(v: Option<i32>) -> Option<i32> {
     "options.primitives.i32.should_return_none_for_odd_value",
     justification = "Ensure find_even returns None when the i32 value is odd.",
     directions = "Call `options::primitives::find_even` through the generated binding and assert find_even returns None when the i32 value is odd.",
-    exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for find_even in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
     exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
@@ -219,11 +189,6 @@ pub fn find_even(value: i32) -> Option<i32> {
     justification = "Ensure find_positive_i64 returns Some containing the input when the i64 value is positive.",
     directions = "Call `options::primitives::find_positive_i64` through the generated binding and assert find_positive_i64 returns Some containing the input when the i64 value is positive.",
     exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for find_positive_i64 in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
@@ -238,11 +203,6 @@ pub fn find_even(value: i32) -> Option<i32> {
     "options.primitives.i64.should_return_none_for_non_positive_value",
     justification = "Ensure find_positive_i64 returns None when the i64 value is zero or negative.",
     directions = "Call `options::primitives::find_positive_i64` through the generated binding and assert find_positive_i64 returns None when the i64 value is zero or negative.",
-    exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for find_positive_i64 in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
     exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
@@ -265,11 +225,6 @@ pub fn find_positive_i64(value: i64) -> Option<i64> {
     justification = "Ensure find_positive_f64 returns Some containing the input when the f64 value is positive.",
     directions = "Call `options::primitives::find_positive_f64` through the generated binding and assert find_positive_f64 returns Some containing the input when the f64 value is positive.",
     exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for find_positive_f64 in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
@@ -279,11 +234,6 @@ pub fn find_positive_i64(value: i64) -> Option<i64> {
     "options.primitives.f64.should_return_none_for_non_positive_value",
     justification = "Ensure find_positive_f64 returns None when the f64 value is zero or negative.",
     directions = "Call `options::primitives::find_positive_f64` through the generated binding and assert find_positive_f64 returns None when the f64 value is zero or negative.",
-    exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for find_positive_f64 in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
     exclude(
         python,
         reason = ExclusionReason::ImplementationGap,

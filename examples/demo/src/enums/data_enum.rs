@@ -44,7 +44,7 @@ impl Shape {
         exclude(
             java,
             reason = ExclusionReason::ImplementationGap,
-            details = "Java cannot expose Shape::new on the generated surface because new is a Java keyword."
+            details = "#323 - Java bindgen drops static methods whose Rust name collides with a Java keyword. Java cannot expose Shape::new because new is a Java keyword. Include this case when Java keyword-safe renaming lands."
         ),
         exclude(
             python,
@@ -330,11 +330,6 @@ pub enum Message {
     justification = "Ensure the Message::Image variant preserves its URL and dimension payload fields when round-tripped.",
     directions = "Call `enums::data_enum::echo_message` through the generated binding and assert the Message::Image variant preserves its URL and dimension payload fields when round-tripped.",
     exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java reaches the surrounding surface but still needs a round-trip assertion for the Message::Image variant."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer currently emits only C-style enums, not data-enum payloads. Include this case when Python data-enum bindings are implemented."
@@ -344,11 +339,6 @@ pub enum Message {
     "enums.data_enum.message.ping.should_roundtrip_unit_variant",
     justification = "Ensure the Message::Ping unit variant crosses the FFI boundary unchanged.",
     directions = "Call `enums::data_enum::echo_message` through the generated binding and assert the Message::Ping unit variant crosses the FFI boundary unchanged.",
-    exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java reaches the surrounding surface but still needs a round-trip assertion for the Message::Ping variant."
-    ),
     exclude(
         typescript,
         reason = ExclusionReason::CoverageGap,
@@ -383,11 +373,6 @@ pub fn echo_message(m: Message) -> Message {
         csharp,
         reason = ExclusionReason::CoverageGap,
         details = "C# round-trips the value but still needs an assertion for the the Message::Image variant summary."
-    ),
-    exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java round-trips the value but still needs an assertion for the the Message::Image variant summary."
     ),
     exclude(
         python,
@@ -437,11 +422,6 @@ pub enum Animal {
     justification = "Ensure the Animal::Cat variant preserves its name string and indoor boolean payloads when round-tripped.",
     directions = "Call `enums::data_enum::echo_animal` through the generated binding and assert the Animal::Cat variant preserves its name string and indoor boolean payloads when round-tripped.",
     exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java reaches the surrounding surface but still needs a round-trip assertion for the Animal::Cat variant."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer currently emits only C-style enums, not data-enum payloads. Include this case when Python data-enum bindings are implemented."
@@ -451,11 +431,6 @@ pub enum Animal {
     "enums.data_enum.animal.fish.should_roundtrip_count_payload",
     justification = "Ensure the Animal::Fish variant preserves its count payload when round-tripped.",
     directions = "Call `enums::data_enum::echo_animal` through the generated binding and assert the Animal::Fish variant preserves its count payload when round-tripped.",
-    exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java reaches the surrounding surface but still needs a round-trip assertion for the Animal::Fish variant."
-    ),
     exclude(
         typescript,
         reason = ExclusionReason::CoverageGap,
@@ -477,11 +452,6 @@ pub fn echo_animal(a: Animal) -> Animal {
     justification = "Ensure animal_name derives the dog name from an Animal::Dog payload.",
     directions = "Call `enums::data_enum::animal_name` through the generated binding and assert animal_name derives the dog name from an Animal::Dog payload.",
     exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java round-trips the enum family but still needs an assertion for the derived a name from Animal::Dog behavior."
-    ),
-    exclude(
         typescript,
         reason = ExclusionReason::CoverageGap,
         details = "TypeScript round-trips the enum family but still needs an assertion for the derived a name from Animal::Dog behavior."
@@ -500,11 +470,6 @@ pub fn echo_animal(a: Animal) -> Animal {
         csharp,
         reason = ExclusionReason::CoverageGap,
         details = "C# round-trips the enum family but still needs an assertion for the derived a name from Animal::Cat behavior."
-    ),
-    exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java round-trips the enum family but still needs an assertion for the derived a name from Animal::Cat behavior."
     ),
     exclude(
         python,

@@ -16,8 +16,8 @@ use uuid::Uuid;
     ),
     exclude(
         java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for built-in Duration values in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
+        reason = ExclusionReason::ImplementationGap,
+        details = "#320 - Java bindgen does not currently emit functions whose signatures use built-in value types (Duration, SystemTime, URL, UUID). Include this case when the relevant Java built-in binding is implemented."
     ),
     exclude(
         python,
@@ -41,8 +41,8 @@ pub fn echo_duration(d: Duration) -> Duration {
     ),
     exclude(
         java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for built-in Duration values in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
+        reason = ExclusionReason::ImplementationGap,
+        details = "#320 - Java bindgen does not currently emit functions whose signatures use built-in value types (Duration, SystemTime, URL, UUID). Include this case when the relevant Java built-in binding is implemented."
     ),
     exclude(
         python,
@@ -66,8 +66,8 @@ pub fn make_duration(secs: u64, nanos: u32) -> Duration {
     ),
     exclude(
         java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for built-in Duration values in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
+        reason = ExclusionReason::ImplementationGap,
+        details = "#320 - Java bindgen does not currently emit functions whose signatures use built-in value types (Duration, SystemTime, URL, UUID). Include this case when the relevant Java built-in binding is implemented."
     ),
     exclude(
         python,
@@ -91,8 +91,8 @@ pub fn duration_as_millis(d: Duration) -> u64 {
     ),
     exclude(
         java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for built-in SystemTime values in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
+        reason = ExclusionReason::ImplementationGap,
+        details = "#320 - Java bindgen does not currently emit functions whose signatures use built-in value types (Duration, SystemTime, URL, UUID). Include this case when the relevant Java built-in binding is implemented."
     ),
     exclude(
         python,
@@ -116,8 +116,8 @@ pub fn echo_system_time(t: SystemTime) -> SystemTime {
     ),
     exclude(
         java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for built-in SystemTime values in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
+        reason = ExclusionReason::ImplementationGap,
+        details = "#320 - Java bindgen does not currently emit functions whose signatures use built-in value types (Duration, SystemTime, URL, UUID). Include this case when the relevant Java built-in binding is implemented."
     ),
     exclude(
         python,
@@ -141,8 +141,8 @@ pub fn system_time_to_millis(t: SystemTime) -> u64 {
     ),
     exclude(
         java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for built-in SystemTime values in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
+        reason = ExclusionReason::ImplementationGap,
+        details = "#320 - Java bindgen does not currently emit functions whose signatures use built-in value types (Duration, SystemTime, URL, UUID). Include this case when the relevant Java built-in binding is implemented."
     ),
     exclude(
         python,
@@ -167,8 +167,8 @@ pub fn millis_to_system_time(millis: u64) -> SystemTime {
     ),
     exclude(
         java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for built-in UUID values in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
+        reason = ExclusionReason::ImplementationGap,
+        details = "#320 - Java bindgen does not currently emit functions whose signatures use built-in value types (Duration, SystemTime, URL, UUID). Include this case when the relevant Java built-in binding is implemented."
     ),
     exclude(
         python,
@@ -192,8 +192,8 @@ pub fn echo_uuid(id: Uuid) -> Uuid {
     ),
     exclude(
         java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for built-in UUID values in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
+        reason = ExclusionReason::ImplementationGap,
+        details = "#320 - Java bindgen does not currently emit functions whose signatures use built-in value types (Duration, SystemTime, URL, UUID). Include this case when the relevant Java built-in binding is implemented."
     ),
     exclude(
         python,
@@ -217,8 +217,8 @@ pub fn uuid_to_string(id: Uuid) -> String {
     ),
     exclude(
         java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for built-in URL values in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
+        reason = ExclusionReason::ImplementationGap,
+        details = "#320 - Java bindgen does not currently emit functions whose signatures use built-in value types (Duration, SystemTime, URL, UUID). Include this case when the relevant Java built-in binding is implemented."
     ),
     exclude(
         python,
@@ -242,8 +242,8 @@ pub fn echo_url(url: Url) -> Url {
     ),
     exclude(
         java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for built-in URL values in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
+        reason = ExclusionReason::ImplementationGap,
+        details = "#320 - Java bindgen does not currently emit functions whose signatures use built-in value types (Duration, SystemTime, URL, UUID). Include this case when the relevant Java built-in binding is implemented."
     ),
     exclude(
         python,

@@ -7,11 +7,6 @@ use super::error_enums::MathError;
     justification = "Ensure async_safe_divide resolves to the integer quotient when the divisor is non-zero.",
     directions = "Call `results::async_results::async_safe_divide` through the generated binding and assert async_safe_divide resolves to the integer quotient when the divisor is non-zero.",
     exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for async result exports in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer currently omits async functions and Result returns. Include this case when async Result support is implemented for Python."
@@ -21,11 +16,6 @@ use super::error_enums::MathError;
     "results.async_results.safe_divide.should_reject_division_by_zero",
     justification = "Ensure async_safe_divide rejects with a typed MathError when the divisor is zero.",
     directions = "Call `results::async_results::async_safe_divide` through the generated binding and assert async_safe_divide rejects with a typed MathError when the divisor is zero.",
-    exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for async result exports in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
     exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
@@ -46,11 +36,6 @@ pub async fn async_safe_divide(a: i32, b: i32) -> Result<i32, MathError> {
     justification = "Ensure async_fallible_fetch resolves to a value string for a non-negative key.",
     directions = "Call `results::async_results::async_fallible_fetch` through the generated binding and assert async_fallible_fetch resolves to a value string for a non-negative key.",
     exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for async result exports in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer currently omits async functions and Result returns. Include this case when async Result support is implemented for Python."
@@ -60,11 +45,6 @@ pub async fn async_safe_divide(a: i32, b: i32) -> Result<i32, MathError> {
     "results.async_results.fallible_fetch.should_reject_negative_key",
     justification = "Ensure async_fallible_fetch rejects with a string error for a negative key.",
     directions = "Call `results::async_results::async_fallible_fetch` through the generated binding and assert async_fallible_fetch rejects with a string error for a negative key.",
-    exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for async result exports in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
     exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
@@ -88,11 +68,6 @@ pub async fn async_fallible_fetch(key: i32) -> Result<String, String> {
     justification = "Ensure async_find_value resolves to Ok(Some) for a positive key.",
     directions = "Call `results::async_results::async_find_value` through the generated binding and assert async_find_value resolves to Ok(Some) for a positive key.",
     exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for async result exports in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer currently omits async functions and Result returns. Include this case when async Result support is implemented for Python."
@@ -103,11 +78,6 @@ pub async fn async_fallible_fetch(key: i32) -> Result<String, String> {
     justification = "Ensure async_find_value resolves to Ok(None) for key zero.",
     directions = "Call `results::async_results::async_find_value` through the generated binding and assert async_find_value resolves to Ok(None) for key zero.",
     exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for async result exports in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer currently omits async functions and Result returns. Include this case when async Result support is implemented for Python."
@@ -117,11 +87,6 @@ pub async fn async_fallible_fetch(key: i32) -> Result<String, String> {
     "results.async_results.find_value.should_reject_negative_key",
     justification = "Ensure async_find_value rejects with a string error for a negative key.",
     directions = "Call `results::async_results::async_find_value` through the generated binding and assert async_find_value rejects with a string error for a negative key.",
-    exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for async result exports in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
     exclude(
         python,
         reason = ExclusionReason::ImplementationGap,

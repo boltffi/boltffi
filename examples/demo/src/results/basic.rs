@@ -41,11 +41,6 @@ pub fn safe_divide(a: i32, b: i32) -> Result<i32, String> {
         details = "C# has no assertion for safe_sqrt in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for safe_sqrt in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently emit Result-returning functions. Include this case when Result returns are implemented for Python."
@@ -59,11 +54,6 @@ pub fn safe_divide(a: i32, b: i32) -> Result<i32, String> {
         csharp,
         reason = ExclusionReason::CoverageGap,
         details = "C# has no assertion for safe_sqrt in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for safe_sqrt in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
@@ -158,8 +148,8 @@ pub fn always_err(msg: String) -> Result<i32, String> {
     ),
     exclude(
         java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for Result parameters in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
+        reason = ExclusionReason::ImplementationGap,
+        details = "#321 - Java bindgen does not currently emit functions that take Result<T, E> as a parameter. Include this case when Java Result-parameter support lands."
     ),
     exclude(
         python,
@@ -178,8 +168,8 @@ pub fn always_err(msg: String) -> Result<i32, String> {
     ),
     exclude(
         java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for Result parameters in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
+        reason = ExclusionReason::ImplementationGap,
+        details = "#321 - Java bindgen does not currently emit functions that take Result<T, E> as a parameter. Include this case when Java Result-parameter support lands."
     ),
     exclude(
         python,
@@ -205,11 +195,6 @@ pub fn result_to_string(v: Result<i32, String>) -> String {
         details = "C# has no assertion for the divide alias in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for the divide alias in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently emit Result-returning functions. Include this case when Result returns are implemented for Python."
@@ -223,11 +208,6 @@ pub fn result_to_string(v: Result<i32, String>) -> String {
         csharp,
         reason = ExclusionReason::CoverageGap,
         details = "C# has no assertion for the divide alias in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for the divide alias in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
@@ -250,11 +230,6 @@ pub fn divide(a: i32, b: i32) -> Result<i32, String> {
         details = "C# has no assertion for the top-level parse_int export in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for the top-level parse_int export in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently emit Result-returning functions. Include this case when Result returns are implemented for Python."
@@ -268,11 +243,6 @@ pub fn divide(a: i32, b: i32) -> Result<i32, String> {
         csharp,
         reason = ExclusionReason::CoverageGap,
         details = "C# has no assertion for the top-level parse_int export in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for the top-level parse_int export in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
@@ -297,11 +267,6 @@ pub fn parse_int(input: String) -> Result<i32, String> {
         details = "C# has no assertion for validate_name in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for validate_name in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently emit Result-returning functions. Include this case when Result returns are implemented for Python."
@@ -315,11 +280,6 @@ pub fn parse_int(input: String) -> Result<i32, String> {
         csharp,
         reason = ExclusionReason::CoverageGap,
         details = "C# has no assertion for validate_name in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for validate_name in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,

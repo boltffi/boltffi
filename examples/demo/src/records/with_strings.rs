@@ -74,11 +74,6 @@ pub struct Address {
     justification = "Ensure an Address record with multiple string fields crosses the wire and returns unchanged.",
     directions = "Call `records::with_strings::echo_address` through the generated binding and assert an Address record with multiple string fields crosses the wire and returns unchanged.",
     exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for Address records in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer currently emits only primitive-field blittable records. Include this case when records with string fields are implemented for Python."
@@ -94,11 +89,6 @@ pub fn echo_address(a: Address) -> Address {
     "records.with_strings.address.should_format_value",
     justification = "Ensure format_address receives an Address record and returns a formatted string.",
     directions = "Call `records::with_strings::format_address` through the generated binding and assert format_address receives an Address record and returns a formatted string.",
-    exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for Address records in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
     exclude(
         python,
         reason = ExclusionReason::ImplementationGap,

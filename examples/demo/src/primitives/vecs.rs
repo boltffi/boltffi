@@ -205,11 +205,6 @@ pub fn reverse_vec_i32(v: Vec<i32>) -> Vec<i32> {
     justification = "Ensure an i32 count crosses the wire and returns a generated i32 sequence.",
     directions = "Call `primitives::vecs::generate_i32_vec` through the generated binding and assert an i32 count crosses the wire and returns a generated i32 sequence.",
     exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for benchmark vector generators in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::CoverageGap,
         details = "Python supports primitive vector returns, but the demo suite has no assertion for this benchmark vector generator yet."
@@ -236,11 +231,6 @@ pub fn generate_i32_vec(count: i32) -> Vec<i32> {
         details = "C# has no assertion for the i32 benchmark sum helper in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for the i32 benchmark sum helper in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::CoverageGap,
         details = "Python supports primitive vector parameters and primitive returns, but the demo suite has no assertion for this benchmark sum helper yet."
@@ -262,11 +252,6 @@ pub fn sum_i32_vec(values: Vec<i32>) -> i64 {
     justification = "Ensure an i32 count crosses the wire and returns a generated f64 sequence.",
     directions = "Call `primitives::vecs::generate_f64_vec` through the generated binding and assert an i32 count crosses the wire and returns a generated f64 sequence.",
     exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for benchmark vector generators in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::CoverageGap,
         details = "Python supports primitive vector returns, but the demo suite has no assertion for this benchmark vector generator yet."
@@ -287,11 +272,6 @@ pub fn generate_f64_vec(count: i32) -> Vec<f64> {
     "primitives.vecs.f64.should_sum_values",
     justification = "Ensure a f64 vector crosses the wire and returns as a f64 sum.",
     directions = "Call `primitives::vecs::sum_f64_vec` through the generated binding and assert a f64 vector crosses the wire and returns as a f64 sum.",
-    exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for f64 vector sums in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
     exclude(
         python,
         reason = ExclusionReason::CoverageGap,
@@ -320,11 +300,6 @@ pub fn sum_f64_vec(values: Vec<f64>) -> f64 {
         details = "C# has no assertion for the in-place u64 slice helper in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for the in-place u64 slice helper in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer only accepts value parameters today, so mutable slice parameters are omitted. Include this case when in-place sequence parameters are implemented for Python."
@@ -345,11 +320,6 @@ pub fn inc_u64(values: &mut [u64]) {
         csharp,
         reason = ExclusionReason::CoverageGap,
         details = "C# has no assertion for the u64 value increment helper in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for the u64 value increment helper in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
@@ -481,11 +451,6 @@ pub fn echo_vec_vec_string(v: Vec<Vec<String>>) -> Vec<Vec<String>> {
         csharp,
         reason = ExclusionReason::CoverageGap,
         details = "C# has no assertion for flattening an empty nested vector in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for flattening an empty nested vector in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,

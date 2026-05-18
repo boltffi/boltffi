@@ -28,11 +28,6 @@ pub struct UserProfile {
     justification = "Ensure a UserProfile record with absent optional fields crosses the wire and returns unchanged.",
     directions = "Call `records::with_options::echo_user_profile` through the generated binding and assert a UserProfile record with absent optional fields crosses the wire and returns unchanged.",
     exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java reaches the surrounding surface but still needs a round-trip assertion for UserProfile with absent options."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer currently emits only primitive-field blittable records. Include this case when records with optional fields are implemented for Python."
@@ -48,11 +43,6 @@ pub struct UserProfile {
     justification = "Ensure a UserProfile record with one present option and one absent option crosses the wire and returns unchanged.",
     directions = "Call `records::with_options::echo_user_profile` through the generated binding and assert a UserProfile record with one present option and one absent option crosses the wire and returns unchanged.",
     exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java reaches the surrounding surface but still needs a round-trip assertion for UserProfile with mixed option presence."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer currently emits only primitive-field blittable records. Include this case when records with optional fields are implemented for Python."
@@ -67,11 +57,6 @@ pub struct UserProfile {
     "records.with_options.user_profile.should_roundtrip_utf8_optional_string",
     justification = "Ensure a UserProfile record with UTF-8 text inside optional string fields crosses the wire and returns unchanged.",
     directions = "Call `records::with_options::echo_user_profile` through the generated binding and assert a UserProfile record with UTF-8 text inside optional string fields crosses the wire and returns unchanged.",
-    exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java reaches the surrounding surface but still needs a round-trip assertion for UTF-8 inside UserProfile optional fields."
-    ),
     exclude(
         python,
         reason = ExclusionReason::ImplementationGap,

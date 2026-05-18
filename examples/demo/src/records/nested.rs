@@ -87,11 +87,6 @@ pub struct Rect {
     justification = "Ensure a Rect record containing Point and Dimensions records crosses the wire and returns unchanged.",
     directions = "Call `records::nested::echo_rect` through the generated binding and assert a Rect record containing Point and Dimensions records crosses the wire and returns unchanged.",
     exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for Rect records in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer currently emits only primitive-field blittable records. Include this case when nested records are implemented for Python."
@@ -107,11 +102,6 @@ pub fn echo_rect(r: Rect) -> Rect {
     "records.nested.rect.should_compute_area",
     justification = "Ensure rect_area receives a Rect record and multiplies its nested width and height fields.",
     directions = "Call `records::nested::rect_area` through the generated binding and assert rect_area receives a Rect record and multiplies its nested width and height fields.",
-    exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for Rect records in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
     exclude(
         python,
         reason = ExclusionReason::ImplementationGap,

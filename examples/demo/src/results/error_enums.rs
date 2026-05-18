@@ -321,11 +321,6 @@ pub struct BenchmarkResponse {
         details = "C# has no assertion for ApiResult data enum results in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for ApiResult data enum results in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently emit Result returns or structured error payloads. Include this case when typed Result support is implemented for Python."
@@ -341,11 +336,6 @@ pub struct BenchmarkResponse {
         details = "C# has no assertion for ApiResult data enum results in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for ApiResult data enum results in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently emit Result returns or structured error payloads. Include this case when typed Result support is implemented for Python."
@@ -359,11 +349,6 @@ pub struct BenchmarkResponse {
         csharp,
         reason = ExclusionReason::CoverageGap,
         details = "C# has no assertion for ApiResult data enum results in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for ApiResult data enum results in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
@@ -400,11 +385,6 @@ pub fn process_value(value: i32) -> ApiResult {
         details = "C# has no assertion for ApiResult data enum results in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for ApiResult data enum results in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently emit Result returns or structured error payloads. Include this case when typed Result support is implemented for Python."
@@ -418,11 +398,6 @@ pub fn process_value(value: i32) -> ApiResult {
         csharp,
         reason = ExclusionReason::CoverageGap,
         details = "C# has no assertion for ApiResult data enum results in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for ApiResult data enum results in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
@@ -445,11 +420,6 @@ pub fn api_result_is_success(result: ApiResult) -> bool {
         details = "C# has no assertion for ComputeError data enum results in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for ComputeError data enum results in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently emit Result returns or structured error payloads. Include this case when typed Result support is implemented for Python."
@@ -463,11 +433,6 @@ pub fn api_result_is_success(result: ApiResult) -> bool {
         csharp,
         reason = ExclusionReason::CoverageGap,
         details = "C# has no assertion for ComputeError data enum results in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for ComputeError data enum results in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
@@ -497,8 +462,8 @@ pub fn try_compute(value: i32) -> Result<i32, ComputeError> {
     ),
     exclude(
         java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for BenchmarkResponse result fields in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
+        reason = ExclusionReason::ImplementationGap,
+        details = "#322 - Java bindgen does not currently emit functions whose signatures involve records containing Result<T, E> fields. Include this case when Java nested-Result-in-record support lands."
     ),
     exclude(
         python,
@@ -525,8 +490,8 @@ pub fn create_success_response(request_id: i64, point: DataPoint) -> BenchmarkRe
     ),
     exclude(
         java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for BenchmarkResponse result fields in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
+        reason = ExclusionReason::ImplementationGap,
+        details = "#322 - Java bindgen does not currently emit functions whose signatures involve records containing Result<T, E> fields. Include this case when Java nested-Result-in-record support lands."
     ),
     exclude(
         python,
@@ -553,8 +518,8 @@ pub fn create_error_response(request_id: i64, error: ComputeError) -> BenchmarkR
     ),
     exclude(
         java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for BenchmarkResponse result fields in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
+        reason = ExclusionReason::ImplementationGap,
+        details = "#322 - Java bindgen does not currently emit functions whose signatures involve records containing Result<T, E> fields. Include this case when Java nested-Result-in-record support lands."
     ),
     exclude(
         python,
@@ -573,8 +538,8 @@ pub fn create_error_response(request_id: i64, error: ComputeError) -> BenchmarkR
     ),
     exclude(
         java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for BenchmarkResponse result fields in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
+        reason = ExclusionReason::ImplementationGap,
+        details = "#322 - Java bindgen does not currently emit functions whose signatures involve records containing Result<T, E> fields. Include this case when Java nested-Result-in-record support lands."
     ),
     exclude(
         python,
@@ -598,8 +563,8 @@ pub fn is_response_success(response: BenchmarkResponse) -> bool {
     ),
     exclude(
         java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for BenchmarkResponse result fields in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
+        reason = ExclusionReason::ImplementationGap,
+        details = "#322 - Java bindgen does not currently emit functions whose signatures involve records containing Result<T, E> fields. Include this case when Java nested-Result-in-record support lands."
     ),
     exclude(
         python,
@@ -618,8 +583,8 @@ pub fn is_response_success(response: BenchmarkResponse) -> bool {
     ),
     exclude(
         java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for BenchmarkResponse result fields in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
+        reason = ExclusionReason::ImplementationGap,
+        details = "#322 - Java bindgen does not currently emit functions whose signatures involve records containing Result<T, E> fields. Include this case when Java nested-Result-in-record support lands."
     ),
     exclude(
         python,

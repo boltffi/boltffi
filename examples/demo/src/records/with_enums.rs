@@ -17,11 +17,6 @@ pub struct Task {
     justification = "Ensure a Task record with a Priority enum field crosses the wire and returns unchanged.",
     directions = "Call `records::with_enums::echo_task` through the generated binding and assert a Task record with a Priority enum field crosses the wire and returns unchanged.",
     exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java already exercises enum-bearing headers and holders; this case is still waiting on a focused assertion for Task helpers."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer currently emits only primitive-field blittable records. Include this case when records with enum fields are implemented for Python."
@@ -40,11 +35,6 @@ pub fn echo_task(task: Task) -> Task {
         csharp,
         reason = ExclusionReason::CoverageGap,
         details = "C# already exercises Task round-trip; this case is still waiting on a focused assertion for make_task."
-    ),
-    exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java already exercises enum-bearing headers and holders; this case is still waiting on a focused assertion for Task helpers."
     ),
     exclude(
         python,
@@ -71,11 +61,6 @@ pub fn make_task(title: String, priority: Priority) -> Task {
         details = "C# already exercises Task round-trip; this case is still waiting on a focused assertion for is_urgent."
     ),
     exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java already exercises enum-bearing headers and holders; this case is still waiting on a focused assertion for Task helpers."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer currently emits only primitive-field blittable records. Include this case when records with enum fields are implemented for Python."
@@ -98,11 +83,6 @@ pub struct Notification {
     "records.with_enums.notification.should_roundtrip_priority_field",
     justification = "Ensure a Notification record with a Priority enum field crosses the wire and returns unchanged.",
     directions = "Call `records::with_enums::echo_notification` through the generated binding and assert a Notification record with a Priority enum field crosses the wire and returns unchanged.",
-    exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java already exercises enum-bearing headers and holders; this case is still waiting on a focused assertion for Notification helpers."
-    ),
     exclude(
         python,
         reason = ExclusionReason::ImplementationGap,

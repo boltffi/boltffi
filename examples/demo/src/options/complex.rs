@@ -161,11 +161,6 @@ pub fn echo_optional_status(v: Option<Status>) -> Option<Status> {
     justification = "Ensure an Option<Vec<i32>> carrying Some(empty vector) remains distinct from None.",
     directions = "Call `options::complex::echo_optional_vec` through the generated binding and assert an Option<Vec<i32>> carrying Some(empty vector) remains distinct from None.",
     exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for Some(empty Vec) for echo_optional_vec in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
@@ -212,11 +207,6 @@ pub fn optional_vec_length(v: Option<Vec<i32>>) -> Option<u32> {
     justification = "Ensure find_name returns Some generated string when the id is positive.",
     directions = "Call `options::complex::find_name` through the generated binding and assert find_name returns Some generated string when the id is positive.",
     exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for find_name in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
@@ -226,11 +216,6 @@ pub fn optional_vec_length(v: Option<Vec<i32>>) -> Option<u32> {
     "options.complex.string.should_return_none_for_non_positive_id",
     justification = "Ensure find_name returns None when the id is not positive.",
     directions = "Call `options::complex::find_name` through the generated binding and assert find_name returns None when the id is not positive.",
-    exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for find_name in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
     exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
@@ -252,11 +237,6 @@ pub fn find_name(id: i32) -> Option<String> {
     justification = "Ensure find_numbers returns Some vector of i32 values when count is positive.",
     directions = "Call `options::complex::find_numbers` through the generated binding and assert find_numbers returns Some vector of i32 values when count is positive.",
     exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for find_numbers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
@@ -266,11 +246,6 @@ pub fn find_name(id: i32) -> Option<String> {
     "options.complex.vec.should_return_none_for_non_positive_number_count",
     justification = "Ensure find_numbers returns None when count is not positive.",
     directions = "Call `options::complex::find_numbers` through the generated binding and assert find_numbers returns None when count is not positive.",
-    exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for find_numbers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
     exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
@@ -292,11 +267,6 @@ pub fn find_numbers(count: i32) -> Option<Vec<i32>> {
     justification = "Ensure find_names returns Some vector of generated strings when count is positive.",
     directions = "Call `options::complex::find_names` through the generated binding and assert find_names returns Some vector of generated strings when count is positive.",
     exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for find_names in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
@@ -306,11 +276,6 @@ pub fn find_numbers(count: i32) -> Option<Vec<i32>> {
     "options.complex.vec_string.should_return_none_for_non_positive_name_count",
     justification = "Ensure find_names returns None when count is not positive.",
     directions = "Call `options::complex::find_names` through the generated binding and assert find_names returns None when count is not positive.",
-    exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for find_names in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
     exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
@@ -331,11 +296,6 @@ pub fn find_names(count: i32) -> Option<Vec<String>> {
     justification = "Ensure find_api_result returns Some(ApiResult::Success) for code 0.",
     directions = "Call `options::complex::find_api_result` through the generated binding and assert find_api_result returns Some(ApiResult::Success) for code 0.",
     exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for find_api_result in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
@@ -346,11 +306,6 @@ pub fn find_names(count: i32) -> Option<Vec<String>> {
     justification = "Ensure find_api_result returns Some(ApiResult::ErrorCode) for code 1.",
     directions = "Call `options::complex::find_api_result` through the generated binding and assert find_api_result returns Some(ApiResult::ErrorCode) for code 1.",
     exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for find_api_result in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently handle Option<T>. Include this case when optional values are implemented for Python."
@@ -360,11 +315,6 @@ pub fn find_names(count: i32) -> Option<Vec<String>> {
     "options.complex.api_result.should_find_error_with_data_variant",
     justification = "Ensure find_api_result returns Some(ApiResult::ErrorWithData) for code 2.",
     directions = "Call `options::complex::find_api_result` through the generated binding and assert find_api_result returns Some(ApiResult::ErrorWithData) for code 2.",
-    exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for find_api_result in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
     exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
@@ -380,11 +330,6 @@ pub fn find_names(count: i32) -> Option<Vec<String>> {
     "options.complex.api_result.should_return_none_for_unknown_code",
     justification = "Ensure find_api_result returns None when the code does not map to an ApiResult variant.",
     directions = "Call `options::complex::find_api_result` through the generated binding and assert find_api_result returns None when the code does not map to an ApiResult variant.",
-    exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for find_api_result in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
     exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
@@ -433,11 +378,6 @@ pub fn find_api_result(code: i32) -> Option<ApiResult> {
     "options.complex.vec_optional_i32.should_roundtrip_all_none",
     justification = "Ensure a Vec<Option<i32>> carrying only None elements crosses the wire and preserves each absent slot.",
     directions = "Call `options::complex::echo_vec_optional_i32` through the generated binding and assert a Vec<Option<i32>> carrying only None elements crosses the wire and preserves each absent slot.",
-    exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for all-None Vec<Option<i32>> in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
     exclude(
         python,
         reason = ExclusionReason::ImplementationGap,

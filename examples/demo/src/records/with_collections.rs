@@ -231,11 +231,6 @@ pub struct BenchmarkUserProfile {
     justification = "Ensure generate_user_profiles returns a vector of benchmark profile records with nested vectors.",
     directions = "Call `records::with_collections::generate_user_profiles` through the generated binding and assert generate_user_profiles returns a vector of benchmark profile records with nested vectors.",
     exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for benchmark user profile helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer currently emits only primitive-field blittable records and top-level primitive/C-style enum vectors. Include this case when records with collection fields are implemented for Python."
@@ -279,11 +274,6 @@ pub fn generate_user_profiles(count: i32) -> Vec<BenchmarkUserProfile> {
     justification = "Ensure sum_user_scores receives a vector of benchmark profile records and sums their score fields.",
     directions = "Call `records::with_collections::sum_user_scores` through the generated binding and assert sum_user_scores receives a vector of benchmark profile records and sums their score fields.",
     exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for benchmark user profile helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer currently emits only primitive-field blittable records and top-level primitive/C-style enum vectors. Include this case when records with collection fields are implemented for Python."
@@ -304,11 +294,6 @@ pub fn sum_user_scores(users: Vec<BenchmarkUserProfile>) -> f64 {
     "records.with_collections.user_profiles.should_count_active_users",
     justification = "Ensure count_active_users receives a vector of benchmark profile records and counts active users.",
     directions = "Call `records::with_collections::count_active_users` through the generated binding and assert count_active_users receives a vector of benchmark profile records and counts active users.",
-    exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for benchmark user profile helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
     exclude(
         python,
         reason = ExclusionReason::ImplementationGap,

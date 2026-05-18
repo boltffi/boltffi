@@ -100,11 +100,6 @@ pub async fn async_concat(strings: Vec<String>) -> String {
     justification = "Ensure an async Result function resolves with a doubled value for valid input.",
     directions = "Call `async_fns::try_compute_async` through the generated binding and assert an async Result function resolves with a doubled value for valid input.",
     exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for async Result helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer currently omits async functions. Include this case when async Python bindings are implemented."
@@ -120,11 +115,6 @@ pub async fn async_concat(strings: Vec<String>) -> String {
         details = "C# covers the zero-input invalid case for that branch today; add a separate assertion for the negative overflow case."
     ),
     exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for async Result helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer currently omits async functions. Include this case when async Python bindings are implemented."
@@ -134,11 +124,6 @@ pub async fn async_concat(strings: Vec<String>) -> String {
     "async_fns.results.try_compute.should_return_invalid_input_for_zero",
     justification = "Ensure an async Result function rejects zero input with the typed invalid-input error.",
     directions = "Call `async_fns::try_compute_async` through the generated binding and assert an async Result function rejects zero input with the typed invalid-input error.",
-    exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for async Result helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
     exclude(
         typescript,
         reason = ExclusionReason::CoverageGap,
@@ -160,11 +145,6 @@ pub async fn try_compute_async(value: i32) -> Result<i32, ComputeError> {
     justification = "Ensure an async string-error Result function resolves with a scaled positive id.",
     directions = "Call `async_fns::fetch_data` through the generated binding and assert an async string-error Result function resolves with a scaled positive id.",
     exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for async Result helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer currently omits async functions. Include this case when async Python bindings are implemented."
@@ -174,11 +154,6 @@ pub async fn try_compute_async(value: i32) -> Result<i32, ComputeError> {
     "async_fns.results.fetch_data.should_reject_non_positive_id",
     justification = "Ensure an async string-error Result function rejects a non-positive id.",
     directions = "Call `async_fns::fetch_data` through the generated binding and assert an async string-error Result function rejects a non-positive id.",
-    exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for async Result helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
     exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
@@ -198,11 +173,6 @@ pub async fn fetch_data(id: i32) -> Result<i32, String> {
     "async_fns.basic.get_numbers.should_return_counting_sequence",
     justification = "Ensure an async vector producer resolves with a zero-based counting sequence.",
     directions = "Call `async_fns::async_get_numbers` through the generated binding and assert an async vector producer resolves with a zero-based counting sequence.",
-    exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for async_get_numbers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
     exclude(
         typescript,
         reason = ExclusionReason::CoverageGap,

@@ -13,15 +13,26 @@ public final class DemoTest {
         try {
             System.out.println("Testing Java bindings...\n");
             testBool();
+            testI8();
+            testU8();
+            testI16();
+            testU16();
             testI32();
+            testU32();
             testI64();
+            testU64();
+            testIsize();
+            testUsize();
             testF32();
             testF64();
+            testNoop();
             testStrings();
             testCustomTypes();
             testPointRecords();
             testLineRecords();
+            testAddressRecords();
             testPersonRecords();
+            testUserProfileVecs();
             testRecordDefaultValues();
             testCStyleEnums();
             testDataEnums();
@@ -80,6 +91,72 @@ public final class DemoTest {
         assert Demo.echoI32(42) == 42 : "echoI32(42)";
         assert Demo.echoI32(-100) == -100 : "case:primitives.scalars.i32.should_roundtrip_negative_value echoI32(-100)";
         assert Demo.addI32(10, 20) == 30 : "case:primitives.scalars.i32.should_add_two_values addI32(10, 20)";
+        assert Demo.add(7, 9) == 16 : "case:primitives.scalars.i32.should_add_with_benchmark_alias add(7, 9)";
+        System.out.println("  PASS\n");
+    }
+
+    private static void testI8() {
+        System.out.println("Testing i8...");
+        assert Demo.echoI8((byte) 0) == (byte) 0 : "echoI8(0)";
+        assert Demo.echoI8((byte) -7) == (byte) -7 : "case:primitives.scalars.i8.should_roundtrip_negative_value echoI8(-7)";
+        System.out.println("  PASS\n");
+    }
+
+    private static void testU8() {
+        System.out.println("Testing u8...");
+        assert Demo.echoU8((byte) 0) == (byte) 0 : "echoU8(0)";
+        assert Demo.echoU8((byte) 0xFF) == (byte) 0xFF : "case:primitives.scalars.u8.should_roundtrip_max_value echoU8(255)";
+        System.out.println("  PASS\n");
+    }
+
+    private static void testI16() {
+        System.out.println("Testing i16...");
+        assert Demo.echoI16((short) 0) == (short) 0 : "echoI16(0)";
+        assert Demo.echoI16((short) -1234) == (short) -1234 : "case:primitives.scalars.i16.should_roundtrip_negative_value echoI16(-1234)";
+        System.out.println("  PASS\n");
+    }
+
+    private static void testU16() {
+        System.out.println("Testing u16...");
+        assert Demo.echoU16((short) 0) == (short) 0 : "echoU16(0)";
+        // Round-trip a u16 value outside the signed short range (55000 -> (short) -10536 in two's complement).
+        assert Demo.echoU16((short) 55000) == (short) 55000 : "case:primitives.scalars.u16.should_roundtrip_large_value echoU16(55000)";
+        System.out.println("  PASS\n");
+    }
+
+    private static void testU32() {
+        System.out.println("Testing u32...");
+        assert Demo.echoU32(0) == 0 : "echoU32(0)";
+        // 4_000_000_000 is outside the signed int range; round-trip its two's-complement bit pattern.
+        assert Demo.echoU32((int) 4_000_000_000L) == (int) 4_000_000_000L : "case:primitives.scalars.u32.should_roundtrip_large_value echoU32(4e9)";
+        System.out.println("  PASS\n");
+    }
+
+    private static void testU64() {
+        System.out.println("Testing u64...");
+        assert Demo.echoU64(0L) == 0L : "echoU64(0)";
+        assert Demo.echoU64(9_999_999_999L) == 9_999_999_999L : "case:primitives.scalars.u64.should_roundtrip_large_value echoU64(1e10)";
+        System.out.println("  PASS\n");
+    }
+
+    private static void testIsize() {
+        System.out.println("Testing isize...");
+        assert Demo.echoIsize(0L) == 0L : "echoIsize(0)";
+        assert Demo.echoIsize(-123L) == -123L : "case:primitives.scalars.isize.should_roundtrip_negative_value echoIsize(-123)";
+        System.out.println("  PASS\n");
+    }
+
+    private static void testUsize() {
+        System.out.println("Testing usize...");
+        assert Demo.echoUsize(0L) == 0L : "echoUsize(0)";
+        assert Demo.echoUsize(123L) == 123L : "case:primitives.scalars.usize.should_roundtrip_value echoUsize(123)";
+        System.out.println("  PASS\n");
+    }
+
+    private static void testNoop() {
+        System.out.println("Testing noop...");
+        demoCase("case:primitives.scalars.noop.should_cross_without_values");
+        Demo.noop();
         System.out.println("  PASS\n");
     }
 
@@ -101,6 +178,7 @@ public final class DemoTest {
         System.out.println("Testing f64...");
         assert Math.abs(Demo.echoF64(3.14159265359) - 3.14159265359) < 0.0000001 : "case:primitives.scalars.f64.should_roundtrip_pi_with_tolerance echoF64(pi)";
         assert Math.abs(Demo.addF64(1.5, 2.5) - 4.0) < 0.0000001 : "case:primitives.scalars.f64.should_add_two_values_with_tolerance addF64(1.5, 2.5)";
+        assert Math.abs(Demo.multiply(1.5, 4.0) - 6.0) < 0.0000001 : "case:primitives.scalars.f64.should_multiply_two_values multiply(1.5, 4.0)";
         System.out.println("  PASS\n");
     }
 
@@ -225,6 +303,13 @@ public final class DemoTest {
         Point sumPoint = Demo.addPoints(new Point(3.0, 4.0), new Point(5.0, 6.0));
         assert sumPoint.x() == 8.0 : "addPoints.x";
         assert sumPoint.y() == 10.0 : "addPoints.y";
+
+        demoCase("case:records.blittable.point.should_return_some_for_nonzero_coordinates");
+        Optional<Point> tryNonzero = Demo.tryMakePoint(1.0, 2.0);
+        assert tryNonzero.isPresent() : "tryMakePoint non-zero present";
+        assert tryNonzero.get().x() == 1.0 && tryNonzero.get().y() == 2.0 : "tryMakePoint value";
+        demoCase("case:records.blittable.point.should_return_none_for_origin_coordinates");
+        assert !Demo.tryMakePoint(0.0, 0.0).isPresent() : "tryMakePoint origin none";
         assert Math.abs(MathUtils.distanceBetween(new Point(0.0, 0.0), new Point(3.0, 4.0)) - 5.0) < 0.0001 : "MathUtils.distanceBetween";
         Point midpoint = MathUtils.midpoint(new Point(0.0, 0.0), new Point(2.0, 4.0));
         assert midpoint.x() == 1.0 : "MathUtils.midpoint.x";
@@ -244,6 +329,54 @@ public final class DemoTest {
         assert echoedLine.end().x() == 3.0 : "echoLine.end.x";
         demoCase("case:records.nested.line.should_compute_length");
         assert Math.abs(Demo.lineLength(line) - 5.0) < 0.0001 : "lineLength";
+
+        Rect rect = new Rect(new Point(1.0, 2.0), new Dimensions(3.0, 4.0));
+        demoCase("case:records.nested.rect.should_compute_area");
+        assert Math.abs(Demo.rectArea(rect) - 12.0) < 0.0001 : "rectArea";
+        demoCase("case:records.nested.rect.should_roundtrip_nested_records");
+        Rect echoedRect = Demo.echoRect(rect);
+        assert echoedRect.origin().x() == 1.0 && echoedRect.origin().y() == 2.0 : "echoRect.origin";
+        assert echoedRect.dimensions().width() == 3.0 && echoedRect.dimensions().height() == 4.0 : "echoRect.dimensions";
+
+        System.out.println("  PASS\n");
+    }
+
+    private static void testUserProfileVecs() {
+        System.out.println("Testing records (user profiles)...");
+        demoCase("case:records.with_collections.user_profiles.should_generate_profiles");
+        List<BenchmarkUserProfile> profiles = Demo.generateUserProfiles(4);
+        assert profiles.size() == 4 : "generateUserProfiles size";
+        assert profiles.get(0).id == 0 && profiles.get(3).id == 3 : "generateUserProfiles ids";
+
+        demoCase("case:records.with_collections.user_profiles.should_sum_scores");
+        double scoreSum = Demo.sumUserScores(profiles);
+        double expectedScoreSum = 0.0;
+        for (BenchmarkUserProfile p : profiles) {
+            expectedScoreSum += p.score;
+        }
+        assert Math.abs(scoreSum - expectedScoreSum) < 0.0001 : "sumUserScores";
+
+        demoCase("case:records.with_collections.user_profiles.should_count_active_users");
+        int active = Demo.countActiveUsers(profiles);
+        int expectedActive = 0;
+        for (BenchmarkUserProfile p : profiles) {
+            if (p.isActive) {
+                expectedActive++;
+            }
+        }
+        assert active == expectedActive : "countActiveUsers";
+
+        System.out.println("  PASS\n");
+    }
+
+    private static void testAddressRecords() {
+        System.out.println("Testing records (Address)...");
+        Address address = new Address("123 Main St", "Springfield", "12345");
+        demoCase("case:records.with_strings.address.should_roundtrip_value");
+        Address echoedAddress = Demo.echoAddress(address);
+        assert echoedAddress.equals(address) : "echoAddress";
+        demoCase("case:records.with_strings.address.should_format_value");
+        assert Demo.formatAddress(address).equals("123 Main St, Springfield, 12345") : "formatAddress";
         System.out.println("  PASS\n");
     }
 
@@ -349,6 +482,41 @@ public final class DemoTest {
         demoCase("case:enums.c_style.direction.should_report_variant_count");
         assert Direction.count() == 4 : "Direction.count";
 
+        demoCase("case:enums.c_style.direction.should_construct_from_raw_value");
+        assert Direction.fromValue(0) == Direction.NORTH : "Direction.fromValue(0)";
+        assert Direction.fromValue(1) == Direction.SOUTH : "Direction.fromValue(1)";
+        assert Direction.fromValue(2) == Direction.EAST : "Direction.fromValue(2)";
+        assert Direction.fromValue(3) == Direction.WEST : "Direction.fromValue(3)";
+
+        demoCase("case:enums.c_style.direction.should_return_degrees");
+        assert Demo.directionToDegrees(Direction.NORTH) == 0 : "directionToDegrees(North)";
+        assert Demo.directionToDegrees(Direction.EAST) == 90 : "directionToDegrees(East)";
+        assert Demo.directionToDegrees(Direction.SOUTH) == 180 : "directionToDegrees(South)";
+        assert Demo.directionToDegrees(Direction.WEST) == 270 : "directionToDegrees(West)";
+
+        demoCase("case:enums.c_style.direction.should_generate_sequence");
+        List<Direction> generated = Demo.generateDirections(6);
+        assert generated.size() == 6 : "generateDirections size";
+        assert generated.get(0) == Direction.NORTH && generated.get(4) == Direction.NORTH : "generateDirections cycle";
+
+        demoCase("case:enums.c_style.direction.should_count_north_values");
+        assert Demo.countNorth(generated) == 2 : "countNorth";
+        assert Demo.countNorth(Arrays.asList(Direction.EAST, Direction.SOUTH)) == 0 : "countNorth zero";
+
+        demoCase("case:enums.c_style.direction.find_direction.should_return_some_for_known_id");
+        Optional<Direction> foundDir = Demo.findDirection(2);
+        assert foundDir.isPresent() && foundDir.get() == Direction.SOUTH : "findDirection known";
+        demoCase("case:enums.c_style.direction.find_direction.should_return_none_for_unknown_id");
+        assert !Demo.findDirection(99).isPresent() : "findDirection unknown";
+
+        demoCase("case:enums.c_style.direction.find_directions.should_return_sequence_for_positive_count");
+        Optional<List<Direction>> foundSeq = Demo.findDirections(3);
+        assert foundSeq.isPresent() : "findDirections positive present";
+        assert foundSeq.get().size() == 3 : "findDirections size";
+        assert foundSeq.get().get(0) == Direction.NORTH : "findDirections first";
+        demoCase("case:enums.c_style.direction.find_directions.should_return_none_for_non_positive_count");
+        assert !Demo.findDirections(0).isPresent() : "findDirections non-positive";
+
         demoCase("case:enums.repr_int.priority.should_roundtrip_value");
         assert Demo.echoPriority(Priority.HIGH) == Priority.HIGH : "echoPriority(High)";
         demoCase("case:enums.repr_int.priority.should_render_label");
@@ -395,6 +563,24 @@ public final class DemoTest {
         demoCase("case:records.with_enums.holder.should_roundtrip_data_enum_field");
         Holder echoedHolder = Demo.echoHolder(triangleHolder);
         assert echoedHolder.equals(triangleHolder) : "echoHolder round-trip";
+
+        demoCase("case:records.with_enums.task.should_make_incomplete_task");
+        Task task = Demo.makeTask("Ship Java coverage", Priority.HIGH);
+        assert task.title().equals("Ship Java coverage") : "makeTask.title";
+        assert task.priority() == Priority.HIGH : "makeTask.priority";
+        assert !task.completed() : "makeTask.completed";
+        demoCase("case:records.with_enums.task.should_roundtrip_priority_field");
+        Task echoedTask = Demo.echoTask(task);
+        assert echoedTask.equals(task) : "echoTask roundtrip";
+        demoCase("case:records.with_enums.task.should_detect_urgent_priority");
+        assert Demo.isUrgent(new Task("urgent", Priority.CRITICAL, false)) : "isUrgent(Critical)";
+        assert Demo.isUrgent(new Task("urgent", Priority.HIGH, false)) : "isUrgent(High)";
+        assert !Demo.isUrgent(new Task("calm", Priority.LOW, false)) : "isUrgent(Low)";
+
+        demoCase("case:records.with_enums.notification.should_roundtrip_priority_field");
+        Notification notification = new Notification("hello", Priority.MEDIUM, false);
+        Notification echoedNotification = Demo.echoNotification(notification);
+        assert echoedNotification.equals(notification) : "echoNotification roundtrip";
 
         demoCase("case:records.with_enums.task_header.should_make_critical_header");
         TaskHeader header = Demo.makeCriticalTaskHeader(42L);
@@ -527,8 +713,70 @@ public final class DemoTest {
         Animal dog = Demo.echoAnimal(new Animal.Dog("Rex", "Labrador"));
         assert dog instanceof Animal.Dog : "echoAnimal(Dog) type";
         assert ((Animal.Dog) dog).name.equals("Rex") : "echoAnimal(Dog).name";
+        demoCase("case:enums.data_enum.animal.dog.should_derive_name");
+        assert Demo.animalName(new Animal.Dog("Rex", "Labrador")).equals("Rex") : "animalName(Dog)";
+
+        demoCase("case:enums.data_enum.animal.cat.should_roundtrip_name_and_bool_payload");
+        Animal cat = Demo.echoAnimal(new Animal.Cat("Whiskers", true));
+        assert cat instanceof Animal.Cat : "echoAnimal(Cat) type";
+        assert ((Animal.Cat) cat).name.equals("Whiskers") : "echoAnimal(Cat).name";
+        assert ((Animal.Cat) cat).indoor : "echoAnimal(Cat).indoor";
+        demoCase("case:enums.data_enum.animal.cat.should_derive_name");
+        assert Demo.animalName(new Animal.Cat("Whiskers", true)).equals("Whiskers") : "animalName(Cat)";
+
         demoCase("case:enums.data_enum.animal.fish.should_derive_count_label");
         assert Demo.animalName(new Animal.Fish(5)).equals("5 fish") : "animalName(Fish)";
+        demoCase("case:enums.data_enum.animal.fish.should_roundtrip_count_payload");
+        Animal fish = Demo.echoAnimal(new Animal.Fish(7));
+        assert fish instanceof Animal.Fish : "echoAnimal(Fish) type";
+        assert ((Animal.Fish) fish).count == 7 : "echoAnimal(Fish).count";
+
+        demoCase("case:enums.data_enum.message.image.should_roundtrip_url_dimensions_payload");
+        Message image = Demo.echoMessage(new Message.Image("https://example.com/cat.png", 640, 480));
+        assert image instanceof Message.Image : "echoMessage(Image) type";
+        Message.Image img = (Message.Image) image;
+        assert img.url.equals("https://example.com/cat.png") && img.width == 640 && img.height == 480 : "echoMessage(Image) payload";
+        demoCase("case:enums.data_enum.message.image.should_render_image_summary");
+        assert Demo.messageSummary(new Message.Image("https://example.com/cat.png", 640, 480))
+            .equals("image: 640x480 at https://example.com/cat.png") : "messageSummary(Image)";
+
+        demoCase("case:enums.data_enum.message.ping.should_roundtrip_unit_variant");
+        Message ping = Demo.echoMessage(Message.Ping.INSTANCE);
+        assert ping instanceof Message.Ping : "echoMessage(Ping) type";
+
+        demoCase("case:enums.complex_variants.filter.none.should_roundtrip_unit_variant");
+        Filter noneFilter = Demo.echoFilter(Filter.None.INSTANCE);
+        assert noneFilter instanceof Filter.None : "echoFilter(None) type";
+
+        demoCase("case:enums.complex_variants.filter.by_name.should_roundtrip_string_payload");
+        Filter nameFilter = Demo.echoFilter(new Filter.ByName("alpha"));
+        assert nameFilter instanceof Filter.ByName : "echoFilter(ByName) type";
+        assert ((Filter.ByName) nameFilter).name.equals("alpha") : "echoFilter(ByName).name";
+        demoCase("case:enums.complex_variants.filter.by_name.should_describe_string_payload");
+        assert Demo.describeFilter(new Filter.ByName("alpha")).equals("filter by name: alpha") : "describeFilter(ByName)";
+
+        demoCase("case:enums.complex_variants.filter.by_range.should_describe_numeric_bounds");
+        assert Demo.describeFilter(new Filter.ByRange(1.0, 10.0)).equals("filter by range: 1..10") : "describeFilter(ByRange)";
+
+        demoCase("case:enums.complex_variants.filter.by_tags.should_roundtrip_string_vector_payload");
+        Filter tagsFilter = Demo.echoFilter(new Filter.ByTags(Arrays.asList("a", "b", "c")));
+        assert tagsFilter instanceof Filter.ByTags : "echoFilter(ByTags) type";
+        assert ((Filter.ByTags) tagsFilter).tags.equals(Arrays.asList("a", "b", "c")) : "echoFilter(ByTags) payload";
+        demoCase("case:enums.complex_variants.filter.by_tags.should_describe_string_vector_payload");
+        assert Demo.describeFilter(new Filter.ByTags(Arrays.asList("a", "b", "c"))).equals("filter by 3 tags") : "describeFilter(ByTags)";
+
+        demoCase("case:enums.complex_variants.filter.by_points.should_roundtrip_record_vector_payload");
+        List<Point> anchors = Arrays.asList(new Point(0.0, 0.0), new Point(1.0, 2.0));
+        Filter pointsFilter = Demo.echoFilter(new Filter.ByPoints(anchors));
+        assert pointsFilter instanceof Filter.ByPoints : "echoFilter(ByPoints) type";
+        assert ((Filter.ByPoints) pointsFilter).anchors.equals(anchors) : "echoFilter(ByPoints) payload";
+        demoCase("case:enums.complex_variants.filter.by_points.should_describe_record_vector_payload");
+        assert Demo.describeFilter(new Filter.ByPoints(anchors)).equals("filter by 2 anchor points") : "describeFilter(ByPoints)";
+
+        demoCase("case:enums.complex_variants.api_response.redirect.should_roundtrip_url_payload");
+        ApiResponse redirect = Demo.echoApiResponse(new ApiResponse.Redirect("https://example.com/new"));
+        assert redirect instanceof ApiResponse.Redirect : "echoApiResponse(Redirect) type";
+        assert ((ApiResponse.Redirect) redirect).url.equals("https://example.com/new") : "echoApiResponse(Redirect).url";
 
         demoCase("case:enums.complex_variants.api_response.success.should_roundtrip_string_payload");
         ApiResponse success = Demo.echoApiResponse(new ApiResponse.Success("ok"));
@@ -697,6 +945,32 @@ public final class DemoTest {
         int[] reversed = Demo.reverseVecI32(new int[]{1, 2, 3});
         assert reversed[0] == 3 && reversed[1] == 2 && reversed[2] == 1 : "reverseVecI32";
 
+        demoCase("case:primitives.vecs.i32.should_generate_sequence");
+        int[] genI32 = Demo.generateI32Vec(4);
+        assert genI32.length == 4 : "generateI32Vec length";
+        assert genI32[0] == 0 && genI32[1] == 1 && genI32[2] == 2 && genI32[3] == 3 : "generateI32Vec values";
+
+        demoCase("case:primitives.vecs.i32.should_sum_benchmark_values");
+        assert Demo.sumI32Vec(new int[]{4, 5, 6}) == 15L : "sumI32Vec";
+
+        demoCase("case:primitives.vecs.f64.should_generate_sequence");
+        double[] genF64 = Demo.generateF64Vec(3);
+        assert genF64.length == 3 : "generateF64Vec length";
+        assert Math.abs(genF64[0] - 0.0) < 0.0001
+            && Math.abs(genF64[1] - 0.1) < 0.0001
+            && Math.abs(genF64[2] - 0.2) < 0.0001 : "generateF64Vec values";
+
+        demoCase("case:primitives.vecs.f64.should_sum_values");
+        assert Math.abs(Demo.sumF64Vec(new double[]{1.5, 2.5, 4.0}) - 8.0) < 0.0001 : "sumF64Vec";
+
+        demoCase("case:primitives.vecs.u64.should_increment_first_value_in_place");
+        long[] u64Buf = new long[]{10L, 20L, 30L};
+        Demo.incU64(u64Buf);
+        assert u64Buf[0] == 11L && u64Buf[1] == 20L && u64Buf[2] == 30L : "incU64 first element";
+
+        demoCase("case:primitives.vecs.u64.should_increment_value");
+        assert Demo.incU64Value(41L) == 42L : "incU64Value";
+
         System.out.println("  PASS\n");
     }
 
@@ -780,6 +1054,7 @@ public final class DemoTest {
         assert flat.length == 5 : "flattenVecVecI32 length";
         assert flat[0] == 1 && flat[1] == 2 && flat[2] == 3 && flat[3] == 4 && flat[4] == 5 : "flattenVecVecI32 values";
 
+        demoCase("case:primitives.vecs.nested_i32.should_flatten_empty");
         assert Demo.flattenVecVecI32(Collections.emptyList()).length == 0 : "flattenVecVecI32 empty";
 
         System.out.println("  PASS\n");
@@ -815,6 +1090,41 @@ public final class DemoTest {
         assert readings.size() == 3 : "generateSensorReadings size";
         demoCase("case:records.blittable.sensor_readings.should_average_generated_temperatures");
         assert Math.abs(Demo.avgSensorTemperature(readings) - 21.0) < 0.0001 : "avgSensorTemperature";
+        demoCase("case:records.blittable.sensor_readings.should_average_empty_vector_as_zero");
+        assert Demo.avgSensorTemperature(Collections.emptyList()) == 0.0 : "avgSensorTemperature empty";
+
+        demoCase("case:records.blittable.color.should_roundtrip_value");
+        Color color = new Color((byte) 0xAA, (byte) 0xBB, (byte) 0xCC, (byte) 0xDD);
+        Color echoedColor = Demo.echoColor(color);
+        assert echoedColor.r() == color.r() && echoedColor.g() == color.g()
+            && echoedColor.b() == color.b() && echoedColor.a() == color.a() : "echoColor";
+        demoCase("case:records.blittable.color.should_make_from_channels");
+        Color madeColor = Demo.makeColor((byte) 1, (byte) 2, (byte) 3, (byte) 4);
+        assert madeColor.r() == 1 && madeColor.g() == 2 && madeColor.b() == 3 && madeColor.a() == 4 : "makeColor channels";
+
+        demoCase("case:records.blittable.locations.should_count_empty_vector");
+        assert Demo.processLocations(Collections.emptyList()) == 0 : "processLocations empty";
+        List<Location> hostLocations = Arrays.asList(
+            new Location(1L, 1.0, 2.0, 3.5, 4, true),
+            new Location(2L, 5.0, 6.0, 2.5, 8, false)
+        );
+        demoCase("case:records.blittable.locations.should_count_host_constructed_vector");
+        assert Demo.processLocations(hostLocations) == 2 : "processLocations host-constructed";
+        demoCase("case:records.blittable.locations.should_sum_host_constructed_ratings");
+        assert Math.abs(Demo.sumRatings(hostLocations) - 6.0) < 0.0001 : "sumRatings host-constructed";
+
+        demoCase("case:records.blittable.locations.find_location.should_return_some_for_positive_id");
+        Optional<Location> foundLoc = Demo.findLocation(7);
+        assert foundLoc.isPresent() && foundLoc.get().id() == 7L : "findLocation present";
+        demoCase("case:records.blittable.locations.find_location.should_return_none_for_non_positive_id");
+        assert !Demo.findLocation(0).isPresent() : "findLocation absent";
+
+        demoCase("case:records.blittable.locations.find_locations.should_return_some_vector_for_positive_count");
+        Optional<List<Location>> foundLocs = Demo.findLocations(3);
+        assert foundLocs.isPresent() : "findLocations present";
+        assert foundLocs.get().size() == 3 : "findLocations size";
+        demoCase("case:records.blittable.locations.find_locations.should_return_none_for_non_positive_count");
+        assert !Demo.findLocations(0).isPresent() : "findLocations non-positive";
 
         System.out.println("  PASS\n");
     }
@@ -912,6 +1222,24 @@ public final class DemoTest {
         assert echoedProfile.email().isPresent() : "echoUserProfile email";
         assert echoedProfile.email().get().equals("alice@example.com") : "echoUserProfile email value";
 
+        demoCase("case:records.with_options.user_profile.should_roundtrip_absent_options");
+        UserProfile echoedAbsent = Demo.echoUserProfile(noEmail);
+        assert !echoedAbsent.email().isPresent() : "echoUserProfile email absent";
+        assert !echoedAbsent.score().isPresent() : "echoUserProfile score absent";
+        assert echoedAbsent.name().equals("Bob") && echoedAbsent.age() == 22 : "echoUserProfile absent payload";
+
+        demoCase("case:records.with_options.user_profile.should_roundtrip_mixed_options");
+        UserProfile mixedProfile = new UserProfile("Cara", 27, Optional.of("cara@example.com"), Optional.empty());
+        UserProfile echoedMixedProfile = Demo.echoUserProfile(mixedProfile);
+        assert echoedMixedProfile.email().isPresent() && echoedMixedProfile.email().get().equals("cara@example.com") : "echoUserProfile mixed email";
+        assert !echoedMixedProfile.score().isPresent() : "echoUserProfile mixed score";
+
+        demoCase("case:records.with_options.user_profile.should_roundtrip_utf8_optional_string");
+        UserProfile utf8 = new UserProfile("Élodie", 34, Optional.of("élodie@café.example"), Optional.of(7.5));
+        UserProfile echoedUtf8 = Demo.echoUserProfile(utf8);
+        assert echoedUtf8.email().isPresent() && echoedUtf8.email().get().equals("élodie@café.example") : "echoUserProfile utf-8 string";
+        assert echoedUtf8.name().equals("Élodie") : "echoUserProfile utf-8 name";
+
         demoCase("case:records.with_options.search_result.should_roundtrip_present_options");
         SearchResult withCursor = Demo.echoSearchResult(
             new SearchResult("rust ffi", 12, Optional.of("cursor-1"), Optional.of(0.99))
@@ -943,6 +1271,84 @@ public final class DemoTest {
         demoCase("case:options.complex.vec_optional_i32.should_roundtrip_empty");
         assert Demo.echoVecOptionalI32(java.util.Collections.emptyList()).isEmpty()
             : "echoVecOptionalI32 empty";
+
+        demoCase("case:options.complex.vec_optional_i32.should_roundtrip_all_none");
+        java.util.List<Optional<Integer>> allNone = Arrays.asList(Optional.empty(), Optional.empty(), Optional.empty());
+        java.util.List<Optional<Integer>> echoedAllNone = Demo.echoVecOptionalI32(allNone);
+        assert echoedAllNone.size() == 3 : "echoVecOptionalI32 all-none size";
+        for (Optional<Integer> v : echoedAllNone) {
+            assert !v.isPresent() : "echoVecOptionalI32 all-none entry";
+        }
+
+        demoCase("case:options.primitives.bool.should_roundtrip_some");
+        Optional<Boolean> optBoolSome = Demo.echoOptionalBool(Optional.of(true));
+        assert optBoolSome.isPresent() && optBoolSome.get() : "echoOptionalBool some";
+        demoCase("case:options.primitives.bool.should_roundtrip_none");
+        assert !Demo.echoOptionalBool(Optional.empty()).isPresent() : "echoOptionalBool none";
+
+        demoCase("case:options.primitives.f64.should_roundtrip_some");
+        Optional<Double> optF64Some = Demo.echoOptionalF64(Optional.of(1.5));
+        assert optF64Some.isPresent() && Math.abs(optF64Some.get() - 1.5) < 0.0001 : "echoOptionalF64 some";
+        demoCase("case:options.primitives.f64.should_roundtrip_none");
+        assert !Demo.echoOptionalF64(Optional.empty()).isPresent() : "echoOptionalF64 none";
+
+        demoCase("case:options.primitives.f64.should_find_positive_value");
+        Optional<Double> posF64 = Demo.findPositiveF64(3.5);
+        assert posF64.isPresent() && Math.abs(posF64.get() - 3.5) < 0.0001 : "findPositiveF64 positive";
+        demoCase("case:options.primitives.f64.should_return_none_for_non_positive_value");
+        assert !Demo.findPositiveF64(-1.0).isPresent() : "findPositiveF64 non-positive";
+
+        demoCase("case:options.primitives.i32.should_find_even_value");
+        Optional<Integer> even = Demo.findEven(8);
+        assert even.isPresent() && even.get() == 8 : "findEven even";
+        demoCase("case:options.primitives.i32.should_return_none_for_odd_value");
+        assert !Demo.findEven(7).isPresent() : "findEven odd";
+
+        demoCase("case:options.primitives.i64.should_find_positive_value");
+        Optional<Long> posI64 = Demo.findPositiveI64(123L);
+        assert posI64.isPresent() && posI64.get() == 123L : "findPositiveI64 positive";
+        demoCase("case:options.primitives.i64.should_return_none_for_non_positive_value");
+        assert !Demo.findPositiveI64(-5L).isPresent() : "findPositiveI64 non-positive";
+
+        demoCase("case:options.complex.string.should_find_name_for_positive_id");
+        Optional<String> foundName = Demo.findName(3);
+        assert foundName.isPresent() && foundName.get().equals("Name_3") : "findName positive";
+        demoCase("case:options.complex.string.should_return_none_for_non_positive_id");
+        assert !Demo.findName(0).isPresent() : "findName non-positive";
+
+        demoCase("case:options.complex.vec.should_find_numbers_for_positive_count");
+        Optional<int[]> foundNumbers = Demo.findNumbers(4);
+        assert foundNumbers.isPresent() : "findNumbers positive present";
+        int[] foundArr = foundNumbers.get();
+        assert foundArr.length == 4 && foundArr[0] == 0 && foundArr[3] == 3 : "findNumbers values";
+        demoCase("case:options.complex.vec.should_return_none_for_non_positive_number_count");
+        assert !Demo.findNumbers(0).isPresent() : "findNumbers non-positive";
+
+        demoCase("case:options.complex.vec.should_roundtrip_empty_some");
+        Optional<int[]> emptySome = Demo.echoOptionalVec(Optional.of(new int[0]));
+        assert emptySome.isPresent() && emptySome.get().length == 0 : "echoOptionalVec empty-some";
+
+        demoCase("case:options.complex.vec_string.should_find_names_for_positive_count");
+        Optional<java.util.List<String>> foundNames = Demo.findNames(2);
+        assert foundNames.isPresent() : "findNames positive present";
+        assert foundNames.get().equals(Arrays.asList("Name_0", "Name_1")) : "findNames values";
+        demoCase("case:options.complex.vec_string.should_return_none_for_non_positive_name_count");
+        assert !Demo.findNames(-1).isPresent() : "findNames non-positive";
+
+        demoCase("case:options.complex.api_result.should_find_success_variant");
+        Optional<ApiResult> apiSuccess = Demo.findApiResult(0);
+        assert apiSuccess.isPresent() && apiSuccess.get() instanceof ApiResult.Success : "findApiResult success";
+        demoCase("case:options.complex.api_result.should_find_error_code_variant");
+        Optional<ApiResult> apiErrorCode = Demo.findApiResult(1);
+        assert apiErrorCode.isPresent() && apiErrorCode.get() instanceof ApiResult.ErrorCode : "findApiResult error code variant";
+        assert ((ApiResult.ErrorCode) apiErrorCode.get()).value0 == -1 : "findApiResult error code value";
+        demoCase("case:options.complex.api_result.should_find_error_with_data_variant");
+        Optional<ApiResult> apiErrorData = Demo.findApiResult(2);
+        assert apiErrorData.isPresent() && apiErrorData.get() instanceof ApiResult.ErrorWithData : "findApiResult error with data variant";
+        ApiResult.ErrorWithData err = (ApiResult.ErrorWithData) apiErrorData.get();
+        assert err.code == -1 && err.detail == -2 : "findApiResult error-with-data payload";
+        demoCase("case:options.complex.api_result.should_return_none_for_unknown_code");
+        assert !Demo.findApiResult(99).isPresent() : "findApiResult unknown";
 
         System.out.println("  PASS\n");
     }
@@ -1506,6 +1912,78 @@ public final class DemoTest {
                 record.shape(),
                 record.parameters()
             ).get().equals(record) : "asyncMakeMixedRecord";
+
+            demoCase("case:async_fns.basic.get_numbers.should_return_counting_sequence");
+            int[] counting = Demo.asyncGetNumbers(4).get();
+            assert counting.length == 4 : "asyncGetNumbers length";
+            assert counting[0] == 0 && counting[1] == 1 && counting[2] == 2 && counting[3] == 3 : "asyncGetNumbers values";
+
+            demoCase("case:async_fns.results.fetch_data.should_return_scaled_positive_id");
+            assert Demo.fetchData(7).get() == 70 : "fetchData scaled";
+
+            demoCase("case:async_fns.results.fetch_data.should_reject_non_positive_id");
+            try {
+                Demo.fetchData(0).get();
+                assert false : "fetchData should reject non-positive id";
+            } catch (java.util.concurrent.ExecutionException ee) {
+                assert ee.getCause().getMessage().contains("invalid id") : "fetchData error message";
+            }
+
+            demoCase("case:async_fns.results.try_compute.should_return_doubled_value");
+            assert Demo.tryComputeAsync(21).get() == 42 : "tryComputeAsync doubled";
+
+            demoCase("case:async_fns.results.try_compute.should_return_invalid_input_for_zero");
+            try {
+                Demo.tryComputeAsync(0).get();
+                assert false : "tryComputeAsync should reject zero";
+            } catch (java.util.concurrent.ExecutionException ee) {
+                assert ee.getCause() instanceof ComputeError.InvalidInput : "tryComputeAsync zero -> InvalidInput";
+                assert ((ComputeError.InvalidInput) ee.getCause()).value0 == -999 : "tryComputeAsync InvalidInput payload";
+            }
+
+            demoCase("case:async_fns.results.try_compute.should_return_overflow_for_negative_value");
+            try {
+                Demo.tryComputeAsync(-3).get();
+                assert false : "tryComputeAsync should reject negative";
+            } catch (java.util.concurrent.ExecutionException ee) {
+                assert ee.getCause() instanceof ComputeError.Overflow : "tryComputeAsync negative -> Overflow";
+                ComputeError.Overflow ovf = (ComputeError.Overflow) ee.getCause();
+                assert ovf.value == -3 && ovf.limit == 0 : "tryComputeAsync Overflow payload";
+            }
+
+            demoCase("case:results.async_results.safe_divide.should_return_quotient");
+            assert Demo.asyncSafeDivide(12, 3).get() == 4 : "asyncSafeDivide ok";
+            demoCase("case:results.async_results.safe_divide.should_reject_division_by_zero");
+            try {
+                Demo.asyncSafeDivide(12, 0).get();
+                assert false : "asyncSafeDivide should reject zero";
+            } catch (java.util.concurrent.ExecutionException ee) {
+                assert ee.getCause() instanceof MathError.Exception : "asyncSafeDivide -> MathError.Exception";
+                assert ((MathError.Exception) ee.getCause()).getError() == MathError.DIVISION_BY_ZERO : "asyncSafeDivide error variant";
+            }
+
+            demoCase("case:results.async_results.fallible_fetch.should_return_value_for_non_negative_key");
+            assert Demo.asyncFallibleFetch(7).get().equals("value_7") : "asyncFallibleFetch ok";
+            demoCase("case:results.async_results.fallible_fetch.should_reject_negative_key");
+            try {
+                Demo.asyncFallibleFetch(-1).get();
+                assert false : "asyncFallibleFetch should reject negative";
+            } catch (java.util.concurrent.ExecutionException ee) {
+                assert ee.getCause().getMessage().contains("invalid key") : "asyncFallibleFetch error";
+            }
+
+            demoCase("case:results.async_results.find_value.should_return_some_for_positive_key");
+            Optional<Integer> findSomeKey = Demo.asyncFindValue(4).get();
+            assert findSomeKey.isPresent() && findSomeKey.get() == 40 : "asyncFindValue positive";
+            demoCase("case:results.async_results.find_value.should_return_none_for_zero_key");
+            assert !Demo.asyncFindValue(0).get().isPresent() : "asyncFindValue zero";
+            demoCase("case:results.async_results.find_value.should_reject_negative_key");
+            try {
+                Demo.asyncFindValue(-1).get();
+                assert false : "asyncFindValue should reject negative";
+            } catch (java.util.concurrent.ExecutionException ee) {
+                assert ee.getCause().getMessage().contains("invalid key") : "asyncFindValue error";
+            }
         } catch (Exception e) {
             throw new RuntimeException("async function test failed", e);
         }
@@ -1647,6 +2125,46 @@ public final class DemoTest {
             assert false : "resultOfVec should throw on negative count";
         } catch (RuntimeException ignored) {}
 
+        demoCase("case:results.basic.divide.should_return_quotient");
+        assert Demo.divide(20, 4) == 5 : "divide ok";
+        demoCase("case:results.basic.divide.should_reject_division_by_zero");
+        try {
+            Demo.divide(20, 0);
+            assert false : "divide should throw on zero";
+        } catch (RuntimeException e) {
+            assert e.getMessage().contains("division by zero") : "divide error";
+        }
+
+        demoCase("case:results.basic.parse_int.should_parse_integer");
+        assert Demo.parseInt("42") == 42 : "parseInt ok";
+        demoCase("case:results.basic.parse_int.should_reject_invalid_integer");
+        try {
+            Demo.parseInt("not-a-number");
+            assert false : "parseInt should throw on invalid input";
+        } catch (RuntimeException e) {
+            assert e.getMessage().contains("invalid integer") : "parseInt error";
+        }
+
+        demoCase("case:results.basic.safe_sqrt.should_return_square_root");
+        assert Math.abs(Demo.safeSqrt(16.0) - 4.0) < 0.0001 : "safeSqrt ok";
+        demoCase("case:results.basic.safe_sqrt.should_reject_negative_input");
+        try {
+            Demo.safeSqrt(-4.0);
+            assert false : "safeSqrt should throw on negative";
+        } catch (RuntimeException e) {
+            assert e.getMessage().contains("negative input") : "safeSqrt error";
+        }
+
+        demoCase("case:results.basic.validate_name.should_greet_valid_name");
+        assert Demo.validateName("Java").equals("Hello, Java!") : "validateName ok";
+        demoCase("case:results.basic.validate_name.should_reject_empty_name");
+        try {
+            Demo.validateName("");
+            assert false : "validateName should reject empty";
+        } catch (RuntimeException e) {
+            assert e.getMessage().contains("name cannot be empty") : "validateName error";
+        }
+
         System.out.println("  PASS\n");
     }
 
@@ -1748,6 +2266,31 @@ public final class DemoTest {
             assert e.code() == 400 : "mayFail code";
             assert e.message().equals("Invalid input") : "mayFail message field";
             assert e.getMessage().equals("Invalid input") : "mayFail exception message";
+        }
+
+        demoCase("case:results.error_enums.api_result_is_success.should_report_success_variant");
+        assert Demo.apiResultIsSuccess(ApiResult.Success.INSTANCE) : "apiResultIsSuccess(Success)";
+        demoCase("case:results.error_enums.api_result_is_success.should_report_error_variant");
+        assert !Demo.apiResultIsSuccess(new ApiResult.ErrorCode(-1)) : "apiResultIsSuccess(ErrorCode)";
+
+        demoCase("case:results.error_enums.process_value.should_return_success_variant");
+        assert Demo.processValue(5) instanceof ApiResult.Success : "processValue(positive) -> Success";
+        demoCase("case:results.error_enums.process_value.should_return_error_code_variant");
+        ApiResult zeroResult = Demo.processValue(0);
+        assert zeroResult instanceof ApiResult.ErrorCode : "processValue(0) -> ErrorCode";
+        assert ((ApiResult.ErrorCode) zeroResult).value0 == -1 : "processValue(0) error code value";
+        demoCase("case:results.error_enums.process_value.should_return_error_with_data_variant");
+        ApiResult negResult = Demo.processValue(-3);
+        assert negResult instanceof ApiResult.ErrorWithData : "processValue(negative) -> ErrorWithData";
+
+        demoCase("case:results.error_enums.try_compute.should_return_doubled_value");
+        assert Demo.tryCompute(21) == 42 : "tryCompute doubled";
+        demoCase("case:results.error_enums.try_compute.should_return_overflow_error");
+        try {
+            Demo.tryCompute(-3);
+            assert false : "tryCompute should throw on negative";
+        } catch (ComputeError.Overflow ovf) {
+            assert ovf.value == -3 && ovf.limit == 0 : "tryCompute Overflow payload";
         }
 
         demoCase("case:results.error_enums.divide_app.should_return_quotient");

@@ -26,12 +26,7 @@ pub fn negate_bool(v: bool) -> bool {
 #[demo_bench_macros::demo_case(
     "primitives.scalars.i8.should_roundtrip_negative_value",
     justification = "Ensure a negative i8 value crosses the wire and returns unchanged.",
-    directions = "Call `primitives::scalars::echo_i8` through the generated binding and assert a negative i8 value crosses the wire and returns unchanged.",
-    exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for i8 scalar values in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    )
+    directions = "Call `primitives::scalars::echo_i8` through the generated binding and assert a negative i8 value crosses the wire and returns unchanged."
 )]
 #[export]
 pub fn echo_i8(v: i8) -> i8 {
@@ -41,12 +36,7 @@ pub fn echo_i8(v: i8) -> i8 {
 #[demo_bench_macros::demo_case(
     "primitives.scalars.u8.should_roundtrip_max_value",
     justification = "Ensure a maximum u8 value crosses the wire and returns unchanged.",
-    directions = "Call `primitives::scalars::echo_u8` through the generated binding and assert a maximum u8 value crosses the wire and returns unchanged.",
-    exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for u8 scalar values in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    )
+    directions = "Call `primitives::scalars::echo_u8` through the generated binding and assert a maximum u8 value crosses the wire and returns unchanged."
 )]
 #[export]
 pub fn echo_u8(v: u8) -> u8 {
@@ -56,12 +46,7 @@ pub fn echo_u8(v: u8) -> u8 {
 #[demo_bench_macros::demo_case(
     "primitives.scalars.i16.should_roundtrip_negative_value",
     justification = "Ensure a negative i16 value crosses the wire and returns unchanged.",
-    directions = "Call `primitives::scalars::echo_i16` through the generated binding and assert a negative i16 value crosses the wire and returns unchanged.",
-    exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for i16 scalar values in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    )
+    directions = "Call `primitives::scalars::echo_i16` through the generated binding and assert a negative i16 value crosses the wire and returns unchanged."
 )]
 #[export]
 pub fn echo_i16(v: i16) -> i16 {
@@ -71,12 +56,7 @@ pub fn echo_i16(v: i16) -> i16 {
 #[demo_bench_macros::demo_case(
     "primitives.scalars.u16.should_roundtrip_large_value",
     justification = "Ensure a large u16 value crosses the wire and returns unchanged.",
-    directions = "Call `primitives::scalars::echo_u16` through the generated binding and assert a large u16 value crosses the wire and returns unchanged.",
-    exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for u16 scalar values in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    )
+    directions = "Call `primitives::scalars::echo_u16` through the generated binding and assert a large u16 value crosses the wire and returns unchanged."
 )]
 #[export]
 pub fn echo_u16(v: u16) -> u16 {
@@ -109,12 +89,7 @@ pub fn add_i32(a: i32, b: i32) -> i32 {
 #[demo_bench_macros::demo_case(
     "primitives.scalars.u32.should_roundtrip_large_value",
     justification = "Ensure a large u32 value crosses the wire and returns unchanged.",
-    directions = "Call `primitives::scalars::echo_u32` through the generated binding and assert a large u32 value crosses the wire and returns unchanged.",
-    exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for u32 scalar values in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    )
+    directions = "Call `primitives::scalars::echo_u32` through the generated binding and assert a large u32 value crosses the wire and returns unchanged."
 )]
 #[export]
 pub fn echo_u32(v: u32) -> u32 {
@@ -134,12 +109,7 @@ pub fn echo_i64(v: i64) -> i64 {
 #[demo_bench_macros::demo_case(
     "primitives.scalars.u64.should_roundtrip_large_value",
     justification = "Ensure a large u64 value crosses the wire and returns unchanged.",
-    directions = "Call `primitives::scalars::echo_u64` through the generated binding and assert a large u64 value crosses the wire and returns unchanged.",
-    exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for u64 scalar values in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    )
+    directions = "Call `primitives::scalars::echo_u64` through the generated binding and assert a large u64 value crosses the wire and returns unchanged."
 )]
 #[export]
 pub fn echo_u64(v: u64) -> u64 {
@@ -191,12 +161,7 @@ pub fn add_f64(a: f64, b: f64) -> f64 {
 #[demo_bench_macros::demo_case(
     "primitives.scalars.usize.should_roundtrip_value",
     justification = "Ensure a usize value crosses the wire and returns unchanged.",
-    directions = "Call `primitives::scalars::echo_usize` through the generated binding and assert a usize value crosses the wire and returns unchanged.",
-    exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for usize scalar values in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    )
+    directions = "Call `primitives::scalars::echo_usize` through the generated binding and assert a usize value crosses the wire and returns unchanged."
 )]
 #[export]
 pub fn echo_usize(v: usize) -> usize {
@@ -206,12 +171,7 @@ pub fn echo_usize(v: usize) -> usize {
 #[demo_bench_macros::demo_case(
     "primitives.scalars.isize.should_roundtrip_negative_value",
     justification = "Ensure a negative isize value crosses the wire and returns unchanged.",
-    directions = "Call `primitives::scalars::echo_isize` through the generated binding and assert a negative isize value crosses the wire and returns unchanged.",
-    exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for isize scalar values in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    )
+    directions = "Call `primitives::scalars::echo_isize` through the generated binding and assert a negative isize value crosses the wire and returns unchanged."
 )]
 #[export]
 pub fn echo_isize(v: isize) -> isize {
@@ -227,11 +187,6 @@ pub fn echo_isize(v: isize) -> isize {
         csharp,
         reason = ExclusionReason::CoverageGap,
         details = "C# has no assertion for the scalar noop helper in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for the scalar noop helper in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
@@ -258,11 +213,6 @@ pub fn noop() {}
         details = "C# has no assertion for the benchmark add alias in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for the benchmark add alias in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::CoverageGap,
         details = "Python supports primitive scalar calls, but the demo suite has no assertion for the benchmark add alias yet."
@@ -287,11 +237,6 @@ pub fn add(a: i32, b: i32) -> i32 {
         csharp,
         reason = ExclusionReason::CoverageGap,
         details = "C# has no assertion for the scalar multiply helper in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for the scalar multiply helper in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,

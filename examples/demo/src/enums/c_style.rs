@@ -71,12 +71,7 @@ impl Direction {
     #[demo_bench_macros::demo_case(
         "enums.c_style.direction.should_construct_from_raw_value",
         justification = "Ensure Direction::new maps raw integer values to Direction variants.",
-        directions = "Call `enums::c_style::Direction::new` through the generated binding and assert Direction::new maps raw integer values to Direction variants.",
-        exclude(
-            java,
-            reason = ExclusionReason::CoverageGap,
-            details = "Java has no assertion for Direction::new in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-        )
+        directions = "Call `enums::c_style::Direction::new` through the generated binding and assert Direction::new maps raw integer values to Direction variants."
     )]
     pub fn new(raw: i32) -> Self {
         match raw {
@@ -199,11 +194,6 @@ pub fn opposite_direction(d: Direction) -> Direction {
         details = "C# has no assertion for direction_to_degrees in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for direction_to_degrees in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::CoverageGap,
         details = "Python supports C-style enum parameters and primitive returns, but the demo suite has no assertion for direction_to_degrees yet."
@@ -229,11 +219,6 @@ pub fn direction_to_degrees(direction: Direction) -> i32 {
     "enums.c_style.direction.should_generate_sequence",
     justification = "Ensure generate_directions returns a cyclic sequence of Direction values.",
     directions = "Call `enums::c_style::generate_directions` through the generated binding and assert generate_directions returns a cyclic sequence of Direction values.",
-    exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for direction sequence helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
     exclude(
         python,
         reason = ExclusionReason::CoverageGap,
@@ -264,11 +249,6 @@ pub fn generate_directions(count: i32) -> Vec<Direction> {
     justification = "Ensure count_north returns the number of North variants in a Direction vector.",
     directions = "Call `enums::c_style::count_north` through the generated binding and assert count_north returns the number of North variants in a Direction vector.",
     exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for direction sequence helpers in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::CoverageGap,
         details = "Python supports C-style enum vectors, but the demo suite has no assertion for direction sequence helpers yet."
@@ -298,11 +278,6 @@ pub fn count_north(directions: Vec<Direction>) -> i32 {
         details = "C# has no assertion for find_direction in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for find_direction in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; C-style enums are emitted, but Option<Direction> returns are not. Include this case when optional enum returns are implemented for Python."
@@ -321,11 +296,6 @@ pub fn count_north(directions: Vec<Direction>) -> i32 {
         csharp,
         reason = ExclusionReason::CoverageGap,
         details = "C# has no assertion for find_direction in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for find_direction in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
@@ -360,11 +330,6 @@ pub fn find_direction(id: i32) -> Option<Direction> {
         details = "C# has no assertion for find_directions in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for find_directions in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; C-style enum vectors are emitted, but Option<Vec<Direction>> returns are not. Include this case when optional enum-vector returns are implemented for Python."
@@ -383,11 +348,6 @@ pub fn find_direction(id: i32) -> Option<Direction> {
         csharp,
         reason = ExclusionReason::CoverageGap,
         details = "C# has no assertion for find_directions in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
-        java,
-        reason = ExclusionReason::CoverageGap,
-        details = "Java has no assertion for find_directions in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
     ),
     exclude(
         python,
