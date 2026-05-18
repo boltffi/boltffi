@@ -467,6 +467,8 @@
 
         internal void WriteDateTime(global::System.DateTime v)
         {
+            if (v.Kind == global::System.DateTimeKind.Unspecified)
+                throw new ArgumentException("DateTime must have Kind=Utc or Kind=Local; Unspecified is ambiguous on the wire.", nameof(v));
             long ticks = (v.ToUniversalTime() - global::System.DateTime.UnixEpoch).Ticks;
             long seconds = ticks / global::System.TimeSpan.TicksPerSecond;
             long subTicks = ticks % global::System.TimeSpan.TicksPerSecond;
