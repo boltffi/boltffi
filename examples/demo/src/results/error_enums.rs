@@ -311,11 +311,6 @@ pub struct BenchmarkResponse {
     justification = "Ensure process_value returns the Success data enum variant for positive input.",
     directions = "Call `results::error_enums::process_value` through the generated binding and assert process_value returns the Success data enum variant for positive input.",
     exclude(
-        csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# has no assertion for ApiResult data enum results in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently emit Result returns or structured error payloads. Include this case when typed Result support is implemented for Python."
@@ -326,11 +321,6 @@ pub struct BenchmarkResponse {
     justification = "Ensure process_value returns the ErrorCode data enum variant for zero input.",
     directions = "Call `results::error_enums::process_value` through the generated binding and assert process_value returns the ErrorCode data enum variant for zero input.",
     exclude(
-        csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# has no assertion for ApiResult data enum results in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently emit Result returns or structured error payloads. Include this case when typed Result support is implemented for Python."
@@ -340,11 +330,6 @@ pub struct BenchmarkResponse {
     "results.error_enums.process_value.should_return_error_with_data_variant",
     justification = "Ensure process_value returns the ErrorWithData data enum variant for negative input.",
     directions = "Call `results::error_enums::process_value` through the generated binding and assert process_value returns the ErrorWithData data enum variant for negative input.",
-    exclude(
-        csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# has no assertion for ApiResult data enum results in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
     exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
@@ -370,11 +355,6 @@ pub fn process_value(value: i32) -> ApiResult {
     justification = "Ensure api_result_is_success returns true for the Success data enum variant.",
     directions = "Call `results::error_enums::api_result_is_success` through the generated binding and assert api_result_is_success returns true for the Success data enum variant.",
     exclude(
-        csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# has no assertion for ApiResult data enum results in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently emit Result returns or structured error payloads. Include this case when typed Result support is implemented for Python."
@@ -384,11 +364,6 @@ pub fn process_value(value: i32) -> ApiResult {
     "results.error_enums.api_result_is_success.should_report_error_variant",
     justification = "Ensure api_result_is_success returns false for non-success data enum variants.",
     directions = "Call `results::error_enums::api_result_is_success` through the generated binding and assert api_result_is_success returns false for non-success data enum variants.",
-    exclude(
-        csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# has no assertion for ApiResult data enum results in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
     exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
@@ -405,11 +380,6 @@ pub fn api_result_is_success(result: ApiResult) -> bool {
     justification = "Ensure try_compute returns an Ok value containing positive input doubled.",
     directions = "Call `results::error_enums::try_compute` through the generated binding and assert try_compute returns an Ok value containing positive input doubled.",
     exclude(
-        csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# has no assertion for ComputeError data enum results in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently emit Result returns or structured error payloads. Include this case when typed Result support is implemented for Python."
@@ -419,11 +389,6 @@ pub fn api_result_is_success(result: ApiResult) -> bool {
     "results.error_enums.try_compute.should_return_overflow_error",
     justification = "Ensure try_compute returns the Overflow typed error for negative input.",
     directions = "Call `results::error_enums::try_compute` through the generated binding and assert try_compute returns the Overflow typed error for negative input.",
-    exclude(
-        csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# has no assertion for ComputeError data enum results in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
     exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
@@ -447,8 +412,8 @@ pub fn try_compute(value: i32) -> Result<i32, ComputeError> {
     directions = "Call `results::error_enums::create_success_response` through the generated binding and assert create_success_response returns a BenchmarkResponse carrying an Ok DataPoint result.",
     exclude(
         csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# has no assertion for BenchmarkResponse result fields in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
+        reason = ExclusionReason::ImplementationGap,
+        details = "#322: C# bindgen does not currently emit functions whose signatures involve records containing Result<T, E> fields. Include this case when C# nested-Result-in-record support lands."
     ),
     exclude(
         java,
@@ -475,8 +440,8 @@ pub fn create_success_response(request_id: i64, point: DataPoint) -> BenchmarkRe
     directions = "Call `results::error_enums::create_error_response` through the generated binding and assert create_error_response returns or surfaces a BenchmarkResponse carrying an Err ComputeError result.",
     exclude(
         csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# has no assertion for BenchmarkResponse result fields in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
+        reason = ExclusionReason::ImplementationGap,
+        details = "#322: C# bindgen does not currently emit functions whose signatures involve records containing Result<T, E> fields. Include this case when C# nested-Result-in-record support lands."
     ),
     exclude(
         java,
@@ -503,8 +468,8 @@ pub fn create_error_response(request_id: i64, error: ComputeError) -> BenchmarkR
     directions = "Call `results::error_enums::is_response_success` through the generated binding and assert is_response_success returns true for a BenchmarkResponse carrying an Ok result.",
     exclude(
         csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# has no assertion for BenchmarkResponse result fields in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
+        reason = ExclusionReason::ImplementationGap,
+        details = "#322: C# bindgen does not currently emit functions whose signatures involve records containing Result<T, E> fields. Include this case when C# nested-Result-in-record support lands."
     ),
     exclude(
         java,
@@ -523,8 +488,8 @@ pub fn create_error_response(request_id: i64, error: ComputeError) -> BenchmarkR
     directions = "Call `results::error_enums::is_response_success` through the generated binding and assert is_response_success returns false for a BenchmarkResponse carrying an Err result.",
     exclude(
         csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# has no assertion for BenchmarkResponse result fields in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
+        reason = ExclusionReason::ImplementationGap,
+        details = "#322: C# bindgen does not currently emit functions whose signatures involve records containing Result<T, E> fields. Include this case when C# nested-Result-in-record support lands."
     ),
     exclude(
         java,
@@ -548,8 +513,8 @@ pub fn is_response_success(response: BenchmarkResponse) -> bool {
     directions = "Call `results::error_enums::get_response_value` through the generated binding and assert get_response_value returns Some(DataPoint) for a BenchmarkResponse carrying an Ok result.",
     exclude(
         csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# has no assertion for BenchmarkResponse result fields in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
+        reason = ExclusionReason::ImplementationGap,
+        details = "#322: C# bindgen does not currently emit functions whose signatures involve records containing Result<T, E> fields. Include this case when C# nested-Result-in-record support lands."
     ),
     exclude(
         java,
@@ -568,8 +533,8 @@ pub fn is_response_success(response: BenchmarkResponse) -> bool {
     directions = "Call `results::error_enums::get_response_value` through the generated binding and assert get_response_value returns None for a BenchmarkResponse carrying an Err result.",
     exclude(
         csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# has no assertion for BenchmarkResponse result fields in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
+        reason = ExclusionReason::ImplementationGap,
+        details = "#322: C# bindgen does not currently emit functions whose signatures involve records containing Result<T, E> fields. Include this case when C# nested-Result-in-record support lands."
     ),
     exclude(
         java,

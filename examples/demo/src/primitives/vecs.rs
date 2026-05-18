@@ -221,11 +221,6 @@ pub fn generate_i32_vec(count: i32) -> Vec<i32> {
     justification = "Ensure an i32 vector crosses the wire through the benchmark sum helper and returns as an i64 sum.",
     directions = "Call `primitives::vecs::sum_i32_vec` through the generated binding and assert an i32 vector crosses the wire through the benchmark sum helper and returns as an i64 sum.",
     exclude(
-        csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# has no assertion for the i32 benchmark sum helper in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::CoverageGap,
         details = "Python supports primitive vector parameters and primitive returns, but the demo suite has no assertion for this benchmark sum helper yet."
@@ -276,8 +271,8 @@ pub fn sum_f64_vec(values: Vec<f64>) -> f64 {
     directions = "Call `primitives::vecs::inc_u64` through the generated binding and assert a mutable u64 slice crosses the wire and increments its first value in place.",
     exclude(
         csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# has no assertion for the in-place u64 slice helper in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
+        reason = ExclusionReason::ImplementationGap,
+        details = "#328: C# bindgen does not currently emit free functions with `&mut [T]` slice parameters, so inc_u64 is absent from the generated surface. Include this case when in-place sequence parameters are implemented for C#."
     ),
     exclude(
         python,
@@ -296,11 +291,6 @@ pub fn inc_u64(values: &mut [u64]) {
     "primitives.vecs.u64.should_increment_value",
     justification = "Ensure a u64 value crosses the wire and returns incremented by one.",
     directions = "Call `primitives::vecs::inc_u64_value` through the generated binding and assert a u64 value crosses the wire and returns incremented by one.",
-    exclude(
-        csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# has no assertion for the u64 value increment helper in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
     exclude(
         python,
         reason = ExclusionReason::CoverageGap,
@@ -422,11 +412,6 @@ pub fn echo_vec_vec_string(v: Vec<Vec<String>>) -> Vec<Vec<String>> {
     "primitives.vecs.nested_i32.should_flatten_empty",
     justification = "Ensure an empty nested i32 vector crosses the wire and returns as an empty i32 vector.",
     directions = "Call `primitives::vecs::flatten_vec_vec_i32` through the generated binding and assert an empty nested i32 vector crosses the wire and returns as an empty i32 vector.",
-    exclude(
-        csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# has no assertion for flattening an empty nested vector in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
     exclude(
         python,
         reason = ExclusionReason::ImplementationGap,

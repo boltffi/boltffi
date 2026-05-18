@@ -32,11 +32,6 @@ pub fn echo_task(task: Task) -> Task {
     justification = "Ensure make_task constructs a Task with the requested Priority enum and completed set to false.",
     directions = "Call `records::with_enums::make_task` through the generated binding and assert make_task constructs a Task with the requested Priority enum and completed set to false.",
     exclude(
-        csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# already exercises Task round-trip; this case is still waiting on a focused assertion for make_task."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer currently emits only primitive-field blittable records. Include this case when records with enum fields are implemented for Python."
@@ -55,11 +50,6 @@ pub fn make_task(title: String, priority: Priority) -> Task {
     "records.with_enums.task.should_detect_urgent_priority",
     justification = "Ensure is_urgent reads the Priority enum field from a Task record and classifies urgent priorities.",
     directions = "Call `records::with_enums::is_urgent` through the generated binding and assert is_urgent reads the Priority enum field from a Task record and classifies urgent priorities.",
-    exclude(
-        csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# already exercises Task round-trip; this case is still waiting on a focused assertion for is_urgent."
-    ),
     exclude(
         python,
         reason = ExclusionReason::ImplementationGap,

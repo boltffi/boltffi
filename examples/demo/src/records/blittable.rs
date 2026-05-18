@@ -19,11 +19,6 @@ impl Point {
         justification = "Ensure Point::new returns a blittable Point containing the provided coordinates.",
         directions = "Call `records::blittable::Point::new` through the generated binding and assert Point::new returns a blittable Point containing the provided coordinates.",
         exclude(
-            csharp,
-            reason = ExclusionReason::CoverageGap,
-            details = "C# has no assertion for the Point::new constructor in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-        ),
-        exclude(
             java,
             reason = ExclusionReason::ImplementationGap,
             details = "#323: Java bindgen drops static methods whose Rust name collides with a Java keyword. Java cannot expose Point::new because new is a Java keyword. Include this case when Java keyword-safe renaming lands."
@@ -60,8 +55,8 @@ impl Point {
         directions = "Call `records::blittable::Point::try_unit` through the generated binding and assert Point::try_unit returns a normalized Point for non-zero coordinates.",
         exclude(
             csharp,
-            reason = ExclusionReason::CoverageGap,
-            details = "C# has no assertion for the fallible Point::try_unit method in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
+            reason = ExclusionReason::ImplementationGap,
+            details = "#328: C# bindgen does not currently emit Result-returning record static methods, so Point::try_unit is absent from the generated surface. Include this case when fallible record methods are implemented for C#."
         ),
         exclude(
             python,
@@ -75,8 +70,8 @@ impl Point {
         directions = "Call `records::blittable::Point::try_unit` through the generated binding and assert Point::try_unit rejects zero coordinates instead of returning an invalid unit vector.",
         exclude(
             csharp,
-            reason = ExclusionReason::CoverageGap,
-            details = "C# has no assertion for the fallible Point::try_unit method in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
+            reason = ExclusionReason::ImplementationGap,
+            details = "#328: C# bindgen does not currently emit Result-returning record static methods, so Point::try_unit is absent from the generated surface. Include this case when fallible record methods are implemented for C#."
         ),
         exclude(
             python,
@@ -102,8 +97,8 @@ impl Point {
         directions = "Call `records::blittable::Point::checked_unit` through the generated binding and assert Point::checked_unit returns Some normalized Point for non-zero coordinates.",
         exclude(
             csharp,
-            reason = ExclusionReason::CoverageGap,
-            details = "C# has no assertion for the optional Point::checked_unit method in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
+            reason = ExclusionReason::ImplementationGap,
+            details = "#328: C# bindgen does not currently emit Option-returning record static methods, so Point::checked_unit is absent from the generated surface. Include this case when optional record methods are implemented for C#."
         ),
         exclude(
             python,
@@ -117,8 +112,8 @@ impl Point {
         directions = "Call `records::blittable::Point::checked_unit` through the generated binding and assert Point::checked_unit returns None for zero coordinates.",
         exclude(
             csharp,
-            reason = ExclusionReason::CoverageGap,
-            details = "C# has no assertion for the optional Point::checked_unit method in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
+            reason = ExclusionReason::ImplementationGap,
+            details = "#328: C# bindgen does not currently emit Option-returning record static methods, so Point::checked_unit is absent from the generated surface. Include this case when optional record methods are implemented for C#."
         ),
         exclude(
             python,
@@ -153,8 +148,8 @@ impl Point {
         directions = "Call `records::blittable::Point::scale` through the generated binding and assert Point::scale multiplies both coordinates by the provided factor.",
         exclude(
             csharp,
-            reason = ExclusionReason::CoverageGap,
-            details = "C# has no assertion for the Point::scale method in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
+            reason = ExclusionReason::ImplementationGap,
+            details = "#328: C# bindgen does not currently emit `&mut self` record instance methods, so Point::scale is absent from the generated surface. Include this case when in-place record methods are implemented for C#."
         )
     )]
     pub fn scale(&mut self, factor: f64) {
@@ -220,11 +215,6 @@ pub fn echo_point(p: Point) -> Point {
     justification = "Ensure try_make_point returns Some Point when the provided coordinates are not both zero.",
     directions = "Call `records::blittable::try_make_point` through the generated binding and assert try_make_point returns Some Point when the provided coordinates are not both zero.",
     exclude(
-        csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# has no assertion for try_make_point in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently handle Option<T> around blittable records. Include this case when optional record returns are implemented for Python."
@@ -234,11 +224,6 @@ pub fn echo_point(p: Point) -> Point {
     "records.blittable.point.should_return_none_for_origin_coordinates",
     justification = "Ensure try_make_point returns None when both coordinates are zero.",
     directions = "Call `records::blittable::try_make_point` through the generated binding and assert try_make_point returns None when both coordinates are zero.",
-    exclude(
-        csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# has no assertion for try_make_point in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
     exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
@@ -755,11 +740,6 @@ pub fn avg_sensor_temperature(readings: Vec<SensorReading>) -> f64 {
     justification = "Ensure find_location returns Some(Location) for a positive id.",
     directions = "Call `records::blittable::find_location` through the generated binding and assert find_location returns Some(Location) for a positive id.",
     exclude(
-        csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# has no assertion for find_location in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently handle Vec<Record> parameters or returns, even for blittable records. Include this case when record-vector support is implemented for Python."
@@ -769,11 +749,6 @@ pub fn avg_sensor_temperature(readings: Vec<SensorReading>) -> f64 {
     "records.blittable.locations.find_location.should_return_none_for_non_positive_id",
     justification = "Ensure find_location returns None for a non-positive id.",
     directions = "Call `records::blittable::find_location` through the generated binding and assert find_location returns None for a non-positive id.",
-    exclude(
-        csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# has no assertion for find_location in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
     exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
@@ -802,11 +777,6 @@ pub fn find_location(id: i32) -> Option<Location> {
     justification = "Ensure find_locations returns Some generated Location vector for a positive count.",
     directions = "Call `records::blittable::find_locations` through the generated binding and assert find_locations returns Some generated Location vector for a positive count.",
     exclude(
-        csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# has no assertion for find_locations in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently handle Vec<Record> parameters or returns, even for blittable records. Include this case when record-vector support is implemented for Python."
@@ -816,11 +786,6 @@ pub fn find_location(id: i32) -> Option<Location> {
     "records.blittable.locations.find_locations.should_return_none_for_non_positive_count",
     justification = "Ensure find_locations returns None for a non-positive count.",
     directions = "Call `records::blittable::find_locations` through the generated binding and assert find_locations returns None for a non-positive count.",
-    exclude(
-        csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# has no assertion for find_locations in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
     exclude(
         python,
         reason = ExclusionReason::ImplementationGap,

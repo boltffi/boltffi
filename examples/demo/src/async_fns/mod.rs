@@ -110,11 +110,6 @@ pub async fn async_concat(strings: Vec<String>) -> String {
     justification = "Ensure an async Result function rejects negative input with the typed overflow error.",
     directions = "Call `async_fns::try_compute_async` through the generated binding and assert an async Result function rejects negative input with the typed overflow error.",
     exclude(
-        csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# covers the zero-input invalid case for that branch today; add a separate assertion for the negative overflow case."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer currently omits async functions. Include this case when async Python bindings are implemented."

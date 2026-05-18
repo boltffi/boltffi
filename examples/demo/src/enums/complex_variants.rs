@@ -18,11 +18,6 @@ pub enum Filter {
     justification = "Ensure the unit Filter::None variant crosses the FFI boundary unchanged.",
     directions = "Call `enums::complex_variants::echo_filter` through the generated binding and assert the unit Filter::None variant crosses the FFI boundary unchanged.",
     exclude(
-        csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# reaches the surrounding surface but still needs a round-trip assertion for the Filter::None variant."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer currently emits only C-style enums, not data-enum payloads. Include this case when Python data-enum bindings are implemented."
@@ -32,11 +27,6 @@ pub enum Filter {
     "enums.complex_variants.filter.by_name.should_roundtrip_string_payload",
     justification = "Ensure the Filter::ByName variant preserves its string payload when round-tripped.",
     directions = "Call `enums::complex_variants::echo_filter` through the generated binding and assert the Filter::ByName variant preserves its string payload when round-tripped.",
-    exclude(
-        csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# reaches the surrounding surface but still needs a round-trip assertion for the Filter::ByName variant."
-    ),
     exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
@@ -83,11 +73,6 @@ pub fn echo_filter(f: Filter) -> Filter {
     justification = "Ensure describe_filter renders a ByName string payload in the summary.",
     directions = "Call `enums::complex_variants::describe_filter` through the generated binding and assert describe_filter renders a ByName string payload in the summary.",
     exclude(
-        csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# reaches the complex enum helpers but still needs an assertion for describing the Filter::ByName variant."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer currently emits only C-style enums, not data-enum payloads. Include this case when Python data-enum bindings are implemented."
@@ -97,11 +82,6 @@ pub fn echo_filter(f: Filter) -> Filter {
     "enums.complex_variants.filter.by_range.should_describe_numeric_bounds",
     justification = "Ensure describe_filter renders a ByRange numeric lower and upper bound.",
     directions = "Call `enums::complex_variants::describe_filter` through the generated binding and assert describe_filter renders a ByRange numeric lower and upper bound.",
-    exclude(
-        csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# reaches the complex enum helpers but still needs an assertion for describing the Filter::ByRange variant."
-    ),
     exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
@@ -164,11 +144,6 @@ pub enum ApiResponse {
     justification = "Ensure the ApiResponse::Success variant preserves its string payload when round-tripped.",
     directions = "Call `enums::complex_variants::echo_api_response` through the generated binding and assert the ApiResponse::Success variant preserves its string payload when round-tripped.",
     exclude(
-        csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# already exercises Filter complex variants; this case is still waiting on a focused assertion for ApiResponse helpers."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer currently emits only C-style enums, not data-enum payloads. Include this case when Python data-enum bindings are implemented."
@@ -178,11 +153,6 @@ pub enum ApiResponse {
     "enums.complex_variants.api_response.redirect.should_roundtrip_url_payload",
     justification = "Ensure the ApiResponse::Redirect variant preserves its URL payload when round-tripped.",
     directions = "Call `enums::complex_variants::echo_api_response` through the generated binding and assert the ApiResponse::Redirect variant preserves its URL payload when round-tripped.",
-    exclude(
-        csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# already exercises Filter complex variants; this case is still waiting on a focused assertion for ApiResponse helpers."
-    ),
     exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
@@ -199,11 +169,6 @@ pub fn echo_api_response(response: ApiResponse) -> ApiResponse {
     justification = "Ensure is_success returns true for the ApiResponse::Success variant.",
     directions = "Call `enums::complex_variants::is_success` through the generated binding and assert is_success returns true for the ApiResponse::Success variant.",
     exclude(
-        csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# already exercises Filter complex variants; this case is still waiting on a focused assertion for ApiResponse helpers."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer currently emits only C-style enums, not data-enum payloads. Include this case when Python data-enum bindings are implemented."
@@ -213,11 +178,6 @@ pub fn echo_api_response(response: ApiResponse) -> ApiResponse {
     "enums.complex_variants.api_response.empty.should_not_identify_as_success",
     justification = "Ensure is_success returns false for the ApiResponse::Empty variant.",
     directions = "Call `enums::complex_variants::is_success` through the generated binding and assert is_success returns false for the ApiResponse::Empty variant.",
-    exclude(
-        csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# already exercises Filter complex variants; this case is still waiting on a focused assertion for ApiResponse helpers."
-    ),
     exclude(
         python,
         reason = ExclusionReason::ImplementationGap,

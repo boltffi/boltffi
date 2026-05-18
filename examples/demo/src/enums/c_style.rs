@@ -189,11 +189,6 @@ pub fn opposite_direction(d: Direction) -> Direction {
     justification = "Ensure direction_to_degrees maps Direction variants to compass degrees.",
     directions = "Call `enums::c_style::direction_to_degrees` through the generated binding and assert direction_to_degrees maps Direction variants to compass degrees.",
     exclude(
-        csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# has no assertion for direction_to_degrees in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::CoverageGap,
         details = "Python supports C-style enum parameters and primitive returns, but the demo suite has no assertion for direction_to_degrees yet."
@@ -258,11 +253,6 @@ pub fn count_north(directions: Vec<Direction>) -> i32 {
     justification = "Ensure find_direction returns Some(Direction) for a known id.",
     directions = "Call `enums::c_style::find_direction` through the generated binding and assert find_direction returns Some(Direction) for a known id.",
     exclude(
-        csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# has no assertion for find_direction in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; C-style enums are emitted, but Option<Direction> returns are not. Include this case when optional enum returns are implemented for Python."
@@ -272,11 +262,6 @@ pub fn count_north(directions: Vec<Direction>) -> i32 {
     "enums.c_style.direction.find_direction.should_return_none_for_unknown_id",
     justification = "Ensure find_direction returns None for an unknown id.",
     directions = "Call `enums::c_style::find_direction` through the generated binding and assert find_direction returns None for an unknown id.",
-    exclude(
-        csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# has no assertion for find_direction in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
     exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
@@ -300,11 +285,6 @@ pub fn find_direction(id: i32) -> Option<Direction> {
     justification = "Ensure find_directions returns Some generated directions for a positive count.",
     directions = "Call `enums::c_style::find_directions` through the generated binding and assert find_directions returns Some generated directions for a positive count.",
     exclude(
-        csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# has no assertion for find_directions in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; C-style enum vectors are emitted, but Option<Vec<Direction>> returns are not. Include this case when optional enum-vector returns are implemented for Python."
@@ -314,11 +294,6 @@ pub fn find_direction(id: i32) -> Option<Direction> {
     "enums.c_style.direction.find_directions.should_return_none_for_non_positive_count",
     justification = "Ensure find_directions returns None for a non-positive count.",
     directions = "Call `enums::c_style::find_directions` through the generated binding and assert find_directions returns None for a non-positive count.",
-    exclude(
-        csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# has no assertion for find_directions in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
     exclude(
         python,
         reason = ExclusionReason::ImplementationGap,

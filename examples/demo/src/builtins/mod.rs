@@ -11,8 +11,8 @@ use uuid::Uuid;
     directions = "Call `builtins::echo_duration` through the generated binding and assert a Duration value crosses the wire and returns unchanged.",
     exclude(
         csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# has no assertion for built-in Duration values in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
+        reason = ExclusionReason::ImplementationGap,
+        details = "#320: C# bindgen does not currently emit functions whose signatures use built-in value types (Duration, SystemTime, URL, UUID). Include this case when the relevant C# built-in binding is implemented."
     ),
     exclude(
         java,
@@ -36,8 +36,8 @@ pub fn echo_duration(d: Duration) -> Duration {
     directions = "Call `builtins::make_duration` through the generated binding and assert Duration seconds and nanoseconds cross the wire and return as a Duration value.",
     exclude(
         csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# has no assertion for built-in Duration values in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
+        reason = ExclusionReason::ImplementationGap,
+        details = "#320: C# bindgen does not currently emit functions whose signatures use built-in value types (Duration, SystemTime, URL, UUID). Include this case when the relevant C# built-in binding is implemented."
     ),
     exclude(
         java,
@@ -61,8 +61,8 @@ pub fn make_duration(secs: u64, nanos: u32) -> Duration {
     directions = "Call `builtins::duration_as_millis` through the generated binding and assert a Duration value crosses the wire and returns its millisecond count.",
     exclude(
         csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# has no assertion for built-in Duration values in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
+        reason = ExclusionReason::ImplementationGap,
+        details = "#320: C# bindgen does not currently emit functions whose signatures use built-in value types (Duration, SystemTime, URL, UUID). Include this case when the relevant C# built-in binding is implemented."
     ),
     exclude(
         java,
@@ -86,8 +86,8 @@ pub fn duration_as_millis(d: Duration) -> u64 {
     directions = "Call `builtins::echo_system_time` through the generated binding and assert a SystemTime value crosses the wire and returns unchanged.",
     exclude(
         csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# has no assertion for built-in SystemTime values in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
+        reason = ExclusionReason::ImplementationGap,
+        details = "#320: C# bindgen does not currently emit functions whose signatures use built-in value types (Duration, SystemTime, URL, UUID). Include this case when the relevant C# built-in binding is implemented."
     ),
     exclude(
         java,
@@ -111,8 +111,8 @@ pub fn echo_system_time(t: SystemTime) -> SystemTime {
     directions = "Call `builtins::system_time_to_millis` through the generated binding and assert a SystemTime value crosses the wire and returns Unix epoch milliseconds.",
     exclude(
         csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# has no assertion for built-in SystemTime values in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
+        reason = ExclusionReason::ImplementationGap,
+        details = "#320: C# bindgen does not currently emit functions whose signatures use built-in value types (Duration, SystemTime, URL, UUID). Include this case when the relevant C# built-in binding is implemented."
     ),
     exclude(
         java,
@@ -136,8 +136,8 @@ pub fn system_time_to_millis(t: SystemTime) -> u64 {
     directions = "Call `builtins::millis_to_system_time` through the generated binding and assert Unix epoch milliseconds cross the wire and return as a SystemTime value.",
     exclude(
         csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# has no assertion for built-in SystemTime values in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
+        reason = ExclusionReason::ImplementationGap,
+        details = "#320: C# bindgen does not currently emit functions whose signatures use built-in value types (Duration, SystemTime, URL, UUID). Include this case when the relevant C# built-in binding is implemented."
     ),
     exclude(
         java,
@@ -162,8 +162,8 @@ pub fn millis_to_system_time(millis: u64) -> SystemTime {
     directions = "Call `builtins::echo_uuid` through the generated binding and assert a UUID value crosses the wire and returns unchanged.",
     exclude(
         csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# has no assertion for built-in UUID values in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
+        reason = ExclusionReason::ImplementationGap,
+        details = "#320: C# bindgen does not currently emit functions whose signatures use built-in value types (Duration, SystemTime, URL, UUID). Include this case when the relevant C# built-in binding is implemented."
     ),
     exclude(
         java,
@@ -187,8 +187,8 @@ pub fn echo_uuid(id: Uuid) -> Uuid {
     directions = "Call `builtins::uuid_to_string` through the generated binding and assert a UUID value crosses the wire and returns its canonical string representation.",
     exclude(
         csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# has no assertion for built-in UUID values in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
+        reason = ExclusionReason::ImplementationGap,
+        details = "#320: C# bindgen does not currently emit functions whose signatures use built-in value types (Duration, SystemTime, URL, UUID). Include this case when the relevant C# built-in binding is implemented."
     ),
     exclude(
         java,
@@ -212,8 +212,8 @@ pub fn uuid_to_string(id: Uuid) -> String {
     directions = "Call `builtins::echo_url` through the generated binding and assert a URL value crosses the wire and returns unchanged.",
     exclude(
         csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# has no assertion for built-in URL values in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
+        reason = ExclusionReason::ImplementationGap,
+        details = "#320: C# bindgen does not currently emit functions whose signatures use built-in value types (Duration, SystemTime, URL, UUID). Include this case when the relevant C# built-in binding is implemented."
     ),
     exclude(
         java,
@@ -237,8 +237,8 @@ pub fn echo_url(url: Url) -> Url {
     directions = "Call `builtins::url_to_string` through the generated binding and assert a URL value crosses the wire and returns its string representation.",
     exclude(
         csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# has no assertion for built-in URL values in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
+        reason = ExclusionReason::ImplementationGap,
+        details = "#320: C# bindgen does not currently emit functions whose signatures use built-in value types (Duration, SystemTime, URL, UUID). Include this case when the relevant C# built-in binding is implemented."
     ),
     exclude(
         java,

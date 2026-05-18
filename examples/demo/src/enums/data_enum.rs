@@ -94,7 +94,7 @@ impl Shape {
         exclude(
             csharp,
             reason = ExclusionReason::ImplementationGap,
-            details = "C# does not currently emit Result-returning data-enum static methods, so Shape::try_circle is absent from the generated surface. Include this case when fallible data-enum factories are implemented for C#."
+            details = "#328: C# bindgen does not currently emit Result-returning data-enum static methods, so Shape::try_circle is absent from the generated surface. Include this case when fallible data-enum factories are implemented for C#."
         ),
         exclude(
             python,
@@ -109,7 +109,7 @@ impl Shape {
         exclude(
             csharp,
             reason = ExclusionReason::ImplementationGap,
-            details = "C# does not currently emit Result-returning data-enum static methods, so Shape::try_circle is absent from the generated surface. Include this case when fallible data-enum factories are implemented for C#."
+            details = "#328: C# bindgen does not currently emit Result-returning data-enum static methods, so Shape::try_circle is absent from the generated surface. Include this case when fallible data-enum factories are implemented for C#."
         ),
         exclude(
             python,
@@ -365,11 +365,6 @@ pub fn echo_message(m: Message) -> Message {
     justification = "Ensure message_summary renders the Image dimensions and URL in the summary.",
     directions = "Call `enums::data_enum::message_summary` through the generated binding and assert message_summary renders the Image dimensions and URL in the summary.",
     exclude(
-        csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# round-trips the value but still needs an assertion for the the Message::Image variant summary."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer currently emits only C-style enums, not data-enum payloads. Include this case when Python data-enum bindings are implemented."
@@ -451,11 +446,6 @@ pub fn echo_animal(a: Animal) -> Animal {
     "enums.data_enum.animal.cat.should_derive_name",
     justification = "Ensure animal_name derives the cat name from an Animal::Cat payload.",
     directions = "Call `enums::data_enum::animal_name` through the generated binding and assert animal_name derives the cat name from an Animal::Cat payload.",
-    exclude(
-        csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# round-trips the enum family but still needs an assertion for the derived a name from Animal::Cat behavior."
-    ),
     exclude(
         python,
         reason = ExclusionReason::ImplementationGap,

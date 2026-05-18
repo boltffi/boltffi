@@ -48,11 +48,6 @@ impl MixedRecord {
     justification = "Ensure a MixedRecord composed from strings, records, enums, options, and vectors crosses the wire and returns unchanged.",
     directions = "Call `records::mixed::echo_mixed_record` through the generated binding and assert a MixedRecord composed from strings, records, enums, options, and vectors crosses the wire and returns unchanged.",
     exclude(
-        csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# already exercises MixedRecord through class and async APIs; this case is still waiting on a focused assertion for the records::mixed free functions."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer currently emits only primitive-field blittable records. Include this case when non-blittable records are implemented for Python."
@@ -67,11 +62,6 @@ pub fn echo_mixed_record(record: MixedRecord) -> MixedRecord {
     "records.mixed.should_make_from_composed_parts",
     justification = "Ensure make_mixed_record constructs a MixedRecord from nested records, data enums, repr-int enums, options, and vectors.",
     directions = "Call `records::mixed::make_mixed_record` through the generated binding and assert make_mixed_record constructs a MixedRecord from nested records, data enums, repr-int enums, options, and vectors.",
-    exclude(
-        csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# already exercises MixedRecord through class and async APIs; this case is still waiting on a focused assertion for the records::mixed free functions."
-    ),
     exclude(
         python,
         reason = ExclusionReason::ImplementationGap,

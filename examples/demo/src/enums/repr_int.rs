@@ -17,12 +17,7 @@ pub enum Priority {
 #[demo_bench_macros::demo_case(
     "enums.repr_int.priority.should_roundtrip_value",
     justification = "Ensure a repr(i32) Priority enum value crosses the FFI boundary and returns unchanged.",
-    directions = "Call `enums::repr_int::echo_priority` through the generated binding and assert a repr(i32) Priority enum value crosses the FFI boundary and returns unchanged.",
-    exclude(
-        csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# has no assertion for Priority helper functions in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    )
+    directions = "Call `enums::repr_int::echo_priority` through the generated binding and assert a repr(i32) Priority enum value crosses the FFI boundary and returns unchanged."
 )]
 #[export]
 pub fn echo_priority(p: Priority) -> Priority {
@@ -32,12 +27,7 @@ pub fn echo_priority(p: Priority) -> Priority {
 #[demo_bench_macros::demo_case(
     "enums.repr_int.priority.should_render_label",
     justification = "Ensure priority_label maps Priority enum values to their string labels.",
-    directions = "Call `enums::repr_int::priority_label` through the generated binding and assert priority_label maps Priority enum values to their string labels.",
-    exclude(
-        csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# has no assertion for Priority helper functions in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    )
+    directions = "Call `enums::repr_int::priority_label` through the generated binding and assert priority_label maps Priority enum values to their string labels."
 )]
 #[export]
 pub fn priority_label(p: Priority) -> String {
@@ -52,12 +42,7 @@ pub fn priority_label(p: Priority) -> String {
 #[demo_bench_macros::demo_case(
     "enums.repr_int.priority.should_identify_high_priority",
     justification = "Ensure is_high_priority returns true for High and Critical priorities.",
-    directions = "Call `enums::repr_int::is_high_priority` through the generated binding and assert is_high_priority returns true for High and Critical priorities.",
-    exclude(
-        csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# has no assertion for Priority helper functions in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    )
+    directions = "Call `enums::repr_int::is_high_priority` through the generated binding and assert is_high_priority returns true for High and Critical priorities."
 )]
 #[export]
 pub fn is_high_priority(p: Priority) -> bool {

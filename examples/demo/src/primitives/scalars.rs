@@ -184,11 +184,6 @@ pub fn echo_isize(v: isize) -> isize {
     justification = "Ensure a no-argument no-op call crosses the wire without returning a value.",
     directions = "Call `primitives::scalars::noop` through the generated binding and assert a no-argument no-op call crosses the wire without returning a value.",
     exclude(
-        csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# has no assertion for the scalar noop helper in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::CoverageGap,
         details = "Python supports primitive scalar calls, but the demo suite has no assertion for the scalar noop benchmark helper yet."
@@ -202,11 +197,6 @@ pub fn noop() {}
     "primitives.scalars.i32.should_add_with_benchmark_alias",
     justification = "Ensure two i32 values cross the wire through the benchmark add alias and return as their sum.",
     directions = "Call `primitives::scalars::add` through the generated binding and assert two i32 values cross the wire through the benchmark add alias and return as their sum.",
-    exclude(
-        csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# has no assertion for the benchmark add alias in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
     exclude(
         python,
         reason = ExclusionReason::CoverageGap,
@@ -223,11 +213,6 @@ pub fn add(a: i32, b: i32) -> i32 {
     "primitives.scalars.f64.should_multiply_two_values",
     justification = "Ensure two f64 values cross the wire and return as their product.",
     directions = "Call `primitives::scalars::multiply` through the generated binding and assert two f64 values cross the wire and return as their product.",
-    exclude(
-        csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# has no assertion for the scalar multiply helper in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
     exclude(
         python,
         reason = ExclusionReason::CoverageGap,

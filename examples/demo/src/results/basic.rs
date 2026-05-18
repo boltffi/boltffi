@@ -36,11 +36,6 @@ pub fn safe_divide(a: i32, b: i32) -> Result<i32, String> {
     justification = "Ensure safe_sqrt returns the square root for non-negative floating-point input.",
     directions = "Call `results::basic::safe_sqrt` through the generated binding and assert safe_sqrt returns the square root for non-negative floating-point input.",
     exclude(
-        csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# has no assertion for safe_sqrt in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently emit Result-returning functions. Include this case when Result returns are implemented for Python."
@@ -50,11 +45,6 @@ pub fn safe_divide(a: i32, b: i32) -> Result<i32, String> {
     "results.basic.safe_sqrt.should_reject_negative_input",
     justification = "Ensure safe_sqrt returns a language-native error for negative floating-point input.",
     directions = "Call `results::basic::safe_sqrt` through the generated binding and assert safe_sqrt returns a language-native error for negative floating-point input.",
-    exclude(
-        csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# has no assertion for safe_sqrt in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
     exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
@@ -143,8 +133,8 @@ pub fn always_err(msg: String) -> Result<i32, String> {
     directions = "Call `results::basic::result_to_string` through the generated binding and assert result_to_string receives an Ok Result value over FFI and renders its success payload.",
     exclude(
         csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# has no assertion for Result parameters in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
+        reason = ExclusionReason::ImplementationGap,
+        details = "#321: C# bindgen does not currently emit functions that take Result<T, E> as a parameter. Include this case when C# Result-parameter support lands."
     ),
     exclude(
         java,
@@ -163,8 +153,8 @@ pub fn always_err(msg: String) -> Result<i32, String> {
     directions = "Call `results::basic::result_to_string` through the generated binding and assert result_to_string receives an Err Result value over FFI and renders its error payload.",
     exclude(
         csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# has no assertion for Result parameters in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
+        reason = ExclusionReason::ImplementationGap,
+        details = "#321: C# bindgen does not currently emit functions that take Result<T, E> as a parameter. Include this case when C# Result-parameter support lands."
     ),
     exclude(
         java,
@@ -190,11 +180,6 @@ pub fn result_to_string(v: Result<i32, String>) -> String {
     justification = "Ensure divide returns the integer quotient when the divisor is non-zero.",
     directions = "Call `results::basic::divide` through the generated binding and assert divide returns the integer quotient when the divisor is non-zero.",
     exclude(
-        csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# has no assertion for the divide alias in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently emit Result-returning functions. Include this case when Result returns are implemented for Python."
@@ -204,11 +189,6 @@ pub fn result_to_string(v: Result<i32, String>) -> String {
     "results.basic.divide.should_reject_division_by_zero",
     justification = "Ensure divide returns a language-native error when the divisor is zero.",
     directions = "Call `results::basic::divide` through the generated binding and assert divide returns a language-native error when the divisor is zero.",
-    exclude(
-        csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# has no assertion for the divide alias in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
     exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
@@ -225,11 +205,6 @@ pub fn divide(a: i32, b: i32) -> Result<i32, String> {
     justification = "Ensure parse_int parses a decimal string into an i32 value.",
     directions = "Call `results::basic::parse_int` through the generated binding and assert parse_int parses a decimal string into an i32 value.",
     exclude(
-        csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# has no assertion for the top-level parse_int export in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently emit Result-returning functions. Include this case when Result returns are implemented for Python."
@@ -239,11 +214,6 @@ pub fn divide(a: i32, b: i32) -> Result<i32, String> {
     "results.basic.parse_int.should_reject_invalid_integer",
     justification = "Ensure parse_int returns a language-native error when the string is not a valid i32.",
     directions = "Call `results::basic::parse_int` through the generated binding and assert parse_int returns a language-native error when the string is not a valid i32.",
-    exclude(
-        csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# has no assertion for the top-level parse_int export in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
     exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
@@ -262,11 +232,6 @@ pub fn parse_int(input: String) -> Result<i32, String> {
     justification = "Ensure validate_name returns a greeting for a non-empty name within the length limit.",
     directions = "Call `results::basic::validate_name` through the generated binding and assert validate_name returns a greeting for a non-empty name within the length limit.",
     exclude(
-        csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# has no assertion for validate_name in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently emit Result-returning functions. Include this case when Result returns are implemented for Python."
@@ -276,11 +241,6 @@ pub fn parse_int(input: String) -> Result<i32, String> {
     "results.basic.validate_name.should_reject_empty_name",
     justification = "Ensure validate_name returns a language-native error when the provided name is empty.",
     directions = "Call `results::basic::validate_name` through the generated binding and assert validate_name returns a language-native error when the provided name is empty.",
-    exclude(
-        csharp,
-        reason = ExclusionReason::CoverageGap,
-        details = "C# has no assertion for validate_name in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
-    ),
     exclude(
         python,
         reason = ExclusionReason::ImplementationGap,

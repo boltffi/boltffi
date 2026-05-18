@@ -40,6 +40,7 @@ public static class DemoTest
             TestDataEnums();
             TestRecordsWithEnumFields();
             TestPrimitiveVecs();
+            TestBytes();
             TestStringAndNestedVecs();
             TestBlittableRecordVecs();
             TestEnumVecs();
@@ -118,6 +119,9 @@ public static class DemoTest
         Require(EchoI32(42) == 42, "echoI32(42)");
         Require(EchoI32(-100) == -100, "case:primitives.scalars.i32.should_roundtrip_negative_value echoI32(-100)");
         Require(AddI32(10, 20) == 30, "case:primitives.scalars.i32.should_add_two_values addI32(10, 20)");
+        Require(Add(7, 9) == 16, "case:primitives.scalars.i32.should_add_with_benchmark_alias add(7, 9)");
+        DemoCase("case:primitives.scalars.noop.should_cross_without_values");
+        Noop();
         Console.WriteLine("  PASS\n");
     }
 
@@ -158,6 +162,7 @@ public static class DemoTest
         Console.WriteLine("Testing f64...");
         Require(Math.Abs(EchoF64(3.14159265359) - 3.14159265359) < 0.0000001, "case:primitives.scalars.f64.should_roundtrip_pi_with_tolerance echoF64(pi)");
         Require(Math.Abs(AddF64(1.5, 2.5) - 4.0) < 0.0000001, "case:primitives.scalars.f64.should_add_two_values_with_tolerance addF64(1.5, 2.5)");
+        Require(Math.Abs(Multiply(1.5, 4.0) - 6.0) < 0.0000001, "case:primitives.scalars.f64.should_multiply_two_values multiply(1.5, 4.0)");
         Console.WriteLine("  PASS\n");
     }
 
@@ -231,6 +236,8 @@ public static class DemoTest
         Require(echoed.Timestamp == ts, "EchoEvent.Timestamp");
         DemoCase("case:custom_types.event.should_extract_timestamp_millis");
         Require(EventTimestamp(evt) == ts, "EventTimestamp");
+        DemoCase("case:custom_types.event.should_expose_datetime_field");
+        Require(evt.Timestamp == ts, "Event.Timestamp datetime field");
 
         string[] emails = new[] { "café@example.com", "user@example.org" };
         DemoCase("case:custom_types.vectors.emails.should_roundtrip_values");
@@ -281,8 +288,15 @@ public static class DemoTest
 
         // Static factories on a blittable record — return by value across
         // the ABI as a [StructLayout(Sequential)] struct.
+        DemoCase("case:records.blittable.point.should_construct_with_static_new");
+        Require(Point.New(1.5, 2.5) == new Point(1.5, 2.5), "Point.New");
         DemoCase("case:records.blittable.point.should_return_origin");
         Require(Point.Origin() == new Point(0.0, 0.0), "Point.Origin()");
+        DemoCase("case:records.blittable.point.should_return_some_for_nonzero_coordinates");
+        Point? tryNonzero = TryMakePoint(1.0, 2.0);
+        Require(tryNonzero.HasValue && tryNonzero.Value == new Point(1.0, 2.0), "TryMakePoint(1,2)");
+        DemoCase("case:records.blittable.point.should_return_none_for_origin_coordinates");
+        Require(!TryMakePoint(0.0, 0.0).HasValue, "TryMakePoint(0,0)");
         DemoCase("case:records.blittable.point.should_construct_from_polar_coordinates");
         Point fromPolar = Point.FromPolar(2.0, Math.PI / 2.0);
         Require(Math.Abs(fromPolar.X) < 1e-9 && Math.Abs(fromPolar.Y - 2.0) < 1e-9, "Point.FromPolar");
@@ -478,9 +492,35 @@ public static class DemoTest
         DemoCase("case:enums.c_style.direction.should_construct_from_raw_value");
         Require(DirectionMethods.New(2) == Direction.East, "New(2) == East");
 
+        DemoCase("case:enums.c_style.direction.should_return_degrees");
+        Require(DirectionToDegrees(Direction.North) == 0, "DirectionToDegrees(North)");
+        Require(DirectionToDegrees(Direction.East) == 90, "DirectionToDegrees(East)");
+
+        DemoCase("case:enums.c_style.direction.find_direction.should_return_some_for_known_id");
+        Direction? foundDir = FindDirection(1);
+        Require(foundDir.HasValue && foundDir.Value == Direction.East, "FindDirection(1)");
+        DemoCase("case:enums.c_style.direction.find_direction.should_return_none_for_unknown_id");
+        Require(!FindDirection(99).HasValue, "FindDirection(99)");
+
+        DemoCase("case:enums.c_style.direction.find_directions.should_return_sequence_for_positive_count");
+        Direction[] someDirs = FindDirections(3);
+        Require(someDirs is not null && someDirs.Length == 3, "FindDirections(3)");
+        DemoCase("case:enums.c_style.direction.find_directions.should_return_none_for_non_positive_count");
+        Require(FindDirections(0) is null, "FindDirections(0)");
+
         // Non-default backing type: LogLevel is #[repr(u8)] on the Rust side,
         // so these direct P/Invoke calls catch any accidental `enum : int`
         // projection in the generated C# surface.
+        DemoCase("case:enums.repr_int.priority.should_roundtrip_value");
+        Require(EchoPriority(Priority.High) == Priority.High, "EchoPriority(High)");
+        DemoCase("case:enums.repr_int.priority.should_render_label");
+        Require(PriorityLabel(Priority.Low) == "low", "PriorityLabel(Low)");
+        Require(PriorityLabel(Priority.Critical) == "critical", "PriorityLabel(Critical)");
+        DemoCase("case:enums.repr_int.priority.should_identify_high_priority");
+        Require(IsHighPriority(Priority.High), "IsHighPriority(High)");
+        Require(IsHighPriority(Priority.Critical), "IsHighPriority(Critical)");
+        Require(!IsHighPriority(Priority.Low), "IsHighPriority(Low) == false");
+
         DemoCase("case:enums.repr_int.log_level.should_roundtrip_value");
         Require(EchoLogLevel(LogLevel.Trace) == LogLevel.Trace, "EchoLogLevel(Trace)");
         Require(EchoLogLevel(LogLevel.Error) == LogLevel.Error, "EchoLogLevel(Error)");
@@ -677,6 +717,12 @@ public static class DemoTest
         );
         DemoCase("case:enums.data_enum.message.ping.should_render_ping_summary");
         Require(MessageSummary(new Message.Ping()) == "ping", "MessageSummary(Ping)");
+        DemoCase("case:enums.data_enum.message.image.should_render_image_summary");
+        Require(
+            MessageSummary(new Message.Image("https://example.com/a.png", 1920, 1080))
+                == "image: 1920x1080 at https://example.com/a.png",
+            "MessageSummary(Image)"
+        );
 
         // Animal — three struct variants, one with a bool field.
         DemoCase("case:enums.data_enum.animal.dog.should_roundtrip_string_payloads");
@@ -702,6 +748,8 @@ public static class DemoTest
 
         DemoCase("case:enums.data_enum.animal.dog.should_derive_name");
         Require(AnimalName(new Animal.Dog("Rex", "Lab")) == "Rex", "AnimalName(Dog)");
+        DemoCase("case:enums.data_enum.animal.cat.should_derive_name");
+        Require(AnimalName(new Animal.Cat("Whiskers", true)) == "Whiskers", "AnimalName(Cat)");
         DemoCase("case:enums.data_enum.animal.fish.should_derive_count_label");
         Require(AnimalName(new Animal.Fish(5u)) == "5 fish", "AnimalName(Fish)");
 
@@ -746,6 +794,14 @@ public static class DemoTest
         global::Demo.Task echoedTask = EchoTask(task);
         Require(echoedTask == task, "EchoTask round-trip");
         Require(echoedTask.Priority == Priority.High, "Task.Priority preserved");
+
+        DemoCase("case:records.with_enums.task.should_make_incomplete_task");
+        global::Demo.Task made = MakeTask("New task", Priority.Low);
+        Require(made.Title == "New task" && made.Priority == Priority.Low && !made.Completed, "MakeTask defaults");
+
+        DemoCase("case:records.with_enums.task.should_detect_urgent_priority");
+        Require(IsUrgent(new global::Demo.Task("urgent", Priority.Critical, false)), "IsUrgent(Critical)");
+        Require(!IsUrgent(new global::Demo.Task("normal", Priority.Low, false)), "IsUrgent(Low) false");
 
         Notification notification = new Notification("Build failed", Priority.Critical, false);
         DemoCase("case:records.with_enums.notification.should_roundtrip_priority_field");
@@ -840,6 +896,12 @@ public static class DemoTest
         Require(SumVecI32(new int[] { 10, 20, 30 }) == 60L, "sumVecI32");
         Require(SumVecI32(Array.Empty<int>()) == 0L, "sumVecI32 empty");
 
+        DemoCase("case:primitives.vecs.i32.should_sum_benchmark_values");
+        Require(SumI32Vec(new int[] { 1, 2, 3, 4 }) == 10L, "sumI32Vec");
+
+        DemoCase("case:primitives.vecs.u64.should_increment_value");
+        Require(IncU64Value(41UL) == 42UL, "incU64Value");
+
         DemoCase("case:primitives.vecs.i32.should_make_range");
         Require(MakeRange(0, 5).SequenceEqual(new int[] { 0, 1, 2, 3, 4 }), "makeRange");
         DemoCase("case:primitives.vecs.i32.should_reverse_values");
@@ -850,6 +912,24 @@ public static class DemoTest
         Require(GenerateF64Vec(3).Length == 3, "generateF64Vec length");
         DemoCase("case:primitives.vecs.f64.should_sum_values");
         Require(Math.Abs(SumF64Vec(new double[] { 0.5, 1.5, 2.0 }) - 4.0) < 1e-9, "sumF64Vec");
+
+        Console.WriteLine("  PASS\n");
+    }
+
+    private static void TestBytes()
+    {
+        Console.WriteLine("Testing bytes...");
+
+        DemoCase("case:bytes.bytes.should_roundtrip_values");
+        Require(EchoBytes(new byte[] { 1, 2, 3, 4 }).SequenceEqual(new byte[] { 1, 2, 3, 4 }), "echoBytes");
+        DemoCase("case:bytes.bytes.should_report_length");
+        Require(BytesLength(new byte[] { 9, 8, 7 }) == 3u, "bytesLength");
+        DemoCase("case:bytes.bytes.should_sum_values");
+        Require(BytesSum(new byte[] { 1, 2, 3, 4 }) == 10u, "bytesSum");
+        DemoCase("case:bytes.bytes.should_make_sequential_values");
+        Require(MakeBytes(4).SequenceEqual(new byte[] { 0, 1, 2, 3 }), "makeBytes");
+        DemoCase("case:bytes.bytes.should_reverse_values");
+        Require(ReverseBytes(new byte[] { 1, 2, 3, 4 }).SequenceEqual(new byte[] { 4, 3, 2, 1 }), "reverseBytes");
 
         Console.WriteLine("  PASS\n");
     }
@@ -936,6 +1016,8 @@ public static class DemoTest
         DemoCase("case:primitives.vecs.nested_i32.should_flatten_values");
         int[] flattened = FlattenVecVecI32(nestedInts);
         Require(flattened.SequenceEqual(new[] { 1, 2, 3, -1 }), "flattenVecVecI32");
+        DemoCase("case:primitives.vecs.nested_i32.should_flatten_empty");
+        Require(FlattenVecVecI32(Array.Empty<int[]>()).Length == 0, "flattenVecVecI32 empty");
 
         DemoCase("case:primitives.vecs.nested_string.should_roundtrip_utf8_values");
         string[][] nestedStrings = new[]
@@ -1020,6 +1102,18 @@ public static class DemoTest
         Require(ProcessLocations(handmade) == 2, "processLocations handmade");
         DemoCase("case:records.blittable.locations.should_sum_host_constructed_ratings");
         Require(Math.Abs(SumRatings(handmade) - 6.5) < 1e-9, "sumRatings handmade");
+
+        DemoCase("case:records.blittable.locations.find_location.should_return_some_for_positive_id");
+        Location? foundLoc = FindLocation(1);
+        Require(foundLoc.HasValue && foundLoc.Value.Id == 1L, "findLocation(1)");
+        DemoCase("case:records.blittable.locations.find_location.should_return_none_for_non_positive_id");
+        Require(!FindLocation(0).HasValue, "findLocation(0)");
+
+        DemoCase("case:records.blittable.locations.find_locations.should_return_some_vector_for_positive_count");
+        Location[] foundLocs = FindLocations(3);
+        Require(foundLocs is not null && foundLocs.Length == 3, "findLocations(3)");
+        DemoCase("case:records.blittable.locations.find_locations.should_return_none_for_non_positive_count");
+        Require(FindLocations(0) is null, "findLocations(0)");
 
         Console.WriteLine("  PASS\n");
     }
@@ -1154,6 +1248,20 @@ public static class DemoTest
         Require(Math.Abs(AverageScore(scores) - 20.0) < 1e-9, "averageScore");
         Require(AverageScore(new TaggedScores("empty", Array.Empty<double>())) == 0.0, "averageScore empty");
 
+        DemoCase("case:enums.complex_variants.filter.none.should_roundtrip_unit_variant");
+        Filter noneFilter = new Filter.None();
+        Require(EchoFilter(noneFilter) is Filter.None, "echoFilter None");
+
+        Filter byName = new Filter.ByName("query");
+        DemoCase("case:enums.complex_variants.filter.by_name.should_roundtrip_string_payload");
+        Require(EchoFilter(byName) is Filter.ByName n && n.Name == "query", "echoFilter ByName");
+        DemoCase("case:enums.complex_variants.filter.by_name.should_describe_string_payload");
+        Require(DescribeFilter(byName) == "filter by name: query", "describeFilter ByName");
+
+        Filter byRange = new Filter.ByRange(1.5, 9.0);
+        DemoCase("case:enums.complex_variants.filter.by_range.should_describe_numeric_bounds");
+        Require(DescribeFilter(byRange) == "filter by range: 1.5..9", "describeFilter ByRange");
+
         Filter byTags = new Filter.ByTags(new[] { "café", "🌍" });
         DemoCase("case:enums.complex_variants.filter.by_tags.should_roundtrip_string_vector_payload");
         Filter echoedTags = EchoFilter(byTags);
@@ -1188,6 +1296,19 @@ public static class DemoTest
         Require(echoedPts is Filter.ByPoints p2 && p2.Anchors.SequenceEqual(((Filter.ByPoints)byPoints).Anchors), "echoFilter ByPoints");
         DemoCase("case:enums.complex_variants.filter.by_points.should_describe_record_vector_payload");
         Require(DescribeFilter(byPoints) == "filter by 2 anchor points", "describeFilter ByPoints");
+
+        ApiResponse successResp = new ApiResponse.Success("payload");
+        DemoCase("case:enums.complex_variants.api_response.success.should_roundtrip_string_payload");
+        Require(EchoApiResponse(successResp) is ApiResponse.Success s && s.Data == "payload", "echoApiResponse Success");
+        DemoCase("case:enums.complex_variants.api_response.success.should_identify_success");
+        Require(IsSuccess(successResp), "isSuccess Success");
+
+        ApiResponse redirectResp = new ApiResponse.Redirect("https://example.com/r");
+        DemoCase("case:enums.complex_variants.api_response.redirect.should_roundtrip_url_payload");
+        Require(EchoApiResponse(redirectResp) is ApiResponse.Redirect r2 && r2.Url == "https://example.com/r", "echoApiResponse Redirect");
+
+        DemoCase("case:enums.complex_variants.api_response.empty.should_not_identify_as_success");
+        Require(!IsSuccess(new ApiResponse.Empty()), "isSuccess Empty");
 
         DemoCase("case:records.with_collections.user_profiles.should_generate_profiles");
         BenchmarkUserProfile[] profiles = GenerateUserProfiles(4);
@@ -1673,6 +1794,16 @@ public static class DemoTest
                 parameters
             );
 
+            DemoCase("case:records.mixed.should_roundtrip_composed_record");
+            MixedRecord freeEchoed = EchoMixedRecord(record);
+            Require(freeEchoed.Name == "demo" && freeEchoed.Priority == Priority.High, "EchoMixedRecord free fn");
+
+            DemoCase("case:records.mixed.should_make_from_composed_parts");
+            MixedRecord freeMade = MakeMixedRecord("free-made", new Point(7.0, 8.0), Priority.Medium,
+                new Shape.Circle(1.0), parameters);
+            Require(freeMade.Name == "free-made" && freeMade.Anchor == new Point(7.0, 8.0)
+                && freeMade.Priority == Priority.Medium, "MakeMixedRecord free fn");
+
             MixedRecord echoed = svc.EchoRecord(record);
             Require(echoed.Name == "demo", "EchoRecord round-trips Name");
             Require(echoed.Anchor.X == 1.0 && echoed.Anchor.Y == 2.0, "EchoRecord round-trips Anchor");
@@ -1873,6 +2004,46 @@ public static class DemoTest
         {
             Require(e.Message.Contains("division by zero"), "SafeDivide error message");
         }
+
+        DemoCase("case:results.basic.divide.should_return_quotient");
+        Require(Divide(20, 4) == 5, "Divide(20, 4) == 5");
+        DemoCase("case:results.basic.divide.should_reject_division_by_zero");
+        try
+        {
+            Divide(1, 0);
+            Require(false, "Divide(1, 0) should throw");
+        }
+        catch (BoltException) { }
+
+        DemoCase("case:results.basic.parse_int.should_parse_integer");
+        Require(ParseInt("42") == 42, "ParseInt(42)");
+        DemoCase("case:results.basic.parse_int.should_reject_invalid_integer");
+        try
+        {
+            ParseInt("not a number");
+            Require(false, "ParseInt(bad) should throw");
+        }
+        catch (BoltException) { }
+
+        DemoCase("case:results.basic.safe_sqrt.should_return_square_root");
+        Require(Math.Abs(SafeSqrt(9.0) - 3.0) < 1e-9, "SafeSqrt(9)");
+        DemoCase("case:results.basic.safe_sqrt.should_reject_negative_input");
+        try
+        {
+            SafeSqrt(-1.0);
+            Require(false, "SafeSqrt(-1) should throw");
+        }
+        catch (BoltException) { }
+
+        DemoCase("case:results.basic.validate_name.should_greet_valid_name");
+        Require(ValidateName("Ada") == "Hello, Ada!", "ValidateName(Ada)");
+        DemoCase("case:results.basic.validate_name.should_reject_empty_name");
+        try
+        {
+            ValidateName("");
+            Require(false, "ValidateName(empty) should throw");
+        }
+        catch (BoltException) { }
 
         DemoCase("case:results.basic.always_ok.should_return_doubled_value");
         Require(AlwaysOk(21) == 42, "AlwaysOk doubles its input");
@@ -2076,6 +2247,32 @@ public static class DemoTest
             Require(e.Error.Message == "Division by zero", "DivideApp AppError.Message");
         }
 
+        DemoCase("case:results.error_enums.process_value.should_return_success_variant");
+        Require(ProcessValue(5) is ApiResult.Success, "ProcessValue(5) -> Success");
+        DemoCase("case:results.error_enums.process_value.should_return_error_code_variant");
+        Require(ProcessValue(0) is ApiResult.ErrorCode ec && ec.Value0 == -1, "ProcessValue(0) -> ErrorCode(-1)");
+        DemoCase("case:results.error_enums.process_value.should_return_error_with_data_variant");
+        Require(ProcessValue(-3) is ApiResult.ErrorWithData ed && ed.Code == -3 && ed.Detail == -6,
+            "ProcessValue(-3) -> ErrorWithData(-3,-6)");
+
+        DemoCase("case:results.error_enums.api_result_is_success.should_report_success_variant");
+        Require(ApiResultIsSuccess(new ApiResult.Success()), "ApiResultIsSuccess(Success)");
+        DemoCase("case:results.error_enums.api_result_is_success.should_report_error_variant");
+        Require(!ApiResultIsSuccess(new ApiResult.ErrorCode(1)), "ApiResultIsSuccess(ErrorCode) false");
+
+        DemoCase("case:results.error_enums.try_compute.should_return_doubled_value");
+        Require(TryCompute(7) == 14, "TryCompute(7) == 14");
+        DemoCase("case:results.error_enums.try_compute.should_return_overflow_error");
+        try
+        {
+            TryCompute(-1);
+            Require(false, "TryCompute(-1) should throw");
+        }
+        catch (ComputeErrorException e)
+        {
+            Require(e.Error is ComputeError.Overflow, "TryCompute(-1) Overflow variant");
+        }
+
         Console.WriteLine("  PASS\n");
     }
 
@@ -2158,6 +2355,16 @@ public static class DemoTest
         {
             Require(e.Error is ComputeError.InvalidInput invalid && invalid.Value0 == -999,
                 "TryComputeAsync typed ComputeError");
+        }
+        DemoCase("case:async_fns.results.try_compute.should_return_overflow_for_negative_value");
+        try
+        {
+            await TryComputeAsync(-2);
+            Require(false, "TryComputeAsync(-2) should throw");
+        }
+        catch (ComputeErrorException e)
+        {
+            Require(e.Error is ComputeError.Overflow, "TryComputeAsync(-2) Overflow variant");
         }
 
         DemoCase("case:async_fns.results.fetch_data.should_return_scaled_positive_id");
