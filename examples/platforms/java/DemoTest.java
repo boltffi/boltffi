@@ -267,6 +267,7 @@ public final class DemoTest {
         Instant instant = Instant.ofEpochMilli(1_710_000_000_123L);
         demoCase("case:builtins.system_time.should_roundtrip_value");
         assert Demo.echoSystemTime(instant).equals(instant) : "echoSystemTime";
+        demoCase("case:builtins.system_time.should_roundtrip_pre_epoch_value");
         Instant preEpochInstant = Instant.ofEpochSecond(-1L, 500_000_000L);
         assert Demo.echoSystemTime(preEpochInstant).equals(preEpochInstant) : "echoSystemTime pre epoch";
         demoCase("case:builtins.system_time.should_convert_to_epoch_milliseconds");

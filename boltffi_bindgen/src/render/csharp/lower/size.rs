@@ -74,7 +74,9 @@ pub(crate) fn lower_size_expr(
             receiver: Box::new(render_value(value, renames)),
             name: CSharpPropertyName::from_source("length"),
         },
-        SizeExpr::BuiltinSize { id, value } => lower_builtin_size(id, &render_value(value, renames)),
+        SizeExpr::BuiltinSize { id, value } => {
+            lower_builtin_size(id, &render_value(value, renames))
+        }
         SizeExpr::WireSize { value, .. } => CSharpExpression::MethodCall {
             receiver: Box::new(render_value(value, renames)),
             method: CSharpMethodName::from_source("wire_encoded_size"),
