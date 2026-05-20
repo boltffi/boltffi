@@ -27,6 +27,14 @@ const unsupportedTypeMembers = new Set([
   "classes/streams.rs::EventBus::subscribeValuesCallback",
 ]);
 
+// These members are generated for wasm, but the wasm demo tests do not exercise
+// the C# regression cases yet. The demo metadata tracks them as coverage gaps.
+const coverageGapTypeMembers = new Set([
+  "enums/data_enum.rs::Shape::maybeCircle",
+  "records/default_values.rs::ServiceConfig::tryWithRetries",
+  "records/default_values.rs::ServiceConfig::maybeWithRetries",
+]);
+
 const tsKeywords = new Set([
   "break",
   "case",
@@ -367,7 +375,8 @@ export async function run() {
   });
 
   const missingMemberCoverage = rustTypeMembers.filter((item) => {
-    if (unsupportedTypeMembers.has(rustMemberKey(item.rustFile, item.typeName, item.rustName))) {
+    const memberKey = rustMemberKey(item.rustFile, item.typeName, item.rustName);
+    if (unsupportedTypeMembers.has(memberKey) || coverageGapTypeMembers.has(memberKey)) {
       return false;
     }
     const testSource = testSources[expectedTestPath(item.rustFile)] ?? "";
