@@ -92,11 +92,6 @@ impl Shape {
         justification = "Ensure Shape::try_circle returns a Circle variant for a positive radius.",
         directions = "Call `enums::data_enum::Shape::try_circle` through the generated binding and assert Shape::try_circle returns a Circle variant for a positive radius.",
         exclude(
-            csharp,
-            reason = ExclusionReason::ImplementationGap,
-            details = "#328: C# bindgen does not currently emit Result-returning data-enum static methods, so Shape::try_circle is absent from the generated surface. Include this case when fallible data-enum factories are implemented for C#."
-        ),
-        exclude(
             python,
             reason = ExclusionReason::ImplementationGap,
             details = "Python is experimental; its lowerer currently emits only C-style enums, not data-enum payloads. Include this case when Python data-enum bindings are implemented."
@@ -106,11 +101,6 @@ impl Shape {
         "enums.data_enum.shape.should_reject_non_positive_circle_radius",
         justification = "Ensure Shape::try_circle returns a language-native error when radius is zero or negative.",
         directions = "Call `enums::data_enum::Shape::try_circle` through the generated binding and assert Shape::try_circle returns a language-native error when radius is zero or negative.",
-        exclude(
-            csharp,
-            reason = ExclusionReason::ImplementationGap,
-            details = "#328: C# bindgen does not currently emit Result-returning data-enum static methods, so Shape::try_circle is absent from the generated surface. Include this case when fallible data-enum factories are implemented for C#."
-        ),
         exclude(
             python,
             reason = ExclusionReason::ImplementationGap,
@@ -122,6 +112,74 @@ impl Shape {
             Err("radius must be positive".to_string())
         } else {
             Ok(Shape::Circle { radius })
+        }
+    }
+
+    #[demo_bench_macros::demo_case(
+        "enums.data_enum.shape.maybe_circle.should_return_some_for_positive_radius",
+        justification = "Ensure Shape::maybe_circle returns Some(data enum) for a positive radius.",
+        directions = "Call `enums::data_enum::Shape::maybe_circle` through the generated binding and assert it returns Some(Shape::Circle) for a positive radius.",
+        exclude(
+            swift,
+            reason = ExclusionReason::CoverageGap,
+            details = "This C# regression case is not asserted by the Swift demo suite yet. Add it when Swift demo coverage expands for optional data-enum constructors."
+        ),
+        exclude(
+            kotlin,
+            reason = ExclusionReason::CoverageGap,
+            details = "This C# regression case is not asserted by the Kotlin demo suite yet. Add it when Kotlin demo coverage expands for optional data-enum constructors."
+        ),
+        exclude(
+            java,
+            reason = ExclusionReason::CoverageGap,
+            details = "This C# regression case is not asserted by the Java demo suite yet. Add it when Java demo coverage expands for optional data-enum constructors."
+        ),
+        exclude(
+            typescript,
+            reason = ExclusionReason::CoverageGap,
+            details = "This C# regression case is not asserted by the TypeScript demo suite yet. Add it when TypeScript demo coverage expands for optional data-enum constructors."
+        ),
+        exclude(
+            python,
+            reason = ExclusionReason::CoverageGap,
+            details = "This C# regression case is not asserted by the Python demo suite yet. Add it when Python demo coverage expands for optional data-enum constructors."
+        )
+    )]
+    #[demo_bench_macros::demo_case(
+        "enums.data_enum.shape.maybe_circle.should_return_none_for_non_positive_radius",
+        justification = "Ensure Shape::maybe_circle returns None for a non-positive radius.",
+        directions = "Call `enums::data_enum::Shape::maybe_circle` through the generated binding and assert it returns None/null for a non-positive radius.",
+        exclude(
+            swift,
+            reason = ExclusionReason::CoverageGap,
+            details = "This C# regression case is not asserted by the Swift demo suite yet. Add it when Swift demo coverage expands for optional data-enum constructors."
+        ),
+        exclude(
+            kotlin,
+            reason = ExclusionReason::CoverageGap,
+            details = "This C# regression case is not asserted by the Kotlin demo suite yet. Add it when Kotlin demo coverage expands for optional data-enum constructors."
+        ),
+        exclude(
+            java,
+            reason = ExclusionReason::CoverageGap,
+            details = "This C# regression case is not asserted by the Java demo suite yet. Add it when Java demo coverage expands for optional data-enum constructors."
+        ),
+        exclude(
+            typescript,
+            reason = ExclusionReason::CoverageGap,
+            details = "This C# regression case is not asserted by the TypeScript demo suite yet. Add it when TypeScript demo coverage expands for optional data-enum constructors."
+        ),
+        exclude(
+            python,
+            reason = ExclusionReason::CoverageGap,
+            details = "This C# regression case is not asserted by the Python demo suite yet. Add it when Python demo coverage expands for optional data-enum constructors."
+        )
+    )]
+    pub fn maybe_circle(radius: f64) -> Option<Self> {
+        if radius > 0.0 {
+            Some(Shape::Circle { radius })
+        } else {
+            None
         }
     }
 

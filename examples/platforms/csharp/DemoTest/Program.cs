@@ -352,6 +352,32 @@ public static class DemoTest
         DemoCase("case:records.blittable.point.should_report_dimension_count");
         Require(Point.Dimensions() == 2u, "Point.Dimensions() == 2");
 
+        DemoCase("case:records.blittable.point.should_normalize_unit_vector");
+        Point unit = Point.TryUnit(3.0, 4.0);
+        Require(Math.Abs(unit.X - 0.6) < 1e-9 && Math.Abs(unit.Y - 0.8) < 1e-9, "Point.TryUnit(3,4)");
+
+        DemoCase("case:records.blittable.point.should_reject_zero_unit_vector");
+        try
+        {
+            Point.TryUnit(0.0, 0.0);
+            throw new Exception("expected Point.TryUnit(0,0) to throw");
+        }
+        catch (BoltException) { }
+
+        DemoCase("case:records.blittable.point.should_return_some_for_checked_unit");
+        Point? checked1 = Point.CheckedUnit(3.0, 4.0);
+        Require(
+            checked1 is { } cu && Math.Abs(cu.X - 0.6) < 1e-9 && Math.Abs(cu.Y - 0.8) < 1e-9,
+            "Point.CheckedUnit(3,4)"
+        );
+
+        DemoCase("case:records.blittable.point.should_return_none_for_zero_checked_unit");
+        Require(Point.CheckedUnit(0.0, 0.0) is null, "Point.CheckedUnit(0,0) == null");
+
+        DemoCase("case:records.blittable.point.should_scale_coordinates");
+        Point scaled = new Point(1.5, -2.5).Scale(2.0);
+        Require(scaled == new Point(3.0, -5.0), "Point.Scale(2) doubles coordinates");
+
         // Instance methods on a blittable record — `this` passes by value
         // through P/Invoke (no wire encode), exercising the
         // owner_is_blittable branch of CSharpReceiver::InstanceNative.
@@ -454,6 +480,31 @@ public static class DemoTest
             withEndpoint.Describe() == "api:5:us-east:https://primary:https://backup",
             "ServiceConfig.Describe() with endpoints"
         );
+
+        DemoCase("case:records.default_values.service_config.try_with_retries.should_return_config");
+        ServiceConfig withRetries = ServiceConfig.TryWithRetries(5);
+        Require(
+            withRetries == new ServiceConfig("generated", 5, "standard", null, "https://default"),
+            "ServiceConfig.TryWithRetries(5)"
+        );
+
+        DemoCase("case:records.default_values.service_config.try_with_retries.should_reject_negative_retries");
+        try
+        {
+            ServiceConfig.TryWithRetries(-1);
+            throw new Exception("expected ServiceConfig.TryWithRetries(-1) to throw");
+        }
+        catch (BoltException) { }
+
+        DemoCase("case:records.default_values.service_config.maybe_with_retries.should_return_some");
+        ServiceConfig? maybeWithRetries = ServiceConfig.MaybeWithRetries(7);
+        Require(
+            maybeWithRetries is { } retries && retries == new ServiceConfig("generated", 7, "standard", null, "https://default"),
+            "ServiceConfig.MaybeWithRetries(7)"
+        );
+
+        DemoCase("case:records.default_values.service_config.maybe_with_retries.should_return_none");
+        Require(ServiceConfig.MaybeWithRetries(-1) is null, "ServiceConfig.MaybeWithRetries(-1) == null");
 
         Console.WriteLine("  PASS\n");
     }
@@ -728,6 +779,23 @@ public static class DemoTest
         DemoCase("case:enums.data_enum.shape.should_support_primary_constructor");
         Require(Shape.New(3.0) is Shape.Circle sn && sn.Radius == 3.0, "Shape.New(3)");
 
+        DemoCase("case:enums.data_enum.shape.try_circle.should_return_circle_for_positive_radius");
+        Require(Shape.TryCircle(2.5) is Shape.Circle tc && tc.Radius == 2.5, "Shape.TryCircle(2.5)");
+
+        DemoCase("case:enums.data_enum.shape.should_reject_non_positive_circle_radius");
+        try
+        {
+            Shape.TryCircle(-1.0);
+            throw new Exception("expected Shape.TryCircle(-1) to throw");
+        }
+        catch (BoltException) { }
+
+        DemoCase("case:enums.data_enum.shape.maybe_circle.should_return_some_for_positive_radius");
+        Require(Shape.MaybeCircle(1.25) is Shape.Circle mc && mc.Radius == 1.25, "Shape.MaybeCircle(1.25)");
+
+        DemoCase("case:enums.data_enum.shape.maybe_circle.should_return_none_for_non_positive_radius");
+        Require(Shape.MaybeCircle(0.0) is null, "Shape.MaybeCircle(0) == null");
+
         // TryApexPoint — static method whose return type is Option<Point>
         // where Point is shadowed by a sibling variant. Drives scoped
         // rendering of the Option decode inside the Shape scope.
@@ -950,6 +1018,14 @@ public static class DemoTest
 
         DemoCase("case:primitives.vecs.u64.should_increment_value");
         Require(IncU64Value(41UL) == 42UL, "incU64Value");
+
+        DemoCase("case:primitives.vecs.u64.should_increment_first_value_in_place");
+        ulong[] incBuf = new ulong[] { 10UL, 20UL, 30UL };
+        IncU64(incBuf);
+        Require(
+            incBuf[0] == 11UL && incBuf[1] == 20UL && incBuf[2] == 30UL,
+            "incU64 mutates first element in place"
+        );
 
         DemoCase("case:primitives.vecs.i32.should_make_range");
         Require(MakeRange(0, 5).SequenceEqual(new int[] { 0, 1, 2, 3, 4 }), "makeRange");

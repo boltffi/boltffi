@@ -270,11 +270,6 @@ pub fn sum_f64_vec(values: Vec<f64>) -> f64 {
     justification = "Ensure a mutable u64 slice crosses the wire and increments its first value in place.",
     directions = "Call `primitives::vecs::inc_u64` through the generated binding and assert a mutable u64 slice crosses the wire and increments its first value in place.",
     exclude(
-        csharp,
-        reason = ExclusionReason::ImplementationGap,
-        details = "#328: C# bindgen does not currently emit free functions with `&mut [T]` slice parameters, so inc_u64 is absent from the generated surface. Include this case when in-place sequence parameters are implemented for C#."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer only accepts value parameters today, so mutable slice parameters are omitted. Include this case when in-place sequence parameters are implemented for Python."

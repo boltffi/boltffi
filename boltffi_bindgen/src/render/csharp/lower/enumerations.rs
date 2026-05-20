@@ -2,16 +2,19 @@ use std::collections::HashSet;
 
 use crate::ir::abi::{AbiCall, AbiEnum, AbiEnumField, AbiEnumPayload, AbiEnumVariant, CallId};
 use crate::ir::definitions::{ConstructorDef, EnumDef, EnumRepr, MethodDef, Receiver};
+use crate::ir::ids::EnumId;
+use crate::ir::types::TypeExpr;
 
 use super::super::ast::{
     CSharpClassName, CSharpComment, CSharpEnumUnderlyingType, CSharpExpression, CSharpIdentity,
-    CSharpLocalName, CSharpMethodName, CSharpType,
+    CSharpLocalName, CSharpMethodName,
 };
 use super::super::plan::{
     CSharpEnumKind, CSharpEnumPlan, CSharpEnumVariantPlan, CSharpFieldPlan, CSharpMethodPlan,
-    CSharpParamPlan, CSharpReceiver, CSharpReturnKind,
+    CSharpParamPlan, CSharpReceiver,
 };
 use super::lowerer::CSharpLowerer;
+use super::records::constructor_return_def;
 use super::wire_writers::self_wire_writer;
 use super::{decode, encode, size};
 
@@ -212,11 +215,12 @@ impl<'a> CSharpLowerer<'a> {
     }
 
     /// Walks an enum's `#[data(impl)]` constructors and methods and
-    /// produces the corresponding [`CSharpMethodPlan`]s. Fallible
-    /// constructors (`Result<Self, _>`), optional constructors
-    /// (`Option<Self>`), methods that return `Result<_, _>`, async methods,
-    /// and `&mut self` / `self` receivers are dropped silently; the C#
-    /// backend doesn't model them yet.
+    /// produces the corresponding [`CSharpMethodPlan`]s. Async methods
+    /// and `&mut self` / `self` receivers are dropped silently — data
+    /// enums are immutable in C#, and re-binding the receiver is a wider
+    /// shape question the backend doesn't model yet. Fallible
+    /// (`Result<Self, _>`) and optional (`Option<Self>`) constructors
+    /// ride the same `return_kind` path as the rest of the backend.
     fn lower_enum_methods(
         &self,
         enum_def: &EnumDef,
@@ -227,9 +231,6 @@ impl<'a> CSharpLowerer<'a> {
         let mut methods = Vec::new();
 
         for (index, ctor) in enum_def.constructors.iter().enumerate() {
-            if ctor.is_fallible() || ctor.is_optional() {
-                continue;
-            }
             let call_id = CallId::EnumConstructor {
                 enum_id: enum_def.id.clone(),
                 index,
@@ -237,7 +238,8 @@ impl<'a> CSharpLowerer<'a> {
             let Some(call) = self.abi.calls.iter().find(|c| c.id == call_id) else {
                 continue;
             };
-            if let Some(method) = self.lower_enum_constructor(ctor, call, enum_class_name, is_data)
+            if let Some(method) =
+                self.lower_enum_constructor(ctor, call, &enum_def.id, enum_class_name)
             {
                 methods.push(method);
             }
@@ -271,31 +273,30 @@ impl<'a> CSharpLowerer<'a> {
     }
 
     /// Lowers a `#[data(impl)]` constructor into a static factory method
-    /// on the enum's container.
+    /// on the enum's container. Fallible/optional constructors
+    /// synthesize a `Result<Self, String>` / `Option<Self>` return so
+    /// they ride the same `return_kind` paths as everything else —
+    /// errors throw, optionals become `Shape?`.
     fn lower_enum_constructor(
         &self,
         ctor: &ConstructorDef,
         call: &AbiCall,
+        enum_id: &EnumId,
         enum_class_name: &CSharpClassName,
-        owner_is_data: bool,
     ) -> Option<CSharpMethodPlan> {
         let raw_name: &str = match ctor.name() {
             Some(id) => id.as_str(),
             None => "new",
         };
         let name = CSharpMethodName::from_source(raw_name);
-        let return_type = if owner_is_data {
-            CSharpType::DataEnum(enum_class_name.clone().into())
-        } else {
-            CSharpType::CStyleEnum(enum_class_name.clone().into())
-        };
-        let return_kind = if owner_is_data {
-            CSharpReturnKind::WireDecodeObject {
-                class_name: enum_class_name.clone(),
-            }
-        } else {
-            CSharpReturnKind::Direct
-        };
+        let return_def = constructor_return_def(ctor, TypeExpr::Enum(enum_id.clone()));
+        let return_type = self.lower_return(&return_def)?;
+        let return_kind = self.return_kind(
+            &return_def,
+            &return_type,
+            call.returns.decode_ops.as_ref(),
+            None,
+        );
         let mut ctor_size_locals = size::SizeLocalCounters::default();
         let mut ctor_encode_locals = encode::EncodeLocalCounters::default();
         let wire_writers: Vec<_> = call

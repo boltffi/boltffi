@@ -20,7 +20,16 @@ impl<'a> CSharpLowerer<'a> {
             if let TypeExpr::Callback(id) = &param.type_expr {
                 return self.lower_callback_param(param, id);
             }
-            return None;
+            // `&mut [T]` for blittable T joins the rest of the param
+            // lowering — the CLR pins the managed array in place, so
+            // the same DirectArray / PinnedArray paths native-side
+            // pass `(ptr, len)` and the caller observes the mutation.
+            if !matches!(
+                (&param.passing, &param.type_expr),
+                (ParamPassing::RefMut, TypeExpr::Vec(_))
+            ) {
+                return None;
+            }
         }
 
         let csharp_type = self.lower_type(&param.type_expr)?;

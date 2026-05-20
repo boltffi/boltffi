@@ -24,8 +24,11 @@ impl<'a> CSharpLowerer<'a> {
         self.abi_record_for(id).is_some_and(|r| r.is_blittable)
     }
 
-    /// Whether the param can be handled by the C# backend. Today only
-    /// by-value passing is supported (no `&` / `&mut`).
+    /// Whether the param can be handled by the C# backend. By-value is
+    /// the common case; `&mut [T]` (RefMut over a `Vec<T>`) is allowed
+    /// when T is a blittable vec element — the CLR pins primitive
+    /// arrays across P/Invoke, so the native side can mutate them in
+    /// place. Callback params have their own passing kinds.
     pub(super) fn is_supported_param(&self, param: &ParamDef) -> bool {
         match (&param.passing, &param.type_expr) {
             (ParamPassing::Value, TypeExpr::Option(inner))
@@ -37,6 +40,7 @@ impl<'a> CSharpLowerer<'a> {
                 self.is_supported_callback(id)
             }
             (ParamPassing::Value, _) => self.is_supported_type(&param.type_expr),
+            (ParamPassing::RefMut, TypeExpr::Vec(inner)) => self.is_blittable_vec_element(inner),
             _ => false,
         }
     }

@@ -1,15 +1,15 @@
 use crate::ir::abi::{AbiCall, CallId};
-use crate::ir::definitions::{ConstructorDef, FieldDef, MethodDef, Receiver, RecordDef};
+use crate::ir::definitions::{ConstructorDef, FieldDef, MethodDef, Receiver, RecordDef, ReturnDef};
 use crate::ir::ids::{FieldName, RecordId};
 use crate::ir::ops::{ReadOp, ReadSeq, WriteOp, WriteSeq};
+use crate::ir::types::TypeExpr;
 
 use super::super::ast::{
     CSharpClassName, CSharpComment, CSharpExpression, CSharpIdentity, CSharpLocalName,
-    CSharpMethodName, CSharpType,
+    CSharpMethodName,
 };
 use super::super::plan::{
     CSharpFieldPlan, CSharpMethodPlan, CSharpParamPlan, CSharpReceiver, CSharpRecordPlan,
-    CSharpReturnKind,
 };
 use super::lowerer::CSharpLowerer;
 use super::wire_writers::self_wire_writer;
@@ -51,9 +51,10 @@ impl<'a> CSharpLowerer<'a> {
     }
 
     /// Walks a record's `#[data(impl)]` constructors and methods and
-    /// produces the corresponding [`CSharpMethodPlan`]s. Same filter as
-    /// the enum lowerer: fallible/optional constructors, async methods,
-    /// and `&mut self` / `self` receivers are dropped silently.
+    /// produces the corresponding [`CSharpMethodPlan`]s. Async methods
+    /// and `OwnedSelf` receivers are dropped silently. `&mut self`
+    /// methods that return `()` are lifted to "return the mutated owner"
+    /// so the public C# surface stays immutable: `point = point.Scale(2)`.
     fn lower_record_methods(
         &self,
         record: &RecordDef,
@@ -63,9 +64,6 @@ impl<'a> CSharpLowerer<'a> {
         let mut methods = Vec::new();
 
         for (index, ctor) in record.constructors.iter().enumerate() {
-            if ctor.is_fallible() || ctor.is_optional() {
-                continue;
-            }
             let call_id = CallId::RecordConstructor {
                 record_id: record.id.clone(),
                 index,
@@ -74,7 +72,7 @@ impl<'a> CSharpLowerer<'a> {
                 continue;
             };
             if let Some(method) =
-                self.lower_record_constructor(ctor, call, record_class_name, owner_is_blittable)
+                self.lower_record_constructor(ctor, call, &record.id, record_class_name)
             {
                 methods.push(method);
             }
@@ -84,10 +82,7 @@ impl<'a> CSharpLowerer<'a> {
             if method_def.is_async() {
                 continue;
             }
-            if matches!(
-                method_def.receiver,
-                Receiver::RefMutSelf | Receiver::OwnedSelf
-            ) {
+            if matches!(method_def.receiver, Receiver::OwnedSelf) {
                 continue;
             }
             let call_id = CallId::RecordMethod {
@@ -97,9 +92,13 @@ impl<'a> CSharpLowerer<'a> {
             let Some(call) = self.abi.calls.iter().find(|c| c.id == call_id) else {
                 continue;
             };
-            if let Some(method) =
-                self.lower_record_method(method_def, call, record_class_name, owner_is_blittable)
-            {
+            if let Some(method) = self.lower_record_method(
+                method_def,
+                call,
+                &record.id,
+                record_class_name,
+                owner_is_blittable,
+            ) {
                 methods.push(method);
             }
         }
@@ -108,29 +107,35 @@ impl<'a> CSharpLowerer<'a> {
     }
 
     /// Lowers a `#[data(impl)]` constructor into a static factory method
-    /// on the record struct. Blittable records return the struct
-    /// directly across P/Invoke; non-blittable records return an
-    /// `FfiBuf` that we decode through the record's `WireReader`.
+    /// on the record struct. Plain constructors return the owner type
+    /// (directly for blittable records, wire-decoded otherwise). Fallible
+    /// and optional constructors synthesize a `Result<Self, String>` /
+    /// `Option<Self>` return so they ride the same `return_kind` paths
+    /// the rest of the backend uses for `Result` / `Option` returns —
+    /// errors throw, optionals become `Point?`.
     fn lower_record_constructor(
         &self,
         ctor: &ConstructorDef,
         call: &AbiCall,
+        record_id: &RecordId,
         record_class_name: &CSharpClassName,
-        owner_is_blittable: bool,
     ) -> Option<CSharpMethodPlan> {
         let raw_name: &str = match ctor.name() {
             Some(id) => id.as_str(),
             None => "new",
         };
         let name = CSharpMethodName::from_source(raw_name);
-        let return_type = CSharpType::Record(record_class_name.clone().into());
-        let return_kind = if owner_is_blittable {
-            CSharpReturnKind::Direct
-        } else {
-            CSharpReturnKind::WireDecodeObject {
-                class_name: record_class_name.clone(),
-            }
-        };
+        // Synthesize the return so fallible/optional constructors ride
+        // the same `return_kind` paths as everything else. `return_kind`
+        // already picks the blittable fast path for plain `Value(Record)`.
+        let return_def = constructor_return_def(ctor, TypeExpr::Record(record_id.clone()));
+        let return_type = self.lower_return(&return_def)?;
+        let return_kind = self.return_kind(
+            &return_def,
+            &return_type,
+            call.returns.decode_ops.as_ref(),
+            None,
+        );
         let mut ctor_size_locals = size::SizeLocalCounters::default();
         let mut ctor_encode_locals = encode::EncodeLocalCounters::default();
         let wire_writers: Vec<_> = call
@@ -163,20 +168,31 @@ impl<'a> CSharpLowerer<'a> {
     }
 
     /// Lowers a `#[data(impl)]` instance or static method on a record.
-    /// Static methods land as `Static`; `&self` / `&mut self` / `self`
-    /// receivers all land as `InstanceNative`. The blittable owner flag
-    /// drives whether the body wire-encodes `this` or passes it by value.
+    /// Static methods land as `Static`; `&self` / `&mut self` receivers
+    /// land as `InstanceNative`. `&mut self`-with-`Void`-return is
+    /// lifted to return the mutated owner: the Rust ABI already
+    /// classifies the call as returning the struct (see
+    /// `ir::lower::calls::lower_value_type_method`), and the public C#
+    /// surface stays immutable — `p = p.Scale(2.0)`.
     fn lower_record_method(
         &self,
         method_def: &MethodDef,
         call: &AbiCall,
+        record_id: &RecordId,
         record_class_name: &CSharpClassName,
         owner_is_blittable: bool,
     ) -> Option<CSharpMethodPlan> {
         let name: CSharpMethodName = (&method_def.id).into();
-        let return_type = self.lower_return(&method_def.returns)?;
+        let lifted_returns = if matches!(method_def.receiver, Receiver::RefMutSelf)
+            && matches!(method_def.returns, ReturnDef::Void)
+        {
+            ReturnDef::Value(TypeExpr::Record(record_id.clone()))
+        } else {
+            method_def.returns.clone()
+        };
+        let return_type = self.lower_return(&lifted_returns)?;
         let return_kind = self.return_kind(
-            &method_def.returns,
+            &lifted_returns,
             &return_type,
             call.returns.decode_ops.as_ref(),
             None,
@@ -309,5 +325,22 @@ impl<'a> CSharpLowerer<'a> {
                     .map(|field| field.seq.clone()),
                 _ => None,
             })
+    }
+}
+
+/// Synthesizes the return shape for a value-type constructor — fallible
+/// crosses as `Result<Self, String>`, optional as `Option<Self>`. Shared
+/// between record and enum constructors so they ride the same
+/// `return_kind` paths as everything else.
+pub(super) fn constructor_return_def(ctor: &ConstructorDef, owner: TypeExpr) -> ReturnDef {
+    if ctor.is_fallible() {
+        ReturnDef::Result {
+            ok: owner,
+            err: TypeExpr::String,
+        }
+    } else if ctor.is_optional() {
+        ReturnDef::Value(TypeExpr::Option(Box::new(owner)))
+    } else {
+        ReturnDef::Value(owner)
     }
 }

@@ -54,11 +54,6 @@ impl Point {
         justification = "Ensure Point::try_unit returns a normalized Point for non-zero coordinates.",
         directions = "Call `records::blittable::Point::try_unit` through the generated binding and assert Point::try_unit returns a normalized Point for non-zero coordinates.",
         exclude(
-            csharp,
-            reason = ExclusionReason::ImplementationGap,
-            details = "#328: C# bindgen does not currently emit Result-returning record static methods, so Point::try_unit is absent from the generated surface. Include this case when fallible record methods are implemented for C#."
-        ),
-        exclude(
             python,
             reason = ExclusionReason::ImplementationGap,
             details = "Python is experimental; its lowerer currently omits Result-returning record methods. Include this case when fallible record methods are implemented for Python."
@@ -68,11 +63,6 @@ impl Point {
         "records.blittable.point.should_reject_zero_unit_vector",
         justification = "Ensure Point::try_unit rejects zero coordinates instead of returning an invalid unit vector.",
         directions = "Call `records::blittable::Point::try_unit` through the generated binding and assert Point::try_unit rejects zero coordinates instead of returning an invalid unit vector.",
-        exclude(
-            csharp,
-            reason = ExclusionReason::ImplementationGap,
-            details = "#328: C# bindgen does not currently emit Result-returning record static methods, so Point::try_unit is absent from the generated surface. Include this case when fallible record methods are implemented for C#."
-        ),
         exclude(
             python,
             reason = ExclusionReason::ImplementationGap,
@@ -96,11 +86,6 @@ impl Point {
         justification = "Ensure Point::checked_unit returns Some normalized Point for non-zero coordinates.",
         directions = "Call `records::blittable::Point::checked_unit` through the generated binding and assert Point::checked_unit returns Some normalized Point for non-zero coordinates.",
         exclude(
-            csharp,
-            reason = ExclusionReason::ImplementationGap,
-            details = "#328: C# bindgen does not currently emit Option-returning record static methods, so Point::checked_unit is absent from the generated surface. Include this case when optional record methods are implemented for C#."
-        ),
-        exclude(
             python,
             reason = ExclusionReason::ImplementationGap,
             details = "Python is experimental; its lowerer does not currently handle Option<T> around blittable records. Include this case when optional record returns are implemented for Python."
@@ -110,11 +95,6 @@ impl Point {
         "records.blittable.point.should_return_none_for_zero_checked_unit",
         justification = "Ensure Point::checked_unit returns None for zero coordinates.",
         directions = "Call `records::blittable::Point::checked_unit` through the generated binding and assert Point::checked_unit returns None for zero coordinates.",
-        exclude(
-            csharp,
-            reason = ExclusionReason::ImplementationGap,
-            details = "#328: C# bindgen does not currently emit Option-returning record static methods, so Point::checked_unit is absent from the generated surface. Include this case when optional record methods are implemented for C#."
-        ),
         exclude(
             python,
             reason = ExclusionReason::ImplementationGap,
@@ -145,12 +125,7 @@ impl Point {
     #[demo_bench_macros::demo_case(
         "records.blittable.point.should_scale_coordinates",
         justification = "Ensure Point::scale multiplies both coordinates by the provided factor.",
-        directions = "Call `records::blittable::Point::scale` through the generated binding and assert Point::scale multiplies both coordinates by the provided factor.",
-        exclude(
-            csharp,
-            reason = ExclusionReason::ImplementationGap,
-            details = "#328: C# bindgen does not currently emit `&mut self` record instance methods, so Point::scale is absent from the generated surface. Include this case when in-place record methods are implemented for C#."
-        )
+        directions = "Call `records::blittable::Point::scale` through the generated binding and assert Point::scale multiplies both coordinates by the provided factor."
     )]
     pub fn scale(&mut self, factor: f64) {
         self.x *= factor;
