@@ -51,10 +51,13 @@ impl<'a> CSharpLowerer<'a> {
     }
 
     /// Walks a record's `#[data(impl)]` constructors and methods and
-    /// produces the corresponding [`CSharpMethodPlan`]s. Async methods
-    /// and `OwnedSelf` receivers are dropped silently. `&mut self`
-    /// methods that return `()` are lifted to "return the mutated owner"
-    /// so the public C# surface stays immutable: `point = point.Scale(2)`.
+    /// produces the corresponding [`CSharpMethodPlan`]s. Async methods,
+    /// `OwnedSelf` receivers, and non-void `&mut self` receivers are
+    /// dropped silently. `&mut self` methods that return `()` are lifted
+    /// to "return the mutated owner" so the public C# surface stays
+    /// immutable: `point = point.Scale(2)`. Non-void mutable receivers
+    /// need an ABI channel for both the method result and owner writeback
+    /// (#346).
     fn lower_record_methods(
         &self,
         record: &RecordDef,
@@ -83,6 +86,11 @@ impl<'a> CSharpLowerer<'a> {
                 continue;
             }
             if matches!(method_def.receiver, Receiver::OwnedSelf) {
+                continue;
+            }
+            if matches!(method_def.receiver, Receiver::RefMutSelf)
+                && !matches!(method_def.returns, ReturnDef::Void)
+            {
                 continue;
             }
             let call_id = CallId::RecordMethod {

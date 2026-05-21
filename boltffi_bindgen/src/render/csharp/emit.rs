@@ -145,9 +145,9 @@ mod tests {
     use crate::ir::Lowerer as IrLowerer;
     use crate::ir::contract::{FfiContract, PackageInfo};
     use crate::ir::definitions::{
-        CStyleVariant, CallbackKind, CallbackMethodDef, CallbackTraitDef, ClassDef, DataVariant,
-        EnumDef, EnumRepr, FieldDef, FunctionDef, MethodDef, ParamDef, ParamPassing, Receiver,
-        RecordDef, ReturnDef, StreamDef, StreamMode, VariantPayload,
+        CStyleVariant, CallbackKind, CallbackMethodDef, CallbackTraitDef, ClassDef, ConstructorDef,
+        DataVariant, EnumDef, EnumRepr, FieldDef, FunctionDef, MethodDef, ParamDef, ParamPassing,
+        Receiver, RecordDef, ReturnDef, StreamDef, StreamMode, VariantPayload,
     };
     use crate::ir::ids::{
         CallbackId, ClassId, EnumId, FieldName, FunctionId, MethodId, ParamName, RecordId, StreamId,
@@ -313,6 +313,15 @@ mod tests {
             execution_kind: ExecutionKind::Sync,
             doc: None,
             deprecated: None,
+        }
+    }
+
+    fn param_with_passing(name: &str, type_expr: TypeExpr, passing: ParamPassing) -> ParamDef {
+        ParamDef {
+            name: ParamName::new(name),
+            type_expr,
+            passing,
+            doc: None,
         }
     }
 
@@ -1167,6 +1176,95 @@ mod tests {
         );
     }
 
+    /// `&mut [T]` params are only emitted when T has an in-place array
+    /// representation. A record method takes the direct `lower_param`
+    /// route, so this guards the path that used to admit `Vec<String>`
+    /// and mutate only a temporary wire buffer (#345).
+    #[test]
+    fn emit_record_method_skips_ref_mut_vec_string_param() {
+        let mut record = record_with_fields(
+            "point",
+            true,
+            vec![
+                ("x", TypeExpr::Primitive(PrimitiveType::F64)),
+                ("y", TypeExpr::Primitive(PrimitiveType::F64)),
+            ],
+        );
+        record.methods.push(MethodDef {
+            id: MethodId::new("rewrite_names"),
+            receiver: Receiver::Static,
+            params: vec![param_with_passing(
+                "names",
+                TypeExpr::Vec(Box::new(TypeExpr::String)),
+                ParamPassing::RefMut,
+            )],
+            returns: ReturnDef::Void,
+            execution_kind: ExecutionKind::Sync,
+            doc: None,
+            deprecated: None,
+        });
+
+        let mut contract = empty_contract();
+        contract.catalog.insert_record(record);
+
+        let src = emit_contract(&contract).combined_source();
+
+        assert_source_lacks(
+            &src,
+            "RewriteNames",
+            "the public record method because Vec<String> cannot be mutated in place",
+        );
+        assert_source_lacks(
+            &src,
+            "PointRewriteNames",
+            "the DllImport for the skipped mutable Vec<String> method",
+        );
+    }
+
+    /// `&mut self -> T` would need to return both `T` and the updated
+    /// owner value. Until that ABI exists, C# only emits mutable receiver
+    /// value-type methods when the declared Rust return is `()` (#346).
+    #[test]
+    fn emit_record_method_skips_ref_mut_self_non_void_return() {
+        let mut record = record_with_fields(
+            "point",
+            true,
+            vec![
+                ("x", TypeExpr::Primitive(PrimitiveType::F64)),
+                ("y", TypeExpr::Primitive(PrimitiveType::F64)),
+            ],
+        );
+        record.methods.push(MethodDef {
+            id: MethodId::new("scale_and_len"),
+            receiver: Receiver::RefMutSelf,
+            params: vec![param_with_passing(
+                "factor",
+                TypeExpr::Primitive(PrimitiveType::F64),
+                ParamPassing::Value,
+            )],
+            returns: ReturnDef::Value(TypeExpr::Primitive(PrimitiveType::F64)),
+            execution_kind: ExecutionKind::Sync,
+            doc: None,
+            deprecated: None,
+        });
+
+        let mut contract = empty_contract();
+        contract.catalog.insert_record(record);
+
+        let src = emit_contract(&contract).combined_source();
+
+        assert_source_lacks(
+            &src,
+            "ScaleAndLen",
+            "the public record method until the ABI can carry both return value and owner writeback",
+        );
+        assert_source_lacks(
+            &src,
+            "PointScaleAndLen",
+            "the DllImport for the skipped non-void mutable receiver method",
+        );
+    }
+
     /// A non-blittable record (one with a string field) must NOT carry
     /// `[StructLayout(Sequential)]`. Its memory layout doesn't need to
     /// match Rust's because it travels as wire-encoded bytes, not as a
@@ -1549,6 +1647,96 @@ mod tests {
             &src,
             "return Shape.Decode(new WireReader(_buf));",
             "the wrapper body to decode the returned FfiBuf through the data enum's static Decode",
+        );
+    }
+
+    /// Data-enum optional constructors are part of #328 and must keep
+    /// emitting. C-style Result/Option constructors still need scalar return
+    /// handling and stay skipped under #344.
+    #[test]
+    fn emit_data_enum_optional_constructor_but_skips_c_style_optional_constructor() {
+        let mut shape = data_enum_single_variant(
+            "shape",
+            "Circle",
+            ("radius", TypeExpr::Primitive(PrimitiveType::F64)),
+        );
+        shape.constructors.push(ConstructorDef::NamedInit {
+            name: MethodId::new("maybe_circle"),
+            first_param: param_with_passing(
+                "radius",
+                TypeExpr::Primitive(PrimitiveType::F64),
+                ParamPassing::Value,
+            ),
+            rest_params: vec![],
+            is_fallible: false,
+            is_optional: true,
+            doc: None,
+            deprecated: None,
+        });
+
+        let mut status = c_style_enum("status", vec!["Active", "Inactive"]);
+        status.constructors.push(ConstructorDef::NamedInit {
+            name: MethodId::new("maybe_status"),
+            first_param: param_with_passing(
+                "value",
+                TypeExpr::Primitive(PrimitiveType::I32),
+                ParamPassing::Value,
+            ),
+            rest_params: vec![],
+            is_fallible: false,
+            is_optional: true,
+            doc: None,
+            deprecated: None,
+        });
+        status.constructors.push(ConstructorDef::NamedInit {
+            name: MethodId::new("try_status"),
+            first_param: param_with_passing(
+                "value",
+                TypeExpr::Primitive(PrimitiveType::I32),
+                ParamPassing::Value,
+            ),
+            rest_params: vec![],
+            is_fallible: true,
+            is_optional: false,
+            doc: None,
+            deprecated: None,
+        });
+
+        let mut contract = empty_contract();
+        contract.catalog.insert_enum(shape);
+        contract.catalog.insert_enum(status);
+
+        let src = emit_contract(&contract).combined_source();
+
+        assert_source_contains(
+            &src,
+            "public static Shape? MaybeCircle(double radius)",
+            "the data-enum optional constructor to remain in the #328 C# surface",
+        );
+        assert_source_contains(
+            &src,
+            "internal static extern FfiBuf ShapeMaybeCircle(double radius);",
+            "the data-enum optional constructor to return a wire-decoded Option<Self>",
+        );
+        assert_source_lacks(
+            &src,
+            "MaybeStatus",
+            "the C-style optional constructor until scalar enum Result/Option returns are implemented",
+        );
+        assert_source_lacks(
+            &src,
+            "StatusMaybeStatus",
+            "the DllImport for the skipped C-style optional constructor",
+        );
+        assert_source_lacks(
+            &src,
+            "TryStatus",
+            "the C-style fallible constructor until scalar enum Result/Option returns are implemented",
+        );
+        assert_source_lacks(
+            &src,
+            "StatusTryStatus",
+            "the DllImport for the skipped C-style fallible constructor",
         );
     }
 

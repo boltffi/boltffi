@@ -20,13 +20,14 @@ impl<'a> CSharpLowerer<'a> {
             if let TypeExpr::Callback(id) = &param.type_expr {
                 return self.lower_callback_param(param, id);
             }
-            // `&mut [T]` for blittable T joins the rest of the param
-            // lowering — the CLR pins the managed array in place, so
-            // the same DirectArray / PinnedArray paths native-side
-            // pass `(ptr, len)` and the caller observes the mutation.
+            // `&mut [T]` is only safe when T uses an in-place array
+            // representation. Wire-encoded element types would mutate a
+            // temporary buffer with no writeback to the managed caller
+            // (#345).
             if !matches!(
                 (&param.passing, &param.type_expr),
-                (ParamPassing::RefMut, TypeExpr::Vec(_))
+                (ParamPassing::RefMut, TypeExpr::Vec(inner))
+                    if self.is_blittable_vec_element(inner)
             ) {
                 return None;
             }

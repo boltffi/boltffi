@@ -220,7 +220,8 @@ impl<'a> CSharpLowerer<'a> {
     /// enums are immutable in C#, and re-binding the receiver is a wider
     /// shape question the backend doesn't model yet. Fallible
     /// (`Result<Self, _>`) and optional (`Option<Self>`) constructors
-    /// ride the same `return_kind` path as the rest of the backend.
+    /// are supported for data enums; C-style enum constructors need scalar
+    /// return handling first (#344).
     fn lower_enum_methods(
         &self,
         enum_def: &EnumDef,
@@ -231,6 +232,9 @@ impl<'a> CSharpLowerer<'a> {
         let mut methods = Vec::new();
 
         for (index, ctor) in enum_def.constructors.iter().enumerate() {
+            if !is_data && (ctor.is_fallible() || ctor.is_optional()) {
+                continue;
+            }
             let call_id = CallId::EnumConstructor {
                 enum_id: enum_def.id.clone(),
                 index,
