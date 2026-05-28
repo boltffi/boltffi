@@ -285,6 +285,10 @@ impl HeaderNamespace {
             .into_iter()
             .map(|entry| entry.path())
             .filter(|path| path != &namespace_path)
+            .filter(|path| {
+                path.file_name()
+                    .is_none_or(|file_name| file_name != "module.modulemap")
+            })
             .collect::<Vec<_>>();
 
         if entries.is_empty() {
@@ -469,13 +473,11 @@ mod tests {
         let xcframework_path = temporary_directory.path().join("Demo.xcframework");
         let headers_path = xcframework_path.join("ios-arm64").join("Headers");
         let private_headers_path = headers_path.join("private");
-        let legacy_modulemap_content = generate_modulemap("Demo", "demo.h");
-
         fs::create_dir_all(&private_headers_path).expect("create private headers");
         fs::write(headers_path.join("demo.h"), "").expect("write public header");
         fs::write(
             headers_path.join("module.modulemap"),
-            &legacy_modulemap_content,
+            generate_modulemap("Demo", "demo.h"),
         )
         .expect("write module map");
         fs::write(private_headers_path.join("detail.h"), "").expect("write private header");
@@ -485,11 +487,7 @@ mod tests {
             .expect("namespace headers");
 
         assert!(headers_path.join("demo").join("demo.h").is_file());
-        assert_eq!(
-            fs::read_to_string(headers_path.join("demo").join("module.modulemap"))
-                .expect("read nested module map"),
-            legacy_modulemap_content
-        );
+        assert!(!headers_path.join("demo").join("module.modulemap").exists());
         assert_eq!(
             fs::read_to_string(headers_path.join("module.modulemap"))
                 .expect("read root module map"),
