@@ -51,6 +51,9 @@ use boltffi_ffi_rules::naming::{LibraryName, Name};
 
 #[derive(Debug, Clone, Default)]
 pub struct CSharpOptions {
+    /// Override the C# namespace used for all generated bindings.
+    /// Defaults to PascalCase of the crate/package name when `None`.
+    pub namespace: Option<String>,
     /// Override the native library name used in `[DllImport("...")]` declarations.
     /// Defaults to the crate/package name when `None`.
     pub library_name: Option<Name<LibraryName>>,

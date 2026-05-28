@@ -434,6 +434,11 @@ impl CSharpNamespace {
     pub(crate) fn from_source(source: &str) -> Self {
         Self(naming::to_upper_camel_case(source))
     }
+
+    /// Wraps an explicit namespace chosen by configuration.
+    pub(crate) fn new(namespace: impl Into<String>) -> Self {
+        Self(namespace.into())
+    }
 }
 
 impl fmt::Display for CSharpNamespace {

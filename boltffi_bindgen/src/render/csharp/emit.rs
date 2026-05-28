@@ -280,6 +280,26 @@ mod tests {
     }
 
     #[test]
+    fn emit_uses_configured_namespace_override() {
+        let contract = empty_contract();
+        let abi = IrLowerer::new(&contract).to_abi_contract();
+        let output = CSharpEmitter::emit(
+            &contract,
+            &abi,
+            &CSharpOptions {
+                namespace: Some("CounterApp.Shared".to_string()),
+                ..Default::default()
+            },
+        );
+
+        assert!(
+            output
+                .combined_source()
+                .contains("namespace CounterApp.Shared")
+        );
+    }
+
+    #[test]
     fn emit_escapes_csharp_keywords_in_param_names() {
         let mut contract = empty_contract();
         contract.functions.push(primitive_function(

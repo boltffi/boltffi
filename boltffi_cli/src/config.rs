@@ -166,6 +166,7 @@ pub struct PythonWheelConfig {
 pub struct CSharpConfig {
     #[serde(default = "default_csharp_output")]
     pub output: PathBuf,
+    pub namespace: Option<String>,
     pub package_id: Option<String>,
     pub target_framework: Option<String>,
     pub package_output: Option<PathBuf>,
@@ -199,6 +200,7 @@ impl Default for CSharpConfig {
     fn default() -> Self {
         Self {
             output: default_csharp_output(),
+            namespace: None,
             package_id: None,
             target_framework: None,
             package_output: None,
@@ -885,6 +887,15 @@ impl Config {
                 ));
             }
 
+            if let Some(namespace) = self.targets.csharp.namespace.as_deref()
+                && !is_valid_csharp_namespace(namespace)
+            {
+                return Err(ConfigError::Validation(format!(
+                    "targets.csharp.namespace must be a dot-separated C# namespace, got '{}'",
+                    namespace
+                )));
+            }
+
             if let Some(target_framework) = self.targets.csharp.target_framework.as_deref()
                 && target_framework.trim().is_empty()
             {
@@ -1415,6 +1426,10 @@ impl Config {
         self.targets.csharp.output.clone()
     }
 
+    pub fn csharp_namespace(&self) -> Option<&str> {
+        self.targets.csharp.namespace.as_deref()
+    }
+
     pub fn csharp_package_id(&self) -> String {
         self.targets
             .csharp
@@ -1668,6 +1683,22 @@ fn normalize_module_name(input: &str) -> String {
     } else {
         normalized
     }
+}
+
+fn is_valid_csharp_namespace(namespace: &str) -> bool {
+    namespace.trim() == namespace
+        && !namespace.is_empty()
+        && namespace.split('.').all(is_valid_csharp_namespace_segment)
+}
+
+fn is_valid_csharp_namespace_segment(segment: &str) -> bool {
+    let mut characters = segment.chars();
+    let Some(first_character) = characters.next() else {
+        return false;
+    };
+
+    (first_character == '_' || first_character.is_alphabetic())
+        && characters.all(|character| character == '_' || character.is_alphanumeric())
 }
 
 fn validate_unique<T, F>(
@@ -2869,6 +2900,7 @@ enabled = true
             PathBuf::from("dist/csharp/packages")
         );
         assert_eq!(config.csharp_package_id(), "my-lib");
+        assert_eq!(config.csharp_namespace(), None);
         assert_eq!(config.csharp_target_framework(), "net10.0");
         assert_eq!(
             config.csharp_requested_runtime_identifiers(),
@@ -2889,6 +2921,7 @@ enabled = true
 output = "artifacts/csharp"
 package_output = "artifacts/nuget"
 package_id = "Company.MyLib"
+namespace = "Company.MyLib.Bindings"
 target_framework = "net9.0"
 runtime_identifiers = ["current", "linux-x64"]
 "#,
@@ -2900,6 +2933,7 @@ runtime_identifiers = ["current", "linux-x64"]
             PathBuf::from("artifacts/nuget")
         );
         assert_eq!(config.csharp_package_id(), "Company.MyLib");
+        assert_eq!(config.csharp_namespace(), Some("Company.MyLib.Bindings"));
         assert_eq!(config.csharp_target_framework(), "net9.0");
         assert_eq!(
             config.csharp_requested_runtime_identifiers(),
@@ -2929,6 +2963,27 @@ runtime_identifiers = []
             parsed.validate(),
             Err(ConfigError::Validation(message))
                 if message.contains("targets.csharp.runtime_identifiers must be non-empty")
+        ));
+    }
+
+    #[test]
+    fn rejects_invalid_csharp_namespace() {
+        let parsed: Config = toml::from_str(
+            r#"
+[package]
+name = "my-lib"
+
+[targets.csharp]
+enabled = true
+namespace = "CounterApp."
+"#,
+        )
+        .expect("toml parse failed");
+
+        assert!(matches!(
+            parsed.validate(),
+            Err(ConfigError::Validation(message))
+                if message.contains("targets.csharp.namespace must be a dot-separated C# namespace")
         ));
     }
 

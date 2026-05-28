@@ -34,7 +34,11 @@ pub struct CSharpLowerer<'a> {
 impl<'a> CSharpLowerer<'a> {
     pub fn new(ffi: &'a FfiContract, abi: &'a AbiContract, options: &'a CSharpOptions) -> Self {
         let (supported_records, supported_enums) = Self::compute_supported_sets(ffi);
-        let namespace = CSharpNamespace::from_source(&ffi.package.name);
+        let namespace = options
+            .namespace
+            .as_deref()
+            .map(CSharpNamespace::new)
+            .unwrap_or_else(|| CSharpNamespace::from_source(&ffi.package.name));
         Self {
             ffi,
             abi,
@@ -256,6 +260,19 @@ mod tests {
                 .map(ToString::to_string),
             Some("Returns the current value.".to_string())
         );
+    }
+
+    #[test]
+    fn lowerer_uses_configured_namespace_override() {
+        let contract = empty_contract();
+        let abi = IrLowerer::new(&contract).to_abi_contract();
+        let options = CSharpOptions {
+            namespace: Some("CounterApp.Shared".to_string()),
+            ..Default::default()
+        };
+        let module = CSharpLowerer::new(&contract, &abi, &options).lower();
+
+        assert_eq!(module.namespace.to_string(), "CounterApp.Shared");
     }
 
     #[test]

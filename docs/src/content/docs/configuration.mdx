@@ -565,6 +565,16 @@ boltffi pack csharp       # builds the NuGet package with native runtime assets
 
 `generate csharp` writes one `.cs` file for the top-level module/runtime helpers plus additional `.cs` files for generated records, enums, classes, callbacks, and stream-owning types directly under `output`. `pack csharp` writes the generated sources under `{output}/src`, builds the Rust `cdylib` for each configured runtime identifier into `{output}/runtimes/<rid>/native/`, and emits a `.nupkg` under `{output}/packages/` that bundles everything together.
 
+### Namespace
+
+By default, C# sources use a namespace derived from the Rust crate name. Set `namespace` when your generated C# types need to live under an application or product namespace:
+
+```toml
+[targets.csharp]
+enabled = true
+namespace = "CounterApp.Shared"
+```
+
 ### Runtime Identifiers
 
 Choose which .NET runtime identifiers `pack csharp` builds native assets for:
