@@ -200,7 +200,7 @@ impl<'a> XcframeworkBuilder<'a> {
             });
         }
 
-        HeaderNamespace::for_library(self.config.library_name())
+        HeaderNamespace::new(self.config.library_name(), self.config.xcframework_name())
             .apply_to_xcframework(&xcframework_path)?;
 
         Ok(xcframework_path)
@@ -225,8 +225,10 @@ impl<'a> XcframeworkBuilder<'a> {
 
         copy_directory_contents(&self.headers_dir, &headers_staging)?;
 
-        let modulemap_content =
-            generate_modulemap(&self.config.xcframework_name(), self.config.library_name());
+        let modulemap_content = generate_modulemap(
+            &self.config.xcframework_name(),
+            &format!("{}.h", self.config.library_name()),
+        );
         let modulemap_path = headers_staging.join("module.modulemap");
 
         fs::write(&modulemap_path, modulemap_content).map_err(|source| CliError::WriteFailed {
@@ -240,12 +242,14 @@ impl<'a> XcframeworkBuilder<'a> {
 
 struct HeaderNamespace {
     directory_name: String,
+    module_name: String,
 }
 
 impl HeaderNamespace {
-    fn for_library(library_name: impl Into<String>) -> Self {
+    fn new(library_name: impl Into<String>, module_name: impl Into<String>) -> Self {
         Self {
             directory_name: library_name.into(),
+            module_name: module_name.into(),
         }
     }
 
@@ -294,7 +298,9 @@ impl HeaderNamespace {
 
         entries
             .into_iter()
-            .try_for_each(|source_path| self.move_entry(source_path, &namespace_path))
+            .try_for_each(|source_path| self.move_entry(source_path, &namespace_path))?;
+
+        self.write_root_modulemap(headers_path)
     }
 
     fn move_entry(&self, source_path: PathBuf, namespace_path: &Path) -> Result<()> {
@@ -309,16 +315,27 @@ impl HeaderNamespace {
             source,
         })
     }
+
+    fn write_root_modulemap(&self, headers_path: &Path) -> Result<()> {
+        let modulemap_path = headers_path.join("module.modulemap");
+        let namespaced_header_path = format!("{}/{}.h", self.directory_name, self.directory_name);
+        let modulemap_content = generate_modulemap(&self.module_name, &namespaced_header_path);
+
+        fs::write(&modulemap_path, modulemap_content).map_err(|source| CliError::WriteFailed {
+            path: modulemap_path,
+            source,
+        })
+    }
 }
 
-fn generate_modulemap(module_name: &str, header_name: &str) -> String {
+fn generate_modulemap(module_name: &str, header_path: &str) -> String {
     format!(
         r#"module {}FFI {{
-    header "{}.h"
+    header "{}"
     export *
 }}
 "#,
-        module_name, header_name
+        module_name, header_path
     )
 }
 
@@ -418,7 +435,7 @@ mod tests {
     use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use super::HeaderNamespace;
+    use super::{HeaderNamespace, generate_modulemap};
 
     struct TemporaryDirectory {
         path: PathBuf,
@@ -452,18 +469,36 @@ mod tests {
         let xcframework_path = temporary_directory.path().join("Demo.xcframework");
         let headers_path = xcframework_path.join("ios-arm64").join("Headers");
         let private_headers_path = headers_path.join("private");
+        let legacy_modulemap_content = generate_modulemap("Demo", "demo.h");
 
         fs::create_dir_all(&private_headers_path).expect("create private headers");
         fs::write(headers_path.join("demo.h"), "").expect("write public header");
-        fs::write(headers_path.join("module.modulemap"), "").expect("write module map");
+        fs::write(
+            headers_path.join("module.modulemap"),
+            &legacy_modulemap_content,
+        )
+        .expect("write module map");
         fs::write(private_headers_path.join("detail.h"), "").expect("write private header");
 
-        HeaderNamespace::for_library("demo")
+        HeaderNamespace::new("demo", "Demo")
             .apply_to_xcframework(&xcframework_path)
             .expect("namespace headers");
 
         assert!(headers_path.join("demo").join("demo.h").is_file());
-        assert!(headers_path.join("demo").join("module.modulemap").is_file());
+        assert_eq!(
+            fs::read_to_string(headers_path.join("demo").join("module.modulemap"))
+                .expect("read nested module map"),
+            legacy_modulemap_content
+        );
+        assert_eq!(
+            fs::read_to_string(headers_path.join("module.modulemap"))
+                .expect("read root module map"),
+            r#"module DemoFFI {
+    header "demo/demo.h"
+    export *
+}
+"#
+        );
         assert!(
             headers_path
                 .join("demo")
@@ -472,7 +507,6 @@ mod tests {
                 .is_file()
         );
         assert!(!headers_path.join("demo.h").exists());
-        assert!(!headers_path.join("module.modulemap").exists());
         assert!(!headers_path.join("private").exists());
     }
 
@@ -487,7 +521,7 @@ mod tests {
         fs::write(namespaced_headers_path.join("demo.h"), "").expect("write public header");
         fs::write(namespaced_headers_path.join("module.modulemap"), "").expect("write module map");
 
-        HeaderNamespace::for_library("demo")
+        HeaderNamespace::new("demo", "Demo")
             .apply_to_xcframework(&xcframework_path)
             .expect("namespace headers");
 
