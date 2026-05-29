@@ -35,6 +35,7 @@ pub(crate) fn pack_csharp(
         config,
         options.execution.release,
         &options.execution.cargo_args,
+        options.execution.no_build,
     )?;
     step.finish_success();
 
@@ -105,7 +106,7 @@ struct CSharpPackagingTarget {
     runtime_identifier: CSharpRuntimeIdentifier,
     host_target: NativeHostPlatform,
     cargo_context: CSharpCargoContext,
-    toolchain: NativeHostToolchain,
+    toolchain: Option<NativeHostToolchain>,
 }
 
 #[derive(Debug)]
@@ -128,7 +129,12 @@ impl CSharpCargoContext {
 }
 
 impl CSharpPackagingPlan {
-    fn from_config(config: &Config, release: bool, cargo_args: &[String]) -> Result<Self> {
+    fn from_config(
+        config: &Config,
+        release: bool,
+        cargo_args: &[String],
+        no_build: bool,
+    ) -> Result<Self> {
         let build_cargo_args = resolve_build_cargo_args(config, cargo_args);
         let cargo = Cargo::current(&build_cargo_args)?;
         ensure_csharp_pack_cargo_args_supported(&cargo)?;
@@ -182,14 +188,27 @@ impl CSharpPackagingPlan {
             .copied()
             .map(|runtime_identifier| {
                 let host_target = runtime_identifier.native_host_platform();
-                let toolchain = NativeHostToolchain::discover_csharp(
-                    toolchain_selector.as_deref(),
-                    &cargo_command_args,
-                    host_target,
-                    current_host,
-                )?;
+                let (rust_target_triple, toolchain) = if no_build {
+                    (
+                        NativeHostToolchain::resolve_csharp_no_build_rust_target_triple(
+                            toolchain_selector.as_deref(),
+                            &cargo_command_args,
+                            host_target,
+                            current_host,
+                        )?,
+                        None,
+                    )
+                } else {
+                    let toolchain = NativeHostToolchain::discover_csharp(
+                        toolchain_selector.as_deref(),
+                        &cargo_command_args,
+                        host_target,
+                        current_host,
+                    )?;
+                    (toolchain.rust_target_triple().to_string(), Some(toolchain))
+                };
                 let cargo_context = CSharpCargoContext {
-                    rust_target_triple: toolchain.rust_target_triple().to_string(),
+                    rust_target_triple,
                     release,
                     build_profile: build_profile.clone(),
                     artifact_name: artifact_name.clone(),
@@ -282,6 +301,12 @@ fn build_csharp_native_library(
     command.args(&cargo_context.cargo_command_args);
     packaging_target
         .toolchain
+        .as_ref()
+        .ok_or_else(|| CliError::CommandFailed {
+            command: "internal error: C# build requested without a discovered native toolchain"
+                .to_string(),
+            status: None,
+        })?
         .configure_cargo_build(&mut command);
 
     if step.is_verbose() {
@@ -508,12 +533,14 @@ fn dotnet_pack(plan: &CSharpPackagingPlan, step: &Step) -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::{CSharpPackageLayout, CSharpPackagingPlan, pack_csharp, render_csharp_project};
+    use crate::cargo::CargoCrateType;
     use crate::cli::CliError;
     use crate::commands::pack::{PackCSharpOptions, PackExecutionOptions};
     use crate::config::{CSharpConfig, CargoConfig, Config, PackageConfig, TargetsConfig};
     use crate::reporter::{Reporter, Verbosity};
-    use crate::target::CSharpRuntimeIdentifier;
-    use std::path::PathBuf;
+    use crate::target::{CSharpRuntimeIdentifier, NativeHostPlatform};
+    use std::path::{Path, PathBuf};
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     fn config() -> Config {
         Config {
@@ -549,6 +576,67 @@ mod tests {
                 no_build: false,
                 cargo_args: Vec::new(),
             },
+        }
+    }
+
+    fn unique_temp_dir(prefix: &str) -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time went backwards")
+            .as_nanos();
+        std::env::temp_dir().join(format!("{prefix}-{unique}"))
+    }
+
+    fn temp_cdylib_project() -> PathBuf {
+        let root = unique_temp_dir("boltffi-csharp-plan-test");
+        let src = root.join("src");
+        std::fs::create_dir_all(&src).expect("create temp cdylib source dir");
+        std::fs::write(
+            root.join("Cargo.toml"),
+            format!(
+                r#"[package]
+name = "demo"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["{}"]
+"#,
+                String::from(CargoCrateType::Cdylib)
+            ),
+        )
+        .expect("write temp cdylib manifest");
+        std::fs::write(src.join("lib.rs"), "pub extern \"C\" fn demo_noop() {}\n")
+            .expect("write temp cdylib lib");
+        root
+    }
+
+    fn cargo_args_for_manifest(manifest_path: &Path) -> Vec<String> {
+        vec![
+            "--manifest-path".to_string(),
+            manifest_path.display().to_string(),
+        ]
+    }
+
+    fn unsupported_csharp_runtime_identifier() -> CSharpRuntimeIdentifier {
+        match NativeHostPlatform::current().expect("supported host for C# packaging tests") {
+            NativeHostPlatform::WindowsX86_64 => CSharpRuntimeIdentifier::OsxArm64,
+            _ => CSharpRuntimeIdentifier::WinX64,
+        }
+    }
+
+    fn expected_no_build_rust_target_triple(
+        runtime_identifier: CSharpRuntimeIdentifier,
+    ) -> &'static str {
+        match runtime_identifier {
+            CSharpRuntimeIdentifier::Current => {
+                unreachable!("resolved runtime identifier required")
+            }
+            CSharpRuntimeIdentifier::OsxArm64 => "aarch64-apple-darwin",
+            CSharpRuntimeIdentifier::OsxX64 => "x86_64-apple-darwin",
+            CSharpRuntimeIdentifier::LinuxX64 => "x86_64-unknown-linux-gnu",
+            CSharpRuntimeIdentifier::LinuxArm64 => "aarch64-unknown-linux-gnu",
+            CSharpRuntimeIdentifier::WinX64 => "x86_64-pc-windows-msvc",
         }
     }
 
@@ -615,5 +703,61 @@ mod tests {
             CliError::CommandFailed { command, .. }
                 if command.contains("targets.csharp.enabled = false")
         ));
+    }
+
+    #[test]
+    fn csharp_no_build_plan_allows_cross_host_runtime_identifiers() {
+        let project = temp_cdylib_project();
+        let manifest_path = project.join("Cargo.toml");
+        let mut config = config();
+        let runtime_identifier = unsupported_csharp_runtime_identifier();
+        config.targets.csharp.runtime_identifiers = Some(vec![runtime_identifier]);
+
+        let plan = CSharpPackagingPlan::from_config(
+            &config,
+            false,
+            &cargo_args_for_manifest(&manifest_path),
+            true,
+        )
+        .expect("no-build C# packaging should not validate cross-host build toolchains");
+
+        let packaging_target = plan
+            .packaging_targets
+            .first()
+            .expect("expected one C# packaging target");
+        assert_eq!(plan.packaging_targets.len(), 1);
+        assert_eq!(packaging_target.runtime_identifier, runtime_identifier);
+        assert!(packaging_target.toolchain.is_none());
+        assert_eq!(
+            packaging_target.cargo_context.rust_target_triple,
+            expected_no_build_rust_target_triple(runtime_identifier)
+        );
+
+        std::fs::remove_dir_all(project).expect("cleanup temp cdylib project");
+    }
+
+    #[test]
+    fn csharp_build_plan_rejects_unsupported_cross_host_runtime_identifiers() {
+        let project = temp_cdylib_project();
+        let manifest_path = project.join("Cargo.toml");
+        let mut config = config();
+        config.targets.csharp.runtime_identifiers =
+            Some(vec![unsupported_csharp_runtime_identifier()]);
+
+        let error = CSharpPackagingPlan::from_config(
+            &config,
+            false,
+            &cargo_args_for_manifest(&manifest_path),
+            false,
+        )
+        .expect_err("building C# packaging should still reject unsupported cross-host targets");
+
+        assert!(matches!(
+            error,
+            CliError::CommandFailed { command, .. }
+                if command.contains("is not supported from current host")
+        ));
+
+        std::fs::remove_dir_all(project).expect("cleanup temp cdylib project");
     }
 }

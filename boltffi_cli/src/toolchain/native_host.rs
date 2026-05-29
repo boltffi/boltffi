@@ -109,6 +109,33 @@ impl NativeHostToolchain {
         )
     }
 
+    pub fn resolve_csharp_no_build_rust_target_triple(
+        toolchain_selector: Option<&str>,
+        cargo_args: &[String],
+        target: NativeHostPlatform,
+        current_host: NativeHostPlatform,
+    ) -> Result<String> {
+        match target {
+            NativeHostPlatform::DarwinArm64 => Ok("aarch64-apple-darwin".to_string()),
+            NativeHostPlatform::DarwinX86_64 => Ok("x86_64-apple-darwin".to_string()),
+            NativeHostPlatform::LinuxX86_64 | NativeHostPlatform::LinuxAarch64 => {
+                resolve_csharp_linux_no_build_rust_target_triple(
+                    target,
+                    current_host,
+                    toolchain_selector,
+                    cargo_args,
+                )
+            }
+            NativeHostPlatform::WindowsX86_64 => {
+                resolve_csharp_windows_no_build_rust_target_triple(
+                    current_host,
+                    toolchain_selector,
+                    cargo_args,
+                )
+            }
+        }
+    }
+
     fn discover_for_platform(
         toolchain_selector: Option<&str>,
         cargo_args: &[String],
@@ -299,6 +326,20 @@ fn resolve_rust_target_triple(
     }
 }
 
+fn resolve_csharp_linux_no_build_rust_target_triple(
+    target: NativeHostPlatform,
+    current_host: NativeHostPlatform,
+    toolchain_selector: Option<&str>,
+    cargo_args: &[String],
+) -> Result<String> {
+    resolve_linux_rust_target_triple(
+        target.into(),
+        current_host.into(),
+        toolchain_selector,
+        cargo_args,
+    )
+}
+
 fn resolve_linux_rust_target_triple(
     target: JavaHostTarget,
     current_host: JavaHostTarget,
@@ -362,6 +403,27 @@ fn validate_windows_rust_target_triple(target_triple: &str) -> Result<String> {
             status: None,
         }),
     }
+}
+
+fn resolve_csharp_windows_no_build_rust_target_triple(
+    current_host: NativeHostPlatform,
+    toolchain_selector: Option<&str>,
+    cargo_args: &[String],
+) -> Result<String> {
+    if let Some(target_triple) = configured_windows_build_target(cargo_args)? {
+        return Ok(target_triple);
+    }
+
+    if current_host == NativeHostPlatform::WindowsX86_64 {
+        return resolve_windows_rust_target_triple(
+            JavaHostTarget::WindowsX86_64,
+            current_host.into(),
+            toolchain_selector,
+            cargo_args,
+        );
+    }
+
+    Ok("x86_64-pc-windows-msvc".to_string())
 }
 
 fn configured_linux_build_target(
@@ -1577,7 +1639,7 @@ mod tests {
         write_linux_cross_linker_wrapper,
     };
     use crate::cli::CliError;
-    use crate::target::JavaHostTarget;
+    use crate::target::{JavaHostTarget, NativeHostPlatform};
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -2201,6 +2263,32 @@ unix
             &["--config=build.target='x86_64-pc-windows-gnu'".to_string()],
         )
         .expect("current windows host should honor compatible cargo build target");
+
+        assert_eq!(target, "x86_64-pc-windows-gnu");
+    }
+
+    #[test]
+    fn csharp_no_build_defaults_cross_windows_rid_to_msvc_triple() {
+        let target = NativeHostToolchain::resolve_csharp_no_build_rust_target_triple(
+            None,
+            &[],
+            NativeHostPlatform::WindowsX86_64,
+            NativeHostPlatform::DarwinArm64,
+        )
+        .expect("cross-host no-build C# windows target should resolve");
+
+        assert_eq!(target, "x86_64-pc-windows-msvc");
+    }
+
+    #[test]
+    fn csharp_no_build_honors_configured_windows_build_target() {
+        let target = NativeHostToolchain::resolve_csharp_no_build_rust_target_triple(
+            None,
+            &["--config=build.target='x86_64-pc-windows-gnu'".to_string()],
+            NativeHostPlatform::WindowsX86_64,
+            NativeHostPlatform::DarwinArm64,
+        )
+        .expect("configured no-build C# windows target should resolve");
 
         assert_eq!(target, "x86_64-pc-windows-gnu");
     }

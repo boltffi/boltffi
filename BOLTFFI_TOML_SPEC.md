@@ -402,8 +402,10 @@ Controls npm package generation in `boltffi pack wasm`.
   - Supported aliases: `darwin-arm64`, `darwin-x86_64`, `linux-x86_64`, `linux-aarch64`, `windows-x86_64`
   - Default: `["current"]`
   - Behavior: `current` resolves to the active host RID, repeated values are deduped after resolution, and native libraries are packaged under NuGet `runtimes/{rid}/native/`.
+  - `--no-build`: skips cross-host build toolchain validation and reuses existing artifacts from `target/{rust-target-triple}/{profile}/`.
+  - For `win-x64` with `--no-build`, `{rust-target-triple}` defaults to `x86_64-pc-windows-msvc`; configure Cargo `build.target` to use another compatible Windows Rust target.
 
-`boltffi pack csharp` rejects explicit Cargo `--target` passthrough args because the native asset matrix is controlled by `targets.csharp.runtime_identifiers`. Current-host packaging works on `osx-arm64`, `osx-x64`, `linux-x64`, `linux-arm64`, and `win-x64`. Cross-host support follows the shared desktop toolchain support used by JVM packaging; unsupported host/target pairs fail during preflight.
+`boltffi pack csharp` rejects explicit Cargo `--target` passthrough args because the native asset matrix is controlled by `targets.csharp.runtime_identifiers`. Current-host packaging works on `osx-arm64`, `osx-x64`, `linux-x64`, `linux-arm64`, and `win-x64`. When building native libraries, cross-host support follows the shared desktop toolchain support used by JVM packaging and unsupported host/target pairs fail during preflight.
 
 ## Apple SwiftPM layouts
 
