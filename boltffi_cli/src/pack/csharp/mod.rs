@@ -182,6 +182,7 @@ impl CSharpPackagingPlan {
         let build_profile = resolve_build_profile(release, &build_cargo_args);
         let toolchain_selector = cargo.toolchain_selector().map(str::to_owned);
         let cargo_command_args = cargo.probe_command_arguments();
+        let no_build_config_args = csharp_no_build_config_args(&cargo);
 
         let packaging_targets = runtime_identifiers
             .iter()
@@ -192,7 +193,7 @@ impl CSharpPackagingPlan {
                     (
                         NativeHostToolchain::resolve_csharp_no_build_rust_target_triple(
                             toolchain_selector.as_deref(),
-                            &cargo_command_args,
+                            &no_build_config_args,
                             host_target,
                             current_host,
                         )?,
@@ -247,6 +248,10 @@ impl CSharpPackagingPlan {
             packaging_targets,
         })
     }
+}
+
+fn csharp_no_build_config_args(cargo: &Cargo) -> Vec<String> {
+    cargo.command_arguments_without_target_selector()
 }
 
 fn ensure_csharp_pack_cargo_args_supported(cargo: &Cargo) -> Result<()> {
@@ -532,8 +537,11 @@ fn dotnet_pack(plan: &CSharpPackagingPlan, step: &Step) -> Result<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use super::{CSharpPackageLayout, CSharpPackagingPlan, pack_csharp, render_csharp_project};
-    use crate::cargo::CargoCrateType;
+    use super::{
+        CSharpPackageLayout, CSharpPackagingPlan, csharp_no_build_config_args, pack_csharp,
+        render_csharp_project,
+    };
+    use crate::cargo::{Cargo, CargoCrateType};
     use crate::cli::CliError;
     use crate::commands::pack::{PackCSharpOptions, PackExecutionOptions};
     use crate::config::{CSharpConfig, CargoConfig, Config, PackageConfig, TargetsConfig};
@@ -638,6 +646,38 @@ crate-type = ["{}"]
             CSharpRuntimeIdentifier::LinuxArm64 => "aarch64-unknown-linux-gnu",
             CSharpRuntimeIdentifier::WinX64 => "x86_64-pc-windows-msvc",
         }
+    }
+
+    #[test]
+    fn csharp_no_build_config_args_preserve_manifest_path_when_probe_args_strip_it() {
+        let cargo_args = vec![
+            "--manifest-path".to_string(),
+            "/tmp/demo/Cargo.toml".to_string(),
+            "--target".to_string(),
+            "x86_64-unknown-linux-gnu".to_string(),
+            "--config=build.target='x86_64-pc-windows-gnu'".to_string(),
+        ];
+        let cargo = Cargo::in_working_directory(PathBuf::from("/workspace"), &cargo_args);
+
+        let config_args = csharp_no_build_config_args(&cargo);
+        let probe_args = cargo.probe_command_arguments();
+
+        assert!(
+            config_args
+                .windows(2)
+                .any(|args| { args[0] == "--manifest-path" && args[1] == "/tmp/demo/Cargo.toml" })
+        );
+        assert!(
+            config_args
+                .iter()
+                .all(|arg| arg != "--target" && !arg.starts_with("--target="))
+        );
+        assert!(config_args.contains(&"--config=build.target='x86_64-pc-windows-gnu'".to_string()));
+        assert!(
+            probe_args
+                .iter()
+                .all(|arg| arg != "--manifest-path" && !arg.starts_with("--manifest-path="))
+        );
     }
 
     #[test]

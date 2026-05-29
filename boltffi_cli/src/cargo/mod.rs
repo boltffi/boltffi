@@ -117,7 +117,6 @@ impl Cargo {
             .command_arguments_without_manifest_path_selector()
     }
 
-    #[cfg(test)]
     pub(crate) fn command_arguments_without_target_selector(&self) -> Vec<String> {
         self.arguments.command_arguments_without_target_selector()
     }
