@@ -127,11 +127,7 @@ impl NativeHostToolchain {
                 )
             }
             NativeHostPlatform::WindowsX86_64 => {
-                resolve_csharp_windows_no_build_rust_target_triple(
-                    current_host,
-                    toolchain_selector,
-                    cargo_args,
-                )
+                resolve_csharp_windows_no_build_rust_target_triple(cargo_args)
             }
         }
     }
@@ -405,22 +401,9 @@ fn validate_windows_rust_target_triple(target_triple: &str) -> Result<String> {
     }
 }
 
-fn resolve_csharp_windows_no_build_rust_target_triple(
-    current_host: NativeHostPlatform,
-    toolchain_selector: Option<&str>,
-    cargo_args: &[String],
-) -> Result<String> {
+fn resolve_csharp_windows_no_build_rust_target_triple(cargo_args: &[String]) -> Result<String> {
     if let Some(target_triple) = configured_windows_build_target(cargo_args)? {
         return Ok(target_triple);
-    }
-
-    if current_host == NativeHostPlatform::WindowsX86_64 {
-        return resolve_windows_rust_target_triple(
-            JavaHostTarget::WindowsX86_64,
-            current_host.into(),
-            toolchain_selector,
-            cargo_args,
-        );
     }
 
     Ok("x86_64-pc-windows-msvc".to_string())
@@ -2276,6 +2259,19 @@ unix
             NativeHostPlatform::DarwinArm64,
         )
         .expect("cross-host no-build C# windows target should resolve");
+
+        assert_eq!(target, "x86_64-pc-windows-msvc");
+    }
+
+    #[test]
+    fn csharp_no_build_defaults_current_windows_rid_to_msvc_triple() {
+        let target = NativeHostToolchain::resolve_csharp_no_build_rust_target_triple(
+            None,
+            &[],
+            NativeHostPlatform::WindowsX86_64,
+            NativeHostPlatform::WindowsX86_64,
+        )
+        .expect("current-host no-build C# windows target should resolve");
 
         assert_eq!(target, "x86_64-pc-windows-msvc");
     }
