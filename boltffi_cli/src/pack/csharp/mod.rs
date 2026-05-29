@@ -550,6 +550,59 @@ mod tests {
     use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
 
+    struct CargoManifestBuilder {
+        package_name: String,
+        package_version: String,
+        edition: String,
+        crate_types: Vec<CargoCrateType>,
+    }
+
+    impl CargoManifestBuilder {
+        fn cdylib_package(package_name: impl Into<String>) -> Self {
+            Self {
+                package_name: package_name.into(),
+                package_version: "0.1.0".to_string(),
+                edition: "2021".to_string(),
+                crate_types: vec![CargoCrateType::Cdylib],
+            }
+        }
+
+        fn render(&self) -> String {
+            let mut manifest = toml::Table::new();
+
+            let mut package = toml::Table::new();
+            package.insert(
+                "name".to_string(),
+                toml::Value::String(self.package_name.clone()),
+            );
+            package.insert(
+                "version".to_string(),
+                toml::Value::String(self.package_version.clone()),
+            );
+            package.insert(
+                "edition".to_string(),
+                toml::Value::String(self.edition.clone()),
+            );
+            manifest.insert("package".to_string(), toml::Value::Table(package));
+
+            let mut lib = toml::Table::new();
+            lib.insert(
+                "crate-type".to_string(),
+                toml::Value::Array(
+                    self.crate_types
+                        .iter()
+                        .cloned()
+                        .map(String::from)
+                        .map(toml::Value::String)
+                        .collect(),
+                ),
+            );
+            manifest.insert("lib".to_string(), toml::Value::Table(lib));
+
+            toml::to_string(&toml::Value::Table(manifest)).expect("temp Cargo manifest TOML")
+        }
+    }
+
     fn config() -> Config {
         Config {
             experimental: Vec::new(),
@@ -601,17 +654,7 @@ mod tests {
         std::fs::create_dir_all(&src).expect("create temp cdylib source dir");
         std::fs::write(
             root.join("Cargo.toml"),
-            format!(
-                r#"[package]
-name = "demo"
-version = "0.1.0"
-edition = "2021"
-
-[lib]
-crate-type = ["{}"]
-"#,
-                String::from(CargoCrateType::Cdylib)
-            ),
+            CargoManifestBuilder::cdylib_package("demo").render(),
         )
         .expect("write temp cdylib manifest");
         std::fs::write(src.join("lib.rs"), "pub extern \"C\" fn demo_noop() {}\n")
