@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <TargetFramework>{{ target_framework }}</TargetFramework>
-    <RuntimeIdentifiers>{{ runtime_identifiers }}</RuntimeIdentifiers>
+    <RuntimeIdentifiers>{% for runtime_identifier in runtime_identifiers %}{{ runtime_identifier.canonical_name() }}{% if !loop.last %};{% endif %}{% endfor %}</RuntimeIdentifiers>
     <PackageId>{{ package_id }}</PackageId>
     <Version>{{ package_version }}</Version>
     <Nullable>enable</Nullable>
@@ -10,14 +10,27 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ImplicitUsings>disable</ImplicitUsings>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
-{% if has_description %}    <Description>{{ description }}</Description>
-{% endif %}{% if has_license %}    <PackageLicenseExpression>{{ license }}</PackageLicenseExpression>
-{% endif %}{% if has_repository %}    <RepositoryUrl>{{ repository }}</RepositoryUrl>
+{% if let Some(title) = nuget.title() %}    <Title>{{ title }}</Title>
+{% endif %}{% if let Some(authors) = nuget.authors() %}    <Authors>{% for author in authors %}{{ author }}{% if !loop.last %};{% endif %}{% endfor %}</Authors>
+{% endif %}{% if let Some(owners) = nuget.owners() %}    <Owners>{% for owner in owners %}{{ owner }}{% if !loop.last %};{% endif %}{% endfor %}</Owners>
+{% endif %}{% if let Some(description) = nuget.description() %}    <Description>{{ description }}</Description>
+{% endif %}{% if let Some(package_project_url) = nuget.package_project_url() %}    <PackageProjectUrl>{{ package_project_url }}</PackageProjectUrl>
+{% endif %}{% if let Some(repository_url) = nuget.repository_url() %}    <RepositoryUrl>{{ repository_url }}</RepositoryUrl>
+{% endif %}{% if let Some(repository_type) = nuget.repository_type() %}    <RepositoryType>{{ repository_type }}</RepositoryType>
+{% endif %}{% if let Some(package_license_expression) = nuget.package_license_expression() %}    <PackageLicenseExpression>{{ package_license_expression }}</PackageLicenseExpression>
+{% endif %}{% if let Some(package_icon) = nuget.package_icon() %}    <PackageIcon>{{ package_icon.package_path() }}</PackageIcon>
+{% endif %}{% if let Some(package_readme_file) = nuget.package_readme_file() %}    <PackageReadmeFile>{{ package_readme_file.package_path() }}</PackageReadmeFile>
+{% endif %}{% if let Some(package_tags) = nuget.package_tags() %}    <PackageTags>{% for tag in package_tags %}{{ tag }}{% if !loop.last %};{% endif %}{% endfor %}</PackageTags>
+{% endif %}{% if let Some(package_release_notes) = nuget.package_release_notes() %}    <PackageReleaseNotes>{{ package_release_notes }}</PackageReleaseNotes>
+{% endif %}{% if let Some(package_require_license_acceptance) = nuget.package_require_license_acceptance() %}    <PackageRequireLicenseAcceptance>{{ package_require_license_acceptance }}</PackageRequireLicenseAcceptance>
 {% endif %}  </PropertyGroup>
 
   <ItemGroup>
     <Compile Include="src/**/*.cs" />
     <None Include="runtimes/**/*" Pack="true" PackagePath="%(Identity)" />
+{% if let Some(package_icon) = nuget.package_icon() %}    <None Include="{{ package_icon.include_path() }}" Pack="true" PackagePath="" />
+{% endif %}{% if let Some(package_readme_file) = nuget.package_readme_file() %}    <None Include="{{ package_readme_file.include_path() }}" Pack="true" PackagePath="" />
+{% endif %}
   </ItemGroup>
 
 </Project>
