@@ -31,4 +31,141 @@ public final class BoltFFIResult<Ok, Err> {
     public Err errValue() {
         return errValue;
     }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (this == obj) return true;
+        if (!(obj instanceof BoltFFIResult<?, ?>)) return false;
+        BoltFFIResult<?, ?> other = (BoltFFIResult<?, ?>) obj;
+        return ok == other.ok
+            && (ok ? valuesEqual(okValue, other.okValue) : valuesEqual(errValue, other.errValue));
+    }
+
+    @Override
+    public int hashCode() {
+        return 31 * Boolean.hashCode(ok) + valueHash(ok ? okValue : errValue);
+    }
+
+    @Override
+    public String toString() {
+        return ok ? "Ok(" + okValue + ")" : "Err(" + errValue + ")";
+    }
+
+    private static boolean valuesEqual(Object left, Object right) {
+        if (left == right) return true;
+        if (left == null || right == null) return false;
+        if (left instanceof byte[] && right instanceof byte[]) {
+            return java.util.Arrays.equals((byte[]) left, (byte[]) right);
+        }
+        if (left instanceof boolean[] && right instanceof boolean[]) {
+            return java.util.Arrays.equals((boolean[]) left, (boolean[]) right);
+        }
+        if (left instanceof short[] && right instanceof short[]) {
+            return java.util.Arrays.equals((short[]) left, (short[]) right);
+        }
+        if (left instanceof int[] && right instanceof int[]) {
+            return java.util.Arrays.equals((int[]) left, (int[]) right);
+        }
+        if (left instanceof long[] && right instanceof long[]) {
+            return java.util.Arrays.equals((long[]) left, (long[]) right);
+        }
+        if (left instanceof char[] && right instanceof char[]) {
+            return java.util.Arrays.equals((char[]) left, (char[]) right);
+        }
+        if (left instanceof float[] && right instanceof float[]) {
+            return java.util.Arrays.equals((float[]) left, (float[]) right);
+        }
+        if (left instanceof double[] && right instanceof double[]) {
+            return java.util.Arrays.equals((double[]) left, (double[]) right);
+        }
+        if (left instanceof java.util.Optional && right instanceof java.util.Optional) {
+            return optionalsEqual((java.util.Optional<?>) left, (java.util.Optional<?>) right);
+        }
+        if (left instanceof java.util.List && right instanceof java.util.List) {
+            return listsEqual((java.util.List<?>) left, (java.util.List<?>) right);
+        }
+        if (left instanceof Object[] && right instanceof Object[]) {
+            return objectArraysEqual((Object[]) left, (Object[]) right);
+        }
+        return java.util.Objects.equals(left, right);
+    }
+
+    private static int valueHash(Object value) {
+        if (value == null) return 0;
+        if (value instanceof byte[]) {
+            return java.util.Arrays.hashCode((byte[]) value);
+        }
+        if (value instanceof boolean[]) {
+            return java.util.Arrays.hashCode((boolean[]) value);
+        }
+        if (value instanceof short[]) {
+            return java.util.Arrays.hashCode((short[]) value);
+        }
+        if (value instanceof int[]) {
+            return java.util.Arrays.hashCode((int[]) value);
+        }
+        if (value instanceof long[]) {
+            return java.util.Arrays.hashCode((long[]) value);
+        }
+        if (value instanceof char[]) {
+            return java.util.Arrays.hashCode((char[]) value);
+        }
+        if (value instanceof float[]) {
+            return java.util.Arrays.hashCode((float[]) value);
+        }
+        if (value instanceof double[]) {
+            return java.util.Arrays.hashCode((double[]) value);
+        }
+        if (value instanceof java.util.Optional) {
+            return optionalHash((java.util.Optional<?>) value);
+        }
+        if (value instanceof java.util.List) {
+            return listHash((java.util.List<?>) value);
+        }
+        if (value instanceof Object[]) {
+            return objectArrayHash((Object[]) value);
+        }
+        return java.util.Objects.hashCode(value);
+    }
+
+    private static boolean optionalsEqual(java.util.Optional<?> left, java.util.Optional<?> right) {
+        if (left.isPresent() != right.isPresent()) return false;
+        return !left.isPresent() || valuesEqual(left.get(), right.get());
+    }
+
+    private static int optionalHash(java.util.Optional<?> value) {
+        return value.isPresent() ? 31 + valueHash(value.get()) : 0;
+    }
+
+    private static boolean listsEqual(java.util.List<?> left, java.util.List<?> right) {
+        if (left.size() != right.size()) return false;
+        for (int index = 0; index < left.size(); index++) {
+            if (!valuesEqual(left.get(index), right.get(index))) return false;
+        }
+        return true;
+    }
+
+    private static int listHash(java.util.List<?> value) {
+        int result = 1;
+        for (Object item : value) {
+            result = 31 * result + valueHash(item);
+        }
+        return result;
+    }
+
+    private static boolean objectArraysEqual(Object[] left, Object[] right) {
+        if (left.length != right.length) return false;
+        for (int index = 0; index < left.length; index++) {
+            if (!valuesEqual(left[index], right[index])) return false;
+        }
+        return true;
+    }
+
+    private static int objectArrayHash(Object[] value) {
+        int result = 1;
+        for (Object item : value) {
+            result = 31 * result + valueHash(item);
+        }
+        return result;
+    }
 }

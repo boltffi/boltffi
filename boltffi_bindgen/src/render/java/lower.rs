@@ -180,9 +180,39 @@ impl<'a> JavaLowerer<'a> {
             TypeExpr::Builtin(_) => true,
             TypeExpr::Option(inner) => Self::is_leaf_supported(ffi, inner, supported),
             TypeExpr::Vec(inner) => Self::is_leaf_supported(ffi, inner, supported),
+            TypeExpr::Result { ok, err } => {
+                Self::is_wire_result_branch_supported(ffi, ok, supported)
+                    && Self::is_wire_result_branch_supported(ffi, err, supported)
+            }
             TypeExpr::Callback(_) => true,
             TypeExpr::Handle(_) => true,
-            _ => false,
+        }
+    }
+
+    fn is_wire_result_branch_supported(
+        ffi: &FfiContract,
+        ty: &TypeExpr,
+        supported: &HashSet<String>,
+    ) -> bool {
+        match ty {
+            TypeExpr::Primitive(_)
+            | TypeExpr::String
+            | TypeExpr::Bytes
+            | TypeExpr::Void
+            | TypeExpr::Builtin(_) => true,
+            TypeExpr::Option(inner) | TypeExpr::Vec(inner) => {
+                Self::is_wire_result_branch_supported(ffi, inner, supported)
+            }
+            TypeExpr::Result { ok, err } => {
+                Self::is_wire_result_branch_supported(ffi, ok, supported)
+                    && Self::is_wire_result_branch_supported(ffi, err, supported)
+            }
+            TypeExpr::Custom(id) => ffi.catalog.resolve_custom(id).is_some_and(|custom| {
+                Self::is_wire_result_branch_supported(ffi, &custom.repr, supported)
+            }),
+            TypeExpr::Record(id) => supported.contains(id.as_str()),
+            TypeExpr::Enum(id) => supported.contains(id.as_str()),
+            TypeExpr::Handle(_) | TypeExpr::Callback(_) => false,
         }
     }
 
@@ -1070,6 +1100,7 @@ impl<'a> JavaLowerer<'a> {
             TypeExpr::String | TypeExpr::Record(_) | TypeExpr::Enum(_) | TypeExpr::Builtin(_) => {
                 format!("java.util.Objects.equals({left}, {right})")
             }
+            TypeExpr::Result { .. } => format!("java.util.Objects.equals({left}, {right})"),
             TypeExpr::Bytes => format!("java.util.Arrays.equals({left}, {right})"),
             TypeExpr::Option(inner) => {
                 let left_is_null = format!("({left}) == null");
@@ -1132,6 +1163,7 @@ impl<'a> JavaLowerer<'a> {
             TypeExpr::String | TypeExpr::Record(_) | TypeExpr::Enum(_) | TypeExpr::Builtin(_) => {
                 format!("java.util.Objects.hashCode({value})")
             }
+            TypeExpr::Result { .. } => format!("java.util.Objects.hashCode({value})"),
             TypeExpr::Bytes => format!("java.util.Arrays.hashCode({value})"),
             TypeExpr::Option(inner) => {
                 let inner_value = format!("({value}).get()");
@@ -2220,6 +2252,7 @@ impl<'a> JavaLowerer<'a> {
 
     fn java_type(&self, ty: &TypeExpr) -> String {
         match ty {
+            TypeExpr::Void => "void".to_string(),
             TypeExpr::Primitive(p) => mappings::java_type(*p).to_string(),
             TypeExpr::String => "String".to_string(),
             TypeExpr::Bytes => "byte[]".to_string(),
@@ -2240,7 +2273,6 @@ impl<'a> JavaLowerer<'a> {
                 )
             }
             TypeExpr::Vec(inner) => self.java_vec_type(inner),
-            _ => "Object".to_string(),
         }
     }
 
@@ -2254,6 +2286,7 @@ impl<'a> JavaLowerer<'a> {
 
     fn java_boxed_type(&self, ty: &TypeExpr) -> String {
         match ty {
+            TypeExpr::Void => "Void".to_string(),
             TypeExpr::Primitive(p) => mappings::java_boxed_type(*p).to_string(),
             TypeExpr::String => "String".to_string(),
             TypeExpr::Bytes => "byte[]".to_string(),
@@ -2274,7 +2307,6 @@ impl<'a> JavaLowerer<'a> {
                 )
             }
             TypeExpr::Vec(inner) => self.java_vec_type(inner),
-            _ => "Object".to_string(),
         }
     }
 
@@ -2450,6 +2482,8 @@ impl<'a> JavaLowerer<'a> {
             ".wireEncodedSize(",
             ".decodeBlittableVec(",
             ".encodeBlittableVec(",
+            ".ok(",
+            ".err(",
         ];
         for name in sibling_names {
             for suffix in static_call_suffixes {
@@ -3618,6 +3652,29 @@ mod tests {
         }
     }
 
+    fn c_style_enum(id: &str, variants: Vec<&str>) -> EnumDef {
+        EnumDef {
+            id: EnumId::new(id),
+            repr: EnumRepr::CStyle {
+                tag_type: PrimitiveType::I32,
+                variants: variants
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, name)| CStyleVariant {
+                        name: VariantName::new(name),
+                        discriminant: i as i128,
+                        doc: None,
+                    })
+                    .collect(),
+            },
+            is_error: false,
+            constructors: vec![],
+            methods: vec![],
+            doc: None,
+            deprecated: None,
+        }
+    }
+
     fn field(name: &str, ty: TypeExpr) -> FieldDef {
         FieldDef {
             name: FieldName::new(name),
@@ -4324,6 +4381,183 @@ mod tests {
         assert_eq!(result_param.java_type, "BoltFFIResult<Integer, String>");
         assert_eq!(result_param.native_type, "ByteBuffer");
         assert_eq!(func.input_bindings.wire_writers.len(), 1);
+    }
+
+    #[test]
+    fn record_with_result_field_is_admitted_and_decoded() {
+        let mut contract = empty_contract();
+        contract.catalog.insert_record(record_def(
+            "data_point",
+            vec![field("value", TypeExpr::Primitive(PrimitiveType::F64))],
+        ));
+        contract
+            .catalog
+            .insert_enum(c_style_enum("compute_error", vec!["Overflow", "Timeout"]));
+        contract.catalog.insert_record(record_def(
+            "benchmark_response",
+            vec![
+                field("request_id", TypeExpr::Primitive(PrimitiveType::I64)),
+                field(
+                    "result",
+                    TypeExpr::Result {
+                        ok: Box::new(TypeExpr::Record(RecordId::new("data_point"))),
+                        err: Box::new(TypeExpr::Enum(EnumId::new("compute_error"))),
+                    },
+                ),
+            ],
+        ));
+        contract.functions.push(function(
+            "create_success_response",
+            vec![],
+            ReturnDef::Value(TypeExpr::Record(RecordId::new("benchmark_response"))),
+        ));
+        contract.functions.push(function(
+            "is_response_success",
+            vec![param(
+                "response",
+                TypeExpr::Record(RecordId::new("benchmark_response")),
+            )],
+            ReturnDef::Value(TypeExpr::Primitive(PrimitiveType::Bool)),
+        ));
+
+        let module = lower(&contract);
+        let response = module
+            .records
+            .iter()
+            .find(|record| record.class_name == "BenchmarkResponse")
+            .expect("BenchmarkResponse should be emitted");
+        let result_field = response
+            .fields
+            .iter()
+            .find(|field| field.name == "result")
+            .expect("result field should be emitted");
+
+        assert_eq!(
+            result_field.java_type,
+            "BoltFFIResult<DataPoint, ComputeError>"
+        );
+        assert!(
+            result_field
+                .wire_decode_expr
+                .contains("BoltFFIResult.ok(DataPoint.decode(reader))"),
+            "Result field should decode the Ok branch, got: {}",
+            result_field.wire_decode_expr,
+        );
+        assert!(
+            result_field
+                .wire_decode_expr
+                .contains("BoltFFIResult.err(ComputeError.fromTag(reader.readI32()))"),
+            "Result field should decode the Err branch, got: {}",
+            result_field.wire_decode_expr,
+        );
+        assert_eq!(
+            module.functions.len(),
+            2,
+            "functions using BenchmarkResponse should not be dropped",
+        );
+    }
+
+    #[test]
+    fn record_with_void_result_branch_encodes_only_the_tag() {
+        let mut contract = empty_contract();
+        contract.catalog.insert_record(record_def(
+            "ack",
+            vec![field(
+                "result",
+                TypeExpr::Result {
+                    ok: Box::new(TypeExpr::Void),
+                    err: Box::new(TypeExpr::String),
+                },
+            )],
+        ));
+
+        let module = lower(&contract);
+        let result_field = &module.records[0].fields[0];
+
+        assert_eq!(result_field.java_type, "BoltFFIResult<Void, String>");
+        assert!(
+            result_field
+                .wire_decode_expr
+                .contains("BoltFFIResult.ok(null)"),
+            "void Ok branch should decode as null, got: {}",
+            result_field.wire_decode_expr,
+        );
+        assert!(
+            result_field
+                .wire_encode_expr
+                .contains("if ((result).isOk()) { wire.writeI8((byte)0); }"),
+            "void Ok branch should write only the tag, got: {}",
+            result_field.wire_encode_expr,
+        );
+        assert!(
+            result_field
+                .wire_encode_expr
+                .contains("wire.writeString((result).errValue())"),
+            "Err branch should still encode its payload, got: {}",
+            result_field.wire_encode_expr,
+        );
+    }
+
+    #[test]
+    fn result_field_qualifies_factory_calls_shadowed_by_variant_name() {
+        let mut contract = empty_contract();
+        contract.catalog.insert_record(record_def(
+            "data_point",
+            vec![field("value", TypeExpr::Primitive(PrimitiveType::F64))],
+        ));
+        contract.catalog.insert_enum(EnumDef {
+            id: EnumId::new("response"),
+            repr: EnumRepr::Data {
+                tag_type: PrimitiveType::I32,
+                variants: vec![
+                    DataVariant {
+                        name: VariantName::new("BoltFFIResult"),
+                        discriminant: 0,
+                        payload: VariantPayload::Unit,
+                        doc: None,
+                    },
+                    DataVariant {
+                        name: VariantName::new("payload"),
+                        discriminant: 1,
+                        payload: VariantPayload::Struct(vec![field(
+                            "result",
+                            TypeExpr::Result {
+                                ok: Box::new(TypeExpr::Record(RecordId::new("data_point"))),
+                                err: Box::new(TypeExpr::String),
+                            },
+                        )]),
+                        doc: None,
+                    },
+                ],
+            },
+            is_error: false,
+            constructors: vec![],
+            methods: vec![],
+            doc: None,
+            deprecated: None,
+        });
+
+        let module = lower(&contract);
+        let result_field = &module.enums[0].variants[1].fields[0];
+
+        assert_eq!(
+            result_field.java_type,
+            "com.test.BoltFFIResult<DataPoint, String>"
+        );
+        assert!(
+            result_field
+                .wire_decode_expr
+                .contains("com.test.BoltFFIResult.ok(DataPoint.decode(reader))"),
+            "shadowed helper should qualify Ok factory, got: {}",
+            result_field.wire_decode_expr,
+        );
+        assert!(
+            result_field
+                .wire_decode_expr
+                .contains("com.test.BoltFFIResult.err(reader.readString())"),
+            "shadowed helper should qualify Err factory, got: {}",
+            result_field.wire_decode_expr,
+        );
     }
 
     #[test]

@@ -177,9 +177,19 @@ pub(crate) fn lower_encode_expr(
             );
 
             let mut then = vec![tag_byte(0)];
-            then.extend(lower_encode_expr(ok, writer, &ok_renames, locals));
+            then.extend(lower_result_branch_encode_expr(
+                ok,
+                writer,
+                &ok_renames,
+                locals,
+            ));
             let mut otherwise = vec![tag_byte(1)];
-            otherwise.extend(lower_encode_expr(err, writer, &err_renames, locals));
+            otherwise.extend(lower_result_branch_encode_expr(
+                err,
+                writer,
+                &err_renames,
+                locals,
+            ));
 
             vec![CSharpStatement::If {
                 cond: CSharpExpression::MemberAccess {
@@ -262,6 +272,19 @@ pub(crate) fn lower_encode_expr(
             "C# backend has not yet implemented write support for {:?}",
             other
         ),
+    }
+}
+
+fn lower_result_branch_encode_expr(
+    seq: &WriteSeq,
+    writer: &CSharpExpression,
+    renames: &Renames,
+    locals: &mut EncodeLocalCounters,
+) -> Vec<CSharpStatement> {
+    if seq.ops.is_empty() {
+        Vec::new()
+    } else {
+        lower_encode_expr(seq, writer, renames, locals)
     }
 }
 

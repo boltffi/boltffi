@@ -141,6 +141,13 @@ pub(crate) enum CSharpExpression {
         type_args: Vec<CSharpType>,
         args: CSharpArgumentList,
     },
+    /// `{receiver}.{method}({arg0}, ...)` where the receiver is a
+    /// generic type expression such as `BoltFFIResult<T, E>`.
+    StaticMethodCall {
+        receiver: CSharpType,
+        method: CSharpMethodName,
+        args: CSharpArgumentList,
+    },
     /// `({target}){inner}`: a C-style cast.
     Cast {
         target: CSharpType,
@@ -206,6 +213,11 @@ impl fmt::Display for CSharpExpression {
                 }
                 write!(f, "({args})")
             }
+            Self::StaticMethodCall {
+                receiver,
+                method,
+                args,
+            } => write!(f, "{receiver}.{method}({args})"),
             Self::Cast { target, inner } => write!(f, "({target}){inner}"),
             Self::Binary { op, left, right } => write!(f, "{left} {op} {right}"),
             Self::Paren(inner) => write!(f, "({inner})"),

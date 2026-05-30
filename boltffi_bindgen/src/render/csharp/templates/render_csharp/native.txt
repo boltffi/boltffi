@@ -624,11 +624,13 @@
         internal bool IsNull => handle == 0 || vtable == IntPtr.Zero;
     }
 
-    internal readonly struct BoltFFIUnit
+{% endif %}
+{%- if module.needs_result_runtime() %}
+    public readonly struct BoltFFIUnit
     {
     }
 
-    internal readonly struct BoltFFIResult<TOk, TErr>
+    public readonly struct BoltFFIResult<TOk, TErr>
     {
         private readonly TOk _okValue;
         private readonly TErr _errValue;
@@ -640,14 +642,16 @@
             IsOk = isOk;
         }
 
-        internal bool IsOk { get; }
-        internal TOk OkValue => _okValue;
-        internal TErr ErrValue => _errValue;
+        public bool IsOk { get; }
+        public TOk OkValue => _okValue;
+        public TErr ErrValue => _errValue;
 
-        internal static BoltFFIResult<TOk, TErr> Ok(TOk value) => new(value, default!, true);
-        internal static BoltFFIResult<TOk, TErr> Err(TErr value) => new(default!, value, false);
+        public static BoltFFIResult<TOk, TErr> Ok(TOk value) => new(value, default!, true);
+        public static BoltFFIResult<TOk, TErr> Err(TErr value) => new(default!, value, false);
     }
 
+{% endif %}
+{%- if module.needs_callback_runtime() %}
     internal static class BoltFFICallbackReturn
     {
         internal static unsafe void Store(byte[] bytes, out IntPtr outPtr, out UIntPtr outLen)

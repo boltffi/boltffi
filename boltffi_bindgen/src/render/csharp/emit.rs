@@ -1381,6 +1381,118 @@ mod tests {
         );
     }
 
+    #[test]
+    fn emit_record_with_result_field_keeps_record_and_functions() {
+        let mut contract = empty_contract();
+        contract.catalog.insert_record(record_with_fields(
+            "data_point",
+            true,
+            vec![("value", TypeExpr::Primitive(PrimitiveType::F64))],
+        ));
+        contract
+            .catalog
+            .insert_enum(c_style_enum("compute_error", vec!["Overflow", "Timeout"]));
+        contract.catalog.insert_record(record_with_fields(
+            "benchmark_response",
+            false,
+            vec![
+                ("request_id", TypeExpr::Primitive(PrimitiveType::I64)),
+                (
+                    "result",
+                    TypeExpr::Result {
+                        ok: Box::new(TypeExpr::Record(RecordId::new("data_point"))),
+                        err: Box::new(TypeExpr::Enum(EnumId::new("compute_error"))),
+                    },
+                ),
+            ],
+        ));
+        contract.functions.push(function_with_types(
+            "create_success_response",
+            vec![],
+            ReturnDef::Value(TypeExpr::Record(RecordId::new("benchmark_response"))),
+        ));
+        contract.functions.push(function_with_types(
+            "is_response_success",
+            vec![(
+                "response",
+                TypeExpr::Record(RecordId::new("benchmark_response")),
+            )],
+            ReturnDef::Value(TypeExpr::Primitive(PrimitiveType::Bool)),
+        ));
+
+        let src = emit_contract(&contract).combined_source();
+
+        assert_source_contains(
+            &src,
+            "public readonly record struct BenchmarkResponse(",
+            "the record containing a Result field should be emitted",
+        );
+        assert_source_contains(
+            &src,
+            "BoltFFIResult<DataPoint, ComputeError> Result",
+            "the Result field should be exposed with the generated C# result carrier",
+        );
+        assert_source_contains(
+            &src,
+            "public readonly struct BoltFFIResult<TOk, TErr>",
+            "the public result carrier should be emitted even without callbacks",
+        );
+        assert_source_contains(
+            &src,
+            "reader.ReadU8() == 0 ? BoltFFIResult<DataPoint, ComputeError>.Ok(DataPoint.Decode(reader)) : BoltFFIResult<DataPoint, ComputeError>.Err(ComputeErrorWire.Decode(reader))",
+            "record field decode should reconstruct the nested Result value",
+        );
+        assert_source_contains(
+            &src,
+            "public static BenchmarkResponse CreateSuccessResponse()",
+            "functions returning the record should no longer be dropped",
+        );
+        assert_source_contains(
+            &src,
+            "public static bool IsResponseSuccess(BenchmarkResponse response)",
+            "functions taking the record should no longer be dropped",
+        );
+    }
+
+    #[test]
+    fn emit_record_with_void_result_branch_encodes_only_the_tag() {
+        let mut contract = empty_contract();
+        contract.catalog.insert_record(record_with_fields(
+            "ack",
+            false,
+            vec![(
+                "result",
+                TypeExpr::Result {
+                    ok: Box::new(TypeExpr::Void),
+                    err: Box::new(TypeExpr::String),
+                },
+            )],
+        ));
+
+        let src = emit_contract(&contract).combined_source();
+
+        assert_source_contains(
+            &src,
+            "BoltFFIResult<BoltFFIUnit, string> Result",
+            "void Result branch should use the unit carrier type",
+        );
+        assert_source_contains(
+            &src,
+            "BoltFFIResult<BoltFFIUnit, string>.Ok(new BoltFFIUnit())",
+            "void Ok branch should decode as BoltFFIUnit",
+        );
+        assert_source_contains(
+            &src,
+            "wire.WriteU8((byte)0);",
+            "void Ok branch should still write the Result tag",
+        );
+        assert_source_contains(
+            &src,
+            "wire.WriteString(this.Result.ErrValue);",
+            "Err branch should still encode its payload",
+        );
+    }
+
     /// A nested record's `WireEncodeTo` must delegate to the inner
     /// record's `WireEncodeTo` via the field accessor, and its `Decode`
     /// must call the inner record's `Decode`. This is the recursive

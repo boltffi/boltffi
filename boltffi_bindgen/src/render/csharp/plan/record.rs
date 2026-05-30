@@ -59,6 +59,10 @@ impl CSharpRecordPlan {
         self.fields.iter().any(|f| f.csharp_type.contains_string())
     }
 
+    pub fn has_result_fields(&self) -> bool {
+        self.fields.iter().any(|f| f.csharp_type.contains_result())
+    }
+
     /// Whether any record method needs `using System.Runtime.CompilerServices`
     /// for `Unsafe.SizeOf<T>()` in a pinned-array argument length expression.
     pub fn has_pinned_params(&self) -> bool {

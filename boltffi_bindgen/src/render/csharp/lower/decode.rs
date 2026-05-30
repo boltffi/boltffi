@@ -151,6 +151,35 @@ pub(crate) fn lower_decode_expr(
                 otherwise: Box::new(inner),
             }
         }
+        ReadOp::Result { ok, err, .. } => {
+            let result_ty =
+                CSharpType::from_read_op(op).qualify_if_shadowed_opt(shadowed, namespace);
+            let ok_expr = lower_result_branch_decode_expr(ok, reader, shadowed, namespace, locals);
+            let err_expr =
+                lower_result_branch_decode_expr(err, reader, shadowed, namespace, locals);
+            CSharpExpression::Ternary {
+                cond: Box::new(CSharpExpression::Binary {
+                    op: CSharpBinaryOp::Eq,
+                    left: Box::new(CSharpExpression::MethodCall {
+                        receiver: Box::new(reader.clone()),
+                        method: CSharpMethodName::from_source("read_u8"),
+                        type_args: vec![],
+                        args: CSharpArgumentList::default(),
+                    }),
+                    right: Box::new(CSharpExpression::Literal(CSharpLiteral::Int(0))),
+                }),
+                then: Box::new(CSharpExpression::StaticMethodCall {
+                    receiver: result_ty.clone(),
+                    method: CSharpMethodName::from_source("ok"),
+                    args: vec![ok_expr].into(),
+                }),
+                otherwise: Box::new(CSharpExpression::StaticMethodCall {
+                    receiver: result_ty,
+                    method: CSharpMethodName::from_source("err"),
+                    args: vec![err_expr].into(),
+                }),
+            }
+        }
         ReadOp::Vec {
             element_type: TypeExpr::Primitive(p),
             layout: VecLayout::Blittable { .. },
@@ -217,6 +246,23 @@ pub(crate) fn lower_decode_expr(
             "C# backend has not yet implemented decode support for {:?}",
             other
         ),
+    }
+}
+
+fn lower_result_branch_decode_expr(
+    seq: &ReadSeq,
+    reader: &CSharpExpression,
+    shadowed: Option<&HashSet<CSharpClassName>>,
+    namespace: &CSharpNamespace,
+    locals: &mut DecodeLocalCounters,
+) -> CSharpExpression {
+    if seq.ops.is_empty() {
+        CSharpExpression::New {
+            target: CSharpType::boltffi_unit(),
+            args: CSharpArgumentList::default(),
+        }
+    } else {
+        lower_decode_expr(seq, reader, shadowed, namespace, locals)
     }
 }
 

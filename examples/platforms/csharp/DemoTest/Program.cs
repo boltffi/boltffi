@@ -2416,6 +2416,33 @@ public static class DemoTest
             Require(e.Error is ComputeError.Overflow, "TryCompute(-1) Overflow variant");
         }
 
+        DataPoint benchmarkPoint = new DataPoint(1.0, 2.0, 123L);
+        DemoCase("case:results.error_enums.benchmark_response.should_make_success_response");
+        BenchmarkResponse successResponse = CreateSuccessResponse(42L, benchmarkPoint);
+        Require(successResponse.RequestId == 42L, "BenchmarkResponse success RequestId");
+        Require(successResponse.Result.IsOk, "BenchmarkResponse success Result is Ok");
+        Require(successResponse.Result.OkValue == benchmarkPoint, "BenchmarkResponse success DataPoint");
+
+        ComputeError.Overflow benchmarkError = new ComputeError.Overflow(-5, 0);
+        DemoCase("case:results.error_enums.benchmark_response.should_make_error_response");
+        BenchmarkResponse errorResponse = CreateErrorResponse(43L, benchmarkError);
+        Require(errorResponse.RequestId == 43L, "BenchmarkResponse error RequestId");
+        Require(!errorResponse.Result.IsOk, "BenchmarkResponse error Result is Err");
+        Require(errorResponse.Result.ErrValue == benchmarkError, "BenchmarkResponse error payload");
+
+        DemoCase("case:results.error_enums.benchmark_response.should_report_success_response");
+        Require(IsResponseSuccess(successResponse), "IsResponseSuccess should report Ok");
+        DemoCase("case:results.error_enums.benchmark_response.should_report_error_response");
+        Require(!IsResponseSuccess(errorResponse), "IsResponseSuccess should report Err");
+
+        DemoCase("case:results.error_enums.benchmark_response.should_return_value_for_success_response");
+        DataPoint? responseValue = GetResponseValue(successResponse);
+        Require(responseValue.HasValue && responseValue.Value == benchmarkPoint,
+            "GetResponseValue should return success payload");
+
+        DemoCase("case:results.error_enums.benchmark_response.should_return_none_for_error_response");
+        Require(GetResponseValue(errorResponse) == null, "GetResponseValue should return null for Err payload");
+
         Console.WriteLine("  PASS\n");
     }
 

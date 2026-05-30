@@ -2371,6 +2371,34 @@ public final class DemoTest {
             assert ovf.value == -3 && ovf.limit == 0 : "tryCompute Overflow payload";
         }
 
+        DataPoint benchmarkPoint = new DataPoint(1.0, 2.0, 123L);
+        demoCase("case:results.error_enums.benchmark_response.should_make_success_response");
+        BenchmarkResponse successResponse = Demo.createSuccessResponse(42L, benchmarkPoint);
+        assert successResponse.requestId() == 42L : "BenchmarkResponse success request_id";
+        assert successResponse.result().isOk() : "BenchmarkResponse success result is Ok";
+        assert successResponse.result().okValue().equals(benchmarkPoint) : "BenchmarkResponse success point";
+
+        ComputeError.Overflow benchmarkError = new ComputeError.Overflow(-5, 0);
+        demoCase("case:results.error_enums.benchmark_response.should_make_error_response");
+        BenchmarkResponse errorResponse = Demo.createErrorResponse(43L, benchmarkError);
+        assert errorResponse.requestId() == 43L : "BenchmarkResponse error request_id";
+        assert !errorResponse.result().isOk() : "BenchmarkResponse error result is Err";
+        assert errorResponse.result().errValue().equals(benchmarkError) : "BenchmarkResponse error payload";
+
+        demoCase("case:results.error_enums.benchmark_response.should_report_success_response");
+        assert Demo.isResponseSuccess(successResponse) : "isResponseSuccess should report Ok";
+        demoCase("case:results.error_enums.benchmark_response.should_report_error_response");
+        assert !Demo.isResponseSuccess(errorResponse) : "isResponseSuccess should report Err";
+
+        demoCase("case:results.error_enums.benchmark_response.should_return_value_for_success_response");
+        Optional<DataPoint> responseValue = Demo.getResponseValue(successResponse);
+        assert responseValue.isPresent() && responseValue.get().equals(benchmarkPoint)
+            : "getResponseValue should return success payload";
+
+        demoCase("case:results.error_enums.benchmark_response.should_return_none_for_error_response");
+        assert !Demo.getResponseValue(errorResponse).isPresent()
+            : "getResponseValue should return empty for Err payload";
+
         demoCase("case:results.error_enums.divide_app.should_return_quotient");
         assert Demo.divideApp(10, 2) == 5 : "divideApp ok";
         demoCase("case:results.error_enums.divide_app.should_return_app_error_for_division_by_zero");

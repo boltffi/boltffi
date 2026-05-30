@@ -125,6 +125,13 @@ impl CSharpEnumPlan {
             .any(|f| f.csharp_type.contains_string())
     }
 
+    pub fn has_result_fields(&self) -> bool {
+        self.variants
+            .iter()
+            .flat_map(|v| v.fields.iter())
+            .any(|f| f.csharp_type.contains_result())
+    }
+
     /// Whether any method on this enum returns `Result<_, _>`. Used by
     /// the module-level predicate that decides whether to emit the
     /// runtime `BoltException` class.

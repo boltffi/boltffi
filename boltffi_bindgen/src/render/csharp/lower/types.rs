@@ -182,10 +182,22 @@ impl<'a> CSharpLowerer<'a> {
                 let inner_type = self.lower_type(inner)?;
                 Some(CSharpType::Nullable(Box::new(inner_type)))
             }
+            TypeExpr::Result { ok, err } => Some(CSharpType::Result {
+                carrier: CSharpType::boltffi_result_reference(),
+                ok: Box::new(self.lower_result_branch_type(ok)?),
+                err: Box::new(self.lower_result_branch_type(err)?),
+            }),
             TypeExpr::Callback(id) => Some(CSharpType::Record(
                 self.callback_public_class_name(id).into(),
             )),
             _ => None,
+        }
+    }
+
+    fn lower_result_branch_type(&self, type_expr: &TypeExpr) -> Option<CSharpType> {
+        match type_expr {
+            TypeExpr::Void => Some(CSharpType::boltffi_unit()),
+            other => self.lower_type(other),
         }
     }
 

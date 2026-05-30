@@ -153,6 +153,9 @@ mod tests {
         JavaRecordField, JavaReturnPlan, JavaReturnRender, JavaStream, JavaStreamMode,
         JavaWireWriter,
     };
+    use std::fs;
+    use std::process::Command;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     fn java_param(name: &str, java_type: &str, native_type: &str, native_expr: &str) -> JavaParam {
         JavaParam {
@@ -195,6 +198,97 @@ mod tests {
             functions: vec![],
             classes,
         }
+    }
+
+    #[test]
+    fn result_template_deep_compares_array_payloads_when_java_available() {
+        if Command::new("javac").arg("-version").output().is_err()
+            || Command::new("java").arg("-version").output().is_err()
+        {
+            return;
+        }
+
+        let source = ResultTemplate {
+            package_name: "com.test",
+        }
+        .render()
+        .expect("result template should render");
+
+        let smoke = r#"package com.test;
+
+public final class ResultEqualitySmoke {
+    public static void main(String[] args) {
+        BoltFFIResult<byte[], String> leftBytes = BoltFFIResult.ok(new byte[] {1, 2, 3});
+        BoltFFIResult<byte[], String> rightBytes = BoltFFIResult.ok(new byte[] {1, 2, 3});
+        if (!leftBytes.equals(rightBytes)) throw new AssertionError("byte[] payloads should compare by contents");
+        if (leftBytes.hashCode() != rightBytes.hashCode()) throw new AssertionError("equal byte[] payloads should hash equally");
+
+        BoltFFIResult<int[], String> leftInts = BoltFFIResult.ok(new int[] {4, 5, 6});
+        BoltFFIResult<int[], String> rightInts = BoltFFIResult.ok(new int[] {4, 5, 6});
+        if (!leftInts.equals(rightInts)) throw new AssertionError("int[] payloads should compare by contents");
+        if (leftInts.hashCode() != rightInts.hashCode()) throw new AssertionError("equal int[] payloads should hash equally");
+
+        BoltFFIResult<java.util.List<int[]>, String> leftRows =
+            BoltFFIResult.ok(java.util.Arrays.asList(new int[] {1, 2}, new int[] {3, 4}));
+        BoltFFIResult<java.util.List<int[]>, String> rightRows =
+            BoltFFIResult.ok(java.util.Arrays.asList(new int[] {1, 2}, new int[] {3, 4}));
+        if (!leftRows.equals(rightRows)) throw new AssertionError("List<int[]> payloads should compare by nested contents");
+        if (leftRows.hashCode() != rightRows.hashCode()) throw new AssertionError("equal List<int[]> payloads should hash equally");
+
+        BoltFFIResult<java.util.Optional<byte[]>, String> leftOptional =
+            BoltFFIResult.ok(java.util.Optional.of(new byte[] {7, 8}));
+        BoltFFIResult<java.util.Optional<byte[]>, String> rightOptional =
+            BoltFFIResult.ok(java.util.Optional.of(new byte[] {7, 8}));
+        if (!leftOptional.equals(rightOptional)) throw new AssertionError("Optional<byte[]> payloads should compare by nested contents");
+        if (leftOptional.hashCode() != rightOptional.hashCode()) throw new AssertionError("equal Optional<byte[]> payloads should hash equally");
+
+        if (leftBytes.equals(BoltFFIResult.ok(new byte[] {1, 2, 4}))) throw new AssertionError("different arrays must not compare equal");
+        if (leftBytes.equals(BoltFFIResult.err("boom"))) throw new AssertionError("Ok and Err must not compare equal");
+    }
+}
+"#;
+
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time should be monotonic")
+            .as_nanos();
+        let tmp_root = std::env::temp_dir().join(format!("boltffi-java-result-eq-{nanos}"));
+        let package_dir = tmp_root.join("com/test");
+        let classes_dir = tmp_root.join("classes");
+        fs::create_dir_all(&package_dir).expect("should create package directory");
+        fs::create_dir_all(&classes_dir).expect("should create classes directory");
+
+        let result_path = package_dir.join("BoltFFIResult.java");
+        let smoke_path = package_dir.join("ResultEqualitySmoke.java");
+        fs::write(&result_path, source).expect("should write result source");
+        fs::write(&smoke_path, smoke).expect("should write smoke source");
+
+        let javac = Command::new("javac")
+            .arg("-d")
+            .arg(&classes_dir)
+            .arg(&result_path)
+            .arg(&smoke_path)
+            .output()
+            .expect("javac should execute");
+        assert!(
+            javac.status.success(),
+            "result equality smoke sources should compile: {}",
+            String::from_utf8_lossy(&javac.stderr)
+        );
+
+        let java = Command::new("java")
+            .arg("-cp")
+            .arg(&classes_dir)
+            .arg("com.test.ResultEqualitySmoke")
+            .output()
+            .expect("java should execute");
+        assert!(
+            java.status.success(),
+            "result equality smoke should pass: {}",
+            String::from_utf8_lossy(&java.stderr)
+        );
+
+        let _ = fs::remove_dir_all(tmp_root);
     }
 
     #[test]

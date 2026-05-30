@@ -125,6 +125,12 @@ impl CSharpModulePlan {
         self.has_callbacks() || self.has_closures()
     }
 
+    pub fn needs_result_runtime(&self) -> bool {
+        self.needs_callback_runtime()
+            || self.records.iter().any(CSharpRecordPlan::has_result_fields)
+            || self.enums.iter().any(CSharpEnumPlan::has_result_fields)
+    }
+
     pub fn needs_ffi_status(&self) -> bool {
         self.has_async() || self.needs_callback_runtime() || self.needs_last_error()
     }

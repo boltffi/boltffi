@@ -336,12 +336,23 @@ fn emit_reader_read_with_context(seq: &ReadSeq, context: &mut JavaEmitContext) -
             layout,
             ..
         } => emit_reader_vec_with_context(element_type, element, layout, context),
-        ReadOp::Result { .. } => {
-            panic!(
-                "ReadOp::Result should be handled via ResultDecode strategy, not emit_reader_read"
+        ReadOp::Result { ok, err, .. } => {
+            let ok_expr = emit_reader_read_or_null(ok, context);
+            let err_expr = emit_reader_read_or_null(err, context);
+            format!(
+                "reader.readI8() == 0 ? BoltFFIResult.ok({}) : BoltFFIResult.err({})",
+                ok_expr, err_expr,
             )
         }
         other => panic!("unsupported Java read op: {:?}", other),
+    }
+}
+
+fn emit_reader_read_or_null(seq: &ReadSeq, context: &mut JavaEmitContext) -> String {
+    if seq.ops.is_empty() {
+        "null".to_string()
+    } else {
+        emit_reader_read_with_context(seq, context)
     }
 }
 
@@ -470,16 +481,15 @@ fn emit_write_expr_with_context(
         },
         WriteOp::Result { value, ok, err } => {
             let result_expr = render_value(value);
-            let ok_inner = emit_write_expr_with_context(ok, writer_name, context);
-            let err_inner = emit_write_expr_with_context(err, writer_name, context);
             let ok_value_expr = format!("({}).okValue()", result_expr);
             let err_value_expr = format!("({}).errValue()", result_expr);
-            let remapped_ok = replace_identifier_occurrences(&ok_inner, "okVal", &ok_value_expr);
-            let remapped_err =
-                replace_identifier_occurrences(&err_inner, "errVal", &err_value_expr);
+            let ok_payload =
+                emit_result_branch_write(ok, writer_name, context, "okVal", &ok_value_expr);
+            let err_payload =
+                emit_result_branch_write(err, writer_name, context, "errVal", &err_value_expr);
             format!(
-                "if (({}).isOk()) {{ {}.writeI8((byte)0); {}; }} else {{ {}.writeI8((byte)1); {}; }}",
-                result_expr, writer_name, remapped_ok, writer_name, remapped_err,
+                "if (({}).isOk()) {{ {}.writeI8((byte)0);{} }} else {{ {}.writeI8((byte)1);{} }}",
+                result_expr, writer_name, ok_payload, writer_name, err_payload,
             )
         }
         WriteOp::Vec {
@@ -496,6 +506,22 @@ fn emit_write_expr_with_context(
             context,
         ),
         other => panic!("unsupported Java write op: {:?}", other),
+    }
+}
+
+fn emit_result_branch_write(
+    seq: &WriteSeq,
+    writer_name: &str,
+    context: &mut JavaEmitContext,
+    binding: &str,
+    replacement: &str,
+) -> String {
+    if seq.ops.is_empty() {
+        String::new()
+    } else {
+        let inner = emit_write_expr_with_context(seq, writer_name, context);
+        let remapped = replace_identifier_occurrences(&inner, binding, replacement);
+        format!(" {remapped};")
     }
 }
 
@@ -570,12 +596,20 @@ fn java_type_for_iteration(ty: &TypeExpr) -> String {
         TypeExpr::Option(inner) => {
             format!("java.util.Optional<{}>", java_type_for_iteration(inner))
         }
+        TypeExpr::Result { ok, err } => {
+            format!(
+                "BoltFFIResult<{}, {}>",
+                java_type_for_iteration(ok),
+                java_type_for_iteration(err)
+            )
+        }
         TypeExpr::Vec(inner) => match inner.as_ref() {
             TypeExpr::Primitive(primitive) => {
                 mappings::java_primitive_array_type(*primitive).to_string()
             }
             _ => format!("java.util.List<{}>", java_type_for_iteration(inner)),
         },
+        TypeExpr::Void => "Void".to_string(),
         _ => "Object".to_string(),
     }
 }

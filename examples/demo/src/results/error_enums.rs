@@ -411,16 +411,6 @@ pub fn try_compute(value: i32) -> Result<i32, ComputeError> {
     justification = "Ensure create_success_response returns a BenchmarkResponse carrying an Ok DataPoint result.",
     directions = "Call `results::error_enums::create_success_response` through the generated binding and assert create_success_response returns a BenchmarkResponse carrying an Ok DataPoint result.",
     exclude(
-        csharp,
-        reason = ExclusionReason::ImplementationGap,
-        details = "#322: C# bindgen does not currently emit functions whose signatures involve records containing Result<T, E> fields. Include this case when C# nested-Result-in-record support lands."
-    ),
-    exclude(
-        java,
-        reason = ExclusionReason::ImplementationGap,
-        details = "#322: Java bindgen does not currently emit functions whose signatures involve records containing Result<T, E> fields. Include this case when Java nested-Result-in-record support lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently emit Result returns or structured error payloads. Include this case when typed Result support is implemented for Python."
@@ -438,16 +428,6 @@ pub fn create_success_response(request_id: i64, point: DataPoint) -> BenchmarkRe
     "results.error_enums.benchmark_response.should_make_error_response",
     justification = "Ensure create_error_response returns or surfaces a BenchmarkResponse carrying an Err ComputeError result.",
     directions = "Call `results::error_enums::create_error_response` through the generated binding and assert create_error_response returns or surfaces a BenchmarkResponse carrying an Err ComputeError result.",
-    exclude(
-        csharp,
-        reason = ExclusionReason::ImplementationGap,
-        details = "#322: C# bindgen does not currently emit functions whose signatures involve records containing Result<T, E> fields. Include this case when C# nested-Result-in-record support lands."
-    ),
-    exclude(
-        java,
-        reason = ExclusionReason::ImplementationGap,
-        details = "#322: Java bindgen does not currently emit functions whose signatures involve records containing Result<T, E> fields. Include this case when Java nested-Result-in-record support lands."
-    ),
     exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
@@ -467,16 +447,6 @@ pub fn create_error_response(request_id: i64, error: ComputeError) -> BenchmarkR
     justification = "Ensure is_response_success returns true for a BenchmarkResponse carrying an Ok result.",
     directions = "Call `results::error_enums::is_response_success` through the generated binding and assert is_response_success returns true for a BenchmarkResponse carrying an Ok result.",
     exclude(
-        csharp,
-        reason = ExclusionReason::ImplementationGap,
-        details = "#322: C# bindgen does not currently emit functions whose signatures involve records containing Result<T, E> fields. Include this case when C# nested-Result-in-record support lands."
-    ),
-    exclude(
-        java,
-        reason = ExclusionReason::ImplementationGap,
-        details = "#322: Java bindgen does not currently emit functions whose signatures involve records containing Result<T, E> fields. Include this case when Java nested-Result-in-record support lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently emit Result returns or structured error payloads. Include this case when typed Result support is implemented for Python."
@@ -486,16 +456,6 @@ pub fn create_error_response(request_id: i64, error: ComputeError) -> BenchmarkR
     "results.error_enums.benchmark_response.should_report_error_response",
     justification = "Ensure is_response_success returns false for a BenchmarkResponse carrying an Err result.",
     directions = "Call `results::error_enums::is_response_success` through the generated binding and assert is_response_success returns false for a BenchmarkResponse carrying an Err result.",
-    exclude(
-        csharp,
-        reason = ExclusionReason::ImplementationGap,
-        details = "#322: C# bindgen does not currently emit functions whose signatures involve records containing Result<T, E> fields. Include this case when C# nested-Result-in-record support lands."
-    ),
-    exclude(
-        java,
-        reason = ExclusionReason::ImplementationGap,
-        details = "#322: Java bindgen does not currently emit functions whose signatures involve records containing Result<T, E> fields. Include this case when Java nested-Result-in-record support lands."
-    ),
     exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
@@ -512,16 +472,6 @@ pub fn is_response_success(response: BenchmarkResponse) -> bool {
     justification = "Ensure get_response_value returns Some(DataPoint) for a BenchmarkResponse carrying an Ok result.",
     directions = "Call `results::error_enums::get_response_value` through the generated binding and assert get_response_value returns Some(DataPoint) for a BenchmarkResponse carrying an Ok result.",
     exclude(
-        csharp,
-        reason = ExclusionReason::ImplementationGap,
-        details = "#322: C# bindgen does not currently emit functions whose signatures involve records containing Result<T, E> fields. Include this case when C# nested-Result-in-record support lands."
-    ),
-    exclude(
-        java,
-        reason = ExclusionReason::ImplementationGap,
-        details = "#322: Java bindgen does not currently emit functions whose signatures involve records containing Result<T, E> fields. Include this case when Java nested-Result-in-record support lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently emit Result returns or structured error payloads. Include this case when typed Result support is implemented for Python."
@@ -531,16 +481,6 @@ pub fn is_response_success(response: BenchmarkResponse) -> bool {
     "results.error_enums.benchmark_response.should_return_none_for_error_response",
     justification = "Ensure get_response_value returns None for a BenchmarkResponse carrying an Err result.",
     directions = "Call `results::error_enums::get_response_value` through the generated binding and assert get_response_value returns None for a BenchmarkResponse carrying an Err result.",
-    exclude(
-        csharp,
-        reason = ExclusionReason::ImplementationGap,
-        details = "#322: C# bindgen does not currently emit functions whose signatures involve records containing Result<T, E> fields. Include this case when C# nested-Result-in-record support lands."
-    ),
-    exclude(
-        java,
-        reason = ExclusionReason::ImplementationGap,
-        details = "#322: Java bindgen does not currently emit functions whose signatures involve records containing Result<T, E> fields. Include this case when Java nested-Result-in-record support lands."
-    ),
     exclude(
         python,
         reason = ExclusionReason::ImplementationGap,

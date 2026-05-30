@@ -62,6 +62,15 @@ pub(crate) enum CSharpType {
     Array(Box<CSharpType>),
     /// `T?`: a value or reference type that may be `null`.
     Nullable(Box<CSharpType>),
+    /// `BoltFFIResult<TOk, TErr>`: the public carrier for a nested
+    /// Rust `Result<T, E>` value, used when `Result` appears inside a
+    /// record field or data-enum payload rather than as a throwing
+    /// top-level return.
+    Result {
+        carrier: CSharpTypeReference,
+        ok: Box<CSharpType>,
+        err: Box<CSharpType>,
+    },
 }
 
 impl CSharpType {
@@ -80,6 +89,18 @@ impl CSharpType {
         match self {
             Self::String => true,
             Self::Array(inner) | Self::Nullable(inner) => inner.contains_string(),
+            Self::Result { ok, err, .. } => ok.contains_string() || err.contains_string(),
+            _ => false,
+        }
+    }
+
+    /// Whether this type contains a nested `BoltFFIResult<_, _>` carrier.
+    /// Used to emit the C# runtime helper only when the public surface
+    /// names it.
+    pub(crate) fn contains_result(&self) -> bool {
+        match self {
+            Self::Result { .. } => true,
+            Self::Array(inner) | Self::Nullable(inner) => inner.contains_result(),
             _ => false,
         }
     }
@@ -113,6 +134,11 @@ impl CSharpType {
             Self::Nullable(inner) => {
                 Self::Nullable(Box::new((*inner).qualify_if_shadowed(shadowed, namespace)))
             }
+            Self::Result { carrier, ok, err } => Self::Result {
+                carrier: carrier.qualify_if_shadowed(shadowed, namespace),
+                ok: Box::new((*ok).qualify_if_shadowed(shadowed, namespace)),
+                err: Box::new((*err).qualify_if_shadowed(shadowed, namespace)),
+            },
             other => other,
         }
     }
@@ -177,9 +203,18 @@ impl CSharpType {
                 Self::from_read_op(underlying.ops.first().expect("custom underlying read op"))
             }
             ReadOp::Builtin { id, .. } => Self::Builtin(id.clone()),
-            ReadOp::Result { .. } => {
-                todo!("CSharpType::from_read_op: {:?}", op)
-            }
+            ReadOp::Result { ok, err, .. } => Self::Result {
+                carrier: Self::boltffi_result_reference(),
+                ok: Box::new(Self::from_result_branch_read_seq(ok)),
+                err: Box::new(Self::from_result_branch_read_seq(err)),
+            },
+        }
+    }
+
+    fn from_result_branch_read_seq(seq: &crate::ir::ops::ReadSeq) -> Self {
+        match seq.ops.first() {
+            Some(op) => Self::from_read_op(op),
+            None => Self::boltffi_unit(),
         }
     }
 
@@ -203,11 +238,32 @@ impl CSharpType {
                 Self::DataEnum(class_name.into())
             }
             TypeExpr::Builtin(id) => Self::Builtin(id.clone()),
-            TypeExpr::Result { .. }
-            | TypeExpr::Callback(_)
-            | TypeExpr::Custom(_)
-            | TypeExpr::Handle(_) => todo!("CSharpType::from_type_expr: {:?}", expr),
+            TypeExpr::Result { ok, err } => Self::Result {
+                carrier: Self::boltffi_result_reference(),
+                ok: Box::new(Self::from_result_branch_type_expr(ok)),
+                err: Box::new(Self::from_result_branch_type_expr(err)),
+            },
+            TypeExpr::Callback(_) | TypeExpr::Custom(_) | TypeExpr::Handle(_) => {
+                todo!("CSharpType::from_type_expr: {:?}", expr)
+            }
         }
+    }
+
+    fn from_result_branch_type_expr(expr: &TypeExpr) -> Self {
+        match expr {
+            TypeExpr::Void => Self::boltffi_unit(),
+            other => Self::from_type_expr(other),
+        }
+    }
+
+    pub(crate) fn boltffi_unit() -> Self {
+        Self::Named(CSharpTypeReference::Plain(CSharpClassName::new(
+            "BoltFFIUnit",
+        )))
+    }
+
+    pub(crate) fn boltffi_result_reference() -> CSharpTypeReference {
+        CSharpTypeReference::Plain(CSharpClassName::new("BoltFFIResult"))
     }
 }
 
@@ -274,6 +330,7 @@ impl fmt::Display for CSharpType {
             Self::Record(r) | Self::CStyleEnum(r) | Self::DataEnum(r) | Self::Named(r) => r.fmt(f),
             Self::Array(inner) => write!(f, "{inner}[]"),
             Self::Nullable(inner) => write!(f, "{inner}?"),
+            Self::Result { carrier, ok, err } => write!(f, "{carrier}<{ok}, {err}>"),
         }
     }
 }
@@ -328,6 +385,23 @@ mod tests {
                 .qualify_if_shadowed(&shadowed, &namespace)
                 .to_string(),
             "global::Demo.WireReader"
+        );
+    }
+
+    #[test]
+    fn result_runtime_type_qualifies_when_shadowed() {
+        let shadowed: HashSet<CSharpClassName> =
+            std::iter::once(CSharpClassName::new("BoltFFIResult")).collect();
+        let namespace = CSharpNamespace::from_source("demo");
+        let ty = CSharpType::Result {
+            carrier: CSharpType::boltffi_result_reference(),
+            ok: Box::new(CSharpType::Int),
+            err: Box::new(CSharpType::String),
+        };
+
+        assert_eq!(
+            ty.qualify_if_shadowed(&shadowed, &namespace).to_string(),
+            "global::Demo.BoltFFIResult<int, string>"
         );
     }
 

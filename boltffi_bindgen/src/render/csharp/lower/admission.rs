@@ -121,6 +121,10 @@ fn is_field_type_supported(
             !matches!(inner.as_ref(), TypeExpr::Option(_))
                 && is_field_type_supported(ffi, inner, records, enums)
         }
+        TypeExpr::Result { ok, err } => {
+            is_field_type_supported(ffi, ok, records, enums)
+                && is_field_type_supported(ffi, err, records, enums)
+        }
         _ => false,
     }
 }
