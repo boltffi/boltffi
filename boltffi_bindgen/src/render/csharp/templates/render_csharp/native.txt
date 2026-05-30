@@ -6,6 +6,16 @@
     }
 
 {% endif %}
+{%- if module.needs_last_error() %}
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct FfiString
+    {
+        public IntPtr ptr;
+        public UIntPtr len;
+        public UIntPtr cap;
+    }
+
+{% endif %}
 {%- if module.needs_ffi_buf() %}
     [StructLayout(LayoutKind.Sequential)]
     internal struct FfiBuf
@@ -589,11 +599,11 @@
 {% endif %}
 {%- if module.needs_bolt_exception() %}
     /// <summary>
-    /// Thrown by generated wrapper methods when a Rust <c>Result</c>
-    /// returns an <c>Err</c> whose payload isn't a typed
-    /// <c>#[error]</c> enum or record. The message is the underlying
-    /// error rendered as a string. Catch this to handle plain
-    /// <c>Result&lt;_, String&gt;</c> errors and untyped <c>Err</c>
+    /// Thrown by generated wrapper methods and fallible constructors
+    /// when a Rust <c>Result</c> returns an <c>Err</c> whose payload
+    /// isn't a typed <c>#[error]</c> enum or record. The message is the
+    /// underlying error rendered as a string. Catch this to handle
+    /// plain <c>Result&lt;_, String&gt;</c> errors and untyped <c>Err</c>
     /// payloads; catch a typed <c>&lt;Name&gt;Exception</c> instead
     /// when the Rust side declared an <c>#[error]</c> type.
     /// </summary>
@@ -921,6 +931,30 @@
     internal static class NativeMethods
     {
         internal const string LibName = "{{ module.lib_name }}";
+{%- if module.needs_last_error() %}
+
+        [DllImport(LibName, EntryPoint = "boltffi_last_error_message")]
+        private static extern FfiStatus LastErrorMessage(out FfiString message);
+
+        [DllImport(LibName, EntryPoint = "boltffi_free_string")]
+        private static extern void FreeString(FfiString message);
+
+        internal static string TakeLastErrorMessage(string fallback)
+        {
+            FfiStatus status = LastErrorMessage(out FfiString message);
+            if (status.code != 0) return fallback;
+
+            try
+            {
+                if (message.ptr == IntPtr.Zero || message.len == UIntPtr.Zero) return fallback;
+                return Marshal.PtrToStringUTF8(message.ptr, checked((int)(nuint)message.len)) ?? fallback;
+            }
+            finally
+            {
+                FreeString(message);
+            }
+        }
+{%- endif %}
 {%- if module.needs_ffi_buf() %}
 
         [DllImport(LibName, EntryPoint = "{{ module.free_buf_ffi_name }}")]

@@ -61,7 +61,13 @@ namespace {{ namespace }}
 {%- when _ %}
 {%- endmatch %}
 {%- endfor %}
+{%- if ctor.is_fallible %}
+                IntPtr _handle = NativeMethods.{{ ctor.native_method_name }}({{ ctor.native_call_args() }});
+                if (_handle == IntPtr.Zero) throw new BoltException(NativeMethods.TakeLastErrorMessage("Constructor failed"));
+                return _handle;
+{%- else %}
                 return NativeMethods.{{ ctor.native_method_name }}({{ ctor.native_call_args() }});
+{%- endif %}
 {%- for param in ctor.params %}
 {%- if param.is_pinned() %}
                 }
@@ -69,7 +75,13 @@ namespace {{ namespace }}
 {%- endfor %}
             }
 {%- else %}
+{%- if ctor.is_fallible %}
+            IntPtr _handle = NativeMethods.{{ ctor.native_method_name }}({{ ctor.native_call_args() }});
+            if (_handle == IntPtr.Zero) throw new BoltException(NativeMethods.TakeLastErrorMessage("Constructor failed"));
+            return _handle;
+{%- else %}
             return NativeMethods.{{ ctor.native_method_name }}({{ ctor.native_call_args() }});
+{%- endif %}
 {%- endif %}
         }
 {%- when CSharpConstructorKind::StaticFactory with { name } %}
@@ -99,7 +111,13 @@ namespace {{ namespace }}
 {%- when _ %}
 {%- endmatch %}
 {%- endfor %}
+{%- if ctor.is_fallible %}
+                IntPtr _handle = NativeMethods.{{ ctor.native_method_name }}({{ ctor.native_call_args() }});
+                if (_handle == IntPtr.Zero) throw new BoltException(NativeMethods.TakeLastErrorMessage("Factory constructor failed"));
+                return new {{ class.class_name }}(_handle);
+{%- else %}
                 return new {{ class.class_name }}(NativeMethods.{{ ctor.native_method_name }}({{ ctor.native_call_args() }}));
+{%- endif %}
 {%- for param in ctor.params %}
 {%- if param.is_pinned() %}
                 }
@@ -107,7 +125,13 @@ namespace {{ namespace }}
 {%- endfor %}
             }
 {%- else %}
+{%- if ctor.is_fallible %}
+            IntPtr _handle = NativeMethods.{{ ctor.native_method_name }}({{ ctor.native_call_args() }});
+            if (_handle == IntPtr.Zero) throw new BoltException(NativeMethods.TakeLastErrorMessage("Factory constructor failed"));
+            return new {{ class.class_name }}(_handle);
+{%- else %}
             return new {{ class.class_name }}(NativeMethods.{{ ctor.native_method_name }}({{ ctor.native_call_args() }}));
+{%- endif %}
 {%- endif %}
         }
 {%- endmatch %}

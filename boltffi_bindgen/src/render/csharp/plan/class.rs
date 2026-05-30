@@ -88,6 +88,10 @@ pub struct CSharpConstructorPlan {
     pub native_method_name: CSharpMethodName,
     /// The C function this constructor calls across the ABI.
     pub ffi_name: CFunctionName,
+    /// Whether the Rust constructor returns `Result<Self, _>`. The
+    /// generated FFI export returns a null handle on Err, so C# checks
+    /// the handle and throws instead of adopting it.
+    pub is_fallible: bool,
     /// Explicit params on the public surface.
     pub params: Vec<CSharpParamPlan>,
     /// For each non-blittable record / data-enum / option / nested-vec
@@ -184,11 +188,20 @@ impl CSharpClassPlan {
             || self.methods.iter().any(|m| !m.wire_writers.is_empty())
     }
 
-    /// Whether any method returns `Result<_, _>`. Used by the
-    /// module-level predicate that decides whether to emit the runtime
-    /// `BoltException` class.
+    pub fn has_fallible_constructors(&self) -> bool {
+        self.constructors.iter().any(|c| c.is_fallible)
+    }
+
+    /// Whether any method returns `Result<_, _>`.
     pub fn has_throwing_methods(&self) -> bool {
         self.methods.iter().any(|m| m.return_kind.is_result())
+    }
+
+    /// Whether any class member can throw the runtime `BoltException`.
+    /// Fallible constructors throw when the native side returns a null
+    /// handle; methods throw when they decode a non-typed `Result` Err.
+    pub fn has_throwing_members(&self) -> bool {
+        self.has_fallible_constructors() || self.has_throwing_methods()
     }
 
     pub fn has_async_methods(&self) -> bool {
@@ -225,15 +238,36 @@ mod tests {
         CSharpExpression::Identity(CSharpIdentity::Local(CSharpLocalName::new("placeholder")))
     }
 
-    fn class_with_methods(methods: Vec<CSharpMethodPlan>) -> CSharpClassPlan {
+    fn class_with_members(
+        constructors: Vec<CSharpConstructorPlan>,
+        methods: Vec<CSharpMethodPlan>,
+    ) -> CSharpClassPlan {
         CSharpClassPlan {
             summary_doc: None,
             class_name: CSharpClassName::from_source("counter"),
             ffi_free: CFunctionName::new("boltffi_counter_free".to_string()),
             native_free_method_name: CSharpMethodName::from_source("CounterFree"),
-            constructors: vec![],
+            constructors,
             methods,
             streams: vec![],
+        }
+    }
+
+    fn class_with_methods(methods: Vec<CSharpMethodPlan>) -> CSharpClassPlan {
+        class_with_members(vec![], methods)
+    }
+
+    fn constructor_with_fallibility(is_fallible: bool) -> CSharpConstructorPlan {
+        CSharpConstructorPlan {
+            summary_doc: None,
+            kind: CSharpConstructorKind::Primary {
+                helper_method_name: CSharpMethodName::from_source("counter_new_handle"),
+            },
+            native_method_name: CSharpMethodName::from_source("CounterNew"),
+            ffi_name: CFunctionName::new("boltffi_counter_new".to_string()),
+            is_fallible,
+            params: vec![],
+            wire_writers: vec![],
         }
     }
 
@@ -278,5 +312,20 @@ mod tests {
             method_with_return_kind(CSharpReturnKind::WireDecodeString),
         ]);
         assert!(!class.has_throwing_methods());
+    }
+
+    #[test]
+    fn has_throwing_members_is_true_when_a_constructor_is_fallible() {
+        let class = class_with_members(vec![constructor_with_fallibility(true)], vec![]);
+        assert!(class.has_throwing_members());
+    }
+
+    #[test]
+    fn has_throwing_members_is_false_when_constructors_and_methods_cannot_throw() {
+        let class = class_with_members(
+            vec![constructor_with_fallibility(false)],
+            vec![method_with_return_kind(CSharpReturnKind::Direct)],
+        );
+        assert!(!class.has_throwing_members());
     }
 }

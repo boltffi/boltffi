@@ -1428,6 +1428,7 @@ mod tests {
                 &CSharpMethodName::new("New"),
             ),
             ffi_name: CFunctionName::new("boltffi_inventory_new".to_string()),
+            is_fallible: false,
             params: vec![],
             wire_writers: vec![],
         };
@@ -1442,6 +1443,7 @@ mod tests {
                 &with_capacity_name,
             ),
             ffi_name: CFunctionName::new("boltffi_inventory_with_capacity".to_string()),
+            is_fallible: false,
             params: vec![CSharpParamPlan {
                 name: CSharpParamName::from_source("capacity"),
                 csharp_type: CSharpType::UInt,
@@ -1729,6 +1731,7 @@ mod tests {
                 &CSharpMethodName::new("New"),
             ),
             ffi_name: CFunctionName::new("boltffi_counter_new".to_string()),
+            is_fallible: false,
             params: vec![],
             wire_writers: vec![],
         };

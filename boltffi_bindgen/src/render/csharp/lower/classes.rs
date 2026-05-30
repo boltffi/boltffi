@@ -39,10 +39,11 @@ impl<'a> CSharpLowerer<'a> {
     }
 
     /// Walks `class.constructors` and produces the corresponding
-    /// [`CSharpConstructorPlan`]s. Fallible (`Result<Self, _>`) and
-    /// optional (`Option<Self>`) constructors are dropped silently;
-    /// the C# backend doesn't model failure paths yet, matching how
-    /// enum constructor lowering handles them.
+    /// [`CSharpConstructorPlan`]s. Fallible (`Result<Self, _>`)
+    /// constructors are kept so the renderer can null-check the
+    /// returned handle; optional (`Option<Self>`) constructors are
+    /// still skipped because the C# class surface doesn't model
+    /// nullable construction yet.
     fn lower_class_constructors(
         &self,
         class: &ClassDef,
@@ -52,7 +53,7 @@ impl<'a> CSharpLowerer<'a> {
             .constructors
             .iter()
             .enumerate()
-            .filter(|(_, ctor)| !ctor.is_fallible() && !ctor.is_optional())
+            .filter(|(_, ctor)| !ctor.is_optional())
             .filter_map(|(index, ctor)| {
                 let call = self.abi.calls.iter().find(|c| {
                     c.id == CallId::Constructor {
@@ -111,6 +112,7 @@ impl<'a> CSharpLowerer<'a> {
             kind,
             native_method_name,
             ffi_name: (&call.symbol).into(),
+            is_fallible: ctor.is_fallible(),
             params,
             wire_writers,
         })

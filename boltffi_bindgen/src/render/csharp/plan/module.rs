@@ -126,7 +126,13 @@ impl CSharpModulePlan {
     }
 
     pub fn needs_ffi_status(&self) -> bool {
-        self.has_async() || self.needs_callback_runtime()
+        self.has_async() || self.needs_callback_runtime() || self.needs_last_error()
+    }
+
+    pub fn needs_last_error(&self) -> bool {
+        self.classes
+            .iter()
+            .any(CSharpClassPlan::has_fallible_constructors)
     }
 
     /// Whether the module needs `using System.Text;`. True when any function
@@ -223,13 +229,6 @@ impl CSharpModulePlan {
                 .any(|closure| closure.needs_wire_writer)
     }
 
-    /// Whether the runtime `BoltException` class is emitted. True when
-    /// any throwing function or method in the module ends up calling
-    /// `new BoltException(...)` — i.e., any `Result<_, _>` whose Err
-    /// type isn't a typed `#[error]` enum or record. Mirrors the
-    /// Kotlin/Swift/Dart pattern of a generated runtime FFI exception
-    /// type; Java reuses the built-in `RuntimeException` instead and
-    /// has no equivalent.
     /// Whether the module references `std::time::Duration`. Gates the
     /// `WireReader.ReadDuration` / `WireWriter.WriteDuration` helpers in
     /// the runtime template — modules that don't take or return a
@@ -256,12 +255,19 @@ impl CSharpModulePlan {
         self.builtins.uses_url()
     }
 
+    /// Whether the runtime `BoltException` class is emitted. True when
+    /// any throwing function, method, or fallible class constructor in
+    /// the module ends up calling `new BoltException(...)` — i.e., any
+    /// `Result<_, _>` whose Err type isn't a typed `#[error]` enum or
+    /// record. Mirrors the Kotlin/Swift/Dart pattern of a generated
+    /// runtime FFI exception type; Java reuses the built-in
+    /// `RuntimeException` instead and has no equivalent.
     pub fn needs_bolt_exception(&self) -> bool {
         self.functions.iter().any(|f| f.return_kind.is_result())
             || self
                 .classes
                 .iter()
-                .any(CSharpClassPlan::has_throwing_methods)
+                .any(CSharpClassPlan::has_throwing_members)
             || self
                 .records
                 .iter()
@@ -276,8 +282,8 @@ mod tests {
         CSharpExpression, CSharpIdentity, CSharpLocalName, CSharpMethodName, CSharpType,
     };
     use super::super::{
-        CFunctionName, CSharpEnumKind, CSharpFunctionPlan, CSharpMethodPlan, CSharpReceiver,
-        CSharpReturnKind,
+        CFunctionName, CSharpConstructorKind, CSharpConstructorPlan, CSharpEnumKind,
+        CSharpFunctionPlan, CSharpMethodPlan, CSharpReceiver, CSharpReturnKind,
     };
     use super::*;
 
@@ -348,6 +354,32 @@ mod tests {
         }
     }
 
+    fn fallible_constructor_plan() -> CSharpConstructorPlan {
+        CSharpConstructorPlan {
+            summary_doc: None,
+            kind: CSharpConstructorKind::StaticFactory {
+                name: CSharpMethodName::from_source("try_new"),
+            },
+            native_method_name: CSharpMethodName::from_source("CounterTryNew"),
+            ffi_name: CFunctionName::new("boltffi_counter_try_new".to_string()),
+            is_fallible: true,
+            params: vec![],
+            wire_writers: vec![],
+        }
+    }
+
+    fn fallible_constructor_class_plan() -> CSharpClassPlan {
+        CSharpClassPlan {
+            summary_doc: None,
+            class_name: CSharpClassName::from_source("counter"),
+            ffi_free: CFunctionName::new("boltffi_counter_free".to_string()),
+            native_free_method_name: CSharpMethodName::from_source("CounterFree"),
+            constructors: vec![fallible_constructor_plan()],
+            methods: vec![],
+            streams: vec![],
+        }
+    }
+
     fn throwing_record_plan() -> CSharpRecordPlan {
         CSharpRecordPlan {
             summary_doc: None,
@@ -401,6 +433,24 @@ mod tests {
         let mut module = empty_module();
         module.classes.push(throwing_class_plan());
         assert!(module.needs_bolt_exception());
+    }
+
+    /// A fallible class constructor throws `BoltException` when the
+    /// native export returns a null handle, so the runtime exception
+    /// class must be emitted even if no method returns `Result`.
+    #[test]
+    fn needs_bolt_exception_is_true_when_a_class_constructor_is_fallible() {
+        let mut module = empty_module();
+        module.classes.push(fallible_constructor_class_plan());
+        assert!(module.needs_bolt_exception());
+    }
+
+    #[test]
+    fn needs_last_error_is_true_when_a_class_constructor_is_fallible() {
+        let mut module = empty_module();
+        module.classes.push(fallible_constructor_class_plan());
+        assert!(module.needs_last_error());
+        assert!(module.needs_ffi_status());
     }
 
     /// A record method that returns `Result<_, _>` flips the predicate

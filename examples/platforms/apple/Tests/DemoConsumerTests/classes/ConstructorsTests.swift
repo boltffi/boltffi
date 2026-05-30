@@ -18,11 +18,12 @@ final class ConstructorsTests: DemoTestCase {
         XCTAssertEqual(smallInventory.add(item: "c"), false)
         XCTAssertEqual(smallInventory.getAll(), ["a", "b"])
 
+        demoCase("case:classes.constructors.inventory.try_new.should_return_inventory_for_positive_capacity")
         let tryInventory = try Inventory(tryNew: 1)
         XCTAssertEqual(tryInventory.capacity(), 1)
         XCTAssertEqual(tryInventory.add(item: "only"), true)
         XCTAssertEqual(tryInventory.add(item: "overflow"), false)
+        demoCase("case:classes.constructors.inventory.try_new.should_reject_zero_capacity")
         assertThrowsMessageContains("capacity must be greater than zero", try Inventory(tryNew: 0))
     }
 }
-

@@ -3301,6 +3301,16 @@ mod tests {
             "public static Inventory WithCapacity(uint capacity)",
             "demo Inventory's `pub fn with_capacity(u32)` lifts to a static factory",
         );
+        assert_source_contains(
+            &inventory.source,
+            "public static Inventory TryNew(uint capacity)",
+            "demo Inventory's fallible `pub fn try_new(u32)` lifts to a static factory",
+        );
+        assert_source_contains(
+            &inventory.source,
+            "if (_handle == IntPtr.Zero) throw new BoltException(NativeMethods.TakeLastErrorMessage(\"Factory constructor failed\"));",
+            "fallible class constructors check for the null handle returned by Rust Err and throw the last error message",
+        );
 
         let counter = output
             .files
@@ -3373,6 +3383,21 @@ mod tests {
             &main.source,
             "internal static extern IntPtr InventoryWithCapacity(uint capacity);",
             "Inventory's named-init constructor takes its explicit param through DllImport",
+        );
+        assert_source_contains(
+            &main.source,
+            r#"[DllImport(LibName, EntryPoint = "boltffi_inventory_try_new")]"#,
+            "demo crate emit registers Inventory's fallible constructor DllImport",
+        );
+        assert_source_contains(
+            &main.source,
+            "internal static extern IntPtr InventoryTryNew(uint capacity);",
+            "Inventory's fallible constructor returns an IntPtr handle through DllImport",
+        );
+        assert_source_contains(
+            &main.source,
+            r#"[DllImport(LibName, EntryPoint = "boltffi_last_error_message")]"#,
+            "fallible constructors read the native last-error message before throwing",
         );
         assert_source_contains(
             &main.source,

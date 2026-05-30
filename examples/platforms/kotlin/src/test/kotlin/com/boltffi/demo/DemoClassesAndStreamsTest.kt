@@ -32,12 +32,14 @@ class DemoClassesAndStreamsTest {
             assertEquals(listOf("a", "b"), inventory.getAll())
         }
 
+        demoCase("case:classes.constructors.inventory.try_new.should_return_inventory_for_positive_capacity")
         Inventory.tryNew(1u).use { inventory ->
             assertEquals(1u, inventory.capacity())
             assertEquals(true, inventory.add("only"))
             assertEquals(false, inventory.add("overflow"))
         }
 
+        demoCase("case:classes.constructors.inventory.try_new.should_reject_zero_capacity")
         assertMessageContains(assertFailsWith<FfiException> { Inventory.tryNew(0u) }, "capacity must be greater than zero")
 
         Counter(2).use { counter ->

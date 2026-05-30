@@ -18,6 +18,7 @@ export async function run() {
   assertArrayEqual(fixedCapacityInventory.getAll(), ["a", "b"]);
   fixedCapacityInventory.dispose();
 
+  globalThis.demoCase("case:classes.constructors.inventory.try_new.should_return_inventory_for_positive_capacity");
   const tinyInventory = demo.Inventory.tryNew(1);
   assert.notEqual(tinyInventory, null);
   assert.equal(tinyInventory.capacity(), 1);
@@ -25,5 +26,6 @@ export async function run() {
   assert.equal(tinyInventory.add("overflow"), false);
   tinyInventory.dispose();
 
+  globalThis.demoCase("case:classes.constructors.inventory.try_new.should_reject_zero_capacity");
   assert.equal(demo.Inventory.tryNew(0), null);
 }

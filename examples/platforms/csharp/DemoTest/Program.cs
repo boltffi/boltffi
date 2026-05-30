@@ -1789,6 +1789,24 @@ public static class DemoTest
             Require(!inv.Add("third"), "Add past capacity returns false");
         }
 
+        DemoCase("case:classes.constructors.inventory.try_new.should_return_inventory_for_positive_capacity");
+        using (var inv = Inventory.TryNew(1))
+        {
+            Require(inv.Capacity() == 1u, "Inventory.TryNew(1).Capacity()");
+            Require(inv.Count() == 0u, "Inventory.TryNew(1).Count() starts at 0");
+        }
+
+        DemoCase("case:classes.constructors.inventory.try_new.should_reject_zero_capacity");
+        try
+        {
+            using var unexpected = Inventory.TryNew(0);
+            Require(false, "Inventory.TryNew(0) should throw");
+        }
+        catch (BoltException e)
+        {
+            Require(e.Message.Contains("capacity must be greater than zero"), "Inventory.TryNew(0) error message");
+        }
+
         // Counter exercises every method-return shape that lands in
         // this PR: primitive direct, void mutator, Option<primitive>
         // through FfiBuf, and a blittable record return.

@@ -50,6 +50,7 @@ public final class DemoTest {
             testBlittableRecordVecs();
             testOptions();
             testRecordsWithVecs();
+            testInventoryConstructors();
             testConstructorCoverageMatrix();
             testClosures();
             testSyncCallbacks();
@@ -1466,6 +1467,27 @@ public final class DemoTest {
             record.shape(),
             record.parameters()
         ).equals(record) : "makeMixedRecord";
+
+        System.out.println("  PASS\n");
+    }
+
+    private static void testInventoryConstructors() {
+        System.out.println("Testing class constructors (Inventory)...");
+
+        demoCase("case:classes.constructors.inventory.try_new.should_return_inventory_for_positive_capacity");
+        try (Inventory inventory = Inventory.tryNew(1)) {
+            assert inventory.capacity() == 1 : "Inventory.tryNew(1).capacity";
+            assert inventory.count() == 0 : "Inventory.tryNew(1).count";
+            assert inventory.add("only") : "Inventory.tryNew(1).add only";
+            assert !inventory.add("overflow") : "Inventory.tryNew(1).add overflow";
+        }
+
+        demoCase("case:classes.constructors.inventory.try_new.should_reject_zero_capacity");
+        try (Inventory unexpected = Inventory.tryNew(0)) {
+            assert false : "Inventory.tryNew(0) should fail";
+        } catch (RuntimeException expected) {
+            assert expected.getMessage().contains("Factory constructor failed") : "Inventory.tryNew(0) error";
+        }
 
         System.out.println("  PASS\n");
     }
