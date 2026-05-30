@@ -255,14 +255,22 @@ impl CargoArguments {
             working_directory.join(manifest_path)
         };
 
-        manifest_path
-            .canonicalize()
-            .map_err(|source| CliError::CommandFailed {
-                command: format!(
-                    "canonicalize manifest path {}: {source}",
-                    manifest_path.display()
-                ),
-                status: None,
-            })
+        canonicalize_manifest_path(&manifest_path).map_err(|source| CliError::CommandFailed {
+            command: format!(
+                "canonicalize manifest path {}: {source}",
+                manifest_path.display()
+            ),
+            status: None,
+        })
     }
+}
+
+#[cfg(windows)]
+fn canonicalize_manifest_path(path: &Path) -> std::io::Result<PathBuf> {
+    dunce::canonicalize(path)
+}
+
+#[cfg(not(windows))]
+fn canonicalize_manifest_path(path: &Path) -> std::io::Result<PathBuf> {
+    path.canonicalize()
 }

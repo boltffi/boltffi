@@ -160,7 +160,7 @@ impl Cargo {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
 
     use super::Cargo;
     use crate::cargo::fixture::{CargoMetadataFixture, CargoPackageFixture, CargoTargetFixture};
@@ -195,6 +195,25 @@ mod tests {
 
     fn metadata_fixture() -> CargoMetadataFixture {
         CargoMetadataFixture::new("/tmp/boltffi-target")
+    }
+
+    #[cfg(windows)]
+    fn expected_canonical_manifest_path() -> PathBuf {
+        dunce::canonicalize(
+            std::env::current_dir()
+                .expect("current dir")
+                .join("Cargo.toml"),
+        )
+        .expect("canonical manifest path")
+    }
+
+    #[cfg(not(windows))]
+    fn expected_canonical_manifest_path() -> PathBuf {
+        std::env::current_dir()
+            .expect("current dir")
+            .join("Cargo.toml")
+            .canonicalize()
+            .expect("canonical manifest path")
     }
 
     #[test]
@@ -245,11 +264,7 @@ mod tests {
 
     #[test]
     fn canonicalizes_manifest_path_from_split_cargo_args() {
-        let expected = std::env::current_dir()
-            .expect("current dir")
-            .join("Cargo.toml")
-            .canonicalize()
-            .expect("canonical manifest path");
+        let expected = expected_canonical_manifest_path();
 
         let manifest_path = cargo(&["--manifest-path", "Cargo.toml"])
             .manifest_path()
@@ -260,11 +275,7 @@ mod tests {
 
     #[test]
     fn canonicalizes_manifest_path_from_equals_cargo_arg() {
-        let expected = std::env::current_dir()
-            .expect("current dir")
-            .join("Cargo.toml")
-            .canonicalize()
-            .expect("canonical manifest path");
+        let expected = expected_canonical_manifest_path();
 
         let manifest_path = cargo(&["--manifest-path=Cargo.toml"])
             .manifest_path()
@@ -275,15 +286,32 @@ mod tests {
 
     #[test]
     fn canonicalizes_implicit_manifest_path() {
-        let expected = std::env::current_dir()
-            .expect("current dir")
-            .join("Cargo.toml")
-            .canonicalize()
-            .expect("canonical manifest path");
+        let expected = expected_canonical_manifest_path();
 
         let manifest_path = cargo(&[]).manifest_path().expect("manifest path");
 
         assert_eq!(manifest_path, expected);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn canonical_manifest_path_omits_windows_verbatim_prefix() {
+        use std::path::{Component, Prefix};
+
+        let manifest_path = cargo(&[]).manifest_path().expect("manifest path");
+        let has_verbatim_prefix = matches!(
+            manifest_path.components().next(),
+            Some(Component::Prefix(prefix)) if matches!(
+                prefix.kind(),
+                Prefix::Verbatim(_) | Prefix::VerbatimDisk(_) | Prefix::VerbatimUNC(_, _)
+            )
+        );
+
+        assert!(
+            !has_verbatim_prefix,
+            "{} should not use a Windows verbatim prefix",
+            manifest_path.display()
+        );
     }
 
     #[test]
