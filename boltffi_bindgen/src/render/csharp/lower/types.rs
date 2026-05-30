@@ -113,6 +113,11 @@ impl<'a> CSharpLowerer<'a> {
                 // primitive layout.
                 wire_encoded_kind(wire_writers, &param.name)?
             }
+            TypeExpr::Result { .. } => {
+                // Results are tagged unions on the wire, so the managed
+                // carrier is serialized into a byte buffer before P/Invoke.
+                wire_encoded_kind(wire_writers, &param.name)?
+            }
             // Primitives, bools, blittable records, and C-style enums
             // pass directly. The CLR marshals them across P/Invoke with
             // no extra setup.

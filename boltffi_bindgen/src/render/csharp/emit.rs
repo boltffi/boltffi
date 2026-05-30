@@ -1455,6 +1455,50 @@ mod tests {
     }
 
     #[test]
+    fn emit_function_with_result_param_uses_wire_writer_and_result_runtime() {
+        let mut contract = empty_contract();
+        contract.functions.push(function_with_types(
+            "result_to_string",
+            vec![(
+                "input",
+                TypeExpr::Result {
+                    ok: Box::new(TypeExpr::Primitive(PrimitiveType::I32)),
+                    err: Box::new(TypeExpr::String),
+                },
+            )],
+            ReturnDef::Value(TypeExpr::String),
+        ));
+
+        let src = emit_contract(&contract).combined_source();
+
+        assert_source_contains(
+            &src,
+            "public static string ResultToString(BoltFFIResult<int, string> input)",
+            "Result params should be admitted and exposed on the public C# wrapper",
+        );
+        assert_source_contains(
+            &src,
+            "public readonly struct BoltFFIResult<TOk, TErr>",
+            "Result-param-only modules still need the public result carrier",
+        );
+        assert_source_contains(
+            &src,
+            "using var _wire_input = new WireWriter((1 + (input.IsOk ? 4 : (4 + Encoding.UTF8.GetByteCount(input.ErrValue)))));",
+            "Result params should allocate a wire buffer sized from the active branch",
+        );
+        assert_source_contains(
+            &src,
+            "if (input.IsOk) { _wire_input.WriteU8((byte)0); _wire_input.WriteI32(input.OkValue); } else { _wire_input.WriteU8((byte)1); _wire_input.WriteString(input.ErrValue); }",
+            "Result params should encode the tag and active payload branch",
+        );
+        assert_source_contains(
+            &src,
+            "internal static extern FfiBuf ResultToString(byte[] input, UIntPtr inputLen);",
+            "Result params should cross P/Invoke as a byte buffer plus length",
+        );
+    }
+
+    #[test]
     fn emit_record_with_void_result_branch_encodes_only_the_tag() {
         let mut contract = empty_contract();
         contract.catalog.insert_record(record_with_fields(

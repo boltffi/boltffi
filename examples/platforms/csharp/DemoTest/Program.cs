@@ -2201,6 +2201,11 @@ public static class DemoTest
             Require(e.Message.Contains("boom"), "AlwaysErr error message");
         }
 
+        DemoCase("case:results.basic.result_to_string.should_render_ok");
+        Require(ResultToString(BoltFFIResult<int, string>.Ok(7)) == "ok: 7", "ResultToString Ok");
+        DemoCase("case:results.basic.result_to_string.should_render_err");
+        Require(ResultToString(BoltFFIResult<int, string>.Err("bad")) == "err: bad", "ResultToString Err");
+
         // Result<Point, String> with Ok carrying a record.
         DemoCase("case:results.basic.parse_point.should_parse_coordinates");
         Point p = ParsePoint("3.0,4.0");

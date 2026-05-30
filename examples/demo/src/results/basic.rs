@@ -132,11 +132,6 @@ pub fn always_err(msg: String) -> Result<i32, String> {
     justification = "Ensure result_to_string receives an Ok Result value over FFI and renders its success payload.",
     directions = "Call `results::basic::result_to_string` through the generated binding and assert result_to_string receives an Ok Result value over FFI and renders its success payload.",
     exclude(
-        csharp,
-        reason = ExclusionReason::ImplementationGap,
-        details = "#321: C# bindgen does not currently emit functions that take Result<T, E> as a parameter. Include this case when C# Result-parameter support lands."
-    ),
-    exclude(
         python,
         reason = ExclusionReason::ImplementationGap,
         details = "Python is experimental; its lowerer does not currently accept Result<T, E> parameters. Include this case when Result parameters are implemented for Python."
@@ -146,11 +141,6 @@ pub fn always_err(msg: String) -> Result<i32, String> {
     "results.basic.result_to_string.should_render_err",
     justification = "Ensure result_to_string receives an Err Result value over FFI and renders its error payload.",
     directions = "Call `results::basic::result_to_string` through the generated binding and assert result_to_string receives an Err Result value over FFI and renders its error payload.",
-    exclude(
-        csharp,
-        reason = ExclusionReason::ImplementationGap,
-        details = "#321: C# bindgen does not currently emit functions that take Result<T, E> as a parameter. Include this case when C# Result-parameter support lands."
-    ),
     exclude(
         python,
         reason = ExclusionReason::ImplementationGap,

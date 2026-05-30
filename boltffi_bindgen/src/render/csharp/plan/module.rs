@@ -7,7 +7,8 @@ use crate::ir::types::BuiltinKind;
 use super::super::ast::{CSharpClassName, CSharpNamespace};
 use super::{
     CFunctionName, CSharpCallablePlan, CSharpCallbackPlan, CSharpClassPlan, CSharpClosurePlan,
-    CSharpEnumPlan, CSharpFunctionPlan, CSharpRecordPlan,
+    CSharpConstructorPlan, CSharpEnumPlan, CSharpFunctionPlan, CSharpMethodPlan, CSharpParamPlan,
+    CSharpRecordPlan,
 };
 
 /// A whole C# module: namespace, library binding, and every record, enum,
@@ -127,6 +128,10 @@ impl CSharpModulePlan {
 
     pub fn needs_result_runtime(&self) -> bool {
         self.needs_callback_runtime()
+            || self.functions.iter().any(function_has_result_params)
+            || self.classes.iter().any(class_has_result_params)
+            || self.records.iter().any(record_method_has_result_params)
+            || self.enums.iter().any(enum_method_has_result_params)
             || self.records.iter().any(CSharpRecordPlan::has_result_fields)
             || self.enums.iter().any(CSharpEnumPlan::has_result_fields)
     }
@@ -280,6 +285,35 @@ impl CSharpModulePlan {
                 .any(CSharpRecordPlan::has_throwing_methods)
             || self.enums.iter().any(CSharpEnumPlan::has_throwing_methods)
     }
+}
+
+fn params_have_result(params: &[CSharpParamPlan]) -> bool {
+    params.iter().any(|p| p.csharp_type.contains_result())
+}
+
+fn function_has_result_params(function: &CSharpFunctionPlan) -> bool {
+    params_have_result(&function.params)
+}
+
+fn constructor_has_result_params(constructor: &CSharpConstructorPlan) -> bool {
+    params_have_result(&constructor.params)
+}
+
+fn method_has_result_params(method: &CSharpMethodPlan) -> bool {
+    params_have_result(&method.params)
+}
+
+fn class_has_result_params(class: &CSharpClassPlan) -> bool {
+    class.constructors.iter().any(constructor_has_result_params)
+        || class.methods.iter().any(method_has_result_params)
+}
+
+fn record_method_has_result_params(record: &CSharpRecordPlan) -> bool {
+    record.methods.iter().any(method_has_result_params)
+}
+
+fn enum_method_has_result_params(enumeration: &CSharpEnumPlan) -> bool {
+    enumeration.methods.iter().any(method_has_result_params)
 }
 
 #[cfg(test)]

@@ -112,9 +112,7 @@ impl<'a> CSharpLowerer<'a> {
             // the wire-encoded path: the macro exposes them as wire-buffer
             // signatures on the C ABI, matching the param shape Java uses.
             WriteOp::Builtin { .. } => true,
-            WriteOp::Result { .. } => {
-                todo!("C# backend has not yet implemented param support for {op:?}")
-            }
+            WriteOp::Result { .. } => true,
         }
     }
 }

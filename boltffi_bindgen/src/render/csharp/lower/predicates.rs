@@ -25,16 +25,20 @@ impl<'a> CSharpLowerer<'a> {
     }
 
     /// Whether the param can be handled by the C# backend. By-value is
-    /// the common case; `&mut [T]` (RefMut over a `Vec<T>`) is allowed
-    /// when T is a blittable vec element — the CLR pins primitive
-    /// arrays across P/Invoke, so the native side can mutate them in
-    /// place. Callback params have their own passing kinds.
+    /// the common case; `Result<T, E>` params ride the same wire-encoded
+    /// carrier used by record fields. `&mut [T]` (RefMut over a `Vec<T>`)
+    /// is allowed when T is a blittable vec element — the CLR pins
+    /// primitive arrays across P/Invoke, so the native side can mutate
+    /// them in place. Callback params have their own passing kinds.
     pub(super) fn is_supported_param(&self, param: &ParamDef) -> bool {
         match (&param.passing, &param.type_expr) {
             (ParamPassing::Value, TypeExpr::Option(inner))
                 if matches!(inner.as_ref(), TypeExpr::Callback(_)) =>
             {
                 self.is_supported_type(&param.type_expr)
+            }
+            (ParamPassing::Value, TypeExpr::Result { ok, err }) => {
+                self.is_supported_result_type(ok) && self.is_supported_result_type(err)
             }
             (ParamPassing::ImplTrait | ParamPassing::BoxedDyn, TypeExpr::Callback(id)) => {
                 self.is_supported_callback(id)
