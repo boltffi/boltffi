@@ -34,9 +34,6 @@ impl<'a> CSharpLowerer<'a> {
             WriteOp::String { value } => WriteOp::String {
                 value: Self::prefix_value(value, binding),
             },
-            WriteOp::Bytes { value } => WriteOp::Bytes {
-                value: Self::prefix_value(value, binding),
-            },
             WriteOp::Record { id, value, fields } => WriteOp::Record {
                 id: id.clone(),
                 value: Self::prefix_value(value, binding),

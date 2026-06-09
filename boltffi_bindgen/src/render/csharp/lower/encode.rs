@@ -75,14 +75,6 @@ pub(crate) fn lower_encode_expr(
                 args: vec![render_value(value, renames)].into(),
             })]
         }
-        WriteOp::Bytes { value } => {
-            vec![CSharpStatement::Expression(CSharpExpression::MethodCall {
-                receiver: Box::new(writer.clone()),
-                method: CSharpMethodName::from_source("write_bytes"),
-                type_args: vec![],
-                args: vec![render_value(value, renames)].into(),
-            })]
-        }
         WriteOp::Builtin { id, value } => {
             vec![CSharpStatement::Expression(CSharpExpression::MethodCall {
                 receiver: Box::new(writer.clone()),

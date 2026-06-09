@@ -152,7 +152,6 @@ pub fn type_expr_dart_type(ty: &TypeExpr) -> String {
     match ty {
         TypeExpr::Primitive(p) => primitive_dart_type(*p),
         TypeExpr::String => "String".to_string(),
-        TypeExpr::Bytes => "$$typed_data.Uint8List".to_string(),
         TypeExpr::Vec(inner) => match inner.as_ref() {
             TypeExpr::Primitive(primitive) => match primitive {
                 PrimitiveType::I32 => "$$typed_data.Int32List".to_string(),
@@ -358,7 +357,6 @@ fn write_seq_dart_type(seq: &WriteSeq) -> String {
             type_expr_dart_type(&TypeExpr::Primitive(*primitive))
         }
         Some(WriteOp::String { .. }) => "String".to_string(),
-        Some(WriteOp::Bytes { .. }) => "Uint8List".to_string(),
         Some(WriteOp::Builtin { id, .. }) => type_expr_dart_type(&TypeExpr::Builtin(id.clone())),
         Some(WriteOp::Record { id, .. }) => render_type_name(id.as_str()),
         Some(WriteOp::Enum { id, .. }) => render_type_name(id.as_str()),
@@ -423,7 +421,6 @@ pub fn emit_writer_write(seq: &WriteSeq, writer_name: &str, value: &str) -> Stri
             )
         }
         Some(WriteOp::String { .. }) => format!("{writer_name}.writeString({value});"),
-        Some(WriteOp::Bytes { .. }) => format!("{writer_name}.writeTypedData({value});"),
         Some(WriteOp::Builtin { id, .. }) => emit_write_builtin(id, writer_name, value),
         Some(WriteOp::Record { .. }) => format!("{value}._m$wireEncode({writer_name});",),
         Some(WriteOp::Enum { .. }) => format!("{value}._m$wireEncode({writer_name});"),
@@ -516,7 +513,6 @@ pub fn emit_reader_read(seq: &ReadSeq, reader_name: &str) -> String {
             format!("{reader_name}.{}()", primitive_read_method(*primitive))
         }
         ReadOp::String { .. } => format!("{reader_name}.readString()"),
-        ReadOp::Bytes { .. } => format!("{reader_name}.readUint8List()"),
         ReadOp::Record { id, .. } => {
             format!(
                 "{}._m$wireDecode({reader_name})",

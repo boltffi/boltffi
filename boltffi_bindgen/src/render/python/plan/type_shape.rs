@@ -5,7 +5,6 @@ use super::{PythonEnumType, PythonRecordType};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PythonSequenceType {
-    Bytes,
     PrimitiveVec(PrimitiveType),
     CStyleEnumVec(PythonEnumType),
 }
@@ -13,7 +12,6 @@ pub enum PythonSequenceType {
 impl PythonSequenceType {
     pub fn parameter_annotation(&self) -> String {
         match self {
-            Self::Bytes => "bytes".to_string(),
             Self::PrimitiveVec(PrimitiveType::U8) => "bytes | Sequence[int]".to_string(),
             Self::PrimitiveVec(primitive) => {
                 format!("Sequence[{}]", primitive.python_annotation())
@@ -24,7 +22,7 @@ impl PythonSequenceType {
 
     pub fn return_annotation(&self) -> String {
         match self {
-            Self::Bytes | Self::PrimitiveVec(PrimitiveType::U8) => "bytes".to_string(),
+            Self::PrimitiveVec(PrimitiveType::U8) => "bytes".to_string(),
             Self::PrimitiveVec(primitive) => {
                 format!("list[{}]", primitive.python_annotation())
             }
@@ -34,7 +32,6 @@ impl PythonSequenceType {
 
     pub fn primitive_element(&self) -> Option<PrimitiveType> {
         match self {
-            Self::Bytes => None,
             Self::PrimitiveVec(primitive) => Some(*primitive),
             Self::CStyleEnumVec(_) => None,
         }
@@ -47,12 +44,8 @@ impl PythonSequenceType {
         }
     }
 
-    pub fn is_bytes(&self) -> bool {
-        matches!(self, Self::Bytes)
-    }
-
     pub fn is_byte_like(&self) -> bool {
-        matches!(self, Self::Bytes | Self::PrimitiveVec(PrimitiveType::U8))
+        matches!(self, Self::PrimitiveVec(PrimitiveType::U8))
     }
 
     pub fn is_primitive_vector(&self) -> bool {
@@ -64,10 +57,7 @@ impl PythonSequenceType {
     }
 
     pub fn uses_buffer_input(&self) -> bool {
-        matches!(
-            self,
-            Self::Bytes | Self::PrimitiveVec(_) | Self::CStyleEnumVec(_)
-        )
+        matches!(self, Self::PrimitiveVec(_) | Self::CStyleEnumVec(_))
     }
 }
 
@@ -150,10 +140,6 @@ impl PythonType {
 
     pub fn is_c_style_enum(&self) -> bool {
         matches!(self, Self::CStyleEnum(_))
-    }
-
-    pub fn is_bytes(&self) -> bool {
-        matches!(self, Self::Sequence(PythonSequenceType::Bytes))
     }
 
     pub fn is_byte_like(&self) -> bool {

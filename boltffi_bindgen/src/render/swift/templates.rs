@@ -379,24 +379,6 @@ mod tests {
         }
     }
 
-    fn read_bytes(offset_expr: OffsetExpr) -> ReadSeq {
-        ReadSeq {
-            size: SizeExpr::Runtime,
-            ops: vec![ReadOp::Bytes {
-                offset: offset_expr,
-            }],
-            shape: WireShape::Value,
-        }
-    }
-
-    fn write_bytes(value: &str) -> WriteSeq {
-        WriteSeq {
-            size: SizeExpr::Sum(vec![SizeExpr::Fixed(4), SizeExpr::BytesLen(val(value))]),
-            ops: vec![WriteOp::Bytes { value: val(value) }],
-            shape: WireShape::Value,
-        }
-    }
-
     fn read_option(offset_expr: OffsetExpr, inner: ReadSeq) -> ReadSeq {
         ReadSeq {
             size: SizeExpr::Runtime,
@@ -1318,7 +1300,12 @@ mod tests {
                     result: Box::new(SwiftAsyncResult::Encoded {
                         swift_type: "Data".to_string(),
                         ok_type: None,
-                        decode: read_bytes(offset("pos")),
+                        decode: read_vec(
+                            offset("pos"),
+                            TypeExpr::Primitive(PrimitiveType::U8),
+                            read_primitive(PrimitiveType::U8, offset("pos")),
+                            VecLayout::Blittable { element_size: 1 },
+                        ),
                         throws: false,
                         err_decode: read_empty(),
                         err_is_string: false,

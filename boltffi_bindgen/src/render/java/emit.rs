@@ -286,7 +286,6 @@ fn emit_reader_read_with_context(seq: &ReadSeq, context: &mut JavaEmitContext) -
             format!("reader.{}()", primitive_read_method(*primitive))
         }
         ReadOp::String { .. } => "reader.readString()".to_string(),
-        ReadOp::Bytes { .. } => "reader.readBytes()".to_string(),
         ReadOp::Builtin { id, .. } => {
             format!("reader.{}()", mappings::java_builtin_read_method(id))
         }
@@ -428,9 +427,6 @@ fn emit_write_expr_with_context(
         }
         WriteOp::String { value } => {
             format!("{}.writeString({})", writer_name, render_value(value))
-        }
-        WriteOp::Bytes { value } => {
-            format!("{}.writeBytes({})", writer_name, render_value(value))
         }
         WriteOp::Builtin { id, value } => {
             format!(
@@ -589,7 +585,6 @@ fn java_type_for_iteration(ty: &TypeExpr) -> String {
     match ty {
         TypeExpr::Primitive(primitive) => mappings::java_boxed_type(*primitive).to_string(),
         TypeExpr::String => "String".to_string(),
-        TypeExpr::Bytes => "byte[]".to_string(),
         TypeExpr::Builtin(id) => mappings::java_builtin_type(id).to_string(),
         TypeExpr::Record(id) => NamingConvention::class_name(id.as_str()),
         TypeExpr::Enum(id) => NamingConvention::class_name(id.as_str()),

@@ -450,7 +450,6 @@ impl<'m> ContractBuilder<'m> {
         match ty {
             model::Type::Primitive(p) => TypeExpr::Primitive(*p),
             model::Type::String => TypeExpr::String,
-            model::Type::Bytes => TypeExpr::Bytes,
             model::Type::Builtin(id) => TypeExpr::Builtin(BuiltinId::new(id.type_id())),
             model::Type::Vec(inner) => TypeExpr::Vec(Box::new(Self::convert_type(inner))),
             model::Type::Option(inner) => TypeExpr::Option(Box::new(Self::convert_type(inner))),

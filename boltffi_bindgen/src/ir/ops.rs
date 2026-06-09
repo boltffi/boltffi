@@ -164,9 +164,6 @@ pub enum ReadOp {
     String {
         offset: OffsetExpr,
     },
-    Bytes {
-        offset: OffsetExpr,
-    },
     Option {
         tag_offset: OffsetExpr,
         some: Box<ReadSeq>,
@@ -209,9 +206,6 @@ pub enum WriteOp {
         value: ValueExpr,
     },
     String {
-        value: ValueExpr,
-    },
-    Bytes {
         value: ValueExpr,
     },
     Option {
@@ -330,9 +324,6 @@ fn remap_root_in_op(op: &WriteOp, new_root: &ValueExpr) -> WriteOp {
             value: value.remap_root(new_root.clone()),
         },
         WriteOp::String { value } => WriteOp::String {
-            value: value.remap_root(new_root.clone()),
-        },
-        WriteOp::Bytes { value } => WriteOp::Bytes {
             value: value.remap_root(new_root.clone()),
         },
         WriteOp::Option { value, some } => WriteOp::Option {

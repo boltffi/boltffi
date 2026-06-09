@@ -99,7 +99,6 @@ pub fn swift_type(type_expr: &TypeExpr) -> String {
         TypeExpr::Void => "Void".to_string(),
         TypeExpr::Primitive(primitive) => swift_primitive(*primitive),
         TypeExpr::String => "String".to_string(),
-        TypeExpr::Bytes => "Data".to_string(),
         TypeExpr::Builtin(id) => swift_builtin(id),
         TypeExpr::Option(inner) => format!("{}?", swift_type(inner)),
         TypeExpr::Vec(inner) => {
@@ -435,13 +434,6 @@ fn emit_read_op(op: &ReadOp, base_name: &str, base_expr: &str) -> (String, ReadR
                 ReadReturn::WithSize,
             )
         }
-        ReadOp::Bytes { offset } => {
-            let offset_expr = emit_offset_expr(offset, base_name, base_expr);
-            (
-                format!("wire.readDataWithSize(at: {})", offset_expr),
-                ReadReturn::WithSize,
-            )
-        }
         ReadOp::Builtin { id, offset } => {
             let offset_expr = emit_offset_expr(offset, base_name, base_expr);
             match id.as_str() {
@@ -601,7 +593,6 @@ fn emit_write_data_op(op: &WriteOp) -> String {
             emit_write_data_primitive(*primitive, &v)
         }
         WriteOp::String { value } => format!("data.appendString({})", render_value(value)),
-        WriteOp::Bytes { value } => format!("data.appendBytes({})", render_value(value)),
         WriteOp::Builtin { id, value } => {
             let v = render_value(value);
             match id.as_str() {
@@ -704,7 +695,6 @@ fn emit_write_bytes_op(op: &WriteOp) -> String {
             emit_write_bytes_primitive(*primitive, &v)
         }
         WriteOp::String { value } => format!("bytes.appendString({})", render_value(value)),
-        WriteOp::Bytes { value } => format!("bytes.appendBytes({})", render_value(value)),
         WriteOp::Builtin { id, value } => {
             let v = render_value(value);
             match id.as_str() {
@@ -857,7 +847,6 @@ fn emit_reader_read_op(op: &ReadOp) -> String {
             PrimitiveType::F64 => "reader.readF64()".into(),
         },
         ReadOp::String { .. } => "reader.readString()".into(),
-        ReadOp::Bytes { .. } => "reader.readBytes()".into(),
         ReadOp::Builtin { id, .. } => match id.as_str() {
             "Duration" => "reader.readDuration()".into(),
             "SystemTime" => "reader.readTimestamp()".into(),
@@ -954,7 +943,6 @@ fn emit_writer_write_op(op: &WriteOp) -> String {
             }
         }
         WriteOp::String { value } => format!("writer.writeString({})", render_value(value)),
-        WriteOp::Bytes { value } => format!("writer.writeBytes({})", render_value(value)),
         WriteOp::Builtin { id, value } => {
             let v = render_value(value);
             match id.as_str() {

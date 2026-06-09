@@ -1240,8 +1240,7 @@ fn type_supported_with_sets(
     match ty {
         ir::types::TypeExpr::Void
         | ir::types::TypeExpr::Primitive(_)
-        | ir::types::TypeExpr::String
-        | ir::types::TypeExpr::Bytes => true,
+        | ir::types::TypeExpr::String => true,
         ir::types::TypeExpr::Vec(inner) | ir::types::TypeExpr::Option(inner) => {
             type_supported_with_sets(inner, contract, records, enums, custom_types)
         }
@@ -1312,7 +1311,6 @@ fn common_type_name(ty: &ir::types::TypeExpr) -> String {
         ir::types::TypeExpr::Void => "Unit".to_string(),
         ir::types::TypeExpr::Primitive(primitive) => primitive_type_name(*primitive),
         ir::types::TypeExpr::String => "String".to_string(),
-        ir::types::TypeExpr::Bytes => "ByteArray".to_string(),
         ir::types::TypeExpr::Vec(inner) => vec_type_name(inner),
         ir::types::TypeExpr::Option(inner) => format!("{}?", common_type_name(inner)),
         ir::types::TypeExpr::Record(id) => NamingConvention::class_name(id.as_str()),
@@ -1346,9 +1344,6 @@ fn common_type_name_with_disambiguation(
         }
         ir::types::TypeExpr::String => {
             disambiguated_kotlin_type_name("String", reserved_names, "kotlin")
-        }
-        ir::types::TypeExpr::Bytes => {
-            disambiguated_kotlin_type_name("ByteArray", reserved_names, "kotlin")
         }
         ir::types::TypeExpr::Vec(inner) => match inner.as_ref() {
             ir::types::TypeExpr::Primitive(_) => {
@@ -2398,7 +2393,9 @@ mod tests {
                     ir::definitions::DataVariant {
                         name: "ByteArray".into(),
                         discriminant: 2,
-                        payload: VariantPayload::Tuple(vec![ir::types::TypeExpr::Bytes]),
+                        payload: VariantPayload::Tuple(vec![ir::types::TypeExpr::Vec(Box::new(
+                            ir::types::TypeExpr::Primitive(ir::types::PrimitiveType::U8),
+                        ))]),
                         doc: None,
                     },
                     ir::definitions::DataVariant {

@@ -170,7 +170,7 @@ impl<'a> JavaLowerer<'a> {
 
     fn is_leaf_supported(ffi: &FfiContract, ty: &TypeExpr, supported: &HashSet<String>) -> bool {
         match ty {
-            TypeExpr::Primitive(_) | TypeExpr::String | TypeExpr::Bytes | TypeExpr::Void => true,
+            TypeExpr::Primitive(_) | TypeExpr::String | TypeExpr::Void => true,
             TypeExpr::Record(id) => supported.contains(id.as_str()),
             TypeExpr::Enum(id) => supported.contains(id.as_str()),
             TypeExpr::Custom(id) => ffi
@@ -195,11 +195,9 @@ impl<'a> JavaLowerer<'a> {
         supported: &HashSet<String>,
     ) -> bool {
         match ty {
-            TypeExpr::Primitive(_)
-            | TypeExpr::String
-            | TypeExpr::Bytes
-            | TypeExpr::Void
-            | TypeExpr::Builtin(_) => true,
+            TypeExpr::Primitive(_) | TypeExpr::String | TypeExpr::Void | TypeExpr::Builtin(_) => {
+                true
+            }
             TypeExpr::Option(inner) | TypeExpr::Vec(inner) => {
                 Self::is_wire_result_branch_supported(ffi, inner, supported)
             }
@@ -408,9 +406,7 @@ impl<'a> JavaLowerer<'a> {
         visit: &mut WireEncodableVisit,
     ) -> bool {
         match ty {
-            TypeExpr::Primitive(_) | TypeExpr::String | TypeExpr::Bytes | TypeExpr::Builtin(_) => {
-                true
-            }
+            TypeExpr::Primitive(_) | TypeExpr::String | TypeExpr::Builtin(_) => true,
             TypeExpr::Option(inner) | TypeExpr::Vec(inner) => {
                 self.is_wire_encodable_result_param_branch(inner, visit)
             }
@@ -707,7 +703,6 @@ impl<'a> JavaLowerer<'a> {
 
     fn contains_primitive_array_component(&self, ty: &TypeExpr) -> bool {
         match ty {
-            TypeExpr::Bytes => true,
             TypeExpr::Vec(inner) => {
                 matches!(inner.as_ref(), TypeExpr::Primitive(_))
                     || self.contains_primitive_array_component(inner)
@@ -1101,7 +1096,6 @@ impl<'a> JavaLowerer<'a> {
                 format!("java.util.Objects.equals({left}, {right})")
             }
             TypeExpr::Result { .. } => format!("java.util.Objects.equals({left}, {right})"),
-            TypeExpr::Bytes => format!("java.util.Arrays.equals({left}, {right})"),
             TypeExpr::Option(inner) => {
                 let left_is_null = format!("({left}) == null");
                 let right_is_null = format!("({right}) == null");
@@ -1164,7 +1158,6 @@ impl<'a> JavaLowerer<'a> {
                 format!("java.util.Objects.hashCode({value})")
             }
             TypeExpr::Result { .. } => format!("java.util.Objects.hashCode({value})"),
-            TypeExpr::Bytes => format!("java.util.Arrays.hashCode({value})"),
             TypeExpr::Option(inner) => {
                 let inner_value = format!("({value}).get()");
                 let inner_hash = self.value_hash_expr_with_depth(inner, &inner_value, depth);
@@ -1309,16 +1302,6 @@ impl<'a> JavaLowerer<'a> {
                             field_name
                         ),
                     )
-                }
-            }
-            TypeExpr::Bytes => {
-                if let Some(binding_name) = input_bindings.binding_name_for(source_name) {
-                    (
-                        "ByteBuffer".to_string(),
-                        format!("{}.toBuffer()", binding_name),
-                    )
-                } else {
-                    ("byte[]".to_string(), field_name.to_string())
                 }
             }
             TypeExpr::Record(record_id) if matches!(abi_transport, Some(Transport::Composite(layout)) if &layout.record_id == record_id) =>
@@ -1743,7 +1726,6 @@ impl<'a> JavaLowerer<'a> {
                     };
                 }
             },
-            TypeExpr::Bytes => "_buf != null ? _buf : new byte[0]".to_string(),
             _ => {
                 return JavaReturnPlan {
                     native_return_type: "void".to_string(),
@@ -1763,12 +1745,6 @@ impl<'a> JavaLowerer<'a> {
         ret_shape: &ReturnShape,
     ) -> JavaReturnPlan {
         match ty {
-            TypeExpr::Bytes => JavaReturnPlan {
-                native_return_type: "byte[]".to_string(),
-                render: JavaReturnRender::Decode {
-                    decode_expr: "_buf != null ? _buf : new byte[0]".to_string(),
-                },
-            },
             TypeExpr::Vec(inner) => JavaReturnPlan {
                 native_return_type: "byte[]".to_string(),
                 render: JavaReturnRender::Decode {
@@ -2255,7 +2231,6 @@ impl<'a> JavaLowerer<'a> {
             TypeExpr::Void => "void".to_string(),
             TypeExpr::Primitive(p) => mappings::java_type(*p).to_string(),
             TypeExpr::String => "String".to_string(),
-            TypeExpr::Bytes => "byte[]".to_string(),
             TypeExpr::Builtin(id) => mappings::java_builtin_type(id).to_string(),
             TypeExpr::Record(id) => NamingConvention::class_name(id.as_str()),
             TypeExpr::Custom(id) => self.java_type(self.custom_repr_type(id)),
@@ -2289,7 +2264,6 @@ impl<'a> JavaLowerer<'a> {
             TypeExpr::Void => "Void".to_string(),
             TypeExpr::Primitive(p) => mappings::java_boxed_type(*p).to_string(),
             TypeExpr::String => "String".to_string(),
-            TypeExpr::Bytes => "byte[]".to_string(),
             TypeExpr::Builtin(id) => mappings::java_builtin_type(id).to_string(),
             TypeExpr::Record(id) => NamingConvention::class_name(id.as_str()),
             TypeExpr::Custom(id) => self.java_boxed_type(self.custom_repr_type(id)),
@@ -2548,9 +2522,6 @@ impl<'a> JavaLowerer<'a> {
                 value: Self::prefix_value(value, binding),
             },
             WriteOp::String { value } => WriteOp::String {
-                value: Self::prefix_value(value, binding),
-            },
-            WriteOp::Bytes { value } => WriteOp::Bytes {
                 value: Self::prefix_value(value, binding),
             },
             WriteOp::Option { value, some } => WriteOp::Option {
@@ -3771,17 +3742,6 @@ mod tests {
     }
 
     #[test]
-    fn bytes_field_type() {
-        let mut contract = empty_contract();
-        contract
-            .catalog
-            .insert_record(record_def("Buffer", vec![field("data", TypeExpr::Bytes)]));
-
-        let module = lower(&contract);
-        assert_eq!(module.records[0].fields[0].java_type, "byte[]");
-    }
-
-    #[test]
     fn option_field_type() {
         let mut contract = empty_contract();
         contract.catalog.insert_record(record_def(
@@ -3954,7 +3914,10 @@ mod tests {
         let mut contract = empty_contract();
         contract.catalog.insert_record(record_def(
             "WithBytes",
-            vec![field("data", TypeExpr::Bytes)],
+            vec![field(
+                "data",
+                TypeExpr::Vec(Box::new(TypeExpr::Primitive(PrimitiveType::U8))),
+            )],
         ));
 
         let module = lower_with_version(&contract, JavaVersion::JAVA_17);
@@ -3993,9 +3956,13 @@ mod tests {
     #[test]
     fn bytes_equality_uses_arrays_equals() {
         let mut contract = empty_contract();
-        contract
-            .catalog
-            .insert_record(record_def("Buffer", vec![field("data", TypeExpr::Bytes)]));
+        contract.catalog.insert_record(record_def(
+            "Buffer",
+            vec![field(
+                "data",
+                TypeExpr::Vec(Box::new(TypeExpr::Primitive(PrimitiveType::U8))),
+            )],
+        ));
 
         let module = lower(&contract);
         let field = &module.records[0].fields[0];
@@ -4009,9 +3976,13 @@ mod tests {
     #[test]
     fn bytes_hash_uses_arrays_hash_code() {
         let mut contract = empty_contract();
-        contract
-            .catalog
-            .insert_record(record_def("Buffer", vec![field("data", TypeExpr::Bytes)]));
+        contract.catalog.insert_record(record_def(
+            "Buffer",
+            vec![field(
+                "data",
+                TypeExpr::Vec(Box::new(TypeExpr::Primitive(PrimitiveType::U8))),
+            )],
+        ));
 
         let module = lower(&contract);
         let field = &module.records[0].fields[0];
@@ -4623,7 +4594,9 @@ mod tests {
         contract.functions.push(function(
             "get_data",
             vec![],
-            ReturnDef::Value(TypeExpr::Bytes),
+            ReturnDef::Value(TypeExpr::Vec(Box::new(TypeExpr::Primitive(
+                PrimitiveType::U8,
+            )))),
         ));
 
         let module = lower(&contract);
@@ -4662,7 +4635,10 @@ mod tests {
         let mut contract = empty_contract();
         contract.functions.push(function(
             "process",
-            vec![param("data", TypeExpr::Bytes)],
+            vec![param(
+                "data",
+                TypeExpr::Vec(Box::new(TypeExpr::Primitive(PrimitiveType::U8))),
+            )],
             ReturnDef::Void,
         ));
 
@@ -5450,8 +5426,13 @@ mod tests {
         let mut contract = empty_contract();
         contract.functions.push(function(
             "echo",
-            vec![param("data", TypeExpr::Bytes)],
-            ReturnDef::Value(TypeExpr::Bytes),
+            vec![param(
+                "data",
+                TypeExpr::Vec(Box::new(TypeExpr::Primitive(PrimitiveType::U8))),
+            )],
+            ReturnDef::Value(TypeExpr::Vec(Box::new(TypeExpr::Primitive(
+                PrimitiveType::U8,
+            )))),
         ));
 
         let module = lower(&contract);
@@ -5463,7 +5444,12 @@ mod tests {
         let mut contract = empty_contract();
         contract.catalog.insert_record(record_def(
             "MaybeBuffer",
-            vec![field("data", TypeExpr::Option(Box::new(TypeExpr::Bytes)))],
+            vec![field(
+                "data",
+                TypeExpr::Option(Box::new(TypeExpr::Vec(Box::new(TypeExpr::Primitive(
+                    PrimitiveType::U8,
+                ))))),
+            )],
         ));
 
         let module = lower(&contract);

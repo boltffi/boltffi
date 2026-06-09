@@ -73,12 +73,6 @@ pub(crate) fn lower_decode_expr(
             type_args: vec![],
             args: CSharpArgumentList::default(),
         },
-        ReadOp::Bytes { .. } => CSharpExpression::MethodCall {
-            receiver: Box::new(reader.clone()),
-            method: CSharpMethodName::from_source("read_bytes"),
-            type_args: vec![],
-            args: CSharpArgumentList::default(),
-        },
         ReadOp::Builtin { id, .. } => CSharpExpression::MethodCall {
             receiver: Box::new(reader.clone()),
             method: builtin_read_method(id),

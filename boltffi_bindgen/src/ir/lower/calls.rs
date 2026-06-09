@@ -315,9 +315,6 @@ impl<'c> Lowerer<'c> {
                 }
             },
             TypeExpr::String => ParamValueStrategy::Utf8String,
-            TypeExpr::Bytes => {
-                ParamValueStrategy::DirectBuffer(DirectBufferParamStrategy::ScalarElements)
-            }
             TypeExpr::Vec(inner) => match inner.as_ref() {
                 TypeExpr::Primitive(_) => {
                     ParamValueStrategy::DirectBuffer(DirectBufferParamStrategy::ScalarElements)
@@ -380,9 +377,6 @@ impl<'c> Lowerer<'c> {
             }
             TypeExpr::Enum(id) => self.classify_enum(id),
             TypeExpr::String => Transport::Span(SpanContent::Utf8),
-            TypeExpr::Bytes => Transport::Span(SpanContent::Scalar(ScalarOrigin::Primitive(
-                PrimitiveType::U8,
-            ))),
             TypeExpr::Vec(inner) => match inner.as_ref() {
                 TypeExpr::Primitive(primitive) => {
                     Transport::Span(SpanContent::Scalar(ScalarOrigin::Primitive(*primitive)))

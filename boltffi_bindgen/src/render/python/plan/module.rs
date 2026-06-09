@@ -122,15 +122,6 @@ impl PythonModule {
         })
     }
 
-    pub fn uses_bytes_parameters(&self) -> bool {
-        self.callables().any(|callable| {
-            callable
-                .parameters
-                .iter()
-                .any(|parameter| parameter.type_ref.is_bytes())
-        })
-    }
-
     pub fn uses_c_style_enums(&self) -> bool {
         !self.enums.is_empty()
     }

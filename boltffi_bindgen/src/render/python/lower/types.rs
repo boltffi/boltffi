@@ -59,7 +59,6 @@ impl PythonLowerer<'_> {
                 .lower_c_style_enum_type(enum_id)
                 .map(PythonType::CStyleEnum),
             TypeExpr::String => Some(PythonType::String),
-            TypeExpr::Bytes => Some(PythonType::Sequence(PythonSequenceType::Bytes)),
             TypeExpr::Vec(inner) => self.lower_vector(inner),
             TypeExpr::Void => Some(PythonType::Void),
             _ => None,
@@ -153,11 +152,13 @@ mod tests {
             id: FunctionId::new("echo_bytes"),
             params: vec![ParamDef {
                 name: ParamName::new("value"),
-                type_expr: TypeExpr::Bytes,
+                type_expr: TypeExpr::Vec(Box::new(TypeExpr::Primitive(PrimitiveType::U8))),
                 passing: ParamPassing::Value,
                 doc: None,
             }],
-            returns: ReturnDef::Value(TypeExpr::Bytes),
+            returns: ReturnDef::Value(TypeExpr::Vec(Box::new(TypeExpr::Primitive(
+                PrimitiveType::U8,
+            )))),
             execution_kind: ExecutionKind::Sync,
             doc: None,
             deprecated: None,
@@ -169,11 +170,11 @@ mod tests {
 
         assert_eq!(
             lowered.callable.parameters[0].type_ref,
-            PythonType::Sequence(PythonSequenceType::Bytes)
+            PythonType::Sequence(PythonSequenceType::PrimitiveVec(PrimitiveType::U8))
         );
         assert_eq!(
             lowered.callable.return_type,
-            PythonType::Sequence(PythonSequenceType::Bytes)
+            PythonType::Sequence(PythonSequenceType::PrimitiveVec(PrimitiveType::U8))
         );
     }
 

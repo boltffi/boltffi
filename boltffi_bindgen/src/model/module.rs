@@ -263,7 +263,6 @@ impl DerivedTypeCollector {
             }
             Type::Primitive(_)
             | Type::String
-            | Type::Bytes
             | Type::Record(_)
             | Type::Enum(_)
             | Type::Object(_)

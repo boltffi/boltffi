@@ -178,7 +178,6 @@ impl CSharpType {
         match op {
             ReadOp::Primitive { primitive, .. } => Self::from(*primitive),
             ReadOp::String { .. } => Self::String,
-            ReadOp::Bytes { .. } => Self::Array(Box::new(Self::Byte)),
             ReadOp::Option { some, .. } => {
                 let inner = Self::from_read_op(some.ops.first().expect("option inner read op"));
                 Self::Nullable(Box::new(inner))
@@ -226,7 +225,6 @@ impl CSharpType {
             TypeExpr::Void => Self::Void,
             TypeExpr::Primitive(p) => Self::from(*p),
             TypeExpr::String => Self::String,
-            TypeExpr::Bytes => Self::Array(Box::new(Self::Byte)),
             TypeExpr::Vec(inner) => Self::Array(Box::new(Self::from_type_expr(inner))),
             TypeExpr::Option(inner) => Self::Nullable(Box::new(Self::from_type_expr(inner))),
             TypeExpr::Record(id) => {

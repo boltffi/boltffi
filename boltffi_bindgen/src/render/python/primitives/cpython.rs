@@ -306,16 +306,6 @@ impl CPythonParameterExt for PythonParameter {
                     name: format!("{}.len", self.parser_state_name()),
                 },
             ],
-            PythonType::Sequence(PythonSequenceType::Bytes) => vec![
-                CPythonCBinding {
-                    c_type_name: "const uint8_t *".to_string(),
-                    name: format!("{}.ptr", self.parser_state_name()),
-                },
-                CPythonCBinding {
-                    c_type_name: "uintptr_t".to_string(),
-                    name: format!("{}.len", self.parser_state_name()),
-                },
-            ],
             PythonType::Sequence(PythonSequenceType::PrimitiveVec(primitive)) => vec![
                 CPythonCBinding {
                     c_type_name: format!("const {} *", primitive.c_type_name()),
@@ -358,8 +348,7 @@ impl CPythonParameterExt for PythonParameter {
                 c_type_name: "boltffi_python_utf8_input".to_string(),
                 name: self.parser_state_name(),
             }],
-            PythonType::Sequence(PythonSequenceType::Bytes)
-            | PythonType::Sequence(PythonSequenceType::PrimitiveVec(_))
+            PythonType::Sequence(PythonSequenceType::PrimitiveVec(_))
             | PythonType::Sequence(PythonSequenceType::CStyleEnumVec(_)) => {
                 vec![CPythonCBinding {
                     c_type_name: "boltffi_python_buffer_input".to_string(),
@@ -376,9 +365,6 @@ impl CPythonParameterExt for PythonParameter {
             PythonType::Record(record_type) => record_type.parser_name(),
             PythonType::CStyleEnum(enum_type) => enum_type.parser_name(),
             PythonType::String => "boltffi_python_parse_string".to_string(),
-            PythonType::Sequence(PythonSequenceType::Bytes) => {
-                "boltffi_python_parse_bytes".to_string()
-            }
             PythonType::Sequence(PythonSequenceType::PrimitiveVec(primitive)) => {
                 primitive.vector_parser_name().to_string()
             }
@@ -410,10 +396,6 @@ impl CPythonParameterExt for PythonParameter {
                 format!("{}.ptr", self.parser_state_name()),
                 format!("{}.len", self.parser_state_name()),
             ],
-            PythonType::Sequence(PythonSequenceType::Bytes) => vec![
-                format!("(const uint8_t *){}.ptr", self.parser_state_name()),
-                format!("{}.len", self.parser_state_name()),
-            ],
             PythonType::Sequence(PythonSequenceType::PrimitiveVec(primitive)) => vec![
                 format!(
                     "(const {} *){}.ptr",
@@ -431,8 +413,7 @@ impl CPythonParameterExt for PythonParameter {
 
     fn cleanup_statement(&self) -> Option<String> {
         match &self.type_ref {
-            PythonType::Sequence(PythonSequenceType::Bytes)
-            | PythonType::Sequence(PythonSequenceType::PrimitiveVec(_)) => Some(format!(
+            PythonType::Sequence(PythonSequenceType::PrimitiveVec(_)) => Some(format!(
                 "boltffi_python_release_buffer_input(&{});",
                 self.parser_state_name()
             )),

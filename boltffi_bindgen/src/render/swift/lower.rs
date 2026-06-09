@@ -1311,7 +1311,6 @@ impl<'a> SwiftLowerer<'a> {
                 self.swift_codec_result_error_type(err)
             ),
             CodecPlan::String => "String".to_string(),
-            CodecPlan::Bytes => "Data".to_string(),
             CodecPlan::Primitive(p) => self.abi_to_swift(&AbiType::from(*p)),
             CodecPlan::Void => "Void".to_string(),
             CodecPlan::Builtin(id) => emit::swift_builtin(id),
@@ -1730,9 +1729,6 @@ impl<'a> SwiftLowerer<'a> {
             ReadOp::String { offset } => ReadOp::String {
                 offset: self.rebase_offset_expr(offset, old_base, new_base),
             },
-            ReadOp::Bytes { offset } => ReadOp::Bytes {
-                offset: self.rebase_offset_expr(offset, old_base, new_base),
-            },
             ReadOp::Option { tag_offset, some } => ReadOp::Option {
                 tag_offset: self.rebase_offset_expr(tag_offset, old_base, new_base),
                 some: Box::new(self.rebase_read_seq(some, old_base, new_base)),
@@ -1848,7 +1844,6 @@ impl<'a> SwiftLowerer<'a> {
     fn buffer_element_swift_type(&self, ty: &TypeExpr) -> String {
         match ty {
             TypeExpr::Vec(inner) => self.swift_type(inner),
-            TypeExpr::Bytes => "UInt8".to_string(),
             _ => "UInt8".to_string(),
         }
     }

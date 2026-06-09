@@ -43,7 +43,6 @@ fn kotlin_type_for_type_expr(ty: &TypeExpr) -> String {
             PrimitiveType::F64 => "Double".to_string(),
         },
         TypeExpr::String => "String".to_string(),
-        TypeExpr::Bytes => "ByteArray".to_string(),
         TypeExpr::Vec(inner) => match inner.as_ref() {
             TypeExpr::Primitive(primitive) => match primitive {
                 PrimitiveType::I32 | PrimitiveType::U32 => "IntArray".to_string(),
@@ -87,7 +86,6 @@ fn kotlin_type_for_write_seq(seq: &WriteSeq) -> String {
             kotlin_type_for_type_expr(&TypeExpr::Primitive(*primitive))
         }
         Some(WriteOp::String { .. }) => "String".to_string(),
-        Some(WriteOp::Bytes { .. }) => "ByteArray".to_string(),
         Some(WriteOp::Builtin { id, .. }) => {
             kotlin_type_for_type_expr(&TypeExpr::Builtin(id.clone()))
         }
@@ -192,7 +190,6 @@ pub fn emit_reader_read(seq: &ReadSeq) -> String {
             format!("reader.{}()", method)
         }
         ReadOp::String { .. } => "reader.readString()".to_string(),
-        ReadOp::Bytes { .. } => "reader.readBytes()".to_string(),
         ReadOp::Record { id, .. } => {
             format!("{}.decode(reader)", render_type_name(id.as_str()))
         }
@@ -304,7 +301,6 @@ pub fn emit_write_expr(seq: &WriteSeq) -> String {
             emit_write_primitive(*primitive, &render_value(value))
         }
         WriteOp::String { value } => format!("wire.writeString({})", render_value(value)),
-        WriteOp::Bytes { value } => format!("wire.writeBytes({})", render_value(value)),
         WriteOp::Option { value, some } => {
             let inner = emit_write_expr(some);
             format!(

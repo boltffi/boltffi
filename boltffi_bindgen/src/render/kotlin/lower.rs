@@ -654,9 +654,6 @@ impl<'a> KotlinLowerer<'a> {
             WriteOp::String { value } => WriteOp::String {
                 value: Self::strip_field_access_in_value(value),
             },
-            WriteOp::Bytes { value } => WriteOp::Bytes {
-                value: Self::strip_field_access_in_value(value),
-            },
             WriteOp::Builtin { id, value } => WriteOp::Builtin {
                 id: id.clone(),
                 value: Self::strip_field_access_in_value(value),
@@ -1775,9 +1772,6 @@ impl<'a> KotlinLowerer<'a> {
             ReadOp::String { offset } => ReadOp::String {
                 offset: self.rebase_offset_expr(offset, old_base, new_base),
             },
-            ReadOp::Bytes { offset } => ReadOp::Bytes {
-                offset: self.rebase_offset_expr(offset, old_base, new_base),
-            },
             ReadOp::Option { tag_offset, some } => ReadOp::Option {
                 tag_offset: self.rebase_offset_expr(tag_offset, old_base, new_base),
                 some: Box::new(self.rebase_read_seq(some, old_base, new_base)),
@@ -2318,14 +2312,6 @@ impl<'a> KotlinLowerer<'a> {
         ret_shape: &ReturnShape,
     ) -> Option<String> {
         match (returns, &ret_shape.transport) {
-            (
-                ReturnDef::Value(TypeExpr::Bytes),
-                Some(Transport::Span(SpanContent::Scalar(ScalarOrigin::Primitive(
-                    PrimitiveType::U8,
-                )))),
-            ) => Some(
-                ".let { value -> run { val writer = WireWriterPool.acquire(4 + value.size); try { val wire = writer.writer; wire.writeBytes(value); wire.toByteArray() } finally { writer.close() } } }".to_string(),
-            ),
             (
                 ReturnDef::Value(TypeExpr::Vec(inner)),
                 Some(Transport::Span(SpanContent::Scalar(origin))),
@@ -2975,7 +2961,6 @@ impl<'a> KotlinLowerer<'a> {
         match ty {
             TypeExpr::Primitive(p) => self.primitive_kotlin_type(*p),
             TypeExpr::String => "String".to_string(),
-            TypeExpr::Bytes => "ByteArray".to_string(),
             TypeExpr::Builtin(id) => self.builtin_kotlin_type(id),
             TypeExpr::Record(id) => NamingConvention::class_name(id.as_str()),
             TypeExpr::Custom(id) => {
@@ -3214,7 +3199,6 @@ impl<'a> KotlinLowerer<'a> {
         match op {
             ReadOp::Primitive { primitive, .. } => self.primitive_kotlin_type(*primitive),
             ReadOp::String { .. } => "String".to_string(),
-            ReadOp::Bytes { .. } => "ByteArray".to_string(),
             ReadOp::Builtin { id, .. } => self.builtin_kotlin_type(id),
             ReadOp::Record { id, .. } => NamingConvention::class_name(id.as_str()),
             ReadOp::Enum { id, .. } => NamingConvention::class_name(id.as_str()),
@@ -4487,13 +4471,6 @@ impl<'a> KotlinLowerer<'a> {
                 }],
                 shape: WireShape::Value,
             }),
-            TypeExpr::Bytes => Some(ReadSeq {
-                size: SizeExpr::Runtime,
-                ops: vec![ReadOp::Bytes {
-                    offset: OffsetExpr::Base,
-                }],
-                shape: WireShape::Value,
-            }),
             _ => None,
         }
     }
@@ -4511,13 +4488,6 @@ impl<'a> KotlinLowerer<'a> {
             TypeExpr::String => Some(WriteSeq {
                 size: SizeExpr::StringLen(ValueExpr::Var("repr".to_string())),
                 ops: vec![WriteOp::String {
-                    value: ValueExpr::Var("repr".to_string()),
-                }],
-                shape: WireShape::Value,
-            }),
-            TypeExpr::Bytes => Some(WriteSeq {
-                size: SizeExpr::BytesLen(ValueExpr::Var("repr".to_string())),
-                ops: vec![WriteOp::Bytes {
                     value: ValueExpr::Var("repr".to_string()),
                 }],
                 shape: WireShape::Value,
@@ -4544,7 +4514,6 @@ impl<'a> KotlinLowerer<'a> {
                 primitive == expected
             }
             (Some(ReadOp::String { .. }), TypeExpr::String) => true,
-            (Some(ReadOp::Bytes { .. }), TypeExpr::Bytes) => true,
             (Some(ReadOp::Builtin { id, .. }), TypeExpr::Builtin(expected)) => id == expected,
             (Some(ReadOp::Record { id, .. }), TypeExpr::Record(expected)) => id == expected,
             (Some(ReadOp::Enum { id, .. }), TypeExpr::Enum(expected)) => id == expected,
@@ -4572,7 +4541,6 @@ impl<'a> KotlinLowerer<'a> {
                 primitive == expected
             }
             (Some(WriteOp::String { .. }), TypeExpr::String) => true,
-            (Some(WriteOp::Bytes { .. }), TypeExpr::Bytes) => true,
             (Some(WriteOp::Builtin { id, .. }), TypeExpr::Builtin(expected)) => id == expected,
             (Some(WriteOp::Record { id, .. }), TypeExpr::Record(expected)) => id == expected,
             (Some(WriteOp::Enum { id, .. }), TypeExpr::Enum(expected)) => id == expected,
@@ -4903,7 +4871,6 @@ fn read_seq_offset(seq: &ReadSeq) -> Option<usize> {
     let offset = match op {
         ReadOp::Primitive { offset, .. }
         | ReadOp::String { offset }
-        | ReadOp::Bytes { offset }
         | ReadOp::Builtin { offset, .. }
         | ReadOp::Record { offset, .. }
         | ReadOp::Enum { offset, .. } => offset,

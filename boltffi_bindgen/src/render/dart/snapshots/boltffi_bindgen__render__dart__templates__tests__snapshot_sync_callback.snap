@@ -78,7 +78,7 @@ abstract interface class ICallback {
   );
 
   void processBytes(
-    $$typed_data.Uint8List bytes,
+    List<int> bytes,
   );
 }
 

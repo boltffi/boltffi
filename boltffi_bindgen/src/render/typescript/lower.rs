@@ -2135,7 +2135,6 @@ fn infer_ts_type_from_read_ops(seq: &ReadSeq) -> String {
         .map(|op| match op {
             ReadOp::Primitive { primitive, .. } => emit::ts_primitive(*primitive),
             ReadOp::String { .. } => "string".to_string(),
-            ReadOp::Bytes { .. } => "Uint8Array".to_string(),
             ReadOp::Option { some, .. } => {
                 format!("{} | null", infer_ts_type_from_read_ops(some))
             }
@@ -2252,9 +2251,6 @@ fn remap_named_in_write_op(op: &WriteOp) -> WriteOp {
             value: remap_named_in_value(value),
         },
         WriteOp::String { value } => WriteOp::String {
-            value: remap_named_in_value(value),
-        },
-        WriteOp::Bytes { value } => WriteOp::Bytes {
             value: remap_named_in_value(value),
         },
         WriteOp::Option { value, some } => WriteOp::Option {

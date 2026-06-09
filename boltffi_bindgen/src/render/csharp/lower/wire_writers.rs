@@ -86,7 +86,7 @@ impl<'a> CSharpLowerer<'a> {
     /// buffer serialized up front.
     fn param_needs_wire_buffer(&self, op: &WriteOp) -> bool {
         match op {
-            WriteOp::Primitive { .. } | WriteOp::String { .. } | WriteOp::Bytes { .. } => false,
+            WriteOp::Primitive { .. } | WriteOp::String { .. } => false,
             WriteOp::Record { id, .. } => !self.is_blittable_record(id),
             WriteOp::Enum {
                 layout: EnumLayout::Data { .. },

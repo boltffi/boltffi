@@ -399,9 +399,13 @@ mod tests {
                             ffi_symbol: "boltffi_echo_bytes".to_string(),
                             parameters: vec![PythonParameter {
                                 name: "value".to_string(),
-                                type_ref: PythonType::Sequence(PythonSequenceType::Bytes),
+                                type_ref: PythonType::Sequence(PythonSequenceType::PrimitiveVec(
+                                    PrimitiveType::U8,
+                                )),
                             }],
-                            return_type: PythonType::Sequence(PythonSequenceType::Bytes),
+                            return_type: PythonType::Sequence(PythonSequenceType::PrimitiveVec(
+                                PrimitiveType::U8,
+                            )),
                         },
                     },
                     PythonFunction {

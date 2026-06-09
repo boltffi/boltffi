@@ -756,9 +756,6 @@ impl<'a> CSharpLowerer<'a> {
                 Some(CSharpType::from(*primitive))
             }
             crate::ir::ops::WriteOp::String { .. } => Some(CSharpType::String),
-            crate::ir::ops::WriteOp::Bytes { .. } => {
-                Some(CSharpType::Array(Box::new(CSharpType::Byte)))
-            }
             crate::ir::ops::WriteOp::Record { id, .. } => {
                 Some(CSharpType::Record(CSharpClassName::from(id).into()))
             }

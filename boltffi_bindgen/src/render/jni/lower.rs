@@ -956,7 +956,6 @@ impl<'a> JniLowerer<'a> {
         match ty {
             TypeExpr::Primitive(p) => self.primitive_jni_type(*p).to_string(),
             TypeExpr::String => "jstring".to_string(),
-            TypeExpr::Bytes => "jbyteArray".to_string(),
             TypeExpr::Handle(_) | TypeExpr::Callback(_) => "jlong".to_string(),
             TypeExpr::Enum(_) => "jint".to_string(),
             _ => "jlong".to_string(),
@@ -980,7 +979,6 @@ impl<'a> JniLowerer<'a> {
                 TypeExpr::Primitive(PrimitiveType::Bool) => "jbooleanArray",
                 _ => "jobject",
             },
-            TypeExpr::Bytes => "jbyteArray",
             _ => "jobject",
         }
     }
@@ -1369,7 +1367,6 @@ impl<'a> JniLowerer<'a> {
                 | TypeExpr::Enum(_)
                 | TypeExpr::Vec(_)
                 | TypeExpr::Option(_)
-                | TypeExpr::Bytes
                 | TypeExpr::Builtin(_)
                 | TypeExpr::Custom(_) => JniReturnMeta {
                     is_unit: false,
@@ -3056,11 +3053,13 @@ mod tests {
     }
 
     #[test]
-    fn closure_return_bytes_is_wire_encoded() {
+    fn closure_return_byte_vec_is_wire_encoded() {
         let lowerer = test_lowerer();
         let ret = lowerer.closure_return_info(&closure_return_shape_from_contract(
             empty_contract(),
-            ReturnDef::Value(TypeExpr::Bytes),
+            ReturnDef::Value(TypeExpr::Vec(Box::new(TypeExpr::Primitive(
+                PrimitiveType::U8,
+            )))),
         ));
         assert!(matches!(ret.strategy, TrampolineReturnStrategy::WireBuffer));
         assert_eq!(ret.c_type, "FfiBuf_u8");

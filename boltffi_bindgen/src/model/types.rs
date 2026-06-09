@@ -199,7 +199,6 @@ impl BuiltinId {
 pub enum Type {
     Primitive(Primitive),
     String,
-    Bytes,
     Builtin(BuiltinId),
     Slice(Box<Type>),
     MutSlice(Box<Type>),
@@ -327,7 +326,6 @@ impl Type {
             Self::Void => "Void".into(),
             Self::Primitive(p) => p.type_id().into(),
             Self::String => "String".into(),
-            Self::Bytes => "Bytes".into(),
             Self::Builtin(id) => id.type_id().into(),
             Self::Vec(inner) => format!("Vec{}", inner.type_id()),
             Self::Option(inner) => format!("Opt{}", inner.type_id()),
@@ -350,9 +348,7 @@ impl CLayout for Type {
     fn c_layout(&self) -> Layout {
         match self {
             Self::Primitive(primitive) => primitive.c_layout(),
-            Self::String | Self::Bytes | Self::Vec(_) | Self::Slice(_) | Self::MutSlice(_) => {
-                Layout::new(24, 8)
-            }
+            Self::String | Self::Vec(_) | Self::Slice(_) | Self::MutSlice(_) => Layout::new(24, 8),
             Self::Object(_) | Self::BoxedTrait(_) | Self::Closure(_) => Layout::new(8, 8),
             Self::Builtin(_) | Self::Record(_) | Self::Enum(_) | Self::Custom { .. } => {
                 Layout::new(8, 8)

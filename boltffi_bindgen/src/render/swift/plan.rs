@@ -593,7 +593,6 @@ fn uses_offset_in_read_op(op: &ReadOp) -> bool {
     match op {
         ReadOp::Primitive { offset, .. } => offset_uses(offset),
         ReadOp::String { offset } => offset_uses(offset),
-        ReadOp::Bytes { offset } => offset_uses(offset),
         ReadOp::Option { tag_offset, some } => {
             offset_uses(tag_offset) || uses_offset_in_read_seq(some)
         }

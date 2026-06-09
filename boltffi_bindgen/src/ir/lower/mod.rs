@@ -928,11 +928,14 @@ mod tests {
     }
 
     #[test]
-    fn param_strategy_bytes_is_buffer() {
+    fn param_strategy_byte_vec_is_buffer() {
         let contract = test_contract();
         let lowerer = lowerer_for_contract(&contract);
 
-        let strategy = lowerer.classify_param(&TypeExpr::Bytes, &ParamPassing::Ref);
+        let strategy = lowerer.classify_param(
+            &TypeExpr::Vec(Box::new(TypeExpr::Primitive(PrimitiveType::U8))),
+            &ParamPassing::Ref,
+        );
 
         assert!(matches!(
             strategy,

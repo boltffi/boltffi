@@ -149,7 +149,6 @@ pub fn ts_type(type_expr: &TypeExpr) -> String {
         TypeExpr::Void => "void".to_string(),
         TypeExpr::Primitive(p) => ts_primitive(*p),
         TypeExpr::String => "string".to_string(),
-        TypeExpr::Bytes => "Uint8Array".to_string(),
         TypeExpr::Builtin(id) => ts_builtin(id),
         TypeExpr::Option(inner) => format!("{} | null", ts_type(inner)),
         TypeExpr::Vec(inner) => {
@@ -249,7 +248,6 @@ fn emit_reader_read_op(op: &ReadOp) -> String {
             PrimitiveType::F64 => "reader.readF64()".into(),
         },
         ReadOp::String { .. } => "reader.readString()".into(),
-        ReadOp::Bytes { .. } => "reader.readBytes()".into(),
         ReadOp::Builtin { id, .. } => match id.as_str() {
             "Duration" => "reader.readDuration()".into(),
             "SystemTime" => "reader.readTimestamp()".into(),
@@ -345,9 +343,6 @@ fn emit_writer_write_op(op: &WriteOp, w: &str, root_value: &str) -> String {
         }
         WriteOp::String { value } => {
             format!("{w}.writeString({})", render_value(value, root_value))
-        }
-        WriteOp::Bytes { value } => {
-            format!("{w}.writeBytes({})", render_value(value, root_value))
         }
         WriteOp::Builtin { id, value } => {
             let val = render_value(value, root_value);

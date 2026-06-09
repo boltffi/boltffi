@@ -243,7 +243,6 @@ impl DartType {
             TypeExpr::Void => DartType::Void,
             TypeExpr::Primitive(primitive) => Self::from_primitive(*primitive),
             TypeExpr::String => DartType::String,
-            TypeExpr::Bytes => DartType::Bytes,
             TypeExpr::Vec(inner) => {
                 DartType::List(Box::new(Self::from_type_expr(inner, type_catalog)))
             }

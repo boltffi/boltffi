@@ -14,7 +14,6 @@ pub enum CodecPlan {
     Void,
     Primitive(PrimitiveType),
     String,
-    Bytes,
     Builtin(BuiltinId),
 
     Option(Box<CodecPlan>),
@@ -47,7 +46,6 @@ impl From<&CodecPlan> for TypeExpr {
             CodecPlan::Void => TypeExpr::Void,
             CodecPlan::Primitive(p) => TypeExpr::Primitive(*p),
             CodecPlan::String => TypeExpr::String,
-            CodecPlan::Bytes => TypeExpr::Bytes,
             CodecPlan::Builtin(id) => TypeExpr::Builtin(id.clone()),
             CodecPlan::Option(inner) => TypeExpr::Option(Box::new(TypeExpr::from(inner.as_ref()))),
             CodecPlan::Vec { element, .. } => {

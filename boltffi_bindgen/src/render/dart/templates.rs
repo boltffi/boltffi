@@ -139,7 +139,7 @@ mod tests {
                     id: MethodId::new("process_bytes"),
                     params: vec![ParamDef {
                         name: ParamName::new("bytes"),
-                        type_expr: TypeExpr::Bytes,
+                        type_expr: TypeExpr::Vec(Box::new(TypeExpr::Primitive(PrimitiveType::U8))),
                         passing: ParamPassing::Value,
                         doc: None,
                     }],

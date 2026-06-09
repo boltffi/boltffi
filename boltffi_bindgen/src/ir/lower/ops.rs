@@ -29,11 +29,6 @@ impl<'c> Lowerer<'c> {
                 ops: vec![ReadOp::String { offset }],
                 shape: WireShape::Value,
             },
-            CodecPlan::Bytes => ReadSeq {
-                size: SizeExpr::Runtime,
-                ops: vec![ReadOp::Bytes { offset }],
-                shape: WireShape::Value,
-            },
             CodecPlan::Builtin(id) => {
                 let size = self
                     .builtin_fixed_size(id)
@@ -167,13 +162,6 @@ impl<'c> Lowerer<'c> {
             CodecPlan::String => WriteSeq {
                 size: SizeExpr::Sum(vec![SizeExpr::Fixed(4), SizeExpr::StringLen(value.clone())]),
                 ops: vec![WriteOp::String {
-                    value: value.clone(),
-                }],
-                shape: WireShape::Value,
-            },
-            CodecPlan::Bytes => WriteSeq {
-                size: SizeExpr::Sum(vec![SizeExpr::Fixed(4), SizeExpr::BytesLen(value.clone())]),
-                ops: vec![WriteOp::Bytes {
                     value: value.clone(),
                 }],
                 shape: WireShape::Value,
