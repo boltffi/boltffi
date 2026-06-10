@@ -243,9 +243,10 @@ impl DartType {
             TypeExpr::Void => DartType::Void,
             TypeExpr::Primitive(primitive) => Self::from_primitive(*primitive),
             TypeExpr::String => DartType::String,
-            TypeExpr::Vec(inner) => {
-                DartType::List(Box::new(Self::from_type_expr(inner, type_catalog)))
-            }
+            TypeExpr::Vec(inner) => match inner.as_ref() {
+                TypeExpr::Primitive(PrimitiveType::U8) => DartType::Bytes,
+                _ => DartType::List(Box::new(Self::from_type_expr(inner, type_catalog))),
+            },
             TypeExpr::Option(inner) => {
                 DartType::Option(Box::new(Self::from_type_expr(inner, type_catalog)))
             }

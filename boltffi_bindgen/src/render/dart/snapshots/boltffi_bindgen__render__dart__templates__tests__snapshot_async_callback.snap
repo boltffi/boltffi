@@ -77,7 +77,7 @@ abstract interface class ICallback {
   );
 
   Future<void> processBytes(
-    List<int> bytes,
+    $$typed_data.Uint8List bytes,
   );
 }
 
