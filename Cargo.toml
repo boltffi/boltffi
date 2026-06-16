@@ -4,7 +4,7 @@ members = ["boltffi", "boltffi_core", "boltffi_macros", "boltffi_bindgen", "bolt
 exclude = ["benchmarks/adapters/uniffi", "examples/demo"]
 
 [workspace.package]
-version = "0.25.4"
+version = "0.25.5"
 edition = "2024"
 authors = ["Ali A. Hilal <me@alihilal.com>"]
 license = "MIT"

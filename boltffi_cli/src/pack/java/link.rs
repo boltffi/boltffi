@@ -430,7 +430,13 @@ pub(crate) fn compile_jni_library_with_layout(
     let has_shared_library_copy = compatibility_shared_library.is_some();
     let mut debug_info_sidecars = Vec::new();
 
-    let volume_paths: Vec<&Path> = vec![
+    // Directories named by `-L` flags (cargo registry import libs, build-script
+    // OUT dirs) must be bind-mounted into the link container, or the linker
+    // cannot resolve `-l<lib>` against them — e.g. the windows-targets import
+    // libs (`-lwindows.0.52.0`) that live under the cargo registry. Held in an
+    // owned vec so the `&Path` borrows below outlive the command.
+    let link_search_dirs = link_search_path_dirs(&build_artifacts.native_link_search_paths);
+    let mut volume_paths: Vec<&Path> = vec![
         output_lib.as_path(),
         jni_glue.as_path(),
         link_input.path(),
@@ -438,6 +444,7 @@ pub(crate) fn compile_jni_library_with_layout(
         jni_include_directories.shared.as_path(),
         jni_include_directories.platform.as_path(),
     ];
+    volume_paths.extend(link_search_dirs.iter().map(PathBuf::as_path));
     let mut command = packaging_target
         .toolchain
         .container_linker_command(&volume_paths);
@@ -947,6 +954,63 @@ pub(crate) fn extract_link_search_paths(output: &str) -> Vec<String> {
     linked_paths
 }
 
+/// Rewrite container-internal `/target` mount paths in build-script link search
+/// entries back to the host target directory.
+///
+/// `cross` mounts the host cargo target dir at `/target` inside the build image
+/// and sets `CARGO_TARGET_DIR=/target`, so a probe run there reports build-script
+/// output dirs as `/target/<triple>/release/build/.../out`. The JNI link runs in
+/// a *separate* container (or on the host) where `/target` is meaningless, so the
+/// prefix is translated to the real host target dir. Entries keep their
+/// `native=`/`dependency=`/`all=`/`crate=`/`framework=` kind prefix; only the
+/// path portion is remapped. Non-`/target` paths (e.g. the cargo registry, which
+/// `cross` already mounts at its host path) pass through unchanged.
+pub(crate) fn remap_container_link_search_paths(
+    link_search_paths: Vec<String>,
+    host_target_directory: &Path,
+) -> Vec<String> {
+    let host_root = host_target_directory.to_string_lossy();
+    link_search_paths
+        .into_iter()
+        .map(|entry| {
+            let (kind, path) = match entry.split_once('=') {
+                Some((kind, path)) => (Some(kind), path),
+                None => (None, entry.as_str()),
+            };
+            let remapped = if path == "/target" {
+                host_root.to_string()
+            } else if let Some(rest) = path.strip_prefix("/target/") {
+                format!("{host_root}/{rest}")
+            } else {
+                path.to_string()
+            };
+            match kind {
+                Some(kind) => format!("{kind}={remapped}"),
+                None => remapped,
+            }
+        })
+        .collect()
+}
+
+/// Directories named by link search entries, for bind-mounting into the JNI link
+/// container. Strips the `native=`/`dependency=`/… kind prefix; skips `framework=`
+/// (macOS framework search, not a plain `-L` directory).
+pub(crate) fn link_search_path_dirs(link_search_paths: &[String]) -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+    for entry in link_search_paths {
+        let path = match entry.split_once('=') {
+            Some(("framework", _)) => continue,
+            Some((_, path)) => path,
+            None => entry.as_str(),
+        };
+        let dir = PathBuf::from(path);
+        if !dirs.contains(&dir) {
+            dirs.push(dir);
+        }
+    }
+    dirs
+}
+
 pub(crate) fn link_search_path_flags(link_search_paths: &[String]) -> Vec<String> {
     let mut flags = Vec::new();
 
@@ -1439,6 +1503,16 @@ pub(crate) fn query_native_link_metadata(
     let stderr = String::from_utf8_lossy(&output.stderr);
     let combined = format!("{stdout}\n{stderr}");
     let native_link_search_paths = extract_link_search_paths(&stdout);
+    // A containerized probe (`cross`) runs inside an image that mounts the host
+    // target dir at `/target`, so build-script `linked_paths` come back as
+    // `/target/<triple>/release/build/.../out`. Those don't exist on the host or
+    // in the separate JNI-link container; rewrite the `/target` mount prefix back
+    // to the host target directory so the `-L` paths are valid and mountable.
+    let native_link_search_paths = if runs_in_container {
+        remap_container_link_search_paths(native_link_search_paths, &cargo_context.target_directory)
+    } else {
+        native_link_search_paths
+    };
     let native_static_libraries =
         extract_native_static_libraries(&combined).ok_or_else(|| CliError::CommandFailed {
             command: "cargo rustc --print=native-static-libs did not emit link metadata"
@@ -1592,7 +1666,8 @@ mod tests {
         clang_style_jni_linker_args, compiler_tool_version_suffix, desktop_jni_strip_mode,
         existing_jvm_shared_library_path, extract_library_filenames, extract_link_search_paths,
         extract_native_static_libraries, handle_missing_linux_strip_program,
-        link_search_path_flags, linux_strip_program_candidates, msvc_link_search_path_flags,
+        link_search_path_dirs, link_search_path_flags, linux_strip_program_candidates,
+        msvc_link_search_path_flags, remap_container_link_search_paths,
         msvc_native_static_library_flags, msvc_rustflag_linker_args, parse_native_static_libraries,
         resolve_jni_include_directories_with_overrides, resolve_jvm_native_link_input,
         resolve_linux_strip_program, select_windows_static_library_filename,
@@ -1613,6 +1688,57 @@ mod tests {
             .expect("time went backwards")
             .as_nanos();
         std::env::temp_dir().join(format!("{prefix}-{unique}"))
+    }
+
+    #[test]
+    fn remap_container_link_search_paths_rewrites_target_mount_to_host() {
+        let host_target = Path::new("/home/dev/project/target");
+        let input = vec![
+            "native=/target/x86_64-pc-windows-gnu/release/build/ring-abc/out".to_string(),
+            "native=/home/dev/.cargo/registry/src/idx/windows_x86_64_gnu-0.53.1/lib".to_string(),
+            "native=/target".to_string(),
+            "dependency=/opt/extra/lib".to_string(),
+        ];
+
+        let remapped = remap_container_link_search_paths(input, host_target);
+
+        assert_eq!(
+            remapped,
+            vec![
+                // /target/... -> <host target>/...
+                "native=/home/dev/project/target/x86_64-pc-windows-gnu/release/build/ring-abc/out"
+                    .to_string(),
+                // cargo registry host path passes through untouched
+                "native=/home/dev/.cargo/registry/src/idx/windows_x86_64_gnu-0.53.1/lib"
+                    .to_string(),
+                // bare /target -> host target root
+                "native=/home/dev/project/target".to_string(),
+                // unrelated path with a different kind prefix is preserved
+                "dependency=/opt/extra/lib".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn link_search_path_dirs_strips_kind_prefix_and_skips_frameworks() {
+        let input = vec![
+            "native=/a/lib".to_string(),
+            "dependency=/b/lib".to_string(),
+            "framework=/c/Frameworks".to_string(),
+            "/d/plain".to_string(),
+            "native=/a/lib".to_string(), // duplicate, deduped
+        ];
+
+        let dirs = link_search_path_dirs(&input);
+
+        assert_eq!(
+            dirs,
+            vec![
+                PathBuf::from("/a/lib"),
+                PathBuf::from("/b/lib"),
+                PathBuf::from("/d/plain"),
+            ]
+        );
     }
 
     fn cargo_context(root: &Path, host_target: JavaHostTarget) -> JvmCargoContext {
