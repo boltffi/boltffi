@@ -71,6 +71,29 @@ impl CargoBuildCommand {
         matches!(self, Self::Cargo | Self::Zigbuild)
     }
 
+    /// Whether this build command compiles inside a container (e.g. `cross`),
+    /// so the cross toolchain — including the C compilers used by build scripts
+    /// like `ring`/`zstd-sys` — lives in the image rather than on the host. When
+    /// true, the `--print=native-static-libs` probe must run through this same
+    /// command so it executes in the container, and the host cross-probe linker
+    /// shim must NOT be injected.
+    pub fn runs_in_container(&self) -> bool {
+        matches!(self, Self::Cross)
+    }
+
+    /// The subcommand used to run the `--print=native-static-libs` probe.
+    ///
+    /// The probe needs raw `rustc` flags, so it always uses the `rustc`
+    /// subcommand: `cargo rustc` for host builds (`cargo`/`zigbuild`) and
+    /// `cross rustc` for containerized builds — the latter runs the probe inside
+    /// the cross image where the target C toolchain is available.
+    pub fn probe_subcommand(&self) -> &str {
+        match self {
+            Self::Cargo | Self::Zigbuild | Self::Cross => "rustc",
+            Self::Custom { .. } => "rustc",
+        }
+    }
+
     fn from_token(s: &str) -> Self {
         match s {
             "cross" => Self::Cross,

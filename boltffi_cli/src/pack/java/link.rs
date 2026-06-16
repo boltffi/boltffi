@@ -1372,15 +1372,28 @@ pub(crate) fn query_native_link_metadata(
         status: None,
     })?;
 
-    let mut command = Command::new("cargo");
+    // Mirror the real build command for the probe. A containerized builder
+    // (`cross`) must run the probe via `cross rustc` so it executes inside the
+    // image: the target C toolchain used by build scripts (`ring`, `zstd-sys`)
+    // lives in the container, not on the host, and the build scripts are
+    // compiled against the container's (older) glibc so they remain runnable
+    // there. A plain host `cargo rustc` probe would need a host cross C compiler
+    // and would poison the shared target with host-glibc build-script binaries.
+    let cmd = cargo_context.cargo_build_command.as_ref();
+    let program = cmd.map(CargoBuildCommand::program).unwrap_or("cargo");
+    let probe_subcommand = cmd.map(CargoBuildCommand::probe_subcommand).unwrap_or("rustc");
+    let is_cargo = cmd.map(CargoBuildCommand::is_cargo_program).unwrap_or(true);
+    let runs_in_container = cmd.map(CargoBuildCommand::runs_in_container).unwrap_or(false);
+
+    let mut command = Command::new(program);
     command.current_dir(crate_directory);
 
-    if let Some(toolchain_selector) = cargo_context.toolchain_selector.as_deref() {
+    if is_cargo && let Some(toolchain_selector) = cargo_context.toolchain_selector.as_deref() {
         command.arg(toolchain_selector);
     }
 
     command
-        .arg("rustc")
+        .arg(probe_subcommand)
         .arg("--target")
         .arg(&cargo_context.rust_target_triple);
     apply_jvm_cargo_package_selection(&mut command, cargo_context);
@@ -1402,7 +1415,9 @@ pub(crate) fn query_native_link_metadata(
     // fails for a cross target whose linker lives in the build command (e.g.
     // `zig cc` via `cargo zigbuild`). Point the probe at the JNI compiler driver
     // as the cross linker so it can produce the artifact and print its metadata.
-    if JavaHostTarget::current() != Some(cargo_context.host_target) {
+    // Containerized builders (`cross`) carry their own linker in the image, so
+    // the host shim is unnecessary and must not be injected there.
+    if !runs_in_container && JavaHostTarget::current() != Some(cargo_context.host_target) {
         packaging_target
             .toolchain
             .configure_cross_probe_linker(&mut command)?;
