@@ -110,4 +110,13 @@ impl Step {
             println!("   {} {}", style("✓").green(), message);
         }
     }
+
+    pub fn finish_failure(self, message: &str) {
+        if let Some(pb) = self.spinner {
+            pb.finish_and_clear();
+        }
+        if self.verbosity != Verbosity::Quiet {
+            println!("   {} {}", style("✗").red(), message);
+        }
+    }
 }

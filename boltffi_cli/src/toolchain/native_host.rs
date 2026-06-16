@@ -159,7 +159,12 @@ impl NativeHostToolchain {
         glibc_version: Option<&str>,
         jni_compiler_container: Option<&JniCompilerContainerConfig>,
     ) -> Result<Self> {
-        ensure_supported_native_host_pair(current_host, target, platform_name)?;
+        ensure_supported_native_host_pair(
+            current_host,
+            target,
+            platform_name,
+            jni_compiler_override.is_some(),
+        )?;
         let rust_target_triple =
             resolve_rust_target_triple(target, current_host, toolchain_selector, cargo_args)?;
         ensure_rust_target_installed(
@@ -171,15 +176,10 @@ impl NativeHostToolchain {
         let rustflag_linker_args =
             configured_target_rustflag_linker_args(cargo_args, &rust_target_triple);
 
-        match (current_host, target) {
-            (
-                JavaHostTarget::DarwinArm64 | JavaHostTarget::DarwinX86_64,
-                JavaHostTarget::DarwinArm64,
-            )
-            | (
-                JavaHostTarget::DarwinArm64 | JavaHostTarget::DarwinX86_64,
-                JavaHostTarget::DarwinX86_64,
-            ) => {
+        match target {
+            JavaHostTarget::Current => unreachable!("resolved host target required"),
+            JavaHostTarget::DarwinArm64 | JavaHostTarget::DarwinX86_64 => {
+                // macOS target — the guard guarantees a macOS host.
                 let (jni_compiler_program, jni_compiler_args) = if let Some(override_str) =
                     jni_compiler_override
                 {
@@ -213,10 +213,35 @@ impl NativeHostToolchain {
                     jni_compiler_container: jni_compiler_container.cloned(),
                 })
             }
-            (
-                JavaHostTarget::DarwinArm64 | JavaHostTarget::DarwinX86_64,
-                JavaHostTarget::LinuxX86_64,
-            ) => {
+            JavaHostTarget::LinuxX86_64 | JavaHostTarget::LinuxAarch64
+                if current_host == target =>
+            {
+                // Native Linux build (host == target).
+                let (linker_program, linker_args) = if let Some(override_str) =
+                    jni_compiler_override
+                {
+                    parse_jni_compiler_override(
+                        override_str,
+                        &rust_target_triple,
+                        glibc_version,
+                        jni_compiler_container.is_some(),
+                    )?
+                } else {
+                    resolve_linux_host_linker(toolchain_selector, cargo_args, &rust_target_triple)?
+                };
+                Ok(Self {
+                    rust_target_triple,
+                    cargo_linker_env: None,
+                    jni_compiler_program: linker_program,
+                    jni_compiler_args: linker_args,
+                    jni_rustflag_linker_args: rustflag_linker_args,
+                    jni_compiler_container: jni_compiler_container.cloned(),
+                })
+            }
+            JavaHostTarget::LinuxX86_64 | JavaHostTarget::LinuxAarch64 => {
+                // Cross-compile to Linux from a different host (macOS, or the other
+                // Linux architecture). Host-agnostic: drive it with a jni_compiler
+                // override (e.g. `zig cc`) or a discoverable cross toolchain.
                 if let Some(override_str) = jni_compiler_override {
                     // When a JNI compiler override is provided (e.g. "zig cc"), we don't
                     // require a separately-installed cross-linker for the Rust build step.
@@ -265,30 +290,7 @@ impl NativeHostToolchain {
                     })
                 }
             }
-            (JavaHostTarget::LinuxX86_64, JavaHostTarget::LinuxX86_64)
-            | (JavaHostTarget::LinuxAarch64, JavaHostTarget::LinuxAarch64) => {
-                let (linker_program, linker_args) = if let Some(override_str) =
-                    jni_compiler_override
-                {
-                    parse_jni_compiler_override(
-                        override_str,
-                        &rust_target_triple,
-                        glibc_version,
-                        jni_compiler_container.is_some(),
-                    )?
-                } else {
-                    resolve_linux_host_linker(toolchain_selector, cargo_args, &rust_target_triple)?
-                };
-                Ok(Self {
-                    rust_target_triple,
-                    cargo_linker_env: None,
-                    jni_compiler_program: linker_program,
-                    jni_compiler_args: linker_args,
-                    jni_rustflag_linker_args: rustflag_linker_args,
-                    jni_compiler_container: jni_compiler_container.cloned(),
-                })
-            }
-            (JavaHostTarget::WindowsX86_64, JavaHostTarget::WindowsX86_64) => {
+            JavaHostTarget::WindowsX86_64 if current_host == target => {
                 let (linker_program, linker_args) =
                     if let Some(override_str) = jni_compiler_override {
                         parse_jni_compiler_override(
@@ -313,7 +315,33 @@ impl NativeHostToolchain {
                     jni_compiler_container: jni_compiler_container.cloned(),
                 })
             }
-            _ => unreachable!("unsupported host/target pairs should fail before toolchain probing"),
+            JavaHostTarget::WindowsX86_64 => {
+                // Cross-compile to Windows from a non-Windows host. The guard only
+                // admits this pair when a jni_compiler override is configured, so the
+                // override is guaranteed to be present here.
+                let override_str = jni_compiler_override.ok_or_else(|| CliError::CommandFailed {
+                    command: format!(
+                        "cross-compiling the JNI library to '{}' from '{}' requires a jni_compiler override (e.g. jni_compiler = \"zig cc\")",
+                        target.canonical_name(),
+                        current_host.canonical_name()
+                    ),
+                    status: None,
+                })?;
+                let (jni_compiler_program, jni_compiler_args) = parse_jni_compiler_override(
+                    override_str,
+                    &rust_target_triple,
+                    glibc_version,
+                    jni_compiler_container.is_some(),
+                )?;
+                Ok(Self {
+                    rust_target_triple,
+                    cargo_linker_env: None,
+                    jni_compiler_program,
+                    jni_compiler_args,
+                    jni_rustflag_linker_args: rustflag_linker_args,
+                    jni_compiler_container: jni_compiler_container.cloned(),
+                })
+            }
         }
     }
 
@@ -343,6 +371,80 @@ impl NativeHostToolchain {
         if let Some((key, value)) = self.cargo_linker_env.as_ref() {
             command.env(key, value);
         }
+    }
+
+    /// Configure a `cargo rustc` link-metadata probe so it can link a cross
+    /// target. A plain `cargo rustc` links with the host linker, which fails for
+    /// a foreign target whose linker lives in the build command (e.g. `zig cc`
+    /// via `cargo zigbuild`). This writes a wrapper that execs the JNI compiler
+    /// driver (program + its configured args) and points
+    /// `CARGO_TARGET_<triple>_LINKER` at it.
+    ///
+    /// No-op when the JNI compiler runs in a container, since a host-side
+    /// linker wrapper cannot reach the in-container compiler.
+    pub fn configure_cross_probe_linker(&self, command: &mut Command) -> Result<()> {
+        if self.jni_compiler_container.is_some() {
+            return Ok(());
+        }
+        let wrapper = self.write_cross_probe_linker_wrapper()?;
+        command.env(cargo_linker_env_key(&self.rust_target_triple), wrapper);
+        Ok(())
+    }
+
+    fn write_cross_probe_linker_wrapper(&self) -> Result<PathBuf> {
+        let wrapper_dir = std::env::temp_dir().join("boltffi-jvm-linkers");
+        std::fs::create_dir_all(&wrapper_dir).map_err(|source| {
+            CliError::CreateDirectoryFailed {
+                path: wrapper_dir.clone(),
+                source,
+            }
+        })?;
+
+        let program_name = self
+            .jni_compiler_program
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("jni-compiler");
+        let wrapper_path = wrapper_dir.join(format!(
+            "{program_name}-{}-probe-linker.sh",
+            self.rust_target_triple
+        ));
+        let quoted_args = self
+            .jni_compiler_args
+            .iter()
+            .map(|arg| format!("\"{arg}\""))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let script = format!(
+            "#!/bin/sh\nexec \"{}\" {} \"$@\"\n",
+            self.jni_compiler_program.display(),
+            quoted_args
+        );
+        std::fs::write(&wrapper_path, script).map_err(|source| CliError::WriteFailed {
+            path: wrapper_path.clone(),
+            source,
+        })?;
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+
+            let mut permissions = std::fs::metadata(&wrapper_path)
+                .map_err(|source| CliError::ReadFailed {
+                    path: wrapper_path.clone(),
+                    source,
+                })?
+                .permissions();
+            permissions.set_mode(0o755);
+            std::fs::set_permissions(&wrapper_path, permissions).map_err(|source| {
+                CliError::WriteFailed {
+                    path: wrapper_path.clone(),
+                    source,
+                }
+            })?;
+        }
+
+        Ok(wrapper_path)
     }
 
     pub fn linker_command(&self) -> Command {
@@ -376,6 +478,13 @@ impl NativeHostToolchain {
 
                 let cwd = std::env::current_dir().unwrap_or_default();
                 let mut volume_roots: Vec<PathBuf> = Vec::new();
+                // Mount the working directory and run the compiler from it, so that
+                // cwd-relative linker arguments resolve to the same paths they would
+                // on the host. Without this the container defaults to cwd `/` and
+                // relative inputs/outputs are "not found".
+                if cwd.is_absolute() {
+                    add_unique_volume_root(&mut volume_roots, &cwd);
+                }
                 for path in extra_volume_paths {
                     if let Some(parent) = path.parent() {
                         // Docker/Podman require absolute mount paths.
@@ -392,6 +501,10 @@ impl NativeHostToolchain {
                     command
                         .arg("-v")
                         .arg(format!("{}:{}", root.display(), root.display()));
+                }
+
+                if cwd.is_absolute() {
+                    command.arg("-w").arg(&cwd);
                 }
 
                 command.arg(&container.image);
@@ -413,26 +526,36 @@ impl NativeHostToolchain {
     }
 }
 
+/// Decides whether a JNI/native library can be produced for `target` from the
+/// current build host.
+///
+/// Cross-compilation viability depends on the target platform family:
+/// - **macOS targets** require an Apple SDK, so only a macOS host qualifies.
+/// - **Linux targets** cross-compile cleanly from any macOS or Linux host
+///   (via `zig cc` or a cross gcc); the concrete cross toolchain is validated
+///   further down in `discover_for_platform`.
+/// - **Windows targets** are native on a Windows host. Cross-building to Windows
+///   from another host needs an explicit `jni_compiler` override (e.g. `zig cc`),
+///   so it is only allowed when one is present.
 fn ensure_supported_native_host_pair(
     current_host: JavaHostTarget,
     target: JavaHostTarget,
     platform_name: &str,
+    jni_compiler_override_present: bool,
 ) -> Result<()> {
-    let supported = matches!(
-        (current_host, target),
-        (
-            JavaHostTarget::DarwinArm64 | JavaHostTarget::DarwinX86_64,
-            JavaHostTarget::DarwinArm64,
-        ) | (
-            JavaHostTarget::DarwinArm64 | JavaHostTarget::DarwinX86_64,
-            JavaHostTarget::DarwinX86_64,
-        ) | (
-            JavaHostTarget::DarwinArm64 | JavaHostTarget::DarwinX86_64,
-            JavaHostTarget::LinuxX86_64,
-        ) | (JavaHostTarget::LinuxX86_64, JavaHostTarget::LinuxX86_64)
-            | (JavaHostTarget::LinuxAarch64, JavaHostTarget::LinuxAarch64)
-            | (JavaHostTarget::WindowsX86_64, JavaHostTarget::WindowsX86_64)
-    );
+    use JavaHostTarget::{
+        Current, DarwinArm64, DarwinX86_64, LinuxAarch64, LinuxX86_64, WindowsX86_64,
+    };
+
+    let supported = match target {
+        Current => false,
+        DarwinArm64 | DarwinX86_64 => matches!(current_host, DarwinArm64 | DarwinX86_64),
+        LinuxX86_64 | LinuxAarch64 => matches!(
+            current_host,
+            DarwinArm64 | DarwinX86_64 | LinuxX86_64 | LinuxAarch64
+        ),
+        WindowsX86_64 => current_host == WindowsX86_64 || jni_compiler_override_present,
+    };
 
     if supported {
         return Ok(());
@@ -844,12 +967,18 @@ fn default_windows_jni_compiler_candidates(rust_target_triple: &str) -> Vec<&'st
 }
 
 fn discover_default_linux_x86_64_cross_compiler(rust_target_triple: &str) -> Option<PathBuf> {
-    if rust_target_triple != default_linux_rust_target_triple(JavaHostTarget::LinuxX86_64) {
-        return None;
-    }
+    let candidates: &[&str] =
+        if rust_target_triple == default_linux_rust_target_triple(JavaHostTarget::LinuxX86_64) {
+            &["x86_64-linux-gnu-clang", "x86_64-linux-gnu-gcc"]
+        } else if rust_target_triple == default_linux_rust_target_triple(JavaHostTarget::LinuxAarch64)
+        {
+            &["aarch64-linux-gnu-clang", "aarch64-linux-gnu-gcc"]
+        } else {
+            return None;
+        };
 
-    ["x86_64-linux-gnu-clang", "x86_64-linux-gnu-gcc"]
-        .into_iter()
+    candidates
+        .iter()
         .find_map(|candidate| which::which(candidate).ok())
 }
 
@@ -1907,6 +2036,7 @@ mod tests {
     use crate::target::{JavaHostTarget, NativeHostPlatform};
     use std::fs;
     use std::path::{Path, PathBuf};
+    use std::process::Command;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
@@ -2740,18 +2870,73 @@ unix
     }
 
     #[test]
-    fn rejects_unsupported_jvm_host_pairs_before_toolchain_probing() {
+    fn rejects_cross_windows_without_jni_compiler_override() {
+        // Cross-building to Windows needs an explicit jni_compiler override; without
+        // one the pair is rejected before any toolchain probing.
         let error = ensure_supported_native_host_pair(
             JavaHostTarget::DarwinArm64,
             JavaHostTarget::WindowsX86_64,
             "JVM",
+            false,
         )
-        .expect_err("unsupported host pair should fail");
+        .expect_err("cross windows without override should fail");
 
         match error {
             CliError::CommandFailed { command, status } => {
                 assert!(command.contains("windows-x86_64"));
                 assert!(command.contains("darwin-arm64"));
+                assert_eq!(status, None);
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn allows_cross_windows_with_jni_compiler_override() {
+        ensure_supported_native_host_pair(
+            JavaHostTarget::LinuxX86_64,
+            JavaHostTarget::WindowsX86_64,
+            "JVM",
+            true,
+        )
+        .expect("cross windows with override should be allowed");
+    }
+
+    #[test]
+    fn allows_cross_linux_arch_from_linux_host() {
+        // The driving use case: a linux-x86_64 runner producing linux-aarch64.
+        ensure_supported_native_host_pair(
+            JavaHostTarget::LinuxX86_64,
+            JavaHostTarget::LinuxAarch64,
+            "JVM",
+            false,
+        )
+        .expect("linux-x86_64 -> linux-aarch64 should be allowed");
+        ensure_supported_native_host_pair(
+            JavaHostTarget::LinuxAarch64,
+            JavaHostTarget::LinuxX86_64,
+            "JVM",
+            false,
+        )
+        .expect("linux-aarch64 -> linux-x86_64 should be allowed");
+    }
+
+    #[test]
+    fn rejects_macos_target_from_non_macos_host() {
+        // macOS targets require an Apple SDK and cannot be cross-built from Linux,
+        // even with a jni_compiler override.
+        let error = ensure_supported_native_host_pair(
+            JavaHostTarget::LinuxX86_64,
+            JavaHostTarget::DarwinArm64,
+            "JVM",
+            true,
+        )
+        .expect_err("cross to macOS from linux should fail");
+
+        match error {
+            CliError::CommandFailed { command, status } => {
+                assert!(command.contains("darwin-arm64"));
+                assert!(command.contains("linux-x86_64"));
                 assert_eq!(status, None);
             }
             other => panic!("unexpected error: {other:?}"),
@@ -3298,6 +3483,16 @@ unix
         assert!(args.contains(&"-shared"));
         // Volume mappings should be present
         assert!(args.contains(&"-v"));
+        // Working directory must be set so cwd-relative linker args resolve
+        // (without it the container runs from `/` and inputs are "not found").
+        let workdir = std::env::current_dir().unwrap();
+        let workdir = workdir.to_str().unwrap();
+        let w_index = args.iter().position(|a| *a == "-w").expect("-w workdir flag");
+        assert_eq!(args[w_index + 1], workdir);
+        // The working directory must also be mounted into the container.
+        assert!(args
+            .windows(2)
+            .any(|w| w[0] == "-v" && w[1] == format!("{workdir}:{workdir}")));
     }
 
     #[test]
@@ -3333,6 +3528,64 @@ unix
         assert_eq!(cmd.get_program().to_str().unwrap(), "/usr/bin/gcc");
         let args: Vec<_> = cmd.get_args().map(|a| a.to_str().unwrap()).collect();
         assert_eq!(args, vec!["-shared"]);
+    }
+
+    #[test]
+    fn configure_cross_probe_linker_points_cargo_at_the_jni_compiler() {
+        let toolchain = NativeHostToolchain {
+            rust_target_triple: "aarch64-unknown-linux-gnu".to_string(),
+            cargo_linker_env: None,
+            jni_compiler_program: PathBuf::from("/usr/bin/zig"),
+            jni_compiler_args: vec![
+                "cc".to_string(),
+                "-target".to_string(),
+                "aarch64-linux-gnu".to_string(),
+            ],
+            jni_rustflag_linker_args: vec![],
+            jni_compiler_container: None,
+        };
+
+        let mut command = Command::new("cargo");
+        toolchain
+            .configure_cross_probe_linker(&mut command)
+            .expect("probe linker configured");
+
+        let linker = command
+            .get_envs()
+            .find(|(key, _)| {
+                *key == std::ffi::OsStr::new("CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER")
+            })
+            .and_then(|(_, value)| value)
+            .expect("cross linker env set");
+
+        let script = std::fs::read_to_string(linker).expect("read wrapper script");
+        assert!(script.contains("/usr/bin/zig"));
+        assert!(script.contains("\"cc\" \"-target\" \"aarch64-linux-gnu\""));
+        assert!(script.contains("\"$@\""));
+    }
+
+    #[test]
+    fn configure_cross_probe_linker_is_noop_for_container_compiler() {
+        let toolchain = NativeHostToolchain {
+            rust_target_triple: "aarch64-unknown-linux-gnu".to_string(),
+            cargo_linker_env: None,
+            jni_compiler_program: PathBuf::from("gcc"),
+            jni_compiler_args: vec![],
+            jni_rustflag_linker_args: vec![],
+            jni_compiler_container: Some(JniCompilerContainerConfig {
+                image: "manylinux2014_aarch64".to_string(),
+                runtime: "docker".to_string(),
+            }),
+        };
+
+        let mut command = Command::new("cargo");
+        toolchain
+            .configure_cross_probe_linker(&mut command)
+            .expect("container probe is a no-op");
+
+        // A host-side wrapper cannot reach an in-container compiler, so no linker
+        // env is injected.
+        assert!(command.get_envs().next().is_none());
     }
 
     #[test]

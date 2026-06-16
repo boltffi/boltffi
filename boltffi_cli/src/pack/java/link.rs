@@ -10,6 +10,7 @@ use crate::pack::{format_command_for_log, print_cargo_line, print_verbose_detail
 use crate::reporter::Step;
 use crate::target::JavaHostTarget;
 
+use super::outputs::clean_structured_jvm_output_dir;
 use super::plan::{JvmCargoContext, JvmCrateOutputs, JvmPackagingTarget};
 
 pub(crate) struct JvmBuildArtifacts {
@@ -413,6 +414,10 @@ pub(crate) fn compile_jni_library_with_layout(
     );
 
     let host_native_output = layout.native_output_root.join(host_target.canonical_name());
+    // Clean only this arch's output directory before rebuilding it, so stale files
+    // from a previous build of the same arch are dropped while sibling arches built
+    // by other runners are left intact.
+    clean_structured_jvm_output_dir(&host_native_output)?;
     std::fs::create_dir_all(&host_native_output).map_err(|source| {
         CliError::CreateDirectoryFailed {
             path: host_native_output.clone(),
@@ -1393,6 +1398,15 @@ pub(crate) fn query_native_link_metadata(
     packaging_target
         .toolchain
         .configure_cargo_build(&mut command);
+    // A plain `cargo rustc` probe links the cdylib with the host linker, which
+    // fails for a cross target whose linker lives in the build command (e.g.
+    // `zig cc` via `cargo zigbuild`). Point the probe at the JNI compiler driver
+    // as the cross linker so it can produce the artifact and print its metadata.
+    if JavaHostTarget::current() != Some(cargo_context.host_target) {
+        packaging_target
+            .toolchain
+            .configure_cross_probe_linker(&mut command)?;
+    }
 
     let output = command.output().map_err(|source| CliError::CommandFailed {
         command: format!("cargo rustc --print=native-static-libs: {source}"),

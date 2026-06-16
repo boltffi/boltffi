@@ -18,23 +18,23 @@ Quick links: [User Guide](https://boltffi.dev/docs/overview) | [Tutorial](https:
 
 ### vs UniFFI (Swift/Kotlin)
 
-| Benchmark | BoltFFI | UniFFI | Speedup |
-|-----------|--------:|-------:|--------:|
-| noop | <1 ns | 1,416 ns | >1000x |
-| echo_i32 | <1 ns | 1,416 ns | >1000x |
-| counter_increment (1k calls) | 1,083 ns | 1,388,895 ns | 1,282x |
-| generate_locations (1k structs) | 4,167 ns | 1,276,333 ns | 306x |
-| generate_locations (10k structs) | 62,542 ns | 12,817,000 ns | 205x |
+| Benchmark                        |   BoltFFI |        UniFFI | Speedup |
+|----------------------------------|----------:|--------------:|--------:|
+| noop                             |     <1 ns |      1,416 ns |  >1000x |
+| echo_i32                         |     <1 ns |      1,416 ns |  >1000x |
+| counter_increment (1k calls)     |  1,083 ns |  1,388,895 ns |  1,282x |
+| generate_locations (1k structs)  |  4,167 ns |  1,276,333 ns |    306x |
+| generate_locations (10k structs) | 62,542 ns | 12,817,000 ns |    205x |
 
 ### vs wasm-bindgen (WASM)
 
-| Benchmark | BoltFFI | wasm-bindgen | Speedup |
-|-----------|--------:|-------------:|--------:|
-| 1k particles | 29,886 ns | 13,532,530 ns | 453x |
-| 100 particles | 3,117 ns | 748,287 ns | 240x |
-| 1k locations | 21,931 ns | 4,037,879 ns | 184x |
-| 1k trades | 42,015 ns | 5,781,767 ns | 138x |
-| 100 locations | 2,199 ns | 283,753 ns | 129x |
+| Benchmark     |   BoltFFI |  wasm-bindgen | Speedup |
+|---------------|----------:|--------------:|--------:|
+| 1k particles  | 29,886 ns | 13,532,530 ns |    453x |
+| 100 particles |  3,117 ns |    748,287 ns |    240x |
+| 1k locations  | 21,931 ns |  4,037,879 ns |    184x |
+| 1k trades     | 42,015 ns |  5,781,767 ns |    138x |
+| 100 locations |  2,199 ns |    283,753 ns |    129x |
 
 Full benchmark code: [benchmarks](./benchmarks)
 

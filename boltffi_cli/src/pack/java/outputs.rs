@@ -62,38 +62,15 @@ pub(crate) fn remove_stale_requested_jvm_shared_library_copies_after_success(
     Ok(())
 }
 
-pub(crate) fn remove_stale_structured_jvm_outputs(
-    native_output_root: &Path,
-    requested_host_targets: &[JavaHostTarget],
-) -> Result<()> {
-    let requested_host_directories = requested_host_targets
-        .iter()
-        .map(|host_target| host_target.canonical_name())
-        .collect::<std::collections::HashSet<_>>();
-
-    for host_target in [
-        JavaHostTarget::DarwinArm64,
-        JavaHostTarget::DarwinX86_64,
-        JavaHostTarget::LinuxX86_64,
-        JavaHostTarget::LinuxAarch64,
-        JavaHostTarget::WindowsX86_64,
-    ] {
-        if requested_host_directories.contains(host_target.canonical_name()) {
-            continue;
-        }
-
-        remove_directory_if_exists(&native_output_root.join(host_target.canonical_name()))?;
-    }
-
-    Ok(())
-}
-
-fn remove_directory_if_exists(path: &Path) -> Result<()> {
-    match std::fs::remove_dir_all(path) {
+/// Remove stale files from a single arch's `native/<arch>/` directory before it
+/// is rebuilt, leaving sibling arches untouched. Used by the JNI compile step so
+/// that an incremental, per-arch pack only ever cleans the subdir it owns.
+pub(crate) fn clean_structured_jvm_output_dir(native_arch_dir: &Path) -> Result<()> {
+    match std::fs::remove_dir_all(native_arch_dir) {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(source) => Err(CliError::WriteFailed {
-            path: path.to_path_buf(),
+            path: native_arch_dir.to_path_buf(),
             source,
         }),
     }
@@ -105,9 +82,9 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::{
-        remove_file_if_exists, remove_stale_flat_jvm_outputs_if_current_host_unrequested,
+        clean_structured_jvm_output_dir, remove_file_if_exists,
+        remove_stale_flat_jvm_outputs_if_current_host_unrequested,
         remove_stale_requested_jvm_shared_library_copies_after_success,
-        remove_stale_structured_jvm_outputs,
     };
     use crate::pack::java::link::JvmPackagedNativeOutput;
     use crate::target::JavaHostTarget;
@@ -209,38 +186,30 @@ mod tests {
     }
 
     #[test]
-    fn removes_stale_structured_jvm_outputs_when_host_matrix_is_narrowed() {
-        let temp_root = temporary_directory("boltffi-java-structured-cleanup");
+    fn clean_structured_jvm_output_dir_removes_only_the_named_arch() {
+        let temp_root = temporary_directory("boltffi-java-structured-clean");
         let darwin_dir = temp_root.join(JavaHostTarget::DarwinArm64.canonical_name());
         let linux_dir = temp_root.join(JavaHostTarget::LinuxX86_64.canonical_name());
         fs::create_dir_all(&darwin_dir).expect("create darwin dir");
         fs::create_dir_all(&linux_dir).expect("create linux dir");
+        fs::write(linux_dir.join("stale.so"), []).expect("write stale lib");
 
-        remove_stale_structured_jvm_outputs(&temp_root, &[JavaHostTarget::DarwinArm64])
-            .expect("cleanup stale structured outputs");
+        clean_structured_jvm_output_dir(&linux_dir).expect("clean only the rebuilt arch");
 
-        assert!(darwin_dir.exists());
+        // Only the named arch is cleaned; sibling arches survive.
         assert!(!linux_dir.exists());
+        assert!(darwin_dir.exists());
 
         fs::remove_dir_all(&temp_root).expect("cleanup temp dir");
     }
 
     #[test]
-    fn preserves_requested_structured_jvm_outputs() {
-        let temp_root = temporary_directory("boltffi-java-structured-preserve");
-        let darwin_dir = temp_root.join(JavaHostTarget::DarwinArm64.canonical_name());
-        let linux_dir = temp_root.join(JavaHostTarget::LinuxX86_64.canonical_name());
-        fs::create_dir_all(&darwin_dir).expect("create darwin dir");
-        fs::create_dir_all(&linux_dir).expect("create linux dir");
+    fn clean_structured_jvm_output_dir_is_a_noop_when_absent() {
+        let temp_root = temporary_directory("boltffi-java-structured-clean-absent");
+        fs::create_dir_all(&temp_root).expect("create temp dir");
+        let missing = temp_root.join(JavaHostTarget::LinuxAarch64.canonical_name());
 
-        remove_stale_structured_jvm_outputs(
-            &temp_root,
-            &[JavaHostTarget::DarwinArm64, JavaHostTarget::LinuxX86_64],
-        )
-        .expect("preserve structured outputs");
-
-        assert!(darwin_dir.exists());
-        assert!(linux_dir.exists());
+        clean_structured_jvm_output_dir(&missing).expect("missing dir is not an error");
 
         fs::remove_dir_all(&temp_root).expect("cleanup temp dir");
     }

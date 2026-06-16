@@ -12,7 +12,6 @@ use crate::pack::android::{AndroidBindingMode, AndroidPackager, build_android_ta
 use crate::pack::java::link::{
     JvmNativePackageLayout, build_jvm_native_library, compile_jni_library_with_layout,
 };
-use crate::pack::java::outputs::remove_stale_structured_jvm_outputs;
 use crate::pack::java::{
     generate_jvm_header, prepare_kmp_jvm_packaging, selected_jvm_package_artifact_name,
     selected_jvm_package_source_directory,
@@ -109,10 +108,8 @@ pub(crate) fn pack_kmp(
         step.finish_success();
     }
 
-    remove_stale_structured_jvm_outputs(
-        &kmp_jvm_native_resource_root(config),
-        &prepared_jvm_packaging.host_targets,
-    )?;
+    // Sibling `native/<arch>/` directories are intentionally preserved; each
+    // rebuilt arch cleans only its own subdir (see compile_jni_library_with_layout).
 
     reporter.finish();
     Ok(())

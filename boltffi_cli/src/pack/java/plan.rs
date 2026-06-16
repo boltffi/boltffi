@@ -21,7 +21,6 @@ use super::link::{
 use super::outputs::{
     remove_stale_flat_jvm_outputs_if_current_host_unrequested,
     remove_stale_requested_jvm_shared_library_copies_after_success,
-    remove_stale_structured_jvm_outputs,
 };
 
 #[derive(Debug, Clone)]
@@ -157,31 +156,53 @@ pub(crate) fn pack_java(
         step.finish_success();
     }
 
+    // Build each requested target independently. One target failing must not
+    // abort the others or discard the siblings already written to disk — collect
+    // per-target failures and surface them after every target has been attempted.
     let mut packaged_outputs = Vec::with_capacity(packaging_targets.len());
+    let mut failed_targets: Vec<String> = Vec::new();
     for packaging_target in &packaging_targets {
         let cargo_context = &packaging_target.cargo_context;
         let host_target = cargo_context.host_target;
         let build_label = format_build_label(cargo_context);
+
         let step = reporter.step(&format!("Building Rust library for {build_label}"));
         let build_artifacts =
-            build_jvm_native_library(packaging_target, options.execution.release, &step)?;
-        step.finish_success();
+            match build_jvm_native_library(packaging_target, options.execution.release, &step) {
+                Ok(build_artifacts) => {
+                    step.finish_success();
+                    build_artifacts
+                }
+                Err(error) => {
+                    step.finish_failure(&format!(
+                        "Building Rust library for {build_label} failed: {error}"
+                    ));
+                    failed_targets.push(host_target.canonical_name().to_string());
+                    continue;
+                }
+            };
 
         let step = reporter.step(&format!(
             "Compiling JNI library for {}",
             host_target.canonical_name()
         ));
-        packaged_outputs.push(compile_jni_library(
-            config,
-            packaging_target,
-            &build_artifacts,
-            &step,
-        )?);
-        step.finish_success();
+        match compile_jni_library(config, packaging_target, &build_artifacts, &step) {
+            Ok(packaged_output) => {
+                step.finish_success();
+                packaged_outputs.push(packaged_output);
+            }
+            Err(error) => {
+                step.finish_failure(&format!(
+                    "Compiling JNI library for {} failed: {error}",
+                    host_target.canonical_name()
+                ));
+                failed_targets.push(host_target.canonical_name().to_string());
+            }
+        }
     }
 
     let artifact_name = selected_jvm_package_artifact_name(&packaging_targets)?;
-    if config.java_jvm_debug_symbols_enabled() {
+    if config.java_jvm_debug_symbols_enabled() && !packaged_outputs.is_empty() {
         let step = reporter.step("Bundling JVM debug symbols");
         write_jvm_debug_symbols(config, artifact_name, &packaged_outputs)?;
         step.finish_success();
@@ -191,13 +212,27 @@ pub(crate) fn pack_java(
         &packaged_outputs,
         artifact_name,
     )?;
-    remove_stale_structured_jvm_outputs(&config.java_jvm_output().join("native"), &host_targets)?;
+    // Note: sibling `native/<arch>/` directories are intentionally NOT pruned here.
+    // Earlier this removed every arch dir absent from the current run's host_targets,
+    // which destroyed good outputs produced by other runners during incremental,
+    // per-arch packaging. Each rebuilt arch cleans only its own subdir (see link.rs).
     remove_stale_flat_jvm_outputs_if_current_host_unrequested(
         &config.java_jvm_output(),
         JavaHostTarget::current(),
         &host_targets,
         artifact_name,
     )?;
+
+    if !failed_targets.is_empty() {
+        return Err(CliError::CommandFailed {
+            command: format!(
+                "JVM packaging failed for target(s): {}; other targets completed and were written to {}",
+                failed_targets.join(", "),
+                config.java_jvm_output().join("native").display()
+            ),
+            status: None,
+        });
+    }
 
     reporter.finish();
     Ok(())
