@@ -640,10 +640,17 @@ fn resolve_windows_rust_target_triple(
     toolchain_selector: Option<&str>,
     cargo_args: &[String],
 ) -> Result<String> {
-    if current_host != target
-        && let Some(target_triple) = configured_windows_build_target(cargo_args)?
-    {
-        return Ok(target_triple);
+    if current_host != target {
+        if let Some(target_triple) = configured_windows_build_target(cargo_args)? {
+            return Ok(target_triple);
+        }
+
+        // Cross-compiling to windows-x86_64 from a non-Windows host with nothing
+        // configured: default to the MinGW GNU triple. The host's own triple
+        // (e.g. x86_64-unknown-linux-gnu) is never a valid Windows target, so
+        // falling through to `rustc_host_triple` below would always error. GNU
+        // (not MSVC) is the cross-from-Linux default, matching `cross` images.
+        return Ok(default_windows_rust_target_triple().to_string());
     }
 
     if let Some(target_triple) = current_host_windows_build_target(cargo_args) {
@@ -652,6 +659,10 @@ fn resolve_windows_rust_target_triple(
 
     let host_triple = rustc_host_triple(toolchain_selector)?;
     validate_windows_rust_target_triple(&host_triple)
+}
+
+fn default_windows_rust_target_triple() -> &'static str {
+    "x86_64-pc-windows-gnu"
 }
 
 fn validate_windows_rust_target_triple(target_triple: &str) -> Result<String> {
