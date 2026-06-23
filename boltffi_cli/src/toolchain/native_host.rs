@@ -386,12 +386,67 @@ impl NativeHostToolchain {
         if self.jni_compiler_container.is_some() {
             return Ok(());
         }
-        let wrapper = self.write_cross_probe_linker_wrapper()?;
-        command.env(cargo_linker_env_key(&self.rust_target_triple), wrapper);
+        // Linker: a wrapper that execs the JNI compiler driver (e.g.
+        // `zig cc -target aarch64-linux-gnu.2.17`).
+        let linker = self.write_cross_probe_tool_wrapper("linker", &self.jni_compiler_args)?;
+        command.env(cargo_linker_env_key(&self.rust_target_triple), &linker);
+
+        // The probe is a *plain* `cargo rustc` (cargo-zigbuild's CC/linker env is
+        // not active), so for a non-host target it re-runs the build scripts
+        // (`ring`, `zstd-sys`, …) with no cross C toolchain and the build fails
+        // before the link. Point cc-rs at the same driver for CC/CXX/AR — but
+        // ONLY on this probe `command`, never process-wide: a global CC_<triple>
+        // is honoured by cargo-zigbuild during the real build and overrides its
+        // own (more complete) wrapper, breaking that build instead.
+        if let Some(args) = self.zig_subcommand_args("cc") {
+            let cc = self.write_cross_probe_tool_wrapper("cc", &args)?;
+            for key in cc_tool_env_keys("CC", &self.rust_target_triple) {
+                command.env(key, &cc);
+            }
+        }
+        if let Some(args) = self.zig_subcommand_args("c++") {
+            let cxx = self.write_cross_probe_tool_wrapper("cxx", &args)?;
+            for key in cc_tool_env_keys("CXX", &self.rust_target_triple) {
+                command.env(key, &cxx);
+            }
+        }
+        if let Some(args) = self.zig_subcommand_args("ar") {
+            let ar = self.write_cross_probe_tool_wrapper("ar", &args)?;
+            for key in cc_tool_env_keys("AR", &self.rust_target_triple) {
+                command.env(key, &ar);
+            }
+        }
         Ok(())
     }
 
-    fn write_cross_probe_linker_wrapper(&self) -> Result<PathBuf> {
+    /// If the JNI compiler is a Zig driver (`zig cc …`), return its args with the
+    /// `cc` sub-command swapped for `subcommand` (e.g. `c++`, `ar`). `ar` drops
+    /// the `-target <triple>` pair, which `zig ar` does not accept. Returns `None`
+    /// for non-Zig compilers, where deriving a sibling tool isn't safe.
+    fn zig_subcommand_args(&self, subcommand: &str) -> Option<Vec<String>> {
+        let is_zig = self
+            .jni_compiler_program
+            .file_stem()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name == "zig");
+        if !is_zig {
+            return None;
+        }
+        let mut args = self.jni_compiler_args.clone();
+        match args.first() {
+            Some(first) if first == "cc" => *args.first_mut().unwrap() = subcommand.to_string(),
+            _ => return None,
+        }
+        if subcommand == "ar" {
+            // `zig ar` takes no `-target`; strip the `-target <triple>` pair.
+            if let Some(pos) = args.iter().position(|a| a == "-target") {
+                args.drain(pos..=(pos + 1).min(args.len() - 1));
+            }
+        }
+        Some(args)
+    }
+
+    fn write_cross_probe_tool_wrapper(&self, role: &str, args: &[String]) -> Result<PathBuf> {
         let wrapper_dir = std::env::temp_dir().join("boltffi-jvm-linkers");
         std::fs::create_dir_all(&wrapper_dir).map_err(|source| {
             CliError::CreateDirectoryFailed {
@@ -406,11 +461,10 @@ impl NativeHostToolchain {
             .and_then(|name| name.to_str())
             .unwrap_or("jni-compiler");
         let wrapper_path = wrapper_dir.join(format!(
-            "{program_name}-{}-probe-linker.sh",
+            "{program_name}-{}-probe-{role}.sh",
             self.rust_target_triple
         ));
-        let quoted_args = self
-            .jni_compiler_args
+        let quoted_args = args
             .iter()
             .map(|arg| format!("\"{arg}\""))
             .collect::<Vec<_>>()
@@ -870,6 +924,18 @@ fn cargo_linker_env_key(target_triple: &str) -> String {
         "CARGO_TARGET_{}_LINKER",
         target_triple.replace('-', "_").to_uppercase()
     )
+}
+
+/// Env-var keys a `cc`-rs build script reads to find a tool (`CC`/`CXX`/`AR`)
+/// for a target. cc-rs accepts both the dashed triple (`CC_aarch64-unknown-linux-gnu`)
+/// and the underscored form; emit both so the override is found regardless.
+fn cc_tool_env_keys(tool: &str, target_triple: &str) -> Vec<String> {
+    let mut keys = vec![format!("{tool}_{target_triple}")];
+    let underscored = target_triple.replace('-', "_");
+    if underscored != target_triple {
+        keys.push(format!("{tool}_{underscored}"));
+    }
+    keys
 }
 
 fn resolve_linux_host_linker(

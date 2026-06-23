@@ -1493,8 +1493,25 @@ pub(crate) fn query_native_link_metadata(
     })?;
 
     if !output.status.success() {
+        // Surface the probe's stderr tail — otherwise a probe failure (a missing
+        // cross C toolchain, a linker error, …) reports only an exit code and is
+        // undebuggable.
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let tail = stderr
+            .lines()
+            .rev()
+            .take(25)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect::<Vec<_>>()
+            .join("\n");
         return Err(CliError::CommandFailed {
-            command: "cargo rustc --print=native-static-libs".to_string(),
+            command: if tail.trim().is_empty() {
+                "cargo rustc --print=native-static-libs".to_string()
+            } else {
+                format!("cargo rustc --print=native-static-libs:\n{tail}")
+            },
             status: output.status.code(),
         });
     }
