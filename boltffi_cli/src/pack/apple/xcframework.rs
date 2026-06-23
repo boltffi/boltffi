@@ -708,7 +708,23 @@ fn create_zip(source_dir: &Path, zip_path: &Path) -> Result<()> {
                 .unwrap();
             let path_string = relative.to_string_lossy().to_string();
 
-            if entry.file_type().is_dir() {
+            // The versioned macOS framework layout stores its top-level entries
+            // (binary, Headers, Modules, Resources, Versions/Current) as
+            // symlinks. walkdir does not follow them, so preserve them as
+            // symlink entries instead of trying to read them as files.
+            if entry.file_type().is_symlink() {
+                let target =
+                    fs::read_link(entry.path()).map_err(|source| CliError::ReadFailed {
+                        path: entry.path().to_path_buf(),
+                        source,
+                    })?;
+
+                zip_writer
+                    .add_symlink(path_string, target.to_string_lossy().to_string(), options)
+                    .map_err(|_| PackError::ZipFailed {
+                        source: std::io::Error::other("zip symlink failed"),
+                    })?;
+            } else if entry.file_type().is_dir() {
                 zip_writer
                     .add_directory(path_string, options)
                     .map_err(|_| PackError::ZipFailed {
@@ -760,7 +776,7 @@ mod tests {
 
     use super::{
         AppleLibrarySlice, AppleLibrarySliceKind, AppleNames, FrameworkLayout,
-        StaticFrameworkBundlePlan, XcframeworkPlan,
+        StaticFrameworkBundlePlan, XcframeworkPlan, create_zip,
     };
     use crate::config::{Config, PackageConfig, TargetsConfig};
 
@@ -1054,5 +1070,55 @@ mod tests {
             // Symlink resolves to a real file/directory.
             assert!(link.exists(), "{entry} symlink should resolve");
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn zips_versioned_framework_symlinks_as_symlinks() {
+        let temporary_directory = TemporaryDirectory::new("boltffi-zip-versioned");
+        let headers_path = temporary_directory.path().join("headers");
+        let library_path = temporary_directory.path().join("libdemo.a");
+        let framework_path = temporary_directory.path().join("DemoFFI.framework");
+
+        fs::create_dir_all(&headers_path).expect("create headers");
+        fs::write(headers_path.join("demo.h"), "").expect("write public header");
+        fs::write(&library_path, "archive").expect("write static library");
+
+        // The versioned macOS layout produces top-level symlinks (Resources,
+        // Headers, Modules, the binary, Versions/Current). Zipping used to fail
+        // by trying to read these symlinks as files.
+        StaticFrameworkBundlePlan::new(
+            framework_path.clone(),
+            "DemoFFI".to_string(),
+            "demo".to_string(),
+            headers_path,
+            library_path,
+            FrameworkLayout::Versioned,
+        )
+        .execute()
+        .expect("create versioned framework bundle");
+
+        let zip_path = temporary_directory.path().join("DemoFFI.framework.zip");
+        create_zip(&framework_path, &zip_path).expect("zip versioned framework bundle");
+
+        let archive_file = fs::File::open(&zip_path).expect("open zip archive");
+        let mut archive = zip::ZipArchive::new(archive_file).expect("read zip archive");
+
+        let resources_entry = archive
+            .by_name("DemoFFI.framework/Resources")
+            .expect("zip should contain the Resources symlink entry");
+        assert!(
+            resources_entry.is_symlink(),
+            "Resources should be stored as a symlink, not a regular file"
+        );
+        drop(resources_entry);
+
+        // The real contents under Versions/A are still stored as files.
+        assert!(
+            archive
+                .by_name("DemoFFI.framework/Versions/A/DemoFFI")
+                .is_ok(),
+            "versioned binary should be present in the archive"
+        );
     }
 }
