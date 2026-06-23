@@ -252,6 +252,27 @@ impl AppleLibrarySliceKind {
             Self::MacOs => "macos",
         }
     }
+
+    fn framework_layout(self) -> FrameworkLayout {
+        match self {
+            // iOS, tvOS and watchOS use shallow bundles.
+            Self::IosDevice | Self::IosSimulator => FrameworkLayout::Shallow,
+            // macOS requires the versioned bundle layout; Xcode rejects shallow
+            // macOS frameworks.
+            Self::MacOs => FrameworkLayout::Versioned,
+        }
+    }
+}
+
+/// Layout of a `.framework` bundle.
+///
+/// macOS is the only Apple platform that requires the versioned bundle layout
+/// (`Versions/A` plus `Current` and top-level symlinks); every other platform
+/// uses the shallow layout with resources at the bundle root.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FrameworkLayout {
+    Shallow,
+    Versioned,
 }
 
 #[derive(Debug)]
@@ -333,6 +354,7 @@ impl XcframeworkPlan {
                     library_name.clone(),
                     headers_dir.clone(),
                     library_slice.library_path,
+                    library_slice.kind.framework_layout(),
                 )
             })
             .collect();
@@ -375,6 +397,7 @@ struct StaticFrameworkBundlePlan {
     headers_dir: PathBuf,
     library_path: PathBuf,
     public_header_path: String,
+    layout: FrameworkLayout,
 }
 
 impl StaticFrameworkBundlePlan {
@@ -384,6 +407,7 @@ impl StaticFrameworkBundlePlan {
         library_name: String,
         headers_dir: PathBuf,
         library_path: PathBuf,
+        layout: FrameworkLayout,
     ) -> Self {
         let public_header_path = format!("{}/{}.h", library_name, library_name);
 
@@ -394,6 +418,7 @@ impl StaticFrameworkBundlePlan {
             headers_dir,
             library_path,
             public_header_path,
+            layout,
         }
     }
 
@@ -426,19 +451,42 @@ impl StaticFrameworkBundlePlan {
         self.write_modulemap()?;
         self.write_info_plist()?;
 
+        if self.layout == FrameworkLayout::Versioned {
+            self.create_version_symlinks()?;
+        }
+
         Ok(self.framework_path.clone())
     }
 
+    /// Directory that holds the bundle's contents (binary, Headers, Modules,
+    /// Info.plist). For shallow bundles this is the framework root; for
+    /// versioned bundles it is `Versions/A`.
+    fn contents_dir(&self) -> PathBuf {
+        match self.layout {
+            FrameworkLayout::Shallow => self.framework_path.clone(),
+            FrameworkLayout::Versioned => self.framework_path.join("Versions").join("A"),
+        }
+    }
+
     fn namespaced_headers_path(&self) -> PathBuf {
-        self.framework_path.join("Headers").join(&self.library_name)
+        self.contents_dir().join("Headers").join(&self.library_name)
     }
 
     fn modules_path(&self) -> PathBuf {
-        self.framework_path.join("Modules")
+        self.contents_dir().join("Modules")
     }
 
     fn framework_binary_path(&self) -> PathBuf {
-        self.framework_path.join(&self.framework_name)
+        self.contents_dir().join(&self.framework_name)
+    }
+
+    fn info_plist_path(&self) -> PathBuf {
+        match self.layout {
+            // Shallow bundles keep Info.plist at the bundle root.
+            FrameworkLayout::Shallow => self.framework_path.join("Info.plist"),
+            // Versioned bundles place it under Resources, which macOS requires.
+            FrameworkLayout::Versioned => self.contents_dir().join("Resources").join("Info.plist"),
+        }
     }
 
     fn write_modulemap(&self) -> Result<()> {
@@ -454,12 +502,48 @@ impl StaticFrameworkBundlePlan {
 
     fn write_info_plist(&self) -> Result<()> {
         let info_plist_content = render_framework_info_plist(&self.framework_name)?;
-        let info_plist_path = self.framework_path.join("Info.plist");
+        let info_plist_path = self.info_plist_path();
+
+        if let Some(parent) = info_plist_path.parent() {
+            fs::create_dir_all(parent).map_err(|source| CliError::CreateDirectoryFailed {
+                path: parent.to_path_buf(),
+                source,
+            })?;
+        }
 
         fs::write(&info_plist_path, info_plist_content).map_err(|source| CliError::WriteFailed {
             path: info_plist_path,
             source,
         })
+    }
+
+    /// Create the symlinks that turn a `Versions/A` tree into a valid versioned
+    /// macOS framework bundle:
+    ///
+    /// ```text
+    /// Versions/Current -> A
+    /// {framework_name} -> Versions/Current/{framework_name}
+    /// Headers          -> Versions/Current/Headers
+    /// Modules          -> Versions/Current/Modules
+    /// Resources        -> Versions/Current/Resources
+    /// ```
+    fn create_version_symlinks(&self) -> Result<()> {
+        create_relative_symlink(
+            Path::new("A"),
+            &self.framework_path.join("Versions").join("Current"),
+        )?;
+
+        for entry in [
+            self.framework_name.as_str(),
+            "Headers",
+            "Modules",
+            "Resources",
+        ] {
+            let target = Path::new("Versions").join("Current").join(entry);
+            create_relative_symlink(&target, &self.framework_path.join(entry))?;
+        }
+
+        Ok(())
     }
 }
 
@@ -522,6 +606,28 @@ fn render_framework_modulemap(module_name: &str, header_path: &str) -> Result<St
         command: format!("render Apple framework modulemap template: {source}"),
         status: None,
     })
+}
+
+/// Create a symlink at `link` pointing at the relative `target`.
+fn create_relative_symlink(target: &Path, link: &Path) -> Result<()> {
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(target, link).map_err(|source| CliError::WriteFailed {
+            path: link.to_path_buf(),
+            source,
+        })
+    }
+
+    #[cfg(not(unix))]
+    {
+        let _ = target;
+        Err(CliError::WriteFailed {
+            path: link.to_path_buf(),
+            source: std::io::Error::other(
+                "creating macOS versioned framework bundles requires symlink support",
+            ),
+        })
+    }
 }
 
 fn remove_directory_if_exists(path: &Path) -> Result<()> {
@@ -653,8 +759,8 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::{
-        AppleLibrarySlice, AppleLibrarySliceKind, AppleNames, StaticFrameworkBundlePlan,
-        XcframeworkPlan,
+        AppleLibrarySlice, AppleLibrarySliceKind, AppleNames, FrameworkLayout,
+        StaticFrameworkBundlePlan, XcframeworkPlan,
     };
     use crate::config::{Config, PackageConfig, TargetsConfig};
 
@@ -826,6 +932,7 @@ mod tests {
             "demo".to_string(),
             headers_path.clone(),
             library_path.clone(),
+            FrameworkLayout::Shallow,
         )
         .execute()
         .expect("create static framework bundle");
@@ -865,5 +972,87 @@ mod tests {
                 .join("module.modulemap")
                 .exists()
         );
+    }
+
+    #[test]
+    fn macos_slice_uses_versioned_layout() {
+        assert_eq!(
+            AppleLibrarySliceKind::MacOs.framework_layout(),
+            FrameworkLayout::Versioned
+        );
+        assert_eq!(
+            AppleLibrarySliceKind::IosDevice.framework_layout(),
+            FrameworkLayout::Shallow
+        );
+        assert_eq!(
+            AppleLibrarySliceKind::IosSimulator.framework_layout(),
+            FrameworkLayout::Shallow
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn creates_versioned_framework_bundle_for_macos() {
+        let temporary_directory = TemporaryDirectory::new("boltffi-versioned-framework");
+        let headers_path = temporary_directory.path().join("headers");
+        let library_path = temporary_directory.path().join("libdemo.a");
+        let framework_path = temporary_directory.path().join("DemoFFI.framework");
+
+        fs::create_dir_all(&headers_path).expect("create headers");
+        fs::write(headers_path.join("demo.h"), "").expect("write public header");
+        fs::write(&library_path, "archive").expect("write static library");
+
+        StaticFrameworkBundlePlan::new(
+            framework_path.clone(),
+            "DemoFFI".to_string(),
+            "demo".to_string(),
+            headers_path.clone(),
+            library_path.clone(),
+            FrameworkLayout::Versioned,
+        )
+        .execute()
+        .expect("create versioned framework bundle");
+
+        let versions_a = framework_path.join("Versions").join("A");
+
+        // Real contents live under Versions/A.
+        assert_eq!(
+            fs::read_to_string(versions_a.join("DemoFFI")).expect("read framework binary"),
+            "archive"
+        );
+        assert!(
+            versions_a
+                .join("Headers")
+                .join("demo")
+                .join("demo.h")
+                .is_file()
+        );
+        assert!(
+            versions_a
+                .join("Modules")
+                .join("module.modulemap")
+                .is_file()
+        );
+        // macOS requires Info.plist under Resources, not the bundle root.
+        assert!(versions_a.join("Resources").join("Info.plist").is_file());
+        assert!(!framework_path.join("Info.plist").exists());
+
+        // Versions/Current -> A
+        assert_eq!(
+            fs::read_link(framework_path.join("Versions").join("Current"))
+                .expect("read Current symlink"),
+            Path::new("A")
+        );
+
+        // Top-level symlinks point through Versions/Current.
+        for entry in ["DemoFFI", "Headers", "Modules", "Resources"] {
+            let link = framework_path.join(entry);
+            assert_eq!(
+                fs::read_link(&link).unwrap_or_else(|_| panic!("read {entry} symlink")),
+                Path::new("Versions").join("Current").join(entry)
+            );
+            // Symlink resolves to a real file/directory.
+            assert!(link.exists(), "{entry} symlink should resolve");
+        }
     }
 }
