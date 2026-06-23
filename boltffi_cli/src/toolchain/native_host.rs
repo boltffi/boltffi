@@ -387,8 +387,10 @@ impl NativeHostToolchain {
             return Ok(());
         }
         // Linker: a wrapper that execs the JNI compiler driver (e.g.
-        // `zig cc -target aarch64-linux-gnu.2.17`).
-        let linker = self.write_cross_probe_tool_wrapper("linker", &self.jni_compiler_args)?;
+        // `zig cc -target aarch64-linux-gnu.2.17`). rustc drives the linker with
+        // object files + `-l`/`-L`; it does not inject a clang `--target`, so no
+        // stripping is needed here.
+        let linker = self.write_cross_probe_tool_wrapper("linker", &self.jni_compiler_args, false)?;
         command.env(cargo_linker_env_key(&self.rust_target_triple), &linker);
 
         // The probe is a *plain* `cargo rustc` (cargo-zigbuild's CC/linker env is
@@ -398,20 +400,25 @@ impl NativeHostToolchain {
         // ONLY on this probe `command`, never process-wide: a global CC_<triple>
         // is honoured by cargo-zigbuild during the real build and overrides its
         // own (more complete) wrapper, breaking that build instead.
+        // CC/CXX: cc-rs appends its own clang-style `--target=<rust-triple>` (e.g.
+        // `--target=aarch64-unknown-linux-gnu`), which Zig cannot parse
+        // (`unable to parse target query … UnknownOperatingSystem` — Zig wants the
+        // vendorless `aarch64-linux-gnu`). Strip that flag in the wrapper so only
+        // the Zig `-target` we set survives.
         if let Some(args) = self.zig_subcommand_args("cc") {
-            let cc = self.write_cross_probe_tool_wrapper("cc", &args)?;
+            let cc = self.write_cross_probe_tool_wrapper("cc", &args, true)?;
             for key in cc_tool_env_keys("CC", &self.rust_target_triple) {
                 command.env(key, &cc);
             }
         }
         if let Some(args) = self.zig_subcommand_args("c++") {
-            let cxx = self.write_cross_probe_tool_wrapper("cxx", &args)?;
+            let cxx = self.write_cross_probe_tool_wrapper("cxx", &args, true)?;
             for key in cc_tool_env_keys("CXX", &self.rust_target_triple) {
                 command.env(key, &cxx);
             }
         }
         if let Some(args) = self.zig_subcommand_args("ar") {
-            let ar = self.write_cross_probe_tool_wrapper("ar", &args)?;
+            let ar = self.write_cross_probe_tool_wrapper("ar", &args, false)?;
             for key in cc_tool_env_keys("AR", &self.rust_target_triple) {
                 command.env(key, &ar);
             }
@@ -446,7 +453,12 @@ impl NativeHostToolchain {
         Some(args)
     }
 
-    fn write_cross_probe_tool_wrapper(&self, role: &str, args: &[String]) -> Result<PathBuf> {
+    fn write_cross_probe_tool_wrapper(
+        &self,
+        role: &str,
+        args: &[String],
+        strip_clang_target: bool,
+    ) -> Result<PathBuf> {
         let wrapper_dir = std::env::temp_dir().join("boltffi-jvm-linkers");
         std::fs::create_dir_all(&wrapper_dir).map_err(|source| {
             CliError::CreateDirectoryFailed {
@@ -469,11 +481,23 @@ impl NativeHostToolchain {
             .map(|arg| format!("\"{arg}\""))
             .collect::<Vec<_>>()
             .join(" ");
-        let script = format!(
-            "#!/bin/sh\nexec \"{}\" {} \"$@\"\n",
-            self.jni_compiler_program.display(),
-            quoted_args
-        );
+        // Optionally drop a caller-supplied clang `--target`/`--target=…` so it
+        // doesn't reach Zig (which only understands its own vendorless target).
+        // Rotates the positional args: pop each from the front, append kept ones
+        // to the back, then exec the driver with the wrapper's own args first.
+        let script = if strip_clang_target {
+            format!(
+                "#!/bin/sh\nn=$#; i=0\nwhile [ $i -lt $n ]; do\n  a=$1; shift; i=$((i+1))\n  case \"$a\" in\n    --target=*) continue ;;\n    -target) shift; i=$((i+1)); continue ;;\n    *) set -- \"$@\" \"$a\" ;;\n  esac\ndone\nexec \"{}\" {} \"$@\"\n",
+                self.jni_compiler_program.display(),
+                quoted_args
+            )
+        } else {
+            format!(
+                "#!/bin/sh\nexec \"{}\" {} \"$@\"\n",
+                self.jni_compiler_program.display(),
+                quoted_args
+            )
+        };
         std::fs::write(&wrapper_path, script).map_err(|source| CliError::WriteFailed {
             path: wrapper_path.clone(),
             source,
