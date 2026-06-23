@@ -745,7 +745,7 @@ pub(crate) fn build_jvm_native_library(
 
     let native_static_libraries = if native_static_libraries.is_empty() {
         let static_library_filename = if cargo_context.crate_outputs.builds_staticlib {
-            resolve_static_library_filename(cargo_context)?
+            resolve_static_library_filename(packaging_target)?
         } else {
             None
         };
@@ -766,7 +766,7 @@ pub(crate) fn build_jvm_native_library(
         }
     } else {
         let static_library_filename = if cargo_context.crate_outputs.builds_staticlib {
-            resolve_static_library_filename(cargo_context)?
+            resolve_static_library_filename(packaging_target)?
         } else {
             None
         };
@@ -787,7 +787,7 @@ pub(crate) fn build_jvm_native_library(
     };
 
     let static_library_filename = if cargo_context.crate_outputs.builds_staticlib {
-        resolve_static_library_filename(cargo_context)?
+        resolve_static_library_filename(packaging_target)?
     } else {
         None
     };
@@ -1578,7 +1578,10 @@ fn strip_ansi_escape_codes(input: &str) -> String {
     output
 }
 
-fn resolve_static_library_filename(cargo_context: &JvmCargoContext) -> Result<Option<String>> {
+fn resolve_static_library_filename(
+    packaging_target: &JvmPackagingTarget,
+) -> Result<Option<String>> {
+    let cargo_context = &packaging_target.cargo_context;
     let artifact_name = &cargo_context.artifact_name;
 
     if cargo_context.host_target != JavaHostTarget::WindowsX86_64 {
@@ -1589,7 +1592,7 @@ fn resolve_static_library_filename(cargo_context: &JvmCargoContext) -> Result<Op
         ));
     }
 
-    let filenames = query_library_filenames(cargo_context)?;
+    let filenames = query_library_filenames(packaging_target)?;
     select_windows_static_library_filename(artifact_name, &filenames)
         .map(Some)
         .ok_or_else(|| CliError::CommandFailed {
@@ -1601,7 +1604,8 @@ fn resolve_static_library_filename(cargo_context: &JvmCargoContext) -> Result<Op
         })
 }
 
-fn query_library_filenames(cargo_context: &JvmCargoContext) -> Result<Vec<String>> {
+fn query_library_filenames(packaging_target: &JvmPackagingTarget) -> Result<Vec<String>> {
+    let cargo_context = &packaging_target.cargo_context;
     let crate_directory = std::env::current_dir().map_err(|source| CliError::CommandFailed {
         command: format!("current_dir: {source}"),
         status: None,
@@ -1630,14 +1634,41 @@ fn query_library_filenames(cargo_context: &JvmCargoContext) -> Result<Vec<String
         .arg("--")
         .arg("--print=file-names");
 
+    // Like the native-static-libs probe, this plain `cargo rustc` may re-run the
+    // target's build scripts (ring/zstd-sys C) for a cross target. Give it the
+    // same scoped Zig CC/CXX/AR + linker so those compiles succeed; otherwise the
+    // probe fails with the build command's toolchain absent (e.g. Windows-gnu via
+    // `cargo zigbuild`). Containerized builders carry their own toolchain.
+    let cmd = cargo_context.cargo_build_command.as_ref();
+    let runs_in_container = cmd.map(CargoBuildCommand::runs_in_container).unwrap_or(false);
+    if !runs_in_container && JavaHostTarget::current() != Some(cargo_context.host_target) {
+        packaging_target
+            .toolchain
+            .configure_cross_probe_linker(&mut command)?;
+    }
+
     let output = command.output().map_err(|source| CliError::CommandFailed {
         command: format!("cargo rustc --print=file-names: {source}"),
         status: None,
     })?;
 
     if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let tail = stderr
+            .lines()
+            .rev()
+            .take(25)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect::<Vec<_>>()
+            .join("\n");
         return Err(CliError::CommandFailed {
-            command: "cargo rustc --print=file-names".to_string(),
+            command: if tail.trim().is_empty() {
+                "cargo rustc --print=file-names".to_string()
+            } else {
+                format!("cargo rustc --print=file-names:\n{tail}")
+            },
             status: output.status.code(),
         });
     }
