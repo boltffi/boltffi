@@ -71,6 +71,7 @@ M2 has started:
 - M2b-a introduced the `boltffi_bindgen` adapter scaffold that converts `FfiContract` + `AbiContract` into backend JVM-family delegate output for the admitted primitive sync surface.
 - M2b-b wired production IR KMP generation through that delegate for the admitted primitive sync surface.
 - M2c let the delegate supply trusted generated internal Kotlin function bodies, so JVM/Android emission now reuses the mature Kotlin/JNI function renderer for the currently admitted surface.
+- M2d added a production-generation smoke that validates the strict primitive-sync KMP module shape across common, JVM actual, Android actual, internal Kotlin/JNI, Gradle, and support metadata.
 - Unsupported KMP surfaces remain strict and fail-closed unless explicit preview pruning is enabled.
 
 ## Target Architecture
@@ -284,12 +285,25 @@ Completed:
 - Added focused backend and adapter regressions proving delegate-owned internal Kotlin source is propagated into generated KMP JVM output.
 - Did not admit new API categories; strings, records, async, classes, callbacks, and broader value conversion remain future explicit plan work.
 
-Remaining M2 work after M2c:
+#### M2d: Current Surface Compile-Readiness Smoke
+
+Goal: prove the currently admitted production IR KMP surface is internally coherent before widening API coverage.
+
+Completed:
+
+- Added a strict production-generation smoke for one infallible primitive sync function.
+- Verified the generated file list includes common, JVM actual, Android actual, JVM-family internal Kotlin, JVM/Android JNI glue, Gradle files, and support metadata.
+- Verified common `expect`, JVM/Android `actual`, internal delegate function, `Native` external declaration, JNI glue, Gradle JVM/Android targets, and strict support metadata agree for that function.
+- Kept this as a deterministic Rust test rather than a default Gradle invocation so normal test runs do not depend on plugin downloads or local Android/Gradle setup.
+- Did not admit new API categories or change generation/packaging behavior.
+
+Remaining M2 work after M2d:
 
 - Extend admitted JVM/Android coverage beyond infallible primitive sync functions through explicit common-to-JVM conversion plans.
 - Preserve the shared Kotlin `Native` runtime inside the owner object that declares external methods as more API shapes are admitted.
 - Preserve shared JNI C preamble/includes/helpers once per generated translation unit as more API shapes are admitted.
 - Keep delegate functions filtered to the admitted KMP support surface.
+- Add an environment-gated Gradle compile/assemble smoke once the generated KMP project is ready for CI toolchain provisioning.
 - Keep Android `jniLibs` packaging through the existing Android packager.
 - Keep JVM native resources through the existing JVM packager.
 - Delete the old monolithic `KMPEmitter` production flow after JVM/Android parity is proven.

@@ -247,9 +247,10 @@ impl Generation {
     /// Reads the embedded metadata, selects the target surface contract, and renders it.
     pub fn render(&self, target: Target) -> Result<GeneratedOutput, GenerationError> {
         match target {
-            Target::Python => self.render_python(),
-            Target::Kotlin => self.render_kotlin(),
-            Target::KotlinMultiplatform => self.render_kmp(),
+            Target::Python | Target::Kotlin | Target::KotlinMultiplatform => {
+                let bindings = self.bindings::<Native>()?;
+                self.render_native_bindings(target, &bindings)
+            }
             Target::Swift => self.render_swift(),
             Target::Java | Target::TypeScript | Target::Header | Target::Dart | Target::CSharp => {
                 Err(GenerationError::UnsupportedTarget { target })
@@ -267,17 +268,28 @@ impl Generation {
         Self::write_output(output, output_dir)
     }
 
-    fn render_python(&self) -> Result<GeneratedOutput, GenerationError> {
-        let bindings = self.bindings::<Native>()?;
-        let target = self
-            .python_host()?
-            .into_target(&bindings)
-            .map_err(GenerationError::Render)?;
-        self.render_backend(&target, &bindings)
+    fn render_native_bindings(
+        &self,
+        target: Target,
+        bindings: &Bindings<Native>,
+    ) -> Result<GeneratedOutput, GenerationError> {
+        match target {
+            Target::Python => self.render_python_bindings(bindings),
+            Target::Kotlin => self.render_kotlin_bindings(bindings),
+            Target::KotlinMultiplatform => self.render_kmp_bindings(bindings),
+            Target::Swift
+            | Target::Java
+            | Target::TypeScript
+            | Target::Header
+            | Target::Dart
+            | Target::CSharp => Err(GenerationError::UnsupportedTarget { target }),
+        }
     }
 
-    fn render_kotlin(&self) -> Result<GeneratedOutput, GenerationError> {
-        let bindings = self.bindings::<Native>()?;
+    fn render_kotlin_bindings(
+        &self,
+        bindings: &Bindings<Native>,
+    ) -> Result<GeneratedOutput, GenerationError> {
         let package = self
             .kotlin_package
             .as_deref()
@@ -287,7 +299,7 @@ impl Generation {
             .kotlin_host(package, file)?
             .into_target()
             .map_err(GenerationError::Render)?;
-        self.render_backend(&target, &bindings)
+        self.render_backend(&target, bindings)
     }
 
     fn kotlin_host(&self, package: &str, file: &str) -> Result<KotlinHost, GenerationError> {
@@ -327,10 +339,23 @@ impl Generation {
             .fold(host, |host, header| host.c_header(header.clone())))
     }
 
-    fn render_kmp(&self) -> Result<GeneratedOutput, GenerationError> {
-        let bindings = self.bindings::<Native>()?;
-        let target = self.kmp_host(&bindings)?.into_target();
-        self.render_backend(&target, &bindings)
+    fn render_python_bindings(
+        &self,
+        bindings: &Bindings<Native>,
+    ) -> Result<GeneratedOutput, GenerationError> {
+        let target = self
+            .python_host()?
+            .into_target(bindings)
+            .map_err(GenerationError::Render)?;
+        self.render_backend(&target, bindings)
+    }
+
+    fn render_kmp_bindings(
+        &self,
+        bindings: &Bindings<Native>,
+    ) -> Result<GeneratedOutput, GenerationError> {
+        let target = self.kmp_host(bindings)?.into_target();
+        self.render_backend(&target, bindings)
     }
 
     fn render_swift(&self) -> Result<GeneratedOutput, GenerationError> {
@@ -522,6 +547,7 @@ mod tests {
         ParameterDef as SourceParameterDef, Primitive as SourcePrimitive,
         ReturnDef as SourceReturnDef, SourceContract, SourceName, TypeExpr as SourceTypeExpr,
     };
+    use boltffi_backend::target::kmp::KMP_SUPPORT_REPORT_FILE;
 
     use super::*;
 
@@ -577,20 +603,37 @@ mod tests {
             .contents()
     }
 
-    #[test]
-    fn kmp_generation_wires_jni_delegate_for_sync_primitive_bindings() {
+    fn output_paths(output: &GeneratedOutput) -> Vec<String> {
+        output
+            .files()
+            .iter()
+            .map(|file| file.path().as_path().display().to_string())
+            .collect()
+    }
+
+    fn render_primitive_kmp_output() -> GeneratedOutput {
         let bindings = primitive_function_bindings();
         let generation = Generation::new("Cargo.toml")
             .kmp_package_name("com.boltffi.demo")
             .kmp_module_name("Demo");
-        let target = generation
-            .kmp_host(&bindings)
-            .expect("KMP host should adapt primitive bindings")
-            .into_target();
 
-        let output = generation
-            .render_backend(&target, &bindings)
-            .expect("primitive KMP bindings should render through the production host");
+        generation
+            .render_native_bindings(Target::KotlinMultiplatform, &bindings)
+            .expect("primitive KMP bindings should render through the production target route")
+    }
+
+    #[test]
+    fn kmp_generation_public_render_route_attempts_metadata_read() {
+        let error = Generation::new("missing-kmp-fixture/Cargo.toml")
+            .render(Target::KotlinMultiplatform)
+            .expect_err("KMP public render route should try to read metadata");
+
+        assert!(matches!(error, GenerationError::Metadata(_)), "{error}");
+    }
+
+    #[test]
+    fn kmp_generation_wires_jni_delegate_for_sync_primitive_bindings() {
+        let output = render_primitive_kmp_output();
 
         assert!(
             file(&output, "src/commonMain/kotlin/com/boltffi/demo/Demo.kt")
@@ -611,6 +654,95 @@ mod tests {
             file(&output, "src/jvmMain/c/jni_glue.c")
                 .contains("_result = boltffi_function_demo_add(left, right);")
         );
+    }
+
+    #[test]
+    fn kmp_generation_emits_compile_ready_jvm_android_smoke_for_sync_primitive_bindings() {
+        let output = render_primitive_kmp_output();
+
+        assert_eq!(
+            output_paths(&output),
+            vec![
+                "settings.gradle.kts",
+                "build.gradle.kts",
+                "src/commonMain/kotlin/com/boltffi/demo/Demo.kt",
+                KMP_SUPPORT_REPORT_FILE,
+                "src/jvmMain/kotlin/com/boltffi/demo/DemoJvmActual.kt",
+                "src/androidMain/kotlin/com/boltffi/demo/DemoAndroidActual.kt",
+                "src/jvmMain/kotlin/com/boltffi/demo/jvm/Demo.kt",
+                "src/androidMain/kotlin/com/boltffi/demo/jvm/Demo.kt",
+                "src/jvmMain/c/jni_glue.c",
+                "src/androidMain/c/jni_glue.c",
+            ]
+        );
+
+        let common = file(&output, "src/commonMain/kotlin/com/boltffi/demo/Demo.kt");
+        let jvm_actual = file(
+            &output,
+            "src/jvmMain/kotlin/com/boltffi/demo/DemoJvmActual.kt",
+        );
+        let android_actual = file(
+            &output,
+            "src/androidMain/kotlin/com/boltffi/demo/DemoAndroidActual.kt",
+        );
+        let jvm_internal = file(&output, "src/jvmMain/kotlin/com/boltffi/demo/jvm/Demo.kt");
+        let android_internal = file(
+            &output,
+            "src/androidMain/kotlin/com/boltffi/demo/jvm/Demo.kt",
+        );
+        let jvm_jni = file(&output, "src/jvmMain/c/jni_glue.c");
+        let android_jni = file(&output, "src/androidMain/c/jni_glue.c");
+        let build_gradle = file(&output, "build.gradle.kts");
+        let settings_gradle = file(&output, "settings.gradle.kts");
+        let report: serde_json::Value =
+            serde_json::from_str(file(&output, KMP_SUPPORT_REPORT_FILE))
+                .expect("KMP support report should be valid JSON");
+
+        assert!(common.contains("package com.boltffi.demo"));
+        assert!(common.contains("expect fun add(left: Int, right: Int): Int"));
+        assert!(!common.contains("actual fun"));
+        assert!(!common.contains("Native."));
+
+        assert_eq!(jvm_actual, android_actual);
+        assert!(jvm_actual.contains("actual fun add(left: Int, right: Int): Int"));
+        assert!(jvm_actual.contains("return com.boltffi.demo.jvm.add(left, right)"));
+        assert!(!jvm_actual.contains("Native."));
+
+        assert_eq!(jvm_internal, android_internal);
+        assert!(jvm_internal.contains("package com.boltffi.demo.jvm"));
+        assert!(jvm_internal.contains("private object Native"));
+        assert!(jvm_internal.contains(
+            "@JvmStatic external fun boltffi_function_demo_add(left: Int, right: Int): Int"
+        ));
+        assert!(jvm_internal.contains("fun add(left: Int, right: Int): Int"));
+        assert!(jvm_internal.contains("return Native.boltffi_function_demo_add(left, right)"));
+        assert!(!jvm_internal.contains("expect fun"));
+        assert!(!jvm_internal.contains("actual fun"));
+
+        assert_eq!(jvm_jni, android_jni);
+        assert!(jvm_jni.contains("#include <demo.h>"));
+        assert!(jvm_jni.contains(
+            "JNIEXPORT jint JNICALL Java_com_boltffi_demo_jvm_Native_boltffi_1function_1demo_1add"
+        ));
+        assert!(jvm_jni.contains("boltffi_function_demo_add(left, right)"));
+
+        assert!(build_gradle.contains("kotlin(\"multiplatform\") version \"2.3.21\""));
+        assert!(build_gradle.contains("id(\"com.android.library\") version \"8.5.2\""));
+        assert!(build_gradle.contains("jvm {"));
+        assert!(build_gradle.contains("androidTarget {"));
+        assert!(build_gradle.contains("namespace = \"com.boltffi.demo\""));
+        assert!(settings_gradle.contains("rootProject.name = \"demo-kmp\""));
+
+        assert_eq!(report["mode"], "strict");
+        assert_eq!(
+            report["selected_platforms"],
+            serde_json::json!(["jvm", "android"])
+        );
+        assert_eq!(
+            report["admitted_apis"],
+            serde_json::json!([{ "kind": "function", "name": "add" }])
+        );
+        assert_eq!(report["rejected_apis"], serde_json::json!([]));
     }
 
     #[test]
