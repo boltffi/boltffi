@@ -11,7 +11,7 @@ use crate::commands::init::InitOptions;
 use crate::commands::pack::{
     PackAllOptions, PackAndroidOptions, PackAppleOptions, PackCSharpOptions, PackCommand,
     PackDartOptions, PackExecutionOptions, PackJavaOptions, PackKmpOptions, PackPythonOptions,
-    PackWasmOptions, check_java_packaging_prereqs,
+    PackRubyOptions, PackWasmOptions, check_java_packaging_prereqs,
 };
 use crate::commands::verify::VerifyOptions;
 use crate::commands::{run_build, run_check, run_doctor, run_init, run_pack, run_verify};
@@ -174,6 +174,8 @@ pub(crate) enum GenerateTargetArg {
     Dart,
     #[value(help = "Generate Python bindings")]
     Python,
+    #[value(help = "Generate experimental Ruby bindings")]
+    Ruby,
     #[value(help = "Generate C# bindings")]
     Csharp,
     #[value(help = "Generate all bindings")]
@@ -371,6 +373,29 @@ pub(crate) enum PackTargetArg {
         #[arg(long)]
         no_build: bool,
     },
+
+    #[command(
+        about = "Build + package Ruby artifacts",
+        long_about = "Build + package Ruby artifacts.\n\nOutputs:\n  - Ruby precompiled gem: {targets.ruby.pack.output}/gems\n"
+    )]
+    Ruby {
+        #[arg(long)]
+        release: bool,
+
+        #[arg(long, default_value = "true")]
+        regenerate: bool,
+
+        #[arg(long)]
+        no_build: bool,
+
+        #[arg(
+            long = "target",
+            action = clap::ArgAction::Append,
+            value_name = "TARGET",
+            help = "Ruby platform target (repeatable)"
+        )]
+        targets: Vec<String>,
+    },
 }
 
 #[derive(Clone, Copy, clap::ValueEnum)]
@@ -485,6 +510,7 @@ pub(crate) fn execute_command(
                         GenerateTargetArg::Typescript => GenerateTarget::Typescript,
                         GenerateTargetArg::Dart => GenerateTarget::Dart,
                         GenerateTargetArg::Python => GenerateTarget::Python,
+                        GenerateTargetArg::Ruby => GenerateTarget::Ruby,
                         GenerateTargetArg::Csharp => GenerateTarget::CSharp,
                         GenerateTargetArg::All => GenerateTarget::All,
                     })
@@ -639,7 +665,21 @@ pub(crate) fn execute_command(
                     regenerate,
                     no_build,
                 } => PackCommand::CSharp(PackCSharpOptions {
+                    execution: pack_execution_options(
+                        release,
+                        regenerate,
+                        no_build,
+                        cargo_args.clone(),
+                    ),
+                }),
+                PackTargetArg::Ruby {
+                    release,
+                    regenerate,
+                    no_build,
+                    targets,
+                } => PackCommand::Ruby(PackRubyOptions {
                     execution: pack_execution_options(release, regenerate, no_build, cargo_args),
+                    targets,
                 }),
             };
             run_pack(&config, command, reporter)
@@ -961,6 +1001,13 @@ fn release_pack_commands(
                 commands.push(PackCommand::Dart(PackDartOptions {
                     execution: pack_execution_options(true, false, false, cargo_args.to_vec()),
                     experimental: false,
+                }));
+            }
+
+            if config.is_ruby_enabled() {
+                commands.push(PackCommand::Ruby(PackRubyOptions {
+                    execution: pack_execution_options(true, true, false, cargo_args.to_vec()),
+                    targets: Vec::new(),
                 }));
             }
 

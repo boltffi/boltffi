@@ -162,13 +162,13 @@ impl DataStore {
             .sum()
     }
 
-    pub fn foreach(&self, mut callback: impl FnMut(DataPoint)) {
+    pub fn foreach(&self, callback: impl FnMut(DataPoint)) {
         self.items
             .lock()
             .unwrap()
             .iter()
             .copied()
-            .for_each(|point| callback(point));
+            .for_each(callback);
     }
 
     pub async fn async_sum(&self) -> Result<f64, String> {

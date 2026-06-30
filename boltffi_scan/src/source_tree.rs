@@ -115,11 +115,12 @@ fn descend(
         return Ok(Vec::new());
     }
     let name = item_mod.ident.to_string();
+    let lookup_name = module_file_name(&name);
     let child = parent.child(&name);
     match item_mod.content {
         Some((_, items)) => walk(
             child,
-            &dir.join(&name),
+            &dir.join(lookup_name),
             ParsedFile {
                 items,
                 spans: parent_spans,
@@ -127,7 +128,7 @@ fn descend(
             source_mode,
         ),
         None if source_mode == SourceMode::Files => {
-            let path = resolve(parent, dir, &name, &item_mod.attrs)?;
+            let path = resolve(parent, dir, &name, lookup_name, &item_mod.attrs)?;
             let file = parse(&path)?;
             walk(child, &module_dir(&path), file, source_mode)
         }
@@ -158,7 +159,8 @@ fn module_dir(file: &Path) -> PathBuf {
 fn resolve(
     parent: &ModulePath,
     dir: &Path,
-    name: &str,
+    diagnostic_name: &str,
+    lookup_name: &str,
     attrs: &[syn::Attribute],
 ) -> Result<PathBuf, ScanError> {
     if let Some(path) = path_attr(attrs) {
@@ -167,22 +169,26 @@ fn resolve(
             .is_file()
             .then_some(candidate.clone())
             .ok_or_else(|| ScanError::ModuleNotFound {
-                module: parent.qualified(name),
+                module: parent.qualified(diagnostic_name),
                 searched: vec![candidate.display().to_string()],
             });
     }
-    let flat = dir.join(format!("{name}.rs"));
-    let nested = dir.join(name).join("mod.rs");
+    let flat = dir.join(format!("{lookup_name}.rs"));
+    let nested = dir.join(lookup_name).join("mod.rs");
     if flat.is_file() {
         Ok(flat)
     } else if nested.is_file() {
         Ok(nested)
     } else {
         Err(ScanError::ModuleNotFound {
-            module: parent.qualified(name),
+            module: parent.qualified(diagnostic_name),
             searched: vec![flat.display().to_string(), nested.display().to_string()],
         })
     }
+}
+
+fn module_file_name(identifier: &str) -> &str {
+    identifier.strip_prefix("r#").unwrap_or(identifier)
 }
 
 fn has_cfg(attrs: &[syn::Attribute]) -> bool {
@@ -339,6 +345,49 @@ mod tests {
 
         std::fs::remove_dir_all(&dir).ok();
         assert!(module_paths(&tree).contains(&"demo::geometry::".to_owned()));
+    }
+
+    #[test]
+    fn raw_identifier_modules_resolve_unraw_file_names() {
+        let dir = std::env::temp_dir().join("boltffi_scan_tree_raw_ident");
+        std::fs::create_dir_all(&dir).expect("create fixture dirs");
+        let root = dir.join("lib.rs");
+        std::fs::write(&root, "pub mod r#as;").expect("write root");
+        std::fs::write(dir.join("as.rs"), "pub struct Keyword;").expect("write module");
+
+        let tree = SourceTree::load(&root, "demo").expect("load tree");
+
+        std::fs::remove_dir_all(&dir).ok();
+        assert!(module_paths(&tree).contains(&"demo::r#as::".to_owned()));
+    }
+
+    #[test]
+    fn raw_identifier_modules_resolve_unraw_mod_rs_directories() {
+        let dir = std::env::temp_dir().join("boltffi_scan_tree_raw_ident_modrs");
+        let module_dir = dir.join("as");
+        std::fs::create_dir_all(&module_dir).expect("create fixture dirs");
+        let root = dir.join("lib.rs");
+        std::fs::write(&root, "pub mod r#as;").expect("write root");
+        std::fs::write(module_dir.join("mod.rs"), "pub struct Keyword;").expect("write module");
+
+        let tree = SourceTree::load(&root, "demo").expect("load tree");
+
+        std::fs::remove_dir_all(&dir).ok();
+        assert!(module_paths(&tree).contains(&"demo::r#as::".to_owned()));
+    }
+
+    #[test]
+    fn raw_identifier_path_attribute_still_uses_explicit_path() {
+        let dir = std::env::temp_dir().join("boltffi_scan_tree_raw_ident_path_attr");
+        std::fs::create_dir_all(&dir).expect("create fixture dirs");
+        let root = dir.join("lib.rs");
+        std::fs::write(&root, "#[path = \"where.rs\"] pub mod r#where;").expect("write root");
+        std::fs::write(dir.join("where.rs"), "pub struct Keyword;").expect("write module");
+
+        let tree = SourceTree::load(&root, "demo").expect("load tree");
+
+        std::fs::remove_dir_all(&dir).ok();
+        assert!(module_paths(&tree).contains(&"demo::r#where::".to_owned()));
     }
 
     #[test]

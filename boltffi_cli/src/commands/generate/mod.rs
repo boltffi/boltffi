@@ -27,6 +27,7 @@ pub enum GenerateTarget {
     Typescript,
     Dart,
     Python,
+    Ruby,
     CSharp,
     All,
 }
@@ -40,7 +41,7 @@ pub struct GenerateOptions {
 }
 
 pub fn run_generate_with_output(config: &Config, options: GenerateOptions) -> Result<()> {
-    if options.ir {
+    if options.ir || matches!(options.target, GenerateTarget::Ruby) {
         return ir::run_ir_generation(config, &options);
     }
 
@@ -69,6 +70,7 @@ pub fn run_generate_with_output(config: &Config, options: GenerateOptions) -> Re
             run_generator::<DartGenerator>(&legacy_request(), options.experimental)
         }
         GenerateTarget::Python => ir::run_ir_generation(config, &options),
+        GenerateTarget::Ruby => ir::run_ir_generation(config, &options),
         GenerateTarget::CSharp => {
             run_generator::<CSharpGenerator>(&legacy_request(), options.experimental)
         }
@@ -104,6 +106,19 @@ pub fn run_generate_with_output(config: &Config, options: GenerateOptions) -> Re
                     config,
                     &GenerateOptions {
                         target: GenerateTarget::Python,
+                        output: options.output.clone(),
+                        experimental: options.experimental,
+                        ir: true,
+                        cargo_args: options.cargo_args.clone(),
+                    },
+                )?;
+            }
+
+            if config.should_process(Target::Ruby, options.experimental) {
+                ir::run_ir_generation(
+                    config,
+                    &GenerateOptions {
+                        target: GenerateTarget::Ruby,
                         output: options.output.clone(),
                         experimental: options.experimental,
                         ir: true,

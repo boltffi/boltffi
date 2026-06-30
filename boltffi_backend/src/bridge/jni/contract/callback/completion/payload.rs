@@ -62,7 +62,8 @@ impl CallbackCompletionPayload {
                     .find(|declaration| declaration.id() == *callback)
                     .ok_or(Error::BrokenBridgeContract {
                         bridge: JNI_BRIDGE,
-                        invariant: "async callback completion payload has no C callback declaration",
+                        invariant:
+                            "async callback completion payload has no C callback declaration",
                     })?;
                 let create_handle = Identifier::parse(declaration.create_handle().name())?;
                 let suffix = create_handle

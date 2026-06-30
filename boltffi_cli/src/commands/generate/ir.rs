@@ -13,9 +13,10 @@ use super::{GenerateOptions, GenerateTarget};
 pub fn run_ir_generation(config: &Config, options: &GenerateOptions) -> Result<()> {
     match &options.target {
         GenerateTarget::Python => generate_python(config, options),
+        GenerateTarget::Ruby => generate_ruby(config, options),
         other => Err(CliError::CommandFailed {
             command: format!(
-                "--ir is only available for python, not {}",
+                "--ir is only available for python or ruby, not {}",
                 target_label(other)
             ),
             status: None,
@@ -99,20 +100,20 @@ fn write_python(
         .python_native_library(artifact_name)
         .render(Target::Python)
         .and_then(|output| {
-            print_coverage(&output);
+            print_coverage("python", &output);
             Generation::write_output(output, &output_directory)
         })
         .map(drop)
-        .map_err(generation_error)
+        .map_err(|error| generation_error("python", error))
 }
 
-fn print_coverage(output: &GeneratedOutput) {
+fn print_coverage(target: &str, output: &GeneratedOutput) {
     let unsupported = output.coverage().unsupported();
     if unsupported.is_empty() {
         return;
     }
 
-    eprintln!("python generation skipped unsupported declarations");
+    eprintln!("{target} generation skipped unsupported declarations");
     eprintln!("{:<12} {:<48} reason", "kind", "name");
     unsupported.iter().for_each(|item| {
         eprintln!(
@@ -124,9 +125,41 @@ fn print_coverage(output: &GeneratedOutput) {
     });
 }
 
-fn generation_error(error: GenerationError) -> CliError {
+fn generate_ruby(config: &Config, options: &GenerateOptions) -> Result<()> {
+    if !config.is_ruby_enabled() {
+        return Err(CliError::CommandFailed {
+            command: "targets.ruby.enabled = false".to_string(),
+            status: None,
+        });
+    }
+
+    let cargo_args = config
+        .cargo_args_for_command("generate")
+        .into_iter()
+        .chain(options.cargo_args.iter().cloned())
+        .collect::<Vec<_>>();
+    let manifest_path = Cargo::current(&cargo_args)?.manifest_path()?;
+    let output_directory = options
+        .output
+        .clone()
+        .unwrap_or_else(|| config.ruby_output());
+
+    Generation::new(manifest_path)
+        .cargo_args(cargo_args)
+        .coverage_mode(CoverageMode::Partial)
+        .ruby_ractor_safe(config.ruby_ractor_safe())
+        .render(Target::Ruby)
+        .and_then(|output| {
+            print_coverage("ruby", &output);
+            Generation::write_output(output, &output_directory)
+        })
+        .map(drop)
+        .map_err(|error| generation_error("ruby", error))
+}
+
+fn generation_error(target: &str, error: GenerationError) -> CliError {
     CliError::CommandFailed {
-        command: format!("generate python: {error}"),
+        command: format!("generate {target}: {error}"),
         status: None,
     }
 }
@@ -141,6 +174,7 @@ fn target_label(target: &GenerateTarget) -> &'static str {
         GenerateTarget::Typescript => "typescript",
         GenerateTarget::Dart => "dart",
         GenerateTarget::Python => "python",
+        GenerateTarget::Ruby => "ruby",
         GenerateTarget::CSharp => "csharp",
         GenerateTarget::All => "all",
     }

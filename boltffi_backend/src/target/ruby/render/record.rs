@@ -1,0 +1,330 @@
+use boltffi_binding::{
+    DirectRecordDecl, EncodedRecordDecl, FieldKey, Native, Primitive, RecordDecl, RecordId, TypeRef,
+};
+
+use crate::{
+    bridge::c::CBridgeContract,
+    core::{Emitted, Error, RenderContext, Result},
+    target::ruby::{
+        name_style::Name,
+        render::function::{primitive_box, primitive_c_type},
+    },
+};
+
+pub struct Record {
+    body: String,
+}
+
+pub fn encoded_record_supported(record: &EncodedRecordDecl<Native>) -> bool {
+    record.fields().iter().all(|field| {
+        matches!(field.key(), FieldKey::Named(_))
+            && match field.ty() {
+                TypeRef::String | TypeRef::Bytes => true,
+                TypeRef::Primitive(primitive) => wire_read_fn(*primitive).is_ok(),
+                _ => false,
+            }
+    })
+}
+
+#[derive(Clone, Debug)]
+pub struct Symbols {
+    pub class_var: String,
+    pub class_name: String,
+    pub ident: String,
+    pub c_type: Option<String>,
+    pub data_type: String,
+    pub boxer: String,
+    pub decoder: Option<String>,
+    pub unwrapper: String,
+}
+
+impl Record {
+    pub fn from_declaration(
+        declaration: &RecordDecl<Native>,
+        bridge: &CBridgeContract,
+        _context: &RenderContext<Native>,
+    ) -> Result<Self> {
+        let symbols = Symbols::from_decl(declaration, bridge)?;
+        let body = match declaration {
+            RecordDecl::Direct(record) => render_direct(record, bridge, &symbols)?,
+            RecordDecl::Encoded(record) => {
+                if !encoded_record_supported(record) {
+                    return Err(Error::UnsupportedTarget {
+                        target: "ruby",
+                        shape: "unsupported encoded record field",
+                    });
+                }
+                render_encoded(record, &symbols)?
+            }
+            _ => {
+                return Err(Error::UnsupportedTarget {
+                    target: "ruby",
+                    shape: "unknown record",
+                });
+            }
+        };
+        Ok(Self { body })
+    }
+
+    pub fn render(self) -> Result<Emitted> {
+        Ok(Emitted::primary(self.body))
+    }
+}
+
+impl Symbols {
+    pub fn from_record_id(
+        record_id: RecordId,
+        bridge: &CBridgeContract,
+        context: &RenderContext<Native>,
+    ) -> Result<Self> {
+        let record = context.record(record_id).ok_or(Error::UnsupportedTarget {
+            target: "ruby",
+            shape: "record id without declaration",
+        })?;
+        Self::from_decl(record, bridge)
+    }
+
+    fn from_decl(record: &RecordDecl<Native>, bridge: &CBridgeContract) -> Result<Self> {
+        let class_name = Name::new(record.name()).class();
+        let ident = Name::new(record.name()).function();
+        let c_type = match record {
+            RecordDecl::Direct(record) => Some(
+                bridge
+                    .source_direct_record(record.id())
+                    .ok_or(Error::UnsupportedTarget {
+                        target: "ruby",
+                        shape: "direct record without C typedef",
+                    })?
+                    .name()
+                    .to_owned(),
+            ),
+            RecordDecl::Encoded(_) => Some(format!("boltffi_ruby_{ident}")),
+            _ => None,
+        };
+        Ok(Self {
+            class_var: format!("c_{ident}"),
+            class_name,
+            ident: ident.clone(),
+            c_type,
+            data_type: format!("boltffi_ruby_{ident}_type"),
+            boxer: format!("boltffi_ruby_box_{ident}"),
+            decoder: match record {
+                RecordDecl::Encoded(_) => Some(format!("boltffi_ruby_decode_{ident}")),
+                _ => None,
+            },
+            unwrapper: format!("boltffi_ruby_unwrap_{ident}"),
+        })
+    }
+}
+
+fn render_direct(
+    record: &DirectRecordDecl<Native>,
+    bridge: &CBridgeContract,
+    symbols: &Symbols,
+) -> Result<String> {
+    let c_record = bridge
+        .source_direct_record(record.id())
+        .ok_or(Error::UnsupportedTarget {
+            target: "ruby",
+            shape: "direct record without C typedef",
+        })?;
+    let c_type = c_record.name();
+    let ident = &symbols.ident;
+    let mut out = String::new();
+    out.push_str(&format!(
+        "/* boltffi:ruby:record class={} var={} */\n",
+        symbols.class_name, symbols.class_var
+    ));
+    out.push_str(&format!("static VALUE {};\n", symbols.class_var));
+    out.push_str(&format!(
+        "static size_t boltffi_ruby_{ident}_size(const void *ptr) {{\n    (void)ptr;\n#if BOLTFFI_RUBY_HAS_TYPED_EMBEDDABLE\n    return 0;\n#else\n    return sizeof({c_type});\n#endif\n}}\n"
+    ));
+    out.push_str(&format!(
+        "static const rb_data_type_t {} = {{\n    \"boltffi.ruby.generated.{}\", {{ NULL, RUBY_TYPED_DEFAULT_FREE, boltffi_ruby_{ident}_size, NULL }}, NULL, NULL, RUBY_TYPED_FREE_IMMEDIATELY | BOLTFFI_RUBY_TYPED_EMBEDDABLE\n}};\n",
+        symbols.data_type, symbols.class_name
+    ));
+    out.push_str(&format!(
+        "static VALUE {}({c_type} value) {{\n    {c_type} *data;\n    VALUE obj = TypedData_Make_Struct({}, {c_type}, &{}, data);\n    *data = value;\n    return obj;\n}}\n",
+        symbols.boxer, symbols.class_var, symbols.data_type
+    ));
+    out.push_str(&format!(
+        "static {c_type} {}(VALUE value) {{\n    {c_type} *data;\n    TypedData_Get_Struct(value, {c_type}, &{}, data);\n    {c_type} copy = *data;\n    RB_GC_GUARD(value);\n    return copy;\n}}\n",
+        symbols.unwrapper, symbols.data_type
+    ));
+    for (source, c_field) in record.fields().iter().zip(c_record.fields()) {
+        let field_name = field_name(source.key())?;
+        let primitive = source.ty().primitive();
+        let expr =
+            primitive_box(primitive).replace("_ffi_ret", &format!("data->{}", c_field.name()));
+        out.push_str(&format!(
+            "static VALUE boltffi_ruby_{ident}_{field_name}(VALUE self) {{\n    {c_type} *data;\n    TypedData_Get_Struct(self, {c_type}, &{}, data);\n    VALUE result = {expr};\n    RB_GC_GUARD(self);\n    return result;\n}}\n",
+            symbols.data_type
+        ));
+    }
+    out.push_str(&format!(
+        "/* boltffi:ruby:record:init {} */\n",
+        symbols.ident
+    ));
+    out.push_str(&format!(
+        "    {} = rb_define_class_under(mod, \"{}\", rb_cObject);\n    rb_undef_alloc_func({});\n",
+        symbols.class_var, symbols.class_name, symbols.class_var
+    ));
+    for (source, _) in record.fields().iter().zip(c_record.fields()) {
+        let field_name = field_name(source.key())?;
+        out.push_str(&format!(
+            "    rb_define_method({}, \"{field_name}\", boltffi_ruby_{ident}_{field_name}, 0);\n",
+            symbols.class_var
+        ));
+    }
+    out.push_str("/* boltffi:ruby:record:init:end */\n");
+    Ok(out)
+}
+
+fn render_encoded(record: &EncodedRecordDecl<Native>, symbols: &Symbols) -> Result<String> {
+    let ident = &symbols.ident;
+    let c_type = symbols.c_type.as_deref().expect("encoded c type");
+    let mut field_defs = Vec::new();
+    let mut free_lines = Vec::new();
+    let mut size_lines = Vec::new();
+    let mut init_lines = Vec::new();
+    let mut getter_lines = Vec::new();
+    let mut decode_lines = Vec::new();
+
+    for field in record.fields() {
+        let name = field_name(field.key())?;
+        match field.ty() {
+            TypeRef::String => {
+                field_defs.push(format!("    char *{name}_ptr;"));
+                field_defs.push(format!("    uintptr_t {name}_len;"));
+                free_lines.push(format!("    free(data->{name}_ptr);"));
+                size_lines.push(format!("    size += data->{name}_len;"));
+                init_lines.push(format!("    data->{name}_ptr = NULL;"));
+                init_lines.push(format!("    data->{name}_len = 0;"));
+                decode_lines.push(format!("    if (!boltffi_ruby_wire_read_string(&reader, &data->{name}_ptr, &data->{name}_len)) goto fail;"));
+                getter_lines.push(format!(
+                    "static VALUE boltffi_ruby_{ident}_{name}(VALUE self) {{\n    {c_type} *data;\n    TypedData_Get_Struct(self, {c_type}, &{}, data);\n    VALUE result = rb_utf8_str_new(data->{name}_ptr, (long)data->{name}_len);\n    RB_ENC_CODERANGE_SET(result, RUBY_ENC_CODERANGE_VALID);\n    RB_GC_GUARD(self);\n    return result;\n}}\n",
+                    symbols.data_type
+                ));
+            }
+            TypeRef::Bytes => {
+                field_defs.push(format!("    uint8_t *{name}_ptr;"));
+                field_defs.push(format!("    uintptr_t {name}_len;"));
+                free_lines.push(format!("    free(data->{name}_ptr);"));
+                size_lines.push(format!("    size += data->{name}_len;"));
+                init_lines.push(format!("    data->{name}_ptr = NULL;"));
+                init_lines.push(format!("    data->{name}_len = 0;"));
+                decode_lines.push(format!("    if (!boltffi_ruby_wire_read_bytes(&reader, &data->{name}_ptr, &data->{name}_len)) goto fail;"));
+                getter_lines.push(format!(
+                    "static VALUE boltffi_ruby_{ident}_{name}(VALUE self) {{\n    {c_type} *data;\n    TypedData_Get_Struct(self, {c_type}, &{}, data);\n    VALUE result = rb_str_new((const char *)data->{name}_ptr, (long)data->{name}_len);\n    RB_GC_GUARD(self);\n    return result;\n}}\n",
+                    symbols.data_type
+                ));
+            }
+            TypeRef::Primitive(primitive) => {
+                let c_field_type = primitive_c_type(*primitive)?;
+                field_defs.push(format!("    {c_field_type} {name};"));
+                init_lines.push(format!("    data->{name} = 0;"));
+                let read_fn = wire_read_fn(*primitive)?;
+                decode_lines.push(format!(
+                    "    if (!{read_fn}(&reader, &data->{name})) goto fail;"
+                ));
+                let expr = primitive_box(*primitive).replace("_ffi_ret", &format!("data->{name}"));
+                getter_lines.push(format!(
+                    "static VALUE boltffi_ruby_{ident}_{name}(VALUE self) {{\n    {c_type} *data;\n    TypedData_Get_Struct(self, {c_type}, &{}, data);\n    VALUE result = {expr};\n    RB_GC_GUARD(self);\n    return result;\n}}\n",
+                    symbols.data_type
+                ));
+            }
+            _ => {
+                return Err(Error::UnsupportedTarget {
+                    target: "ruby",
+                    shape: "unsupported encoded record field",
+                });
+            }
+        }
+    }
+
+    let mut out = String::new();
+    out.push_str(&format!(
+        "/* boltffi:ruby:record class={} var={} */\n",
+        symbols.class_name, symbols.class_var
+    ));
+    out.push_str(&format!(
+        "typedef struct {{\n{}\n}} {c_type};\n",
+        field_defs.join("\n")
+    ));
+    out.push_str(&format!("static VALUE {};\n", symbols.class_var));
+    out.push_str(&format!(
+        "static void boltffi_ruby_{ident}_free(void *ptr) {{\n    {c_type} *data = ({c_type} *)ptr;\n    if (data != NULL) {{\n{}\n#if !BOLTFFI_RUBY_HAS_TYPED_EMBEDDABLE\n        xfree(data);\n#endif\n    }}\n}}\n",
+        free_lines.join("\n")
+    ));
+    out.push_str(&format!(
+        "static size_t boltffi_ruby_{ident}_size(const void *ptr) {{\n    const {c_type} *data = (const {c_type} *)ptr;\n    size_t size = 0;\n#if !BOLTFFI_RUBY_HAS_TYPED_EMBEDDABLE\n    size += sizeof({c_type});\n#endif\n    if (data != NULL) {{\n{}\n    }}\n    return size;\n}}\n",
+        size_lines.join("\n")
+    ));
+    out.push_str(&format!(
+        "static const rb_data_type_t {} = {{\n    \"boltffi.ruby.generated.{}\", {{ NULL, boltffi_ruby_{ident}_free, boltffi_ruby_{ident}_size, NULL }}, NULL, NULL, RUBY_TYPED_FREE_IMMEDIATELY | BOLTFFI_RUBY_TYPED_EMBEDDABLE\n}};\n",
+        symbols.data_type, symbols.class_name
+    ));
+    out.push_str(&format!(
+        "static VALUE boltffi_ruby_{ident}_from_stack(VALUE source) {{\n    {c_type} *data;\n    {c_type} *src = ({c_type} *)(uintptr_t)source;\n    VALUE obj = TypedData_Make_Struct({}, {c_type}, &{}, data);\n    *data = *src;\n    return obj;\n}}\n",
+        symbols.class_var, symbols.data_type
+    ));
+    out.push_str(&getter_lines.join(""));
+    out.push_str(&format!(
+        "static VALUE {}(FfiBuf_u8 buffer) {{\n    {c_type} stack_data;\n    {c_type} *data = &stack_data;\n{}\n    boltffi_ruby_wire_reader reader = boltffi_ruby_wire_reader_new(buffer);\n{}\n    boltffi_free_buf(buffer);\n    int error = 0;\n    VALUE obj = rb_protect(boltffi_ruby_{ident}_from_stack, (VALUE)(uintptr_t)&stack_data, &error);\n    if (error) {{\n{}\n        rb_jump_tag(error);\n    }}\n    RB_GC_GUARD(obj);\n    return obj;\nfail:\n{}\n    boltffi_free_buf(buffer);\n    rb_raise(rb_eRuntimeError, \"native function returned truncated {} buffer\");\n}}\n",
+        symbols.decoder.as_ref().expect("decoder"),
+        init_lines.iter().map(|line| format!("    {line}")).collect::<Vec<_>>().join("\n"),
+        decode_lines.iter().map(|line| format!("    {line}")).collect::<Vec<_>>().join("\n"),
+        free_lines.join("\n"),
+        free_lines.join("\n"),
+        symbols.class_name
+    ));
+    out.push_str(&format!(
+        "/* boltffi:ruby:record:init {} */\n",
+        symbols.ident
+    ));
+    out.push_str(&format!(
+        "    {} = rb_define_class_under(mod, \"{}\", rb_cObject);\n    rb_undef_alloc_func({});\n",
+        symbols.class_var, symbols.class_name, symbols.class_var
+    ));
+    for field in record.fields() {
+        let name = field_name(field.key())?;
+        out.push_str(&format!(
+            "    rb_define_method({}, \"{name}\", boltffi_ruby_{ident}_{name}, 0);\n",
+            symbols.class_var
+        ));
+    }
+    out.push_str("/* boltffi:ruby:record:init:end */\n");
+    Ok(out)
+}
+
+fn field_name(key: &FieldKey) -> Result<String> {
+    match key {
+        FieldKey::Named(name) => Ok(Name::new(name).function()),
+        FieldKey::Position(_) | _ => Err(Error::UnsupportedTarget {
+            target: "ruby",
+            shape: "tuple record field",
+        }),
+    }
+}
+
+fn wire_read_fn(primitive: Primitive) -> Result<&'static str> {
+    Ok(match primitive {
+        Primitive::Bool => "boltffi_ruby_wire_read_bool",
+        Primitive::I8 => "boltffi_ruby_wire_read_i8",
+        Primitive::U8 => "boltffi_ruby_wire_read_u8",
+        Primitive::I16 => "boltffi_ruby_wire_read_i16",
+        Primitive::U16 => "boltffi_ruby_wire_read_u16",
+        Primitive::I32 => "boltffi_ruby_wire_read_i32",
+        Primitive::U32 => "boltffi_ruby_wire_read_u32",
+        Primitive::I64 => "boltffi_ruby_wire_read_i64",
+        Primitive::U64 => "boltffi_ruby_wire_read_u64",
+        Primitive::F32 => "boltffi_ruby_wire_read_f32",
+        Primitive::F64 => "boltffi_ruby_wire_read_f64",
+        _ => {
+            return Err(Error::UnsupportedTarget {
+                target: "ruby",
+                shape: "unsupported encoded record primitive",
+            });
+        }
+    })
+}

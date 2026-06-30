@@ -43,6 +43,14 @@ impl<'a> Scanner<'a> {
             syn::Type::Path(type_path) => self.path(type_path, ty),
             syn::Type::TraitObject(trait_object) => self.dyn_trait(trait_object, ty),
             syn::Type::Tuple(tuple) => self.tuple(tuple),
+            // References are handled in parameter position by signature.rs; elsewhere they
+            // are unsupported — emit a hint so the author knows where they are valid.
+            syn::Type::Reference(_) => Err(ScanError::UnsupportedType {
+                spelling: format!(
+                    "{} (reference types are only valid as function parameters)",
+                    crate::spelling::ty(ty)
+                ),
+            }),
             _ => Err(ScanError::unsupported_type(ty)),
         }
     }
@@ -891,6 +899,24 @@ mod tests {
                 FnTraitKind::FnOnce,
                 FnSig::new(vec![TypeExpr::Primitive(Primitive::U32)], ReturnDef::Void)
             ))))
+        );
+    }
+
+    #[test]
+    fn reference_type_in_non_parameter_position_hints_at_valid_usage() {
+        // References are handled by signature.rs in parameter position; elsewhere
+        // the error should tell the author WHERE they are valid, not just "unsupported".
+        let err = scan("&Point").unwrap_err();
+        let ScanError::UnsupportedType { spelling } = err else {
+            panic!("expected UnsupportedType, got {err:?}");
+        };
+        assert!(
+            spelling.contains("reference types are only valid as function parameters"),
+            "error should hint at valid usage, got: `{spelling}`"
+        );
+        assert!(
+            spelling.contains("&Point"),
+            "error should include the type spelling"
         );
     }
 }

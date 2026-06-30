@@ -1,8 +1,10 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use boltffi_backend::bridge::c::CBridge;
 use boltffi_backend::core::{CoverageMode, bridge, host};
 use boltffi_backend::target::python::PythonCExtHost;
+use boltffi_backend::target::ruby::RubyCExtHost;
 use boltffi_backend::{GeneratedOutput, Target as BackendTarget};
 use boltffi_binding::{BindingMetadataSurface, Bindings, Native, Surface};
 use thiserror::Error;
@@ -28,6 +30,7 @@ pub struct Generation {
     python_distribution_name: Option<String>,
     python_package_version: Option<String>,
     python_native_library: Option<String>,
+    ruby_ractor_safe: bool,
 }
 
 impl Generation {
@@ -42,6 +45,7 @@ impl Generation {
             python_distribution_name: None,
             python_package_version: None,
             python_native_library: None,
+            ruby_ractor_safe: false,
         }
     }
 
@@ -87,10 +91,17 @@ impl Generation {
         self
     }
 
+    /// Declares the generated Ruby extension Ractor-safe (`rb_ext_ractor_safe(true)`).
+    pub fn ruby_ractor_safe(mut self, ractor_safe: bool) -> Self {
+        self.ruby_ractor_safe = ractor_safe;
+        self
+    }
+
     /// Reads the embedded metadata, selects the target surface contract, and renders it.
     pub fn render(&self, target: Target) -> Result<GeneratedOutput, GenerationError> {
         match target {
             Target::Python => self.render_python(),
+            Target::Ruby => self.render_ruby(),
             Target::Swift
             | Target::Kotlin
             | Target::KotlinMultiplatform
@@ -118,6 +129,20 @@ impl Generation {
             .python_host()?
             .into_target(&bindings)
             .map_err(GenerationError::Render)?;
+        self.render_backend(&target, &bindings)
+    }
+
+    fn render_ruby(&self) -> Result<GeneratedOutput, GenerationError> {
+        let bindings = self.bindings::<Native>()?;
+        let crate_stem = bindings
+            .package()
+            .name()
+            .as_path_string()
+            .replace("::", "_");
+        let target = BackendTarget::new(
+            RubyCExtHost::new().ractor_safe(self.ruby_ractor_safe),
+            CBridge::new(format!("ext/{crate_stem}/boltffi.h")).map_err(GenerationError::Render)?,
+        );
         self.render_backend(&target, &bindings)
     }
 

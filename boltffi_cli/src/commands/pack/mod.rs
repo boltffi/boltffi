@@ -8,7 +8,7 @@ use crate::reporter::Reporter;
 pub use self::request::{
     PackAllOptions, PackAndroidOptions, PackAppleOptions, PackCSharpOptions, PackCommand,
     PackDartOptions, PackExecutionOptions, PackJavaOptions, PackKmpOptions, PackPythonOptions,
-    PackWasmOptions,
+    PackRubyOptions, PackWasmOptions,
 };
 pub(crate) use crate::pack::android::pack_android;
 pub(crate) use crate::pack::apple::pack_apple;
@@ -19,6 +19,7 @@ pub(crate) use crate::pack::java::{
 };
 pub(crate) use crate::pack::kmp::{ensure_kmp_no_build_supported, pack_kmp};
 pub(crate) use crate::pack::python::pack_python;
+pub(crate) use crate::pack::ruby::pack_ruby;
 pub(crate) use crate::pack::wasm::pack_wasm;
 
 pub fn run_pack(config: &Config, command: PackCommand, reporter: &Reporter) -> Result<()> {
@@ -32,5 +33,6 @@ pub fn run_pack(config: &Config, command: PackCommand, reporter: &Reporter) -> R
         PackCommand::Python(options) => pack_python(config, options, reporter),
         PackCommand::Dart(options) => pack_dart(config, options, reporter),
         PackCommand::CSharp(options) => pack_csharp(config, options, reporter),
+        PackCommand::Ruby(options) => pack_ruby(config, options, reporter),
     }
 }
