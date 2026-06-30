@@ -10,6 +10,10 @@ use boltffi_backend::target::kotlin::{
 };
 use boltffi_backend::{CoverageMode, GeneratedOutput};
 use boltffi_bindgen::generate::{Generation, GenerationError};
+use boltffi_bindgen::render::kotlin::{
+    FactoryStyle as BindgenFactoryStyle, KotlinApiStyle as BindgenKotlinApiStyle,
+    KotlinDesktopLoader as BindgenKotlinDesktopLoader, KotlinOptions,
+};
 use boltffi_bindgen::target::Target;
 
 use crate::cargo::Cargo;
@@ -175,6 +179,8 @@ fn generate_kmp(config: &Config, options: &GenerateOptions) -> Result<()> {
     let package_selector =
         cargo.effective_package_selector(config, &metadata, &cargo_manifest_path);
     let package = metadata.find_package(&cargo_manifest_path, package_selector.as_deref())?;
+    let library_target =
+        package.resolve_library_target(&config.crate_artifact_name(), &cargo_manifest_path)?;
     let output_directory = options
         .output
         .clone()
@@ -184,7 +190,9 @@ fn generate_kmp(config: &Config, options: &GenerateOptions) -> Result<()> {
         config,
         output_directory,
         package.manifest_path.clone(),
+        library_target.name.clone(),
         cargo.probe_command_arguments(),
+        cargo.toolchain_selector().map(str::to_owned),
     )
 }
 
@@ -235,6 +243,49 @@ pub fn run_python_generation(
     )
 }
 
+pub fn run_kmp_generation(
+    config: &Config,
+    output: Option<PathBuf>,
+    manifest_path: PathBuf,
+    artifact_name: String,
+    cargo_args: Vec<String>,
+    toolchain_selector: Option<String>,
+) -> Result<()> {
+    if !config.is_kotlin_multiplatform_enabled() {
+        return Err(CliError::CommandFailed {
+            command: "targets.kotlin_multiplatform.enabled = false".to_string(),
+            status: None,
+        });
+    }
+
+    let output_directory = output.unwrap_or_else(|| config.kotlin_multiplatform_output());
+
+    write_kmp(
+        config,
+        output_directory,
+        manifest_path,
+        artifact_name,
+        cargo_args,
+        toolchain_selector,
+    )
+}
+
+pub fn run_c_header_generation(
+    output_directory: PathBuf,
+    manifest_path: PathBuf,
+    header_name: String,
+    cargo_args: Vec<String>,
+    toolchain_selector: Option<String>,
+) -> Result<()> {
+    Generation::new(manifest_path)
+        .cargo_args(cargo_args)
+        .cargo_toolchain_selector(toolchain_selector)
+        .render_c_header(format!("{header_name}.h"))
+        .and_then(|output| Generation::write_output(output, &output_directory))
+        .map(drop)
+        .map_err(|error| generation_error("c header", error))
+}
+
 fn write_python(
     config: &Config,
     output_directory: PathBuf,
@@ -262,7 +313,9 @@ fn write_kmp(
     config: &Config,
     output_directory: PathBuf,
     manifest_path: PathBuf,
+    artifact_name: String,
     cargo_args: Vec<String>,
+    toolchain_selector: Option<String>,
 ) -> Result<()> {
     let support_mode = if config.kotlin_multiplatform_preview_prune_unsupported() {
         eprintln!(
@@ -279,17 +332,47 @@ fn write_kmp(
         _ => CoverageMode::Complete,
     };
 
+    let module_name = config.kotlin_multiplatform_module_name();
     let output = Generation::new(manifest_path)
         .cargo_args(cargo_args)
+        .cargo_toolchain_selector(toolchain_selector)
         .coverage_mode(coverage)
         .kmp_package_name(config.kotlin_multiplatform_package())
-        .kmp_module_name(config.kotlin_multiplatform_module_name())
+        .kmp_module_name(module_name.clone())
         .kmp_min_sdk(config.android_min_sdk())
+        .kmp_kotlin_options(kmp_kotlin_options(config, &module_name, &artifact_name))
         .kmp_support_mode(support_mode)
         .render(Target::KotlinMultiplatform)
         .map_err(|error| generation_error("kmp", error))?;
 
     write_kmp_output(output, &output_directory)
+}
+
+fn kmp_kotlin_options(
+    config: &Config,
+    module_name: &str,
+    desktop_fallback_library_name: &str,
+) -> KotlinOptions {
+    let factory_style = match config.android_kotlin_factory_style() {
+        KotlinFactoryStyle::Constructors => BindgenFactoryStyle::Constructors,
+        KotlinFactoryStyle::CompanionMethods => BindgenFactoryStyle::CompanionMethods,
+    };
+
+    KotlinOptions {
+        factory_style,
+        api_style: BindgenKotlinApiStyle::TopLevel,
+        module_object_name: Some(module_name.to_string()),
+        library_name: Some(boltffi_bindgen::load_library_name(
+            &config.resolved_android_kotlin_library_name(),
+        )),
+        desktop_jni_library_name: Some(boltffi_bindgen::library_name(
+            &config.resolved_android_kotlin_desktop_library_name(),
+        )),
+        desktop_fallback_library_name: Some(boltffi_bindgen::library_name(
+            desktop_fallback_library_name,
+        )),
+        desktop_loader: BindgenKotlinDesktopLoader::Bundled,
+    }
 }
 
 fn write_kmp_output(output: GeneratedOutput, output_directory: &Path) -> Result<()> {
@@ -555,7 +638,9 @@ package = "com.boltffi.demo"
             &config,
             output_directory.clone(),
             demo_manifest_path(),
+            "demo".to_string(),
             Vec::new(),
+            None,
         )
         .expect_err("production IR KMP must fail closed for unsupported declarations");
 

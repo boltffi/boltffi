@@ -23,6 +23,8 @@ pub struct AndroidPackager<'a> {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub(crate) struct AndroidPackageLayout {
     pub(crate) jni_glue_path: PathBuf,
+    pub(crate) header_include_dir: PathBuf,
+    pub(crate) header_name: String,
     pub(crate) jnilibs_path: PathBuf,
 }
 
@@ -88,8 +90,8 @@ impl<'a> AndroidPackager<'a> {
         })?;
 
         let jni_glue_path = self.android_jni_glue_path()?;
-        let header_include_dir = self.config.android_header_output();
-        let header_path = header_include_dir.join(format!("{}.h", self.config.library_name()));
+        let header_include_dir = self.layout.header_include_dir.clone();
+        let header_path = header_include_dir.join(format!("{}.h", self.layout.header_name));
         if !header_path.exists() {
             return Err(CliError::FileNotFound(header_path));
         }
@@ -241,6 +243,8 @@ impl AndroidPackageLayout {
                 .android_kotlin_output()
                 .join("jni")
                 .join("jni_glue.c"),
+            header_include_dir: config.android_header_output(),
+            header_name: config.library_name().to_string(),
             jnilibs_path: config.android_pack_output(),
         }
     }
@@ -398,6 +402,8 @@ mod tests {
     fn kmp_android_layout(output_root: &Path) -> AndroidPackageLayout {
         AndroidPackageLayout {
             jni_glue_path: output_root.join("src/androidMain/c/jni_glue.c"),
+            header_include_dir: output_root.join("src/androidMain/c"),
+            header_name: "demo".to_string(),
             jnilibs_path: output_root.join("src/androidMain/jniLibs"),
         }
     }
@@ -643,6 +649,8 @@ output = "{}"
         ));
         let layout = AndroidPackageLayout {
             jni_glue_path: expected_glue.clone(),
+            header_include_dir: layout_kmp_output.join("src/androidMain/c"),
+            header_name: "demo".to_string(),
             jnilibs_path: expected_jnilibs.clone(),
         };
         let packager = AndroidPackager::new_with_layout(

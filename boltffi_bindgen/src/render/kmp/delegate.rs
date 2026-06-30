@@ -18,6 +18,7 @@ use crate::ir::{FfiContract, Lowerer, PackageInfo, TypeCatalog};
 use crate::render::jni::{JniEmitter, JniFunction, JniLowerer, JniModule, JvmBindingStyle};
 use crate::render::kmp::{
     KmpSurfaceSupport, filter_abi_for_kmp_surface, filter_contract_for_kmp_surface,
+    kmp_generated_c_header_include,
 };
 use crate::render::kotlin::{
     KotlinEmitter, KotlinFunction, KotlinLowerer, KotlinModule, KotlinOptions,
@@ -93,6 +94,9 @@ impl KmpJvmDelegateAdapter {
             self.module_name.clone(),
         )
         .with_jvm_binding_style(JvmBindingStyle::Kotlin)
+        .with_header_include(kmp_generated_c_header_include(
+            &internal_contract.package.name,
+        ))
         .lower();
 
         let runtime_source = native_runtime_members(&kotlin_module)?;

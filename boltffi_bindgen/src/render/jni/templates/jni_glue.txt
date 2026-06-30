@@ -9,7 +9,7 @@
 #if defined(__ANDROID__)
 #include <pthread.h>
 #endif
-#include <{{ module_name }}.h>
+#include <{{ header_include }}>
 
 static inline bool boltffi_exception_pending(JNIEnv* env) {
     return (*env)->ExceptionCheck(env);

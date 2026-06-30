@@ -1,6 +1,8 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use boltffi_backend::bridge::c::CBridge;
+use boltffi_backend::core::bridge::BridgeBackend;
 use boltffi_backend::core::{CoverageMode, bridge, host};
 use boltffi_backend::target::{
     kmp::{DEFAULT_KMP_MODULE_NAME, DEFAULT_KMP_PACKAGE_NAME, KmpHost, KmpSupportMode},
@@ -31,6 +33,7 @@ pub struct Generation {
     triple: Option<String>,
     coverage: CoverageMode,
     cargo_args: Vec<String>,
+    cargo_toolchain_selector: Option<String>,
     python_package_module: Option<String>,
     python_distribution_name: Option<String>,
     python_package_version: Option<String>,
@@ -52,6 +55,7 @@ pub struct Generation {
     kmp_package_name: Option<String>,
     kmp_module_name: Option<String>,
     kmp_min_sdk: Option<u32>,
+    kmp_kotlin_options: KotlinOptions,
     kmp_support_mode: KmpSupportMode,
 }
 
@@ -63,6 +67,7 @@ impl Generation {
             triple: None,
             coverage: CoverageMode::Complete,
             cargo_args: Vec::new(),
+            cargo_toolchain_selector: None,
             python_package_module: None,
             python_distribution_name: None,
             python_package_version: None,
@@ -84,6 +89,7 @@ impl Generation {
             kmp_package_name: None,
             kmp_module_name: None,
             kmp_min_sdk: None,
+            kmp_kotlin_options: KotlinOptions::default(),
             kmp_support_mode: KmpSupportMode::Strict,
         }
     }
@@ -97,6 +103,12 @@ impl Generation {
     /// Passes Cargo build arguments to metadata generation.
     pub fn cargo_args(mut self, cargo_args: impl IntoIterator<Item = String>) -> Self {
         self.cargo_args = cargo_args.into_iter().collect();
+        self
+    }
+
+    /// Selects a rustup Cargo toolchain for metadata generation.
+    pub fn cargo_toolchain_selector(mut self, toolchain_selector: Option<String>) -> Self {
+        self.cargo_toolchain_selector = toolchain_selector;
         self
     }
 
@@ -238,6 +250,12 @@ impl Generation {
         self
     }
 
+    /// Sets Kotlin/JNI loader options used by generated KMP JVM and Android delegates.
+    pub fn kmp_kotlin_options(mut self, kotlin_options: KotlinOptions) -> Self {
+        self.kmp_kotlin_options = kotlin_options;
+        self
+    }
+
     /// Sets the KMP support mode recorded in generated support metadata.
     pub fn kmp_support_mode(mut self, support_mode: KmpSupportMode) -> Self {
         self.kmp_support_mode = support_mode;
@@ -256,6 +274,15 @@ impl Generation {
                 Err(GenerationError::UnsupportedTarget { target })
             }
         }
+    }
+
+    /// Renders a C header from the same metadata-backed native bindings path.
+    pub fn render_c_header(
+        &self,
+        header_path: impl Into<PathBuf>,
+    ) -> Result<GeneratedOutput, GenerationError> {
+        let bindings = self.bindings::<Native>()?;
+        self.render_c_header_bindings(&bindings, header_path)
     }
 
     /// Renders the bindings and writes every generated file under `output_dir`.
@@ -367,6 +394,20 @@ impl Generation {
         self.render_backend(&target, &bindings)
     }
 
+    fn render_c_header_bindings(
+        &self,
+        bindings: &Bindings<Native>,
+        header_path: impl Into<PathBuf>,
+    ) -> Result<GeneratedOutput, GenerationError> {
+        let bridge = CBridge::new(header_path).map_err(GenerationError::Render)?;
+        let contract = bridge
+            .build_contract(bindings)
+            .map_err(GenerationError::Render)?;
+        bridge
+            .render_bridge(bindings, &contract)
+            .map_err(GenerationError::Render)
+    }
+
     fn render_backend<H, S>(
         &self,
         target: &BackendTarget<H, S>,
@@ -426,7 +467,7 @@ impl Generation {
         let delegate = KmpJvmDelegateAdapter::new(
             package_name.clone(),
             module_name.clone(),
-            KotlinOptions::default(),
+            self.kmp_kotlin_options.clone(),
         )
         .adapt_bindings(bindings)
         .map_err(|source| GenerationError::KmpJvmDelegate {
@@ -474,6 +515,9 @@ impl Generation {
         let mut build = BindingMetadataBuild::new(&self.manifest_path);
         if !self.cargo_args.is_empty() {
             build = build.cargo_args(self.cargo_args.clone());
+        }
+        if let Some(toolchain_selector) = &self.cargo_toolchain_selector {
+            build = build.rustup_toolchain(toolchain_selector.clone());
         }
         if let Some(triple) = &self.triple {
             build = build.target(triple);
@@ -632,6 +676,25 @@ mod tests {
     }
 
     #[test]
+    fn c_header_generation_uses_requested_header_path_for_native_bindings() {
+        let bindings = primitive_function_bindings();
+        let output = Generation::new("Cargo.toml")
+            .render_c_header_bindings(&bindings, "selected_package.h")
+            .expect("C header should render for primitive bindings");
+
+        assert_eq!(output.files().len(), 1);
+        assert_eq!(
+            output.files()[0].path().as_path(),
+            Path::new("selected_package.h")
+        );
+        assert!(
+            output.files()[0]
+                .contents()
+                .contains("boltffi_function_demo_add")
+        );
+    }
+
+    #[test]
     fn kmp_generation_wires_jni_delegate_for_sync_primitive_bindings() {
         let output = render_primitive_kmp_output();
 
@@ -654,6 +717,27 @@ mod tests {
             file(&output, "src/jvmMain/c/jni_glue.c")
                 .contains("_result = boltffi_function_demo_add(left, right);")
         );
+    }
+
+    #[test]
+    fn kmp_generation_uses_configured_kotlin_loader_options() {
+        let bindings = primitive_function_bindings();
+        let output = Generation::new("Cargo.toml")
+            .kmp_package_name("com.boltffi.demo")
+            .kmp_module_name("Demo")
+            .kmp_kotlin_options(KotlinOptions {
+                library_name: Some(crate::load_library_name("configured-library")),
+                desktop_jni_library_name: Some(crate::library_name("configured-library")),
+                desktop_fallback_library_name: Some(crate::library_name("my-lib")),
+                ..KotlinOptions::default()
+            })
+            .render_native_bindings(Target::KotlinMultiplatform, &bindings)
+            .expect("configured KMP loader options should render");
+
+        let jvm_internal = file(&output, "src/jvmMain/kotlin/com/boltffi/demo/jvm/Demo.kt");
+        assert!(jvm_internal.contains("val androidLibrary = \"configured-library\""));
+        assert!(jvm_internal.contains("val desktopPreferredLibrary = \"configured_library_jni\""));
+        assert!(jvm_internal.contains("val desktopFallbackLibrary = \"my_lib\""));
     }
 
     #[test]
@@ -720,7 +804,7 @@ mod tests {
         assert!(!jvm_internal.contains("actual fun"));
 
         assert_eq!(jvm_jni, android_jni);
-        assert!(jvm_jni.contains("#include <demo.h>"));
+        assert!(jvm_jni.contains("#include <boltffi_generated/demo.h>"));
         assert!(jvm_jni.contains(
             "JNIEXPORT jint JNICALL Java_com_boltffi_demo_jvm_Native_boltffi_1function_1demo_1add"
         ));

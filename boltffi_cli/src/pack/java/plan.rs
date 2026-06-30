@@ -32,6 +32,7 @@ pub(crate) struct JvmCargoContext {
     pub(crate) rust_target_triple: String,
     pub(crate) release: bool,
     pub(crate) build_profile: CargoBuildProfile,
+    pub(crate) package_name: String,
     pub(crate) artifact_name: String,
     pub(crate) cargo_manifest_path: PathBuf,
     pub(crate) manifest_path: PathBuf,
@@ -333,6 +334,12 @@ pub(crate) fn generate_jvm_header(
             source,
         }
     })?;
+    if let Some(parent) = output_path.parent() {
+        std::fs::create_dir_all(parent).map_err(|source| CliError::CreateDirectoryFailed {
+            path: parent.to_path_buf(),
+            source,
+        })?;
+    }
     let host_pointer_width_bits = match usize::BITS {
         32 => Some(32),
         64 => Some(64),
@@ -463,6 +470,7 @@ fn resolve_jvm_packaging_targets(
     let package_selector =
         cargo.effective_package_selector(config, &metadata, &cargo_manifest_path);
     let package = metadata.find_package(&cargo_manifest_path, package_selector.as_deref())?;
+    let package_name = package.name.clone();
     let artifact_name = package
         .resolve_library_artifact_name(&config.crate_artifact_name(), &cargo_manifest_path)?
         .to_string();
@@ -491,6 +499,7 @@ fn resolve_jvm_packaging_targets(
                 rust_target_triple: toolchain.rust_target_triple().to_string(),
                 release,
                 build_profile: build_profile.clone(),
+                package_name: package_name.clone(),
                 artifact_name: artifact_name.clone(),
                 cargo_manifest_path: cargo_manifest_path.clone(),
                 manifest_path: package.manifest_path.clone(),
@@ -517,7 +526,7 @@ mod tests {
 
     use super::{
         JvmCargoContext, JvmCrateOutputs, JvmPackagingTarget, ensure_java_no_build_supported,
-        ensure_jvm_pack_cargo_args_supported, resolve_jvm_packaging_targets,
+        ensure_jvm_pack_cargo_args_supported, generate_jvm_header, resolve_jvm_packaging_targets,
         selected_jvm_package_source_directory, write_jvm_debug_symbols,
     };
     use crate::build::CargoBuildProfile;
@@ -533,6 +542,10 @@ mod tests {
             .expect("time went backwards")
             .as_nanos();
         std::env::temp_dir().join(format!("{prefix}-{unique}"))
+    }
+
+    fn demo_source_directory() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../examples/demo")
     }
 
     fn config(java_enabled: bool) -> Config {
@@ -661,6 +674,7 @@ mod tests {
                 rust_target_triple: "x86_64-unknown-linux-gnu".to_string(),
                 release: false,
                 build_profile: CargoBuildProfile::Debug,
+                package_name: "workspace-member".to_string(),
                 artifact_name: "workspace_member".to_string(),
                 cargo_manifest_path: PathBuf::from("/tmp/workspace/Cargo.toml"),
                 manifest_path: PathBuf::from("/tmp/workspace/member/Cargo.toml"),
@@ -681,6 +695,25 @@ mod tests {
             selected_jvm_package_source_directory(&packaging_targets).expect("source directory");
 
         assert_eq!(source_directory, PathBuf::from("/tmp/workspace/member"));
+    }
+
+    #[test]
+    fn generate_jvm_header_creates_nested_header_parent_directory() {
+        let output_directory = temporary_directory("boltffi-jvm-nested-header-test");
+
+        generate_jvm_header(
+            &demo_source_directory(),
+            "demo",
+            &output_directory,
+            "boltffi_generated/demo",
+        )
+        .expect("nested header generation should succeed");
+
+        let header_path = output_directory.join("boltffi_generated/demo.h");
+        let header = fs::read_to_string(&header_path).expect("nested header should be readable");
+        assert!(header.contains("BoltFFICallbackHandle"));
+
+        fs::remove_dir_all(output_directory).expect("cleanup generated output");
     }
 
     #[test]

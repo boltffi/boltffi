@@ -72,6 +72,7 @@ M2 has started:
 - M2b-b wired production IR KMP generation through that delegate for the admitted primitive sync surface.
 - M2c let the delegate supply trusted generated internal Kotlin function bodies, so JVM/Android emission now reuses the mature Kotlin/JNI function renderer for the currently admitted surface.
 - M2d added a production-generation smoke that validates the strict primitive-sync KMP module shape across common, JVM actual, Android actual, internal Kotlin/JNI, Gradle, and support metadata.
+- M2e isolated generated KMP C headers under `boltffi_generated/`, made KMP pack validate JVM/Android glue against that generated-header contract, and removed stale root headers that could shadow regenerated headers.
 - Unsupported KMP surfaces remain strict and fail-closed unless explicit preview pruning is enabled.
 
 ## Target Architecture
@@ -297,16 +298,84 @@ Completed:
 - Kept this as a deterministic Rust test rather than a default Gradle invocation so normal test runs do not depend on plugin downloads or local Android/Gradle setup.
 - Did not admit new API categories or change generation/packaging behavior.
 
-Remaining M2 work after M2d:
+#### M2e: Generated Header Isolation For KMP JNI
+
+Goal: make the generated JVM/Android KMP JNI glue consume cbindgen headers from a generated-header namespace so stale root-level headers cannot shadow regenerated bindings.
+
+Completed:
+
+- Added a delegate-controlled JNI header include so KMP JVM/Android glue includes `boltffi_generated/<module>.h` while standalone non-KMP JNI keeps its existing `<module>.h` default.
+- Made KMP pack read and validate both JVM and Android `jni_glue.c` files before packaging.
+- Required both source sets to include the same generated header, or both to have no generated include only for empty/comment-only glue that falls back to the selected package header.
+- Rejected stale unqualified includes, mismatched generated includes, duplicate generated includes, path-like generated include basenames, and duplicate unqualified preamble-name includes that match the selected generated header basename.
+- Taught header generation to create nested parent directories for `boltffi_generated/<module>.h`.
+- Removed stale root-level `.h` files from KMP JVM/Android C source roots while preserving nested generated headers and non-header files.
+- Kept the cleanup and validation scoped to KMP packaging; standalone Java/JNI generation behavior remains unchanged except for the shared lowerer accepting an explicit header include.
+
+Verification:
+
+- `cargo test -p boltffi_cli kmp`
+- `cargo test -p boltffi_bindgen kmp`
+- `cargo test -p boltffi_bindgen jni`
+- `cargo test -p boltffi_backend kmp`
+- `cargo check -p boltffi_cli`
+- `cargo fmt --check`
+- `git diff --check`
+- `rg "NotImplementedError|NativeRuntimeNotImplemented|boltffiNativeRuntimeNotImplemented" boltffi_bindgen/src/render/kmp boltffi_backend/src/target/kmp`
+
+#### M2f: Environment-Gated Gradle Compile Smoke
+
+Goal: prove the current admitted JVM/Android KMP project compiles through Gradle before widening API coverage or deleting more legacy code.
+
+Planned:
+
+- Generate the strict primitive-sync KMP smoke project through the IR path.
+- Add an opt-in/env-gated Gradle check so default Rust tests do not depend on local Gradle, Android SDK, or plugin downloads.
+- Validate at least JVM compilation for the generated module and Android assemble/source-set wiring when the Android toolchain is available.
+- Keep the smoke focused on the currently admitted surface; do not use this slice to admit strings, records, callbacks, classes, or Apple targets.
+
+Exit criteria:
+
+- CI/local developers can opt into a real generated-project compile check.
+- The smoke exercises the IR-generated KMP files that pack will consume.
+- Failures point to generation, Gradle configuration, or packaging layout with actionable diagnostics.
+
+#### M2g: Delete Legacy Non-IR KMP JVM/Android Production Path
+
+Goal: make IR generation the only production KMP JVM/Android path before starting Apple support.
+
+Planned:
+
+- Remove the legacy CLI generator path in `boltffi_cli/src/commands/generate/languages/kmp.rs` and any remaining production dispatch that can call `KMPEmitter::emit` for KMP generation.
+- Keep `boltffi generate kmp --experimental` routed through `commands::generate::ir` and `Generation::render(Target::KotlinMultiplatform)`.
+- Move or delete any remaining tests that depend on `KMPEmitter::emit`; retain only migrated helper tests with clear ownership in the new backend, delegate adapter, or packaging modules.
+- Extract any still-useful helper snippets from `boltffi_bindgen/src/render/kmp/mod.rs` into owner-correct modules, then delete the monolithic emitter surface instead of leaving it as a fallback.
+- Add route-level regressions proving KMP generation cannot take a non-IR path.
+- Keep the support metadata/report types available from their new owner before deleting old modules that currently export shared constants.
+
+Exit criteria:
+
+- `KMPEmitter::emit` is not reachable from production code.
+- The legacy `KMPGenerator` path is deleted or reduced to no production behavior.
+- `boltffi generate kmp --experimental` and `pack kmp` still work for the currently admitted JVM/Android surface through the IR path.
+- No KMP-specific duplicate JNI implementation remains outside the delegate adapter.
+
+Verification:
+
+- Generated KMP project still matches the M2d/M2f smoke expectations.
+- `rg "KMPEmitter::emit|KMPGenerator|commands/generate/languages/kmp" boltffi_bindgen/src boltffi_cli/src` finds no production KMP generation path.
+- `rg "boltffiNativeRuntimeNotImplemented|NotImplementedError|NativeRuntimeNotImplemented" boltffi_bindgen/src/render/kmp boltffi_backend/src/target/kmp` confirms no legacy fallback runtime path remains.
+
+Remaining M2 work after M2e:
 
 - Extend admitted JVM/Android coverage beyond infallible primitive sync functions through explicit common-to-JVM conversion plans.
 - Preserve the shared Kotlin `Native` runtime inside the owner object that declares external methods as more API shapes are admitted.
 - Preserve shared JNI C preamble/includes/helpers once per generated translation unit as more API shapes are admitted.
 - Keep delegate functions filtered to the admitted KMP support surface.
-- Add an environment-gated Gradle compile/assemble smoke once the generated KMP project is ready for CI toolchain provisioning.
+- Add the environment-gated Gradle compile/assemble smoke from M2f once the generated KMP project is ready for CI toolchain provisioning.
 - Keep Android `jniLibs` packaging through the existing Android packager.
 - Keep JVM native resources through the existing JVM packager.
-- Delete the old monolithic `KMPEmitter` production flow after JVM/Android parity is proven.
+- Delete the old monolithic `KMPEmitter` production flow through M2g before starting Apple support.
 - Keep JVM/Android packaging on the new `pack/kmp/*` orchestration while production parity moves over.
 - Retain only migrated helpers, snippets, and tests with clear ownership in the new modules.
 
@@ -481,13 +550,16 @@ Verification:
 2. Done: introduce KMP plan/lower/emit skeleton and support report.
 3. Done: move packaging to `pack/kmp/*` with no feature expansion.
 4. In progress: rebuild JVM/Android KMP generation and packaging.
-5. Next: connect `boltffi_bindgen` Kotlin/JNI lowerers to the KMP JVM delegate seam.
-6. Add Apple target/layout planning and static library staging.
-7. Add Apple sync value actuals.
-8. Add Apple classes/handles.
-9. Add callbacks.
-10. Add async and streams.
-11. Add publication/demo/CI/docs hardening.
+5. Done: connect `boltffi_bindgen` Kotlin/JNI lowerers to the KMP JVM delegate seam.
+6. Done: prove current JVM/Android primitive-sync KMP shape and generated-header isolation.
+7. Next: add an environment-gated Gradle compile/assemble smoke for the current admitted JVM/Android surface.
+8. Delete the legacy non-IR KMP JVM/Android production path.
+9. Add Apple target/layout planning and static library staging.
+10. Add Apple sync value actuals.
+11. Add Apple classes/handles.
+12. Add callbacks.
+13. Add async and streams.
+14. Add publication/demo/CI/docs hardening.
 
 ## Salvage Plan
 

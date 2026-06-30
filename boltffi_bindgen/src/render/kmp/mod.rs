@@ -20,6 +20,13 @@ pub const KMP_SUPPORT_REPORT_SCHEMA_VERSION: u32 = 1;
 /// Platform matrix currently emitted by the production KMP generator.
 pub const KMP_SELECTED_PLATFORMS: &[&str] = &["jvm", "android"];
 
+/// Directory under each KMP C source set that owns generated BoltFFI headers.
+pub const KMP_GENERATED_C_HEADER_DIR: &str = "boltffi_generated";
+
+pub(crate) fn kmp_generated_c_header_include(module_name: &str) -> String {
+    format!("{KMP_GENERATED_C_HEADER_DIR}/{module_name}.h")
+}
+
 #[derive(Debug, Clone)]
 pub struct KMPOptions {
     /// Kotlin package used for common and platform source sets.
@@ -300,6 +307,9 @@ impl KMPEmitter {
             module_name.clone(),
         )
         .with_jvm_binding_style(JvmBindingStyle::Kotlin)
+        .with_header_include(kmp_generated_c_header_include(
+            &internal_contract.package.name,
+        ))
         .lower();
         let jni_source = JniEmitter::emit(&jni_module);
 

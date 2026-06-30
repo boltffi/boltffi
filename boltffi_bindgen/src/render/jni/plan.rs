@@ -7,6 +7,7 @@ pub struct JniModule {
     pub jni_prefix: String,
     pub package_path: String,
     pub module_name: String,
+    pub header_include: String,
     pub class_name: String,
     pub has_async: bool,
     pub has_async_runtime: bool,

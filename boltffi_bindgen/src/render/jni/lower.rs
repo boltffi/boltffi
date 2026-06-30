@@ -83,6 +83,7 @@ pub struct JniLowerer<'a> {
     abi: &'a AbiContract,
     package: String,
     class_name: String,
+    header_include: Option<String>,
     string_encoding: JniStringEncoding,
     jvm_binding_style: JvmBindingStyle,
 }
@@ -99,6 +100,7 @@ impl<'a> JniLowerer<'a> {
             abi,
             package,
             class_name,
+            header_include: None,
             string_encoding: JniStringEncoding::default(),
             jvm_binding_style: JvmBindingStyle::default(),
         }
@@ -114,11 +116,20 @@ impl<'a> JniLowerer<'a> {
         self
     }
 
+    pub fn with_header_include(mut self, header_include: impl Into<String>) -> Self {
+        self.header_include = Some(header_include.into());
+        self
+    }
+
     pub fn lower(&self) -> JniModule {
         let prefix = naming::ffi_prefix().to_string();
         let jni_prefix = self.jni_prefix();
         let package_path = self.package.replace('.', "/");
         let module_name = self.contract.package.name.clone();
+        let header_include = self
+            .header_include
+            .clone()
+            .unwrap_or_else(|| format!("{module_name}.h"));
         let used_callbacks = self.collect_used_callbacks();
 
         let functions = self
@@ -193,6 +204,7 @@ impl<'a> JniLowerer<'a> {
             jni_prefix,
             package_path,
             module_name,
+            header_include,
             class_name: self.class_name.clone(),
             has_async,
             has_async_runtime,

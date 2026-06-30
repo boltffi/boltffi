@@ -1562,6 +1562,7 @@ mod tests {
             rust_target_triple: "x86_64-unknown-linux-gnu".to_string(),
             release: false,
             build_profile: CargoBuildProfile::Debug,
+            package_name: "demo".to_string(),
             artifact_name: "demo".to_string(),
             cargo_manifest_path: root.join("Cargo.toml"),
             manifest_path: root.join("Cargo.toml"),

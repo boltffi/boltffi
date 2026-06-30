@@ -41,6 +41,11 @@ impl KmpPackageLayout {
         &self.jvm_jni_dir
     }
 
+    /// Returns the Android source-set directory containing generated JNI C glue.
+    pub(crate) fn android_jni_dir(&self) -> &PathBuf {
+        &self.android_jni_dir
+    }
+
     /// Returns the JVM native resources root used for packaged desktop libraries.
     pub(crate) fn jvm_native_resource_root(&self) -> &PathBuf {
         &self.jvm_native_resource_root
@@ -52,9 +57,11 @@ impl KmpPackageLayout {
     }
 
     /// Creates the Android package layout used by the shared Android linker.
-    pub(crate) fn android_native_layout(&self) -> AndroidPackageLayout {
+    pub(crate) fn android_native_layout(&self, header_name: &str) -> AndroidPackageLayout {
         AndroidPackageLayout {
             jni_glue_path: self.android_jni_dir.join("jni_glue.c"),
+            header_include_dir: self.android_jni_dir.clone(),
+            header_name: header_name.to_string(),
             jnilibs_path: self.android_jnilibs_dir.clone(),
         }
     }

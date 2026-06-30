@@ -139,6 +139,24 @@ pub(crate) fn build_android_targets(
     build_cargo_args: &[String],
     step: &crate::reporter::Step,
 ) -> Result<()> {
+    build_android_targets_for_package(
+        config,
+        targets,
+        release,
+        config.library_name(),
+        build_cargo_args,
+        step,
+    )
+}
+
+pub(crate) fn build_android_targets_for_package(
+    config: &Config,
+    targets: &[crate::target::RustTarget],
+    release: bool,
+    package: impl Into<String>,
+    build_cargo_args: &[String],
+    step: &crate::reporter::Step,
+) -> Result<()> {
     let on_output: Option<OutputCallback> = if step.is_verbose() {
         Some(Box::new(|line: &str| print_cargo_line(line)))
     } else {
@@ -147,7 +165,7 @@ pub(crate) fn build_android_targets(
 
     let build_options = BuildOptions {
         release,
-        package: Some(config.library_name().to_string()),
+        package: Some(package.into()),
         cargo_args: build_cargo_args.to_vec(),
         env: Vec::new(),
         on_output,

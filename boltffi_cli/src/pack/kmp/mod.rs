@@ -1,25 +1,27 @@
+use std::ffi::OsStr;
 use std::fs;
+use std::path::Path;
 
 use boltffi_bindgen::render::kmp::{
-    KMP_SELECTED_PLATFORMS, KMP_SUPPORT_REPORT_SCHEMA_VERSION, KmpSupportPolicy, KmpSupportReport,
+    KMP_GENERATED_C_HEADER_DIR, KMP_SELECTED_PLATFORMS, KMP_SUPPORT_REPORT_SCHEMA_VERSION,
+    KmpSupportPolicy, KmpSupportReport,
 };
 use boltffi_bindgen::target::Target;
 
 use crate::cli::{CliError, Result};
 use crate::commands::generate::{
-    run_generate_header_with_output_from_source_dir,
-    run_generate_kmp_with_output_from_source_dir_and_desktop_fallback_library_name,
+    run_generate_c_header_with_manifest, run_generate_kmp_with_manifest,
 };
 use crate::commands::pack::PackKmpOptions;
 use crate::config::Config;
 use crate::pack::PackError;
-use crate::pack::android::{AndroidBindingMode, AndroidPackager, build_android_targets};
+use crate::pack::android::{
+    AndroidBindingMode, AndroidPackager, build_android_targets_for_package,
+};
 use crate::pack::java::link::{build_jvm_native_library, compile_jni_library_with_layout};
 use crate::pack::java::outputs::remove_stale_structured_jvm_outputs;
-use crate::pack::java::{generate_jvm_header, prepare_kmp_jvm_packaging};
-use crate::pack::{
-    discover_built_libraries_for_targets, missing_built_libraries, resolve_build_cargo_args,
-};
+use crate::pack::java::prepare_kmp_jvm_packaging;
+use crate::pack::missing_built_libraries;
 use crate::reporter::Reporter;
 use crate::target::Platform;
 
@@ -52,43 +54,55 @@ pub(crate) fn pack_kmp(
     step.finish_success();
 
     let plan = KmpPackagingPlan::new(config, prepared_jvm_packaging)?;
+    let fallback_header_name = plan.fallback_header_name();
 
-    if options.execution.regenerate {
+    let header_name = if options.execution.regenerate {
+        let generation_cargo_args = plan.generation_cargo_args(options.execution.release);
+        let generation_toolchain_selector = plan.generation_toolchain_selector().map(str::to_owned);
+
         let step = reporter.step("Generating Kotlin Multiplatform bindings");
-        run_generate_kmp_with_output_from_source_dir_and_desktop_fallback_library_name(
+        run_generate_kmp_with_manifest(
             config,
             Some(plan.layout().output_root().clone()),
-            plan.source_directory(),
-            plan.source_crate_name(),
-            plan.artifact_name(),
+            plan.manifest_path().to_path_buf(),
+            plan.artifact_name().to_string(),
+            generation_cargo_args.clone(),
+            generation_toolchain_selector.clone(),
         )?;
         step.finish_success();
 
+        let header_name = read_kmp_jni_header_name(plan.layout(), &fallback_header_name)?;
+
         let step = reporter.step("Generating JVM C header");
-        generate_jvm_header(
-            plan.source_directory(),
-            plan.source_crate_name(),
-            plan.layout().jvm_jni_dir(),
-            plan.source_crate_name(),
+        run_generate_c_header_with_manifest(
+            plan.layout().jvm_jni_dir().clone(),
+            plan.manifest_path().to_path_buf(),
+            header_name.clone(),
+            generation_cargo_args.clone(),
+            generation_toolchain_selector.clone(),
         )?;
         step.finish_success();
 
         let step = reporter.step("Generating Android C header");
-        run_generate_header_with_output_from_source_dir(
-            config,
-            Some(config.android_header_output()),
-            plan.source_directory(),
-            plan.source_crate_name(),
+        run_generate_c_header_with_manifest(
+            plan.layout().android_jni_dir().clone(),
+            plan.manifest_path().to_path_buf(),
+            header_name.clone(),
+            generation_cargo_args,
+            generation_toolchain_selector,
         )?;
         step.finish_success();
-    }
 
+        header_name
+    } else {
+        read_kmp_jni_header_name(plan.layout(), &fallback_header_name)?
+    };
+
+    remove_stale_kmp_root_headers(plan.layout())?;
     verify_kmp_support_metadata(config, plan.layout())?;
-    package_kmp_android_libraries(config, &options, plan.layout(), reporter)?;
+    package_kmp_android_libraries(config, &options, &plan, &header_name, reporter)?;
 
-    let kmp_jvm_layout = plan
-        .layout()
-        .jvm_native_layout(config, plan.source_crate_name());
+    let kmp_jvm_layout = plan.layout().jvm_native_layout(config, &header_name);
     for packaging_target in &plan.jvm_packaging().packaging_targets {
         let host_target = packaging_target.cargo_context.host_target;
         let step = reporter.step(&format!(
@@ -218,6 +232,202 @@ fn kmp_support_metadata_error(reason: String) -> CliError {
     }
 }
 
+fn read_kmp_jni_header_name(
+    layout: &layout::KmpPackageLayout,
+    fallback_header_name: &str,
+) -> Result<String> {
+    let fallback_header_basename = fallback_header_name;
+    let fallback_header_name = kmp_generated_header_name(fallback_header_basename);
+    let jvm_header_name =
+        read_kmp_jni_header_name_from_glue(layout.jvm_jni_dir(), fallback_header_basename)?;
+    let android_header_name =
+        read_kmp_jni_header_name_from_glue(layout.android_jni_dir(), fallback_header_basename)?;
+
+    match (jvm_header_name, android_header_name) {
+        (Some(jvm_header_name), Some(android_header_name))
+            if jvm_header_name == android_header_name =>
+        {
+            Ok(jvm_header_name)
+        }
+        (None, None) => Ok(fallback_header_name),
+        (Some(jvm_header_name), Some(android_header_name)) => Err(CliError::CommandFailed {
+            command: format!(
+                "KMP JNI glue includes mismatched generated headers: JVM uses `{jvm_header_name}.h` and Android uses `{android_header_name}.h`; regenerate the KMP bindings"
+            ),
+            status: None,
+        }),
+        (Some(jvm_header_name), None) => Err(CliError::CommandFailed {
+            command: format!(
+                "KMP JNI glue includes mismatched generated headers: JVM uses `{jvm_header_name}.h` but Android has no generated header include; regenerate the KMP bindings"
+            ),
+            status: None,
+        }),
+        (None, Some(android_header_name)) => Err(CliError::CommandFailed {
+            command: format!(
+                "KMP JNI glue includes mismatched generated headers: Android uses `{android_header_name}.h` but JVM has no generated header include; regenerate the KMP bindings"
+            ),
+            status: None,
+        }),
+    }
+}
+
+fn read_kmp_jni_header_name_from_glue(
+    jni_dir: &Path,
+    expected_header_basename: &str,
+) -> Result<Option<String>> {
+    let jni_glue_path = jni_dir.join("jni_glue.c");
+    let source = fs::read_to_string(&jni_glue_path).map_err(|source| CliError::ReadFailed {
+        path: jni_glue_path.clone(),
+        source,
+    })?;
+    validate_kmp_jni_header_name_from_source(&source, expected_header_basename)
+        .map_err(|error| kmp_jni_header_validation_error(error, &jni_glue_path))
+}
+
+fn kmp_generated_header_name(header_name: &str) -> String {
+    format!("{KMP_GENERATED_C_HEADER_DIR}/{header_name}")
+}
+
+fn kmp_generated_header_name_is_qualified(header_name: &str) -> bool {
+    header_name
+        .strip_prefix(KMP_GENERATED_C_HEADER_DIR)
+        .and_then(|header_name| header_name.strip_prefix('/'))
+        .is_some_and(kmp_generated_header_basename_is_safe)
+}
+
+fn kmp_generated_header_basename_is_safe(header_name: &str) -> bool {
+    !header_name.is_empty()
+        && header_name
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
+}
+
+#[cfg(test)]
+fn kmp_jni_header_name_from_source(source: &str) -> Option<String> {
+    validate_kmp_jni_header_name_from_source(source, "__boltffi_test_header__")
+        .ok()
+        .flatten()
+}
+
+#[derive(Debug)]
+enum KmpJniHeaderValidationError {
+    UnsupportedHeader(String),
+    DuplicateGeneratedHeader { first: String, second: String },
+}
+
+fn validate_kmp_jni_header_name_from_source(
+    source: &str,
+    expected_header_basename: &str,
+) -> std::result::Result<Option<String>, KmpJniHeaderValidationError> {
+    let mut generated_header = None;
+    let mut expected_preamble_seen = false;
+
+    for header_name in kmp_jni_header_names_from_source(source) {
+        if kmp_jni_preamble_header_name(&header_name) {
+            if header_name == expected_header_basename {
+                if expected_preamble_seen {
+                    return Err(KmpJniHeaderValidationError::UnsupportedHeader(header_name));
+                }
+                expected_preamble_seen = true;
+            }
+            continue;
+        }
+
+        if !kmp_generated_header_name_is_qualified(&header_name) {
+            return Err(KmpJniHeaderValidationError::UnsupportedHeader(header_name));
+        }
+
+        if let Some(first) = generated_header {
+            return Err(KmpJniHeaderValidationError::DuplicateGeneratedHeader {
+                first,
+                second: header_name,
+            });
+        }
+
+        generated_header = Some(header_name);
+    }
+
+    Ok(generated_header)
+}
+
+fn kmp_jni_header_names_from_source(source: &str) -> impl Iterator<Item = String> + '_ {
+    source.lines().filter_map(|line| {
+        let header = line.trim().strip_prefix("#include <")?.strip_suffix('>')?;
+        let header_name = header.strip_suffix(".h")?;
+        Some(header_name.to_string())
+    })
+}
+
+fn kmp_jni_preamble_header_name(header_name: &str) -> bool {
+    matches!(
+        header_name,
+        "jni"
+            | "stdint"
+            | "stdbool"
+            | "stdio"
+            | "stdlib"
+            | "string"
+            | "limits"
+            | "stdatomic"
+            | "pthread"
+    )
+}
+
+fn kmp_jni_header_validation_error(
+    error: KmpJniHeaderValidationError,
+    jni_glue_path: &Path,
+) -> CliError {
+    let command = match error {
+        KmpJniHeaderValidationError::UnsupportedHeader(header_name) => format!(
+            "KMP JNI glue includes unsupported generated header `{header_name}.h` in {}; regenerate the KMP bindings so generated C headers live under `{KMP_GENERATED_C_HEADER_DIR}/` and stale generated includes are removed",
+            jni_glue_path.display()
+        ),
+        KmpJniHeaderValidationError::DuplicateGeneratedHeader { first, second } => format!(
+            "KMP JNI glue includes multiple generated headers `{first}.h` and `{second}.h` in {}; regenerate the KMP bindings",
+            jni_glue_path.display()
+        ),
+    };
+    CliError::CommandFailed {
+        command,
+        status: None,
+    }
+}
+
+fn remove_stale_kmp_root_headers(layout: &layout::KmpPackageLayout) -> Result<()> {
+    remove_stale_kmp_root_headers_in_dir(layout.jvm_jni_dir())?;
+    remove_stale_kmp_root_headers_in_dir(layout.android_jni_dir())
+}
+
+fn remove_stale_kmp_root_headers_in_dir(jni_dir: &Path) -> Result<()> {
+    let entries = match fs::read_dir(jni_dir) {
+        Ok(entries) => entries,
+        Err(source) if source.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(source) => {
+            return Err(CliError::ReadFailed {
+                path: jni_dir.to_path_buf(),
+                source,
+            });
+        }
+    };
+
+    for entry in entries {
+        let entry = entry.map_err(|source| CliError::ReadFailed {
+            path: jni_dir.to_path_buf(),
+            source,
+        })?;
+        let path = entry.path();
+        let file_type = entry.file_type().map_err(|source| CliError::ReadFailed {
+            path: path.clone(),
+            source,
+        })?;
+        if file_type.is_file() && path.extension() == Some(OsStr::new("h")) {
+            fs::remove_file(&path).map_err(|source| CliError::WriteFailed { path, source })?;
+        }
+    }
+
+    Ok(())
+}
+
 fn ensure_kmp_packaging_enabled(config: &Config, experimental_flag: bool) -> Result<()> {
     if !config.is_kotlin_multiplatform_enabled() {
         return Err(CliError::CommandFailed {
@@ -243,29 +453,32 @@ fn ensure_kmp_packaging_enabled(config: &Config, experimental_flag: bool) -> Res
 fn package_kmp_android_libraries(
     config: &Config,
     options: &PackKmpOptions,
-    layout: &layout::KmpPackageLayout,
+    plan: &KmpPackagingPlan,
+    header_name: &str,
     reporter: &Reporter,
 ) -> Result<()> {
-    let build_cargo_args = resolve_build_cargo_args(config, &options.execution.cargo_args);
+    let build_cargo_args = plan.android_build_cargo_args();
     let build_profile =
         crate::build::resolve_build_profile(options.execution.release, &build_cargo_args);
     let android_targets = config.android_targets();
 
     let step = reporter.step("Building Android targets for Kotlin Multiplatform");
-    build_android_targets(
+    build_android_targets_for_package(
         config,
         &android_targets,
         options.execution.release,
+        plan.build_package_selector(),
         &build_cargo_args,
         &step,
     )?;
     step.finish_success();
 
-    let libraries = discover_built_libraries_for_targets(
-        &config.crate_artifact_name(),
+    let libraries = crate::target::BuiltLibrary::discover_for_targets(
+        plan.target_directory(),
+        plan.artifact_name(),
         build_profile.output_directory_name(),
         &android_targets,
-    )?;
+    );
     let android_libraries: Vec<_> = libraries
         .into_iter()
         .filter(|library| library.target.platform() == Platform::Android)
@@ -285,7 +498,7 @@ fn package_kmp_android_libraries(
         android_libraries,
         build_profile.is_release_like(),
         AndroidBindingMode::KotlinMultiplatform,
-        layout.android_native_layout(),
+        plan.layout().android_native_layout(header_name),
     );
     let step = reporter.step("Packaging Android jniLibs for Kotlin Multiplatform");
     packager.package()?;
@@ -316,8 +529,8 @@ pub(crate) fn ensure_kmp_no_build_supported(
 mod tests {
     use super::layout::KmpPackageLayout;
     use super::{
-        ensure_kmp_no_build_supported, ensure_kmp_packaging_enabled, validate_kmp_support_report,
-        verify_kmp_support_metadata,
+        ensure_kmp_no_build_supported, ensure_kmp_packaging_enabled,
+        kmp_jni_header_name_from_source, validate_kmp_support_report, verify_kmp_support_metadata,
     };
     use crate::cli::CliError;
     use crate::config::Config;
@@ -326,7 +539,7 @@ mod tests {
         KmpSupportReport,
     };
     use std::fs;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn parse_config(input: &str) -> Config {
@@ -342,6 +555,364 @@ mod tests {
             .as_nanos();
 
         std::env::temp_dir().join(format!("{prefix}-{unique_suffix}"))
+    }
+
+    fn write_kmp_jni_glue(output_directory: &Path, source_set: &str, source: &str) -> PathBuf {
+        let jni_glue = output_directory.join(format!("src/{source_set}/c/jni_glue.c"));
+        fs::create_dir_all(jni_glue.parent().expect("jni glue path has parent"))
+            .expect("create jni glue directory");
+        fs::write(&jni_glue, source).expect("write jni glue");
+        jni_glue
+    }
+
+    fn write_matching_kmp_jni_glue(output_directory: &Path, source: &str) {
+        write_kmp_jni_glue(output_directory, "jvmMain", source);
+        write_kmp_jni_glue(output_directory, "androidMain", source);
+    }
+
+    #[test]
+    fn kmp_jni_header_name_uses_generated_package_include() {
+        let jni_glue = r#"
+#include <jni.h>
+#include <stdint.h>
+#include <stdbool.h>
+#include <boltffi_generated/workspace_member.h>
+"#;
+
+        assert_eq!(
+            kmp_jni_header_name_from_source(jni_glue).as_deref(),
+            Some("boltffi_generated/workspace_member")
+        );
+    }
+
+    #[test]
+    fn kmp_jni_header_parser_uses_last_generated_include() {
+        let jni_glue = r#"
+#include <jni.h>
+#include <stdint.h>
+#include <stdbool.h>
+#include <string.h>
+#include <boltffi_generated/string.h>
+"#;
+
+        assert_eq!(
+            kmp_jni_header_name_from_source(jni_glue).as_deref(),
+            Some("boltffi_generated/string")
+        );
+    }
+
+    #[test]
+    fn kmp_jni_header_name_falls_back_for_comment_only_glue() {
+        let output_directory = unique_temp_dir("boltffi-kmp-comment-only-glue-test");
+        let config = parse_config(&format!(
+            r#"
+experimental = ["kotlin_multiplatform"]
+
+[package]
+name = "workspace-member"
+
+[targets.kotlin_multiplatform]
+enabled = true
+output = "{}"
+"#,
+            output_directory.display()
+        ));
+        let layout = KmpPackageLayout::from_config(&config);
+        write_matching_kmp_jni_glue(&output_directory, "// No JNI functions emitted.\n");
+
+        assert_eq!(
+            super::read_kmp_jni_header_name(&layout, "workspace_member")
+                .expect("comment-only glue should use fallback header"),
+            "boltffi_generated/workspace_member"
+        );
+
+        fs::remove_dir_all(output_directory).expect("cleanup temp output");
+    }
+
+    #[test]
+    fn kmp_jni_header_name_accepts_path_qualified_system_header_basename() {
+        let output_directory = unique_temp_dir("boltffi-kmp-path-qualified-header-test");
+        let config = parse_config(&format!(
+            r#"
+experimental = ["kotlin_multiplatform"]
+
+[package]
+name = "jni"
+
+[targets.kotlin_multiplatform]
+enabled = true
+output = "{}"
+"#,
+            output_directory.display()
+        ));
+        let layout = KmpPackageLayout::from_config(&config);
+        write_matching_kmp_jni_glue(
+            &output_directory,
+            "#include <jni.h>\n#include <stdint.h>\n#include <boltffi_generated/jni.h>\n",
+        );
+
+        assert_eq!(
+            super::read_kmp_jni_header_name(&layout, "jni")
+                .expect("path-qualified generated header should not shadow preamble headers"),
+            "boltffi_generated/jni"
+        );
+
+        fs::remove_dir_all(output_directory).expect("cleanup temp output");
+    }
+
+    #[test]
+    fn kmp_jni_header_name_rejects_duplicate_preamble_named_stale_include() {
+        let output_directory = unique_temp_dir("boltffi-kmp-duplicate-preamble-header-test");
+        let config = parse_config(&format!(
+            r#"
+experimental = ["kotlin_multiplatform"]
+
+[package]
+name = "jni"
+
+[targets.kotlin_multiplatform]
+enabled = true
+output = "{}"
+"#,
+            output_directory.display()
+        ));
+        let layout = KmpPackageLayout::from_config(&config);
+        let jni_glue = write_kmp_jni_glue(
+            &output_directory,
+            "jvmMain",
+            "#include <jni.h>\n#include <stdint.h>\n#include <jni.h>\n",
+        );
+        write_kmp_jni_glue(
+            &output_directory,
+            "androidMain",
+            "#include <jni.h>\n#include <stdint.h>\n#include <jni.h>\n",
+        );
+
+        let error = super::read_kmp_jni_header_name(&layout, "jni")
+            .expect_err("duplicate preamble-named stale include should fail");
+
+        assert!(
+            matches!(&error, CliError::CommandFailed { command, status: None }
+                if command.contains("KMP JNI glue includes unsupported generated header `jni.h`")
+                    && command.contains(&jni_glue.display().to_string())),
+            "{error:?}"
+        );
+
+        fs::remove_dir_all(output_directory).expect("cleanup temp output");
+    }
+
+    #[test]
+    fn kmp_jni_header_name_rejects_stale_unqualified_generated_include() {
+        let output_directory = unique_temp_dir("boltffi-kmp-stale-unqualified-header-test");
+        let config = parse_config(&format!(
+            r#"
+experimental = ["kotlin_multiplatform"]
+
+[package]
+name = "demo"
+
+[targets.kotlin_multiplatform]
+enabled = true
+output = "{}"
+"#,
+            output_directory.display()
+        ));
+        let layout = KmpPackageLayout::from_config(&config);
+        write_kmp_jni_glue(
+            &output_directory,
+            "jvmMain",
+            "#include <jni.h>\n#include <stdint.h>\n#include <boltffi_generated/demo.h>\n",
+        );
+        let android_jni_glue = write_kmp_jni_glue(
+            &output_directory,
+            "androidMain",
+            "#include <jni.h>\n#include <stdint.h>\n#include <demo.h>\n",
+        );
+
+        let error = super::read_kmp_jni_header_name(&layout, "demo")
+            .expect_err("stale unqualified glue should fail");
+
+        assert!(
+            matches!(&error, CliError::CommandFailed { command, status: None }
+                if command.contains("KMP JNI glue includes unsupported generated header `demo.h`")
+                    && command.contains(&android_jni_glue.display().to_string())),
+            "{error:?}"
+        );
+
+        fs::remove_dir_all(output_directory).expect("cleanup temp output");
+    }
+
+    #[test]
+    fn kmp_jni_header_name_rejects_path_like_generated_include() {
+        let output_directory = unique_temp_dir("boltffi-kmp-path-like-header-test");
+        let config = parse_config(&format!(
+            r#"
+experimental = ["kotlin_multiplatform"]
+
+[package]
+name = "demo"
+
+[targets.kotlin_multiplatform]
+enabled = true
+output = "{}"
+"#,
+            output_directory.display()
+        ));
+        let layout = KmpPackageLayout::from_config(&config);
+        let jni_glue = write_kmp_jni_glue(
+            &output_directory,
+            "jvmMain",
+            "#include <jni.h>\n#include <stdint.h>\n#include <boltffi_generated/..\\jni.h>\n",
+        );
+        write_kmp_jni_glue(
+            &output_directory,
+            "androidMain",
+            "#include <jni.h>\n#include <stdint.h>\n#include <boltffi_generated/..\\jni.h>\n",
+        );
+
+        let error = super::read_kmp_jni_header_name(&layout, "demo")
+            .expect_err("path-like generated include should fail");
+
+        assert!(
+            matches!(&error, CliError::CommandFailed { command, status: None }
+                if command.contains("KMP JNI glue includes unsupported generated header `boltffi_generated/..\\jni.h`")
+                    && command.contains(&jni_glue.display().to_string())),
+            "{error:?}"
+        );
+
+        fs::remove_dir_all(output_directory).expect("cleanup temp output");
+    }
+
+    #[test]
+    fn kmp_jni_header_name_rejects_stale_include_before_valid_generated_include() {
+        let output_directory = unique_temp_dir("boltffi-kmp-stale-before-valid-header-test");
+        let config = parse_config(&format!(
+            r#"
+experimental = ["kotlin_multiplatform"]
+
+[package]
+name = "demo"
+
+[targets.kotlin_multiplatform]
+enabled = true
+output = "{}"
+"#,
+            output_directory.display()
+        ));
+        let layout = KmpPackageLayout::from_config(&config);
+        let jni_glue = write_kmp_jni_glue(
+            &output_directory,
+            "jvmMain",
+            "#include <jni.h>\n#include <demo.h>\n#include <boltffi_generated/demo.h>\n",
+        );
+        write_kmp_jni_glue(
+            &output_directory,
+            "androidMain",
+            "#include <jni.h>\n#include <boltffi_generated/demo.h>\n",
+        );
+
+        let error = super::read_kmp_jni_header_name(&layout, "demo")
+            .expect_err("stale include before valid generated include should fail");
+
+        assert!(
+            matches!(&error, CliError::CommandFailed { command, status: None }
+                if command.contains("KMP JNI glue includes unsupported generated header `demo.h`")
+                    && command.contains(&jni_glue.display().to_string())),
+            "{error:?}"
+        );
+
+        fs::remove_dir_all(output_directory).expect("cleanup temp output");
+    }
+
+    #[test]
+    fn kmp_jni_header_name_rejects_mismatched_jvm_android_generated_includes() {
+        let output_directory = unique_temp_dir("boltffi-kmp-mismatched-header-test");
+        let config = parse_config(&format!(
+            r#"
+experimental = ["kotlin_multiplatform"]
+
+[package]
+name = "demo"
+
+[targets.kotlin_multiplatform]
+enabled = true
+output = "{}"
+"#,
+            output_directory.display()
+        ));
+        let layout = KmpPackageLayout::from_config(&config);
+        write_kmp_jni_glue(
+            &output_directory,
+            "jvmMain",
+            "#include <jni.h>\n#include <stdint.h>\n#include <boltffi_generated/demo.h>\n",
+        );
+        write_kmp_jni_glue(
+            &output_directory,
+            "androidMain",
+            "#include <jni.h>\n#include <stdint.h>\n#include <boltffi_generated/other.h>\n",
+        );
+
+        let error = super::read_kmp_jni_header_name(&layout, "demo")
+            .expect_err("mismatched glue should fail");
+
+        assert!(
+            matches!(&error, CliError::CommandFailed { command, status: None }
+                if command.contains("JVM uses `boltffi_generated/demo.h`")
+                    && command.contains("Android uses `boltffi_generated/other.h`")),
+            "{error:?}"
+        );
+
+        fs::remove_dir_all(output_directory).expect("cleanup temp output");
+    }
+
+    #[test]
+    fn remove_stale_kmp_root_headers_removes_flat_headers_only() {
+        let output_directory = unique_temp_dir("boltffi-kmp-root-header-cleanup-test");
+        let config = parse_config(&format!(
+            r#"
+experimental = ["kotlin_multiplatform"]
+
+[package]
+name = "demo"
+
+[targets.kotlin_multiplatform]
+enabled = true
+output = "{}"
+"#,
+            output_directory.display()
+        ));
+        let layout = KmpPackageLayout::from_config(&config);
+        let jvm_flat_header = output_directory.join("src/jvmMain/c/jni.h");
+        let android_flat_header = output_directory.join("src/androidMain/c/stdint.h");
+        let jvm_glue = output_directory.join("src/jvmMain/c/jni_glue.c");
+        let android_glue = output_directory.join("src/androidMain/c/jni_glue.c");
+        let jvm_nested_header = output_directory.join("src/jvmMain/c/boltffi_generated/demo.h");
+        let android_nested_header =
+            output_directory.join("src/androidMain/c/boltffi_generated/demo.h");
+
+        for path in [
+            &jvm_flat_header,
+            &android_flat_header,
+            &jvm_glue,
+            &android_glue,
+            &jvm_nested_header,
+            &android_nested_header,
+        ] {
+            fs::create_dir_all(path.parent().expect("test path has parent"))
+                .expect("create test directory");
+            fs::write(path, []).expect("write test file");
+        }
+
+        super::remove_stale_kmp_root_headers(&layout).expect("cleanup should succeed");
+
+        assert!(!jvm_flat_header.exists());
+        assert!(!android_flat_header.exists());
+        assert!(jvm_glue.exists());
+        assert!(android_glue.exists());
+        assert!(jvm_nested_header.exists());
+        assert!(android_nested_header.exists());
+
+        fs::remove_dir_all(output_directory).expect("cleanup temp output");
     }
 
     fn support_report(config: &Config, mode: KmpSupportPolicy) -> KmpSupportReport {
@@ -381,7 +952,7 @@ module_name = "Demo"
 "#,
         );
         let layout = KmpPackageLayout::from_config(&config);
-        let android_layout = layout.android_native_layout();
+        let android_layout = layout.android_native_layout("demo_lib");
         let jvm_layout = layout.jvm_native_layout(&config, "demo-lib");
 
         assert_eq!(layout.output_root(), &PathBuf::from("dist/kmp"));
@@ -390,8 +961,17 @@ module_name = "Demo"
             PathBuf::from("dist/kmp/src/androidMain/c/jni_glue.c")
         );
         assert_eq!(
+            android_layout.header_include_dir,
+            PathBuf::from("dist/kmp/src/androidMain/c")
+        );
+        assert_eq!(android_layout.header_name, "demo_lib");
+        assert_eq!(
             android_layout.jnilibs_path,
             PathBuf::from("dist/kmp/src/androidMain/jniLibs")
+        );
+        assert_eq!(
+            layout.android_jni_dir(),
+            &PathBuf::from("dist/kmp/src/androidMain/c")
         );
         assert_eq!(
             layout.jvm_jni_dir(),

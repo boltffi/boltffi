@@ -1,19 +1,28 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+#[cfg(test)]
 use boltffi_bindgen::KotlinOptions;
+#[cfg(not(test))]
+use boltffi_bindgen::render::kmp::KMP_SUPPORT_REPORT_FILE;
+#[cfg(test)]
 use boltffi_bindgen::render::kmp::{
     KMP_SUPPORT_REPORT_FILE, KMPEmitter, KMPOptions, KmpSupportPolicy,
 };
+#[cfg(test)]
 use boltffi_bindgen::render::kotlin::{
     FactoryStyle as BindgenFactoryStyle, KotlinApiStyle, KotlinDesktopLoader,
 };
 
+#[cfg(test)]
 use boltffi_bindgen::target::Target;
 
 use crate::cli::{CliError, Result};
+#[cfg(test)]
 use crate::commands::generate::generator::SourceCrate;
+#[cfg(test)]
 use crate::commands::generate::generator::{GenerateRequest, LanguageGenerator, ScanPointerWidth};
+#[cfg(test)]
 use crate::config::KotlinFactoryStyle as ConfigKotlinFactoryStyle;
 
 const KMP_MANAGED_GENERATED_PATHS: &[&str] = &[
@@ -27,8 +36,10 @@ const KMP_MANAGED_GENERATED_PATHS: &[&str] = &[
     "src/androidMain/c",
 ];
 
+#[cfg(test)]
 pub struct KMPGenerator;
 
+#[cfg(test)]
 impl KMPGenerator {
     pub fn generate_from_source_directory_with_desktop_fallback_library_name(
         config: &crate::config::Config,
@@ -142,6 +153,7 @@ impl KMPGenerator {
     }
 }
 
+#[cfg(test)]
 fn prepare_kmp_output_directory(
     request: &GenerateRequest<'_>,
     output_directory: &Path,
@@ -173,6 +185,7 @@ fn remove_stale_generated_path(path: PathBuf) -> Result<()> {
     }
 }
 
+#[cfg(test)]
 impl LanguageGenerator for KMPGenerator {
     const TARGET: Target = Target::KotlinMultiplatform;
 

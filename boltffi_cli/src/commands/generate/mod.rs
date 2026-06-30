@@ -5,10 +5,13 @@ mod languages;
 
 use std::path::{Path, PathBuf};
 
+#[cfg(test)]
 use boltffi_bindgen::CHeaderLowerer;
-use generator::{GenerateRequest, ScanPointerWidth, run_generator};
+#[cfg(test)]
+use generator::ScanPointerWidth;
+use generator::{GenerateRequest, run_generator};
 use header::HeaderGenerator;
-use languages::{CSharpGenerator, DartGenerator, JavaGenerator, KMPGenerator, TypeScriptGenerator};
+use languages::{CSharpGenerator, DartGenerator, JavaGenerator, TypeScriptGenerator};
 
 use boltffi_bindgen::target::Target;
 
@@ -46,9 +49,7 @@ pub fn run_generate_with_output(config: &Config, options: GenerateOptions) -> Re
     match &options.target {
         GenerateTarget::Swift => ir::run_ir_generation(config, &options),
         GenerateTarget::Kotlin => ir::run_ir_generation(config, &options),
-        GenerateTarget::KotlinMultiplatform => {
-            run_generator::<KMPGenerator>(&legacy_request(), options.experimental)
-        }
+        GenerateTarget::KotlinMultiplatform => ir::run_ir_generation(config, &options),
         GenerateTarget::Java => {
             run_generator::<JavaGenerator>(&legacy_request(), options.experimental)
         }
@@ -95,7 +96,16 @@ pub fn run_generate_with_output(config: &Config, options: GenerateOptions) -> Re
             }
 
             if config.should_process(Target::KotlinMultiplatform, options.experimental) {
-                run_generator::<KMPGenerator>(&request, options.experimental)?;
+                ir::run_ir_generation(
+                    config,
+                    &GenerateOptions {
+                        target: GenerateTarget::KotlinMultiplatform,
+                        output: options.output.clone(),
+                        experimental: options.experimental,
+                        ir: true,
+                        cargo_args: options.cargo_args.clone(),
+                    },
+                )?;
             }
 
             if config.should_process(Target::Java, options.experimental) {
@@ -141,22 +151,7 @@ pub fn run_generate_java_with_output_from_source_dir(
     JavaGenerator::generate_from_source_directory(config, output, source_directory, crate_name)
 }
 
-pub fn run_generate_kmp_with_output_from_source_dir_and_desktop_fallback_library_name(
-    config: &Config,
-    output: Option<PathBuf>,
-    source_directory: &Path,
-    crate_name: &str,
-    desktop_fallback_library_name: &str,
-) -> Result<()> {
-    KMPGenerator::generate_from_source_directory_with_desktop_fallback_library_name(
-        config,
-        output,
-        source_directory,
-        crate_name,
-        Some(desktop_fallback_library_name),
-    )
-}
-
+#[cfg(test)]
 pub fn run_generate_header_with_output_from_source_dir(
     config: &Config,
     output: Option<PathBuf>,
@@ -191,6 +186,40 @@ pub fn run_generate_python_with_manifest(
     cargo_args: Vec<String>,
 ) -> Result<()> {
     ir::run_python_generation(config, output, manifest_path, artifact_name, cargo_args)
+}
+
+pub fn run_generate_kmp_with_manifest(
+    config: &Config,
+    output: Option<PathBuf>,
+    manifest_path: PathBuf,
+    artifact_name: String,
+    cargo_args: Vec<String>,
+    toolchain_selector: Option<String>,
+) -> Result<()> {
+    ir::run_kmp_generation(
+        config,
+        output,
+        manifest_path,
+        artifact_name,
+        cargo_args,
+        toolchain_selector,
+    )
+}
+
+pub fn run_generate_c_header_with_manifest(
+    output_directory: PathBuf,
+    manifest_path: PathBuf,
+    header_name: String,
+    cargo_args: Vec<String>,
+    toolchain_selector: Option<String>,
+) -> Result<()> {
+    ir::run_c_header_generation(
+        output_directory,
+        manifest_path,
+        header_name,
+        cargo_args,
+        toolchain_selector,
+    )
 }
 
 pub fn run_generate_csharp_with_output_from_source_dir(
@@ -232,6 +261,41 @@ mod tests {
 
     fn demo_source_directory() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../examples/demo")
+    }
+
+    #[test]
+    fn kotlin_multiplatform_generate_uses_ir_route_without_ir_flag() {
+        let config = parse_config(
+            r#"
+experimental = ["kotlin_multiplatform"]
+
+[package]
+name = "demo"
+
+[targets.kotlin_multiplatform]
+enabled = true
+"#,
+        );
+
+        let error = super::run_generate_with_output(
+            &config,
+            super::GenerateOptions {
+                target: super::GenerateTarget::KotlinMultiplatform,
+                output: None,
+                experimental: false,
+                ir: false,
+                cargo_args: vec![
+                    "--manifest-path".to_string(),
+                    "/definitely/missing/boltffi/Cargo.toml".to_string(),
+                ],
+            },
+        )
+        .expect_err("production KMP generation should use IR cargo selection");
+
+        assert!(
+            matches!(error, crate::cli::CliError::CommandFailed { command, .. }
+                if command.contains("cargo metadata --format-version 1 --no-deps"))
+        );
     }
 
     #[test]
@@ -477,7 +541,7 @@ preview_prune_unsupported = true
         assert!(jvm_internal.contains("val androidLibrary = \"configured-library\""));
         assert!(jvm_internal.contains("val desktopPreferredLibrary = \"configured_library_jni\""));
         assert!(jvm_internal.contains("val desktopFallbackLibrary = \"my_lib\""));
-        assert!(jni_glue.contains("#include <my-lib.h>"));
+        assert!(jni_glue.contains("#include <boltffi_generated/my-lib.h>"));
 
         fs::remove_dir_all(output_directory).expect("cleanup generated output");
     }
