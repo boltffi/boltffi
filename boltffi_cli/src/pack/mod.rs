@@ -5,6 +5,7 @@ pub mod dart;
 pub mod java;
 pub mod kmp;
 pub mod python;
+pub mod ruby;
 mod scratch;
 pub mod symbols;
 pub mod wasm;

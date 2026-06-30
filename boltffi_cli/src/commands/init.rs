@@ -4,8 +4,8 @@ use crate::cli::Result;
 use crate::config::{
     AndroidConfig, AndroidPackConfig, AppleConfig, CSharpConfig, CargoConfig, Config, DartConfig,
     DebugSymbolsConfig, ErrorStyle, HeaderConfig, JavaConfig, KotlinConfig, KotlinFactoryStyle,
-    KotlinMultiplatformConfig, PackageConfig, PythonConfig, SpmConfig, SwiftConfig, TargetsConfig,
-    WasmConfig, XcframeworkConfig,
+    KotlinMultiplatformConfig, PackageConfig, PythonConfig, RubyConfig, SpmConfig, SwiftConfig,
+    TargetsConfig, WasmConfig, XcframeworkConfig,
 };
 
 pub struct InitOptions {
@@ -133,6 +133,15 @@ fn create_default_config(package_name: &str) -> Config {
             java: JavaConfig::default(),
             dart: DartConfig::default(),
             python: PythonConfig::default(),
+            ruby: RubyConfig {
+                // Surface `ractor_safe` in the scaffolded config so authors see the
+                // knob and make a deliberate choice. Defaults to `true`: BoltFFI
+                // bindings hold no unsynchronized global mutable state, so the
+                // generated extension is Ractor-safe. Flip to `false` if the bound
+                // crate introduces shared mutable state without synchronization.
+                ractor_safe: true,
+                ..RubyConfig::default()
+            },
             csharp: CSharpConfig::default(),
         },
     }
@@ -185,6 +194,9 @@ mod tests {
         assert!(content.contains("[targets.kotlin_multiplatform]"));
         assert!(content.contains("[targets.python]"));
         assert!(content.contains("[targets.python.wheel]"));
+        assert!(content.contains("[targets.ruby]"));
+        // The scaffold makes the Ractor-safety knob visible and on by default.
+        assert!(content.contains("ractor_safe = true"));
 
         fs::remove_dir_all(temp_root).expect("cleanup temp root");
     }

@@ -1,0 +1,19 @@
+Gem::Specification.new do |spec|
+  spec.name = "{{ gem_name }}"
+  spec.version = "{{ version }}"
+  spec.summary = "BoltFFI-generated Ruby bindings for {{ crate_stem }}"
+  spec.authors = ["BoltFFI"]
+  spec.platform = Gem::Platform::RUBY
+
+  spec.files = [
+    "lib/{{ crate_stem }}.rb",
+    "ext/{{ crate_stem }}/_native.c",
+    "ext/{{ crate_stem }}/boltffi.h",
+    "ext/{{ crate_stem }}/extconf.rb",
+  ]
+
+  spec.extensions = ["ext/{{ crate_stem }}/extconf.rb"]
+  spec.required_ruby_version = ">= 3.1"
+  spec.required_rubygems_version = ">= 3.0"
+  spec.metadata = { "rubygems_mfa_required" => "true" }
+end

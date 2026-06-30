@@ -1,0 +1,19 @@
+# frozen_string_literal: true
+
+require "{{ crate_stem }}_native"
+
+module {{ module_name }}
+{%- for enumeration in enums %}
+  module {{ enumeration.class_name }}
+{%- for variant in enumeration.variants %}
+    {{ variant.const_name }} = {{ variant.discriminant }}
+{%- endfor %}
+  end
+{%- endfor %}
+{%- for function in functions %}
+  module_function
+  def {{ function.ruby_name }}(...)
+    Native.{{ function.ruby_name }}(...)
+  end
+{%- endfor %}
+end

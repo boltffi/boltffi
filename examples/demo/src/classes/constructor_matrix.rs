@@ -13,6 +13,12 @@ pub struct ConstructorCoverageMatrix {
 }
 
 #[export]
+impl Default for ConstructorCoverageMatrix {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ConstructorCoverageMatrix {
     pub fn new() -> Self {
         Self::from_parts("new", "default", 0, 0)

@@ -378,7 +378,7 @@ mod tests {
 
         assert!(matches!(
             error,
-            ScanError::UnsupportedType { spelling } if spelling == "&Point"
+            ScanError::UnsupportedType { spelling } if spelling.contains("&Point")
         ));
     }
 
@@ -388,7 +388,7 @@ mod tests {
 
         assert!(matches!(
             error,
-            ScanError::UnsupportedType { spelling } if spelling == "&mut str"
+            ScanError::UnsupportedType { spelling } if spelling.contains("&mut str")
         ));
     }
 

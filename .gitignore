@@ -19,6 +19,7 @@ examples/platforms/apple/ffi
 examples/platforms/apple/.build
 benchmarks/scripts/__pycache__
 examples/platforms/python/dist/
+examples/platforms/ruby/dist/
 benchmarks/**/.DS_Store
 benchmarks/**/.build/
 benchmarks/**/.swiftpm/

@@ -11,6 +11,7 @@ use boltffi_backend::target::{
     kmp::{DEFAULT_KMP_MODULE_NAME, DEFAULT_KMP_PACKAGE_NAME, KmpHost, KmpSupportMode},
     kotlin::{KotlinApiStyle, KotlinDesktopLoader, KotlinFactoryStyle, KotlinHost},
     python::PythonCExtHost,
+    ruby::RubyCExtHost,
     swift::SwiftHost,
     typescript::TypeScriptHost,
 };
@@ -75,6 +76,7 @@ pub struct Generation {
     kmp_support_mode: KmpSupportMode,
     typescript_module: Option<String>,
     typescript_runtime_package: Option<String>,
+    ruby_ractor_safe: bool,
 }
 
 impl Generation {
@@ -123,6 +125,7 @@ impl Generation {
             kmp_support_mode: KmpSupportMode::Strict,
             typescript_module: None,
             typescript_runtime_package: None,
+            ruby_ractor_safe: false,
         }
     }
 
@@ -385,6 +388,12 @@ impl Generation {
         self
     }
 
+    /// Declares the generated Ruby extension Ractor-safe (`rb_ext_ractor_safe(true)`).
+    pub fn ruby_ractor_safe(mut self, ractor_safe: bool) -> Self {
+        self.ruby_ractor_safe = ractor_safe;
+        self
+    }
+
     /// Reads the embedded metadata, selects the target surface contract, and renders it.
     pub fn render(&self, target: Target) -> Result<GeneratedOutput, GenerationError> {
         match target {
@@ -398,6 +407,7 @@ impl Generation {
             }
             Target::Swift => self.render_swift(),
             Target::TypeScript => self.render_typescript(),
+            Target::Ruby => self.render_ruby(),
             Target::Header | Target::Dart => Err(GenerationError::UnsupportedTarget { target }),
         }
     }
@@ -432,9 +442,11 @@ impl Generation {
             Target::Kotlin => self.render_kotlin_bindings(bindings),
             Target::KotlinMultiplatform => self.render_kmp_bindings(bindings),
             Target::CSharp => self.render_csharp_bindings(bindings),
-            Target::Swift | Target::TypeScript | Target::Header | Target::Dart => {
-                Err(GenerationError::UnsupportedTarget { target })
-            }
+            Target::Ruby
+            | Target::Swift
+            | Target::TypeScript
+            | Target::Header
+            | Target::Dart => Err(GenerationError::UnsupportedTarget { target }),
         }
     }
 
@@ -580,6 +592,20 @@ impl Generation {
                     .unwrap_or("@boltffi/runtime"),
             );
         self.render_backend(&host.into_target(), bindings)
+    }
+
+    fn render_ruby(&self) -> Result<GeneratedOutput, GenerationError> {
+        let bindings = self.bindings::<Native>()?;
+        let crate_stem = bindings
+            .package()
+            .name()
+            .as_path_string()
+            .replace("::", "_");
+        let target = BackendTarget::new(
+            RubyCExtHost::new().ractor_safe(self.ruby_ractor_safe),
+            CBridge::new(format!("ext/{crate_stem}/boltffi.h")).map_err(GenerationError::Render)?,
+        );
+        self.render_backend(&target, &bindings)
     }
 
     fn render_c_header_bindings(

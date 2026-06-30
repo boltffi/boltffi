@@ -10,10 +10,12 @@ java_dir="$repo_root/examples/platforms/java"
 csharp_dir="$repo_root/examples/platforms/csharp"
 wasm_dir="$repo_root/examples/platforms/wasm"
 python_dir="$repo_root/examples/platforms/python"
+ruby_dir="$repo_root/examples/platforms/ruby"
 workspace_manifest="$repo_root/Cargo.toml"
 
 selected_platforms=()
 python_interpreter=""
+ruby_interpreter=""
 
 run_step() {
     local title="$1"
@@ -32,9 +34,12 @@ run_boltffi() {
 host_default_platforms() {
     case "$(uname -s)" in
         Darwin)
-            printf '%s\n' apple kotlin java csharp wasm python
+            printf '%s\n' apple kotlin java csharp wasm python ruby
             ;;
-        Linux|MINGW*|MSYS*|CYGWIN*)
+        Linux)
+            printf '%s\n' java csharp wasm python ruby
+            ;;
+        MINGW*|MSYS*|CYGWIN*)
             printf '%s\n' java csharp wasm python
             ;;
         *)
@@ -88,12 +93,16 @@ while [[ $# -gt 0 ]]; do
             python_interpreter="${2:-}"
             shift 2
             ;;
+        --ruby)
+            ruby_interpreter="${2:-}"
+            shift 2
+            ;;
         --host-defaults)
             shift
             ;;
         *)
             printf 'Unknown argument: %s\n' "$1" >&2
-            printf 'Usage: %s [--platform <apple|kotlin|java|csharp|wasm|python>] [--python <interpreter>] [--host-defaults]\n' "$0" >&2
+            printf 'Usage: %s [--platform <apple|kotlin|java|csharp|wasm|python|ruby>] [--python <interpreter>] [--ruby <interpreter>] [--host-defaults]\n' "$0" >&2
             exit 2
             ;;
     esac
@@ -134,6 +143,14 @@ for selected_platform in "${selected_platforms[@]}"; do
             else
                 run_step "pack python" run_boltffi pack python --release
                 run_step "python demo" "$python_dir/test-demo.sh"
+            fi
+            ;;
+        ruby)
+            run_step "generate ruby" run_boltffi generate ruby --experimental
+            if [[ -n "$ruby_interpreter" ]]; then
+                run_step "ruby demo" "$ruby_dir/test-demo.sh" --ruby "$ruby_interpreter"
+            else
+                run_step "ruby demo" "$ruby_dir/test-demo.sh"
             fi
             ;;
         *)

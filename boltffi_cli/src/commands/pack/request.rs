@@ -10,6 +10,7 @@ pub enum PackCommand {
     Python(PackPythonOptions),
     Dart(PackDartOptions),
     CSharp(PackCSharpOptions),
+    Ruby(PackRubyOptions),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -64,4 +65,9 @@ pub struct PackDartOptions {
 
 pub struct PackCSharpOptions {
     pub execution: PackExecutionOptions,
+}
+
+pub struct PackRubyOptions {
+    pub execution: PackExecutionOptions,
+    pub targets: Vec<String>,
 }
