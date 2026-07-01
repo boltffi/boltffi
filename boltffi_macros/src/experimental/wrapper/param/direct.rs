@@ -70,6 +70,10 @@ where
             DirectValueType::Primitive(primitive) => {
                 PrimitiveParam::new(*primitive, input.receive, input.ident).tokens::<S>()
             }
+            DirectValueType::Record(_) if S::BORROWED_DIRECT_RECORD_PARAMS => {
+                NativeRecordParam::new(input.receive, input.ident, input.rust_type, input.failure)
+                    .tokens()
+            }
             DirectValueType::Record(_) => <Record as Render<S, _>>::render(
                 Record,
                 RecordInput::new(input.receive, input.rust_type, input.ident, input.failure),
@@ -194,6 +198,96 @@ impl PassableParam {
                     <#rust_type as ::boltffi::__private::Passable>::unpack(#ident)
                 };
             }],
+        }
+    }
+}
+
+pub struct NativeRecordParam {
+    receive: Receive,
+    ident: Ident,
+    rust_type: Type,
+    failure: TokenStream,
+}
+
+impl NativeRecordParam {
+    pub fn new(receive: Receive, ident: Ident, rust_type: Type, failure: TokenStream) -> Self {
+        Self {
+            receive,
+            ident,
+            rust_type,
+            failure,
+        }
+    }
+
+    pub fn tokens(self) -> Result<Tokens, Error> {
+        match self.receive {
+            Receive::ByValue => {
+                PassableParam::new(self.receive, self.ident, self.rust_type).tokens()
+            }
+            Receive::ByRef | Receive::ByMutRef => self.pointer_tokens(),
+            _ => Err(Error::UnsupportedExpansion(
+                "unknown direct record receive mode",
+            )),
+        }
+    }
+
+    fn pointer_tokens(self) -> Result<Tokens, Error> {
+        let ident = &self.ident;
+        let _rust_type = &self.rust_type;
+        let ffi_type = self.ffi_type()?;
+        Ok(Tokens {
+            items: Vec::new(),
+            ffi_parameters: vec![quote! { #ident: #ffi_type }],
+            ffi_parameter_types: vec![ffi_type],
+            conversions: vec![self.conversion()?],
+            writebacks: Vec::new(),
+            argument: quote! { #ident },
+        })
+    }
+
+    fn ffi_type(&self) -> Result<TokenStream, Error> {
+        let rust_type = &self.rust_type;
+        match self.receive {
+            Receive::ByRef => {
+                Ok(quote! { *const <#rust_type as ::boltffi::__private::Passable>::In })
+            }
+            Receive::ByMutRef => {
+                Ok(quote! { *mut <#rust_type as ::boltffi::__private::Passable>::In })
+            }
+            _ => Err(Error::UnsupportedExpansion(
+                "unknown borrowed direct record receive mode",
+            )),
+        }
+    }
+
+    fn conversion(&self) -> Result<TokenStream, Error> {
+        let ident = &self.ident;
+        let rust_type = &self.rust_type;
+        let failure = &self.failure;
+        match self.receive {
+            Receive::ByRef => Ok(quote! {
+                if #ident.is_null() {
+                    ::boltffi::__private::set_last_error(format!(
+                        "{}: null direct record pointer",
+                        stringify!(#ident)
+                    ));
+                    #failure
+                }
+                let #ident: &#rust_type = unsafe { &*(#ident as *const #rust_type) };
+            }),
+            Receive::ByMutRef => Ok(quote! {
+                if #ident.is_null() {
+                    ::boltffi::__private::set_last_error(format!(
+                        "{}: null direct record pointer",
+                        stringify!(#ident)
+                    ));
+                    #failure
+                }
+                let #ident: &mut #rust_type = unsafe { &mut *(#ident as *mut #rust_type) };
+            }),
+            _ => Err(Error::UnsupportedExpansion(
+                "unknown borrowed direct record receive mode",
+            )),
         }
     }
 }

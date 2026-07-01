@@ -4613,12 +4613,17 @@ mod tests {
                 #[cfg(not(target_arch = "wasm32"))]
                 #[unsafe(no_mangle)]
                 pub unsafe extern "C" fn boltffi_function_demo_shift(
-                    point: <Point as ::boltffi::__private::Passable>::In
+                    point: *mut <Point as ::boltffi::__private::Passable>::In
                 ) -> f64 {
-                    let mut point: Point = unsafe {
-                        <Point as ::boltffi::__private::Passable>::unpack(point)
-                    };
-                    shift(&mut point)
+                    if point.is_null() {
+                        ::boltffi::__private::set_last_error(format!(
+                            "{}: null direct record pointer",
+                            stringify!(point)
+                        ));
+                        return <f64 as ::core::default::Default>::default();
+                    }
+                    let point: &mut Point = unsafe { &mut *(point as *mut Point) };
+                    shift(point)
                 }
             }
             .to_string()

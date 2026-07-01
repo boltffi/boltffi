@@ -21,7 +21,8 @@ pub struct Renderer;
 pub fn requires_failure_return<S: RenderSurface>(param: &ParamDecl<S, IntoRust>) -> bool {
     match param.payload() {
         IncomingParam::Value(ParamPlan::Direct { ty, .. }) => {
-            matches!(S::DIRECT_RECORD_PARAMS, DirectRecordCrossing::Pointer)
+            (S::BORROWED_DIRECT_RECORD_PARAMS
+                || matches!(S::DIRECT_RECORD_PARAMS, DirectRecordCrossing::Pointer))
                 && matches!(ty, DirectValueType::Record(_))
         }
         IncomingParam::Value(ParamPlan::Encoded { .. })

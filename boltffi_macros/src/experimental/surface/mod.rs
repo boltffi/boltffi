@@ -51,6 +51,9 @@ pub trait RenderSurface:
     /// Crossing used for direct record parameters.
     const DIRECT_RECORD_PARAMS: DirectRecordCrossing;
 
+    /// Whether borrowed direct record parameters use typed native pointers.
+    const BORROWED_DIRECT_RECORD_PARAMS: bool;
+
     /// Returns the `cfg` attribute applied to generated wrapper items for this surface.
     fn cfg_attr() -> TokenStream;
 }
@@ -76,6 +79,7 @@ pub enum DirectRecordCrossing {
 impl RenderSurface for Native {
     const SCALAR_OPTION: ScalarOptionCrossing = ScalarOptionCrossing::WireEncoded;
     const DIRECT_RECORD_PARAMS: DirectRecordCrossing = DirectRecordCrossing::Value;
+    const BORROWED_DIRECT_RECORD_PARAMS: bool = true;
 
     fn cfg_attr() -> TokenStream {
         quote! { #[cfg(not(target_arch = "wasm32"))] }
@@ -85,6 +89,7 @@ impl RenderSurface for Native {
 impl RenderSurface for Wasm32 {
     const SCALAR_OPTION: ScalarOptionCrossing = ScalarOptionCrossing::NanBoxedF64;
     const DIRECT_RECORD_PARAMS: DirectRecordCrossing = DirectRecordCrossing::Pointer;
+    const BORROWED_DIRECT_RECORD_PARAMS: bool = false;
 
     fn cfg_attr() -> TokenStream {
         quote! { #[cfg(target_arch = "wasm32")] }
