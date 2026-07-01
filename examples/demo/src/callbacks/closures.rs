@@ -47,7 +47,7 @@ pub fn apply_f64_closure(f: impl Fn(f64) -> f64, v: f64) -> f64 {
 
 #[export]
 pub fn map_vec_with_closure(f: impl Fn(i32) -> i32, values: Vec<i32>) -> Vec<i32> {
-    values.into_iter().map(f).collect()
+    values.into_iter().map(|v| f(v)).collect()
 }
 
 #[export]
