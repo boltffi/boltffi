@@ -91,6 +91,14 @@ impl EncodedWritebackReceive for () {
     }
 }
 
+fn is_byte_buffer(ty: &TypeRef) -> bool {
+    match ty {
+        TypeRef::Bytes => true,
+        TypeRef::Sequence(inner) => matches!(inner.as_ref(), TypeRef::Primitive(Primitive::U8)),
+        _ => false,
+    }
+}
+
 impl ClosureInvokeScope for ForeignBody {
     fn parameters(
         signature: &Signature,
@@ -174,7 +182,7 @@ where
 
     fn encoded(
         &mut self,
-        _: &'plan TypeRef,
+        ty: &'plan TypeRef,
         _: &'plan D::Codec,
         shape: native::BufferShape,
         receive: D::Receive,
@@ -187,7 +195,7 @@ where
                     Parameter::byte_pointer(&self.name)?
                 };
                 let mut parameters = vec![pointer, Parameter::byte_length(&self.name)?];
-                if receive.needs_encoded_writeback() {
+                if receive.needs_encoded_writeback() && !is_byte_buffer(ty) {
                     parameters.push(Parameter::new(
                         format!("{}_out", self.name),
                         Type::MutPointer(Box::new(Type::Buffer)),

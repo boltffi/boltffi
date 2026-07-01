@@ -249,7 +249,8 @@ mod tests {
         assert!(
             header.contains(
                 "uint32_t boltffi_function_demo_fill(uint8_t *out_ptr, uintptr_t out_len);"
-            )
+            ),
+            "{header}"
         );
     }
 
