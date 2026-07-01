@@ -600,14 +600,15 @@ fn collect_item_exports(items: &[Item], module: &str, exports: &mut BTreeSet<Str
             {
                 if let Some(owner) = type_owner(&item_impl.self_ty) {
                     for impl_item in &item_impl.items {
-                        if let syn::ImplItem::Fn(method) = impl_item
-                            && is_public(&method.vis) {
+                        if let syn::ImplItem::Fn(method) = impl_item {
+                            if is_public(&method.vis) {
                                 exports.insert(make_export_id(
                                     module,
                                     &method.sig.ident.to_string(),
                                     Some(&owner),
                                 ));
                             }
+                        }
                     }
                 }
             }
@@ -880,10 +881,11 @@ fn module_name_for_source(src_root: &Path, path: &Path) -> AppResult<String> {
         .collect();
     if parts.last().is_some_and(|part| part == "mod.rs") {
         parts.pop();
-    } else if let Some(last) = parts.last_mut()
-        && let Some(stripped) = last.strip_suffix(".rs") {
+    } else if let Some(last) = parts.last_mut() {
+        if let Some(stripped) = last.strip_suffix(".rs") {
             *last = stripped.to_string();
         }
+    }
     Ok(parts.join("::"))
 }
 

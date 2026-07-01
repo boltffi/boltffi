@@ -99,7 +99,7 @@ impl Direction {
     )]
     pub fn from_degrees(degrees: f64) -> Self {
         let normalized = ((degrees % 360.0) + 360.0) % 360.0;
-        if !(45.0..315.0).contains(&normalized) {
+        if normalized < 45.0 || normalized >= 315.0 {
             Direction::North
         } else if normalized < 135.0 {
             Direction::East
