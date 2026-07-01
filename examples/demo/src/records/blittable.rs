@@ -198,6 +198,27 @@ pub fn add_points(a: Point, b: Point) -> Point {
     }
 }
 
+#[demo_bench_macros::demo_case(
+    "records.blittable.point.should_compute_distance_from_borrowed_point",
+    justification = "Ensure distance_from_origin borrows a direct Point without wire encoding.",
+    directions = "Call `records::blittable::distance_from_origin` through the generated binding and assert it computes the distance from a borrowed Point."
+)]
+#[export]
+pub fn distance_from_origin(point: &Point) -> f64 {
+    (point.x * point.x + point.y * point.y).sqrt()
+}
+
+#[demo_bench_macros::demo_case(
+    "records.blittable.point.should_scale_borrowed_mutable_point",
+    justification = "Ensure scale_point mutates a borrowed direct Point in place.",
+    directions = "Call `records::blittable::scale_point` through the generated binding and assert it mutates the borrowed Point in place."
+)]
+#[export]
+pub fn scale_point(point: &mut Point, factor: f64) {
+    point.x *= factor;
+    point.y *= factor;
+}
+
 #[data]
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub struct Color {

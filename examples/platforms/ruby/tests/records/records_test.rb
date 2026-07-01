@@ -21,4 +21,21 @@ class RecordsTest < DemoTestCase
     assert_in_delta 3.0, point.x, 1e-9
     assert_in_delta 4.0, point.y, 1e-9
   end
+
+  def test_borrowed_direct_record_parameter
+    demo_case "case:records.blittable.point.should_compute_distance_from_borrowed_point"
+    point = Demo.make_point(3.0, 4.0)
+
+    assert_in_delta 5.0, Demo.distance_from_origin(point), 1e-9
+  end
+
+  def test_mutable_borrowed_direct_record_parameter
+    demo_case "case:records.blittable.point.should_scale_borrowed_mutable_point"
+    point = Demo.make_point(3.0, 4.0)
+
+    Demo.scale_point(point, 2.0)
+
+    assert_in_delta 6.0, point.x, 1e-9
+    assert_in_delta 8.0, point.y, 1e-9
+  end
 end
