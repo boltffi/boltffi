@@ -419,6 +419,47 @@ mod tests {
     }
 
     #[test]
+    fn ruby_target_renders_optional_encoded_record_fields() {
+        let output = target()
+            .render(&bindings(
+                r#"
+                #[data]
+                pub struct Sniffed {
+                    pub name: Option<String>,
+                    pub major: Option<u32>,
+                    pub mobile: Option<bool>,
+                    pub bytes: Option<Vec<u8>>,
+                }
+
+                #[export]
+                pub fn sniff() -> Sniffed {
+                    Sniffed { name: None, major: Some(120), mobile: Some(false), bytes: None }
+                }
+                "#,
+            ))
+            .expect("Ruby target should render optional encoded record fields");
+        let extension = extension(&output);
+
+        assert!(extension.contains("int name_present;"));
+        assert!(extension.contains("int major_present;"));
+        assert!(extension.contains("int mobile_present;"));
+        assert!(extension.contains("int bytes_present;"));
+        assert!(extension.contains(
+            "if (!boltffi_ruby_wire_read_option_tag(&reader, &data->name_present)) goto fail;"
+        ));
+        assert!(extension.contains(
+            "if (data->name_present) { if (!boltffi_ruby_wire_read_string(&reader, &data->name_ptr, &data->name_len)) goto fail; }"
+        ));
+        assert!(extension.contains(
+            "if (data->major_present) { if (!boltffi_ruby_wire_read_u32(&reader, &data->major)) goto fail; }"
+        ));
+        assert!(extension.contains("if (!data->name_present) return Qnil;"));
+        assert!(extension.contains("if (!data->major_present) return Qnil;"));
+        assert!(extension.contains("if (!data->mobile_present) return Qnil;"));
+        assert!(extension.contains("if (!data->bytes_present) return Qnil;"));
+    }
+
+    #[test]
     fn ruby_target_renders_direct_record_returning_function() {
         let output = target()
             .render(&bindings(
