@@ -114,7 +114,12 @@ impl Function {
             .iter()
             .enumerate()
             .map(|(index, param)| {
-                ParamConversion::from_parameter(&arg_accessor(index, variadic), param)
+                ParamConversion::from_parameter(
+                    &arg_accessor(index, variadic),
+                    param,
+                    bridge,
+                    context,
+                )
             })
             .collect::<Result<Vec<_>>>()?;
         let call_args = params
@@ -175,7 +180,12 @@ pub struct ParamConversion {
 }
 
 impl ParamConversion {
-    fn from_parameter(accessor: &str, parameter: &ParamDecl<Native, IntoRust>) -> Result<Self> {
+    fn from_parameter(
+        accessor: &str,
+        parameter: &ParamDecl<Native, IntoRust>,
+        bridge: &CBridgeContract,
+        context: &RenderContext<Native>,
+    ) -> Result<Self> {
         let name = Name::new(parameter.name()).function();
         match parameter.payload() {
             IncomingParam::Value(ParamPlan::Direct {
@@ -190,6 +200,10 @@ impl ParamConversion {
                 call_args: vec![name.to_owned()],
                 cleanup: Vec::new(),
             }),
+            IncomingParam::Value(ParamPlan::Direct {
+                ty: DirectValueType::Record(record),
+                receive,
+            }) => Self::direct_record(accessor, &name, *record, *receive, bridge, context),
             IncomingParam::Value(ParamPlan::Encoded {
                 ty: TypeRef::String | TypeRef::Bytes,
                 shape: native::BufferShape::Slice,
@@ -221,6 +235,47 @@ impl ParamConversion {
             call_args: vec![name.to_owned()],
             cleanup: Vec::new(),
         })
+    }
+
+    fn direct_record(
+        accessor: &str,
+        name: &str,
+        record: boltffi_binding::RecordId,
+        receive: Receive,
+        bridge: &CBridgeContract,
+        context: &RenderContext<Native>,
+    ) -> Result<Self> {
+        let symbols = RecordSymbols::from_record_id(record, bridge, context)?;
+        let c_type = symbols.c_type.as_deref().ok_or(Error::UnsupportedTarget {
+            target: "ruby",
+            shape: "direct record without C type",
+        })?;
+        match receive {
+            Receive::ByValue => Ok(Self {
+                declarations: vec![format!(
+                    "{c_type} {name} = {}({accessor});",
+                    symbols.unwrapper
+                )],
+                call_args: vec![name.to_owned()],
+                cleanup: Vec::new(),
+            }),
+            Receive::ByRef | Receive::ByMutRef => Ok(Self {
+                declarations: vec![
+                    format!("VALUE {name}_value = {accessor};"),
+                    format!("{c_type} *{name} = NULL;"),
+                    format!(
+                        "TypedData_Get_Struct({name}_value, {c_type}, &{}, {name});",
+                        symbols.data_type
+                    ),
+                ],
+                call_args: vec![name.to_owned()],
+                cleanup: vec![format!("RB_GC_GUARD({name}_value);")],
+            }),
+            _ => Err(Error::UnsupportedTarget {
+                target: "ruby",
+                shape: "unknown direct record receive mode",
+            }),
+        }
     }
 
     /// Builds the length-prefixed wire buffer for a borrowed `&str`/`&[u8]`

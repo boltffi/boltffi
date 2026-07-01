@@ -451,6 +451,69 @@ mod tests {
     }
 
     #[test]
+    fn ruby_target_renders_direct_record_borrowed_parameters() {
+        let output = target()
+            .render(&bindings(
+                r#"
+                #[repr(C)]
+                #[data]
+                pub struct Point {
+                    pub x: f64,
+                    pub y: f64,
+                }
+
+                #[export]
+                pub fn distance(point: &Point) -> f64 {
+                    0.0
+                }
+
+                #[export]
+                pub fn scale(point: &mut Point, factor: f64) {
+                    point.x *= factor;
+                }
+                "#,
+            ))
+            .expect("Ruby target should render borrowed direct record params");
+        let extension = extension(&output);
+
+        assert!(extension.contains("VALUE point_value = arg0;"));
+        assert!(extension.contains("___Point *point = NULL;"));
+        assert!(extension.contains(
+            "TypedData_Get_Struct(point_value, ___Point, &boltffi_ruby_point_type, point);"
+        ));
+        assert!(extension.contains("double _ffi_ret = boltffi_function_demo_distance(point);"));
+        assert!(extension.contains("boltffi_function_demo_scale(point, factor);"));
+        assert!(extension.contains("RB_GC_GUARD(point_value);"));
+        assert!(!extension.contains("FfiBuf_u8 point"));
+        assert!(!extension.contains("point_out"));
+    }
+
+    #[test]
+    fn ruby_target_renders_direct_record_by_value_parameter() {
+        let output = target()
+            .render(&bindings(
+                r#"
+                #[repr(C)]
+                #[data]
+                pub struct Point {
+                    pub x: f64,
+                    pub y: f64,
+                }
+
+                #[export]
+                pub fn echo(point: Point) -> Point {
+                    point
+                }
+                "#,
+            ))
+            .expect("Ruby target should render by-value direct record param");
+        let extension = extension(&output);
+
+        assert!(extension.contains("___Point point = boltffi_ruby_unwrap_point(arg0);"));
+        assert!(extension.contains("___Point _ffi_ret = boltffi_function_demo_echo(point);"));
+    }
+
+    #[test]
     fn ruby_target_rejects_mutable_bytes_parameter() {
         // Mutable byte slices need a borrowed write-back ABI that does not exist
         // yet; until then `&mut [u8]` is unsupported rather than silently copied.
