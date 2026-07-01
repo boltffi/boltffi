@@ -166,6 +166,14 @@ static int boltffi_ruby_wire_read_bool(boltffi_ruby_wire_reader *reader, int *ou
     return 1;
 }
 
+static int boltffi_ruby_wire_read_option_tag(boltffi_ruby_wire_reader *reader, int *out) {
+    uint8_t value;
+    if (!boltffi_ruby_wire_read_u8(reader, &value)) return 0;
+    if (value > 1) return 0;
+    *out = value != 0;
+    return 1;
+}
+
 static int boltffi_ruby_wire_read_u16(boltffi_ruby_wire_reader *reader, uint16_t *out) {
     const uint8_t *bytes;
     if (!boltffi_ruby_wire_read_exact(reader, sizeof(uint16_t), &bytes)) return 0;
