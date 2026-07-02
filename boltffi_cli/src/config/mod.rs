@@ -861,6 +861,11 @@ impl Config {
         self.targets.ruby.ractor_safe
     }
 
+    /// Returns extra Ruby source files to include in the generated package.
+    pub fn ruby_extra_files(&self) -> &[PathBuf] {
+        &self.targets.ruby.extra_files
+    }
+
     pub fn ruby_pack_output(&self) -> PathBuf {
         self.targets
             .ruby

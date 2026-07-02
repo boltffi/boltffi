@@ -750,6 +750,22 @@ boltffi pack python --python python3.12 --python python3.13
 
 If you omit `interpreters`, BoltFFI falls back to the first available default interpreter it finds on the host.
 
+## Ruby Configuration
+
+The `[targets.ruby]` section controls generated Ruby gem output.
+
+```toml
+[targets.ruby]
+enabled = true
+output = "dist/ruby"
+ractor_safe = true
+extra_files = ["src/ruby/compat.rb"]
+```
+
+`extra_files` lets you ship hand-written Ruby files alongside generated Ruby output. Each path is relative to the selected crate root and must point to a `.rb` file. BoltFFI copies these files under `lib/<crate_stem>/`, adds `require_relative` lines to the generated `lib/<crate_stem>.rb`, and includes the files in the generated gemspec.
+
+Files under a `ruby/` directory preserve the path below that directory. For example, `src/ruby/compat/foo.rb` is emitted as `lib/<crate_stem>/compat/foo.rb` and required as `require_relative "<crate_stem>/compat/foo"`.
+
 ## Complete Example
 
 Here's a full configuration for a library that targets all platforms:
@@ -810,6 +826,11 @@ level = "s"
 [targets.python]
 enabled = true
 module_name = "mylib_runtime"
+
+[targets.ruby]
+enabled = true
+output = "dist/ruby"
+extra_files = ["src/ruby/compat.rb"]
 
 [targets.python.wheel]
 output = "dist/python/wheels"

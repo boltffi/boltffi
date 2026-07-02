@@ -70,6 +70,17 @@ pub struct RubyConfig {
     /// unsynchronized global mutable state, which BoltFFI cannot verify.
     #[serde(default)]
     pub ractor_safe: bool,
+    /// Extra Ruby source files (`.rb`) to include in the generated package.
+    /// Each path is relative to the crate root and is copied into the output
+    /// under `lib/<crate_stem>/`. The generator adds `require_relative` lines
+    /// to `lib/<crate>.rb` and `spec.files` entries to the gemspec
+    /// automatically.
+    ///
+    /// All extra files land under `lib/` so the gemspec's `require_paths`
+    /// stays at the RubyGems default `["lib"]`.
+    /// See: <https://guides.rubygems.org/specification-reference/#require_paths=>
+    #[serde(default)]
+    pub extra_files: Vec<PathBuf>,
     #[serde(default, alias = "pack")]
     pub gem: RubyGemPackConfig,
 }
