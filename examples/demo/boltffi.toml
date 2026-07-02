@@ -69,3 +69,6 @@ output = "../platforms/csharp/dist"
 enabled = true
 output = "../platforms/ruby/dist"
 ractor_safe = true
+# Include hand-written Ruby files under lib/<crate_stem>/ and require them
+# from the generated lib/<crate_stem>.rb entrypoint.
+# extra_files = ["src/ruby/compat.rb"]
