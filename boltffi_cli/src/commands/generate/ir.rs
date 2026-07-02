@@ -148,6 +148,7 @@ fn generate_ruby(config: &Config, options: &GenerateOptions) -> Result<()> {
         .cargo_args(cargo_args)
         .coverage_mode(CoverageMode::Partial)
         .ruby_ractor_safe(config.ruby_ractor_safe())
+        .ruby_extra_files(config.ruby_extra_files().to_vec())
         .render(Target::Ruby)
         .and_then(|output| {
             print_coverage("ruby", &output);

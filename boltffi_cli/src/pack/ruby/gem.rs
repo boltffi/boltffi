@@ -3,7 +3,7 @@ use super::plan::RubyPackagingPlan;
 use super::platform::RubyPackTarget;
 use crate::cli::{CliError, Result};
 use crate::reporter::Step;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 pub struct RubyGemBuilder<'a> {
@@ -52,6 +52,37 @@ impl<'a> RubyGemBuilder<'a> {
             })
     }
 
+    fn extra_lib_files(&self) -> Result<Vec<PathBuf>> {
+        let extra_root = self
+            .layout
+            .source_root
+            .join("lib")
+            .join(&self.plan.crate_name);
+        if !extra_root.exists() {
+            return Ok(Vec::new());
+        }
+
+        let mut files = Vec::new();
+        collect_rb_files(&extra_root, &mut files)?;
+        files.sort();
+
+        files
+            .into_iter()
+            .map(|path| {
+                path.strip_prefix(&self.layout.source_root)
+                    .map(Path::to_path_buf)
+                    .map_err(|_| CliError::CommandFailed {
+                        command: format!(
+                            "extra Ruby file `{}` is outside Ruby output root `{}`",
+                            path.display(),
+                            self.layout.source_root.display()
+                        ),
+                        status: None,
+                    })
+            })
+            .collect()
+    }
+
     pub fn build_gem(&self, target: &RubyPackTarget, _step: &Step) -> Result<PathBuf> {
         let source_gemspec_path = self.source_gemspec_path()?;
 
@@ -74,6 +105,9 @@ impl<'a> RubyGemBuilder<'a> {
             if line.contains("spec.files =") {
                 new_lines.push("  spec.files = [".to_string());
                 new_lines.push(format!("    \"lib/{}.rb\",", self.plan.crate_name));
+                for extra_file in self.extra_lib_files()? {
+                    new_lines.push(format!("    \"{}\",", extra_file.to_string_lossy()));
+                }
                 new_lines.push(format!("    \"ext/{}/_native.c\",", self.plan.crate_name));
                 new_lines.push(format!("    \"ext/{}/boltffi.h\",", self.plan.crate_name));
                 new_lines.push(format!("    \"ext/{}/extconf.rb\",", self.plan.crate_name));
@@ -122,6 +156,19 @@ impl<'a> RubyGemBuilder<'a> {
             to: rb_dest,
             source: e,
         })?;
+
+        for extra_file in self.extra_lib_files()? {
+            let extra_src = self.layout.source_root.join(&extra_file);
+            let extra_dest = staging_dir.join(&extra_file);
+            if let Some(parent) = extra_dest.parent() {
+                std::fs::create_dir_all(parent).ok();
+            }
+            std::fs::copy(&extra_src, &extra_dest).map_err(|e| CliError::CopyFailed {
+                from: extra_src,
+                to: extra_dest,
+                source: e,
+            })?;
+        }
 
         let c_src = self.layout.ext_dir(self.plan).join("_native.c");
         let c_dest = staging_dir
@@ -234,5 +281,79 @@ impl<'a> RubyGemBuilder<'a> {
             self.plan.gem_name, self.plan.version, target.rubygems_platform
         ));
         Ok(gem_file_path)
+    }
+}
+
+fn collect_rb_files(dir: &Path, files: &mut Vec<PathBuf>) -> Result<()> {
+    for entry in std::fs::read_dir(dir).map_err(|e| CliError::ReadFailed {
+        path: dir.to_path_buf(),
+        source: e,
+    })? {
+        let entry = entry.map_err(|e| CliError::ReadFailed {
+            path: dir.to_path_buf(),
+            source: e,
+        })?;
+        let path = entry.path();
+        if path.is_dir() {
+            collect_rb_files(&path, files)?;
+        } else if path.extension().and_then(|ext| ext.to_str()) == Some("rb") {
+            files.push(path);
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_dir() -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("boltffi-ruby-pack-{unique}"));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn plan(source_directory: PathBuf) -> RubyPackagingPlan {
+        RubyPackagingPlan {
+            targets: Vec::new(),
+            source_directory,
+            crate_name: "demo".to_string(),
+            gem_name: "demo".to_string(),
+            version: "0.1.0".to_string(),
+            cargo_manifest_path: PathBuf::from("Cargo.toml"),
+            library_source_path: PathBuf::from("src/lib.rs"),
+            package_selector: None,
+            cargo_zigbuild: None,
+            release: false,
+            cargo_command_args: Vec::new(),
+            toolchain_selector: None,
+        }
+    }
+
+    #[test]
+    fn extra_lib_files_discovers_nested_ruby_files() {
+        let root = temp_dir();
+        let source_root = root.join("ruby");
+        std::fs::create_dir_all(source_root.join("lib/demo/compat")).unwrap();
+        std::fs::write(source_root.join("lib/demo.rb"), "# generated\n").unwrap();
+        std::fs::write(source_root.join("lib/demo/compat/foo.rb"), "# extra\n").unwrap();
+        std::fs::write(source_root.join("lib/demo/compat/skip.txt"), "nope\n").unwrap();
+
+        let plan = plan(root.clone());
+        let layout = RubyStagingLayout {
+            source_root: source_root.clone(),
+            target_root: root.join("pkg"),
+        };
+        let builder = RubyGemBuilder::new(&plan, &layout);
+
+        let files = builder.extra_lib_files().unwrap();
+        assert_eq!(files, vec![PathBuf::from("lib/demo/compat/foo.rb")]);
+
+        std::fs::remove_dir_all(root).ok();
     }
 }
