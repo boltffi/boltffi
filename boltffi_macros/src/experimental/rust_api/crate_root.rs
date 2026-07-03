@@ -178,6 +178,7 @@ impl RootModuleTypes {
             | TypeExpr::Unit
             | TypeExpr::String
             | TypeExpr::Str
+            | TypeExpr::InternedString { .. }
             | TypeExpr::Builtin(_)
             | TypeExpr::SelfType
             | TypeExpr::Parameter(_) => {}

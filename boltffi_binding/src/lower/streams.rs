@@ -161,6 +161,7 @@ fn validate_item_type(type_expr: &TypeExpr) -> Result<(), LowerError> {
         TypeExpr::Primitive(_)
         | TypeExpr::String
         | TypeExpr::Str
+        | TypeExpr::InternedString { .. }
         | TypeExpr::Builtin(_)
         | TypeExpr::Record { .. }
         | TypeExpr::Enum { .. }

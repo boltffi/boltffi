@@ -7,6 +7,7 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 pub mod callback;
 pub mod custom_ffi;
 pub mod handle;
+pub mod interned_string;
 pub mod passable;
 pub mod ringbuffer;
 pub mod runtime;
@@ -18,7 +19,7 @@ pub mod wire;
 
 pub use boltffi_macros::{
     Data, FfiType, custom_ffi, custom_type, data, default, error, export, ffi_export, ffi_stream,
-    ffi_trait, name, skip,
+    ffi_trait, interned_string_pool, name, skip,
 };
 #[cfg(target_arch = "wasm32")]
 pub use callback::WasmCallbackOwner;
@@ -28,6 +29,7 @@ pub use callback::{
 };
 pub use custom_ffi::CustomFfiConvertible;
 pub use handle::HandleBox;
+pub use interned_string::{InternedString, InternedStringPool, InternedStringRepr};
 pub use passable::{Passable, VecTransport, WirePassable};
 pub use ringbuffer::SpscRingBuffer;
 pub use runtime::async_callback;

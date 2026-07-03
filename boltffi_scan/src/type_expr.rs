@@ -86,6 +86,7 @@ impl<'a> Scanner<'a> {
             .ok_or_else(|| ScanError::unsupported_type(source))?;
         match standard_type {
             StandardType::String => Ok(TypeExpr::String),
+            StandardType::InternedString => self.interned_string(type_path, segment, source),
             StandardType::Vec => self
                 .single_type_argument(segment, source)
                 .and_then(|argument| self.scan(argument))
@@ -148,6 +149,7 @@ impl<'a> Scanner<'a> {
             | SourceType::Declared(DeclaredType::Enum(_))
             | SourceType::Declared(DeclaredType::Trait(_))
             | SourceType::Declared(DeclaredType::Class(_))
+            | SourceType::Declared(DeclaredType::InternedStringPool(_))
             | SourceType::Unregistered => Err(ScanError::unsupported_type(source)),
             SourceType::Declared(DeclaredType::Custom(_)) => Ok(None),
             SourceType::External(path) => {
@@ -197,6 +199,7 @@ impl<'a> Scanner<'a> {
                 Ok(TypeExpr::custom(id.clone(), path))
             }
             SourceType::Declared(DeclaredType::Trait(_))
+            | SourceType::Declared(DeclaredType::InternedStringPool(_))
             | SourceType::Unregistered
             | SourceType::External(_)
             | SourceType::Unknown => Err(ScanError::unsupported_type(source)),
@@ -394,6 +397,36 @@ impl<'a> Scanner<'a> {
         }
     }
 
+    fn interned_string(
+        &self,
+        type_path: &syn::TypePath,
+        segment: &syn::PathSegment,
+        source: &syn::Type,
+    ) -> Result<TypeExpr, ScanError> {
+        let pool = self.single_type_argument(segment, source)?;
+        let syn::Type::Path(pool_path) = unwrapped(pool) else {
+            return Err(ScanError::unsupported_type(source));
+        };
+        if pool_path.qself.is_some()
+            || pool_path
+                .path
+                .segments
+                .iter()
+                .any(|segment| !matches!(segment.arguments, syn::PathArguments::None))
+        {
+            return Err(ScanError::unsupported_type(source));
+        }
+        let static_values = self
+            .declared_types
+            .resolve_interned_string_pool(self.scope, &pool_path.path)?
+            .ok_or_else(|| ScanError::unsupported_type(source))?
+            .to_vec();
+        Ok(TypeExpr::interned_string(
+            interned_string_source_path(&type_path.path, &pool_path.path),
+            static_values,
+        ))
+    }
+
     fn single_type_argument<'segment>(
         &self,
         segment: &'segment syn::PathSegment,
@@ -470,6 +503,19 @@ fn ast_path_without_arguments(path: &syn::Path) -> Path {
         path_root(path),
         path_segments_without_arguments(path).collect(),
     )
+}
+
+fn interned_string_source_path(type_path: &syn::Path, pool_path: &syn::Path) -> Path {
+    let mut segments = path_segments_without_arguments(type_path).collect::<Vec<_>>();
+    if let Some(last) = segments.last_mut() {
+        *last = PathSegment::with_arguments(
+            last.name.clone(),
+            vec![GenericArgument::Const(ConstExpr::Raw(
+                pool_path.to_token_stream().to_string().replace(' ', ""),
+            ))],
+        );
+    }
+    Path::new(path_root(type_path), segments)
 }
 
 fn path_root(path: &syn::Path) -> PathRoot {
@@ -568,6 +614,7 @@ fn ast_generic_argument(
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum StandardType {
     String,
+    InternedString,
     Vec,
     Option,
     Result,
@@ -582,6 +629,7 @@ impl StandardType {
     fn from_leaf(leaf: &str) -> Option<Self> {
         Some(match leaf {
             "String" => Self::String,
+            "InternedString" => Self::InternedString,
             "Vec" => Self::Vec,
             "Option" => Self::Option,
             "Result" => Self::Result,
@@ -604,6 +652,11 @@ impl StandardType {
     fn paths(self) -> &'static [&'static str] {
         match self {
             Self::String => &["String", "std::string::String", "alloc::string::String"],
+            Self::InternedString => &[
+                "InternedString",
+                "boltffi::InternedString",
+                "boltffi_core::InternedString",
+            ],
             Self::Vec => &["Vec", "std::vec::Vec", "alloc::vec::Vec"],
             Self::Option => &["Option", "std::option::Option", "core::option::Option"],
             Self::Result => &["Result", "std::result::Result", "core::result::Result"],

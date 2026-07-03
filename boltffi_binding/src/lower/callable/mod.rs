@@ -712,6 +712,7 @@ pub fn substitute_self_type(
         | TypeExpr::Unit
         | TypeExpr::String
         | TypeExpr::Str
+        | TypeExpr::InternedString { .. }
         | TypeExpr::Builtin(_)
         | TypeExpr::Record { .. }
         | TypeExpr::Enum { .. }

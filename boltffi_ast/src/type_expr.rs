@@ -34,6 +34,13 @@ pub enum TypeExpr {
     String,
     /// The borrowed `str` type.
     Str,
+    /// A `boltffi::InternedString<Pool>` value.
+    InternedString {
+        /// Path as written at this use site.
+        path: Path,
+        /// Static values addressable by wire id.
+        static_values: Vec<String>,
+    },
     /// A BoltFFI-owned builtin value type.
     Builtin(BuiltinType),
     /// A struct exported as a BoltFFI record.
@@ -128,6 +135,14 @@ impl TypeExpr {
     /// Builds a builtin type expression.
     pub const fn builtin(kind: BuiltinType) -> Self {
         Self::Builtin(kind)
+    }
+
+    /// Builds an interned UTF-8 string type expression.
+    pub fn interned_string(path: Path, static_values: Vec<String>) -> Self {
+        Self::InternedString {
+            path,
+            static_values,
+        }
     }
 
     /// Builds a `dyn Trait` expression for a declared callback trait.

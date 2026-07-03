@@ -25,6 +25,11 @@ pub enum TypeRef {
     Primitive(Primitive),
     /// UTF-8 string value.
     String,
+    /// UTF-8 string value with a backend-provided static intern table.
+    InternedString {
+        /// Static values addressable by wire id before falling back to dynamic bytes.
+        static_values: Vec<String>,
+    },
     /// Byte buffer value.
     Bytes,
     /// Record reference.
@@ -305,6 +310,7 @@ impl TypeRefWalker {
         match ty {
             TypeRef::Primitive(primitive) => renderer.primitive(*primitive),
             TypeRef::String => renderer.string(),
+            TypeRef::InternedString { .. } => renderer.string(),
             TypeRef::Bytes => renderer.bytes(),
             TypeRef::Record(id) => renderer.record(*id),
             TypeRef::Enum(id) => renderer.enumeration(*id),

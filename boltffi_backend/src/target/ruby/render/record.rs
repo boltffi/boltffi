@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use boltffi_binding::{
     DirectRecordDecl, EncodedRecordDecl, FieldKey, Native, Primitive, RecordDecl, RecordId, TypeRef,
 };
@@ -23,7 +25,7 @@ pub fn encoded_record_supported(record: &EncodedRecordDecl<Native>) -> bool {
 
 fn encoded_field_supported(ty: &TypeRef) -> bool {
     match ty {
-        TypeRef::String | TypeRef::Bytes => true,
+        TypeRef::String | TypeRef::Bytes | TypeRef::InternedString { .. } => true,
         TypeRef::Primitive(primitive) => wire_read_fn(*primitive).is_ok(),
         TypeRef::Optional(inner) => {
             !matches!(inner.as_ref(), TypeRef::Optional(_)) && encoded_field_supported(inner)
@@ -190,11 +192,14 @@ fn render_encoded(record: &EncodedRecordDecl<Native>, symbols: &Symbols) -> Resu
     let ident = &symbols.ident;
     let c_type = symbols.c_type.as_deref().expect("encoded c type");
     let mut field_defs = Vec::new();
+    let mut support_defs = Vec::new();
     let mut free_lines = Vec::new();
     let mut size_lines = Vec::new();
     let mut init_lines = Vec::new();
+    let mut extension_init_lines = Vec::new();
     let mut getter_lines = Vec::new();
     let mut decode_lines = Vec::new();
+    let mut needs_interned_error = false;
 
     for field in record.fields() {
         add_encoded_field(
@@ -205,11 +210,14 @@ fn render_encoded(record: &EncodedRecordDecl<Native>, symbols: &Symbols) -> Resu
             &symbols.data_type,
             EncodedFieldParts {
                 field_defs: &mut field_defs,
+                support_defs: &mut support_defs,
                 free_lines: &mut free_lines,
                 size_lines: &mut size_lines,
                 init_lines: &mut init_lines,
+                extension_init_lines: &mut extension_init_lines,
                 getter_lines: &mut getter_lines,
                 decode_lines: &mut decode_lines,
+                needs_interned_error: &mut needs_interned_error,
             },
         )?;
     }
@@ -223,6 +231,7 @@ fn render_encoded(record: &EncodedRecordDecl<Native>, symbols: &Symbols) -> Resu
         "typedef struct {{\n{}\n}} {c_type};\n",
         field_defs.join("\n")
     ));
+    out.push_str(&support_defs.join(""));
     out.push_str(&format!("static VALUE {};\n", symbols.class_var));
     out.push_str(&format!(
         "static void boltffi_ruby_{ident}_free(void *ptr) {{\n    {c_type} *data = ({c_type} *)ptr;\n    if (data != NULL) {{\n{}\n#if !BOLTFFI_RUBY_HAS_TYPED_EMBEDDABLE\n        xfree(data);\n#endif\n    }}\n}}\n",
@@ -241,12 +250,27 @@ fn render_encoded(record: &EncodedRecordDecl<Native>, symbols: &Symbols) -> Resu
         symbols.class_var, symbols.data_type
     ));
     out.push_str(&getter_lines.join(""));
+    let interned_error_decl = if needs_interned_error {
+        "    int interned_error = 0;\n"
+    } else {
+        ""
+    };
+    let interned_error_label = if needs_interned_error {
+        format!(
+            "invalid_interned:\n{}\n    boltffi_free_buf(buffer);\n    rb_raise(rb_eRuntimeError, interned_error == 1 ? \"native function returned invalid interned string tag\" : \"native function returned invalid interned string id\");\n",
+            free_lines.join("\n")
+        )
+    } else {
+        String::new()
+    };
     out.push_str(&format!(
-        "static VALUE {}(FfiBuf_u8 buffer) {{\n    {c_type} stack_data;\n    {c_type} *data = &stack_data;\n{}\n    boltffi_ruby_wire_reader reader = boltffi_ruby_wire_reader_new(buffer);\n{}\n    boltffi_free_buf(buffer);\n    int error = 0;\n    VALUE obj = rb_protect(boltffi_ruby_{ident}_from_stack, (VALUE)(uintptr_t)&stack_data, &error);\n    if (error) {{\n{}\n        rb_jump_tag(error);\n    }}\n    RB_GC_GUARD(obj);\n    return obj;\nfail:\n{}\n    boltffi_free_buf(buffer);\n    rb_raise(rb_eRuntimeError, \"native function returned truncated {} buffer\");\n}}\n",
+        "static VALUE {}(FfiBuf_u8 buffer) {{\n    {c_type} stack_data;\n    {c_type} *data = &stack_data;\n{}\n{}    boltffi_ruby_wire_reader reader = boltffi_ruby_wire_reader_new(buffer);\n{}\n    boltffi_free_buf(buffer);\n    int error = 0;\n    VALUE obj = rb_protect(boltffi_ruby_{ident}_from_stack, (VALUE)(uintptr_t)&stack_data, &error);\n    if (error) {{\n{}\n        rb_jump_tag(error);\n    }}\n    RB_GC_GUARD(obj);\n    return obj;\n{}fail:\n{}\n    boltffi_free_buf(buffer);\n    rb_raise(rb_eRuntimeError, \"native function returned truncated {} buffer\");\n}}\n",
         symbols.decoder.as_ref().expect("decoder"),
         init_lines.iter().map(|line| format!("    {line}")).collect::<Vec<_>>().join("\n"),
+        interned_error_decl,
         decode_lines.iter().map(|line| format!("    {line}")).collect::<Vec<_>>().join("\n"),
         free_lines.join("\n"),
+        interned_error_label,
         free_lines.join("\n"),
         symbols.class_name
     ));
@@ -254,6 +278,7 @@ fn render_encoded(record: &EncodedRecordDecl<Native>, symbols: &Symbols) -> Resu
         "/* boltffi:ruby:record:init {} */\n",
         symbols.ident
     ));
+    out.push_str(&extension_init_lines.join(""));
     out.push_str(&format!(
         "    {} = rb_define_class_under(mod, \"{}\", rb_cObject);\n    rb_undef_alloc_func({});\n",
         symbols.class_var, symbols.class_name, symbols.class_var
@@ -271,11 +296,14 @@ fn render_encoded(record: &EncodedRecordDecl<Native>, symbols: &Symbols) -> Resu
 
 struct EncodedFieldParts<'a> {
     field_defs: &'a mut Vec<String>,
+    support_defs: &'a mut Vec<String>,
     free_lines: &'a mut Vec<String>,
     size_lines: &'a mut Vec<String>,
     init_lines: &'a mut Vec<String>,
+    extension_init_lines: &'a mut Vec<String>,
     getter_lines: &'a mut Vec<String>,
     decode_lines: &'a mut Vec<String>,
+    needs_interned_error: &'a mut bool,
 }
 
 fn add_encoded_field(
@@ -373,6 +401,59 @@ fn add_encoded_field_inner(
                 "static VALUE boltffi_ruby_{ident}_{name}(VALUE self) {{\n    {c_type} *data;\n    TypedData_Get_Struct(self, {c_type}, &{data_type}, data);\n{nil_guard}    VALUE result = rb_str_new((const char *)data->{name}_ptr, (long)data->{name}_len);\n    RB_GC_GUARD(self);\n    return result;\n}}\n"
             ));
         }
+        TypeRef::InternedString { static_values } => {
+            validate_interned_static_values(static_values)?;
+            let table = format!("boltffi_ruby_{ident}_{name}_interned_values");
+            let read_fn = format!("boltffi_ruby_{ident}_{name}_read_interned");
+            let count = static_values.len();
+            let table_len = count.max(1);
+            parts.field_defs.push(format!("    int {name}_static;"));
+            parts.field_defs.push(format!("    uint32_t {name}_id;"));
+            parts.field_defs.push(format!("    char *{name}_ptr;"));
+            parts.field_defs.push(format!("    uintptr_t {name}_len;"));
+            parts.free_lines.push(format!(
+                "    if (!data->{name}_static) free(data->{name}_ptr);"
+            ));
+            parts.size_lines.push(format!(
+                "    if (!data->{name}_static) size += data->{name}_len;"
+            ));
+            parts
+                .init_lines
+                .push(format!("    data->{name}_static = 1;"));
+            parts.init_lines.push(format!("    data->{name}_id = 0;"));
+            parts
+                .init_lines
+                .push(format!("    data->{name}_ptr = NULL;"));
+            parts.init_lines.push(format!("    data->{name}_len = 0;"));
+            parts
+                .support_defs
+                .push(format!("static VALUE {table}[{table_len}];\n"));
+            parts.support_defs.push(format!(
+                "static int {read_fn}(boltffi_ruby_wire_reader *reader, {c_type} *data) {{\n    uint8_t tag;\n    if (!boltffi_ruby_wire_read_u8(reader, &tag)) return 0;\n    data->{name}_static = 0;\n    data->{name}_id = 0;\n    data->{name}_ptr = NULL;\n    data->{name}_len = 0;\n    if (tag == 0) {{\n        uint32_t id;\n        if (!boltffi_ruby_wire_read_u32(reader, &id)) return 0;\n        if (id >= {count}) return 3;\n        data->{name}_static = 1;\n        data->{name}_id = id;\n        return 1;\n    }}\n    if (tag == 1) {{\n        if (!boltffi_ruby_wire_read_string(reader, &data->{name}_ptr, &data->{name}_len)) return 0;\n        return 1;\n    }}\n    return 2;\n}}\n"
+            ));
+            for (index, value) in static_values.iter().enumerate() {
+                let literal = c_string_literal(value);
+                parts.extension_init_lines.push(format!(
+                    "    rb_global_variable(&{table}[{index}]);\n    {table}[{index}] = rb_utf8_str_new_static({literal}, sizeof({literal}) - 1);\n    rb_obj_freeze({table}[{index}]);\n"
+                ));
+            }
+            let read = format!(
+                "int {name}_status = {read_fn}(&reader, data); if ({name}_status == 0) goto fail; if ({name}_status == 2) {{ interned_error = 1; goto invalid_interned; }} if ({name}_status == 3) {{ interned_error = 2; goto invalid_interned; }}"
+            );
+            parts.decode_lines.push(match &guard {
+                Some(guard) => format!("    if ({guard}) {{ {read} }}"),
+                None => format!("    {read}"),
+            });
+            *parts.needs_interned_error = true;
+            let nil_guard = if optional {
+                format!("    if (!data->{name}_present) return Qnil;\n")
+            } else {
+                Default::default()
+            };
+            parts.getter_lines.push(format!(
+                "static VALUE boltffi_ruby_{ident}_{name}(VALUE self) {{\n    {c_type} *data;\n    TypedData_Get_Struct(self, {c_type}, &{data_type}, data);\n{nil_guard}    VALUE result;\n    if (data->{name}_static) {{\n        if (data->{name}_id >= {count}) rb_raise(rb_eRuntimeError, \"native function returned invalid interned string id\");\n        result = {table}[data->{name}_id];\n    }} else {{\n        result = rb_utf8_str_new(data->{name}_ptr, (long)data->{name}_len);\n        RB_ENC_CODERANGE_SET(result, RUBY_ENC_CODERANGE_VALID);\n        rb_obj_freeze(result);\n    }}\n    RB_GC_GUARD(self);\n    return result;\n}}\n"
+            ));
+        }
         TypeRef::Primitive(primitive) => {
             let c_field_type = primitive_c_type(*primitive)?;
             parts.field_defs.push(format!("    {c_field_type} {name};"));
@@ -417,6 +498,50 @@ fn field_name(key: &FieldKey) -> Result<String> {
             shape: "tuple record field",
         }),
     }
+}
+
+fn validate_interned_static_values(values: &[String]) -> Result<()> {
+    if values.is_empty() {
+        return Err(Error::UnsupportedTarget {
+            target: "ruby",
+            shape: "empty interned string pool",
+        });
+    }
+
+    let mut seen = HashSet::new();
+    for value in values {
+        if value.as_bytes().contains(&0) {
+            return Err(Error::UnsupportedTarget {
+                target: "ruby",
+                shape: "interned string pool value containing NUL",
+            });
+        }
+        if !seen.insert(value) {
+            return Err(Error::UnsupportedTarget {
+                target: "ruby",
+                shape: "duplicate interned string pool value",
+            });
+        }
+    }
+    Ok(())
+}
+
+fn c_string_literal(value: &str) -> String {
+    let mut out = String::from("\"");
+    for byte in value.bytes() {
+        match byte {
+            b'\\' => out.push_str("\\\\"),
+            b'\"' => out.push_str("\\\""),
+            b'?' => out.push_str("\\?"),
+            b'\n' => out.push_str("\\n"),
+            b'\r' => out.push_str("\\r"),
+            b'\t' => out.push_str("\\t"),
+            0x20..=0x7e => out.push(byte as char),
+            _ => out.push_str(&format!("\\{:03o}", byte)),
+        }
+    }
+    out.push('"');
+    out
 }
 
 fn wire_read_fn(primitive: Primitive) -> Result<&'static str> {

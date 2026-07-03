@@ -8,6 +8,7 @@ mod data;
 mod experimental;
 mod exports;
 mod index;
+mod interned_string;
 mod lowering;
 mod safety;
 
@@ -202,6 +203,11 @@ pub fn custom_ffi(_attr: TokenStream, item: TokenStream) -> TokenStream {
 #[proc_macro]
 pub fn custom_type(item: TokenStream) -> TokenStream {
     custom::r#type::custom_type_impl(item)
+}
+
+#[proc_macro]
+pub fn interned_string_pool(item: TokenStream) -> TokenStream {
+    interned_string::interned_string_pool_impl(item)
 }
 
 #[proc_macro_attribute]

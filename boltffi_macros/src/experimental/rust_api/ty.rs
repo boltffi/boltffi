@@ -260,7 +260,8 @@ impl TypeTokens {
             TypeExpr::Record { path, .. }
             | TypeExpr::Enum { path, .. }
             | TypeExpr::Class { path, .. }
-            | TypeExpr::Custom { path, .. } => Self::path_tokens(path)?,
+            | TypeExpr::Custom { path, .. }
+            | TypeExpr::InternedString { path, .. } => Self::path_tokens(path)?,
             TypeExpr::Dyn(bound) => {
                 let bound = Self::trait_bound_tokens(bound)?;
                 quote! { dyn #bound }

@@ -168,6 +168,7 @@ fn lower_plan<S: SurfaceLower, D: Direction>(
         }
         TypeExpr::String
         | TypeExpr::Str
+        | TypeExpr::InternedString { .. }
         | TypeExpr::Builtin(_)
         | TypeExpr::Slice(_)
         | TypeExpr::Record { .. }

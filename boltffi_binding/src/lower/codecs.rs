@@ -20,7 +20,7 @@ pub fn node(
 ) -> Result<CodecNode, LowerError> {
     Ok(match type_expr {
         TypeExpr::Primitive(primitive) => CodecNode::Primitive(Primitive::from(*primitive)),
-        TypeExpr::String | TypeExpr::Str => CodecNode::String,
+        TypeExpr::String | TypeExpr::Str | TypeExpr::InternedString { .. } => CodecNode::String,
         TypeExpr::Builtin(kind) => CodecNode::Builtin(*kind),
         TypeExpr::Vec(inner) | TypeExpr::Slice(inner) if types::is_byte_primitive(inner) => {
             CodecNode::Bytes

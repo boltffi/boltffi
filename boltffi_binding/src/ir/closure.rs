@@ -118,6 +118,7 @@ impl fmt::Display for TypeSignature<'_> {
             TypeExpr::Enum { id, .. } => formatter.write_str(&source_type_signature(id.as_str())),
             TypeExpr::Class { id, .. } => formatter.write_str(&source_type_signature(id.as_str())),
             TypeExpr::Custom { id, .. } => formatter.write_str(&source_type_signature(id.as_str())),
+            TypeExpr::InternedString { .. } => formatter.write_str("InternedString"),
             TypeExpr::ImplTrait(bounds) | TypeExpr::Dyn(bounds) => match &bounds.base {
                 boltffi_ast::BaseTrait::Named { id, .. } => {
                     formatter.write_str(&source_type_signature(id.as_str()))

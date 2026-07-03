@@ -187,7 +187,7 @@ mod tests {
     use boltffi_ast::PackageInfo;
     use boltffi_binding::{Bindings, Native, lower};
 
-    use crate::{bridge::c::CBridge, core::Target, target::ruby::RubyCExtHost};
+    use crate::{Error, bridge::c::CBridge, core::Target, target::ruby::RubyCExtHost};
 
     fn bindings(source: &str) -> Bindings<Native> {
         let source = boltffi_scan::scan_file(
@@ -196,6 +196,84 @@ mod tests {
         )
         .expect("source should scan");
         lower::<Native>(&source).expect("source should lower")
+    }
+
+    fn bindings_with_interned_field(
+        source: &str,
+        field_name: &str,
+        static_values: &[&str],
+    ) -> Bindings<Native> {
+        let mut value = serde_json::to_value(bindings(source)).expect("bindings serialize");
+        let mut replaced = false;
+        replace_interned_field(&mut value, field_name, static_values, &mut replaced);
+        assert!(
+            replaced,
+            "expected to rewrite field {field_name} as InternedString"
+        );
+        serde_json::from_value(value).expect("interned fixture should deserialize")
+    }
+
+    fn replace_interned_field(
+        value: &mut serde_json::Value,
+        field_name: &str,
+        static_values: &[&str],
+        replaced: &mut bool,
+    ) {
+        match value {
+            serde_json::Value::Object(object) => {
+                if let Some(fields) = object
+                    .get_mut("fields")
+                    .and_then(serde_json::Value::as_array_mut)
+                {
+                    for field in fields {
+                        if field_matches_name(field, field_name) {
+                            rewrite_string_type(
+                                field.get_mut("ty").expect("encoded field has type"),
+                                static_values,
+                            );
+                            *replaced = true;
+                        }
+                    }
+                }
+                for child in object.values_mut() {
+                    replace_interned_field(child, field_name, static_values, replaced);
+                }
+            }
+            serde_json::Value::Array(items) => {
+                for item in items {
+                    replace_interned_field(item, field_name, static_values, replaced);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn field_matches_name(field: &serde_json::Value, field_name: &str) -> bool {
+        field
+            .get("key")
+            .and_then(|key| key.get("Named"))
+            .and_then(|named| named.get("parts"))
+            .and_then(serde_json::Value::as_array)
+            .is_some_and(|parts| {
+                parts.len() == 1
+                    && parts.first().and_then(serde_json::Value::as_str) == Some(field_name)
+            })
+    }
+
+    fn rewrite_string_type(ty: &mut serde_json::Value, static_values: &[&str]) {
+        let interned = serde_json::json!({
+            "InternedString": { "static_values": static_values }
+        });
+        if *ty == serde_json::Value::String("String".to_owned()) {
+            *ty = interned;
+            return;
+        }
+        if let Some(inner) = ty.get_mut("Optional") {
+            assert_eq!(*inner, serde_json::Value::String("String".to_owned()));
+            *inner = interned;
+            return;
+        }
+        panic!("expected String or Option<String> field, got {ty}");
     }
 
     fn target() -> Target<RubyCExtHost, CBridge> {
@@ -457,6 +535,176 @@ mod tests {
         assert!(extension.contains("if (!data->major_present) return Qnil;"));
         assert!(extension.contains("if (!data->mobile_present) return Qnil;"));
         assert!(extension.contains("if (!data->bytes_present) return Qnil;"));
+    }
+
+    #[test]
+    fn ruby_target_renders_interned_string_encoded_record_field() {
+        let output = target()
+            .render(&bindings(
+                r#"
+                boltffi::interned_string_pool! {
+                    pub BrowserName {
+                        Ok = "ok",
+                        Cached = "cached",
+                    }
+                }
+
+                #[data]
+                pub struct Sniffed {
+                    pub label: boltffi::InternedString<BrowserName>,
+                    pub major: u32,
+                }
+
+                #[export]
+                pub fn sniff() -> Sniffed {
+                    Sniffed { label: BrowserName::OK, major: 1 }
+                }
+                "#,
+            ))
+            .expect("Ruby target should render interned string encoded record field");
+        let extension = extension(&output);
+
+        assert!(extension.contains("static VALUE boltffi_ruby_sniffed_label_interned_values[2];"));
+        let register = extension
+            .find("rb_global_variable(&boltffi_ruby_sniffed_label_interned_values[0]);")
+            .expect("interned slot registered with Ruby GC");
+        let initialize = extension
+            .find("boltffi_ruby_sniffed_label_interned_values[0] = rb_utf8_str_new_static(\"ok\", sizeof(\"ok\") - 1);")
+            .expect("interned slot initialized with static UTF-8 literal");
+        assert!(register < initialize);
+        assert!(
+            extension.contains("rb_obj_freeze(boltffi_ruby_sniffed_label_interned_values[0]);")
+        );
+        assert!(
+            extension
+                .contains("rb_global_variable(&boltffi_ruby_sniffed_label_interned_values[1]);")
+        );
+        assert!(extension.contains(
+            "boltffi_ruby_sniffed_label_interned_values[1] = rb_utf8_str_new_static(\"cached\", sizeof(\"cached\") - 1);"
+        ));
+        assert!(
+            extension.contains("rb_obj_freeze(boltffi_ruby_sniffed_label_interned_values[1]);")
+        );
+        assert!(extension.contains("if (!boltffi_ruby_wire_read_u8(reader, &tag)) return 0;"));
+        assert!(extension.contains("if (!boltffi_ruby_wire_read_u32(reader, &id)) return 0;"));
+        assert!(extension.contains(
+            "if (!boltffi_ruby_wire_read_string(reader, &data->label_ptr, &data->label_len)) return 0;"
+        ));
+        assert!(extension.contains("if (id >= 2) return 3;"));
+        assert!(extension.contains("return 2;"));
+        assert!(extension.contains("native function returned invalid interned string tag"));
+        assert!(extension.contains("native function returned invalid interned string id"));
+        assert!(
+            extension
+                .contains("result = boltffi_ruby_sniffed_label_interned_values[data->label_id];")
+        );
+        assert!(extension.contains("rb_obj_freeze(result);"));
+        assert!(!extension.contains("FfiString"));
+    }
+
+    #[test]
+    fn ruby_target_escapes_interned_static_string_literals() {
+        let output = target()
+            .render(&bindings_with_interned_field(
+                r#"
+                #[data]
+                pub struct Sniffed {
+                    pub label: String,
+                }
+
+                #[export]
+                pub fn sniff() -> Sniffed {
+                    Sniffed { label: String::from("ok") }
+                }
+                "#,
+                "label",
+                &["Firefox\nβ", "quote\"slash\\question?"],
+            ))
+            .expect("Ruby target should render escaped interned static values");
+        let extension = extension(&output);
+
+        assert!(extension.contains(
+            "rb_utf8_str_new_static(\"Firefox\\n\\316\\262\", sizeof(\"Firefox\\n\\316\\262\") - 1);"
+        ));
+        assert!(extension.contains(
+            "rb_utf8_str_new_static(\"quote\\\"slash\\\\question\\?\", sizeof(\"quote\\\"slash\\\\question\\?\") - 1);"
+        ));
+    }
+
+    #[test]
+    fn ruby_target_rejects_invalid_interned_static_values() {
+        assert_interned_static_values_rejected(&[], "empty interned string pool");
+        assert_interned_static_values_rejected(
+            &["dup", "dup"],
+            "duplicate interned string pool value",
+        );
+        assert_interned_static_values_rejected(
+            &["nul\0value"],
+            "interned string pool value containing NUL",
+        );
+    }
+
+    fn assert_interned_static_values_rejected(static_values: &[&str], expected_shape: &str) {
+        let err = target()
+            .render(&bindings_with_interned_field(
+                r#"
+                #[data]
+                pub struct Sniffed {
+                    pub label: String,
+                }
+
+                #[export]
+                pub fn sniff() -> Sniffed {
+                    Sniffed { label: String::from("ok") }
+                }
+                "#,
+                "label",
+                static_values,
+            ))
+            .expect_err("invalid interned static values should be rejected");
+
+        assert!(
+            matches!(
+                err,
+                Error::UnsupportedTarget {
+                    target: "ruby",
+                    shape
+                } if shape == expected_shape
+            ),
+            "unexpected error: {err:?}"
+        );
+    }
+
+    #[test]
+    fn ruby_target_wraps_interned_string_field_with_existing_option_tag() {
+        let output = target()
+            .render(&bindings_with_interned_field(
+                r#"
+                #[data]
+                pub struct Sniffed {
+                    pub label: Option<String>,
+                }
+
+                #[export]
+                pub fn sniff() -> Sniffed {
+                    Sniffed { label: None }
+                }
+                "#,
+                "label",
+                &["known"],
+            ))
+            .expect("Ruby target should render optional interned string encoded record field");
+        let extension = extension(&output);
+
+        let option = extension
+            .find("boltffi_ruby_wire_read_option_tag(&reader, &data->label_present)")
+            .expect("option tag read");
+        let interned = extension
+            .find("int label_status = boltffi_ruby_sniffed_label_read_interned(&reader, data)")
+            .expect("interned tag read after option tag");
+        assert!(option < interned);
+        assert!(extension.contains("if (!data->label_present) return Qnil;"));
+        assert!(extension.contains("if (data->label_present) { int label_status = boltffi_ruby_sniffed_label_read_interned(&reader, data);"));
     }
 
     #[test]
