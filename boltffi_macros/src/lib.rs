@@ -210,12 +210,12 @@ pub fn data(attr: TokenStream, item: TokenStream) -> TokenStream {
     if attr_str.trim() == "impl" {
         return expand_or_experimental(item, data::expansion::data_impl_block);
     }
-    expand_or_experimental(item, data::expansion::data_impl)
+    expand_or_experimental(data::repr::materialize(item), data::expansion::data_impl)
 }
 
 #[proc_macro_attribute]
 pub fn error(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    expand_or_experimental(item, data::expansion::data_impl)
+    expand_or_experimental(data::repr::materialize(item), data::expansion::data_impl)
 }
 
 #[proc_macro_derive(Data)]

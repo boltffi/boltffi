@@ -501,54 +501,6 @@ static void boltffi_tests_async_noop(uint64_t data, int8_t status) {
     (void)status;
 }
 
-static FfiBuf_u8 boltffi_tests_point_buf(double x, double y) {
-    uint8_t bytes[sizeof(double) * 2];
-    memcpy(bytes, &x, sizeof(x));
-    memcpy(bytes + sizeof(x), &y, sizeof(y));
-    return boltffi_buf_from_bytes(bytes, sizeof(bytes));
-}
-
-static int boltffi_tests_check_point_buf(FfiBuf_u8 buf, double expected_x, double expected_y, int code) {
-    if (buf.len != sizeof(double) * 2) {
-        boltffi_free_buf(buf);
-        return code;
-    }
-    double x = 0.0;
-    double y = 0.0;
-    memcpy(&x, buf.ptr, sizeof(x));
-    memcpy(&y, buf.ptr + sizeof(x), sizeof(y));
-    boltffi_free_buf(buf);
-    if (x != expected_x || y != expected_y) {
-        return code + 1;
-    }
-    return 0;
-}
-
-static int boltffi_tests_check_point_vec_buf(FfiBuf_u8 buf, double expected_x, double expected_y, int code) {
-    uintptr_t offset = 0;
-    if (buf.len == sizeof(uint32_t) + sizeof(double) * 2) {
-        uint32_t count = 0;
-        memcpy(&count, buf.ptr, sizeof(count));
-        if (count != 1) {
-            boltffi_free_buf(buf);
-            return code;
-        }
-        offset = sizeof(uint32_t);
-    } else if (buf.len != sizeof(double) * 2) {
-        boltffi_free_buf(buf);
-        return code + 1;
-    }
-    double x = 0.0;
-    double y = 0.0;
-    memcpy(&x, buf.ptr + offset, sizeof(x));
-    memcpy(&y, buf.ptr + offset + sizeof(x), sizeof(y));
-    boltffi_free_buf(buf);
-    if (x != expected_x || y != expected_y) {
-        return code + 2;
-    }
-    return 0;
-}
-
 static FfiBuf_u8 boltffi_tests_string_buf(const char *value, uintptr_t len) {
     uint8_t bytes[64] = {0};
     uint32_t wire_len = (uint32_t)len;
@@ -725,42 +677,30 @@ static int boltffi_tests_check_direct_records(void) {
 
     fn record_methods_harness(&self) -> &'static str {
         r#"static int boltffi_tests_check_record_methods(void) {
-    FfiBuf_u8 origin = boltffi_init_record_boltffi_tests_fixture_point_origin();
-    double origin_distance = boltffi_method_record_boltffi_tests_fixture_point_distance_to_origin(origin.ptr, origin.len);
+    ___FixturePoint origin = boltffi_init_record_boltffi_tests_fixture_point_origin();
+    double origin_distance = boltffi_method_record_boltffi_tests_fixture_point_distance_to_origin(origin);
     if (origin_distance != 0.0) {
-        boltffi_free_buf(origin);
         return 181;
     }
-    boltffi_free_buf(origin);
-    FfiBuf_u8 point = boltffi_init_record_boltffi_tests_fixture_point_new_at(3.0, 4.0);
-    double distance = boltffi_method_record_boltffi_tests_fixture_point_distance_to_origin(point.ptr, point.len);
+    ___FixturePoint point = boltffi_init_record_boltffi_tests_fixture_point_new_at(3.0, 4.0);
+    double distance = boltffi_method_record_boltffi_tests_fixture_point_distance_to_origin(point);
     if (distance != 5.0) {
-        boltffi_free_buf(point);
         return 182;
     }
-    FfiBuf_u8 scaled = {0};
-    FfiStatus status = boltffi_method_record_boltffi_tests_fixture_point_scale(point.ptr, point.len, &scaled, 2.0);
-    boltffi_free_buf(point);
+    ___FixturePoint scaled = {0};
+    FfiStatus status = boltffi_method_record_boltffi_tests_fixture_point_scale(point, &scaled, 2.0);
     if (status.code != FFI_STATUS_OK.code) {
         return 183;
     }
-    double scaled_distance = boltffi_method_record_boltffi_tests_fixture_point_distance_to_origin(scaled.ptr, scaled.len);
-    boltffi_free_buf(scaled);
+    double scaled_distance = boltffi_method_record_boltffi_tests_fixture_point_distance_to_origin(scaled);
     if (scaled_distance != 10.0) {
         return 184;
     }
-    FfiBuf_u8 first = boltffi_tests_point_buf(0.0, 2.0);
-    FfiBuf_u8 second = boltffi_tests_point_buf(4.0, 6.0);
-    int midpoint = boltffi_tests_check_point_buf(
-        boltffi_init_record_boltffi_tests_fixture_point_midpoint_to(first.ptr, first.len, second.ptr, second.len),
-        2.0,
-        4.0,
-        185
-    );
-    boltffi_free_buf(first);
-    boltffi_free_buf(second);
-    if (midpoint != 0) {
-        return midpoint;
+    ___FixturePoint first = { 0.0, 2.0 };
+    ___FixturePoint second = { 4.0, 6.0 };
+    ___FixturePoint midpoint = boltffi_init_record_boltffi_tests_fixture_point_midpoint_to(first, second);
+    if (midpoint.x != 2.0 || midpoint.y != 4.0) {
+        return 185;
     }
     FfiBuf_u8 owned = boltffi_tests_string_buf("name", 4);
     FfiBuf_u8 owned_config = boltffi_init_record_boltffi_tests_records_encoded_fixture_string_config_from_owned_name(owned.ptr, owned.len);
@@ -1220,8 +1160,9 @@ static uint32_t boltffi_tests_provider_count(uint64_t handle) {
     return (uint32_t)handle;
 }
 
-static FfiBuf_u8 boltffi_tests_provider_item(uint64_t handle, uint32_t index) {
-    return boltffi_tests_point_buf((double)index + 1.0, (double)handle);
+static ___FixturePoint boltffi_tests_provider_item(uint64_t handle, uint32_t index) {
+    ___FixturePoint point = { (double)index + 1.0, (double)handle };
+    return point;
 }
 
 static FfiBuf_u8 boltffi_tests_vec_callback(uint64_t handle, const int32_t *values, uintptr_t len) {
@@ -1229,10 +1170,10 @@ static FfiBuf_u8 boltffi_tests_vec_callback(uint64_t handle, const int32_t *valu
     return boltffi_tests_i32_vec2_buf(values[0] + (int32_t)handle, values[1] + (int32_t)handle);
 }
 
-static FfiBuf_u8 boltffi_tests_struct_callback(uint64_t handle, const uint8_t *ptr, uintptr_t len) {
-    (void)ptr;
-    (void)len;
-    return boltffi_tests_point_buf((double)handle, (double)handle + 1.0);
+static ___FixturePoint boltffi_tests_struct_callback(uint64_t handle, ___FixturePoint point) {
+    (void)point;
+    ___FixturePoint result = { (double)handle, (double)handle + 1.0 };
+    return result;
 }
 
 static FfiBuf_u8 boltffi_tests_option_callback(uint64_t handle, int32_t key) {
@@ -1372,27 +1313,15 @@ static int boltffi_tests_check_callbacks(void) {
         return vec_boxed;
     }
     BoltFFICallbackHandle struct_callback = boltffi_create_callback_boltffi_tests_callbacks_sync_struct_callback(6);
-    FfiBuf_u8 point = boltffi_tests_point_buf(1.0, 2.0);
-    int struct_impl = boltffi_tests_check_point_buf(
-        boltffi_function_boltffi_tests_callbacks_invoke_struct_impl(struct_callback, point.ptr, point.len),
-        6.0,
-        7.0,
-        721
-    );
-    boltffi_free_buf(point);
-    if (struct_impl != 0) {
-        return struct_impl;
+    ___FixturePoint point = { 1.0, 2.0 };
+    ___FixturePoint struct_impl = boltffi_function_boltffi_tests_callbacks_invoke_struct_impl(struct_callback, point);
+    if (struct_impl.x != 6.0 || struct_impl.y != 7.0) {
+        return 721;
     }
-    FfiBuf_u8 point_boxed = boltffi_tests_point_buf(2.0, 3.0);
-    int struct_boxed = boltffi_tests_check_point_buf(
-        boltffi_function_boltffi_tests_callbacks_invoke_struct_boxed(struct_callback, point_boxed.ptr, point_boxed.len),
-        6.0,
-        7.0,
-        724
-    );
-    boltffi_free_buf(point_boxed);
-    if (struct_boxed != 0) {
-        return struct_boxed;
+    ___FixturePoint point_boxed = { 2.0, 3.0 };
+    ___FixturePoint struct_boxed = boltffi_function_boltffi_tests_callbacks_invoke_struct_boxed(struct_callback, point_boxed);
+    if (struct_boxed.x != 6.0 || struct_boxed.y != 7.0) {
+        return 724;
     }
     BoltFFICallbackHandle option = boltffi_create_callback_boltffi_tests_callbacks_sync_option_callback(4);
     const uint8_t option_expected[5] = {1, 70, 0, 0, 0};
@@ -1543,17 +1472,11 @@ static int boltffi_tests_check_callbacks(void) {
         boltffi_release_class_boltffi_tests_callbacks_sync_processor(sync_processor);
         return 760;
     }
-    FfiBuf_u8 processor_point = boltffi_tests_point_buf(1.0, 2.0);
-    int processor_point_check = boltffi_tests_check_point_buf(
-        boltffi_method_class_boltffi_tests_callbacks_sync_processor_apply_struct_impl(sync_processor, struct_callback, processor_point.ptr, processor_point.len),
-        6.0,
-        7.0,
-        761
-    );
-    boltffi_free_buf(processor_point);
-    if (processor_point_check != 0) {
+    ___FixturePoint processor_point = { 1.0, 2.0 };
+    ___FixturePoint processor_point_result = boltffi_method_class_boltffi_tests_callbacks_sync_processor_apply_struct_impl(sync_processor, struct_callback, processor_point);
+    if (processor_point_result.x != 6.0 || processor_point_result.y != 7.0) {
         boltffi_release_class_boltffi_tests_callbacks_sync_processor(sync_processor);
-        return processor_point_check;
+        return 761;
     }
     const uint8_t processor_option_expected[5] = {1, 150, 0, 0, 0};
     int processor_option_check = boltffi_tests_check_buf(
@@ -1660,27 +1583,25 @@ static int boltffi_tests_check_callbacks(void) {
     if (map == 0) {
         return 739;
     }
-    int32_t marker_id = 44;
-    uint8_t marker_options[sizeof(marker_id)];
-    memcpy(marker_options, &marker_id, sizeof(marker_id));
-    uint64_t marker = boltffi_method_class_boltffi_tests_classes_fixture_map_add_marker(map, marker_options, sizeof(marker_options));
+    ___FixtureMarkerOptions marker_options = { 44 };
+    uint64_t marker = boltffi_method_class_boltffi_tests_classes_fixture_map_add_marker(map, marker_options);
     if (marker == 0 || boltffi_method_class_boltffi_tests_classes_fixture_marker_id(marker) != 44) {
         boltffi_release_class_boltffi_tests_classes_fixture_map(map);
         return 740;
     }
     boltffi_release_class_boltffi_tests_classes_fixture_marker(marker);
-    uint64_t maybe = boltffi_method_class_boltffi_tests_classes_fixture_map_maybe_marker(map, marker_options, sizeof(marker_options), true);
+    uint64_t maybe = boltffi_method_class_boltffi_tests_classes_fixture_map_maybe_marker(map, marker_options, true);
     if (maybe == 0 || boltffi_method_class_boltffi_tests_classes_fixture_marker_id(maybe) != 44) {
         boltffi_release_class_boltffi_tests_classes_fixture_map(map);
         return 741;
     }
     boltffi_release_class_boltffi_tests_classes_fixture_marker(maybe);
-    uint64_t missing = boltffi_method_class_boltffi_tests_classes_fixture_map_maybe_marker(map, marker_options, sizeof(marker_options), false);
+    uint64_t missing = boltffi_method_class_boltffi_tests_classes_fixture_map_maybe_marker(map, marker_options, false);
     if (missing != 0) {
         boltffi_release_class_boltffi_tests_classes_fixture_map(map);
         return 742;
     }
-    uint64_t default_marker = boltffi_method_class_boltffi_tests_classes_fixture_map_default_marker(marker_options, sizeof(marker_options));
+    uint64_t default_marker = boltffi_method_class_boltffi_tests_classes_fixture_map_default_marker(marker_options);
     if (default_marker == 0 || boltffi_method_class_boltffi_tests_classes_fixture_marker_id(default_marker) != 44) {
         boltffi_release_class_boltffi_tests_classes_fixture_map(map);
         return 743;
@@ -1716,16 +1637,10 @@ static int boltffi_tests_check_callbacks(void) {
         boltffi_release_class_boltffi_tests_classes_class_test_fixture(fixture);
         return 750;
     }
-    FfiBuf_u8 point = boltffi_tests_point_buf(3.0, 4.0);
-    FfiStatus set_point = boltffi_method_class_boltffi_tests_classes_class_test_fixture_set_point(fixture, point.ptr, point.len);
-    boltffi_free_buf(point);
-    int point_check = boltffi_tests_check_point_buf(
-        boltffi_method_class_boltffi_tests_classes_class_test_fixture_get_point(fixture),
-        3.0,
-        4.0,
-        751
-    );
-    if (set_point.code != FFI_STATUS_OK.code || point_check != 0) {
+    ___FixturePoint point = { 3.0, 4.0 };
+    FfiStatus set_point = boltffi_method_class_boltffi_tests_classes_class_test_fixture_set_point(fixture, point);
+    ___FixturePoint fixture_point = boltffi_method_class_boltffi_tests_classes_class_test_fixture_get_point(fixture);
+    if (set_point.code != FFI_STATUS_OK.code || fixture_point.x != 3.0 || fixture_point.y != 4.0) {
         boltffi_release_class_boltffi_tests_classes_class_test_fixture(fixture);
         return 754;
     }
@@ -1797,15 +1712,14 @@ static int boltffi_tests_check_callbacks(void) {
         boltffi_release_class_boltffi_tests_classes_class_test_fixture(fixture);
         return found;
     }
-    FfiBuf_u8 near_point = boltffi_tests_point_buf(2.0, 1.0);
+    ___FixturePoint near_point = { 2.0, 1.0 };
     int32_t near_expected[2] = {1, -2};
     int near = boltffi_tests_check_i32_vec_buf(
-        boltffi_method_class_boltffi_tests_classes_class_test_fixture_values_near_point(fixture, near_point.ptr, near_point.len),
+        boltffi_method_class_boltffi_tests_classes_class_test_fixture_values_near_point(fixture, near_point),
         near_expected,
         2,
         771
     );
-    boltffi_free_buf(near_point);
     if (near != 0) {
         boltffi_release_class_boltffi_tests_classes_class_test_fixture(fixture);
         return near;
@@ -1844,15 +1758,10 @@ static int boltffi_tests_check_callbacks(void) {
         boltffi_release_class_boltffi_tests_classes_class_test_fixture(fixture);
         return concat;
     }
-    int static_point = boltffi_tests_check_point_buf(
-        boltffi_method_class_boltffi_tests_classes_class_test_fixture_static_make_point(8.0, 9.0),
-        8.0,
-        9.0,
-        782
-    );
-    if (static_point != 0) {
+    ___FixturePoint static_point = boltffi_method_class_boltffi_tests_classes_class_test_fixture_static_make_point(8.0, 9.0);
+    if (static_point.x != 8.0 || static_point.y != 9.0) {
         boltffi_release_class_boltffi_tests_classes_class_test_fixture(fixture);
-        return static_point;
+        return 782;
     }
     if (boltffi_method_class_boltffi_tests_classes_class_test_fixture_static_identity_status(FIXTURE_STATUS_FAILED) != FIXTURE_STATUS_FAILED) {
         boltffi_release_class_boltffi_tests_classes_class_test_fixture(fixture);
@@ -2003,19 +1912,13 @@ static int boltffi_tests_check_callbacks(void) {
         return 794;
     }
     boltffi_release_class_boltffi_tests_classes_class_test_fixture(named);
-    FfiBuf_u8 constructor_point = boltffi_tests_point_buf(6.0, 7.0);
-    uint64_t with_point = boltffi_init_class_boltffi_tests_classes_class_test_fixture_new_with_point(constructor_point.ptr, constructor_point.len);
-    boltffi_free_buf(constructor_point);
+    ___FixturePoint constructor_point = { 6.0, 7.0 };
+    uint64_t with_point = boltffi_init_class_boltffi_tests_classes_class_test_fixture_new_with_point(constructor_point);
     if (with_point == 0) {
         return 814;
     }
-    int with_point_check = boltffi_tests_check_point_buf(
-        boltffi_method_class_boltffi_tests_classes_class_test_fixture_get_point(with_point),
-        6.0,
-        7.0,
-        815
-    );
-    if (with_point_check != 0) {
+    ___FixturePoint with_point_value = boltffi_method_class_boltffi_tests_classes_class_test_fixture_get_point(with_point);
+    if (with_point_value.x != 6.0 || with_point_value.y != 7.0) {
         return 817;
     }
     boltffi_release_class_boltffi_tests_classes_class_test_fixture(with_point);
@@ -2024,9 +1927,8 @@ static int boltffi_tests_check_callbacks(void) {
         return 795;
     }
     boltffi_release_class_boltffi_tests_classes_class_test_fixture(with_status);
-    FfiBuf_u8 full_point = boltffi_tests_point_buf(1.0, 2.0);
-    uint64_t full = boltffi_init_class_boltffi_tests_classes_class_test_fixture_new_full(321, zed_expected, 7, full_point.ptr, full_point.len, FIXTURE_STATUS_FAILED);
-    boltffi_free_buf(full_point);
+    ___FixturePoint full_point = { 1.0, 2.0 };
+    uint64_t full = boltffi_init_class_boltffi_tests_classes_class_test_fixture_new_full(321, zed_expected, 7, full_point, FIXTURE_STATUS_FAILED);
     if (full == 0 || boltffi_method_class_boltffi_tests_classes_class_test_fixture_get_id(full) != 321 || boltffi_method_class_boltffi_tests_classes_class_test_fixture_get_status(full) != FIXTURE_STATUS_FAILED) {
         return 818;
     }
@@ -2110,28 +2012,22 @@ static int boltffi_tests_check_streams(void) {
         boltffi_release_class_boltffi_tests_streams_point_stream(point_stream);
         return 760;
     }
-    FfiBuf_u8 point = boltffi_tests_point_buf(1.5, 2.5);
-    FfiStatus point_emit = boltffi_method_class_boltffi_tests_streams_point_stream_emit(point_stream, point.ptr, point.len);
-    boltffi_free_buf(point);
+    ___FixturePoint point = { 1.5, 2.5 };
+    FfiStatus point_emit = boltffi_method_class_boltffi_tests_streams_point_stream_emit(point_stream, point);
     if (point_emit.code != FFI_STATUS_OK.code) {
         boltffi_stream_boltffi_tests_streams_point_stream_subscribe_free(point_subscription);
         boltffi_release_class_boltffi_tests_streams_point_stream(point_stream);
         return 761;
     }
-    int point_batch = boltffi_tests_check_point_vec_buf(
-        boltffi_stream_boltffi_tests_streams_point_stream_subscribe_pop_batch(point_subscription, 1),
-        1.5,
-        2.5,
-        762
-    );
-    if (point_batch != 0) {
+    ___FixturePoint point_batch[1] = {0};
+    uintptr_t point_batch_count = boltffi_stream_boltffi_tests_streams_point_stream_subscribe_pop_batch(point_subscription, point_batch, 1);
+    if (point_batch_count != 1 || point_batch[0].x != 1.5 || point_batch[0].y != 2.5) {
         boltffi_stream_boltffi_tests_streams_point_stream_subscribe_free(point_subscription);
         boltffi_release_class_boltffi_tests_streams_point_stream(point_stream);
-        return point_batch;
+        return 762;
     }
-    FfiBuf_u8 point_again = boltffi_tests_point_buf(3.5, 4.5);
-    FfiStatus point_again_emit = boltffi_method_class_boltffi_tests_streams_point_stream_emit(point_stream, point_again.ptr, point_again.len);
-    boltffi_free_buf(point_again);
+    ___FixturePoint point_again = { 3.5, 4.5 };
+    FfiStatus point_again_emit = boltffi_method_class_boltffi_tests_streams_point_stream_emit(point_stream, point_again);
     if (point_again_emit.code != FFI_STATUS_OK.code) {
         boltffi_stream_boltffi_tests_streams_point_stream_subscribe_free(point_subscription);
         boltffi_release_class_boltffi_tests_streams_point_stream(point_stream);

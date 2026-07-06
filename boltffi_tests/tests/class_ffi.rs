@@ -108,26 +108,30 @@ fn get_fallible_service_value(handle: u64, key: i32) -> Result<i32, FixtureError
 }
 
 fn add_marker(map: u64, id: i32) -> u64 {
-    with_encoded(&FixtureMarkerOptions { id }, |ptr, len| unsafe {
-        boltffi_method_class_boltffi_tests_classes_fixture_map_add_marker(map, ptr, len)
-    })
+    unsafe {
+        boltffi_method_class_boltffi_tests_classes_fixture_map_add_marker(
+            map,
+            FixtureMarkerOptions { id },
+        )
+    }
 }
 
 fn default_marker(id: i32) -> u64 {
-    with_encoded(&FixtureMarkerOptions { id }, |ptr, len| unsafe {
-        boltffi_method_class_boltffi_tests_classes_fixture_map_default_marker(ptr, len)
-    })
+    unsafe {
+        boltffi_method_class_boltffi_tests_classes_fixture_map_default_marker(
+            FixtureMarkerOptions { id },
+        )
+    }
 }
 
 fn maybe_marker(map: u64, id: i32, should_create: bool) -> u64 {
-    with_encoded(&FixtureMarkerOptions { id }, |ptr, len| unsafe {
+    unsafe {
         boltffi_method_class_boltffi_tests_classes_fixture_map_maybe_marker(
             map,
-            ptr,
-            len,
+            FixtureMarkerOptions { id },
             should_create,
         )
-    })
+    }
 }
 
 fn new_fixture_with_name(name: &str) -> u64 {
@@ -137,30 +141,23 @@ fn new_fixture_with_name(name: &str) -> u64 {
 }
 
 fn new_fixture_with_point(point: FixturePoint) -> u64 {
-    with_encoded(&point, |ptr, len| unsafe {
-        boltffi_init_class_boltffi_tests_classes_class_test_fixture_new_with_point(ptr, len)
-    })
+    unsafe { boltffi_init_class_boltffi_tests_classes_class_test_fixture_new_with_point(point) }
 }
 
 fn new_full_fixture(id: i32, name: &str, point: FixturePoint, status: FixtureStatus) -> u64 {
-    with_encoded_str(name, |name_ptr, name_len| {
-        with_encoded(&point, |point_ptr, point_len| unsafe {
-            boltffi_init_class_boltffi_tests_classes_class_test_fixture_new_full(
-                id,
-                name_ptr,
-                name_len,
-                point_ptr,
-                point_len,
-                status as i32,
-            )
-        })
+    with_encoded_str(name, |name_ptr, name_len| unsafe {
+        boltffi_init_class_boltffi_tests_classes_class_test_fixture_new_full(
+            id,
+            name_ptr,
+            name_len,
+            point,
+            status as i32,
+        )
     })
 }
 
 fn get_fixture_point(handle: u64) -> FixturePoint {
-    let buf =
-        unsafe { boltffi_method_class_boltffi_tests_classes_class_test_fixture_get_point(handle) };
-    decode_buf(&buf)
+    unsafe { boltffi_method_class_boltffi_tests_classes_class_test_fixture_get_point(handle) }
 }
 
 fn set_fixture_name(handle: u64, name: &str) {
@@ -170,17 +167,17 @@ fn set_fixture_name(handle: u64, name: &str) {
 }
 
 fn set_fixture_point(handle: u64, point: FixturePoint) {
-    with_encoded(&point, |ptr, len| unsafe {
-        boltffi_method_class_boltffi_tests_classes_class_test_fixture_set_point(handle, ptr, len)
-    });
+    unsafe {
+        boltffi_method_class_boltffi_tests_classes_class_test_fixture_set_point(handle, point)
+    };
 }
 
 fn values_near_point(handle: u64, point: FixturePoint) -> Vec<i32> {
-    let buf = with_encoded(&point, |ptr, len| unsafe {
+    let buf = unsafe {
         boltffi_method_class_boltffi_tests_classes_class_test_fixture_values_near_point(
-            handle, ptr, len,
+            handle, point,
         )
-    });
+    };
     decode_i32_vec(buf)
 }
 
@@ -198,10 +195,7 @@ fn concat_strings(first: &str, second: &str) -> String {
 }
 
 fn make_static_point(x: f64, y: f64) -> FixturePoint {
-    let buf = unsafe {
-        boltffi_method_class_boltffi_tests_classes_class_test_fixture_static_make_point(x, y)
-    };
-    decode_buf(&buf)
+    unsafe { boltffi_method_class_boltffi_tests_classes_class_test_fixture_static_make_point(x, y) }
 }
 
 fn async_set_fixture_name(handle: u64, name: &str) -> RustFutureHandle {

@@ -2665,6 +2665,9 @@ mod tests {
         assert!(rendered.contains(
             "const _ : [() ; 8usize] = [() ; :: core :: mem :: align_of :: < Point > ()] ;"
         ));
+        assert!(rendered.contains(
+            "const _ : [() ; 0usize] = [() ; :: core :: mem :: offset_of ! (Point , x)] ;"
+        ));
     }
 
     #[test]
