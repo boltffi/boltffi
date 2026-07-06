@@ -75,7 +75,7 @@ impl<'expansion, 'lowered, S: RenderSurface> Renderer<'expansion, 'lowered, S> {
             .render(),
             EnumDecl::Data(binding) => Data {
                 source: self.pair.source(),
-                binding,
+                binding: binding.as_ref(),
                 expansion: self.expansion,
             }
             .render(),

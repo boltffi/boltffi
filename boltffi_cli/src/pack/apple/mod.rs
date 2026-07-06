@@ -2,11 +2,17 @@ mod names;
 mod spm;
 mod xcframework;
 
-use std::path::Path;
+use std::fs;
+use std::path::{Path, PathBuf};
 
-use crate::build::{BuildOptions, Builder, OutputCallback, all_successful, failed_targets};
+use boltffi_backend::GeneratedOutput;
+use boltffi_bindgen::generate::{Generation, GenerationError};
+use boltffi_bindgen::target::Target as BindgenTarget;
+
+use crate::build::{
+    BindingExpansion, BuildOptions, Builder, OutputCallback, all_successful, failed_targets,
+};
 use crate::cli::{CliError, Result};
-use crate::commands::generate::{GenerateOptions, GenerateTarget, run_generate_with_output};
 use crate::commands::pack::PackAppleOptions;
 use crate::config::{Config, DebugSymbolsBundle, DebugSymbolsFormat, SpmDistribution, SpmLayout};
 use crate::pack::PackError;
@@ -51,6 +57,7 @@ pub(crate) fn pack_apple(
     }
 
     let build_cargo_args = resolve_build_cargo_args(config, &options.execution.cargo_args);
+    let selected_crate = BindingExpansion::resolve(config, &build_cargo_args)?;
     let build_profile =
         crate::build::resolve_build_profile(options.execution.release, &build_cargo_args);
     let apple_targets = config.apple_targets();
@@ -73,6 +80,7 @@ pub(crate) fn pack_apple(
             &apple_targets,
             options.execution.release,
             &build_cargo_args,
+            &selected_crate,
             &step,
         )?;
         step.finish_success();
@@ -86,13 +94,7 @@ pub(crate) fn pack_apple(
     if options.execution.regenerate {
         scratch_directory.recreate()?;
         let step = reporter.step("Generating Apple bindings");
-        generate_apple_bindings(
-            config,
-            layout,
-            &package_root,
-            &headers_dir,
-            &build_cargo_args,
-        )?;
+        generate_apple_bindings(config, layout, &package_root, &headers_dir, &selected_crate)?;
         step.finish_success();
     }
 
@@ -207,6 +209,7 @@ fn build_apple_targets(
     targets: &[crate::target::RustTarget],
     release: bool,
     build_cargo_args: &[String],
+    selected_crate: &BindingExpansion,
     step: &crate::reporter::Step,
 ) -> Result<()> {
     let on_output: Option<OutputCallback> = if step.is_verbose() {
@@ -221,6 +224,7 @@ fn build_apple_targets(
         release,
         package: Some(config.library_name().to_string()),
         cargo_args: build_cargo_args.to_vec(),
+        env: selected_crate.env()?,
         on_output,
     };
     let builder = Builder::new(config, build_options);
@@ -239,7 +243,7 @@ fn generate_apple_bindings(
     layout: SpmLayout,
     package_root: &Path,
     header_output_directory: &Path,
-    build_cargo_args: &[String],
+    selected_crate: &BindingExpansion,
 ) -> Result<()> {
     let swift_output_directory = match layout {
         SpmLayout::Bundled => config
@@ -250,27 +254,88 @@ fn generate_apple_bindings(
         SpmLayout::Split => config.apple_swift_output().join("BoltFFI"),
     };
 
-    run_generate_with_output(
-        config,
-        GenerateOptions {
-            target: GenerateTarget::Swift,
-            output: Some(swift_output_directory),
-            experimental: false,
-            ir: false,
-            cargo_args: build_cargo_args.to_vec(),
-        },
-    )?;
+    let output = Generation::new(selected_crate.manifest_path())
+        .cargo_args(selected_crate.cargo_args())
+        .swift_ffi_module(apple_ffi_module_name(config))
+        .swift_file(config.swift_bindings_file_stem())
+        .swift_custom_mappings(config.apple_swift_custom_mappings())
+        .swift_c_header(apple_c_header_path(config))
+        .render(BindgenTarget::Swift)
+        .map_err(swift_generation_error)?;
 
-    run_generate_with_output(
-        config,
-        GenerateOptions {
-            target: GenerateTarget::Header,
-            output: Some(header_output_directory.to_path_buf()),
-            experimental: false,
-            ir: false,
-            cargo_args: build_cargo_args.to_vec(),
-        },
-    )
+    print_coverage(&output);
+    write_apple_binding_output(output, &swift_output_directory, header_output_directory)
+}
+
+fn apple_ffi_module_name(config: &Config) -> String {
+    config
+        .apple_swift_ffi_module_name()
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("{}FFI", config.xcframework_name()))
+}
+
+fn apple_c_header_path(config: &Config) -> PathBuf {
+    PathBuf::from(format!("{}.h", config.library_name()))
+}
+
+fn write_apple_binding_output(
+    output: GeneratedOutput,
+    swift_output_directory: &Path,
+    header_output_directory: &Path,
+) -> Result<()> {
+    output.files().iter().try_for_each(|file| {
+        let root = if file
+            .path()
+            .as_path()
+            .extension()
+            .and_then(|value| value.to_str())
+            == Some("h")
+        {
+            header_output_directory
+        } else {
+            swift_output_directory
+        };
+        write_generated_file(&root.join(file.path().as_path()), file.contents())
+    })
+}
+
+fn write_generated_file(path: &Path, contents: &str) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|source| CliError::CreateDirectoryFailed {
+            path: parent.to_path_buf(),
+            source,
+        })?;
+    }
+
+    fs::write(path, contents).map_err(|source| CliError::WriteFailed {
+        path: path.to_path_buf(),
+        source,
+    })
+}
+
+fn print_coverage(output: &GeneratedOutput) {
+    let unsupported = output.coverage().unsupported();
+    if unsupported.is_empty() {
+        return;
+    }
+
+    eprintln!("swift generation skipped unsupported declarations");
+    eprintln!("{:<12} {:<48} reason", "kind", "name");
+    unsupported.iter().for_each(|item| {
+        eprintln!(
+            "{:<12} {:<48} {}",
+            item.declaration().kind(),
+            item.declaration().name(),
+            item.reason()
+        );
+    });
+}
+
+fn swift_generation_error(error: GenerationError) -> CliError {
+    CliError::CommandFailed {
+        command: format!("generate swift: {error}"),
+        status: None,
+    }
 }
 
 fn existing_xcframework_checksum(config: &Config) -> Result<String> {

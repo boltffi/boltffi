@@ -159,13 +159,14 @@ mod tests {
     use std::process::Command;
 
     use boltffi_ast::{
-        AdditionalBound, BaseTrait, CanonicalName, ClassDef, ClassId, ClassThreadSafety, ConstExpr,
-        ConstantDef, ConstantId, CustomRemoteType, CustomTypeConverter, CustomTypeConverters,
-        CustomTypeDef, CustomTypeId, EnumDef, EnumId, ExecutionKind, FieldDef, FnSig, FnTrait,
-        FnTraitKind, FunctionDef, FunctionId, IntegerLiteral, Literal, MethodDef, MethodId,
-        PackageInfo, ParameterDef, ParameterPassing, Path, Primitive, Receiver, RecordDef,
-        RecordId, ReprAttr, ReprItem, ReturnDef, Source, SourceContract, SourceName, StreamDef,
-        StreamId, TraitBounds, TraitDef, TraitId, TypeExpr, VariantDef, VariantPayload, Visibility,
+        AdditionalBound, AttributeInput, BaseTrait, CanonicalName, ClassDef, ClassId,
+        ClassThreadSafety, ConstExpr, ConstantDef, ConstantId, CustomRemoteType,
+        CustomTypeConverter, CustomTypeConverters, CustomTypeDef, CustomTypeId, EnumDef, EnumId,
+        ExecutionKind, FieldDef, FnSig, FnTrait, FnTraitKind, FunctionDef, FunctionId,
+        IntegerLiteral, Literal, MethodDef, MethodId, PackageInfo, ParameterDef, ParameterPassing,
+        Path, Primitive, Receiver, RecordDef, RecordId, ReprAttr, ReprItem, ReturnDef, Source,
+        SourceContract, SourceName, StreamDef, StreamId, TraitBounds, TraitDef, TraitId, TypeExpr,
+        UserAttr, VariantDef, VariantPayload, Visibility,
     };
     use boltffi_binding::{Native, Wasm32, lower_with_declarations};
     use proc_macro2::TokenStream;
@@ -1377,6 +1378,42 @@ mod tests {
             impl_closure(
                 Vec::<TypeExpr>::new(),
                 result_return(TypeExpr::String, TypeExpr::String),
+            ),
+        )];
+
+        let mut source = SourceContract::new(PackageInfo::new("demo", None));
+        source.functions.push(function);
+        source
+    }
+
+    fn optional_scalar_closure_param_contract() -> SourceContract {
+        let mut function = FunctionDef::new(
+            FunctionId::new("demo::apply"),
+            CanonicalName::single("apply"),
+        );
+        function.parameters = vec![ParameterDef::value(
+            CanonicalName::single("callback"),
+            impl_closure(
+                Vec::<TypeExpr>::new(),
+                ReturnDef::value(TypeExpr::option(TypeExpr::Primitive(Primitive::I32))),
+            ),
+        )];
+
+        let mut source = SourceContract::new(PackageInfo::new("demo", None));
+        source.functions.push(function);
+        source
+    }
+
+    fn direct_vector_closure_param_contract() -> SourceContract {
+        let mut function = FunctionDef::new(
+            FunctionId::new("demo::apply"),
+            CanonicalName::single("apply"),
+        );
+        function.parameters = vec![ParameterDef::value(
+            CanonicalName::single("callback"),
+            impl_closure(
+                Vec::<TypeExpr>::new(),
+                ReturnDef::value(TypeExpr::Vec(Box::new(TypeExpr::Primitive(Primitive::U32)))),
             ),
         )];
 
@@ -6847,6 +6884,27 @@ mod tests {
     }
 
     #[test]
+    fn native_async_trait_callback_method_expansion_uses_async_trait_attribute() {
+        let mut source = async_string_listener_contract();
+        source.traits[0].user_attrs.push(UserAttr::new(
+            Path::single("async_trait"),
+            AttributeInput::Empty,
+        ));
+        let lowered = lower_with_declarations::<Native>(&source).expect("lowered bindings");
+        let expansion = Expansion::new(&lowered);
+
+        let tokens =
+            expand_native_callback(&expansion, &source.traits[0]).expect("expanded callback");
+        let rendered = tokens.to_string();
+        syn::parse2::<syn::File>(tokens).expect("expanded callback parses");
+
+        assert!(
+            rendered
+                .contains("# [:: async_trait :: async_trait] impl Listener for ForeignListener")
+        );
+    }
+
+    #[test]
     fn wasm_async_callback_method_expansion_uses_start_import_and_complete_export() {
         let source = async_string_listener_contract();
         let lowered = lower_with_declarations::<Wasm32>(&source).expect("lowered bindings");
@@ -7650,6 +7708,93 @@ mod tests {
             ":: boltffi :: __private :: wire :: decode :: < String > (__boltffi_packed_bytes . as_slice ())"
         ));
         assert!(!rendered.contains("take_packed_utf8_string"));
+    }
+
+    #[test]
+    fn native_closure_param_expansion_decodes_optional_scalar_return() {
+        let source = optional_scalar_closure_param_contract();
+        let lowered = lower_with_declarations::<Native>(&source).expect("lowered bindings");
+        let expansion = Expansion::new(&lowered);
+        let syntax = syn::parse_quote! {
+            pub fn apply(callback: impl Fn() -> Option<i32>) -> i32 {
+                callback().unwrap_or_default()
+            }
+        };
+
+        let tokens =
+            expand_function(&expansion, &source.functions[0], syntax).expect("expanded function");
+        let rendered = tokens.to_string();
+        syn::parse2::<syn::File>(tokens.clone()).expect("expanded closure param parses");
+
+        assert!(rendered.contains(
+            "extern \"C\" fn (* mut :: core :: ffi :: c_void) -> :: boltffi :: __private :: FfiBuf"
+        ));
+        assert!(
+            rendered.contains(":: boltffi :: __private :: wire :: decode :: < Option < i32 > >")
+        );
+    }
+
+    #[test]
+    fn wasm_closure_param_expansion_decodes_optional_scalar_return() {
+        let source = optional_scalar_closure_param_contract();
+        let lowered = lower_with_declarations::<Wasm32>(&source).expect("lowered bindings");
+        let expansion = Expansion::new(&lowered);
+        let syntax = syn::parse_quote! {
+            pub fn apply(callback: impl Fn() -> Option<i32>) -> i32 {
+                callback().unwrap_or_default()
+            }
+        };
+
+        let tokens =
+            expand_function(&expansion, &source.functions[0], syntax).expect("expanded function");
+        let rendered = tokens.to_string();
+        syn::parse2::<syn::File>(tokens.clone()).expect("expanded closure param parses");
+
+        assert!(rendered.contains(") -> f64"));
+        assert!(rendered.contains("if __boltffi_result . is_nan ()"));
+    }
+
+    #[test]
+    fn native_closure_param_expansion_decodes_direct_vector_return() {
+        let source = direct_vector_closure_param_contract();
+        let lowered = lower_with_declarations::<Native>(&source).expect("lowered bindings");
+        let expansion = Expansion::new(&lowered);
+        let syntax = syn::parse_quote! {
+            pub fn apply(callback: impl Fn() -> Vec<u32>) -> u32 {
+                callback().into_iter().sum()
+            }
+        };
+
+        let tokens =
+            expand_function(&expansion, &source.functions[0], syntax).expect("expanded function");
+        let rendered = tokens.to_string();
+        syn::parse2::<syn::File>(tokens.clone()).expect("expanded closure param parses");
+
+        assert!(rendered.contains(
+            "extern \"C\" fn (* mut :: core :: ffi :: c_void) -> :: boltffi :: __private :: FfiBuf"
+        ));
+        assert!(
+            rendered.contains("< u32 as :: boltffi :: __private :: VecTransport > :: unpack_vec")
+        );
+    }
+
+    #[test]
+    fn wasm_closure_param_expansion_decodes_direct_vector_return() {
+        let source = direct_vector_closure_param_contract();
+        let lowered = lower_with_declarations::<Wasm32>(&source).expect("lowered bindings");
+        let expansion = Expansion::new(&lowered);
+        let syntax = syn::parse_quote! {
+            pub fn apply(callback: impl Fn() -> Vec<u32>) -> u32 {
+                callback().into_iter().sum()
+            }
+        };
+
+        let tokens =
+            expand_function(&expansion, &source.functions[0], syntax).expect("expanded function");
+        let rendered = tokens.to_string();
+        syn::parse2::<syn::File>(tokens.clone()).expect("expanded closure param parses");
+
+        assert!(rendered.contains("take_return_slot_vec :: < u32 >"));
     }
 
     #[test]

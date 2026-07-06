@@ -15,6 +15,8 @@ pub struct CallbackSlot {
     returns: Type,
     parameters: Vec<Parameter>,
     parameter_groups: Vec<ParameterGroup>,
+    return_parameter_groups: Vec<ParameterGroup>,
+    source_parameter_groups: Vec<ParameterGroup>,
 }
 
 impl CallbackSlot {
@@ -36,6 +38,16 @@ impl CallbackSlot {
     /// Returns source-level parameter groups in declaration order.
     pub fn parameter_groups(&self) -> &[ParameterGroup] {
         &self.parameter_groups
+    }
+
+    /// Returns return-value groups in C ABI order.
+    pub fn return_parameter_groups(&self) -> &[ParameterGroup] {
+        &self.return_parameter_groups
+    }
+
+    /// Returns source-parameter groups in source declaration order.
+    pub fn source_parameter_groups(&self) -> &[ParameterGroup] {
+        &self.source_parameter_groups
     }
 
     /// Returns the C ABI parameter at the given position.
@@ -61,6 +73,8 @@ impl CallbackSlot {
             method.callable().error(),
         )?;
         let method_parameters = signature.imported_params(method.callable().params())?;
+        let return_group_count = ParameterGroup::from_params(&return_parameters)?.len();
+        let source_group_count = ParameterGroup::from_params(&method_parameters)?.len();
         let parameters = std::iter::once(Parameter::new("handle", Type::Uint64)?)
             .chain(return_parameters)
             .chain(method_parameters)
@@ -72,6 +86,8 @@ impl CallbackSlot {
                 method.callable().error(),
             )?,
             parameters,
+            return_group_count,
+            source_group_count,
         )
     }
 
@@ -94,6 +110,7 @@ impl CallbackSlot {
         signature: &Signature,
     ) -> Result<Self> {
         let method_parameters = signature.imported_params(method.callable().params())?;
+        let source_group_count = ParameterGroup::from_params(&method_parameters)?.len();
         let completion = signature.async_completion(
             method.callable().returns().plan(),
             method.callable().error(),
@@ -109,16 +126,38 @@ impl CallbackSlot {
             Identifier::escape(method.target().as_str())?,
             Type::Void,
             parameters,
+            0,
+            source_group_count,
         )
     }
 
-    fn new(name: Identifier, returns: Type, parameters: Vec<Parameter>) -> Result<Self> {
+    fn new(
+        name: Identifier,
+        returns: Type,
+        parameters: Vec<Parameter>,
+        return_group_count: usize,
+        source_group_count: usize,
+    ) -> Result<Self> {
         let parameter_groups = ParameterGroup::from_params(&parameters)?;
+        let return_parameter_groups = parameter_groups
+            .iter()
+            .skip(1)
+            .take(return_group_count)
+            .cloned()
+            .collect();
+        let source_parameter_groups = parameter_groups
+            .iter()
+            .skip(1 + return_group_count)
+            .take(source_group_count)
+            .cloned()
+            .collect();
         Ok(Self {
             name,
             returns,
             parameters,
             parameter_groups,
+            return_parameter_groups,
+            source_parameter_groups,
         })
     }
 }

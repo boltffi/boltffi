@@ -223,14 +223,16 @@ pub enum IncomingParam<S: Surface> {
 }
 
 impl<S: Surface> IncomingParam<S> {
-    pub(crate) fn as_value(&self) -> Option<&ParamPlan<S, IntoRust>> {
+    /// Returns the value crossing plan if this payload carries one.
+    pub fn as_value(&self) -> Option<&ParamPlan<S, IntoRust>> {
         match self {
             Self::Value(plan) => Some(plan),
             Self::Closure(_) => None,
         }
     }
 
-    pub(crate) fn as_closure(&self) -> Option<&ClosureParameter<S, IntoRust>> {
+    /// Returns the incoming closure if this payload carries one.
+    pub fn as_closure(&self) -> Option<&ClosureParameter<S, IntoRust>> {
         match self {
             Self::Closure(closure) => Some(closure),
             Self::Value(_) => None,

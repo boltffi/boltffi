@@ -1,6 +1,5 @@
 use boltffi_ast::PackageInfo;
 use boltffi_binding::{Native, lower};
-use std::{fs, path::PathBuf};
 
 use boltffi_backend::{
     bridge::{
@@ -9,6 +8,8 @@ use boltffi_backend::{
     },
     core::{BridgeLayer, BridgeOutput, BridgeStack},
 };
+
+mod source;
 
 #[path = "jni/associated.rs"]
 mod associated;
@@ -24,6 +25,8 @@ mod direct_vector;
 mod native_methods;
 #[path = "jni/stream.rs"]
 mod stream;
+
+use source::SourceFixture;
 
 fn bindings(source: &str) -> boltffi_binding::Bindings<Native> {
     let file = syn::parse_str(source).expect("valid source fixture");
@@ -56,7 +59,11 @@ pub fn files(source: &str) -> Vec<(String, String)> {
 }
 
 pub fn rendered_fixture(name: &str) -> String {
-    rendered_files(&files(&fixture(name)))
+    rendered_source(SourceFixture::one(name))
+}
+
+pub fn rendered_source(fixture: SourceFixture) -> String {
+    rendered_files(&files(&fixture.read()))
 }
 
 pub fn rendered_fixture_with_support(name: &str) -> String {
@@ -68,15 +75,7 @@ pub fn bridge_fixture(name: &str) -> BridgeOutput<JniBridgeContract> {
 }
 
 fn fixture(name: &str) -> String {
-    fs::read_to_string(fixture_path(name)).expect("source fixture")
-}
-
-fn fixture_path(name: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests")
-        .join("fixtures")
-        .join("source")
-        .join(format!("{name}.rs"))
+    SourceFixture::one(name).read()
 }
 
 fn rendered_files(files: &[(String, String)]) -> String {

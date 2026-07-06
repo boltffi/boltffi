@@ -1,9 +1,0 @@
----
-source: boltffi_bindgen/src/render/swift/templates.rs
-expression: "render_function(&func, \"boltffi\")"
----
-public func findUser(id: Int64) -> String? {
-    let buf = boltffi_find_user(id)
-    defer { boltffi_free_buf(buf) }
-    return boltffiDecodeOwnedBuf(buf.ptr, Int(buf.len)) { reader in reader.readOptional { reader in reader.readString() } }
-}

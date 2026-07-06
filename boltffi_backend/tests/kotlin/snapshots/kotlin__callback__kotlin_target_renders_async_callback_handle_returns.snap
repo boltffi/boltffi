@@ -157,27 +157,27 @@ object ListenerCallbacks {
     }
 
     @JvmStatic
-    fun child(handle: Long, callback: Long, context: Long) {
+    fun child(handle: Long, callbackToken: Long, callbackContext: Long) {
         val impl = ListenerMap.get(handle) ?: error("ListenerMap: invalid handle $handle")
         boltffiLaunchCallback {
             try {
                 val __boltffi_result = impl.child()
-                Native.boltffi_async_callback_complete_Callback_demo_child(callback, context, ChildBridge.create(__boltffi_result))
+                Native.boltffi_async_callback_complete_Callback_demo_child(callbackToken, callbackContext, ChildBridge.create(__boltffi_result))
             } catch (throwable: Throwable) {
-                Native.boltffi_async_callback_complete_Callback_demo_child_failure(callback, context)
+                Native.boltffi_async_callback_complete_Callback_demo_child_failure(callbackToken, callbackContext)
             }
         }
     }
 
     @JvmStatic
-    fun sibling(handle: Long, callback: Long, context: Long) {
+    fun sibling(handle: Long, callbackToken: Long, callbackContext: Long) {
         val impl = ListenerMap.get(handle) ?: error("ListenerMap: invalid handle $handle")
         boltffiLaunchCallback {
             try {
                 val __boltffi_result = impl.sibling()
-                Native.boltffi_async_callback_complete_Callback_demo_sibling(callback, context, SiblingBridge.create(__boltffi_result))
+                Native.boltffi_async_callback_complete_Callback_demo_sibling(callbackToken, callbackContext, SiblingBridge.create(__boltffi_result))
             } catch (throwable: Throwable) {
-                Native.boltffi_async_callback_complete_Callback_demo_sibling_failure(callback, context)
+                Native.boltffi_async_callback_complete_Callback_demo_sibling_failure(callbackToken, callbackContext)
             }
         }
     }

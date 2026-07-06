@@ -404,8 +404,12 @@ mod tests {
         assert!(init.contains("PACKAGE_NAME = \"demo\""));
         assert!(init.contains("\"add\","));
         assert!(stub.contains("def add(left: int, right: int) -> int: ..."));
+        assert!(setup.contains(
+            "extension_compile_args = [\"/std:c11\", \"/experimental:c11atomics\"] if sys.platform == \"win32\" else []"
+        ));
         assert!(setup.contains("Extension(\n            \"demo._native\","));
         assert!(setup.contains("sources=[\"_native.c\"]"));
+        assert!(setup.contains("extra_compile_args=extension_compile_args"));
     }
 
     #[test]
@@ -1087,6 +1091,37 @@ mod tests {
         assert!(stub.contains("def reset(self) -> None: ..."));
         assert!(stub.contains("def marker(self) -> Marker: ..."));
         assert!(stub.contains("def make_marker(value: int) -> Marker: ..."));
+    }
+
+    #[test]
+    fn python_target_preserves_rust_pascal_type_spelling() {
+        let output = target()
+            .render(&bindings(
+                r#"
+                pub struct GPSSimulator {
+                    enabled: bool,
+                }
+
+                #[export]
+                impl GPSSimulator {
+                    pub fn new(enabled: bool) -> Self {
+                        Self { enabled }
+                    }
+
+                    pub fn enabled(&self) -> bool {
+                        self.enabled
+                    }
+                }
+                "#,
+            ))
+            .expect("Python target should render");
+        let init = file(&output, "demo/__init__.py");
+        let stub = file(&output, "demo/__init__.pyi");
+
+        assert!(init.contains("class GPSSimulator:"));
+        assert!(stub.contains("class GPSSimulator:"));
+        assert!(!init.contains("class GpsSimulator:"));
+        assert!(!stub.contains("class GpsSimulator:"));
     }
 
     #[test]

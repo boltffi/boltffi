@@ -46,7 +46,7 @@ impl Constant {
     ) -> Result<Self> {
         match declaration.value() {
             ConstantValueDecl::Inline { ty, value, .. } => Ok(Self {
-                inline: Some(Inline::new(declaration, ty, value, host, context)?),
+                inline: Some(Inline::new(declaration, ty, value, context)?),
                 accessor: None,
             }),
             ConstantValueDecl::Accessor { symbol, callable } => Ok(Self {
@@ -110,12 +110,11 @@ impl Inline {
         declaration: &ConstantDecl<Native>,
         ty: &TypeRef,
         value: &DefaultValue,
-        host: &KotlinHost,
         context: &RenderContext<Native>,
     ) -> Result<Self> {
         Ok(Self {
             name: Name::new(declaration.name()).function()?,
-            ty: KotlinType::type_ref(ty, host, context)?,
+            ty: KotlinType::type_ref(ty, context)?,
             value: DefaultExpression::render(ty, value)?,
         })
     }

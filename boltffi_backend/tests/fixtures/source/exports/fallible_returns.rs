@@ -28,3 +28,12 @@ pub fn parse_point(text: String) -> Result<Point, MathError> {
 pub fn validate_name(name: String) -> Result<String, MathError> {
     Ok(name)
 }
+
+#[export]
+pub fn store_name(name: String) -> Result<(), MathError> {
+    if name.is_empty() {
+        Err(MathError::InvalidInput)
+    } else {
+        Ok(())
+    }
+}

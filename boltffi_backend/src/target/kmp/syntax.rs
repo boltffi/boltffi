@@ -2,15 +2,15 @@ use std::fmt;
 
 use crate::core::{LanguageSyntax, syntax::sealed};
 
-/// Kotlin syntax fragment family used by the KMP backend skeleton.
+/// Kotlin syntax fragment family used by the KMP backend.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 pub struct Syntax;
 
 /// Opaque Kotlin syntax fragment placeholder.
 ///
-/// M1a does not render Kotlin source yet, but the backend traits require a
-/// typed syntax family. Later KMP rendering modules can replace this placeholder
-/// with role-specific fragments as declarations start lowering to Kotlin.
+/// The current KMP emitter renders directly from the KMP module plan. This
+/// fragment type keeps the backend trait implementation typed while future
+/// renderers can introduce role-specific fragments where they are useful.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Fragment(String);
 

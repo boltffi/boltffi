@@ -1,8 +1,8 @@
-use std::{fs, path::PathBuf};
-
 use boltffi_ast::PackageInfo;
 use boltffi_backend::target::kotlin::KotlinHost;
 use boltffi_binding::{Native, lower};
+
+mod source;
 
 #[path = "kotlin/callback.rs"]
 mod callback;
@@ -15,6 +15,8 @@ mod exports;
 #[path = "kotlin/stream.rs"]
 mod stream;
 
+use source::SourceFixture;
+
 fn bindings(source: &str) -> boltffi_binding::Bindings<Native> {
     let file = syn::parse_str(source).expect("valid source fixture");
     let source =
@@ -24,11 +26,20 @@ fn bindings(source: &str) -> boltffi_binding::Bindings<Native> {
 
 pub fn rendered_fixture(name: &str) -> String {
     let host = KotlinHost::new("com.boltffi.demo", "Demo").expect("Kotlin host");
-    rendered_fixture_with_host(name, host)
+    rendered_source_with_host(SourceFixture::one(name), host)
+}
+
+pub fn rendered_source(fixture: SourceFixture) -> String {
+    let host = KotlinHost::new("com.boltffi.demo", "Demo").expect("Kotlin host");
+    rendered_source_with_host(fixture, host)
 }
 
 pub fn rendered_fixture_with_host(name: &str, host: KotlinHost) -> String {
-    let kotlin_file = files_with_host(&fixture(name), host)
+    rendered_source_with_host(SourceFixture::one(name), host)
+}
+
+pub fn rendered_source_with_host(fixture: SourceFixture, host: KotlinHost) -> String {
+    let kotlin_file = files_with_host(&fixture.read(), host)
         .into_iter()
         .find(|(path, _)| path.ends_with(".kt"))
         .expect("Kotlin target should render a Kotlin source file");
@@ -37,7 +48,7 @@ pub fn rendered_fixture_with_host(name: &str, host: KotlinHost) -> String {
 
 pub fn rendered_fixture_with_runtime(name: &str) -> String {
     let host = KotlinHost::new("com.boltffi.demo", "Demo").expect("Kotlin host");
-    let kotlin_file = files_with_host(&fixture(name), host)
+    let kotlin_file = files_with_host(&SourceFixture::one(name).read(), host)
         .into_iter()
         .find(|(path, _)| path.ends_with(".kt"))
         .expect("Kotlin target should render a Kotlin source file");
@@ -68,15 +79,7 @@ pub fn files_with_host(source: &str, host: KotlinHost) -> Vec<(String, String)> 
 }
 
 pub fn fixture(name: &str) -> String {
-    fs::read_to_string(fixture_path(name)).expect("source fixture")
-}
-
-pub fn fixture_path(name: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests")
-        .join("fixtures")
-        .join("source")
-        .join(format!("{name}.rs"))
+    SourceFixture::one(name).read()
 }
 
 pub fn rendered_files(files: &[(String, String)]) -> String {

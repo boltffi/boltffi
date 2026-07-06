@@ -137,9 +137,13 @@ where
         contract
             .capabilities()
             .require_bridge(self.host.name(), &self.host.bridge_capabilities())?;
-        let context = RenderContext::new(bindings, self.host.name());
+        let context = RenderContext::new(bindings, self.host.name(), mode)
+            .with_custom_type_mappings(self.host.custom_type_mappings(bindings)?);
+        let preflight_coverage = self
+            .host
+            .preflight_coverage(bindings, &contract, &context)?;
         let (declarations, coverage) = bindings.decls().iter().try_fold(
-            (Vec::new(), CoverageReport::new()),
+            (Vec::new(), preflight_coverage),
             |accumulator, decl| {
                 self.render_declaration_with_coverage(
                     decl,
@@ -176,21 +180,28 @@ where
         let capability = BindingCapability::from_decl(decl);
         let status = host_capabilities.status(capability);
         if !status.is_stable() {
-            if matches!(mode, CoverageMode::Partial) {
+            if matches!(mode, CoverageMode::Complete) {
+                return Err(Error::BindingCapability {
+                    target: self.host.name(),
+                    capability,
+                    status,
+                });
+            }
+            if !status.renderable_in_partial() {
                 accumulator
                     .1
                     .push(UnsupportedDeclaration::new(label, status.reason()));
                 return Ok(accumulator);
             }
-            return Err(Error::BindingCapability {
-                target: self.host.name(),
-                capability,
-                status,
-            });
         }
 
         match self.render_declaration(decl, bridge, context) {
             Ok(rendered) => {
+                if !status.is_stable() {
+                    accumulator
+                        .1
+                        .push(UnsupportedDeclaration::new(label.clone(), status.reason()));
+                }
                 rendered
                     .emitted()
                     .diagnostics()

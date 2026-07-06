@@ -1,6 +1,6 @@
 use boltffi_binding::{CanonicalName, FieldKey};
 
-use crate::core::{Error, Result};
+use crate::core::{Error, Result, name_case};
 
 #[derive(Clone, Debug)]
 pub struct Spelling {
@@ -17,7 +17,7 @@ impl Spelling {
     }
 
     pub fn typedef(self) -> String {
-        format!("___{}", self.join("", Self::capitalized))
+        format!("___{}", name_case::upper_camel(&self.name))
     }
 
     pub fn constant(self) -> String {
@@ -31,13 +31,6 @@ impl Spelling {
             .map(|part| transform(part.as_str()))
             .collect::<Vec<_>>()
             .join(separator)
-    }
-
-    fn capitalized(part: &str) -> String {
-        let mut characters = part.chars();
-        characters.next().map_or_else(String::new, |first| {
-            first.to_uppercase().chain(characters).collect::<String>()
-        })
     }
 }
 

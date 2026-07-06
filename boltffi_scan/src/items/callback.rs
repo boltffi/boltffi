@@ -66,7 +66,7 @@ fn supertraits(
     bounds
         .iter()
         .all(|bound| match bound {
-            syn::TypeParamBound::Trait(bound) => is_auto_supertrait(bound),
+            syn::TypeParamBound::Trait(bound) => is_supported_supertrait(bound),
             _ => false,
         })
         .then_some(())
@@ -75,14 +75,15 @@ fn supertraits(
         })
 }
 
-fn is_auto_supertrait(bound: &syn::TraitBound) -> bool {
+fn is_supported_supertrait(bound: &syn::TraitBound) -> bool {
     matches!(bound.modifier, syn::TraitBoundModifier::None)
         && bound.lifetimes.is_none()
-        && bound
-            .path
-            .segments
-            .last()
-            .is_some_and(|segment| matches!(segment.ident.to_string().as_str(), "Send" | "Sync"))
+        && bound.path.segments.last().is_some_and(|segment| {
+            matches!(
+                segment.ident.to_string().as_str(),
+                "Send" | "Sync" | "Debug"
+            )
+        })
 }
 
 fn is_exported_method(method: &syn::TraitItemFn) -> Result<bool, ScanError> {
@@ -198,8 +199,9 @@ mod tests {
     }
 
     #[test]
-    fn accepts_send_sync_callback_supertraits() {
-        let callback = scan("trait Listener: Send + Sync { fn call(&self); }").expect("scan");
+    fn accepts_supported_callback_supertraits() {
+        let callback =
+            scan("trait Listener: Send + Sync + Debug { fn call(&self); }").expect("scan");
 
         assert_eq!(callback.id, TraitId::new("demo::Listener"));
         assert_eq!(callback.methods.len(), 1);

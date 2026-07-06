@@ -55,6 +55,14 @@ impl SupportFunctions {
         self.function("boltffi_free_buf", "missing C free buffer support symbol")
     }
 
+    /// Returns the C ABI support function that copies bytes into a BoltFFI buffer.
+    pub fn buffer_from_bytes(&self) -> Result<&Function> {
+        self.function(
+            "boltffi_buf_from_bytes",
+            "missing C buffer copy support symbol",
+        )
+    }
+
     fn function(&self, name: &str, shape: &'static str) -> Result<&Function> {
         self.functions
             .iter()

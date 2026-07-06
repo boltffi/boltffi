@@ -1,0 +1,38 @@
+---
+source: boltffi_backend/tests/jni/native_methods.rs
+expression: "rendered_fixture(\"exports/acronym_class\")"
+---
+===== jni/demo.h =====
+<c abi support declarations>
+void boltffi_release_class_demo_gps_simulator(uint64_t handle);
+uint64_t boltffi_init_class_demo_gps_simulator_new(bool enabled);
+bool boltffi_method_class_demo_gps_simulator_enabled(uint64_t receiver);
+
+===== jni/jni_glue.c =====
+<jni source includes>
+JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1release_1class_1demo_1gps_1simulator(JNIEnv *env, jclass cls, jlong handle) {
+    (void)cls;
+
+    (void)env;
+    boltffi_release_class_demo_gps_simulator(handle);
+
+    return;
+}
+
+JNIEXPORT jlong JNICALL Java_com_boltffi_demo_Native_boltffi_1init_1class_1demo_1gps_1simulator_1new(JNIEnv *env, jclass cls, jboolean enabled) {
+    (void)cls;
+
+    (void)env;
+    uint64_t __boltffi_result = boltffi_init_class_demo_gps_simulator_new(enabled);
+
+    return (jlong)__boltffi_result;
+}
+
+JNIEXPORT jboolean JNICALL Java_com_boltffi_demo_Native_boltffi_1method_1class_1demo_1gps_1simulator_1enabled(JNIEnv *env, jclass cls, jlong receiver) {
+    (void)cls;
+
+    (void)env;
+    bool __boltffi_result = boltffi_method_class_demo_gps_simulator_enabled(receiver);
+
+    return (jboolean)__boltffi_result;
+}

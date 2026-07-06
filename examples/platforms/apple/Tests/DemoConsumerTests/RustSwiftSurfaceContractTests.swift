@@ -476,8 +476,8 @@ private extension SwiftGeneratedSurface {
             return false
         }
 
-        return expectedFragments(for: rustTypeMember).contains { expectedFragment in
-            typeBlock.contains(expectedFragment)
+        return expectedPatterns(for: rustTypeMember).contains { expectedPattern in
+            typeBlock.matches(pattern: expectedPattern)
         }
     }
 
@@ -486,7 +486,9 @@ private extension SwiftGeneratedSurface {
             return false
         }
 
-        return protocolBlock.contains("func \(rustProtocolRequirement.swiftName)(")
+        return protocolBlock.matches(
+            pattern: "\\bfunc\\s+\(rustProtocolRequirement.swiftName)\\s*\\("
+        )
     }
 
     func usageTokens(for rustTypeMember: RustTypeMember) -> [String] {
@@ -516,28 +518,27 @@ private extension SwiftGeneratedSurface {
         ]
     }
 
-    private func expectedFragments(for rustTypeMember: RustTypeMember) -> [String] {
+    private func expectedPatterns(for rustTypeMember: RustTypeMember) -> [String] {
         if rustTypeMember.rustName == "new" {
             return [
-                "public init(",
-                "public convenience init(",
-                "public static func new("
+                "\\bpublic\\s+init\\s*\\(",
+                "\\bpublic\\s+convenience\\s+init\\s*\\(",
+                "\\bpublic\\s+static\\s+func\\s+new\\s*\\("
             ]
         }
 
         if rustTypeMember.isInstanceMethod {
             return [
-                "public func \(rustTypeMember.swiftName)(",
-                "public mutating func \(rustTypeMember.swiftName)("
+                "\\bpublic\\s+func\\s+\(rustTypeMember.swiftName)\\s*\\(",
+                "\\bpublic\\s+mutating\\s+func\\s+\(rustTypeMember.swiftName)\\s*\\("
             ]
         }
 
         return [
-            "public static func \(rustTypeMember.swiftName)(",
-            "public func \(rustTypeMember.swiftName)(",
-            "public init(\(rustTypeMember.swiftName)",
-            "public init?(\(rustTypeMember.swiftName)",
-            "public convenience init(\(rustTypeMember.swiftName)"
+            "\\bpublic\\s+static\\s+func\\s+\(rustTypeMember.swiftName)\\s*\\(",
+            "\\bpublic\\s+func\\s+\(rustTypeMember.swiftName)\\s*\\(",
+            "\\bpublic\\s+init\\??\\s*\\(\\s*\(rustTypeMember.swiftName)\\b",
+            "\\bpublic\\s+convenience\\s+init\\??\\s*\\(\\s*\(rustTypeMember.swiftName)\\b"
         ]
     }
 }
@@ -625,5 +626,14 @@ private extension String {
                 return String(self[range])
             }
         }
+    }
+
+    func matches(pattern: String) -> Bool {
+        guard let regularExpression = try? NSRegularExpression(pattern: pattern) else {
+            return false
+        }
+
+        let fullRange = NSRange(startIndex..., in: self)
+        return regularExpression.firstMatch(in: self, range: fullRange) != nil
     }
 }

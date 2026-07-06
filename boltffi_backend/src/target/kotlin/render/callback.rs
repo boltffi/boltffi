@@ -491,8 +491,8 @@ impl AsyncCompletion {
                 .map(|method| Identifier::escape(method.as_str()))
                 .transpose()?,
             payload: invoker.payload().map(|payload| payload.value()),
-            callback: Identifier::parse("callback")?,
-            context: Identifier::parse("context")?,
+            callback: Identifier::parse("callbackToken")?,
+            context: Identifier::parse("callbackContext")?,
         })
     }
 
@@ -867,10 +867,7 @@ impl<'plan> ParamPlanRender<'plan, Native, OutOfRust> for HandleParameterRender<
         )?;
         let (setup, native_argument, cleanup) = write.into_parts();
         Ok(HandleParameter {
-            public: Parameter::new(
-                self.name.clone(),
-                KotlinType::type_ref(ty, self.host, self.context)?,
-            ),
+            public: Parameter::new(self.name.clone(), KotlinType::type_ref(ty, self.context)?),
             native_argument,
             setup,
             cleanup,
@@ -986,7 +983,7 @@ impl<'plan> ReturnPlanRender<'plan, Native, IntoRust> for ReturnRender<'_> {
     ) -> Self::Output {
         self.require_supported_slot(slot, "callback method out-pointer encoded return")?;
         Ok(ReturnValue {
-            public_ty: Some(KotlinType::type_ref(ty, self.host, self.context)?),
+            public_ty: Some(KotlinType::type_ref(ty, self.context)?),
             jvm_ty: Some(TypeName::byte_array(false)),
             conversion: ReturnConversion::Encoded {
                 codec: codec.clone(),
@@ -1109,7 +1106,7 @@ impl<'plan> ReturnPlanRender<'plan, Native, IntoRust> for HandleReturnRender<'_>
             ));
         }
         Ok(HandleReturn {
-            ty: Some(KotlinType::type_ref(ty, self.host, self.context)?),
+            ty: Some(KotlinType::type_ref(ty, self.context)?),
             conversion: HandleReturnConversion::Encoded(codec.read_plan()),
         })
     }
@@ -1269,7 +1266,7 @@ impl ReturnValue {
     ) -> Result<Vec<Statement>> {
         let error = fallible.source_name.generated("error")?;
         Ok(vec![Statement::expression(
-            self.completion_success_expression(call, completion, host, context)?
+            self.fallible_completion_success_expression(call, fallible, completion, host, context)?
                 .try_catch(
                     error.clone(),
                     fallible.catch_type(host, context)?,
@@ -1281,6 +1278,37 @@ impl ReturnValue {
                     )?,
                 ),
         )])
+    }
+
+    fn fallible_completion_success_expression(
+        &self,
+        value: Expression,
+        fallible: &FallibleReturn,
+        completion: &AsyncCompletion,
+        host: &KotlinHost,
+        context: &RenderContext<Native>,
+    ) -> Result<Expression> {
+        let statements = match &self.conversion {
+            ReturnConversion::Void => {
+                self.fallible_completion_success_value(value, fallible, completion, host, context)?
+            }
+            _ => {
+                let result = Identifier::parse("__boltffi_result")?;
+                std::iter::once(Statement::value(result.clone(), value))
+                    .chain(self.fallible_completion_success_value(
+                        Expression::identifier(result),
+                        fallible,
+                        completion,
+                        host,
+                        context,
+                    )?)
+                    .collect()
+            }
+        };
+        Ok(Expression::run(
+            statements,
+            Expression::identifier(Identifier::parse("Unit")?),
+        ))
     }
 
     fn statements(
@@ -1401,35 +1429,6 @@ impl ReturnValue {
         ))
     }
 
-    fn completion_success_expression(
-        &self,
-        value: Expression,
-        completion: &AsyncCompletion,
-        host: &KotlinHost,
-        context: &RenderContext<Native>,
-    ) -> Result<Expression> {
-        let statements = match &self.conversion {
-            ReturnConversion::Void => {
-                self.completion_success_value(value, completion, host, context)?
-            }
-            _ => {
-                let result = Identifier::parse("__boltffi_result")?;
-                std::iter::once(Statement::value(result.clone(), value))
-                    .chain(self.completion_success_value(
-                        Expression::identifier(result),
-                        completion,
-                        host,
-                        context,
-                    )?)
-                    .collect()
-            }
-        };
-        Ok(Expression::run(
-            statements,
-            Expression::identifier(Identifier::parse("Unit")?),
-        ))
-    }
-
     fn completion_success_value(
         &self,
         value: Expression,
@@ -1461,6 +1460,52 @@ impl ReturnValue {
                     .chain(cleanup)
                     .collect())
             }
+        }
+    }
+
+    fn fallible_completion_success_value(
+        &self,
+        value: Expression,
+        fallible: &FallibleReturn,
+        completion: &AsyncCompletion,
+        host: &KotlinHost,
+        context: &RenderContext<Native>,
+    ) -> Result<Vec<Statement>> {
+        match completion.payload {
+            Some(CallbackCompletionPayloadValue::Bytes) => {
+                let (setup, payload, cleanup) =
+                    self.byte_success_value(value, fallible, host, context)?;
+                Ok(setup
+                    .into_iter()
+                    .chain(std::iter::once(completion.success_statement(Some(payload))))
+                    .chain(cleanup)
+                    .collect())
+            }
+            _ => self.completion_success_value(value, completion, host, context),
+        }
+    }
+
+    fn byte_success_value(
+        &self,
+        value: Expression,
+        fallible: &FallibleReturn,
+        host: &KotlinHost,
+        context: &RenderContext<Native>,
+    ) -> Result<(Vec<Statement>, Expression, Vec<Statement>)> {
+        match &self.conversion {
+            ReturnConversion::Void => Ok((Vec::new(), Self::empty_error_payload(), Vec::new())),
+            ReturnConversion::Direct(DirectValueType::Primitive(primitive)) => {
+                Self::primitive_bytes(&fallible.source_name, *primitive, value)
+            }
+            ReturnConversion::DirectEnum { repr } => Self::native_primitive_bytes(
+                &fallible.source_name,
+                *repr,
+                Expression::property(value, Identifier::parse("value")?),
+            ),
+            ReturnConversion::DirectRecord => {
+                Ok((Vec::new(), Record::encode_expression(value)?, Vec::new()))
+            }
+            _ => self.success_value(value, host, context),
         }
     }
 
@@ -1516,6 +1561,53 @@ impl ReturnValue {
                 .into_iter()
                 .collect::<ArgumentList>(),
         )
+    }
+
+    fn primitive_bytes(
+        source_name: &Name,
+        primitive: Primitive,
+        value: Expression,
+    ) -> Result<(Vec<Statement>, Expression, Vec<Statement>)> {
+        Self::primitive_bytes_with_method(
+            source_name,
+            primitive,
+            value,
+            KotlinPrimitive::new(primitive).wire_method_suffix()?,
+        )
+    }
+
+    fn native_primitive_bytes(
+        source_name: &Name,
+        primitive: Primitive,
+        value: Expression,
+    ) -> Result<(Vec<Statement>, Expression, Vec<Statement>)> {
+        Self::primitive_bytes_with_method(
+            source_name,
+            primitive,
+            value,
+            KotlinPrimitive::new(primitive).native_wire_method_suffix()?,
+        )
+    }
+
+    fn primitive_bytes_with_method(
+        source_name: &Name,
+        primitive: Primitive,
+        value: Expression,
+        suffix: &str,
+    ) -> Result<(Vec<Statement>, Expression, Vec<Statement>)> {
+        let buffer = WireBuffer::new(source_name)?;
+        let writer = buffer.writer().clone();
+        let encoded = buffer
+            .write_statements(
+                Expression::integer(i128::from(KotlinPrimitive::new(primitive).wire_size()?)),
+                vec![Statement::expression(Expression::call(
+                    Expression::identifier(writer),
+                    Identifier::parse(format!("write{suffix}"))?,
+                    [value].into_iter().collect::<ArgumentList>(),
+                ))],
+            )?
+            .into_parts();
+        Ok(encoded)
     }
 }
 

@@ -72,6 +72,14 @@ impl CapabilityStatus {
         matches!(self, Self::Stable)
     }
 
+    /// Returns whether partial rendering may try this capability.
+    pub const fn renderable_in_partial(self) -> bool {
+        matches!(
+            self,
+            Self::Stable | Self::Experimental { .. } | Self::InProgress { .. }
+        )
+    }
+
     /// Returns the diagnostic reason for this support state.
     pub const fn reason(self) -> &'static str {
         match self {

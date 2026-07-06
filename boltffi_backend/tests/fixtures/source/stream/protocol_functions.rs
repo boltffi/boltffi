@@ -21,4 +21,9 @@ impl Engine {
     pub fn names(&self) -> Arc<EventSubscription<String>> {
         loop {}
     }
+
+    #[ffi_stream(item = i32, mode = "callback")]
+    pub fn ticks(&self) -> Arc<EventSubscription<i32>> {
+        loop {}
+    }
 }

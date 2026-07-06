@@ -18,7 +18,7 @@ pub struct Reader<'context> {
     reader: Identifier,
     host: &'context KotlinHost,
     context: &'context RenderContext<'context, Native>,
-    record_package: Option<KotlinPackage>,
+    package: Option<KotlinPackage>,
 }
 
 pub struct ReadExpression {
@@ -36,12 +36,12 @@ impl<'context> Reader<'context> {
             reader,
             host,
             context,
-            record_package: None,
+            package: None,
         }
     }
 
-    pub fn record_package(mut self, package: &KotlinPackage) -> Self {
-        self.record_package = Some(package.clone());
+    pub fn package(mut self, package: &KotlinPackage) -> Self {
+        self.package = Some(package.clone());
         self
     }
 
@@ -55,6 +55,16 @@ impl<'context> Reader<'context> {
 
     fn unsupported(shape: &'static str) -> Result<ReadExpression> {
         Err(KotlinHost::unsupported(shape))
+    }
+
+    fn qualified_type(&self, ty: TypeName) -> TypeName {
+        self.package
+            .as_ref()
+            .map_or(ty.clone(), |package| TypeName::qualified(package, ty))
+    }
+
+    fn enum_type(&self, id: EnumId) -> Result<TypeName> {
+        Enumeration::type_name_from_id(id, self.context).map(|ty| self.qualified_type(ty))
     }
 }
 
@@ -102,12 +112,7 @@ impl CodecRead for Reader<'_> {
 
     fn encoded_record(&mut self, id: RecordId) -> Self::Expr {
         Record::type_name_from_id(id, self.context).and_then(|record| {
-            let record = self
-                .record_package
-                .as_ref()
-                .map_or(record.clone(), |package| {
-                    TypeName::qualified(package, record)
-                });
+            let record = self.qualified_type(record);
             Ok(ReadExpression::new(Expression::call(
                 record,
                 Identifier::parse("fromReader")?,
@@ -123,9 +128,10 @@ impl CodecRead for Reader<'_> {
             KotlinPrimitive::new(enumeration.repr()?)
                 .native_wire_method_suffix()
                 .and_then(|suffix| {
+                    let ty = self.enum_type(id)?;
                     self.call(format!("read{suffix}")).and_then(|value| {
                         Ok(ReadExpression::new(Expression::call(
-                            enumeration.name().clone(),
+                            ty,
                             Identifier::parse("fromValue")?,
                             [value.expression].into_iter().collect::<ArgumentList>(),
                         )))
@@ -135,7 +141,15 @@ impl CodecRead for Reader<'_> {
     }
 
     fn data_enum(&mut self, id: EnumId) -> Self::Expr {
-        Enumeration::read_expression(id, self.reader.clone(), self.context).map(ReadExpression::new)
+        self.enum_type(id).and_then(|enumeration| {
+            Ok(ReadExpression::new(Expression::call(
+                enumeration,
+                Identifier::parse("fromReader")?,
+                [Expression::identifier(self.reader.clone())]
+                    .into_iter()
+                    .collect::<ArgumentList>(),
+            )))
+        })
     }
 
     fn class_handle(&mut self, _id: ClassId) -> Self::Expr {
@@ -148,9 +162,8 @@ impl CodecRead for Reader<'_> {
 
     fn custom(&mut self, id: CustomTypeId, representation: Self::Expr) -> Self::Expr {
         let representation = representation?;
-        match self.host.custom_type_mapping(id, self.context) {
-            Some(mapping) => mapping
-                .decode(representation.expression)
+        match self.context.custom_type_mapping(id) {
+            Some(mapping) => KotlinHost::custom_type_decode(mapping, representation.expression)
                 .map(ReadExpression::new),
             None => Ok(ReadExpression::new(representation.expression)),
         }

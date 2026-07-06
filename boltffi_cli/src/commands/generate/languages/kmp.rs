@@ -150,7 +150,7 @@ fn prepare_kmp_output_directory(
     remove_stale_kmp_generated_paths(output_directory)
 }
 
-fn remove_stale_kmp_generated_paths(output_directory: &Path) -> Result<()> {
+pub(crate) fn remove_stale_kmp_generated_paths(output_directory: &Path) -> Result<()> {
     KMP_MANAGED_GENERATED_PATHS
         .iter()
         .map(|relative_path| output_directory.join(relative_path))

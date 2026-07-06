@@ -2,6 +2,8 @@ use std::{collections::HashSet, error, fmt};
 
 use serde::{Deserialize, Serialize};
 
+use super::error_payloads::ErrorPayloadTypes;
+
 use crate::{
     BindingError, BindingErrorKind, CanonicalName, Decl, Native, NativeSymbol, NativeSymbolTable,
     Surface, Wasm32,
@@ -148,6 +150,8 @@ impl<S: Surface> Bindings<S> {
         decls: Vec<Decl<S>>,
         symbols: NativeSymbolTable,
     ) -> Result<Self, BindingError> {
+        let mut decls = decls;
+        ErrorPayloadTypes::from_decls(&decls).mark_decls(&mut decls);
         let bindings = Self {
             version: ContractVersion::current(),
             package,
@@ -288,10 +292,12 @@ impl<S: Surface> TryFrom<UncheckedBindings<S>> for Bindings<S> {
     type Error = BindingError;
 
     fn try_from(unchecked: UncheckedBindings<S>) -> Result<Self, Self::Error> {
+        let mut decls = unchecked.decls;
+        ErrorPayloadTypes::from_decls(&decls).mark_decls(&mut decls);
         let bindings = Self {
             version: unchecked.version,
             package: unchecked.package,
-            decls: unchecked.decls,
+            decls,
             symbols: unchecked.symbols,
         };
         bindings.validate()?;
@@ -678,8 +684,8 @@ impl BindingMetadataEnvelope {
         }
         if &self.package != self.bindings.package() {
             return Err(BindingMetadataError::PackageMismatch {
-                envelope: self.package.clone(),
-                payload: self.bindings.package().clone(),
+                envelope: Box::new(self.package.clone()),
+                payload: Box::new(self.bindings.package().clone()),
             });
         }
         let actual = BindingMetadataHash::new(&self.bindings.payload_bytes()?);
@@ -794,9 +800,9 @@ pub enum BindingMetadataError {
     /// The envelope package does not match the payload package.
     PackageMismatch {
         /// Package written on the envelope.
-        envelope: PackageInfo,
+        envelope: Box<PackageInfo>,
         /// Package carried by the payload.
-        payload: PackageInfo,
+        payload: Box<PackageInfo>,
     },
     /// The payload hash does not match the serialized payload.
     HashMismatch {

@@ -5,7 +5,7 @@ use boltffi_binding::{CanonicalName, NamePart};
 
 use crate::{
     bridge::jni::JvmClassPath,
-    core::{Error, Result},
+    core::{Error, Result, name_case},
     target::kotlin::{
         KotlinHost,
         syntax::{Identifier, TypeName},
@@ -32,7 +32,7 @@ pub struct KotlinLibrary {
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Name {
-    parts: Vec<NamePart>,
+    source: CanonicalName,
 }
 
 impl KotlinPackage {
@@ -126,7 +126,7 @@ impl fmt::Display for KotlinLibrary {
 impl Name {
     pub fn new(name: &CanonicalName) -> Self {
         Self {
-            parts: name.parts().to_vec(),
+            source: name.clone(),
         }
     }
 
@@ -155,32 +155,16 @@ impl Name {
     }
 
     fn lower_camel(&self) -> String {
-        self.parts
-            .iter()
-            .enumerate()
-            .map(|(index, part)| match index {
-                0 => part.as_str().to_owned(),
-                _ => Self::capitalized(part.as_str()),
-            })
-            .collect()
-    }
-
-    fn capitalized(part: &str) -> String {
-        let mut characters = part.chars();
-        characters.next().map_or_else(String::new, |first| {
-            first.to_uppercase().chain(characters).collect()
-        })
+        name_case::lower_camel(&self.source)
     }
 
     fn upper_camel(&self) -> String {
-        self.parts
-            .iter()
-            .map(|part| Self::capitalized(part.as_str()))
-            .collect()
+        name_case::upper_camel(&self.source)
     }
 
     fn screaming_snake(&self) -> String {
-        self.parts
+        self.source
+            .parts()
             .iter()
             .map(NamePart::as_str)
             .map(str::to_ascii_uppercase)

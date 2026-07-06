@@ -24,6 +24,12 @@ private object Native {
     @JvmStatic external fun boltffi_stream_demo_engine_names_poll(subscription: Long, callback_data: Long): Unit
     @JvmStatic external fun boltffi_stream_demo_engine_names_unsubscribe(subscription: Long): Unit
     @JvmStatic external fun boltffi_stream_demo_engine_names_free(subscription: Long): Unit
+    @JvmStatic external fun boltffi_stream_demo_engine_ticks_subscribe(`receiver`: Long): Long
+    @JvmStatic external fun boltffi_stream_demo_engine_ticks_pop_batch(subscription: Long, maxCount: Long): ByteArray?
+    @JvmStatic external fun boltffi_stream_demo_engine_ticks_wait(subscription: Long, timeout_milliseconds: Int): Int
+    @JvmStatic external fun boltffi_stream_demo_engine_ticks_poll(subscription: Long, callback_data: Long): Unit
+    @JvmStatic external fun boltffi_stream_demo_engine_ticks_unsubscribe(subscription: Long): Unit
+    @JvmStatic external fun boltffi_stream_demo_engine_ticks_free(subscription: Long): Unit
 
     @JvmStatic fun boltffiFutureContinuationCallback(handle: Long, pollResult: Byte) {
         BoltFfiAsync.resume(handle, pollResult)
@@ -148,4 +154,42 @@ fun Engine.names(): kotlinx.coroutines.flow.Flow<String> = kotlinx.coroutines.fl
     )
     context.start()
     awaitClose { context.requestTermination() }
+}
+
+fun Engine.ticks(callback: (Int) -> Unit): TicksCancellable {
+    val subscription = Native.boltffi_stream_demo_engine_ticks_subscribe(handle)
+    if (subscription == 0L) return TicksCancellable {}
+    val context = BoltFfiStreamContext(
+        scope = boltffiCallbackScope,
+        subscription = subscription,
+        batchSize = 16L,
+        popBatch = Native::boltffi_stream_demo_engine_ticks_pop_batch,
+        poll = Native::boltffi_stream_demo_engine_ticks_poll,
+        unsubscribe = Native::boltffi_stream_demo_engine_ticks_unsubscribe,
+        free = Native::boltffi_stream_demo_engine_ticks_free,
+        processItems = { bytes ->
+            val items = DirectVectorCodec.readIntArray(bytes).toList()
+            items.forEach { item ->
+                callback(item)
+            }
+        },
+        finish = {}
+    )
+    context.start()
+    return TicksCancellable { context.requestTermination() }
+}
+
+class TicksCancellable(
+    private val onCancel: () -> Unit = {}
+) : AutoCloseable {
+    private val cancelled = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    fun cancel() {
+        if (!cancelled.compareAndSet(false, true)) return
+        onCancel()
+    }
+
+    override fun close() {
+        cancel()
+    }
 }

@@ -6,22 +6,22 @@ use crate::core::{
 
 use super::Syntax;
 
-/// No-op bridge used while the KMP IR backend skeleton is being introduced.
+/// No-op bridge used while KMP target emission is moving into the IR backend.
 ///
-/// Later milestones will replace this bridge contract with the concrete ABI
-/// model needed by the KMP lowerer. Keeping it explicit lets
+/// Later milestones can replace this bridge contract with the concrete ABI
+/// model needed for shared JNI and native output. Keeping it explicit lets
 /// [`crate::Target`] exercise the same typed host/bridge composition path as
-/// the Python backend without implying C, JNI, or Apple output ownership.
+/// the Python backend without implying Apple output ownership yet.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 #[non_exhaustive]
 pub struct KmpBridge;
 
-/// Bridge contract consumed by the skeletal KMP host.
+/// Bridge contract consumed by the KMP host.
 ///
-/// The contract advertises no bridge capabilities because M1a does not render
-/// target-language calls over an ABI yet. Host-side admission remains strict:
-/// exported declarations are rejected before rendering until M1b introduces
-/// the real KMP plan and support report.
+/// The contract advertises no bridge capabilities because the current KMP
+/// emitter owns only the JVM/Android project surface; callable JNI delegation
+/// remains fail-closed until JVM/Android parity is rebuilt around the shared
+/// bridge model.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct KmpBridgeContract {

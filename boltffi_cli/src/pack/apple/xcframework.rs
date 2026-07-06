@@ -62,6 +62,7 @@ impl<'a> XcframeworkBuilder<'a> {
             &self.output_dir,
             &self.scratch_dir,
             &self.names,
+            self.config.apple_deployment_target(),
             self.headers_dir.clone(),
             library_slices,
         );
@@ -255,11 +256,15 @@ impl AppleLibrarySliceKind {
 
     fn framework_layout(self) -> FrameworkLayout {
         match self {
-            // iOS, tvOS and watchOS use shallow bundles.
             Self::IosDevice | Self::IosSimulator => FrameworkLayout::Shallow,
-            // macOS requires the versioned bundle layout; Xcode rejects shallow
-            // macOS frameworks.
             Self::MacOs => FrameworkLayout::Versioned,
+        }
+    }
+
+    fn minimum_os_version(self, deployment_target: &str) -> Option<String> {
+        match self {
+            Self::IosDevice | Self::IosSimulator => Some(deployment_target.to_owned()),
+            Self::MacOs => None,
         }
     }
 }
@@ -318,6 +323,7 @@ impl XcframeworkPlan {
         output_dir: &Path,
         scratch_dir: &Path,
         names: &AppleNames,
+        deployment_target: &str,
         headers_dir: PathBuf,
         library_slices: Vec<AppleLibrarySlice>,
     ) -> Self {
@@ -355,6 +361,7 @@ impl XcframeworkPlan {
                     headers_dir.clone(),
                     library_slice.library_path,
                     library_slice.kind.framework_layout(),
+                    library_slice.kind.minimum_os_version(deployment_target),
                 )
             })
             .collect();
@@ -398,6 +405,7 @@ struct StaticFrameworkBundlePlan {
     library_path: PathBuf,
     public_header_path: String,
     layout: FrameworkLayout,
+    minimum_os_version: Option<String>,
 }
 
 impl StaticFrameworkBundlePlan {
@@ -408,6 +416,7 @@ impl StaticFrameworkBundlePlan {
         headers_dir: PathBuf,
         library_path: PathBuf,
         layout: FrameworkLayout,
+        minimum_os_version: Option<String>,
     ) -> Self {
         let public_header_path = format!("{}/{}.h", library_name, library_name);
 
@@ -419,6 +428,7 @@ impl StaticFrameworkBundlePlan {
             library_path,
             public_header_path,
             layout,
+            minimum_os_version,
         }
     }
 
@@ -501,7 +511,8 @@ impl StaticFrameworkBundlePlan {
     }
 
     fn write_info_plist(&self) -> Result<()> {
-        let info_plist_content = render_framework_info_plist(&self.framework_name)?;
+        let info_plist_content =
+            render_framework_info_plist(&self.framework_name, self.minimum_os_version.as_deref())?;
         let info_plist_path = self.info_plist_path();
 
         if let Some(parent) = info_plist_path.parent() {
@@ -552,6 +563,7 @@ impl StaticFrameworkBundlePlan {
 struct AppleFrameworkInfoPlistTemplate<'a> {
     framework_name: &'a str,
     bundle_identifier: &'a str,
+    minimum_os_version: Option<&'a str>,
 }
 
 #[derive(Template)]
@@ -561,12 +573,16 @@ struct AppleFrameworkModulemapTemplate<'a> {
     header_path: &'a str,
 }
 
-fn render_framework_info_plist(framework_name: &str) -> Result<String> {
+fn render_framework_info_plist(
+    framework_name: &str,
+    minimum_os_version: Option<&str>,
+) -> Result<String> {
     let bundle_identifier = framework_bundle_identifier(framework_name);
 
     AppleFrameworkInfoPlistTemplate {
         framework_name,
         bundle_identifier: &bundle_identifier,
+        minimum_os_version,
     }
     .render()
     .map_err(|source| CliError::CommandFailed {
@@ -841,6 +857,7 @@ mod tests {
             &output_dir,
             &scratch_dir,
             &names,
+            "16.0",
             headers_path,
             vec![AppleLibrarySlice::resolved(
                 AppleLibrarySliceKind::IosSimulator,
@@ -853,6 +870,11 @@ mod tests {
             plan.framework_plans
                 .iter()
                 .all(|framework_plan| framework_plan.framework_path.starts_with(&scratch_dir))
+        );
+        assert!(
+            plan.framework_plans
+                .iter()
+                .all(|framework_plan| framework_plan.minimum_os_version.as_deref() == Some("16.0"))
         );
         assert_eq!(
             plan.xcframework_path,
@@ -887,6 +909,7 @@ mod tests {
             &output_dir,
             &scratch_dir,
             &names,
+            "16.0",
             output_dir.join("headers"),
             Vec::new(),
         );
@@ -949,6 +972,7 @@ mod tests {
             headers_path.clone(),
             library_path.clone(),
             FrameworkLayout::Shallow,
+            Some("16.0".to_string()),
         )
         .execute()
         .expect("create static framework bundle");
@@ -982,6 +1006,11 @@ mod tests {
                 .is_file()
         );
         assert!(framework_path.join("Info.plist").is_file());
+        assert!(
+            fs::read_to_string(framework_path.join("Info.plist"))
+                .expect("read framework plist")
+                .contains("<key>MinimumOSVersion</key>\n    <string>16.0</string>")
+        );
         assert!(
             !framework_path
                 .join("Headers")
@@ -1025,6 +1054,7 @@ mod tests {
             headers_path.clone(),
             library_path.clone(),
             FrameworkLayout::Versioned,
+            None,
         )
         .execute()
         .expect("create versioned framework bundle");
@@ -1051,6 +1081,11 @@ mod tests {
         );
         // macOS requires Info.plist under Resources, not the bundle root.
         assert!(versions_a.join("Resources").join("Info.plist").is_file());
+        assert!(
+            !fs::read_to_string(versions_a.join("Resources").join("Info.plist"))
+                .expect("read framework plist")
+                .contains("MinimumOSVersion")
+        );
         assert!(!framework_path.join("Info.plist").exists());
 
         // Versions/Current -> A
@@ -1094,6 +1129,7 @@ mod tests {
             headers_path,
             library_path,
             FrameworkLayout::Versioned,
+            None,
         )
         .execute()
         .expect("create versioned framework bundle");

@@ -2,13 +2,21 @@
 
 pub mod admission;
 
-use std::fmt;
+use std::{collections::BTreeSet, fmt};
 
-use boltffi_binding::{Bindings, Native};
+use boltffi_binding::{
+    Bindings, Decl, DeclarationRef, DirectValueType, ErrorChannel, ExecutionDecl, FunctionDecl,
+    IncomingParam, Native, ParamPlan, Primitive, Receive, ReturnPlan,
+};
 
-use super::plan::{
-    KmpApiPlan, KmpCommonModule, KmpModule, KmpPlatform, KmpPlatformModule, KmpSupportMode,
-    KmpSupportReport,
+use crate::core::DeclarationLabel;
+
+use super::{
+    names,
+    plan::{
+        KmpApiPlan, KmpCommonModule, KmpFunctionPlan, KmpModule, KmpParamPlan, KmpPlatform,
+        KmpPlatformModule, KmpSupportMode, KmpSupportReport, KmpTypePlan,
+    },
 };
 
 /// Options controlling KMP plan lowering.
@@ -75,28 +83,53 @@ impl KmpLowerer {
         &self,
         bindings: &Bindings<Native>,
     ) -> std::result::Result<KmpModule, KmpLowerError> {
+        self.lower_support_plan(self.support_plan(bindings))
+    }
+
+    pub(crate) fn support_plan(&self, bindings: &Bindings<Native>) -> KmpSupportPlan {
         let admission = admission::KmpAdmission::for_bindings(
             self.options.selected_platforms.clone(),
             bindings,
         );
-        let admission_report = admission.evaluate();
-        let admitted = admission_report
-            .admitted()
-            .iter()
-            .map(|record| {
-                KmpApiPlan::new(
-                    record.kind(),
-                    record.name(),
-                    record.required_capabilities().clone(),
-                )
-            })
-            .collect::<Vec<_>>();
-        let support_report = KmpSupportReport::new(
-            self.options.support_mode,
-            self.options.selected_platforms.clone(),
-            admission_report.admitted_support_apis(),
-            admission_report.rejected_support_apis(),
-        );
+        let mut admission_report = admission::KmpAdmissionReport::new();
+        let mut admitted = Vec::new();
+        let mut declarations = Vec::new();
+        let mut function_signatures = BTreeSet::new();
+        for decl in bindings.decls() {
+            let label = DeclarationLabel::from_ref(DeclarationRef::from(decl));
+            let mut declaration_records = Vec::new();
+            for record in admission.evaluate_decl(decl) {
+                let support_record = if record.is_admitted() {
+                    match admitted_api_plan(decl, &record, &mut function_signatures) {
+                        Ok(api) => {
+                            admitted.push(api);
+                            record
+                        }
+                        Err(reason) => admission::KmpAdmissionRecord::rejected(
+                            record.kind(),
+                            record.name(),
+                            record.required_capabilities().clone(),
+                            reason,
+                        ),
+                    }
+                } else {
+                    record
+                };
+                admission_report.push(support_record.clone());
+                declaration_records.push(support_record);
+            }
+            declarations.push(KmpDeclarationSupport::new(label, declaration_records));
+        }
+
+        KmpSupportPlan::new(admitted, admission_report, declarations)
+    }
+
+    pub(crate) fn lower_support_plan(
+        &self,
+        support_plan: KmpSupportPlan,
+    ) -> std::result::Result<KmpModule, KmpLowerError> {
+        let support_report = support_plan
+            .support_report(self.options.support_mode, &self.options.selected_platforms);
 
         if self.options.selected_platforms.is_empty() {
             return Err(KmpLowerError::InvalidPlatformMatrix {
@@ -113,6 +146,7 @@ impl KmpLowerer {
             });
         }
 
+        let admitted = support_plan.into_common_apis();
         let platforms = self
             .options
             .selected_platforms
@@ -208,13 +242,254 @@ pub fn lower(bindings: &Bindings<Native>) -> std::result::Result<KmpModule, KmpL
     KmpLowerer::new(KmpLoweringOptions::new()).lower(bindings)
 }
 
+/// Ordered KMP support decisions for one binding contract.
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub(crate) struct KmpSupportPlan {
+    common_apis: Vec<KmpApiPlan>,
+    admission_report: admission::KmpAdmissionReport,
+    declarations: Vec<KmpDeclarationSupport>,
+}
+
+impl KmpSupportPlan {
+    fn new(
+        common_apis: Vec<KmpApiPlan>,
+        admission_report: admission::KmpAdmissionReport,
+        declarations: Vec<KmpDeclarationSupport>,
+    ) -> Self {
+        Self {
+            common_apis,
+            admission_report,
+            declarations,
+        }
+    }
+
+    pub(crate) fn declarations(&self) -> &[KmpDeclarationSupport] {
+        &self.declarations
+    }
+
+    pub(crate) fn has_rejections(&self) -> bool {
+        self.admission_report
+            .records()
+            .iter()
+            .any(|record| !record.is_admitted())
+    }
+
+    fn support_report(
+        &self,
+        mode: KmpSupportMode,
+        selected_platforms: &[KmpPlatform],
+    ) -> KmpSupportReport {
+        KmpSupportReport::new(
+            mode,
+            selected_platforms.to_vec(),
+            self.admission_report.admitted_support_apis(),
+            self.admission_report.rejected_support_apis(),
+        )
+    }
+
+    fn into_common_apis(self) -> Vec<KmpApiPlan> {
+        self.common_apis
+    }
+}
+
+/// KMP support decisions owned by one source declaration.
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub(crate) struct KmpDeclarationSupport {
+    label: DeclarationLabel,
+    records: Vec<admission::KmpAdmissionRecord>,
+}
+
+impl KmpDeclarationSupport {
+    fn new(label: DeclarationLabel, records: Vec<admission::KmpAdmissionRecord>) -> Self {
+        Self { label, records }
+    }
+
+    pub(crate) const fn label(&self) -> &DeclarationLabel {
+        &self.label
+    }
+
+    pub(crate) fn records(&self) -> &[admission::KmpAdmissionRecord] {
+        &self.records
+    }
+}
+
+fn admitted_api_plan(
+    decl: &Decl<Native>,
+    record: &admission::KmpAdmissionRecord,
+    function_signatures: &mut BTreeSet<String>,
+) -> std::result::Result<KmpApiPlan, String> {
+    if let Some(reason) =
+        body_emission_rejection(DeclarationRef::from(decl), record, function_signatures)
+    {
+        return Err(reason);
+    }
+
+    Ok(KmpApiPlan::new(
+        record.kind(),
+        record.name(),
+        record.required_capabilities().clone(),
+    ))
+}
+
+fn body_emission_rejection(
+    declaration: DeclarationRef<'_, Native>,
+    record: &admission::KmpAdmissionRecord,
+    function_signatures: &mut BTreeSet<String>,
+) -> Option<String> {
+    if !record.is_admitted() {
+        return None;
+    }
+
+    match (record.kind(), declaration) {
+        ("function", DeclarationRef::Function(function)) => {
+            let function_plan = lower_function_plan(function, function_signatures);
+            Some(match function_plan {
+                Ok(function_plan) => format!(
+                    "KMP JNI glue emission has not been delegated for function {}",
+                    function_plan.name()
+                ),
+                Err(reason) => reason,
+            })
+        }
+        _ => Some(format!(
+            "KMP declaration body emission has not been ported for {} {}",
+            record.kind(),
+            record.name()
+        )),
+    }
+}
+
+fn lower_function_plan(
+    function: &FunctionDecl<Native>,
+    function_signatures: &mut BTreeSet<String>,
+) -> std::result::Result<KmpFunctionPlan, String> {
+    let callable = function.callable();
+    if callable.receiver().is_some()
+        || !matches!(callable.execution(), ExecutionDecl::Synchronous(_))
+        || !matches!(callable.error().channel(), ErrorChannel::None)
+    {
+        return Err(
+            "KMP function body emission supports only infallible synchronous free functions"
+                .to_string(),
+        );
+    }
+
+    let mut param_names = BTreeSet::new();
+    let params = callable
+        .params()
+        .iter()
+        .map(|param| {
+            let IncomingParam::Value(ParamPlan::Direct {
+                ty: DirectValueType::Primitive(primitive),
+                receive,
+            }) = param.payload()
+            else {
+                return Err(
+                    "KMP function body emission supports only direct primitive parameters"
+                        .to_string(),
+                );
+            };
+            if *receive == Receive::ByMutRef {
+                return Err(
+                    "mutable direct parameter writeback is not planned for KMP functions"
+                        .to_string(),
+                );
+            }
+            if !primitive_has_direct_jvm_carrier(*primitive) {
+                return Err(format!(
+                    "unsigned primitive JNI carrier is not planned for KMP functions: {primitive:?}"
+                ));
+            }
+            let name = names::param_name(param.name());
+            if !param_names.insert(name.clone()) {
+                return Err(format!("duplicate Kotlin parameter name {name}"));
+            }
+            Ok(KmpParamPlan::new(name, KmpTypePlan::Primitive(*primitive)))
+        })
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    let returns = match callable.returns().plan() {
+        ReturnPlan::Void => None,
+        ReturnPlan::DirectViaReturnSlot {
+            ty: DirectValueType::Primitive(primitive),
+        } if primitive_has_direct_jvm_carrier(*primitive) => {
+            Some(KmpTypePlan::Primitive(*primitive))
+        }
+        ReturnPlan::DirectViaReturnSlot {
+            ty: DirectValueType::Primitive(primitive),
+        } => {
+            return Err(format!(
+                "unsigned primitive JNI carrier is not planned for KMP functions: {primitive:?}"
+            ));
+        }
+        _ => {
+            return Err(
+                "KMP function body emission supports only direct primitive return slots"
+                    .to_string(),
+            );
+        }
+    };
+    let name = names::callable_name(function.name());
+    let signature = function_signature_key(&name, &params);
+    if !function_signatures.insert(signature.clone()) {
+        return Err(format!("duplicate Kotlin function signature {signature}"));
+    }
+
+    Ok(KmpFunctionPlan::new(
+        name,
+        function.symbol().name().as_str(),
+        params,
+        returns,
+    ))
+}
+
+fn function_signature_key(name: &str, params: &[KmpParamPlan]) -> String {
+    let params = params
+        .iter()
+        .map(|param| type_signature_key(param.ty()))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("{name}({params})")
+}
+
+fn type_signature_key(ty: &KmpTypePlan) -> &'static str {
+    match ty {
+        KmpTypePlan::Primitive(primitive) => primitive_signature_key(*primitive),
+    }
+}
+
+fn primitive_signature_key(primitive: Primitive) -> &'static str {
+    match primitive {
+        Primitive::Bool => "Boolean",
+        Primitive::I8 => "Byte",
+        Primitive::I16 => "Short",
+        Primitive::I32 => "Int",
+        Primitive::I64 | Primitive::ISize => "Long",
+        Primitive::F32 => "Float",
+        Primitive::F64 => "Double",
+        Primitive::U8 => "UByte",
+        Primitive::U16 => "UShort",
+        Primitive::U32 => "UInt",
+        Primitive::U64 | Primitive::USize => "ULong",
+        _ => "unsupported",
+    }
+}
+
+fn primitive_has_direct_jvm_carrier(primitive: Primitive) -> bool {
+    !matches!(
+        primitive,
+        Primitive::U8 | Primitive::U16 | Primitive::U32 | Primitive::U64 | Primitive::USize
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use boltffi_ast::PackageInfo;
     use boltffi_binding::{Bindings, Native, lower as lower_bindings};
 
     use super::{
-        super::plan::{KmpCapability, KmpPlatform, KmpSupportMode},
+        super::plan::{KmpPlatform, KmpSupportMode},
         KmpLowerError, KmpLowerer, KmpLoweringOptions,
     };
 
@@ -234,22 +509,9 @@ mod tests {
         }
     }
 
-    fn admitted_api<'module>(
-        module: &'module super::super::plan::KmpModule,
-        kind: &str,
-        name: &str,
-    ) -> &'module super::super::plan::KmpApiPlan {
-        module
-            .common()
-            .apis()
-            .iter()
-            .find(|api| api.kind() == kind && api.name() == name)
-            .expect("admitted API")
-    }
-
     #[test]
-    fn lowerer_admits_sync_function_for_default_jvm_android_intersection() {
-        let module = super::lower(&bindings(
+    fn strict_lowerer_rejects_sync_function_until_jvm_jni_glue_is_delegated() {
+        let error = super::lower(&bindings(
             r#"
             #[export]
             pub fn add(left: i32, right: i32) -> i32 {
@@ -257,17 +519,181 @@ mod tests {
             }
             "#,
         ))
-        .expect("sync primitive function should be admitted for JVM and Android");
+        .expect_err("sync functions need real JVM/Android JNI glue before commonMain exposure");
+        let report = unsupported_report(error);
 
-        assert_eq!(module.platforms().len(), 2);
-        assert_eq!(module.platforms()[0].platform(), KmpPlatform::Jvm);
-        assert_eq!(module.platforms()[1].platform(), KmpPlatform::Android);
-        assert_eq!(module.common().apis().len(), 1);
-        assert_eq!(module.common().apis()[0].kind(), "function");
-        assert_eq!(module.common().apis()[0].name(), "add");
-        assert_eq!(module.support_report().mode(), KmpSupportMode::Strict);
-        assert_eq!(module.support_report().admitted_apis().len(), 1);
-        assert!(module.support_report().rejected_apis().is_empty());
+        assert_eq!(report.rejected_apis().len(), 1);
+        assert_eq!(report.rejected_apis()[0].kind(), "function");
+        assert_eq!(report.rejected_apis()[0].name(), "add");
+        assert!(
+            report.rejected_apis()[0]
+                .reason()
+                .expect("rejection reason")
+                .contains("JNI glue emission")
+        );
+    }
+
+    #[test]
+    fn strict_lowerer_rejects_unsigned_primitives_until_jni_carrier_plan_exists() {
+        let error = super::lower(&bindings(
+            r#"
+            #[export]
+            pub fn round_trip(value: u32) -> u32 {
+                value
+            }
+            "#,
+        ))
+        .expect_err("unsigned primitive function should fail before commonMain emission");
+        let report = unsupported_report(error);
+
+        assert!(report.rejected_apis().iter().any(|api| {
+            api.kind() == "function"
+                && api.name() == "round::trip"
+                && api
+                    .reason()
+                    .expect("rejection reason")
+                    .contains("unsigned primitive JNI carrier")
+        }));
+    }
+
+    #[test]
+    fn strict_lowerer_rejects_mutable_direct_params_until_writeback_plan_exists() {
+        let error = super::lower(&bindings(
+            r#"
+            #[export]
+            pub fn bump(value: &mut i32) {
+                *value += 1;
+            }
+            "#,
+        ))
+        .expect_err("mutable direct primitive function should fail before commonMain emission");
+        let report = unsupported_report(error);
+
+        assert!(report.rejected_apis().iter().any(|api| {
+            api.kind() == "function"
+                && api.name() == "bump"
+                && api
+                    .reason()
+                    .expect("rejection reason")
+                    .contains("mutable direct parameter writeback")
+        }));
+    }
+
+    #[test]
+    fn strict_lowerer_rejects_duplicate_kotlin_function_signatures() {
+        let error = super::lower(&bindings(
+            r#"
+            #[export]
+            pub fn ping_pong(value: i32) -> i32 {
+                value
+            }
+
+            #[export]
+            pub fn ping__pong(value: i32) -> i32 {
+                value
+            }
+            "#,
+        ))
+        .expect_err("duplicate Kotlin callable signatures should fail closed");
+        let report = unsupported_report(error);
+
+        assert!(report.rejected_apis().iter().any(|api| {
+            api.kind() == "function"
+                && api.name() == "ping::pong"
+                && api
+                    .reason()
+                    .expect("rejection reason")
+                    .contains("duplicate Kotlin function signature")
+        }));
+    }
+
+    #[test]
+    fn strict_lowerer_rejects_duplicate_kotlin_parameter_names() {
+        let error = super::lower(&bindings(
+            r#"
+            #[export]
+            pub fn add(foo_bar: i32, foo__bar: i32) -> i32 {
+                foo_bar + foo__bar
+            }
+            "#,
+        ))
+        .expect_err("duplicate normalized Kotlin parameter names should fail closed");
+        let report = unsupported_report(error);
+
+        assert!(report.rejected_apis().iter().any(|api| {
+            api.kind() == "function"
+                && api.name() == "add"
+                && api
+                    .reason()
+                    .expect("rejection reason")
+                    .contains("duplicate Kotlin parameter name")
+        }));
+    }
+
+    #[test]
+    fn preview_prune_omits_unrenderable_functions_and_reports_reasons() {
+        let module = KmpLowerer::new(
+            KmpLoweringOptions::new().support_mode(KmpSupportMode::PreviewPruneUnsupported),
+        )
+        .lower(&bindings(
+            r#"
+            #[export]
+            pub fn add(left: i32, right: i32) -> i32 {
+                left + right
+            }
+
+            #[export]
+            pub fn round_trip(value: u32) -> u32 {
+                value
+            }
+            "#,
+        ))
+        .expect("preview pruning should omit unrenderable functions");
+
+        assert!(module.common().apis().is_empty());
+        assert!(module.support_report().rejected_apis().iter().any(|api| {
+            api.kind() == "function"
+                && api.name() == "add"
+                && api
+                    .reason()
+                    .expect("rejection reason")
+                    .contains("JNI glue emission")
+        }));
+        assert!(module.support_report().rejected_apis().iter().any(|api| {
+            api.kind() == "function"
+                && api.name() == "round::trip"
+                && api
+                    .reason()
+                    .expect("rejection reason")
+                    .contains("unsigned primitive JNI carrier")
+        }));
+    }
+
+    #[test]
+    fn preview_prune_omits_unrenderable_record_bodies_and_reports_reasons() {
+        let module = KmpLowerer::new(
+            KmpLoweringOptions::new().support_mode(KmpSupportMode::PreviewPruneUnsupported),
+        )
+        .lower(&bindings(
+            r#"
+            #[repr(C)]
+            #[data]
+            pub struct Point {
+                pub x: i32,
+            }
+            "#,
+        ))
+        .expect("preview pruning should omit unrenderable record bodies");
+
+        assert!(module.common().apis().is_empty());
+        assert!(module.support_report().rejected_apis().iter().any(|api| {
+            api.kind() == "record"
+                && api.name() == "point"
+                && api
+                    .reason()
+                    .expect("rejection reason")
+                    .contains("KMP declaration body emission")
+        }));
     }
 
     #[test]
@@ -369,12 +795,14 @@ mod tests {
         .expect_err("async record methods are outside the M1b KMP capability set");
 
         let report = unsupported_report(error);
-        assert!(
-            report
-                .admitted_apis()
-                .iter()
-                .any(|api| api.kind() == "record" && api.name() == "point")
-        );
+        assert!(report.rejected_apis().iter().any(|api| {
+            api.kind() == "record"
+                && api.name() == "point"
+                && api
+                    .reason()
+                    .expect("rejection reason")
+                    .contains("KMP declaration body emission")
+        }));
         assert!(report.rejected_apis().iter().any(|api| {
             api.kind() == "record method"
                 && api.name() == "point::load"
@@ -419,18 +847,22 @@ mod tests {
         .expect_err("mutating record and enum receivers are outside the M1b KMP capability set");
 
         let report = unsupported_report(error);
-        assert!(
-            report
-                .admitted_apis()
-                .iter()
-                .any(|api| api.kind() == "record" && api.name() == "point")
-        );
-        assert!(
-            report
-                .admitted_apis()
-                .iter()
-                .any(|api| api.kind() == "enum" && api.name() == "mode")
-        );
+        assert!(report.rejected_apis().iter().any(|api| {
+            api.kind() == "record"
+                && api.name() == "point"
+                && api
+                    .reason()
+                    .expect("rejection reason")
+                    .contains("KMP declaration body emission")
+        }));
+        assert!(report.rejected_apis().iter().any(|api| {
+            api.kind() == "enum"
+                && api.name() == "mode"
+                && api
+                    .reason()
+                    .expect("rejection reason")
+                    .contains("KMP declaration body emission")
+        }));
         assert!(report.rejected_apis().iter().any(|api| {
             api.kind() == "record method"
                 && api.name() == "point::translate"
@@ -491,26 +923,20 @@ mod tests {
         ))
         .expect("preview mode should return a pruned plan");
 
+        assert!(module.common().apis().is_empty());
         assert!(
             module
-                .common()
-                .apis()
+                .support_report()
+                .rejected_apis()
                 .iter()
-                .any(|api| api.kind() == "record" && api.name() == "point")
+                .any(|api| { api.kind() == "record" && api.name() == "point" })
         );
         assert!(
             module
-                .common()
-                .apis()
+                .support_report()
+                .rejected_apis()
                 .iter()
-                .any(|api| api.kind() == "enum" && api.name() == "mode")
-        );
-        assert!(
-            !module
-                .common()
-                .apis()
-                .iter()
-                .any(|api| { matches!(api.name(), "point::translate" | "mode::flip") })
+                .any(|api| { api.kind() == "enum" && api.name() == "mode" })
         );
         assert!(
             module
@@ -529,8 +955,8 @@ mod tests {
     }
 
     #[test]
-    fn lowerer_records_owner_capabilities_on_admitted_members() {
-        let module = super::lower(&bindings(
+    fn strict_lowerer_rejects_supported_record_and_enum_members_until_bodies_are_ported() {
+        let error = super::lower(&bindings(
             r#"
             #[repr(C)]
             #[data]
@@ -559,31 +985,29 @@ mod tests {
             }
             "#,
         ))
-        .expect("supported record and enum methods should be admitted");
+        .expect_err("supported record and enum members still need body emission");
 
-        let record_method = admitted_api(&module, "record method", "point::stable");
-        assert!(
-            record_method
-                .required_capabilities()
-                .contains(KmpCapability::DirectRecords)
-        );
-        assert!(
-            record_method
-                .required_capabilities()
-                .contains(KmpCapability::SyncCallables)
-        );
-
-        let enum_method = admitted_api(&module, "enum method", "mode::stable");
-        assert!(
-            enum_method
-                .required_capabilities()
-                .contains(KmpCapability::CStyleEnums)
-        );
-        assert!(
-            enum_method
-                .required_capabilities()
-                .contains(KmpCapability::SyncCallables)
-        );
+        let report = unsupported_report(error);
+        for (kind, name) in [
+            ("record", "point"),
+            ("record method", "point::stable"),
+            ("enum", "mode"),
+            ("enum method", "mode::stable"),
+        ] {
+            assert!(
+                report.rejected_apis().iter().any(|api| {
+                    api.kind() == kind
+                        && api.name() == name
+                        && api
+                            .reason()
+                            .expect("rejection reason")
+                            .contains("KMP declaration body emission")
+                }),
+                "{:#?}",
+                report.rejected_apis()
+            );
+        }
+        assert!(report.admitted_apis().is_empty());
     }
 
     #[test]

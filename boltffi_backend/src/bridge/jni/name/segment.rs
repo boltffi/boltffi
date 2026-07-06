@@ -13,7 +13,7 @@ use boltffi_binding::{CanonicalName, ClosureSignature};
 
 use crate::{
     bridge::jni::name::JniSymbolName,
-    core::{Error, Result},
+    core::{Error, Result, name_case},
 };
 
 /// One JVM package or class-name segment.
@@ -54,17 +54,7 @@ impl JvmNameSegment {
     }
 
     fn canonical_class(name: &CanonicalName) -> String {
-        name.parts()
-            .iter()
-            .map(|part| Self::capitalized(part.as_str()))
-            .collect()
-    }
-
-    fn capitalized(segment: &str) -> String {
-        let mut characters = segment.chars();
-        characters.next().map_or_else(String::new, |first| {
-            first.to_uppercase().chain(characters).collect()
-        })
+        name_case::upper_camel(name)
     }
 
     fn parse(name: String, error: impl FnOnce(String) -> Error) -> Result<Self> {

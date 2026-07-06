@@ -1,0 +1,36 @@
+---
+source: boltffi_backend/tests/kotlin/exports.rs
+expression: "rendered_fixture(\"exports/acronym_class\")"
+---
+===== com/boltffi/demo/Demo.kt =====
+@file:OptIn(kotlin.ExperimentalUnsignedTypes::class)
+
+package com.boltffi.demo
+@Suppress("FunctionName")
+private object Native {
+    @JvmStatic external fun boltffi_release_class_demo_gps_simulator(handle: Long): Unit
+    @JvmStatic external fun boltffi_init_class_demo_gps_simulator_new(enabled: Boolean): Long
+    @JvmStatic external fun boltffi_method_class_demo_gps_simulator_enabled(`receiver`: Long): Boolean
+}
+
+class GPSSimulator internal constructor(internal val handle: Long) : AutoCloseable {
+    private val __boltffi_closed = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    override fun close() {
+        if (__boltffi_closed.compareAndSet(false, true)) {
+            Native.boltffi_release_class_demo_gps_simulator(handle)
+        }
+    }
+
+    constructor(enabled: Boolean) : this(new(enabled).handle)
+
+    companion object {
+        fun new(enabled: Boolean): GPSSimulator {
+            return GPSSimulator(Native.boltffi_init_class_demo_gps_simulator_new(enabled))
+        }
+    }
+
+    fun enabled(): Boolean {
+        return Native.boltffi_method_class_demo_gps_simulator_enabled(this.handle)
+    }
+}

@@ -315,7 +315,7 @@ impl<'plan> StreamItemPlanRender<'plan, Native> for StreamItemRenderer<'_> {
     ) -> Self::Output {
         match shape {
             native::BufferShape::Buffer => Ok(StreamItem {
-                ty: KotlinType::type_ref(ty, self.host, self.context)?,
+                ty: KotlinType::type_ref(ty, self.context)?,
                 setup: self.encoded_setup()?,
                 items: self.encoded_items(read)?,
             }),

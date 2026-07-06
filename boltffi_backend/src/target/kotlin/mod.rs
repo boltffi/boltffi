@@ -6,11 +6,11 @@ mod primitive;
 mod render;
 mod syntax;
 
-use std::{collections::BTreeMap, path::PathBuf};
+use std::path::PathBuf;
 
 use boltffi_binding::{
-    Bindings, CallbackDecl, ClassDecl, ConstantDecl, CustomTypeDecl, CustomTypeId, EnumDecl,
-    FunctionDecl, Native, RecordDecl, StreamDecl,
+    Bindings, CallbackDecl, ClassDecl, ConstantDecl, CustomTypeDecl, EnumDecl, FunctionDecl,
+    Native, RecordDecl, StreamDecl,
 };
 
 use crate::{
@@ -20,11 +20,14 @@ use crate::{
     },
     core::{
         BindingCapability, BridgeCapability, BridgeLayer, CapabilityRequirements, Emitted, Error,
-        GeneratedOutput, HostCapabilities, RenderContext, RenderedDeclaration, Result, Target,
-        contract::sealed, host,
+        GeneratedOutput, HostCapabilities, RenderContext, RenderedDeclaration,
+        ResolvedCustomTypeMappings, Result, Target, contract::sealed, host,
     },
 };
 
+pub use crate::core::{
+    CustomTypeConversion as KotlinCustomConversion, CustomTypeMapping as KotlinCustomMapping,
+};
 use name_style::Name;
 pub use name_style::{KotlinFile, KotlinLibrary, KotlinPackage};
 use syntax::{ArgumentList, Expression, Identifier, Syntax, TypeName};
@@ -64,24 +67,6 @@ pub enum KotlinFactoryStyle {
     CompanionMethods,
 }
 
-/// Conversion used by a Kotlin custom type mapping.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-#[non_exhaustive]
-pub enum KotlinCustomConversion {
-    /// Convert a string representation to and from `java.util.UUID`.
-    UuidString,
-    /// Convert a string representation to and from `java.net.URI`.
-    UrlString,
-}
-
-/// Public Kotlin type and conversion for one BoltFFI custom type.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-#[non_exhaustive]
-pub struct KotlinCustomMapping {
-    ty: TypeName,
-    conversion: KotlinCustomConversion,
-}
-
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 struct NativeLibraries {
     android: KotlinLibrary,
@@ -101,50 +86,7 @@ pub struct KotlinHost {
     native_libraries: NativeLibraries,
     api_style: KotlinApiStyle,
     factory_style: KotlinFactoryStyle,
-    custom_mappings: BTreeMap<String, KotlinCustomMapping>,
-}
-
-impl KotlinCustomMapping {
-    /// Creates a mapping whose FFI representation is a UUID string.
-    pub fn uuid_string(ty: impl Into<String>) -> Self {
-        Self {
-            ty: TypeName::new(ty),
-            conversion: KotlinCustomConversion::UuidString,
-        }
-    }
-
-    /// Creates a mapping whose FFI representation is a URL string.
-    pub fn url_string(ty: impl Into<String>) -> Self {
-        Self {
-            ty: TypeName::new(ty),
-            conversion: KotlinCustomConversion::UrlString,
-        }
-    }
-
-    fn ty(&self) -> TypeName {
-        self.ty.clone()
-    }
-
-    fn decode(&self, representation: Expression) -> Result<Expression> {
-        match self.conversion {
-            KotlinCustomConversion::UuidString => Ok(Expression::invoke(
-                "java.util.UUID.fromString",
-                [representation].into_iter().collect::<ArgumentList>(),
-            )),
-            KotlinCustomConversion::UrlString => Ok(Expression::invoke(
-                "java.net.URI.create",
-                [representation].into_iter().collect::<ArgumentList>(),
-            )),
-        }
-    }
-
-    fn encode(&self, value: Expression) -> Result<Expression> {
-        Ok(Expression::call(
-            value,
-            Identifier::parse("toString")?,
-            ArgumentList::default(),
-        ))
-    }
+    custom_mappings: crate::core::CustomTypeMappingSet,
 }
 
 impl KotlinHost {
@@ -160,7 +102,7 @@ impl KotlinHost {
             native_libraries: NativeLibraries::default()?,
             api_style: KotlinApiStyle::default(),
             factory_style: KotlinFactoryStyle::default(),
-            custom_mappings: BTreeMap::new(),
+            custom_mappings: crate::core::CustomTypeMappingSet::default(),
         })
     }
 
@@ -218,7 +160,7 @@ impl KotlinHost {
         custom_type: impl Into<String>,
         mapping: KotlinCustomMapping,
     ) -> Self {
-        self.custom_mappings.insert(custom_type.into(), mapping);
+        self.custom_mappings.insert(custom_type, mapping);
         self
     }
 
@@ -262,17 +204,38 @@ impl KotlinHost {
         self.factory_style
     }
 
-    fn custom_type_mapping(
-        &self,
-        id: CustomTypeId,
-        context: &RenderContext<Native>,
-    ) -> Option<&KotlinCustomMapping> {
-        let declaration = context.custom_type(id)?;
-        let kotlin_name = Name::new(declaration.name()).type_name().to_string();
-        self.custom_mappings.get(&kotlin_name).or_else(|| {
-            self.custom_mappings
-                .get(&declaration.name().as_path_string())
-        })
+    fn custom_type_name(mapping: &KotlinCustomMapping) -> TypeName {
+        TypeName::new(
+            match (mapping.conversion(), mapping.target_type().as_str()) {
+                (KotlinCustomConversion::UuidString, "UUID") => "java.util.UUID",
+                (KotlinCustomConversion::UrlString, "URI") => "java.net.URI",
+                _ => mapping.target_type().as_str(),
+            },
+        )
+    }
+
+    fn custom_type_decode(
+        mapping: &KotlinCustomMapping,
+        representation: Expression,
+    ) -> Result<Expression> {
+        match mapping.conversion() {
+            KotlinCustomConversion::UuidString => Ok(Expression::invoke(
+                "java.util.UUID.fromString",
+                [representation].into_iter().collect::<ArgumentList>(),
+            )),
+            KotlinCustomConversion::UrlString => Ok(Expression::invoke(
+                "java.net.URI.create",
+                [representation].into_iter().collect::<ArgumentList>(),
+            )),
+        }
+    }
+
+    fn custom_type_encode(_mapping: &KotlinCustomMapping, value: Expression) -> Result<Expression> {
+        Ok(Expression::call(
+            value,
+            Identifier::parse("toString")?,
+            ArgumentList::default(),
+        ))
     }
 
     fn unsupported(shape: &'static str) -> Error {
@@ -344,6 +307,16 @@ impl host::HostBackend for KotlinHost {
 
     fn bridge_capabilities(&self) -> CapabilityRequirements<BridgeCapability> {
         CapabilityRequirements::new().require(BridgeCapability::Jni)
+    }
+
+    fn custom_type_mappings(
+        &self,
+        bindings: &Bindings<Self::Surface>,
+    ) -> Result<ResolvedCustomTypeMappings> {
+        self.custom_mappings
+            .resolve(bindings, Self::TARGET, |declaration| {
+                Name::new(declaration.name()).type_name().to_string()
+            })
     }
 
     fn record(
@@ -423,7 +396,7 @@ impl host::HostBackend for KotlinHost {
         _bridge: &Self::Bridge,
         context: &RenderContext<Self::Surface>,
     ) -> Result<Emitted> {
-        render::CustomType::from_declaration(decl, self, context)?.render()
+        render::CustomType::from_declaration(decl, context)?.render()
     }
 
     fn assemble<'decl>(

@@ -714,10 +714,7 @@ mod tests {
             .decls()
             .iter()
             .find_map(|decl| match decl {
-                Decl::Record(record) => match record.as_ref() {
-                    crate::RecordDecl::Direct(direct) => Some(direct.methods()),
-                    crate::RecordDecl::Encoded(encoded) => Some(encoded.methods()),
-                },
+                Decl::Record(record) => Some(record.methods()),
                 _ => None,
             })
             .expect("expected record");

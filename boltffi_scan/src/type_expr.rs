@@ -424,7 +424,10 @@ impl<'a> Scanner<'a> {
             .declared_types
             .resolve_type_in_scope(self.scope, &type_path.path)?
         {
-            SourceType::Declared(_) | SourceType::Unregistered => Ok(false),
+            SourceType::Declared(_) => Ok(false),
+            SourceType::Unregistered => self
+                .declared_types
+                .resolves_type_alias(self.scope, &type_path.path),
             SourceType::External(_) | SourceType::Unknown => Ok(true),
         }
     }

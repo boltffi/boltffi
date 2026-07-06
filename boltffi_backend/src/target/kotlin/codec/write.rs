@@ -318,8 +318,11 @@ impl CodecWrite for Writer<'_> {
     where
         F: FnOnce(&mut Self, &ValueRef) -> Vec<Self::Stmt>,
     {
-        let representation = match self.host.custom_type_mapping(id, self.context) {
-            Some(mapping) => match self.value(value).and_then(|value| mapping.encode(value)) {
+        let representation = match self.context.custom_type_mapping(id) {
+            Some(mapping) => match self
+                .value(value)
+                .and_then(|value| KotlinHost::custom_type_encode(mapping, value))
+            {
                 Ok(value) => self.with_current(value, representation),
                 Err(error) => vec![Err(error)],
             },

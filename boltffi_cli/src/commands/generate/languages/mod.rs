@@ -2,12 +2,11 @@ mod csharp;
 mod dart;
 mod java;
 mod kmp;
-mod swift;
 mod typescript;
 
 pub use csharp::CSharpGenerator;
 pub use dart::DartGenerator;
 pub use java::JavaGenerator;
 pub use kmp::KMPGenerator;
-pub use swift::SwiftGenerator;
+pub(crate) use kmp::remove_stale_kmp_generated_paths;
 pub use typescript::TypeScriptGenerator;

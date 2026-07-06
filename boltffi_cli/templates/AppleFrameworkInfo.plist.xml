@@ -8,6 +8,10 @@
     <string>{{ bundle_identifier }}</string>
     <key>CFBundleName</key>
     <string>{{ framework_name }}</string>
+{% if let Some(minimum_os_version) = minimum_os_version %}
+    <key>MinimumOSVersion</key>
+    <string>{{ minimum_os_version }}</string>
+{% endif %}
     <key>CFBundlePackageType</key>
     <string>FMWK</string>
     <key>CFBundleShortVersionString</key>

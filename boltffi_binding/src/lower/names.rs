@@ -4,7 +4,8 @@ use crate::{CanonicalName, FieldKey, NamePart};
 
 impl From<&SourceName> for CanonicalName {
     fn from(name: &SourceName) -> Self {
-        Self::new(
+        Self::from_source(
+            name.spelling(),
             name.parts()
                 .map(|part| NamePart::new(part.as_str()))
                 .collect(),

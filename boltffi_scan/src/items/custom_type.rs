@@ -114,6 +114,17 @@ impl Spec {
         &self.remote_type
     }
 
+    /// Whether the custom declaration proves a Rust type exists at its
+    /// declared path.
+    ///
+    /// A `custom_ffi` trait impl targets a real type in its module, even one
+    /// a macro like `new_key_type!` generated, so the path can join the
+    /// source namespace and re-export chains can verify against it. A
+    /// `custom_type!` macro only names an FFI-side alias.
+    pub fn declares_source_type(&self) -> bool {
+        matches!(self.converters, ConverterSource::Trait { .. })
+    }
+
     fn repr(&self) -> &syn::Type {
         &self.repr
     }

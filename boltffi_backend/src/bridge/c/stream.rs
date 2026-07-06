@@ -115,6 +115,36 @@ impl Stream {
         ]
     }
 
+    /// Returns the C stream subscription function.
+    pub fn subscribe(&self) -> &Function {
+        &self.subscribe
+    }
+
+    /// Returns the C stream batch function.
+    pub fn pop_batch(&self) -> &Function {
+        self.pop_batch.function()
+    }
+
+    /// Returns the C stream wait function.
+    pub fn wait(&self) -> &Function {
+        &self.wait
+    }
+
+    /// Returns the C stream poll function.
+    pub fn poll(&self) -> &Function {
+        &self.poll
+    }
+
+    /// Returns the C stream unsubscribe function.
+    pub fn unsubscribe(&self) -> &Function {
+        &self.unsubscribe
+    }
+
+    /// Returns the C stream free function.
+    pub fn free(&self) -> &Function {
+        &self.free
+    }
+
     /// Returns the direct batch function when this stream copies direct items.
     pub fn direct_batch(&self) -> Option<&DirectStreamBatch> {
         match &self.pop_batch {

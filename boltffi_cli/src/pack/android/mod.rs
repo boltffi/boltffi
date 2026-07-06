@@ -154,6 +154,7 @@ pub(crate) fn build_android_targets(
         release,
         package: Some(config.library_name().to_string()),
         cargo_args: build_cargo_args.to_vec(),
+        env: Vec::new(),
         on_output,
     };
     let builder = Builder::new(config, build_options);

@@ -708,6 +708,62 @@ mod tests {
     }
 
     #[test]
+    fn explicit_import_resolves_dependency_type_reexported_through_bare_module_paths() {
+        // A uniform-path re-export (`pub use camera::CameraUpdate;` naming a
+        // sibling module without a `crate::`/`self::` prefix) is stored
+        // unqualified, so resolution must qualify it with the module path.
+        let maplib = source_tree(
+            "maplib",
+            "mod camera { \
+                 mod update { #[data] pub struct CameraUpdate { pub zoom: f64 } } \
+                 pub use update::CameraUpdate; \
+             } \
+             pub use camera::CameraUpdate;",
+        );
+        let root = source_tree(
+            "demo",
+            "use maplib::CameraUpdate; \
+             #[data] pub struct MapOptions { pub initial_camera: CameraUpdate }",
+        );
+        let complete = SourceTree::combine([maplib, root.clone()]);
+        let root_marked = MarkedItems::collect(&root).expect("root marked items");
+        let complete_marked = MarkedItems::collect(&complete).expect("complete marked items");
+        let declared_types =
+            DeclaredTypes::index(&complete, &complete_marked).expect("declared types");
+        let contract = scan_marked_with_declarations(
+            &root_marked,
+            &declared_types,
+            PackageInfo::new("demo", None),
+        )
+        .expect("dependency reexport chain resolves");
+
+        assert_eq!(
+            contract.records[0].fields[0].type_expr,
+            record("maplib::camera::update::CameraUpdate", "CameraUpdate")
+        );
+
+        let paths = root_visible_paths(
+            &declared_types,
+            &complete,
+            &complete_marked,
+            "demo",
+            &["maplib".to_owned()],
+        );
+        let path = paths
+            .get("maplib::camera::update::CameraUpdate")
+            .expect("dependency type spells through its crate root reexport");
+
+        assert_eq!(path.root, PathRoot::Relative);
+        assert_eq!(
+            path.segments
+                .iter()
+                .map(|segment| segment.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["maplib", "CameraUpdate"]
+        );
+    }
+
+    #[test]
     fn scans_marked_items_nested_several_modules_deep() {
         let contract = scan(
             "pub mod a { pub mod b { \
@@ -800,6 +856,66 @@ mod tests {
         assert_eq!(
             value_return(&contract.functions[0].returns),
             &custom("demo::UtcDateTime", "DateTime")
+        );
+    }
+
+    #[test]
+    fn scans_custom_remote_used_through_type_alias() {
+        let contract = scan(
+            "custom_type!(pub UtcDateTime, remote = chrono::DateTime<chrono::Utc>, repr = i64, error = ConvertError, into_ffi = |dt: &chrono::DateTime<chrono::Utc>| dt.timestamp_millis(), try_from_ffi = |millis: i64| from_millis(millis)); \
+             pub mod core { \
+                 pub mod location { \
+                     pub mod types { \
+                         pub mod coor { \
+                             use chrono::{DateTime, Utc}; \
+                             pub type UtcDateTime = DateTime<Utc>; \
+                         } \
+                         pub mod location { \
+                             use super::coor::UtcDateTime; \
+                             #[data] pub struct CurrentLocation { pub timestamp: UtcDateTime } \
+                         } \
+                     } \
+                 } \
+             }",
+        );
+        let location = contract
+            .records
+            .iter()
+            .find(|record| {
+                record.id == RecordId::new("demo::core::location::types::location::CurrentLocation")
+            })
+            .expect("CurrentLocation record");
+
+        assert_eq!(
+            location.fields[0].type_expr,
+            custom("demo::UtcDateTime", "UtcDateTime")
+        );
+    }
+
+    #[test]
+    fn scans_custom_repr_reexported_from_root() {
+        let contract = scan(
+            "pub use core::location::{GeoCoord, GeographicCoordinate}; \
+             pub mod core { \
+                 pub mod location { \
+                     pub use types::coor::{GeoCoord, GeographicCoordinate}; \
+                     pub mod types { \
+                         pub mod coor { \
+                             pub type GeoCoord = geo::Coord<f64>; \
+                             #[data] pub struct GeographicCoordinate { pub latitude: f64, pub longitude: f64 } \
+                         } \
+                     } \
+                 } \
+             } \
+             custom_type!(pub GeoCoord, remote = geo::Coord<f64>, repr = GeographicCoordinate, error = ConvertError, into_ffi = |coord: &geo::Coord<f64>| GeographicCoordinate { latitude: coord.y, longitude: coord.x }, try_from_ffi = |value: GeographicCoordinate| from_coordinate(value));",
+        );
+
+        assert_eq!(
+            contract.customs[0].repr,
+            record(
+                "demo::core::location::types::coor::GeographicCoordinate",
+                "GeographicCoordinate"
+            )
         );
     }
 
@@ -1018,6 +1134,65 @@ mod tests {
                 .map(|segment| segment.name.as_str())
                 .collect::<Vec<_>>(),
             vec!["session", "model_echo_kind"]
+        );
+    }
+
+    #[test]
+    fn root_visible_paths_prefer_public_reexports_over_private_module_paths() {
+        let root = source_tree(
+            "demo",
+            "mod inner { #[data] pub struct Hidden { pub x: f64 } } \
+             pub use inner::Hidden;",
+        );
+        let marked = MarkedItems::collect(&root).expect("marked items");
+        let declared_types = DeclaredTypes::index(&root, &marked).expect("declared types");
+        let paths = root_visible_paths(&declared_types, &root, &marked, "demo", &[]);
+        let path = paths
+            .get("demo::inner::Hidden")
+            .expect("privately declared root type is visible");
+
+        assert_eq!(path.root, PathRoot::Crate);
+        assert_eq!(
+            path.segments
+                .iter()
+                .map(|segment| segment.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Hidden"]
+        );
+    }
+
+    #[test]
+    fn root_visible_paths_resolve_macro_generated_custom_ffi_types() {
+        // The defining struct comes from a macro invocation, so it is absent
+        // from the item index; the custom_ffi impl must still prove the type
+        // exists for the re-export chain to verify against.
+        let root = source_tree(
+            "demo",
+            "mod ids { \
+                 new_key_type! { pub struct Token; } \
+                 #[custom_ffi] impl CustomFfiConvertible for Token { \
+                     type FfiRepr = u64; \
+                     type Error = String; \
+                     fn into_ffi(&self) -> u64 { 0 } \
+                     fn try_from_ffi(value: u64) -> Result<Self, String> { todo!() } \
+                 } \
+             } \
+             pub use ids::Token;",
+        );
+        let marked = MarkedItems::collect(&root).expect("marked items");
+        let declared_types = DeclaredTypes::index(&root, &marked).expect("declared types");
+        let paths = root_visible_paths(&declared_types, &root, &marked, "demo", &[]);
+        let path = paths
+            .get("demo::ids::Token")
+            .expect("macro-generated custom type is visible");
+
+        assert_eq!(path.root, PathRoot::Crate);
+        assert_eq!(
+            path.segments
+                .iter()
+                .map(|segment| segment.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Token"]
         );
     }
 

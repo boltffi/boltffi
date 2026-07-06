@@ -17,6 +17,7 @@ typedef struct {
     void (*point)(uint64_t, ___Point, void (*)(void *, FfiStatus, ___Point), void *);
     void (*values)(uint64_t, uint32_t, void (*)(void *, FfiStatus, FfiBuf_u8), void *);
     void (*try_load)(uint64_t, uint32_t, void (*)(void *, FfiStatus, FfiBuf_u8), void *);
+    void (*check_enabled)(uint64_t, uint32_t, void (*)(void *, FfiStatus, FfiBuf_u8), void *);
 } ___ListenerVTable;
 void boltffi_register_callback_demo_listener(const ___ListenerVTable *vtable);
 BoltFFICallbackHandle boltffi_create_callback_demo_listener(uint64_t handle);
@@ -34,6 +35,7 @@ static jmethodID g____ListenerVTable_value_method = NULL;
 static jmethodID g____ListenerVTable_point_method = NULL;
 static jmethodID g____ListenerVTable_values_method = NULL;
 static jmethodID g____ListenerVTable_try_load_method = NULL;
+static jmethodID g____ListenerVTable_check_enabled_method = NULL;
 
 static void ___ListenerVTable_free(uint64_t handle) {
     JNIEnv *env = NULL;
@@ -181,6 +183,32 @@ __boltffi_fail:
     return;
 }
 
+static void ___ListenerVTable_check_enabled(uint64_t handle, uint32_t key, void (*complete)(void *, FfiStatus, FfiBuf_u8), void *complete_context) {
+    JNIEnv *env = NULL;
+    int attached = 0;
+
+    if (!boltffi_jni_enter(&env, &attached)) {
+        complete(complete_context, (FfiStatus){.code = 1}, (FfiBuf_u8){0});
+        return;
+    }
+
+    (*env)->CallStaticVoidMethod(env, g____ListenerVTable_class, g____ListenerVTable_check_enabled_method, (jlong)handle, (jint)key, (jlong)complete, (jlong)complete_context);
+    if (boltffi_jni_clear_exception(env)) {
+        goto __boltffi_fail;
+    }
+
+    boltffi_jni_exit(env, attached);
+    return;
+__boltffi_fail:
+
+    boltffi_jni_clear_exception(env);
+    boltffi_jni_exit(env, attached);
+
+    complete(complete_context, (FfiStatus){.code = 1}, (FfiBuf_u8){0});
+
+    return;
+}
+
 static ___ListenerVTable g____ListenerVTable_vtable = {
     .free = ___ListenerVTable_free,
     .clone = ___ListenerVTable_clone,
@@ -188,6 +216,7 @@ static ___ListenerVTable g____ListenerVTable_vtable = {
     .point = ___ListenerVTable_point,
     .values = ___ListenerVTable_values,
     .try_load = ___ListenerVTable_try_load,
+    .check_enabled = ___ListenerVTable_check_enabled,
 };
 
 static bool boltffi_jni_load____ListenerVTable_callbacks(JNIEnv *env) {
@@ -224,6 +253,10 @@ static bool boltffi_jni_load____ListenerVTable_callbacks(JNIEnv *env) {
     if (g____ListenerVTable_try_load_method == NULL) {
         goto fail;
     }
+    g____ListenerVTable_check_enabled_method = (*env)->GetStaticMethodID(env, g____ListenerVTable_class, "check_enabled", "(JIJJ)V");
+    if (g____ListenerVTable_check_enabled_method == NULL) {
+        goto fail;
+    }
     boltffi_register_callback_demo_listener(&g____ListenerVTable_vtable);
     return true;
 fail:
@@ -243,6 +276,7 @@ static void boltffi_jni_unload____ListenerVTable_callbacks(JNIEnv *env) {
     g____ListenerVTable_point_method = NULL;
     g____ListenerVTable_values_method = NULL;
     g____ListenerVTable_try_load_method = NULL;
+    g____ListenerVTable_check_enabled_method = NULL;
 }
 
 JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1async_1callback_1complete_1Bytes(JNIEnv *env, jclass cls, jlong callback, jlong context, jbyteArray result) {

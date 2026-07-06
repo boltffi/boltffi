@@ -3,9 +3,7 @@ use boltffi_binding::{CustomTypeDecl, Native};
 
 use crate::{
     core::{Emitted, RenderContext, Result},
-    target::kotlin::{
-        KotlinHost, name_style::Name, render::type_name::KotlinType, syntax::TypeName,
-    },
+    target::kotlin::{name_style::Name, render::type_name::KotlinType, syntax::TypeName},
 };
 
 #[derive(AskamaTemplate)]
@@ -23,15 +21,14 @@ pub struct CustomType {
 impl CustomType {
     pub fn from_declaration(
         declaration: &CustomTypeDecl,
-        host: &KotlinHost,
         context: &RenderContext<Native>,
     ) -> Result<Self> {
         Ok(Self {
             name: Name::new(declaration.name()).type_name(),
-            representation: host
-                .custom_type_mapping(declaration.id(), context)
+            representation: context
+                .custom_type_mapping(declaration.id())
                 .is_none()
-                .then(|| KotlinType::type_ref(declaration.representation(), host, context))
+                .then(|| KotlinType::type_ref(declaration.representation(), context))
                 .transpose()?,
         })
     }

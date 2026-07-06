@@ -9,12 +9,15 @@ pub mod context;
 pub mod contract;
 /// Backend coverage reports.
 pub mod coverage;
+/// Custom types mapping contracts.
+pub mod custom_types_mapping;
 /// Backend errors.
 pub mod error;
 /// Generated file containers.
 pub mod files;
 /// Host backend traits.
 pub mod host;
+pub(crate) mod name_case;
 /// Typed language syntax fragments.
 pub mod syntax;
 /// Target composition.
@@ -28,6 +31,10 @@ pub use capabilities::{
 pub use context::RenderContext;
 pub use contract::BridgeContract;
 pub use coverage::{CoverageMode, CoverageReport, DeclarationLabel, UnsupportedDeclaration};
+pub use custom_types_mapping::{
+    CustomTypeConversion, CustomTypeMapping, CustomTypeMappingSet, ResolvedCustomTypeMappings,
+    TargetTypeName,
+};
 pub use error::{BackendError, Error, Result};
 pub use files::{
     AllDeclarations, AuxChunk, Diagnostic, Emitted, FallbackPolicy, FileAssembler, FileGroup,

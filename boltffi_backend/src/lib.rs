@@ -21,8 +21,10 @@ pub mod target;
 pub use core::{
     AllDeclarations, AuxChunk, BackendError, BindingCapability, BridgeCapabilities,
     BridgeCapability, CapabilityRequirements, CapabilitySet, CapabilityStatus, CoverageMode,
-    CoverageReport, DeclarationLabel, Diagnostic, Emitted, Error, FallbackPolicy, FileAssembler,
-    FileGroup, FileLayout, FilePath, FilePlan, GeneratedFile, GeneratedOutput, HelperId,
-    HelperPolicy, HostCapabilities, ImportDirective, LanguageSyntax, RenderContext,
-    RenderedDeclaration, Result, SyntaxFragment, Target, TextChunk, UnsupportedDeclaration,
+    CoverageReport, CustomTypeConversion, CustomTypeMapping, CustomTypeMappingSet,
+    DeclarationLabel, Diagnostic, Emitted, Error, FallbackPolicy, FileAssembler, FileGroup,
+    FileLayout, FilePath, FilePlan, GeneratedFile, GeneratedOutput, HelperId, HelperPolicy,
+    HostCapabilities, ImportDirective, LanguageSyntax, RenderContext, RenderedDeclaration,
+    ResolvedCustomTypeMappings, Result, SyntaxFragment, Target, TargetTypeName, TextChunk,
+    UnsupportedDeclaration,
 };

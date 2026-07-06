@@ -2,6 +2,8 @@
 
 use std::collections::BTreeSet;
 
+use boltffi_binding::Primitive;
+
 /// Feature required by one generated KMP API.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[non_exhaustive]
@@ -253,10 +255,11 @@ pub struct KmpApiPlan {
     kind: &'static str,
     name: String,
     required_capabilities: KmpCapabilitySet,
+    body: KmpApiBody,
 }
 
 impl KmpApiPlan {
-    /// Creates an admitted API plan.
+    /// Creates an admitted API plan whose body emission has not been ported yet.
     pub fn new(
         kind: &'static str,
         name: impl Into<String>,
@@ -266,6 +269,21 @@ impl KmpApiPlan {
             kind,
             name: name.into(),
             required_capabilities,
+            body: KmpApiBody::Unsupported,
+        }
+    }
+
+    /// Creates an admitted function API plan.
+    pub fn function(
+        name: impl Into<String>,
+        required_capabilities: KmpCapabilitySet,
+        function: KmpFunctionPlan,
+    ) -> Self {
+        Self {
+            kind: "function",
+            name: name.into(),
+            required_capabilities,
+            body: KmpApiBody::Function(function),
         }
     }
 
@@ -283,6 +301,104 @@ impl KmpApiPlan {
     pub const fn required_capabilities(&self) -> &KmpCapabilitySet {
         &self.required_capabilities
     }
+
+    /// Returns the renderable API body, if this API has been ported.
+    pub const fn body(&self) -> &KmpApiBody {
+        &self.body
+    }
+}
+
+/// Renderable body for one admitted KMP API.
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum KmpApiBody {
+    /// Body emission for this admitted API shape has not been ported yet.
+    Unsupported,
+    /// Synchronous free function body.
+    Function(KmpFunctionPlan),
+}
+
+/// Planned Kotlin function emitted to common and platform source sets.
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub struct KmpFunctionPlan {
+    name: String,
+    native_symbol: String,
+    params: Vec<KmpParamPlan>,
+    returns: Option<KmpTypePlan>,
+}
+
+impl KmpFunctionPlan {
+    /// Creates a function plan.
+    pub fn new(
+        name: impl Into<String>,
+        native_symbol: impl Into<String>,
+        params: Vec<KmpParamPlan>,
+        returns: Option<KmpTypePlan>,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            native_symbol: native_symbol.into(),
+            params,
+            returns,
+        }
+    }
+
+    /// Returns the generated Kotlin function name.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Returns the native symbol called by the internal JVM binding.
+    pub fn native_symbol(&self) -> &str {
+        &self.native_symbol
+    }
+
+    /// Returns the generated Kotlin parameters.
+    pub fn params(&self) -> &[KmpParamPlan] {
+        &self.params
+    }
+
+    /// Returns the generated Kotlin return type, or `None` for `Unit`.
+    pub const fn returns(&self) -> Option<&KmpTypePlan> {
+        self.returns.as_ref()
+    }
+}
+
+/// Planned Kotlin function parameter.
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub struct KmpParamPlan {
+    name: String,
+    ty: KmpTypePlan,
+}
+
+impl KmpParamPlan {
+    /// Creates a parameter plan.
+    pub fn new(name: impl Into<String>, ty: KmpTypePlan) -> Self {
+        Self {
+            name: name.into(),
+            ty,
+        }
+    }
+
+    /// Returns the generated Kotlin parameter name.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Returns the generated Kotlin parameter type.
+    pub const fn ty(&self) -> &KmpTypePlan {
+        &self.ty
+    }
+}
+
+/// Planned Kotlin type for supported KMP declarations.
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum KmpTypePlan {
+    /// Primitive scalar type.
+    Primitive(Primitive),
 }
 
 /// Generated support report for a planned KMP module.

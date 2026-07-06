@@ -1,5 +1,9 @@
 use serde::{Deserialize, Serialize};
-use std::fmt;
+use std::{
+    cmp::Ordering,
+    fmt,
+    hash::{Hash, Hasher},
+};
 
 /// One word inside a [`CanonicalName`].
 ///
@@ -63,27 +67,46 @@ impl From<String> for NamePart {
 /// type `XmlParser`, the segments are `["xml", "parser"]`; the Swift
 /// renderer produces `XmlParser`, the snake_case renderer produces
 /// `xml_parser`.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CanonicalName {
     parts: Vec<NamePart>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    source_spelling: Option<Box<str>>,
 }
 
 impl CanonicalName {
     /// Builds a name from already-normalized parts.
     pub fn new(parts: Vec<NamePart>) -> Self {
-        Self { parts }
+        Self {
+            parts,
+            source_spelling: None,
+        }
+    }
+
+    /// Builds a name from normalized parts and the Rust source spelling.
+    pub fn from_source(spelling: impl Into<String>, parts: Vec<NamePart>) -> Self {
+        Self {
+            parts,
+            source_spelling: Some(spelling.into().into_boxed_str()),
+        }
     }
 
     /// Builds a single-segment name.
     pub fn single(part: impl Into<NamePart>) -> Self {
         Self {
             parts: vec![part.into()],
+            source_spelling: None,
         }
     }
 
     /// Returns the segments in source order.
     pub fn parts(&self) -> &[NamePart] {
         &self.parts
+    }
+
+    /// Returns the Rust source spelling when it was preserved by the scanner.
+    pub fn source_spelling(&self) -> Option<&str> {
+        self.source_spelling.as_deref()
     }
 
     /// Returns the segments joined by `::`.
@@ -93,5 +116,31 @@ impl CanonicalName {
             .map(NamePart::as_str)
             .collect::<Vec<_>>()
             .join("::")
+    }
+}
+
+impl Eq for CanonicalName {}
+
+impl Hash for CanonicalName {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.parts.hash(state);
+    }
+}
+
+impl Ord for CanonicalName {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.parts.cmp(&other.parts)
+    }
+}
+
+impl PartialEq for CanonicalName {
+    fn eq(&self, other: &Self) -> bool {
+        self.parts == other.parts
+    }
+}
+
+impl PartialOrd for CanonicalName {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
     }
 }

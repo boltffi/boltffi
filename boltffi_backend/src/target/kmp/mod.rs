@@ -1,21 +1,25 @@
-//! Kotlin Multiplatform target skeleton for the IR backend pipeline.
+//! Kotlin Multiplatform target for the IR backend pipeline.
 //!
-//! This module intentionally owns only the new backend boundary in M1a. It
-//! does not render the production JVM/Android KMP output yet; that remains in
-//! the legacy bindgen renderer until the later KMP planning and parity
-//! milestones move behavior into this crate.
+//! The backend lowers admitted APIs into a typed KMP plan and emits the
+//! JVM/Android project layout incrementally. APIs whose body emission has not
+//! been ported remain fail-closed so generated `commonMain` never exposes a
+//! public API without matching platform actuals.
 
 mod bridge;
+pub mod emit;
 mod host;
 pub mod lower;
+mod names;
 pub mod plan;
 mod syntax;
 
 pub use bridge::{KmpBridge, KmpBridgeContract};
+pub use emit::{KMP_SUPPORT_REPORT_FILE, KmpEmissionOptions, KmpEmitter};
 pub use host::KmpHost;
 pub use lower::{KmpLowerError, KmpLowerer, KmpLoweringOptions};
 pub use plan::{
-    KmpApiPlan, KmpCapability, KmpCapabilitySet, KmpCommonModule, KmpModule, KmpPlatform,
-    KmpPlatformModule, KmpSupportApi, KmpSupportMode, KmpSupportReport,
+    KmpApiBody, KmpApiPlan, KmpCapability, KmpCapabilitySet, KmpCommonModule, KmpFunctionPlan,
+    KmpModule, KmpParamPlan, KmpPlatform, KmpPlatformModule, KmpSupportApi, KmpSupportMode,
+    KmpSupportReport, KmpTypePlan,
 };
 pub use syntax::Syntax;

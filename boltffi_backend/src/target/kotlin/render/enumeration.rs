@@ -78,12 +78,8 @@ impl Enumeration {
         context: &RenderContext<Native>,
     ) -> Result<Self> {
         match declaration {
-            EnumDecl::CStyle(enumeration) => {
-                Self::from_c_style(enumeration, None, host, context, false)
-            }
-            EnumDecl::Data(enumeration) => {
-                Self::from_data(enumeration, None, host, context, None, false)
-            }
+            EnumDecl::CStyle(enumeration) => Self::from_c_style(enumeration, None, host, context),
+            EnumDecl::Data(enumeration) => Self::from_data(enumeration, None, host, context, None),
             _ => Err(KotlinHost::unsupported("unknown enum declaration")),
         }
     }
@@ -95,47 +91,12 @@ impl Enumeration {
         context: &RenderContext<Native>,
         package: Option<&KotlinPackage>,
     ) -> Result<Self> {
-        Self::from_declaration_with_package_and_error(
-            declaration,
-            host,
-            bridge,
-            context,
-            package,
-            false,
-        )
-    }
-
-    pub fn from_declaration_as_error(
-        declaration: &EnumDecl<Native>,
-        host: &KotlinHost,
-        bridge: &JniBridgeContract,
-        context: &RenderContext<Native>,
-        package: Option<&KotlinPackage>,
-    ) -> Result<Self> {
-        Self::from_declaration_with_package_and_error(
-            declaration,
-            host,
-            bridge,
-            context,
-            package,
-            true,
-        )
-    }
-
-    pub fn from_declaration_with_package_and_error(
-        declaration: &EnumDecl<Native>,
-        host: &KotlinHost,
-        bridge: &JniBridgeContract,
-        context: &RenderContext<Native>,
-        package: Option<&KotlinPackage>,
-        error: bool,
-    ) -> Result<Self> {
         match declaration {
             EnumDecl::CStyle(enumeration) => {
-                Self::from_c_style(enumeration, Some(bridge), host, context, error)
+                Self::from_c_style(enumeration, Some(bridge), host, context)
             }
             EnumDecl::Data(enumeration) => {
-                Self::from_data(enumeration, Some(bridge), host, context, package, error)
+                Self::from_data(enumeration, Some(bridge), host, context, package)
             }
             _ => Err(KotlinHost::unsupported("unknown enum declaration")),
         }
@@ -247,22 +208,6 @@ impl Enumeration {
             .native_argument(Expression::property(value, Identifier::parse("value")?))
     }
 
-    pub fn read_expression(
-        id: EnumId,
-        reader: Identifier,
-        context: &RenderContext<Native>,
-    ) -> Result<Expression> {
-        Self::type_name_from_id(id, context).and_then(|enumeration| {
-            Ok(Expression::call(
-                enumeration,
-                Identifier::parse("fromReader")?,
-                [Expression::identifier(reader)]
-                    .into_iter()
-                    .collect::<ArgumentList>(),
-            ))
-        })
-    }
-
     pub fn write_statement(
         id: EnumId,
         value: Expression,
@@ -299,8 +244,8 @@ impl Enumeration {
         bridge: Option<&JniBridgeContract>,
         host: &KotlinHost,
         context: &RenderContext<Native>,
-        error: bool,
     ) -> Result<Self> {
+        let error = enumeration.is_error_payload();
         let primitive = enumeration.repr().primitive();
         let name = Name::new(enumeration.name()).type_name();
         let receiver = Receiver {
@@ -354,8 +299,8 @@ impl Enumeration {
         host: &KotlinHost,
         context: &RenderContext<Native>,
         package: Option<&KotlinPackage>,
-        error: bool,
     ) -> Result<Self> {
+        let error = enumeration.is_error_payload();
         let name = Name::new(enumeration.name()).type_name();
         let receiver = Receiver {
             argument: Self::encode_expression(Expression::this())?,
@@ -419,7 +364,7 @@ impl Enumeration {
                 initializers
                     .iter()
                     .map(|initializer| match package {
-                        Some(package) => calls.with_record_package(
+                        Some(package) => calls.with_package(
                             Name::new(initializer.name()).function()?,
                             initializer.symbol(),
                             initializer.callable(),
@@ -461,7 +406,7 @@ impl Enumeration {
                                 .and_then(|writeback| {
                                     let mutation = match package {
                                         Some(package) => EncodedReceiverMutation::new(writeback)
-                                            .with_record_package(package),
+                                            .with_package(package),
                                         None => EncodedReceiverMutation::new(writeback),
                                     };
                                     calls.with_encoded_receiver_mutation(
@@ -474,7 +419,7 @@ impl Enumeration {
                                 }),
                             (Some(Receive::ByRef | Receive::ByValue), Some(receiver)) => {
                                 match package {
-                                    Some(package) => calls.with_record_package(
+                                    Some(package) => calls.with_package(
                                         Name::new(method.name()).function()?,
                                         method.target(),
                                         method.callable(),
@@ -490,7 +435,7 @@ impl Enumeration {
                                 }
                             }
                             (None, None) => match package {
-                                Some(package) => calls.with_record_package(
+                                Some(package) => calls.with_package(
                                     Name::new(method.name()).function()?,
                                     method.target(),
                                     method.callable(),

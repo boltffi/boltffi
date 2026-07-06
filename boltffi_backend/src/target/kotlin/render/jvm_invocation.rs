@@ -144,7 +144,7 @@ impl<'plan> ParamPlanRender<'plan, Native, OutOfRust> for Renderer<'_> {
         Ok(Parameter {
             public: SignatureParameter::new(
                 self.name.clone(),
-                KotlinType::type_ref(ty, self.host, self.context)?,
+                KotlinType::type_ref(ty, self.context)?,
             ),
             jvm: SignatureParameter::new(self.name.clone(), TypeName::byte_array(false)),
             setup: vec![

@@ -1,7 +1,0 @@
----
-source: boltffi_bindgen/src/render/swift/templates.rs
-expression: "render_function(&func, \"boltffi\")"
----
-public func add(a: Int32, b: Int32) -> Int32 {
-    return boltffi_add(a, b)
-}

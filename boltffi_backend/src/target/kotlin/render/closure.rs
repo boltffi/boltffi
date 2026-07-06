@@ -554,8 +554,8 @@ impl TypeRefRender for ClosureTypeName<'_> {
     }
 
     fn custom(&mut self, id: CustomTypeId) -> Self::Output {
-        if let Some(mapping) = self.host.custom_type_mapping(id, self.context) {
-            return Ok(type_name_fragment(&mapping.ty()));
+        if let Some(mapping) = self.context.custom_type_mapping(id) {
+            return Ok(type_name_fragment(&KotlinHost::custom_type_name(mapping)));
         }
 
         self.context
@@ -709,7 +709,7 @@ impl<'plan> ReturnPlanRender<'plan, Native, IntoRust> for ReturnRender<'_> {
     ) -> Self::Output {
         self.require_supported_slot(slot, "closure out-pointer encoded return")?;
         Ok(ClosureReturnValue {
-            public_ty: Some(KotlinType::type_ref(ty, self.host, self.context)?),
+            public_ty: Some(KotlinType::type_ref(ty, self.context)?),
             jvm_ty: Some(TypeName::byte_array(false)),
             conversion: ReturnConversion::Encoded {
                 codec: codec.clone(),
@@ -814,7 +814,7 @@ impl ClosureReturnValue {
             self.fallible_success_expression(call, &fallible, host, context)?
                 .try_catch(
                     error.clone(),
-                    fallible.error_type(host, context)?,
+                    fallible.error_type(context)?,
                     fallible.error_expression(Expression::identifier(error), host, context)?,
                 ),
         )])
@@ -980,8 +980,8 @@ impl ClosureReturnValue {
 }
 
 impl FallibleReturn<'_> {
-    fn error_type(&self, host: &KotlinHost, context: &RenderContext<Native>) -> Result<TypeName> {
-        KotlinType::type_ref(self.error_ty, host, context)
+    fn error_type(&self, context: &RenderContext<Native>) -> Result<TypeName> {
+        KotlinType::type_ref(self.error_ty, context)
     }
 
     fn error_expression(

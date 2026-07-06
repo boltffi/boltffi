@@ -98,22 +98,17 @@ impl KotlinType {
         }
     }
 
-    pub fn type_ref(
-        ty: &TypeRef,
-        host: &KotlinHost,
-        context: &RenderContext<Native>,
-    ) -> Result<TypeName> {
-        ty.render_with(&mut KotlinTypeRef::new(host, context))
+    pub fn type_ref(ty: &TypeRef, context: &RenderContext<Native>) -> Result<TypeName> {
+        ty.render_with(&mut KotlinTypeRef::new(context))
             .map(ApiType::into_type)
     }
 
-    pub fn type_ref_with_record_package(
+    pub fn type_ref_with_package(
         ty: &TypeRef,
-        host: &KotlinHost,
         context: &RenderContext<Native>,
         package: &KotlinPackage,
     ) -> Result<TypeName> {
-        ty.render_with(&mut KotlinTypeRef::new(host, context).record_package(package))
+        ty.render_with(&mut KotlinTypeRef::new(context).package(package))
             .map(ApiType::into_type)
     }
 
@@ -130,9 +125,8 @@ impl KotlinType {
 }
 
 struct KotlinTypeRef<'context> {
-    host: &'context KotlinHost,
     context: &'context RenderContext<'context, Native>,
-    record_package: Option<KotlinPackage>,
+    package: Option<KotlinPackage>,
 }
 
 struct ApiType {
@@ -141,17 +135,22 @@ struct ApiType {
 }
 
 impl<'context> KotlinTypeRef<'context> {
-    pub fn new(host: &'context KotlinHost, context: &'context RenderContext<Native>) -> Self {
+    pub fn new(context: &'context RenderContext<Native>) -> Self {
         Self {
-            host,
             context,
-            record_package: None,
+            package: None,
         }
     }
 
-    pub fn record_package(mut self, package: &KotlinPackage) -> Self {
-        self.record_package = Some(package.clone());
+    pub fn package(mut self, package: &KotlinPackage) -> Self {
+        self.package = Some(package.clone());
         self
+    }
+
+    fn qualify(&self, ty: TypeName) -> TypeName {
+        self.package
+            .as_ref()
+            .map_or(ty.clone(), |package| TypeName::qualified(package, ty))
     }
 }
 
@@ -174,19 +173,12 @@ impl TypeRefRender for KotlinTypeRef<'_> {
     }
 
     fn record(&mut self, id: RecordId) -> Self::Output {
-        Record::type_name_from_id(id, self.context).map(|record| {
-            ApiType::new(
-                self.record_package
-                    .as_ref()
-                    .map_or(record.clone(), |package| {
-                        TypeName::qualified(package, record)
-                    }),
-            )
-        })
+        Record::type_name_from_id(id, self.context).map(|record| ApiType::new(self.qualify(record)))
     }
 
     fn enumeration(&mut self, id: EnumId) -> Self::Output {
-        Enumeration::type_name_from_id(id, self.context).map(ApiType::new)
+        Enumeration::type_name_from_id(id, self.context)
+            .map(|enumeration| ApiType::new(self.qualify(enumeration)))
     }
 
     fn class(&mut self, _id: ClassId) -> Self::Output {
@@ -198,8 +190,8 @@ impl TypeRefRender for KotlinTypeRef<'_> {
     }
 
     fn custom(&mut self, id: CustomTypeId) -> Self::Output {
-        if let Some(mapping) = self.host.custom_type_mapping(id, self.context) {
-            return Ok(ApiType::new(mapping.ty()));
+        if let Some(mapping) = self.context.custom_type_mapping(id) {
+            return Ok(ApiType::new(KotlinHost::custom_type_name(mapping)));
         }
 
         self.context
@@ -255,26 +247,27 @@ impl ApiType {
 }
 
 pub struct ParameterType<'context> {
-    host: &'context KotlinHost,
     context: &'context RenderContext<'context, Native>,
-    record_package: Option<KotlinPackage>,
+    package: Option<KotlinPackage>,
 }
 
 impl<'context> ParameterType<'context> {
-    pub fn new(
-        host: &'context KotlinHost,
-        context: &'context RenderContext<'context, Native>,
-    ) -> Self {
+    pub fn new(context: &'context RenderContext<'context, Native>) -> Self {
         Self {
-            host,
             context,
-            record_package: None,
+            package: None,
         }
     }
 
-    pub fn record_package(mut self, package: Option<&KotlinPackage>) -> Self {
-        self.record_package = package.cloned();
+    pub fn package(mut self, package: Option<&KotlinPackage>) -> Self {
+        self.package = package.cloned();
         self
+    }
+
+    fn qualify(&self, ty: TypeName) -> TypeName {
+        self.package
+            .as_ref()
+            .map_or(ty.clone(), |package| TypeName::qualified(package, ty))
     }
 }
 
@@ -288,16 +281,12 @@ impl<'plan> ParamPlanRender<'plan, Native, IntoRust> for ParameterType<'_> {
     ) -> Self::Output {
         match ty {
             DirectValueType::Primitive(primitive) => KotlinType::primitive(*primitive),
-            DirectValueType::Record(record) => Record::type_name_from_id(*record, self.context)
-                .map(|record| {
-                    self.record_package
-                        .as_ref()
-                        .map_or(record.clone(), |package| {
-                            TypeName::qualified(package, record)
-                        })
-                }),
+            DirectValueType::Record(record) => {
+                Record::type_name_from_id(*record, self.context).map(|record| self.qualify(record))
+            }
             DirectValueType::Enum(enumeration) => {
                 Enumeration::type_name_from_id(*enumeration, self.context)
+                    .map(|enumeration| self.qualify(enumeration))
             }
             _ => Err(KotlinHost::unsupported("unknown direct function parameter")),
         }
@@ -310,11 +299,9 @@ impl<'plan> ParamPlanRender<'plan, Native, IntoRust> for ParameterType<'_> {
         _shape: <Native as Surface>::BufferShape,
         _receive: <IntoRust as Direction>::Receive,
     ) -> Self::Output {
-        match &self.record_package {
-            Some(package) => {
-                KotlinType::type_ref_with_record_package(ty, self.host, self.context, package)
-            }
-            None => KotlinType::type_ref(ty, self.host, self.context),
+        match &self.package {
+            Some(package) => KotlinType::type_ref_with_package(ty, self.context, package),
+            None => KotlinType::type_ref(ty, self.context),
         }
     }
 

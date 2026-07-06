@@ -42,48 +42,59 @@ KMP should follow that pattern.
 6. Unsupported APIs fail with a clear diagnostic by default. If preview pruning remains useful, it should be an explicit opt-in that writes a support report.
 7. JVM/Android should delegate to the existing Kotlin/JNI backend instead of copying JNI logic.
 
+## Current Status
+
+M0 is complete:
+
+- `preview_prune_unsupported` defaults to `false`.
+- Strict KMP generation fails unsupported APIs by default.
+- Preview pruning is explicit and writes support metadata.
+- `pack kmp` verifies generated support metadata against the effective config.
+- Production KMP generation has no `NotImplementedError` or `NativeRuntimeNotImplemented` fallback path for admitted APIs.
+
+M1a through M1c are complete:
+
+- M1a introduced the new IR KMP backend skeleton under `boltffi_backend/src/target/kmp`.
+- M1b introduced the KMP plan/lower/admission model, support reports, platform capability intersection, and plan-level tests.
+- M1c introduced emit/file-list parity for the default JVM/Android KMP project skeleton from the IR plan.
+- M1c keeps behavior intentionally strict: unsupported or currently unrenderable APIs fail in strict mode and are omitted only in explicit preview-prune mode.
+- Empty or fully pruned JVM/Android source sets remain package-only skeletons; they do not emit runtime declarations for APIs that were not admitted.
+- M1c does not provide real JVM/Android API body parity. That starts in M2.
+
+Remaining M1 work, if kept before M2, is packaging foundation only:
+
+- Add `KmpPackagingPlan` and `KmpPackageLayout`.
+- Move KMP packaging path calculation behind layout-owned helpers.
+- Do not expand generated API behavior in this step.
+
 ## Target Architecture
 
-### Bindgen Layout
+### Backend Layout
 
-Create a real KMP backend boundary:
+Create a real KMP backend boundary. The current M1/M2 path is:
 
 ```text
-boltffi_bindgen/src/render/kmp/
+boltffi_backend/src/target/kmp/
   mod.rs
   plan/
     mod.rs
-    module.rs
-    platform.rs
-    support.rs
-    gradle.rs
   lower/
     mod.rs
-    lowerer.rs
     admission.rs
-    common.rs
-    jvm.rs
-    android.rs
-    apple.rs
   emit/
     mod.rs
     output.rs
     common.rs
     jvm.rs
-    android.rs
-    apple.rs
     gradle.rs
-    cinterop.rs
-  apple/
-    mod.rs
-    runtime.rs
-    codec.rs
-    calls.rs
-    handles.rs
-    callbacks.rs
+  names.rs
+  bridge.rs
+  host.rs
+  syntax.rs
 ```
 
-`mod.rs` should be a thin public facade. It should expose types similar to `PythonLowerer`, `PythonEmitter`, and output-file structs.
+`mod.rs` should be a thin public facade. It should expose types similar to the Python backend lowerer/emitter and output-file structs.
+Apple-specific lower/emit/runtime modules should be added under this backend boundary in M3, not revived from the old production fallback path.
 
 Suggested core structs:
 
@@ -151,6 +162,16 @@ Work:
 - Add `KmpPackagingPlan` and `KmpPackageLayout`.
 - Keep JVM/Android behavior equivalent, or intentionally mark the previous behavior as preview-only until M2.
 
+Completed:
+
+- M1a: IR KMP backend skeleton.
+- M1b: KMP plan/lower/admission, platform modules, support report, capability intersection, and plan-level tests.
+- M1c: emit/file-list parity skeleton for common/JVM/Android from the IR plan.
+
+Remaining:
+
+- M1d: KMP packaging plan/layout foundation. This should calculate paths and validation state only; it should not add new generated API behavior.
+
 Exit criteria:
 
 - KMP has a small facade similar to Python.
@@ -162,6 +183,17 @@ Verification:
 - Snapshot tests for generated file lists.
 - Plan-level tests for capability intersection and diagnostics.
 - Existing KMP JVM/Android snapshots pass or are replaced by equivalent plan-level tests.
+- M1c exit check passed on `m1c-b-file-list`:
+  - `cargo test -p boltffi_backend kmp -- --nocapture`
+  - `cargo test -p boltffi_backend`
+  - `cargo test -p boltffi_bindgen kmp`
+  - `cargo test -p boltffi_cli kmp`
+  - `cargo test -p boltffi_cli kotlin_multiplatform`
+  - `cargo test -p boltffi_cli ir_generation`
+  - `cargo test -p boltffi_cli ir_kmp -- --nocapture`
+  - `cargo fmt --check`
+  - `git diff --check`
+  - `rg "NotImplementedError|NativeRuntimeNotImplemented" boltffi_bindgen/src/render/kmp boltffi_backend/src/target/kmp`
 
 ### M2: JVM And Android Parity
 
@@ -345,9 +377,9 @@ Verification:
 
 ## Proposed PR Slices
 
-1. Reset docs and support contract.
-2. Introduce KMP plan/lower/emit skeleton and support report.
-3. Move packaging to `pack/kmp/*` with no feature expansion.
+1. Done: reset docs and support contract.
+2. Done: introduce KMP plan/lower/emit skeleton and support report.
+3. Next: move packaging to `pack/kmp/*` with no feature expansion.
 4. Rebuild JVM/Android KMP generation and packaging.
 5. Add Apple target/layout planning and static library staging.
 6. Add Apple sync value actuals.

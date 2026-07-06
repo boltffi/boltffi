@@ -12,6 +12,8 @@ categories = ["development-tools::ffi", "development-tools::build-utils"]
 [dependencies]
 askama = "0.16"
 boltffi_binding.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]

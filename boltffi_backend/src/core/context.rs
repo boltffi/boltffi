@@ -4,17 +4,36 @@ use boltffi_binding::{
     FunctionId, RecordDecl, RecordId, StreamDecl, StreamId, Surface,
 };
 
+use crate::core::{CoverageMode, CustomTypeMapping, ResolvedCustomTypeMappings};
+
 /// Read-only state shared while one target renders a binding contract.
 #[non_exhaustive]
 pub struct RenderContext<'bindings, S: Surface> {
     bindings: &'bindings Bindings<S>,
     target: &'static str,
+    custom_type_mappings: ResolvedCustomTypeMappings,
+    coverage_mode: CoverageMode,
 }
 
 impl<'bindings, S: Surface> RenderContext<'bindings, S> {
     /// Creates a render context for a target.
-    pub const fn new(bindings: &'bindings Bindings<S>, target: &'static str) -> Self {
-        Self { bindings, target }
+    pub fn new(
+        bindings: &'bindings Bindings<S>,
+        target: &'static str,
+        coverage_mode: CoverageMode,
+    ) -> Self {
+        Self {
+            bindings,
+            target,
+            custom_type_mappings: ResolvedCustomTypeMappings::default(),
+            coverage_mode,
+        }
+    }
+
+    /// Adds resolved custom type mappings.
+    pub fn with_custom_type_mappings(mut self, mappings: ResolvedCustomTypeMappings) -> Self {
+        self.custom_type_mappings = mappings;
+        self
     }
 
     /// Returns the binding contract being rendered.
@@ -25,6 +44,11 @@ impl<'bindings, S: Surface> RenderContext<'bindings, S> {
     /// Returns the backend target name.
     pub const fn target(&self) -> &'static str {
         self.target
+    }
+
+    /// Returns the coverage policy for this render.
+    pub const fn coverage_mode(&self) -> CoverageMode {
+        self.coverage_mode
     }
 
     /// Returns the record declaration with the given id.
@@ -65,6 +89,11 @@ impl<'bindings, S: Surface> RenderContext<'bindings, S> {
     /// Returns the custom type declaration with the given id.
     pub fn custom_type(&self, id: CustomTypeId) -> Option<&'bindings CustomTypeDecl> {
         self.find(DeclarationId::CustomType(id), DeclarationRef::custom_type)
+    }
+
+    /// Returns the target mapping for the custom type id.
+    pub fn custom_type_mapping(&self, id: CustomTypeId) -> Option<&CustomTypeMapping> {
+        self.custom_type_mappings.get(id)
     }
 
     fn find<T>(

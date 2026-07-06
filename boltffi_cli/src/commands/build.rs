@@ -1,6 +1,8 @@
+use std::ffi::OsString;
+
 use crate::build::{
-    BuildOptions, BuildResult, Builder, all_successful, count_successful, failed_targets,
-    resolve_build_profile,
+    BindingExpansion, BuildOptions, BuildResult, Builder, all_successful, count_successful,
+    failed_targets, resolve_build_profile,
 };
 use crate::cli::Result;
 use crate::config::Config;
@@ -35,15 +37,6 @@ pub fn run_build(config: &Config, options: BuildCommandOptions) -> Result<Vec<Bu
 
     let build_profile = resolve_build_profile(release, &cargo_args);
 
-    let build_options = BuildOptions {
-        release,
-        package: Some(config.library_name().to_string()),
-        cargo_args,
-        on_output: None,
-    };
-
-    let builder = Builder::new(config, build_options);
-
     let profile = build_profile.output_directory_name();
 
     let results = match platform {
@@ -52,43 +45,59 @@ pub fn run_build(config: &Config, options: BuildCommandOptions) -> Result<Vec<Bu
                 return Ok(Vec::new());
             }
             println!("Building for Apple ({})...", profile);
-            builder.build_targets(&config.apple_targets())?
+            apple_builder(config, release, cargo_args.clone())?
+                .build_targets(&config.apple_targets())?
         }
         BuildPlatform::Android => {
             if !config.is_android_enabled() {
                 return Ok(Vec::new());
             }
             println!("Building for Android ({})...", profile);
-            builder.build_android(&config.android_targets())?
+            plain_builder(config, release, cargo_args.clone())
+                .build_android(&config.android_targets())?
         }
         BuildPlatform::Wasm => {
             if !config.is_wasm_enabled() {
                 return Ok(Vec::new());
             }
             println!("Building for wasm ({})...", profile);
-            builder.build_wasm_with_triple(config.wasm_triple())?
+            plain_builder(config, release, cargo_args.clone())
+                .build_wasm_with_triple(config.wasm_triple())?
         }
         BuildPlatform::Dart => {
             if !config.is_dart_enabled() {
                 return Ok(Vec::new());
             }
             println!("Building for dart ({})...", profile);
-            builder.build_targets(&config.dart_targets())?
+            plain_builder(config, release, cargo_args.clone())
+                .build_targets(&config.dart_targets())?
         }
         BuildPlatform::All => {
             println!("Building all targets ({})...", profile);
             let mut all_results = Vec::new();
             if config.is_apple_enabled() {
-                all_results.extend(builder.build_targets(&config.apple_targets())?);
+                all_results.extend(
+                    apple_builder(config, release, cargo_args.clone())?
+                        .build_targets(&config.apple_targets())?,
+                );
             }
             if config.is_android_enabled() {
-                all_results.extend(builder.build_android(&config.android_targets())?);
+                all_results.extend(
+                    plain_builder(config, release, cargo_args.clone())
+                        .build_android(&config.android_targets())?,
+                );
             }
             if config.is_wasm_enabled() {
-                all_results.extend(builder.build_wasm_with_triple(config.wasm_triple())?);
+                all_results.extend(
+                    plain_builder(config, release, cargo_args.clone())
+                        .build_wasm_with_triple(config.wasm_triple())?,
+                );
             }
             if config.is_dart_enabled() {
-                all_results.extend(builder.build_targets(&config.dart_targets())?);
+                all_results.extend(
+                    plain_builder(config, release, cargo_args.clone())
+                        .build_targets(&config.dart_targets())?,
+                );
             }
             all_results
         }
@@ -108,6 +117,32 @@ pub fn run_build(config: &Config, options: BuildCommandOptions) -> Result<Vec<Bu
             targets: failed_targets(&results),
         }
         .into())
+    }
+}
+
+fn apple_builder(config: &Config, release: bool, cargo_args: Vec<String>) -> Result<Builder<'_>> {
+    let expansion = BindingExpansion::resolve(config, &cargo_args)?;
+    Ok(Builder::new(
+        config,
+        build_options(release, cargo_args, expansion.env()?),
+    ))
+}
+
+fn plain_builder(config: &Config, release: bool, cargo_args: Vec<String>) -> Builder<'_> {
+    Builder::new(config, build_options(release, cargo_args, Vec::new()))
+}
+
+fn build_options(
+    release: bool,
+    cargo_args: Vec<String>,
+    env: Vec<(OsString, OsString)>,
+) -> BuildOptions {
+    BuildOptions {
+        release,
+        package: None,
+        cargo_args,
+        env,
+        on_output: None,
     }
 }
 

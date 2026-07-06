@@ -8,10 +8,7 @@ use std::path::{Path, PathBuf};
 use boltffi_bindgen::CHeaderLowerer;
 use generator::{GenerateRequest, ScanPointerWidth, run_generator};
 use header::HeaderGenerator;
-use languages::{
-    CSharpGenerator, DartGenerator, JavaGenerator, KMPGenerator, SwiftGenerator,
-    TypeScriptGenerator,
-};
+use languages::{CSharpGenerator, DartGenerator, JavaGenerator, KMPGenerator, TypeScriptGenerator};
 
 use boltffi_bindgen::target::Target;
 
@@ -47,9 +44,7 @@ pub fn run_generate_with_output(config: &Config, options: GenerateOptions) -> Re
     let legacy_request = || GenerateRequest::for_current_crate(config, options.output.clone());
 
     match &options.target {
-        GenerateTarget::Swift => {
-            run_generator::<SwiftGenerator>(&legacy_request(), options.experimental)
-        }
+        GenerateTarget::Swift => ir::run_ir_generation(config, &options),
         GenerateTarget::Kotlin => ir::run_ir_generation(config, &options),
         GenerateTarget::KotlinMultiplatform => {
             run_generator::<KMPGenerator>(&legacy_request(), options.experimental)
@@ -74,7 +69,16 @@ pub fn run_generate_with_output(config: &Config, options: GenerateOptions) -> Re
             let request = legacy_request();
 
             if config.should_process(Target::Swift, options.experimental) {
-                run_generator::<SwiftGenerator>(&request, options.experimental)?;
+                ir::run_ir_generation(
+                    config,
+                    &GenerateOptions {
+                        target: GenerateTarget::Swift,
+                        output: options.output.clone(),
+                        experimental: options.experimental,
+                        ir: true,
+                        cargo_args: options.cargo_args.clone(),
+                    },
+                )?;
             }
 
             if config.should_process(Target::Kotlin, options.experimental) {

@@ -1,10 +1,9 @@
-use std::{collections::BTreeSet, path::PathBuf};
+use std::path::PathBuf;
 
 use askama::Template as AskamaTemplate;
 use boltffi_binding::{
     Bindings, CanonicalName, ClassDecl, ClassId, CodecNode, ConstantDecl, CustomTypeDecl,
-    CustomTypeId, DeclarationRef, EncodedRecordDecl, EnumDecl, EnumId, ErrorChannel,
-    ExportedCallable, ExportedMethodDecl, FunctionDecl, InitializerDecl, Native, NativeSymbol,
+    CustomTypeId, DeclarationRef, EncodedRecordDecl, EnumDecl, EnumId, FunctionDecl, Native,
     RecordDecl, RecordId, StreamDecl, TypeRef,
 };
 
@@ -127,9 +126,8 @@ impl<'bindings> Package<'bindings> {
         let module = self.module_name();
         let package = self.distribution.clone();
         let version = self.version.clone();
-        let error_types = ErrorTypes::from_declarations(&self.declarations);
-        let records = self.records(&error_types)?;
-        let enums = self.enums(&error_types)?;
+        let records = self.records()?;
+        let enums = self.enums()?;
         let classes = self.classes()?;
         let constants = self.constants()?;
         let functions = self.functions();
@@ -256,102 +254,6 @@ struct PackageDeclarations<'bindings> {
     customs: Vec<&'bindings CustomTypeDecl>,
 }
 
-#[derive(Default)]
-struct ErrorTypes {
-    records: BTreeSet<RecordId>,
-    enums: BTreeSet<EnumId>,
-}
-
-impl ErrorTypes {
-    fn from_declarations(declarations: &PackageDeclarations<'_>) -> Self {
-        let mut types = Self::default();
-        declarations
-            .functions
-            .iter()
-            .for_each(|function| types.insert_callable(function.callable()));
-        declarations
-            .records
-            .iter()
-            .for_each(|record| types.insert_record(record));
-        declarations
-            .enums
-            .iter()
-            .for_each(|enumeration| types.insert_enum(enumeration));
-        declarations
-            .classes
-            .iter()
-            .for_each(|class| types.insert_class(class));
-        types
-    }
-
-    fn contains_record(&self, id: RecordId) -> bool {
-        self.records.contains(&id)
-    }
-
-    fn contains_enum(&self, id: EnumId) -> bool {
-        self.enums.contains(&id)
-    }
-
-    fn insert_callable(&mut self, callable: &ExportedCallable<Native>) {
-        if let ErrorChannel::Encoded { ty, .. } = callable.error().channel() {
-            self.insert_type(ty);
-        }
-    }
-
-    fn insert_record(&mut self, record: &RecordDecl<Native>) {
-        match record {
-            RecordDecl::Direct(record) => {
-                self.insert_members(record.initializers(), record.methods())
-            }
-            RecordDecl::Encoded(record) => {
-                self.insert_members(record.initializers(), record.methods())
-            }
-            _ => {}
-        }
-    }
-
-    fn insert_enum(&mut self, enumeration: &EnumDecl<Native>) {
-        match enumeration {
-            EnumDecl::CStyle(enumeration) => {
-                self.insert_members(enumeration.initializers(), enumeration.methods())
-            }
-            EnumDecl::Data(enumeration) => {
-                self.insert_members(enumeration.initializers(), enumeration.methods())
-            }
-            _ => {}
-        }
-    }
-
-    fn insert_class(&mut self, class: &ClassDecl<Native>) {
-        self.insert_members(class.initializers(), class.methods());
-    }
-
-    fn insert_members(
-        &mut self,
-        initializers: &[InitializerDecl<Native>],
-        methods: &[ExportedMethodDecl<Native, NativeSymbol>],
-    ) {
-        initializers
-            .iter()
-            .for_each(|initializer| self.insert_callable(initializer.callable()));
-        methods
-            .iter()
-            .for_each(|method| self.insert_callable(method.callable()));
-    }
-
-    fn insert_type(&mut self, ty: &TypeRef) {
-        match ty {
-            TypeRef::Record(id) => {
-                self.records.insert(*id);
-            }
-            TypeRef::Enum(id) => {
-                self.enums.insert(*id);
-            }
-            _ => {}
-        }
-    }
-}
-
 impl<'bindings> PackageDeclarations<'bindings> {
     fn new(bindings: &'bindings Bindings<Native>) -> Self {
         bindings
@@ -381,12 +283,8 @@ impl<'bindings> Package<'bindings> {
         self.declarations
             .records
             .iter()
-            .find_map(|record| match record {
-                RecordDecl::Direct(record) if record.id() == record_id => Some(record.name()),
-                RecordDecl::Encoded(record) if record.id() == record_id => Some(record.name()),
-                RecordDecl::Direct(_) | RecordDecl::Encoded(_) => None,
-                _ => None,
-            })
+            .find(|record| record.id() == record_id)
+            .map(|record| record.name())
             .map(|name| Identifier::parse(Name::new(name).class()))
             .transpose()?
             .ok_or(Error::UnsupportedTarget {
@@ -425,16 +323,8 @@ impl<'bindings> Package<'bindings> {
         self.declarations
             .enums
             .iter()
-            .find_map(|enumeration| match enumeration {
-                EnumDecl::CStyle(enumeration) if enumeration.id() == enum_id => {
-                    Some(enumeration.name())
-                }
-                EnumDecl::Data(enumeration) if enumeration.id() == enum_id => {
-                    Some(enumeration.name())
-                }
-                EnumDecl::CStyle(_) | EnumDecl::Data(_) => None,
-                _ => None,
-            })
+            .find(|enumeration| enumeration.id() == enum_id)
+            .map(|enumeration| enumeration.name())
             .map(|name| Identifier::parse(Name::new(name).class()))
             .transpose()?
             .ok_or(Error::UnsupportedTarget {
@@ -447,16 +337,19 @@ impl<'bindings> Package<'bindings> {
         self.declarations
             .enums
             .iter()
-            .find_map(|enumeration| match enumeration {
-                EnumDecl::CStyle(enumeration) if enumeration.id() == enum_id => {
-                    Some(Ok(EnumCodec::CStyle(enumeration.repr().primitive())))
+            .find(|enumeration| enumeration.id() == enum_id)
+            .map(|enumeration| match *enumeration {
+                EnumDecl::CStyle(enumeration) => {
+                    Ok(EnumCodec::CStyle(enumeration.repr().primitive()))
                 }
-                EnumDecl::Data(enumeration) if enumeration.id() == enum_id => Some(
+                EnumDecl::Data(enumeration) => {
                     Identifier::parse(Name::new(enumeration.name()).class())
-                        .map(|class_name| EnumCodec::Data { class_name }),
-                ),
-                EnumDecl::CStyle(_) | EnumDecl::Data(_) => None,
-                _ => None,
+                        .map(|class_name| EnumCodec::Data { class_name })
+                }
+                _ => Err(Error::UnsupportedTarget {
+                    target: "python",
+                    shape: "unknown enum wire type",
+                }),
             })
             .transpose()?
             .ok_or(Error::UnsupportedTarget {
@@ -504,7 +397,7 @@ impl<'bindings> Package<'bindings> {
             .records
             .iter()
             .find_map(|record| match record {
-                RecordDecl::Encoded(record) if record.id() == record_id => Some(record),
+                RecordDecl::Encoded(record) if record.id() == record_id => Some(record.as_ref()),
                 RecordDecl::Direct(_) | RecordDecl::Encoded(_) => None,
                 _ => None,
             })
@@ -538,20 +431,14 @@ impl<'bindings> Package<'bindings> {
             .collect()
     }
 
-    fn records(&self, error_types: &ErrorTypes) -> Result<Vec<RecordClass>> {
+    fn records(&self) -> Result<Vec<RecordClass>> {
         self.declarations
             .records
             .iter()
             .copied()
             .map(|record| match record {
-                RecordDecl::Direct(record) => {
-                    RecordClass::from_direct(record, self, error_types.contains_record(record.id()))
-                }
-                RecordDecl::Encoded(record) => RecordClass::from_encoded(
-                    record,
-                    self,
-                    error_types.contains_record(record.id()),
-                ),
+                RecordDecl::Direct(declared) => RecordClass::from_direct(declared, self),
+                RecordDecl::Encoded(declared) => RecordClass::from_encoded(declared, self),
                 _ => Err(Error::UnsupportedTarget {
                     target: "python",
                     shape: "unknown record package",
@@ -560,22 +447,14 @@ impl<'bindings> Package<'bindings> {
             .collect()
     }
 
-    fn enums(&self, error_types: &ErrorTypes) -> Result<Vec<EnumClass>> {
+    fn enums(&self) -> Result<Vec<EnumClass>> {
         self.declarations
             .enums
             .iter()
             .copied()
             .map(|enumeration| match enumeration {
-                EnumDecl::CStyle(enumeration) => EnumClass::from_c_style(
-                    enumeration,
-                    self,
-                    error_types.contains_enum(enumeration.id()),
-                ),
-                EnumDecl::Data(enumeration) => EnumClass::from_data(
-                    enumeration,
-                    self,
-                    error_types.contains_enum(enumeration.id()),
-                ),
+                EnumDecl::CStyle(declared) => EnumClass::from_c_style(declared, self),
+                EnumDecl::Data(declared) => EnumClass::from_data(declared, self),
                 _ => Err(Error::UnsupportedTarget {
                     target: "python",
                     shape: "unknown enum package",
@@ -610,15 +489,13 @@ impl<'bindings> Package<'bindings> {
         self.declarations
             .enums
             .iter()
-            .find_map(|enumeration| match enumeration {
-                EnumDecl::CStyle(enumeration) if enumeration.name() == enum_name => {
-                    Some(enumeration::VariantStyle::CStyle)
-                }
-                EnumDecl::Data(enumeration) if enumeration.name() == enum_name => {
-                    Some(enumeration::VariantStyle::Data)
-                }
-                EnumDecl::CStyle(_) | EnumDecl::Data(_) => None,
-                _ => None,
+            .find_map(|enumeration| match enumeration.name() == enum_name {
+                true => match enumeration {
+                    EnumDecl::CStyle(_) => Some(enumeration::VariantStyle::CStyle),
+                    EnumDecl::Data(_) => Some(enumeration::VariantStyle::Data),
+                    _ => None,
+                },
+                false => None,
             })
             .map(|style| style.expression(enum_name, variant_name))
             .transpose()?

@@ -70,28 +70,9 @@ impl Record {
         bridge: &JniBridgeContract,
         context: &RenderContext<Native>,
     ) -> Result<Self> {
-        Self::from_declaration_with_error(declaration, host, bridge, context, false)
-    }
-
-    pub fn from_declaration_as_error(
-        declaration: &RecordDecl<Native>,
-        host: &KotlinHost,
-        bridge: &JniBridgeContract,
-        context: &RenderContext<Native>,
-    ) -> Result<Self> {
-        Self::from_declaration_with_error(declaration, host, bridge, context, true)
-    }
-
-    pub fn from_declaration_with_error(
-        declaration: &RecordDecl<Native>,
-        host: &KotlinHost,
-        bridge: &JniBridgeContract,
-        context: &RenderContext<Native>,
-        error: bool,
-    ) -> Result<Self> {
         match declaration {
-            RecordDecl::Direct(record) => Self::from_direct(record, host, bridge, context, error),
-            RecordDecl::Encoded(record) => Self::from_encoded(record, host, bridge, context, error),
+            RecordDecl::Direct(record) => Self::from_direct(record, host, bridge, context),
+            RecordDecl::Encoded(record) => Self::from_encoded(record, host, bridge, context),
             _ => Err(KotlinHost::unsupported("unknown record declaration")),
         }
     }
@@ -205,7 +186,6 @@ impl Record {
         host: &KotlinHost,
         bridge: &JniBridgeContract,
         context: &RenderContext<Native>,
-        error: bool,
     ) -> Result<Self> {
         let buffer = Identifier::parse("buffer")?;
         Ok(Self {
@@ -213,7 +193,7 @@ impl Record {
             body: RecordBody::Direct {
                 size: record.layout().size().get(),
             },
-            error,
+            error: record.is_error_payload(),
             fields: record
                 .fields()
                 .iter()
@@ -236,7 +216,6 @@ impl Record {
         host: &KotlinHost,
         bridge: &JniBridgeContract,
         context: &RenderContext<Native>,
-        error: bool,
     ) -> Result<Self> {
         let reader = Identifier::parse("reader")?;
         let writer = Identifier::parse("writer")?;
@@ -257,7 +236,7 @@ impl Record {
         Ok(Self {
             name: Name::new(record.name()).type_name(),
             body: RecordBody::Encoded { size },
-            error,
+            error: record.is_error_payload(),
             fields: record
                 .fields()
                 .iter()

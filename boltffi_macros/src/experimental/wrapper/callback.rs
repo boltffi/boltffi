@@ -1,6 +1,6 @@
 use boltffi_ast::{
-    ExecutionKind, MethodDef, ParameterDef, ParameterPassing, Receiver, ReturnDef, TraitDef,
-    TypeExpr,
+    AttributeInput, ExecutionKind, MethodDef, ParameterDef, ParameterPassing, Receiver, ReturnDef,
+    TraitDef, TypeExpr, UserAttr,
 };
 use boltffi_binding::{
     CallbackDecl, CallbackLocalFunction, CallbackLocalMethodDecl, CallbackLocalProtocol,
@@ -175,6 +175,7 @@ impl<'expansion, 'lowered> NativeProtocol<'expansion, 'lowered> {
         let trait_ident = &names.trait_ident;
         let trait_path = self.path.unwrap_or_else(|| quote! { #trait_ident });
         let foreign_ident = &names.foreign_ident;
+        let async_trait = AsyncTraitAttribute::from_trait(self.source)?;
         let vtable_ident = &names.vtable_ident;
         let foreign_vtable_static = &names.foreign_vtable_static;
         let register_ident = RustIdent::new(protocol.register().name().as_str())?;
@@ -311,6 +312,7 @@ impl<'expansion, 'lowered> NativeProtocol<'expansion, 'lowered> {
             }
 
             #cfg
+            #async_trait
             impl #trait_path for #foreign_ident {
                 #(#foreign_methods)*
             }
@@ -476,6 +478,7 @@ impl<'expansion, 'lowered> WasmProtocol<'expansion, 'lowered> {
         });
         let cfg = Wasm32::cfg_attr();
         let wasm_foreign_callback_handle_start = wasm32::FOREIGN_CALLBACK_HANDLE_START;
+        let async_trait = AsyncTraitAttribute::from_trait(self.source)?;
         let trait_object_tokens = if supports_trait_object && self.trait_object_impls {
             match local_names {
                 Some(local_names) => {
@@ -584,6 +587,7 @@ impl<'expansion, 'lowered> WasmProtocol<'expansion, 'lowered> {
                     }
 
                     #cfg
+                    #async_trait
                     impl #trait_path for #local_proxy_ident {
                         #(#local_proxy_methods)*
                     }
@@ -691,6 +695,7 @@ impl<'expansion, 'lowered> WasmProtocol<'expansion, 'lowered> {
             }
 
             #cfg
+            #async_trait
             impl #trait_path for #foreign_ident {
                 #(#foreign_methods)*
             }
@@ -4798,6 +4803,44 @@ impl ReceiverTokens {
         match self.receiver {
             Receiver::Shared => quote! { &self },
             Receiver::None | Receiver::Owned | Receiver::Mutable => TokenStream::new(),
+        }
+    }
+}
+
+struct AsyncTraitAttribute<'source> {
+    attr: &'source UserAttr,
+}
+
+impl<'source> AsyncTraitAttribute<'source> {
+    fn from_trait(source: &'source TraitDef) -> Result<TokenStream, Error> {
+        source
+            .user_attrs
+            .iter()
+            .find_map(Self::new)
+            .map(|attr| attr.tokens())
+            .transpose()
+            .map(Option::unwrap_or_default)
+    }
+
+    fn new(attr: &'source UserAttr) -> Option<Self> {
+        attr.path
+            .last()
+            .is_some_and(|segment| segment.name.as_str() == "async_trait")
+            .then_some(Self { attr })
+    }
+
+    fn tokens(self) -> Result<TokenStream, Error> {
+        match &self.attr.input {
+            AttributeInput::Empty => Ok(quote! { #[::async_trait::async_trait] }),
+            AttributeInput::Tokens(tokens) => {
+                let tokens = tokens
+                    .parse::<TokenStream>()
+                    .map_err(|_| Error::SourceSyntaxMismatch("async_trait attribute input"))?;
+                Ok(quote! { #[::async_trait::async_trait(#tokens)] })
+            }
+            AttributeInput::Value(_) | AttributeInput::List(_) => {
+                Err(Error::UnsupportedExpansion("async_trait attribute input"))
+            }
         }
     }
 }

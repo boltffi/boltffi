@@ -1,4 +1,8 @@
+import sys
+
 from setuptools import Extension, setup
+
+extension_compile_args = ["/std:c11", "/experimental:c11atomics"] if sys.platform == "win32" else []
 
 setup(
     name={{ package_name_literal }},
@@ -10,6 +14,7 @@ setup(
         Extension(
             {{ extension_name_literal }},
             sources=[{{ extension_source_literal }}],
+            extra_compile_args=extension_compile_args,
         ),
     ],
     zip_safe=False,

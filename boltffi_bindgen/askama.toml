@@ -1,2 +1,2 @@
 [general]
-dirs = ["templates", "src/render/swift/templates", "src/render/jni/templates", "src/render/kotlin/templates", "src/render/typescript/templates", "src/render/java/templates", "src/render/c/templates", "src/render/csharp/templates", "src/render/dart/templates"]
+dirs = ["templates", "src/render/jni/templates", "src/render/kotlin/templates", "src/render/typescript/templates", "src/render/java/templates", "src/render/c/templates", "src/render/csharp/templates", "src/render/dart/templates"]

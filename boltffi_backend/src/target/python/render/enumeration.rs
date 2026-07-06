@@ -56,11 +56,7 @@ pub struct EnumClass {
 }
 
 impl EnumClass {
-    pub fn from_c_style(
-        enumeration: &CStyleEnumDecl<Native>,
-        package: &Package,
-        error_type: bool,
-    ) -> Result<Self> {
+    pub fn from_c_style(enumeration: &CStyleEnumDecl<Native>, package: &Package) -> Result<Self> {
         let class = enumeration_render::PythonClass::from_c_style(enumeration, package.bridge)?;
         let c_enum = package.bridge.source_c_style_enum(enumeration.id()).ok_or(
             Error::UnsupportedTarget {
@@ -71,7 +67,8 @@ impl EnumClass {
         let symbols = enumeration_render::Symbols::from_c_style(enumeration, c_enum)?;
         Ok(Self {
             class_name: class.class_name().clone(),
-            exception_name: error_type
+            exception_name: enumeration
+                .is_error_payload()
                 .then(|| package.exception_name(class.class_name()))
                 .transpose()?,
             register_method: class.register_method().clone(),
@@ -87,16 +84,13 @@ impl EnumClass {
         })
     }
 
-    pub fn from_data(
-        enumeration: &DataEnumDecl<Native>,
-        package: &Package,
-        error_type: bool,
-    ) -> Result<Self> {
+    pub fn from_data(enumeration: &DataEnumDecl<Native>, package: &Package) -> Result<Self> {
         let symbols = enumeration_render::Symbols::from_data(enumeration)?;
         let class_name = symbols.class_name().clone();
         Ok(Self {
             class_name: class_name.clone(),
-            exception_name: error_type
+            exception_name: enumeration
+                .is_error_payload()
                 .then(|| package.exception_name(&class_name))
                 .transpose()?,
             register_method: symbols.register_method().clone(),

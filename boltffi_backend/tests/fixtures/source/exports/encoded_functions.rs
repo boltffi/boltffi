@@ -1,11 +1,6 @@
-#[data]
-pub struct Person {
-    pub name: String,
-}
-
-#[data]
-pub enum Shape {
-    Label(String),
+#[export]
+pub fn echo_bytes(bytes: Vec<u8>) -> Vec<u8> {
+    bytes
 }
 
 #[export]
@@ -16,4 +11,9 @@ pub fn keep_person(person: Person) -> Person {
 #[export]
 pub fn keep_shape(shape: Shape) -> Shape {
     shape
+}
+
+#[export]
+pub fn echo_message(message: Message) -> Message {
+    message
 }

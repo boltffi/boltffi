@@ -174,6 +174,7 @@ where
     }
 
     fn expand(self) -> Result<TokenStream, Error> {
+        let imports = self.record_and_enum_imports()?;
         let callbacks = self.callbacks()?;
         let records = self.records()?;
         let enumerations = self.enumerations()?;
@@ -183,6 +184,7 @@ where
         let functions = self.functions()?;
 
         Ok(quote! {
+            #(#imports)*
             #(#callbacks)*
             #(#records)*
             #(#enumerations)*
@@ -191,6 +193,38 @@ where
             #(#constants)*
             #(#functions)*
         })
+    }
+
+    /// Explicit imports for the root crate's record and enum impl targets.
+    ///
+    /// The wrapper module only glob-imports the crate root, while codec
+    /// impls spell their target by bare leaf name, so a root type that is
+    /// not re-exported at the root would not resolve. Explicit imports
+    /// shadow the glob, which keeps root re-exports working unchanged.
+    /// Dependency types keep their own crate's codec impls and need no
+    /// import here.
+    fn record_and_enum_imports(&self) -> Result<Vec<TokenStream>, Error> {
+        let package = self.source.package.name.replace('-', "_");
+        self.source
+            .records
+            .iter()
+            .map(|record| record.id.as_str())
+            .chain(
+                self.source
+                    .enums
+                    .iter()
+                    .map(|enumeration| enumeration.id.as_str()),
+            )
+            .filter(|id| id.split("::").next() == Some(package.as_str()))
+            .filter_map(|id| self.visible_paths.get(id))
+            .map(|path| {
+                let path = Self::path_tokens(path)?;
+                Ok(quote! {
+                    #[allow(unused_imports)]
+                    use #path;
+                })
+            })
+            .collect()
     }
 
     fn callbacks(&self) -> Result<Vec<TokenStream>, Error> {
@@ -416,6 +450,39 @@ mod tests {
         assert!(rendered.contains("fn boltffi_stream_demo_events_subscribe () -> u64"));
         assert!(rendered.contains("let subscription = events ()"));
         assert_generated_crate_checks("expander_ownerless_stream", ownerless_stream_crate(tokens));
+    }
+
+    #[test]
+    fn native_expander_imports_root_codec_targets_by_visible_path() {
+        // The record impls spell their target by bare leaf name inside the
+        // wrapper module, so a root type living outside the crate root needs
+        // an explicit import along its public re-export.
+        let mut source = SourceContract::new(PackageInfo::new("demo", None));
+        let mut record = RecordDef::new(
+            "demo::inner::Hidden".into(),
+            CanonicalName::single("Hidden"),
+        );
+        record.fields = vec![FieldDef::new(
+            CanonicalName::single("x"),
+            TypeExpr::Primitive(Primitive::F64),
+        )];
+        source.records.push(record);
+        let lowered = lower_with_declarations::<Native>(&source).expect("contract lowers");
+        let expansion = Expansion::new(&lowered);
+        let visible_paths = vec![(
+            "demo::inner::Hidden".to_owned(),
+            boltffi_ast::Path::new(
+                boltffi_ast::PathRoot::Crate,
+                vec![boltffi_ast::PathSegment::new("Hidden")],
+            ),
+        )];
+
+        let tokens = expander::Expander::with_support(&source, &source, visible_paths)
+            .native(&expansion)
+            .expect("contract expands");
+        let rendered = tokens.to_string();
+
+        assert!(rendered.contains("use crate :: Hidden ;"));
     }
 
     #[test]

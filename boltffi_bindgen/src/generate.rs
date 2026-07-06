@@ -3,13 +3,12 @@ use std::path::{Path, PathBuf};
 
 use boltffi_backend::core::{CoverageMode, bridge, host};
 use boltffi_backend::target::{
-    kmp::KmpHost,
-    kotlin::{
-        KotlinApiStyle, KotlinCustomMapping, KotlinDesktopLoader, KotlinFactoryStyle, KotlinHost,
-    },
+    kmp::{KmpHost, KmpSupportMode},
+    kotlin::{KotlinApiStyle, KotlinDesktopLoader, KotlinFactoryStyle, KotlinHost},
     python::PythonCExtHost,
+    swift::SwiftHost,
 };
-use boltffi_backend::{GeneratedOutput, Target as BackendTarget};
+use boltffi_backend::{CustomTypeMapping, GeneratedOutput, Target as BackendTarget};
 use boltffi_binding::{BindingMetadataSurface, Bindings, Native, Surface};
 use thiserror::Error;
 
@@ -43,7 +42,15 @@ pub struct Generation {
     kotlin_desktop_loader: KotlinDesktopLoader,
     kotlin_api_style: KotlinApiStyle,
     kotlin_factory_style: KotlinFactoryStyle,
-    kotlin_custom_mappings: Vec<(String, KotlinCustomMapping)>,
+    kotlin_custom_mappings: Vec<(String, CustomTypeMapping)>,
+    swift_custom_mappings: Vec<(String, CustomTypeMapping)>,
+    swift_ffi_module: Option<String>,
+    swift_file: Option<String>,
+    swift_c_header: Option<PathBuf>,
+    kmp_package_name: Option<String>,
+    kmp_module_name: Option<String>,
+    kmp_min_sdk: Option<u32>,
+    kmp_support_mode: KmpSupportMode,
 }
 
 impl Generation {
@@ -68,6 +75,14 @@ impl Generation {
             kotlin_api_style: KotlinApiStyle::default(),
             kotlin_factory_style: KotlinFactoryStyle::default(),
             kotlin_custom_mappings: Vec::new(),
+            swift_custom_mappings: Vec::new(),
+            swift_ffi_module: None,
+            swift_file: None,
+            swift_c_header: None,
+            kmp_package_name: None,
+            kmp_module_name: None,
+            kmp_min_sdk: None,
+            kmp_support_mode: KmpSupportMode::Strict,
         }
     }
 
@@ -170,9 +185,60 @@ impl Generation {
     /// Registers Kotlin API mappings for custom types.
     pub fn kotlin_custom_mappings(
         mut self,
-        mappings: impl IntoIterator<Item = (String, KotlinCustomMapping)>,
+        mappings: impl IntoIterator<Item = (String, CustomTypeMapping)>,
     ) -> Self {
         self.kotlin_custom_mappings = mappings.into_iter().collect();
+        self
+    }
+
+    /// Registers Swift API mappings for custom types.
+    pub fn swift_custom_mappings(
+        mut self,
+        mappings: impl IntoIterator<Item = (String, CustomTypeMapping)>,
+    ) -> Self {
+        self.swift_custom_mappings = mappings.into_iter().collect();
+        self
+    }
+
+    /// Sets the C FFI module imported by the generated Swift source.
+    pub fn swift_ffi_module(mut self, module: impl Into<String>) -> Self {
+        self.swift_ffi_module = Some(module.into());
+        self
+    }
+
+    /// Sets the generated Swift source file.
+    pub fn swift_file(mut self, file: impl Into<String>) -> Self {
+        self.swift_file = Some(file.into());
+        self
+    }
+
+    /// Sets the C bridge header path generated with the Swift source.
+    pub fn swift_c_header(mut self, path: impl Into<PathBuf>) -> Self {
+        self.swift_c_header = Some(path.into());
+        self
+    }
+
+    /// Sets the generated Kotlin Multiplatform package name.
+    pub fn kmp_package_name(mut self, package_name: impl Into<String>) -> Self {
+        self.kmp_package_name = Some(package_name.into());
+        self
+    }
+
+    /// Sets the generated Kotlin Multiplatform module/source class name.
+    pub fn kmp_module_name(mut self, module_name: impl Into<String>) -> Self {
+        self.kmp_module_name = Some(module_name.into());
+        self
+    }
+
+    /// Sets the Android minSdk written into generated KMP Gradle output.
+    pub fn kmp_min_sdk(mut self, min_sdk: u32) -> Self {
+        self.kmp_min_sdk = Some(min_sdk);
+        self
+    }
+
+    /// Sets the KMP support mode recorded in generated support metadata.
+    pub fn kmp_support_mode(mut self, support_mode: KmpSupportMode) -> Self {
+        self.kmp_support_mode = support_mode;
         self
     }
 
@@ -182,12 +248,10 @@ impl Generation {
             Target::Python => self.render_python(),
             Target::Kotlin => self.render_kotlin(),
             Target::KotlinMultiplatform => self.render_kmp(),
-            Target::Swift
-            | Target::Java
-            | Target::TypeScript
-            | Target::Header
-            | Target::Dart
-            | Target::CSharp => Err(GenerationError::UnsupportedTarget { target }),
+            Target::Swift => self.render_swift(),
+            Target::Java | Target::TypeScript | Target::Header | Target::Dart | Target::CSharp => {
+                Err(GenerationError::UnsupportedTarget { target })
+            }
         }
     }
 
@@ -263,7 +327,16 @@ impl Generation {
 
     fn render_kmp(&self) -> Result<GeneratedOutput, GenerationError> {
         let bindings = self.bindings::<Native>()?;
-        let target = KmpHost::new().into_target();
+        let target = self.kmp_host().into_target();
+        self.render_backend(&target, &bindings)
+    }
+
+    fn render_swift(&self) -> Result<GeneratedOutput, GenerationError> {
+        let bindings = self.bindings::<Native>()?;
+        let target = self
+            .swift_host()?
+            .into_target()
+            .map_err(GenerationError::Render)?;
         self.render_backend(&target, &bindings)
     }
 
@@ -298,6 +371,41 @@ impl Generation {
             .iter()
             .fold(host, |host, library| host.native_library(library.clone()));
         Ok(host.version(self.python_package_version.clone()))
+    }
+
+    fn swift_host(&self) -> Result<SwiftHost, GenerationError> {
+        let module = self.swift_ffi_module.as_deref().unwrap_or("BoltFFI");
+        let host = SwiftHost::new(module).map_err(GenerationError::Render)?;
+        let host = self
+            .swift_custom_mappings
+            .iter()
+            .fold(host, |host, (custom_type, mapping)| {
+                host.custom_mapping(custom_type.clone(), mapping.clone())
+            });
+        let host = self
+            .swift_file
+            .iter()
+            .try_fold(host, |host, file| host.file(file.clone()))
+            .map_err(GenerationError::Render)?;
+        Ok(self
+            .swift_c_header
+            .iter()
+            .fold(host, |host, header| host.c_header(header.clone())))
+    }
+
+    fn kmp_host(&self) -> KmpHost {
+        let host = KmpHost::new().support_mode(self.kmp_support_mode);
+        let host = self
+            .kmp_package_name
+            .iter()
+            .fold(host, |host, package| host.package_name(package.clone()));
+        let host = self
+            .kmp_module_name
+            .iter()
+            .fold(host, |host, module| host.module_name(module.clone()));
+        self.kmp_min_sdk
+            .iter()
+            .fold(host, |host, min_sdk| host.min_sdk(*min_sdk))
     }
 
     /// Writes generated output to a directory.

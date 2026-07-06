@@ -1,6 +1,9 @@
 use std::path::Path;
 
-use super::{bridge_fixture, rendered_fixture, rendered_fixture_with_support};
+use super::{
+    bridge_fixture, rendered_fixture, rendered_fixture_with_support, rendered_source,
+    source::SourceFixture,
+};
 
 #[test]
 fn jni_bridge_layers_primitive_functions_on_c_bridge() {
@@ -39,7 +42,12 @@ fn jni_bridge_renders_direct_records_and_c_style_enums() {
 
 #[test]
 fn jni_bridge_renders_encoded_functions_as_byte_arrays() {
-    insta::assert_snapshot!(rendered_fixture("exports/encoded_functions"));
+    insta::assert_snapshot!(rendered_source(SourceFixture::many([
+        "records/person",
+        "enums/shape",
+        "enums/message",
+        "exports/encoded_functions",
+    ])));
 }
 
 #[test]
@@ -60,6 +68,11 @@ fn jni_bridge_renders_custom_type_functions_as_byte_arrays() {
 #[test]
 fn jni_bridge_renders_class_handles_and_methods() {
     insta::assert_snapshot!(rendered_fixture("exports/class_handles_and_methods"));
+}
+
+#[test]
+fn jni_bridge_preserves_rust_pascal_type_spelling() {
+    insta::assert_snapshot!(rendered_fixture("exports/acronym_class"));
 }
 
 #[test]

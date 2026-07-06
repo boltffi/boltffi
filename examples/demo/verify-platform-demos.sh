@@ -109,7 +109,7 @@ for selected_platform in "${selected_platforms[@]}"; do
     case "$selected_platform" in
         apple)
             run_step "pack apple" run_boltffi pack apple
-            run_step "swift test" swift test --package-path "$apple_dir"
+            run_step "swift test" swift test --package-path "$apple_dir" --scratch-path "$apple_dir/.build/xctest" --disable-swift-testing
             run_step "xcodebuild xcframework modulemap smoke" bash "$apple_dir/verify-xcframework-modulemap-collision.sh"
             ;;
         kotlin)

@@ -17,4 +17,5 @@ pub trait Listener {
     async fn point(&self, point: Point) -> Point;
     async fn values(&self, count: u32) -> Vec<u32>;
     async fn try_load(&self, key: u32) -> Result<String, LoadError>;
+    async fn check_enabled(&self, key: u32) -> Result<bool, LoadError>;
 }

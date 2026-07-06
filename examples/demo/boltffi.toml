@@ -15,6 +15,10 @@ layout = "split"
 [targets.apple.swift]
 output = "../platforms/apple/Sources/Demo"
 
+[targets.apple.swift.type_mappings.Email]
+type = "URL"
+conversion = "url_string"
+
 [targets.android]
 enabled = true
 

@@ -1,3 +1,6 @@
+mod expansion;
+
+use std::ffi::OsString;
 use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
@@ -7,6 +10,8 @@ use crate::cli::Result;
 use crate::config::Config;
 use crate::target::{Platform, RustTarget};
 use crate::toolchain::{AndroidToolchain, AndroidToolchainError};
+
+pub use self::expansion::BindingExpansion;
 
 pub type OutputCallback = Box<dyn Fn(&str) + Send>;
 
@@ -128,6 +133,7 @@ pub struct BuildOptions {
     pub release: bool,
     pub package: Option<String>,
     pub cargo_args: Vec<String>,
+    pub env: Vec<(OsString, OsString)>,
     pub on_output: Option<OutputCallback>,
 }
 
@@ -175,6 +181,7 @@ impl<'a> Builder<'a> {
         command.arg("--target").arg(triple);
 
         self.apply_common_build_args(&mut command);
+        self.apply_env(&mut command);
         command.args(&command_args.command_args);
 
         let success = run_command_streaming(&mut command, self.options.on_output.as_ref());
@@ -196,6 +203,7 @@ impl<'a> Builder<'a> {
         cmd.arg("--target").arg(target.triple());
 
         self.apply_common_build_args(&mut cmd);
+        self.apply_env(&mut cmd);
         cmd.args(&command_args.command_args);
 
         if target.platform() == Platform::Android {
@@ -225,6 +233,12 @@ impl<'a> Builder<'a> {
         }
 
         command.arg("-p").arg(self.package_name());
+    }
+
+    fn apply_env(&self, command: &mut Command) {
+        self.options.env.iter().for_each(|(key, value)| {
+            command.env(key, value);
+        });
     }
 
     fn cargo_build_command_args(&self) -> CargoBuildCommandArgs {

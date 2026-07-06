@@ -4,10 +4,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use boltffi_binding::{
     Bindings, CallableDecl, CallbackDecl, ClassDecl, ConstantDecl, ConstantValueDecl,
-    CustomTypeDecl, CustomTypeId, DataVariantPayload, Decl, DeclarationRef, DirectValueType,
-    EnumDecl, EnumId, ErrorChannel, ErrorDecl, ExecutionDecl, ExportedMethodDecl, FunctionDecl,
-    IncomingParam, InitializerDecl, Native, NativeSymbol, ParamPlan, Receive, RecordDecl, RecordId,
-    ReturnPlan, RustBody, TypeRef,
+    CustomTypeDecl, CustomTypeId, DataVariantDecl, DataVariantPayload, Decl, DeclarationRef,
+    DirectValueType, EncodedFieldDecl, EnumDecl, EnumId, ErrorChannel, ErrorDecl, ExecutionDecl,
+    ExportedMethodDecl, FunctionDecl, IncomingParam, InitializerDecl, Native, NativeSymbol,
+    ParamPlan, Receive, RecordDecl, RecordId, ReturnPlan, RustBody, TypeRef,
 };
 
 use crate::core::DeclarationLabel;
@@ -129,70 +129,28 @@ impl<'bindings> KmpAdmission<'bindings> {
     fn record(&self, record: &RecordDecl<Native>) -> Vec<KmpAdmissionRecord> {
         let owner_record = self.evaluate_declaration_only(DeclarationRef::Record(record));
         let mut records = vec![owner_record.clone()];
-        match record {
-            RecordDecl::Direct(record) => {
-                records.extend(self.admit_owned_members(
-                    record.name(),
-                    record.initializers(),
-                    record.methods(),
-                    "record initializer",
-                    "record method",
-                    &owner_record,
-                ));
-            }
-            RecordDecl::Encoded(record) => {
-                records.extend(self.admit_owned_members(
-                    record.name(),
-                    record.initializers(),
-                    record.methods(),
-                    "record initializer",
-                    "record method",
-                    &owner_record,
-                ));
-            }
-            _ => {
-                records.push(self.rejected(
-                    "record",
-                    record.name().as_path_string(),
-                    KmpCapabilitySet::from_iter([KmpCapability::UnknownBindingShapes]),
-                ));
-            }
-        }
+        records.extend(self.admit_owned_members(
+            record.name(),
+            record.initializers(),
+            record.methods(),
+            "record initializer",
+            "record method",
+            &owner_record,
+        ));
         records
     }
 
     fn enumeration(&self, enumeration: &EnumDecl<Native>) -> Vec<KmpAdmissionRecord> {
         let owner_record = self.evaluate_declaration_only(DeclarationRef::Enum(enumeration));
         let mut records = vec![owner_record.clone()];
-        match enumeration {
-            EnumDecl::CStyle(enumeration) => {
-                records.extend(self.admit_owned_members(
-                    enumeration.name(),
-                    enumeration.initializers(),
-                    enumeration.methods(),
-                    "enum initializer",
-                    "enum method",
-                    &owner_record,
-                ));
-            }
-            EnumDecl::Data(enumeration) => {
-                records.extend(self.admit_owned_members(
-                    enumeration.name(),
-                    enumeration.initializers(),
-                    enumeration.methods(),
-                    "enum initializer",
-                    "enum method",
-                    &owner_record,
-                ));
-            }
-            _ => {
-                records.push(self.rejected(
-                    "enum",
-                    enumeration.name().as_path_string(),
-                    KmpCapabilitySet::from_iter([KmpCapability::UnknownBindingShapes]),
-                ));
-            }
-        }
+        records.extend(self.admit_owned_members(
+            enumeration.name(),
+            enumeration.initializers(),
+            enumeration.methods(),
+            "enum initializer",
+            "enum method",
+            &owner_record,
+        ));
         records
     }
 
@@ -542,14 +500,9 @@ impl<'bindings> KmpAdmission<'bindings> {
     ) -> Vec<KmpCapability> {
         match record {
             RecordDecl::Direct(_) => vec![KmpCapability::DirectRecords],
-            RecordDecl::Encoded(record) => std::iter::once(KmpCapability::EncodedRecords)
-                .chain(
-                    record
-                        .fields()
-                        .iter()
-                        .flat_map(|field| self.type_ref_capabilities_inner(field.ty(), visiting)),
-                )
-                .collect(),
+            RecordDecl::Encoded(record) => {
+                self.encoded_record_capabilities(record.fields().iter().collect(), visiting)
+            }
             _ => vec![KmpCapability::UnknownBindingShapes],
         }
     }
@@ -567,13 +520,37 @@ impl<'bindings> KmpAdmission<'bindings> {
     ) -> Vec<KmpCapability> {
         match enumeration {
             EnumDecl::CStyle(_) => vec![KmpCapability::CStyleEnums],
-            EnumDecl::Data(enumeration) => std::iter::once(KmpCapability::DataEnums)
-                .chain(enumeration.variants().iter().flat_map(|variant| {
-                    self.data_variant_payload_capabilities_inner(variant.payload(), visiting)
-                }))
-                .collect(),
+            EnumDecl::Data(enumeration) => {
+                self.data_enum_capabilities(enumeration.variants().iter().collect(), visiting)
+            }
             _ => vec![KmpCapability::UnknownBindingShapes],
         }
+    }
+
+    fn encoded_record_capabilities(
+        &self,
+        fields: Vec<&EncodedFieldDecl>,
+        visiting: &mut TypeCapabilityStack,
+    ) -> Vec<KmpCapability> {
+        std::iter::once(KmpCapability::EncodedRecords)
+            .chain(
+                fields
+                    .into_iter()
+                    .flat_map(|field| self.type_ref_capabilities_inner(field.ty(), visiting)),
+            )
+            .collect()
+    }
+
+    fn data_enum_capabilities(
+        &self,
+        variants: Vec<&DataVariantDecl>,
+        visiting: &mut TypeCapabilityStack,
+    ) -> Vec<KmpCapability> {
+        std::iter::once(KmpCapability::DataEnums)
+            .chain(variants.into_iter().flat_map(|variant| {
+                self.data_variant_payload_capabilities_inner(variant.payload(), visiting)
+            }))
+            .collect()
     }
 
     fn data_variant_payload_capabilities_inner(

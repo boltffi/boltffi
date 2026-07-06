@@ -200,10 +200,11 @@ fn build_protocol(
 mod tests {
     use boltffi_ast::{
         CanonicalName as SourceName, ClassDef, ClassId as SourceClassId,
-        DeprecationInfo as SourceDeprecationInfo, DocComment as SourceDocComment, FieldDef,
-        PackageInfo as SourcePackage, Path as SourcePath, Primitive, RecordDef,
-        RecordId as SourceRecordId, ReprAttr, ReprItem, SourceContract, StreamDef,
-        StreamId as SourceStreamId, StreamMode, TraitDef, TraitId as SourceTraitId, TypeExpr,
+        DeprecationInfo as SourceDeprecationInfo, DocComment as SourceDocComment, EnumDef,
+        EnumId as SourceEnumId, FieldDef, PackageInfo as SourcePackage, Path as SourcePath,
+        Primitive, RecordDef, RecordId as SourceRecordId, ReprAttr, ReprItem, SourceContract,
+        StreamDef, StreamId as SourceStreamId, StreamMode, TraitDef, TraitId as SourceTraitId,
+        TypeExpr, VariantDef,
     };
 
     use crate::lower::{LowerError, LowerErrorKind, UnsupportedType, lower};
@@ -250,6 +251,13 @@ mod tests {
         record
     }
 
+    fn c_style_enum(id: &str, enum_name: &str) -> EnumDef {
+        let mut enumeration = EnumDef::new(SourceEnumId::new(id), name(enum_name));
+        enumeration.repr = ReprAttr::new(vec![ReprItem::Primitive(Primitive::U32)]);
+        enumeration.variants.push(VariantDef::unit(name("failed")));
+        enumeration
+    }
+
     fn lower_streams<S: SurfaceLower>(streams: Vec<StreamDef>) -> Result<Bindings<S>, LowerError> {
         let mut contract = package();
         contract.streams = streams;
@@ -284,6 +292,38 @@ mod tests {
             .iter()
             .map(|symbol| symbol.name().as_str())
             .collect()
+    }
+
+    #[test]
+    fn result_stream_item_marks_error_enum_payload() {
+        let error_id = SourceEnumId::new("demo::LoadError");
+        let mut contract = package();
+        contract
+            .enums
+            .push(c_style_enum(error_id.as_str(), "LoadError"));
+        contract.streams.push(stream(
+            "demo::loads",
+            "loads",
+            TypeExpr::Result {
+                ok: Box::new(TypeExpr::String),
+                err: Box::new(TypeExpr::enumeration(
+                    error_id,
+                    SourcePath::single("LoadError"),
+                )),
+            },
+        ));
+
+        let bindings = lower::<Native>(&contract).expect("stream should lower");
+        let enumeration = bindings
+            .decls()
+            .iter()
+            .find_map(|decl| match decl {
+                Decl::Enum(enumeration) => Some(enumeration.as_ref()),
+                _ => None,
+            })
+            .expect("error enum should lower");
+
+        assert!(enumeration.is_error_payload());
     }
 
     #[test]

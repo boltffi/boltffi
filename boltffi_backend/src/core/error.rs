@@ -74,6 +74,14 @@ pub enum BackendError {
         /// Unexpected binding shape.
         shape: &'static str,
     },
+    /// A configured custom type mapping did not match a custom type declaration.
+    #[error("{target} target has no custom type named `{custom_type}`")]
+    UnknownCustomTypeMapping {
+        /// Host target name.
+        target: &'static str,
+        /// Configured mapping key.
+        custom_type: String,
+    },
     /// A bridge contract index was missing data that construction should have recorded.
     #[error("{bridge} bridge contract invariant failed: {invariant}")]
     BrokenBridgeContract {
@@ -135,6 +143,12 @@ pub enum BackendError {
     /// A generated Kotlin identifier was invalid.
     #[error("invalid Kotlin identifier `{identifier}`")]
     InvalidKotlinIdentifier {
+        /// Invalid identifier text.
+        identifier: String,
+    },
+    /// A generated Swift identifier was invalid.
+    #[error("invalid Swift identifier `{identifier}`")]
+    InvalidSwiftIdentifier {
         /// Invalid identifier text.
         identifier: String,
     },

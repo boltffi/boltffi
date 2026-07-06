@@ -62,10 +62,9 @@ fn lower_one<S: SurfaceLower>(
     let initializers = methods::lower_enum_initializers::<S>(index, ids, allocator, enumeration)?;
     let enum_methods = methods::lower_enum_methods::<S>(index, ids, allocator, enumeration)?;
     if is_c_style(enumeration) {
-        lower_c_style(ids, enumeration, initializers, enum_methods).map(EnumDecl::CStyle)
+        lower_c_style(ids, enumeration, initializers, enum_methods).map(EnumDecl::c_style)
     } else {
-        lower_data(index, ids, enumeration, initializers, enum_methods)
-            .map(|enumeration| EnumDecl::Data(Box::new(enumeration)))
+        lower_data(index, ids, enumeration, initializers, enum_methods).map(EnumDecl::data)
     }
 }
 
@@ -420,7 +419,7 @@ mod tests {
 
     fn data_enum<S: SurfaceLower>(bindings: &Bindings<S>) -> &DataEnumDecl<S> {
         match enum_decl_at(bindings, 0) {
-            EnumDecl::Data(enumeration) => enumeration,
+            EnumDecl::Data(enumeration) => enumeration.as_ref(),
             EnumDecl::CStyle(_) => panic!("expected data enum"),
         }
     }
@@ -429,20 +428,14 @@ mod tests {
         bindings: &Bindings<S>,
         index: usize,
     ) -> &[ExportedMethodDecl<S, NativeSymbol>] {
-        match enum_decl_at(bindings, index) {
-            EnumDecl::CStyle(enumeration) => enumeration.methods(),
-            EnumDecl::Data(enumeration) => enumeration.methods(),
-        }
+        enum_decl_at(bindings, index).methods()
     }
 
     fn enum_initializers_at<S: SurfaceLower>(
         bindings: &Bindings<S>,
         index: usize,
     ) -> &[InitializerDecl<S>] {
-        match enum_decl_at(bindings, index) {
-            EnumDecl::CStyle(enumeration) => enumeration.initializers(),
-            EnumDecl::Data(enumeration) => enumeration.initializers(),
-        }
+        enum_decl_at(bindings, index).initializers()
     }
 
     fn only_method<S: SurfaceLower>(

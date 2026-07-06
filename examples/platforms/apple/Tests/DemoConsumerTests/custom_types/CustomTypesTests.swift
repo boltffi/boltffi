@@ -4,7 +4,7 @@ import XCTest
 
 final class CustomTypesTests: DemoTestCase {
     func testCustomTypesRoundTrip() {
-        let email = "café@example.com"
+        let email = URL(string: "mailto:cafe@example.com")!
         XCTAssertEqual(echoEmail(email: email), email, "case:custom_types.email.should_roundtrip_value")
         XCTAssertEqual(emailDomain(email: email), "example.com", "case:custom_types.email.should_extract_domain")
 
@@ -24,7 +24,10 @@ final class CustomTypesTests: DemoTestCase {
         demoCase("case:custom_types.event.should_extract_timestamp_millis")
         XCTAssertEqual(eventTimestamp(event: event), datetime)
 
-        let emails = ["café@example.com", "user@example.org"]
+        let emails = [
+            URL(string: "mailto:cafe@example.com")!,
+            URL(string: "mailto:user@example.org")!,
+        ]
         demoCase("case:custom_types.vectors.emails.should_roundtrip_values")
         XCTAssertEqual(echoEmails(emails: emails), emails)
 

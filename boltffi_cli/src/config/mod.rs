@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use boltffi_backend::target::python::PackageModule;
+use boltffi_backend::{CustomTypeMapping, target::python::PackageModule};
 use boltffi_bindgen::target::Target;
 use serde::{Deserialize, Serialize};
 
@@ -57,6 +57,15 @@ pub struct TypeMapping {
     #[serde(rename = "type")]
     pub native_type: String,
     pub conversion: TypeConversion,
+}
+
+impl TypeMapping {
+    fn custom_type_mapping(&self) -> CustomTypeMapping {
+        match self.conversion {
+            TypeConversion::UuidString => CustomTypeMapping::uuid_string(self.native_type.clone()),
+            TypeConversion::UrlString => CustomTypeMapping::url_string(self.native_type.clone()),
+        }
+    }
 }
 
 pub fn read_toml_value(path: &Path) -> Result<toml::Value, ConfigError> {
@@ -351,6 +360,14 @@ impl Config {
             .unwrap_or_else(|| to_pascal_case(&self.package.name))
     }
 
+    pub fn swift_bindings_file_stem(&self) -> String {
+        let name = to_pascal_case(self.library_name());
+        match name.is_empty() {
+            true => "BoltFFI".to_string(),
+            false => format!("{name}BoltFFI"),
+        }
+    }
+
     pub fn xcframework_name(&self) -> String {
         self.targets
             .apple
@@ -461,6 +478,17 @@ impl Config {
 
     pub fn apple_swift_ffi_module_name(&self) -> Option<&str> {
         self.targets.apple.swift.ffi_module_name.as_deref()
+    }
+
+    pub fn apple_swift_custom_mappings(
+        &self,
+    ) -> impl Iterator<Item = (String, CustomTypeMapping)> + '_ {
+        self.targets
+            .apple
+            .swift
+            .type_mappings
+            .iter()
+            .map(|(name, mapping)| (name.clone(), mapping.custom_type_mapping()))
     }
 
     pub fn apple_header_output(&self) -> PathBuf {
@@ -657,12 +685,15 @@ impl Config {
         self.targets.apple.spm.skip_package_swift
     }
 
-    pub fn swift_type_mappings(&self) -> &HashMap<String, TypeMapping> {
-        &self.targets.apple.swift.type_mappings
-    }
-
-    pub fn android_kotlin_type_mappings(&self) -> &HashMap<String, TypeMapping> {
-        &self.targets.android.kotlin.type_mappings
+    pub fn android_kotlin_custom_mappings(
+        &self,
+    ) -> impl Iterator<Item = (String, CustomTypeMapping)> + '_ {
+        self.targets
+            .android
+            .kotlin
+            .type_mappings
+            .iter()
+            .map(|(name, mapping)| (name.clone(), mapping.custom_type_mapping()))
     }
 
     pub fn kotlin_multiplatform_output(&self) -> PathBuf {
@@ -2251,6 +2282,18 @@ enabled = true
             PathBuf::from("dist/python/wheelhouse")
         );
         assert_eq!(config.python_wheel_interpreters(), None);
+    }
+
+    #[test]
+    fn swift_bindings_file_stem_normalizes_package_name() {
+        let config = parse_config(
+            r#"
+[package]
+name = "my-lib"
+"#,
+        );
+
+        assert_eq!(config.swift_bindings_file_stem(), "MyLibBoltFFI");
     }
 
     #[test]

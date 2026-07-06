@@ -93,11 +93,7 @@ const SOURCE: &str = "
 ";
 
 fn record_method_counts(record: &RecordDecl<Native>) -> (usize, usize) {
-    match record {
-        RecordDecl::Direct(direct) => (direct.initializers().len(), direct.methods().len()),
-        RecordDecl::Encoded(encoded) => (encoded.initializers().len(), encoded.methods().len()),
-        _ => panic!("unexpected RecordDecl variant"),
-    }
+    (record.initializers().len(), record.methods().len())
 }
 
 fn class_method_counts(class: &ClassDecl<Native>) -> (usize, usize) {

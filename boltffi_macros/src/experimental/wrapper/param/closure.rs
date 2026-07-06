@@ -540,7 +540,9 @@ impl<'expansion, 'lowered, S: RenderSurface> ForeignClosureReturn<'expansion, 'l
                     rust_type: rust_type.clone(),
                 }))
             }
-            ReturnPlan::EncodedViaReturnSlot { .. } => Ok(None),
+            ReturnPlan::EncodedViaReturnSlot { .. }
+            | ReturnPlan::ScalarOptionViaReturnSlot { .. }
+            | ReturnPlan::DirectVecViaReturnSlot { .. } => Ok(None),
             _ => Err(Error::UnsupportedExpansion("closure invoke return shape")),
         }
     }
@@ -604,6 +606,33 @@ impl<'expansion, 'lowered> Render<Native, ForeignClosureReturn<'expansion, 'lowe
         }
 
         match (input.plan, input.error) {
+            (ReturnPlan::ScalarOptionViaReturnSlot { primitive }, ErrorDecl::None(_)) => {
+                rust_api::Return::new(input.source).scalar_option(*primitive)?;
+                let rust_type = input.rust_type.as_ref().ok_or(Error::SourceSyntaxMismatch(
+                    "closure optional scalar return requires source return type",
+                ))?;
+                let value =
+                    <wrapper::returns::scalar_option::Incoming as Render<Native, _>>::render(
+                        wrapper::returns::scalar_option::Incoming,
+                        wrapper::returns::scalar_option::IncomingInput::new(
+                            *primitive,
+                            rust_type.clone(),
+                            quote! { __boltffi_result_buf },
+                        ),
+                    )?;
+                Ok(ForeignClosureReturnTokens::NativeScalarOption { value })
+            }
+            (ReturnPlan::DirectVecViaReturnSlot { .. }, ErrorDecl::None(_)) => {
+                let element = rust_api::Return::new(input.source).direct_vec_element_type()?;
+                let value = <wrapper::returns::direct_vec::Incoming as Render<Native, _>>::render(
+                    wrapper::returns::direct_vec::Incoming,
+                    wrapper::returns::direct_vec::IncomingInput::new(
+                        element,
+                        quote! { __boltffi_result_buf },
+                    ),
+                )?;
+                Ok(ForeignClosureReturnTokens::NativeDirectVec { value })
+            }
             (
                 ReturnPlan::DirectViaOutPointer {
                     ty: DirectValueType::Primitive(primitive),
@@ -738,6 +767,33 @@ impl<'expansion, 'lowered> Render<Wasm32, ForeignClosureReturn<'expansion, 'lowe
         }
 
         match (input.plan, input.error) {
+            (ReturnPlan::ScalarOptionViaReturnSlot { primitive }, ErrorDecl::None(_)) => {
+                rust_api::Return::new(input.source).scalar_option(*primitive)?;
+                let rust_type = input.rust_type.as_ref().ok_or(Error::SourceSyntaxMismatch(
+                    "closure optional scalar return requires source return type",
+                ))?;
+                let value =
+                    <wrapper::returns::scalar_option::Incoming as Render<Wasm32, _>>::render(
+                        wrapper::returns::scalar_option::Incoming,
+                        wrapper::returns::scalar_option::IncomingInput::new(
+                            *primitive,
+                            rust_type.clone(),
+                            quote! { __boltffi_result_value },
+                        ),
+                    )?;
+                Ok(ForeignClosureReturnTokens::WasmScalarOption { value })
+            }
+            (ReturnPlan::DirectVecViaReturnSlot { .. }, ErrorDecl::None(_)) => {
+                let element = rust_api::Return::new(input.source).direct_vec_element_type()?;
+                let value = <wrapper::returns::direct_vec::Incoming as Render<Wasm32, _>>::render(
+                    wrapper::returns::direct_vec::Incoming,
+                    wrapper::returns::direct_vec::IncomingInput::new(
+                        element,
+                        quote! { __boltffi_result_value },
+                    ),
+                )?;
+                Ok(ForeignClosureReturnTokens::WasmDirectVec { value })
+            }
             (
                 ReturnPlan::DirectViaOutPointer {
                     ty: DirectValueType::Primitive(primitive),
@@ -868,6 +924,18 @@ enum ForeignClosureReturnTokens {
     WasmEncoded {
         value: TokenStream,
     },
+    NativeScalarOption {
+        value: TokenStream,
+    },
+    WasmScalarOption {
+        value: TokenStream,
+    },
+    NativeDirectVec {
+        value: TokenStream,
+    },
+    WasmDirectVec {
+        value: TokenStream,
+    },
     NativeFallibleVoid {
         error: TokenStream,
     },
@@ -911,6 +979,11 @@ impl ForeignClosureReturnTokens {
             }
             Self::NativeEncoded { .. } => quote! { -> ::boltffi::__private::FfiBuf },
             Self::WasmEncoded { .. } => quote! { -> u64 },
+            Self::NativeScalarOption { .. } | Self::NativeDirectVec { .. } => {
+                quote! { -> ::boltffi::__private::FfiBuf }
+            }
+            Self::WasmScalarOption { .. } => quote! { -> f64 },
+            Self::WasmDirectVec { .. } => TokenStream::new(),
             Self::NativeFallibleVoid { .. }
             | Self::NativeFallibleDirectPrimitive { .. }
             | Self::NativeFallibleDirectPassable { .. }
@@ -1001,6 +1074,18 @@ impl ForeignClosureReturnTokens {
             Self::WasmEncoded { value } => quote! {
                 {
                     let __boltffi_result_packed = unsafe { #call };
+                    #value
+                }
+            },
+            Self::NativeScalarOption { value } | Self::NativeDirectVec { value } => quote! {
+                {
+                    let __boltffi_result_buf = unsafe { #call };
+                    #value
+                }
+            },
+            Self::WasmScalarOption { value } | Self::WasmDirectVec { value } => quote! {
+                {
+                    let __boltffi_result_value = unsafe { #call };
                     #value
                 }
             },

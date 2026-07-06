@@ -29,11 +29,7 @@ pub struct RecordClass {
 }
 
 impl RecordClass {
-    pub fn from_direct(
-        record: &DirectRecordDecl<Native>,
-        package: &Package,
-        error_type: bool,
-    ) -> Result<Self> {
+    pub fn from_direct(record: &DirectRecordDecl<Native>, package: &Package) -> Result<Self> {
         let c_record =
             package
                 .bridge
@@ -45,7 +41,8 @@ impl RecordClass {
         let symbols = record_render::Symbols::from_direct(record, c_record)?;
         Ok(Self {
             class_name: symbols.class_name().clone(),
-            exception_name: error_type
+            exception_name: record
+                .is_error_payload()
                 .then(|| package.exception_name(symbols.class_name()))
                 .transpose()?,
             register_method: symbols.register_method().clone(),
@@ -65,11 +62,7 @@ impl RecordClass {
         })
     }
 
-    pub fn from_encoded(
-        record: &EncodedRecordDecl<Native>,
-        package: &Package,
-        error_type: bool,
-    ) -> Result<Self> {
+    pub fn from_encoded(record: &EncodedRecordDecl<Native>, package: &Package) -> Result<Self> {
         let symbols = record_render::Symbols::from_encoded(record)?;
         let fields = record
             .fields()
@@ -83,7 +76,8 @@ impl RecordClass {
             .collect::<Result<Vec<_>>>()?;
         Ok(Self {
             class_name: symbols.class_name().clone(),
-            exception_name: error_type
+            exception_name: record
+                .is_error_payload()
                 .then(|| package.exception_name(symbols.class_name()))
                 .transpose()?,
             register_method: symbols.register_method().clone(),

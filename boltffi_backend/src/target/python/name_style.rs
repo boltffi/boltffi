@@ -1,6 +1,6 @@
 use boltffi_binding::{CanonicalName, NamePart};
 
-use crate::core::{Error, Result};
+use crate::core::{Error, Result, name_case};
 
 use super::syntax::Identifier;
 
@@ -39,12 +39,7 @@ impl Name {
     }
 
     pub fn class(&self) -> String {
-        self.source
-            .parts()
-            .iter()
-            .map(NamePart::as_str)
-            .map(Self::capitalized)
-            .collect()
+        name_case::upper_camel(&self.source)
     }
 
     pub fn enum_member(&self) -> String {
@@ -59,13 +54,6 @@ impl Name {
 
     pub fn position_field(position: u32) -> Result<Identifier> {
         Identifier::parse(format!("field_{position}"))
-    }
-
-    fn capitalized(part: &str) -> String {
-        let mut characters = part.chars();
-        characters.next().map_or_else(String::new, |first| {
-            first.to_uppercase().chain(characters).collect()
-        })
     }
 }
 

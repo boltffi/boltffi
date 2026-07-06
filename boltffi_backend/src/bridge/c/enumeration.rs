@@ -1,4 +1,4 @@
-use boltffi_binding::{CStyleEnumDecl, EnumDecl, Native};
+use boltffi_binding::{CStyleEnumDecl, DataEnumDecl, EnumDecl, Native};
 
 use crate::core::{Error, Result};
 
@@ -43,20 +43,7 @@ impl Enum {
     pub fn from_decl(enumeration: &EnumDecl<Native>, names: &Names) -> Result<Self> {
         match enumeration {
             EnumDecl::CStyle(enumeration) => Self::c_style(enumeration, names),
-            EnumDecl::Data(enumeration) => Ok(Self {
-                name: names.enumeration(enumeration.id())?,
-                repr: Type::Uint32,
-                variants: enumeration
-                    .variants()
-                    .iter()
-                    .map(|variant| {
-                        EnumVariant::new(
-                            name::EnumConstant::new(enumeration.name(), variant.name()).spelling(),
-                            i128::from(variant.tag().get()),
-                        )
-                    })
-                    .collect::<Result<Vec<_>>>()?,
-            }),
+            EnumDecl::Data(enumeration) => Self::data(enumeration, names),
             _ => Err(Error::UnexpectedBindingShape {
                 layer: C_BRIDGE_LAYER,
                 shape: "unknown enum declaration",
@@ -76,6 +63,23 @@ impl Enum {
                     EnumVariant::new(
                         name::EnumConstant::new(enumeration.name(), variant.name()).spelling(),
                         variant.discriminant().get(),
+                    )
+                })
+                .collect::<Result<Vec<_>>>()?,
+        })
+    }
+
+    fn data(enumeration: &DataEnumDecl<Native>, names: &Names) -> Result<Self> {
+        Ok(Self {
+            name: names.enumeration(enumeration.id())?,
+            repr: Type::Uint32,
+            variants: enumeration
+                .variants()
+                .iter()
+                .map(|variant| {
+                    EnumVariant::new(
+                        name::EnumConstant::new(enumeration.name(), variant.name()).spelling(),
+                        i128::from(variant.tag().get()),
                     )
                 })
                 .collect::<Result<Vec<_>>>()?,

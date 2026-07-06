@@ -5,8 +5,9 @@ mod signature;
 pub use signature::Signature;
 
 use boltffi_binding::{
-    ClassDecl, ConstantDecl, ConstantValueDecl, DeclarationRef, EnumDecl, ExportedCallable,
-    ExportedMethodDecl, InitializerDecl, Native, NativeSymbol, RecordDecl,
+    CStyleEnumDecl, ClassDecl, ConstantDecl, ConstantValueDecl, DataEnumDecl, DeclarationRef,
+    DirectRecordDecl, EncodedRecordDecl, EnumDecl, ExportedCallable, ExportedMethodDecl,
+    InitializerDecl, Native, NativeSymbol, RecordDecl,
 };
 
 use crate::core::{Error, Result};
@@ -89,53 +90,76 @@ impl Function {
     }
 
     fn record_functions(record: &RecordDecl<Native>, names: &Names) -> Result<Vec<Self>> {
-        let (initializers, methods, receiver) = match record {
-            RecordDecl::Direct(record) => (
-                record.initializers(),
-                record.methods(),
-                ReceiverAbi::direct("receiver", Type::DirectRecord(names.record(record.id())?))?,
-            ),
-            RecordDecl::Encoded(record) => (
-                record.initializers(),
-                record.methods(),
-                ReceiverAbi::encoded("receiver")?,
-            ),
-            _ => {
-                return Err(Error::UnexpectedBindingShape {
-                    layer: C_BRIDGE_LAYER,
-                    shape: "unknown record declaration",
-                });
-            }
-        };
-        Self::associated_functions(initializers, methods, receiver, names)
+        match record {
+            RecordDecl::Direct(record) => Self::direct_record_functions(record, names),
+            RecordDecl::Encoded(record) => Self::encoded_record_functions(record, names),
+            _ => Err(Error::UnexpectedBindingShape {
+                layer: C_BRIDGE_LAYER,
+                shape: "unknown record declaration",
+            }),
+        }
     }
 
     fn enum_functions(enumeration: &EnumDecl<Native>, names: &Names) -> Result<Vec<Self>> {
-        let (initializers, methods, receiver) = match enumeration {
-            EnumDecl::CStyle(enumeration) => (
-                enumeration.initializers(),
-                enumeration.methods(),
-                ReceiverAbi::direct(
-                    "receiver",
-                    Type::CStyleEnum {
-                        name: names.enumeration(enumeration.id())?,
-                        repr: Box::new(Type::primitive(enumeration.repr().primitive())?),
-                    },
-                )?,
-            ),
-            EnumDecl::Data(enumeration) => (
-                enumeration.initializers(),
-                enumeration.methods(),
-                ReceiverAbi::encoded("receiver")?,
-            ),
-            _ => {
-                return Err(Error::UnexpectedBindingShape {
-                    layer: C_BRIDGE_LAYER,
-                    shape: "unknown enum declaration",
-                });
-            }
-        };
-        Self::associated_functions(initializers, methods, receiver, names)
+        match enumeration {
+            EnumDecl::CStyle(enumeration) => Self::c_style_enum_functions(enumeration, names),
+            EnumDecl::Data(enumeration) => Self::data_enum_functions(enumeration, names),
+            _ => Err(Error::UnexpectedBindingShape {
+                layer: C_BRIDGE_LAYER,
+                shape: "unknown enum declaration",
+            }),
+        }
+    }
+
+    fn direct_record_functions(
+        record: &DirectRecordDecl<Native>,
+        names: &Names,
+    ) -> Result<Vec<Self>> {
+        Self::associated_functions(
+            record.initializers(),
+            record.methods(),
+            ReceiverAbi::direct("receiver", Type::DirectRecord(names.record(record.id())?))?,
+            names,
+        )
+    }
+
+    fn encoded_record_functions(
+        record: &EncodedRecordDecl<Native>,
+        names: &Names,
+    ) -> Result<Vec<Self>> {
+        Self::associated_functions(
+            record.initializers(),
+            record.methods(),
+            ReceiverAbi::encoded("receiver")?,
+            names,
+        )
+    }
+
+    fn c_style_enum_functions(
+        enumeration: &CStyleEnumDecl<Native>,
+        names: &Names,
+    ) -> Result<Vec<Self>> {
+        Self::associated_functions(
+            enumeration.initializers(),
+            enumeration.methods(),
+            ReceiverAbi::direct(
+                "receiver",
+                Type::CStyleEnum {
+                    name: names.enumeration(enumeration.id())?,
+                    repr: Box::new(Type::primitive(enumeration.repr().primitive())?),
+                },
+            )?,
+            names,
+        )
+    }
+
+    fn data_enum_functions(enumeration: &DataEnumDecl<Native>, names: &Names) -> Result<Vec<Self>> {
+        Self::associated_functions(
+            enumeration.initializers(),
+            enumeration.methods(),
+            ReceiverAbi::encoded("receiver")?,
+            names,
+        )
     }
 
     fn class_functions(class: &ClassDecl<Native>, names: &Names) -> Result<Vec<Self>> {

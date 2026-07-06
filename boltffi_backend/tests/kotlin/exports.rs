@@ -4,7 +4,7 @@ use boltffi_backend::target::kotlin::{
 
 use super::{
     files_with_host, fixture, rendered_files, rendered_fixture, rendered_fixture_with_host,
-    rendered_fixture_with_runtime,
+    rendered_fixture_with_runtime, rendered_source, source::SourceFixture,
 };
 
 #[test]
@@ -46,12 +46,21 @@ fn kotlin_target_renders_direct_records_and_function_bridges() {
 
 #[test]
 fn kotlin_target_renders_encoded_records_through_codec_methods() {
-    insta::assert_snapshot!(rendered_fixture("exports/encoded_record_functions"));
+    insta::assert_snapshot!(rendered_source(SourceFixture::many([
+        "enums/role",
+        "records/encoded_user",
+        "exports/encoded_record_functions",
+    ])));
 }
 
 #[test]
 fn kotlin_target_renders_data_enums_through_codec_methods() {
-    insta::assert_snapshot!(rendered_fixture("exports/encoded_functions"));
+    insta::assert_snapshot!(rendered_source(SourceFixture::many([
+        "records/person",
+        "enums/shape",
+        "enums/message",
+        "exports/encoded_functions",
+    ])));
 }
 
 #[test]
@@ -68,12 +77,17 @@ fn kotlin_target_renders_custom_types_through_representations() {
 fn kotlin_target_renders_custom_type_mappings() {
     let host = KotlinHost::new("com.boltffi.demo", "Demo")
         .expect("Kotlin host")
-        .custom_mapping("Email", KotlinCustomMapping::url_string("java.net.URI"));
+        .custom_mapping("Email", KotlinCustomMapping::url_string("URI"));
 
     insta::assert_snapshot!(rendered_fixture_with_host(
         "exports/custom_string_type_functions",
         host
     ));
+}
+
+#[test]
+fn kotlin_target_qualifies_shadowed_data_enum_payloads() {
+    insta::assert_snapshot!(rendered_fixture("enums/error_payload_shadow"));
 }
 
 #[test]
@@ -99,6 +113,11 @@ fn kotlin_target_encodes_nullable_primitives_as_compact_wire() {
 #[test]
 fn kotlin_target_renders_class_handles_and_associated_callables() {
     insta::assert_snapshot!(rendered_fixture("exports/kotlin_class_handles"));
+}
+
+#[test]
+fn kotlin_target_preserves_rust_pascal_type_spelling() {
+    insta::assert_snapshot!(rendered_fixture("exports/acronym_class"));
 }
 
 #[test]

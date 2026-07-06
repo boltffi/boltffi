@@ -1,15 +1,9 @@
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::cli::{CliError, Result};
-use crate::config::{
-    Config, Experimental, TypeConversion as ConfigTypeConversion, TypeMapping as ConfigTypeMapping,
-};
+use crate::config::{Config, Experimental};
 use boltffi_bindgen::target::Target;
-use boltffi_bindgen::{
-    TypeConversion as BindgenTypeConversion, TypeMapping as BindgenTypeMapping, TypeMappings, ir,
-    scan_crate_with_pointer_width,
-};
+use boltffi_bindgen::{ir, scan_crate_with_pointer_width};
 
 #[derive(Debug, Clone)]
 pub struct SourceCrate {
@@ -195,26 +189,4 @@ pub fn run_generator<Generator: LanguageGenerator>(
     }
 
     Generator::generate(request)
-}
-
-pub fn bindgen_type_mappings(
-    config_type_mappings: &HashMap<String, ConfigTypeMapping>,
-) -> TypeMappings {
-    config_type_mappings
-        .iter()
-        .map(|(type_name, type_mapping)| {
-            let conversion = match type_mapping.conversion {
-                ConfigTypeConversion::UuidString => BindgenTypeConversion::UuidString,
-                ConfigTypeConversion::UrlString => BindgenTypeConversion::UrlString,
-            };
-
-            (
-                type_name.clone(),
-                BindgenTypeMapping {
-                    native_type: type_mapping.native_type.clone(),
-                    conversion,
-                },
-            )
-        })
-        .collect()
 }

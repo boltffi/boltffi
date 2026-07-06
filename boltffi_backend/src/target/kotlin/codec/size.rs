@@ -180,10 +180,10 @@ impl CodecSize for Sizer<'_> {
     where
         F: FnOnce(&mut Self, &ValueRef) -> Self::Expr,
     {
-        let representation = match self.host.custom_type_mapping(id, self.context) {
+        let representation = match self.context.custom_type_mapping(id) {
             Some(mapping) => self
                 .value(value)
-                .and_then(|value| mapping.encode(value))
+                .and_then(|value| KotlinHost::custom_type_encode(mapping, value))
                 .and_then(|value| self.with_current(value, representation)),
             None => representation(self, value),
         };

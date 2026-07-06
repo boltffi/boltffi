@@ -60,9 +60,9 @@ fn lower_one<S: SurfaceLower>(
     let initializers = methods::lower_record_initializers::<S>(index, ids, allocator, record)?;
     let record_methods = methods::lower_record_methods::<S>(index, ids, allocator, record)?;
     if is_direct(record) {
-        lower_direct(ids, record, initializers, record_methods).map(RecordDecl::Direct)
+        lower_direct(ids, record, initializers, record_methods).map(RecordDecl::direct)
     } else {
-        lower_encoded(index, ids, record, initializers, record_methods).map(RecordDecl::Encoded)
+        lower_encoded(index, ids, record, initializers, record_methods).map(RecordDecl::encoded)
     }
 }
 
@@ -411,10 +411,7 @@ mod tests {
         index: usize,
     ) -> &[ExportedMethodDecl<S, NativeSymbol>] {
         match bindings.decls().get(index) {
-            Some(Decl::Record(record)) => match record.as_ref() {
-                RecordDecl::Direct(direct) => direct.methods(),
-                RecordDecl::Encoded(encoded) => encoded.methods(),
-            },
+            Some(Decl::Record(record)) => record.methods(),
             _ => panic!("expected record declaration"),
         }
     }
@@ -925,17 +922,11 @@ mod tests {
     fn first_record_methods<S: SurfaceLower>(
         bindings: &Bindings<S>,
     ) -> &[ExportedMethodDecl<S, NativeSymbol>] {
-        match first_record(bindings) {
-            RecordDecl::Direct(direct) => direct.methods(),
-            RecordDecl::Encoded(encoded) => encoded.methods(),
-        }
+        first_record(bindings).methods()
     }
 
     fn first_record_initializers<S: SurfaceLower>(bindings: &Bindings<S>) -> &[InitializerDecl<S>] {
-        match first_record(bindings) {
-            RecordDecl::Direct(direct) => direct.initializers(),
-            RecordDecl::Encoded(encoded) => encoded.initializers(),
-        }
+        first_record(bindings).initializers()
     }
 
     #[test]
@@ -1501,10 +1492,7 @@ mod tests {
                 _ => None,
             })
             .expect("expected record");
-        let methods = match record_decl {
-            crate::RecordDecl::Direct(direct) => direct.methods(),
-            crate::RecordDecl::Encoded(encoded) => encoded.methods(),
-        };
+        let methods = record_decl.methods();
         let plan = methods[0].callable().returns().plan();
 
         let closure_param = match plan {
@@ -1573,10 +1561,7 @@ mod tests {
                 _ => None,
             })
             .expect("expected record");
-        let methods = match record_decl {
-            crate::RecordDecl::Direct(direct) => direct.methods(),
-            crate::RecordDecl::Encoded(encoded) => encoded.methods(),
-        };
+        let methods = record_decl.methods();
         let callable = methods[0].callable();
 
         assert!(

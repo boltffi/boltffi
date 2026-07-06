@@ -1,4 +1,4 @@
-//! Backends that generate target-language source files from an [`AbiContract`].
+//! Legacy backends that generate target-language source files from an [`AbiContract`].
 //!
 //! Each backend is split into three parts:
 //!
@@ -23,7 +23,6 @@ pub mod java;
 pub mod jni;
 pub mod kmp;
 pub mod kotlin;
-pub mod swift;
 pub mod typescript;
 
 use std::collections::HashMap;
