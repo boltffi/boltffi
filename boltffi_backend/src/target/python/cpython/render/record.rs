@@ -1,7 +1,7 @@
 use askama::Template as AskamaTemplate;
 use boltffi_binding::{
-    CanonicalName, DirectFieldDecl, DirectRecordDecl, EncodedRecordDecl, ExportedMethodDecl,
-    FieldKey, InitializerDecl, Native, NativeSymbol, RecordDecl, RecordId,
+    CanonicalName, DefaultValue, DirectFieldDecl, DirectRecordDecl, EncodedRecordDecl,
+    ExportedMethodDecl, FieldKey, InitializerDecl, Native, NativeSymbol, RecordDecl, RecordId,
 };
 
 use crate::{
@@ -11,7 +11,10 @@ use crate::{
     },
     core::{Emitted, Error, RenderContext, Result},
     target::python::{
-        cpython::render::{argument, direct_vector, function, primitive, result},
+        cpython::{
+            codec::{self, EncodedCodec, EncodedCodecNode},
+            render::{argument, direct_vector, function, primitive, result},
+        },
         name_style::Name,
         syntax::Identifier as PythonIdentifier,
     },
@@ -23,8 +26,9 @@ struct DirectTemplate {
     class_name: PythonIdentifier,
     c_type: TypeFragment,
     type_object: Identifier,
-    register_method: PythonIdentifier,
-    register_wrapper: Identifier,
+    object_struct: Identifier,
+    prefix: Identifier,
+    type_setup: Identifier,
     parser: Identifier,
     boxer: Identifier,
     fields: Vec<Field>,
@@ -39,12 +43,13 @@ struct EncodedTemplate {
     register_wrapper: Identifier,
     wire_encoder: Identifier,
     owned_decoder: Identifier,
+    codec: EncodedCodec,
 }
 
 pub struct Record {
     symbols: Symbols,
     shape: Shape,
-    method: ExtensionMethod,
+    method: Option<ExtensionMethod>,
     callables: Vec<function::Function>,
 }
 
@@ -69,25 +74,30 @@ impl Record {
         let source = match self.shape {
             Shape::Direct { fields, .. } => {
                 let c_type = symbols.c_type()?.clone();
+                let object_struct = symbols.object_struct()?;
+                let prefix = symbols.prefix()?;
+                let type_setup = symbols.type_setup()?;
                 DirectTemplate {
                     class_name: symbols.class_name,
                     c_type,
                     type_object: symbols.type_object,
-                    register_method: symbols.register_method,
-                    register_wrapper: symbols.register_wrapper,
+                    object_struct,
+                    prefix,
+                    type_setup,
                     parser: symbols.parser,
                     boxer: symbols.boxer,
                     fields,
                 }
                 .render()?
             }
-            Shape::Encoded => EncodedTemplate {
+            Shape::Encoded { codec, .. } => EncodedTemplate {
                 class_name: symbols.class_name,
                 type_object: symbols.type_object,
                 register_method: symbols.register_method,
                 register_wrapper: symbols.register_wrapper,
                 wire_encoder: symbols.parser,
                 owned_decoder: symbols.boxer,
+                codec,
             }
             .render()?,
         };
@@ -109,14 +119,26 @@ impl Record {
     }
 
     pub fn methods(&self) -> impl Iterator<Item = &ExtensionMethod> {
-        std::iter::once(&self.method)
+        self.method
+            .iter()
             .chain(self.callables.iter().flat_map(function::Function::methods))
+    }
+
+    pub fn type_setup(&self) -> Result<Option<Identifier>> {
+        match self.shape {
+            Shape::Direct { .. } => self.symbols.type_setup().map(Some),
+            Shape::Encoded { .. } => Ok(None),
+        }
+    }
+
+    pub fn has_native_type(&self) -> bool {
+        matches!(self.shape, Shape::Direct { .. })
     }
 
     pub fn primitives(&self) -> Vec<primitive::Runtime> {
         let own = match &self.shape {
             Shape::Direct { primitives, .. } => primitives.clone(),
-            Shape::Encoded => Vec::new(),
+            Shape::Encoded { primitives, .. } => primitives.clone(),
         };
         own.into_iter()
             .chain(
@@ -132,7 +154,7 @@ impl Record {
     }
 
     pub fn needs_owned_buffer(&self) -> bool {
-        matches!(self.shape, Shape::Encoded)
+        matches!(self.shape, Shape::Encoded { .. })
     }
 
     pub fn owned_buffers(&self) -> impl Iterator<Item = result::OwnedBuffer> + '_ {
@@ -151,6 +173,12 @@ impl Record {
         self.callables
             .iter()
             .flat_map(function::Function::direct_vector_elements)
+    }
+
+    pub fn native_sequences(&self) -> impl Iterator<Item = codec::NativeSequence> + '_ {
+        self.callables
+            .iter()
+            .flat_map(function::Function::native_sequences)
     }
 
     pub fn has_string_argument(&self) -> bool {
@@ -203,16 +231,11 @@ impl Record {
             .map(|(source, c_field)| Field::new(source, c_field))
             .collect::<Result<Vec<_>>>()?;
         let primitives = fields.iter().map(Field::primitive).collect();
-        let method = ExtensionMethod::new(
-            MethodName::parse(symbols.register_method.as_str())?,
-            symbols.register_wrapper.clone(),
-            MethodFlags::FastCall,
-        )?;
         let callables = Self::direct_callables(record, &symbols, bridge, context)?;
         Ok(Self {
             symbols,
             shape: Shape::Direct { primitives, fields },
-            method,
+            method: None,
             callables,
         })
     }
@@ -223,6 +246,8 @@ impl Record {
         context: &RenderContext<Native>,
     ) -> Result<Self> {
         let symbols = Symbols::from_encoded(record)?;
+        let codec = EncodedCodec::from_record(record)?;
+        let primitives = codec.primitives();
         let method = ExtensionMethod::new(
             MethodName::parse(symbols.register_method.as_str())?,
             symbols.register_wrapper.clone(),
@@ -231,8 +256,8 @@ impl Record {
         let callables = Self::encoded_callables(record, &symbols, bridge, context)?;
         Ok(Self {
             symbols,
-            shape: Shape::Encoded,
-            method,
+            shape: Shape::Encoded { codec, primitives },
+            method: Some(method),
             callables,
         })
     }
@@ -251,7 +276,14 @@ impl Record {
             let receiver = method
                 .callable()
                 .receiver()
-                .map(|_| argument::Conversion::direct_record_receiver(record.id(), bridge, context))
+                .map(|receive| {
+                    argument::Conversion::direct_record_receiver(
+                        record.id(),
+                        receive,
+                        bridge,
+                        context,
+                    )
+                })
                 .transpose()?
                 .into_iter()
                 .collect();
@@ -413,6 +445,18 @@ impl Symbols {
         })
     }
 
+    pub fn object_struct(&self) -> Result<Identifier> {
+        Identifier::parse(format!("boltffi_python_{}_object", self.stem))
+    }
+
+    pub fn prefix(&self) -> Result<Identifier> {
+        Identifier::parse(format!("boltffi_python_{}", self.stem))
+    }
+
+    pub fn type_setup(&self) -> Result<Identifier> {
+        Identifier::parse(format!("boltffi_python_setup_{}_type", self.stem))
+    }
+
     pub fn from_encoded(record: &EncodedRecordDecl<Native>) -> Result<Self> {
         let stem = Identifier::escape(Name::new(record.name()).function_text()?)?.to_string();
         Ok(Self {
@@ -441,7 +485,10 @@ enum Shape {
         fields: Vec<Field>,
         primitives: Vec<primitive::Runtime>,
     },
-    Encoded,
+    Encoded {
+        codec: EncodedCodec,
+        primitives: Vec<primitive::Runtime>,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -451,6 +498,7 @@ struct Field {
     value_name: Identifier,
     parser: Identifier,
     boxer: Identifier,
+    default: Option<String>,
     primitive: primitive::Runtime,
 }
 
@@ -464,8 +512,36 @@ impl Field {
             c_name: Identifier::parse(c_field.name())?,
             parser: primitive.parser()?,
             boxer: primitive.boxer()?,
+            default: source
+                .meta()
+                .default()
+                .map(Self::default_literal)
+                .transpose()?,
             primitive,
         })
+    }
+
+    fn default_literal(value: &DefaultValue) -> Result<String> {
+        match value {
+            DefaultValue::Bool(value) => Ok(if *value { "true" } else { "false" }.to_owned()),
+            DefaultValue::Integer(value) => Ok(value.get().to_string()),
+            DefaultValue::Float(value) => {
+                let float = value.to_f64();
+                if float == f64::INFINITY {
+                    Ok("INFINITY".to_owned())
+                } else if float == f64::NEG_INFINITY {
+                    Ok("-INFINITY".to_owned())
+                } else if float.is_nan() {
+                    Ok("NAN".to_owned())
+                } else {
+                    Ok(format!("{float:?}"))
+                }
+            }
+            _ => Err(Error::UnsupportedTarget {
+                target: "python",
+                shape: "non-scalar direct record field default",
+            }),
+        }
     }
 
     fn primitive(&self) -> primitive::Runtime {

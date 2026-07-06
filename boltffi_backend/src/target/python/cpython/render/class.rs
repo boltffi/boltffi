@@ -8,7 +8,10 @@ use crate::{
     },
     core::{Emitted, Error, RenderContext, Result},
     target::python::{
-        cpython::render::{argument, direct_vector, function, primitive, result},
+        cpython::{
+            codec,
+            render::{argument, direct_vector, function, primitive, result},
+        },
         name_style::Name,
         syntax::Identifier as PythonIdentifier,
     },
@@ -116,6 +119,12 @@ impl Class {
         self.callables
             .iter()
             .flat_map(function::Function::direct_vector_elements)
+    }
+
+    pub fn native_sequences(&self) -> impl Iterator<Item = codec::NativeSequence> + '_ {
+        self.callables
+            .iter()
+            .flat_map(function::Function::native_sequences)
     }
 
     pub fn has_string_argument(&self) -> bool {

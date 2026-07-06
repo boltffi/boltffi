@@ -11,9 +11,12 @@ use crate::{
     core::{Emitted, FileLayout, GeneratedOutput, RenderContext, RenderedDeclaration, Result},
     target::python::{
         codec::{CodecAdapters, ReadAdapter, WriteAdapter},
-        cpython::render::{
-            callback, class, constant, direct_vector, enumeration, function, method, primitive,
-            record, result, stream,
+        cpython::{
+            codec,
+            render::{
+                callback, class, constant, direct_vector, enumeration, function, method, primitive,
+                record, result, stream,
+            },
         },
     },
 };
@@ -40,6 +43,7 @@ struct NativeModuleTemplate {
     functions: Vec<String>,
     methods: Vec<method::Entry>,
     cleanup: Vec<Statement>,
+    type_setups: Vec<Identifier>,
 }
 
 pub struct NativeModule<'render, 'bindings> {
@@ -98,6 +102,7 @@ impl<'render, 'bindings> NativeModule<'render, 'bindings> {
             functions: declarations.function_sources(),
             methods,
             cleanup: declarations.cleanup(),
+            type_setups: declarations.type_setups()?,
         }
         .render()?;
         FileLayout::single(bridge.source_path().clone()).assemble([Emitted::primary(source)])
@@ -130,6 +135,13 @@ impl ModuleDeclarations {
 
     fn record_sources(&self) -> Vec<String> {
         self.records.iter().map(Rendered::source).collect()
+    }
+
+    fn type_setups(&self) -> Result<Vec<Identifier>> {
+        self.records
+            .iter()
+            .filter_map(|record| record.declaration.type_setup().transpose())
+            .collect()
     }
 
     fn enum_sources(&self) -> Vec<String> {
@@ -415,7 +427,10 @@ impl<'module> SupportArtifacts<'module> {
             .iter()
             .filter_map(|buffer| match buffer {
                 result::OwnedBuffer::DirectVector(element) => Some((**element).clone()),
-                result::OwnedBuffer::RawWire | result::OwnedBuffer::OptionalPrimitive(_) => None,
+                result::OwnedBuffer::RawWire
+                | result::OwnedBuffer::Utf8Text
+                | result::OwnedBuffer::OptionalPrimitive(_)
+                | result::OwnedBuffer::Native(_) => None,
             })
             .chain(
                 self.functions
@@ -521,6 +536,43 @@ impl<'module> SupportArtifacts<'module> {
             .collect()
     }
 
+    fn native_sequences(
+        &self,
+        owned_buffers: &BTreeSet<result::OwnedBuffer>,
+    ) -> Vec<codec::NativeSequence> {
+        owned_buffers
+            .iter()
+            .filter_map(result::OwnedBuffer::native_sequence)
+            .chain(
+                self.functions
+                    .iter()
+                    .flat_map(|function| function.native_sequences()),
+            )
+            .chain(
+                self.constants
+                    .iter()
+                    .flat_map(|constant| constant.native_sequences()),
+            )
+            .chain(
+                self.records
+                    .iter()
+                    .flat_map(|record| record.native_sequences()),
+            )
+            .chain(
+                self.enums
+                    .iter()
+                    .flat_map(|enumeration| enumeration.native_sequences()),
+            )
+            .chain(
+                self.classes
+                    .iter()
+                    .flat_map(|class| class.native_sequences()),
+            )
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect()
+    }
+
     fn owned_primitives(
         &self,
         owned_buffers: &BTreeSet<result::OwnedBuffer>,
@@ -529,7 +581,10 @@ impl<'module> SupportArtifacts<'module> {
             .iter()
             .filter_map(|buffer| match buffer {
                 result::OwnedBuffer::OptionalPrimitive(primitive) => Some(*primitive),
-                result::OwnedBuffer::RawWire | result::OwnedBuffer::DirectVector(_) => None,
+                result::OwnedBuffer::RawWire
+                | result::OwnedBuffer::Utf8Text
+                | result::OwnedBuffer::DirectVector(_)
+                | result::OwnedBuffer::Native(_) => None,
             })
             .collect::<BTreeSet<_>>()
             .into_iter()
@@ -615,11 +670,14 @@ struct ModuleSupport {
     wire_primitives: Vec<primitive::Support>,
     owned_primitives: Vec<primitive::Support>,
     direct_vector_elements: Vec<direct_vector::Element>,
+    native_sequences: Vec<codec::NativeSequence>,
     free_buffer: Identifier,
     string_arguments: bool,
     bytes_arguments: bool,
     raw_wire_arguments: bool,
     raw_wire_returns: bool,
+    utf8_returns: bool,
+    native_record_types: bool,
     encoded_records: bool,
     data_enums: bool,
     record_types: bool,
@@ -640,6 +698,7 @@ impl ModuleSupport {
         let direct_vector_elements = artifacts.direct_vector_elements(&owned_buffers);
         let primitives = artifacts.primitives(&direct_vector_elements)?;
         let wire_primitives = artifacts.wire_primitives()?;
+        let native_sequences = artifacts.native_sequences(&owned_buffers);
         let owned_primitives = artifacts.owned_primitives(&owned_buffers)?;
         let string_arguments = artifacts.has_string_arguments();
         let bytes_arguments = artifacts.has_bytes_arguments();
@@ -649,11 +708,17 @@ impl ModuleSupport {
             wire_primitives,
             owned_primitives,
             direct_vector_elements: direct_vector_elements.into_iter().collect(),
+            native_sequences,
             free_buffer: Self::free_buffer_storage(bridge)?,
             string_arguments,
             bytes_arguments,
             raw_wire_arguments,
             raw_wire_returns: owned_buffers.contains(&result::OwnedBuffer::RawWire),
+            utf8_returns: owned_buffers.contains(&result::OwnedBuffer::Utf8Text),
+            native_record_types: artifacts
+                .records
+                .iter()
+                .any(|record| record.has_native_type()),
             encoded_records,
             data_enums,
             record_types: !artifacts.records.is_empty(),
@@ -679,6 +744,10 @@ impl ModuleSupport {
         &self.direct_vector_elements
     }
 
+    fn native_sequences(&self) -> &[codec::NativeSequence] {
+        &self.native_sequences
+    }
+
     fn free_buffer(&self) -> &Identifier {
         &self.free_buffer
     }
@@ -692,8 +761,10 @@ impl ModuleSupport {
 
     fn uses_owned_buffers(&self) -> bool {
         self.raw_wire_returns
+            || self.utf8_returns
             || !self.owned_primitives.is_empty()
             || !self.direct_vector_elements.is_empty()
+            || !self.native_sequences.is_empty()
             || self.encoded_records
             || self.data_enums
             || self.c_style_enums
@@ -713,7 +784,7 @@ impl ModuleSupport {
     }
 
     fn uses_owned_utf8(&self) -> bool {
-        self.async_functions
+        self.async_functions || self.utf8_returns
     }
 
     fn uses_owned_bytes(&self) -> bool {
@@ -734,6 +805,10 @@ impl ModuleSupport {
 
     fn uses_registered_types(&self) -> bool {
         self.record_types || self.c_style_enums
+    }
+
+    fn uses_native_record_types(&self) -> bool {
+        self.native_record_types
     }
 
     fn uses_async_functions(&self) -> bool {

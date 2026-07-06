@@ -15,7 +15,10 @@ use crate::{
     },
     core::{Diagnostic, Emitted, Error, RenderContext, Result},
     target::python::{
-        cpython::render::{argument, direct_vector, primitive, result},
+        cpython::{
+            codec,
+            render::{argument, direct_vector, primitive, result},
+        },
         name_style::Name,
         render::NativeFutureMethods,
         syntax::Identifier as PythonIdentifier,
@@ -280,6 +283,15 @@ impl Function {
         .into_iter()
     }
 
+    pub fn native_sequences(&self) -> impl Iterator<Item = codec::NativeSequence> {
+        match &self.body {
+            Body::Sync(function) => function.native_sequences().collect::<Vec<_>>(),
+            Body::Async(function) => function.native_sequences().collect::<Vec<_>>(),
+            Body::Skipped(_) => Vec::new(),
+        }
+        .into_iter()
+    }
+
     pub fn owned_buffer(&self) -> Option<result::OwnedBuffer> {
         self.owned_buffers().next()
     }
@@ -376,12 +388,19 @@ impl UnsupportedCallable {
         callable: &ExportedCallable<Native>,
         receiver_args: &[argument::Conversion],
     ) -> Option<Self> {
-        if matches!(callable.execution(), ExecutionDecl::Asynchronous(_))
-            && receiver_args.iter().any(argument::Conversion::has_mutation)
-        {
-            return Some(Self {
-                shape: "async mutable encoded receiver",
-            });
+        if receiver_args.iter().any(argument::Conversion::has_mutation) {
+            if matches!(callable.execution(), ExecutionDecl::Asynchronous(_)) {
+                return Some(Self {
+                    shape: "async mutable receiver",
+                });
+            }
+            if !matches!(callable.error().channel(), ErrorChannel::None)
+                || !matches!(callable.returns().plan(), ReturnPlan::Void)
+            {
+                return Some(Self {
+                    shape: "mutable receiver with non-void return",
+                });
+            }
         }
 
         Self::from_callable(callable)
@@ -561,13 +580,13 @@ impl SyncFunction {
         if mutations.next().is_some() {
             return Err(Error::UnsupportedTarget {
                 target: "python",
-                shape: "multiple mutable encoded parameters",
+                shape: "multiple mutable parameters",
             });
         }
         if mutation.is_some() && (fallible || !returns.is_void()) {
             return Err(Error::UnsupportedTarget {
                 target: "python",
-                shape: "mutable encoded parameter with non-void return",
+                shape: "mutable parameter with non-void return",
             });
         }
         Ok(mutation)
@@ -638,6 +657,13 @@ impl SyncFunction {
                     .iter()
                     .filter_map(FallibleResult::owned_buffer),
             )
+    }
+
+    fn native_sequences(&self) -> impl Iterator<Item = codec::NativeSequence> + '_ {
+        self.params
+            .iter()
+            .filter_map(argument::Conversion::native_sequence)
+            .chain(self.returns.native_sequence())
     }
 
     fn has_string_argument(&self) -> bool {
@@ -846,6 +872,13 @@ impl AsyncFunction {
                     .iter()
                     .filter_map(FallibleResult::owned_buffer),
             )
+    }
+
+    fn native_sequences(&self) -> impl Iterator<Item = codec::NativeSequence> + '_ {
+        self.params
+            .iter()
+            .filter_map(argument::Conversion::native_sequence)
+            .chain(self.returns.native_sequence())
     }
 
     fn has_string_argument(&self) -> bool {

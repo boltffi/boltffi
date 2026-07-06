@@ -1,7 +1,10 @@
 use crate::{
-    bridge::c::{Expression, Identifier, TypeFragment},
+    bridge::c::{Expression, Identifier},
     core::{Error, Result},
-    target::python::cpython::render::{direct_vector, primitive, result},
+    target::python::cpython::{
+        codec,
+        render::{direct_vector, primitive, result},
+    },
 };
 
 #[derive(Clone)]
@@ -9,7 +12,9 @@ pub enum BufferedArgument {
     OptionalPrimitive(primitive::Runtime),
     RegisteredObject(RegisteredObject),
     RawWire,
+    Utf8Text,
     DirectVector(direct_vector::Element),
+    Native(codec::NativeCodec),
 }
 
 impl BufferedArgument {
@@ -18,7 +23,9 @@ impl BufferedArgument {
             Self::OptionalPrimitive(primitive) => primitive.optional_wire_encoder(),
             Self::RegisteredObject(registered) => Ok(registered.parser.clone()),
             Self::RawWire => Identifier::parse("boltffi_python_wire_raw"),
-            Self::DirectVector(element) => Ok(element.vector_parser().clone()),
+            Self::Utf8Text => Identifier::parse("boltffi_python_wire_string"),
+            Self::DirectVector(element) => Ok(element.argument_parser().clone()),
+            Self::Native(codec) => Ok(codec.encoder().clone()),
         }
     }
 
@@ -29,27 +36,25 @@ impl BufferedArgument {
         mutation: Option<&MutationOutput>,
     ) -> Result<Vec<Expression>> {
         match self {
-            Self::DirectVector(element) => Ok(vec![
-                Expression::cast(
-                    TypeFragment::new(format!("const {} *", element.c_type())),
-                    Expression::identifier(pointer.clone()),
-                ),
-                Expression::identifier(length.clone()),
-            ]),
-            Self::OptionalPrimitive(_) | Self::RegisteredObject(_) | Self::RawWire => {
-                Ok([pointer, length]
-                    .into_iter()
-                    .cloned()
-                    .map(Expression::identifier)
-                    .chain(
-                        mutation
-                            .map(MutationOutput::buffer)
-                            .cloned()
-                            .map(Expression::identifier)
-                            .map(Expression::address_of),
-                    )
-                    .collect())
+            Self::DirectVector(element) => {
+                Ok(element.argument_expressions(pointer.clone(), length.clone()))
             }
+            Self::OptionalPrimitive(_)
+            | Self::RegisteredObject(_)
+            | Self::RawWire
+            | Self::Utf8Text
+            | Self::Native(_) => Ok([pointer, length]
+                .into_iter()
+                .cloned()
+                .map(Expression::identifier)
+                .chain(
+                    mutation
+                        .map(MutationOutput::buffer)
+                        .cloned()
+                        .map(Expression::identifier)
+                        .map(Expression::address_of),
+                )
+                .collect()),
         }
     }
 
@@ -65,7 +70,10 @@ impl BufferedArgument {
                 result::OwnedBuffer::RawWire.converter()?,
                 Some(result::OwnedBuffer::RawWire),
             ))),
-            Self::OptionalPrimitive(_) | Self::DirectVector(_) => Err(Error::UnsupportedTarget {
+            Self::OptionalPrimitive(_)
+            | Self::Utf8Text
+            | Self::DirectVector(_)
+            | Self::Native(_) => Err(Error::UnsupportedTarget {
                 target: "python",
                 shape: "mutable encoded parameter",
             }),
@@ -75,19 +83,42 @@ impl BufferedArgument {
     pub fn primitive(&self) -> Option<primitive::Runtime> {
         match self {
             Self::OptionalPrimitive(primitive) => Some(*primitive),
-            Self::RegisteredObject(_) | Self::RawWire | Self::DirectVector(_) => None,
+            Self::RegisteredObject(_)
+            | Self::RawWire
+            | Self::Utf8Text
+            | Self::DirectVector(_)
+            | Self::Native(_) => None,
         }
     }
 
     pub fn direct_vector_element(&self) -> Option<direct_vector::Element> {
         match self {
             Self::DirectVector(element) => Some(element.clone()),
-            Self::OptionalPrimitive(_) | Self::RegisteredObject(_) | Self::RawWire => None,
+            Self::OptionalPrimitive(_)
+            | Self::RegisteredObject(_)
+            | Self::RawWire
+            | Self::Utf8Text
+            | Self::Native(_) => None,
+        }
+    }
+
+    pub fn native_sequence(&self) -> Option<codec::NativeSequence> {
+        match self {
+            Self::Native(codec) => codec.sequence().cloned(),
+            Self::OptionalPrimitive(_)
+            | Self::RegisteredObject(_)
+            | Self::RawWire
+            | Self::Utf8Text
+            | Self::DirectVector(_) => None,
         }
     }
 
     pub fn is_raw_wire(&self) -> bool {
         matches!(self, Self::RawWire)
+    }
+
+    pub fn is_utf8_text(&self) -> bool {
+        matches!(self, Self::Utf8Text)
     }
 }
 
@@ -124,6 +155,10 @@ impl MutationOutput {
             decoder,
             owned_buffer,
         }
+    }
+
+    pub(super) fn from_boxer(buffer: Identifier, boxer: Identifier) -> Self {
+        Self::new(buffer, boxer, None)
     }
 
     pub fn buffer(&self) -> &Identifier {

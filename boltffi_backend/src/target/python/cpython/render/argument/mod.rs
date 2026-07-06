@@ -11,8 +11,12 @@ use crate::{
     },
     core::{Error, RenderContext, Result},
     target::python::{
-        cpython::render::{
-            callback, closure, direct, direct_vector, enumeration, primitive, record, result,
+        codec::EncodedCrossing,
+        cpython::{
+            codec as native_codec,
+            render::{
+                callback, closure, direct, direct_vector, enumeration, primitive, record, result,
+            },
         },
         name_style::Name,
     },
@@ -63,15 +67,13 @@ impl Conversion {
 
     pub fn direct_record_receiver(
         record: RecordId,
+        receive: Receive,
         bridge: &PythonCExtBridgeContract,
         context: &RenderContext<Native>,
     ) -> Result<Self> {
-        let direct = direct::NativeSlot::from_record_id(record, bridge, context)?;
-        Self::direct_with_name(
-            0,
-            Identifier::parse("receiver")?,
-            direct.c_type().to_owned(),
-            direct.parser().clone(),
+        Self::receiver_from_slot(
+            direct::NativeSlot::from_record_id(record, bridge, context)?,
+            receive,
         )
     }
 
@@ -95,15 +97,13 @@ impl Conversion {
 
     pub fn c_style_enum_receiver(
         enumeration: EnumId,
+        receive: Receive,
         bridge: &PythonCExtBridgeContract,
         context: &RenderContext<Native>,
     ) -> Result<Self> {
-        let direct = direct::NativeSlot::from_enum_id(enumeration, bridge, context)?;
-        Self::direct_with_name(
-            0,
-            Identifier::parse("receiver")?,
-            direct.c_type().to_owned(),
-            direct.parser().clone(),
+        Self::receiver_from_slot(
+            direct::NativeSlot::from_enum_id(enumeration, bridge, context)?,
+            receive,
         )
     }
 
@@ -127,7 +127,13 @@ impl Conversion {
 
     pub fn call_args(&self) -> Result<Vec<c::Expression>> {
         match &self.kind {
-            Kind::Direct(_) => Ok(vec![c::Expression::identifier(self.name.clone())]),
+            Kind::Direct(direct) => Ok(std::iter::once(c::Expression::identifier(
+                self.name.clone(),
+            ))
+            .chain(direct.mutation.as_ref().map(|mutation| {
+                c::Expression::address_of(c::Expression::identifier(mutation.buffer().clone()))
+            }))
+            .collect()),
             Kind::Buffered(buffered) => buffered.call_args(),
             Kind::Closure(closure) => closure
                 .call_args()
@@ -140,7 +146,7 @@ impl Conversion {
 
     pub fn c_arity(&self) -> usize {
         match &self.kind {
-            Kind::Direct(_) => 1,
+            Kind::Direct(direct) => 1 + usize::from(direct.mutation.is_some()),
             Kind::Buffered(buffered) => buffered.c_arity(),
             Kind::Closure(_) => closure::Parameter::c_arity(),
         }
@@ -167,7 +173,7 @@ impl Conversion {
     }
 
     pub fn is_string(&self) -> bool {
-        false
+        matches!(&self.kind, Kind::Buffered(buffered) if buffered.argument.is_utf8_text())
     }
 
     pub fn is_bytes(&self) -> bool {
@@ -214,6 +220,13 @@ impl Conversion {
     pub fn direct_vector_element(&self) -> Option<direct_vector::Element> {
         match &self.kind {
             Kind::Buffered(buffered) => buffered.direct_vector_element(),
+            Kind::Closure(_) | Kind::Direct(_) => None,
+        }
+    }
+
+    pub fn native_sequence(&self) -> Option<native_codec::NativeSequence> {
+        match &self.kind {
+            Kind::Buffered(buffered) => buffered.native_sequence(),
             Kind::Closure(_) | Kind::Direct(_) => None,
         }
     }
@@ -269,26 +282,24 @@ impl Conversion {
     }
 
     pub fn has_mutation(&self) -> bool {
-        matches!(&self.kind, Kind::Buffered(buffered) if buffered.mutation.is_some())
+        self.mutation().is_some()
     }
 
     pub fn mutation_buffer(&self) -> &Identifier {
         match &self.kind {
-            Kind::Buffered(buffered) => buffered
-                .mutation
-                .as_ref()
-                .map(MutationOutput::buffer)
-                .unwrap_or_else(|| unreachable!("buffered parameter has no mutation output")),
-            Kind::Direct(_) | Kind::Closure(_) => {
-                unreachable!("non-buffered parameter has no mutation output")
-            }
+            Kind::Buffered(buffered) => buffered.mutation.as_ref(),
+            Kind::Direct(direct) => direct.mutation.as_ref(),
+            Kind::Closure(_) => None,
         }
+        .map(MutationOutput::buffer)
+        .unwrap_or_else(|| unreachable!("parameter has no mutation output"))
     }
 
     pub fn mutation(&self) -> Option<MutationOutput> {
         match &self.kind {
             Kind::Buffered(buffered) => buffered.mutation.clone(),
-            Kind::Direct(_) | Kind::Closure(_) => None,
+            Kind::Direct(direct) => direct.mutation.clone(),
+            Kind::Closure(_) => None,
         }
     }
 
@@ -377,6 +388,7 @@ impl Conversion {
             kind: Kind::Direct(Direct {
                 c_type: direct.c_type().clone(),
                 parser: direct.parser().clone(),
+                mutation: None,
             }),
             primitive: direct.primitive(),
         })
@@ -398,6 +410,7 @@ impl Conversion {
             kind: Kind::Direct(Direct {
                 c_type: carrier.c_type()?,
                 parser: carrier.parser()?,
+                mutation: None,
             }),
             primitive: Some(carrier),
         })
@@ -418,6 +431,7 @@ impl Conversion {
             kind: Kind::Direct(Direct {
                 c_type: TypeFragment::anonymous(&Type::CallbackHandle(callback))?,
                 parser: symbols.parser(presence).clone(),
+                mutation: None,
             }),
             primitive: None,
         })
@@ -458,16 +472,28 @@ impl Conversion {
         Self::encoded_with_name(index, name, receive, encoded)
     }
 
-    fn direct_with_name(
-        index: usize,
-        name: Identifier,
-        c_type: c::TypeFragment,
-        parser: Identifier,
-    ) -> Result<Self> {
+    fn receiver_from_slot(direct: direct::NativeSlot, receive: Receive) -> Result<Self> {
+        let mutation = match receive {
+            Receive::ByMutRef => Some(MutationOutput::from_boxer(
+                Identifier::parse("receiver_out")?,
+                direct.boxer().clone(),
+            )),
+            Receive::ByValue | Receive::ByRef => None,
+            _ => {
+                return Err(Error::UnsupportedTarget {
+                    target: "python",
+                    shape: "unknown receiver receive mode",
+                });
+            }
+        };
         Ok(Self {
-            index,
-            name,
-            kind: Kind::Direct(Direct { c_type, parser }),
+            index: 0,
+            name: Identifier::parse("receiver")?,
+            kind: Kind::Direct(Direct {
+                c_type: direct.c_type().clone(),
+                parser: direct.parser().clone(),
+                mutation,
+            }),
             primitive: None,
         })
     }
@@ -576,17 +602,28 @@ impl<'plan, 'render> ParamPlanRender<'plan, Native, IntoRust> for ParameterConve
     fn encoded(
         &mut self,
         _: &TypeRef,
-        _: &WritePlan,
+        codec: &WritePlan,
         shape: native::BufferShape,
         receive: Receive,
     ) -> Self::Output {
         match shape {
-            native::BufferShape::Slice => Conversion::encoded(
-                self.index,
-                self.name.clone(),
-                receive,
-                BufferedArgument::RawWire,
-            ),
+            native::BufferShape::Slice => {
+                let native = native_codec::NativeCodec::from_node(codec.root(), self.context)?;
+                Conversion::encoded(
+                    self.index,
+                    self.name.clone(),
+                    receive,
+                    match (native, EncodedCrossing::of(codec.root()), receive) {
+                        (Some(native), _, Receive::ByValue | Receive::ByRef) => {
+                            BufferedArgument::Native(native)
+                        }
+                        (_, EncodedCrossing::Utf8Text, Receive::ByValue | Receive::ByRef) => {
+                            BufferedArgument::Utf8Text
+                        }
+                        _ => BufferedArgument::RawWire,
+                    },
+                )
+            }
             _ => Err(Error::UnsupportedTarget {
                 target: "python",
                 shape: "unsupported encoded parameter",
@@ -636,6 +673,7 @@ enum Kind {
 struct Direct {
     c_type: c::TypeFragment,
     parser: Identifier,
+    mutation: Option<MutationOutput>,
 }
 
 enum EitherIter<Left, Right> {
@@ -697,5 +735,9 @@ impl BufferedParam {
 
     fn direct_vector_element(&self) -> Option<direct_vector::Element> {
         self.argument.direct_vector_element()
+    }
+
+    fn native_sequence(&self) -> Option<native_codec::NativeSequence> {
+        self.argument.native_sequence()
     }
 }
