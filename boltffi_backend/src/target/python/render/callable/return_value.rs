@@ -8,7 +8,7 @@ use boltffi_binding::{
 use crate::{
     core::{Error, Result},
     target::python::{
-        codec::Expression as CodecExpression,
+        codec::{EncodedCrossing, Expression as CodecExpression},
         syntax::{CallExpression, Expression, Identifier, Statement, TypeAnnotation},
     },
 };
@@ -328,7 +328,18 @@ impl<'plan, 'package> ReturnPlanRender<'plan, Native, OutOfRust> for ReturnedVal
     ) -> Self::Output {
         self.delivery.slot(slot)?;
         match shape {
-            native::BufferShape::Buffer => ReturnedValue::from_encoded_plan(codec, self.package),
+            native::BufferShape::Buffer => {
+                if self.package.has_native_encoded_crossing(codec.root())? {
+                    self.delivery.native()
+                } else {
+                    match EncodedCrossing::of(codec.root()) {
+                        EncodedCrossing::Utf8Text => self.delivery.native(),
+                        EncodedCrossing::WireBytes => {
+                            ReturnedValue::from_encoded_plan(codec, self.package)
+                        }
+                    }
+                }
+            }
             _ => Err(Error::UnsupportedTarget {
                 target: "python",
                 shape: self.delivery.unsupported_shape(),
