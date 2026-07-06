@@ -6,7 +6,7 @@ use boltffi_binding::{
 use crate::{
     core::{Error, Result},
     target::python::{
-        codec::Expression as CodecExpression,
+        codec::{Expression as CodecExpression, FixedStruct},
         cpython::render::{function, record as record_render},
         name_style::Name,
         render::Package,
@@ -22,7 +22,7 @@ pub struct RecordClass {
     pub exception_name: Option<Identifier>,
     pub register_method: Identifier,
     pub fields: Vec<RecordField>,
-    pub wire: Option<EncodedRecordWire>,
+    pub wire: RecordWire,
     pub constructors: Vec<AssociatedCallable>,
     pub static_methods: Vec<AssociatedCallable>,
     pub instance_methods: Vec<AssociatedCallable>,
@@ -54,7 +54,11 @@ impl RecordClass {
                 .iter()
                 .map(|field| RecordField::from_direct(field, package))
                 .collect::<Result<Vec<_>>>()?,
-            wire: None,
+            wire: RecordWire::Fixed(FixedStruct::from_layout(
+                symbols.class_name(),
+                record.fields(),
+                record.layout(),
+            )?),
             constructors: Self::constructors(record.initializers(), &symbols, package)?,
             static_methods: Self::static_methods(record.methods(), &symbols, package)?,
             instance_methods: Self::instance_methods(record.methods(), &symbols, package)?,
@@ -84,21 +88,11 @@ impl RecordClass {
                 .transpose()?,
             register_method: symbols.register_method().clone(),
             fields,
-            wire: Some(EncodedRecordWire {
-                fields: wire_fields,
-            }),
+            wire: RecordWire::Fields(wire_fields),
             constructors: Self::constructors(record.initializers(), &symbols, package)?,
             static_methods: Self::static_methods(record.methods(), &symbols, package)?,
             instance_methods: Self::instance_methods(record.methods(), &symbols, package)?,
         })
-    }
-
-    pub fn has_wire(&self) -> bool {
-        self.wire.is_some()
-    }
-
-    pub fn uses_wire_helpers(&self) -> bool {
-        self.callables().any(AssociatedCallable::uses_wire_helpers)
     }
 
     pub fn uses_async_helpers(&self) -> bool {
@@ -287,9 +281,17 @@ impl RecordField {
     }
 }
 
+/// How a record class moves through wire bytes.
+///
+/// The variants mirror the record declaration split: a direct record packs
+/// its padded memory image through one precompiled `struct.Struct`, and an
+/// encoded record walks its fields through per-field codec expressions.
+/// Rendering matches on the variant, so a record cannot silently fall off
+/// its lane.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct EncodedRecordWire {
-    pub fields: Vec<EncodedRecordField>,
+pub enum RecordWire {
+    Fixed(FixedStruct),
+    Fields(Vec<EncodedRecordField>),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

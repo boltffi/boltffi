@@ -16,6 +16,10 @@ from collections.abc import {% if uses_callable_annotations %}Callable{% if uses
 import asyncio
 
 {% endif %}
+{% if uses_wire_helpers %}
+import struct
+
+{% endif %}
 import sys
 import uuid
 from pathlib import Path
@@ -112,8 +116,30 @@ class _BoltFfiNativeFuture:
 
 {% endif %}
 {% if uses_wire_helpers %}
+_BOLTFFI_STRUCT_I8 = struct.Struct("<b")
+_BOLTFFI_STRUCT_U8 = struct.Struct("<B")
+_BOLTFFI_STRUCT_I16 = struct.Struct("<h")
+_BOLTFFI_STRUCT_U16 = struct.Struct("<H")
+_BOLTFFI_STRUCT_I32 = struct.Struct("<i")
+_BOLTFFI_STRUCT_U32 = struct.Struct("<I")
+_BOLTFFI_STRUCT_I64 = struct.Struct("<q")
+_BOLTFFI_STRUCT_U64 = struct.Struct("<Q")
+_BOLTFFI_STRUCT_F32 = struct.Struct("<f")
+_BOLTFFI_STRUCT_F64 = struct.Struct("<d")
+
+_BOLTFFI_UNPACK_I8 = _BOLTFFI_STRUCT_I8.unpack_from
+_BOLTFFI_UNPACK_I16 = _BOLTFFI_STRUCT_I16.unpack_from
+_BOLTFFI_UNPACK_U16 = _BOLTFFI_STRUCT_U16.unpack_from
+_BOLTFFI_UNPACK_I32 = _BOLTFFI_STRUCT_I32.unpack_from
+_BOLTFFI_UNPACK_U32 = _BOLTFFI_STRUCT_U32.unpack_from
+_BOLTFFI_UNPACK_I64 = _BOLTFFI_STRUCT_I64.unpack_from
+_BOLTFFI_UNPACK_U64 = _BOLTFFI_STRUCT_U64.unpack_from
+_BOLTFFI_UNPACK_F32 = _BOLTFFI_STRUCT_F32.unpack_from
+_BOLTFFI_UNPACK_F64 = _BOLTFFI_STRUCT_F64.unpack_from
+
+
 def _boltffi_u32(value: int) -> bytes:
-    return int(value).to_bytes(4, "little", signed=False)
+    return _BOLTFFI_STRUCT_U32.pack(int(value))
 
 
 def _boltffi_wire_bool(value: bool) -> bytes:
@@ -121,53 +147,51 @@ def _boltffi_wire_bool(value: bool) -> bytes:
 
 
 def _boltffi_wire_i8(value: int) -> bytes:
-    return int(value).to_bytes(1, "little", signed=True)
+    return _BOLTFFI_STRUCT_I8.pack(int(value))
 
 
 def _boltffi_wire_u8(value: int) -> bytes:
-    return int(value).to_bytes(1, "little", signed=False)
+    return _BOLTFFI_STRUCT_U8.pack(int(value))
 
 
 def _boltffi_wire_i16(value: int) -> bytes:
-    return int(value).to_bytes(2, "little", signed=True)
+    return _BOLTFFI_STRUCT_I16.pack(int(value))
 
 
 def _boltffi_wire_u16(value: int) -> bytes:
-    return int(value).to_bytes(2, "little", signed=False)
+    return _BOLTFFI_STRUCT_U16.pack(int(value))
 
 
 def _boltffi_wire_i32(value: int) -> bytes:
-    return int(value).to_bytes(4, "little", signed=True)
+    return _BOLTFFI_STRUCT_I32.pack(int(value))
 
 
 def _boltffi_wire_u32(value: int) -> bytes:
-    return int(value).to_bytes(4, "little", signed=False)
+    return _BOLTFFI_STRUCT_U32.pack(int(value))
 
 
 def _boltffi_wire_i64(value: int) -> bytes:
-    return int(value).to_bytes(8, "little", signed=True)
+    return _BOLTFFI_STRUCT_I64.pack(int(value))
 
 
 def _boltffi_wire_u64(value: int) -> bytes:
-    return int(value).to_bytes(8, "little", signed=False)
+    return _BOLTFFI_STRUCT_U64.pack(int(value))
 
 
 def _boltffi_wire_isize(value: int) -> bytes:
-    return _boltffi_wire_i64(value)
+    return _BOLTFFI_STRUCT_I64.pack(int(value))
 
 
 def _boltffi_wire_usize(value: int) -> bytes:
-    return _boltffi_wire_u64(value)
+    return _BOLTFFI_STRUCT_U64.pack(int(value))
 
 
 def _boltffi_wire_f32(value: float) -> bytes:
-    import struct
-    return struct.pack("<f", float(value))
+    return _BOLTFFI_STRUCT_F32.pack(float(value))
 
 
 def _boltffi_wire_f64(value: float) -> bytes:
-    import struct
-    return struct.pack("<d", float(value))
+    return _BOLTFFI_STRUCT_F64.pack(float(value))
 
 
 def _boltffi_wire_string(value: str) -> bytes:
@@ -275,7 +299,7 @@ class _BoltFfiWireReader:
     __slots__ = ("_data", "_offset")
 
     def __init__(self, data: bytes) -> None:
-        self._data = memoryview(data)
+        self._data = data
         self._offset = 0
 
     def finish(self) -> None:
@@ -283,42 +307,60 @@ class _BoltFfiWireReader:
             raise ValueError("trailing BoltFFI wire bytes")
 
     def read(self, count: int) -> bytes:
-        end = self._offset + count
+        offset = self._offset
+        end = offset + count
         if end > len(self._data):
             raise ValueError("truncated BoltFFI wire bytes")
-        value = self._data[self._offset:end].tobytes()
         self._offset = end
-        return value
+        return self._data[offset:end]
 
     def bool(self) -> bool:
-        value = self.read(1)[0]
+        value = self.u8()
         if value > 1:
             raise ValueError("invalid BoltFFI bool")
         return value == 1
 
     def i8(self) -> int:
-        return int.from_bytes(self.read(1), "little", signed=True)
+        offset = self._offset
+        self._offset = offset + 1
+        return _BOLTFFI_UNPACK_I8(self._data, offset)[0]
 
     def u8(self) -> int:
-        return int.from_bytes(self.read(1), "little", signed=False)
+        offset = self._offset
+        if offset >= len(self._data):
+            raise ValueError("truncated BoltFFI wire bytes")
+        self._offset = offset + 1
+        return self._data[offset]
 
     def i16(self) -> int:
-        return int.from_bytes(self.read(2), "little", signed=True)
+        offset = self._offset
+        self._offset = offset + 2
+        return _BOLTFFI_UNPACK_I16(self._data, offset)[0]
 
     def u16(self) -> int:
-        return int.from_bytes(self.read(2), "little", signed=False)
+        offset = self._offset
+        self._offset = offset + 2
+        return _BOLTFFI_UNPACK_U16(self._data, offset)[0]
 
     def i32(self) -> int:
-        return int.from_bytes(self.read(4), "little", signed=True)
+        offset = self._offset
+        self._offset = offset + 4
+        return _BOLTFFI_UNPACK_I32(self._data, offset)[0]
 
     def u32(self) -> int:
-        return int.from_bytes(self.read(4), "little", signed=False)
+        offset = self._offset
+        self._offset = offset + 4
+        return _BOLTFFI_UNPACK_U32(self._data, offset)[0]
 
     def i64(self) -> int:
-        return int.from_bytes(self.read(8), "little", signed=True)
+        offset = self._offset
+        self._offset = offset + 8
+        return _BOLTFFI_UNPACK_I64(self._data, offset)[0]
 
     def u64(self) -> int:
-        return int.from_bytes(self.read(8), "little", signed=False)
+        offset = self._offset
+        self._offset = offset + 8
+        return _BOLTFFI_UNPACK_U64(self._data, offset)[0]
 
     def isize(self) -> int:
         return self.i64()
@@ -327,18 +369,55 @@ class _BoltFfiWireReader:
         return self.u64()
 
     def f32(self) -> float:
-        import struct
-        return struct.unpack("<f", self.read(4))[0]
+        offset = self._offset
+        self._offset = offset + 4
+        return _BOLTFFI_UNPACK_F32(self._data, offset)[0]
 
     def f64(self) -> float:
-        import struct
-        return struct.unpack("<d", self.read(8))[0]
+        offset = self._offset
+        self._offset = offset + 8
+        return _BOLTFFI_UNPACK_F64(self._data, offset)[0]
 
     def string(self) -> str:
-        return self.read(self.u32()).decode("utf-8")
+        count = self.u32()
+        offset = self._offset
+        end = offset + count
+        if end > len(self._data):
+            raise ValueError("truncated BoltFFI wire bytes")
+        self._offset = end
+        return str(memoryview(self._data)[offset:end], "utf-8")
 
     def bytes(self) -> bytes:
         return self.read(self.u32())
+
+    def fixed(self, layout) -> tuple:
+        offset = self._offset
+        self._offset = offset + layout.size
+        return layout.unpack_from(self._data, offset)
+
+    def fixed_sequence(self, layout, factory) -> list:
+        count = self.u32()
+        offset = self._offset
+        end = offset + count * layout.size
+        if end > len(self._data):
+            raise ValueError("truncated BoltFFI wire bytes")
+        self._offset = end
+        window = memoryview(self._data)[offset:end]
+        return [factory(*values) for values in layout.iter_unpack(window)]
+
+    def enum_sequence(self, layout, enum_type) -> list:
+        count = self.u32()
+        offset = self._offset
+        end = offset + count * layout.size
+        if end > len(self._data):
+            raise ValueError("truncated BoltFFI wire bytes")
+        self._offset = end
+        window = memoryview(self._data)[offset:end]
+        members = enum_type._value2member_map_
+        try:
+            return [members[value] for (value,) in layout.iter_unpack(window)]
+        except KeyError as error:
+            raise ValueError(f"invalid {enum_type.__name__} value") from error
 
     def duration(self) -> float:
         return self.u64() + self.u32() / 1_000_000_000
@@ -355,7 +434,7 @@ class _BoltFfiWireReader:
         return self.string()
 
     def optional(self, decode):
-        tag = self.read(1)[0]
+        tag = self.u8()
         if tag == 0:
             return None
         if tag == 1:
@@ -363,7 +442,7 @@ class _BoltFfiWireReader:
         raise ValueError("invalid BoltFFI option tag")
 
     def result(self, decode_ok, decode_err):
-        tag = self.read(1)[0]
+        tag = self.u8()
         if tag == 0:
             return (True, decode_ok())
         if tag == 1:
@@ -379,7 +458,10 @@ class _BoltFfiWireReader:
 
 def _boltffi_read_wire(data: bytes, decode):
     reader = _BoltFfiWireReader(data)
-    value = decode(reader)
+    try:
+        value = decode(reader)
+    except struct.error as error:
+        raise ValueError("truncated BoltFFI wire bytes") from error
     reader.finish()
     return value
 
@@ -401,16 +483,79 @@ _native._register_wire_codec({{ encoder.key() }}, {{ encoder.name() }})
 
 {% endfor %}
 {% for record in records %}
+{%- match record.wire %}
+{%- when RecordWire::Fixed(fixed) %}
+{{ record.class_name }} = _native.{{ record.class_name }}
+{{ record.class_name }}.__module__ = __name__
+{{ record.class_name }}.__match_args__ = ({% for field in record.fields %}"{{ field.name }}",{% endfor %})
+{{ record.class_name }}.__annotations__ = {{ "{" }}{% for field in record.fields %}"{{ field.name }}": {{ field.annotation }}{% if !loop.last %}, {% endif %}{% endfor %}{{ "}" }}
+{{ fixed.struct_global() }} = struct.Struct("{{ fixed.format() }}")
+
+
+def _boltffi_attach_{{ record.class_name }}_wire(self) -> bytes:
+    return {{ fixed.struct_global() }}.pack({% for field in record.fields %}self.{{ field.name }}{% if !loop.last %}, {% endif %}{% endfor %})
+
+
+def _boltffi_attach_{{ record.class_name }}_from_wire(cls, data: bytes) -> "{{ record.class_name }}":
+    reader = _BoltFfiWireReader(data)
+    try:
+        value = cls._boltffi_from_reader(reader)
+    except struct.error as error:
+        raise ValueError("truncated BoltFFI wire bytes") from error
+    reader.finish()
+    return value
+
+
+def _boltffi_attach_{{ record.class_name }}_from_reader(cls, reader: "_BoltFfiWireReader") -> "{{ record.class_name }}":
+    return cls(*reader.fixed({{ fixed.struct_global() }}))
+
+
+{{ record.class_name }}._boltffi_wire = _boltffi_attach_{{ record.class_name }}_wire
+{{ record.class_name }}._boltffi_from_wire = classmethod(_boltffi_attach_{{ record.class_name }}_from_wire)
+{{ record.class_name }}._boltffi_from_reader = classmethod(_boltffi_attach_{{ record.class_name }}_from_reader)
+{%- for constructor in record.constructors %}
+
+
+{% if constructor.asynchronous %}async {% endif %}def _boltffi_attach_{{ record.class_name }}_{{ constructor.python_name }}(cls{% for parameter in constructor.parameters %}, {{ parameter.name }}: {{ parameter.annotation }}{% endfor %}) -> "{{ record.class_name }}":
+{%- for line in constructor.body %}
+    {{ line }}
+{%- endfor %}
+
+
+{{ record.class_name }}.{{ constructor.python_name }} = classmethod(_boltffi_attach_{{ record.class_name }}_{{ constructor.python_name }})
+{%- endfor %}
+{%- for method in record.static_methods %}
+
+
+{% if method.asynchronous %}async {% endif %}def _boltffi_attach_{{ record.class_name }}_{{ method.python_name }}({% for parameter in method.parameters %}{{ parameter.name }}: {{ parameter.annotation }}{% if !loop.last %}, {% endif %}{% endfor %}) -> {{ method.return_annotation }}:
+{%- for line in method.body %}
+    {{ line }}
+{%- endfor %}
+
+
+{{ record.class_name }}.{{ method.python_name }} = staticmethod(_boltffi_attach_{{ record.class_name }}_{{ method.python_name }})
+{%- endfor %}
+{%- for method in record.instance_methods %}
+
+
+{% if method.asynchronous %}async {% endif %}def _boltffi_attach_{{ record.class_name }}_{{ method.python_name }}(self{% for parameter in method.parameters %}, {{ parameter.name }}: {{ parameter.annotation }}{% endfor %}) -> {{ method.return_annotation }}:
+{%- for line in method.body %}
+    {{ line }}
+{%- endfor %}
+
+
+{{ record.class_name }}.{{ method.python_name }} = _boltffi_attach_{{ record.class_name }}_{{ method.python_name }}
+{%- endfor %}
+{%- when RecordWire::Fields(wire_fields) %}
 @dataclass(frozen=True, slots=True)
 class {{ record.class_name }}:
 {%- for field in record.fields %}
     {{ field.name }}: {{ field.annotation }}{% if let Some(default) = field.default %} = {{ default }}{% endif %}
 {%- endfor %}
-{%- if let Some(wire) = record.wire %}
 
     def _boltffi_wire(self) -> bytes:
         return b"".join((
-{%- for field in wire.fields %}
+{%- for field in wire_fields %}
             {{ field.encode }},
 {%- endfor %}
         ))
@@ -418,18 +563,20 @@ class {{ record.class_name }}:
     @classmethod
     def _boltffi_from_wire(cls, data: bytes) -> "{{ record.class_name }}":
         reader = _BoltFfiWireReader(data)
-        value = cls._boltffi_from_reader(reader)
+        try:
+            value = cls._boltffi_from_reader(reader)
+        except struct.error as error:
+            raise ValueError("truncated BoltFFI wire bytes") from error
         reader.finish()
         return value
 
     @classmethod
     def _boltffi_from_reader(cls, reader: "_BoltFfiWireReader") -> "{{ record.class_name }}":
         return cls(
-{%- for field in wire.fields %}
+{%- for field in wire_fields %}
             {{ field.name }}={{ field.decode }},
 {%- endfor %}
         )
-{%- endif %}
 {%- for constructor in record.constructors %}
 
     @classmethod
@@ -456,6 +603,7 @@ class {{ record.class_name }}:
 
 
 _native.{{ record.register_method }}({{ record.class_name }})
+{%- endmatch %}
 {% if let Some(exception_name) = record.exception_name %}
 
 class {{ exception_name }}(RuntimeError):
@@ -475,7 +623,10 @@ class {{ enumeration.class_name }}:
     @classmethod
     def _boltffi_from_wire(cls, data: bytes) -> "{{ enumeration.class_name }}":
         reader = _BoltFfiWireReader(data)
-        value = cls._boltffi_from_reader(reader)
+        try:
+            value = cls._boltffi_from_reader(reader)
+        except struct.error as error:
+            raise ValueError("truncated BoltFFI wire bytes") from error
         reader.finish()
         return value
 

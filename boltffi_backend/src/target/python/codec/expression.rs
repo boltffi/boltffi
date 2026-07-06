@@ -18,14 +18,14 @@ impl Expression {
     pub fn read(plan: &ReadPlan, package: &Package) -> Result<Self> {
         let mut reader = Reader::new(package);
         Ok(Self {
-            expression: plan.render_with(&mut reader)?,
+            expression: plan.render_with(&mut reader)?.into_expression(),
         })
     }
 
     pub fn read_codec(codec: &CodecNode, package: &Package) -> Result<Self> {
         let mut reader = Reader::new(package);
         Ok(Self {
-            expression: codec.render_read_with(&mut reader)?,
+            expression: codec.render_read_with(&mut reader)?.into_expression(),
         })
     }
 

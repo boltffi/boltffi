@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+pub(crate) mod codec;
 pub mod render;
 
 use boltffi_binding::{
@@ -488,22 +489,31 @@ mod tests {
         let stub = file(&output, "demo/__init__.pyi");
 
         assert!(extension.contains("static PyObject *boltffi_python_point_type = NULL;"));
-        assert!(extension.contains("static PyObject *boltffi_python_wrapper_register_point"));
+        assert!(extension.contains("} boltffi_python_point_object;"));
+        assert!(extension.contains("static PyObject *boltffi_python_point_new(PyTypeObject *cls"));
+        assert!(extension.contains("static int boltffi_python_setup_point_type(PyObject *module)"));
+        assert!(extension.contains(
+            "boltffi_python_point_type = PyType_FromSpec(&boltffi_python_point_type_spec);"
+        ));
+        assert!(extension.contains(
+            "if (PyModule_AddObjectRef(module, \"Point\", boltffi_python_point_type) < 0)"
+        ));
+        assert!(extension.contains("if (!boltffi_python_setup_point_type(module))"));
         assert!(extension.contains("static int boltffi_python_parse_point"));
+        assert!(extension.contains("*out = ((boltffi_python_point_object *)value)->value;"));
         assert!(extension.contains("static PyObject *boltffi_python_box_point"));
+        assert!(extension.contains("((boltffi_python_point_object *)self)->value = value;"));
         assert!(extension.contains("___Point value;"));
         assert!(extension.contains("boltffi_python_parse_point(args[0], &value)"));
         assert!(extension.contains(
             "result = boltffi_python_box_point(boltffi_python_boltffi_function_demo_echo_point(value));"
         ));
-        assert!(extension.contains(
-            "{\"_register_point\", (PyCFunction)boltffi_python_wrapper_register_point, METH_FASTCALL, NULL}"
-        ));
+        assert!(!extension.contains("_register_point"));
         assert!(extension.contains("Py_CLEAR(boltffi_python_point_type);"));
-        assert!(init.contains("@dataclass(frozen=True, slots=True)\nclass Point:"));
-        assert!(init.contains("    x: float"));
-        assert!(init.contains("    y: float"));
-        assert!(init.contains("_native._register_point(Point)"));
+        assert!(init.contains("Point = _native.Point"));
+        assert!(init.contains("Point.__match_args__ = (\"x\",\"y\",)"));
+        assert!(init.contains("Point.__annotations__ = {\"x\": float, \"y\": float}"));
+        assert!(!init.contains("_native._register_point(Point)"));
         assert!(stub.contains("class Point:"));
         assert!(stub.contains("def echo_point(value: Point) -> Point: ..."));
     }
@@ -533,15 +543,29 @@ mod tests {
         assert!(extension.contains("static int boltffi_python_parse_vec_point"));
         assert!(extension.contains("static PyObject *boltffi_python_decode_owned_vec_point"));
         assert!(extension.contains("___Point *values = NULL;"));
+        let parse_declaration = extension
+            .find("static int boltffi_python_parse_point(PyObject *value, ___Point *out);")
+            .expect("record parser should be declared before the vector support functions");
+        let box_declaration = extension
+            .find("static PyObject *boltffi_python_box_point(___Point value);")
+            .expect("record boxer should be declared before the vector support functions");
+        let vector_parser = extension
+            .find("static int boltffi_python_parse_vec_point")
+            .expect("vector parser should be rendered");
+        assert!(parse_declaration < vector_parser);
+        assert!(box_declaration < vector_parser);
         assert!(extension.contains(
             "boltffi_python_parse_point(PySequence_Fast_GET_ITEM(sequence, index), &values[index])"
         ));
         assert!(extension.contains("item = boltffi_python_box_point(values[index]);"));
         assert!(extension.contains(
-            "boltffi_python_parse_vec_point(args[0], &values_wire, &values_ptr, &values_len)"
+            "typedef FfiBuf_u8 (*boltffi_python_boltffi_function_demo_echo_points_fn)(const uint8_t *, uintptr_t);"
         ));
         assert!(extension.contains(
-            "result = boltffi_python_decode_owned_vec_point(boltffi_python_boltffi_function_demo_echo_points((const ___Point *)values_ptr, values_len));"
+            "boltffi_python_wire_vec_point(args[0], &values_wire, &values_ptr, &values_len)"
+        ));
+        assert!(extension.contains(
+            "result = boltffi_python_decode_owned_vec_point(boltffi_python_boltffi_function_demo_echo_points(values_ptr, values_len));"
         ));
         assert!(stub.contains("from collections.abc import Sequence"));
         assert!(stub.contains("def echo_points(values: Sequence[Point]) -> list[Point]: ..."));
@@ -686,18 +710,64 @@ mod tests {
         assert!(extension.contains(
             "{\"_boltffi_point_distance_to_origin\", (PyCFunction)boltffi_python_callable_wrapper_boltffi_method_record_demo_point_distance_to_origin, METH_FASTCALL, NULL}"
         ));
-        assert!(init.contains("def origin(cls) -> \"Point\":"));
+        assert!(init.contains("def _boltffi_attach_Point_origin(cls) -> \"Point\":"));
         assert!(init.contains("return _native._boltffi_point_origin()"));
-        assert!(init.contains("def distance_to_origin(self) -> float:"));
+        assert!(init.contains("Point.origin = classmethod(_boltffi_attach_Point_origin)"));
+        assert!(init.contains("def _boltffi_attach_Point_distance_to_origin(self) -> float:"));
         assert!(init.contains("return _native._boltffi_point_distance_to_origin(self)"));
-        assert!(init.contains("def midpoint_to(cls, left: Point, right: Point) -> \"Point\":"));
+        assert!(
+            init.contains("Point.distance_to_origin = _boltffi_attach_Point_distance_to_origin")
+        );
+        assert!(init.contains(
+            "def _boltffi_attach_Point_midpoint_to(cls, left: Point, right: Point) -> \"Point\":"
+        ));
         assert!(init.contains("return _native._boltffi_point_midpoint_to(left, right)"));
-        assert!(init.contains("def sum_x(left: Point, right: Point) -> float:"));
-        assert!(init.contains("return _native._boltffi_point_sum_x(left, right)"));
+        assert!(
+            init.contains("def _boltffi_attach_Point_sum_x(left: Point, right: Point) -> float:")
+        );
+        assert!(init.contains("Point.sum_x = staticmethod(_boltffi_attach_Point_sum_x)"));
         assert!(stub.contains("def origin(cls) -> \"Point\": ..."));
         assert!(stub.contains("def distance_to_origin(self) -> float: ..."));
         assert!(stub.contains("def midpoint_to(cls, left: Point, right: Point) -> \"Point\": ..."));
         assert!(stub.contains("def sum_x(left: Point, right: Point) -> float: ..."));
+    }
+
+    #[test]
+    fn python_target_renders_direct_record_mut_receiver_writeback() {
+        let output = target()
+            .render(&bindings(
+                r#"
+                #[repr(C)]
+                #[data]
+                pub struct Point {
+                    pub x: f64,
+                    pub y: f64,
+                }
+
+                #[data(impl)]
+                impl Point {
+                    pub fn scale(&mut self, factor: f64) {
+                        self.x *= factor;
+                        self.y *= factor;
+                    }
+                }
+                "#,
+            ))
+            .expect("Python target should render");
+        let extension = extension(&output);
+        let init = file(&output, "demo/__init__.py");
+
+        assert!(extension.contains(
+            "typedef FfiStatus (*boltffi_python_boltffi_method_record_demo_point_scale_fn)(___Point, ___Point *, double);"
+        ));
+        assert!(extension.contains("___Point receiver_out = {0};"));
+        assert!(extension.contains(
+            "FfiStatus status = boltffi_python_boltffi_method_record_demo_point_scale(receiver, &receiver_out, factor);"
+        ));
+        assert!(extension.contains("result = boltffi_python_box_point(receiver_out);"));
+        assert!(init.contains("def _boltffi_attach_Point_scale(self, factor: float) -> Point:"));
+        assert!(init.contains("return _native._boltffi_point_scale(self, factor)"));
+        assert!(init.contains("Point.scale = _boltffi_attach_Point_scale"));
     }
 
     #[test]
@@ -798,7 +868,7 @@ mod tests {
             "_boltffi_wire_sequence(values, len(values), lambda __boltffi_value_0: _boltffi_wire_i32(_boltffi_enum_value(__boltffi_value_0, Status, \"Status\")))"
         ));
         assert!(init.contains(
-            "_boltffi_read_wire(_native.echo_statuses(_boltffi_wire_sequence(values, len(values), lambda __boltffi_value_0: _boltffi_wire_i32(_boltffi_enum_value(__boltffi_value_0, Status, \"Status\")))), lambda reader: reader.sequence(lambda: Status(reader.i32())))"
+            "_boltffi_read_wire(_native.echo_statuses(_boltffi_wire_sequence(values, len(values), lambda __boltffi_value_0: _boltffi_wire_i32(_boltffi_enum_value(__boltffi_value_0, Status, \"Status\")))), lambda reader: reader.enum_sequence(_BOLTFFI_STRUCT_I32, Status))"
         ));
         assert!(stub.contains("from collections.abc import Sequence"));
         assert!(stub.contains("def echo_statuses(values: Sequence[Status]) -> list[Status]: ..."));
@@ -1645,22 +1715,24 @@ mod tests {
         let extension = extension(&output);
         let init = file(&output, "demo/__init__.py");
 
-        assert!(extension.contains("static int boltffi_python_wire_raw"));
-        assert!(extension.contains("static PyObject *boltffi_python_decode_owned_raw_wire"));
+        assert!(extension.contains("static int boltffi_python_wire_string"));
+        assert!(extension.contains("PyUnicode_AsUTF8AndSize(value, &len)"));
+        assert!(extension.contains("static PyObject *boltffi_python_decode_owned_utf8"));
         assert!(extension.contains("PyObject *name_wire = NULL;"));
         assert!(extension.contains("const uint8_t *name_ptr = NULL;"));
         assert!(extension.contains("uintptr_t name_len = 0;"));
         assert!(
             extension
-                .contains("boltffi_python_wire_raw(args[0], &name_wire, &name_ptr, &name_len)")
+                .contains("boltffi_python_wire_string(args[0], &name_wire, &name_ptr, &name_len)")
         );
         assert!(extension.contains(
-            "result = boltffi_python_decode_owned_raw_wire(boltffi_python_boltffi_function_demo_greet(name_ptr, name_len));"
+            "result = boltffi_python_decode_owned_utf8(boltffi_python_boltffi_function_demo_greet(name_ptr, name_len));"
         ));
         assert!(extension.contains("Py_XDECREF(name_wire);"));
         assert!(extension.contains("boltffi_python_boltffi_free_buf(buffer);"));
-        assert!(init.contains("_native.greet(_boltffi_wire_string(name))"));
-        assert!(init.contains("lambda reader: reader.string()"));
+        assert!(init.contains("return _native.greet(name)"));
+        assert!(!init.contains("greet(_boltffi_wire_string(name))"));
+        assert!(!init.contains("_boltffi_read_wire(_native.greet"));
     }
 
     #[test]
