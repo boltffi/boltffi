@@ -115,6 +115,12 @@ impl DecodeTarget {
         &self.source
     }
 
+    /// Returns true when the source type is a slice (`&mut [u8]`), as opposed to an owned
+    /// collection (`&mut Vec<u8>`). Used to select direct mutable-slice ABI vs wire-decode.
+    pub fn is_slice_source(&self) -> bool {
+        matches!(&self.source, TypeExpr::Slice(_))
+    }
+
     pub fn incoming_encoded_type(&self) -> IncomingEncodedType {
         IncomingEncodedType::new(&self.source)
     }

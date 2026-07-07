@@ -140,32 +140,13 @@ mod bytes {
     }
 
     #[test]
-    fn mutable_byte_vec_writeback_returns_changed_bytes() {
-        let data = vec![5u8, 6, 7];
-        let mut out = FfiBuf::empty();
-        with_encoded(&data, |ptr, len| {
-            assert_ok(unsafe {
-                boltffi_function_boltffi_tests_bytes_grow_bytes(ptr, len, &mut out, 8)
-            });
-        });
-        assert_eq!(decode_buf::<Vec<u8>>(out), vec![5, 6, 7, 8]);
-    }
-
-    #[test]
-    fn mutable_byte_slice_writeback_returns_changed_bytes_on_current_contract() {
-        let input = vec![0u8; 6];
-        let encoded = encode_buf(&input);
-        let mut out = FfiBuf::empty();
+    fn mutable_byte_slice_writes_into_current_buffer() {
+        let mut input = vec![0u8; 6];
         let written = unsafe {
-            boltffi_function_boltffi_tests_bytes_fill_bytes(
-                encoded.as_ptr(),
-                encoded.len(),
-                &mut out,
-            )
+            boltffi_function_boltffi_tests_bytes_fill_bytes(input.as_mut_ptr(), input.len())
         };
         assert_eq!(written, 6);
-        let filled = decode_buf::<Vec<u8>>(out);
-        assert_eq!(filled, vec![1, 4, 7, 10, 13, 16]);
+        assert_eq!(input, vec![1, 4, 7, 10, 13, 16]);
     }
 }
 
@@ -191,7 +172,11 @@ mod strings {
             |text_ptr, text_len, suffix_ptr, suffix_len| {
                 assert_ok(unsafe {
                     boltffi_function_boltffi_tests_strings_rewrite(
-                        text_ptr, text_len, &mut out, suffix_ptr, suffix_len,
+                        text_ptr as *mut u8,
+                        text_len,
+                        &mut out,
+                        suffix_ptr,
+                        suffix_len,
                     )
                 });
             },
@@ -205,7 +190,7 @@ mod records {
 
     #[test]
     fn direct_record_functions_keep_c_layout_values() {
-        let rect =
+        let mut rect =
             unsafe { boltffi_function_boltffi_tests_records_direct_make_rect(1.0, 2.0, 3.0, 4.0) };
         assert_eq!(
             rect,
@@ -221,12 +206,14 @@ mod records {
             12.0
         );
         assert_eq!(
-            unsafe { boltffi_function_boltffi_tests_records_direct_rect_x(rect) },
+            unsafe { boltffi_function_boltffi_tests_records_direct_rect_x(&rect) },
             1.0
         );
         assert_ok(unsafe {
-            boltffi_function_boltffi_tests_records_direct_scale_rect_in_place(rect, 2.0)
+            boltffi_function_boltffi_tests_records_direct_scale_rect_in_place(&mut rect, 2.0)
         });
+        assert_eq!(rect.width, 6.0);
+        assert_eq!(rect.height, 8.0);
     }
 
     #[test]
@@ -253,7 +240,11 @@ mod records {
             |record_ptr, record_len, label_ptr, label_len| {
                 assert_ok(unsafe {
                     boltffi_function_boltffi_tests_records_encoded_relabel(
-                        record_ptr, record_len, &mut out, label_ptr, label_len,
+                        record_ptr as *mut u8,
+                        record_len,
+                        &mut out,
+                        label_ptr,
+                        label_len,
                     )
                 });
             },

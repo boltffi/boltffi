@@ -45,6 +45,8 @@ struct FallibleAsyncCallbackSuccess;
 
 trait EncodedWritebackReceive {
     fn needs_encoded_writeback(self) -> bool;
+    fn needs_mutable_pointer(self) -> bool;
+    fn direct_param_type(self, ty: &DirectValueType, value: Type) -> Type;
 }
 
 /// C ABI projection for the callable body behind a closure handle.
@@ -62,11 +64,31 @@ impl EncodedWritebackReceive for Receive {
     fn needs_encoded_writeback(self) -> bool {
         self == Receive::ByMutRef
     }
+
+    fn needs_mutable_pointer(self) -> bool {
+        self == Receive::ByMutRef
+    }
+
+    fn direct_param_type(self, ty: &DirectValueType, value: Type) -> Type {
+        match (ty, self) {
+            (DirectValueType::Record(_), Receive::ByRef) => Type::ConstPointer(Box::new(value)),
+            (DirectValueType::Record(_), Receive::ByMutRef) => Type::MutPointer(Box::new(value)),
+            _ => value,
+        }
+    }
 }
 
 impl EncodedWritebackReceive for () {
     fn needs_encoded_writeback(self) -> bool {
         false
+    }
+
+    fn needs_mutable_pointer(self) -> bool {
+        false
+    }
+
+    fn direct_param_type(self, _: &DirectValueType, value: Type) -> Type {
+        value
     }
 }
 
@@ -143,27 +165,34 @@ where
 {
     type Output = Result<Vec<Parameter>>;
 
-    fn direct(&mut self, ty: &'plan DirectValueType, _: D::Receive) -> Self::Output {
+    fn direct(&mut self, ty: &'plan DirectValueType, receive: D::Receive) -> Self::Output {
+        let value = self.signature.names.direct_value(ty)?;
         Ok(vec![Parameter::new(
             self.name.as_str(),
-            self.signature.names.direct_value(ty)?,
+            receive.direct_param_type(ty, value),
         )?])
     }
 
     fn encoded(
         &mut self,
-        _: &'plan TypeRef,
+        ty: &'plan TypeRef,
         _: &'plan D::Codec,
         shape: native::BufferShape,
         receive: D::Receive,
     ) -> Self::Output {
         match shape {
             native::BufferShape::Slice => {
-                let mut parameters = vec![
-                    Parameter::byte_pointer(&self.name)?,
-                    Parameter::byte_length(&self.name)?,
-                ];
-                if receive.needs_encoded_writeback() {
+                // Only the in-place `&mut [u8]` case (no writeback out-param) takes a
+                // mutable input pointer. Other `&mut` encoded params (e.g. `&mut [u64]`,
+                // `&mut <record>`) keep a const input pointer plus an encoded writeback
+                // out-param, matching the Rust extern and host renderers.
+                let pointer = if receive.needs_mutable_pointer() && matches!(ty, TypeRef::Bytes) {
+                    Parameter::mutable_byte_pointer(&self.name)?
+                } else {
+                    Parameter::byte_pointer(&self.name)?
+                };
+                let mut parameters = vec![pointer, Parameter::byte_length(&self.name)?];
+                if receive.needs_encoded_writeback() && !matches!(ty, TypeRef::Bytes) {
                     parameters.push(Parameter::encoded_writeback(&self.name)?);
                 }
                 Ok(parameters)

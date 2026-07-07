@@ -80,9 +80,18 @@ impl Parameter {
 
     /// Creates the pointer half of a borrowed byte-slice C ABI parameter group.
     pub fn byte_pointer(name: &str) -> Result<Self> {
+        Self::byte_pointer_with_type(name, Type::ConstPointer(Box::new(Type::Uint8)))
+    }
+
+    /// Creates the pointer half of a mutable byte-slice C ABI parameter group.
+    pub fn mutable_byte_pointer(name: &str) -> Result<Self> {
+        Self::byte_pointer_with_type(name, Type::MutPointer(Box::new(Type::Uint8)))
+    }
+
+    fn byte_pointer_with_type(name: &str, ty: Type) -> Result<Self> {
         Self::with_role(
             format!("{name}_ptr"),
-            Type::ConstPointer(Box::new(Type::Uint8)),
+            ty,
             ParameterRole::BytePointer(Identifier::escape(name)?),
         )
     }

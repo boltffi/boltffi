@@ -344,7 +344,7 @@ pub mod native {
     /// `free_slot` is invoked when Rust drops the foreign
     /// implementation. `clone_slot` is invoked when Rust duplicates the
     /// handle. Each method on the trait occupies its own slot named on
-    /// the corresponding [`MethodDecl`].
+    /// the corresponding method declaration.
     #[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
     pub struct CallbackVTable {
         free_slot: VTableSlot,

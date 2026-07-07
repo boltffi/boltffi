@@ -1,4 +1,6 @@
-use boltffi_binding::{DirectValueType, IncomingParam, IntoRust, ParamDecl, ParamPlan, Receive};
+use boltffi_binding::{
+    DirectValueType, IncomingParam, IntoRust, ParamDecl, ParamPlan, Receive, TypeRef,
+};
 use proc_macro2::TokenStream;
 
 use crate::experimental::{
@@ -20,9 +22,18 @@ pub struct Renderer;
 
 pub fn requires_failure_return<S: RenderSurface>(param: &ParamDecl<S, IntoRust>) -> bool {
     match param.payload() {
-        IncomingParam::Value(ParamPlan::Direct { ty, .. }) => {
-            matches!(S::DIRECT_RECORD_PARAMS, DirectRecordCrossing::Pointer)
-                && matches!(ty, DirectValueType::Record(_))
+        IncomingParam::Value(ParamPlan::Direct { ty, receive }) => {
+            // A direct record needs a failure return only when it crosses as a
+            // nullable pointer that the wrapper null-checks:
+            //   * surfaces that pass every direct record by pointer (e.g. wasm)
+            //     null-check all of them, including by-value; or
+            //   * surfaces that only borrow direct records by pointer (native)
+            //     null-check just the borrowed `&T` / `&mut T` cases. By-value
+            //     records there are passed directly and can never be null.
+            matches!(ty, DirectValueType::Record(_))
+                && (matches!(S::DIRECT_RECORD_PARAMS, DirectRecordCrossing::Pointer)
+                    || (S::BORROWED_DIRECT_RECORD_PARAMS
+                        && matches!(receive, Receive::ByRef | Receive::ByMutRef)))
         }
         IncomingParam::Value(ParamPlan::Encoded { .. })
         | IncomingParam::Value(ParamPlan::Handle { .. })
@@ -122,6 +133,7 @@ where
                 codec,
                 shape,
                 receive,
+                ty,
                 ..
             }) => {
                 let encoded_input = encoded::Input::new(
@@ -132,8 +144,9 @@ where
                     input.failure,
                     input.expansion,
                 );
-                let encoded_input = match receive {
-                    Receive::ByMutRef => encoded_input.with_writeback(),
+                let encoded_input = match (receive, ty) {
+                    (Receive::ByMutRef, TypeRef::Bytes) => encoded_input.into_mutable_bytes(),
+                    (Receive::ByMutRef, _) => encoded_input.with_writeback(),
                     _ => encoded_input,
                 };
                 <encoded::Renderer as Render<S, _>>::render(encoded::Renderer, encoded_input)

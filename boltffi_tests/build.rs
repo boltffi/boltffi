@@ -634,13 +634,7 @@ static int boltffi_tests_check_i32_vec_buf(FfiBuf_u8 buf, const int32_t *expecte
     if (echoed != 0) {
         return echoed;
     }
-    const uint8_t grown_expected[9] = {5, 0, 0, 0, 1, 2, 3, 4, 9};
-    FfiBuf_u8 grown = {0};
-    FfiStatus status = boltffi_function_boltffi_tests_bytes_grow_bytes(data, 8, &grown, 9);
-    if (status.code != FFI_STATUS_OK.code) {
-        return 56;
-    }
-    return boltffi_tests_check_buf(grown, grown_expected, 9, 57);
+    return 0;
 }
 "#
     }
@@ -711,12 +705,15 @@ static int boltffi_tests_check_direct_records(void) {
     if (boltffi_function_boltffi_tests_records_direct_rect_area(rect) != 12.0) {
         return 202;
     }
-    if (boltffi_function_boltffi_tests_records_direct_rect_x(rect) != 1.0) {
+    if (boltffi_function_boltffi_tests_records_direct_rect_x(&rect) != 1.0) {
         return 203;
     }
-    FfiStatus status = boltffi_function_boltffi_tests_records_direct_scale_rect_in_place(rect, 2.0);
+    FfiStatus status = boltffi_function_boltffi_tests_records_direct_scale_rect_in_place(&rect, 2.0);
     if (status.code != FFI_STATUS_OK.code) {
         return 204;
+    }
+    if (rect.width != 6.0 || rect.height != 8.0) {
+        return 205;
     }
     return 0;
 }
@@ -848,7 +845,7 @@ static int boltffi_tests_check_direct_records(void) {
     if (shouted != 0) {
         return shouted;
     }
-    const uint8_t base[8] = {4, 0, 0, 0, 'b', 'a', 's', 'e'};
+    uint8_t base[8] = {4, 0, 0, 0, 'b', 'a', 's', 'e'};
     const uint8_t suffix[6] = {2, 0, 0, 0, ':', 'x'};
     const uint8_t rewritten_expected[10] = {6, 0, 0, 0, 'b', 'a', 's', 'e', ':', 'x'};
     FfiBuf_u8 rewritten = {0};
@@ -863,7 +860,7 @@ static int boltffi_tests_check_direct_records(void) {
 
     fn encoded_records_harness(&self) -> &'static str {
         r#"static int boltffi_tests_check_encoded_records(void) {
-    const uint8_t record[27] = {
+    uint8_t record[27] = {
         3, 0, 0, 0, 'o', 'l', 'd',
         0, 0, 0, 0, 0, 0, 0, 64,
         0, 0, 0, 0, 0, 0, 8, 64,

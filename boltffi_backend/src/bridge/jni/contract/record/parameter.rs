@@ -10,7 +10,7 @@
 //! of deciding record mutability from the source type.
 
 use crate::{
-    bridge::c::{self, Identifier},
+    bridge::c::{self, Expression, Identifier},
     core::{Error, Result},
 };
 
@@ -42,6 +42,11 @@ impl RecordParameter {
     /// Returns the local C record value passed to the C bridge.
     pub fn local(&self) -> &Identifier {
         &self.local
+    }
+
+    /// Returns the expression passed to the C bridge function.
+    pub fn c_argument(&self) -> Expression {
+        self.value.c_argument(self.local.clone())
     }
 
     /// Returns the mutation writeback contract when the C bridge expects one.

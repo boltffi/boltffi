@@ -2,8 +2,8 @@
 //!
 //! Each backend is split into three parts:
 //!
-//! - A **lowerer** that walks the [`AbiContract`] and maps each [`AbiCall`],
-//!   [`AbiRecord`], [`AbiEnum`], and [`AbiStream`] into language-specific plan
+//! - A **lowerer** that walks the [`AbiContract`] and maps each `AbiCall`,
+//!   `AbiRecord`, `AbiEnum`, and `AbiStream` into language-specific plan
 //!   structs. These plan structs carry everything a template needs to render:
 //!   type names, method signatures, wire read/write expressions, native
 //!   function declarations.

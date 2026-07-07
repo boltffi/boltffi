@@ -19,7 +19,7 @@ use crate::{
 /// FFI decision already made.
 ///
 /// Generic over `S: Surface` because every variant transitively contains
-/// at least one [`CallableDecl`], and callable shapes diverge by target.
+/// at least one callable declaration, and callable shapes diverge by target.
 #[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 #[serde(bound(
     serialize = "S::BufferShape: Serialize, S::HandleCarrier: Serialize, S::AsyncProtocol: Serialize, S::CallbackProtocol: Serialize",
@@ -1413,7 +1413,7 @@ impl DataVariantPayload {
 /// A free function exported across the boundary.
 ///
 /// Carries the binding name, the native symbol foreign code links
-/// against, and the [`CallableDecl`] that describes how the call
+/// against, and the callable declaration that describes how the call
 /// actually crosses.
 #[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 #[serde(bound(

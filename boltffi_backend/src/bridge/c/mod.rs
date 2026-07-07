@@ -47,7 +47,7 @@ mod tests {
 
     use crate::core::bridge::BridgeBackend;
 
-    use super::{CBridge, ParameterGroup, Type};
+    use super::{CBridge, Identifier, ParameterGroup, Type};
 
     fn bindings(source: &str) -> boltffi_binding::Bindings<Native> {
         let file = syn::parse_str(source).expect("valid source fixture");
@@ -238,6 +238,23 @@ mod tests {
     }
 
     #[test]
+    fn c_header_renders_mutable_encoded_parameter_pointer() {
+        let header = header(
+            r#"
+            #[export]
+            pub fn fill(out: &mut [u8]) -> u32 { out.len() as u32 }
+            "#,
+        );
+
+        assert!(
+            header.contains(
+                "uint32_t boltffi_function_demo_fill(uint8_t *out_ptr, uintptr_t out_len);"
+            ),
+            "{header}"
+        );
+    }
+
+    #[test]
     fn c_contract_groups_closure_parameter_triples() {
         let contract = contract(
             r#"
@@ -416,6 +433,82 @@ mod tests {
         assert_eq!(bytes.name(), "name");
         assert_eq!(function.parameter(bytes.pointer()).name(), "name_ptr");
         assert_eq!(function.parameter(bytes.length()).name(), "name_len");
+    }
+
+    #[test]
+    fn c_contract_direct_record_params_are_receive_aware() {
+        let contract = contract(
+            r#"
+            #[repr(C)]
+            #[data]
+            pub struct Point {
+                pub x: f64,
+                pub y: f64,
+            }
+
+            #[export]
+            pub fn distance(point: &Point) -> f64 {
+                0.0
+            }
+
+            #[export]
+            pub fn scale(point: &mut Point, factor: f64) {
+                point.x *= factor;
+            }
+
+            #[export]
+            pub fn echo(point: Point) -> Point {
+                point
+            }
+            "#,
+        );
+        let distance = contract
+            .functions()
+            .iter()
+            .find(|function| function.name() == "boltffi_function_demo_distance")
+            .expect("shared direct record parameter function");
+        let scale = contract
+            .functions()
+            .iter()
+            .find(|function| function.name() == "boltffi_function_demo_scale")
+            .expect("mutable direct record parameter function");
+        let echo = contract
+            .functions()
+            .iter()
+            .find(|function| function.name() == "boltffi_function_demo_echo")
+            .expect("by-value direct record parameter function");
+
+        let [ParameterGroup::Value(distance_point)] = distance.parameter_groups() else {
+            panic!("expected one direct-record parameter");
+        };
+        let [
+            ParameterGroup::Value(scale_point),
+            ParameterGroup::Value(scale_factor),
+        ] = scale.parameter_groups()
+        else {
+            panic!("expected direct-record pointer and scalar parameter");
+        };
+        let [ParameterGroup::Value(echo_point)] = echo.parameter_groups() else {
+            panic!("expected one direct-record parameter");
+        };
+
+        assert_eq!(
+            distance.parameter(*distance_point).ty(),
+            &Type::ConstPointer(Box::new(Type::DirectRecord(
+                Identifier::parse("___Point").expect("identifier")
+            )))
+        );
+        assert_eq!(
+            scale.parameter(*scale_point).ty(),
+            &Type::MutPointer(Box::new(Type::DirectRecord(
+                Identifier::parse("___Point").expect("identifier")
+            )))
+        );
+        assert_eq!(scale.parameter(*scale_factor).name(), "factor");
+        assert_eq!(
+            echo.parameter(*echo_point).ty(),
+            &Type::DirectRecord(Identifier::parse("___Point").expect("identifier"))
+        );
     }
 
     #[test]

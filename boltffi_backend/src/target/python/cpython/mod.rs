@@ -513,6 +513,41 @@ mod tests {
     }
 
     #[test]
+    fn python_target_renders_borrowed_direct_record_param_as_addressed_local() {
+        let output = target()
+            .render(&bindings(
+                r#"
+                #[repr(C)]
+                #[data]
+                pub struct Point {
+                    pub x: f64,
+                    pub y: f64,
+                }
+
+                #[export]
+                pub fn distance(point: &Point) -> f64 {
+                    point.x
+                }
+                "#,
+            ))
+            .expect("Python target should render borrowed direct record params");
+        let extension = extension(&output);
+        let stub = file(&output, "demo/__init__.pyi");
+
+        assert!(extension.contains("___Point point;"));
+        assert!(extension.contains("boltffi_python_parse_point(args[0], &point)"));
+        assert!(
+            extension.contains("boltffi_python_boltffi_function_demo_distance(&point)"),
+            "borrowed direct records should stay Python record-shaped and pass an addressed local to the pointer-shaped C ABI\n{extension}"
+        );
+        assert!(
+            !extension.contains("boltffi_python_boltffi_function_demo_distance(point)"),
+            "borrowed direct records must not keep passing the local by value after the C ABI becomes pointer-shaped\n{extension}"
+        );
+        assert!(stub.contains("def distance(point: Point) -> float: ..."));
+    }
+
+    #[test]
     fn python_target_renders_direct_record_vector_function_wrapper() {
         let output = target()
             .render(&bindings(
