@@ -26,6 +26,17 @@ static void *boltffi_ruby_keep_abi_version __attribute__((used)) = (void *)&ruby
 #define BOLTFFI_RUBY_HAS_TYPED_EMBEDDABLE 1
 #endif
 
+/* Install a frozen, GC-registered static interned string into `slot`. `lit`
+ * must be a string literal so `sizeof(lit) - 1` yields its byte length.
+ * Registered before assignment so a GC during allocation sees a live slot. */
+#define BOLTFFI_RUBY_DEFINE_INTERNED_STATIC(slot, lit) \
+    do { \
+        rb_global_variable(&(slot)); \
+        (slot) = rb_utf8_str_new_static((lit), sizeof(lit) - 1); \
+        RB_ENC_CODERANGE_SET((slot), RUBY_ENC_CODERANGE_VALID); \
+        rb_obj_freeze(slot); \
+    } while (0)
+
 {% if needs_bool_helper %}
 static inline int boltffi_ruby_bool(VALUE value) {
     if (value != Qtrue && value != Qfalse) {

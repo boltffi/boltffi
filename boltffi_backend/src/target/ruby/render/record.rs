@@ -434,7 +434,7 @@ fn add_encoded_field_inner(
             for (index, value) in static_values.iter().enumerate() {
                 let literal = c_string_literal(value);
                 parts.extension_init_lines.push(format!(
-                    "    rb_global_variable(&{table}[{index}]);\n    {table}[{index}] = rb_utf8_str_new_static({literal}, sizeof({literal}) - 1);\n    rb_obj_freeze({table}[{index}]);\n"
+                    "    BOLTFFI_RUBY_DEFINE_INTERNED_STATIC({table}[{index}], {literal});\n"
                 ));
             }
             let read = format!(

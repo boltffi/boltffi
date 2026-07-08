@@ -566,26 +566,13 @@ mod tests {
         let extension = extension(&output);
 
         assert!(extension.contains("static VALUE boltffi_ruby_sniffed_label_interned_values[2];"));
-        let register = extension
-            .find("rb_global_variable(&boltffi_ruby_sniffed_label_interned_values[0]);")
-            .expect("interned slot registered with Ruby GC");
-        let initialize = extension
-            .find("boltffi_ruby_sniffed_label_interned_values[0] = rb_utf8_str_new_static(\"ok\", sizeof(\"ok\") - 1);")
-            .expect("interned slot initialized with static UTF-8 literal");
-        assert!(register < initialize);
-        assert!(
-            extension.contains("rb_obj_freeze(boltffi_ruby_sniffed_label_interned_values[0]);")
-        );
-        assert!(
-            extension
-                .contains("rb_global_variable(&boltffi_ruby_sniffed_label_interned_values[1]);")
-        );
+        assert!(extension.contains("#define BOLTFFI_RUBY_DEFINE_INTERNED_STATIC(slot, lit)"));
         assert!(extension.contains(
-            "boltffi_ruby_sniffed_label_interned_values[1] = rb_utf8_str_new_static(\"cached\", sizeof(\"cached\") - 1);"
+            "BOLTFFI_RUBY_DEFINE_INTERNED_STATIC(boltffi_ruby_sniffed_label_interned_values[0], \"ok\");"
         ));
-        assert!(
-            extension.contains("rb_obj_freeze(boltffi_ruby_sniffed_label_interned_values[1]);")
-        );
+        assert!(extension.contains(
+            "BOLTFFI_RUBY_DEFINE_INTERNED_STATIC(boltffi_ruby_sniffed_label_interned_values[1], \"cached\");"
+        ));
         assert!(extension.contains("if (!boltffi_ruby_wire_read_u8(reader, &tag)) return 0;"));
         assert!(extension.contains("if (!boltffi_ruby_wire_read_u32(reader, &id)) return 0;"));
         assert!(extension.contains(
@@ -625,10 +612,10 @@ mod tests {
         let extension = extension(&output);
 
         assert!(extension.contains(
-            "rb_utf8_str_new_static(\"Firefox\\n\\316\\262\", sizeof(\"Firefox\\n\\316\\262\") - 1);"
+            "BOLTFFI_RUBY_DEFINE_INTERNED_STATIC(boltffi_ruby_sniffed_label_interned_values[0], \"Firefox\\n\\316\\262\");"
         ));
         assert!(extension.contains(
-            "rb_utf8_str_new_static(\"quote\\\"slash\\\\question\\?\", sizeof(\"quote\\\"slash\\\\question\\?\") - 1);"
+            "BOLTFFI_RUBY_DEFINE_INTERNED_STATIC(boltffi_ruby_sniffed_label_interned_values[1], \"quote\\\"slash\\\\question\\?\");"
         ));
     }
 
