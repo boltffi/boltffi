@@ -9,13 +9,15 @@ use std::collections::BTreeMap;
 use askama::Template;
 use boltffi_binding::{
     CanonicalName, DeclarationRef, DirectValueType, DirectVectorElementType, ErrorChannel,
-    ExecutionDecl, ExportedCallable, ExportedMethodDecl, FunctionDecl, IncomingParam,
-    InitializerDecl, Native, NativeSymbol, ParamPlan, Primitive, ReadPlan, Receive, ReturnPlan,
-    WritePlan, native,
+    ErrorPlacement, ExecutionDecl, ExportedCallable, ExportedMethodDecl, FunctionDecl,
+    IncomingParam, InitializerDecl, Native, NativeSymbol, OutOfRust, ParamPlan, Primitive,
+    ReadPlan, Receive, ReturnPlan, TypeRef, WritePlan, native,
 };
 
 use crate::{
-    bridge::c::{CBridgeContract, Function as CFunction, ParameterGroup, Type as CBridgeType},
+    bridge::c::{
+        CBridgeContract, Function as CFunction, ParameterGroup, ReturnChannel, Type as CBridgeType,
+    },
     core::{
         AuxChunk, Diagnostic, Emitted, Error, FilePath, GeneratedFile, GeneratedOutput, HelperId,
         RenderContext, RenderedDeclaration, Result,
@@ -293,9 +295,6 @@ impl Function {
         if !matches!(callable.execution(), ExecutionDecl::Synchronous(_)) {
             return unsupported("asynchronous functions");
         }
-        if !matches!(callable.error().channel(), ErrorChannel::None) {
-            return unsupported("fallible functions");
-        }
         let mut parameter_groups = c_function.parameter_groups().iter();
         let mut native_parameters = Vec::new();
         let mut invocation_arguments = Vec::new();
@@ -303,6 +302,13 @@ impl Function {
         let mut encoded_writeback = None;
         let mut setup = Vec::new();
         let mut requires_wire_runtime = false;
+        let encoded_error = lower_error(
+            callable.error().channel(),
+            type_namespace,
+            c_function,
+            context,
+        )?;
+        requires_wire_runtime |= encoded_error.is_some();
 
         if let Some(receive) = callable.receiver() {
             let (owner, owner_name, extension) = match &call_site {
@@ -568,10 +574,6 @@ impl Function {
             }
         }
 
-        if parameter_groups.next().is_some() {
-            return broken_contract("function parameter group count does not match the C bridge");
-        }
-
         let return_plan = callable.returns().plan();
         if (return_after_status.is_some() || encoded_writeback.is_some())
             && !matches!(return_plan, ReturnPlan::Void)
@@ -582,7 +584,12 @@ impl Function {
         let (public_return_type, native_return_type, return_marshal_i1, checks_status) =
             match return_plan {
                 ReturnPlan::Void => {
-                    if c_function.returns() != &CBridgeType::Status {
+                    let expected_return = if encoded_error.is_some() {
+                        CBridgeType::Buffer
+                    } else {
+                        CBridgeType::Status
+                    };
+                    if c_function.returns() != &expected_return {
                         return broken_contract("void return type does not match the C bridge");
                     }
                     let public_return_type = match (
@@ -597,12 +604,21 @@ impl Function {
                     };
                     (
                         public_return_type,
-                        TypeFragment::new("FfiStatus"),
+                        if encoded_error.is_some() {
+                            TypeFragment::new("FfiBuf")
+                        } else {
+                            TypeFragment::new("FfiStatus")
+                        },
                         false,
-                        true,
+                        encoded_error.is_none(),
                     )
                 }
                 ReturnPlan::DirectViaReturnSlot { ty } => {
+                    if encoded_error.is_some() {
+                        return broken_contract(
+                            "fallible direct return does not use a success out-pointer",
+                        );
+                    }
                     if return_after_status.is_some() || encoded_writeback.is_some() {
                         return unsupported("mutable value method returns");
                     }
@@ -618,6 +634,11 @@ impl Function {
                     )
                 }
                 ReturnPlan::EncodedViaReturnSlot { ty, codec, shape } => {
+                    if encoded_error.is_some() {
+                        return broken_contract(
+                            "fallible encoded return does not use a success out-pointer",
+                        );
+                    }
                     if *shape != native::BufferShape::Buffer
                         || c_function.returns() != &CBridgeType::Buffer
                     {
@@ -645,6 +666,11 @@ impl Function {
                     )
                 }
                 ReturnPlan::ScalarOptionViaReturnSlot { primitive } => {
+                    if encoded_error.is_some() {
+                        return broken_contract(
+                            "fallible scalar-option return does not use a success out-pointer",
+                        );
+                    }
                     if c_function.returns() != &CBridgeType::Buffer {
                         return broken_contract("scalar option return does not match the C bridge");
                     }
@@ -663,6 +689,11 @@ impl Function {
                     (ty, TypeFragment::new("FfiBuf"), false, false)
                 }
                 ReturnPlan::DirectVecViaReturnSlot { element } => {
+                    if encoded_error.is_some() {
+                        return broken_contract(
+                            "fallible direct-vector return does not use a success out-pointer",
+                        );
+                    }
                     if c_function.returns() != &CBridgeType::Buffer {
                         return broken_contract("direct-vector return does not match the C bridge");
                     }
@@ -694,8 +725,93 @@ impl Function {
                         false,
                     )
                 }
+                ReturnPlan::DirectViaOutPointer { ty } => {
+                    if encoded_error.is_none() {
+                        return broken_contract(
+                            "direct success out-pointer is missing an error channel",
+                        );
+                    }
+                    let Some(ParameterGroup::SuccessOut(index)) = parameter_groups.next() else {
+                        return broken_contract(
+                            "direct success return is missing its C out-pointer",
+                        );
+                    };
+                    let matches = match c_function.parameter(*index).ty() {
+                        CBridgeType::MutPointer(inner) => c_direct_matches(ty, inner, bridge)?,
+                        _ => false,
+                    };
+                    if !matches {
+                        return broken_contract(
+                            "direct success out-pointer does not match the C bridge",
+                        );
+                    }
+                    let rendered = direct_type_with(ty, type_namespace, context)?;
+                    let result = Identifier::parse("boltffiResult")?;
+                    native_parameters.push(NativeParameter {
+                        name: result.clone(),
+                        ty: rendered.clone(),
+                        modifier: "out ",
+                        marshal_i1: false,
+                        marshal_bool_array: false,
+                        byte_array: false,
+                    });
+                    invocation_arguments.push(Expression::new(format!("out {rendered} {result}")));
+                    return_after_status = Some(Expression::identifier(result));
+                    (rendered, TypeFragment::new("FfiBuf"), false, false)
+                }
+                ReturnPlan::EncodedViaOutPointer { ty, codec, shape } => {
+                    if encoded_error.is_none() || *shape != native::BufferShape::Buffer {
+                        return unsupported("encoded success out-pointer shape");
+                    }
+                    let Some(ParameterGroup::SuccessOut(index)) = parameter_groups.next() else {
+                        return broken_contract(
+                            "encoded success return is missing its C out-pointer",
+                        );
+                    };
+                    if c_function.parameter(*index).ty()
+                        != &CBridgeType::MutPointer(Box::new(CBridgeType::Buffer))
+                    {
+                        return broken_contract(
+                            "encoded success out-pointer does not match the C bridge",
+                        );
+                    }
+                    let buffer = Identifier::parse("boltffiResultBuffer")?;
+                    native_parameters.push(NativeParameter {
+                        name: buffer.clone(),
+                        ty: TypeFragment::new("FfiBuf"),
+                        modifier: "out ",
+                        marshal_i1: false,
+                        marshal_bool_array: false,
+                        byte_array: false,
+                    });
+                    invocation_arguments.push(Expression::new(format!("out FfiBuf {buffer}")));
+                    let reader = Identifier::parse("resultReader")?;
+                    let mut codec_reader = Reader::new(reader.clone(), context);
+                    if let Some(namespace) = type_namespace {
+                        codec_reader = codec_reader.qualified(namespace);
+                    }
+                    let decode = codec
+                        .render_with(&mut codec_reader)
+                        .map(ReadExpression::into_expression)?;
+                    encoded_return = Some(EncodedReturn {
+                        buffer,
+                        reader,
+                        decode,
+                    });
+                    requires_wire_runtime = true;
+                    (
+                        render_type_ref(ty, type_namespace, context)?,
+                        TypeFragment::new("FfiBuf"),
+                        false,
+                        false,
+                    )
+                }
                 _ => return unsupported("non-primitive function returns"),
             };
+
+        if parameter_groups.next().is_some() {
+            return broken_contract("function parameter group count does not match the C bridge");
+        }
 
         let invocation = Expression::call(
             Expression::member(Identifier::parse("NativeMethods")?, native_name.clone()),
@@ -707,21 +823,27 @@ impl Function {
             _ => None,
         };
         let is_static = !receiver || extension_owner.is_some();
-        let body = (!setup.is_empty() || encoded_return.is_some() || encoded_writeback.is_some())
-            .then(|| {
-                render_callable_body(
-                    &setup,
-                    &invocation,
-                    checks_status,
-                    return_after_status.as_ref(),
-                    encoded_return.as_ref(),
-                    encoded_writeback.as_ref(),
-                )
-            })
-            .transpose()?;
+        let body = (!setup.is_empty()
+            || encoded_return.is_some()
+            || encoded_writeback.is_some()
+            || encoded_error.is_some())
+        .then(|| {
+            render_callable_body(
+                &setup,
+                &invocation,
+                checks_status,
+                return_after_status.as_ref(),
+                encoded_return.as_ref(),
+                encoded_writeback.as_ref(),
+                encoded_error.as_ref(),
+            )
+        })
+        .transpose()?;
         let free_buffer_entry = encoded_return
             .as_ref()
             .or(encoded_writeback.as_ref())
+            .map(|value| &value.buffer)
+            .or_else(|| encoded_error.as_ref().map(|value| &value.buffer))
             .map(|_| {
                 bridge
                     .support()
@@ -782,12 +904,74 @@ struct EncodedReturn {
     decode: Expression,
 }
 
+struct EncodedError {
+    buffer: Identifier,
+    reader: Identifier,
+    throw: Expression,
+}
+
 fn generated_identifier(source: &Identifier, suffix: &str) -> Result<Identifier> {
     Identifier::escape(format!(
         "{}{}",
         source.as_str().trim_start_matches('@'),
         suffix
     ))
+}
+
+fn lower_error(
+    channel: ErrorChannel<'_, Native, OutOfRust>,
+    type_namespace: Option<&Namespace>,
+    c_function: &CFunction,
+    context: &RenderContext<Native>,
+) -> Result<Option<EncodedError>> {
+    let ErrorChannel::Encoded {
+        placement,
+        ty,
+        codec,
+        shape,
+    } = channel
+    else {
+        return match channel {
+            ErrorChannel::None if c_function.return_channel() != ReturnChannel::EncodedError => {
+                Ok(None)
+            }
+            ErrorChannel::None => broken_contract(
+                "infallible function unexpectedly uses the C encoded-error return channel",
+            ),
+            ErrorChannel::Status => unsupported("status error channel"),
+            _ => unsupported("unknown error channel"),
+        };
+    };
+    if placement != ErrorPlacement::ReturnSlot
+        || shape != native::BufferShape::Buffer
+        || c_function.return_channel() != ReturnChannel::EncodedError
+        || c_function.returns() != &CBridgeType::Buffer
+    {
+        return unsupported("encoded error channel shape");
+    }
+
+    let buffer = Identifier::parse("boltffiErrorBuffer")?;
+    let reader = Identifier::parse("boltffiErrorReader")?;
+    let mut codec_reader = Reader::new(reader.clone(), context);
+    if let Some(namespace) = type_namespace {
+        codec_reader = codec_reader.qualified(namespace);
+    }
+    let decode = codec
+        .render_with(&mut codec_reader)
+        .map(ReadExpression::into_expression)?;
+    let throw = match ty {
+        TypeRef::String => Expression::new(format!("new BoltException({decode})")),
+        TypeRef::Record(_) | TypeRef::Enum(_) => {
+            let ty = render_type_ref(ty, type_namespace, context)?;
+            Expression::new(format!("new {ty}Exception({decode})"))
+        }
+        _ => return unsupported("encoded error type"),
+    };
+    Ok(Some(EncodedError {
+        buffer,
+        reader,
+        throw,
+    }))
 }
 
 fn render_callable_body(
@@ -797,35 +981,53 @@ fn render_callable_body(
     return_after_status: Option<&Expression>,
     encoded_return: Option<&EncodedReturn>,
     encoded_writeback: Option<&EncodedReturn>,
+    encoded_error: Option<&EncodedError>,
 ) -> Result<Statement> {
     let mut lines = setup.iter().map(ToString::to_string).collect::<Vec<_>>();
+    if let Some(error) = encoded_error {
+        lines.push(format!(
+            "FfiBuf {} = {invocation};\nif ({}.ptr != 0)\n{{\n    try\n    {{\n        WireReader {} = new WireReader({});\n        throw {};\n    }}\n    finally\n    {{\n        NativeMethods.FreeBuf({});\n    }}\n}}",
+            error.buffer,
+            error.buffer,
+            error.reader,
+            error.buffer,
+            error.throw,
+            error.buffer,
+        ));
+        if let Some(encoded) = encoded_return.or(encoded_writeback) {
+            lines.push(render_buffer_return(encoded));
+        } else if let Some(value) = return_after_status {
+            lines.push(format!("return {value};"));
+        }
+        return Ok(Statement::new(indent(&lines.join("\n"), 12)));
+    }
+
     match encoded_return {
         Some(encoded) => lines.push(format!(
-            "FfiBuf {} = {invocation};\ntry\n{{\n    WireReader {} = new WireReader({});\n    return {};\n}}\nfinally\n{{\n    NativeMethods.FreeBuf({});\n}}",
+            "FfiBuf {} = {invocation};\n{}",
             encoded.buffer,
-            encoded.reader,
-            encoded.buffer,
-            encoded.decode,
-            encoded.buffer,
+            render_buffer_return(encoded),
         )),
         None if checks_status => {
             lines.push(format!(
                 "FfiStatus status = {invocation};\nif (status.code != 0)\n{{\n    throw new global::System.InvalidOperationException($\"BoltFFI call failed with status code {{status.code}}\");\n}}"
             ));
-            match encoded_writeback {
-                Some(encoded) => lines.push(format!(
-                    "try\n{{\n    WireReader {} = new WireReader({});\n    return {};\n}}\nfinally\n{{\n    NativeMethods.FreeBuf({});\n}}",
-                    encoded.reader, encoded.buffer, encoded.decode, encoded.buffer,
-                )),
-                None if return_after_status.is_some() => {
-                    lines.push(format!("return {};", return_after_status.unwrap()));
-                }
-                None => {}
+            match (encoded_writeback, return_after_status) {
+                (Some(encoded), _) => lines.push(render_buffer_return(encoded)),
+                (None, Some(value)) => lines.push(format!("return {value};")),
+                (None, None) => {}
             }
         }
         None => lines.push(format!("return {invocation};")),
     }
     Ok(Statement::new(indent(&lines.join("\n"), 12)))
+}
+
+fn render_buffer_return(encoded: &EncodedReturn) -> String {
+    format!(
+        "try\n{{\n    WireReader {} = new WireReader({});\n    return {};\n}}\nfinally\n{{\n    NativeMethods.FreeBuf({});\n}}",
+        encoded.reader, encoded.buffer, encoded.decode, encoded.buffer,
+    )
 }
 
 fn indent(source: &str, spaces: usize) -> String {

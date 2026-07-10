@@ -467,6 +467,72 @@ mod tests {
     }
 
     #[test]
+    fn csharp_target_renders_fallible_calls_as_exceptions() {
+        let bindings = bindings(
+            r#"
+            #[error]
+            pub enum MathError {
+                DivisionByZero,
+                Overflow,
+            }
+
+            #[error]
+            pub struct AppError {
+                pub code: i32,
+                pub message: String,
+            }
+
+            #[export]
+            pub fn safe_divide(a: i32, b: i32) -> Result<i32, String> {
+                if b == 0 { Err("division by zero".to_string()) } else { Ok(a / b) }
+            }
+
+            #[export]
+            pub fn checked_add(a: i32, b: i32) -> Result<i32, MathError> {
+                a.checked_add(b).ok_or(MathError::Overflow)
+            }
+
+            #[export]
+            pub fn load_name(valid: bool) -> Result<String, AppError> {
+                if valid {
+                    Ok("ok".to_string())
+                } else {
+                    Err(AppError { code: 1, message: "bad".to_string() })
+                }
+            }
+
+            #[export]
+            pub fn validate(valid: bool) -> Result<(), String> {
+                if valid { Ok(()) } else { Err("bad".to_string()) }
+            }
+            "#,
+        );
+        let output = target(CSharpHost::new())
+            .render(&bindings)
+            .expect("fallible functions should render");
+
+        let source = file(&output, "Demo.cs");
+        assert!(source.contains("public static int SafeDivide(int a, int b)"));
+        assert!(source.contains("out int boltffiResult"));
+        assert!(source.contains("FfiBuf boltffiErrorBuffer = NativeMethods.NativeSafeDivide"));
+        assert!(source.contains("throw new BoltException(boltffiErrorReader.ReadString());"));
+        assert!(source.contains("return boltffiResult;"));
+        assert!(source.contains("public static string LoadName(bool valid)"));
+        assert!(source.contains("out FfiBuf boltffiResultBuffer"));
+        assert!(source.contains("throw new AppErrorException(AppError.Decode(boltffiErrorReader));"));
+        assert!(source.contains("return resultReader.ReadString();"));
+        assert!(source.contains("public static void Validate(bool valid)"));
+
+        let math_error = file(&output, "MathError.cs");
+        assert!(math_error.contains("public sealed class MathErrorException"));
+        assert!(math_error.contains("public MathError Error { get; }"));
+        let app_error = file(&output, "AppError.cs");
+        assert!(app_error.contains("public sealed class AppErrorException"));
+        assert!(app_error.contains("base(error.Message)"));
+        assert!(output.diagnostics().is_empty());
+    }
+
+    #[test]
     fn csharp_target_renders_encoded_records_from_codec_plans() {
         let bindings = bindings(
             r#"

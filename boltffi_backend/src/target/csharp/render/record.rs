@@ -31,6 +31,8 @@ pub(in crate::target::csharp) struct Record {
     name: Identifier,
     direct: bool,
     codec_payload: bool,
+    error_payload: bool,
+    error_message_field: Option<Identifier>,
     fields: Vec<Field>,
     methods: Vec<Function>,
     diagnostics: Vec<Diagnostic>,
@@ -140,6 +142,11 @@ impl Record {
             name,
             direct: true,
             codec_payload: true,
+            error_payload: declaration.is_error_payload(),
+            error_message_field: fields
+                .iter()
+                .find(|field| field.name.as_str() == "Message")
+                .map(|field| field.name.clone()),
             fields,
             methods,
             diagnostics,
@@ -229,6 +236,11 @@ impl Record {
             name,
             direct: false,
             codec_payload: true,
+            error_payload: declaration.is_error_payload(),
+            error_message_field: fields
+                .iter()
+                .find(|field| field.name.as_str() == "Message")
+                .map(|field| field.name.clone()),
             fields,
             methods,
             diagnostics,

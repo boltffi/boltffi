@@ -346,3 +346,8 @@
         public static BoltFFIResult<TOk, TErr> Ok(TOk value) => new BoltFFIResult<TOk, TErr>(value, default!, true);
         public static BoltFFIResult<TOk, TErr> Err(TErr value) => new BoltFFIResult<TOk, TErr>(default!, value, false);
     }
+
+    public sealed class BoltException : global::System.Exception
+    {
+        public BoltException(string message) : base(message) { }
+    }

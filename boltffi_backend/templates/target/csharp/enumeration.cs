@@ -46,5 +46,16 @@ namespace {{ enumeration.namespace }}
 {% for function in enumeration.methods %}
 {% include "target/csharp/function.cs" %}
 {% endfor %}    }
+{% endif %}{% if enumeration.error_payload %}
+
+    public sealed class {{ enumeration.name }}Exception : global::System.Exception
+    {
+        public {{ enumeration.name }} Error { get; }
+
+        public {{ enumeration.name }}Exception({{ enumeration.name }} error) : base(error.ToString())
+        {
+            Error = error;
+        }
+    }
 {% endif -%}
 }

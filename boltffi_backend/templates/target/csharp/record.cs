@@ -32,5 +32,16 @@ namespace {{ record.namespace }}
 {% for function in record.methods %}
 {% include "target/csharp/function.cs" %}
 {% endfor %}    }
+{% endif %}{% if record.error_payload %}
+
+    public sealed class {{ record.name }}Exception : global::System.Exception
+    {
+        public {{ record.name }} Error { get; }
+
+        public {{ record.name }}Exception({{ record.name }} error) : base({% if let Some(field) = record.error_message_field %}error.{{ field }}{% else %}error.ToString(){% endif %})
+        {
+            Error = error;
+        }
+    }
 {% endif -%}
 }
