@@ -1,4 +1,8 @@
-{% if function.checks_status %}        public {% if function.is_static %}static {% endif %}{{ function.public_return_type }} {{ function.name }}({% if let Some(owner) = function.extension_owner %}this {{ owner }} self{% if !function.parameters.is_empty() %}, {% endif %}{% endif %}{% for parameter in function.parameters %}{{ parameter.ty }} {{ parameter.name }}{% if !loop.last %}, {% endif %}{% endfor %})
+{% if let Some(body) = function.body %}        public {% if function.is_static %}static {% endif %}{{ function.public_return_type }} {{ function.name }}({% if let Some(owner) = function.extension_owner %}this {{ owner }} self{% if !function.parameters.is_empty() %}, {% endif %}{% endif %}{% for parameter in function.parameters %}{{ parameter.ty }} {{ parameter.name }}{% if !loop.last %}, {% endif %}{% endfor %})
+        {
+{{ body }}
+        }
+{% else if function.checks_status %}        public {% if function.is_static %}static {% endif %}{{ function.public_return_type }} {{ function.name }}({% if let Some(owner) = function.extension_owner %}this {{ owner }} self{% if !function.parameters.is_empty() %}, {% endif %}{% endif %}{% for parameter in function.parameters %}{{ parameter.ty }} {{ parameter.name }}{% if !loop.last %}, {% endif %}{% endfor %})
         {
             FfiStatus status = {{ function.invocation }};
             if (status.code != 0)

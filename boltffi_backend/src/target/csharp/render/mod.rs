@@ -10,7 +10,7 @@ use askama::Template;
 use boltffi_binding::{
     CanonicalName, DeclarationRef, DirectValueType, ErrorChannel, ExecutionDecl, ExportedCallable,
     ExportedMethodDecl, FunctionDecl, IncomingParam, InitializerDecl, Native, NativeSymbol,
-    ParamPlan, Primitive, Receive, ReturnPlan,
+    ParamPlan, Primitive, Receive, ReturnPlan, native,
 };
 
 use crate::{
@@ -22,8 +22,10 @@ use crate::{
 };
 
 use super::{
+    codec::{ReadExpression, Reader, Writer, primitive_read_method, primitive_write_method},
     name_style::{Name, Namespace},
     syntax::{ArgumentList, Expression, Identifier, Literal, Statement, TypeFragment},
+    type_name,
 };
 
 const TARGET: &str = "csharp";
@@ -41,6 +43,7 @@ struct NativeParameter {
     ty: TypeFragment,
     modifier: &'static str,
     marshal_i1: bool,
+    byte_array: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -69,6 +72,9 @@ pub(super) struct Function {
     is_static: bool,
     extension_owner: Option<TypeFragment>,
     return_after_status: Option<Expression>,
+    body: Option<Statement>,
+    requires_wire_runtime: bool,
+    free_buffer_entry: Option<Literal>,
     invocation: Expression,
     entry_point: Literal,
     helper_id: HelperId,
@@ -89,6 +95,16 @@ struct NativeFunctionTemplate<'function> {
 #[derive(Template)]
 #[template(path = "target/csharp/status.cs", escape = "none")]
 struct StatusTemplate;
+
+#[derive(Template)]
+#[template(path = "target/csharp/wire.cs", escape = "none")]
+struct WireTemplate;
+
+#[derive(Template)]
+#[template(path = "target/csharp/free_buffer.cs", escape = "none")]
+struct FreeBufferTemplate<'entry> {
+    entry_point: &'entry Literal,
+}
 
 #[derive(Template)]
 #[template(path = "target/csharp/module.cs", escape = "none")]
@@ -115,6 +131,7 @@ impl Function {
             declaration.symbol(),
             declaration.callable(),
             CallSite::Free,
+            None,
             bridge,
             context,
         )
@@ -135,6 +152,28 @@ impl Function {
             owner,
             owner_name,
             extension,
+            None,
+            bridge,
+            context,
+        )
+    }
+
+    pub(super) fn from_initializer_qualified(
+        declaration: &InitializerDecl<Native>,
+        owner: DirectValueType,
+        owner_name: &Identifier,
+        namespace: &Namespace,
+        bridge: &CBridgeContract,
+        context: &RenderContext<Native>,
+    ) -> Result<Self> {
+        Self::from_associated(
+            declaration.name(),
+            declaration.symbol(),
+            declaration.callable(),
+            owner,
+            owner_name,
+            false,
+            Some(namespace),
             bridge,
             context,
         )
@@ -155,6 +194,28 @@ impl Function {
             owner,
             owner_name,
             extension,
+            None,
+            bridge,
+            context,
+        )
+    }
+
+    pub(super) fn from_method_qualified(
+        declaration: &ExportedMethodDecl<Native, NativeSymbol>,
+        owner: DirectValueType,
+        owner_name: &Identifier,
+        namespace: &Namespace,
+        bridge: &CBridgeContract,
+        context: &RenderContext<Native>,
+    ) -> Result<Self> {
+        Self::from_associated(
+            declaration.name(),
+            declaration.target(),
+            declaration.callable(),
+            owner,
+            owner_name,
+            false,
+            Some(namespace),
             bridge,
             context,
         )
@@ -168,6 +229,7 @@ impl Function {
         owner: DirectValueType,
         owner_name: &Identifier,
         extension: bool,
+        type_namespace: Option<&Namespace>,
         bridge: &CBridgeContract,
         context: &RenderContext<Native>,
     ) -> Result<Self> {
@@ -189,6 +251,7 @@ impl Function {
             symbol,
             callable,
             call_site,
+            type_namespace,
             bridge,
             context,
         )
@@ -202,6 +265,7 @@ impl Function {
         symbol: &NativeSymbol,
         callable: &ExportedCallable<Native>,
         call_site: CallSite,
+        type_namespace: Option<&Namespace>,
         bridge: &CBridgeContract,
         context: &RenderContext<Native>,
     ) -> Result<Self> {
@@ -217,6 +281,8 @@ impl Function {
         let mut native_parameters = Vec::new();
         let mut invocation_arguments = Vec::new();
         let mut return_after_status = None;
+        let mut setup = Vec::new();
+        let mut requires_wire_runtime = false;
 
         if let Some(receive) = callable.receiver() {
             let (owner, owner_name, extension) = match &call_site {
@@ -238,40 +304,168 @@ impl Function {
 
         let mut parameters = Vec::new();
         for parameter in callable.params() {
-            let (ty, receive) = match parameter.payload() {
-                IncomingParam::Value(ParamPlan::Direct { ty, receive }) => (ty, *receive),
-                _ => return unsupported("non-primitive function parameters"),
-            };
             let group = parameter_groups.next().ok_or(Error::BrokenBridgeContract {
                 bridge: "c",
                 invariant: "function parameter is missing from the C bridge",
             })?;
-            let ParameterGroup::Value(index) = group else {
-                return unsupported("mutable direct function parameters");
-            };
-            let c_parameter = c_function.parameter(*index);
-            let modifier = direct_parameter_modifier(ty, receive, c_parameter.ty(), bridge)?;
             let name = Name::new(parameter.name()).camel()?;
-            let rendered_type = direct_type(ty, context)?;
-            let marshal_i1 = matches!(ty, DirectValueType::Primitive(Primitive::Bool));
-            parameters.push(Parameter {
-                name: name.clone(),
-                ty: rendered_type.clone(),
-                marshal_i1,
-            });
-            native_parameters.push(NativeParameter {
-                name: name.clone(),
-                ty: rendered_type,
-                modifier,
-                marshal_i1,
-            });
-            invocation_arguments.push(Expression::identifier(name));
+            match parameter.payload() {
+                IncomingParam::Value(ParamPlan::Direct { ty, receive }) => {
+                    let ParameterGroup::Value(index) = group else {
+                        return unsupported("mutable direct function parameters");
+                    };
+                    let c_parameter = c_function.parameter(*index);
+                    let modifier =
+                        direct_parameter_modifier(ty, *receive, c_parameter.ty(), bridge)?;
+                    let rendered_type = direct_type_with(ty, type_namespace, context)?;
+                    let marshal_i1 = matches!(ty, DirectValueType::Primitive(Primitive::Bool));
+                    parameters.push(Parameter {
+                        name: name.clone(),
+                        ty: rendered_type.clone(),
+                        marshal_i1,
+                    });
+                    native_parameters.push(NativeParameter {
+                        name: name.clone(),
+                        ty: rendered_type,
+                        modifier,
+                        marshal_i1,
+                        byte_array: false,
+                    });
+                    invocation_arguments.push(Expression::identifier(name));
+                }
+                IncomingParam::Value(ParamPlan::Encoded {
+                    ty,
+                    codec,
+                    shape,
+                    receive,
+                }) => {
+                    if *shape != native::BufferShape::Slice {
+                        return unsupported("encoded function parameter shape");
+                    }
+                    if matches!(receive, Receive::ByMutRef) {
+                        return unsupported("mutable encoded function parameters");
+                    }
+                    let ParameterGroup::ByteSlice(slice) = group else {
+                        return broken_contract(
+                            "encoded function parameter does not use a C byte slice",
+                        );
+                    };
+                    if !matches!(
+                        c_function.parameter(slice.pointer()).ty(),
+                        CBridgeType::ConstPointer(inner) if inner.as_ref() == &CBridgeType::Uint8
+                    ) || c_function.parameter(slice.length()).ty() != &CBridgeType::PointerWidth
+                    {
+                        return broken_contract(
+                            "encoded function parameter does not match the C bridge",
+                        );
+                    }
+                    parameters.push(Parameter {
+                        name: name.clone(),
+                        ty: render_type_ref(ty, type_namespace, context)?,
+                        marshal_i1: false,
+                    });
+                    let writer = generated_identifier(&name, "Writer")?;
+                    let bytes = generated_identifier(&name, "Bytes")?;
+                    let writes = codec
+                        .render_with(&mut Writer::new(
+                            writer.clone(),
+                            Expression::identifier(name.clone()),
+                            context,
+                        ))
+                        .into_iter()
+                        .collect::<Result<Vec<_>>>()?;
+                    setup.push(Statement::new(format!(
+                        "WireWriter {writer} = new WireWriter();"
+                    )));
+                    setup.extend(writes);
+                    setup.push(Statement::new(format!(
+                        "byte[] {bytes} = {writer}.ToArray();"
+                    )));
+                    native_parameters.extend([
+                        NativeParameter {
+                            name: bytes.clone(),
+                            ty: TypeFragment::new("byte[]"),
+                            modifier: "",
+                            marshal_i1: false,
+                            byte_array: true,
+                        },
+                        NativeParameter {
+                            name: generated_identifier(&name, "Length")?,
+                            ty: TypeFragment::new("nuint"),
+                            modifier: "",
+                            marshal_i1: false,
+                            byte_array: false,
+                        },
+                    ]);
+                    invocation_arguments.extend([
+                        Expression::identifier(bytes.clone()),
+                        Expression::new(format!("(nuint){bytes}.Length")),
+                    ]);
+                    requires_wire_runtime = true;
+                }
+                IncomingParam::Value(ParamPlan::ScalarOption { primitive }) => {
+                    let ParameterGroup::ByteSlice(slice) = group else {
+                        return broken_contract(
+                            "scalar option parameter does not use a C byte slice",
+                        );
+                    };
+                    if !matches!(
+                        c_function.parameter(slice.pointer()).ty(),
+                        CBridgeType::ConstPointer(inner) if inner.as_ref() == &CBridgeType::Uint8
+                    ) || c_function.parameter(slice.length()).ty() != &CBridgeType::PointerWidth
+                    {
+                        return broken_contract(
+                            "scalar option parameter does not match the C bridge",
+                        );
+                    }
+                    parameters.push(Parameter {
+                        name: name.clone(),
+                        ty: TypeFragment::new(format!("{}?", primitive_type(*primitive))),
+                        marshal_i1: false,
+                    });
+                    let writer = generated_identifier(&name, "Writer")?;
+                    let bytes = generated_identifier(&name, "Bytes")?;
+                    setup.push(Statement::new(format!(
+                        "WireWriter {writer} = new WireWriter();"
+                    )));
+                    setup.push(Statement::new(format!(
+                        "if ({name}.HasValue)\n{{\n    {writer}.WriteU8(1);\n    {writer}.{}({name}.Value);\n}}\nelse\n{{\n    {writer}.WriteU8(0);\n}}",
+                        primitive_write_method(*primitive)
+                    )));
+                    setup.push(Statement::new(format!(
+                        "byte[] {bytes} = {writer}.ToArray();"
+                    )));
+                    native_parameters.extend([
+                        NativeParameter {
+                            name: bytes.clone(),
+                            ty: TypeFragment::new("byte[]"),
+                            modifier: "",
+                            marshal_i1: false,
+                            byte_array: true,
+                        },
+                        NativeParameter {
+                            name: generated_identifier(&name, "Length")?,
+                            ty: TypeFragment::new("nuint"),
+                            modifier: "",
+                            marshal_i1: false,
+                            byte_array: false,
+                        },
+                    ]);
+                    invocation_arguments.extend([
+                        Expression::identifier(bytes.clone()),
+                        Expression::new(format!("(nuint){bytes}.Length")),
+                    ]);
+                    requires_wire_runtime = true;
+                }
+                _ => return unsupported("function parameter crossing"),
+            }
         }
 
         if parameter_groups.next().is_some() {
             return broken_contract("function parameter group count does not match the C bridge");
         }
 
+        let mut encoded_return = None;
         let (public_return_type, native_return_type, return_marshal_i1, checks_status) =
             match callable.returns().plan() {
                 ReturnPlan::Void => {
@@ -279,7 +473,9 @@ impl Function {
                         return broken_contract("void return type does not match the C bridge");
                     }
                     let public_return_type = match (&return_after_status, &call_site) {
-                        (Some(_), CallSite::Record { owner, .. }) => direct_type(owner, context)?,
+                        (Some(_), CallSite::Record { owner, .. }) => {
+                            direct_type_with(owner, type_namespace, context)?
+                        }
                         (Some(_), _) => return unsupported("mutable enum receiver"),
                         (None, _) => TypeFragment::void(),
                     };
@@ -297,13 +493,50 @@ impl Function {
                     if !c_direct_matches(ty, c_function.returns(), bridge)? {
                         return broken_contract("function return type does not match the C bridge");
                     }
-                    let rendered = direct_type(ty, context)?;
+                    let rendered = direct_type_with(ty, type_namespace, context)?;
                     (
                         rendered.clone(),
                         rendered,
                         matches!(ty, DirectValueType::Primitive(Primitive::Bool)),
                         false,
                     )
+                }
+                ReturnPlan::EncodedViaReturnSlot { ty, codec, shape } => {
+                    if *shape != native::BufferShape::Buffer
+                        || c_function.returns() != &CBridgeType::Buffer
+                    {
+                        return unsupported("encoded function return shape");
+                    }
+                    let reader = Identifier::parse("resultReader")?;
+                    let mut codec_reader = Reader::new(reader.clone(), context);
+                    if let Some(namespace) = type_namespace {
+                        codec_reader = codec_reader.qualified(namespace);
+                    }
+                    let decode = codec
+                        .render_with(&mut codec_reader)
+                        .map(ReadExpression::into_expression)?;
+                    encoded_return = Some(EncodedReturn { reader, decode });
+                    requires_wire_runtime = true;
+                    (
+                        render_type_ref(ty, type_namespace, context)?,
+                        TypeFragment::new("FfiBuf"),
+                        false,
+                        false,
+                    )
+                }
+                ReturnPlan::ScalarOptionViaReturnSlot { primitive } => {
+                    if c_function.returns() != &CBridgeType::Buffer {
+                        return broken_contract("scalar option return does not match the C bridge");
+                    }
+                    let reader = Identifier::parse("resultReader")?;
+                    let ty = TypeFragment::new(format!("{}?", primitive_type(*primitive)));
+                    let decode = Expression::new(format!(
+                        "{reader}.ReadU8() == 0 ? default({ty}) : {reader}.{}()",
+                        primitive_read_method(*primitive)
+                    ));
+                    encoded_return = Some(EncodedReturn { reader, decode });
+                    requires_wire_runtime = true;
+                    (ty, TypeFragment::new("FfiBuf"), false, false)
                 }
                 _ => return unsupported("non-primitive function returns"),
             };
@@ -318,6 +551,26 @@ impl Function {
             _ => None,
         };
         let is_static = !receiver || extension_owner.is_some();
+        let body = (!setup.is_empty() || encoded_return.is_some())
+            .then(|| {
+                render_callable_body(
+                    &setup,
+                    &invocation,
+                    checks_status,
+                    return_after_status.as_ref(),
+                    encoded_return.as_ref(),
+                )
+            })
+            .transpose()?;
+        let free_buffer_entry = encoded_return
+            .as_ref()
+            .map(|_| {
+                bridge
+                    .support()
+                    .buffer_free()
+                    .map(|function| Literal::string(function.name()))
+            })
+            .transpose()?;
 
         Ok(Self {
             name,
@@ -331,6 +584,9 @@ impl Function {
             is_static,
             extension_owner,
             return_after_status,
+            body,
+            requires_wire_runtime,
+            free_buffer_entry,
             invocation,
             entry_point: Literal::string(c_function.name()),
             helper_id,
@@ -344,11 +600,70 @@ impl Function {
                 text: NativeFunctionTemplate { function: self }.render()?.into(),
             },
         );
-        match self.checks_status {
-            true => Ok(emitted.with_aux(AuxChunk::ForwardDecl(StatusTemplate.render()?.into()))),
-            false => Ok(emitted),
+        let emitted = match self.checks_status {
+            true => emitted.with_aux(AuxChunk::ForwardDecl(StatusTemplate.render()?.into())),
+            false => emitted,
+        };
+        let emitted = match self.requires_wire_runtime {
+            true => emitted.with_aux(AuxChunk::ForwardDecl(WireTemplate.render()?.into())),
+            false => emitted,
+        };
+        match &self.free_buffer_entry {
+            Some(entry_point) => Ok(emitted.with_aux(AuxChunk::Helper {
+                id: HelperId::new(CanonicalName::single("csharp_free_buffer")),
+                text: FreeBufferTemplate { entry_point }.render()?.into(),
+            })),
+            None => Ok(emitted),
         }
     }
+}
+
+struct EncodedReturn {
+    reader: Identifier,
+    decode: Expression,
+}
+
+fn generated_identifier(source: &Identifier, suffix: &str) -> Result<Identifier> {
+    Identifier::escape(format!(
+        "{}{}",
+        source.as_str().trim_start_matches('@'),
+        suffix
+    ))
+}
+
+fn render_callable_body(
+    setup: &[Statement],
+    invocation: &Expression,
+    checks_status: bool,
+    return_after_status: Option<&Expression>,
+    encoded_return: Option<&EncodedReturn>,
+) -> Result<Statement> {
+    let mut lines = setup.iter().map(ToString::to_string).collect::<Vec<_>>();
+    match encoded_return {
+        Some(encoded) => lines.push(format!(
+            "FfiBuf boltffiResultBuffer = {invocation};\ntry\n{{\n    WireReader {} = new WireReader(boltffiResultBuffer);\n    return {};\n}}\nfinally\n{{\n    NativeMethods.FreeBuf(boltffiResultBuffer);\n}}",
+            encoded.reader, encoded.decode
+        )),
+        None if checks_status => {
+            lines.push(format!(
+                "FfiStatus status = {invocation};\nif (status.code != 0)\n{{\n    throw new global::System.InvalidOperationException($\"BoltFFI call failed with status code {{status.code}}\");\n}}"
+            ));
+            if let Some(value) = return_after_status {
+                lines.push(format!("return {value};"));
+            }
+        }
+        None => lines.push(format!("return {invocation};")),
+    }
+    Ok(Statement::new(indent(&lines.join("\n"), 12)))
+}
+
+fn indent(source: &str, spaces: usize) -> String {
+    let prefix = " ".repeat(spaces);
+    source
+        .lines()
+        .map(|line| format!("{prefix}{line}"))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 struct LoweredReceiver {
@@ -391,12 +706,14 @@ fn lower_receiver(
                         ty: ty.clone(),
                         modifier: "",
                         marshal_i1: false,
+                        byte_array: false,
                     },
                     NativeParameter {
                         name: output_name.clone(),
                         ty: ty.clone(),
                         modifier: "out ",
                         marshal_i1: false,
+                        byte_array: false,
                     },
                 ],
                 arguments: vec![
@@ -416,6 +733,7 @@ fn lower_receiver(
                     ty: TypeFragment::new(owner_name.to_string()),
                     modifier: "",
                     marshal_i1: false,
+                    byte_array: false,
                 }],
                 arguments: vec![receiver_expression],
                 return_after_status: None,
@@ -550,7 +868,7 @@ fn direct_parameter_modifier(
     }
 }
 
-pub(super) fn primitive_type(primitive: Primitive) -> TypeFragment {
+pub(in crate::target::csharp) fn primitive_type(primitive: Primitive) -> TypeFragment {
     TypeFragment::new(match primitive {
         Primitive::Bool => "bool",
         Primitive::I8 => "sbyte",
@@ -591,6 +909,31 @@ fn direct_type(ty: &DirectValueType, context: &RenderContext<Native>) -> Result<
                 shape: "missing C-style enum declaration",
             }),
         _ => unsupported("unknown direct value type"),
+    }
+}
+
+fn direct_type_with(
+    ty: &DirectValueType,
+    namespace: Option<&Namespace>,
+    context: &RenderContext<Native>,
+) -> Result<TypeFragment> {
+    let rendered = direct_type(ty, context)?;
+    Ok(match (ty, namespace) {
+        (DirectValueType::Record(_) | DirectValueType::Enum(_), Some(namespace)) => {
+            TypeFragment::new(format!("global::{namespace}.{rendered}"))
+        }
+        _ => rendered,
+    })
+}
+
+fn render_type_ref(
+    ty: &boltffi_binding::TypeRef,
+    namespace: Option<&Namespace>,
+    context: &RenderContext<Native>,
+) -> Result<TypeFragment> {
+    match namespace {
+        Some(namespace) => type_name::type_ref_qualified(ty, namespace, context),
+        None => type_name::type_ref(ty, context),
     }
 }
 

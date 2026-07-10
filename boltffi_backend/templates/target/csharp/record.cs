@@ -7,8 +7,8 @@ using System.Runtime.InteropServices;
 
 namespace {{ record.namespace }}
 {
-    [StructLayout(LayoutKind.Sequential)]
-{% if record.methods.is_empty() %}{% if record.fields.is_empty() %}    public readonly record struct {{ record.name }};
+{% if record.direct %}    [StructLayout(LayoutKind.Sequential)]
+{% endif %}{% if record.methods.is_empty() && !record.codec_payload %}{% if record.fields.is_empty() %}    public readonly record struct {{ record.name }};
 {% else %}    public readonly record struct {{ record.name }}(
 {% for field in record.fields %}        {% if field.marshal_i1 %}[field: MarshalAs(UnmanagedType.I1)] {% endif %}{{ field.ty }} {{ field.name }}{% if !loop.last %},{% endif %}
 {% endfor %}    );
@@ -17,6 +17,18 @@ namespace {{ record.namespace }}
 {% for field in record.fields %}        {% if field.marshal_i1 %}[field: MarshalAs(UnmanagedType.I1)] {% endif %}{{ field.ty }} {{ field.name }}{% if !loop.last %},{% endif %}
 {% endfor %}    )
 {% endif %}    {
+{% if record.codec_payload %}        internal static {{ record.name }} Decode(WireReader reader) =>
+            new {{ record.name }}({% if !record.fields.is_empty() %}
+{% for field in record.fields %}                {{ field.read }}{% if !loop.last %},{% endif %}
+{% endfor %}            {% endif %});
+
+        internal void Encode(WireWriter writer)
+        {
+{% for field in record.fields %}            {
+{% for statement in field.write %}{{ statement.indented(16) }}
+{% endfor %}            }
+{% endfor %}        }
+{% endif %}
 {% for function in record.methods %}
 {% include "target/csharp/function.cs" %}
 {% endfor %}    }

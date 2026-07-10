@@ -1,8 +1,10 @@
 //! C# target rendered through .NET P/Invoke over the C ABI bridge.
 
+mod codec;
 mod name_style;
 mod render;
 mod syntax;
+mod type_name;
 
 use boltffi_binding::{
     Bindings, CallbackDecl, ClassDecl, ConstantDecl, CustomTypeDecl, EnumDecl, FunctionDecl,
@@ -13,14 +15,17 @@ use crate::{
     bridge::c::{CBridge, CBridgeContract},
     core::{
         BindingCapability, BridgeCapability, CapabilityRequirements, Emitted, Error,
-        GeneratedOutput, HostCapabilities, RenderContext, RenderedDeclaration, Result, Target,
-        contract::sealed, host,
+        GeneratedOutput, HostCapabilities, RenderContext, RenderedDeclaration,
+        ResolvedCustomTypeMappings, Result, Target, contract::sealed, host,
     },
 };
 
 use name_style::{Name, Namespace};
 use syntax::Literal;
 
+pub use crate::core::{
+    CustomTypeConversion as CSharpCustomConversion, CustomTypeMapping as CSharpCustomMapping,
+};
 pub use syntax::{ArgumentList, Expression, Identifier, Statement, Syntax, TypeFragment};
 
 /// C# host renderer for direct P/Invoke calls into the BoltFFI C ABI.
@@ -29,6 +34,7 @@ pub use syntax::{ArgumentList, Expression, Identifier, Statement, Syntax, TypeFr
 pub struct CSharpHost {
     namespace: Option<Namespace>,
     library: Option<String>,
+    custom_mappings: crate::core::CustomTypeMappingSet,
 }
 
 impl CSharpHost {
@@ -46,6 +52,16 @@ impl CSharpHost {
     /// Selects the native library name used by generated DllImport declarations.
     pub fn native_library(mut self, library: impl Into<String>) -> Self {
         self.library = Some(library.into());
+        self
+    }
+
+    /// Registers a C# API mapping for one custom type.
+    pub fn custom_mapping(
+        mut self,
+        custom_type: impl Into<String>,
+        mapping: CSharpCustomMapping,
+    ) -> Self {
+        self.custom_mappings.insert(custom_type, mapping);
         self
     }
 
@@ -92,14 +108,24 @@ impl host::HostBackend for CSharpHost {
                 BindingCapability::Constants,
                 "C# constants have not migrated",
             )
-            .unsupported(
-                BindingCapability::CustomTypes,
-                "C# custom types have not migrated",
-            )
+            .stable(BindingCapability::CustomTypes)
     }
 
     fn bridge_capabilities(&self) -> CapabilityRequirements<BridgeCapability> {
         CapabilityRequirements::new().require(BridgeCapability::CAbi)
+    }
+
+    fn custom_type_mappings(
+        &self,
+        bindings: &Bindings<Self::Surface>,
+    ) -> Result<ResolvedCustomTypeMappings> {
+        self.custom_mappings
+            .resolve(bindings, "csharp", |declaration| {
+                Name::new(declaration.name())
+                    .pascal()
+                    .map(|name| name.to_string())
+                    .unwrap_or_else(|_| declaration.name().as_path_string())
+            })
     }
 
     fn record(
@@ -183,7 +209,7 @@ impl host::HostBackend for CSharpHost {
         _bridge: &Self::Bridge,
         _context: &RenderContext<Self::Surface>,
     ) -> Result<Emitted> {
-        unsupported("custom types")
+        Ok(Emitted::primary(""))
     }
 
     fn assemble<'decl>(
@@ -221,7 +247,7 @@ mod tests {
 
     use crate::{GeneratedOutput, Target, bridge::c::CBridge};
 
-    use super::CSharpHost;
+    use super::{CSharpCustomMapping, CSharpHost};
 
     fn bindings(source: &str) -> Bindings<Native> {
         let source = boltffi_scan::scan_file(
@@ -236,7 +262,7 @@ mod tests {
         host.into_target().expect("C# target")
     }
 
-    fn file<'output>(output: &'output GeneratedOutput, path: impl AsRef<Path>) -> &'output str {
+    fn file(output: &GeneratedOutput, path: impl AsRef<Path>) -> &str {
         output
             .files()
             .iter()
@@ -336,7 +362,7 @@ mod tests {
             pub fn add(left: i32, right: i32) -> i32 { left + right }
 
             #[export]
-            pub fn greet(name: String) -> String { name }
+            pub async fn fetch() -> i32 { 1 }
             "#,
         );
         let output = target(CSharpHost::new())
@@ -345,12 +371,200 @@ mod tests {
 
         let source = file(&output, "Demo.cs");
         assert!(source.contains("public static int Add(int left, int right)"));
-        assert!(!source.contains("Greet"));
+        assert!(!source.contains("Fetch"));
         let [unsupported] = output.coverage().unsupported() else {
             panic!("expected one unsupported declaration")
         };
-        assert_eq!(unsupported.declaration().name(), "greet");
-        assert_eq!(unsupported.reason(), "non-primitive function parameters");
+        assert_eq!(unsupported.declaration().name(), "fetch");
+        assert_eq!(unsupported.reason(), "asynchronous functions");
+    }
+
+    #[test]
+    fn csharp_target_renders_encoded_functions_through_wire_runtime() {
+        let bindings = bindings(
+            r#"
+            #[export]
+            pub fn greet(name: String) -> String { name }
+
+            #[export]
+            pub fn echo_bytes(value: Vec<u8>) -> Vec<u8> { value }
+
+            #[export]
+            pub fn echo_maybe(value: Option<String>) -> Option<String> { value }
+
+            #[export]
+            pub fn echo_all(values: Vec<String>) -> Vec<String> { values }
+
+            #[export]
+            pub fn echo_count(value: Option<i32>) -> Option<i32> { value }
+            "#,
+        );
+        let output = target(CSharpHost::new())
+            .render(&bindings)
+            .expect("encoded functions should render");
+
+        let source = file(&output, "Demo.cs");
+        assert!(source.contains("public static string Greet(string name)"));
+        assert!(source.contains("nameWriter.WriteString(name);"));
+        assert!(source.contains("return resultReader.ReadString();"));
+        assert!(source.contains("public static byte[] EchoBytes(byte[] value)"));
+        assert!(source.contains("public static string? EchoMaybe(string? value)"));
+        assert!(source.contains("if (value is { } boltffiValue0)"));
+        assert!(source.contains("public static string[] EchoAll(string[] values)"));
+        assert!(source.contains("foreach (var boltffiValue0 in values)"));
+        assert!(source.contains("public static int? EchoCount(int? value)"));
+        assert!(source.contains("valueWriter.WriteI32(value.Value);"));
+        assert!(
+            source.contains("resultReader.ReadU8() == 0 ? default(int?) : resultReader.ReadI32()")
+        );
+        assert!(source.contains("internal sealed class WireReader"));
+        assert!(source.contains("internal sealed class WireWriter"));
+        assert!(source.contains("internal static extern void FreeBuf(FfiBuf buffer);"));
+        assert!(source.contains("[In] byte[] nameBytes, nuint nameLength"));
+        assert!(output.diagnostics().is_empty());
+    }
+
+    #[test]
+    fn csharp_target_renders_encoded_records_from_codec_plans() {
+        let bindings = bindings(
+            r#"
+            #[repr(C)]
+            #[data]
+            pub struct Point {
+                pub x: i32,
+                pub y: i32,
+            }
+
+            #[data]
+            pub struct Profile {
+                pub name: String,
+                pub aliases: Vec<String>,
+                pub location: Point,
+                pub outcome: Result<i32, String>,
+            }
+
+            #[export]
+            pub fn echo_profile(profile: Profile) -> Profile { profile }
+            "#,
+        );
+        let output = target(CSharpHost::new())
+            .render(&bindings)
+            .expect("encoded records should render");
+
+        let profile = file(&output, "Profile.cs");
+        assert!(profile.contains("public readonly record struct Profile("));
+        assert!(profile.contains("string Name,"));
+        assert!(profile.contains("string[] Aliases,"));
+        assert!(profile.contains("Point Location"));
+        assert!(profile.contains("BoltFFIResult<int, string> Outcome"));
+        assert!(profile.contains("internal static Profile Decode(WireReader reader)"));
+        assert!(profile.contains("reader.ReadString()"));
+        assert!(profile.contains("reader.ReadArray(reader => reader.ReadString())"));
+        assert!(profile.contains("Point.Decode(reader)"));
+        assert!(profile.contains(
+            "reader.ReadResult(reader => reader.ReadI32(), reader => reader.ReadString())"
+        ));
+        assert!(profile.contains("writer.WriteString(this.Name);"));
+        assert!(profile.contains("this.Location.Encode(writer);"));
+        assert!(profile.contains("if (this.Outcome.IsOk)"));
+
+        let point = file(&output, "Point.cs");
+        assert!(point.contains("[StructLayout(LayoutKind.Sequential)]"));
+        assert!(point.contains("internal static Point Decode(WireReader reader)"));
+        assert!(point.contains("writer.WriteI32(this.X);"));
+
+        let module = file(&output, "Demo.cs");
+        assert!(module.contains("public static Profile EchoProfile(Profile profile)"));
+        assert!(module.contains("profile.Encode(profileWriter);"));
+        assert!(module.contains("return Profile.Decode(resultReader);"));
+        assert!(output.diagnostics().is_empty());
+    }
+
+    #[test]
+    fn csharp_target_renders_data_enums_from_codec_plans() {
+        let bindings = bindings(
+            r#"
+            #[data]
+            pub enum Shape {
+                Empty,
+                Circle { radius: f64 },
+                Label(String),
+            }
+
+            #[export]
+            pub fn echo_shape(shape: Shape) -> Shape { shape }
+            "#,
+        );
+        let output = target(CSharpHost::new())
+            .render(&bindings)
+            .expect("data enums should render");
+
+        let shape = file(&output, "Shape.cs");
+        assert!(shape.contains("public abstract record Shape"));
+        assert!(shape.contains("internal static Shape Decode(WireReader reader)"));
+        assert!(shape.contains("0 => new Empty()"));
+        assert!(shape.contains("1 => new Circle(reader.ReadF64())"));
+        assert!(shape.contains("2 => new Label(reader.ReadString())"));
+        assert!(shape.contains("case Circle value:"));
+        assert!(shape.contains("writer.WriteF64(value.Radius);"));
+        assert!(shape.contains("public sealed record Circle(double Radius) : Shape;"));
+        assert!(shape.contains("public sealed record Label(string Field0) : Shape;"));
+
+        let module = file(&output, "Demo.cs");
+        assert!(module.contains("public static Shape EchoShape(Shape shape)"));
+        assert!(module.contains("shape.Encode(shapeWriter);"));
+        assert!(module.contains("return Shape.Decode(resultReader);"));
+        assert!(output.diagnostics().is_empty());
+    }
+
+    #[test]
+    fn csharp_target_renders_builtins_and_custom_mappings() {
+        let bindings = bindings(
+            r#"
+            custom_type!(
+                pub Email,
+                remote = EmailRust,
+                repr = String,
+                into_ffi = email_into_ffi,
+                try_from_ffi = email_from_ffi
+            );
+
+            #[export]
+            pub fn keep_email(value: EmailRust) -> EmailRust { value }
+
+            #[export]
+            pub fn keep_duration(value: std::time::Duration) -> std::time::Duration { value }
+
+            #[export]
+            pub fn keep_time(value: std::time::SystemTime) -> std::time::SystemTime { value }
+
+            #[export]
+            pub fn keep_uuid(value: uuid::Uuid) -> uuid::Uuid { value }
+
+            #[export]
+            pub fn keep_url(value: url::Url) -> url::Url { value }
+            "#,
+        );
+        let output = target(CSharpHost::new().custom_mapping(
+            "Email",
+            CSharpCustomMapping::url_string("global::System.Uri"),
+        ))
+        .render(&bindings)
+        .expect("builtins and custom mappings should render");
+
+        let source = file(&output, "Demo.cs");
+        assert!(
+            source.contains("public static global::System.Uri KeepEmail(global::System.Uri value)")
+        );
+        assert!(source.contains("valueWriter.WriteString(value.ToString());"));
+        assert!(source.contains("return new global::System.Uri(resultReader.ReadString());"));
+        assert!(source.contains("global::System.TimeSpan KeepDuration"));
+        assert!(source.contains("valueWriter.WriteDuration(value);"));
+        assert!(source.contains("resultReader.ReadDuration()"));
+        assert!(source.contains("global::System.DateTime KeepTime"));
+        assert!(source.contains("global::System.Guid KeepUuid"));
+        assert!(source.contains("global::System.Uri KeepUrl"));
+        assert!(output.diagnostics().is_empty());
     }
 
     #[test]
@@ -396,7 +610,25 @@ mod tests {
             public readonly record struct Point(
                 int X,
                 int Y
-            );
+            )
+            {
+                internal static Point Decode(WireReader reader) =>
+                    new Point(
+                        reader.ReadI32(),
+                        reader.ReadI32()
+                    );
+
+                internal void Encode(WireWriter writer)
+                {
+                    {
+                        writer.WriteI32(this.X);
+                    }
+                    {
+                        writer.WriteI32(this.Y);
+                    }
+                }
+
+            }
         }
         "###);
         insta::assert_snapshot!(file(&output, "Mode.cs"), @r###"

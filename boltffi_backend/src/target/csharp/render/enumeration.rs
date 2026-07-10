@@ -1,18 +1,21 @@
 use askama::Template;
 use boltffi_binding::{
-    CStyleEnumDecl, CanonicalName, DirectValueType, EnumDecl, Native, Primitive,
+    CStyleEnumDecl, CanonicalName, DataEnumDecl, DataVariantPayload, DirectValueType, EnumDecl,
+    FieldKey, Native, Primitive,
 };
 
 use crate::{
     bridge::c::{CBridgeContract, Type as CBridgeType},
-    core::{Diagnostic, Emitted, Error, RenderContext, Result},
+    core::{AuxChunk, Diagnostic, Emitted, Error, RenderContext, Result},
 };
 
 use super::super::{
+    codec::{ReadExpression, Reader, ValueScope, Writer},
     name_style::{Name, Namespace},
-    syntax::{Identifier, TypeFragment},
+    syntax::{Expression, Identifier, Statement, TypeFragment},
+    type_name,
 };
-use super::{Function, primitive_type};
+use super::{Function, WireTemplate, primitive_type};
 
 #[derive(Template)]
 #[template(path = "target/csharp/enumeration.cs", escape = "none")]
@@ -24,8 +27,10 @@ struct EnumerationTemplate<'enumeration> {
 pub(in crate::target::csharp) struct Enumeration {
     namespace: Namespace,
     name: Identifier,
+    c_style: bool,
     underlying_type: TypeFragment,
     variants: Vec<Variant>,
+    data_variants: Vec<DataVariant>,
     methods: Vec<Function>,
     diagnostics: Vec<Diagnostic>,
 }
@@ -34,6 +39,22 @@ pub(in crate::target::csharp) struct Enumeration {
 struct Variant {
     name: Identifier,
     discriminant: i128,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct DataVariant {
+    name: Identifier,
+    tag: u32,
+    fields: Vec<DataField>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct DataField {
+    key: FieldKey,
+    name: Identifier,
+    ty: TypeFragment,
+    read: Expression,
+    write: Vec<Statement>,
 }
 
 impl Enumeration {
@@ -47,10 +68,7 @@ impl Enumeration {
             EnumDecl::CStyle(enumeration) => {
                 Self::from_c_style(enumeration, namespace, bridge, context)
             }
-            EnumDecl::Data(_) => Err(Error::UnsupportedTarget {
-                target: "csharp",
-                shape: "data enums",
-            }),
+            EnumDecl::Data(enumeration) => Self::from_data(enumeration, namespace, bridge, context),
             _ => Err(Error::UnexpectedBindingShape {
                 layer: "csharp enum",
                 shape: "unknown enum declaration",
@@ -135,8 +153,139 @@ impl Enumeration {
         Ok(Self {
             namespace,
             name,
+            c_style: true,
             underlying_type: primitive_type(primitive),
             variants,
+            data_variants: Vec::new(),
+            methods,
+            diagnostics,
+        })
+    }
+
+    fn from_data(
+        declaration: &DataEnumDecl<Native>,
+        namespace: Namespace,
+        bridge: &CBridgeContract,
+        context: &RenderContext<Native>,
+    ) -> Result<Self> {
+        let reader = Identifier::parse("reader")?;
+        let writer = Identifier::parse("writer")?;
+        let data_variants = declaration
+            .variants()
+            .iter()
+            .map(|variant| {
+                let fields = match variant.payload() {
+                    DataVariantPayload::Unit => Vec::new(),
+                    DataVariantPayload::Tuple(fields) | DataVariantPayload::Struct(fields) => {
+                        let scope = ValueScope::fields(
+                            fields
+                                .iter()
+                                .map(|field| {
+                                    Ok((
+                                        field.key().clone(),
+                                        Expression::new(format!(
+                                            "value.{}",
+                                            data_field_name(field.key())?
+                                        )),
+                                    ))
+                                })
+                                .collect::<Result<Vec<_>>>()?,
+                        );
+                        fields
+                            .iter()
+                            .map(|field| {
+                                Ok(DataField {
+                                    key: field.key().clone(),
+                                    name: data_field_name(field.key())?,
+                                    ty: type_name::type_ref_qualified(
+                                        field.ty(),
+                                        &namespace,
+                                        context,
+                                    )?,
+                                    read: field
+                                        .read()
+                                        .render_with(
+                                            &mut Reader::new(reader.clone(), context)
+                                                .qualified(&namespace),
+                                        )
+                                        .map(ReadExpression::into_expression)?,
+                                    write: field
+                                        .write()
+                                        .render_with(&mut Writer::new(
+                                            writer.clone(),
+                                            scope.clone(),
+                                            context,
+                                        ))
+                                        .into_iter()
+                                        .collect::<Result<Vec<_>>>()?,
+                                })
+                            })
+                            .collect::<Result<Vec<_>>>()?
+                    }
+                    _ => {
+                        return Err(Error::UnexpectedBindingShape {
+                            layer: "csharp enum",
+                            shape: "unknown data enum payload",
+                        });
+                    }
+                };
+                Ok(DataVariant {
+                    name: Name::new(variant.name()).pascal()?,
+                    tag: variant.tag().get(),
+                    fields,
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let name = Name::new(declaration.name()).pascal()?;
+        let owner = DirectValueType::Enum(declaration.id());
+        let mut methods = Vec::new();
+        let mut diagnostics = Vec::new();
+        for initializer in declaration.initializers() {
+            collect_associated(
+                &mut methods,
+                &mut diagnostics,
+                "initializer",
+                initializer.name(),
+                Function::from_initializer_qualified(
+                    initializer,
+                    owner.clone(),
+                    &name,
+                    &namespace,
+                    bridge,
+                    context,
+                ),
+            )?;
+        }
+        for method in declaration.methods() {
+            if method.callable().receiver().is_some() {
+                diagnostics.push(Diagnostic::new(format!(
+                    "method {}: encoded enum receiver",
+                    Name::new(method.name()).pascal()?
+                )));
+                continue;
+            }
+            collect_associated(
+                &mut methods,
+                &mut diagnostics,
+                "method",
+                method.name(),
+                Function::from_method_qualified(
+                    method,
+                    owner.clone(),
+                    &name,
+                    &namespace,
+                    bridge,
+                    context,
+                ),
+            )?;
+        }
+        Ok(Self {
+            namespace,
+            name,
+            c_style: false,
+            underlying_type: TypeFragment::void(),
+            variants: Vec::new(),
+            data_variants,
             methods,
             diagnostics,
         })
@@ -152,7 +301,21 @@ impl Enumeration {
             }
             emitted = emitted.with_diagnostics(diagnostics);
         }
+        if !self.c_style {
+            emitted = emitted.with_aux(AuxChunk::ForwardDecl(WireTemplate.render()?.into()));
+        }
         Ok(emitted)
+    }
+}
+
+fn data_field_name(key: &FieldKey) -> Result<Identifier> {
+    match key {
+        FieldKey::Named(name) => Name::new(name).pascal(),
+        FieldKey::Position(position) => Identifier::parse(format!("Field{position}")),
+        _ => Err(Error::UnexpectedBindingShape {
+            layer: "csharp enum",
+            shape: "unknown data enum field key",
+        }),
     }
 }
 

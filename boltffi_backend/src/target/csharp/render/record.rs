@@ -1,18 +1,23 @@
 use askama::Template;
 use boltffi_binding::{
-    CanonicalName, DirectRecordDecl, DirectValueType, FieldKey, Native, RecordDecl,
+    CanonicalName, DirectRecordDecl, DirectValueType, EncodedRecordDecl, FieldKey, Native,
+    RecordDecl,
 };
 
 use crate::{
     bridge::c::{CBridgeContract, Type as CBridgeType},
-    core::{Diagnostic, Emitted, Error, RenderContext, Result},
+    core::{AuxChunk, Diagnostic, Emitted, Error, RenderContext, Result},
 };
 
 use super::super::{
+    codec::{
+        ReadExpression, Reader, ValueScope, Writer, primitive_read_method, primitive_write_method,
+    },
     name_style::{Name, Namespace},
-    syntax::{Identifier, TypeFragment},
+    syntax::{Expression, Identifier, Statement, TypeFragment},
+    type_name,
 };
-use super::{Function, primitive_type};
+use super::{Function, WireTemplate, primitive_type};
 
 #[derive(Template)]
 #[template(path = "target/csharp/record.cs", escape = "none")]
@@ -24,6 +29,8 @@ struct RecordTemplate<'record> {
 pub(in crate::target::csharp) struct Record {
     namespace: Namespace,
     name: Identifier,
+    direct: bool,
+    codec_payload: bool,
     fields: Vec<Field>,
     methods: Vec<Function>,
     diagnostics: Vec<Diagnostic>,
@@ -34,6 +41,8 @@ struct Field {
     name: Identifier,
     ty: TypeFragment,
     marshal_i1: bool,
+    read: Expression,
+    write: Vec<Statement>,
 }
 
 impl Record {
@@ -45,10 +54,7 @@ impl Record {
     ) -> Result<Self> {
         match declaration {
             RecordDecl::Direct(record) => Self::from_direct(record, namespace, bridge, context),
-            RecordDecl::Encoded(_) => Err(Error::UnsupportedTarget {
-                target: "csharp",
-                shape: "encoded records",
-            }),
+            RecordDecl::Encoded(record) => Self::from_encoded(record, namespace, bridge, context),
             _ => Err(Error::UnexpectedBindingShape {
                 layer: "csharp record",
                 shape: "unknown record declaration",
@@ -91,6 +97,12 @@ impl Record {
                     name: field_name(field.key())?,
                     ty: primitive_type(primitive),
                     marshal_i1: matches!(primitive, boltffi_binding::Primitive::Bool),
+                    read: Expression::new(format!("reader.{}()", primitive_read_method(primitive))),
+                    write: vec![Statement::new(format!(
+                        "writer.{}(this.{});",
+                        primitive_write_method(primitive),
+                        field_name(field.key())?
+                    ))],
                 })
             })
             .collect::<Result<Vec<_>>>()?;
@@ -126,6 +138,95 @@ impl Record {
         Ok(Self {
             namespace,
             name,
+            direct: true,
+            codec_payload: true,
+            fields,
+            methods,
+            diagnostics,
+        })
+    }
+
+    fn from_encoded(
+        declaration: &EncodedRecordDecl<Native>,
+        namespace: Namespace,
+        bridge: &CBridgeContract,
+        context: &RenderContext<Native>,
+    ) -> Result<Self> {
+        let name = Name::new(declaration.name()).pascal()?;
+        let reader = Identifier::parse("reader")?;
+        let writer = Identifier::parse("writer")?;
+        let scope = ValueScope::fields(
+            declaration
+                .fields()
+                .iter()
+                .map(|field| {
+                    Ok((
+                        field.key().clone(),
+                        Expression::new(format!("this.{}", field_name(field.key())?)),
+                    ))
+                })
+                .collect::<Result<Vec<_>>>()?,
+        );
+        let fields = declaration
+            .fields()
+            .iter()
+            .map(|field| {
+                Ok(Field {
+                    name: field_name(field.key())?,
+                    ty: type_name::type_ref(field.ty(), context)?,
+                    marshal_i1: false,
+                    read: field
+                        .read()
+                        .render_with(&mut Reader::new(reader.clone(), context))
+                        .map(ReadExpression::into_expression)?,
+                    write: field
+                        .write()
+                        .render_with(&mut Writer::new(writer.clone(), scope.clone(), context))
+                        .into_iter()
+                        .collect::<Result<Vec<_>>>()?,
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let owner = DirectValueType::Record(declaration.id());
+        let mut methods = Vec::new();
+        let mut diagnostics = Vec::new();
+        for initializer in declaration.initializers() {
+            collect_associated(
+                &mut methods,
+                &mut diagnostics,
+                "initializer",
+                initializer.name(),
+                Function::from_initializer(
+                    initializer,
+                    owner.clone(),
+                    &name,
+                    false,
+                    bridge,
+                    context,
+                ),
+            )?;
+        }
+        for method in declaration.methods() {
+            if method.callable().receiver().is_some() {
+                diagnostics.push(Diagnostic::new(format!(
+                    "method {}: encoded record receiver",
+                    Name::new(method.name()).pascal()?
+                )));
+                continue;
+            }
+            collect_associated(
+                &mut methods,
+                &mut diagnostics,
+                "method",
+                method.name(),
+                Function::from_method(method, owner.clone(), &name, false, bridge, context),
+            )?;
+        }
+        Ok(Self {
+            namespace,
+            name,
+            direct: false,
+            codec_payload: true,
             fields,
             methods,
             diagnostics,
@@ -141,6 +242,9 @@ impl Record {
                 emitted = emitted.with_aux(chunk);
             }
             emitted = emitted.with_diagnostics(diagnostics);
+        }
+        if self.codec_payload {
+            emitted = emitted.with_aux(AuxChunk::ForwardDecl(WireTemplate.render()?.into()));
         }
         Ok(emitted)
     }

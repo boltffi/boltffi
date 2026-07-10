@@ -222,6 +222,15 @@ impl Statement {
     pub(crate) fn new(statement: impl Into<String>) -> Self {
         Self(statement.into())
     }
+
+    pub(crate) fn indented(&self, spaces: usize) -> String {
+        let prefix = " ".repeat(spaces);
+        self.0
+            .lines()
+            .map(|line| format!("{prefix}{line}"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
 }
 
 impl sealed::SyntaxFragment for Literal {}
