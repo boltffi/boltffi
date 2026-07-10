@@ -65,6 +65,18 @@ pub(super) fn class(id: ClassId, context: &RenderContext<Native>) -> Result<Type
         })
 }
 
+pub(super) fn callback(id: CallbackId, context: &RenderContext<Native>) -> Result<TypeFragment> {
+    context
+        .callback(id)
+        .map(|callback| Name::new(callback.name()).pascal())
+        .transpose()?
+        .map(|name| TypeFragment::new(name.to_string()))
+        .ok_or(Error::UnexpectedBindingShape {
+            layer: "csharp type",
+            shape: "missing callback declaration",
+        })
+}
+
 struct Renderer<'context, 'bindings> {
     context: &'context RenderContext<'bindings, Native>,
     namespace: Option<&'context Namespace>,
@@ -97,8 +109,8 @@ impl TypeRefRender for Renderer<'_, '_> {
         qualify(class(id, self.context)?, self.namespace)
     }
 
-    fn callback(&mut self, _: CallbackId) -> Self::Output {
-        super::unsupported("callback type")
+    fn callback(&mut self, id: CallbackId) -> Self::Output {
+        qualify(callback(id, self.context)?, self.namespace)
     }
 
     fn custom(&mut self, id: CustomTypeId) -> Self::Output {

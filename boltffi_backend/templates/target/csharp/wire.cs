@@ -5,6 +5,19 @@
         internal nuint len;
         internal nuint cap;
         internal nuint align;
+
+        internal static FfiBuf FromBytes(byte[] bytes) =>
+            NativeMethods.BufFromBytes(bytes, (nuint)bytes.Length);
+
+        internal static FfiBuf FromRawArray<T>(T[] values) where T : unmanaged =>
+            FromBytes(global::System.Runtime.InteropServices.MemoryMarshal.AsBytes(global::System.MemoryExtensions.AsSpan(values)).ToArray());
+
+        internal static FfiBuf FromRawBoolArray(bool[] values)
+        {
+            byte[] bytes = new byte[values.Length];
+            for (int index = 0; index < values.Length; index++) bytes[index] = values[index] ? (byte)1 : (byte)0;
+            return FromBytes(bytes);
+        }
     }
 
     internal sealed class WireReader

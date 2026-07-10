@@ -1,7 +1,9 @@
+mod callback;
 mod class;
 mod enumeration;
 mod record;
 
+pub(in crate::target::csharp) use callback::Callback;
 pub(in crate::target::csharp) use class::Class;
 pub(in crate::target::csharp) use enumeration::Enumeration;
 pub(in crate::target::csharp) use record::Record;
@@ -92,6 +94,7 @@ pub(super) struct Function {
     return_after_status: Option<Expression>,
     body: Option<Statement>,
     requires_wire_runtime: bool,
+    requires_callback_runtime: bool,
     free_buffer_entry: Option<Literal>,
     invocation: Expression,
     entry_point: Literal,
@@ -124,6 +127,10 @@ struct WireTemplate;
 struct AsyncRuntimeTemplate;
 
 #[derive(Template)]
+#[template(path = "target/csharp/callback_runtime.cs", escape = "none")]
+struct CallbackRuntimeTemplate;
+
+#[derive(Template)]
 #[template(path = "target/csharp/async_native.cs", escape = "none")]
 struct AsyncNativeTemplate<'call> {
     asynchronous: &'call AsyncCall,
@@ -132,6 +139,12 @@ struct AsyncNativeTemplate<'call> {
 #[derive(Template)]
 #[template(path = "target/csharp/free_buffer.cs", escape = "none")]
 struct FreeBufferTemplate<'entry> {
+    entry_point: &'entry Literal,
+}
+
+#[derive(Template)]
+#[template(path = "target/csharp/copy_buffer.cs", escape = "none")]
+struct CopyBufferTemplate<'entry> {
     entry_point: &'entry Literal,
 }
 
@@ -404,6 +417,7 @@ impl Function {
         let mut encoded_writeback = None;
         let mut setup = Vec::new();
         let mut requires_wire_runtime = false;
+        let mut requires_callback_runtime = false;
         let encoded_error = lower_error(
             callable.error().channel(),
             type_namespace,
@@ -571,11 +585,35 @@ impl Function {
                     {
                         return broken_contract("handle parameter does not match the C bridge");
                     }
-                    let (public_type, handle) = match target {
-                        HandleTarget::Class(class) => {
-                            (type_name::class(*class, context)?, "Handle")
+                    let (public_type, argument) = match target {
+                        HandleTarget::Class(class) => (
+                            type_name::class(*class, context)?,
+                            match presence {
+                                HandlePresence::Required => format!("{name}.Handle"),
+                                HandlePresence::Nullable => {
+                                    format!("{name}?.Handle ?? 0")
+                                }
+                                _ => return unsupported("unknown handle presence"),
+                            },
+                        ),
+                        HandleTarget::Callback(callback) => {
+                            requires_callback_runtime = true;
+                            let ty = type_name::callback(*callback, context)?;
+                            let bridge = format!("{ty}Bridge");
+                            (
+                                ty,
+                                match presence {
+                                    HandlePresence::Required => {
+                                        format!("{bridge}.Create({name})")
+                                    }
+                                    HandlePresence::Nullable => {
+                                        format!("{bridge}.Create({name})")
+                                    }
+                                    _ => return unsupported("unknown handle presence"),
+                                },
+                            )
                         }
-                        _ => return unsupported("non-class handle parameter"),
+                        _ => return unsupported("stream handle parameter"),
                     };
                     let public_type = match presence {
                         HandlePresence::Required => public_type,
@@ -595,11 +633,7 @@ impl Function {
                         marshal_bool_array: false,
                         byte_array: false,
                     });
-                    invocation_arguments.push(Expression::new(match presence {
-                        HandlePresence::Required => format!("{name}.{handle}"),
-                        HandlePresence::Nullable => format!("{name}?.{handle} ?? 0"),
-                        _ => return unsupported("unknown handle presence"),
-                    }));
+                    invocation_arguments.push(Expression::new(argument));
                 }
                 IncomingParam::Value(ParamPlan::ScalarOption { primitive }) => {
                     let ParameterGroup::ByteSlice(slice) = group else {
@@ -874,7 +908,9 @@ impl Function {
                         ty: handle_target_type(target, context)?,
                         native_type: handle_carrier_type(*carrier)?,
                         nullable: matches!(presence, HandlePresence::Nullable),
+                        callback: matches!(target, HandleTarget::Callback(_)),
                     });
+                    requires_callback_runtime |= matches!(target, HandleTarget::Callback(_));
                     (public_type, handle_carrier_type(*carrier)?, false, false)
                 }
                 ReturnPlan::ScalarOptionViaReturnSlot { primitive } => {
@@ -1063,7 +1099,9 @@ impl Function {
                         handle_target_type(target, context)?,
                         &result,
                         matches!(presence, HandlePresence::Nullable),
+                        matches!(target, HandleTarget::Callback(_)),
                     ));
+                    requires_callback_runtime |= matches!(target, HandleTarget::Callback(_));
                     (
                         handle_public_type(target, *presence, context)?,
                         TypeFragment::new("FfiBuf"),
@@ -1177,6 +1215,7 @@ impl Function {
             return_after_status,
             body,
             requires_wire_runtime,
+            requires_callback_runtime,
             free_buffer_entry,
             invocation,
             entry_point: Literal::string(c_function.name()),
@@ -1208,6 +1247,12 @@ impl Function {
             true => emitted.with_aux(AuxChunk::ForwardDecl(WireTemplate.render()?.into())),
             false => emitted,
         };
+        let emitted = match self.requires_callback_runtime {
+            true => emitted.with_aux(AuxChunk::ForwardDecl(
+                CallbackRuntimeTemplate.render()?.into(),
+            )),
+            false => emitted,
+        };
         match &self.free_buffer_entry {
             Some(entry_point) => Ok(emitted.with_aux(AuxChunk::Helper {
                 id: HelperId::new(CanonicalName::single("csharp_free_buffer")),
@@ -1234,6 +1279,7 @@ struct HandleReturn {
     ty: TypeFragment,
     native_type: TypeFragment,
     nullable: bool,
+    callback: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1384,7 +1430,7 @@ fn render_callable_body(
         lines.push(format!(
             "{} {local} = {invocation};\nreturn {};",
             handle.native_type,
-            handle_value_expression(handle.ty.clone(), &local, handle.nullable),
+            handle_value_expression(handle.ty.clone(), &local, handle.nullable, handle.callback,),
         ));
         return Ok(Statement::new(indent(&lines.join("\n"), 12)));
     }
@@ -1475,7 +1521,12 @@ fn render_async_body(
             ));
             completion.push(format!(
                 "return {};",
-                handle_value_expression(handle.ty.clone(), &local, handle.nullable)
+                handle_value_expression(
+                    handle.ty.clone(),
+                    &local,
+                    handle.nullable,
+                    handle.callback,
+                )
             ));
         }
         None if returns_void => {
@@ -1817,13 +1868,17 @@ impl<'module> Module<'module> {
             diagnostics.extend(emitted_diagnostics);
             let standalone = matches!(
                 declaration_ref,
-                DeclarationRef::Record(_) | DeclarationRef::Enum(_) | DeclarationRef::Class(_)
+                DeclarationRef::Record(_)
+                    | DeclarationRef::Enum(_)
+                    | DeclarationRef::Class(_)
+                    | DeclarationRef::Callback(_)
             );
             if standalone {
                 let name = match declaration_ref {
                     DeclarationRef::Record(record) => record.name(),
                     DeclarationRef::Enum(enumeration) => enumeration.name(),
                     DeclarationRef::Class(class) => class.name(),
+                    DeclarationRef::Callback(callback) => callback.name(),
                     _ => unreachable!(),
                 };
                 files.push(GeneratedFile::new(
@@ -1940,7 +1995,8 @@ fn handle_target_type(
 ) -> Result<TypeFragment> {
     match target {
         HandleTarget::Class(class) => type_name::class(*class, context),
-        _ => unsupported("non-class handle target"),
+        HandleTarget::Callback(callback) => type_name::callback(*callback, context),
+        _ => unsupported("stream handle target"),
     }
 }
 
@@ -1957,10 +2013,19 @@ fn handle_public_type(
     }
 }
 
-fn handle_value_expression(ty: TypeFragment, handle: &Identifier, nullable: bool) -> Expression {
-    match nullable {
-        true => Expression::new(format!("{handle} == 0 ? null : new {ty}({handle})")),
-        false => Expression::new(format!(
+fn handle_value_expression(
+    ty: TypeFragment,
+    handle: &Identifier,
+    nullable: bool,
+    callback: bool,
+) -> Expression {
+    match (callback, nullable) {
+        (true, true) => Expression::new(format!(
+            "{handle}.IsNull ? null : {ty}Bridge.Wrap({handle})"
+        )),
+        (true, false) => Expression::new(format!("{ty}Bridge.Wrap({handle})")),
+        (false, true) => Expression::new(format!("{handle} == 0 ? null : new {ty}({handle})")),
+        (false, false) => Expression::new(format!(
             "{handle} == 0 ? throw new global::System.InvalidOperationException(\"BoltFFI returned a null {ty} handle\") : new {ty}({handle})"
         )),
     }

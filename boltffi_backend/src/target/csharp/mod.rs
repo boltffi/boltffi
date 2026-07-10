@@ -99,10 +99,7 @@ impl host::HostBackend for CSharpHost {
             .stable(BindingCapability::Enums)
             .stable(BindingCapability::Functions)
             .stable(BindingCapability::Classes)
-            .unsupported(
-                BindingCapability::Callbacks,
-                "C# callbacks have not migrated",
-            )
+            .stable(BindingCapability::Callbacks)
             .unsupported(BindingCapability::Streams, "C# streams have not migrated")
             .unsupported(
                 BindingCapability::Constants,
@@ -184,11 +181,17 @@ impl host::HostBackend for CSharpHost {
 
     fn callback(
         &self,
-        _decl: &CallbackDecl<Self::Surface>,
-        _bridge: &Self::Bridge,
-        _context: &RenderContext<Self::Surface>,
+        decl: &CallbackDecl<Self::Surface>,
+        bridge: &Self::Bridge,
+        context: &RenderContext<Self::Surface>,
     ) -> Result<Emitted> {
-        unsupported("callbacks")
+        render::Callback::from_declaration(
+            decl,
+            self.namespace_for(context.bindings())?,
+            bridge,
+            context,
+        )?
+        .render()
     }
 
     fn stream(
@@ -393,6 +396,149 @@ mod tests {
         assert!(source.contains("global::System.Threading.Tasks.Task<string> Greet"));
         assert!(source.contains("global::System.Threading.Tasks.Task<int> Checked"));
         assert!(source.contains("throw new BoltException(boltffiErrorReader.ReadString());"));
+        assert!(output.diagnostics().is_empty());
+    }
+
+    #[test]
+    fn csharp_target_renders_callback_interfaces_and_handles() {
+        let bindings = bindings(
+            r#"
+            #[export]
+            pub trait ValueCallback {
+                fn on_value(&self, value: i32) -> i32;
+            }
+
+            #[export]
+            pub fn invoke(callback: impl ValueCallback, value: i32) -> i32 {
+                callback.on_value(value)
+            }
+
+            #[export]
+            pub fn make_callback(delta: i32) -> Box<dyn ValueCallback> {
+                unimplemented!()
+            }
+            "#,
+        );
+        let output = target(CSharpHost::new())
+            .render(&bindings)
+            .expect("callbacks should render");
+
+        let callback = file(&output, "ValueCallback.cs");
+        assert!(callback.contains("public interface ValueCallback"));
+        assert!(callback.contains("int OnValue(int value);"));
+        assert!(callback.contains("internal static BoltFFICallbackHandle Create"));
+        assert!(callback.contains("internal static ValueCallbackProxy Wrap"));
+        assert!(callback.contains("return implementation.OnValue(value);"));
+
+        let module = file(&output, "Demo.cs");
+        assert!(module.contains("ValueCallback callback"));
+        assert!(module.contains("ValueCallbackBridge.Create(callback)"));
+        assert!(module.contains("return ValueCallbackBridge.Wrap(boltffiHandle);"));
+        assert!(output.diagnostics().is_empty());
+    }
+
+    #[test]
+    fn csharp_target_renders_callback_parameter_and_return_shapes() {
+        let bindings = bindings(
+            r#"
+            #[export]
+            pub trait Child {
+                fn on_value(&self, value: u32) -> u32;
+            }
+
+            #[export]
+            pub trait Listener {
+                fn update(&self, value: Option<u32>);
+                fn process(&self, values: Vec<i32>) -> Vec<i32>;
+                fn on_child(&self, child: Box<dyn Child>);
+                fn child(&self) -> Box<dyn Child>;
+            }
+            "#,
+        );
+        let output = target(CSharpHost::new())
+            .render(&bindings)
+            .expect("callback shapes should render");
+
+        let listener = file(&output, "Listener.cs");
+        assert!(listener.contains("void Update(uint? value);"));
+        assert!(listener.contains("int[] Process(int[] values);"));
+        assert!(listener.contains("void OnChild(Child child);"));
+        assert!(listener.contains("Child Child();"));
+        assert!(listener.contains("WriteU32(value.Value);"));
+        assert!(listener.contains("ReadRawArray<int>()"));
+        assert!(listener.contains("ChildBridge.Wrap(child)"));
+        assert!(listener.contains("ChildBridge.Create(boltffiValue)"));
+        assert!(output.diagnostics().is_empty());
+    }
+
+    #[test]
+    fn csharp_target_renders_fallible_callback_methods() {
+        let bindings = bindings(
+            r#"
+            #[error]
+            pub enum MathError {
+                Invalid,
+            }
+
+            #[export]
+            pub trait Calculator {
+                fn compute(&self, value: i32) -> Result<i32, MathError>;
+                fn label(&self, value: i32) -> Result<String, String>;
+            }
+            "#,
+        );
+        let output = target(CSharpHost::new())
+            .render(&bindings)
+            .expect("fallible callbacks should render");
+
+        let callback = file(&output, "Calculator.cs");
+        assert!(callback.contains("int Compute(int value);"));
+        assert!(callback.contains("string Label(int value);"));
+        assert!(callback.contains("catch (MathErrorException boltffiError)"));
+        assert!(callback.contains("catch (BoltException boltffiError)"));
+        assert!(callback.contains("return_out = implementation.Compute(value);"));
+        assert!(callback.contains("out var return_out"));
+        assert!(callback.contains("throw new MathErrorException("));
+        assert!(callback.contains("throw new BoltException("));
+        assert!(!callback.contains("This callback method shape has not migrated"));
+        assert!(output.diagnostics().is_empty());
+    }
+
+    #[test]
+    fn csharp_target_renders_async_callback_methods() {
+        let bindings = bindings(
+            r#"
+            #[error]
+            pub enum FetchError {
+                Missing,
+            }
+
+            #[export]
+            #[allow(async_fn_in_trait)]
+            pub trait Fetcher {
+                async fn fetch_count(&self, key: i32) -> i32;
+                async fn fetch_name(&self, key: String) -> String;
+                async fn try_fetch(&self, key: i32) -> Result<String, FetchError>;
+            }
+            "#,
+        );
+        let output = target(CSharpHost::new())
+            .render(&bindings)
+            .expect("async callbacks should render");
+
+        let callback = file(&output, "Fetcher.cs");
+        assert!(callback.contains("global::System.Threading.Tasks.Task<int> FetchCount"));
+        assert!(callback.contains("private static async void FetchCount"));
+        assert!(callback.contains("await implementation.FetchCount(key).ConfigureAwait(false)"));
+        assert!(callback.contains("TaskCompletionSource<int>"));
+        assert!(callback.contains("GCHandle.Alloc(boltffiCompletion)"));
+        assert!(callback.contains("boltffiComplete(1, FfiBuf.FromBytes"));
+        assert!(callback.contains("boltffiStatus.code == 1"));
+        assert!(!callback.contains("This callback method shape has not migrated"));
+
+        let module = file(&output, "Demo.cs");
+        assert!(module.contains("internal static extern void FreeBuf(FfiBuf buffer);"));
+        assert!(module.contains("internal static extern FfiBuf BufFromBytes"));
         assert!(output.diagnostics().is_empty());
     }
 
