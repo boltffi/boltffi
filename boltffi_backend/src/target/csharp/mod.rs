@@ -361,28 +361,39 @@ mod tests {
     }
 
     #[test]
-    fn csharp_partial_coverage_keeps_supported_functions() {
+    fn csharp_target_renders_async_poll_handle_functions() {
         let bindings = bindings(
             r#"
             #[export]
             pub fn add(left: i32, right: i32) -> i32 { left + right }
 
             #[export]
-            pub async fn fetch() -> i32 { 1 }
+            pub async fn fetch(value: i32) -> i32 { value }
+
+            #[export]
+            pub async fn greet(value: String) -> String { value }
+
+            #[export]
+            pub async fn checked(value: i32) -> Result<i32, String> { Ok(value) }
             "#,
         );
         let output = target(CSharpHost::new())
-            .render_partial(&bindings)
-            .expect("partial C# render");
+            .render(&bindings)
+            .expect("async C# render");
 
         let source = file(&output, "Demo.cs");
         assert!(source.contains("public static int Add(int left, int right)"));
-        assert!(!source.contains("Fetch"));
-        let [unsupported] = output.coverage().unsupported() else {
-            panic!("expected one unsupported declaration")
-        };
-        assert_eq!(unsupported.declaration().name(), "fetch");
-        assert_eq!(unsupported.reason(), "asynchronous functions");
+        assert!(source.contains(
+            "global::System.Threading.Tasks.Task<int> Fetch(int value, global::System.Threading.CancellationToken cancellationToken = default)"
+        ));
+        assert!(source.contains("return BoltFFIAsync.CallAsync<int>("));
+        assert!(source.contains("NativeMethods.NativeFetchPoll"));
+        assert!(source.contains("NativeMethods.NativeFetchComplete"));
+        assert!(source.contains("BoltFFIAsync.ThrowIfStatus(boltffiStatus, cancellationToken);"));
+        assert!(source.contains("global::System.Threading.Tasks.Task<string> Greet"));
+        assert!(source.contains("global::System.Threading.Tasks.Task<int> Checked"));
+        assert!(source.contains("throw new BoltException(boltffiErrorReader.ReadString());"));
+        assert!(output.diagnostics().is_empty());
     }
 
     #[test]

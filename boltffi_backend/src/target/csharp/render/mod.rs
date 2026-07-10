@@ -83,6 +83,7 @@ pub(super) struct Function {
     parameters: Vec<Parameter>,
     native_parameters: Vec<NativeParameter>,
     public_return_type: TypeFragment,
+    returns_void: bool,
     native_return_type: TypeFragment,
     return_marshal_i1: bool,
     checks_status: bool,
@@ -95,6 +96,7 @@ pub(super) struct Function {
     invocation: Expression,
     entry_point: Literal,
     helper_id: HelperId,
+    asynchronous: Option<AsyncCall>,
 }
 
 #[derive(Template)]
@@ -116,6 +118,16 @@ struct StatusTemplate;
 #[derive(Template)]
 #[template(path = "target/csharp/wire.cs", escape = "none")]
 struct WireTemplate;
+
+#[derive(Template)]
+#[template(path = "target/csharp/async.cs", escape = "none")]
+struct AsyncRuntimeTemplate;
+
+#[derive(Template)]
+#[template(path = "target/csharp/async_native.cs", escape = "none")]
+struct AsyncNativeTemplate<'call> {
+    asynchronous: &'call AsyncCall,
+}
 
 #[derive(Template)]
 #[template(path = "target/csharp/free_buffer.cs", escape = "none")]
@@ -359,13 +371,35 @@ impl Function {
         context: &RenderContext<Native>,
     ) -> Result<Self> {
         let c_function = bridge_function(symbol, bridge)?;
-
-        if !matches!(callable.execution(), ExecutionDecl::Synchronous(_)) {
-            return unsupported("asynchronous functions");
+        let (return_function, async_symbols) = match callable.execution() {
+            ExecutionDecl::Synchronous(_) => (c_function, None),
+            ExecutionDecl::Asynchronous(native::AsyncProtocol::PollHandle {
+                poll,
+                complete,
+                cancel,
+                free,
+                ..
+            }) => (
+                bridge_function(complete, bridge)?,
+                Some(AsyncSymbols {
+                    poll,
+                    complete,
+                    cancel,
+                    free,
+                }),
+            ),
+            ExecutionDecl::Asynchronous(_) => return unsupported("async function protocol"),
+            _ => return unsupported("unknown function execution"),
+        };
+        if async_symbols.is_some() && c_function.returns() != &CBridgeType::FutureHandle {
+            return broken_contract("async start function does not return a future handle");
         }
-        let mut parameter_groups = c_function.parameter_groups().iter();
+        let parameter_groups = c_function.parameter_groups();
+        let mut parameter_group_index = 0;
         let mut native_parameters = Vec::new();
         let mut invocation_arguments = Vec::new();
+        let mut completion_native_parameters = Vec::new();
+        let mut completion_invocation_arguments = Vec::new();
         let mut return_after_status = None;
         let mut encoded_writeback = None;
         let mut setup = Vec::new();
@@ -373,16 +407,20 @@ impl Function {
         let encoded_error = lower_error(
             callable.error().channel(),
             type_namespace,
-            c_function,
+            return_function,
             context,
         )?;
         requires_wire_runtime |= encoded_error.is_some();
 
         if let Some(receive) = callable.receiver() {
-            let group = parameter_groups.next().ok_or(Error::BrokenBridgeContract {
-                bridge: "c",
-                invariant: "method receiver is missing from the C bridge",
-            })?;
+            let group =
+                parameter_groups
+                    .get(parameter_group_index)
+                    .ok_or(Error::BrokenBridgeContract {
+                        bridge: "c",
+                        invariant: "method receiver is missing from the C bridge",
+                    })?;
+            parameter_group_index += 1;
             let receiver = match (&call_site, encoded_receiver) {
                 (CallSite::Class { carrier, name, .. }, None) => {
                     lower_class_receiver(*carrier, name, receive, group, c_function)?
@@ -413,10 +451,14 @@ impl Function {
 
         let mut parameters = Vec::new();
         for parameter in callable.params() {
-            let group = parameter_groups.next().ok_or(Error::BrokenBridgeContract {
-                bridge: "c",
-                invariant: "function parameter is missing from the C bridge",
-            })?;
+            let group =
+                parameter_groups
+                    .get(parameter_group_index)
+                    .ok_or(Error::BrokenBridgeContract {
+                        bridge: "c",
+                        invariant: "function parameter is missing from the C bridge",
+                    })?;
+            parameter_group_index += 1;
             let name = Name::new(parameter.name()).camel()?;
             match parameter.payload() {
                 IncomingParam::Value(ParamPlan::Direct { ty, receive }) => {
@@ -688,6 +730,38 @@ impl Function {
             }
         }
 
+        let return_groups = match async_symbols {
+            Some(_) => {
+                if parameter_group_index != parameter_groups.len() {
+                    return broken_contract(
+                        "async start parameter group count does not match the C bridge",
+                    );
+                }
+                let groups = return_function.parameter_groups();
+                let [
+                    ParameterGroup::Value(future),
+                    ParameterGroup::CompletionStatusOut(status),
+                    rest @ ..,
+                ] = groups
+                else {
+                    return broken_contract(
+                        "async completion is missing future and status parameters",
+                    );
+                };
+                if return_function.parameter(*future).ty() != &CBridgeType::FutureHandle
+                    || return_function.parameter(*status).ty()
+                        != &CBridgeType::MutPointer(Box::new(CBridgeType::Status))
+                {
+                    return broken_contract(
+                        "async completion future or status parameter does not match the C bridge",
+                    );
+                }
+                rest
+            }
+            None => &parameter_groups[parameter_group_index..],
+        };
+        let mut return_parameter_groups = return_groups.iter();
+
         let return_plan = callable.returns().plan();
         if (return_after_status.is_some() || encoded_writeback.is_some())
             && !matches!(return_plan, ReturnPlan::Void)
@@ -701,10 +775,12 @@ impl Function {
                 ReturnPlan::Void => {
                     let expected_return = if encoded_error.is_some() {
                         CBridgeType::Buffer
+                    } else if async_symbols.is_some() {
+                        CBridgeType::Void
                     } else {
                         CBridgeType::Status
                     };
-                    if c_function.returns() != &expected_return {
+                    if return_function.returns() != &expected_return {
                         return broken_contract("void return type does not match the C bridge");
                     }
                     let public_return_type = match (
@@ -721,11 +797,13 @@ impl Function {
                         public_return_type,
                         if encoded_error.is_some() {
                             TypeFragment::new("FfiBuf")
+                        } else if async_symbols.is_some() {
+                            TypeFragment::void()
                         } else {
                             TypeFragment::new("FfiStatus")
                         },
                         false,
-                        encoded_error.is_none(),
+                        encoded_error.is_none() && async_symbols.is_none(),
                     )
                 }
                 ReturnPlan::DirectViaReturnSlot { ty } => {
@@ -737,7 +815,7 @@ impl Function {
                     if return_after_status.is_some() || encoded_writeback.is_some() {
                         return unsupported("mutable value method returns");
                     }
-                    if !c_direct_matches(ty, c_function.returns(), bridge)? {
+                    if !c_direct_matches(ty, return_function.returns(), bridge)? {
                         return broken_contract("function return type does not match the C bridge");
                     }
                     let rendered = direct_type_with(ty, type_namespace, context)?;
@@ -755,7 +833,7 @@ impl Function {
                         );
                     }
                     if *shape != native::BufferShape::Buffer
-                        || c_function.returns() != &CBridgeType::Buffer
+                        || return_function.returns() != &CBridgeType::Buffer
                     {
                         return unsupported("encoded function return shape");
                     }
@@ -786,7 +864,8 @@ impl Function {
                     presence,
                 } => {
                     if encoded_error.is_some()
-                        || c_function.returns() != &CBridgeType::handle_target(target, *carrier)?
+                        || return_function.returns()
+                            != &CBridgeType::handle_target(target, *carrier)?
                     {
                         return broken_contract("handle return slot does not match the C bridge");
                     }
@@ -804,7 +883,7 @@ impl Function {
                             "fallible scalar-option return does not use a success out-pointer",
                         );
                     }
-                    if c_function.returns() != &CBridgeType::Buffer {
+                    if return_function.returns() != &CBridgeType::Buffer {
                         return broken_contract("scalar option return does not match the C bridge");
                     }
                     let reader = Identifier::parse("resultReader")?;
@@ -827,7 +906,7 @@ impl Function {
                             "fallible direct-vector return does not use a success out-pointer",
                         );
                     }
-                    if c_function.returns() != &CBridgeType::Buffer {
+                    if return_function.returns() != &CBridgeType::Buffer {
                         return broken_contract("direct-vector return does not match the C bridge");
                     }
                     let element_type =
@@ -864,12 +943,13 @@ impl Function {
                             "direct success out-pointer is missing an error channel",
                         );
                     }
-                    let Some(ParameterGroup::SuccessOut(index)) = parameter_groups.next() else {
+                    let Some(ParameterGroup::SuccessOut(index)) = return_parameter_groups.next()
+                    else {
                         return broken_contract(
                             "direct success return is missing its C out-pointer",
                         );
                     };
-                    let matches = match c_function.parameter(*index).ty() {
+                    let matches = match return_function.parameter(*index).ty() {
                         CBridgeType::MutPointer(inner) => c_direct_matches(ty, inner, bridge)?,
                         _ => false,
                     };
@@ -880,7 +960,7 @@ impl Function {
                     }
                     let rendered = direct_type_with(ty, type_namespace, context)?;
                     let result = Identifier::parse("boltffiResult")?;
-                    native_parameters.push(NativeParameter {
+                    completion_native_parameters.push(NativeParameter {
                         name: result.clone(),
                         ty: rendered.clone(),
                         modifier: "out ",
@@ -888,7 +968,8 @@ impl Function {
                         marshal_bool_array: false,
                         byte_array: false,
                     });
-                    invocation_arguments.push(Expression::new(format!("out {rendered} {result}")));
+                    completion_invocation_arguments
+                        .push(Expression::new(format!("out {rendered} {result}")));
                     return_after_status = Some(Expression::identifier(result));
                     (rendered, TypeFragment::new("FfiBuf"), false, false)
                 }
@@ -896,12 +977,13 @@ impl Function {
                     if encoded_error.is_none() || *shape != native::BufferShape::Buffer {
                         return unsupported("encoded success out-pointer shape");
                     }
-                    let Some(ParameterGroup::SuccessOut(index)) = parameter_groups.next() else {
+                    let Some(ParameterGroup::SuccessOut(index)) = return_parameter_groups.next()
+                    else {
                         return broken_contract(
                             "encoded success return is missing its C out-pointer",
                         );
                     };
-                    if c_function.parameter(*index).ty()
+                    if return_function.parameter(*index).ty()
                         != &CBridgeType::MutPointer(Box::new(CBridgeType::Buffer))
                     {
                         return broken_contract(
@@ -909,7 +991,7 @@ impl Function {
                         );
                     }
                     let buffer = Identifier::parse("boltffiResultBuffer")?;
-                    native_parameters.push(NativeParameter {
+                    completion_native_parameters.push(NativeParameter {
                         name: buffer.clone(),
                         ty: TypeFragment::new("FfiBuf"),
                         modifier: "out ",
@@ -917,7 +999,8 @@ impl Function {
                         marshal_bool_array: false,
                         byte_array: false,
                     });
-                    invocation_arguments.push(Expression::new(format!("out FfiBuf {buffer}")));
+                    completion_invocation_arguments
+                        .push(Expression::new(format!("out FfiBuf {buffer}")));
                     let reader = Identifier::parse("resultReader")?;
                     let mut codec_reader = Reader::new(reader.clone(), context);
                     if let Some(namespace) = type_namespace {
@@ -949,12 +1032,13 @@ impl Function {
                             "handle success out-pointer is missing an error channel",
                         );
                     }
-                    let Some(ParameterGroup::SuccessOut(index)) = parameter_groups.next() else {
+                    let Some(ParameterGroup::SuccessOut(index)) = return_parameter_groups.next()
+                    else {
                         return broken_contract(
                             "handle success return is missing its C out-pointer",
                         );
                     };
-                    if c_function.parameter(*index).ty()
+                    if return_function.parameter(*index).ty()
                         != &CBridgeType::MutPointer(Box::new(CBridgeType::handle_target(
                             target, *carrier,
                         )?))
@@ -965,7 +1049,7 @@ impl Function {
                     }
                     let native_type = handle_carrier_type(*carrier)?;
                     let result = Identifier::parse("boltffiHandle")?;
-                    native_parameters.push(NativeParameter {
+                    completion_native_parameters.push(NativeParameter {
                         name: result.clone(),
                         ty: native_type.clone(),
                         modifier: "out ",
@@ -973,7 +1057,7 @@ impl Function {
                         marshal_bool_array: false,
                         byte_array: false,
                     });
-                    invocation_arguments
+                    completion_invocation_arguments
                         .push(Expression::new(format!("out {native_type} {result}")));
                     return_after_status = Some(handle_value_expression(
                         handle_target_type(target, context)?,
@@ -990,8 +1074,15 @@ impl Function {
                 _ => return unsupported("non-primitive function returns"),
             };
 
-        if parameter_groups.next().is_some() {
+        if return_parameter_groups.next().is_some() {
             return broken_contract("function parameter group count does not match the C bridge");
+        }
+
+        let complete_return_type = native_return_type.clone();
+        let complete_return_marshal_i1 = return_marshal_i1;
+        if async_symbols.is_none() {
+            native_parameters.append(&mut completion_native_parameters);
+            invocation_arguments.append(&mut completion_invocation_arguments);
         }
 
         let invocation = Expression::call(
@@ -1004,24 +1095,52 @@ impl Function {
             _ => None,
         };
         let is_static = !receiver || extension_owner.is_some();
-        let body = (!setup.is_empty()
-            || encoded_return.is_some()
-            || encoded_writeback.is_some()
-            || encoded_error.is_some()
-            || handle_return.is_some())
-        .then(|| {
-            render_callable_body(
+        let asynchronous = async_symbols
+            .map(|symbols| {
+                AsyncCall::new(
+                    &native_name,
+                    symbols,
+                    complete_return_type,
+                    complete_return_marshal_i1,
+                    completion_native_parameters,
+                )
+            })
+            .transpose()?;
+        let returns_void = public_return_type == TypeFragment::void();
+        let body = match &asynchronous {
+            Some(asynchronous) => Some(render_async_body(
                 &setup,
                 &invocation,
-                checks_status,
+                asynchronous,
+                &completion_invocation_arguments,
+                returns_void,
+                &public_return_type,
+                &native_return_type,
                 return_after_status.as_ref(),
                 encoded_return.as_ref(),
                 encoded_writeback.as_ref(),
                 encoded_error.as_ref(),
                 handle_return.as_ref(),
-            )
-        })
-        .transpose()?;
+            )?),
+            None => (!setup.is_empty()
+                || encoded_return.is_some()
+                || encoded_writeback.is_some()
+                || encoded_error.is_some()
+                || handle_return.is_some())
+            .then(|| {
+                render_callable_body(
+                    &setup,
+                    &invocation,
+                    checks_status,
+                    return_after_status.as_ref(),
+                    encoded_return.as_ref(),
+                    encoded_writeback.as_ref(),
+                    encoded_error.as_ref(),
+                    handle_return.as_ref(),
+                )
+            })
+            .transpose()?,
+        };
         let free_buffer_entry = encoded_return
             .as_ref()
             .or(encoded_writeback.as_ref())
@@ -1034,6 +1153,7 @@ impl Function {
                     .map(|function| Literal::string(function.name()))
             })
             .transpose()?;
+        let is_asynchronous = asynchronous.is_some();
 
         Ok(Self {
             visibility: "public",
@@ -1042,8 +1162,15 @@ impl Function {
             parameters,
             native_parameters,
             public_return_type,
-            native_return_type,
-            return_marshal_i1,
+            returns_void,
+            native_return_type: match is_asynchronous {
+                true => TypeFragment::new("nint"),
+                false => native_return_type,
+            },
+            return_marshal_i1: match is_asynchronous {
+                true => false,
+                false => return_marshal_i1,
+            },
             checks_status,
             is_static,
             extension_owner,
@@ -1054,17 +1181,26 @@ impl Function {
             invocation,
             entry_point: Literal::string(c_function.name()),
             helper_id,
+            asynchronous,
         })
     }
 
     pub(super) fn render(&self) -> Result<Emitted> {
-        let emitted = Emitted::primary(FunctionTemplate { function: self }.render()?).with_aux(
+        let mut emitted = Emitted::primary(FunctionTemplate { function: self }.render()?).with_aux(
             AuxChunk::Helper {
                 id: self.helper_id.clone(),
                 text: NativeFunctionTemplate { function: self }.render()?.into(),
             },
         );
-        let emitted = match self.checks_status {
+        if let Some(asynchronous) = &self.asynchronous {
+            emitted = emitted
+                .with_aux(AuxChunk::ForwardDecl(AsyncRuntimeTemplate.render()?.into()))
+                .with_aux(AuxChunk::Helper {
+                    id: asynchronous.helper_id.clone(),
+                    text: AsyncNativeTemplate { asynchronous }.render()?.into(),
+                });
+        }
+        let emitted = match self.checks_status || self.asynchronous.is_some() {
             true => emitted.with_aux(AuxChunk::ForwardDecl(StatusTemplate.render()?.into())),
             false => emitted,
         };
@@ -1098,6 +1234,55 @@ struct HandleReturn {
     ty: TypeFragment,
     native_type: TypeFragment,
     nullable: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct AsyncCall {
+    poll_name: Identifier,
+    poll_entry: Literal,
+    complete_name: Identifier,
+    complete_entry: Literal,
+    complete_return_type: TypeFragment,
+    complete_return_marshal_i1: bool,
+    complete_parameters: Vec<NativeParameter>,
+    cancel_name: Identifier,
+    cancel_entry: Literal,
+    free_name: Identifier,
+    free_entry: Literal,
+    helper_id: HelperId,
+}
+
+#[derive(Clone, Copy)]
+struct AsyncSymbols<'symbol> {
+    poll: &'symbol NativeSymbol,
+    complete: &'symbol NativeSymbol,
+    cancel: &'symbol NativeSymbol,
+    free: &'symbol NativeSymbol,
+}
+
+impl AsyncCall {
+    fn new(
+        native_name: &Identifier,
+        symbols: AsyncSymbols<'_>,
+        complete_return_type: TypeFragment,
+        complete_return_marshal_i1: bool,
+        complete_parameters: Vec<NativeParameter>,
+    ) -> Result<Self> {
+        Ok(Self {
+            poll_name: Identifier::parse(format!("{native_name}Poll"))?,
+            poll_entry: Literal::string(symbols.poll.name().as_str()),
+            complete_name: Identifier::parse(format!("{native_name}Complete"))?,
+            complete_entry: Literal::string(symbols.complete.name().as_str()),
+            complete_return_type,
+            complete_return_marshal_i1,
+            complete_parameters,
+            cancel_name: Identifier::parse(format!("{native_name}Cancel"))?,
+            cancel_entry: Literal::string(symbols.cancel.name().as_str()),
+            free_name: Identifier::parse(format!("{native_name}Free"))?,
+            free_entry: Literal::string(symbols.free.name().as_str()),
+            helper_id: HelperId::new(CanonicalName::single(symbols.poll.name().as_str())),
+        })
+    }
 }
 
 fn generated_identifier(source: &Identifier, suffix: &str) -> Result<Identifier> {
@@ -1223,6 +1408,114 @@ fn render_callable_body(
         None => lines.push(format!("return {invocation};")),
     }
     Ok(Statement::new(indent(&lines.join("\n"), 12)))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_async_body(
+    setup: &[Statement],
+    start: &Expression,
+    asynchronous: &AsyncCall,
+    completion_arguments: &[Expression],
+    returns_void: bool,
+    public_return_type: &TypeFragment,
+    _: &TypeFragment,
+    return_after_completion: Option<&Expression>,
+    encoded_return: Option<&EncodedReturn>,
+    encoded_writeback: Option<&EncodedReturn>,
+    encoded_error: Option<&EncodedError>,
+    handle_return: Option<&HandleReturn>,
+) -> Result<Statement> {
+    if encoded_writeback.is_some() {
+        return unsupported("mutable encoded value in async function");
+    }
+    let future = Identifier::parse("boltffiFuture")?;
+    let status = Identifier::parse("boltffiStatus")?;
+    let complete = Expression::call(
+        Expression::member(
+            Identifier::parse("NativeMethods")?,
+            asynchronous.complete_name.clone(),
+        ),
+        ArgumentList::new(
+            [
+                Expression::identifier(future.clone()),
+                Expression::new(format!("out FfiStatus {status}")),
+            ]
+            .into_iter()
+            .chain(completion_arguments.iter().cloned()),
+        ),
+    );
+    let mut completion = Vec::new();
+    match encoded_error {
+        Some(error) => {
+            completion.push(format!("FfiBuf {} = {complete};", error.buffer));
+            completion.push(format!(
+                "BoltFFIAsync.ThrowIfStatus({status}, cancellationToken);"
+            ));
+            completion.push(render_encoded_error_check(error));
+            if let Some(encoded) = encoded_return {
+                completion.push(render_buffer_return(encoded));
+            } else if let Some(value) = return_after_completion {
+                completion.push(format!("return {value};"));
+            }
+        }
+        None if encoded_return.is_some() => {
+            let encoded = encoded_return.unwrap();
+            completion.push(format!("FfiBuf {} = {complete};", encoded.buffer));
+            completion.push(format!(
+                "BoltFFIAsync.ThrowIfStatus({status}, cancellationToken);"
+            ));
+            completion.push(render_buffer_return(encoded));
+        }
+        None if handle_return.is_some() => {
+            let handle = handle_return.unwrap();
+            let local = Identifier::parse("boltffiHandle")?;
+            completion.push(format!("{} {local} = {complete};", handle.native_type));
+            completion.push(format!(
+                "BoltFFIAsync.ThrowIfStatus({status}, cancellationToken);"
+            ));
+            completion.push(format!(
+                "return {};",
+                handle_value_expression(handle.ty.clone(), &local, handle.nullable)
+            ));
+        }
+        None if returns_void => {
+            completion.push(format!("{complete};"));
+            completion.push(format!(
+                "BoltFFIAsync.ThrowIfStatus({status}, cancellationToken);"
+            ));
+        }
+        None => {
+            completion.push(format!(
+                "{} boltffiResult = {complete};",
+                asynchronous.complete_return_type
+            ));
+            completion.push(format!(
+                "BoltFFIAsync.ThrowIfStatus({status}, cancellationToken);"
+            ));
+            completion.push("return boltffiResult;".to_owned());
+        }
+    }
+
+    let call = match returns_void {
+        true => "CallAsyncVoid".to_owned(),
+        false => format!("CallAsync<{public_return_type}>"),
+    };
+    let mut lines = setup.iter().map(ToString::to_string).collect::<Vec<_>>();
+    lines.push(format!(
+        "return BoltFFIAsync.{call}(\n    () => {start},\n    NativeMethods.{},\n    {future} =>\n    {{\n{}\n    }},\n    NativeMethods.{},\n    NativeMethods.{},\n    cancellationToken);",
+        asynchronous.poll_name,
+        indent(&completion.join("\n"), 8),
+        asynchronous.cancel_name,
+        asynchronous.free_name,
+    ));
+    Ok(Statement::new(indent(&lines.join("\n"), 12)))
+}
+
+fn render_encoded_error_check(error: &EncodedError) -> String {
+    format!(
+        "if ({}.ptr != 0)\n{{\n    try\n    {{\n        WireReader {} = new WireReader({});\n        throw {};\n    }}\n    finally\n    {{\n        NativeMethods.FreeBuf({});\n    }}\n}}",
+        error.buffer, error.reader, error.buffer, error.throw, error.buffer,
+    )
 }
 
 fn render_buffer_return(encoded: &EncodedReturn) -> String {

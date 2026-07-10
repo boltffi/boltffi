@@ -1,4 +1,8 @@
-{% if let Some(body) = function.body %}        {{ function.visibility }} {% if function.is_static %}static {% endif %}{{ function.public_return_type }} {{ function.name }}({% if let Some(owner) = function.extension_owner %}this {{ owner }} self{% if !function.parameters.is_empty() %}, {% endif %}{% endif %}{% for parameter in function.parameters %}{{ parameter.ty }} {{ parameter.name }}{% if !loop.last %}, {% endif %}{% endfor %})
+{% if function.asynchronous.is_some() %}{% if let Some(body) = function.body %}        {{ function.visibility }} {% if function.is_static %}static {% endif %}global::System.Threading.Tasks.Task{% if !function.returns_void %}<{{ function.public_return_type }}>{% endif %} {{ function.name }}({% if let Some(owner) = function.extension_owner %}this {{ owner }} self, {% endif %}{% for parameter in function.parameters %}{{ parameter.ty }} {{ parameter.name }}, {% endfor %}global::System.Threading.CancellationToken cancellationToken = default)
+        {
+{{ body }}
+        }
+{% endif %}{% else if let Some(body) = function.body %}        {{ function.visibility }} {% if function.is_static %}static {% endif %}{{ function.public_return_type }} {{ function.name }}({% if let Some(owner) = function.extension_owner %}this {{ owner }} self{% if !function.parameters.is_empty() %}, {% endif %}{% endif %}{% for parameter in function.parameters %}{{ parameter.ty }} {{ parameter.name }}{% if !loop.last %}, {% endif %}{% endfor %})
         {
 {{ body }}
         }
