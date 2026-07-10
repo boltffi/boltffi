@@ -655,6 +655,93 @@ mod tests {
     }
 
     #[test]
+    fn csharp_target_renders_direct_closure_parameters() {
+        let bindings = bindings(
+            r#"
+            #[repr(u8)]
+            #[data]
+            pub enum Mode { Fast = 1, Slow = 2 }
+
+            #[export]
+            pub fn apply(f: impl Fn(i32) -> i32, value: i32) -> i32 { f(value) }
+
+            #[export]
+            pub fn notify(f: impl Fn(bool), value: bool) { f(value) }
+
+            #[export]
+            pub fn map_mode(f: impl Fn(Mode) -> Mode, value: Mode) -> Mode { f(value) }
+            "#,
+        );
+        let output = target(CSharpHost::new())
+            .render(&bindings)
+            .expect("direct closures should render");
+
+        let source = file(&output, "Demo.cs");
+        assert!(source.contains("public static int Apply(global::System.Func<int, int> f"));
+        assert!(source.contains("public static void Notify(global::System.Action<bool> f"));
+        assert!(source.contains("global::System.Func<Mode, Mode> f"));
+        assert!(source.contains("GCHandle.Alloc(f)"));
+        assert!(source.contains("GCHandle.FromIntPtr(context).Target!"));
+        assert!(source.contains("GCHandle.FromIntPtr(context).Free();"));
+        assert!(output.diagnostics().is_empty());
+    }
+
+    #[test]
+    fn csharp_target_renders_encoded_closure_parameters() {
+        let bindings = bindings(
+            r#"
+            #[data]
+            pub struct Point { pub x: i32, pub y: i32 }
+
+            #[export]
+            pub fn apply_point(f: impl Fn(Point) -> Point, value: Point) -> Point { f(value) }
+
+            #[export]
+            pub fn apply_string(f: impl Fn(String) -> String, value: String) -> String { f(value) }
+            "#,
+        );
+        let output = target(CSharpHost::new())
+            .render(&bindings)
+            .expect("encoded closures should render");
+
+        let source = file(&output, "Demo.cs");
+        assert!(source.contains("global::System.Func<Point, Point> f"));
+        assert!(source.contains("global::System.Func<string, string> f"));
+        assert!(source.contains("Point.Decode(boltffi"));
+        assert!(source.contains("return FfiBuf.FromBytes(boltffiReturnWriter.ToArray());"));
+        assert!(source.contains("internal static extern FfiBuf BufFromBytes"));
+        assert!(output.diagnostics().is_empty());
+    }
+
+    #[test]
+    fn csharp_target_renders_fallible_closure_parameters() {
+        let bindings = bindings(
+            r#"
+            #[error]
+            pub enum MathError { Invalid }
+
+            #[export]
+            pub fn apply(
+                f: impl Fn(i32) -> Result<i32, MathError>,
+                value: i32,
+            ) -> Result<i32, MathError> {
+                f(value)
+            }
+            "#,
+        );
+        let output = target(CSharpHost::new())
+            .render(&bindings)
+            .expect("fallible closures should render");
+
+        let source = file(&output, "Demo.cs");
+        assert!(source.contains("global::System.Func<int, int> f"));
+        assert!(source.contains("out int return_out"));
+        assert!(source.contains("catch (MathErrorException boltffiError)"));
+        assert!(source.contains("return FfiBuf.FromBytes(boltffiErrorWriter.ToArray());"));
+        assert!(output.diagnostics().is_empty());
+    }
+
+    #[test]
     fn csharp_target_renders_fallible_calls_as_exceptions() {
         let bindings = bindings(
             r#"

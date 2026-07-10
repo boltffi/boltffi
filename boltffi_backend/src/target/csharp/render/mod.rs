@@ -1,5 +1,6 @@
 mod callback;
 mod class;
+mod closure;
 mod enumeration;
 mod record;
 
@@ -96,10 +97,12 @@ pub(super) struct Function {
     requires_wire_runtime: bool,
     requires_callback_runtime: bool,
     free_buffer_entry: Option<Literal>,
+    copy_buffer_entry: Option<Literal>,
     invocation: Expression,
     entry_point: Literal,
     helper_id: HelperId,
     asynchronous: Option<AsyncCall>,
+    closure_helpers: Vec<closure::ClosureHelper>,
 }
 
 #[derive(Template)]
@@ -419,6 +422,8 @@ impl Function {
         let mut setup = Vec::new();
         let mut requires_wire_runtime = false;
         let mut requires_callback_runtime = false;
+        let mut requires_copy_buffer = false;
+        let mut closure_helpers = Vec::new();
         let encoded_error = lower_error(
             callable.error().channel(),
             type_namespace,
@@ -802,6 +807,29 @@ impl Function {
                         )),
                         _ => return unsupported("direct-vector element type"),
                     });
+                }
+                IncomingParam::Closure(declaration) => {
+                    let ParameterGroup::Closure(closure_group) = group else {
+                        return broken_contract("closure parameter does not match the C bridge");
+                    };
+                    let helper_name = Identifier::parse(format!(
+                        "{native_name}{}Closure",
+                        Name::new(parameter.name()).pascal()?
+                    ))?;
+                    let closure = closure::ClosureArgument::from_declaration(
+                        name.clone(),
+                        helper_name,
+                        declaration,
+                        closure_group,
+                        context,
+                    )?;
+                    parameters.push(closure.parameter);
+                    native_parameters.extend(closure.native_parameters);
+                    invocation_arguments.extend(closure.invocation_arguments);
+                    setup.push(closure.setup);
+                    requires_wire_runtime |= closure.requires_wire_runtime;
+                    requires_copy_buffer |= closure.requires_copy_buffer;
+                    closure_helpers.push(closure.helper);
                 }
                 _ => return unsupported("function parameter crossing"),
             }
@@ -1245,6 +1273,14 @@ impl Function {
             })
             .transpose()?;
         let is_asynchronous = asynchronous.is_some();
+        let copy_buffer_entry = requires_copy_buffer
+            .then(|| {
+                bridge
+                    .support()
+                    .buffer_from_bytes()
+                    .map(|function| Literal::string(function.name()))
+            })
+            .transpose()?;
 
         Ok(Self {
             visibility: "public",
@@ -1270,10 +1306,12 @@ impl Function {
             requires_wire_runtime,
             requires_callback_runtime,
             free_buffer_entry,
+            copy_buffer_entry,
             invocation,
             entry_point: Literal::string(c_function.name()),
             helper_id,
             asynchronous,
+            closure_helpers,
         })
     }
 
@@ -1292,6 +1330,12 @@ impl Function {
                     text: AsyncNativeTemplate { asynchronous }.render()?.into(),
                 });
         }
+        for helper in &self.closure_helpers {
+            emitted = emitted.with_aux(AuxChunk::Helper {
+                id: helper.id.clone(),
+                text: helper.source.to_string().into(),
+            });
+        }
         let emitted = match self.checks_status || self.asynchronous.is_some() {
             true => emitted.with_aux(AuxChunk::ForwardDecl(StatusTemplate.render()?.into())),
             false => emitted,
@@ -1306,13 +1350,20 @@ impl Function {
             )),
             false => emitted,
         };
-        match &self.free_buffer_entry {
-            Some(entry_point) => Ok(emitted.with_aux(AuxChunk::Helper {
+        let emitted = match &self.free_buffer_entry {
+            Some(entry_point) => emitted.with_aux(AuxChunk::Helper {
                 id: HelperId::new(CanonicalName::single("csharp_free_buffer")),
                 text: FreeBufferTemplate { entry_point }.render()?.into(),
-            })),
-            None => Ok(emitted),
-        }
+            }),
+            None => emitted,
+        };
+        Ok(match &self.copy_buffer_entry {
+            Some(entry_point) => emitted.with_aux(AuxChunk::Helper {
+                id: HelperId::new(CanonicalName::single("csharp_copy_buffer")),
+                text: CopyBufferTemplate { entry_point }.render()?.into(),
+            }),
+            None => emitted,
+        })
     }
 }
 
