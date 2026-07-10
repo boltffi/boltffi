@@ -12,7 +12,7 @@ use boltffi_bindgen::CHeaderLowerer;
 use generator::ScanPointerWidth;
 use generator::{GenerateRequest, run_generator};
 use header::HeaderGenerator;
-use languages::{CSharpGenerator, DartGenerator};
+use languages::DartGenerator;
 
 use boltffi_bindgen::target::Target;
 
@@ -60,9 +60,7 @@ pub fn run_generate_with_output(config: &Config, options: GenerateOptions) -> Re
             run_generator::<DartGenerator>(&legacy_request(), options.experimental)
         }
         GenerateTarget::Python => ir::run_ir_generation(config, &options),
-        GenerateTarget::CSharp => {
-            run_generator::<CSharpGenerator>(&legacy_request(), options.experimental)
-        }
+        GenerateTarget::CSharp => ir::run_ir_generation(config, &options),
         GenerateTarget::All => {
             let request = legacy_request();
 
@@ -149,7 +147,16 @@ pub fn run_generate_with_output(config: &Config, options: GenerateOptions) -> Re
             }
 
             if config.should_process(Target::CSharp, options.experimental) {
-                run_generator::<CSharpGenerator>(&request, options.experimental)?;
+                ir::run_ir_generation(
+                    config,
+                    &GenerateOptions {
+                        target: GenerateTarget::CSharp,
+                        output: options.output.clone(),
+                        experimental: options.experimental,
+                        ir: true,
+                        cargo_args: options.cargo_args.clone(),
+                    },
+                )?;
             }
 
             Ok(())
@@ -251,7 +258,13 @@ pub fn run_generate_csharp_with_output_from_source_dir(
     source_directory: &Path,
     crate_name: &str,
 ) -> Result<()> {
-    CSharpGenerator::generate_from_source_directory(config, output, source_directory, crate_name)
+    ir::run_csharp_generation(
+        config,
+        output,
+        source_directory.join("Cargo.toml"),
+        crate_name.to_owned(),
+        Vec::new(),
+    )
 }
 
 #[cfg(test)]
@@ -351,6 +364,39 @@ enabled = false
         assert!(
             matches!(error, crate::cli::CliError::CommandFailed { command, status: None }
                 if command == "targets.wasm.enabled = false")
+        );
+    }
+
+    #[test]
+    fn csharp_generate_uses_ir_route_without_ir_flag() {
+        let config = parse_config(
+            r#"
+[package]
+name = "demo"
+
+[targets.csharp]
+enabled = true
+"#,
+        );
+
+        let error = super::run_generate_with_output(
+            &config,
+            super::GenerateOptions {
+                target: super::GenerateTarget::CSharp,
+                output: None,
+                experimental: false,
+                ir: false,
+                cargo_args: vec![
+                    "--manifest-path".to_string(),
+                    "/definitely/missing/boltffi/Cargo.toml".to_string(),
+                ],
+            },
+        )
+        .expect_err("production C# generation should use IR cargo selection");
+
+        assert!(
+            matches!(error, crate::cli::CliError::CommandFailed { command, .. }
+                if command.contains("cargo metadata --format-version 1 --no-deps"))
         );
     }
 

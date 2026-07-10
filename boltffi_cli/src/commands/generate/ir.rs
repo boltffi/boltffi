@@ -532,6 +532,34 @@ pub fn run_python_generation(
     )
 }
 
+pub fn run_csharp_generation(
+    config: &Config,
+    output: Option<PathBuf>,
+    manifest_path: PathBuf,
+    artifact_name: String,
+    cargo_args: Vec<String>,
+) -> Result<()> {
+    if !config.is_csharp_enabled() {
+        return Err(CliError::CommandFailed {
+            command: "targets.csharp.enabled = false".to_string(),
+            status: None,
+        });
+    }
+    let output_directory = output.unwrap_or_else(|| config.csharp_output());
+    Generation::new(manifest_path)
+        .cargo_args(cargo_args)
+        .coverage_mode(CoverageMode::Partial)
+        .csharp_namespace(config.csharp_namespace().map(str::to_owned))
+        .csharp_native_library(artifact_name)
+        .render(Target::CSharp)
+        .and_then(|output| {
+            print_coverage(Target::CSharp.name(), &output);
+            Generation::write_output(output, &output_directory)
+        })
+        .map(drop)
+        .map_err(|error| generation_error(Target::CSharp.name(), error))
+}
+
 pub fn run_kmp_generation(
     config: &Config,
     output: Option<PathBuf>,
