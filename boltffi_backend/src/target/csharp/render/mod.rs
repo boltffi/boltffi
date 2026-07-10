@@ -1,16 +1,22 @@
+mod enumeration;
+mod record;
+
+pub(in crate::target::csharp) use enumeration::Enumeration;
+pub(in crate::target::csharp) use record::Record;
+
 use std::collections::BTreeMap;
 
 use askama::Template;
 use boltffi_binding::{
-    ErrorChannel, ExecutionDecl, FunctionDecl, IncomingParam, Native, ParamPlan, Primitive,
-    ReturnPlan,
+    DeclarationRef, DirectValueType, ErrorChannel, ExecutionDecl, FunctionDecl, IncomingParam,
+    Native, ParamPlan, Primitive, ReturnPlan,
 };
 
 use crate::{
     bridge::c::{CBridgeContract, Function as CFunction, ParameterGroup, Type as CBridgeType},
     core::{
         AuxChunk, Diagnostic, Emitted, Error, FilePath, GeneratedFile, GeneratedOutput, HelperId,
-        RenderedDeclaration, Result,
+        RenderContext, RenderedDeclaration, Result,
     },
 };
 
@@ -73,6 +79,7 @@ impl Function {
     pub(super) fn from_declaration(
         declaration: &FunctionDecl<Native>,
         bridge: &CBridgeContract,
+        context: &RenderContext<Native>,
     ) -> Result<Self> {
         let c_function = bridge_function(declaration, bridge)?;
         let callable = declaration.callable();
@@ -92,59 +99,54 @@ impl Function {
             .iter()
             .zip(c_function.parameter_groups())
             .map(|(parameter, c_parameter)| {
-                let primitive = match parameter.payload() {
-                    IncomingParam::Value(ParamPlan::Direct {
-                        ty: boltffi_binding::DirectValueType::Primitive(primitive),
-                        ..
-                    }) => *primitive,
+                let ty = match parameter.payload() {
+                    IncomingParam::Value(ParamPlan::Direct { ty, .. }) => ty,
                     _ => return unsupported("non-primitive function parameters"),
                 };
                 let ParameterGroup::Value(index) = c_parameter else {
                     return broken_contract(
-                        "primitive function parameter does not use a C value group",
+                        "direct function parameter does not use a C value group",
                     );
                 };
                 let c_parameter = c_function.parameter(*index);
-                let expected = CBridgeType::primitive(primitive)?;
-                if c_parameter.ty() != &expected {
+                if !c_direct_matches(ty, c_parameter.ty(), bridge)? {
                     return broken_contract("function parameter type does not match the C bridge");
                 }
                 Ok(Parameter {
                     name: Name::new(parameter.name()).camel()?,
-                    ty: primitive_type(primitive),
-                    marshal_i1: matches!(primitive, Primitive::Bool),
+                    ty: direct_type(ty, context)?,
+                    marshal_i1: matches!(ty, DirectValueType::Primitive(Primitive::Bool)),
                 })
             })
             .collect::<Result<Vec<_>>>()?;
 
-        let (
-            public_return_type,
-            native_return_type,
-            return_marshal_i1,
-            checks_status,
-            expected_return,
-        ) = match callable.returns().plan() {
-            ReturnPlan::Void => (
-                TypeFragment::void(),
-                TypeFragment::new("FfiStatus"),
-                false,
-                true,
-                CBridgeType::Status,
-            ),
-            ReturnPlan::DirectViaReturnSlot {
-                ty: boltffi_binding::DirectValueType::Primitive(primitive),
-            } => (
-                primitive_type(*primitive),
-                primitive_type(*primitive),
-                matches!(primitive, Primitive::Bool),
-                false,
-                CBridgeType::primitive(*primitive)?,
-            ),
-            _ => return unsupported("non-primitive function returns"),
-        };
-        if c_function.returns() != &expected_return {
-            return broken_contract("function return type does not match the C bridge");
-        }
+        let (public_return_type, native_return_type, return_marshal_i1, checks_status) =
+            match callable.returns().plan() {
+                ReturnPlan::Void => {
+                    if c_function.returns() != &CBridgeType::Status {
+                        return broken_contract("void return type does not match the C bridge");
+                    }
+                    (
+                        TypeFragment::void(),
+                        TypeFragment::new("FfiStatus"),
+                        false,
+                        true,
+                    )
+                }
+                ReturnPlan::DirectViaReturnSlot { ty } => {
+                    if !c_direct_matches(ty, c_function.returns(), bridge)? {
+                        return broken_contract("function return type does not match the C bridge");
+                    }
+                    let rendered = direct_type(ty, context)?;
+                    (
+                        rendered.clone(),
+                        rendered,
+                        matches!(ty, DirectValueType::Primitive(Primitive::Bool)),
+                        false,
+                    )
+                }
+                _ => return unsupported("non-primitive function returns"),
+            };
 
         let name = Name::new(declaration.name()).pascal()?;
         let native_name = Identifier::parse(format!("Native{name}"))?;
@@ -212,11 +214,34 @@ impl<'module> Module<'module> {
         let mut native_functions = BTreeMap::<HelperId, Statement>::new();
         let mut support = BTreeMap::<String, Statement>::new();
         let mut diagnostics = Vec::<Diagnostic>::new();
+        let mut files = Vec::<GeneratedFile>::new();
 
         for declaration in declarations {
+            let declaration_ref = declaration.declaration();
             let (_, emitted) = declaration.into_parts();
             let (primary, aux, emitted_diagnostics) = emitted.into_parts();
             diagnostics.extend(emitted_diagnostics);
+            if matches!(
+                declaration_ref,
+                DeclarationRef::Record(_) | DeclarationRef::Enum(_)
+            ) {
+                if !aux.is_empty() {
+                    return Err(Error::UnexpectedBindingShape {
+                        layer: "csharp module",
+                        shape: "standalone declaration auxiliary source",
+                    });
+                }
+                let name = match declaration_ref {
+                    DeclarationRef::Record(record) => record.name(),
+                    DeclarationRef::Enum(enumeration) => enumeration.name(),
+                    _ => unreachable!(),
+                };
+                files.push(GeneratedFile::new(
+                    FilePath::new(format!("{}.cs", Name::new(name).pascal()?))?,
+                    primary.into_string(),
+                ));
+                continue;
+            }
             if !primary.is_empty() {
                 functions.push(Statement::new(primary.into_string()));
             }
@@ -255,10 +280,8 @@ impl<'module> Module<'module> {
         }
         .render()?;
         let path = FilePath::new(format!("{}.cs", self.class_name.as_str()))?;
-        Ok(GeneratedOutput::new(
-            vec![GeneratedFile::new(path, source)],
-            diagnostics,
-        ))
+        files.push(GeneratedFile::new(path, source));
+        Ok(GeneratedOutput::new(files, diagnostics))
     }
 }
 
@@ -277,7 +300,7 @@ fn bridge_function<'bridge>(
         })
 }
 
-fn primitive_type(primitive: Primitive) -> TypeFragment {
+pub(super) fn primitive_type(primitive: Primitive) -> TypeFragment {
     TypeFragment::new(match primitive {
         Primitive::Bool => "bool",
         Primitive::I8 => "sbyte",
@@ -293,6 +316,50 @@ fn primitive_type(primitive: Primitive) -> TypeFragment {
         Primitive::F32 => "float",
         Primitive::F64 => "double",
         _ => unreachable!("Primitive is exhaustively matched"),
+    })
+}
+
+fn direct_type(ty: &DirectValueType, context: &RenderContext<Native>) -> Result<TypeFragment> {
+    match ty {
+        DirectValueType::Primitive(primitive) => Ok(primitive_type(*primitive)),
+        DirectValueType::Record(id) => context
+            .record(*id)
+            .map(|record| Name::new(record.name()).pascal())
+            .transpose()?
+            .map(|name| TypeFragment::new(name.to_string()))
+            .ok_or(Error::UnexpectedBindingShape {
+                layer: "csharp function",
+                shape: "missing direct record declaration",
+            }),
+        DirectValueType::Enum(id) => context
+            .enumeration(*id)
+            .map(|enumeration| Name::new(enumeration.name()).pascal())
+            .transpose()?
+            .map(|name| TypeFragment::new(name.to_string()))
+            .ok_or(Error::UnexpectedBindingShape {
+                layer: "csharp function",
+                shape: "missing C-style enum declaration",
+            }),
+        _ => unsupported("unknown direct value type"),
+    }
+}
+
+fn c_direct_matches(
+    ty: &DirectValueType,
+    c_ty: &CBridgeType,
+    bridge: &CBridgeContract,
+) -> Result<bool> {
+    Ok(match (ty, c_ty) {
+        (DirectValueType::Primitive(primitive), c_ty) => {
+            c_ty == &CBridgeType::primitive(*primitive)?
+        }
+        (DirectValueType::Record(id), CBridgeType::DirectRecord(name)) => bridge
+            .source_direct_record(*id)
+            .is_some_and(|record| record.name() == name.as_str()),
+        (DirectValueType::Enum(id), CBridgeType::CStyleEnum { name, .. }) => bridge
+            .source_c_style_enum(*id)
+            .is_some_and(|enumeration| enumeration.name() == name.as_str()),
+        _ => false,
     })
 }
 

@@ -7,7 +7,8 @@ using System.Runtime.InteropServices;
 
 namespace {{ namespace }}
 {
-{% for item in support %}{{ item }}{% endfor %}
+{% for item in support %}{{ item }}
+{% endfor %}
     public static class {{ class_name }}
     {
 {% for function in functions %}{{ function }}
