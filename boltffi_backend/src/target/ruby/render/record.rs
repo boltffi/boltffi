@@ -56,13 +56,23 @@ impl Record {
         let body = match declaration {
             RecordDecl::Direct(record) => render_direct(record, bridge, &symbols)?,
             RecordDecl::Encoded(record) => {
-                if !encoded_record_supported(record) {
-                    return Err(Error::UnsupportedTarget {
-                        target: "ruby",
-                        shape: "unsupported encoded record field",
-                    });
+                if record.is_native_opaque() {
+                    if !native_opaque_record_supported(record) {
+                        return Err(Error::UnsupportedTarget {
+                            target: "ruby",
+                            shape: "unsupported native opaque record field",
+                        });
+                    }
+                    render_native_opaque(record, &symbols)?
+                } else {
+                    if !encoded_record_supported(record) {
+                        return Err(Error::UnsupportedTarget {
+                            target: "ruby",
+                            shape: "unsupported encoded record field",
+                        });
+                    }
+                    render_encoded(record, &symbols)?
                 }
-                render_encoded(record, &symbols)?
             }
             _ => {
                 return Err(Error::UnsupportedTarget {
@@ -488,6 +498,316 @@ fn add_encoded_field_inner(
         }
     }
     Ok(())
+}
+
+pub fn native_opaque_record_supported(record: &EncodedRecordDecl<Native>) -> bool {
+    record.fields().iter().all(|field| {
+        matches!(field.key(), FieldKey::Named(_)) && native_opaque_field_supported(field.ty())
+    })
+}
+
+fn native_opaque_field_supported(ty: &TypeRef) -> bool {
+    match ty {
+        TypeRef::String | TypeRef::Bytes | TypeRef::InternedString { .. } => true,
+        TypeRef::Primitive(_) => true,
+        TypeRef::Optional(inner) => {
+            !matches!(inner.as_ref(), TypeRef::Optional(_)) && native_opaque_field_supported(inner)
+        }
+        _ => false,
+    }
+}
+
+fn native_opaque_field_name(key: &FieldKey) -> Result<String> {
+    field_name(key)
+}
+
+fn render_native_opaque(record: &EncodedRecordDecl<Native>, symbols: &Symbols) -> Result<String> {
+    let ident = &symbols.ident;
+    let c_type = format!("boltffi_ruby_{ident}");
+    let exports = record
+        .native_opaque_exports()
+        .ok_or(Error::UnsupportedTarget {
+            target: "ruby",
+            shape: "native opaque record without helper exports",
+        })?;
+    let drop_symbol = exports.drop().name().as_str();
+    let dsize_symbol = exports.dsize().name().as_str();
+
+    // Determine which fields need VALUE caches (not primitives)
+    let mut value_cache_fields: Vec<String> = Vec::new();
+    let mut cache_initializers: Vec<String> = Vec::new();
+    let mut mark_lines: Vec<String> = Vec::new();
+    let mut compact_lines: Vec<String> = Vec::new();
+    let mut getter_lines: Vec<String> = Vec::new();
+    let mut support_defs: Vec<String> = Vec::new();
+    let mut extension_init_lines: Vec<String> = Vec::new();
+    let mut method_defs: Vec<String> = Vec::new();
+
+    for field in record.fields() {
+        let name = native_opaque_field_name(field.key())?;
+        let (ty, optional) = match field.ty() {
+            TypeRef::Optional(inner) => (inner.as_ref(), true),
+            ty => (ty, false),
+        };
+
+        let field_export = exports.field(field.key()).ok_or(Error::UnsupportedTarget {
+            target: "ruby",
+            shape: "native opaque record field without matching exports",
+        })?;
+        let has_sym: String = if optional {
+            field_export
+                .has()
+                .ok_or(Error::UnsupportedTarget {
+                    target: "ruby",
+                    shape: "native opaque optional field without has export",
+                })?
+                .name()
+                .as_str()
+                .to_owned()
+        } else {
+            String::new()
+        };
+
+        match ty {
+            TypeRef::Primitive(primitive) => {
+                let get_sym = field_export
+                    .get()
+                    .ok_or(Error::UnsupportedTarget {
+                        target: "ruby",
+                        shape: "native opaque primitive field without get export",
+                    })?
+                    .name()
+                    .as_str()
+                    .to_owned();
+                value_cache_fields.push(name.clone());
+                cache_initializers.push(format!("    data->{name}_value = Qundef;"));
+                mark_lines.push(format!(
+                    "    if (data->{name}_value != Qundef && !RB_SPECIAL_CONST_P(data->{name}_value)) rb_gc_mark_movable(data->{name}_value);"
+                ));
+                compact_lines.push(format!(
+                    "    if (data->{name}_value != Qundef && !RB_SPECIAL_CONST_P(data->{name}_value)) data->{name}_value = rb_gc_location(data->{name}_value);"
+                ));
+                let c_prim_type = primitive_c_type(*primitive)?;
+                let box_expr = primitive_box(*primitive).replace("_ffi_ret", "val");
+                if optional {
+                    getter_lines.push(format!(
+                        "static VALUE boltffi_ruby_{ident}_{name}(VALUE self) {{\n    {c_type} *data = ({c_type} *)RTYPEDDATA_DATA(self);\n    if (data->{name}_value != Qundef) return data->{name}_value;\n    if (!{has_sym}(data->native)) {{\n        RB_OBJ_WRITE(self, &data->{name}_value, Qnil);\n        return Qnil;\n    }}\n    {c_prim_type} val = {get_sym}(data->native);\n    VALUE result = {box_expr};\n    RB_OBJ_WRITE(self, &data->{name}_value, result);\n    RB_GC_GUARD(self);\n    return data->{name}_value;\n}}\n"
+                    ));
+                } else {
+                    getter_lines.push(format!(
+                        "static VALUE boltffi_ruby_{ident}_{name}(VALUE self) {{\n    {c_type} *data = ({c_type} *)RTYPEDDATA_DATA(self);\n    if (data->{name}_value != Qundef) return data->{name}_value;\n    {c_prim_type} val = {get_sym}(data->native);\n    VALUE result = {box_expr};\n    RB_OBJ_WRITE(self, &data->{name}_value, result);\n    RB_GC_GUARD(self);\n    return data->{name}_value;\n}}\n"
+                    ));
+                }
+            }
+            TypeRef::String => {
+                let borrow_sym = field_export
+                    .borrow()
+                    .ok_or(Error::UnsupportedTarget {
+                        target: "ruby",
+                        shape: "native opaque string field without borrow export",
+                    })?
+                    .name()
+                    .as_str()
+                    .to_owned();
+                value_cache_fields.push(name.clone());
+                cache_initializers.push(format!("    data->{name}_value = Qundef;"));
+                mark_lines.push(format!(
+                    "    if (data->{name}_value != Qundef && data->{name}_value != Qnil) rb_gc_mark_movable(data->{name}_value);"
+                ));
+                compact_lines.push(format!(
+                    "    if (data->{name}_value != Qundef && data->{name}_value != Qnil) data->{name}_value = rb_gc_location(data->{name}_value);"
+                ));
+                if optional {
+                    getter_lines.push(format!(
+                        "static VALUE boltffi_ruby_{ident}_{name}(VALUE self) {{\n    {c_type} *data = ({c_type} *)RTYPEDDATA_DATA(self);\n    if (data->{name}_value != Qundef) return data->{name}_value;\n    if (!{has_sym}(data->native)) {{\n        RB_OBJ_WRITE(self, &data->{name}_value, Qnil);\n        return Qnil;\n    }}\n    const uint8_t *ptr; uintptr_t len;\n    if (!{borrow_sym}(data->native, &ptr, &len)) rb_raise(rb_eRuntimeError, \"native opaque record field accessor failed\");\n    VALUE result = rb_utf8_str_new((const char *)ptr, (long)len);\n    RB_ENC_CODERANGE_SET(result, RUBY_ENC_CODERANGE_VALID);\n    rb_obj_freeze(result);\n    RB_OBJ_WRITE(self, &data->{name}_value, result);\n    RB_GC_GUARD(self);\n    return data->{name}_value;\n}}\n"
+                    ));
+                } else {
+                    getter_lines.push(format!(
+                        "static VALUE boltffi_ruby_{ident}_{name}(VALUE self) {{\n    {c_type} *data = ({c_type} *)RTYPEDDATA_DATA(self);\n    if (data->{name}_value != Qundef) return data->{name}_value;\n    const uint8_t *ptr; uintptr_t len;\n    if (!{borrow_sym}(data->native, &ptr, &len)) rb_raise(rb_eRuntimeError, \"native opaque record field accessor failed\");\n    VALUE result = rb_utf8_str_new((const char *)ptr, (long)len);\n    RB_ENC_CODERANGE_SET(result, RUBY_ENC_CODERANGE_VALID);\n    rb_obj_freeze(result);\n    RB_OBJ_WRITE(self, &data->{name}_value, result);\n    RB_GC_GUARD(self);\n    return data->{name}_value;\n}}\n"
+                    ));
+                }
+            }
+            TypeRef::Bytes => {
+                let borrow_sym = field_export
+                    .borrow()
+                    .ok_or(Error::UnsupportedTarget {
+                        target: "ruby",
+                        shape: "native opaque bytes field without borrow export",
+                    })?
+                    .name()
+                    .as_str()
+                    .to_owned();
+                value_cache_fields.push(name.clone());
+                cache_initializers.push(format!("    data->{name}_value = Qundef;"));
+                mark_lines.push(format!(
+                    "    if (data->{name}_value != Qundef && data->{name}_value != Qnil) rb_gc_mark_movable(data->{name}_value);"
+                ));
+                compact_lines.push(format!(
+                    "    if (data->{name}_value != Qundef && data->{name}_value != Qnil) data->{name}_value = rb_gc_location(data->{name}_value);"
+                ));
+                if optional {
+                    getter_lines.push(format!(
+                        "static VALUE boltffi_ruby_{ident}_{name}(VALUE self) {{\n    {c_type} *data = ({c_type} *)RTYPEDDATA_DATA(self);\n    if (data->{name}_value != Qundef) return data->{name}_value;\n    if (!{has_sym}(data->native)) {{\n        RB_OBJ_WRITE(self, &data->{name}_value, Qnil);\n        return Qnil;\n    }}\n    const uint8_t *ptr; uintptr_t len;\n    if (!{borrow_sym}(data->native, &ptr, &len)) rb_raise(rb_eRuntimeError, \"native opaque record field accessor failed\");\n    VALUE result = rb_str_new((const char *)ptr, (long)len);\n    rb_obj_freeze(result);\n    RB_OBJ_WRITE(self, &data->{name}_value, result);\n    RB_GC_GUARD(self);\n    return data->{name}_value;\n}}\n"
+                    ));
+                } else {
+                    getter_lines.push(format!(
+                        "static VALUE boltffi_ruby_{ident}_{name}(VALUE self) {{\n    {c_type} *data = ({c_type} *)RTYPEDDATA_DATA(self);\n    if (data->{name}_value != Qundef) return data->{name}_value;\n    const uint8_t *ptr; uintptr_t len;\n    if (!{borrow_sym}(data->native, &ptr, &len)) rb_raise(rb_eRuntimeError, \"native opaque record field accessor failed\");\n    VALUE result = rb_str_new((const char *)ptr, (long)len);\n    rb_obj_freeze(result);\n    RB_OBJ_WRITE(self, &data->{name}_value, result);\n    RB_GC_GUARD(self);\n    return data->{name}_value;\n}}\n"
+                    ));
+                }
+            }
+            TypeRef::InternedString { static_values } => {
+                let interned_tag_sym = field_export
+                    .interned_tag()
+                    .ok_or(Error::UnsupportedTarget {
+                        target: "ruby",
+                        shape: "native opaque interned string field without interned_tag export",
+                    })?
+                    .name()
+                    .as_str()
+                    .to_owned();
+                let interned_id_sym = field_export
+                    .interned_id()
+                    .ok_or(Error::UnsupportedTarget {
+                        target: "ruby",
+                        shape: "native opaque interned string field without interned_id export",
+                    })?
+                    .name()
+                    .as_str()
+                    .to_owned();
+                let interned_borrow_sym = field_export
+                    .interned_borrow_dynamic()
+                    .ok_or(Error::UnsupportedTarget {
+                        target: "ruby",
+                        shape: "native opaque interned string field without interned_borrow_dynamic export",
+                    })?
+                    .name()
+                    .as_str()
+                    .to_owned();
+                validate_interned_static_values(static_values)?;
+                let table = format!("boltffi_ruby_{ident}_{name}_table");
+                let count = static_values.len();
+                let table_len = count.max(1);
+                value_cache_fields.push(name.clone());
+                cache_initializers.push(format!("    data->{name}_value = Qundef;"));
+                mark_lines.push(format!(
+                    "    if (data->{name}_value != Qundef && data->{name}_value != Qnil) rb_gc_mark_movable(data->{name}_value);"
+                ));
+                compact_lines.push(format!(
+                    "    if (data->{name}_value != Qundef && data->{name}_value != Qnil) data->{name}_value = rb_gc_location(data->{name}_value);"
+                ));
+                support_defs.push(format!("static VALUE {table}[{table_len}];\n"));
+                for (index, value) in static_values.iter().enumerate() {
+                    let literal = c_string_literal(value);
+                    extension_init_lines.push(format!(
+                        "    BOLTFFI_RUBY_DEFINE_INTERNED_STATIC({table}[{index}], {literal});\n"
+                    ));
+                }
+                if optional {
+                    getter_lines.push(format!(
+                        "static VALUE boltffi_ruby_{ident}_{name}(VALUE self) {{\n    {c_type} *data = ({c_type} *)RTYPEDDATA_DATA(self);\n    if (data->{name}_value != Qundef) return data->{name}_value;\n    if (!{has_sym}(data->native)) {{\n        RB_OBJ_WRITE(self, &data->{name}_value, Qnil);\n        return Qnil;\n    }}\n    uint8_t tag = {interned_tag_sym}(data->native);\n    VALUE result;\n    if (tag == 0) {{\n        uint32_t id = {interned_id_sym}(data->native);\n        if (id >= {count}) rb_raise(rb_eRuntimeError, \"native opaque record: invalid interned string id\");\n        result = {table}[id];\n    }} else if (tag == 1) {{\n        const uint8_t *ptr; uintptr_t len;\n        if (!{interned_borrow_sym}(data->native, &ptr, &len)) rb_raise(rb_eRuntimeError, \"native opaque record: interned borrow failed\");\n        result = rb_utf8_str_new((const char *)ptr, (long)len);\n        RB_ENC_CODERANGE_SET(result, RUBY_ENC_CODERANGE_VALID);\n        rb_obj_freeze(result);\n    }} else {{\n        rb_raise(rb_eRuntimeError, \"native opaque record: invalid interned string tag\");\n    }}\n    RB_OBJ_WRITE(self, &data->{name}_value, result);\n    RB_GC_GUARD(self);\n    return data->{name}_value;\n}}\n"
+                    ));
+                } else {
+                    getter_lines.push(format!(
+                        "static VALUE boltffi_ruby_{ident}_{name}(VALUE self) {{\n    {c_type} *data = ({c_type} *)RTYPEDDATA_DATA(self);\n    if (data->{name}_value != Qundef) return data->{name}_value;\n    uint8_t tag = {interned_tag_sym}(data->native);\n    VALUE result;\n    if (tag == 0) {{\n        uint32_t id = {interned_id_sym}(data->native);\n        if (id >= {count}) rb_raise(rb_eRuntimeError, \"native opaque record: invalid interned string id\");\n        result = {table}[id];\n    }} else if (tag == 1) {{\n        const uint8_t *ptr; uintptr_t len;\n        if (!{interned_borrow_sym}(data->native, &ptr, &len)) rb_raise(rb_eRuntimeError, \"native opaque record: interned borrow failed\");\n        result = rb_utf8_str_new((const char *)ptr, (long)len);\n        RB_ENC_CODERANGE_SET(result, RUBY_ENC_CODERANGE_VALID);\n        rb_obj_freeze(result);\n    }} else {{\n        rb_raise(rb_eRuntimeError, \"native opaque record: invalid interned string tag\");\n    }}\n    RB_OBJ_WRITE(self, &data->{name}_value, result);\n    RB_GC_GUARD(self);\n    return data->{name}_value;\n}}\n"
+                    ));
+                }
+            }
+            _ => {
+                return Err(Error::UnsupportedTarget {
+                    target: "ruby",
+                    shape: "unsupported native opaque record field type",
+                });
+            }
+        }
+
+        method_defs.push(format!(
+            "    rb_define_method({}, \"{name}\", boltffi_ruby_{ident}_{name}, 0);\n",
+            symbols.class_var
+        ));
+    }
+
+    // Build C struct fields: void *native + VALUE caches
+    let mut struct_fields = vec!["    void *native;".to_owned()];
+    for cache_field in &value_cache_fields {
+        struct_fields.push(format!("    VALUE {cache_field}_value;"));
+    }
+
+    let struct_def = format!(
+        "typedef struct {{\n{}\n}} {c_type};\n",
+        struct_fields.join("\n")
+    );
+
+    let mark_body = mark_lines.join("\n");
+    let compact_body = compact_lines.join("\n");
+    let mark_fn = format!(
+        "static void boltffi_ruby_{ident}_mark(void *ptr) {{\n    {c_type} *data = ({c_type} *)ptr;\n    if (data == NULL) return;\n{mark_body}\n}}\n"
+    );
+    let compact_fn = format!(
+        "static void boltffi_ruby_{ident}_compact(void *ptr) {{\n    {c_type} *data = ({c_type} *)ptr;\n    if (data == NULL) return;\n{compact_body}\n}}\n"
+    );
+    let free_fn = format!(
+        "static void boltffi_ruby_{ident}_free(void *ptr) {{\n    {c_type} *data = ({c_type} *)ptr;\n    if (data != NULL) {{\n        void *native = data->native;\n        data->native = NULL;\n        if (native != NULL) {{\n            {drop_symbol}(native);
+        }}\n#if !BOLTFFI_RUBY_HAS_TYPED_EMBEDDABLE\n        xfree(data);\n#endif\n    }}\n}}\n"
+    );
+    let size_fn = format!(
+        "static size_t boltffi_ruby_{ident}_size(const void *ptr) {{\n    const {c_type} *data = (const {c_type} *)ptr;\n    size_t size = 0;\n#if !BOLTFFI_RUBY_HAS_TYPED_EMBEDDABLE\n    size += sizeof({c_type});\n#endif\n    if (data != NULL && data->native != NULL) size += {dsize_symbol}(data->native);
+    return size;\n}}\n"
+    );
+    let data_type_def = format!(
+        "static const rb_data_type_t {} = {{\n    \"boltffi.ruby.generated.{}\", {{ boltffi_ruby_{ident}_mark, boltffi_ruby_{ident}_free, boltffi_ruby_{ident}_size, boltffi_ruby_{ident}_compact }}, NULL, NULL, RUBY_TYPED_FREE_IMMEDIATELY | BOLTFFI_RUBY_TYPED_EMBEDDABLE\n}};\n",
+        symbols.data_type, symbols.class_name
+    );
+
+    let cache_init_body = cache_initializers.join("\n");
+    let from_native_fn = format!(
+        "static VALUE boltffi_ruby_{ident}_from_native(VALUE src) {{\n    void *native = (void *)(uintptr_t)src;\n    {c_type} *data;\n    VALUE obj = TypedData_Make_Struct({}, {c_type}, &{}, data);\n    data->native = native;\n{cache_init_body}\n    return obj;\n}}\n",
+        symbols.class_var, symbols.data_type
+    );
+
+    let boxer_fn = format!(
+        "static VALUE {}(void *native) {{\n    if (native == NULL) rb_raise(rb_eRuntimeError, \"native opaque record returned null\");\n    int error = 0;\n    VALUE obj = rb_protect(boltffi_ruby_{ident}_from_native, (VALUE)(uintptr_t)native, &error);\n    if (error) {{\n        {drop_symbol}(native);
+        rb_jump_tag(error);\n    }}\n    RB_GC_GUARD(obj);\n    return obj;\n}}\n",
+        symbols.boxer
+    );
+
+    let method_defs_str = method_defs.join("");
+    let extension_init_str = extension_init_lines.join("");
+    let support_defs_str = support_defs.join("");
+    let getter_defs_str = getter_lines.join("\n");
+    let class_var = &symbols.class_var;
+    let class_name = &symbols.class_name;
+
+    // Format: declarations body + init markers (parsed by parse_record_rendering)
+    let mut out = format!("/* boltffi:ruby:record class={class_name} var={class_var} */\n");
+    out.push_str(&format!("static VALUE {class_var};\n"));
+    out.push_str(&support_defs_str);
+    out.push_str(&struct_def);
+    out.push('\n');
+    out.push_str(&mark_fn);
+    out.push('\n');
+    out.push_str(&compact_fn);
+    out.push('\n');
+    out.push_str(&free_fn);
+    out.push('\n');
+    out.push_str(&size_fn);
+    out.push('\n');
+    out.push_str(&data_type_def);
+    out.push('\n');
+    out.push_str(&from_native_fn);
+    out.push('\n');
+    out.push_str(&boxer_fn);
+    out.push('\n');
+    out.push_str(&getter_defs_str);
+    out.push('\n');
+    // Init section (picked up by parse_record_rendering)
+    out.push_str(&format!("/* boltffi:ruby:record:init {ident} */\n"));
+    out.push_str(&extension_init_str);
+    out.push_str(&format!(
+        "    {class_var} = rb_define_class_under(mod, \"{class_name}\", rb_cObject);\n    rb_undef_alloc_func({class_var});\n"
+    ));
+    out.push_str(&method_defs_str);
+    out.push_str("/* boltffi:ruby:record:init:end */\n");
+    Ok(out)
 }
 
 fn field_name(key: &FieldKey) -> Result<String> {

@@ -56,6 +56,8 @@ impl host::HostBackend for RubyCExtHost {
             .stable(BindingCapability::Functions)
             .stable(BindingCapability::Classes)
             .stable(BindingCapability::InternedString)
+            .stable(BindingCapability::NativeOpaqueRecords)
+            .stable(BindingCapability::BorrowedSlices)
             .unsupported(
                 BindingCapability::Callbacks,
                 "Ruby callbacks are not migrated yet",
@@ -106,9 +108,9 @@ impl host::HostBackend for RubyCExtHost {
         &self,
         decl: &FunctionDecl<Self::Surface>,
         bridge: &Self::Bridge,
-        _context: &RenderContext<Self::Surface>,
+        context: &RenderContext<Self::Surface>,
     ) -> Result<Emitted> {
-        render::Function::from_declaration(decl, bridge, _context)?.render()
+        render::Function::from_declaration(decl, bridge, context)?.render()
     }
 
     fn class(
@@ -291,6 +293,223 @@ mod tests {
             .find(|file| file.path().as_path() == Path::new("ext/demo/_native.c"))
             .map(|file| file.contents())
             .expect("Ruby extension file")
+    }
+
+    /// Globally renames every JSON string occurrence of `original_name` to
+    /// `new_name` in the serialized bindings.  This updates both the global
+    /// symbol table and all inline symbol references (e.g.
+    /// `native_opaque_exports.fields[i].get.name`) in one pass, keeping the
+    /// bindings consistent so deserialization succeeds.
+    fn bindings_with_symbol_globally_renamed(
+        source: &str,
+        original_name: &str,
+        new_name: &str,
+    ) -> Bindings<Native> {
+        let mut value = serde_json::to_value(bindings(source)).expect("bindings serialize");
+        let mut renamed = false;
+        rename_json_string_occurrences(&mut value, original_name, new_name, &mut renamed);
+        assert!(renamed, "expected to rename symbol {original_name}");
+        serde_json::from_value(value).expect("renamed bindings should deserialize")
+    }
+
+    fn rename_json_string_occurrences(
+        value: &mut serde_json::Value,
+        original: &str,
+        new_name: &str,
+        renamed: &mut bool,
+    ) {
+        match value {
+            serde_json::Value::String(s) if s == original => {
+                *s = new_name.to_owned();
+                *renamed = true;
+            }
+            serde_json::Value::Object(obj) => {
+                for child in obj.values_mut() {
+                    rename_json_string_occurrences(child, original, new_name, renamed);
+                }
+            }
+            serde_json::Value::Array(arr) => {
+                for item in arr {
+                    rename_json_string_occurrences(item, original, new_name, renamed);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Mangles the key of one field in `native_opaque_exports.fields` from the
+    /// real field name to a sentinel that the Ruby renderer cannot match via
+    /// `exports.field(field.key())`, while leaving the export entry in place so
+    /// the C-bridge's positional `zip` loop still pairs exports by index.
+    fn bindings_with_native_opaque_field_key_mangled(
+        source: &str,
+        field_name: &str,
+    ) -> Bindings<Native> {
+        let mut value = serde_json::to_value(bindings(source)).expect("bindings serialize");
+        let mut mangled = false;
+        mangle_native_opaque_field_export_key(&mut value, field_name, &mut mangled);
+        assert!(mangled, "expected to mangle key for field {field_name}");
+        serde_json::from_value(value).expect("mangled bindings should deserialize")
+    }
+
+    fn mangle_native_opaque_field_export_key(
+        value: &mut serde_json::Value,
+        field_name: &str,
+        mangled: &mut bool,
+    ) {
+        match value {
+            serde_json::Value::Object(object) => {
+                let found = object
+                    .get_mut("native_opaque_exports")
+                    .and_then(|exports| exports.get_mut("fields"))
+                    .and_then(serde_json::Value::as_array_mut)
+                    .map(|fields| {
+                        let mut any = false;
+                        for field in fields.iter_mut() {
+                            if native_opaque_field_export_key_matches(field, field_name) {
+                                // Change the single-part key to a sentinel name that
+                                // no real record field carries, so the key-based lookup
+                                // in the Ruby renderer returns None.
+                                if let Some(parts) = field
+                                    .get_mut("key")
+                                    .and_then(|k| k.get_mut("Named"))
+                                    .and_then(|n| n.get_mut("parts"))
+                                    .and_then(serde_json::Value::as_array_mut)
+                                    && let Some(first) = parts.first_mut()
+                                {
+                                    *first = serde_json::Value::String(
+                                        "__mangled_key_sentinel".to_owned(),
+                                    );
+                                    any = true;
+                                }
+                            }
+                        }
+                        any
+                    })
+                    .unwrap_or(false);
+                if found {
+                    *mangled = true;
+                }
+                for child in object.values_mut() {
+                    mangle_native_opaque_field_export_key(child, field_name, mangled);
+                }
+            }
+            serde_json::Value::Array(items) => {
+                for item in items {
+                    mangle_native_opaque_field_export_key(item, field_name, mangled);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Returns true if `field` is the export entry for the given single-word field name.
+    fn native_opaque_field_export_key_matches(field: &serde_json::Value, field_name: &str) -> bool {
+        field
+            .get("key")
+            .and_then(|key| key.get("Named"))
+            .and_then(|named| named.get("parts"))
+            .and_then(serde_json::Value::as_array)
+            .is_some_and(|parts| {
+                parts.len() == 1
+                    && parts.first().and_then(serde_json::Value::as_str) == Some(field_name)
+            })
+    }
+
+    #[test]
+    fn ruby_target_uses_exact_ir_symbol_names_for_native_opaque_fields() {
+        // Globally rename two symbols in the binding IR (updating both the
+        // global symbol table and the inline export references).  If the
+        // renderer uses the exact IR names the renamed strings appear in the
+        // output; if it derives names from the drop-symbol prefix instead,
+        // the original (prefix-derived) names would appear and the assertions
+        // would fail.
+        let bindings = {
+            // Rename the primitive `get` symbol for `count`.
+            let b1 = bindings_with_symbol_globally_renamed(
+                r#"
+                #[data(opaque)]
+                pub struct Snap {
+                    pub count: u32,
+                    pub name: String,
+                }
+                #[export]
+                pub fn make() -> Snap { todo!() }
+                "#,
+                "boltffi_record_native_snap_get_count",
+                "boltffi_custom_get_count_xyzzy",
+            );
+            // Rename the `borrow` symbol for `name`.
+            let mut value = serde_json::to_value(b1).expect("serialize");
+            let mut renamed = false;
+            rename_json_string_occurrences(
+                &mut value,
+                "boltffi_record_native_snap_borrow_name",
+                "boltffi_custom_borrow_name_xyzzy",
+                &mut renamed,
+            );
+            assert!(renamed, "expected to rename borrow symbol");
+            serde_json::from_value::<Bindings<Native>>(value)
+                .expect("deserialize after borrow rename")
+        };
+
+        let output = target().render(&bindings).expect("render should succeed");
+        let ext = extension(&output);
+
+        // The exact IR names (the renamed ones) must appear.
+        assert!(
+            ext.contains("boltffi_custom_get_count_xyzzy"),
+            "renamed get symbol must appear in output"
+        );
+        assert!(
+            ext.contains("boltffi_custom_borrow_name_xyzzy"),
+            "renamed borrow symbol must appear in output"
+        );
+        // The original prefix-derived names for those fields must NOT appear.
+        assert!(
+            !ext.contains("boltffi_record_native_snap_get_count"),
+            "original get symbol must not appear after rename"
+        );
+        assert!(
+            !ext.contains("boltffi_record_native_snap_borrow_name"),
+            "original borrow symbol must not appear after rename"
+        );
+    }
+
+    #[test]
+    fn ruby_target_rejects_native_opaque_field_without_matching_exports() {
+        // Mangle the key of one field's export entry so the Ruby renderer's
+        // key-based lookup (`exports.field(field.key())`) cannot find it,
+        // while the C-bridge's positional `zip` loop is unaffected.  The
+        // renderer must return Error::UnsupportedTarget rather than
+        // silently emitting a guessed call.
+        let bindings = bindings_with_native_opaque_field_key_mangled(
+            r#"
+            #[data(opaque)]
+            pub struct Snap {
+                pub count: u32,
+                pub name: String,
+            }
+            #[export]
+            pub fn make() -> Snap { todo!() }
+            "#,
+            "count",
+        );
+
+        let err = target()
+            .render(&bindings)
+            .expect_err("missing field export should fail rendering");
+
+        assert!(
+            matches!(
+                err,
+                Error::UnsupportedTarget {
+                    target: "ruby",
+                    shape: "native opaque record field without matching exports",
+                }
+            ),
+            "unexpected error: {err:?}"
+        );
     }
 
     #[test]
@@ -497,6 +716,75 @@ mod tests {
         );
     }
 
+    #[test]
+    fn ruby_target_derives_native_opaque_record_from_binding_ir() {
+        let output = target()
+            .render(&bindings(
+                r#"
+                boltffi::interned_string_pool! {
+                    pub Label {
+                        Known = "known",
+                    }
+                }
+
+                #[data(opaque)]
+                pub struct Sniffed {
+                    pub name: Option<String>,
+                    pub label: Option<boltffi::InternedString<Label>>,
+                    pub major: u32,
+                }
+
+                #[export]
+                pub fn sniff(#[boltffi::borrowed] ua: &[u8]) -> Sniffed {
+                    Sniffed {
+                        name: None,
+                        label: None,
+                        major: 0,
+                    }
+                }
+
+                #[export]
+                pub fn sniff_again(#[boltffi::borrowed] ua: &[u8]) -> Sniffed {
+                    sniff(ua)
+                }
+                "#,
+            ))
+            .expect("Ruby target should derive native opaque record return");
+        let extension = extension(&output);
+
+        // Native opaque: void *native handle, VALUE caches, no FfiBuf
+        assert!(extension.contains("void *native;"));
+        assert!(extension.contains("VALUE name_value;"));
+        assert!(extension.contains("VALUE label_value;"));
+        assert!(extension.contains("boltffi_ruby_sniffed_mark"));
+        assert!(extension.contains("boltffi_ruby_sniffed_compact"));
+        assert!(extension.contains("boltffi_ruby_sniffed_free"));
+        // Accessor calls Rust drop in free hook
+        assert!(extension.contains("boltffi_record_native_sniffed_drop"));
+        assert!(extension.contains("boltffi_record_native_sniffed_dsize"));
+        // Field accessors via Rust
+        assert!(extension.contains("boltffi_record_native_sniffed_borrow_name"));
+        assert!(extension.contains("boltffi_record_native_sniffed_interned_label_tag"));
+        assert!(extension.contains("boltffi_record_native_sniffed_get_major"));
+        // Function returns void * and boxes it
+        assert!(extension.contains("void *_ffi_ret = boltffi_function_demo_sniff("));
+        assert!(extension.contains("void *_ffi_ret = boltffi_function_demo_sniff_again("));
+        // Boxer called on handle
+        assert!(extension.contains("return boltffi_ruby_box_sniffed(_ffi_ret);"));
+        // No FfiBuf retained wire buffer
+        assert!(!extension.contains("FfiBuf_u8 boltffi_retained_wire_buffer"));
+        // Every field, including primitives, is cached after the first Rust call.
+        assert!(extension.contains("VALUE major_value;"));
+        assert!(extension.contains("if (data->major_value != Qundef) return data->major_value;"));
+        assert!(extension.contains("RB_OBJ_WRITE(self, &data->major_value, result);"));
+        // Ruby allocation failure returns ownership to Rust exactly once.
+        assert!(extension.contains("rb_protect(boltffi_ruby_sniffed_from_native"));
+        assert!(
+            extension.contains("if (error) {\n        boltffi_record_native_sniffed_drop(native);")
+        );
+        assert!(extension.contains("Qundef"));
+        assert!(extension.contains("RB_OBJ_WRITE"));
+    }
     #[test]
     fn ruby_target_renders_optional_encoded_record_fields() {
         let output = target()

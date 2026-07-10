@@ -1,7 +1,8 @@
 use askama::Template as AskamaTemplate;
 use boltffi_binding::{
-    DirectValueType, ErrorDecl, ExecutionDecl, FunctionDecl, IncomingParam, IntoRust, Native,
-    OutOfRust, ParamDecl, ParamPlan, Primitive, Receive, RecordDecl, ReturnPlan, TypeRef, native,
+    DirectValueType, EncodedParamTransport, ErrorDecl, ExecutionDecl, FunctionDecl, IncomingParam,
+    IntoRust, Native, OutOfRust, ParamDecl, ParamPlan, Primitive, Receive, RecordDecl, ReturnPlan,
+    TypeRef, native,
 };
 
 use crate::{
@@ -207,6 +208,14 @@ impl ParamConversion {
             IncomingParam::Value(ParamPlan::Encoded {
                 ty: TypeRef::String | TypeRef::Bytes,
                 shape: native::BufferShape::Slice,
+                transport: EncodedParamTransport::BorrowedSlice,
+                receive: Receive::ByRef,
+                ..
+            }) => Ok(Self::borrowed_slice(accessor, &name)),
+            IncomingParam::Value(ParamPlan::Encoded {
+                ty: TypeRef::String | TypeRef::Bytes,
+                shape: native::BufferShape::Slice,
+                transport: EncodedParamTransport::Wire,
                 receive: Receive::ByValue | Receive::ByRef,
                 ..
             }) => Ok(Self::encoded_slice(accessor, &name)),
@@ -275,6 +284,19 @@ impl ParamConversion {
                 target: "ruby",
                 shape: "unknown direct record receive mode",
             }),
+        }
+    }
+
+    fn borrowed_slice(accessor: &str, name: &str) -> Self {
+        Self {
+            declarations: vec![
+                format!("Check_Type({accessor}, T_STRING);"),
+                format!("VALUE {name}_value = {accessor};"),
+                format!("const uint8_t *{name}_ptr = (const uint8_t *)RSTRING_PTR({name}_value);"),
+                format!("uintptr_t {name}_len = (uintptr_t)RSTRING_LEN({name}_value);"),
+            ],
+            call_args: vec![format!("{name}_ptr"), format!("{name}_len")],
+            cleanup: vec![format!("RB_GC_GUARD({name}_value);")],
         }
     }
 
@@ -384,6 +406,13 @@ impl ReturnConversion {
                 Ok(Self {
                     declaration: "FfiBuf_u8 _ffi_ret = CALL;".to_owned(),
                     expression: format!("{decoder}(_ffi_ret)"),
+                })
+            }
+            ReturnPlan::NativeOpaqueRecord { record } => {
+                let symbols = RecordSymbols::from_record_id(*record, bridge, context)?;
+                Ok(Self {
+                    declaration: "void *_ffi_ret = CALL;".to_owned(),
+                    expression: format!("{}(_ffi_ret)", symbols.boxer),
                 })
             }
             _ => Err(Error::UnsupportedTarget {
