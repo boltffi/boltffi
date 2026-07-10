@@ -100,7 +100,7 @@ impl host::HostBackend for CSharpHost {
             .stable(BindingCapability::Functions)
             .stable(BindingCapability::Classes)
             .stable(BindingCapability::Callbacks)
-            .unsupported(BindingCapability::Streams, "C# streams have not migrated")
+            .stable(BindingCapability::Streams)
             .unsupported(
                 BindingCapability::Constants,
                 "C# constants have not migrated",
@@ -196,11 +196,11 @@ impl host::HostBackend for CSharpHost {
 
     fn stream(
         &self,
-        _decl: &StreamDecl<Self::Surface>,
-        _bridge: &Self::Bridge,
-        _context: &RenderContext<Self::Surface>,
+        decl: &StreamDecl<Self::Surface>,
+        bridge: &Self::Bridge,
+        context: &RenderContext<Self::Surface>,
     ) -> Result<Emitted> {
-        unsupported("streams")
+        render::Stream::from_declaration(decl, bridge, context)?.render()
     }
 
     fn constant(
@@ -738,6 +738,45 @@ mod tests {
         assert!(source.contains("out int return_out"));
         assert!(source.contains("catch (MathErrorException boltffiError)"));
         assert!(source.contains("return FfiBuf.FromBytes(boltffiErrorWriter.ToArray());"));
+        assert!(output.diagnostics().is_empty());
+    }
+
+    #[test]
+    fn csharp_target_renders_stream_delivery_modes() {
+        let bindings = bindings(
+            r#"
+            use boltffi::EventSubscription;
+            use std::sync::Arc;
+
+            #[data]
+            pub struct Message { pub text: String }
+
+            pub struct Engine;
+
+            #[export]
+            impl Engine {
+                #[ffi_stream(item = i32)]
+                pub fn values(&self) -> Arc<EventSubscription<i32>> { loop {} }
+
+                #[ffi_stream(item = Message, mode = "batch")]
+                pub fn messages(&self) -> Arc<EventSubscription<Message>> { loop {} }
+
+                #[ffi_stream(item = i32, mode = "callback")]
+                pub fn ticks(&self) -> Arc<EventSubscription<i32>> { loop {} }
+            }
+            "#,
+        );
+        let output = target(CSharpHost::new())
+            .render(&bindings)
+            .expect("streams should render");
+
+        let source = file(&output, "Demo.cs");
+        assert!(source.contains("IAsyncEnumerable<int> Values(this Engine self"));
+        assert!(source.contains("MessagesSubscription Messages(this Engine self)"));
+        assert!(source.contains("TicksCancellable Ticks(this Engine self"));
+        assert!(source.contains("EnumeratorCancellation"));
+        assert!(source.contains("NativeValuesPopBatch"));
+        assert!(source.contains("NativeMethods.FreeBuf(buffer);"));
         assert!(output.diagnostics().is_empty());
     }
 

@@ -3,11 +3,13 @@ mod class;
 mod closure;
 mod enumeration;
 mod record;
+mod stream;
 
 pub(in crate::target::csharp) use callback::Callback;
 pub(in crate::target::csharp) use class::Class;
 pub(in crate::target::csharp) use enumeration::Enumeration;
 pub(in crate::target::csharp) use record::Record;
+pub(in crate::target::csharp) use stream::Stream;
 
 use std::collections::BTreeMap;
 
