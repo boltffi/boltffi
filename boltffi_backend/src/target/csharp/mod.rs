@@ -54,7 +54,7 @@ impl CSharpHost {
         Ok(Target::new(self, CBridge::default_header()?))
     }
 
-    fn namespace_for<'bindings>(&'bindings self, bindings: &Bindings<Native>) -> Result<Namespace> {
+    fn namespace_for(&self, bindings: &Bindings<Native>) -> Result<Namespace> {
         self.namespace
             .clone()
             .map(Ok)
@@ -108,8 +108,13 @@ impl host::HostBackend for CSharpHost {
         bridge: &Self::Bridge,
         context: &RenderContext<Self::Surface>,
     ) -> Result<Emitted> {
-        render::Record::from_declaration(decl, self.namespace_for(context.bindings())?, bridge)?
-            .render()
+        render::Record::from_declaration(
+            decl,
+            self.namespace_for(context.bindings())?,
+            bridge,
+            context,
+        )?
+        .render()
     }
 
     fn enumeration(
@@ -122,6 +127,7 @@ impl host::HostBackend for CSharpHost {
             decl,
             self.namespace_for(context.bindings())?,
             bridge,
+            context,
         )?
         .render()
     }
@@ -413,5 +419,76 @@ mod tests {
         assert!(module.contains("internal static extern Point NativeEchoPoint(Point point);"));
         assert!(module.contains("public static Mode EchoMode(Mode mode)"));
         assert!(module.contains("internal static extern Mode NativeEchoMode(Mode mode);"));
+    }
+
+    #[test]
+    fn csharp_target_renders_direct_value_initializers_and_methods() {
+        let bindings = bindings(
+            r#"
+            #[repr(C)]
+            #[data]
+            pub struct Point {
+                pub x: f64,
+                pub y: f64,
+            }
+
+            #[data(impl)]
+            impl Point {
+                pub fn new(x: f64, y: f64) -> Self { Self { x, y } }
+                pub fn origin() -> Self { Self { x: 0.0, y: 0.0 } }
+                pub fn distance(&self) -> f64 { 0.0 }
+                pub fn scale(&mut self, factor: f64) { self.x *= factor; self.y *= factor; }
+                pub fn add(&self, other: Point) -> Point { other }
+                pub fn copy_from(&self, other: &Point) -> Point { *other }
+                pub fn dimensions() -> u32 { 2 }
+            }
+
+            #[repr(u8)]
+            #[data]
+            pub enum Mode {
+                Fast = 1,
+                Slow = 2,
+            }
+
+            #[data(impl)]
+            impl Mode {
+                pub fn new(raw: u8) -> Self { if raw == 1 { Self::Fast } else { Self::Slow } }
+                pub fn count() -> u32 { 2 }
+                pub fn opposite(&self) -> Self { Self::Fast }
+                pub fn is_fast(&self) -> bool { true }
+            }
+            "#,
+        );
+        let output = target(CSharpHost::new())
+            .render(&bindings)
+            .expect("direct value methods should render");
+
+        let point = file(&output, "Point.cs");
+        assert!(point.contains("public static Point New(double x, double y)"));
+        assert!(point.contains("public static Point Origin()"));
+        assert!(point.contains("public double Distance()"));
+        assert!(point.contains("public Point Scale(double factor)"));
+        assert!(point.contains("out Point receiverOut"));
+        assert!(point.contains("return receiverOut;"));
+        assert!(point.contains("public Point Add(Point other)"));
+        assert!(point.contains("public Point CopyFrom(Point other)"));
+        assert!(point.contains("public static uint Dimensions()"));
+
+        let mode = file(&output, "Mode.cs");
+        assert!(mode.contains("public static class ModeMethods"));
+        assert!(mode.contains("public static Mode New(byte raw)"));
+        assert!(mode.contains("public static uint Count()"));
+        assert!(mode.contains("public static Mode Opposite(this Mode self)"));
+        assert!(mode.contains("public static bool IsFast(this Mode self)"));
+
+        let module = file(&output, "Demo.cs");
+        assert!(module.contains("NativePointDistance(Point receiver)"));
+        assert!(
+            module
+                .contains("NativePointScale(Point receiver, out Point receiverOut, double factor)")
+        );
+        assert!(module.contains("NativePointCopyFrom(Point receiver, in Point other)"));
+        assert!(module.contains("NativeModeOpposite(Mode receiver)"));
+        assert!(output.diagnostics().is_empty());
     }
 }

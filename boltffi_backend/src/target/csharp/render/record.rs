@@ -1,16 +1,18 @@
 use askama::Template;
-use boltffi_binding::{DirectRecordDecl, FieldKey, Native, RecordDecl};
+use boltffi_binding::{
+    CanonicalName, DirectRecordDecl, DirectValueType, FieldKey, Native, RecordDecl,
+};
 
 use crate::{
     bridge::c::{CBridgeContract, Type as CBridgeType},
-    core::{Emitted, Error, Result},
+    core::{Diagnostic, Emitted, Error, RenderContext, Result},
 };
 
 use super::super::{
     name_style::{Name, Namespace},
     syntax::{Identifier, TypeFragment},
 };
-use super::primitive_type;
+use super::{Function, primitive_type};
 
 #[derive(Template)]
 #[template(path = "target/csharp/record.cs", escape = "none")]
@@ -23,6 +25,8 @@ pub(in crate::target::csharp) struct Record {
     namespace: Namespace,
     name: Identifier,
     fields: Vec<Field>,
+    methods: Vec<Function>,
+    diagnostics: Vec<Diagnostic>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -37,9 +41,10 @@ impl Record {
         declaration: &RecordDecl<Native>,
         namespace: Namespace,
         bridge: &CBridgeContract,
+        context: &RenderContext<Native>,
     ) -> Result<Self> {
         match declaration {
-            RecordDecl::Direct(record) => Self::from_direct(record, namespace, bridge),
+            RecordDecl::Direct(record) => Self::from_direct(record, namespace, bridge, context),
             RecordDecl::Encoded(_) => Err(Error::UnsupportedTarget {
                 target: "csharp",
                 shape: "encoded records",
@@ -55,6 +60,7 @@ impl Record {
         declaration: &DirectRecordDecl<Native>,
         namespace: Namespace,
         bridge: &CBridgeContract,
+        context: &RenderContext<Native>,
     ) -> Result<Self> {
         let c_record =
             bridge
@@ -88,16 +94,76 @@ impl Record {
                 })
             })
             .collect::<Result<Vec<_>>>()?;
+        let name = Name::new(declaration.name()).pascal()?;
+        let owner = DirectValueType::Record(declaration.id());
+        let mut methods = Vec::new();
+        let mut diagnostics = Vec::new();
+        for initializer in declaration.initializers() {
+            collect_associated(
+                &mut methods,
+                &mut diagnostics,
+                "initializer",
+                initializer.name(),
+                Function::from_initializer(
+                    initializer,
+                    owner.clone(),
+                    &name,
+                    false,
+                    bridge,
+                    context,
+                ),
+            )?;
+        }
+        for method in declaration.methods() {
+            collect_associated(
+                &mut methods,
+                &mut diagnostics,
+                "method",
+                method.name(),
+                Function::from_method(method, owner.clone(), &name, false, bridge, context),
+            )?;
+        }
         Ok(Self {
             namespace,
-            name: Name::new(declaration.name()).pascal()?,
+            name,
             fields,
+            methods,
+            diagnostics,
         })
     }
 
     pub(in crate::target::csharp) fn render(&self) -> Result<Emitted> {
-        Ok(Emitted::primary(RecordTemplate { record: self }.render()?))
+        let mut emitted = Emitted::primary(RecordTemplate { record: self }.render()?)
+            .with_diagnostics(self.diagnostics.iter().cloned());
+        for method in &self.methods {
+            let (_, aux, diagnostics) = method.render()?.into_parts();
+            for chunk in aux {
+                emitted = emitted.with_aux(chunk);
+            }
+            emitted = emitted.with_diagnostics(diagnostics);
+        }
+        Ok(emitted)
     }
+}
+
+fn collect_associated(
+    methods: &mut Vec<Function>,
+    diagnostics: &mut Vec<Diagnostic>,
+    kind: &'static str,
+    name: &CanonicalName,
+    result: Result<Function>,
+) -> Result<()> {
+    match result {
+        Ok(function) => methods.push(function),
+        Err(Error::UnsupportedTarget { shape, .. } | Error::UnsupportedCAbi { shape }) => {
+            diagnostics.push(Diagnostic::new(format!(
+                "{kind} {}: {shape}",
+                Name::new(name).pascal()?
+            )));
+        }
+        Err(error) => return Err(error),
+    }
+    Ok(())
 }
 
 fn field_name(key: &FieldKey) -> Result<Identifier> {

@@ -9,4 +9,11 @@ namespace {{ enumeration.namespace }}
     {
 {% for variant in enumeration.variants %}        {{ variant.name }} = {{ variant.discriminant }}{% if !loop.last %},{% endif %}
 {% endfor %}    }
+{% if !enumeration.methods.is_empty() %}
+    public static class {{ enumeration.name }}Methods
+    {
+{% for function in enumeration.methods %}
+{% include "target/csharp/function.cs" %}
+{% endfor %}    }
+{% endif -%}
 }

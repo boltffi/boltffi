@@ -193,6 +193,10 @@ impl fmt::Display for Expression {
 }
 
 impl Expression {
+    pub(crate) fn new(expression: impl Into<String>) -> Self {
+        Self(expression.into())
+    }
+
     pub(crate) fn identifier(identifier: Identifier) -> Self {
         Self(identifier.to_string())
     }

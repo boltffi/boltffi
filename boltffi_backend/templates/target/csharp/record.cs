@@ -8,8 +8,17 @@ using System.Runtime.InteropServices;
 namespace {{ record.namespace }}
 {
     [StructLayout(LayoutKind.Sequential)]
-{% if record.fields.is_empty() %}    public readonly record struct {{ record.name }};
+{% if record.methods.is_empty() %}{% if record.fields.is_empty() %}    public readonly record struct {{ record.name }};
 {% else %}    public readonly record struct {{ record.name }}(
 {% for field in record.fields %}        {% if field.marshal_i1 %}[field: MarshalAs(UnmanagedType.I1)] {% endif %}{{ field.ty }} {{ field.name }}{% if !loop.last %},{% endif %}
 {% endfor %}    );
-{% endif %}}
+{% endif %}{% else %}{% if record.fields.is_empty() %}    public readonly record struct {{ record.name }}
+{% else %}    public readonly record struct {{ record.name }}(
+{% for field in record.fields %}        {% if field.marshal_i1 %}[field: MarshalAs(UnmanagedType.I1)] {% endif %}{{ field.ty }} {{ field.name }}{% if !loop.last %},{% endif %}
+{% endfor %}    )
+{% endif %}    {
+{% for function in record.methods %}
+{% include "target/csharp/function.cs" %}
+{% endfor %}    }
+{% endif -%}
+}
