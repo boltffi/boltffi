@@ -630,6 +630,31 @@ mod tests {
     }
 
     #[test]
+    fn csharp_target_writes_mutable_encoded_arrays_back_in_place() {
+        let bindings = bindings(
+            r#"
+            #[export]
+            pub fn increment(values: &mut [u64]) {
+                if let Some(first) = values.first_mut() { *first += 1; }
+            }
+            "#,
+        );
+        let output = target(CSharpHost::new())
+            .render(&bindings)
+            .expect("mutable encoded arrays should render");
+
+        let source = file(&output, "Demo.cs");
+        assert!(source.contains("public static void Increment(ulong[] values)"));
+        assert!(source.contains("out FfiBuf valuesOut"));
+        assert!(source.contains("var boltffiUpdated = valuesReader.ReadArray"));
+        assert!(
+            source.contains("global::System.Array.Copy(boltffiUpdated, values, values.Length);")
+        );
+        assert!(source.contains("NativeMethods.FreeBuf(valuesOut);"));
+        assert!(output.diagnostics().is_empty());
+    }
+
+    #[test]
     fn csharp_target_renders_fallible_calls_as_exceptions() {
         let bindings = bindings(
             r#"

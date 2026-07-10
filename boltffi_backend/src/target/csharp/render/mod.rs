@@ -415,6 +415,7 @@ impl Function {
         let mut completion_invocation_arguments = Vec::new();
         let mut return_after_status = None;
         let mut encoded_writeback = None;
+        let mut parameter_writebacks = Vec::new();
         let mut setup = Vec::new();
         let mut requires_wire_runtime = false;
         let mut requires_callback_runtime = false;
@@ -508,13 +509,18 @@ impl Function {
                     if *shape != native::BufferShape::Slice {
                         return unsupported("encoded function parameter shape");
                     }
-                    if matches!(receive, Receive::ByMutRef) {
-                        return unsupported("mutable encoded function parameters");
-                    }
-                    let ParameterGroup::ByteSlice(slice) = group else {
-                        return broken_contract(
-                            "encoded function parameter does not use a C byte slice",
-                        );
+                    let (slice, writeback) = match (receive, group) {
+                        (Receive::ByValue | Receive::ByRef, ParameterGroup::ByteSlice(slice)) => {
+                            (slice, None)
+                        }
+                        (Receive::ByMutRef, ParameterGroup::EncodedWriteback(writeback)) => {
+                            (writeback.bytes(), Some(writeback.output()))
+                        }
+                        _ => {
+                            return broken_contract(
+                                "encoded function parameter does not use the expected C group",
+                            );
+                        }
                     };
                     if !matches!(
                         c_function.parameter(slice.pointer()).ty(),
@@ -569,6 +575,43 @@ impl Function {
                         Expression::identifier(bytes.clone()),
                         Expression::new(format!("(nuint){bytes}.Length")),
                     ]);
+                    if let Some(output) = writeback {
+                        if c_function.parameter(output).ty()
+                            != &CBridgeType::MutPointer(Box::new(CBridgeType::Buffer))
+                        {
+                            return broken_contract(
+                                "mutable encoded parameter writeback does not match the C bridge",
+                            );
+                        }
+                        if !matches!(ty, TypeRef::Bytes | TypeRef::Sequence(_)) {
+                            return unsupported("mutable encoded non-array parameter");
+                        }
+                        let buffer = generated_identifier(&name, "Out")?;
+                        native_parameters.push(NativeParameter {
+                            name: buffer.clone(),
+                            ty: TypeFragment::new("FfiBuf"),
+                            modifier: "out ",
+                            marshal_i1: false,
+                            marshal_bool_array: false,
+                            byte_array: false,
+                        });
+                        invocation_arguments.push(Expression::new(format!("out FfiBuf {buffer}")));
+                        let reader = generated_identifier(&name, "Reader")?;
+                        let mut codec_reader = Reader::new(reader.clone(), context);
+                        if let Some(namespace) = type_namespace {
+                            codec_reader = codec_reader.qualified(namespace);
+                        }
+                        let decode = codec
+                            .read_plan()
+                            .render_with(&mut codec_reader)
+                            .map(ReadExpression::into_expression)?;
+                        parameter_writebacks.push(MutableParameterWriteback {
+                            target: name.clone(),
+                            buffer,
+                            reader,
+                            decode,
+                        });
+                    }
                     requires_wire_runtime = true;
                 }
                 IncomingParam::Value(ParamPlan::Handle {
@@ -797,6 +840,13 @@ impl Function {
         let mut return_parameter_groups = return_groups.iter();
 
         let return_plan = callable.returns().plan();
+        if !parameter_writebacks.is_empty()
+            && (!matches!(return_plan, ReturnPlan::Void)
+                || encoded_error.is_some()
+                || async_symbols.is_some())
+        {
+            return unsupported("mutable encoded parameter call shape");
+        }
         if (return_after_status.is_some() || encoded_writeback.is_some())
             && !matches!(return_plan, ReturnPlan::Void)
         {
@@ -1164,7 +1214,8 @@ impl Function {
                 || encoded_return.is_some()
                 || encoded_writeback.is_some()
                 || encoded_error.is_some()
-                || handle_return.is_some())
+                || handle_return.is_some()
+                || !parameter_writebacks.is_empty())
             .then(|| {
                 render_callable_body(
                     &setup,
@@ -1175,6 +1226,7 @@ impl Function {
                     encoded_writeback.as_ref(),
                     encoded_error.as_ref(),
                     handle_return.as_ref(),
+                    &parameter_writebacks,
                 )
             })
             .transpose()?,
@@ -1184,6 +1236,7 @@ impl Function {
             .or(encoded_writeback.as_ref())
             .map(|value| &value.buffer)
             .or_else(|| encoded_error.as_ref().map(|value| &value.buffer))
+            .or_else(|| parameter_writebacks.first().map(|value| &value.buffer))
             .map(|_| {
                 bridge
                     .support()
@@ -1267,6 +1320,26 @@ struct EncodedReturn {
     buffer: Identifier,
     reader: Identifier,
     decode: Expression,
+}
+
+struct MutableParameterWriteback {
+    target: Identifier,
+    buffer: Identifier,
+    reader: Identifier,
+    decode: Expression,
+}
+
+fn render_parameter_writeback(writeback: &MutableParameterWriteback) -> String {
+    format!(
+        "try\n{{\n    WireReader {} = new WireReader({});\n    var boltffiUpdated = {};\n    if (boltffiUpdated.Length != {}.Length)\n        throw new global::System.InvalidOperationException(\"mutable parameter changed length\");\n    global::System.Array.Copy(boltffiUpdated, {}, {}.Length);\n}}\nfinally\n{{\n    NativeMethods.FreeBuf({});\n}}",
+        writeback.reader,
+        writeback.buffer,
+        writeback.decode,
+        writeback.target,
+        writeback.target,
+        writeback.target,
+        writeback.buffer,
+    )
 }
 
 struct EncodedError {
@@ -1405,6 +1478,7 @@ fn render_callable_body(
     encoded_writeback: Option<&EncodedReturn>,
     encoded_error: Option<&EncodedError>,
     handle_return: Option<&HandleReturn>,
+    parameter_writebacks: &[MutableParameterWriteback],
 ) -> Result<Statement> {
     let mut lines = setup.iter().map(ToString::to_string).collect::<Vec<_>>();
     if let Some(error) = encoded_error {
@@ -1450,6 +1524,7 @@ fn render_callable_body(
                 (None, Some(value)) => lines.push(format!("return {value};")),
                 (None, None) => {}
             }
+            lines.extend(parameter_writebacks.iter().map(render_parameter_writeback));
         }
         None => lines.push(format!("return {invocation};")),
     }
