@@ -1,6 +1,0 @@
-    public interface {{ callback.public_name }}
-    {
-{% for method in callback.methods %}
-        {% if method.is_async %}{% if method.return_type.is_void() %}global::System.Threading.Tasks.Task{% else %}global::System.Threading.Tasks.Task<{{ method.return_type }}>{% endif %}{% else %}{{ method.return_type }}{% endif %} {{ method.name }}({% for param in method.public_params %}{{ param.csharp_type }} {{ param.name }}{% if !loop.last %}, {% endif %}{% endfor %});
-{% endfor %}
-    }
