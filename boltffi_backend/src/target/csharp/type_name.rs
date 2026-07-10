@@ -53,6 +53,18 @@ pub(super) fn enumeration(id: EnumId, context: &RenderContext<Native>) -> Result
         })
 }
 
+pub(super) fn class(id: ClassId, context: &RenderContext<Native>) -> Result<TypeFragment> {
+    context
+        .class(id)
+        .map(|class| Name::new(class.name()).pascal())
+        .transpose()?
+        .map(|name| TypeFragment::new(name.to_string()))
+        .ok_or(Error::UnexpectedBindingShape {
+            layer: "csharp type",
+            shape: "missing class declaration",
+        })
+}
+
 struct Renderer<'context, 'bindings> {
     context: &'context RenderContext<'bindings, Native>,
     namespace: Option<&'context Namespace>,
@@ -81,8 +93,8 @@ impl TypeRefRender for Renderer<'_, '_> {
         qualify(enumeration(id, self.context)?, self.namespace)
     }
 
-    fn class(&mut self, _: ClassId) -> Self::Output {
-        super::unsupported("class type")
+    fn class(&mut self, id: ClassId) -> Self::Output {
+        qualify(class(id, self.context)?, self.namespace)
     }
 
     fn callback(&mut self, _: CallbackId) -> Self::Output {

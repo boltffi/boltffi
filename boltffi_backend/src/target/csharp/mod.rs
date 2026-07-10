@@ -98,7 +98,7 @@ impl host::HostBackend for CSharpHost {
             .stable(BindingCapability::Records)
             .stable(BindingCapability::Enums)
             .stable(BindingCapability::Functions)
-            .unsupported(BindingCapability::Classes, "C# classes have not migrated")
+            .stable(BindingCapability::Classes)
             .unsupported(
                 BindingCapability::Callbacks,
                 "C# callbacks have not migrated",
@@ -169,11 +169,17 @@ impl host::HostBackend for CSharpHost {
 
     fn class(
         &self,
-        _decl: &ClassDecl<Self::Surface>,
-        _bridge: &Self::Bridge,
-        _context: &RenderContext<Self::Surface>,
+        decl: &ClassDecl<Self::Surface>,
+        bridge: &Self::Bridge,
+        context: &RenderContext<Self::Surface>,
     ) -> Result<Emitted> {
-        unsupported("classes")
+        render::Class::from_declaration(
+            decl,
+            self.namespace_for(context.bindings())?,
+            bridge,
+            context,
+        )?
+        .render()
     }
 
     fn callback(
@@ -519,7 +525,9 @@ mod tests {
         assert!(source.contains("return boltffiResult;"));
         assert!(source.contains("public static string LoadName(bool valid)"));
         assert!(source.contains("out FfiBuf boltffiResultBuffer"));
-        assert!(source.contains("throw new AppErrorException(AppError.Decode(boltffiErrorReader));"));
+        assert!(
+            source.contains("throw new AppErrorException(AppError.Decode(boltffiErrorReader));")
+        );
         assert!(source.contains("return resultReader.ReadString();"));
         assert!(source.contains("public static void Validate(bool valid)"));
 
@@ -529,6 +537,51 @@ mod tests {
         let app_error = file(&output, "AppError.cs");
         assert!(app_error.contains("public sealed class AppErrorException"));
         assert!(app_error.contains("base(error.Message)"));
+        assert!(output.diagnostics().is_empty());
+    }
+
+    #[test]
+    fn csharp_target_renders_class_handles_and_methods() {
+        let bindings = bindings(
+            r#"
+            pub struct Counter {
+                value: i32,
+            }
+
+            #[export]
+            impl Counter {
+                pub fn new(value: i32) -> Self { Self { value } }
+                pub fn with_default() -> Self { Self { value: 10 } }
+                pub fn try_new(value: i32) -> Result<Self, String> {
+                    if value < 0 { Err("negative".to_string()) } else { Ok(Self { value }) }
+                }
+                pub fn get(&self) -> i32 { self.value }
+                pub fn increment(&self) { }
+                pub fn add(a: i32, b: i32) -> i32 { a + b }
+            }
+            "#,
+        );
+        let output = target(CSharpHost::new())
+            .render(&bindings)
+            .expect("classes should render");
+
+        let class = file(&output, "Counter.cs");
+        assert!(class.contains("public sealed class Counter : global::System.IDisposable"));
+        assert!(class.contains("public Counter(int value)"));
+        assert!(class.contains(": this(BoltFfiNew(value).TakeHandle())"));
+        assert!(class.contains("private static Counter BoltFfiNew(int value)"));
+        assert!(class.contains("public static Counter WithDefault()"));
+        assert!(class.contains("public static Counter TryNew(int value)"));
+        assert!(class.contains("public int Get()"));
+        assert!(class.contains("public void Increment()"));
+        assert!(class.contains("public static int Add(int a, int b)"));
+        assert!(class.contains("ThrowIfDisposed();"));
+        assert!(class.contains("~Counter() => Release();"));
+
+        let module = file(&output, "Demo.cs");
+        assert!(module.contains("NativeCounterRelease(ulong handle)"));
+        assert!(module.contains("NativeCounterNew(int value)"));
+        assert!(module.contains("NativeCounterGet(ulong receiver)"));
         assert!(output.diagnostics().is_empty());
     }
 

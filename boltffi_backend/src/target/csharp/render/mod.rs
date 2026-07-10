@@ -1,6 +1,8 @@
+mod class;
 mod enumeration;
 mod record;
 
+pub(in crate::target::csharp) use class::Class;
 pub(in crate::target::csharp) use enumeration::Enumeration;
 pub(in crate::target::csharp) use record::Record;
 
@@ -8,10 +10,10 @@ use std::collections::BTreeMap;
 
 use askama::Template;
 use boltffi_binding::{
-    CanonicalName, DeclarationRef, DirectValueType, DirectVectorElementType, ErrorChannel,
+    CanonicalName, ClassId, DeclarationRef, DirectValueType, DirectVectorElementType, ErrorChannel,
     ErrorPlacement, ExecutionDecl, ExportedCallable, ExportedMethodDecl, FunctionDecl,
-    IncomingParam, InitializerDecl, Native, NativeSymbol, OutOfRust, ParamPlan, Primitive,
-    ReadPlan, Receive, ReturnPlan, TypeRef, WritePlan, native,
+    HandlePresence, HandleTarget, IncomingParam, InitializerDecl, Native, NativeSymbol, OutOfRust,
+    ParamPlan, Primitive, ReadPlan, Receive, ReturnPlan, TypeRef, WritePlan, native,
 };
 
 use crate::{
@@ -61,6 +63,10 @@ enum CallSite {
         owner: DirectValueType,
         name: Identifier,
     },
+    Class {
+        name: Identifier,
+        carrier: native::HandleCarrier,
+    },
 }
 
 #[derive(Clone, Copy)]
@@ -71,6 +77,7 @@ struct EncodedReceiverPlan<'plan> {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct Function {
+    visibility: &'static str,
     name: Identifier,
     native_name: Identifier,
     parameters: Vec<Parameter>,
@@ -163,6 +170,67 @@ impl Function {
             owner,
             owner_name,
             extension,
+            None,
+            None,
+            bridge,
+            context,
+        )
+    }
+
+    pub(super) fn from_class_initializer(
+        declaration: &InitializerDecl<Native>,
+        _owner: ClassId,
+        owner_name: &Identifier,
+        carrier: native::HandleCarrier,
+        bridge: &CBridgeContract,
+        context: &RenderContext<Native>,
+    ) -> Result<(Self, bool)> {
+        let source_name = Name::new(declaration.name()).pascal()?;
+        let primary = source_name.as_str() == "New";
+        let public_name = match primary {
+            true => Identifier::parse("BoltFfiNew")?,
+            false => source_name.clone(),
+        };
+        let mut function = Self::from_callable(
+            public_name.clone(),
+            Identifier::parse(format!("Native{owner_name}{source_name}"))?,
+            HelperId::new(CanonicalName::single(declaration.symbol().name().as_str())),
+            declaration.symbol(),
+            declaration.callable(),
+            CallSite::Class {
+                name: owner_name.clone(),
+                carrier,
+            },
+            None,
+            None,
+            bridge,
+            context,
+        )?;
+        if primary {
+            function.visibility = "private";
+        }
+        Ok((function, primary))
+    }
+
+    pub(super) fn from_class_method(
+        declaration: &ExportedMethodDecl<Native, NativeSymbol>,
+        _owner: ClassId,
+        owner_name: &Identifier,
+        carrier: native::HandleCarrier,
+        bridge: &CBridgeContract,
+        context: &RenderContext<Native>,
+    ) -> Result<Self> {
+        let name = Name::new(declaration.name()).pascal()?;
+        Self::from_callable(
+            name.clone(),
+            Identifier::parse(format!("Native{owner_name}{name}"))?,
+            HelperId::new(CanonicalName::single(declaration.target().name().as_str())),
+            declaration.target(),
+            declaration.callable(),
+            CallSite::Class {
+                name: owner_name.clone(),
+                carrier,
+            },
             None,
             None,
             bridge,
@@ -311,17 +379,15 @@ impl Function {
         requires_wire_runtime |= encoded_error.is_some();
 
         if let Some(receive) = callable.receiver() {
-            let (owner, owner_name, extension) = match &call_site {
-                CallSite::Record { owner, name } => (owner, name, false),
-                CallSite::Enumeration { owner, name } => (owner, name, true),
-                CallSite::Free => return unsupported("free function receiver"),
-            };
             let group = parameter_groups.next().ok_or(Error::BrokenBridgeContract {
                 bridge: "c",
                 invariant: "method receiver is missing from the C bridge",
             })?;
-            let receiver = match encoded_receiver {
-                Some(receiver) => lower_encoded_receiver(
+            let receiver = match (&call_site, encoded_receiver) {
+                (CallSite::Class { carrier, name, .. }, None) => {
+                    lower_class_receiver(*carrier, name, receive, group, c_function)?
+                }
+                (_, Some(receiver)) => lower_encoded_receiver(
                     receive,
                     group,
                     receiver,
@@ -329,9 +395,13 @@ impl Function {
                     c_function,
                     context,
                 )?,
-                None => lower_receiver(
-                    owner, owner_name, receive, extension, group, c_function, bridge,
-                )?,
+                (CallSite::Record { owner, name }, None) => {
+                    lower_receiver(owner, name, receive, false, group, c_function, bridge)?
+                }
+                (CallSite::Enumeration { owner, name }, None) => {
+                    lower_receiver(owner, name, receive, true, group, c_function, bridge)?
+                }
+                (CallSite::Free, _) => return unsupported("free function receiver"),
             };
             native_parameters.extend(receiver.native_parameters);
             invocation_arguments.extend(receiver.arguments);
@@ -417,7 +487,7 @@ impl Function {
                     setup.push(Statement::new(format!(
                         "WireWriter {writer} = new WireWriter();"
                     )));
-                    setup.extend(writes);
+                    setup.push(scoped_statements(&writes));
                     setup.push(Statement::new(format!(
                         "byte[] {bytes} = {writer}.ToArray();"
                     )));
@@ -444,6 +514,50 @@ impl Function {
                         Expression::new(format!("(nuint){bytes}.Length")),
                     ]);
                     requires_wire_runtime = true;
+                }
+                IncomingParam::Value(ParamPlan::Handle {
+                    target,
+                    carrier,
+                    presence,
+                    ..
+                }) => {
+                    let ParameterGroup::Value(index) = group else {
+                        return broken_contract("handle parameter does not use one C value slot");
+                    };
+                    if c_function.parameter(*index).ty()
+                        != &CBridgeType::handle_target(target, *carrier)?
+                    {
+                        return broken_contract("handle parameter does not match the C bridge");
+                    }
+                    let (public_type, handle) = match target {
+                        HandleTarget::Class(class) => {
+                            (type_name::class(*class, context)?, "Handle")
+                        }
+                        _ => return unsupported("non-class handle parameter"),
+                    };
+                    let public_type = match presence {
+                        HandlePresence::Required => public_type,
+                        HandlePresence::Nullable => TypeFragment::new(format!("{public_type}?")),
+                        _ => return unsupported("unknown handle presence"),
+                    };
+                    parameters.push(Parameter {
+                        name: name.clone(),
+                        ty: public_type,
+                        marshal_i1: false,
+                    });
+                    native_parameters.push(NativeParameter {
+                        name: name.clone(),
+                        ty: handle_carrier_type(*carrier)?,
+                        modifier: "",
+                        marshal_i1: false,
+                        marshal_bool_array: false,
+                        byte_array: false,
+                    });
+                    invocation_arguments.push(Expression::new(match presence {
+                        HandlePresence::Required => format!("{name}.{handle}"),
+                        HandlePresence::Nullable => format!("{name}?.{handle} ?? 0"),
+                        _ => return unsupported("unknown handle presence"),
+                    }));
                 }
                 IncomingParam::Value(ParamPlan::ScalarOption { primitive }) => {
                     let ParameterGroup::ByteSlice(slice) = group else {
@@ -581,6 +695,7 @@ impl Function {
             return unsupported("mutable value method returns");
         }
         let mut encoded_return = None;
+        let mut handle_return = None;
         let (public_return_type, native_return_type, return_marshal_i1, checks_status) =
             match return_plan {
                 ReturnPlan::Void => {
@@ -664,6 +779,24 @@ impl Function {
                         false,
                         false,
                     )
+                }
+                ReturnPlan::HandleViaReturnSlot {
+                    target,
+                    carrier,
+                    presence,
+                } => {
+                    if encoded_error.is_some()
+                        || c_function.returns() != &CBridgeType::handle_target(target, *carrier)?
+                    {
+                        return broken_contract("handle return slot does not match the C bridge");
+                    }
+                    let public_type = handle_public_type(target, *presence, context)?;
+                    handle_return = Some(HandleReturn {
+                        ty: handle_target_type(target, context)?,
+                        native_type: handle_carrier_type(*carrier)?,
+                        nullable: matches!(presence, HandlePresence::Nullable),
+                    });
+                    (public_type, handle_carrier_type(*carrier)?, false, false)
                 }
                 ReturnPlan::ScalarOptionViaReturnSlot { primitive } => {
                     if encoded_error.is_some() {
@@ -806,6 +939,54 @@ impl Function {
                         false,
                     )
                 }
+                ReturnPlan::HandleViaOutPointer {
+                    target,
+                    carrier,
+                    presence,
+                } => {
+                    if encoded_error.is_none() {
+                        return broken_contract(
+                            "handle success out-pointer is missing an error channel",
+                        );
+                    }
+                    let Some(ParameterGroup::SuccessOut(index)) = parameter_groups.next() else {
+                        return broken_contract(
+                            "handle success return is missing its C out-pointer",
+                        );
+                    };
+                    if c_function.parameter(*index).ty()
+                        != &CBridgeType::MutPointer(Box::new(CBridgeType::handle_target(
+                            target, *carrier,
+                        )?))
+                    {
+                        return broken_contract(
+                            "handle success out-pointer does not match the C bridge",
+                        );
+                    }
+                    let native_type = handle_carrier_type(*carrier)?;
+                    let result = Identifier::parse("boltffiHandle")?;
+                    native_parameters.push(NativeParameter {
+                        name: result.clone(),
+                        ty: native_type.clone(),
+                        modifier: "out ",
+                        marshal_i1: false,
+                        marshal_bool_array: false,
+                        byte_array: false,
+                    });
+                    invocation_arguments
+                        .push(Expression::new(format!("out {native_type} {result}")));
+                    return_after_status = Some(handle_value_expression(
+                        handle_target_type(target, context)?,
+                        &result,
+                        matches!(presence, HandlePresence::Nullable),
+                    ));
+                    (
+                        handle_public_type(target, *presence, context)?,
+                        TypeFragment::new("FfiBuf"),
+                        false,
+                        false,
+                    )
+                }
                 _ => return unsupported("non-primitive function returns"),
             };
 
@@ -826,7 +1007,8 @@ impl Function {
         let body = (!setup.is_empty()
             || encoded_return.is_some()
             || encoded_writeback.is_some()
-            || encoded_error.is_some())
+            || encoded_error.is_some()
+            || handle_return.is_some())
         .then(|| {
             render_callable_body(
                 &setup,
@@ -836,6 +1018,7 @@ impl Function {
                 encoded_return.as_ref(),
                 encoded_writeback.as_ref(),
                 encoded_error.as_ref(),
+                handle_return.as_ref(),
             )
         })
         .transpose()?;
@@ -853,6 +1036,7 @@ impl Function {
             .transpose()?;
 
         Ok(Self {
+            visibility: "public",
             name,
             native_name,
             parameters,
@@ -908,6 +1092,12 @@ struct EncodedError {
     buffer: Identifier,
     reader: Identifier,
     throw: Expression,
+}
+
+struct HandleReturn {
+    ty: TypeFragment,
+    native_type: TypeFragment,
+    nullable: bool,
 }
 
 fn generated_identifier(source: &Identifier, suffix: &str) -> Result<Identifier> {
@@ -974,6 +1164,7 @@ fn lower_error(
     }))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_callable_body(
     setup: &[Statement],
     invocation: &Expression,
@@ -982,6 +1173,7 @@ fn render_callable_body(
     encoded_return: Option<&EncodedReturn>,
     encoded_writeback: Option<&EncodedReturn>,
     encoded_error: Option<&EncodedError>,
+    handle_return: Option<&HandleReturn>,
 ) -> Result<Statement> {
     let mut lines = setup.iter().map(ToString::to_string).collect::<Vec<_>>();
     if let Some(error) = encoded_error {
@@ -999,6 +1191,16 @@ fn render_callable_body(
         } else if let Some(value) = return_after_status {
             lines.push(format!("return {value};"));
         }
+        return Ok(Statement::new(indent(&lines.join("\n"), 12)));
+    }
+
+    if let Some(handle) = handle_return {
+        let local = Identifier::parse("boltffiHandle")?;
+        lines.push(format!(
+            "{} {local} = {invocation};\nreturn {};",
+            handle.native_type,
+            handle_value_expression(handle.ty.clone(), &local, handle.nullable),
+        ));
         return Ok(Statement::new(indent(&lines.join("\n"), 12)));
     }
 
@@ -1037,6 +1239,20 @@ fn indent(source: &str, spaces: usize) -> String {
         .map(|line| format!("{prefix}{line}"))
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+fn scoped_statements(statements: &[Statement]) -> Statement {
+    Statement::new(format!(
+        "{{\n{}\n}}",
+        indent(
+            &statements
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join("\n"),
+            4,
+        )
+    ))
 }
 
 struct LoweredReceiver {
@@ -1129,6 +1345,36 @@ fn lower_receiver(
     }
 }
 
+fn lower_class_receiver(
+    carrier: native::HandleCarrier,
+    _: &Identifier,
+    _: Receive,
+    group: &ParameterGroup,
+    c_function: &CFunction,
+) -> Result<LoweredReceiver> {
+    let ParameterGroup::Value(index) = group else {
+        return broken_contract("class receiver does not use one C value slot");
+    };
+    if c_function.parameter(*index).ty() != &CBridgeType::handle_carrier(carrier)? {
+        return broken_contract("class receiver does not match the C bridge");
+    }
+    Ok(LoweredReceiver {
+        native_parameters: vec![NativeParameter {
+            name: Identifier::parse("receiver")?,
+            ty: handle_carrier_type(carrier)?,
+            modifier: "",
+            marshal_i1: false,
+            marshal_bool_array: false,
+            byte_array: false,
+        }],
+        arguments: vec![Expression::new("this.Handle")],
+        return_after_status: None,
+        encoded_writeback: None,
+        setup: vec![Statement::new("ThrowIfDisposed();")],
+        requires_wire_runtime: false,
+    })
+}
+
 #[allow(clippy::too_many_arguments)]
 fn lower_encoded_receiver(
     receive: Receive,
@@ -1166,16 +1412,16 @@ fn lower_encoded_receiver(
     let mut setup = vec![Statement::new(format!(
         "WireWriter {writer} = new WireWriter();"
     ))];
-    setup.extend(
-        plan.write
-            .render_with(&mut Writer::new(
-                writer.clone(),
-                Expression::new("this"),
-                context,
-            ))
-            .into_iter()
-            .collect::<Result<Vec<_>>>()?,
-    );
+    let writes = plan
+        .write
+        .render_with(&mut Writer::new(
+            writer.clone(),
+            Expression::new("this"),
+            context,
+        ))
+        .into_iter()
+        .collect::<Result<Vec<_>>>()?;
+    setup.push(scoped_statements(&writes));
     setup.push(Statement::new(format!(
         "byte[] {bytes} = {writer}.ToArray();"
     )));
@@ -1278,12 +1524,13 @@ impl<'module> Module<'module> {
             diagnostics.extend(emitted_diagnostics);
             let standalone = matches!(
                 declaration_ref,
-                DeclarationRef::Record(_) | DeclarationRef::Enum(_)
+                DeclarationRef::Record(_) | DeclarationRef::Enum(_) | DeclarationRef::Class(_)
             );
             if standalone {
                 let name = match declaration_ref {
                     DeclarationRef::Record(record) => record.name(),
                     DeclarationRef::Enum(enumeration) => enumeration.name(),
+                    DeclarationRef::Class(class) => class.name(),
                     _ => unreachable!(),
                 };
                 files.push(GeneratedFile::new(
@@ -1383,6 +1630,47 @@ pub(in crate::target::csharp) fn primitive_type(primitive: Primitive) -> TypeFra
         Primitive::F64 => "double",
         _ => unreachable!("Primitive is exhaustively matched"),
     })
+}
+
+fn handle_carrier_type(carrier: native::HandleCarrier) -> Result<TypeFragment> {
+    match carrier {
+        native::HandleCarrier::U64 => Ok(TypeFragment::new("ulong")),
+        native::HandleCarrier::USize => Ok(TypeFragment::new("nuint")),
+        native::HandleCarrier::CallbackHandle => Ok(TypeFragment::new("BoltFFICallbackHandle")),
+        _ => unsupported("unknown handle carrier"),
+    }
+}
+
+fn handle_target_type(
+    target: &HandleTarget,
+    context: &RenderContext<Native>,
+) -> Result<TypeFragment> {
+    match target {
+        HandleTarget::Class(class) => type_name::class(*class, context),
+        _ => unsupported("non-class handle target"),
+    }
+}
+
+fn handle_public_type(
+    target: &HandleTarget,
+    presence: HandlePresence,
+    context: &RenderContext<Native>,
+) -> Result<TypeFragment> {
+    let ty = handle_target_type(target, context)?;
+    match presence {
+        HandlePresence::Required => Ok(ty),
+        HandlePresence::Nullable => Ok(TypeFragment::new(format!("{ty}?"))),
+        _ => unsupported("unknown handle presence"),
+    }
+}
+
+fn handle_value_expression(ty: TypeFragment, handle: &Identifier, nullable: bool) -> Expression {
+    match nullable {
+        true => Expression::new(format!("{handle} == 0 ? null : new {ty}({handle})")),
+        false => Expression::new(format!(
+            "{handle} == 0 ? throw new global::System.InvalidOperationException(\"BoltFFI returned a null {ty} handle\") : new {ty}({handle})"
+        )),
+    }
 }
 
 fn direct_type(ty: &DirectValueType, context: &RenderContext<Native>) -> Result<TypeFragment> {
