@@ -1,4 +1,12 @@
-{% if function.asynchronous.is_some() %}{% if let Some(body) = function.body %}        {{ function.visibility }} {% if function.is_static %}static {% endif %}global::System.Threading.Tasks.Task{% if !function.returns_void %}<{{ function.public_return_type }}>{% endif %} {{ function.name }}({% if let Some(owner) = function.extension_owner %}this {{ owner }} self, {% endif %}{% for parameter in function.parameters %}{{ parameter.ty }} {{ parameter.name }}, {% endfor %}global::System.Threading.CancellationToken cancellationToken = default)
+{% if function.constant_property %}        {{ function.visibility }} static {{ function.public_return_type }} {{ function.name }}
+        {
+            get
+            {
+{% if let Some(body) = function.body %}{{ body }}
+{% else %}                return {{ function.invocation }};
+{% endif %}            }
+        }
+{% else if function.asynchronous.is_some() %}{% if let Some(body) = function.body %}        {{ function.visibility }} {% if function.is_static %}static {% endif %}global::System.Threading.Tasks.Task{% if !function.returns_void %}<{{ function.public_return_type }}>{% endif %} {{ function.name }}({% if let Some(owner) = function.extension_owner %}this {{ owner }} self, {% endif %}{% for parameter in function.parameters %}{{ parameter.ty }} {{ parameter.name }}, {% endfor %}global::System.Threading.CancellationToken cancellationToken = default)
         {
 {{ body }}
         }

@@ -1,12 +1,14 @@
 mod callback;
 mod class;
 mod closure;
+mod constant;
 mod enumeration;
 mod record;
 mod stream;
 
 pub(in crate::target::csharp) use callback::Callback;
 pub(in crate::target::csharp) use class::Class;
+pub(in crate::target::csharp) use constant::Constant;
 pub(in crate::target::csharp) use enumeration::Enumeration;
 pub(in crate::target::csharp) use record::Record;
 pub(in crate::target::csharp) use stream::Stream;
@@ -105,6 +107,7 @@ pub(super) struct Function {
     helper_id: HelperId,
     asynchronous: Option<AsyncCall>,
     closure_helpers: Vec<closure::ClosureHelper>,
+    constant_property: bool,
 }
 
 #[derive(Template)]
@@ -165,6 +168,33 @@ struct ModuleTemplate<'module> {
 }
 
 impl Function {
+    pub(super) fn from_constant_accessor(
+        name: &CanonicalName,
+        symbol: &NativeSymbol,
+        callable: &ExportedCallable<Native>,
+        bridge: &CBridgeContract,
+        context: &RenderContext<Native>,
+    ) -> Result<Self> {
+        let name = Name::new(name).pascal()?;
+        let mut function = Self::from_callable(
+            name.clone(),
+            Identifier::parse(format!("Native{name}"))?,
+            HelperId::new(CanonicalName::single(symbol.name().as_str())),
+            symbol,
+            callable,
+            CallSite::Free,
+            None,
+            None,
+            bridge,
+            context,
+        )?;
+        if !function.parameters.is_empty() || function.asynchronous.is_some() {
+            return unsupported("constant accessor call shape");
+        }
+        function.constant_property = true;
+        Ok(function)
+    }
+
     pub(super) fn from_declaration(
         declaration: &FunctionDecl<Native>,
         bridge: &CBridgeContract,
@@ -1314,6 +1344,7 @@ impl Function {
             helper_id,
             asynchronous,
             closure_helpers,
+            constant_property: false,
         })
     }
 

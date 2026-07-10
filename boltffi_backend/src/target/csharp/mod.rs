@@ -101,10 +101,7 @@ impl host::HostBackend for CSharpHost {
             .stable(BindingCapability::Classes)
             .stable(BindingCapability::Callbacks)
             .stable(BindingCapability::Streams)
-            .unsupported(
-                BindingCapability::Constants,
-                "C# constants have not migrated",
-            )
+            .stable(BindingCapability::Constants)
             .stable(BindingCapability::CustomTypes)
     }
 
@@ -205,11 +202,11 @@ impl host::HostBackend for CSharpHost {
 
     fn constant(
         &self,
-        _decl: &ConstantDecl<Self::Surface>,
-        _bridge: &Self::Bridge,
-        _context: &RenderContext<Self::Surface>,
+        decl: &ConstantDecl<Self::Surface>,
+        bridge: &Self::Bridge,
+        context: &RenderContext<Self::Surface>,
     ) -> Result<Emitted> {
-        unsupported("constants")
+        render::Constant::from_declaration(decl, bridge, context)?.render()
     }
 
     fn custom_type(
@@ -777,6 +774,44 @@ mod tests {
         assert!(source.contains("EnumeratorCancellation"));
         assert!(source.contains("NativeValuesPopBatch"));
         assert!(source.contains("NativeMethods.FreeBuf(buffer);"));
+        assert!(output.diagnostics().is_empty());
+    }
+
+    #[test]
+    fn csharp_target_renders_inline_and_accessor_constants() {
+        let bindings = bindings(
+            r#"
+            #[repr(u8)]
+            #[data]
+            pub enum Mode { Fast = 1, Slow = 2 }
+
+            #[export]
+            pub const ENABLED: bool = true;
+            #[export]
+            pub const LIMIT: u32 = 1024;
+            #[export]
+            pub const HALF: f64 = 0.5;
+            #[export]
+            pub const GREETING: &'static str = "hello";
+            #[export]
+            pub const DEFAULT_MODE: Mode = Mode::Fast;
+            #[export]
+            pub const MAGIC: &'static [u8] = b"ffi";
+            "#,
+        );
+        let output = target(CSharpHost::new())
+            .render(&bindings)
+            .expect("constants should render");
+
+        let source = file(&output, "Demo.cs");
+        assert!(source.contains("public const bool Enabled = true;"));
+        assert!(source.contains("public const uint Limit = 1024U;"));
+        assert!(source.contains("public const double Half = 0.5;"));
+        assert!(source.contains("public const string Greeting = \"hello\";"));
+        assert!(source.contains("public const Mode DefaultMode = Mode.Fast;"));
+        assert!(source.contains("public static byte[] Magic"));
+        assert!(source.contains("get"));
+        assert!(source.contains("NativeMethods.NativeMagic"));
         assert!(output.diagnostics().is_empty());
     }
 
