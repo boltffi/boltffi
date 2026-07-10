@@ -40,7 +40,8 @@ impl CrateIndex {
         let manifest_dir = env::var("CARGO_MANIFEST_DIR")
             .map(PathBuf::from)
             .map_err(|_| syn::Error::new(Span::call_site(), "CARGO_MANIFEST_DIR not set"))?;
-        let environment = ScanEnvironment::from_env();
+        let environment = ScanEnvironment::from_env()
+            .map_err(|error| syn::Error::new(Span::call_site(), error))?;
         let cfg = environment.configuration().active_cfg();
         let key = CrateIndexKey {
             manifest_dir: manifest_dir.clone(),

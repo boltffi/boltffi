@@ -17,7 +17,7 @@ use crate::experimental::{
     error::Error as ExpansionError, expander::Expander, expansion::Expansion,
     rust_api::RootModuleTypes,
 };
-use crate::scan_configuration::ScanEnvironment;
+use crate::scan_configuration::{ScanEnvironment, ScanEnvironmentError};
 
 pub enum Item {
     Inactive,
@@ -71,7 +71,7 @@ impl Request {
     fn render(self) -> Result<TokenStream, BuildError> {
         let input = ScanInput::new(&self.source, self.package)
             .with_manifest_dir(&self.root)
-            .with_configuration(ScanEnvironment::from_env().into_configuration());
+            .with_configuration(ScanEnvironment::from_env()?.into_configuration());
         let scan = boltffi_scan::scan_package(&input)?;
         let source = scan.root_with_support();
         let complete = scan.complete();
@@ -103,6 +103,7 @@ impl Request {
 enum BuildError {
     MissingEnv(&'static str),
     InvalidSurface(String),
+    Configuration(ScanEnvironmentError),
     Scan(ScanError),
     Lower(LowerError),
     Expansion(ExpansionError),
@@ -129,6 +130,12 @@ impl fmt::Display for BuildError {
                     "BoltFFI IR expansion build: `{BINDING_EXPANSION_SURFACE_ENV}` has invalid value `{surface}`"
                 )
             }
+            Self::Configuration(error) => {
+                write!(
+                    formatter,
+                    "BoltFFI IR expansion build configuration failed: {error}"
+                )
+            }
             Self::Scan(error) => {
                 write!(formatter, "BoltFFI IR expansion build scan failed: {error}")
             }
@@ -145,6 +152,12 @@ impl fmt::Display for BuildError {
                 )
             }
         }
+    }
+}
+
+impl From<ScanEnvironmentError> for BuildError {
+    fn from(error: ScanEnvironmentError) -> Self {
+        Self::Configuration(error)
     }
 }
 

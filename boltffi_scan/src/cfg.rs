@@ -1,4 +1,5 @@
 mod attributes;
+mod rustc_args;
 mod syntax;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -8,6 +9,7 @@ use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::{Path, Token, parenthesized};
 
+pub use rustc_args::{RustcCfgArgs, RustcCfgArgsError};
 pub use syntax::ConfiguredFile;
 
 use crate::ScanError;

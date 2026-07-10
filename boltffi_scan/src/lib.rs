@@ -19,7 +19,7 @@ pub(crate) mod type_expr;
 mod unsupported;
 mod visibility;
 
-pub use cfg::{ActiveCfg, ConfiguredFile};
+pub use cfg::{ActiveCfg, ConfiguredFile, RustcCfgArgs, RustcCfgArgsError};
 pub use error::ScanError;
 pub use input::{ScanConfiguration, ScanInput};
 pub use package_graph::{ExportedPackageGraph, LoadError, LocalPackage, PackageId};

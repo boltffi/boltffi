@@ -14,7 +14,7 @@ use proc_macro2::{Span, TokenStream};
 use quote::quote_spanned;
 
 use crate::experimental::{error::Error as MetadataError, metadata};
-use crate::scan_configuration::ScanEnvironment;
+use crate::scan_configuration::{ScanEnvironment, ScanEnvironmentError};
 
 pub enum Item {
     Inactive,
@@ -68,7 +68,7 @@ impl Request {
     fn render(self) -> Result<TokenStream, BuildError> {
         let input = ScanInput::new(&self.source, self.package)
             .with_manifest_dir(&self.root)
-            .with_configuration(ScanEnvironment::from_env().into_configuration());
+            .with_configuration(ScanEnvironment::from_env()?.into_configuration());
         let scan = boltffi_scan::scan_package(&input)?;
         let source = scan.root_with_support();
         match requested_surface()? {
@@ -89,6 +89,7 @@ impl Request {
 enum BuildError {
     MissingEnv(&'static str),
     InvalidSurface(String),
+    Configuration(ScanEnvironmentError),
     Scan(ScanError),
     Lower(LowerError),
     Metadata(MetadataError),
@@ -115,12 +116,24 @@ impl fmt::Display for BuildError {
                     "BoltFFI metadata build: `{BINDING_METADATA_SURFACE_ENV}` has invalid value `{surface}`"
                 )
             }
+            Self::Configuration(error) => {
+                write!(
+                    formatter,
+                    "BoltFFI metadata build configuration failed: {error}"
+                )
+            }
             Self::Scan(error) => write!(formatter, "BoltFFI metadata build scan failed: {error}"),
             Self::Lower(error) => write!(formatter, "BoltFFI metadata build lower failed: {error}"),
             Self::Metadata(error) => {
                 write!(formatter, "BoltFFI metadata build emission failed: {error}")
             }
         }
+    }
+}
+
+impl From<ScanEnvironmentError> for BuildError {
+    fn from(error: ScanEnvironmentError) -> Self {
+        Self::Configuration(error)
     }
 }
 
