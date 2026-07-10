@@ -207,19 +207,21 @@ impl Record {
             )?;
         }
         for method in declaration.methods() {
-            if method.callable().receiver().is_some() {
-                diagnostics.push(Diagnostic::new(format!(
-                    "method {}: encoded record receiver",
-                    Name::new(method.name()).pascal()?
-                )));
-                continue;
-            }
             collect_associated(
                 &mut methods,
                 &mut diagnostics,
                 "method",
                 method.name(),
-                Function::from_method(method, owner.clone(), &name, false, bridge, context),
+                Function::from_encoded_method(
+                    method,
+                    owner.clone(),
+                    &name,
+                    declaration.read(),
+                    declaration.write(),
+                    None,
+                    bridge,
+                    context,
+                ),
             )?;
         }
         Ok(Self {

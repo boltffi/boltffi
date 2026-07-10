@@ -257,23 +257,18 @@ impl Enumeration {
             )?;
         }
         for method in declaration.methods() {
-            if method.callable().receiver().is_some() {
-                diagnostics.push(Diagnostic::new(format!(
-                    "method {}: encoded enum receiver",
-                    Name::new(method.name()).pascal()?
-                )));
-                continue;
-            }
             collect_associated(
                 &mut methods,
                 &mut diagnostics,
                 "method",
                 method.name(),
-                Function::from_method_qualified(
+                Function::from_encoded_method(
                     method,
                     owner.clone(),
                     &name,
-                    &namespace,
+                    declaration.read(),
+                    declaration.write(),
+                    Some(&namespace),
                     bridge,
                     context,
                 ),

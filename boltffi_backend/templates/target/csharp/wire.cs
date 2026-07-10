@@ -104,6 +104,30 @@
             return value;
         }
 
+        internal T[] ReadRawArray<T>() where T : unmanaged
+        {
+            int byteCount = length - position;
+            if (byteCount == 0) return global::System.Array.Empty<T>();
+            int elementSize = global::System.Runtime.CompilerServices.Unsafe.SizeOf<T>();
+            if (byteCount % elementSize != 0)
+                throw new global::System.InvalidOperationException("corrupt direct vector: partial element");
+            byte[] bytes = new byte[byteCount];
+            Marshal.Copy(pointer + position, bytes, 0, byteCount);
+            position += byteCount;
+            return global::System.Runtime.InteropServices.MemoryMarshal.Cast<byte, T>(bytes).ToArray();
+        }
+
+        internal bool[] ReadRawBoolArray()
+        {
+            int count = length - position;
+            if (count == 0) return global::System.Array.Empty<bool>();
+            bool[] values = new bool[count];
+            for (int index = 0; index < count; index++)
+                values[index] = Marshal.ReadByte(pointer, position + index) != 0;
+            position += count;
+            return values;
+        }
+
         internal global::System.TimeSpan ReadDuration()
         {
             long seconds = ReadI64();

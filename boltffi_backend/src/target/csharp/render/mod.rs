@@ -8,9 +8,10 @@ use std::collections::BTreeMap;
 
 use askama::Template;
 use boltffi_binding::{
-    CanonicalName, DeclarationRef, DirectValueType, ErrorChannel, ExecutionDecl, ExportedCallable,
-    ExportedMethodDecl, FunctionDecl, IncomingParam, InitializerDecl, Native, NativeSymbol,
-    ParamPlan, Primitive, Receive, ReturnPlan, native,
+    CanonicalName, DeclarationRef, DirectValueType, DirectVectorElementType, ErrorChannel,
+    ExecutionDecl, ExportedCallable, ExportedMethodDecl, FunctionDecl, IncomingParam,
+    InitializerDecl, Native, NativeSymbol, ParamPlan, Primitive, ReadPlan, Receive, ReturnPlan,
+    WritePlan, native,
 };
 
 use crate::{
@@ -43,6 +44,7 @@ struct NativeParameter {
     ty: TypeFragment,
     modifier: &'static str,
     marshal_i1: bool,
+    marshal_bool_array: bool,
     byte_array: bool,
 }
 
@@ -57,6 +59,12 @@ enum CallSite {
         owner: DirectValueType,
         name: Identifier,
     },
+}
+
+#[derive(Clone, Copy)]
+struct EncodedReceiverPlan<'plan> {
+    read: &'plan ReadPlan,
+    write: &'plan WritePlan,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -132,6 +140,7 @@ impl Function {
             declaration.callable(),
             CallSite::Free,
             None,
+            None,
             bridge,
             context,
         )
@@ -152,6 +161,7 @@ impl Function {
             owner,
             owner_name,
             extension,
+            None,
             None,
             bridge,
             context,
@@ -174,6 +184,7 @@ impl Function {
             owner_name,
             false,
             Some(namespace),
+            None,
             bridge,
             context,
         )
@@ -195,16 +206,20 @@ impl Function {
             owner_name,
             extension,
             None,
+            None,
             bridge,
             context,
         )
     }
 
-    pub(super) fn from_method_qualified(
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn from_encoded_method(
         declaration: &ExportedMethodDecl<Native, NativeSymbol>,
         owner: DirectValueType,
         owner_name: &Identifier,
-        namespace: &Namespace,
+        read: &ReadPlan,
+        write: &WritePlan,
+        type_namespace: Option<&Namespace>,
         bridge: &CBridgeContract,
         context: &RenderContext<Native>,
     ) -> Result<Self> {
@@ -215,7 +230,8 @@ impl Function {
             owner,
             owner_name,
             false,
-            Some(namespace),
+            type_namespace,
+            Some(EncodedReceiverPlan { read, write }),
             bridge,
             context,
         )
@@ -230,6 +246,7 @@ impl Function {
         owner_name: &Identifier,
         extension: bool,
         type_namespace: Option<&Namespace>,
+        encoded_receiver: Option<EncodedReceiverPlan<'_>>,
         bridge: &CBridgeContract,
         context: &RenderContext<Native>,
     ) -> Result<Self> {
@@ -252,6 +269,7 @@ impl Function {
             callable,
             call_site,
             type_namespace,
+            encoded_receiver,
             bridge,
             context,
         )
@@ -266,6 +284,7 @@ impl Function {
         callable: &ExportedCallable<Native>,
         call_site: CallSite,
         type_namespace: Option<&Namespace>,
+        encoded_receiver: Option<EncodedReceiverPlan<'_>>,
         bridge: &CBridgeContract,
         context: &RenderContext<Native>,
     ) -> Result<Self> {
@@ -281,6 +300,7 @@ impl Function {
         let mut native_parameters = Vec::new();
         let mut invocation_arguments = Vec::new();
         let mut return_after_status = None;
+        let mut encoded_writeback = None;
         let mut setup = Vec::new();
         let mut requires_wire_runtime = false;
 
@@ -294,12 +314,25 @@ impl Function {
                 bridge: "c",
                 invariant: "method receiver is missing from the C bridge",
             })?;
-            let receiver = lower_receiver(
-                owner, owner_name, receive, extension, group, c_function, bridge,
-            )?;
+            let receiver = match encoded_receiver {
+                Some(receiver) => lower_encoded_receiver(
+                    receive,
+                    group,
+                    receiver,
+                    type_namespace,
+                    c_function,
+                    context,
+                )?,
+                None => lower_receiver(
+                    owner, owner_name, receive, extension, group, c_function, bridge,
+                )?,
+            };
             native_parameters.extend(receiver.native_parameters);
             invocation_arguments.extend(receiver.arguments);
             return_after_status = receiver.return_after_status;
+            encoded_writeback = receiver.encoded_writeback;
+            setup.extend(receiver.setup);
+            requires_wire_runtime |= receiver.requires_wire_runtime;
         }
 
         let mut parameters = Vec::new();
@@ -329,6 +362,7 @@ impl Function {
                         ty: rendered_type,
                         modifier,
                         marshal_i1,
+                        marshal_bool_array: false,
                         byte_array: false,
                     });
                     invocation_arguments.push(Expression::identifier(name));
@@ -387,6 +421,7 @@ impl Function {
                             ty: TypeFragment::new("byte[]"),
                             modifier: "",
                             marshal_i1: false,
+                            marshal_bool_array: false,
                             byte_array: true,
                         },
                         NativeParameter {
@@ -394,6 +429,7 @@ impl Function {
                             ty: TypeFragment::new("nuint"),
                             modifier: "",
                             marshal_i1: false,
+                            marshal_bool_array: false,
                             byte_array: false,
                         },
                     ]);
@@ -441,6 +477,7 @@ impl Function {
                             ty: TypeFragment::new("byte[]"),
                             modifier: "",
                             marshal_i1: false,
+                            marshal_bool_array: false,
                             byte_array: true,
                         },
                         NativeParameter {
@@ -448,6 +485,7 @@ impl Function {
                             ty: TypeFragment::new("nuint"),
                             modifier: "",
                             marshal_i1: false,
+                            marshal_bool_array: false,
                             byte_array: false,
                         },
                     ]);
@@ -457,6 +495,75 @@ impl Function {
                     ]);
                     requires_wire_runtime = true;
                 }
+                IncomingParam::Value(ParamPlan::DirectVec { element }) => {
+                    let ParameterGroup::DirectVector(vector) = group else {
+                        return broken_contract(
+                            "direct-vector parameter does not use a C vector group",
+                        );
+                    };
+                    if c_function.parameter(vector.length()).ty() != &CBridgeType::PointerWidth {
+                        return broken_contract(
+                            "direct-vector parameter length does not match the C bridge",
+                        );
+                    }
+                    let pointer_matches =
+                        match (element, c_function.parameter(vector.pointer()).ty()) {
+                            (
+                                DirectVectorElementType::Primitive(primitive),
+                                CBridgeType::ConstPointer(inner),
+                            ) => inner.as_ref() == &CBridgeType::primitive(primitive.primitive())?,
+                            (
+                                DirectVectorElementType::Record(_),
+                                CBridgeType::ConstPointer(inner),
+                            ) => inner.as_ref() == &CBridgeType::Uint8,
+                            _ => false,
+                        };
+                    if !pointer_matches {
+                        return broken_contract(
+                            "direct-vector parameter pointer does not match the C bridge",
+                        );
+                    }
+                    let element_type =
+                        direct_vector_element_type(element, type_namespace, context)?;
+                    let array_type = TypeFragment::new(format!("{element_type}[]"));
+                    parameters.push(Parameter {
+                        name: name.clone(),
+                        ty: array_type.clone(),
+                        marshal_i1: false,
+                    });
+                    native_parameters.extend([
+                        NativeParameter {
+                            name: name.clone(),
+                            ty: array_type,
+                            modifier: "",
+                            marshal_i1: false,
+                            marshal_bool_array: matches!(
+                                element,
+                                DirectVectorElementType::Primitive(primitive)
+                                    if primitive.primitive() == Primitive::Bool
+                            ),
+                            byte_array: true,
+                        },
+                        NativeParameter {
+                            name: generated_identifier(&name, "Length")?,
+                            ty: TypeFragment::new("nuint"),
+                            modifier: "",
+                            marshal_i1: false,
+                            marshal_bool_array: false,
+                            byte_array: false,
+                        },
+                    ]);
+                    invocation_arguments.push(Expression::identifier(name.clone()));
+                    invocation_arguments.push(match element {
+                        DirectVectorElementType::Primitive(_) => {
+                            Expression::new(format!("(nuint){name}.Length"))
+                        }
+                        DirectVectorElementType::Record(_) => Expression::new(format!(
+                            "(nuint)({name}.Length * Marshal.SizeOf<{element_type}>())"
+                        )),
+                        _ => return unsupported("direct-vector element type"),
+                    });
+                }
                 _ => return unsupported("function parameter crossing"),
             }
         }
@@ -465,19 +572,28 @@ impl Function {
             return broken_contract("function parameter group count does not match the C bridge");
         }
 
+        let return_plan = callable.returns().plan();
+        if (return_after_status.is_some() || encoded_writeback.is_some())
+            && !matches!(return_plan, ReturnPlan::Void)
+        {
+            return unsupported("mutable value method returns");
+        }
         let mut encoded_return = None;
         let (public_return_type, native_return_type, return_marshal_i1, checks_status) =
-            match callable.returns().plan() {
+            match return_plan {
                 ReturnPlan::Void => {
                     if c_function.returns() != &CBridgeType::Status {
                         return broken_contract("void return type does not match the C bridge");
                     }
-                    let public_return_type = match (&return_after_status, &call_site) {
-                        (Some(_), CallSite::Record { owner, .. }) => {
+                    let public_return_type = match (
+                        return_after_status.is_some() || encoded_writeback.is_some(),
+                        &call_site,
+                    ) {
+                        (true, CallSite::Record { owner, .. }) => {
                             direct_type_with(owner, type_namespace, context)?
                         }
-                        (Some(_), _) => return unsupported("mutable enum receiver"),
-                        (None, _) => TypeFragment::void(),
+                        (true, _) => return unsupported("mutable enum receiver"),
+                        (false, _) => TypeFragment::void(),
                     };
                     (
                         public_return_type,
@@ -487,8 +603,8 @@ impl Function {
                     )
                 }
                 ReturnPlan::DirectViaReturnSlot { ty } => {
-                    if return_after_status.is_some() {
-                        return unsupported("mutable direct record method returns");
+                    if return_after_status.is_some() || encoded_writeback.is_some() {
+                        return unsupported("mutable value method returns");
                     }
                     if !c_direct_matches(ty, c_function.returns(), bridge)? {
                         return broken_contract("function return type does not match the C bridge");
@@ -515,7 +631,11 @@ impl Function {
                     let decode = codec
                         .render_with(&mut codec_reader)
                         .map(ReadExpression::into_expression)?;
-                    encoded_return = Some(EncodedReturn { reader, decode });
+                    encoded_return = Some(EncodedReturn {
+                        buffer: Identifier::parse("boltffiResultBuffer")?,
+                        reader,
+                        decode,
+                    });
                     requires_wire_runtime = true;
                     (
                         render_type_ref(ty, type_namespace, context)?,
@@ -534,9 +654,45 @@ impl Function {
                         "{reader}.ReadU8() == 0 ? default({ty}) : {reader}.{}()",
                         primitive_read_method(*primitive)
                     ));
-                    encoded_return = Some(EncodedReturn { reader, decode });
+                    encoded_return = Some(EncodedReturn {
+                        buffer: Identifier::parse("boltffiResultBuffer")?,
+                        reader,
+                        decode,
+                    });
                     requires_wire_runtime = true;
                     (ty, TypeFragment::new("FfiBuf"), false, false)
+                }
+                ReturnPlan::DirectVecViaReturnSlot { element } => {
+                    if c_function.returns() != &CBridgeType::Buffer {
+                        return broken_contract("direct-vector return does not match the C bridge");
+                    }
+                    let element_type =
+                        direct_vector_element_type(element, type_namespace, context)?;
+                    let reader = Identifier::parse("resultReader")?;
+                    let decode = match element {
+                        DirectVectorElementType::Primitive(primitive)
+                            if primitive.primitive() == Primitive::Bool =>
+                        {
+                            Expression::new(format!("{reader}.ReadRawBoolArray()"))
+                        }
+                        DirectVectorElementType::Primitive(_)
+                        | DirectVectorElementType::Record(_) => {
+                            Expression::new(format!("{reader}.ReadRawArray<{element_type}>()"))
+                        }
+                        _ => return unsupported("direct-vector return element type"),
+                    };
+                    encoded_return = Some(EncodedReturn {
+                        buffer: Identifier::parse("boltffiResultBuffer")?,
+                        reader,
+                        decode,
+                    });
+                    requires_wire_runtime = true;
+                    (
+                        TypeFragment::new(format!("{element_type}[]")),
+                        TypeFragment::new("FfiBuf"),
+                        false,
+                        false,
+                    )
                 }
                 _ => return unsupported("non-primitive function returns"),
             };
@@ -551,7 +707,7 @@ impl Function {
             _ => None,
         };
         let is_static = !receiver || extension_owner.is_some();
-        let body = (!setup.is_empty() || encoded_return.is_some())
+        let body = (!setup.is_empty() || encoded_return.is_some() || encoded_writeback.is_some())
             .then(|| {
                 render_callable_body(
                     &setup,
@@ -559,11 +715,13 @@ impl Function {
                     checks_status,
                     return_after_status.as_ref(),
                     encoded_return.as_ref(),
+                    encoded_writeback.as_ref(),
                 )
             })
             .transpose()?;
         let free_buffer_entry = encoded_return
             .as_ref()
+            .or(encoded_writeback.as_ref())
             .map(|_| {
                 bridge
                     .support()
@@ -619,6 +777,7 @@ impl Function {
 }
 
 struct EncodedReturn {
+    buffer: Identifier,
     reader: Identifier,
     decode: Expression,
 }
@@ -637,19 +796,31 @@ fn render_callable_body(
     checks_status: bool,
     return_after_status: Option<&Expression>,
     encoded_return: Option<&EncodedReturn>,
+    encoded_writeback: Option<&EncodedReturn>,
 ) -> Result<Statement> {
     let mut lines = setup.iter().map(ToString::to_string).collect::<Vec<_>>();
     match encoded_return {
         Some(encoded) => lines.push(format!(
-            "FfiBuf boltffiResultBuffer = {invocation};\ntry\n{{\n    WireReader {} = new WireReader(boltffiResultBuffer);\n    return {};\n}}\nfinally\n{{\n    NativeMethods.FreeBuf(boltffiResultBuffer);\n}}",
-            encoded.reader, encoded.decode
+            "FfiBuf {} = {invocation};\ntry\n{{\n    WireReader {} = new WireReader({});\n    return {};\n}}\nfinally\n{{\n    NativeMethods.FreeBuf({});\n}}",
+            encoded.buffer,
+            encoded.reader,
+            encoded.buffer,
+            encoded.decode,
+            encoded.buffer,
         )),
         None if checks_status => {
             lines.push(format!(
                 "FfiStatus status = {invocation};\nif (status.code != 0)\n{{\n    throw new global::System.InvalidOperationException($\"BoltFFI call failed with status code {{status.code}}\");\n}}"
             ));
-            if let Some(value) = return_after_status {
-                lines.push(format!("return {value};"));
+            match encoded_writeback {
+                Some(encoded) => lines.push(format!(
+                    "try\n{{\n    WireReader {} = new WireReader({});\n    return {};\n}}\nfinally\n{{\n    NativeMethods.FreeBuf({});\n}}",
+                    encoded.reader, encoded.buffer, encoded.decode, encoded.buffer,
+                )),
+                None if return_after_status.is_some() => {
+                    lines.push(format!("return {};", return_after_status.unwrap()));
+                }
+                None => {}
             }
         }
         None => lines.push(format!("return {invocation};")),
@@ -670,6 +841,9 @@ struct LoweredReceiver {
     native_parameters: Vec<NativeParameter>,
     arguments: Vec<Expression>,
     return_after_status: Option<Expression>,
+    encoded_writeback: Option<EncodedReturn>,
+    setup: Vec<Statement>,
+    requires_wire_runtime: bool,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -706,6 +880,7 @@ fn lower_receiver(
                         ty: ty.clone(),
                         modifier: "",
                         marshal_i1: false,
+                        marshal_bool_array: false,
                         byte_array: false,
                     },
                     NativeParameter {
@@ -713,6 +888,7 @@ fn lower_receiver(
                         ty: ty.clone(),
                         modifier: "out ",
                         marshal_i1: false,
+                        marshal_bool_array: false,
                         byte_array: false,
                     },
                 ],
@@ -721,6 +897,9 @@ fn lower_receiver(
                     Expression::new(format!("out {ty} {output_name}")),
                 ],
                 return_after_status: Some(Expression::identifier(output_name)),
+                encoded_writeback: None,
+                setup: Vec::new(),
+                requires_wire_runtime: false,
             })
         }
         (_, Receive::ByValue | Receive::ByRef, ParameterGroup::Value(index)) => {
@@ -733,15 +912,132 @@ fn lower_receiver(
                     ty: TypeFragment::new(owner_name.to_string()),
                     modifier: "",
                     marshal_i1: false,
+                    marshal_bool_array: false,
                     byte_array: false,
                 }],
                 arguments: vec![receiver_expression],
                 return_after_status: None,
+                encoded_writeback: None,
+                setup: Vec::new(),
+                requires_wire_runtime: false,
             })
         }
         (DirectValueType::Enum(_), Receive::ByMutRef, _) => unsupported("mutable enum receiver"),
         _ => broken_contract("method receiver does not match the C bridge"),
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn lower_encoded_receiver(
+    receive: Receive,
+    group: &ParameterGroup,
+    plan: EncodedReceiverPlan<'_>,
+    type_namespace: Option<&Namespace>,
+    c_function: &CFunction,
+    context: &RenderContext<Native>,
+) -> Result<LoweredReceiver> {
+    let (pointer, length, output) = match (receive, group) {
+        (Receive::ByValue | Receive::ByRef, ParameterGroup::ByteSlice(group)) => {
+            (group.pointer(), group.length(), None)
+        }
+        (Receive::ByMutRef, ParameterGroup::EncodedWriteback(group)) => {
+            (group.pointer(), group.length(), Some(group.output()))
+        }
+        _ => return broken_contract("encoded receiver does not match the C bridge"),
+    };
+    if !matches!(
+        c_function.parameter(pointer).ty(),
+        CBridgeType::ConstPointer(inner) if inner.as_ref() == &CBridgeType::Uint8
+    ) || c_function.parameter(length).ty() != &CBridgeType::PointerWidth
+    {
+        return broken_contract("encoded receiver byte slice does not match the C bridge");
+    }
+    if let Some(output) = output
+        && c_function.parameter(output).ty()
+            != &CBridgeType::MutPointer(Box::new(CBridgeType::Buffer))
+    {
+        return broken_contract("encoded receiver writeback does not match the C bridge");
+    }
+
+    let writer = Identifier::parse("boltffiReceiverWriter")?;
+    let bytes = Identifier::parse("boltffiReceiverBytes")?;
+    let mut setup = vec![Statement::new(format!(
+        "WireWriter {writer} = new WireWriter();"
+    ))];
+    setup.extend(
+        plan.write
+            .render_with(&mut Writer::new(
+                writer.clone(),
+                Expression::new("this"),
+                context,
+            ))
+            .into_iter()
+            .collect::<Result<Vec<_>>>()?,
+    );
+    setup.push(Statement::new(format!(
+        "byte[] {bytes} = {writer}.ToArray();"
+    )));
+
+    let mut native_parameters = vec![
+        NativeParameter {
+            name: bytes.clone(),
+            ty: TypeFragment::new("byte[]"),
+            modifier: "",
+            marshal_i1: false,
+            marshal_bool_array: false,
+            byte_array: true,
+        },
+        NativeParameter {
+            name: Identifier::parse("boltffiReceiverLength")?,
+            ty: TypeFragment::new("nuint"),
+            modifier: "",
+            marshal_i1: false,
+            marshal_bool_array: false,
+            byte_array: false,
+        },
+    ];
+    let mut arguments = vec![
+        Expression::identifier(bytes.clone()),
+        Expression::new(format!("(nuint){bytes}.Length")),
+    ];
+
+    let encoded_writeback = output
+        .map(|_| -> Result<EncodedReturn> {
+            let buffer = Identifier::parse("boltffiReceiverOut")?;
+            native_parameters.push(NativeParameter {
+                name: buffer.clone(),
+                ty: TypeFragment::new("FfiBuf"),
+                modifier: "out ",
+                marshal_i1: false,
+                marshal_bool_array: false,
+                byte_array: false,
+            });
+            arguments.push(Expression::new(format!("out FfiBuf {buffer}")));
+            let reader = Identifier::parse("boltffiReceiverReader")?;
+            let mut codec_reader = Reader::new(reader.clone(), context);
+            if let Some(namespace) = type_namespace {
+                codec_reader = codec_reader.qualified(namespace);
+            }
+            let decode = plan
+                .read
+                .render_with(&mut codec_reader)
+                .map(ReadExpression::into_expression)?;
+            Ok(EncodedReturn {
+                buffer,
+                reader,
+                decode,
+            })
+        })
+        .transpose()?;
+
+    Ok(LoweredReceiver {
+        native_parameters,
+        arguments,
+        return_after_status: None,
+        encoded_writeback,
+        setup,
+        requires_wire_runtime: true,
+    })
 }
 
 pub(super) struct Module<'module> {
@@ -924,6 +1220,20 @@ fn direct_type_with(
         }
         _ => rendered,
     })
+}
+
+fn direct_vector_element_type(
+    element: &DirectVectorElementType,
+    namespace: Option<&Namespace>,
+    context: &RenderContext<Native>,
+) -> Result<TypeFragment> {
+    match element {
+        DirectVectorElementType::Primitive(primitive) => Ok(primitive_type(primitive.primitive())),
+        DirectVectorElementType::Record(record) => {
+            direct_type_with(&DirectValueType::Record(*record), namespace, context)
+        }
+        _ => unsupported("direct-vector element type"),
+    }
 }
 
 fn render_type_ref(

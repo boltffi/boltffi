@@ -425,6 +425,48 @@ mod tests {
     }
 
     #[test]
+    fn csharp_target_renders_direct_vectors_as_arrays() {
+        let bindings = bindings(
+            r#"
+            #[repr(C)]
+            #[data]
+            pub struct Point {
+                pub x: i32,
+                pub y: i32,
+            }
+
+            #[export]
+            pub fn echo_numbers(values: Vec<i32>) -> Vec<i32> { values }
+
+            #[export]
+            pub fn echo_flags(values: Vec<bool>) -> Vec<bool> { values }
+
+            #[export]
+            pub fn echo_points(values: Vec<Point>) -> Vec<Point> { values }
+            "#,
+        );
+        let output = target(CSharpHost::new())
+            .render(&bindings)
+            .expect("direct vectors should render");
+
+        let source = file(&output, "Demo.cs");
+        assert!(source.contains("public static int[] EchoNumbers(int[] values)"));
+        assert!(source.contains("NativeEchoNumbers(values, (nuint)values.Length)"));
+        assert!(source.contains("return resultReader.ReadRawArray<int>();"));
+        assert!(source.contains("public static bool[] EchoFlags(bool[] values)"));
+        assert!(source.contains(
+            "[MarshalAs(UnmanagedType.LPArray, ArraySubType = UnmanagedType.U1)] [In] bool[] values"
+        ));
+        assert!(source.contains("return resultReader.ReadRawBoolArray();"));
+        assert!(source.contains("public static Point[] EchoPoints(Point[] values)"));
+        assert!(source.contains(
+            "NativeEchoPoints(values, (nuint)(values.Length * Marshal.SizeOf<Point>()))"
+        ));
+        assert!(source.contains("return resultReader.ReadRawArray<Point>();"));
+        assert!(output.diagnostics().is_empty());
+    }
+
+    #[test]
     fn csharp_target_renders_encoded_records_from_codec_plans() {
         let bindings = bindings(
             r#"
@@ -441,6 +483,12 @@ mod tests {
                 pub aliases: Vec<String>,
                 pub location: Point,
                 pub outcome: Result<i32, String>,
+            }
+
+            #[data(impl)]
+            impl Profile {
+                pub fn alias_count(&self) -> usize { self.aliases.len() }
+                pub fn clear_aliases(&mut self) { self.aliases.clear(); }
             }
 
             #[export]
@@ -467,6 +515,11 @@ mod tests {
         assert!(profile.contains("writer.WriteString(this.Name);"));
         assert!(profile.contains("this.Location.Encode(writer);"));
         assert!(profile.contains("if (this.Outcome.IsOk)"));
+        assert!(profile.contains("public nuint AliasCount()"));
+        assert!(profile.contains("this.Encode(boltffiReceiverWriter);"));
+        assert!(profile.contains("public Profile ClearAliases()"));
+        assert!(profile.contains("out FfiBuf boltffiReceiverOut"));
+        assert!(profile.contains("return Profile.Decode(boltffiReceiverReader);"));
 
         let point = file(&output, "Point.cs");
         assert!(point.contains("[StructLayout(LayoutKind.Sequential)]"));
@@ -491,6 +544,12 @@ mod tests {
                 Label(String),
             }
 
+            #[data(impl)]
+            impl Shape {
+                pub fn is_empty(&self) -> bool { matches!(self, Self::Empty) }
+                pub fn reset(&mut self) { *self = Self::Empty; }
+            }
+
             #[export]
             pub fn echo_shape(shape: Shape) -> Shape { shape }
             "#,
@@ -509,6 +568,10 @@ mod tests {
         assert!(shape.contains("writer.WriteF64(value.Radius);"));
         assert!(shape.contains("public sealed record Circle(double Radius) : Shape;"));
         assert!(shape.contains("public sealed record Label(string Field0) : Shape;"));
+        assert!(shape.contains("public bool IsEmpty()"));
+        assert!(shape.contains("this.Encode(boltffiReceiverWriter);"));
+        assert!(shape.contains("public global::Demo.Shape Reset()"));
+        assert!(shape.contains("return global::Demo.Shape.Decode(boltffiReceiverReader);"));
 
         let module = file(&output, "Demo.cs");
         assert!(module.contains("public static Shape EchoShape(Shape shape)"));
