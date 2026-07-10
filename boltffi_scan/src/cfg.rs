@@ -1,10 +1,14 @@
+mod attributes;
+mod syntax;
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use proc_macro2::TokenStream;
-use quote::ToTokens;
-use syn::parse::Parser;
+use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
-use syn::{Attribute, Expr, Lit, Meta, MetaList, MetaNameValue, Path, Token};
+use syn::{Path, Token, parenthesized};
+
+pub use syntax::ConfiguredFile;
 
 use crate::ScanError;
 
@@ -13,6 +17,9 @@ pub struct ActiveCfg {
     names: BTreeSet<String>,
     values: BTreeMap<String, BTreeSet<String>>,
     features: BTreeSet<String>,
+    legacy_names: BTreeSet<String>,
+    legacy_values: BTreeMap<String, BTreeSet<String>>,
+    legacy_features: BTreeSet<String>,
 }
 
 impl ActiveCfg {
@@ -24,7 +31,7 @@ impl ActiveCfg {
     }
 
     pub fn with_feature(mut self, feature: impl AsRef<str>) -> Self {
-        self.features.insert(Self::feature_name(feature.as_ref()));
+        self.features.insert(feature.as_ref().to_owned());
         self
     }
 
@@ -32,44 +39,53 @@ impl ActiveCfg {
         self.features.extend(
             features
                 .into_iter()
-                .map(|feature| Self::feature_name(feature.as_ref())),
+                .map(|feature| feature.as_ref().to_owned()),
         );
         self
     }
 
+    pub fn for_features(&self, features: impl IntoIterator<Item = impl AsRef<str>>) -> Self {
+        Self {
+            names: self.names.clone(),
+            values: self.values.clone(),
+            legacy_names: self.legacy_names.clone(),
+            legacy_values: self.legacy_values.clone(),
+            features: features
+                .into_iter()
+                .map(|feature| feature.as_ref().to_owned())
+                .collect(),
+            legacy_features: BTreeSet::new(),
+        }
+    }
+
+    pub fn without_features(&self) -> Self {
+        self.for_features(std::iter::empty::<&str>())
+    }
+
     pub fn with_name(mut self, name: impl AsRef<str>) -> Self {
-        self.names.insert(Self::cfg_name(name.as_ref()));
+        self.names.insert(name.as_ref().to_owned());
         self
     }
 
     pub fn with_value(mut self, name: impl AsRef<str>, value: impl Into<String>) -> Self {
         self.values
-            .entry(Self::cfg_name(name.as_ref()))
+            .entry(name.as_ref().to_owned())
             .or_default()
             .insert(value.into());
         self
     }
 
-    pub fn matches_attrs(&self, attrs: &[Attribute]) -> Result<bool, ScanError> {
-        attrs
-            .iter()
-            .filter(|attr| attr.path().is_ident("cfg"))
-            .map(|attr| self.matches_attr(attr))
-            .try_fold(true, |active, matches| {
-                matches.map(|matches| active && matches)
-            })
-    }
-
     fn observe_cargo_env(&mut self, name: &str, value: &str) {
         if let Some(feature) = name.strip_prefix("CARGO_FEATURE_") {
-            self.features.insert(Self::feature_name(feature));
+            self.legacy_features
+                .insert(Self::legacy_feature_name(feature));
             return;
         }
 
         if let Some(name) = name.strip_prefix("CARGO_CFG_") {
-            let name = Self::cfg_name(name);
+            let name = Self::legacy_cfg_name(name);
             if value.is_empty() {
-                self.names.insert(name);
+                self.legacy_names.insert(name);
                 return;
             }
 
@@ -77,10 +93,10 @@ impl ActiveCfg {
                 .split(',')
                 .filter(|value| !value.is_empty())
                 .for_each(|value| {
-                    if name == "feature" {
-                        self.features.insert(Self::feature_name(value));
+                    if name == "FEATURE" {
+                        self.features.insert(value.to_owned());
                     }
-                    self.values
+                    self.legacy_values
                         .entry(name.clone())
                         .or_default()
                         .insert(value.to_owned());
@@ -88,96 +104,48 @@ impl ActiveCfg {
         }
     }
 
-    fn matches_attr(&self, attr: &Attribute) -> Result<bool, ScanError> {
-        attr.parse_args::<Meta>()
-            .map_err(|_| Self::invalid_attribute(attr.meta.to_token_stream()))
-            .and_then(|meta| self.matches_meta(&meta))
-    }
-
-    fn matches_meta(&self, meta: &Meta) -> Result<bool, ScanError> {
-        match meta {
-            Meta::Path(path) => Ok(self.matches_name(path)),
-            Meta::NameValue(value) => self.matches_value(value),
-            Meta::List(list) if list.path.is_ident("all") => self.matches_all(list),
-            Meta::List(list) if list.path.is_ident("any") => self.matches_any(list),
-            Meta::List(list) if list.path.is_ident("not") => self.matches_not(list),
-            Meta::List(list) => Err(Self::invalid_attribute(list.to_token_stream())),
+    fn matches(&self, predicate: &CfgPredicate) -> PredicateMatch {
+        match predicate {
+            CfgPredicate::True => PredicateMatch::Active,
+            CfgPredicate::False => PredicateMatch::Inactive,
+            CfgPredicate::Name(name)
+                if self.names.contains(name)
+                    || self.legacy_names.contains(&Self::legacy_cfg_name(name)) =>
+            {
+                PredicateMatch::Active
+            }
+            CfgPredicate::Name(_) => PredicateMatch::Unknown,
+            CfgPredicate::Value { name, value } if name == "feature" => PredicateMatch::from_bool(
+                self.features.contains(value)
+                    || self
+                        .legacy_features
+                        .contains(&Self::legacy_feature_name(value)),
+            ),
+            CfgPredicate::Value { name, value } => self
+                .values
+                .get(name)
+                .or_else(|| self.legacy_values.get(&Self::legacy_cfg_name(name)))
+                .map_or(PredicateMatch::Unknown, |values| {
+                    PredicateMatch::from_bool(values.contains(value))
+                }),
+            CfgPredicate::All(predicates) => predicates
+                .iter()
+                .map(|predicate| self.matches(predicate))
+                .fold(PredicateMatch::Active, PredicateMatch::and),
+            CfgPredicate::Any(predicates) => predicates
+                .iter()
+                .map(|predicate| self.matches(predicate))
+                .fold(PredicateMatch::Inactive, PredicateMatch::or),
+            CfgPredicate::Not(predicate) => self.matches(predicate).not(),
         }
     }
 
-    fn matches_name(&self, path: &Path) -> bool {
-        path.get_ident()
-            .map(|ident| self.names.contains(&Self::cfg_name(&ident.to_string())))
-            .unwrap_or(false)
-    }
-
-    fn matches_value(&self, value: &MetaNameValue) -> Result<bool, ScanError> {
-        let Some(name) = value.path.get_ident().map(ToString::to_string) else {
-            return Ok(false);
-        };
-        let Some(value) = Self::string_value(&value.value) else {
-            return Err(Self::invalid_attribute(value.to_token_stream()));
-        };
-
-        if name == "feature" {
-            return Ok(self.features.contains(&Self::feature_name(&value)));
-        }
-
-        Ok(self
-            .values
-            .get(&Self::cfg_name(&name))
-            .is_some_and(|values| values.contains(&value)))
-    }
-
-    fn matches_all(&self, list: &MetaList) -> Result<bool, ScanError> {
-        self.predicates(list)?
-            .iter()
-            .map(|meta| self.matches_meta(meta))
-            .try_fold(true, |active, matches| {
-                matches.map(|matches| active && matches)
-            })
-    }
-
-    fn matches_any(&self, list: &MetaList) -> Result<bool, ScanError> {
-        self.predicates(list)?
-            .iter()
-            .map(|meta| self.matches_meta(meta))
-            .try_fold(false, |active, matches| {
-                matches.map(|matches| active || matches)
-            })
-    }
-
-    fn matches_not(&self, list: &MetaList) -> Result<bool, ScanError> {
-        let predicates = self.predicates(list)?;
-        match predicates.len() {
-            1 => self.matches_meta(&predicates[0]).map(|active| !active),
-            _ => Err(Self::invalid_attribute(list.to_token_stream())),
-        }
-    }
-
-    fn predicates(&self, list: &MetaList) -> Result<Vec<Meta>, ScanError> {
-        Punctuated::<Meta, Token![,]>::parse_terminated
-            .parse2(list.tokens.clone())
-            .map(|items| items.into_iter().collect())
-            .map_err(|_| Self::invalid_attribute(list.to_token_stream()))
-    }
-
-    fn string_value(value: &Expr) -> Option<String> {
-        match value {
-            Expr::Lit(value) => match &value.lit {
-                Lit::Str(value) => Some(value.value()),
-                _ => None,
-            },
-            _ => None,
-        }
-    }
-
-    fn feature_name(feature: &str) -> String {
+    fn legacy_feature_name(feature: &str) -> String {
         feature.replace('-', "_").to_ascii_uppercase()
     }
 
-    fn cfg_name(name: &str) -> String {
-        name.to_ascii_lowercase()
+    fn legacy_cfg_name(name: &str) -> String {
+        name.to_ascii_uppercase()
     }
 
     fn invalid_attribute(tokens: TokenStream) -> ScanError {
@@ -187,24 +155,184 @@ impl ActiveCfg {
     }
 }
 
+enum CfgPredicate {
+    True,
+    False,
+    Name(String),
+    Value { name: String, value: String },
+    All(Vec<Self>),
+    Any(Vec<Self>),
+    Not(Box<Self>),
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum PredicateMatch {
+    Active,
+    Inactive,
+    Unknown,
+}
+
+impl PredicateMatch {
+    fn from_bool(value: bool) -> Self {
+        if value { Self::Active } else { Self::Inactive }
+    }
+
+    fn and(self, other: Self) -> Self {
+        match (self, other) {
+            (Self::Inactive, _) | (_, Self::Inactive) => Self::Inactive,
+            (Self::Unknown, _) | (_, Self::Unknown) => Self::Unknown,
+            (Self::Active, Self::Active) => Self::Active,
+        }
+    }
+
+    fn or(self, other: Self) -> Self {
+        match (self, other) {
+            (Self::Active, _) | (_, Self::Active) => Self::Active,
+            (Self::Unknown, _) | (_, Self::Unknown) => Self::Unknown,
+            (Self::Inactive, Self::Inactive) => Self::Inactive,
+        }
+    }
+
+    fn not(self) -> Self {
+        match self {
+            Self::Active => Self::Inactive,
+            Self::Inactive => Self::Active,
+            Self::Unknown => Self::Unknown,
+        }
+    }
+}
+
+impl CfgPredicate {
+    fn name(path: &Path) -> Option<String> {
+        path.get_ident().map(ToString::to_string)
+    }
+}
+
+impl Parse for CfgPredicate {
+    fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
+        if input.peek(syn::LitBool) {
+            return input
+                .parse::<syn::LitBool>()
+                .map(|value| if value.value { Self::True } else { Self::False });
+        }
+
+        let path = input.parse::<Path>()?;
+        let name =
+            Self::name(&path).ok_or_else(|| input.error("cfg name must be an identifier"))?;
+        if input.peek(Token![=]) {
+            input.parse::<Token![=]>()?;
+            return input.parse::<syn::LitStr>().map(|value| Self::Value {
+                name,
+                value: value.value(),
+            });
+        }
+        if !input.peek(syn::token::Paren) {
+            return Ok(Self::Name(name));
+        }
+
+        let content;
+        parenthesized!(content in input);
+        let mut predicates = Punctuated::<Self, Token![,]>::parse_terminated(&content)?
+            .into_iter()
+            .collect::<Vec<_>>();
+        match name.as_str() {
+            "all" => Ok(Self::All(predicates)),
+            "any" => Ok(Self::Any(predicates)),
+            "not" if predicates.len() == 1 => Ok(Self::Not(Box::new(predicates.remove(0)))),
+            _ => Err(input.error("unsupported cfg predicate")),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use quote::ToTokens;
+
     use super::ActiveCfg;
 
     fn matches(active: &ActiveCfg, source: &str) -> bool {
         let source = format!("{source} struct Demo;");
-        let file = syn::parse_str::<syn::File>(&source).expect("valid item");
-        let syn::Item::Struct(item) = &file.items[0] else {
-            panic!("expected struct");
-        };
-        active.matches_attrs(&item.attrs).expect("cfg evaluation")
+        active
+            .configure(syn::parse_str(&source).expect("valid item"))
+            .expect("cfg evaluation")
+            .syntax()
+            .items
+            .iter()
+            .any(|item| matches!(item, syn::Item::Struct(_)))
+    }
+
+    fn configure(active: &ActiveCfg, source: &str) -> String {
+        active
+            .configure(syn::parse_str(source).expect("valid source"))
+            .expect("cfg configuration")
+            .syntax()
+            .to_token_stream()
+            .to_string()
     }
 
     #[test]
-    fn feature_cfg_uses_cargo_feature_normalization() {
-        let active = ActiveCfg::default().with_feature("native_ffi");
+    fn feature_cfg_preserves_exact_feature_identity() {
+        let hyphenated = ActiveCfg::default().with_feature("native-ffi");
+        let underscored = ActiveCfg::default().with_feature("native_ffi");
 
-        assert!(matches(&active, "#[cfg(feature = \"native-ffi\")]"));
+        assert!(matches(&hyphenated, "#[cfg(feature = \"native-ffi\")]"));
+        assert!(!matches(&hyphenated, "#[cfg(feature = \"native_ffi\")]"));
+        assert!(matches(&underscored, "#[cfg(feature = \"native_ffi\")]"));
+        assert!(!matches(&underscored, "#[cfg(feature = \"native-ffi\")]"));
+    }
+
+    #[test]
+    fn authoritative_features_clear_lossy_environment_fallback() {
+        let mut cargo = ActiveCfg::default();
+        cargo.observe_cargo_env("CARGO_FEATURE_NATIVE_FFI", "1");
+
+        assert!(matches(&cargo, "#[cfg(feature = \"native-ffi\")]"));
+        assert!(matches(&cargo, "#[cfg(feature = \"native_ffi\")]"));
+
+        let exact = cargo.for_features(["native-ffi"]);
+
+        assert!(matches(&exact, "#[cfg(feature = \"native-ffi\")]"));
+        assert!(!matches(&exact, "#[cfg(feature = \"native_ffi\")]"));
+    }
+
+    #[test]
+    fn custom_cfg_names_preserve_exact_case() {
+        let configured = configure(
+            &ActiveCfg::default().with_name("Foo"),
+            "#[cfg(Foo)] struct Upper; #[cfg(foo)] struct Lower;",
+        );
+
+        assert_eq!(configured, "struct Upper ; # [cfg (foo)] struct Lower ;");
+    }
+
+    #[test]
+    fn cargo_cfg_name_fallback_is_explicitly_lossy() {
+        let mut cargo = ActiveCfg::default();
+        cargo.observe_cargo_env("CARGO_CFG_FOO", "");
+
+        assert_eq!(
+            configure(
+                &cargo,
+                "#[cfg(Foo)] struct Upper; #[cfg(foo)] struct Lower;"
+            ),
+            "struct Upper ; struct Lower ;"
+        );
+    }
+
+    #[test]
+    fn package_features_replace_root_features_without_losing_target_cfg() {
+        let root = ActiveCfg::default()
+            .with_feature("root")
+            .with_name("unix")
+            .with_value("target_os", "ios");
+        let dependency = root.for_features(["dependency"]);
+
+        assert!(!matches(&dependency, "#[cfg(feature = \"root\")]"));
+        assert!(matches(&dependency, "#[cfg(feature = \"dependency\")]"));
+        assert!(matches(
+            &dependency,
+            "#[cfg(all(unix, target_os = \"ios\"))]"
+        ));
     }
 
     #[test]
@@ -218,5 +346,119 @@ mod tests {
             "#[cfg(all(unix, any(target_os = \"ios\", target_os = \"macos\")))]"
         ));
         assert!(!matches(&active, "#[cfg(not(unix))]"));
+        assert!(matches(&active, "#[cfg(true)]"));
+        assert!(!matches(&active, "#[cfg(false)]"));
+    }
+
+    #[test]
+    fn cfg_attr_expands_multiple_attributes_in_source_order() {
+        let configured = configure(
+            &ActiveCfg::default().with_feature("ffi"),
+            "#[first] #[cfg_attr(feature = \"ffi\", boltffi::data, deprecated)] #[last] struct Signal;",
+        );
+
+        assert_eq!(
+            configured,
+            "# [first] # [boltffi :: data] # [deprecated] # [last] struct Signal ;"
+        );
+    }
+
+    #[test]
+    fn nested_cfg_attr_is_resolved_recursively() {
+        let active = ActiveCfg::default().with_feature("ffi").with_name("unix");
+        let configured = configure(
+            &active,
+            "#[cfg_attr(feature = \"ffi\", cfg_attr(unix, boltffi::data))] struct Signal;",
+        );
+
+        assert_eq!(configured, "# [boltffi :: data] struct Signal ;");
+    }
+
+    #[test]
+    fn cfg_created_by_cfg_attr_controls_liveness() {
+        let configured = configure(
+            &ActiveCfg::default()
+                .with_feature("ffi")
+                .with_value("target_os", "macos"),
+            "#[cfg_attr(feature = \"ffi\", cfg(target_os = \"ios\"))] struct Hidden; struct Visible;",
+        );
+
+        assert_eq!(configured, "struct Visible ;");
+    }
+
+    #[test]
+    fn unobserved_non_feature_cfg_remains_unresolved() {
+        let configured = configure(
+            &ActiveCfg::default(),
+            "#[cfg(target_os = \"ios\")] struct Conditional;",
+        );
+
+        assert_eq!(
+            configured,
+            "# [cfg (target_os = \"ios\")] struct Conditional ;"
+        );
+    }
+
+    #[test]
+    fn unobserved_non_marker_cfg_attr_remains_unresolved() {
+        let configured = configure(
+            &ActiveCfg::default(),
+            "#[cfg_attr(target_os = \"ios\", deprecated)] struct Conditional;",
+        );
+
+        assert_eq!(
+            configured,
+            "# [cfg_attr (target_os = \"ios\" , deprecated)] struct Conditional ;"
+        );
+    }
+
+    #[test]
+    fn unobserved_conditional_marker_is_rejected_locally() {
+        let source = syn::parse_str(
+            "#[cfg_attr(all(feature = \"ffi\", target_os = \"ios\"), boltffi::data)] struct Signal;",
+        )
+        .expect("valid source");
+        let result = ActiveCfg::default().with_feature("ffi").configure(source);
+        let error = match result {
+            Err(error) => error,
+            Ok(_) => panic!("conditional marker needs complete cfg"),
+        };
+
+        assert_eq!(
+            error,
+            crate::ScanError::UnresolvedConditionalMarker {
+                attribute:
+                    "cfg_attr(all (feature = \"ffi\" , target_os = \"ios\") , boltffi :: data)"
+                        .to_owned()
+            }
+        );
+    }
+
+    #[test]
+    fn inactive_cfg_prunes_before_unresolved_conditional_marker() {
+        let configured = configure(
+            &ActiveCfg::default(),
+            "#[cfg(any())] #[cfg_attr(target_os = \"ios\", boltffi::data)] struct Never; struct Always;",
+        );
+
+        assert_eq!(configured, "struct Always ;");
+    }
+
+    #[test]
+    fn configuration_prunes_inactive_members_and_parameters() {
+        let configured = configure(
+            &ActiveCfg::default().with_feature("ffi"),
+            "enum Signal { #[cfg(false)] Hidden, #[cfg_attr(feature = \"ffi\", deprecated)] Ping } \
+             struct Packet { #[cfg(false)] hidden: i32, value: i32 } \
+             impl Packet { #[cfg(false)] fn hidden() {} fn send(#[cfg(false)] ignored: i32, value: i32) {} } \
+             type Callback = fn(#[cfg(false)] i32, bool);",
+        );
+
+        assert!(!configured.contains("Hidden"));
+        assert!(!configured.contains("hidden"));
+        assert!(!configured.contains("ignored"));
+        assert!(configured.contains("# [deprecated] Ping"));
+        assert!(configured.contains("fn send (value : i32)"));
+        assert!(configured.contains("type Callback = fn (bool)"));
     }
 }

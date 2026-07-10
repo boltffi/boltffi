@@ -1,6 +1,8 @@
 use std::collections::HashSet;
 use std::path::{Component, PathBuf};
 
+use boltffi_bindgen::metadata::{ResolvedFeatures, resolve_cargo_features};
+
 use crate::build::{CargoBuildProfile, resolve_build_profile};
 use crate::cargo::Cargo;
 use crate::cli::{CliError, Result};
@@ -49,6 +51,7 @@ pub struct PythonCargoContext {
     pub target_directory: PathBuf,
     pub cargo_command_args: Vec<String>,
     pub toolchain_selector: Option<String>,
+    pub features: ResolvedFeatures,
 }
 
 impl PythonCargoContext {
@@ -131,6 +134,16 @@ impl PythonPackagingPlan {
                 status: None,
             });
         }
+        let cargo_command_args = cargo.probe_command_arguments();
+        let features = resolve_cargo_features(
+            &package.manifest_path,
+            cargo_command_args.clone(),
+            cargo.toolchain_selector(),
+        )
+        .map_err(|error| CliError::CommandFailed {
+            command: format!("resolve active Cargo features: {error}"),
+            status: None,
+        })?;
 
         Ok(Self {
             distribution_name: config.package.name.clone(),
@@ -148,8 +161,9 @@ impl PythonPackagingPlan {
                 library_source_path: library_target.src_path.clone(),
                 package_selector,
                 target_directory: metadata.target_directory,
-                cargo_command_args: cargo.probe_command_arguments(),
+                cargo_command_args,
                 toolchain_selector: cargo.toolchain_selector().map(str::to_owned),
+                features,
             },
         })
     }
@@ -231,6 +245,8 @@ fn normalize_path(path: PathBuf) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
+
+    use boltffi_bindgen::metadata::ResolvedFeatures;
 
     use super::{
         PythonCargoContext, PythonInterpreterSelection, PythonPackageLayout, PythonPackagingPlan,
@@ -330,6 +346,7 @@ mod tests {
                 target_directory: PathBuf::from("/tmp/boltffi-target"),
                 cargo_command_args: Vec::new(),
                 toolchain_selector: None,
+                features: ResolvedFeatures::default(),
             },
         };
 
@@ -366,6 +383,7 @@ mod tests {
                 target_directory: PathBuf::from("/tmp/boltffi-target"),
                 cargo_command_args: Vec::new(),
                 toolchain_selector: None,
+                features: ResolvedFeatures::default(),
             },
         };
 

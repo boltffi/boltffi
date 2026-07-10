@@ -17,6 +17,7 @@ use crate::experimental::{
     error::Error as ExpansionError, expander::Expander, expansion::Expansion,
     rust_api::RootModuleTypes,
 };
+use crate::scan_configuration::ScanEnvironment;
 
 pub enum Item {
     Inactive,
@@ -68,9 +69,10 @@ impl Request {
     }
 
     fn render(self) -> Result<TokenStream, BuildError> {
-        let scan = boltffi_scan::scan_package(
-            &ScanInput::new(&self.source, self.package).with_manifest_dir(&self.root),
-        )?;
+        let input = ScanInput::new(&self.source, self.package)
+            .with_manifest_dir(&self.root)
+            .with_configuration(ScanEnvironment::from_env().into_configuration());
+        let scan = boltffi_scan::scan_package(&input)?;
         let source = scan.root_with_support();
         let complete = scan.complete();
         let visible_paths = scan

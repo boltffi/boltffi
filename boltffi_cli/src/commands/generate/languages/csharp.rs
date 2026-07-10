@@ -27,12 +27,14 @@ impl CSharpGenerator {
         output: Option<PathBuf>,
         source_directory: &Path,
         crate_name: &str,
+        cargo_args: Vec<String>,
     ) -> Result<()> {
         let request = GenerateRequest::new(
             config,
             output,
             SourceCrate::new(source_directory, crate_name),
-        );
+        )
+        .cargo_args(cargo_args);
         Self::generate(&request)
     }
 }

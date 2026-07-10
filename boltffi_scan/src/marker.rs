@@ -155,23 +155,29 @@ fn parse_export_args(input: syn::parse::ParseStream<'_>) -> syn::Result<ExportMa
 }
 
 fn marker_name(attr: &syn::Attribute) -> Option<String> {
-    let segments = attr.path().segments.iter().collect::<Vec<_>>();
-    match segments.as_slice() {
-        [segment] => Some(segment.ident.to_string()).filter(|name| {
-            matches!(
-                name.as_str(),
-                "custom_ffi" | "data" | "error" | "export" | "skip"
-            )
-        }),
-        [namespace, marker] if namespace.ident == "boltffi" => Some(marker.ident.to_string())
-            .filter(|name| {
-                matches!(
-                    name.as_str(),
-                    "custom_ffi" | "data" | "error" | "export" | "skip"
-                )
-            }),
-        _ => None,
+    if !is_marker_path(attr.path()) {
+        return None;
     }
+    attr.path()
+        .segments
+        .last()
+        .map(|segment| segment.ident.to_string())
+}
+
+pub fn is_marker_path(path: &syn::Path) -> bool {
+    let segments = path.segments.iter().collect::<Vec<_>>();
+    match segments.as_slice() {
+        [marker] => is_marker_name(&marker.ident),
+        [namespace, marker] if namespace.ident == "boltffi" => is_marker_name(&marker.ident),
+        _ => false,
+    }
+}
+
+fn is_marker_name(name: &syn::Ident) -> bool {
+    matches!(
+        name.to_string().as_str(),
+        "custom_ffi" | "data" | "error" | "export" | "skip"
+    )
 }
 
 fn invalid(attr: &syn::Attribute) -> ScanError {

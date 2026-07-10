@@ -2,7 +2,7 @@ use std::process::Command;
 
 use boltffi_binding::{
     BINDING_EXPANSION_BUILD_ENV, BINDING_EXPANSION_ROOT_ENV, BINDING_EXPANSION_SOURCE_ENV,
-    BINDING_EXPANSION_SURFACE_ENV, BindingMetadataSurface,
+    BINDING_EXPANSION_SURFACE_ENV, BINDING_METADATA_FEATURES_ENV, BindingMetadataSurface,
 };
 
 use crate::build::{OutputCallback, run_command_streaming};
@@ -82,6 +82,10 @@ impl<'a> PythonSharedLibraryBuilder<'a> {
         command.env(
             BINDING_EXPANSION_SURFACE_ENV,
             BindingMetadataSurface::Native.as_str(),
+        );
+        command.env(
+            BINDING_METADATA_FEATURES_ENV,
+            self.plan.cargo_context.features.env_value(),
         );
 
         if !run_command_streaming(&mut command, on_output.as_ref()) {

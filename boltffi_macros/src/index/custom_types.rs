@@ -6,7 +6,8 @@ use quote::{format_ident, quote};
 use syn::parse::Parse;
 use syn::{GenericArgument, PathArguments, Type};
 
-use crate::index::{CrateIndex, IndexedCrateSource};
+use crate::index::CrateIndex;
+use crate::index::source::IndexedSource;
 
 #[derive(Clone)]
 pub struct CustomTypeEntry {
@@ -355,26 +356,9 @@ struct CustomTypeCollector<'a> {
 }
 
 impl<'a> CustomTypeCollector<'a> {
-    fn collect_module(mut self, module: &syn::ItemMod) -> syn::Result<()> {
-        let Some((_, items)) = &module.content else {
-            return Ok(());
-        };
-
-        self.module_path.push(module.ident.clone());
-        items.iter().try_for_each(|item| self.collect_item(item))?;
-        self.module_path.pop();
-        Ok(())
-    }
-
     fn collect_item(&mut self, item: &syn::Item) -> syn::Result<()> {
         match item {
             syn::Item::Macro(item_macro) => self.collect_item_macro(item_macro),
-            syn::Item::Mod(item_mod) => CustomTypeCollector {
-                root_path: self.root_path.clone(),
-                module_path: self.module_path.clone(),
-                custom_types: self.custom_types,
-            }
-            .collect_module(item_mod),
             _ => Ok(()),
         }
     }
@@ -413,7 +397,7 @@ pub fn registry_for_current_crate() -> syn::Result<CustomTypeRegistry> {
 }
 
 pub(super) fn build_custom_type_registry(
-    sources: &[IndexedCrateSource],
+    sources: &[IndexedSource],
 ) -> syn::Result<CustomTypeRegistry> {
     let mut registry = CustomTypeRegistry::default();
     sources
@@ -424,19 +408,22 @@ pub(super) fn build_custom_type_registry(
 }
 
 fn collect_source_custom_types(
-    source: &IndexedCrateSource,
+    source: &IndexedSource,
     registry: &mut CustomTypeRegistry,
 ) -> syn::Result<()> {
     source.modules().iter().try_for_each(|source_module| {
         let mut collector = CustomTypeCollector {
             root_path: source.root_path().to_vec(),
-            module_path: source_module.module_path().clone().into_idents(),
+            module_path: source
+                .module_path(source_module)
+                .iter()
+                .map(|segment| syn::Ident::new(segment, Span::call_site()))
+                .collect(),
             custom_types: registry,
         };
 
         source_module
-            .syntax()
-            .items
+            .items()
             .iter()
             .try_for_each(|item| collector.collect_item(item))
     })

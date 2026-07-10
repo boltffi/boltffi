@@ -4,7 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [features]
-default = []
+default = ["boltffi"]
+boltffi = []
 uniffi = ["dep:uniffi"]
 wasm-bench = ["dep:serde", "dep:serde-wasm-bindgen", "dep:wasm-bindgen", "dep:wasm-bindgen-futures"]
 

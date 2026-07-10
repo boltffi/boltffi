@@ -32,7 +32,7 @@ impl SourceTree {
         walk(
             ModulePath::root(crate_name),
             Path::new("."),
-            ParsedFile::inline(file.items),
+            ParsedFile::inline(file),
             SourceMode::Inline,
             &ActiveCfg::default(),
         )
@@ -59,7 +59,11 @@ impl SourceTree {
         walk(
             ModulePath::root(crate_name),
             Path::new("."),
-            ParsedFile::inline(items),
+            ParsedFile::inline(syn::File {
+                shebang: None,
+                attrs: Vec::new(),
+                items,
+            }),
             SourceMode::Inline,
             cfg,
         )
@@ -85,8 +89,12 @@ impl SourceModule {
         }
     }
 
-    pub fn scope(&self) -> &ModuleScope {
+    pub(crate) fn scope(&self) -> &ModuleScope {
         &self.scope
+    }
+
+    pub fn path(&self) -> &[String] {
+        self.scope.path().segments()
     }
 
     pub fn items(&self) -> &[syn::Item] {
@@ -102,19 +110,26 @@ fn walk(
     cfg: &ActiveCfg,
 ) -> Result<Vec<SourceModule>, ScanError> {
     let spans = file.spans;
-    let (own_items, mut child_modules) = file.items.into_iter().try_fold(
+    let syntax = cfg.configure(file.syntax)?.into_syntax();
+    let (own_items, mut child_modules) = syntax.items.into_iter().try_fold(
         (Vec::new(), Vec::new()),
         |(mut own_items, mut child_modules), item| {
             match item {
                 syn::Item::Mod(item_mod) => {
-                    child_modules.extend(descend(
-                        &module,
-                        dir,
-                        item_mod.clone(),
-                        spans.clone(),
-                        source_mode,
-                        cfg,
-                    )?);
+                    if !item_mod
+                        .attrs
+                        .iter()
+                        .any(|attr| attr.path().is_ident("cfg"))
+                    {
+                        child_modules.extend(descend(
+                            &module,
+                            dir,
+                            item_mod.clone(),
+                            spans.clone(),
+                            source_mode,
+                            cfg,
+                        )?);
+                    }
                     own_items.push(syn::Item::Mod(item_mod));
                 }
                 item => own_items.push(item),
@@ -134,9 +149,6 @@ fn descend(
     source_mode: SourceMode,
     cfg: &ActiveCfg,
 ) -> Result<Vec<SourceModule>, ScanError> {
-    if !cfg.matches_attrs(&item_mod.attrs)? {
-        return Ok(Vec::new());
-    }
     let name = item_mod.ident.to_string();
     let child = parent.child(&name);
     match item_mod.content {
@@ -144,7 +156,11 @@ fn descend(
             child,
             &dir.join(&name),
             ParsedFile {
-                items,
+                syntax: syn::File {
+                    shebang: None,
+                    attrs: Vec::new(),
+                    items,
+                },
                 spans: parent_spans,
             },
             source_mode,
@@ -228,21 +244,24 @@ fn path_attr(attrs: &[syn::Attribute]) -> Option<String> {
 }
 
 struct ParsedFile {
-    items: Vec<syn::Item>,
+    syntax: syn::File,
     spans: Option<SpanMap>,
 }
 
 impl ParsedFile {
-    fn inline(items: Vec<syn::Item>) -> Self {
-        Self { items, spans: None }
+    fn inline(syntax: syn::File) -> Self {
+        Self {
+            syntax,
+            spans: None,
+        }
     }
 }
 
 fn parse(path: &Path) -> Result<ParsedFile, ScanError> {
     let source = std::fs::read_to_string(path).map_err(|error| ScanError::read(path, &error))?;
     syn::parse_file(&source)
-        .map(|file| ParsedFile {
-            items: file.items,
+        .map(|syntax| ParsedFile {
+            syntax,
             spans: Some(SpanMap::new(path.display().to_string(), &source)),
         })
         .map_err(|error| ScanError::parse(path, &error))
@@ -384,6 +403,30 @@ mod tests {
     }
 
     #[test]
+    fn unresolved_cfg_does_not_descend_inline_module() {
+        let tree = SourceTree::in_memory(
+            "demo",
+            parse_items("#[cfg(test)] mod tests { pub struct Hidden; }"),
+        )
+        .expect("unresolved inline module remains opaque");
+
+        assert_eq!(module_paths(&tree), vec!["demo::".to_owned()]);
+    }
+
+    #[test]
+    fn unresolved_cfg_does_not_load_external_module() {
+        let dir = std::env::temp_dir().join("boltffi_scan_tree_unknown_cfg");
+        std::fs::create_dir_all(&dir).expect("create fixture dir");
+        let root = dir.join("lib.rs");
+        std::fs::write(&root, "#[cfg(test)] mod tests; pub struct Root;").expect("write root");
+
+        let tree = SourceTree::load(&root, "demo").expect("unresolved module remains opaque");
+
+        std::fs::remove_dir_all(&dir).ok();
+        assert_eq!(module_paths(&tree), vec!["demo::".to_owned()]);
+    }
+
+    #[test]
     fn active_feature_cfg_loads_external_module() {
         let dir = std::env::temp_dir().join("boltffi_scan_tree_cfg_feature");
         std::fs::create_dir_all(&dir).expect("create fixture dir");
@@ -395,10 +438,29 @@ mod tests {
         .expect("write root");
         std::fs::write(dir.join("ffi.rs"), "pub struct CoreFfi;").expect("write ffi");
 
-        let cfg = ActiveCfg::default().with_feature("native_ffi");
+        let cfg = ActiveCfg::default().with_feature("native-ffi");
         let tree = SourceTree::load_with_cfg(&root, "demo", &cfg).expect("load tree");
 
         std::fs::remove_dir_all(&dir).ok();
         assert!(module_paths(&tree).contains(&"demo::ffi::".to_owned()));
+    }
+
+    #[test]
+    fn active_cfg_attr_selects_external_module_path() {
+        let dir = std::env::temp_dir().join("boltffi_scan_tree_cfg_attr_path");
+        std::fs::create_dir_all(&dir).expect("create fixture dir");
+        let root = dir.join("lib.rs");
+        std::fs::write(
+            &root,
+            "#[cfg_attr(feature = \"ffi\", path = \"bridge.rs\")] pub mod native;",
+        )
+        .expect("write root");
+        std::fs::write(dir.join("bridge.rs"), "pub struct Bridge;").expect("write bridge");
+
+        let cfg = ActiveCfg::default().with_feature("ffi");
+        let tree = SourceTree::load_with_cfg(&root, "demo", &cfg).expect("load tree");
+
+        std::fs::remove_dir_all(&dir).ok();
+        assert!(module_paths(&tree).contains(&"demo::native::".to_owned()));
     }
 }

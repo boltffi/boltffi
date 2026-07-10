@@ -2,17 +2,19 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path as FsPath;
 
 use boltffi_ast::{PackageInfo, Path, PathRoot, PathSegment, SourceContract};
+use boltffi_ffi_rules::cargo_graph::{CargoFeatureSelection, ResolvedFeatures};
 
 use crate::declared_types::DeclaredTypes;
 use crate::input::ScanInput;
 use crate::marked::MarkedItems;
-use crate::package_graph::{ExportedPackage, LoadError, PackageGraph};
+use crate::package_graph::{ExportedPackageGraph, LoadError, LocalPackage};
 use crate::path::ImportLookup;
 use crate::source_tree::SourceTree;
 use crate::{ModuleScope, ScanError, items};
 
 pub fn scan(input: &ScanInput) -> Result<SourceContract, ScanError> {
-    let source_tree = SourceTree::load_with_cfg(input.root(), &input.package().name, input.cfg())?;
+    let active = input.configuration().active_cfg();
+    let source_tree = SourceTree::load_with_cfg(input.root(), &input.package().name, &active)?;
     scan_tree(source_tree, input.package().clone())
 }
 
@@ -113,8 +115,19 @@ impl RootCrate {
 }
 
 pub fn scan_package(input: &ScanInput) -> Result<PackageScan, ScanError> {
-    let root_tree = SourceTree::load_with_cfg(input.root(), &input.package().name, input.cfg())?;
-    let dependencies = dependencies(input.manifest_dir())?;
+    let feature_selection = input.configuration().feature_selection();
+    let dependency_cfg = input.configuration().active_cfg().without_features();
+    let dependencies = dependencies(
+        input.manifest_dir(),
+        &input.package().name,
+        &feature_selection,
+        &dependency_cfg,
+    )?;
+    let root_cfg = dependencies.root_features.as_ref().map_or_else(
+        || input.configuration().active_cfg(),
+        |features| input.configuration().active_cfg_for_root(features),
+    );
+    let root_tree = SourceTree::load_with_cfg(input.root(), &input.package().name, &root_cfg)?;
     let direct_dependency_modules = dependencies.direct_modules();
     let complete_tree = SourceTree::combine(
         dependencies
@@ -199,8 +212,9 @@ fn scan_marked_with_declarations(
 }
 
 struct PackageDependencies {
-    direct: Vec<ExportedPackage>,
+    direct: Vec<LocalPackage>,
     reachable: Vec<SourceTree>,
+    root_features: Option<ResolvedFeatures>,
 }
 
 impl PackageDependencies {
@@ -208,6 +222,7 @@ impl PackageDependencies {
         Self {
             direct: Vec::new(),
             reachable: Vec::new(),
+            root_features: None,
         }
     }
 
@@ -219,24 +234,36 @@ impl PackageDependencies {
     }
 }
 
-fn dependencies(manifest_dir: Option<&FsPath>) -> Result<PackageDependencies, ScanError> {
+fn dependencies(
+    manifest_dir: Option<&FsPath>,
+    root_module_name: &str,
+    feature_selection: &CargoFeatureSelection,
+    dependency_cfg: &crate::ActiveCfg,
+) -> Result<PackageDependencies, ScanError> {
     let Some(manifest_dir) = manifest_dir else {
         return Ok(PackageDependencies::empty());
     };
-    let Some(graph) = PackageGraph::load(manifest_dir).map_err(package_graph_error)? else {
+    let Some(graph) = ExportedPackageGraph::load(manifest_dir, root_module_name, feature_selection)
+        .map_err(package_graph_error)?
+    else {
         return Ok(PackageDependencies::empty());
     };
     let direct = graph.direct_exported_dependencies(graph.root_id());
+    let root_features = Some(graph.root_features().clone());
     let reachable = graph
         .reachable_exported_dependencies(graph.root_id())
         .into_iter()
-        .map(dependency_tree)
+        .map(|package| dependency_tree(package, dependency_cfg))
         .collect::<Result<Vec<_>, _>>()?;
-    Ok(PackageDependencies { direct, reachable })
+    Ok(PackageDependencies {
+        direct,
+        reachable,
+        root_features,
+    })
 }
 
-fn dependency_tree(package: ExportedPackage) -> Result<SourceTree, ScanError> {
-    SourceTree::load(package.source_file(), package.module_name())
+fn dependency_tree(package: LocalPackage, cfg: &crate::ActiveCfg) -> Result<SourceTree, ScanError> {
+    SourceTree::load_with_cfg(package.source_file(), package.module_name(), cfg)
 }
 
 fn package_graph_error(error: LoadError) -> ScanError {
@@ -419,6 +446,10 @@ fn scan_each<I, T>(
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+    use std::process;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
     use super::*;
     use boltffi_ast::{
         AttributeInput, ClassId, ConstExpr, ConstantId, CustomRemoteGenericArgument,
@@ -438,6 +469,12 @@ mod tests {
 
     fn scan(source: &str) -> SourceContract {
         try_scan(source).expect("scan")
+    }
+
+    fn scan_with_cfg(source: &str, cfg: &crate::ActiveCfg) -> SourceContract {
+        let source_tree =
+            SourceTree::in_memory_with_cfg("demo", parse(source).items, cfg).expect("source tree");
+        scan_tree(source_tree, PackageInfo::new("demo", None)).expect("scan")
     }
 
     fn source_tree(crate_name: &str, source: &str) -> SourceTree {
@@ -514,19 +551,54 @@ mod tests {
     #[test]
     fn scan_source_reads_and_parses_the_file_itself() {
         let path = std::env::temp_dir().join("boltffi_scan_entry_point.rs");
-        std::fs::write(&path, "#[data] pub struct Point { pub x: f64 }").expect("write source");
+        fs::write(&path, "#[data] pub struct Point { pub x: f64 }").expect("write source");
 
         let contract = scan_source(&path, PackageInfo::new("demo", None)).expect("scan");
 
-        std::fs::remove_file(&path).ok();
+        fs::remove_file(&path).ok();
         assert_eq!(contract.records.len(), 1);
         assert_eq!(contract.records[0].id, RecordId::new("demo::Point"));
     }
 
     #[test]
+    fn package_scan_resolves_default_features_before_configuring_root_source() {
+        let unique_suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time after Unix epoch")
+            .as_nanos();
+        let directory = std::env::temp_dir().join(format!(
+            "boltffi-package-features-{}-{unique_suffix}",
+            process::id()
+        ));
+        let source_directory = directory.join("src");
+        let source_file = source_directory.join("lib.rs");
+        fs::create_dir_all(&source_directory).expect("create source directory");
+        fs::write(
+            directory.join("Cargo.toml"),
+            "[package]\nname = \"demo\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[features]\ndefault = [\"boltffi\"]\nboltffi = []\n",
+        )
+        .expect("write manifest");
+        fs::write(
+            &source_file,
+            "#[cfg_attr(feature = \"boltffi\", boltffi::data)] pub enum Signal { Ping, Pong } \
+             #[cfg_attr(feature = \"boltffi\", boltffi::export)] \
+             pub fn signal_name(signal: Signal) -> String { format!(\"{signal:?}\") }",
+        )
+        .expect("write source");
+        let input = ScanInput::new(&source_file, PackageInfo::new("demo", None))
+            .with_manifest_dir(&directory);
+
+        let contract = scan_package(&input).expect("package scan");
+        fs::remove_dir_all(&directory).expect("remove fixture");
+
+        assert_eq!(contract.root().enums.len(), 1);
+        assert_eq!(contract.root().functions.len(), 1);
+    }
+
+    #[test]
     fn scan_source_reports_a_missing_file_as_a_read_error() {
         let path = std::env::temp_dir().join("boltffi_scan_does_not_exist.rs");
-        std::fs::remove_file(&path).ok();
+        fs::remove_file(&path).ok();
 
         let error = scan_source(&path, PackageInfo::new("demo", None))
             .expect_err("a missing file must reject");
@@ -537,12 +609,12 @@ mod tests {
     #[test]
     fn scan_source_reports_invalid_rust_as_a_parse_error() {
         let path = std::env::temp_dir().join("boltffi_scan_invalid.rs");
-        std::fs::write(&path, "#[data] pub struct {").expect("write source");
+        fs::write(&path, "#[data] pub struct {").expect("write source");
 
         let error = scan_source(&path, PackageInfo::new("demo", None))
             .expect_err("invalid source must reject");
 
-        std::fs::remove_file(&path).ok();
+        fs::remove_file(&path).ok();
         assert!(matches!(error, ScanError::Parse { .. }));
     }
 
@@ -566,11 +638,11 @@ mod tests {
             pub fn add(#[default(1)] #[serde(rename = \"left\")] a: i32) -> i32 { a }\n\
         ";
         let path = std::env::temp_dir().join("boltffi_scan_metadata.rs");
-        std::fs::write(&path, source).expect("write source");
+        fs::write(&path, source).expect("write source");
 
         let contract = scan_source(&path, PackageInfo::new("demo", None)).expect("scan");
 
-        std::fs::remove_file(&path).ok();
+        fs::remove_file(&path).ok();
         let record = &contract.records[0];
         let field = &record.fields[0];
         let function = &contract.functions[0];
@@ -2023,6 +2095,20 @@ mod tests {
         assert_eq!(contract.records.len(), 1);
         assert_eq!(contract.functions.len(), 1);
         assert_eq!(contract.constants.len(), 1);
+    }
+
+    #[test]
+    fn active_cfg_attr_markers_define_the_complete_contract() {
+        let source = "#[cfg_attr(feature = \"boltffi\", boltffi::data)] pub enum Signal { Ping, Pong } \
+             #[cfg_attr(feature = \"boltffi\", boltffi::export)] \
+             pub fn signal_name(signal: Signal) -> String { format!(\"{signal:?}\") }";
+        let active = scan_with_cfg(source, &crate::ActiveCfg::default().with_feature("boltffi"));
+        let inactive = scan_with_cfg(source, &crate::ActiveCfg::default());
+
+        assert_eq!(active.enums.len(), 1);
+        assert_eq!(active.functions.len(), 1);
+        assert!(inactive.enums.is_empty());
+        assert!(inactive.functions.is_empty());
     }
 
     #[test]

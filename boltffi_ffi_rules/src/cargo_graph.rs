@@ -1,14 +1,16 @@
+mod exports;
+mod features;
+
+pub use features::{CargoFeatureSelection, ResolvedFeatures};
+
 use crate::naming;
 use serde::Deserialize;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::env;
 use std::ffi::OsString;
 use std::fmt;
-use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
-use syn::{Attribute, Item};
-use walkdir::WalkDir;
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct PackageId(String);
@@ -18,25 +20,22 @@ pub struct ExportedPackage {
     id: PackageId,
     import_name: String,
     manifest_dir: PathBuf,
-    source_root: PathBuf,
+    source_file: PathBuf,
     module_name: String,
 }
+
+pub type LocalPackage = ExportedPackage;
 
 pub struct PackageGraph {
     packages: HashMap<PackageId, CargoPackage>,
     dependencies: HashMap<PackageId, Vec<CargoDependency>>,
     root_id: PackageId,
+    root_features: ResolvedFeatures,
 }
 
 #[derive(Debug)]
 pub struct LoadError {
     message: String,
-}
-
-#[derive(Clone, Copy)]
-enum MetadataMode {
-    CurrentBuild,
-    Standalone,
 }
 
 #[derive(Deserialize)]
@@ -48,9 +47,12 @@ struct CargoMetadata {
 #[derive(Clone, Deserialize)]
 struct CargoPackage {
     id: String,
+    name: String,
     manifest_path: PathBuf,
     source: Option<String>,
     targets: Vec<CargoTarget>,
+    #[serde(default)]
+    features: BTreeMap<String, Vec<String>>,
 }
 
 #[derive(Clone, Deserialize)]
@@ -75,6 +77,13 @@ struct CargoNode {
 struct CargoNodeDependency {
     name: String,
     pkg: String,
+    #[serde(default)]
+    dep_kinds: Vec<CargoDependencyKind>,
+}
+
+#[derive(Deserialize)]
+struct CargoDependencyKind {
+    kind: Option<String>,
 }
 
 impl PackageId {
@@ -85,7 +94,7 @@ impl PackageId {
 
 impl PackageGraph {
     pub fn load(manifest_dir: &Path) -> Result<Option<Self>, LoadError> {
-        Self::load_manifest(manifest_dir, None, MetadataMode::CurrentBuild)
+        Self::load_manifest(manifest_dir, None, &CargoFeatureSelection::default())
     }
 
     pub fn load_for_module(
@@ -95,21 +104,32 @@ impl PackageGraph {
         Self::load_manifest(
             manifest_dir,
             Some(root_module_name),
-            MetadataMode::Standalone,
+            &CargoFeatureSelection::default(),
         )
+    }
+
+    pub fn load_with_features(
+        manifest_dir: &Path,
+        root_module_name: &str,
+        features: &CargoFeatureSelection,
+    ) -> Result<Option<Self>, LoadError> {
+        Self::load_manifest(manifest_dir, Some(root_module_name), features)
     }
 
     pub fn root_id(&self) -> &PackageId {
         &self.root_id
     }
 
-    pub fn package(&self, id: &PackageId) -> Option<ExportedPackage> {
-        self.packages
-            .get(id)
-            .and_then(|package| package.root_export(id.clone()))
+    pub fn root_features(&self) -> &ResolvedFeatures {
+        &self.root_features
     }
 
-    pub fn exported_dependencies(&self, id: &PackageId) -> Vec<ExportedPackage> {
+    pub fn package(&self, id: &PackageId) -> Option<LocalPackage> {
+        let package = self.packages.get(id)?;
+        package.root(id.clone())
+    }
+
+    pub fn direct_local_dependencies(&self, id: &PackageId) -> Vec<LocalPackage> {
         self.dependencies
             .get(id)
             .into_iter()
@@ -117,12 +137,18 @@ impl PackageGraph {
             .filter_map(|dependency| {
                 let package = self.packages.get(&dependency.package_id)?;
                 package.is_local().then_some(())?;
-                package.has_legacy_exports().then_some(())?;
-                package.export(
+                package.local(
                     dependency.package_id.clone(),
                     dependency.import_name.clone(),
                 )
             })
+            .collect()
+    }
+
+    pub fn exported_dependencies(&self, id: &PackageId) -> Vec<ExportedPackage> {
+        self.direct_local_dependencies(id)
+            .into_iter()
+            .filter(exports::PackageExports::has_exports)
             .collect()
     }
 
@@ -133,14 +159,14 @@ impl PackageGraph {
     fn load_manifest(
         manifest_dir: &Path,
         root_module_name: Option<&str>,
-        metadata_mode: MetadataMode,
+        features: &CargoFeatureSelection,
     ) -> Result<Option<Self>, LoadError> {
         let manifest_path = manifest_dir.join("Cargo.toml");
         if !manifest_path.exists() {
             return Ok(None);
         }
 
-        let output = MetadataCommand::new(&manifest_path, metadata_mode).output()?;
+        let output = MetadataCommand::new(&manifest_path, features).output()?;
 
         if !output.status.success() {
             return Err(LoadError::new(format!(
@@ -153,10 +179,20 @@ impl PackageGraph {
         let metadata: CargoMetadata = serde_json::from_slice(&output.stdout)
             .map_err(|error| LoadError::new(format!("failed to parse cargo metadata: {error}")))?;
         let root_id = Self::resolve_root_id(&metadata.packages, &manifest_path, root_module_name)?;
-        Ok(Some(Self::from_metadata(metadata, root_id)))
+        Ok(Some(Self::from_metadata(metadata, root_id, features)))
     }
 
-    fn from_metadata(metadata: CargoMetadata, root_id: PackageId) -> Self {
+    fn from_metadata(
+        metadata: CargoMetadata,
+        root_id: PackageId,
+        feature_selection: &CargoFeatureSelection,
+    ) -> Self {
+        let root_features = metadata
+            .packages
+            .iter()
+            .find(|package| package.id == root_id.0)
+            .map(|package| feature_selection.resolve_for_package(&package.name, &package.features))
+            .unwrap_or_default();
         let packages = metadata
             .packages
             .into_iter()
@@ -173,6 +209,7 @@ impl PackageGraph {
                             PackageId::new(node.id),
                             node.deps
                                 .into_iter()
+                                .filter(CargoNodeDependency::is_normal)
                                 .map(CargoDependency::from)
                                 .collect::<Vec<_>>(),
                         )
@@ -185,6 +222,7 @@ impl PackageGraph {
             packages,
             dependencies,
             root_id,
+            root_features,
         }
     }
 
@@ -257,8 +295,14 @@ impl ExportedPackage {
         &self.manifest_dir
     }
 
+    pub fn source_file(&self) -> &Path {
+        &self.source_file
+    }
+
     pub fn source_root(&self) -> &Path {
-        &self.source_root
+        self.source_file
+            .parent()
+            .unwrap_or(self.manifest_dir.as_path())
     }
 
     pub fn module_name(&self) -> &str {
@@ -282,14 +326,14 @@ impl std::error::Error for LoadError {}
 
 struct MetadataCommand<'a> {
     manifest_path: &'a Path,
-    mode: MetadataMode,
+    features: &'a CargoFeatureSelection,
 }
 
 impl<'a> MetadataCommand<'a> {
-    fn new(manifest_path: &'a Path, mode: MetadataMode) -> Self {
+    fn new(manifest_path: &'a Path, features: &'a CargoFeatureSelection) -> Self {
         Self {
             manifest_path,
-            mode,
+            features,
         }
     }
 
@@ -298,7 +342,8 @@ impl<'a> MetadataCommand<'a> {
         command
             .args(["metadata", "--format-version", "1", "--manifest-path"])
             .arg(self.manifest_path)
-            .args(self.mode.args());
+            .args(Self::mode_args())
+            .args(self.features.cargo_arguments());
         command
             .output()
             .map_err(|error| LoadError::new(format!("cargo metadata failed: {error}")))
@@ -307,23 +352,16 @@ impl<'a> MetadataCommand<'a> {
     fn cargo_executable() -> OsString {
         env::var_os("CARGO").unwrap_or_else(|| OsString::from("cargo"))
     }
-}
 
-impl MetadataMode {
-    fn args(self) -> &'static [&'static str] {
-        match self {
-            Self::CurrentBuild | Self::Standalone if Self::env_flag("CARGO_FROZEN") => {
-                &["--frozen"]
-            }
-            Self::CurrentBuild | Self::Standalone
-                if Self::env_flag("CARGO_NET_OFFLINE") || Self::env_flag("CARGO_OFFLINE") =>
-            {
-                &["--offline"]
-            }
-            Self::CurrentBuild | Self::Standalone if Self::env_flag("CARGO_LOCKED") => {
-                &["--locked"]
-            }
-            Self::CurrentBuild | Self::Standalone => &[],
+    fn mode_args() -> &'static [&'static str] {
+        if Self::env_flag("CARGO_FROZEN") {
+            &["--frozen"]
+        } else if Self::env_flag("CARGO_NET_OFFLINE") || Self::env_flag("CARGO_OFFLINE") {
+            &["--offline"]
+        } else if Self::env_flag("CARGO_LOCKED") {
+            &["--locked"]
+        } else {
+            &[]
         }
     }
 
@@ -346,6 +384,16 @@ impl From<CargoNodeDependency> for CargoDependency {
             import_name: naming::cargo_crate_name(&dependency.name),
             package_id: PackageId::new(dependency.pkg),
         }
+    }
+}
+
+impl CargoNodeDependency {
+    fn is_normal(&self) -> bool {
+        self.dep_kinds.is_empty()
+            || self
+                .dep_kinds
+                .iter()
+                .any(|dependency| dependency.kind.is_none())
     }
 }
 
@@ -377,39 +425,29 @@ impl CargoPackage {
             })
     }
 
-    fn root_export(&self, id: PackageId) -> Option<ExportedPackage> {
-        let module_name = self.library_target_name()?;
-        self.export(id, module_name)
+    fn source_file(&self) -> Option<PathBuf> {
+        self.targets
+            .iter()
+            .find(|target| target.is_library())
+            .map(|target| target.src_path.clone())
+            .or_else(|| {
+                self.source_root()
+                    .map(|source_root| source_root.join("lib.rs"))
+            })
     }
 
-    fn export(&self, id: PackageId, import_name: String) -> Option<ExportedPackage> {
-        Some(ExportedPackage {
+    fn root(&self, id: PackageId) -> Option<LocalPackage> {
+        let module_name = self.library_target_name()?;
+        self.local(id, module_name)
+    }
+
+    fn local(&self, id: PackageId, import_name: String) -> Option<LocalPackage> {
+        Some(LocalPackage {
             id,
             import_name,
             manifest_dir: self.manifest_dir()?,
-            source_root: self.source_root()?,
+            source_file: self.source_file()?,
             module_name: self.library_target_name()?,
-        })
-    }
-
-    fn has_legacy_exports(&self) -> bool {
-        self.source_root().is_some_and(|source_root| {
-            WalkDir::new(source_root)
-                .into_iter()
-                .filter_map(Result::ok)
-                .filter(|entry| {
-                    entry
-                        .path()
-                        .extension()
-                        .is_some_and(|extension| extension == "rs")
-                })
-                .map(|entry| entry.path().to_path_buf())
-                .any(|path| {
-                    fs::read_to_string(path)
-                        .ok()
-                        .and_then(|source| syn::parse_file(&source).ok())
-                        .is_some_and(|syntax| LegacyExportDetector::file_has_exports(&syntax))
-                })
         })
     }
 }
@@ -425,58 +463,39 @@ impl CargoTarget {
     }
 }
 
-struct LegacyExportDetector;
+#[cfg(test)]
+mod tests {
+    use super::CargoNodeDependency;
 
-impl LegacyExportDetector {
-    fn file_has_exports(file: &syn::File) -> bool {
-        file.items.iter().any(Self::item_has_exports)
-    }
+    #[test]
+    fn dependency_graph_keeps_only_normal_library_edges() {
+        let normal = serde_json::from_str::<CargoNodeDependency>(
+            r#"{
+                "name": "api",
+                "pkg": "api 0.1.0",
+                "dep_kinds": [{ "kind": null, "target": null }]
+            }"#,
+        )
+        .expect("normal dependency");
+        let development = serde_json::from_str::<CargoNodeDependency>(
+            r#"{
+                "name": "fixtures",
+                "pkg": "fixtures 0.1.0",
+                "dep_kinds": [{ "kind": "dev", "target": null }]
+            }"#,
+        )
+        .expect("development dependency");
+        let build = serde_json::from_str::<CargoNodeDependency>(
+            r#"{
+                "name": "codegen",
+                "pkg": "codegen 0.1.0",
+                "dep_kinds": [{ "kind": "build", "target": null }]
+            }"#,
+        )
+        .expect("build dependency");
 
-    fn item_has_exports(item: &Item) -> bool {
-        match item {
-            Item::Struct(item_struct) => {
-                Self::has_any_attribute(&item_struct.attrs, &["ffi_record", "data", "error"])
-                    || Self::has_ffi_type_derive(&item_struct.attrs)
-            }
-            Item::Enum(item_enum) => Self::has_any_attribute(&item_enum.attrs, &["data", "error"]),
-            Item::Impl(item_impl) => Self::has_any_attribute(
-                &item_impl.attrs,
-                &["ffi_class", "export", "data", "custom_ffi"],
-            ),
-            Item::Trait(item_trait) => {
-                Self::has_any_attribute(&item_trait.attrs, &["ffi_trait", "export"])
-            }
-            Item::Fn(item_fn) => Self::has_any_attribute(&item_fn.attrs, &["ffi_export", "export"]),
-            Item::Macro(item_macro) => item_macro
-                .mac
-                .path
-                .segments
-                .last()
-                .is_some_and(|segment| segment.ident == "custom_type"),
-            Item::Mod(item_mod) => item_mod
-                .content
-                .as_ref()
-                .is_some_and(|(_, items)| items.iter().any(Self::item_has_exports)),
-            _ => false,
-        }
-    }
-
-    fn has_any_attribute(attrs: &[Attribute], names: &[&str]) -> bool {
-        attrs.iter().any(|attr| {
-            attr.path()
-                .segments
-                .last()
-                .is_some_and(|segment| names.iter().any(|name| segment.ident == *name))
-        })
-    }
-
-    fn has_ffi_type_derive(attrs: &[Attribute]) -> bool {
-        attrs.iter().any(|attr| {
-            attr.path().is_ident("derive")
-                && attr
-                    .meta
-                    .require_list()
-                    .is_ok_and(|meta| meta.tokens.to_string().contains("FfiType"))
-        })
+        assert!(normal.is_normal());
+        assert!(!development.is_normal());
+        assert!(!build.is_normal());
     }
 }

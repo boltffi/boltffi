@@ -1,7 +1,7 @@
 use boltffi_ffi_rules::naming;
-use syn::{Item, ItemMod, ItemTrait};
+use syn::{Item, ItemTrait};
 
-use crate::index::{IndexedCrateSource, ModulePath};
+use crate::index::source::IndexedSource;
 
 #[derive(Clone, Default)]
 pub struct CallbackTraitRegistry {
@@ -31,8 +31,8 @@ struct CallbackTraitDescriptor<'a> {
 
 impl CallbackTraitRegistry {
     pub fn resolve(&self, trait_path: &syn::Path) -> Option<CallbackTraitResolution> {
-        let module_path = ModulePath::from_syn_path(trait_path);
-        let (trait_name, module_path) = module_path.as_strings().split_last()?;
+        let path = Self::path(trait_path);
+        let (trait_name, module_path) = path.split_last()?;
         let matches = self
             .entries
             .iter()
@@ -50,10 +50,25 @@ impl CallbackTraitRegistry {
             _ => None,
         }
     }
+
+    fn path(path: &syn::Path) -> Vec<String> {
+        let mut segments = path
+            .segments
+            .iter()
+            .map(|segment| segment.ident.to_string())
+            .collect::<Vec<_>>();
+        if segments
+            .first()
+            .is_some_and(|segment| matches!(segment.as_str(), "crate" | "self" | "super"))
+        {
+            segments.remove(0);
+        }
+        segments
+    }
 }
 
 pub(super) fn build_callback_trait_registry(
-    sources: &[IndexedCrateSource],
+    sources: &[IndexedSource],
 ) -> syn::Result<CallbackTraitRegistry> {
     let mut entries = Vec::new();
 
@@ -65,18 +80,17 @@ pub(super) fn build_callback_trait_registry(
 }
 
 fn collect_source_callbacks(
-    source: &IndexedCrateSource,
+    source: &IndexedSource,
     entries: &mut Vec<CallbackTraitEntry>,
 ) -> syn::Result<()> {
     source.modules().iter().try_for_each(|source_module| {
         let mut collector = CallbackTraitCollector {
             root_path: source.root_path().to_vec(),
-            module_path: source_module.module_path().clone().into_strings(),
+            module_path: source.module_path(source_module).to_vec(),
             entries,
         };
         source_module
-            .syntax()
-            .items
+            .items()
             .iter()
             .try_for_each(|item| collector.collect_item(item))
     })
@@ -92,7 +106,6 @@ impl<'a> CallbackTraitCollector<'a> {
     fn collect_item(&mut self, item: &Item) -> syn::Result<()> {
         match item {
             Item::Trait(item_trait) => self.collect_trait(item_trait),
-            Item::Mod(item_mod) => self.collect_mod(item_mod),
             _ => Ok(()),
         }
     }
@@ -112,20 +125,6 @@ impl<'a> CallbackTraitCollector<'a> {
         };
         self.entries.push(entry);
         Ok(())
-    }
-
-    fn collect_mod(&mut self, item_mod: &ItemMod) -> syn::Result<()> {
-        let Some((_, items)) = &item_mod.content else {
-            return Ok(());
-        };
-        let mut next_path = self.module_path.clone();
-        next_path.push(item_mod.ident.to_string());
-        let mut nested = CallbackTraitCollector {
-            root_path: self.root_path.clone(),
-            module_path: next_path,
-            entries: self.entries,
-        };
-        items.iter().try_for_each(|item| nested.collect_item(item))
     }
 }
 

@@ -1,13 +1,15 @@
-use boltffi_ffi_rules::{cargo_graph, naming};
+use boltffi_ffi_rules::cargo_graph::{CargoFeatureSelection, ResolvedFeatures};
+use boltffi_ffi_rules::naming;
+use boltffi_scan::{
+    ActiveCfg, ExportedPackageGraph, PackageId, ScanConfiguration, SourceModule, SourceTree,
+};
 use indexmap::IndexMap;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
-use std::fs;
 use std::path::{Path, PathBuf};
 use syn::{
     Attribute, Fields, FnArg, ImplItem, Item, ItemEnum, ItemImpl, ItemStruct, ItemTrait, Type,
 };
-use walkdir::WalkDir;
 
 use crate::model::{
     BuiltinId, CallbackTrait, Class, ClosureSignature as MClosureSignature, Constructor,
@@ -506,6 +508,8 @@ impl AliasResolver {
 
 pub struct SourceScanner {
     module_name: String,
+    cfg: ActiveCfg,
+    active_features: Option<ResolvedFeatures>,
     type_registry: TypeRegistry,
     functions: Vec<Function>,
     callback_traits: Vec<CallbackTrait>,
@@ -513,21 +517,41 @@ pub struct SourceScanner {
     global_aliases: HashMap<String, Vec<String>>,
     compiler_canonical_types: HashMap<String, String>,
     integer_constants: HashMap<String, i128>,
-    source_root: Option<PathBuf>,
     target_pointer_width_bits: Option<u8>,
 }
 
 impl SourceScanner {
     pub fn new(module_name: impl Into<String>) -> Self {
-        Self::new_with_pointer_width(module_name, parse_target_pointer_width())
+        Self::with_cfg(
+            module_name,
+            parse_target_pointer_width(),
+            ActiveCfg::from_cargo_env(),
+            None,
+        )
     }
 
     pub fn new_with_pointer_width(
         module_name: impl Into<String>,
         target_pointer_width_bits: Option<u8>,
     ) -> Self {
+        Self::with_cfg(
+            module_name,
+            target_pointer_width_bits,
+            ActiveCfg::from_cargo_env(),
+            None,
+        )
+    }
+
+    fn with_cfg(
+        module_name: impl Into<String>,
+        target_pointer_width_bits: Option<u8>,
+        cfg: ActiveCfg,
+        active_features: Option<ResolvedFeatures>,
+    ) -> Self {
         Self {
             module_name: module_name.into(),
+            cfg,
+            active_features,
             type_registry: TypeRegistry::default(),
             functions: Vec::new(),
             callback_traits: Vec::new(),
@@ -535,34 +559,37 @@ impl SourceScanner {
             global_aliases: HashMap::new(),
             compiler_canonical_types: HashMap::new(),
             integer_constants: HashMap::new(),
-            source_root: None,
             target_pointer_width_bits,
         }
     }
 
     pub fn scan_directory(&mut self, crate_path: &Path, dir: &Path) -> Result<(), String> {
-        let mut files: Vec<_> = WalkDir::new(dir)
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(|e| e.path().extension().is_some_and(|ext| ext == "rs"))
-            .map(|e| e.path().to_path_buf())
-            .collect();
-        files.sort();
+        self.scan_root(crate_path, &dir.join("lib.rs"))
+    }
 
-        self.source_root = Some(dir.to_path_buf());
-        self.global_aliases = Self::collect_global_aliases(&files)?;
+    fn scan_root(&mut self, crate_path: &Path, root: &Path) -> Result<(), String> {
+        let source_tree = SourceTree::load_with_cfg(root, &self.module_name, &self.cfg)
+            .map_err(|error| format!("Failed to load {}: {}", root.display(), error))?;
+        let modules = source_tree.modules();
+        self.global_aliases = Self::collect_global_aliases(modules)?;
         self.integer_constants =
-            collect_integer_constants_from_files(dir, &files, self.target_pointer_width_bits)?;
-        let compiler_targets = Self::collect_compiler_type_targets(&files, &self.global_aliases)?;
-        self.compiler_canonical_types =
-            compiler_type_resolution::resolve(crate_path, &self.module_name, compiler_targets)?;
-        files
+            collect_integer_constants_from_modules(modules, self.target_pointer_width_bits);
+        let compiler_targets = Self::collect_compiler_type_targets(modules, &self.global_aliases)?;
+        self.compiler_canonical_types = compiler_type_resolution::resolve(
+            crate_path,
+            &self.module_name,
+            compiler_targets,
+            self.active_features.as_ref(),
+        )?;
+        modules
             .iter()
-            .try_for_each(|path| self.collect_type_names(path))?;
-        files
+            .try_for_each(|source| self.collect_type_names(source))?;
+        modules
             .iter()
-            .try_for_each(|path| self.collect_custom_types(path))?;
-        files.iter().try_for_each(|path| self.scan_file(path))?;
+            .try_for_each(|source| self.collect_custom_types(source))?;
+        modules
+            .iter()
+            .try_for_each(|source| self.scan_source(source))?;
         Ok(())
     }
 
@@ -571,22 +598,16 @@ impl SourceScanner {
     }
 
     fn collect_compiler_type_targets(
-        files: &[std::path::PathBuf],
+        modules: &[SourceModule],
         global_aliases: &HashMap<String, Vec<String>>,
     ) -> Result<Vec<String>, String> {
         let mut targets = Vec::<String>::new();
         let mut seen = HashSet::<String>::new();
 
-        files.iter().try_for_each(|path| {
-            let content = fs::read_to_string(path)
-                .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
-
-            let syntax = syn::parse_file(&content)
-                .map_err(|e| format!("Failed to parse {}: {}", path.display(), e))?;
-
+        modules.iter().try_for_each(|source| {
             let alias_resolver =
-                AliasResolver::from_items(&syntax.items).with_global(global_aliases);
-            syntax.items.iter().for_each(|item| {
+                AliasResolver::from_items(source.items()).with_global(global_aliases);
+            source.items().iter().for_each(|item| {
                 Self::collect_item_type_targets(item, &alias_resolver, &mut targets, &mut seen)
             });
 
@@ -829,21 +850,15 @@ impl SourceScanner {
     }
 
     fn collect_global_aliases(
-        files: &[std::path::PathBuf],
+        modules: &[SourceModule],
     ) -> Result<HashMap<String, Vec<String>>, String> {
         let mut aliases = HashMap::<String, Vec<String>>::new();
         let mut conflicts = HashSet::<String>::new();
 
-        files.iter().try_for_each(|path| {
-            let content = fs::read_to_string(path)
-                .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
-
-            let syntax = syn::parse_file(&content)
-                .map_err(|e| format!("Failed to parse {}: {}", path.display(), e))?;
-
-            let local = AliasResolver::from_items(&syntax.items);
-            syntax
-                .items
+        modules.iter().try_for_each(|source| {
+            let local = AliasResolver::from_items(source.items());
+            source
+                .items()
                 .iter()
                 .filter_map(|item| match item {
                     Item::Type(item_type) => Some(item_type),
@@ -885,17 +900,11 @@ impl SourceScanner {
         Ok(aliases)
     }
 
-    fn collect_custom_types(&mut self, path: &Path) -> Result<(), String> {
-        let content = fs::read_to_string(path)
-            .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
-
-        let syntax = syn::parse_file(&content)
-            .map_err(|e| format!("Failed to parse {}: {}", path.display(), e))?;
-
+    fn collect_custom_types(&mut self, source: &SourceModule) -> Result<(), String> {
         let alias_resolver =
-            AliasResolver::from_items(&syntax.items).with_global(&self.global_aliases);
-        syntax
-            .items
+            AliasResolver::from_items(source.items()).with_global(&self.global_aliases);
+        source
+            .items()
             .iter()
             .filter_map(|item| match item {
                 Item::Macro(item_macro)
@@ -913,8 +922,8 @@ impl SourceScanner {
             .try_for_each(|item_macro| {
                 self.collect_custom_type_macro(item_macro, &alias_resolver)
             })?;
-        syntax
-            .items
+        source
+            .items()
             .iter()
             .filter_map(|item| match item {
                 Item::Impl(item_impl) if has_attribute(&item_impl.attrs, "custom_ffi") => {
@@ -1023,85 +1032,74 @@ impl SourceScanner {
         Ok(())
     }
 
-    fn collect_type_names(&mut self, path: &Path) -> Result<(), String> {
-        let content = fs::read_to_string(path)
-            .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
-
-        let syntax = syn::parse_file(&content)
-            .map_err(|e| format!("Failed to parse {}: {}", path.display(), e))?;
-
-        for item in &syntax.items {
-            match item {
-                Item::Struct(item_struct)
-                    if has_attribute(&item_struct.attrs, "ffi_record")
-                        || has_attribute(&item_struct.attrs, "data")
-                        || has_attribute(&item_struct.attrs, "error")
-                        || has_repr_c(&item_struct.attrs)
-                        || (has_attribute(&item_struct.attrs, "derive")
-                            && has_ffi_type_derive(&item_struct.attrs)) =>
-                {
-                    self.type_registry.register(
-                        item_struct.ident.to_string(),
-                        TypeMeta {
-                            doc: extract_doc_string(&item_struct.attrs),
-                            shape: TypeShape::Pending(PendingKind::Record),
-                        },
-                    );
-                }
-                Item::Enum(item_enum)
-                    if has_repr_int(&item_enum.attrs)
-                        || has_attribute(&item_enum.attrs, "data")
-                        || has_attribute(&item_enum.attrs, "error") =>
-                {
-                    self.type_registry.register(
-                        item_enum.ident.to_string(),
-                        TypeMeta {
-                            doc: extract_doc_string(&item_enum.attrs),
-                            shape: TypeShape::Pending(PendingKind::Enum),
-                        },
-                    );
-                }
-                Item::Impl(item_impl) => {
-                    if has_attribute(&item_impl.attrs, "export")
-                        && !has_data_impl_attribute(&item_impl.attrs)
-                        && let Type::Path(type_path) = item_impl.self_ty.as_ref()
-                        && let Some(seg) = type_path.path.segments.last()
-                    {
-                        self.type_registry.register(
-                            seg.ident.to_string(),
-                            TypeMeta {
-                                doc: None,
-                                shape: TypeShape::Pending(PendingKind::Class),
-                            },
-                        );
-                    }
-                }
-                _ => {}
+    fn collect_type_names(&mut self, source: &SourceModule) -> Result<(), String> {
+        source.items().iter().for_each(|item| match item {
+            Item::Struct(item_struct)
+                if has_attribute(&item_struct.attrs, "ffi_record")
+                    || has_attribute(&item_struct.attrs, "data")
+                    || has_attribute(&item_struct.attrs, "error")
+                    || has_repr_c(&item_struct.attrs)
+                    || (has_attribute(&item_struct.attrs, "derive")
+                        && has_ffi_type_derive(&item_struct.attrs)) =>
+            {
+                self.type_registry.register(
+                    item_struct.ident.to_string(),
+                    TypeMeta {
+                        doc: extract_doc_string(&item_struct.attrs),
+                        shape: TypeShape::Pending(PendingKind::Record),
+                    },
+                );
             }
-        }
+            Item::Enum(item_enum)
+                if has_repr_int(&item_enum.attrs)
+                    || has_attribute(&item_enum.attrs, "data")
+                    || has_attribute(&item_enum.attrs, "error") =>
+            {
+                self.type_registry.register(
+                    item_enum.ident.to_string(),
+                    TypeMeta {
+                        doc: extract_doc_string(&item_enum.attrs),
+                        shape: TypeShape::Pending(PendingKind::Enum),
+                    },
+                );
+            }
+            Item::Impl(item_impl) => {
+                if has_attribute(&item_impl.attrs, "export")
+                    && !has_data_impl_attribute(&item_impl.attrs)
+                    && let Type::Path(type_path) = item_impl.self_ty.as_ref()
+                    && let Some(seg) = type_path.path.segments.last()
+                {
+                    self.type_registry.register(
+                        seg.ident.to_string(),
+                        TypeMeta {
+                            doc: None,
+                            shape: TypeShape::Pending(PendingKind::Class),
+                        },
+                    );
+                }
+            }
+            _ => {}
+        });
 
         Ok(())
     }
 
     pub fn scan_file(&mut self, path: &Path) -> Result<(), String> {
-        let content = fs::read_to_string(path)
-            .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
+        let crate_path = path
+            .parent()
+            .and_then(Path::parent)
+            .unwrap_or_else(|| Path::new("."));
+        self.scan_root(crate_path, path)
+    }
 
-        let syntax = syn::parse_file(&content)
-            .map_err(|e| format!("Failed to parse {}: {}", path.display(), e))?;
-
+    fn scan_source(&mut self, source: &SourceModule) -> Result<(), String> {
         self.alias_resolver =
-            AliasResolver::from_items(&syntax.items).with_global(&self.global_aliases);
-        let file_module_path = self
-            .source_root
-            .as_ref()
-            .map(|source_root| module_path_for_source_file(source_root, path))
-            .transpose()?
-            .unwrap_or_default();
-        syntax
-            .items
+            AliasResolver::from_items(source.items()).with_global(&self.global_aliases);
+        let module_path = source.path().iter().skip(1).cloned().collect::<Vec<_>>();
+        source
+            .items()
             .iter()
-            .try_for_each(|item| self.process_item(item, &file_module_path))?;
+            .try_for_each(|item| self.process_item(item, &module_path))?;
 
         Ok(())
     }
@@ -1976,35 +1974,6 @@ fn extract_repr_int(attrs: &[Attribute]) -> Option<Primitive> {
     })
 }
 
-fn module_path_for_source_file(
-    source_root: &Path,
-    file_path: &Path,
-) -> Result<Vec<String>, String> {
-    let relative_path = file_path.strip_prefix(source_root).map_err(|error| {
-        format!(
-            "Failed to resolve module path for {}: {}",
-            file_path.display(),
-            error
-        )
-    })?;
-    let relative_components = relative_path
-        .components()
-        .map(|component| component.as_os_str().to_string_lossy().to_string())
-        .collect::<Vec<_>>();
-    let (file_name, directory_components) = relative_components
-        .split_last()
-        .ok_or_else(|| format!("Failed to resolve module path for {}", file_path.display()))?;
-    let mut module_path = directory_components.to_vec();
-    let file_stem = Path::new(file_name)
-        .file_stem()
-        .and_then(|stem| stem.to_str())
-        .ok_or_else(|| format!("Failed to resolve module path for {}", file_path.display()))?;
-    if !matches!(file_stem, "lib" | "main" | "mod") {
-        module_path.push(file_stem.to_string());
-    }
-    Ok(module_path)
-}
-
 fn collect_integer_constant_candidates(
     items: &[Item],
     module_path: &[String],
@@ -2084,25 +2053,20 @@ fn collect_integer_constants(
     resolve_integer_constants(candidates, target_pointer_width_bits)
 }
 
-fn collect_integer_constants_from_files(
-    source_root: &Path,
-    files: &[PathBuf],
+fn collect_integer_constants_from_modules(
+    modules: &[SourceModule],
     target_pointer_width_bits: Option<u8>,
-) -> Result<HashMap<String, i128>, String> {
+) -> HashMap<String, i128> {
     let mut candidates = Vec::<(String, syn::Expr)>::new();
-    files.iter().try_for_each(|file_path| {
-        let module_path = module_path_for_source_file(source_root, file_path)?;
-        let content = fs::read_to_string(file_path)
-            .map_err(|error| format!("Failed to read {}: {}", file_path.display(), error))?;
-        let syntax = syn::parse_file(&content)
-            .map_err(|error| format!("Failed to parse {}: {}", file_path.display(), error))?;
-        collect_integer_constant_candidates(&syntax.items, module_path.as_slice(), &mut candidates);
-        Ok::<(), String>(())
-    })?;
-    Ok(resolve_integer_constants(
-        candidates,
-        target_pointer_width_bits,
-    ))
+    modules.iter().for_each(|source| {
+        let module_path = source.path().iter().skip(1).cloned().collect::<Vec<_>>();
+        collect_integer_constant_candidates(
+            source.items(),
+            module_path.as_slice(),
+            &mut candidates,
+        );
+    });
+    resolve_integer_constants(candidates, target_pointer_width_bits)
 }
 
 fn parse_discriminant_expr(
@@ -2863,16 +2827,22 @@ fn validate_no_symbol_collisions(module: &Module) -> Result<(), String> {
 }
 
 struct LegacyPackageScanner<'a> {
-    graph: &'a cargo_graph::PackageGraph,
+    graph: &'a ExportedPackageGraph,
     target_pointer_width_bits: Option<u8>,
-    modules: HashMap<cargo_graph::PackageId, Module>,
+    configuration: ScanConfiguration,
+    modules: HashMap<PackageId, Module>,
 }
 
 impl<'a> LegacyPackageScanner<'a> {
-    fn new(graph: &'a cargo_graph::PackageGraph, target_pointer_width_bits: Option<u8>) -> Self {
+    fn new(
+        graph: &'a ExportedPackageGraph,
+        target_pointer_width_bits: Option<u8>,
+        configuration: ScanConfiguration,
+    ) -> Self {
         Self {
             graph,
             target_pointer_width_bits,
+            configuration,
             modules: HashMap::new(),
         }
     }
@@ -2890,7 +2860,7 @@ impl<'a> LegacyPackageScanner<'a> {
 
     fn scan_package(
         &mut self,
-        package_id: &cargo_graph::PackageId,
+        package_id: &PackageId,
         module_name: &str,
     ) -> Result<Module, String> {
         if let Some(module) = self.modules.get(package_id) {
@@ -2908,20 +2878,106 @@ impl<'a> LegacyPackageScanner<'a> {
             .map(|dependency| self.scan_package(dependency.id(), dependency.module_name()))
             .collect::<Result<Vec<_>, _>>()?;
 
-        let mut scanner =
-            SourceScanner::new_with_pointer_width(module_name, self.target_pointer_width_bits);
+        let is_root = package_id == self.graph.root_id();
+        let cfg = if is_root {
+            self.configuration
+                .active_cfg_for_root(self.graph.root_features())
+        } else {
+            self.configuration.active_cfg().without_features()
+        };
+        let active_features = is_root
+            .then(|| {
+                self.configuration
+                    .resolved_features_for_root(self.graph.root_features())
+            })
+            .flatten();
+        let mut scanner = SourceScanner::with_cfg(
+            module_name,
+            self.target_pointer_width_bits,
+            cfg,
+            active_features,
+        );
         dependency_modules
             .iter()
             .try_for_each(|module| scanner.import_module_exports(module))?;
-        scanner.scan_directory(package.manifest_dir(), package.source_root())?;
+        scanner.scan_root(package.manifest_dir(), package.source_file())?;
         let module = scanner.into_module();
         self.modules.insert(package_id.clone(), module.clone());
         Ok(module)
     }
 }
 
+pub struct CrateScan {
+    crate_path: PathBuf,
+    module_name: String,
+    target_pointer_width_bits: Option<u8>,
+    configuration: ScanConfiguration,
+}
+
+impl CrateScan {
+    pub fn new(crate_path: impl Into<PathBuf>, module_name: impl Into<String>) -> Self {
+        Self {
+            crate_path: crate_path.into(),
+            module_name: module_name.into(),
+            target_pointer_width_bits: None,
+            configuration: ScanConfiguration::default()
+                .with_active_cfg(ActiveCfg::from_cargo_env()),
+        }
+    }
+
+    pub fn pointer_width(mut self, target_pointer_width_bits: Option<u8>) -> Self {
+        self.target_pointer_width_bits = target_pointer_width_bits;
+        self
+    }
+
+    pub fn cargo_args(mut self, cargo_args: &[String]) -> Self {
+        self.configuration = self
+            .configuration
+            .select_features(CargoFeatureSelection::from_args(cargo_args));
+        self
+    }
+
+    #[cfg(test)]
+    fn active_cfg(mut self, cfg: ActiveCfg) -> Self {
+        self.configuration = ScanConfiguration::from_active_cfg(cfg);
+        self
+    }
+
+    pub fn scan(self) -> Result<Module, String> {
+        let target_pointer_width_bits = self
+            .target_pointer_width_bits
+            .or_else(parse_target_pointer_width);
+        let feature_selection = self.configuration.feature_selection();
+        if let Some(graph) =
+            ExportedPackageGraph::load(&self.crate_path, &self.module_name, &feature_selection)
+                .map_err(|error| error.to_string())?
+        {
+            let module = LegacyPackageScanner::new(
+                &graph,
+                target_pointer_width_bits,
+                self.configuration.clone(),
+            )
+            .scan(&self.module_name)?;
+            validate_no_symbol_collisions(&module)?;
+            return Ok(module);
+        }
+
+        let src_path = self.crate_path.join("src");
+        let mut scanner = SourceScanner::with_cfg(
+            &self.module_name,
+            target_pointer_width_bits,
+            self.configuration.active_cfg(),
+            None,
+        );
+        scanner.scan_directory(&self.crate_path, &src_path)?;
+        let module = scanner.into_module();
+        validate_no_symbol_collisions(&module)?;
+        Ok(module)
+    }
+}
+
 pub fn scan_crate(crate_path: &Path, module_name: &str) -> Result<Module, String> {
-    scan_crate_with_pointer_width(crate_path, module_name, None)
+    CrateScan::new(crate_path, module_name).scan()
 }
 
 pub fn scan_crate_with_pointer_width(
@@ -2929,35 +2985,15 @@ pub fn scan_crate_with_pointer_width(
     module_name: &str,
     target_pointer_width_bits: Option<u8>,
 ) -> Result<Module, String> {
-    let target_pointer_width_bits = target_pointer_width_bits.or_else(parse_target_pointer_width);
-    if let Some(graph) = cargo_graph::PackageGraph::load_for_module(crate_path, module_name)
-        .map_err(|error| error.to_string())?
-    {
-        let module =
-            LegacyPackageScanner::new(&graph, target_pointer_width_bits).scan(module_name)?;
-        validate_no_symbol_collisions(&module)?;
-        return Ok(module);
-    }
-
-    scan_single_crate_with_pointer_width(crate_path, module_name, target_pointer_width_bits)
-}
-
-fn scan_single_crate_with_pointer_width(
-    crate_path: &Path,
-    module_name: &str,
-    target_pointer_width_bits: Option<u8>,
-) -> Result<Module, String> {
-    let src_path = crate_path.join("src");
-    let mut scanner = SourceScanner::new_with_pointer_width(module_name, target_pointer_width_bits);
-    scanner.scan_directory(crate_path, &src_path)?;
-    let module = scanner.into_module();
-    validate_no_symbol_collisions(&module)?;
-    Ok(module)
+    CrateScan::new(crate_path, module_name)
+        .pointer_width(target_pointer_width_bits)
+        .scan()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
     use std::path::PathBuf;
     use std::process;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -3199,6 +3235,13 @@ mod tests {
                 .iter()
                 .any(|function| function.name == "datetime_to_millis"),
             "expected datetime_to_millis to be exported"
+        );
+        assert!(module.find_enum("Direction").is_some());
+        assert!(
+            module
+                .functions
+                .iter()
+                .any(|function| function.name == "generate_directions")
         );
     }
 
@@ -3589,7 +3632,7 @@ mod tests {
     }
 
     #[test]
-    fn collect_integer_constants_from_files_collects_module_scoped_constants() {
+    fn configured_modules_collect_scoped_constants() {
         let unique_suffix = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -3606,9 +3649,13 @@ mod tests {
         fs::write(source_root.join("constants.rs"), "pub const TAG: i64 = 7;")
             .expect("write constants.rs");
 
-        let files = vec![source_root.join("lib.rs"), source_root.join("constants.rs")];
-        let constants = collect_integer_constants_from_files(&source_root, files.as_slice(), None)
-            .expect("collect constants");
+        let source_tree = SourceTree::load_with_cfg(
+            &source_root.join("lib.rs"),
+            "testlib",
+            &ActiveCfg::default(),
+        )
+        .expect("load source tree");
+        let constants = collect_integer_constants_from_modules(source_tree.modules(), None);
         let expression: syn::Expr = syn::parse_quote!(crate::constants::TAG);
 
         assert_eq!(constants.get("constants::TAG").copied(), Some(7));
@@ -3621,6 +3668,10 @@ mod tests {
     }
 
     fn scan_temp_crate(source: &str) -> Module {
+        scan_configured_crate(source, ActiveCfg::default())
+    }
+
+    fn scan_configured_crate(source: &str, cfg: ActiveCfg) -> Module {
         let unique_suffix = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -3634,8 +3685,10 @@ mod tests {
         fs::create_dir_all(&src_dir).expect("create src dir");
         fs::write(src_dir.join("lib.rs"), source).expect("write lib.rs");
 
-        let module =
-            scan_crate_with_pointer_width(&temp_root, "testlib", None).expect("scan failed");
+        let module = CrateScan::new(&temp_root, "testlib")
+            .active_cfg(cfg)
+            .scan()
+            .expect("scan failed");
         fs::remove_dir_all(&temp_root).expect("cleanup");
         module
     }
@@ -3673,6 +3726,108 @@ mod tests {
     }
 
     #[test]
+    fn cfg_attr_markers_follow_the_active_feature() {
+        let source = r#"
+            #[cfg_attr(feature = "boltffi", boltffi::data)]
+            pub enum Signal {
+                Ping,
+                Pong,
+            }
+
+            #[cfg_attr(feature = "boltffi", boltffi::export)]
+            pub fn signal_name(signal: Signal) -> String {
+                format!("{signal:?}")
+            }
+        "#;
+
+        let active = scan_configured_crate(source, ActiveCfg::default().with_feature("boltffi"));
+        let inactive = scan_configured_crate(source, ActiveCfg::default());
+
+        assert!(active.find_enum("Signal").is_some());
+        assert!(
+            active
+                .functions
+                .iter()
+                .any(|function| function.name == "signal_name")
+        );
+        assert!(inactive.find_enum("Signal").is_none());
+        assert!(inactive.functions.is_empty());
+    }
+
+    #[test]
+    fn cargo_feature_arguments_activate_cfg_attr_markers() {
+        let unique_suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let temp_root = std::env::temp_dir().join(format!(
+            "boltffi_cfg_attr_feature_{}_{}",
+            process::id(),
+            unique_suffix
+        ));
+        let source_directory = temp_root.join("src");
+        fs::create_dir_all(&source_directory).expect("create source directory");
+        fs::write(
+            temp_root.join("Cargo.toml"),
+            "[package]\nname = \"testlib\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[features]\ndefault = []\nboltffi = []\n",
+        )
+        .expect("write manifest");
+        fs::write(
+            source_directory.join("lib.rs"),
+            "#[cfg_attr(feature = \"boltffi\", boltffi::data)] pub enum Signal { Ping, Pong } \
+             #[cfg_attr(feature = \"boltffi\", boltffi::export)] \
+             pub fn signal_name(signal: Signal) -> String { format!(\"{signal:?}\") }",
+        )
+        .expect("write source");
+
+        let module = CrateScan::new(&temp_root, "testlib")
+            .cargo_args(&["--features".to_owned(), "boltffi".to_owned()])
+            .scan()
+            .expect("feature-gated scan");
+        fs::remove_dir_all(&temp_root).expect("cleanup");
+
+        assert!(module.find_enum("Signal").is_some());
+        assert!(
+            module
+                .functions
+                .iter()
+                .any(|function| function.name == "signal_name")
+        );
+    }
+
+    #[test]
+    fn configured_module_graph_controls_legacy_sources() {
+        let module = scan_temp_crate_multi(&[
+            (
+                "lib.rs",
+                "#[cfg(any())] mod hidden; \
+                 #[cfg_attr(all(), path = \"bridge.rs\")] mod api;",
+            ),
+            (
+                "bridge.rs",
+                "#[boltffi::export] pub fn visible() -> bool { true }",
+            ),
+            (
+                "hidden.rs",
+                "#[boltffi::export] pub fn hidden() -> bool { true }",
+            ),
+        ]);
+
+        assert!(
+            module
+                .functions
+                .iter()
+                .any(|function| function.name == "visible")
+        );
+        assert!(
+            module
+                .functions
+                .iter()
+                .all(|function| function.name != "hidden")
+        );
+    }
+
+    #[test]
     fn cargo_metadata_discovers_dependency_exports_for_legacy_scan() {
         let unique_suffix = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -3685,11 +3840,17 @@ mod tests {
         ));
         let root_crate = temp_root.join("root_api");
         let dependency_crate = temp_root.join("session_api");
-        let root_src = root_crate.join("src");
-        let dependency_src = dependency_crate.join("src");
+        let root_source = root_crate.join("ffi/api.rs");
+        let dependency_source = dependency_crate.join("ffi/session.rs");
 
-        fs::create_dir_all(&root_src).expect("create root src");
-        fs::create_dir_all(&dependency_src).expect("create dependency src");
+        fs::create_dir_all(root_source.parent().expect("root source parent"))
+            .expect("create root source");
+        fs::create_dir_all(
+            dependency_source
+                .parent()
+                .expect("dependency source parent"),
+        )
+        .expect("create dependency source");
         fs::write(
             root_crate.join("Cargo.toml"),
             r#"
@@ -3697,6 +3858,9 @@ mod tests {
                 name = "root_api"
                 version = "0.1.0"
                 edition = "2024"
+
+                [lib]
+                path = "ffi/api.rs"
 
                 [dependencies]
                 session_api = { path = "../session_api" }
@@ -3710,11 +3874,15 @@ mod tests {
                 name = "session_api"
                 version = "0.1.0"
                 edition = "2024"
+
+                [lib]
+                path = "ffi/session.rs"
+
             "#,
         )
         .expect("write dependency manifest");
         fs::write(
-            dependency_src.join("lib.rs"),
+            dependency_source,
             r#"
                 #[boltffi::data]
                 pub struct SessionState {
@@ -3739,7 +3907,7 @@ mod tests {
         )
         .expect("write dependency source");
         fs::write(
-            root_src.join("lib.rs"),
+            root_source,
             r#"
                 use session_api::{Session, SessionState};
 
@@ -3756,7 +3924,8 @@ mod tests {
         )
         .expect("write root source");
 
-        let module = scan_crate_with_pointer_width(&root_crate, "root_api", None)
+        let module = CrateScan::new(&root_crate, "root_api")
+            .scan()
             .expect("multi-crate scan should succeed");
         fs::remove_dir_all(&temp_root).expect("cleanup");
 

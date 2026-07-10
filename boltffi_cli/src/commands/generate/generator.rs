@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use crate::cli::{CliError, Result};
 use crate::config::{Config, Experimental};
 use boltffi_bindgen::target::Target;
-use boltffi_bindgen::{ir, scan_crate_with_pointer_width};
+use boltffi_bindgen::{CrateScan, ir};
 
 #[derive(Debug, Clone)]
 pub struct SourceCrate {
@@ -92,6 +92,7 @@ pub struct GenerateRequest<'a> {
     config: &'a Config,
     output_override: Option<PathBuf>,
     source_crate: SourceCrate,
+    cargo_args: Vec<String>,
 }
 
 impl<'a> GenerateRequest<'a> {
@@ -104,6 +105,7 @@ impl<'a> GenerateRequest<'a> {
             config,
             output_override,
             source_crate,
+            cargo_args: Vec::new(),
         }
     }
 
@@ -123,12 +125,19 @@ impl<'a> GenerateRequest<'a> {
         &self.source_crate
     }
 
+    pub fn cargo_args(mut self, cargo_args: impl IntoIterator<Item = String>) -> Self {
+        self.cargo_args.extend(cargo_args);
+        self
+    }
+
     pub fn lowered_crate(&self, pointer_width: ScanPointerWidth) -> Result<LoweredCrate> {
-        let mut scanned_module = scan_crate_with_pointer_width(
+        let mut scanned_module = CrateScan::new(
             self.source_crate.source_directory(),
             self.source_crate.crate_name(),
-            pointer_width.resolved_bits(),
         )
+        .pointer_width(pointer_width.resolved_bits())
+        .cargo_args(&self.cargo_args)
+        .scan()
         .map_err(|error| CliError::CommandFailed {
             command: format!("scan_crate: {error}"),
             status: None,

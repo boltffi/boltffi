@@ -56,7 +56,7 @@ pub fn echo_vec_status(values: Vec<Status>) -> Vec<Status> {
 }
 
 #[benchmark_candidate(enum, uniffi, wasm_bindgen)]
-#[data]
+#[cfg_attr(feature = "boltffi", boltffi::data)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum Direction {
     #[default]
@@ -66,7 +66,7 @@ pub enum Direction {
     West,
 }
 
-#[data(impl)]
+#[cfg_attr(feature = "boltffi", boltffi::data(impl))]
 impl Direction {
     #[demo_bench_macros::demo_case(
         "enums.c_style.direction.should_construct_from_raw_value",
@@ -175,7 +175,7 @@ impl Direction {
     justification = "Ensure a Direction enum value crosses the FFI boundary and returns unchanged.",
     directions = "Call `enums::c_style::echo_direction` through the generated binding and assert a Direction enum value crosses the FFI boundary and returns unchanged."
 )]
-#[export]
+#[cfg_attr(feature = "boltffi", boltffi::export)]
 #[benchmark_candidate(function, uniffi, wasm_bindgen)]
 pub fn echo_direction(d: Direction) -> Direction {
     d
@@ -186,7 +186,7 @@ pub fn echo_direction(d: Direction) -> Direction {
     justification = "Ensure opposite_direction returns the opposite compass direction for a Direction argument.",
     directions = "Call `enums::c_style::opposite_direction` through the generated binding and assert opposite_direction returns the opposite compass direction for a Direction argument."
 )]
-#[export]
+#[cfg_attr(feature = "boltffi", boltffi::export)]
 #[benchmark_candidate(function, uniffi, wasm_bindgen)]
 pub fn opposite_direction(d: Direction) -> Direction {
     match d {
@@ -202,7 +202,7 @@ pub fn opposite_direction(d: Direction) -> Direction {
     justification = "Ensure direction_to_degrees maps Direction variants to compass degrees.",
     directions = "Call `enums::c_style::direction_to_degrees` through the generated binding and assert direction_to_degrees maps Direction variants to compass degrees."
 )]
-#[export]
+#[cfg_attr(feature = "boltffi", boltffi::export)]
 #[benchmark_candidate(function, uniffi, wasm_bindgen)]
 pub fn direction_to_degrees(direction: Direction) -> i32 {
     match direction {
@@ -218,7 +218,7 @@ pub fn direction_to_degrees(direction: Direction) -> i32 {
     justification = "Ensure generate_directions returns a cyclic sequence of Direction values.",
     directions = "Call `enums::c_style::generate_directions` through the generated binding and assert generate_directions returns a cyclic sequence of Direction values."
 )]
-#[export]
+#[cfg_attr(feature = "boltffi", boltffi::export)]
 #[benchmark_candidate(function, uniffi, wasm_bindgen)]
 pub fn generate_directions(count: i32) -> Vec<Direction> {
     let directions = [
@@ -237,7 +237,7 @@ pub fn generate_directions(count: i32) -> Vec<Direction> {
     justification = "Ensure count_north returns the number of North variants in a Direction vector.",
     directions = "Call `enums::c_style::count_north` through the generated binding and assert count_north returns the number of North variants in a Direction vector."
 )]
-#[export]
+#[cfg_attr(feature = "boltffi", boltffi::export)]
 #[benchmark_candidate(function, uniffi, wasm_bindgen)]
 pub fn count_north(directions: Vec<Direction>) -> i32 {
     directions
@@ -256,7 +256,7 @@ pub fn count_north(directions: Vec<Direction>) -> i32 {
     justification = "Ensure find_direction returns None for an unknown id.",
     directions = "Call `enums::c_style::find_direction` through the generated binding and assert find_direction returns None for an unknown id."
 )]
-#[export]
+#[cfg_attr(feature = "boltffi", boltffi::export)]
 #[benchmark_candidate(function, uniffi, wasm_bindgen)]
 pub fn find_direction(id: i32) -> Option<Direction> {
     match id {
@@ -278,7 +278,7 @@ pub fn find_direction(id: i32) -> Option<Direction> {
     justification = "Ensure find_directions returns None for a non-positive count.",
     directions = "Call `enums::c_style::find_directions` through the generated binding and assert find_directions returns None for a non-positive count."
 )]
-#[export]
+#[cfg_attr(feature = "boltffi", boltffi::export)]
 #[benchmark_candidate(function, uniffi)]
 pub fn find_directions(count: i32) -> Option<Vec<Direction>> {
     if count > 0 {

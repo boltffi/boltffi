@@ -1,6 +1,6 @@
 //! Builds a Rust crate and reads embedded BoltFFI binding metadata.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -11,7 +11,10 @@ use boltffi_binding::{
     BINDING_METADATA_SOURCE_ENV, BINDING_METADATA_SURFACE_ENV, BindingMetadataEnvelope,
     BindingMetadataSurface,
 };
+use boltffi_ffi_rules::cargo_graph::CargoFeatureSelection;
+pub use boltffi_ffi_rules::cargo_graph::ResolvedFeatures;
 use serde::Deserialize;
+use serde_json::{Error as JsonError, from_slice, from_str};
 use thiserror::Error;
 
 use crate::artifact::{BindingMetadataReadError, BindingMetadataReader};
@@ -80,6 +83,24 @@ impl BindingMetadataBuild {
     }
 }
 
+pub fn resolve_cargo_features(
+    manifest_path: impl AsRef<Path>,
+    cargo_args: impl IntoIterator<Item = String>,
+    toolchain_selector: Option<&str>,
+) -> Result<ResolvedFeatures, BindingMetadataBuildError> {
+    let manifest = CargoManifest::new(manifest_path.as_ref())?;
+    let cargo_args = cargo_args.into_iter().collect::<Vec<_>>();
+    let toolchain_selector = toolchain_selector.map(str::to_owned).or_else(|| {
+        cargo_args
+            .iter()
+            .find(|argument| is_rustup_toolchain_selector(argument))
+            .cloned()
+    });
+    let cargo_args = MetadataCargoArgs::new(cargo_args);
+    CargoMetadata::load(&manifest, toolchain_selector.as_deref())?
+        .active_features(&manifest, &cargo_args)
+}
+
 /// Failure while building a crate for embedded binding metadata.
 #[derive(Debug, Error)]
 pub enum BindingMetadataBuildError {
@@ -103,7 +124,7 @@ pub enum BindingMetadataBuildError {
         /// Raw Cargo output line.
         line: String,
         /// JSON parse error.
-        source: serde_json::Error,
+        source: JsonError,
     },
     /// The requested manifest path could not be resolved.
     #[error("resolve cargo manifest path `{path}`: {source}")]
@@ -219,12 +240,13 @@ impl CargoMetadata {
         if let Some(toolchain_selector) = toolchain_selector {
             command.arg(toolchain_selector);
         }
-        let output = command
+        command
             .arg("metadata")
             .arg("--format-version=1")
             .arg("--no-deps")
             .arg("--manifest-path")
-            .arg(manifest.path())
+            .arg(manifest.path());
+        let output = command
             .output()
             .map_err(|source| BindingMetadataBuildError::CargoSpawn { source })?;
         if !output.status.success() {
@@ -233,11 +255,9 @@ impl CargoMetadata {
                 stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
             });
         }
-        serde_json::from_slice(&output.stdout).map_err(|source| {
-            BindingMetadataBuildError::CargoJson {
-                line: String::from_utf8_lossy(&output.stdout).into_owned(),
-                source,
-            }
+        from_slice(&output.stdout).map_err(|source| BindingMetadataBuildError::CargoJson {
+            line: String::from_utf8_lossy(&output.stdout).into_owned(),
+            source,
         })
     }
 
@@ -268,14 +288,17 @@ impl CargoMetadata {
         &self,
         manifest: &CargoManifest,
         args: &MetadataCargoArgs,
-    ) -> Result<MetadataFeatures, BindingMetadataBuildError> {
-        self.package(manifest)
-            .map(|package| MetadataFeatures::resolve(package.features(), args))
+    ) -> Result<ResolvedFeatures, BindingMetadataBuildError> {
+        let root_package = self.package(manifest)?;
+        Ok(args
+            .feature_selection
+            .resolve_for_package(&root_package.name, root_package.features()))
     }
 }
 
 #[derive(Clone, Debug, Deserialize)]
 struct MetadataPackage {
+    name: String,
     manifest_path: PathBuf,
     targets: Vec<MetadataTarget>,
     #[serde(default)]
@@ -321,7 +344,7 @@ struct CargoBuild<'build> {
     build: &'build BindingMetadataBuild,
     manifest: &'build CargoManifest,
     source_root: &'build SourceRoot,
-    features: MetadataFeatures,
+    features: ResolvedFeatures,
 }
 
 impl<'build> CargoBuild<'build> {
@@ -329,7 +352,7 @@ impl<'build> CargoBuild<'build> {
         build: &'build BindingMetadataBuild,
         manifest: &'build CargoManifest,
         source_root: &'build SourceRoot,
-        features: MetadataFeatures,
+        features: ResolvedFeatures,
     ) -> Self {
         Self {
             build,
@@ -358,10 +381,7 @@ impl<'build> CargoBuild<'build> {
         command.env(BINDING_METADATA_BUILD_ENV, "1");
         command.env(BINDING_METADATA_SOURCE_ENV, self.source_root.path());
         command.env(BINDING_METADATA_SURFACE_ENV, surface.as_str());
-        command.env(
-            BINDING_METADATA_FEATURES_ENV,
-            self.features.into_env_value(),
-        );
+        command.env(BINDING_METADATA_FEATURES_ENV, self.features.env_value());
         if let Some(root) = self.manifest.path().parent() {
             command.env(BINDING_METADATA_ROOT_ENV, root);
         }
@@ -393,62 +413,21 @@ impl CargoProgram {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct MetadataCargoArgs {
     arguments: Vec<String>,
+    feature_selection: CargoFeatureSelection,
 }
 
 impl MetadataCargoArgs {
     fn new(arguments: impl IntoIterator<Item = String>) -> Self {
+        let arguments = Self::without_owned_selectors(arguments.into_iter().collect());
+        let feature_selection = CargoFeatureSelection::from_args(&arguments);
         Self {
-            arguments: Self::without_owned_selectors(arguments.into_iter().collect()),
+            arguments,
+            feature_selection,
         }
     }
 
     fn iter(&self) -> impl Iterator<Item = &String> {
         self.arguments.iter()
-    }
-
-    fn feature_flags(&self) -> CargoFeatureFlags {
-        let mut skip_value = false;
-        self.arguments.iter().enumerate().fold(
-            CargoFeatureFlags::default(),
-            |mut flags, (index, argument)| {
-                if skip_value {
-                    skip_value = false;
-                    return flags;
-                }
-
-                match argument.as_str() {
-                    "--all-features" => flags.all = true,
-                    "--no-default-features" => flags.default = false,
-                    "--features" | "-F" => {
-                        skip_value = true;
-                        self.arguments
-                            .get(index + 1)
-                            .into_iter()
-                            .flat_map(|features| CargoFeatureFlags::split(features))
-                            .for_each(|feature| {
-                                flags.features.insert(feature);
-                            });
-                    }
-                    _ => {
-                        if let Some(features) = argument.strip_prefix("--features=") {
-                            CargoFeatureFlags::split(features)
-                                .into_iter()
-                                .for_each(|feature| {
-                                    flags.features.insert(feature);
-                                });
-                        } else if let Some(features) = argument.strip_prefix("-F") {
-                            CargoFeatureFlags::split(features.trim_start_matches('='))
-                                .into_iter()
-                                .for_each(|feature| {
-                                    flags.features.insert(feature);
-                                });
-                        }
-                    }
-                }
-
-                flags
-            },
-        )
     }
 
     fn without_owned_selectors(arguments: Vec<String>) -> Vec<String> {
@@ -471,87 +450,6 @@ impl MetadataCargoArgs {
                     && !is_rustup_toolchain_selector(&argument))
                 .then_some(argument)
             })
-            .collect()
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct MetadataFeatures {
-    names: BTreeSet<String>,
-}
-
-impl MetadataFeatures {
-    fn resolve(available: &BTreeMap<String, Vec<String>>, args: &MetadataCargoArgs) -> Self {
-        let flags = args.feature_flags();
-        let mut names = match flags.all {
-            true => available.keys().cloned().collect::<BTreeSet<_>>(),
-            false => flags
-                .features
-                .into_iter()
-                .filter_map(|feature| Self::local_feature(&feature, available))
-                .chain(
-                    flags
-                        .default
-                        .then_some("default")
-                        .filter(|feature| available.contains_key(*feature))
-                        .map(str::to_owned),
-                )
-                .collect::<BTreeSet<_>>(),
-        };
-        Self::close_over_dependencies(available, &mut names);
-        Self { names }
-    }
-
-    fn into_env_value(self) -> String {
-        self.names.into_iter().collect::<Vec<_>>().join(",")
-    }
-
-    fn close_over_dependencies(
-        available: &BTreeMap<String, Vec<String>>,
-        names: &mut BTreeSet<String>,
-    ) {
-        while let Some(feature) = names
-            .iter()
-            .filter_map(|feature| available.get(feature))
-            .flat_map(|dependencies| dependencies.iter())
-            .filter_map(|dependency| Self::local_feature(dependency, available))
-            .find(|dependency| !names.contains(dependency))
-        {
-            names.insert(feature);
-        }
-    }
-
-    fn local_feature(feature: &str, available: &BTreeMap<String, Vec<String>>) -> Option<String> {
-        let feature = feature.strip_prefix("dep:").unwrap_or(feature);
-        let feature = feature.split('/').next().unwrap_or(feature);
-        let feature = feature.strip_suffix('?').unwrap_or(feature);
-        available.contains_key(feature).then(|| feature.to_owned())
-    }
-}
-
-#[derive(Debug, Eq, PartialEq)]
-struct CargoFeatureFlags {
-    all: bool,
-    default: bool,
-    features: BTreeSet<String>,
-}
-
-impl Default for CargoFeatureFlags {
-    fn default() -> Self {
-        Self {
-            all: false,
-            default: true,
-            features: BTreeSet::new(),
-        }
-    }
-}
-
-impl CargoFeatureFlags {
-    fn split(features: &str) -> Vec<String> {
-        features
-            .split(|character: char| character == ',' || character.is_whitespace())
-            .filter(|feature| !feature.is_empty())
-            .map(str::to_owned)
             .collect()
     }
 }
@@ -663,7 +561,7 @@ enum CargoMessage {
 
 impl CargoMessage {
     fn parse(line: &str) -> Result<Self, BindingMetadataBuildError> {
-        serde_json::from_str(line).map_err(|source| BindingMetadataBuildError::CargoJson {
+        from_str(line).map_err(|source| BindingMetadataBuildError::CargoJson {
             line: line.to_owned(),
             source,
         })
@@ -732,7 +630,6 @@ impl MetadataRustflags {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -745,7 +642,7 @@ mod tests {
     };
 
     use super::{
-        BindingMetadataBuild, BindingMetadataBuildError, MetadataCargoArgs, MetadataFeatures,
+        BindingMetadataBuild, BindingMetadataBuildError, MetadataCargoArgs, resolve_cargo_features,
     };
     use crate::artifact::BindingMetadataReadError;
 
@@ -870,7 +767,7 @@ mod tests {
             bindings
                 .decls()
                 .iter()
-                .filter(|decl| matches!(decl, Decl::Record(_)))
+                .filter(|decl| matches!(decl, Decl::Enum(_)))
                 .count(),
             1
         );
@@ -933,45 +830,24 @@ mod tests {
     }
 
     #[test]
-    fn metadata_features_include_default_dependencies() {
-        let args = MetadataCargoArgs::new(Vec::<String>::new());
-        let features = MetadataFeatures::resolve(
-            &[
-                ("default".to_owned(), vec!["native-ffi".to_owned()]),
-                ("native-ffi".to_owned(), Vec::new()),
-                ("debug".to_owned(), Vec::new()),
-            ]
-            .into_iter()
-            .collect(),
-            &args,
-        );
+    fn cargo_features_resolve_root_features() {
+        if cfg!(miri) {
+            return;
+        }
 
-        assert_eq!(features.into_env_value(), "default,native-ffi");
-    }
-
-    #[test]
-    fn metadata_features_honor_all_and_no_default_flags() {
-        let available = [
-            ("default".to_owned(), vec!["native-ffi".to_owned()]),
-            ("native-ffi".to_owned(), Vec::new()),
-            ("debug".to_owned(), Vec::new()),
-        ]
-        .into_iter()
-        .collect::<BTreeMap<_, _>>();
-        let no_default = MetadataCargoArgs::new(["--no-default-features".to_owned()]);
-        let all = MetadataCargoArgs::new([
-            "--no-default-features".to_owned(),
-            "--all-features".to_owned(),
-        ]);
+        let fixture = FixtureCrate::with_feature_gated_boltffi_macros();
+        let features = resolve_cargo_features(
+            fixture.manifest(),
+            ["--features".to_owned(), "native-ffi".to_owned()],
+            None,
+        )
+        .expect("resolve Cargo features");
 
         assert_eq!(
-            MetadataFeatures::resolve(&available, &no_default).into_env_value(),
-            ""
+            features.iter().collect::<Vec<_>>(),
+            vec!["native-ffi", "transport"]
         );
-        assert_eq!(
-            MetadataFeatures::resolve(&available, &all).into_env_value(),
-            "debug,default,native-ffi"
-        );
+        assert_eq!(features.env_value(), "native-ffi,transport");
     }
 
     struct FixtureCrate {
@@ -996,33 +872,31 @@ mod tests {
             fs::write(
                 &manifest,
                 format!(
-                    "[package]\nname = \"metadata_fixture\"\nversion = \"0.0.0\"\nedition = \"2024\"\n\n[lib]\npath = \"src/lib.rs\"\n\n[features]\nnative-ffi = []\n\n[dependencies]\nboltffi = {{ path = \"{}\" }}\n",
+                    "[package]\nname = \"metadata_fixture\"\nversion = \"0.0.0\"\nedition = \"2024\"\n\n[lib]\npath = \"src/lib.rs\"\n\n[features]\nnative-ffi = [\"transport\"]\ntransport = []\n\n[dependencies]\nboltffi = {{ path = \"{}\" }}\n",
                     workspace_crate("boltffi").display()
                 ),
             )
             .expect("write metadata fixture manifest");
             fs::write(
                 source_dir.join("lib.rs"),
-                "#[cfg(feature = \"native-ffi\")]\npub mod ffi;\n",
-            )
-            .expect("write metadata fixture lib");
-            fs::write(
-                source_dir.join("ffi.rs"),
                 r#"
-use boltffi::{data, export};
-
-#[data]
-pub struct CoreFfi {
-    pub value: u32,
+#[cfg_attr(feature = "native-ffi", boltffi::data)]
+#[derive(Clone, Copy)]
+pub enum Signal {
+    Ping,
+    Pong,
 }
 
-#[export]
-pub fn view() -> CoreFfi {
-    CoreFfi { value: 7 }
+#[cfg_attr(feature = "native-ffi", boltffi::export)]
+pub fn signal_name(signal: Signal) -> String {
+    match signal {
+        Signal::Ping => "Ping".to_owned(),
+        Signal::Pong => "Pong".to_owned(),
+    }
 }
 "#,
             )
-            .expect("write metadata fixture ffi");
+            .expect("write metadata fixture lib");
             Self { root, manifest }
         }
 

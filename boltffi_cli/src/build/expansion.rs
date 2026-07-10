@@ -1,9 +1,10 @@
 use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
 
+use boltffi_bindgen::metadata::{ResolvedFeatures, resolve_cargo_features};
 use boltffi_binding::{
     BINDING_EXPANSION_BUILD_ENV, BINDING_EXPANSION_ROOT_ENV, BINDING_EXPANSION_SOURCE_ENV,
-    BINDING_EXPANSION_SURFACE_ENV, BindingMetadataSurface,
+    BINDING_EXPANSION_SURFACE_ENV, BINDING_METADATA_FEATURES_ENV, BindingMetadataSurface,
 };
 
 use crate::cargo::Cargo;
@@ -17,6 +18,7 @@ pub struct BindingExpansion {
     manifest_path: PathBuf,
     source_path: PathBuf,
     cargo_args: Vec<String>,
+    features: ResolvedFeatures,
 }
 
 impl BindingExpansion {
@@ -29,11 +31,22 @@ impl BindingExpansion {
         let package = metadata.find_package(&cargo_manifest_path, package_selector.as_deref())?;
         let library_target =
             package.resolve_library_target(&config.crate_artifact_name(), &cargo_manifest_path)?;
+        let cargo_args = cargo.probe_command_arguments();
+        let features = resolve_cargo_features(
+            &package.manifest_path,
+            cargo_args.clone(),
+            cargo.toolchain_selector(),
+        )
+        .map_err(|error| CliError::CommandFailed {
+            command: format!("resolve active Cargo features: {error}"),
+            status: None,
+        })?;
 
         Ok(Self {
             manifest_path: package.manifest_path.clone(),
             source_path: library_target.src_path.clone(),
-            cargo_args: cargo.probe_command_arguments(),
+            cargo_args,
+            features,
         })
     }
 
@@ -70,6 +83,10 @@ impl BindingExpansion {
             (
                 BINDING_EXPANSION_SURFACE_ENV.into(),
                 BindingMetadataSurface::Native.as_str().into(),
+            ),
+            (
+                BINDING_METADATA_FEATURES_ENV.into(),
+                self.features.env_value().into(),
             ),
             ExpansionRustflags::from_env().into_env(),
         ])

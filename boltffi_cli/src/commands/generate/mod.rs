@@ -39,12 +39,25 @@ pub struct GenerateOptions {
     pub cargo_args: Vec<String>,
 }
 
+impl GenerateOptions {
+    fn legacy_cargo_args(&self, config: &Config) -> Vec<String> {
+        config
+            .cargo_args_for_commands(&["build", "generate"])
+            .into_iter()
+            .chain(self.cargo_args.iter().cloned())
+            .collect()
+    }
+}
+
 pub fn run_generate_with_output(config: &Config, options: GenerateOptions) -> Result<()> {
     if options.ir {
         return ir::run_ir_generation(config, &options);
     }
 
-    let legacy_request = || GenerateRequest::for_current_crate(config, options.output.clone());
+    let legacy_request = || {
+        GenerateRequest::for_current_crate(config, options.output.clone())
+            .cargo_args(options.legacy_cargo_args(config))
+    };
 
     match &options.target {
         GenerateTarget::Swift => ir::run_ir_generation(config, &options),
@@ -147,8 +160,15 @@ pub fn run_generate_java_with_output_from_source_dir(
     output: Option<PathBuf>,
     source_directory: &Path,
     crate_name: &str,
+    cargo_args: Vec<String>,
 ) -> Result<()> {
-    JavaGenerator::generate_from_source_directory(config, output, source_directory, crate_name)
+    JavaGenerator::generate_from_source_directory(
+        config,
+        output,
+        source_directory,
+        crate_name,
+        cargo_args,
+    )
 }
 
 #[cfg(test)]
@@ -227,8 +247,15 @@ pub fn run_generate_csharp_with_output_from_source_dir(
     output: Option<PathBuf>,
     source_directory: &Path,
     crate_name: &str,
+    cargo_args: Vec<String>,
 ) -> Result<()> {
-    CSharpGenerator::generate_from_source_directory(config, output, source_directory, crate_name)
+    CSharpGenerator::generate_from_source_directory(
+        config,
+        output,
+        source_directory,
+        crate_name,
+        cargo_args,
+    )
 }
 
 #[cfg(test)]
@@ -264,6 +291,42 @@ mod tests {
 
     fn demo_manifest_path() -> PathBuf {
         demo_source_directory().join("Cargo.toml")
+    }
+
+    #[test]
+    fn legacy_generation_combines_each_cargo_argument_source_once() {
+        let config = parse_config(
+            r#"
+[package]
+name = "demo"
+
+[cargo]
+global_args = ["--locked"]
+
+[cargo.command_args]
+build = ["--features", "native"]
+generate = ["--no-default-features"]
+"#,
+        );
+        let options = super::GenerateOptions {
+            target: super::GenerateTarget::Header,
+            output: None,
+            experimental: false,
+            ir: false,
+            cargo_args: vec!["--features".to_string(), "cli".to_string()],
+        };
+
+        assert_eq!(
+            options.legacy_cargo_args(&config),
+            [
+                "--locked",
+                "--features",
+                "native",
+                "--no-default-features",
+                "--features",
+                "cli",
+            ]
+        );
     }
 
     #[test]

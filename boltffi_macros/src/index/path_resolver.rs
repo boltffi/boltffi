@@ -1,9 +1,8 @@
+use boltffi_scan::SourceModule;
 use proc_macro2::Span;
 use std::collections::HashMap;
 use syn::punctuated::Punctuated;
 use syn::{Item, Path, PathArguments, PathSegment, Type, UseTree};
-
-use crate::index::SourceModule;
 
 #[derive(Default, Clone)]
 pub(crate) struct PathResolver {
@@ -15,7 +14,7 @@ impl PathResolver {
     pub(super) fn build(source_modules: &[SourceModule]) -> Self {
         source_modules
             .iter()
-            .map(|source_module| Self::from_items(&source_module.syntax().items))
+            .map(|source_module| Self::from_items(source_module.items()))
             .fold(Self::default(), |mut resolver, next| {
                 resolver.merge(next);
                 resolver

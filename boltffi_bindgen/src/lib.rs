@@ -21,7 +21,7 @@ pub use boltffi_ffi_rules::naming::{LibraryName, ffi_prefix, library_name, load_
 pub use render::c::CHeaderLowerer;
 pub use render::kotlin::{FactoryStyle, KotlinApiStyle, KotlinOptions};
 pub use render::{Renderer, TypeConversion, TypeMapping, TypeMappings};
-pub use scan::{SourceScanner, scan_crate, scan_crate_with_pointer_width};
+pub use scan::{CrateScan, SourceScanner, scan_crate, scan_crate_with_pointer_width};
 
 #[cfg(test)]
 mod tests {

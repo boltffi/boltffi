@@ -9,6 +9,8 @@ use quote::quote;
 use serde::Deserialize;
 use syn::{LitStr, Type};
 
+use boltffi_ffi_rules::cargo_graph::ResolvedFeatures;
+
 fn runner_dir(crate_path: &Path) -> PathBuf {
     crate_path
         .join("target")
@@ -148,6 +150,7 @@ pub fn resolve(
     crate_path: &Path,
     package_hint: &str,
     spellings: impl IntoIterator<Item = String>,
+    active_features: Option<&ResolvedFeatures>,
 ) -> Result<HashMap<String, String>, String> {
     let mut unique = HashSet::<String>::new();
     let mut targets = spellings
@@ -186,12 +189,27 @@ pub fn resolve(
     let dir = runner_dir(crate_path);
     let src_dir = dir.join("src");
     fs::create_dir_all(&src_dir).map_err(|e| format!("mkdir {}: {}", src_dir.display(), e))?;
+    let dependency_features = active_features
+        .map(|features| {
+            let features = features
+                .iter()
+                .map(serde_json::to_string)
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| format!("serialize Cargo feature: {error}"))?
+                .join(", ");
+            Ok::<_, String>(format!(
+                ", default-features = false, features = [{features}]"
+            ))
+        })
+        .transpose()?
+        .unwrap_or_default();
 
     let cargo_toml = format!(
-        "[workspace]\n\n[package]\nname = \"boltffi_bindgen_type_resolution_runner\"\nversion = \"0.1.0\"\nedition = \"{}\"\n\n[dependencies]\ntarget_crate = {{ path = '{}', package = \"{}\" }}\n",
+        "[workspace]\n\n[package]\nname = \"boltffi_bindgen_type_resolution_runner\"\nversion = \"0.1.0\"\nedition = \"{}\"\n\n[dependencies]\ntarget_crate = {{ path = '{}', package = \"{}\"{} }}\n",
         target_package.edition,
         target_manifest_dir.display(),
         target_package.name,
+        dependency_features,
     );
 
     write_if_changed(&dir.join("Cargo.toml"), &cargo_toml)?;

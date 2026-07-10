@@ -28,6 +28,9 @@ pub enum ScanError {
     InvalidAttribute {
         attribute: String,
     },
+    UnresolvedConditionalMarker {
+        attribute: String,
+    },
     InvalidDefault {
         attribute: String,
     },
@@ -140,6 +143,12 @@ impl fmt::Display for ScanError {
             }
             Self::InvalidAttribute { attribute } => {
                 write!(formatter, "invalid source attribute `{attribute}`")
+            }
+            Self::UnresolvedConditionalMarker { attribute } => {
+                write!(
+                    formatter,
+                    "cannot resolve conditional BoltFFI marker `{attribute}` from the active cfg"
+                )
             }
             Self::InvalidDefault { attribute } => {
                 write!(formatter, "invalid default attribute `{attribute}`")
@@ -294,6 +303,13 @@ mod tests {
             }
             .to_string(),
             "invalid source attribute `deprecated(because = \"old\")`"
+        );
+        assert_eq!(
+            ScanError::UnresolvedConditionalMarker {
+                attribute: "cfg_attr(target_os = \"ios\", boltffi::data)".to_owned()
+            }
+            .to_string(),
+            "cannot resolve conditional BoltFFI marker `cfg_attr(target_os = \"ios\", boltffi::data)` from the active cfg"
         );
         assert_eq!(
             ScanError::InvalidDefault {

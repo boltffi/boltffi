@@ -3,8 +3,9 @@ use std::collections::{HashMap, HashSet};
 use syn::{Attribute, Item, ItemImpl, Type};
 
 use super::reexports::ReExport;
+use crate::index::PathResolver;
+use crate::index::source::IndexedSource;
 use crate::index::type_paths::TypePathKey;
-use crate::index::{IndexedCrateSource, PathResolver, SourceModule};
 
 #[derive(Default, Clone)]
 pub struct ClassTypeRegistry {
@@ -180,65 +181,50 @@ impl ClassTypeRegistry {
 }
 
 pub fn build_class_type_registry(
-    sources: &[IndexedCrateSource],
+    sources: &[IndexedSource],
     path_resolver: PathResolver,
 ) -> syn::Result<ClassTypeRegistry> {
     let mut registry = ClassTypeRegistry {
         path_resolver,
         ..ClassTypeRegistry::default()
     };
-    sources.iter().try_for_each(|source| {
-        collect_root_types(source.root_path(), source.modules(), &mut registry)
-    })?;
+    sources
+        .iter()
+        .try_for_each(|source| collect_root_types(source, &mut registry))?;
     registry.finalize_unique_names();
-    sources.iter().try_for_each(|source| {
-        collect_root_reexports(source.root_path(), source.modules(), &mut registry)
-    })?;
+    sources
+        .iter()
+        .try_for_each(|source| collect_root_reexports(source, &mut registry))?;
     registry.finalize_unique_names();
     Ok(registry)
 }
 
-fn collect_root_types(
-    root_path: &[String],
-    source_modules: &[SourceModule],
-    registry: &mut ClassTypeRegistry,
-) -> syn::Result<()> {
-    source_modules.iter().try_for_each(|source_module| {
-        let module_path = root_path
-            .iter()
-            .cloned()
-            .chain(source_module.module_path().clone().into_strings())
-            .collect::<Vec<_>>();
+fn collect_root_types(source: &IndexedSource, registry: &mut ClassTypeRegistry) -> syn::Result<()> {
+    source.modules().iter().try_for_each(|source_module| {
+        let module_path = source.path(source_module);
         let mut collector = ClassTypeCollector {
             module_path,
             registry,
         };
         source_module
-            .syntax()
-            .items
+            .items()
             .iter()
             .try_for_each(|item| collector.collect_item(item))
     })
 }
 
 fn collect_root_reexports(
-    root_path: &[String],
-    source_modules: &[SourceModule],
+    source: &IndexedSource,
     registry: &mut ClassTypeRegistry,
 ) -> syn::Result<()> {
-    source_modules.iter().try_for_each(|source_module| {
-        let module_path = root_path
-            .iter()
-            .cloned()
-            .chain(source_module.module_path().clone().into_strings())
-            .collect::<Vec<_>>();
+    source.modules().iter().try_for_each(|source_module| {
+        let module_path = source.path(source_module);
         let mut collector = ClassTypeCollector {
             module_path,
             registry,
         };
         source_module
-            .syntax()
-            .items
+            .items()
             .iter()
             .try_for_each(|item| collector.collect_reexport_item(item))
     })
@@ -256,17 +242,6 @@ impl<'a> ClassTypeCollector<'a> {
                 self.collect_impl(item_impl);
                 Ok(())
             }
-            Item::Mod(item_mod) => {
-                let Some((_, items)) = &item_mod.content else {
-                    return Ok(());
-                };
-                self.module_path.push(item_mod.ident.to_string());
-                let collect_result = items
-                    .iter()
-                    .try_for_each(|nested| self.collect_item(nested));
-                self.module_path.pop();
-                collect_result
-            }
             _ => Ok(()),
         }
     }
@@ -278,17 +253,6 @@ impl<'a> ClassTypeCollector<'a> {
                     .into_iter()
                     .for_each(|reexport| self.collect_reexport(reexport));
                 Ok(())
-            }
-            Item::Mod(item_mod) => {
-                let Some((_, items)) = &item_mod.content else {
-                    return Ok(());
-                };
-                self.module_path.push(item_mod.ident.to_string());
-                let collect_result = items
-                    .iter()
-                    .try_for_each(|nested| self.collect_reexport_item(nested));
-                self.module_path.pop();
-                collect_result
             }
             _ => Ok(()),
         }

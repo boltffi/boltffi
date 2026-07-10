@@ -49,6 +49,7 @@ pub(crate) fn pack_csharp(
             Some(plan.layout.source_directory.clone()),
             &plan.source_directory,
             &plan.artifact_name,
+            plan.cargo_args.clone(),
         )?;
         step.finish_success();
     }
@@ -116,6 +117,7 @@ struct CSharpPackagingPlan {
     target_framework: String,
     artifact_name: String,
     source_directory: PathBuf,
+    cargo_args: Vec<String>,
     layout: CSharpPackageLayout,
     packaging_targets: Vec<CSharpPackagingTarget>,
 }
@@ -244,6 +246,7 @@ impl CSharpPackagingPlan {
             target_framework: config.csharp_target_framework(),
             artifact_name,
             source_directory,
+            cargo_args: cargo_command_args,
             layout,
             packaging_targets,
         })
@@ -841,6 +844,7 @@ mod tests {
             target_framework: "net10.0".to_string(),
             artifact_name: "demo".to_string(),
             source_directory: PathBuf::from("/tmp/demo"),
+            cargo_args: Vec::new(),
             layout: CSharpPackageLayout {
                 source_directory: root_directory.join("src"),
                 package_output: root_directory.join("packages"),
@@ -1038,14 +1042,13 @@ mod tests {
         let mut config = config();
         let runtime_identifier = unsupported_csharp_runtime_identifier();
         config.targets.csharp.runtime_identifiers = Some(vec![runtime_identifier]);
+        let cargo_args = cargo_args_for_manifest(&manifest_path)
+            .into_iter()
+            .chain(["--features".to_string(), "ffi".to_string()])
+            .collect::<Vec<_>>();
 
-        let plan = CSharpPackagingPlan::from_config(
-            &config,
-            false,
-            &cargo_args_for_manifest(&manifest_path),
-            true,
-        )
-        .expect("no-build C# packaging should not validate cross-host build toolchains");
+        let plan = CSharpPackagingPlan::from_config(&config, false, &cargo_args, true)
+            .expect("no-build C# packaging should not validate cross-host build toolchains");
 
         let packaging_target = plan
             .packaging_targets
@@ -1054,6 +1057,7 @@ mod tests {
         assert_eq!(plan.packaging_targets.len(), 1);
         assert_eq!(packaging_target.runtime_identifier, runtime_identifier);
         assert!(packaging_target.toolchain.is_none());
+        assert_eq!(plan.cargo_args, ["--features", "ffi"]);
         assert_eq!(
             packaging_target.cargo_context.rust_target_triple,
             expected_no_build_rust_target_triple(runtime_identifier)

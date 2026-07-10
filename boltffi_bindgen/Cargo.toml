@@ -13,6 +13,7 @@ categories = ["development-tools::ffi", "development-tools::build-utils"]
 boltffi_binding.workspace = true
 boltffi_backend.workspace = true
 boltffi_ffi_rules = { workspace = true, features = ["serde"] }
+boltffi_scan.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
@@ -21,7 +22,6 @@ askama = "0.16"
 syn.workspace = true
 quote.workspace = true
 proc-macro2.workspace = true
-walkdir.workspace = true
 indexmap = "2.7"
 object.workspace = true
 

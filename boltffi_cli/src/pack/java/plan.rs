@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use boltffi_bindgen::target::Target;
+use boltffi_bindgen::{CHeaderLowerer, CrateScan, ir};
 
 use crate::build::CargoBuildProfile;
 use crate::cargo::Cargo;
@@ -116,8 +117,9 @@ pub(crate) fn pack_java(
     if options.execution.regenerate {
         let source_directory = selected_jvm_package_source_directory(&packaging_targets)?;
         let artifact_name = selected_jvm_package_artifact_name(&packaging_targets)?;
+        let cargo_args = selected_jvm_package_cargo_args(&packaging_targets)?;
         let step = reporter.step("Generating C header");
-        generate_java_header(config, &source_directory, artifact_name)?;
+        generate_java_header(config, &source_directory, artifact_name, cargo_args)?;
         step.finish_success();
 
         let step = reporter.step("Generating Java bindings");
@@ -126,6 +128,7 @@ pub(crate) fn pack_java(
             Some(config.java_jvm_output()),
             &source_directory,
             artifact_name,
+            cargo_args.to_vec(),
         )?;
         step.finish_success();
     }
@@ -313,16 +316,28 @@ pub(crate) fn selected_jvm_package_artifact_name(
         })
 }
 
+fn selected_jvm_package_cargo_args(packaging_targets: &[JvmPackagingTarget]) -> Result<&[String]> {
+    packaging_targets
+        .first()
+        .map(|target| target.cargo_context.cargo_command_args.as_slice())
+        .ok_or_else(|| CliError::CommandFailed {
+            command: "could not resolve selected Cargo arguments for JVM generation".to_string(),
+            status: None,
+        })
+}
+
 pub(crate) fn generate_java_header(
     config: &Config,
     source_directory: &Path,
     crate_name: &str,
+    cargo_args: &[String],
 ) -> Result<()> {
     generate_jvm_header(
         source_directory,
         crate_name,
         &config.java_jvm_output().join("jni"),
         crate_name,
+        cargo_args,
     )
 }
 
@@ -331,9 +346,8 @@ pub(crate) fn generate_jvm_header(
     crate_name: &str,
     output_directory: &Path,
     header_name: &str,
+    cargo_args: &[String],
 ) -> Result<()> {
-    use boltffi_bindgen::{CHeaderLowerer, ir, scan_crate_with_pointer_width};
-
     let output_path = output_directory.join(format!("{header_name}.h"));
 
     std::fs::create_dir_all(output_directory).map_err(|source| {
@@ -353,12 +367,14 @@ pub(crate) fn generate_jvm_header(
         64 => Some(64),
         _ => None,
     };
-    let mut module =
-        scan_crate_with_pointer_width(source_directory, crate_name, host_pointer_width_bits)
-            .map_err(|error| CliError::CommandFailed {
-                command: format!("scan_crate: {}", error),
-                status: None,
-            })?;
+    let mut module = CrateScan::new(source_directory, crate_name)
+        .pointer_width(host_pointer_width_bits)
+        .cargo_args(cargo_args)
+        .scan()
+        .map_err(|error| CliError::CommandFailed {
+            command: format!("scan_crate: {}", error),
+            status: None,
+        })?;
 
     let contract = ir::build_contract(&mut module);
     let abi = ir::Lowerer::new(&contract).to_abi_contract();
@@ -535,7 +551,8 @@ mod tests {
     use super::{
         JvmCargoContext, JvmCrateOutputs, JvmPackagingTarget, ensure_java_no_build_supported,
         ensure_jvm_pack_cargo_args_supported, generate_jvm_header, resolve_jvm_packaging_targets,
-        selected_jvm_package_source_directory, write_jvm_debug_symbols,
+        selected_jvm_package_cargo_args, selected_jvm_package_source_directory,
+        write_jvm_debug_symbols,
     };
     use crate::build::CargoBuildProfile;
     use crate::cli::CliError;
@@ -674,8 +691,9 @@ mod tests {
     }
 
     #[test]
-    fn resolves_selected_jvm_package_source_directory_from_selected_package_manifest() {
+    fn resolves_selected_jvm_package_generation_inputs() {
         let current_host = JavaHostTarget::current().expect("current host");
+        let cargo_args = vec!["--features".to_string(), "ffi".to_string()];
         let packaging_targets = vec![JvmPackagingTarget {
             cargo_context: JvmCargoContext {
                 host_target: current_host,
@@ -688,7 +706,7 @@ mod tests {
                 manifest_path: PathBuf::from("/tmp/workspace/member/Cargo.toml"),
                 package_selector: Some("workspace-member".to_string()),
                 target_directory: PathBuf::from("/tmp/boltffi-target"),
-                cargo_command_args: Vec::new(),
+                cargo_command_args: cargo_args.clone(),
                 toolchain_selector: None,
                 crate_outputs: JvmCrateOutputs {
                     builds_staticlib: true,
@@ -701,8 +719,11 @@ mod tests {
 
         let source_directory =
             selected_jvm_package_source_directory(&packaging_targets).expect("source directory");
+        let selected_cargo_args =
+            selected_jvm_package_cargo_args(&packaging_targets).expect("cargo args");
 
         assert_eq!(source_directory, PathBuf::from("/tmp/workspace/member"));
+        assert_eq!(selected_cargo_args, cargo_args);
     }
 
     #[test]
@@ -714,6 +735,7 @@ mod tests {
             "demo",
             &output_directory,
             "boltffi_generated/demo",
+            &[],
         )
         .expect("nested header generation should succeed");
 

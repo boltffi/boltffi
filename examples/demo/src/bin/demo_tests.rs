@@ -4,9 +4,11 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use syn::ext::IdentExt;
-use syn::parse::{Parse, ParseStream};
+use syn::parse::{Parse, ParseStream, Parser};
 use syn::punctuated::Punctuated;
-use syn::{Attribute, Ident, Item, LitStr, Token, Type, Visibility, bracketed, parenthesized};
+use syn::{
+    Attribute, Ident, Item, LitStr, Meta, Token, Type, Visibility, bracketed, parenthesized,
+};
 
 // These identifiers intentionally match `boltffi_bindgen/src/render/*` folder names.
 const TARGETS: &[&str] = &["swift", "kotlin", "java", "csharp", "typescript", "python"];
@@ -84,6 +86,63 @@ struct DemoCaseArgs {
     directions: String,
     exercises: Vec<String>,
     exclusions: Vec<(String, Exclusion)>,
+}
+
+struct ConditionalAttributes {
+    attrs: Vec<Meta>,
+}
+
+struct MarkerAttributes {
+    attrs: Vec<Meta>,
+}
+
+impl Parse for ConditionalAttributes {
+    fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
+        input.parse::<Meta>()?;
+        input.parse::<Token![,]>()?;
+        let attrs = Punctuated::<Meta, Token![,]>::parse_terminated(input)?
+            .into_iter()
+            .collect();
+        Ok(Self { attrs })
+    }
+}
+
+impl MarkerAttributes {
+    fn new(attrs: &[Attribute]) -> Self {
+        Self {
+            attrs: attrs
+                .iter()
+                .flat_map(|attr| Self::expand(attr.meta.clone()))
+                .collect(),
+        }
+    }
+
+    fn named(&self, name: &str) -> impl Iterator<Item = &Meta> {
+        self.attrs.iter().filter(move |meta| {
+            meta.path()
+                .segments
+                .last()
+                .is_some_and(|segment| segment.ident == name)
+        })
+    }
+
+    fn expand(meta: Meta) -> Vec<Meta> {
+        if !meta.path().is_ident("cfg_attr") {
+            return vec![meta];
+        }
+        let Meta::List(list) = &meta else {
+            return Vec::new();
+        };
+        syn::parse2::<ConditionalAttributes>(list.tokens.clone())
+            .map(|conditional| {
+                conditional
+                    .attrs
+                    .into_iter()
+                    .flat_map(Self::expand)
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
 }
 
 #[derive(Debug)]
@@ -824,24 +883,21 @@ fn is_demo_case_attr(attr: &Attribute) -> bool {
 }
 
 fn has_export_attr(attrs: &[Attribute]) -> bool {
-    attrs.iter().any(|attr| {
-        attr.path()
-            .segments
-            .last()
-            .is_some_and(|segment| segment.ident == "export")
-    })
+    MarkerAttributes::new(attrs).named("export").next().is_some()
 }
 
 fn has_data_attr(attrs: &[Attribute]) -> bool {
-    attrs.iter().any(|attr| attr.path().is_ident("data"))
+    MarkerAttributes::new(attrs).named("data").next().is_some()
 }
 
 fn has_data_impl_attr(attrs: &[Attribute]) -> bool {
-    attrs.iter().any(|attr| {
-        attr.path().is_ident("data")
-            && attr
-                .parse_args_with(Ident::parse_any)
-                .is_ok_and(|identifier| identifier == "impl")
+    MarkerAttributes::new(attrs).named("data").any(|meta| {
+        let Meta::List(list) = meta else {
+            return false;
+        };
+        Ident::parse_any
+            .parse2(list.tokens.clone())
+            .is_ok_and(|identifier| identifier == "impl")
     })
 }
 

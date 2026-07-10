@@ -14,9 +14,9 @@ syn.workspace = true
 quote.workspace = true
 proc-macro2.workspace = true
 boltffi_ast.workspace = true
+boltffi_ffi_rules.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-walkdir.workspace = true
 
 [lints]
 workspace = true

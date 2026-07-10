@@ -10,6 +10,7 @@ mod exports;
 mod index;
 mod lowering;
 mod safety;
+mod scan_configuration;
 
 #[proc_macro_derive(FfiType)]
 pub fn derive_ffi_type(input: TokenStream) -> TokenStream {

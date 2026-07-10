@@ -19,10 +19,12 @@ pub(crate) mod type_expr;
 mod unsupported;
 mod visibility;
 
-pub use cfg::ActiveCfg;
+pub use cfg::{ActiveCfg, ConfiguredFile};
 pub use error::ScanError;
-pub use input::ScanInput;
+pub use input::{ScanConfiguration, ScanInput};
+pub use package_graph::{ExportedPackageGraph, LoadError, LocalPackage, PackageId};
 pub use scan::{PackageScan, scan, scan_file, scan_package, scan_source};
+pub use source_tree::{SourceModule, SourceTree};
 pub use unsupported::{UnsupportedFeature, UnsupportedInfo};
 
 use path::{ModulePath, ModuleScope};
