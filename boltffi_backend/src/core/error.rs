@@ -104,6 +104,18 @@ pub enum BackendError {
         /// Invalid identifier text.
         identifier: String,
     },
+    /// A generated C# identifier was invalid.
+    #[error("invalid C# identifier `{identifier}`")]
+    InvalidCSharpIdentifier {
+        /// Invalid identifier text.
+        identifier: String,
+    },
+    /// A generated C# namespace was invalid.
+    #[error("invalid C# namespace `{namespace}`")]
+    InvalidCSharpNamespace {
+        /// Invalid namespace text.
+        namespace: String,
+    },
     /// A generated C include path was invalid.
     #[error("invalid C include path `{path}`")]
     InvalidCIncludePath {

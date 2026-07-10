@@ -93,9 +93,10 @@ pub fn run_ir_generation(config: &Config, options: &GenerateOptions) -> Result<(
         GenerateTarget::Kotlin => generate_kotlin(config, options),
         GenerateTarget::KotlinMultiplatform => generate_kmp(config, options),
         GenerateTarget::Typescript => generate_typescript(config, options),
+        GenerateTarget::CSharp => generate_csharp(config, options),
         other => Err(CliError::CommandFailed {
             command: format!(
-                "--ir is only available for swift, python, java, kotlin, kmp, and typescript, not {}",
+                "--ir is only available for swift, python, java, kotlin, kmp, typescript, and csharp, not {}",
                 target_label(other)
             ),
             status: None,
@@ -328,6 +329,34 @@ fn swift_output_directory(config: &Config, options: &GenerateOptions) -> PathBuf
             SpmLayout::Bundled | SpmLayout::FfiOnly => output,
         }
     })
+}
+
+fn generate_csharp(config: &Config, options: &GenerateOptions) -> Result<()> {
+    if !config.is_csharp_enabled() {
+        return Err(CliError::CommandFailed {
+            command: "targets.csharp.enabled = false".to_string(),
+            status: None,
+        });
+    }
+
+    let selected = SelectedCrate::resolve(config, options)?;
+    let output_directory = options
+        .output
+        .clone()
+        .unwrap_or_else(|| config.csharp_output());
+
+    Generation::new(selected.manifest_path)
+        .cargo_args(selected.cargo_args)
+        .coverage_mode(CoverageMode::Partial)
+        .csharp_namespace(config.csharp_namespace().map(str::to_owned))
+        .csharp_native_library(selected.artifact_name)
+        .render(Target::CSharp)
+        .and_then(|output| {
+            print_coverage(Target::CSharp.name(), &output);
+            Generation::write_output(output, &output_directory)
+        })
+        .map(drop)
+        .map_err(|error| generation_error(Target::CSharp.name(), error))
 }
 
 fn generate_python(config: &Config, options: &GenerateOptions) -> Result<()> {
