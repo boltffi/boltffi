@@ -480,6 +480,7 @@ mod tests {
             #[export]
             pub trait Calculator {
                 fn compute(&self, value: i32) -> Result<i32, MathError>;
+                fn enabled(&self) -> Result<bool, MathError>;
                 fn label(&self, value: i32) -> Result<String, String>;
             }
             "#,
@@ -494,6 +495,9 @@ mod tests {
         assert!(callback.contains("catch (MathErrorException boltffiError)"));
         assert!(callback.contains("catch (BoltException boltffiError)"));
         assert!(callback.contains("return_out = implementation.Compute(value);"));
+        assert!(callback.contains(
+            "[global::System.Runtime.InteropServices.MarshalAs(global::System.Runtime.InteropServices.UnmanagedType.I1)] out bool return_out"
+        ));
         assert!(callback.contains("out var return_out"));
         assert!(callback.contains("throw new MathErrorException("));
         assert!(callback.contains("throw new BoltException("));
@@ -514,6 +518,7 @@ mod tests {
             #[allow(async_fn_in_trait)]
             pub trait Fetcher {
                 async fn fetch_count(&self, key: i32) -> i32;
+                async fn enabled(&self) -> bool;
                 async fn fetch_name(&self, key: String) -> String;
                 async fn try_fetch(&self, key: i32) -> Result<String, FetchError>;
             }
@@ -527,6 +532,9 @@ mod tests {
         assert!(callback.contains("global::System.Threading.Tasks.Task<int> FetchCount"));
         assert!(callback.contains("private static async void FetchCount"));
         assert!(callback.contains("await implementation.FetchCount(key).ConfigureAwait(false)"));
+        assert!(callback.contains(
+            "[global::System.Runtime.InteropServices.MarshalAs(global::System.Runtime.InteropServices.UnmanagedType.I1)] bool arg2"
+        ));
         assert!(callback.contains("TaskCompletionSource<int>"));
         assert!(callback.contains("GCHandle.Alloc(boltffiCompletion)"));
         assert!(callback.contains("boltffiComplete(1, FfiBuf.FromBytes"));
@@ -724,6 +732,13 @@ mod tests {
             ) -> Result<i32, MathError> {
                 f(value)
             }
+
+            #[export]
+            pub fn apply_bool(
+                f: impl Fn() -> Result<bool, MathError>,
+            ) -> Result<bool, MathError> {
+                f()
+            }
             "#,
         );
         let output = target(CSharpHost::new())
@@ -733,6 +748,9 @@ mod tests {
         let source = file(&output, "Demo.cs");
         assert!(source.contains("global::System.Func<int, int> f"));
         assert!(source.contains("out int return_out"));
+        assert!(source.contains(
+            "[global::System.Runtime.InteropServices.MarshalAs(global::System.Runtime.InteropServices.UnmanagedType.I1)] out bool return_out"
+        ));
         assert!(source.contains("catch (MathErrorException boltffiError)"));
         assert!(source.contains("return FfiBuf.FromBytes(boltffiErrorWriter.ToArray());"));
         assert!(output.diagnostics().is_empty());
@@ -858,6 +876,11 @@ mod tests {
             pub fn validate(valid: bool) -> Result<(), String> {
                 if valid { Ok(()) } else { Err("bad".to_string()) }
             }
+
+            #[export]
+            pub fn is_enabled() -> Result<bool, String> {
+                Ok(true)
+            }
             "#,
         );
         let output = target(CSharpHost::new())
@@ -877,6 +900,7 @@ mod tests {
         );
         assert!(source.contains("return resultReader.ReadString();"));
         assert!(source.contains("public static void Validate(bool valid)"));
+        assert!(source.contains("[MarshalAs(UnmanagedType.I1)] out bool boltffiResult"));
 
         let math_error = file(&output, "MathError.cs");
         assert!(math_error.contains("public sealed class MathErrorException"));

@@ -1110,7 +1110,7 @@ impl Function {
                         name: result.clone(),
                         ty: rendered.clone(),
                         modifier: "out ",
-                        marshal_i1: false,
+                        marshal_i1: matches!(ty, DirectValueType::Primitive(Primitive::Bool)),
                         marshal_bool_array: false,
                         byte_array: false,
                     });

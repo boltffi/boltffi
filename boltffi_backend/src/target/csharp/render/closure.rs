@@ -1,6 +1,6 @@
 use boltffi_binding::{
-    CanonicalName, ClosureParameter, ErrorChannel, ErrorPlacement, Native, OutgoingParam,
-    ParamPlan, ReturnPlan, TypeRef, native,
+    CanonicalName, ClosureParameter, DirectValueType, ErrorChannel, ErrorPlacement, Native,
+    OutgoingParam, ParamPlan, Primitive, ReturnPlan, TypeRef, native,
 };
 
 use crate::{
@@ -161,7 +161,14 @@ impl ClosureArgument {
                 requires_wire_runtime = true;
                 let success_name = Identifier::escape(c_closure.parameter(*index).name())?;
                 let success_type = direct_type(ty, context)?;
-                native_parameters.push(format!("out {success_type} {success_name}"));
+                native_parameters.push(format!(
+                    "{}out {success_type} {success_name}",
+                    if matches!(ty, DirectValueType::Primitive(Primitive::Bool)) {
+                        "[global::System.Runtime.InteropServices.MarshalAs(global::System.Runtime.InteropServices.UnmanagedType.I1)] "
+                    } else {
+                        ""
+                    }
+                ));
                 let error = Identifier::parse("boltffiError")?;
                 let writer = Identifier::parse("boltffiErrorWriter")?;
                 let (exception, error_value) = error_exception(error_type, &error, context)?;

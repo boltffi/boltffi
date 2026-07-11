@@ -1032,18 +1032,18 @@ fn native_parameter(
         CBridgeType::MutPointer(inner) if inner.as_ref() == &CBridgeType::Void => {
             Ok(format!("nint {name}"))
         }
-        CBridgeType::MutPointer(inner) => {
-            Ok(format!("out {} {name}", c_type(inner, bridge, context)?))
-        }
+        CBridgeType::MutPointer(inner) => Ok(format!(
+            "{}out {} {name}",
+            bool_parameter_attribute(inner),
+            c_type(inner, bridge, context)?
+        )),
         CBridgeType::FunctionPointer { .. } => completion
             .map(|method| format!("{method}Completion {name}"))
             .ok_or(Error::UnsupportedTarget {
                 target: "csharp",
                 shape: "callback function pointer parameter",
             }),
-        CBridgeType::Bool => Ok(format!(
-            "[global::System.Runtime.InteropServices.MarshalAs(global::System.Runtime.InteropServices.UnmanagedType.I1)] bool {name}"
-        )),
+        CBridgeType::Bool => Ok(format!("{}bool {name}", bool_parameter_attribute(ty))),
         _ => Ok(format!("{} {name}", c_type(ty, bridge, context)?)),
     }
 }
@@ -1064,13 +1064,28 @@ fn completion_delegate(
     let params = params
         .iter()
         .enumerate()
-        .map(|(index, ty)| Ok(format!("{} arg{index}", c_type(ty, bridge, context)?)))
+        .map(|(index, ty)| {
+            Ok(format!(
+                "{}{} arg{index}",
+                bool_parameter_attribute(ty),
+                c_type(ty, bridge, context)?
+            ))
+        })
         .collect::<Result<Vec<_>>>()?
         .join(", ");
     Ok(Some(format!(
         "        [global::System.Runtime.InteropServices.UnmanagedFunctionPointer(global::System.Runtime.InteropServices.CallingConvention.Cdecl)]\n        internal delegate {} {method}Completion({params});",
         c_type(returns, bridge, context)?
     )))
+}
+
+fn bool_parameter_attribute(ty: &CBridgeType) -> &'static str {
+    match ty {
+        CBridgeType::Bool => {
+            "[global::System.Runtime.InteropServices.MarshalAs(global::System.Runtime.InteropServices.UnmanagedType.I1)] "
+        }
+        _ => "",
+    }
 }
 
 fn render_async_entry_body(
