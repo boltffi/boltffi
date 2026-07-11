@@ -774,6 +774,10 @@ mod tests {
         assert!(source.contains("EnumeratorCancellation"));
         assert!(source.contains("NativeValuesPopBatch"));
         assert!(source.contains("NativeMethods.FreeBuf(buffer);"));
+        assert!(source.contains(
+            "await foreach (var item in ReadAll(receiver, cancellation.Token)) callback(item);"
+        ));
+        assert!(!source.contains("ReadAll(receiver, cancellation.Token).ConfigureAwait(false)"));
         assert!(output.diagnostics().is_empty());
     }
 
