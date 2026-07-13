@@ -546,3 +546,30 @@ fn swift_target_renders_custom_type_mappings() {
         host
     ));
 }
+
+#[test]
+fn swift_target_renders_native_opaque_records() {
+    let rendered = rendered_source(SourceFixture::many([
+        "records/native_opaque_snapshot",
+        "exports/native_opaque_record_return",
+    ]));
+
+    assert!(rendered.contains("public func makeSnapshot(input: Data, count: UInt32) -> Snapshot"));
+    assert!(rendered.contains("input.withUnsafeBytes"));
+    assert!(rendered.contains("withExtendedLifetime(storage) { storage in"));
+    assert!(!rendered.contains("boltffiInputBuffer"));
+    insta::assert_snapshot!(rendered);
+}
+
+#[test]
+fn swift_target_borrowed_string_uses_raw_utf8_without_wire_writer() {
+    let rendered = rendered_source(SourceFixture::many([
+        "records/native_opaque_snapshot",
+        "exports/native_opaque_record_return_string",
+    ]));
+
+    assert!(rendered.contains("Array(input.utf8).withUnsafeBytes"));
+    assert!(rendered.contains("boltffi_function_demo_make_snapshot_from_name"));
+    assert!(!rendered.contains("boltffiInputWire"));
+    assert!(!rendered.contains("boltffiEncode"));
+}

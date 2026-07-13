@@ -22,6 +22,7 @@ mod visibility;
 pub use cfg::ActiveCfg;
 pub use error::ScanError;
 pub use input::ScanInput;
+pub use marker::{is_boltffi_data_marker, is_boltffi_data_or_error_marker};
 pub use scan::{PackageScan, scan, scan_file, scan_package, scan_source};
 pub use unsupported::{UnsupportedFeature, UnsupportedInfo};
 

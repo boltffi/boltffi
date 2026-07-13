@@ -53,6 +53,7 @@ mod layout;
 mod metadata;
 mod methods;
 mod names;
+mod opaque;
 mod primitive;
 mod records;
 mod streams;
@@ -265,6 +266,7 @@ mod tests {
                     CodecNode::Builtin(BuiltinType::Duration)
                 ),
                 shape: native::BufferShape::Slice,
+                transport: crate::EncodedParamTransport::Wire,
                 receive: crate::Receive::ByValue,
             }
         );

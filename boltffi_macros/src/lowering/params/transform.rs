@@ -445,16 +445,18 @@ impl<'a> ParamTransformClassifier<'a> {
                         transform: ParamTransform::Passable(PassableParam::from_type(ty)),
                     }
                 }
-                DataTypeCategory::WireEncoded => ClassifiedParamTransform {
-                    contract: ParamContract::new(
-                        ParamValueStrategy::WireEncoded(WireParamStrategy::SingleValue),
-                        Self::passing_strategy(ty),
-                    ),
-                    transform: ParamTransform::WireEncoded(WireEncodedParam::from_type(
-                        WireEncodedParamKind::Required,
-                        ty,
-                    )),
-                },
+                DataTypeCategory::WireEncoded | DataTypeCategory::NativeOpaque => {
+                    ClassifiedParamTransform {
+                        contract: ParamContract::new(
+                            ParamValueStrategy::WireEncoded(WireParamStrategy::SingleValue),
+                            Self::passing_strategy(ty),
+                        ),
+                        transform: ParamTransform::WireEncoded(WireEncodedParam::from_type(
+                            WireEncodedParamKind::Required,
+                            ty,
+                        )),
+                    }
+                }
             };
         }
 
@@ -543,7 +545,7 @@ impl<'a> ParamTransformClassifier<'a> {
                 ParamValueStrategy::Scalar(ScalarParamStrategy::CStyleEnumTag)
             }
             Some(DataTypeCategory::Blittable) => ParamValueStrategy::CompositeValue,
-            Some(DataTypeCategory::WireEncoded) | None => {
+            Some(DataTypeCategory::WireEncoded | DataTypeCategory::NativeOpaque) | None => {
                 ParamValueStrategy::WireEncoded(WireParamStrategy::SingleValue)
             }
         }

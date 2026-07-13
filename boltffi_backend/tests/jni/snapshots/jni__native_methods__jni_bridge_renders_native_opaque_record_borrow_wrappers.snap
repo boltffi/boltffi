@@ -1,0 +1,206 @@
+---
+source: boltffi_backend/tests/jni/native_methods.rs
+expression: "rendered_source(SourceFixture::many([\"records/native_opaque_snapshot\",\n\"exports/native_opaque_record_return\",]))"
+---
+===== jni/demo.h =====
+<c abi support declarations>
+void boltffi_record_native_snapshot_drop(void *handle);
+uintptr_t boltffi_record_native_snapshot_dsize(const void *handle);
+uint32_t boltffi_record_native_snapshot_get_count(const void *handle);
+int32_t boltffi_record_native_snapshot_borrow_title(const void *handle, const uint8_t * *ptr_out, uintptr_t *len_out);
+int32_t boltffi_record_native_snapshot_borrow_payload(const void *handle, const uint8_t * *ptr_out, uintptr_t *len_out);
+int32_t boltffi_record_native_snapshot_has_score(const void *handle);
+double boltffi_record_native_snapshot_get_score(const void *handle);
+int32_t boltffi_record_native_snapshot_has_label(const void *handle);
+int32_t boltffi_record_native_snapshot_borrow_label(const void *handle, const uint8_t * *ptr_out, uintptr_t *len_out);
+void * boltffi_function_demo_make_snapshot(const uint8_t *input_ptr, uintptr_t input_len, uint32_t count);
+
+===== jni/jni_glue.c =====
+<jni source includes>
+<jni exception helpers>
+static bool boltffi_jni_direct_buffer_address(JNIEnv *env, jobject buffer, jlong required_capacity, void **address) {
+    if (buffer == NULL) {
+        boltffi_jni_throw_illegal_argument(env, "BoltFFI direct buffer argument was null");
+        return false;
+    }
+    if (required_capacity < 0) {
+        boltffi_jni_throw_illegal_argument(env, "BoltFFI direct buffer length was negative");
+        return false;
+    }
+    jlong capacity = (*env)->GetDirectBufferCapacity(env, buffer);
+    if (capacity < 0) {
+        boltffi_jni_throw_illegal_argument(env, "BoltFFI argument was not a direct buffer");
+        return false;
+    }
+    if (capacity < required_capacity) {
+        boltffi_jni_throw_illegal_argument(env, "BoltFFI direct buffer capacity was too small");
+        return false;
+    }
+    *address = (*env)->GetDirectBufferAddress(env, buffer);
+    if (*address == NULL && required_capacity != 0) {
+        boltffi_jni_throw_illegal_argument(env, "BoltFFI direct buffer address was unavailable");
+        return false;
+    }
+    return true;
+}
+
+JNIEXPORT jbyteArray JNICALL Java_com_boltffi_demo_Native_boltffi_1record_1native_1snapshot_1borrow_1title(JNIEnv *env, jclass cls, jlong handle) {
+    (void)cls;
+    const uint8_t *ptr = NULL;
+    uintptr_t len = 0;
+    int32_t ok = boltffi_record_native_snapshot_borrow_title((const void *)(uintptr_t)handle, &ptr, &len);
+    if (!ok) {
+        boltffi_jni_throw_runtime(env, "native opaque borrow failed");
+        return NULL;
+    }
+    if (ptr == NULL) {
+        if (len != 0) {
+            boltffi_jni_throw_runtime(env, "BoltFFI borrow pointer was null with non-zero length");
+            return NULL;
+        }
+        return (*env)->NewByteArray(env, 0);
+    }
+    if (len > (uintptr_t)INT32_MAX) {
+        boltffi_jni_throw_runtime(env, "BoltFFI borrow slice too large for Java byte array");
+        return NULL;
+    }
+    jbyteArray result = (*env)->NewByteArray(env, (jsize)len);
+    if (!result) { return NULL; }
+    (*env)->SetByteArrayRegion(env, result, 0, (jsize)len, (const jbyte *)ptr);
+    if ((*env)->ExceptionCheck(env)) {
+        (*env)->DeleteLocalRef(env, result);
+        return NULL;
+    }
+    return result;
+}
+
+JNIEXPORT jbyteArray JNICALL Java_com_boltffi_demo_Native_boltffi_1record_1native_1snapshot_1borrow_1payload(JNIEnv *env, jclass cls, jlong handle) {
+    (void)cls;
+    const uint8_t *ptr = NULL;
+    uintptr_t len = 0;
+    int32_t ok = boltffi_record_native_snapshot_borrow_payload((const void *)(uintptr_t)handle, &ptr, &len);
+    if (!ok) {
+        boltffi_jni_throw_runtime(env, "native opaque borrow failed");
+        return NULL;
+    }
+    if (ptr == NULL) {
+        if (len != 0) {
+            boltffi_jni_throw_runtime(env, "BoltFFI borrow pointer was null with non-zero length");
+            return NULL;
+        }
+        return (*env)->NewByteArray(env, 0);
+    }
+    if (len > (uintptr_t)INT32_MAX) {
+        boltffi_jni_throw_runtime(env, "BoltFFI borrow slice too large for Java byte array");
+        return NULL;
+    }
+    jbyteArray result = (*env)->NewByteArray(env, (jsize)len);
+    if (!result) { return NULL; }
+    (*env)->SetByteArrayRegion(env, result, 0, (jsize)len, (const jbyte *)ptr);
+    if ((*env)->ExceptionCheck(env)) {
+        (*env)->DeleteLocalRef(env, result);
+        return NULL;
+    }
+    return result;
+}
+
+JNIEXPORT jbyteArray JNICALL Java_com_boltffi_demo_Native_boltffi_1record_1native_1snapshot_1borrow_1label(JNIEnv *env, jclass cls, jlong handle) {
+    (void)cls;
+    const uint8_t *ptr = NULL;
+    uintptr_t len = 0;
+    int32_t ok = boltffi_record_native_snapshot_borrow_label((const void *)(uintptr_t)handle, &ptr, &len);
+    if (!ok) {
+        boltffi_jni_throw_runtime(env, "native opaque borrow failed");
+        return NULL;
+    }
+    if (ptr == NULL) {
+        if (len != 0) {
+            boltffi_jni_throw_runtime(env, "BoltFFI borrow pointer was null with non-zero length");
+            return NULL;
+        }
+        return (*env)->NewByteArray(env, 0);
+    }
+    if (len > (uintptr_t)INT32_MAX) {
+        boltffi_jni_throw_runtime(env, "BoltFFI borrow slice too large for Java byte array");
+        return NULL;
+    }
+    jbyteArray result = (*env)->NewByteArray(env, (jsize)len);
+    if (!result) { return NULL; }
+    (*env)->SetByteArrayRegion(env, result, 0, (jsize)len, (const jbyte *)ptr);
+    if ((*env)->ExceptionCheck(env)) {
+        (*env)->DeleteLocalRef(env, result);
+        return NULL;
+    }
+    return result;
+}
+
+JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1record_1native_1snapshot_1drop(JNIEnv *env, jclass cls, jlong handle) {
+    (void)cls;
+
+    (void)env;
+    boltffi_record_native_snapshot_drop((void *)handle);
+
+    return;
+}
+
+JNIEXPORT jlong JNICALL Java_com_boltffi_demo_Native_boltffi_1record_1native_1snapshot_1dsize(JNIEnv *env, jclass cls, jlong handle) {
+    (void)cls;
+
+    (void)env;
+    uintptr_t __boltffi_result = boltffi_record_native_snapshot_dsize((const void *)handle);
+
+    return (jlong)__boltffi_result;
+}
+
+JNIEXPORT jint JNICALL Java_com_boltffi_demo_Native_boltffi_1record_1native_1snapshot_1get_1count(JNIEnv *env, jclass cls, jlong handle) {
+    (void)cls;
+
+    (void)env;
+    uint32_t __boltffi_result = boltffi_record_native_snapshot_get_count((const void *)handle);
+
+    return (jint)__boltffi_result;
+}
+
+JNIEXPORT jint JNICALL Java_com_boltffi_demo_Native_boltffi_1record_1native_1snapshot_1has_1score(JNIEnv *env, jclass cls, jlong handle) {
+    (void)cls;
+
+    (void)env;
+    int32_t __boltffi_result = boltffi_record_native_snapshot_has_score((const void *)handle);
+
+    return (jint)__boltffi_result;
+}
+
+JNIEXPORT jdouble JNICALL Java_com_boltffi_demo_Native_boltffi_1record_1native_1snapshot_1get_1score(JNIEnv *env, jclass cls, jlong handle) {
+    (void)cls;
+
+    (void)env;
+    double __boltffi_result = boltffi_record_native_snapshot_get_score((const void *)handle);
+
+    return (jdouble)__boltffi_result;
+}
+
+JNIEXPORT jint JNICALL Java_com_boltffi_demo_Native_boltffi_1record_1native_1snapshot_1has_1label(JNIEnv *env, jclass cls, jlong handle) {
+    (void)cls;
+
+    (void)env;
+    int32_t __boltffi_result = boltffi_record_native_snapshot_has_label((const void *)handle);
+
+    return (jint)__boltffi_result;
+}
+
+JNIEXPORT jlong JNICALL Java_com_boltffi_demo_Native_boltffi_1function_1demo_1make_1snapshot(JNIEnv *env, jclass cls, jobject input, jint __boltffi_input_len, jint count) {
+    (void)cls;
+
+    void *__boltffi_input_ptr = NULL;
+
+    if (!boltffi_jni_direct_buffer_address(env, input, (jlong)__boltffi_input_len, &__boltffi_input_ptr)) {
+        goto __boltffi_error;
+    }
+
+    (void)env;
+    void * __boltffi_result = boltffi_function_demo_make_snapshot((const uint8_t *)__boltffi_input_ptr, (uintptr_t)__boltffi_input_len, count);
+
+    return (jlong)__boltffi_result;
+__boltffi_error:
+    return 0;
+}

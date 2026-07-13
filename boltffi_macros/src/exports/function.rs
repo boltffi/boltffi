@@ -628,7 +628,8 @@ fn ffi_export_item_impl(input: ItemFn) -> proc_macro2::TokenStream {
 }
 
 pub fn ffi_export_impl(item: TokenStream) -> TokenStream {
-    let input = syn::parse_macro_input!(item as ItemFn);
+    let mut input = syn::parse_macro_input!(item as ItemFn);
+    crate::strip_signature_attrs(&mut input.sig);
     TokenStream::from(ffi_export_item_impl(input))
 }
 

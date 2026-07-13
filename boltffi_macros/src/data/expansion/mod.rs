@@ -12,6 +12,28 @@ use enum_expansion::EnumDataExpansion;
 pub use record_impl::data_impl_block;
 use struct_expansion::StructDataExpansion;
 
+/// Implements the stable-path expansion for `#[data(opaque)]`.
+///
+/// Opaque records do not participate in wire encoding. The experimental
+/// bindgen expansion emits the native handle return and per-field accessors
+/// from binding IR; the legacy attribute path preserves only the Rust struct.
+pub fn data_opaque_impl(item: TokenStream) -> TokenStream {
+    let original_tokens = proc_macro2::TokenStream::from(item.clone());
+
+    if let Ok(mut item_struct) = syn::parse::<ItemStruct>(item) {
+        use crate::data::expansion::field_attrs::BoltffiFieldAttributes;
+        BoltffiFieldAttributes::strip_from_fields(&mut item_struct.fields);
+        return quote::quote!(#item_struct).into();
+    }
+
+    syn::Error::new_spanned(
+        original_tokens,
+        "data(opaque) can only be applied to a struct",
+    )
+    .to_compile_error()
+    .into()
+}
+
 pub fn data_impl(item: TokenStream) -> TokenStream {
     let original_tokens = proc_macro2::TokenStream::from(item.clone());
 

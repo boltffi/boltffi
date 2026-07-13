@@ -84,11 +84,60 @@ fn jni_bridge_indexes_native_methods_by_source_symbol() {
         .source_method(function.symbol().id())
         .expect("JNI method for source symbol");
 
-    assert_eq!(method.source_symbol(), function.symbol().id());
+    assert_eq!(method.source_symbol(), Some(function.symbol().id()));
     assert_eq!(
         method.c_function().name(),
         function.symbol().name().as_str()
     );
+}
+
+#[test]
+fn jni_bridge_marks_native_opaque_helpers_as_auxiliary_methods() {
+    let source = SourceFixture::many([
+        "records/native_opaque_snapshot",
+        "exports/native_opaque_record_return",
+    ])
+    .read();
+    let bindings = bindings(&source);
+    let source_symbol = bindings
+        .decls()
+        .iter()
+        .find_map(|decl| match DeclarationRef::from(decl) {
+            DeclarationRef::Function(function) => Some(function.symbol().id()),
+            _ => None,
+        })
+        .expect("native opaque fixture export");
+    let output = bridge(&source);
+    let methods = output.contract().methods();
+
+    assert!(
+        methods
+            .iter()
+            .any(|method| method.source_symbol().is_some())
+    );
+    assert!(
+        methods
+            .iter()
+            .any(|method| method.source_symbol().is_none())
+    );
+    for method in methods {
+        assert_eq!(
+            method.source_symbol(),
+            method.c_function().source_symbol(),
+            "JNI method source identity must match its C bridge method"
+        );
+    }
+    let expected = methods
+        .iter()
+        .find(|method| method.c_function().source_symbol() == Some(source_symbol))
+        .expect("source-backed C bridge method");
+    let indexed = output
+        .contract()
+        .source_method(source_symbol)
+        .expect("the source index must retain source-backed methods while excluding helpers");
+
+    assert_eq!(indexed.source_symbol(), Some(source_symbol));
+    assert!(std::ptr::eq(indexed.c_function(), expected.c_function()));
 }
 
 #[test]
@@ -232,4 +281,43 @@ fn jni_bridge_renders_closure_direct_record_returns() {
 #[test]
 fn jni_bridge_renders_closure_class_handle_returns() {
     insta::assert_snapshot!(rendered_fixture("exports/closure_class_handle_return"));
+}
+
+#[test]
+fn jni_bridge_renders_native_opaque_record_borrow_wrappers() {
+    insta::assert_snapshot!(rendered_source(SourceFixture::many([
+        "records/native_opaque_snapshot",
+        "exports/native_opaque_record_return",
+    ])));
+}
+
+#[test]
+fn jni_bridge_includes_limits_and_exceptions_for_native_opaque_only_source() {
+    // A binding with ONLY a native opaque record (no callbacks/byte-arrays/etc.)
+    // still needs limits.h (for INT32_MAX) and the exception helpers
+    // (for boltffi_jni_throw_runtime) because borrow_wrapper.c uses both.
+    let source = super::files(
+        r#"
+        #[data(opaque)]
+        pub struct Snap {
+            pub title: String,
+        }
+        #[export]
+        pub fn make_snap() -> Snap { unimplemented!() }
+        "#,
+    );
+    let jni_source = source
+        .iter()
+        .find(|(path, _)| path.ends_with(".c"))
+        .map(|(_, c)| c.as_str())
+        .expect("JNI C source present");
+
+    assert!(
+        jni_source.contains("#include <limits.h>"),
+        "JNI source must include limits.h for borrow_wrapper INT32_MAX guard"
+    );
+    assert!(
+        jni_source.contains("boltffi_jni_throw_runtime"),
+        "JNI source must include exception helpers for borrow_wrapper error reporting"
+    );
 }

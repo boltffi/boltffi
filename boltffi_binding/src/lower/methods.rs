@@ -357,7 +357,9 @@ fn symbol_owner(owner: callable::CallableOwner) -> SymbolOwner {
         callable::CallableOwner::Trait(source_trait) => {
             SymbolOwner::callback(source_trait.id.as_str())
         }
-        callable::CallableOwner::Function => unreachable!("free functions do not own methods"),
+        callable::CallableOwner::Function | callable::CallableOwner::Closure => {
+            unreachable!("free functions and closures do not own methods")
+        }
     }
 }
 

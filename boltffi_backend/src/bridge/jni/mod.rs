@@ -36,8 +36,9 @@ pub use contract::{
     CallbackRegistration, CallbackReturn, ClosureArgument, ClosureBytesArgument, ClosureCParameter,
     ClosureDirectVectorArgument, ClosureHandleArgument, ClosureParameter, ClosureRegistration,
     ContinuationParameter, DirectStreamBatchMethod, DirectVectorParameter, DirectVectorStackCopy,
-    EncodedErrorReturn, JniBridgeContract, JniType, JvmMethodReturn, NativeMethod, NativeParameter,
-    NativeParameterKind, NativeReturn, RecordParameter, RecordValue, ScalarParameter, ScalarReturn,
-    SuccessOutArgument, SuccessOutReturn, SuccessOutValue, SuccessOutWriter,
+    EncodedErrorReturn, JniBridgeContract, JniType, JvmMethodReturn, NativeMethod,
+    NativeOpaqueBorrowWrapper, NativeParameter, NativeParameterKind, NativeReturn, RecordParameter,
+    RecordValue, ScalarParameter, ScalarReturn, SuccessOutArgument, SuccessOutReturn,
+    SuccessOutValue, SuccessOutWriter,
 };
 pub use name::{JniSymbolName, JvmClassPath, JvmNameSegment};

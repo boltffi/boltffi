@@ -1820,4 +1820,36 @@ mod tests {
                     .contains("unknown binding shapes on jvm")
         }));
     }
+
+    #[test]
+    fn kmp_lowerer_explicitly_rejects_native_opaque_records() {
+        let error = super::lower(&bindings(
+            r#"
+            #[data(opaque)]
+            pub struct Snapshot {
+                pub count: u32,
+                pub title: String,
+            }
+
+            #[export]
+            pub fn make_snapshot(count: u32) -> Snapshot {
+                unimplemented!()
+            }
+            "#,
+        ))
+        .expect_err("KMP must explicitly reject native opaque records");
+
+        let report = unsupported_report(error);
+        let rejected = report.rejected_apis();
+        assert!(
+            rejected.iter().any(|api| {
+                api.kind() == "record"
+                    && api
+                        .reason()
+                        .expect("rejection reason")
+                        .contains("native opaque records (unsupported on KMP)")
+            }),
+            "KMP should reject native opaque record with clear diagnostic, got: {rejected:?}"
+        );
+    }
 }

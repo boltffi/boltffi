@@ -630,6 +630,7 @@ impl<'plan, 'render> ParamPlanRender<'plan, Native, IntoRust> for ParameterConve
         _: &TypeRef,
         codec: &WritePlan,
         shape: native::BufferShape,
+        _transport: boltffi_binding::EncodedParamTransport,
         receive: Receive,
     ) -> Self::Output {
         match shape {
@@ -639,11 +640,19 @@ impl<'plan, 'render> ParamPlanRender<'plan, Native, IntoRust> for ParameterConve
                     self.index,
                     self.name.clone(),
                     receive,
-                    match (native, EncodedCrossing::of(codec.root()), receive) {
-                        (Some(native), _, Receive::ByValue | Receive::ByRef) => {
+                    match (
+                        _transport,
+                        native,
+                        EncodedCrossing::of(codec.root()),
+                        receive,
+                    ) {
+                        (boltffi_binding::EncodedParamTransport::BorrowedSlice, _, _, _) => {
+                            BufferedArgument::RawWire
+                        }
+                        (_, Some(native), _, Receive::ByValue | Receive::ByRef) => {
                             BufferedArgument::Native(native)
                         }
-                        (_, EncodedCrossing::Utf8Text, Receive::ByValue | Receive::ByRef) => {
+                        (_, _, EncodedCrossing::Utf8Text, Receive::ByValue | Receive::ByRef) => {
                             BufferedArgument::Utf8Text
                         }
                         _ => BufferedArgument::RawWire,

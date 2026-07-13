@@ -144,6 +144,10 @@ impl Constant {
 }
 
 impl AssociatedConstants {
+    pub(super) fn empty() -> Self {
+        Self(Vec::new())
+    }
+
     pub(super) fn from_c_style_enum(
         enumeration: &CStyleEnumDecl<Native>,
         host: &KotlinHost,

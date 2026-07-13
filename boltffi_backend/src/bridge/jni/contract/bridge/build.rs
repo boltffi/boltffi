@@ -22,9 +22,12 @@ use crate::{
     core::{BridgeCapability, BridgeContract, FilePath, Result},
 };
 
+use crate::bridge::jni::contract::native_opaque::is_borrow_helper;
+
 use super::{
     CallbackCompletionInvoker, CallbackHandleLifecycle, CallbackRegistration, ClosureRegistration,
-    JniBridgeContract, NativeMethod, StreamProtocolMethods, SuccessOutWriter, index::SourceIndex,
+    JniBridgeContract, NativeMethod, NativeOpaqueBorrowWrapper, StreamProtocolMethods,
+    SuccessOutWriter, index::SourceIndex,
 };
 
 impl JniBridgeContract {
@@ -59,6 +62,17 @@ impl JniBridgeContract {
             .transpose()?;
         let callback_completions = CallbackCompletionInvoker::from_callbacks(&class, &callbacks)?;
         let success_out_writers = SuccessOutWriter::from_c_bridge(&class, c_bridge)?;
+        let borrow_wrappers = c_bridge
+            .functions()
+            .iter()
+            .filter(|function| {
+                !matches!(
+                    function.source_declaration(),
+                    Some(DeclarationId::Stream(_))
+                ) && is_borrow_helper(function)
+            })
+            .map(|function| NativeOpaqueBorrowWrapper::new(&class, function))
+            .collect::<Result<Vec<_>>>()?;
         let methods = c_bridge
             .functions()
             .iter()
@@ -66,7 +80,7 @@ impl JniBridgeContract {
                 !matches!(
                     function.source_declaration(),
                     Some(DeclarationId::Stream(_))
-                )
+                ) && !is_borrow_helper(function)
             })
             .map(|function| NativeMethod::new(&class, function, c_bridge.callbacks(), &closures))
             .collect::<Result<Vec<_>>>()?;
@@ -96,6 +110,7 @@ impl JniBridgeContract {
             callback_completions,
             success_out_writers,
             methods,
+            borrow_wrappers,
             streams,
             source_index,
             closures,

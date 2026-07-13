@@ -134,6 +134,7 @@ impl<'plan> ParamPlanRender<'plan, Native, OutOfRust> for Renderer<'_> {
         ty: &'plan TypeRef,
         codec: &'plan <OutOfRust as Direction>::Codec,
         _shape: <Native as Surface>::BufferShape,
+        _: boltffi_binding::EncodedParamTransport,
         _receive: <OutOfRust as Direction>::Receive,
     ) -> Self::Output {
         let reader = self.source_name.generated("reader")?;

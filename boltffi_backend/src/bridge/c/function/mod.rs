@@ -7,7 +7,8 @@ pub use signature::Signature;
 use boltffi_binding::{
     CStyleEnumDecl, ClassDecl, ConstantDecl, ConstantValueDecl, DataEnumDecl, DeclarationId,
     DeclarationRef, DirectRecordDecl, EncodedRecordDecl, EnumDecl, ExportedCallable,
-    ExportedMethodDecl, InitializerDecl, Native, NativeSymbol, RecordDecl, SymbolId,
+    ExportedMethodDecl, InitializerDecl, Native, NativeOpaqueFieldExports, NativeSymbol,
+    RecordDecl, SymbolId, TypeRef,
 };
 
 use crate::core::{Error, Result};
@@ -155,13 +156,150 @@ impl Function {
         record: &EncodedRecordDecl<Native>,
         names: &Names,
     ) -> Result<Vec<Self>> {
-        Self::associated_functions(
+        let native_opaque = if record.is_native_opaque() {
+            Self::native_opaque_record_functions(record)?
+        } else {
+            Vec::new()
+        };
+        let associated = Self::associated_functions(
             DeclarationId::Record(record.id()),
             record.initializers(),
             record.methods(),
             ReceiverAbi::encoded("receiver")?,
             names,
-        )
+        )?;
+        Ok(native_opaque.into_iter().chain(associated).collect())
+    }
+
+    fn native_opaque_record_functions(record: &EncodedRecordDecl<Native>) -> Result<Vec<Self>> {
+        let exports = record
+            .native_opaque_exports()
+            .ok_or(Error::UnexpectedBindingShape {
+                layer: C_BRIDGE_LAYER,
+                shape: "native opaque record without helper exports",
+            })?;
+        let mut functions = vec![
+            Self::new(
+                exports.drop().name().as_str(),
+                vec![Parameter::new(
+                    "handle",
+                    Type::MutPointer(Box::new(Type::Void)),
+                )?],
+                Type::Void,
+            )?,
+            Self::new(
+                exports.dsize().name().as_str(),
+                vec![Parameter::new(
+                    "handle",
+                    Type::ConstPointer(Box::new(Type::Void)),
+                )?],
+                Type::PointerWidth,
+            )?,
+        ];
+        for (field, export) in record.fields().iter().zip(exports.fields()) {
+            functions.extend(Self::native_opaque_field_functions(field.ty(), export)?);
+        }
+        Ok(functions)
+    }
+
+    fn native_opaque_field_functions(
+        ty: &TypeRef,
+        export: &NativeOpaqueFieldExports,
+    ) -> Result<Vec<Self>> {
+        let (ty, optional) = match ty {
+            TypeRef::Optional(inner) => (inner.as_ref(), true),
+            ty => (ty, false),
+        };
+        let mut functions = Vec::new();
+        if optional {
+            let symbol = export.has().ok_or(Error::UnexpectedBindingShape {
+                layer: C_BRIDGE_LAYER,
+                shape: "optional native opaque field without presence export",
+            })?;
+            functions.push(Self::new(
+                symbol.name().as_str(),
+                vec![Self::native_opaque_const_handle()?],
+                Type::Int32,
+            )?);
+        }
+        match ty {
+            TypeRef::Primitive(primitive) => {
+                let symbol = export.get().ok_or(Error::UnexpectedBindingShape {
+                    layer: C_BRIDGE_LAYER,
+                    shape: "primitive native opaque field without getter export",
+                })?;
+                functions.push(Self::new(
+                    symbol.name().as_str(),
+                    vec![Self::native_opaque_const_handle()?],
+                    Type::primitive(*primitive)?,
+                )?);
+            }
+            TypeRef::String | TypeRef::Bytes => {
+                let symbol = export.borrow().ok_or(Error::UnexpectedBindingShape {
+                    layer: C_BRIDGE_LAYER,
+                    shape: "borrowed native opaque field without borrow export",
+                })?;
+                functions.push(Self::new(
+                    symbol.name().as_str(),
+                    Self::native_opaque_borrow_params()?,
+                    Type::Int32,
+                )?);
+            }
+            TypeRef::InternedString { .. } => {
+                let tag = export.interned_tag().ok_or(Error::UnexpectedBindingShape {
+                    layer: C_BRIDGE_LAYER,
+                    shape: "interned native opaque field without tag export",
+                })?;
+                let id = export.interned_id().ok_or(Error::UnexpectedBindingShape {
+                    layer: C_BRIDGE_LAYER,
+                    shape: "interned native opaque field without id export",
+                })?;
+                let borrow_dynamic =
+                    export
+                        .interned_borrow_dynamic()
+                        .ok_or(Error::UnexpectedBindingShape {
+                            layer: C_BRIDGE_LAYER,
+                            shape: "interned native opaque field without dynamic borrow export",
+                        })?;
+                functions.push(Self::new(
+                    tag.name().as_str(),
+                    vec![Self::native_opaque_const_handle()?],
+                    Type::Uint8,
+                )?);
+                functions.push(Self::new(
+                    id.name().as_str(),
+                    vec![Self::native_opaque_const_handle()?],
+                    Type::Uint32,
+                )?);
+                functions.push(Self::new(
+                    borrow_dynamic.name().as_str(),
+                    Self::native_opaque_borrow_params()?,
+                    Type::Int32,
+                )?);
+            }
+            _ => {
+                return Err(Error::UnexpectedBindingShape {
+                    layer: C_BRIDGE_LAYER,
+                    shape: "unsupported native opaque field type",
+                });
+            }
+        }
+        Ok(functions)
+    }
+
+    fn native_opaque_const_handle() -> Result<Parameter> {
+        Parameter::new("handle", Type::ConstPointer(Box::new(Type::Void)))
+    }
+
+    fn native_opaque_borrow_params() -> Result<Vec<Parameter>> {
+        Ok(vec![
+            Self::native_opaque_const_handle()?,
+            Parameter::new(
+                "ptr_out",
+                Type::MutPointer(Box::new(Type::ConstPointer(Box::new(Type::Uint8)))),
+            )?,
+            Parameter::new("len_out", Type::MutPointer(Box::new(Type::PointerWidth)))?,
+        ])
     }
 
     fn c_style_enum_functions(

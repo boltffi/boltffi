@@ -266,6 +266,7 @@ impl<'plan> ParamPlanRender<'plan, Wasm32, OutOfRust> for Renderer<'_> {
         ty: &'plan TypeRef,
         codec: &'plan boltffi_binding::ReadPlan,
         shape: wasm32::BufferShape,
+        _transport: boltffi_binding::EncodedParamTransport,
         _receive: (),
     ) -> Self::Output {
         match shape {

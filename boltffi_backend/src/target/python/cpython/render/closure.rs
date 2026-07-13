@@ -647,6 +647,7 @@ impl<'plan> ParamPlanRender<'plan, Native, OutOfRust> for ClosureArgumentArity {
         _: &TypeRef,
         _: &ReadPlan,
         shape: native::BufferShape,
+        _: boltffi_binding::EncodedParamTransport,
         _: (),
     ) -> Self::Output {
         match shape {
@@ -710,6 +711,7 @@ impl<'plan, 'render> ParamPlanRender<'plan, Native, OutOfRust> for ClosureArgume
         _: &TypeRef,
         codec: &ReadPlan,
         shape: native::BufferShape,
+        _: boltffi_binding::EncodedParamTransport,
         _: (),
     ) -> Self::Output {
         match shape {

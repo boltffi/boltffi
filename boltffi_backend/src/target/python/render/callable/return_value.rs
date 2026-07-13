@@ -1,8 +1,8 @@
 use boltffi_binding::{
     ClosureReturn, CodecNode, DirectValueType, DirectVectorElementType, ErrorChannel,
     ErrorPlacement, ExportedCallable, HandlePresence, HandleTarget, IncomingParam, IntoRust,
-    Native, OutOfRust, ParamDecl, ParamPlanRender, Primitive, ReadPlan, Receive, ReturnPlan,
-    ReturnPlanRender, ReturnValueSlot, TypeRef, WritePlan, native,
+    Native, OutOfRust, ParamDecl, ParamPlanRender, Primitive, ReadPlan, Receive, RecordId,
+    ReturnPlan, ReturnPlanRender, ReturnValueSlot, TypeRef, WritePlan, native,
 };
 
 use crate::{
@@ -225,6 +225,7 @@ impl<'plan, 'package> ParamPlanRender<'plan, Native, IntoRust>
         ty: &TypeRef,
         codec: &WritePlan,
         shape: native::BufferShape,
+        _: boltffi_binding::EncodedParamTransport,
         receive: Receive,
     ) -> Self::Output {
         if receive != Receive::ByMutRef {
@@ -387,5 +388,12 @@ impl<'plan, 'package> ReturnPlanRender<'plan, Native, OutOfRust> for ReturnedVal
             target: "python",
             shape: self.delivery.unsupported_shape(),
         })
+    }
+
+    fn native_opaque_record(&mut self, _record: RecordId) -> Self::Output {
+        // The C converter (boltffi_python_box_opaque_*) already calls _from_handle
+        // and returns a fully-constructed Python object. Package.py must NOT call
+        // _from_handle again; returning Native gives a direct passthrough.
+        Ok(ReturnedValue::Native)
     }
 }
