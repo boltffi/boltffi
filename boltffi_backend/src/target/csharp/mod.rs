@@ -957,6 +957,35 @@ mod tests {
     }
 
     #[test]
+    fn csharp_target_renders_async_class_new_as_static_factory() {
+        let bindings = bindings(
+            r#"
+            pub struct AsyncClient {
+                endpoint: String,
+            }
+
+            #[export]
+            impl AsyncClient {
+                pub async fn new(endpoint: String) -> Self { Self { endpoint } }
+                pub fn endpoint(&self) -> String { self.endpoint.clone() }
+            }
+            "#,
+        );
+        let output = target(CSharpHost::new())
+            .render(&bindings)
+            .expect("async class initializer should render");
+
+        let class = file(&output, "AsyncClient.cs");
+        assert!(class.contains(
+            "public static global::System.Threading.Tasks.Task<AsyncClient> New(string endpoint, global::System.Threading.CancellationToken cancellationToken = default)"
+        ));
+        assert!(!class.contains("public AsyncClient(string endpoint)"));
+        assert!(!class.contains("BoltFfiNew"));
+        assert!(!class.contains(".TakeHandle()"));
+        assert!(output.diagnostics().is_empty());
+    }
+
+    #[test]
     fn csharp_target_renders_encoded_records_from_codec_plans() {
         let bindings = bindings(
             r#"

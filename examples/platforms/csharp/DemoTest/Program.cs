@@ -2754,6 +2754,12 @@ public static class DemoTest
     {
         Console.WriteLine("Testing async class methods...");
 
+        DemoCase("case:classes.async_methods.async_factory.new.should_construct_from_async_initializer");
+        using (var factory = await AsyncFactory.New(42))
+        {
+            Require(factory.Value() == 42, "AsyncFactory.New constructs an initialized class handle");
+        }
+
         using (var worker = new AsyncWorker("worker"))
         {
             Require(await worker.Process("item") == "worker: item", "AsyncWorker.Process");

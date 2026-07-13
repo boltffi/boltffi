@@ -246,7 +246,11 @@ impl Function {
         context: &RenderContext<Native>,
     ) -> Result<(Self, bool)> {
         let source_name = Name::new(declaration.name()).pascal()?;
-        let primary = source_name.as_str() == "New";
+        let primary = source_name.as_str() == "New"
+            && matches!(
+                declaration.callable().execution(),
+                ExecutionDecl::Synchronous(_)
+            );
         let public_name = match primary {
             true => Identifier::parse("BoltFfiNew")?,
             false => source_name.clone(),
