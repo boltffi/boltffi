@@ -990,7 +990,7 @@
 {%- endmatch %}
 {%- else %}
         [DllImport(LibName, EntryPoint = "{{ func.ffi_name }}")]
-{%- if func.return_type.is_bool() %}
+{%- if func.return_type.is_bool() && !func.return_kind.native_returns_ffi_buf() %}
         [return: MarshalAs(UnmanagedType.I1)]
 {%- endif %}
         internal static extern {{ func.native_return_type() }} {{ func.name }}({{ func.native_param_list() }});
@@ -1023,7 +1023,7 @@
 {%- endmatch %}
 {%- else %}
         [DllImport(LibName, EntryPoint = "{{ method.ffi_name }}")]
-{%- if method.return_type.is_bool() %}
+{%- if method.return_type.is_bool() && !method.return_kind.native_returns_ffi_buf() %}
         [return: MarshalAs(UnmanagedType.I1)]
 {%- endif %}
         internal static extern {{ method.native_return_type() }} {{ method.native_method_name }}({{ method.native_param_list(enumeration.class_name, false) }});
@@ -1057,7 +1057,7 @@
 {%- endmatch %}
 {%- else %}
         [DllImport(LibName, EntryPoint = "{{ method.ffi_name }}")]
-{%- if method.return_type.is_bool() %}
+{%- if method.return_type.is_bool() && !method.return_kind.native_returns_ffi_buf() %}
         [return: MarshalAs(UnmanagedType.I1)]
 {%- endif %}
         internal static extern {{ method.native_return_type() }} {{ method.native_method_name }}({{ method.native_param_list(record.class_name, *record.is_blittable) }});
@@ -1099,7 +1099,7 @@
 {%- endmatch %}
 {%- else %}
         [DllImport(LibName, EntryPoint = "{{ method.ffi_name }}")]
-{%- if method.return_type.is_bool() %}
+{%- if method.return_type.is_bool() && !method.return_kind.native_returns_ffi_buf() %}
         [return: MarshalAs(UnmanagedType.I1)]
 {%- endif %}
         internal static extern {{ method.native_return_type() }} {{ method.native_method_name }}({{ method.native_param_list(class.class_name, false) }});

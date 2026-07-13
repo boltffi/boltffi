@@ -471,6 +471,83 @@ mod tests {
         ));
     }
 
+    /// A `Result<bool, E>` return crosses the ABI as an `FfiBuf` wire
+    /// envelope even though the public C# signature returns `bool`, so the
+    /// native signature must not carry the bool `I1` return directive —
+    /// `MarshalAs(I1)` on a struct return throws `MarshalDirectiveException`
+    /// at the P/Invoke boundary (#06).
+    #[test]
+    fn emit_fallible_bool_function_omits_i1_marshalling_on_ffi_buf_return() {
+        let mut contract = empty_contract();
+        contract.functions.push(primitive_function(
+            "run_username_check",
+            vec![],
+            ReturnDef::Result {
+                ok: TypeExpr::Primitive(PrimitiveType::Bool),
+                err: TypeExpr::String,
+            },
+        ));
+
+        let src = emit_contract(&contract).combined_source();
+
+        assert_source_contains(
+            &src,
+            "public static bool RunUsernameCheck()",
+            "the public wrapper to keep the bool success type",
+        );
+        assert_source_contains(
+            &src,
+            "internal static extern FfiBuf RunUsernameCheck();",
+            "the native return to be the FfiBuf wire envelope",
+        );
+        assert_source_lacks(
+            &src,
+            "[return: MarshalAs(UnmanagedType.I1)]\n        internal static extern FfiBuf",
+            "no bool return directive on any FfiBuf-returning P/Invoke",
+        );
+    }
+
+    /// The method `DllImport` sites (class/record/enum) are separate template
+    /// branches from the free-function one, so the FfiBuf guard on the bool
+    /// `I1` return directive must hold there independently (#06).
+    #[test]
+    fn emit_fallible_bool_class_method_omits_i1_marshalling_on_ffi_buf_return() {
+        let mut session = empty_class("session");
+        session.methods.push(MethodDef {
+            id: MethodId::new("is_valid"),
+            receiver: Receiver::RefSelf,
+            params: vec![],
+            returns: ReturnDef::Result {
+                ok: TypeExpr::Primitive(PrimitiveType::Bool),
+                err: TypeExpr::String,
+            },
+            execution_kind: ExecutionKind::Sync,
+            doc: None,
+            deprecated: None,
+        });
+
+        let mut contract = empty_contract();
+        contract.catalog.insert_class(session);
+
+        let src = emit_contract(&contract).combined_source();
+
+        assert_source_contains(
+            &src,
+            "public bool IsValid()",
+            "the public wrapper to keep the bool success type",
+        );
+        assert_source_contains(
+            &src,
+            "internal static extern FfiBuf SessionIsValid(IntPtr self);",
+            "the native method return to be the FfiBuf wire envelope",
+        );
+        assert_source_lacks(
+            &src,
+            "[return: MarshalAs(UnmanagedType.I1)]\n        internal static extern FfiBuf",
+            "no bool return directive on any FfiBuf-returning P/Invoke",
+        );
+    }
+
     #[test]
     fn emit_async_function_generates_task_overloads_and_native_future_methods() {
         let mut contract = empty_contract();
