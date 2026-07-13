@@ -52,6 +52,7 @@ struct InitTemplate {
     uses_callable_annotations: bool,
     uses_wire_helpers: bool,
     uses_async_helpers: bool,
+    uses_dataclass_records: bool,
     has_data_enums: bool,
     codec_decoders: Vec<ReadFunction>,
     codec_encoders: Vec<WriteFunction>,
@@ -67,6 +68,8 @@ struct InitTemplate {
 struct StubTemplate {
     uses_sequence_annotations: bool,
     uses_callable_annotations: bool,
+    uses_dataclass_records: bool,
+    has_native_opaque_records: bool,
     has_data_enums: bool,
     records: Vec<RecordClass>,
     enums: Vec<EnumClass>,
@@ -159,6 +162,7 @@ impl<'bindings> Package<'bindings> {
             || enums.iter().any(EnumClass::uses_callable_annotations)
             || classes.iter().any(Class::uses_callable_annotations)
             || stubs.iter().any(FunctionStub::uses_callable_annotations);
+        let uses_dataclass_records = records.iter().any(|record| !record.is_native_opaque());
         let uses_wire_helpers = records.iter().any(RecordClass::has_wire)
             || records.iter().any(RecordClass::uses_wire_helpers)
             || enums.iter().any(EnumClass::has_wire)
@@ -213,6 +217,7 @@ impl<'bindings> Package<'bindings> {
                             uses_callable_annotations,
                             uses_wire_helpers,
                             uses_async_helpers,
+                            uses_dataclass_records,
                             has_data_enums: enums.iter().any(EnumClass::has_wire),
                             codec_decoders,
                             codec_encoders,
@@ -231,6 +236,10 @@ impl<'bindings> Package<'bindings> {
                         StubTemplate {
                             uses_sequence_annotations,
                             uses_callable_annotations,
+                            uses_dataclass_records,
+                            has_native_opaque_records: records
+                                .iter()
+                                .any(RecordClass::is_native_opaque),
                             has_data_enums: enums.iter().any(EnumClass::has_wire),
                             records,
                             enums,
@@ -401,6 +410,9 @@ impl<'bindings> Package<'bindings> {
             .copied()
             .map(|record| match record {
                 RecordDecl::Direct(declared) => RecordClass::from_direct(declared, self),
+                RecordDecl::Encoded(declared) if declared.is_native_opaque() => {
+                    RecordClass::from_native_opaque(declared, self)
+                }
                 RecordDecl::Encoded(declared) => RecordClass::from_encoded(declared, self),
                 _ => Err(Error::UnsupportedTarget {
                     target: "python",

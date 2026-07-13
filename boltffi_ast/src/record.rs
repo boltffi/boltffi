@@ -6,6 +6,18 @@ use crate::{
     UserAttr,
 };
 
+/// How an exported record is encoded across the binding boundary.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum RecordEncoding {
+    /// The normal Bolt record encoding, decoded into host-owned fields.
+    #[default]
+    Standard,
+    /// The record is boxed as an opaque native handle; host accesses fields
+    /// through generated per-field Rust accessor exports.
+    NativeOpaque,
+}
+
 /// A Rust struct exported as a BoltFFI record.
 ///
 /// A record keeps the struct-shaped API a binding author sees: fields,
@@ -22,6 +34,9 @@ pub struct RecordDef {
     pub fields: Vec<FieldDef>,
     /// `repr` attributes written on the struct.
     pub repr: ReprAttr,
+    /// Requested encoded-record storage behavior.
+    #[serde(default)]
+    pub encoding: RecordEncoding,
     /// User attributes preserved from the struct.
     pub user_attrs: Vec<UserAttr>,
     /// Documentation attached to the record.
@@ -50,6 +65,7 @@ impl RecordDef {
             name: name.into(),
             fields: Vec::new(),
             repr: ReprAttr::none(),
+            encoding: RecordEncoding::Standard,
             user_attrs: Vec::new(),
             doc: None,
             deprecated: None,

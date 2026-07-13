@@ -65,7 +65,12 @@ pub fn classify_value_return_strategy(
 
     let return_type = ReturnTypeDescriptor::parse(rust_type);
 
-    if return_lowering.class_types().is_class_type(rust_type) {
+    if return_lowering.class_types().is_class_type(rust_type)
+        || matches!(
+            return_lowering.data_types().category_for(rust_type),
+            Some(DataTypeCategory::NativeOpaque)
+        )
+    {
         return ValueReturnStrategy::ObjectHandle;
     }
 
@@ -116,7 +121,8 @@ pub fn classify_value_return_strategy(
                             ValueReturnStrategy::Scalar(ScalarReturnStrategy::CStyleEnumTag)
                         }
                         Some(DataTypeCategory::Blittable) => ValueReturnStrategy::CompositeValue,
-                        Some(DataTypeCategory::WireEncoded) | None => unreachable!(
+                        Some(DataTypeCategory::WireEncoded | DataTypeCategory::NativeOpaque)
+                        | None => unreachable!(
                             "passable return transport requires scalar or blittable data type"
                         ),
                     }

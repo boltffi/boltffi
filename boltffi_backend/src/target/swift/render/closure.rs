@@ -620,6 +620,7 @@ impl<'plan> ParamPlanRender<'plan, Native, OutOfRust> for ClosureParameterType<'
         ty: &'plan TypeRef,
         codec: &'plan <OutOfRust as Direction>::Codec,
         shape: <Native as Surface>::BufferShape,
+        _: boltffi_binding::EncodedParamTransport,
         _: (),
     ) -> Self::Output {
         if shape != native::BufferShape::Slice {

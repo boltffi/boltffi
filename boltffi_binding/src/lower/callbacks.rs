@@ -548,7 +548,7 @@ mod tests {
         CanonicalName as SourceName, ClassDef, DeprecationInfo as SourceDeprecationInfo,
         DocComment as SourceDocComment, FieldDef, FnSig, FnTrait, FnTraitKind, MethodDef,
         MethodId as SourceMethodId, PackageInfo as SourcePackage, ParameterDef, ParameterPassing,
-        Path, Primitive, Receiver, RecordDef, ReturnDef, SourceContract, TraitDef,
+        Path, Primitive, Receiver, RecordDef, RecordEncoding, ReturnDef, SourceContract, TraitDef,
         TraitId as SourceTraitId, TypeExpr,
     };
 
@@ -1015,6 +1015,7 @@ mod tests {
                 codec,
                 shape: native::BufferShape::Slice,
                 receive: (),
+                ..
             } => {
                 assert_eq!(codec.root(), &CodecNode::String);
             }
@@ -2068,6 +2069,50 @@ mod tests {
             .map(|symbol| symbol.name().as_str())
             .collect();
         assert!(names.contains(&"boltffi_callback_demo_listener_on_event_complete"));
+    }
+
+    #[test]
+    fn callback_direct_opaque_parameter_is_rejected_as_native_opaque_record_parameter() {
+        let mut callback = listener_callback();
+        let mut consume = method("consume", Receiver::Shared);
+        consume.parameters = vec![value_param(
+            "opaque",
+            TypeExpr::record("demo::Opaque".into(), Path::single("Opaque")),
+        )];
+        callback.methods.push(consume);
+        let mut opaque = RecordDef::new("demo::Opaque".into(), name("Opaque"));
+        opaque.encoding = RecordEncoding::NativeOpaque;
+        let mut contract = package();
+        contract.records.push(opaque);
+        contract.traits.push(callback);
+
+        let error = lower::<Native>(&contract).expect_err("opaque callback parameter must reject");
+        assert!(matches!(
+            error.kind(),
+            LowerErrorKind::UnsupportedType(UnsupportedType::NativeOpaqueRecordParameter)
+        ));
+    }
+
+    #[test]
+    fn callback_direct_opaque_return_is_rejected_as_native_opaque_record_in_callback() {
+        let mut callback = listener_callback();
+        let mut produce = method("produce", Receiver::Shared);
+        produce.returns = ReturnDef::value(TypeExpr::record(
+            "demo::Opaque".into(),
+            Path::single("Opaque"),
+        ));
+        callback.methods.push(produce);
+        let mut opaque = RecordDef::new("demo::Opaque".into(), name("Opaque"));
+        opaque.encoding = RecordEncoding::NativeOpaque;
+        let mut contract = package();
+        contract.records.push(opaque);
+        contract.traits.push(callback);
+
+        let error = lower::<Native>(&contract).expect_err("opaque callback return must reject");
+        assert!(matches!(
+            error.kind(),
+            LowerErrorKind::UnsupportedType(UnsupportedType::NativeOpaqueRecordInCallback)
+        ));
     }
 
     #[test]

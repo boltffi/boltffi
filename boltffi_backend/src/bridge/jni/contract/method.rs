@@ -25,7 +25,7 @@ const JNI_BRIDGE: &str = "jni";
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct NativeMethod {
-    source_symbol: SymbolId,
+    source_symbol: Option<SymbolId>,
     c_function: c::Function,
     symbol: JniSymbolName,
     returns: NativeReturn,
@@ -40,14 +40,8 @@ impl NativeMethod {
         callbacks: &[c::Callback],
         closures: &[ClosureRegistration],
     ) -> Result<Self> {
-        let source_symbol = function
-            .source_symbol()
-            .ok_or(Error::BrokenBridgeContract {
-                bridge: JNI_BRIDGE,
-                invariant: "JNI native method has no source symbol",
-            })?;
         Ok(Self {
-            source_symbol,
+            source_symbol: function.source_symbol(),
             symbol: JniSymbolName::native_method(class, function.name())?,
             returns: NativeReturn::from_c_function(function)?,
             parameters: NativeParameter::from_c_function(function, callbacks, closures)?,
@@ -55,8 +49,11 @@ impl NativeMethod {
         })
     }
 
-    /// Returns the source native symbol id.
-    pub const fn source_symbol(&self) -> SymbolId {
+    /// Returns the source native symbol id when this method represents a source callable.
+    ///
+    /// Auxiliary bridge helpers, such as native opaque record accessors, have
+    /// no source symbol.
+    pub const fn source_symbol(&self) -> Option<SymbolId> {
         self.source_symbol
     }
 

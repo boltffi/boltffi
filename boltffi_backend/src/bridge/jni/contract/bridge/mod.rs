@@ -27,7 +27,8 @@ use crate::{
 
 use super::{
     CallbackCompletionInvoker, CallbackHandleLifecycle, CallbackRegistration, ClosureRegistration,
-    DirectStreamBatchMethod, NativeMethod, StreamProtocolMethods, SuccessOutWriter,
+    DirectStreamBatchMethod, NativeMethod, NativeOpaqueBorrowWrapper, StreamProtocolMethods,
+    SuccessOutWriter,
 };
 use index::SourceIndex;
 
@@ -52,6 +53,7 @@ pub struct JniBridgeContract {
     success_out_writers: Vec<SuccessOutWriter>,
     closures: Vec<ClosureRegistration>,
     methods: Vec<NativeMethod>,
+    borrow_wrappers: Vec<NativeOpaqueBorrowWrapper>,
     streams: Vec<StreamProtocolMethods>,
     source_index: SourceIndex,
 }
@@ -114,6 +116,11 @@ impl JniBridgeContract {
     /// Returns generated native methods.
     pub fn methods(&self) -> &[NativeMethod] {
         &self.methods
+    }
+
+    /// Returns JNI borrow wrappers for native opaque String/Bytes fields.
+    pub fn borrow_wrappers(&self) -> &[NativeOpaqueBorrowWrapper] {
+        &self.borrow_wrappers
     }
 
     /// Returns the JNI native method selected for a source symbol.

@@ -332,6 +332,7 @@ impl<'plan> ParamPlanRender<'plan, Native, IntoRust> for ParameterRender<'_, '_>
         ty: &'plan TypeRef,
         _: &'plan <IntoRust as Direction>::Codec,
         _: native::BufferShape,
+        _: boltffi_binding::EncodedParamTransport,
         _: Receive,
     ) -> Self::Output {
         self.type_ref(ty)

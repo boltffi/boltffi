@@ -912,6 +912,52 @@ state = LoadStateLoading(0.5)
 desc = describe_state(state)`}
 />
 
+## Opaque return records (experimental)
+
+Mark an outgoing record with `#[data(opaque)]` when the host should hold the Rust record alive as an opaque handle and access fields through generated per-field Rust accessor exports instead of copying the whole value across the wire.
+
+```rust
+use boltffi::{data, export};
+
+#[data(opaque)]
+pub struct Parsed {
+    pub name: Option<String>,
+    pub normalized_version: Option<String>,
+    pub major: u32,
+}
+
+#[export]
+pub fn parse(#[boltffi::borrowed] input: &[u8]) -> Parsed {
+    // The input can be borrowed, but every returned field is owned by Parsed.
+    todo!()
+}
+```
+
+`#[boltffi::borrowed]` still passes an immutable `&str` or `&[u8]` parameter as its existing pointer and length, without adding Bolt's normal wire prefix or allocating decode storage. Opaque return records do not allow borrowed output fields; returned dynamic strings or bytes must be owned by the Rust record.
+
+Opaque records use the normal generated function symbol returning a raw pointer handle. The binding IR also emits generated helper symbols for drop, dynamic-size accounting, and per-field accessors for primitives, strings, bytes, and one-level optionals.
+
+### Host support
+
+Each supported host wraps the handle in a language-idiomatic owned type that drops the Rust box exactly once on explicit release. Swift and CPython also support implicit release on last reference / GC; Kotlin/JNI requires an explicit `close()` call.
+
+| Host | Generated type | Ownership model |
+|------|---------------|-----------------|
+| **Swift** | `public struct T: Sendable` with a private `NativeStorage` reference type | `deinit` on the inner class drops the Rust handle; struct copies share storage via ARC |
+| **Kotlin/JNI** | `class T : AutoCloseable` | `close()` uses `AtomicLong.getAndSet(0L)` for idempotent, double-drop-safe release; no GC finalizer — callers must `close()` |
+| **CPython** | `class T` with `__slots__ = ('_handle',)` | `__del__` drops on GC; `_from_handle` is the only constructor; direct `__init__` raises `TypeError` |
+| **KMP** | — | **Explicitly unsupported.** Native opaque records require JNI-specific handle semantics that do not compose with KMP's commonMain/Kotlin-Native targets. Use the Kotlin/JNI target directly. |
+
+Ruby support (TypedData ownership, lazy field memoization, GC mark/compact callbacks) is tracked separately in the Ruby target work.
+
+Current constraints:
+
+- opaque records are outgoing-only, immutable, and infallible-return-only;
+- opaque records may not declare lifetime, type, or const generics;
+- fields are limited to required and one-level optional primitives, `String`, bytes, and `InternedString` (when the host advertises the `InternedString` capability; Swift, Kotlin/JNI, and CPython do not currently advertise it);
+- constructors and methods on opaque records are not supported;
+- hosts must advertise `NativeOpaqueRecords` capability. Swift, Kotlin/JNI, and CPython support this capability; KMP and other targets reject it before rendering.
+
 ## Methods and constructors
 
 Use `#[data(impl)]` on an `impl` block to expose constructors, instance methods, and static methods on records and enums. The generated bindings use each language's native idiom for value-type members.

@@ -9,7 +9,7 @@ use crate::{
     target::python::{
         codec::Expression as CodecExpression,
         name_style::Name,
-        syntax::{Expression, Identifier, Literal, TypeAnnotation},
+        syntax::{CallExpression, Expression, Identifier, Literal, TypeAnnotation},
     },
 };
 
@@ -106,12 +106,36 @@ impl<'plan, 'package> ParamPlanRender<'plan, Native, IntoRust> for StubArgument<
 
     fn encoded(
         &mut self,
-        _: &TypeRef,
+        ty: &TypeRef,
         codec: &WritePlan,
         _: native::BufferShape,
+        transport: boltffi_binding::EncodedParamTransport,
         _: Receive,
     ) -> Self::Output {
-        CodecExpression::write_argument(codec, self.package).map(CodecExpression::into_expression)
+        match transport {
+            boltffi_binding::EncodedParamTransport::Wire => {
+                CodecExpression::write_argument(codec, self.package)
+                    .map(CodecExpression::into_expression)
+            }
+            boltffi_binding::EncodedParamTransport::BorrowedSlice => match ty {
+                TypeRef::Bytes => Ok(Expression::identifier(self.name.clone())),
+                TypeRef::String => Ok(Expression::call(
+                    CallExpression::new(Expression::attribute(
+                        Expression::identifier(self.name.clone()),
+                        Identifier::parse("encode")?,
+                    ))
+                    .positional(Expression::literal(Literal::string("utf-8"))),
+                )),
+                _ => Err(crate::core::Error::UnsupportedTarget {
+                    target: "python",
+                    shape: "borrowed slice parameter type",
+                }),
+            },
+            _ => Err(crate::core::Error::UnsupportedTarget {
+                target: "python",
+                shape: "unknown encoded parameter transport",
+            }),
+        }
     }
 
     fn handle(
@@ -163,10 +187,11 @@ impl<'plan, 'package> ParamPlanRender<'plan, Native, IntoRust> for WireHelperUse
         _: &TypeRef,
         codec: &WritePlan,
         shape: native::BufferShape,
+        transport: boltffi_binding::EncodedParamTransport,
         _: Receive,
     ) -> Self::Output {
-        match shape {
-            native::BufferShape::Slice => {
+        match (shape, transport) {
+            (native::BufferShape::Slice, boltffi_binding::EncodedParamTransport::Wire) => {
                 CodecExpression::write_argument(codec, self.package).map(|_| true)
             }
             _ => Ok(false),

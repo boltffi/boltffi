@@ -202,6 +202,7 @@ where
         ty: &'plan TypeRef,
         _: &'plan D::Codec,
         shape: native::BufferShape,
+        _: boltffi_binding::EncodedParamTransport,
         receive: D::Receive,
     ) -> Self::Output {
         match shape {
@@ -343,6 +344,10 @@ where
             .closure_return_out(closure)
             .map(|param| vec![param])
     }
+
+    fn native_opaque_record(&mut self, _record: boltffi_binding::RecordId) -> Self::Output {
+        Ok(Vec::new())
+    }
 }
 
 impl ReturnParameters {
@@ -399,6 +404,10 @@ where
 
     fn closure(&mut self, _: &'plan ClosureReturn<Native, D>) -> Self::Output {
         Ok(self.status())
+    }
+
+    fn native_opaque_record(&mut self, _record: boltffi_binding::RecordId) -> Self::Output {
+        Ok(Type::MutPointer(Box::new(Type::Void)))
     }
 }
 
@@ -465,6 +474,15 @@ where
             signature: self.signature.clone(),
         }
         .status())
+    }
+
+    fn native_opaque_record(&mut self, _record: boltffi_binding::RecordId) -> Self::Output {
+        // Native opaque records cannot appear in callback return positions
+        // (rejected at the IR lowering stage).  If manually-constructed IR
+        // somehow reaches here, refuse rather than silently emit void*.
+        Err(Error::UnsupportedCAbi {
+            shape: "callback native opaque record return",
+        })
     }
 }
 
@@ -544,6 +562,12 @@ where
     fn closure(&mut self, _: &'plan ClosureReturn<Native, D>) -> Self::Output {
         Err(Error::UnsupportedCAbi {
             shape: "async callback closure return",
+        })
+    }
+
+    fn native_opaque_record(&mut self, _record: boltffi_binding::RecordId) -> Self::Output {
+        Err(Error::UnsupportedCAbi {
+            shape: "async callback native opaque record return",
         })
     }
 }
@@ -628,6 +652,12 @@ where
     fn closure(&mut self, _: &'plan ClosureReturn<Native, D>) -> Self::Output {
         Err(Error::UnsupportedCAbi {
             shape: "async callback closure success",
+        })
+    }
+
+    fn native_opaque_record(&mut self, _record: boltffi_binding::RecordId) -> Self::Output {
+        Err(Error::UnsupportedCAbi {
+            shape: "fallible async callback native opaque record success",
         })
     }
 }

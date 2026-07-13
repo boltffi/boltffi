@@ -111,7 +111,7 @@ impl<'source> MarkedItems<'source> {
             return Ok(());
         };
         match (marker, item) {
-            (Marker::Data | Marker::Error, syn::Item::Struct(item)) => {
+            (Marker::Data | Marker::DataOpaque | Marker::Error, syn::Item::Struct(item)) => {
                 self.records.push(Marked::new(scope, marker, item));
                 Ok(())
             }

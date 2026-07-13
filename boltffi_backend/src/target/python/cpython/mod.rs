@@ -103,6 +103,8 @@ impl host::HostBackend for PythonCExtHost {
             .stable(BindingCapability::Streams)
             .stable(BindingCapability::Constants)
             .stable(BindingCapability::CustomTypes)
+            .stable(BindingCapability::NativeOpaqueRecords)
+            .stable(BindingCapability::BorrowedSlices)
     }
 
     fn bridge_capabilities(&self) -> CapabilityRequirements<BridgeCapability> {
@@ -244,7 +246,7 @@ impl sealed::HostBackend for PythonCExtHost {}
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
+    use std::{path::Path, process::Command};
 
     use boltffi_ast::PackageInfo;
     use boltffi_binding::{Bindings, Native, lower};
@@ -659,8 +661,12 @@ mod tests {
         assert!(init.contains("    x: float"));
         assert!(init.contains("    y: float"));
         assert!(init.contains("_native._register_point(Point)"));
-        assert!(stub.contains("class Point:"));
+        assert!(stub.contains("@dataclass(frozen=True, slots=True)\nclass Point:"));
         assert!(stub.contains("def echo_point(value: Point) -> Point: ..."));
+        assert!(
+            !stub.contains("from typing import Never"),
+            "ordinary record stubs must not import opaque-only constructor types"
+        );
     }
 
     #[test]
@@ -1938,5 +1944,534 @@ mod tests {
         assert!(extension.contains("Py_XDECREF(bytes_wire);"));
         assert!(init.contains("_native.echo(_boltffi_wire_bytes(bytes))"));
         assert!(init.contains("lambda reader: reader.bytes()"));
+    }
+
+    #[test]
+    fn python_target_renders_borrowed_slice_opaque_return_through_direct_abi() {
+        let output = target()
+            .render(&bindings(
+                r#"
+                #[data(opaque)]
+                pub struct Snapshot {
+                    pub count: u32,
+                }
+
+                #[export]
+                pub fn make_snapshot(#[boltffi::borrowed] input: &[u8]) -> Snapshot {
+                    let _ = input;
+                    unimplemented!()
+                }
+                "#,
+            ))
+            .expect("Python target should render a borrowed opaque-return function");
+        let extension = extension(&output);
+
+        assert!(output.coverage().unsupported().is_empty());
+        assert!(
+            extension
+                .contains("boltffi_python_wire_raw(args[0], &input_wire, &input_ptr, &input_len)")
+        );
+        assert!(extension.contains(
+            "boltffi_python_box_opaque_snapshot(boltffi_python_boltffi_function_demo_make_snapshot(input_ptr, input_len))",
+        ));
+    }
+
+    #[test]
+    fn python_target_borrowed_slice_arguments_are_raw_for_bytes_and_strings() {
+        let output = target()
+            .render(&bindings(
+                r#"
+                #[export]
+                pub fn inspect(#[boltffi::borrowed] input: &[u8]) -> u32 { input.len() as u32 }
+                #[export]
+                pub fn name_len(#[boltffi::borrowed] name: &str) -> u32 { name.len() as u32 }
+                "#,
+            ))
+            .expect("Python target should render raw borrowed slices");
+        let extension = extension(&output);
+        let init = file(&output, "demo/__init__.py");
+
+        assert!(
+            extension
+                .contains("boltffi_python_wire_raw(args[0], &input_wire, &input_ptr, &input_len)")
+        );
+        assert!(
+            extension
+                .contains("boltffi_python_wire_raw(args[0], &name_wire, &name_ptr, &name_len)")
+        );
+        assert!(init.contains("_native.inspect(input)"));
+        assert!(init.contains("_native.name_len(name.encode(\"utf-8\"))"));
+        assert!(!init.contains("_native.inspect(_boltffi_wire_bytes(input))"));
+        assert!(!init.contains("_native.name_len(_boltffi_wire_string(name))"));
+    }
+
+    #[test]
+    fn python_target_renders_native_opaque_record() {
+        // Includes multi-word fields (display_name, raw_payload) to verify
+        // sanitized C wrapper naming (snake_case, not as_path_string).
+        let output = target()
+            .render(&bindings(
+                r#"
+                #[data(opaque)]
+                pub struct Snapshot {
+                    pub count: u32,
+                    pub display_name: String,
+                    pub raw_payload: Vec<u8>,
+                    pub score: Option<f64>,
+                    pub label: Option<String>,
+                    pub optional_payload: Option<Vec<u8>>,
+                }
+
+                #[export]
+                pub fn make_snapshot(count: u32) -> Snapshot {
+                    unimplemented!()
+                }
+                "#,
+            ))
+            .expect("Python target should render native opaque records");
+        let extension = extension(&output);
+        let init = file(&output, "demo/__init__.py");
+        let stub = file(&output, "demo/__init__.pyi");
+
+        // ── C extension: register wrapper and boxer ───────────────────────────
+        assert!(
+            extension.contains("boltffi_python_wrapper_register_snapshot"),
+            "register wrapper with correct stem"
+        );
+        assert!(
+            extension.contains("boltffi_python_box_opaque_snapshot"),
+            "boxer function with correct stem"
+        );
+        // No wire encoder/decoder generated for native opaque.
+        assert!(
+            !extension.contains("boltffi_python_wire_"),
+            "no wire encoder for native opaque"
+        );
+        assert!(
+            !extension.contains("boltffi_python_decode_owned_"),
+            "no owned decoder for native opaque"
+        );
+
+        // ── C extension: multi-word field names are sanitized with underscores ─
+        // display_name → boltffi_python_borrow_opaque_snapshot_display_name
+        assert!(
+            extension.contains("boltffi_python_borrow_opaque_snapshot_display_name"),
+            "multi-word String field: display_name borrow wrapper uses sanitized snake_case name"
+        );
+        assert!(
+            extension.contains("boltffi_python_borrow_opaque_snapshot_raw_payload"),
+            "multi-word Bytes field: raw_payload borrow wrapper uses sanitized snake_case name"
+        );
+        assert!(
+            extension
+                .contains("{\"boltffi_python_borrow_opaque_snapshot_display_name\", (PyCFunction)"),
+            "multi-word borrow wrapper registered in method table"
+        );
+
+        // ── C extension: wrappers invoke loaded storage pointers, not raw names ─
+        // Storage pointer names are prefixed with "boltffi_python_" followed by the raw
+        // Rust symbol.  Verify that the raw symbol appears only via its storage pointer
+        // (i.e. never as a bare direct function call before the "boltffi_python_" prefix).
+        let borrow_storage_name =
+            "boltffi_python_boltffi_record_native_snapshot_borrow_display_name";
+        assert!(
+            extension.contains(borrow_storage_name),
+            "borrow field uses loaded storage pointer (boltffi_python_ prefixed)"
+        );
+        let drop_storage_name = "boltffi_python_boltffi_record_native_snapshot_drop";
+        assert!(
+            extension.contains(drop_storage_name),
+            "drop field uses loaded storage pointer"
+        );
+        // The raw symbol never appears as a direct call ("sym_name(") without the prefix.
+        // A direct call would be "boltffi_record_native_snapshot_drop(" without the boltffi_python_ prefix.
+        assert!(
+            !extension.contains(") boltffi_record_native_snapshot_drop("),
+            "C extension must not call raw Rust drop symbol as a direct function call"
+        );
+
+        // ── C extension: borrow wrapper safety guards ─────────────────────────
+        assert!(
+            extension.contains("PyBytes_FromStringAndSize"),
+            "borrow wrapper copies bytes into PyBytes"
+        );
+        assert!(
+            extension.contains("PY_SSIZE_T_MAX"),
+            "borrow wrapper guards against ssize_t overflow"
+        );
+        assert!(
+            extension.contains("len == 0"),
+            "borrow wrapper handles empty-slice (len==0) case"
+        );
+        assert!(
+            extension.contains("non-empty slice with null pointer"),
+            "borrow wrapper rejects non-empty slice with NULL ptr after overflow check"
+        );
+
+        // ── C extension: boxer drops handle on failure paths ──────────────────
+        // If type registration lookup fails or _from_handle errors, the C boxer
+        // must call the loaded drop exactly once before returning NULL.
+        assert!(
+            extension.contains("_from_handle"),
+            "boxer calls _from_handle via type object"
+        );
+        // Two drop calls appear in the boxer (for each failure branch).
+        let drop_in_boxer = extension
+            .split("boltffi_python_box_opaque_snapshot")
+            .nth(1)
+            .unwrap_or("");
+        let drop_count = drop_in_boxer
+            .split_once("static PyObject")
+            .map_or(drop_in_boxer, |(before, _)| before)
+            .matches(drop_storage_name)
+            .count();
+        assert!(
+            drop_count >= 2,
+            "boxer must call loaded drop on each failure branch (registration miss + _from_handle fail): found {drop_count}"
+        );
+
+        // ── Python package.py: class structure ────────────────────────────────
+        assert!(init.contains("_from_handle"), "_from_handle classmethod");
+        assert!(init.contains("__del__"), "__del__ delegates to close");
+        assert!(init.contains("@property"), "property accessor");
+        assert!(
+            !init.contains("@dataclass"),
+            "no dataclass for native opaque"
+        );
+        // Package.py calls the registered C drop wrapper, never raw Rust symbols.
+        assert!(
+            init.contains("boltffi_python_opaque_drop_snapshot"),
+            "close() calls the registered C drop wrapper"
+        );
+        assert!(
+            !init.contains("boltffi_record_native_snapshot_drop"),
+            "package.py must not call raw Rust drop symbol"
+        );
+        assert!(init.contains("def close("), "close() method present");
+        let close = init
+            .split_once("    def close(self) -> None:\n")
+            .and_then(|(_, after)| after.split_once("\n    def __del__(self) -> None:"))
+            .map(|(body, _)| body)
+            .expect("native opaque close body");
+        let clear = close
+            .find("object.__setattr__(self, '_handle', None)")
+            .expect("close clears the handle");
+        let drop = close
+            .find("_native.boltffi_python_opaque_drop_snapshot(handle)")
+            .expect("close calls the native drop wrapper");
+        assert!(
+            clear < drop,
+            "close must clear the Python handle before native drop can re-enter"
+        );
+        assert!(
+            init.contains("def _handle_or_raise("),
+            "_handle_or_raise() guard present"
+        );
+        // Direct construction raises TypeError; _from_handle rejects null/zero.
+        assert!(
+            init.contains("raise TypeError"),
+            "direct construction blocked"
+        );
+        assert!(init.contains("if not handle:"), "_from_handle rejects null");
+        // close()/del use getattr for partial-init safety.
+        assert!(
+            init.contains("getattr(self, '_handle', None)"),
+            "close/del uses getattr for partial-init safety"
+        );
+        // All property accessors route through _handle_or_raise().
+        assert!(
+            init.contains("_handle_or_raise()"),
+            "properties use _handle_or_raise() guard"
+        );
+        // Package.py calls the borrow wrapper (not raw symbol) for String fields.
+        assert!(
+            init.contains("boltffi_python_borrow_opaque_snapshot_display_name"),
+            "display_name property calls registered borrow wrapper"
+        );
+        assert!(
+            !init.contains("boltffi_record_native_snapshot_borrow_display_name"),
+            "package.py must not call raw Rust borrow symbol"
+        );
+        // String properties decode bytes to str; bytes properties return raw.
+        assert!(
+            init.contains(".decode('utf-8')"),
+            "string property decodes bytes"
+        );
+        // Optional fields use registered has/get wrappers, not raw symbols.
+        assert!(
+            init.contains("boltffi_python_opaque_has_snapshot_score"),
+            "optional field calls registered has wrapper"
+        );
+        assert!(
+            !init.contains("boltffi_record_native_snapshot_has_score"),
+            "package.py must not call raw has symbol"
+        );
+        assert!(
+            init.contains("return None"),
+            "optional has-check returns None"
+        );
+        // The exported factory function is a direct call through the C boxer
+        // (ReturnedValue::Native passthrough); package.py must NOT wrap the
+        // native call in _from_handle again.
+        assert!(
+            init.contains("_native.make_snapshot"),
+            "factory function calls native make_snapshot"
+        );
+        assert!(
+            !init.contains("_from_handle(_native.make_snapshot"),
+            "factory function must not double-box via _from_handle"
+        );
+
+        // Execute the rendered class with a reentrant mock drop wrapper. This
+        // proves the exact generated close body makes nested close() observe
+        // `_handle is None`, rather than relying only on source ordering.
+        let package = init
+            .replace("from __future__ import annotations\n", "")
+            .replace("from . import _native", "");
+        let reentrancy_script = format!(
+            r#"
+class _Native:
+    def _initialize_loader(self, _path):
+        pass
+
+    def _register_snapshot(self, _cls):
+        pass
+
+    def boltffi_python_opaque_drop_snapshot(self, _handle):
+        self.drop_calls += 1
+        assert self.object._handle is None
+        self.object.close()
+        if self.raise_after_drop:
+            raise RuntimeError("unexpected native drop failure")
+
+_native = _Native()
+_native.drop_calls = 0
+_native.raise_after_drop = False
+__file__ = "demo/__init__.py"
+{package}
+
+value = Snapshot._from_handle(1)
+_native.object = value
+value.close()
+assert value._handle is None
+assert _native.drop_calls == 1
+
+failing = Snapshot._from_handle(2)
+_native.object = failing
+_native.raise_after_drop = True
+try:
+    failing.close()
+except RuntimeError as error:
+    assert str(error) == "unexpected native drop failure"
+else:
+    raise AssertionError("native drop failure must propagate")
+assert failing._handle is None
+failing.close()
+assert _native.drop_calls == 2
+"#,
+        );
+        let reentrancy = Command::new("python3")
+            .arg("-c")
+            .arg(reentrancy_script)
+            .output()
+            .expect("python3 is required to execute generated opaque close behavior");
+        assert!(
+            reentrancy.status.success(),
+            "generated opaque close did not withstand reentrant drop:\n{}",
+            String::from_utf8_lossy(&reentrancy.stderr)
+        );
+
+        // ── Python package.pyi: opaque class surface ─────────────────────────
+        // This exact, non-empty body check is deliberately dependency-free:
+        // it catches the former empty `@dataclass` stub and proves every runtime
+        // opaque property remains visible to static type checkers.
+        let snapshot_stub = stub
+            .split_once("class Snapshot:\n")
+            .and_then(|(_, after)| after.split_once("\n\ndef make_snapshot"))
+            .map(|(class, _)| class)
+            .expect("non-empty Snapshot stub followed by factory function");
+        assert!(
+            !stub.contains("@dataclass(frozen=True, slots=True)\nclass Snapshot:"),
+            "native opaque records must not advertise dataclass construction"
+        );
+        assert!(
+            !snapshot_stub.trim().is_empty(),
+            "native opaque stub classes must have a body"
+        );
+        assert!(snapshot_stub.contains("    def close(self) -> None: ..."));
+        for property in [
+            "    @property\n    def count(self) -> int: ...",
+            "    @property\n    def display_name(self) -> str: ...",
+            "    @property\n    def raw_payload(self) -> bytes: ...",
+            "    @property\n    def score(self) -> float | None: ...",
+            "    @property\n    def label(self) -> str | None: ...",
+            "    @property\n    def optional_payload(self) -> bytes | None: ...",
+        ] {
+            assert!(
+                snapshot_stub.contains(property),
+                "native opaque stub is missing property `{property}`:\n{snapshot_stub}"
+            );
+        }
+        assert!(stub.contains("from typing import NoReturn\n"));
+        assert!(
+            snapshot_stub.contains("    def __init__(self, _: NoReturn, /) -> None: ..."),
+            "native opaque stubs must require an uninhabited positional construction token"
+        );
+    }
+
+    #[test]
+    fn python_opaque_stub_compiles_with_available_python_3_10_grammar() {
+        let output = target()
+            .render(&bindings(
+                r#"
+                #[data(opaque)]
+                pub struct Snapshot { pub count: u32 }
+                "#,
+            ))
+            .expect("Python target should render an opaque stub");
+        let stub = file(&output, "demo/__init__.pyi");
+        let mut child = Command::new("python3")
+            .arg("-c")
+            .arg("import ast, sys; ast.parse(sys.stdin.read(), feature_version=(3, 10))")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .expect("python3 is required to validate generated Python 3.10 stubs");
+        use std::io::Write;
+        child
+            .stdin
+            .take()
+            .expect("python stdin")
+            .write_all(stub.as_bytes())
+            .expect("write generated stub");
+        let output = child.wait_with_output().expect("wait for python");
+        assert!(
+            output.status.success(),
+            "generated Python stub did not compile: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    #[test]
+    fn python_non_opaque_stub_does_not_import_noreturn() {
+        let output = target()
+            .render(&bindings(
+                r#"
+                #[data]
+                pub struct Person { pub name: String }
+                "#,
+            ))
+            .expect("Python target should render a normal stub");
+        assert!(!file(&output, "demo/__init__.pyi").contains("from typing import NoReturn"));
+    }
+
+    #[test]
+    fn python_target_stub_keeps_dataclasses_for_normal_records_and_data_enums_with_opaque_records()
+    {
+        let output = target()
+            .render(&bindings(
+                r#"
+                #[data(opaque)]
+                pub struct Snapshot {
+                    pub count: u32,
+                }
+
+                #[data]
+                pub struct Person {
+                    pub name: String,
+                }
+
+                #[data]
+                pub enum Shape {
+                    Circle { radius: f64 },
+                }
+                "#,
+            ))
+            .expect("Python target should render mixed record stubs");
+        let stub = file(&output, "demo/__init__.pyi");
+
+        assert!(stub.contains("from typing import NoReturn\n"));
+        assert!(stub.contains("from dataclasses import dataclass\n"));
+        assert!(
+            stub.contains("class Snapshot:\n    def __init__(self, _: NoReturn, /) -> None: ...")
+        );
+        assert!(
+            !stub.contains("@dataclass(frozen=True, slots=True)\nclass Snapshot:"),
+            "opaque records must not gain dataclass constructors"
+        );
+        assert!(stub.contains("@dataclass(frozen=True, slots=True)\nclass Person:"));
+        assert!(stub.contains("@dataclass(frozen=True, slots=True)\nclass ShapeCircle(Shape):",));
+    }
+
+    #[test]
+    fn python_target_native_opaque_emits_primitive_boxers_for_get_wrappers() {
+        // A native opaque record with only a primitive field (u32) must
+        // cause the boltffi_python_box_u32 definition to be emitted in
+        // native_module.c even when no other field or function uses u32.
+        // This verifies that primitives() includes get-wrapper primitives.
+        let output = target()
+            .render(&bindings(
+                r#"
+                #[data(opaque)]
+                pub struct Counter {
+                    pub value: u32,
+                }
+
+                #[export]
+                pub fn make_counter() -> Counter {
+                    unimplemented!()
+                }
+                "#,
+            ))
+            .expect("Python target should render primitive-only native opaque record");
+        let extension = extension(&output);
+        // The get wrapper for `value` uses boltffi_python_box_u32.
+        assert!(
+            extension.contains("boltffi_python_opaque_get_counter_value"),
+            "get wrapper for u32 field is registered"
+        );
+        // The boxer definition must be present so the get wrapper can call it.
+        assert!(
+            extension.contains("boltffi_python_box_u32"),
+            "boltffi_python_box_u32 boxer definition emitted for get wrapper"
+        );
+    }
+
+    #[test]
+    fn python_target_native_opaque_has_get_borrow_wrappers_reject_zero_handle() {
+        // has/get/borrow wrappers must reject a zero (NULL) handle from
+        // PyLong_AsVoidPtr(0) with a ValueError.
+        let output = target()
+            .render(&bindings(
+                r#"
+                #[data(opaque)]
+                pub struct Snap {
+                    pub count: u32,
+                    pub title: String,
+                    pub score: Option<f64>,
+                }
+
+                #[export]
+                pub fn make_snap() -> Snap { unimplemented!() }
+                "#,
+            ))
+            .expect("Python target should render native opaque record");
+        let extension = extension(&output);
+        // All three wrapper kinds must have the zero-handle guard.
+        assert!(
+            extension.contains("handle must be non-zero"),
+            "zero-handle guard present in has/get/borrow wrappers"
+        );
+        // Specifically present for the get wrapper.
+        let get_guard =
+            extension.contains("boltffi_python_opaque_get_snap_count(): handle must be non-zero");
+        let has_guard =
+            extension.contains("boltffi_python_opaque_has_snap_score(): handle must be non-zero");
+        let borrow_guard = extension
+            .contains("boltffi_python_borrow_opaque_snap_title(): handle must be non-zero");
+        assert!(get_guard, "get wrapper has zero-handle guard");
+        assert!(has_guard, "has wrapper has zero-handle guard");
+        assert!(borrow_guard, "borrow wrapper has zero-handle guard");
     }
 }

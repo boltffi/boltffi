@@ -2189,6 +2189,58 @@ fn java_partial_target_prunes_direct_and_transitive_interned_strings_before_pref
 }
 
 #[test]
+fn java_partial_target_rejects_native_opaque_return_with_direct_capability_reason() {
+    let bindings = bindings(
+        r#"
+        #[data(opaque)]
+        pub struct Snapshot {
+            pub count: u32,
+        }
+
+        #[export]
+        pub fn make_snapshot() -> Snapshot { unimplemented!() }
+
+        #[export]
+        pub fn add(left: i32, right: i32) -> i32 { left + right }
+        "#,
+    );
+    let output = host()
+        .render_with_coverage(&bindings, CoverageMode::Partial)
+        .expect("Java admission must reject opaque dependencies before preflight");
+    let java = java_source(&output, "com.boltffi.demo", "Demo");
+    let unsupported = output
+        .coverage()
+        .unsupported()
+        .iter()
+        .map(|declaration| {
+            (
+                declaration.declaration().kind(),
+                declaration.declaration().name().to_owned(),
+                declaration.reason(),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    assert!(java.contains("public static int add(int left, int right)"));
+    assert!(!java.contains("makeSnapshot"));
+    assert_eq!(
+        unsupported,
+        vec![
+            (
+                "record",
+                "snapshot".to_owned(),
+                "capability was not advertised"
+            ),
+            (
+                "function",
+                "make::snapshot".to_owned(),
+                "capability was not advertised"
+            ),
+        ]
+    );
+}
+
+#[test]
 fn java_partial_target_rejects_async_closure_returns_before_building_the_bridge() {
     let source = r#"
         #[export]

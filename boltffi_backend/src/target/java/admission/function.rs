@@ -177,8 +177,12 @@ impl<'plan> ParamPlanRender<'plan, Native, IntoRust> for ParameterShape {
         _: &'plan TypeRef,
         _: &'plan <IntoRust as Direction>::Codec,
         shape: native::BufferShape,
+        transport: boltffi_binding::EncodedParamTransport,
         receive: Receive,
     ) -> Self::Output {
+        if transport == boltffi_binding::EncodedParamTransport::BorrowedSlice {
+            return Err(FunctionShape::EncodedParameter);
+        }
         if receive == Receive::ByMutRef {
             return Err(FunctionShape::MutableEncodedParameter);
         }

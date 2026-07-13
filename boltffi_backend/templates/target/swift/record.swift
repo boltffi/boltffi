@@ -1,3 +1,59 @@
+{%- if record.is_native_opaque() %}
+{{ record.documentation() }}public struct {{ record.name() }}: Sendable {
+    private final class NativeStorage: @unchecked Sendable {
+        let handle: UnsafeMutableRawPointer
+        init(handle: UnsafeMutableRawPointer) { self.handle = handle }
+        deinit { {{ record.native_opaque_drop() }}(handle) }
+    }
+    private let storage: NativeStorage
+    @usableFromInline init(nativeHandle: UnsafeMutableRawPointer) {
+        self.storage = NativeStorage(handle: nativeHandle)
+    }
+{%- for field in record.opaque_fields() %}
+{{ field.documentation() }}    public var {{ field.name() }}: {{ field.ty() }} {
+        return withExtendedLifetime(storage) { storage in
+{%- if field.optional() %}
+        guard {{ field.has_fn().unwrap() }}(UnsafeRawPointer(storage.handle)) != 0 else { return nil }
+{%- endif %}
+{%- if field.is_primitive() %}
+        return {{ field.get_fn().unwrap() }}(UnsafeRawPointer(storage.handle))
+{%- else if field.is_string() %}
+        var ptr: UnsafePointer<UInt8>? = nil
+        var len: UInt = 0
+        guard {{ field.borrow_fn().unwrap() }}(UnsafeRawPointer(storage.handle), &ptr, &len) != 0 else {
+            preconditionFailure("native opaque borrow failed for {{ field.name() }}")
+        }
+        if len == 0 { return "" }
+        guard let ptr else {
+            preconditionFailure("native opaque {{ field.name() }}: nil pointer with non-zero length")
+        }
+        guard len <= UInt(Int.max) else {
+            preconditionFailure("native opaque {{ field.name() }} length overflows Int")
+        }
+        guard let str = String(bytes: UnsafeBufferPointer(start: ptr, count: Int(len)), encoding: .utf8) else {
+            preconditionFailure("native opaque {{ field.name() }} field is not valid UTF-8")
+        }
+        return str
+{%- else %}
+        var ptr: UnsafePointer<UInt8>? = nil
+        var len: UInt = 0
+        guard {{ field.borrow_fn().unwrap() }}(UnsafeRawPointer(storage.handle), &ptr, &len) != 0 else {
+            preconditionFailure("native opaque borrow failed for {{ field.name() }}")
+        }
+        if len == 0 { return Data() }
+        guard let ptr else {
+            preconditionFailure("native opaque {{ field.name() }}: nil pointer with non-zero length")
+        }
+        guard len <= UInt(Int.max) else {
+            preconditionFailure("native opaque {{ field.name() }} length overflows Int")
+        }
+        return Data(bytes: ptr, count: Int(len))
+{%- endif %}
+        }
+    }
+{%- endfor %}
+}
+{%- else -%}
 {{ record.documentation() }}public struct {{ record.name() }}: Hashable, Equatable, Sendable{{ record.error_conformance() }} {
 {%- for field in record.fields() %}
 {{ field.documentation() }}    public var {{ field.name() }}: {{ field.ty() }}
@@ -51,3 +107,4 @@
     }
 {%- endfor %}
 }
+{%- endif %}

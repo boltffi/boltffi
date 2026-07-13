@@ -116,6 +116,19 @@ impl SymbolAllocator {
         self.mint(owner.method_symbol_name(member))
     }
 
+    pub fn mint_native_opaque_record_export(
+        &mut self,
+        record: &SourceName,
+        suffix: &str,
+    ) -> Result<NativeSymbol, LowerError> {
+        self.mint(format!(
+            "{}_record_native_{}_{}",
+            FFI_PREFIX,
+            source_member_name(record),
+            suffix
+        ))
+    }
+
     pub fn mint_initializer(
         &mut self,
         owner: SymbolOwner,

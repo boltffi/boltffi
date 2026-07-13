@@ -11,8 +11,8 @@ use crate::{
     AsyncProtocolIntrospect, BindingError, BindingErrorKind, BufferShapeRules, BuiltinType,
     CallableScope, CanonicalName, ClosureRegistrationIntrospect, ClosureSignature, DeclarationId,
     DirectValueType, DirectVectorElementType, Direction, ElementMeta, ForeignBody, HandlePresence,
-    HandleTarget, IntegerRepr, IntoRust, NativeSymbol, OutOfRust, Primitive, RustBody, Surface,
-    TypeRef,
+    HandleTarget, IntegerRepr, IntoRust, NativeSymbol, OutOfRust, Primitive, RecordId, RustBody,
+    Surface, TypeRef,
 };
 
 /// One call shape ready to be turned into target code.
@@ -883,6 +883,17 @@ impl<S: Surface, D: Direction> ClosureRegistration<S, D> {
     }
 }
 
+/// Byte-level transport used by an encoded parameter slot.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum EncodedParamTransport {
+    /// The slot contains Bolt's ordinary wire encoding.
+    #[default]
+    Wire,
+    /// The slot directly borrows the caller's contiguous bytes without a wire prefix.
+    BorrowedSlice,
+}
+
 /// How one value crosses the boundary as a parameter slot in
 /// direction `D`.
 ///
@@ -912,6 +923,9 @@ pub enum ParamPlan<S: Surface, D: Direction> {
         codec: D::Codec,
         /// Slot layout of the encoded bytes.
         shape: S::BufferShape,
+        /// Whether the bytes are wire-encoded or directly borrowed.
+        #[serde(default)]
+        transport: EncodedParamTransport,
         /// Rust-side receive mode.
         receive: D::Receive,
     },
@@ -960,8 +974,9 @@ impl<S: Surface, D: Direction> ParamPlan<S, D> {
                 ty,
                 codec,
                 shape,
+                transport,
                 receive,
-            } => renderer.encoded(ty, codec, *shape, *receive),
+            } => renderer.encoded(ty, codec, *shape, *transport, *receive),
             Self::Handle {
                 target,
                 carrier,
@@ -976,6 +991,14 @@ impl<S: Surface, D: Direction> ParamPlan<S, D> {
     pub(crate) fn buffer_shape(&self) -> Option<S::BufferShape> {
         match self {
             Self::Encoded { shape, .. } => Some(*shape),
+            _ => None,
+        }
+    }
+
+    /// Returns the encoded byte transport for this parameter.
+    pub const fn encoded_transport(&self) -> Option<EncodedParamTransport> {
+        match self {
+            Self::Encoded { transport, .. } => Some(*transport),
             _ => None,
         }
     }
@@ -1117,6 +1140,7 @@ pub trait ParamPlanRender<'plan, S: Surface, D: Direction> {
         ty: &'plan TypeRef,
         codec: &'plan D::Codec,
         shape: S::BufferShape,
+        transport: EncodedParamTransport,
         receive: D::Receive,
     ) -> Self::Output;
 
@@ -1296,6 +1320,16 @@ where
     /// (Win64) would otherwise force a hidden sret pointer on wide
     /// struct returns. No backend guessing, no platform split.
     ClosureViaOutPointer(ClosureReturn<S, D>),
+    /// Opaque native record returned as a `void *` boxed handle.
+    ///
+    /// The Rust function boxes the record in a `Box<Record>` and returns
+    /// it as a raw `*mut c_void`. Host code accesses fields through
+    /// generated per-field Rust accessor exports and releases the box
+    /// through the generated destructor.
+    NativeOpaqueRecord {
+        /// Declaration of the returned record.
+        record: RecordId,
+    },
 }
 
 /// Where a returned value is delivered in the native ABI.
@@ -1352,6 +1386,14 @@ where
 
     /// Renders a closure return.
     fn closure(&mut self, closure: &'plan ClosureReturn<S, D>) -> Self::Output;
+
+    /// Renders a native opaque record return (`void *` boxed handle).
+    #[allow(unused_variables)]
+    fn native_opaque_record(&mut self, record: RecordId) -> Self::Output {
+        unreachable!(
+            "native opaque records must be rejected by target capability checks before rendering"
+        )
+    }
 }
 
 impl<S: Surface, D: Direction> ReturnPlan<S, D>
@@ -1386,6 +1428,7 @@ where
                 presence,
             } => renderer.handle(ReturnValueSlot::OutPointer, target, *carrier, *presence),
             Self::ClosureViaOutPointer(closure) => renderer.closure(closure),
+            Self::NativeOpaqueRecord { record } => renderer.native_opaque_record(*record),
         }
     }
 
@@ -1400,7 +1443,8 @@ where
             | Self::DirectVecViaReturnSlot { .. }
             | Self::DirectViaOutPointer { .. }
             | Self::EncodedViaOutPointer { .. }
-            | Self::HandleViaOutPointer { .. } => Box::new(std::iter::empty()),
+            | Self::HandleViaOutPointer { .. }
+            | Self::NativeOpaqueRecord { .. } => Box::new(std::iter::empty()),
         }
     }
 
@@ -1412,6 +1456,7 @@ where
                 | Self::HandleViaReturnSlot { .. }
                 | Self::ScalarOptionViaReturnSlot { .. }
                 | Self::DirectVecViaReturnSlot { .. }
+                | Self::NativeOpaqueRecord { .. }
         )
     }
 
@@ -1473,6 +1518,9 @@ where
             Self::ClosureViaOutPointer(closure) => {
                 closure.append_referenced_declarations(references)
             }
+            Self::NativeOpaqueRecord { record } => {
+                references.insert(DeclarationId::Record(*record));
+            }
             Self::Void | Self::ScalarOptionViaReturnSlot { .. } => {}
         }
     }
@@ -1494,6 +1542,7 @@ where
                 direct_vector_references_declaration(element, declaration)
             }
             Self::ClosureViaOutPointer(closure) => closure.references_declaration(declaration),
+            Self::NativeOpaqueRecord { record } => declaration == DeclarationId::Record(*record),
             Self::Void | Self::ScalarOptionViaReturnSlot { .. } => false,
         }
     }
@@ -1516,6 +1565,9 @@ where
     /// is always a handle in the return slot), so a closure-bearing
     /// return paired with a fallible error channel is rejected at the
     /// lowering step before reaching here.
+    ///
+    /// Native opaque records are outgoing-only and cannot appear in fallible
+    /// returns; this method leaves `NativeOpaqueRecord` unchanged.
     pub(crate) fn into_out(self) -> Self {
         match self {
             Self::DirectViaReturnSlot { ty } => Self::DirectViaOutPointer { ty },

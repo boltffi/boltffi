@@ -877,6 +877,7 @@ impl<'plan> ParamPlanRender<'plan, Native, IntoRust> for NativeArgumentRender<'_
         _ty: &'plan TypeRef,
         codec: &'plan <IntoRust as Direction>::Codec,
         _shape: native::BufferShape,
+        _: boltffi_binding::EncodedParamTransport,
         receive: Receive,
     ) -> Self::Output {
         if receive == Receive::ByMutRef {

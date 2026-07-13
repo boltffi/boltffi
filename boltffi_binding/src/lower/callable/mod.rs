@@ -63,7 +63,8 @@ use boltffi_ast::{
 use crate::{
     ClosureForm, ClosureParameter, ClosureRegistration, ClosureReturn, ClosureSignature,
     DirectVectorElementType, Direction, ExecutionDecl, ExportedCallable, ForeignBody,
-    HandlePresence, ImportedCallable, IntoRust, OutOfRust, Primitive, Receive, RustBody,
+    HandlePresence, ImportedCallable, IntoRust, OutOfRust, Primitive, Receive, ReturnPlan,
+    RustBody,
 };
 
 use super::{
@@ -90,6 +91,10 @@ pub enum CallableOwner<'src> {
     /// owning type, so type-expression substitution rejects any `Self`
     /// reference encountered in this position.
     Function,
+    /// An inline closure or Fn/fn-pointer signature.  Like traits these
+    /// cross as callback-style invocables so native opaque records are
+    /// not valid return types here.
+    Closure,
 }
 
 impl<'src> CallableOwner<'src> {
@@ -110,13 +115,17 @@ impl<'src> CallableOwner<'src> {
             Self::Trait(_) => Err(LowerError::unsupported_type(
                 UnsupportedType::SelfInCallbackTrait,
             )),
-            Self::Function => Err(LowerError::unsupported_type(UnsupportedType::SelfType)),
+            Self::Function | Self::Closure => {
+                Err(LowerError::unsupported_type(UnsupportedType::SelfType))
+            }
         }
     }
 
     pub fn owns_type_expr(self, type_expr: &boltffi_ast::TypeExpr) -> bool {
         match (self, type_expr) {
-            (Self::Trait(_) | Self::Function, boltffi_ast::TypeExpr::SelfType) => false,
+            (Self::Trait(_) | Self::Function | Self::Closure, boltffi_ast::TypeExpr::SelfType) => {
+                false
+            }
             (_, boltffi_ast::TypeExpr::SelfType) => true,
             (Self::Record(record), boltffi_ast::TypeExpr::Record { id, .. }) => id == &record.id,
             (Self::Enum(enumeration), boltffi_ast::TypeExpr::Enum { id, .. }) => {
@@ -487,7 +496,9 @@ where
     K::ParamDirection: params::LowerClosure<S>,
     K::ReturnDirection: params::LowerClosure<S>,
 {
-    let owner = CallableOwner::Function;
+    // Use Closure rather than Function so native opaque records in the
+    // return position are rejected as NativeOpaqueRecordInCallback.
+    let owner = CallableOwner::Closure;
     let parameters = closure
         .parameters
         .iter()
@@ -552,6 +563,15 @@ pub fn lower_function<S: SurfaceLower>(
         &function.returns,
     )?;
     let execution = lower_execution::<S>(allocator, function.execution, start_symbol_name)?;
+    // Native opaque records must be returned synchronously: the handle transfer
+    // cannot be expressed through the async protocol's start/poll lifecycle.
+    if matches!(returns.plan(), ReturnPlan::NativeOpaqueRecord { .. })
+        && matches!(execution, ExecutionDecl::Asynchronous(_))
+    {
+        return Err(LowerError::unsupported_type(
+            UnsupportedType::NativeOpaqueRecordAsync,
+        ));
+    }
 
     Ok(ExportedCallable::<S>::new(
         None, parameters, returns, error, execution,
@@ -583,6 +603,11 @@ pub fn lower_constant_accessor<S: SurfaceLower>(
         codecs::RootEncoding::Surface,
         &return_def,
     )?;
+    if matches!(returns.plan(), ReturnPlan::NativeOpaqueRecord { .. }) {
+        return Err(LowerError::unsupported_type(
+            UnsupportedType::NativeOpaqueRecordConstant,
+        ));
+    }
 
     Ok(ExportedCallable::<S>::new(
         None,

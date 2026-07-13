@@ -290,6 +290,27 @@ pub enum UnsupportedType {
     InvalidCallbackReceiver,
     /// A callback handle parameter was borrowed instead of passed by value.
     BorrowedCallbackParameter,
+    /// A borrowed-slice marker was applied to a non-`&str`/`&[u8]` parameter.
+    BorrowedSliceParameter,
+    /// An outgoing-only native opaque record appeared in parameter position.
+    NativeOpaqueRecordParameter,
+    /// A fallible return attempted to pair a native opaque record with an error slot.
+    NativeOpaqueRecordResult,
+    /// A native opaque record field cannot be exposed by generated accessors.
+    NativeOpaqueRecordField,
+    /// A native opaque record appeared in a method, initializer, or non-free-function return.
+    NativeOpaqueRecordMethod,
+    /// A native opaque record appeared as the return type of an async export.
+    NativeOpaqueRecordAsync,
+    /// A native opaque record appeared inside a callback/closure return position.
+    NativeOpaqueRecordInCallback,
+    /// A native opaque record appeared as a constant value.
+    NativeOpaqueRecordConstant,
+    /// A native opaque record appeared as a stream item.
+    NativeOpaqueRecordStreamItem,
+    /// A native opaque record appeared inside a nested return type
+    /// (e.g. Option<Opaque>, Vec<Opaque>) where the handle semantics cannot be preserved.
+    NativeOpaqueRecordNestedReturn,
     /// An owned class receiver has no handle-transfer protocol yet.
     OwnedClassReceiver,
     /// A mutable class receiver needs the class to be exported as unsafe
@@ -327,6 +348,22 @@ impl fmt::Display for UnsupportedType {
             Self::CallbackMethodSlotCollision => "callback method name collides with vtable slot",
             Self::InvalidCallbackReceiver => "callback method receiver",
             Self::BorrowedCallbackParameter => "borrowed callback parameter",
+            Self::BorrowedSliceParameter => "borrowed slice parameter",
+            Self::NativeOpaqueRecordParameter => "native opaque record parameter",
+            Self::NativeOpaqueRecordResult => "fallible native opaque record return",
+            Self::NativeOpaqueRecordField => "unsupported native opaque record field",
+            Self::NativeOpaqueRecordMethod => {
+                "native opaque record return in method, initializer, or non-free-function"
+            }
+            Self::NativeOpaqueRecordAsync => "native opaque record return in async export",
+            Self::NativeOpaqueRecordInCallback => {
+                "native opaque record return in callback or closure"
+            }
+            Self::NativeOpaqueRecordConstant => "native opaque record constant",
+            Self::NativeOpaqueRecordStreamItem => "native opaque record stream item",
+            Self::NativeOpaqueRecordNestedReturn => {
+                "native opaque record in nested return position (Option, Vec, etc.)"
+            }
             Self::OwnedClassReceiver => "owned class receiver",
             Self::MutableClassReceiverRequiresUnsafeSingleThreaded => {
                 "mutable class receiver without unsafe single-threaded export"

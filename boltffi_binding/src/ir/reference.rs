@@ -4,11 +4,12 @@ use crate::{
     BinderId, BuiltinType, ByteSize, CallbackId, ClassId, ClosureReturn, CodecPlan, CodecRead,
     CodecWrite, ConstantDecl, ConstantValueDecl, CustomTypeDecl, CustomTypeId, DataVariantPayload,
     Decl, DeclarationId, DeclarationRef, DirectValueType, DirectVectorElementType, ElementCount,
-    EnumDecl, EnumId, ErrorChannel, ExportedCallable, FieldKey, HandlePresence, HandleTarget,
-    ImportedCallable, IncomingParam, InitializerDecl, IntoRust, IntrinsicOp, MapKind, Op, OpRender,
-    OutOfRust, OutgoingParam, ParamPlan, ParamPlanRender, Primitive, ReadPlan, Receive, RecordDecl,
-    RecordId, ReturnPlan, ReturnPlanRender, ReturnTypeRef, ReturnValueSlot, StreamDecl, StreamId,
-    StreamItemPlanRender, Surface, TypeRef, TypeRefRender, ValueRef, WritePlan,
+    EncodedParamTransport, EnumDecl, EnumId, ErrorChannel, ExportedCallable, FieldKey,
+    HandlePresence, HandleTarget, ImportedCallable, IncomingParam, InitializerDecl, IntoRust,
+    IntrinsicOp, MapKind, Op, OpRender, OutOfRust, OutgoingParam, ParamPlan, ParamPlanRender,
+    Primitive, ReadPlan, Receive, RecordDecl, RecordId, ReturnPlan, ReturnPlanRender,
+    ReturnTypeRef, ReturnValueSlot, StreamDecl, StreamId, StreamItemPlanRender, Surface, TypeRef,
+    TypeRefRender, ValueRef, WritePlan,
 };
 
 /// The declaration form required by an IR reference.
@@ -577,6 +578,7 @@ impl<'plan, S: Surface> ParamPlanRender<'plan, S, IntoRust> for DeclarationRefer
         ty: &'plan TypeRef,
         codec: &'plan WritePlan,
         _: S::BufferShape,
+        _: EncodedParamTransport,
         _: Receive,
     ) {
         self.insert_type(ty);
@@ -607,7 +609,14 @@ impl<'plan, S: Surface> ParamPlanRender<'plan, S, OutOfRust> for DeclarationRefe
         self.insert_direct_value(ty);
     }
 
-    fn encoded(&mut self, ty: &'plan TypeRef, codec: &'plan ReadPlan, _: S::BufferShape, _: ()) {
+    fn encoded(
+        &mut self,
+        ty: &'plan TypeRef,
+        codec: &'plan ReadPlan,
+        _: S::BufferShape,
+        _: EncodedParamTransport,
+        _: (),
+    ) {
         self.insert_type(ty);
         self.insert_read_plan(codec);
     }
@@ -668,6 +677,10 @@ impl<'plan, S: Surface> ReturnPlanRender<'plan, S, IntoRust> for DeclarationRefe
     fn closure(&mut self, closure: &'plan ClosureReturn<S, IntoRust>) {
         self.insert_imported_callable(closure.invoke());
     }
+
+    fn native_opaque_record(&mut self, record: RecordId) {
+        self.insert(DeclarationReference::record(record));
+    }
 }
 
 impl<'plan, S: Surface> ReturnPlanRender<'plan, S, OutOfRust> for DeclarationReferences {
@@ -708,6 +721,10 @@ impl<'plan, S: Surface> ReturnPlanRender<'plan, S, OutOfRust> for DeclarationRef
 
     fn closure(&mut self, closure: &'plan ClosureReturn<S, OutOfRust>) {
         self.insert_exported_callable(closure.invoke());
+    }
+
+    fn native_opaque_record(&mut self, record: RecordId) {
+        self.insert(DeclarationReference::record(record));
     }
 }
 

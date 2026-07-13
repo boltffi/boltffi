@@ -215,6 +215,9 @@ enum ReturnConversion {
     CallbackHandle(CallbackHandle),
     ScalarOption(Primitive),
     ParameterMutation(ParameterMutation),
+    NativeOpaqueRecord {
+        ty: TypeName,
+    },
 }
 
 impl Function {
@@ -621,6 +624,67 @@ struct NativeArgumentRender<'context> {
 }
 
 impl NativeArgument {
+    fn borrowed_slice(source_name: &Name, value: Identifier, ty: &TypeRef) -> Result<Self> {
+        let bytes = source_name.generated("raw")?;
+        let buffer = source_name.generated("raw_buffer")?;
+        let bytes_setup = match ty {
+            TypeRef::Bytes => Statement::value(bytes.clone(), Expression::identifier(value)),
+            TypeRef::String => Statement::value(
+                bytes.clone(),
+                Expression::call(
+                    Expression::identifier(value),
+                    Identifier::parse("toByteArray")?,
+                    [Expression::property(
+                        Expression::identifier(Identifier::parse("Charsets")?),
+                        Identifier::parse("UTF_8")?,
+                    )]
+                    .into_iter()
+                    .collect(),
+                ),
+            ),
+            _ => return Err(KotlinHost::unsupported("borrowed slice parameter type")),
+        };
+        Ok(Self {
+            expressions: vec![
+                Expression::identifier(buffer.clone()),
+                Expression::property(
+                    Expression::identifier(bytes.clone()),
+                    Identifier::parse("size")?,
+                ),
+            ],
+            mutation: None,
+            setup: vec![
+                bytes_setup,
+                Statement::value(
+                    buffer.clone(),
+                    Expression::call(
+                        TypeName::new("java.nio.ByteBuffer"),
+                        Identifier::parse("allocateDirect")?,
+                        [Expression::property(
+                            Expression::identifier(bytes.clone()),
+                            Identifier::parse("size")?,
+                        )]
+                        .into_iter()
+                        .collect(),
+                    ),
+                ),
+                Statement::expression(Expression::call(
+                    Expression::identifier(buffer.clone()),
+                    Identifier::parse("put")?,
+                    [Expression::identifier(bytes.clone())]
+                        .into_iter()
+                        .collect(),
+                )),
+                Statement::expression(Expression::call(
+                    Expression::identifier(buffer.clone()),
+                    Identifier::parse("flip")?,
+                    ArgumentList::default(),
+                )),
+            ],
+            cleanup: Vec::new(),
+        })
+    }
+
     fn direct(expression: Expression) -> Self {
         Self {
             expressions: vec![expression],
@@ -920,11 +984,20 @@ impl<'plan> ParamPlanRender<'plan, Native, IntoRust> for NativeArgumentRender<'_
 
     fn encoded(
         &mut self,
-        _: &'plan TypeRef,
+        ty: &'plan TypeRef,
         codec: &'plan <IntoRust as Direction>::Codec,
         shape: <Native as Surface>::BufferShape,
+        transport: boltffi_binding::EncodedParamTransport,
         receive: <IntoRust as Direction>::Receive,
     ) -> Self::Output {
+        if transport == boltffi_binding::EncodedParamTransport::BorrowedSlice {
+            if shape != native::BufferShape::Slice || receive != Receive::ByRef {
+                return Err(KotlinHost::unsupported(
+                    "borrowed slice parameter transport",
+                ));
+            }
+            return NativeArgument::borrowed_slice(&self.source_name, self.name.clone(), ty);
+        }
         let mutation = ParameterMutation::from_encoded(
             &self.source_name,
             self.name.clone(),
@@ -1093,6 +1166,14 @@ impl<'plan> ReturnPlanRender<'plan, Native, OutOfRust> for FunctionReturnPlan<'_
 
     fn closure(&mut self, _closure: &'plan ClosureReturn<Native, OutOfRust>) -> Self::Output {
         Err(KotlinHost::unsupported("closure function return"))
+    }
+
+    fn native_opaque_record(&mut self, record: RecordId) -> Self::Output {
+        let ty = Record::type_name_from_id(record, self.context)?;
+        Ok(FunctionReturn {
+            ty: Some(ty.clone()),
+            conversion: ReturnConversion::NativeOpaqueRecord { ty },
+        })
     }
 }
 
@@ -1324,6 +1405,18 @@ impl FunctionReturn {
             }
             ReturnConversion::ParameterMutation(mutation) => {
                 mutation.statements(call, host, context)
+            }
+            ReturnConversion::NativeOpaqueRecord { ty } => {
+                let handle = Identifier::parse("__boltffi_handle")?;
+                Ok(vec![
+                    Statement::value(handle.clone(), call),
+                    Statement::expression(Expression::construct(
+                        ty.clone(),
+                        [Expression::identifier(handle)]
+                            .into_iter()
+                            .collect::<ArgumentList>(),
+                    )),
+                ])
             }
         }
     }

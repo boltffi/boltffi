@@ -336,6 +336,22 @@ impl DirectVector {
 }
 
 impl BorrowedVector {
+    /// Borrows raw byte storage for a native pointer-plus-length call without
+    /// applying Bolt's wire encoding. The closure keeps the collection alive
+    /// for the whole native invocation; empty collections may supply null.
+    pub fn raw_bytes(source_name: &Name, collection: Expression) -> Result<Self> {
+        Ok(Self {
+            setup: Vec::new(),
+            collection,
+            buffer: source_name.generated("raw")?,
+            scope: Scope::RawBytes,
+            arguments: Vec::new(),
+            copy_pointer: Expression::nil(),
+            copy_length: Expression::nil(),
+        }
+        .with_byte_arguments())
+    }
+
     pub fn arguments(&self) -> Vec<Expression> {
         self.arguments.clone()
     }

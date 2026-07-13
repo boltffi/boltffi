@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-{% if !records.is_empty() || has_data_enums %}
+{% if uses_dataclass_records || has_data_enums %}
 from dataclasses import dataclass
 
 {% endif %}
@@ -401,6 +401,63 @@ _native._register_wire_codec({{ encoder.key() }}, {{ encoder.name() }})
 
 {% endfor %}
 {% for record in records %}
+{%- if let Some(native_opaque) = record.native_opaque %}
+class {{ record.class_name }}:
+    __slots__ = ('_handle',)
+
+    def __init__(self) -> None:
+        raise TypeError("{{ record.class_name }} cannot be constructed directly; use the exported factory function")
+
+    def close(self) -> None:
+        """Release the native handle. Idempotent; safe to call multiple times."""
+        handle = getattr(self, '_handle', None)
+        if handle is not None:
+            # Clear before calling native code: drop glue can re-enter Python
+            # (and can raise), so every nested close must observe this object
+            # as already closed.
+            object.__setattr__(self, '_handle', None)
+            _native.{{ native_opaque.drop_fn() }}(handle)
+
+    def __del__(self) -> None:
+        self.close()
+
+    def _handle_or_raise(self):
+        handle = getattr(self, '_handle', None)
+        if handle is None:
+            raise RuntimeError("{{ record.class_name }} has already been closed or released")
+        return handle
+
+    @classmethod
+    def _from_handle(cls, handle) -> "{{ record.class_name }}":
+        if not handle:
+            raise TypeError("{{ record.class_name }}._from_handle() received a null or zero handle")
+        obj = cls.__new__(cls)
+        object.__setattr__(obj, '_handle', handle)
+        return obj
+{%- for prop in native_opaque.props() %}
+
+    @property
+    def {{ prop.name() }}(self) -> {{ prop.annotation() }}:
+{%- if prop.optional() %}
+        if _native.{{ prop.has_fn().unwrap() }}(self._handle_or_raise()) == 0:
+            return None
+{%- endif %}
+{%- if prop.is_primitive() %}
+        return _native.{{ prop.get_fn().unwrap() }}(self._handle_or_raise())
+{%- else if prop.is_string() %}
+        raw = _native.{{ prop.python_borrow_fn().unwrap() }}(self._handle_or_raise())
+        if raw is None:
+            raise RuntimeError("native opaque borrow failed for {{ prop.name() }}")
+        return raw.decode('utf-8')
+{%- else %}
+        raw = _native.{{ prop.python_borrow_fn().unwrap() }}(self._handle_or_raise())
+        if raw is None:
+            raise RuntimeError("native opaque borrow failed for {{ prop.name() }}")
+        return raw
+{%- endif %}
+{%- endfor %}
+
+{%- else %}
 @dataclass(frozen=True, slots=True)
 class {{ record.class_name }}:
 {%- for field in record.fields %}
@@ -455,6 +512,7 @@ class {{ record.class_name }}:
 {%- endfor %}
 
 
+{%- endif %}
 _native.{{ record.register_method }}({{ record.class_name }})
 {% if let Some(exception_name) = record.exception_name %}
 

@@ -1,7 +1,7 @@
 use askama::Template as AskamaTemplate;
 use boltffi_binding::{
     CanonicalName, DirectFieldDecl, DirectRecordDecl, EncodedRecordDecl, ExportedMethodDecl,
-    FieldKey, InitializerDecl, Native, NativeSymbol, RecordDecl, RecordId,
+    FieldKey, InitializerDecl, Native, NativeSymbol, RecordDecl, RecordId, TypeRef,
 };
 
 use crate::{
@@ -41,11 +41,61 @@ struct EncodedTemplate {
     owned_decoder: Identifier,
 }
 
+#[derive(AskamaTemplate)]
+#[template(path = "target/python/native_opaque_record.c", escape = "none")]
+struct NativeOpaqueTemplate {
+    class_name: PythonIdentifier,
+    type_object: Identifier,
+    register_method: PythonIdentifier,
+    register_wrapper: Identifier,
+    boxer: Identifier,
+    drop_wrapper: Identifier,
+    drop_storage: Identifier,
+    has_wrappers: Vec<NativeOpaqueHasView>,
+    get_wrappers: Vec<NativeOpaqueGetView>,
+    borrow_wrappers: Vec<NativeOpaqueBorrowWrapperView>,
+}
+
+/// C wrapper view for an optional-presence helper.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct NativeOpaqueHasView {
+    pub c_wrapper: Identifier,
+    pub has_storage: Identifier,
+}
+
+/// C wrapper view for a primitive-get helper.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct NativeOpaqueGetView {
+    pub c_wrapper: Identifier,
+    pub get_storage: Identifier,
+    pub c_return_type: TypeFragment,
+    pub boxer: Identifier,
+}
+
+/// C wrapper view for a String/Bytes borrow helper.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct NativeOpaqueBorrowWrapperView {
+    pub c_wrapper: Identifier,
+    pub borrow_storage: Identifier,
+}
+
 pub struct Record {
     symbols: Symbols,
     shape: Shape,
     method: ExtensionMethod,
     callables: Vec<function::Function>,
+    /// Extra module methods generated for native opaque record field accessors.
+    native_opaque_methods: Vec<ExtensionMethod>,
+    /// Primitive runtimes needed by native opaque get-wrapper boxers.  These
+    /// must be included in primitives() so the boxer definitions are emitted
+    /// in native_module.c even when no other field uses them.
+    native_opaque_get_primitives: Vec<primitive::Runtime>,
+    /// All native-opaque helper view data for the C template.
+    native_opaque_drop_wrapper: Option<Identifier>,
+    native_opaque_drop_storage: Option<Identifier>,
+    native_opaque_has_wrappers: Vec<NativeOpaqueHasView>,
+    native_opaque_get_wrappers: Vec<NativeOpaqueGetView>,
+    native_opaque_borrow_wrappers: Vec<NativeOpaqueBorrowWrapperView>,
 }
 
 impl Record {
@@ -56,6 +106,9 @@ impl Record {
     ) -> Result<Self> {
         match declaration {
             RecordDecl::Direct(record) => Self::from_direct(record, bridge, context),
+            RecordDecl::Encoded(record) if record.is_native_opaque() => {
+                Self::from_native_opaque(record, bridge, context)
+            }
             RecordDecl::Encoded(record) => Self::from_encoded(record, bridge, context),
             _ => Err(Error::UnsupportedTarget {
                 target: "python",
@@ -90,6 +143,25 @@ impl Record {
                 owned_decoder: symbols.boxer,
             }
             .render()?,
+            Shape::NativeOpaque => NativeOpaqueTemplate {
+                class_name: symbols.class_name,
+                type_object: symbols.type_object,
+                register_method: symbols.register_method,
+                register_wrapper: symbols.register_wrapper,
+                boxer: symbols.boxer,
+                drop_wrapper: self
+                    .native_opaque_drop_wrapper
+                    .clone()
+                    .expect("native opaque drop wrapper present"),
+                drop_storage: self
+                    .native_opaque_drop_storage
+                    .clone()
+                    .expect("native opaque drop storage present"),
+                has_wrappers: self.native_opaque_has_wrappers.clone(),
+                get_wrappers: self.native_opaque_get_wrappers.clone(),
+                borrow_wrappers: self.native_opaque_borrow_wrappers.clone(),
+            }
+            .render()?,
         };
         let callables = self
             .callables
@@ -110,6 +182,7 @@ impl Record {
 
     pub fn methods(&self) -> impl Iterator<Item = &ExtensionMethod> {
         std::iter::once(&self.method)
+            .chain(self.native_opaque_methods.iter())
             .chain(self.callables.iter().flat_map(function::Function::methods))
     }
 
@@ -117,6 +190,9 @@ impl Record {
         let own = match &self.shape {
             Shape::Direct { primitives, .. } => primitives.clone(),
             Shape::Encoded => Vec::new(),
+            // Include primitives from get wrappers so their boxer definitions
+            // are emitted in native_module.c even when no other field uses them.
+            Shape::NativeOpaque => self.native_opaque_get_primitives.clone(),
         };
         own.into_iter()
             .chain(
@@ -214,6 +290,172 @@ impl Record {
             shape: Shape::Direct { primitives, fields },
             method,
             callables,
+            native_opaque_methods: Vec::new(),
+            native_opaque_get_primitives: Vec::new(),
+            native_opaque_drop_wrapper: None,
+            native_opaque_drop_storage: None,
+            native_opaque_has_wrappers: Vec::new(),
+            native_opaque_get_wrappers: Vec::new(),
+            native_opaque_borrow_wrappers: Vec::new(),
+        })
+    }
+
+    fn from_native_opaque(
+        record: &EncodedRecordDecl<Native>,
+        bridge: &PythonCExtBridgeContract,
+        _context: &RenderContext<Native>,
+    ) -> Result<Self> {
+        let symbols = Symbols::from_native_opaque(record)?;
+        let method = ExtensionMethod::new(
+            MethodName::parse(symbols.register_method.as_str())?,
+            symbols.register_wrapper.clone(),
+            MethodFlags::FastCall,
+        )?;
+        let stem = symbols.stem().to_owned();
+        let exports = record
+            .native_opaque_exports()
+            .ok_or(Error::UnsupportedTarget {
+                target: "python",
+                shape: "native opaque record without helper exports",
+            })?;
+
+        // Drop wrapper — uses loaded storage pointer
+        let drop_sym = exports.drop();
+        let drop_loaded = bridge
+            .loaded_function(drop_sym)
+            .ok_or(Error::UnsupportedTarget {
+                target: "python",
+                shape: "native opaque drop helper not found in bridge",
+            })?;
+        let drop_wrapper_name = Identifier::parse(format!("boltffi_python_opaque_drop_{stem}"))?;
+        let drop_storage = drop_loaded.storage_name().clone();
+        let mut native_opaque_methods: Vec<ExtensionMethod> = vec![ExtensionMethod::new(
+            MethodName::parse(drop_wrapper_name.as_str())?,
+            drop_wrapper_name.clone(),
+            MethodFlags::FastCall,
+        )?];
+
+        let mut has_wrappers: Vec<NativeOpaqueHasView> = Vec::new();
+        let mut get_wrappers: Vec<NativeOpaqueGetView> = Vec::new();
+        let mut borrow_wrappers: Vec<NativeOpaqueBorrowWrapperView> = Vec::new();
+        let mut get_primitives: Vec<primitive::Runtime> = Vec::new();
+
+        for (field, fexp) in record.fields().iter().zip(exports.fields()) {
+            let inner_ty = match field.ty() {
+                TypeRef::Optional(inner) => inner.as_ref(),
+                ty => ty,
+            };
+            let is_optional = matches!(field.ty(), TypeRef::Optional(_));
+            // Use sanitized function name for multi-word fields (Issues 5)
+            let field_name = match field.key() {
+                boltffi_binding::FieldKey::Named(n) => Name::new(n).function_text()?,
+                _ => continue,
+            };
+
+            // Has wrapper (optional fields only)
+            if is_optional {
+                let has_sym = fexp.has().ok_or(Error::UnsupportedTarget {
+                    target: "python",
+                    shape: "optional native opaque field missing has helper",
+                })?;
+                let has_loaded =
+                    bridge
+                        .loaded_function(has_sym)
+                        .ok_or(Error::UnsupportedTarget {
+                            target: "python",
+                            shape: "native opaque has helper not found in bridge",
+                        })?;
+                let has_wrapper_name =
+                    Identifier::parse(format!("boltffi_python_opaque_has_{stem}_{field_name}"))?;
+                has_wrappers.push(NativeOpaqueHasView {
+                    c_wrapper: has_wrapper_name.clone(),
+                    has_storage: has_loaded.storage_name().clone(),
+                });
+                native_opaque_methods.push(ExtensionMethod::new(
+                    MethodName::parse(has_wrapper_name.as_str())?,
+                    has_wrapper_name,
+                    MethodFlags::FastCall,
+                )?);
+            }
+
+            match inner_ty {
+                TypeRef::Primitive(p) => {
+                    let get_sym = fexp.get().ok_or(Error::UnsupportedTarget {
+                        target: "python",
+                        shape: "primitive native opaque field missing get helper",
+                    })?;
+                    let get_loaded =
+                        bridge
+                            .loaded_function(get_sym)
+                            .ok_or(Error::UnsupportedTarget {
+                                target: "python",
+                                shape: "native opaque get helper not found in bridge",
+                            })?;
+                    let get_wrapper_name = Identifier::parse(format!(
+                        "boltffi_python_opaque_get_{stem}_{field_name}"
+                    ))?;
+                    let prim = primitive::Runtime::new(*p);
+                    get_wrappers.push(NativeOpaqueGetView {
+                        c_wrapper: get_wrapper_name.clone(),
+                        get_storage: get_loaded.storage_name().clone(),
+                        c_return_type: prim.c_type()?,
+                        boxer: prim.boxer()?,
+                    });
+                    // Collect the primitive so its boxer definition is emitted
+                    // in native_module.c (via primitives()).
+                    get_primitives.push(prim);
+                    native_opaque_methods.push(ExtensionMethod::new(
+                        MethodName::parse(get_wrapper_name.as_str())?,
+                        get_wrapper_name,
+                        MethodFlags::FastCall,
+                    )?);
+                }
+                TypeRef::String | TypeRef::Bytes => {
+                    let borrow_sym = fexp.borrow().ok_or(Error::UnsupportedTarget {
+                        target: "python",
+                        shape: "String/Bytes native opaque field missing borrow helper",
+                    })?;
+                    let borrow_loaded =
+                        bridge
+                            .loaded_function(borrow_sym)
+                            .ok_or(Error::UnsupportedTarget {
+                                target: "python",
+                                shape: "native opaque borrow helper not found in bridge",
+                            })?;
+                    let borrow_wrapper_name = Identifier::parse(format!(
+                        "boltffi_python_borrow_opaque_{stem}_{field_name}"
+                    ))?;
+                    borrow_wrappers.push(NativeOpaqueBorrowWrapperView {
+                        c_wrapper: borrow_wrapper_name.clone(),
+                        borrow_storage: borrow_loaded.storage_name().clone(),
+                    });
+                    native_opaque_methods.push(ExtensionMethod::new(
+                        MethodName::parse(borrow_wrapper_name.as_str())?,
+                        borrow_wrapper_name,
+                        MethodFlags::FastCall,
+                    )?);
+                }
+                _ => {
+                    return Err(Error::UnsupportedTarget {
+                        target: "python",
+                        shape: "unsupported native opaque field type",
+                    });
+                }
+            }
+        }
+
+        Ok(Self {
+            symbols,
+            shape: Shape::NativeOpaque,
+            method,
+            callables: Vec::new(),
+            native_opaque_methods,
+            native_opaque_get_primitives: get_primitives,
+            native_opaque_drop_wrapper: Some(drop_wrapper_name),
+            native_opaque_drop_storage: Some(drop_storage),
+            native_opaque_has_wrappers: has_wrappers,
+            native_opaque_get_wrappers: get_wrappers,
+            native_opaque_borrow_wrappers: borrow_wrappers,
         })
     }
 
@@ -234,6 +476,13 @@ impl Record {
             shape: Shape::Encoded,
             method,
             callables,
+            native_opaque_methods: Vec::new(),
+            native_opaque_get_primitives: Vec::new(),
+            native_opaque_drop_wrapper: None,
+            native_opaque_drop_storage: None,
+            native_opaque_has_wrappers: Vec::new(),
+            native_opaque_get_wrappers: Vec::new(),
+            native_opaque_borrow_wrappers: Vec::new(),
         })
     }
 
@@ -413,6 +662,23 @@ impl Symbols {
         })
     }
 
+    pub fn from_native_opaque(record: &EncodedRecordDecl<Native>) -> Result<Self> {
+        let stem = Identifier::escape(Name::new(record.name()).function_text()?)?.to_string();
+        Ok(Self {
+            class_name: PythonIdentifier::parse(Name::new(record.name()).class())?,
+            stem: stem.clone(),
+            c_type: None,
+            type_object: Identifier::parse(format!("boltffi_python_{stem}_type"))?,
+            register_method: PythonIdentifier::parse(format!("_register_{stem}"))?,
+            register_wrapper: Identifier::parse(format!("boltffi_python_wrapper_register_{stem}"))?,
+            // parser is unused for native opaque (no wire encoding); keep consistent naming
+            parser: Identifier::parse(format!(
+                "boltffi_python_native_opaque_{stem}_parser_unused"
+            ))?,
+            boxer: Identifier::parse(format!("boltffi_python_box_opaque_{stem}"))?,
+        })
+    }
+
     pub fn from_encoded(record: &EncodedRecordDecl<Native>) -> Result<Self> {
         let stem = Identifier::escape(Name::new(record.name()).function_text()?)?.to_string();
         Ok(Self {
@@ -442,6 +708,7 @@ enum Shape {
         primitives: Vec<primitive::Runtime>,
     },
     Encoded,
+    NativeOpaque,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

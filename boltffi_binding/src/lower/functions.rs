@@ -55,17 +55,18 @@ fn lower_one<S: SurfaceLower>(
 #[cfg(test)]
 mod tests {
     use boltffi_ast::{
-        CallableForm, CanonicalName as SourceName, DeprecationInfo as SourceDeprecationInfo,
-        DocComment as SourceDocComment, ExecutionKind, FieldDef, FunctionDef,
-        FunctionId as SourceFunctionId, MethodDef, MethodId as SourceMethodId,
-        PackageInfo as SourcePackage, ParameterDef, Path as SourcePath, Primitive, Receiver,
-        RecordDef, ReprAttr, ReprItem, ReturnDef, SourceContract, TypeExpr,
+        AttributeInput, CallableForm, CanonicalName as SourceName,
+        DeprecationInfo as SourceDeprecationInfo, DocComment as SourceDocComment, ExecutionKind,
+        FieldDef, FunctionDef, FunctionId as SourceFunctionId, MethodDef,
+        MethodId as SourceMethodId, PackageInfo as SourcePackage, ParameterDef, Path as SourcePath,
+        Primitive, Receiver, RecordDef, RecordEncoding, ReprAttr, ReprItem, ReturnDef,
+        SourceContract, TypeExpr, UserAttr,
     };
 
     use crate::lower::{LowerError, LowerErrorKind, UnsupportedType, lower};
     use crate::{
-        Bindings, CodecNode, Decl, DirectValueType, DirectVectorElementType, ErrorDecl,
-        ExecutionDecl, FunctionDecl, IntoRust, Native, OutOfRust, ParamPlan,
+        Bindings, CodecNode, Decl, DirectValueType, DirectVectorElementType, EncodedParamTransport,
+        ErrorDecl, ExecutionDecl, FunctionDecl, IntoRust, Native, OutOfRust, ParamPlan,
         Primitive as BindingPrimitive, Receive, RecordDecl, RecordId, ReturnPlan, SurfaceLower,
         TypeRef, ValueRef, Wasm32, native, wasm32,
     };
@@ -122,6 +123,20 @@ mod tests {
 
     fn record_type(id: &str, path: &str) -> TypeExpr {
         TypeExpr::record(id.into(), SourcePath::single(path))
+    }
+
+    fn opaque_record() -> RecordDef {
+        let mut record = RecordDef::new("demo::Snapshot".into(), name("Snapshot"));
+        record.encoding = RecordEncoding::NativeOpaque;
+        record.fields = vec![FieldDef::new(
+            name("count"),
+            TypeExpr::Primitive(Primitive::U32),
+        )];
+        record
+    }
+
+    fn opaque_type() -> TypeExpr {
+        record_type("demo::Snapshot", "Snapshot")
     }
 
     fn point_record() -> RecordDef {
@@ -262,6 +277,7 @@ mod tests {
                 codec,
                 shape: native::BufferShape::Slice,
                 receive: Receive::ByValue,
+                ..
             } => {
                 assert_eq!(
                     codec.value(),
@@ -311,6 +327,135 @@ mod tests {
             }
         );
         assert!(codec.uses_interned_string());
+    }
+
+    #[test]
+    fn native_opaque_free_return_is_the_only_admitted_callable_shape() {
+        let mut good = function("demo::snapshot", "snapshot");
+        good.returns = ReturnDef::value(opaque_type());
+        let bindings = TestContract::new()
+            .with_record(opaque_record())
+            .with_function(good)
+            .lower_ok::<Native>();
+        assert!(matches!(
+            first_function(&bindings).callable().returns().plan(),
+            ReturnPlan::NativeOpaqueRecord { .. }
+        ));
+
+        let mut parameter = function("demo::consume", "consume");
+        parameter.parameters = vec![value_param("snapshot", opaque_type())];
+        let error = TestContract::new()
+            .with_record(opaque_record())
+            .with_function(parameter)
+            .lower::<Native>()
+            .expect_err("opaque parameters must reject");
+        assert!(matches!(
+            error.kind(),
+            LowerErrorKind::UnsupportedType(UnsupportedType::NativeOpaqueRecordParameter)
+        ));
+
+        let mut nested = function("demo::maybe", "maybe");
+        nested.returns = ReturnDef::value(TypeExpr::Option(Box::new(opaque_type())));
+        let error = TestContract::new()
+            .with_record(opaque_record())
+            .with_function(nested)
+            .lower::<Native>()
+            .expect_err("nested opaque return must reject");
+        assert!(matches!(
+            error.kind(),
+            LowerErrorKind::UnsupportedType(UnsupportedType::NativeOpaqueRecordNestedReturn)
+        ));
+
+        let mut asynchronous = function("demo::later", "later");
+        asynchronous.execution = ExecutionKind::Async;
+        asynchronous.returns = ReturnDef::value(opaque_type());
+        let error = TestContract::new()
+            .with_record(opaque_record())
+            .with_function(asynchronous)
+            .lower::<Native>()
+            .expect_err("async opaque return must reject");
+        assert!(matches!(
+            error.kind(),
+            LowerErrorKind::UnsupportedType(UnsupportedType::NativeOpaqueRecordAsync)
+        ));
+    }
+
+    #[test]
+    fn borrowed_slice_marker_lowers_to_direct_slice_transport() {
+        let mut user_agent = value_param(
+            "user_agent",
+            TypeExpr::Slice(Box::new(TypeExpr::Primitive(Primitive::U8))),
+        );
+        user_agent.passing = boltffi_ast::ParameterPassing::Ref;
+        user_agent.user_attrs.push(UserAttr::new(
+            SourcePath::single("borrowed"),
+            AttributeInput::Empty,
+        ));
+        let mut sniff = function("demo::sniff", "sniff");
+        sniff.parameters = vec![user_agent];
+
+        let bindings = TestContract::new()
+            .with_function(sniff)
+            .lower_ok::<Native>();
+
+        assert!(matches!(
+            first_param_lower(&bindings),
+            ParamPlan::Encoded {
+                ty: TypeRef::Bytes,
+                transport: EncodedParamTransport::BorrowedSlice,
+                receive: Receive::ByRef,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn borrowed_slice_marker_rejects_non_byte_slice() {
+        let mut values = value_param(
+            "values",
+            TypeExpr::Slice(Box::new(TypeExpr::Primitive(Primitive::I32))),
+        );
+        values.passing = boltffi_ast::ParameterPassing::Ref;
+        values.user_attrs.push(UserAttr::new(
+            SourcePath::single("borrowed"),
+            AttributeInput::Empty,
+        ));
+        let mut inspect = function("demo::inspect", "inspect");
+        inspect.parameters = vec![values];
+
+        let error = TestContract::new()
+            .with_function(inspect)
+            .lower::<Native>()
+            .expect_err("borrowed transport only accepts byte slices");
+
+        assert!(matches!(
+            error.kind(),
+            LowerErrorKind::UnsupportedType(UnsupportedType::BorrowedSliceParameter)
+        ));
+    }
+
+    #[test]
+    fn borrowed_slice_marker_rejects_owned_bytes() {
+        let mut bytes = value_param(
+            "bytes",
+            TypeExpr::Vec(Box::new(TypeExpr::Primitive(Primitive::U8))),
+        );
+        bytes.user_attrs.push(UserAttr::new(
+            SourcePath::single("borrowed"),
+            AttributeInput::Empty,
+        ));
+        let mut inspect = function("demo::inspect", "inspect");
+        inspect.parameters = vec![bytes];
+
+        let error = TestContract::new()
+            .with_function(inspect)
+            .lower::<Native>()
+            .expect_err("owned bytes cannot use borrowed transport");
+
+        assert!(matches!(
+            error.kind(),
+            LowerErrorKind::UnsupportedType(UnsupportedType::BorrowedSliceParameter)
+        ));
     }
 
     #[test]

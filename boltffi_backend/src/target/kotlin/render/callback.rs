@@ -872,6 +872,7 @@ impl<'plan> ParamPlanRender<'plan, Native, OutOfRust> for HandleParameterRender<
         ty: &'plan TypeRef,
         codec: &'plan <OutOfRust as Direction>::Codec,
         _shape: <Native as Surface>::BufferShape,
+        _: boltffi_binding::EncodedParamTransport,
         _receive: <OutOfRust as Direction>::Receive,
     ) -> Self::Output {
         let write = WireBuffer::new(&self.source_name)?.write_value(

@@ -429,6 +429,7 @@ impl<'plan> ParamPlanRender<'plan, Native, OutOfRust> for HandleParameterRender<
         ty: &'plan TypeRef,
         codec: &'plan <OutOfRust as Direction>::Codec,
         _: native::BufferShape,
+        _: boltffi_binding::EncodedParamTransport,
         _: <OutOfRust as Direction>::Receive,
     ) -> Self::Output {
         let plan = codec.write_self_value();

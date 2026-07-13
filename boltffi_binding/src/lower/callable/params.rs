@@ -2,13 +2,13 @@ use boltffi_ast::{ParameterDef, ParameterPassing, TypeExpr};
 
 use crate::{
     CanonicalName, ClosureParameter, ClosureReturn, DirectValueType, Direction, ElementMeta,
-    HandleTarget, IntoRust, OutOfRust, ParamDecl, ParamDirection, ParamPlan, Primitive, Receive,
-    ValueRef,
+    EncodedParamTransport, HandleTarget, IntoRust, OutOfRust, ParamDecl, ParamDirection, ParamPlan,
+    Primitive, Receive, ValueRef,
 };
 
 use super::super::{
     LowerError, codecs, enums, error::UnsupportedType, ids::DeclarationIds, index::Index, metadata,
-    records, surface::SurfaceLower, symbol::SymbolAllocator, types,
+    opaque, records, surface::SurfaceLower, symbol::SymbolAllocator, types,
 };
 
 use super::{
@@ -74,7 +74,40 @@ where
         return D::lower_closure_param(index, ids, allocator, canonical_name, meta, closure);
     }
     let value = ValueRef::named(canonical_name.clone());
-    let plan = lower_plain_plan::<S, D>(index, ids, root_encoding, &type_expr, value, receive)?;
+    let mut plan = lower_plain_plan::<S, D>(index, ids, root_encoding, &type_expr, value, receive)?;
+    if parameter.user_attrs.iter().any(|attribute| {
+        attribute
+            .path
+            .last()
+            .is_some_and(|segment| segment.name.as_str() == "borrowed")
+    }) {
+        if !matches!(owner, CallableOwner::Function) {
+            return Err(LowerError::unsupported_type(
+                UnsupportedType::BorrowedSliceParameter,
+            ));
+        }
+        match (&type_expr, parameter.passing, &mut plan) {
+            (TypeExpr::Str, ParameterPassing::Ref, ParamPlan::Encoded { transport, .. }) => {
+                *transport = EncodedParamTransport::BorrowedSlice
+            }
+            (
+                TypeExpr::Slice(element),
+                ParameterPassing::Ref,
+                ParamPlan::Encoded { transport, .. },
+            ) if matches!(
+                element.as_ref(),
+                TypeExpr::Primitive(boltffi_ast::Primitive::U8)
+            ) =>
+            {
+                *transport = EncodedParamTransport::BorrowedSlice;
+            }
+            _ => {
+                return Err(LowerError::unsupported_type(
+                    UnsupportedType::BorrowedSliceParameter,
+                ));
+            }
+        }
+    }
     Ok(ParamDecl::value(canonical_name, meta, plan))
 }
 
@@ -86,6 +119,11 @@ fn lower_plain_plan<S: SurfaceLower, D: Direction>(
     value: ValueRef,
     receive: Receive,
 ) -> Result<ParamPlan<S, D>, LowerError> {
+    if opaque::contains(index, type_expr) {
+        return Err(LowerError::unsupported_type(
+            UnsupportedType::NativeOpaqueRecordParameter,
+        ));
+    }
     match specialize_param::<S, D>(index, ids, type_expr, receive)? {
         Some(plan) => Ok(plan),
         None => lower_plan::<S, D>(index, ids, root_encoding, type_expr, value, receive),
@@ -189,6 +227,7 @@ fn lower_plan<S: SurfaceLower, D: Direction>(
                 ty,
                 codec: D::make_codec(value, codec_node),
                 shape: S::encoded_param_shape(),
+                transport: EncodedParamTransport::Wire,
                 receive: D::receive_from(receive),
             })
         }

@@ -173,7 +173,14 @@ fn is_boltffi_helper_attr(attr: &syn::Attribute) -> bool {
         return false;
     }
     match path.segments.last().map(|segment| &segment.ident) {
-        Some(ident) if ident == "skip" || ident == "name" || ident == "ffi_stream" => true,
+        Some(ident)
+            if ident == "skip"
+                || ident == "name"
+                || ident == "ffi_stream"
+                || ident == "borrowed" =>
+        {
+            true
+        }
         Some(ident) if ident == "default" => {
             path.segments.len() == 2 || matches!(attr.meta, syn::Meta::List(_))
         }
@@ -233,18 +240,23 @@ pub fn interned_string_pool(item: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn data(attr: TokenStream, item: TokenStream) -> TokenStream {
     let attr_str = attr.to_string();
-    if attr_str.trim() == "impl" {
-        return expand_or_experimental(
+    match attr_str.trim() {
+        "impl" => expand_or_experimental(
             item,
             data::expansion::data_impl_block,
             DependencyExpansion::Legacy,
-        );
+        ),
+        "opaque" => expand_or_experimental(
+            item,
+            data::expansion::data_opaque_impl,
+            DependencyExpansion::Legacy,
+        ),
+        _ => expand_or_experimental(
+            item,
+            data::expansion::data_impl,
+            DependencyExpansion::Legacy,
+        ),
     }
-    expand_or_experimental(
-        item,
-        data::expansion::data_impl,
-        DependencyExpansion::Legacy,
-    )
 }
 
 #[proc_macro_attribute]

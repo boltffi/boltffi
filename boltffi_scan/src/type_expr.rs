@@ -187,14 +187,6 @@ impl<'a> Scanner<'a> {
     }
 
     fn named(&self, type_path: &syn::TypePath, source: &syn::Type) -> Result<TypeExpr, ScanError> {
-        if type_path
-            .path
-            .segments
-            .iter()
-            .any(|segment| !matches!(segment.arguments, syn::PathArguments::None))
-        {
-            return Err(ScanError::unsupported_type(source));
-        }
         let Some(segment) = type_path.path.segments.last() else {
             return Err(ScanError::unsupported_type(source));
         };
@@ -208,22 +200,43 @@ impl<'a> Scanner<'a> {
         if let Some(primitive) = Primitive::from_rust_name(&name) {
             return Ok(TypeExpr::Primitive(primitive));
         }
-        let path = ast_path(&type_path.path, self)?;
+        let has_arguments = type_path
+            .path
+            .segments
+            .iter()
+            .any(|segment| !matches!(segment.arguments, syn::PathArguments::None));
+        let lifetime_arguments_only = type_path.path.segments.iter().all(|segment| match &segment
+            .arguments
+        {
+            syn::PathArguments::None => true,
+            syn::PathArguments::AngleBracketed(arguments) => arguments
+                .args
+                .iter()
+                .all(|argument| matches!(argument, syn::GenericArgument::Lifetime(_))),
+            syn::PathArguments::Parenthesized(_) => false,
+        });
         match self
             .declared_types
             .resolve_type_in_scope(self.scope, &type_path.path)?
         {
-            SourceType::Declared(DeclaredType::Record(id)) => {
-                Ok(TypeExpr::record(id.clone(), path))
-            }
-            SourceType::Declared(DeclaredType::Enum(id)) => {
-                Ok(TypeExpr::enumeration(id.clone(), path))
-            }
-            SourceType::Declared(DeclaredType::Class(id)) => Ok(TypeExpr::class(id.clone(), path)),
-            SourceType::Declared(DeclaredType::Custom(id)) => {
-                Ok(TypeExpr::custom(id.clone(), path))
-            }
-            SourceType::Declared(DeclaredType::Trait(_))
+            SourceType::Declared(DeclaredType::Record(id)) if lifetime_arguments_only => Ok(
+                TypeExpr::record(id.clone(), ast_path(&type_path.path, self)?),
+            ),
+            SourceType::Declared(DeclaredType::Enum(id)) if !has_arguments => Ok(
+                TypeExpr::enumeration(id.clone(), ast_path(&type_path.path, self)?),
+            ),
+            SourceType::Declared(DeclaredType::Class(id)) if !has_arguments => Ok(TypeExpr::class(
+                id.clone(),
+                ast_path(&type_path.path, self)?,
+            )),
+            SourceType::Declared(DeclaredType::Custom(id)) if !has_arguments => Ok(
+                TypeExpr::custom(id.clone(), ast_path(&type_path.path, self)?),
+            ),
+            SourceType::Declared(DeclaredType::Record(_))
+            | SourceType::Declared(DeclaredType::Enum(_))
+            | SourceType::Declared(DeclaredType::Class(_))
+            | SourceType::Declared(DeclaredType::Custom(_))
+            | SourceType::Declared(DeclaredType::Trait(_))
             | SourceType::Declared(DeclaredType::InternedStringPool(_))
             | SourceType::Unregistered
             | SourceType::External(_)

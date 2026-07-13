@@ -438,6 +438,7 @@ impl<'plan> ParamPlanRender<'plan, Native, OutOfRust> for ClosureTypeName<'_> {
         ty: &'plan TypeRef,
         _codec: &'plan <OutOfRust as Direction>::Codec,
         _shape: <Native as Surface>::BufferShape,
+        _: boltffi_binding::EncodedParamTransport,
         _receive: <OutOfRust as Direction>::Receive,
     ) -> Self::Output {
         self.type_ref(ty)

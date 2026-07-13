@@ -39,7 +39,9 @@ impl<'a> NamedTypeTransportClassifier<'a> {
             Some(DataTypeCategory::Scalar | DataTypeCategory::Blittable) => {
                 NamedTypeTransport::Passable
             }
-            Some(DataTypeCategory::WireEncoded) | None => NamedTypeTransport::WireEncoded,
+            Some(DataTypeCategory::WireEncoded | DataTypeCategory::NativeOpaque) | None => {
+                NamedTypeTransport::WireEncoded
+            }
         }
     }
 

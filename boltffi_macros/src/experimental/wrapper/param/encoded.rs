@@ -24,6 +24,7 @@ pub struct Input<'expansion, 'lowered, S: RenderSurface> {
     expansion: &'expansion Expansion<'lowered, S>,
     writeback: bool,
     mutable_bytes: bool,
+    borrowed_slice: bool,
 }
 
 impl<'expansion, 'lowered, S: RenderSurface> Input<'expansion, 'lowered, S> {
@@ -44,6 +45,7 @@ impl<'expansion, 'lowered, S: RenderSurface> Input<'expansion, 'lowered, S> {
             expansion,
             writeback: false,
             mutable_bytes: false,
+            borrowed_slice: false,
         }
     }
 
@@ -54,6 +56,11 @@ impl<'expansion, 'lowered, S: RenderSurface> Input<'expansion, 'lowered, S> {
 
     pub fn into_mutable_bytes(mut self) -> Self {
         self.mutable_bytes = true;
+        self
+    }
+
+    pub fn into_borrowed_slice(mut self) -> Self {
+        self.borrowed_slice = true;
         self
     }
 }
@@ -80,6 +87,11 @@ impl<'expansion, 'lowered> Render<Wasm32, Input<'expansion, 'lowered, Wasm32>> f
     fn render(self, input: Input<'expansion, 'lowered, Wasm32>) -> Result<Self::Output, Error> {
         match input.shape {
             wasm32::BufferShape::Slice => {
+                if input.borrowed_slice {
+                    return Err(Error::UnsupportedExpansion(
+                        "borrowed slice parameters are unsupported on wasm",
+                    ));
+                }
                 let mut input = input;
                 input.writeback = false;
                 input.mutable_bytes = false;
@@ -105,6 +117,7 @@ struct Slice<'expansion, 'lowered, S: RenderSurface> {
     expansion: &'expansion Expansion<'lowered, S>,
     writeback: bool,
     mutable_bytes: bool,
+    borrowed_slice: bool,
 }
 
 impl<'expansion, 'lowered, S: RenderSurface> From<Input<'expansion, 'lowered, S>>
@@ -131,10 +144,15 @@ impl<'expansion, 'lowered, S: RenderSurface> Slice<'expansion, 'lowered, S> {
             expansion: input.expansion,
             writeback: input.writeback,
             mutable_bytes: input.mutable_bytes,
+            borrowed_slice: input.borrowed_slice,
         }
     }
 
     fn tokens(self) -> Result<Tokens, Error> {
+        if self.borrowed_slice {
+            return self.borrowed_slice_tokens();
+        }
+
         // For mutable byte-slice params (&mut [u8]) in the new direct ABI, bypass wire-decoding
         // and create a mutable slice directly from the raw pointer.
         if self.mutable_bytes {
@@ -174,6 +192,66 @@ impl<'expansion, 'lowered, S: RenderSurface> Slice<'expansion, 'lowered, S> {
                 .chain(writeback.conversions)
                 .collect(),
             writebacks: writeback.writebacks,
+            argument: quote! { #ident },
+        })
+    }
+
+    fn borrowed_slice_tokens(self) -> Result<Tokens, Error> {
+        let pointer = &self.pointer;
+        let length = &self.length;
+        let ident = &self.ident;
+        let failure = &self.failure;
+        let bytes = quote! {
+            if #pointer.is_null() && #length > 0 {
+                ::boltffi::__private::set_last_error(format!(
+                    "{}: null pointer with non-zero length (buf_len={})",
+                    stringify!(#ident),
+                    #length
+                ));
+                #failure
+            } else if #length == 0 {
+                &[]
+            } else {
+                unsafe { ::core::slice::from_raw_parts(#pointer, #length) }
+            }
+        };
+        let conversion = match self.target.source() {
+            boltffi_ast::TypeExpr::Str => quote! {
+                let #ident: &str = match ::core::str::from_utf8(#bytes) {
+                    Ok(value) => value,
+                    Err(error) => {
+                        ::boltffi::__private::set_last_error(format!(
+                            "{}: invalid UTF-8: {} (buf_len={})",
+                            stringify!(#ident),
+                            error,
+                            #length
+                        ));
+                        #failure
+                    }
+                };
+            },
+            boltffi_ast::TypeExpr::Slice(element)
+                if matches!(
+                    element.as_ref(),
+                    boltffi_ast::TypeExpr::Primitive(boltffi_ast::Primitive::U8)
+                ) =>
+            {
+                quote! {
+                    let #ident: &[u8] = #bytes;
+                }
+            }
+            _ => {
+                return Err(Error::UnsupportedExpansion(
+                    "borrowed slice parameter must be `&str` or `&[u8]`",
+                ));
+            }
+        };
+        Ok(Tokens {
+            items: Vec::new(),
+            ffi_parameters: vec![quote! { #pointer: *const u8 }, quote! { #length: usize }],
+            ffi_parameter_types: vec![quote! { *const u8 }, quote! { usize }],
+            conversions: vec![conversion],
+            writebacks: Vec::new(),
             argument: quote! { #ident },
         })
     }

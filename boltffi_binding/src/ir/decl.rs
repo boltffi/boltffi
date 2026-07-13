@@ -446,14 +446,25 @@ impl<S: Surface> Decl<S> {
                     .flat_map(ImportedCallable::native_symbols),
             );
         match self {
-            Self::Record(record) => Box::new(
-                record
-                    .initializers()
-                    .iter()
-                    .map(|initializer| initializer.symbol())
-                    .chain(record.methods().iter().map(|method| method.target()))
-                    .chain(nested),
-            ),
+            Self::Record(record) => {
+                let native_opaque_symbols: Box<dyn Iterator<Item = &NativeSymbol> + '_> =
+                    match record.as_ref() {
+                        RecordDecl::Encoded(record) => match record.native_opaque_exports() {
+                            Some(exports) => Box::new(exports.native_symbols()),
+                            None => Box::new(std::iter::empty()),
+                        },
+                        RecordDecl::Direct(_) => Box::new(std::iter::empty()),
+                    };
+                Box::new(
+                    record
+                        .initializers()
+                        .iter()
+                        .map(|initializer| initializer.symbol())
+                        .chain(record.methods().iter().map(|method| method.target()))
+                        .chain(native_opaque_symbols)
+                        .chain(nested),
+                )
+            }
             Self::Enum(enumeration) => Box::new(
                 enumeration
                     .initializers()
@@ -594,6 +605,11 @@ impl<S: Surface> RecordDecl<S> {
             Self::Direct(record) => record.is_codec_payload(),
             Self::Encoded(_) => true,
         }
+    }
+
+    /// Returns whether this record uses native opaque boxing.
+    pub const fn is_native_opaque(&self) -> bool {
+        matches!(self, Self::Encoded(record) if record.is_native_opaque())
     }
 
     pub(crate) fn set_error_payload(&mut self, error_payload: bool) {
@@ -795,6 +811,156 @@ impl<S: Surface> DirectRecordDecl<S> {
     }
 }
 
+/// Host-side storage policy for an encoded record.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum EncodedRecordStorage {
+    /// Decode fields into ordinary host-owned values.
+    #[default]
+    Decoded,
+    /// Box the Rust record as an opaque handle; host accesses fields through
+    /// generated per-field Rust accessor exports. No wire buffer is retained.
+    NativeOpaque,
+}
+
+/// Generated Rust exports that manage and expose one native opaque record.
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+pub struct NativeOpaqueRecordExports {
+    drop: NativeSymbol,
+    dsize: NativeSymbol,
+    fields: Vec<NativeOpaqueFieldExports>,
+}
+
+impl NativeOpaqueRecordExports {
+    pub(crate) fn new(
+        drop: NativeSymbol,
+        dsize: NativeSymbol,
+        fields: Vec<NativeOpaqueFieldExports>,
+    ) -> Self {
+        Self {
+            drop,
+            dsize,
+            fields,
+        }
+    }
+
+    /// Returns the generated destructor symbol.
+    pub const fn drop(&self) -> &NativeSymbol {
+        &self.drop
+    }
+
+    /// Returns the generated dynamic-size accounting symbol.
+    pub const fn dsize(&self) -> &NativeSymbol {
+        &self.dsize
+    }
+
+    /// Returns generated per-field accessor symbols.
+    pub fn fields(&self) -> &[NativeOpaqueFieldExports] {
+        &self.fields
+    }
+
+    /// Returns the generated accessors for a record field.
+    pub fn field(&self, key: &FieldKey) -> Option<&NativeOpaqueFieldExports> {
+        self.fields.iter().find(|field| field.key() == key)
+    }
+
+    fn native_symbols(&self) -> impl Iterator<Item = &NativeSymbol> {
+        std::iter::once(&self.drop)
+            .chain(std::iter::once(&self.dsize))
+            .chain(
+                self.fields
+                    .iter()
+                    .flat_map(NativeOpaqueFieldExports::native_symbols),
+            )
+    }
+}
+
+/// Generated Rust exports that expose one native opaque record field.
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+pub struct NativeOpaqueFieldExports {
+    key: FieldKey,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    has: Option<NativeSymbol>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    get: Option<NativeSymbol>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    borrow: Option<NativeSymbol>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    interned_tag: Option<NativeSymbol>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    interned_id: Option<NativeSymbol>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    interned_borrow_dynamic: Option<NativeSymbol>,
+}
+
+impl NativeOpaqueFieldExports {
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn new(
+        key: FieldKey,
+        has: Option<NativeSymbol>,
+        get: Option<NativeSymbol>,
+        borrow: Option<NativeSymbol>,
+        interned_tag: Option<NativeSymbol>,
+        interned_id: Option<NativeSymbol>,
+        interned_borrow_dynamic: Option<NativeSymbol>,
+    ) -> Self {
+        Self {
+            key,
+            has,
+            get,
+            borrow,
+            interned_tag,
+            interned_id,
+            interned_borrow_dynamic,
+        }
+    }
+
+    /// Returns the field key these exports expose.
+    pub const fn key(&self) -> &FieldKey {
+        &self.key
+    }
+
+    /// Returns the optional-presence symbol, when the field is optional.
+    pub const fn has(&self) -> Option<&NativeSymbol> {
+        self.has.as_ref()
+    }
+
+    /// Returns the scalar getter symbol, when the field is primitive.
+    pub const fn get(&self) -> Option<&NativeSymbol> {
+        self.get.as_ref()
+    }
+
+    /// Returns the borrowed pointer/length getter symbol for strings or bytes.
+    pub const fn borrow(&self) -> Option<&NativeSymbol> {
+        self.borrow.as_ref()
+    }
+
+    /// Returns the interned-string tag getter symbol.
+    pub const fn interned_tag(&self) -> Option<&NativeSymbol> {
+        self.interned_tag.as_ref()
+    }
+
+    /// Returns the interned-string static id getter symbol.
+    pub const fn interned_id(&self) -> Option<&NativeSymbol> {
+        self.interned_id.as_ref()
+    }
+
+    /// Returns the interned-string dynamic borrow getter symbol.
+    pub const fn interned_borrow_dynamic(&self) -> Option<&NativeSymbol> {
+        self.interned_borrow_dynamic.as_ref()
+    }
+
+    fn native_symbols(&self) -> impl Iterator<Item = &NativeSymbol> {
+        self.has
+            .iter()
+            .chain(self.get.iter())
+            .chain(self.borrow.iter())
+            .chain(self.interned_tag.iter())
+            .chain(self.interned_id.iter())
+            .chain(self.interned_borrow_dynamic.iter())
+    }
+}
+
 /// A record that crosses the boundary through encoded bytes.
 ///
 /// Each field carries its own per-field codec, and the record itself
@@ -811,6 +977,10 @@ pub struct EncodedRecordDecl<S: Surface> {
     #[serde(default, skip_serializing_if = "DeclarationRole::is_value")]
     role: DeclarationRole,
     meta: DeclMeta,
+    #[serde(default)]
+    storage: EncodedRecordStorage,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    native_opaque_exports: Option<NativeOpaqueRecordExports>,
     fields: Vec<EncodedFieldDecl>,
     initializers: Vec<InitializerDecl<S>>,
     methods: Vec<ExportedMethodDecl<S, NativeSymbol>>,
@@ -832,11 +1002,23 @@ impl<S: Surface> EncodedRecordDecl<S> {
             name,
             role: DeclarationRole::Value,
             meta,
+            storage: EncodedRecordStorage::Decoded,
+            native_opaque_exports: None,
             fields,
             initializers,
             methods,
             codec,
         }
+    }
+
+    pub(crate) fn with_storage(mut self, storage: EncodedRecordStorage) -> Self {
+        self.storage = storage;
+        self
+    }
+
+    pub(crate) fn with_native_opaque_exports(mut self, exports: NativeOpaqueRecordExports) -> Self {
+        self.native_opaque_exports = Some(exports);
+        self
     }
 
     /// Returns the record id.
@@ -862,6 +1044,21 @@ impl<S: Surface> EncodedRecordDecl<S> {
     /// Returns the declaration metadata.
     pub fn meta(&self) -> &DeclMeta {
         &self.meta
+    }
+
+    /// Returns the host-side storage policy.
+    pub const fn storage(&self) -> EncodedRecordStorage {
+        self.storage
+    }
+
+    /// Returns whether this record uses native opaque boxing.
+    pub const fn is_native_opaque(&self) -> bool {
+        matches!(self.storage, EncodedRecordStorage::NativeOpaque)
+    }
+
+    /// Returns the generated native opaque helper exports, when present.
+    pub const fn native_opaque_exports(&self) -> Option<&NativeOpaqueRecordExports> {
+        self.native_opaque_exports.as_ref()
     }
 
     /// Returns the fields in source order.

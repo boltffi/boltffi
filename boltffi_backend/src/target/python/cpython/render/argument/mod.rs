@@ -597,6 +597,7 @@ impl<'plan, 'render> ParamPlanRender<'plan, Native, IntoRust> for ParameterConve
         _: &TypeRef,
         _: &WritePlan,
         shape: native::BufferShape,
+        _transport: boltffi_binding::EncodedParamTransport,
         receive: Receive,
     ) -> Self::Output {
         match shape {

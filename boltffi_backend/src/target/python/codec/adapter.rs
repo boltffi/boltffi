@@ -357,6 +357,7 @@ impl<'collector, 'binding> ParamPlanRender<'binding, Native, IntoRust>
         _: &'binding TypeRef,
         codec: &'binding WritePlan,
         _: native::BufferShape,
+        _: boltffi_binding::EncodedParamTransport,
         _: Receive,
     ) {
         self.adapters.insert_encoder(codec);
@@ -392,6 +393,7 @@ impl<'collector, 'binding> ParamPlanRender<'binding, Native, OutOfRust>
         _: &'binding TypeRef,
         codec: &'binding ReadPlan,
         _: native::BufferShape,
+        _: boltffi_binding::EncodedParamTransport,
         _: (),
     ) {
         self.adapters.insert_decoder(codec);
@@ -450,6 +452,8 @@ impl<'collector, 'binding> ReturnPlanRender<'binding, Native, OutOfRust>
     fn closure(&mut self, closure: &'binding ClosureReturn<Native, OutOfRust>) {
         self.adapters.collect_rust_callable(closure.invoke());
     }
+
+    fn native_opaque_record(&mut self, _: boltffi_binding::RecordId) {}
 }
 
 struct IntoRustReturnAdapters<'collector, 'binding> {

@@ -1,6 +1,6 @@
 use boltffi_binding::{
-    DirectValueType, DirectVectorElementType, IncomingParam, IntoRust, ParamDecl, ParamPlan,
-    Receive, TypeRef,
+    DirectValueType, DirectVectorElementType, EncodedParamTransport, IncomingParam, IntoRust,
+    ParamDecl, ParamPlan, Receive, TypeRef,
 };
 use proc_macro2::TokenStream;
 
@@ -133,9 +133,9 @@ where
             IncomingParam::Value(ParamPlan::Encoded {
                 codec,
                 shape,
+                transport,
                 receive,
                 ty,
-                ..
             }) => {
                 let encoded_input = encoded::Input::new(
                     codec,
@@ -145,9 +145,17 @@ where
                     input.failure,
                     input.expansion,
                 );
-                let encoded_input = match (receive, ty) {
-                    (Receive::ByMutRef, TypeRef::Bytes) => encoded_input.into_mutable_bytes(),
-                    (Receive::ByMutRef, _) => encoded_input.with_writeback(),
+                let encoded_input = match (transport, receive, ty) {
+                    (EncodedParamTransport::BorrowedSlice, Receive::ByRef, _) => {
+                        encoded_input.into_borrowed_slice()
+                    }
+                    (EncodedParamTransport::BorrowedSlice, _, _) => {
+                        return Err(Error::UnsupportedExpansion(
+                            "borrowed slice parameter must be an immutable reference",
+                        ));
+                    }
+                    (_, Receive::ByMutRef, TypeRef::Bytes) => encoded_input.into_mutable_bytes(),
+                    (_, Receive::ByMutRef, _) => encoded_input.with_writeback(),
                     _ => encoded_input,
                 };
                 <encoded::Renderer as Render<S, _>>::render(encoded::Renderer, encoded_input)
