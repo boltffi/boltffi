@@ -260,6 +260,8 @@ impl host::HostBackend for KotlinHost {
             .stable(BindingCapability::Streams)
             .stable(BindingCapability::Constants)
             .stable(BindingCapability::CustomTypes)
+            .stable(BindingCapability::NativeOpaqueRecords)
+            .stable(BindingCapability::BorrowedSlices)
     }
 
     fn bridge_capabilities(&self) -> CapabilityRequirements<BridgeCapability> {

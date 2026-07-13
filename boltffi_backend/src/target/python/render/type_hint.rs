@@ -290,6 +290,7 @@ impl<'plan, 'package> ParamPlanRender<'plan, Native, IntoRust> for ParameterHint
         ty: &TypeRef,
         _: &WritePlan,
         shape: native::BufferShape,
+        _: boltffi_binding::EncodedParamTransport,
         _: Receive,
     ) -> Self::Output {
         self.encoded_type_ref(ty, shape)
@@ -401,5 +402,10 @@ impl<'plan, 'package> ReturnPlanRender<'plan, Native, OutOfRust> for ReturnHint<
             target: "python",
             shape: "unsupported return stub",
         })
+    }
+
+    fn native_opaque_record(&mut self, record: RecordId) -> Self::Output {
+        let name = self.package.record_name(record)?;
+        Ok(TypeHint::new(TypeAnnotation::identifier(name)))
     }
 }

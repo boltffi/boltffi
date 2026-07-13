@@ -10,7 +10,7 @@ use crate::{
 
 use super::{
     LowerError, codecs, error::UnsupportedType, ids::DeclarationIds, index::Index, metadata,
-    methods, primitive, surface::SurfaceLower, symbol::SymbolAllocator,
+    methods, opaque, primitive, surface::SurfaceLower, symbol::SymbolAllocator,
 };
 
 /// Lowers every enum in the source contract.
@@ -59,6 +59,21 @@ fn lower_one<S: SurfaceLower>(
     allocator: &mut SymbolAllocator,
     enumeration: &SourceEnum,
 ) -> Result<EnumDecl<S>, LowerError> {
+    if enumeration
+        .variants
+        .iter()
+        .any(|variant| match &variant.payload {
+            SourcePayload::Unit => false,
+            SourcePayload::Tuple(items) => items.iter().any(|item| opaque::contains(index, item)),
+            SourcePayload::Struct(fields) => fields
+                .iter()
+                .any(|field| opaque::contains(index, &field.type_expr)),
+        })
+    {
+        return Err(LowerError::unsupported_type(
+            UnsupportedType::NativeOpaqueRecordField,
+        ));
+    }
     let initializers = methods::lower_enum_initializers::<S>(index, ids, allocator, enumeration)?;
     let enum_methods = methods::lower_enum_methods::<S>(index, ids, allocator, enumeration)?;
     if is_c_style(enumeration) {
@@ -211,8 +226,8 @@ mod tests {
         DeprecationInfo as SourceDeprecationInfo, DocComment as SourceDocComment, EnumDef,
         ExecutionKind, FieldDef, FnSig, FnTrait, FnTraitKind, IntegerLiteral, MethodDef,
         MethodId as SourceMethodId, PackageInfo as SourcePackage, ParameterDef, ParameterPassing,
-        Path as SourcePath, Primitive, Receiver, RecordDef, ReprAttr, ReprItem, ReturnDef, Source,
-        SourceContract, TypeExpr, VariantDef, VariantPayload,
+        Path as SourcePath, Primitive, Receiver, RecordDef, RecordEncoding, ReprAttr, ReprItem,
+        ReturnDef, Source, SourceContract, TypeExpr, VariantDef, VariantPayload,
     };
 
     use crate::lower::lower;
@@ -222,7 +237,7 @@ mod tests {
         EnumId, ErrorDecl, ExecutionDecl, ExportedMethodDecl, FieldKey, InitializerDecl,
         IntegerRepr, IntegerValue, LowerError, LowerErrorKind, Native, NativeSymbol, OutOfRust,
         ParamPlan, Primitive as BindingPrimitive, ReadPlan, Receive, RecordId, ReturnPlan,
-        SurfaceLower, TypeRef, ValueRef, Wasm32, native, wasm32,
+        SurfaceLower, TypeRef, UnsupportedType, ValueRef, Wasm32, native, wasm32,
     };
 
     fn package() -> SourceContract {
@@ -882,6 +897,50 @@ mod tests {
     }
 
     #[test]
+    fn enum_method_direct_opaque_return_is_rejected_as_native_opaque_record_method() {
+        let mut opaque = RecordDef::new("demo::Opaque".into(), name("Opaque"));
+        opaque.encoding = RecordEncoding::NativeOpaque;
+        let enumeration = enum_with_methods(
+            direction_enum(),
+            vec![method_with(
+                "snapshot",
+                Receiver::Shared,
+                Vec::new(),
+                ReturnDef::value(record_type("demo::Opaque", "Opaque")),
+            )],
+        );
+
+        let error = lower_contract_result::<Native>(vec![opaque], vec![enumeration])
+            .expect_err("opaque enum method return must reject");
+        assert!(matches!(
+            error.kind(),
+            LowerErrorKind::UnsupportedType(UnsupportedType::NativeOpaqueRecordMethod)
+        ));
+    }
+
+    #[test]
+    fn enum_method_direct_opaque_parameter_is_rejected_as_native_opaque_record_parameter() {
+        let mut opaque = RecordDef::new("demo::Opaque".into(), name("Opaque"));
+        opaque.encoding = RecordEncoding::NativeOpaque;
+        let enumeration = enum_with_methods(
+            direction_enum(),
+            vec![method_with(
+                "consume",
+                Receiver::Shared,
+                vec![value_param("opaque", record_type("demo::Opaque", "Opaque"))],
+                ReturnDef::Void,
+            )],
+        );
+
+        let error = lower_contract_result::<Native>(vec![opaque], vec![enumeration])
+            .expect_err("opaque enum method parameter must reject");
+        assert!(matches!(
+            error.kind(),
+            LowerErrorKind::UnsupportedType(UnsupportedType::NativeOpaqueRecordParameter)
+        ));
+    }
+
+    #[test]
     fn async_enum_method_lowers_to_poll_handle_protocol_on_native() {
         let mut async_method = method("compute", Receiver::Shared);
         async_method.execution = ExecutionKind::Async;
@@ -1061,6 +1120,7 @@ mod tests {
                 codec,
                 shape: native::BufferShape::Slice,
                 receive: Receive::ByValue,
+                ..
             } => {
                 assert_eq!(ty, &TypeRef::String);
                 assert_eq!(codec.root(), &CodecNode::String);
@@ -1143,6 +1203,7 @@ mod tests {
                 codec,
                 shape: wasm32::BufferShape::Slice,
                 receive: Receive::ByValue,
+                ..
             } => {
                 assert_eq!(ty, &TypeRef::String);
                 assert_eq!(codec.root(), &CodecNode::Utf8String);

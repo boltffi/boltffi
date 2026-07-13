@@ -261,6 +261,9 @@ enum ReturnConversion {
     ClassHandle(ClassHandle),
     CallbackHandle(CallbackHandle),
     Closure(Box<ReturnedClosure>),
+    NativeOpaqueRecord {
+        ty: TypeName,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2371,10 +2374,31 @@ impl<'plan> ParamPlanRender<'plan, Native, IntoRust> for ParameterPlan<'_, '_> {
         ty: &'plan TypeRef,
         codec: &'plan <IntoRust as Direction>::Codec,
         shape: <Native as Surface>::BufferShape,
+        transport: boltffi_binding::EncodedParamTransport,
         receive: Receive,
     ) -> Self::Output {
         if shape != native::BufferShape::Slice {
             return Err(SwiftHost::unsupported("encoded parameter shape"));
+        }
+        if transport == boltffi_binding::EncodedParamTransport::BorrowedSlice {
+            if receive != Receive::ByRef {
+                return Err(SwiftHost::unsupported(
+                    "borrowed slice parameter receive mode",
+                ));
+            }
+            let collection = match ty {
+                TypeRef::Bytes => Expression::identifier(self.name.clone()),
+                TypeRef::String => Expression::new(format!("Array({}.utf8)", self.name)),
+                _ => return Err(SwiftHost::unsupported("borrowed slice parameter type")),
+            };
+            return Ok(Parameter {
+                name: self.name.clone(),
+                ty: SwiftType::type_ref(ty, self.context)?,
+                argument: Argument::DirectVector(BorrowedVector::raw_bytes(
+                    &self.source_name,
+                    collection,
+                )?),
+            });
         }
         if receive == Receive::ByMutRef {
             let read = codec.read_plan();
@@ -2637,6 +2661,18 @@ impl Return {
             ReturnConversion::ClassHandle(handle) => handle.body(value, indent),
             ReturnConversion::CallbackHandle(handle) => handle.body(value, indent),
             ReturnConversion::Closure(_) => Err(SwiftHost::unsupported("closure value body")),
+            ReturnConversion::NativeOpaqueRecord { ty } => {
+                Ok(Statement::returns(Expression::call(
+                    ty,
+                    [Expression::labeled(
+                        "nativeHandle",
+                        Expression::forced(value),
+                    )]
+                    .into_iter()
+                    .collect::<ArgumentList>(),
+                ))
+                .indented(indent))
+            }
             ReturnConversion::Direct | ReturnConversion::FromC(_) => {
                 Ok(self.statement(value).indented(indent))
             }
@@ -2767,7 +2803,8 @@ impl Return {
             ReturnConversion::DirectVector { .. }
             | ReturnConversion::ClassHandle(_)
             | ReturnConversion::CallbackHandle(_)
-            | ReturnConversion::Closure(_) => {
+            | ReturnConversion::Closure(_)
+            | ReturnConversion::NativeOpaqueRecord { .. } => {
                 Err(SwiftHost::unsupported("value initializer return"))
             }
             ReturnConversion::Direct | ReturnConversion::FromC(_) => {
@@ -2900,6 +2937,15 @@ impl Return {
             ReturnConversion::ClassHandle(handle) => handle.wrap(call),
             ReturnConversion::CallbackHandle(handle) => handle.wrap(call),
             ReturnConversion::Closure(_) => call,
+            ReturnConversion::NativeOpaqueRecord { ty } => Expression::call(
+                ty,
+                [Expression::labeled(
+                    "nativeHandle",
+                    Expression::forced(call),
+                )]
+                .into_iter()
+                .collect::<ArgumentList>(),
+            ),
         }
     }
 }
@@ -3649,6 +3695,16 @@ impl<'plan> ReturnPlanRender<'plan, Native, OutOfRust> for ReturnPlan<'_, '_> {
             ty: Some(closure.public_ty.clone()),
             optional: closure.presence == HandlePresence::Nullable,
             conversion: ReturnConversion::Closure(Box::new(closure)),
+            success: None,
+        })
+    }
+
+    fn native_opaque_record(&mut self, record: RecordId) -> Self::Output {
+        let ty = SwiftType::record(record, self.context)?;
+        Ok(Return {
+            ty: Some(ty.clone()),
+            optional: false,
+            conversion: ReturnConversion::NativeOpaqueRecord { ty },
             success: None,
         })
     }

@@ -539,6 +539,7 @@ impl<'plan> ParamPlanRender<'plan, Native, OutOfRust> for ProxyRequirements {
         _: &'plan TypeRef,
         _: &'plan <OutOfRust as Direction>::Codec,
         _: <Native as Surface>::BufferShape,
+        _: boltffi_binding::EncodedParamTransport,
         _: (),
     ) -> Self::Output {
     }
@@ -1711,6 +1712,7 @@ impl<'plan> ParamPlanRender<'plan, Native, OutOfRust> for ParameterPlan<'_, '_> 
         ty: &'plan TypeRef,
         codec: &'plan <OutOfRust as Direction>::Codec,
         shape: <Native as Surface>::BufferShape,
+        _: boltffi_binding::EncodedParamTransport,
         _: (),
     ) -> Self::Output {
         if shape != native::BufferShape::Slice {
@@ -1867,6 +1869,7 @@ impl<'plan> ParamPlanRender<'plan, Native, OutOfRust> for ProxyParameterSupport<
         _: &'plan TypeRef,
         _: &'plan <OutOfRust as Direction>::Codec,
         shape: <Native as Surface>::BufferShape,
+        _: boltffi_binding::EncodedParamTransport,
         _: (),
     ) -> Self::Output {
         match shape {

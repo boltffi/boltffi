@@ -357,3 +357,32 @@ fn kotlin_target_uses_configured_c_header_in_jni_bridge() {
 
     insta::assert_snapshot!(rendered_files(&files));
 }
+
+#[test]
+fn kotlin_target_renders_native_opaque_records() {
+    let rendered = super::rendered_source(super::source::SourceFixture::many([
+        "records/native_opaque_snapshot",
+        "exports/native_opaque_record_return",
+    ]));
+
+    assert!(!rendered.contains("__boltffi_input_wire"));
+    assert!(!rendered.contains("by lazy"));
+    assert!(rendered.contains("get() = withHandle { handle ->"));
+    assert!(rendered.contains("lifecycle.readLock().lock()"));
+    assert!(rendered.contains("lifecycle.writeLock().lock()"));
+    assert!(rendered.contains("__boltffi_input_raw_buffer"));
+    insta::assert_snapshot!(rendered);
+}
+
+#[test]
+fn kotlin_target_borrowed_string_uses_raw_utf8_without_wire_writer() {
+    let rendered = super::rendered_source(super::source::SourceFixture::many([
+        "records/native_opaque_snapshot",
+        "exports/native_opaque_record_return_string",
+    ]));
+
+    assert!(rendered.contains("input.toByteArray(Charsets.UTF_8)"));
+    assert!(rendered.contains("__boltffi_input_raw_buffer"));
+    assert!(!rendered.contains("__boltffi_input_wire"));
+    assert!(!rendered.contains("WireWriterPool.acquire"));
+}

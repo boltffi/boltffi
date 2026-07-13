@@ -3,7 +3,7 @@ use boltffi_binding::{
     ClosureReturn, DirectValueType, DirectVectorElementType, ErrorChannel, ErrorPlacement,
     ExecutionDecl, ExportedCallable, FunctionDecl, HandlePresence, HandleTarget, IncomingParam,
     IntoRust, Native, NativeSymbol, OutOfRust, ParamPlanRender, Primitive, ReadPlan, Receive,
-    ReturnPlan, ReturnPlanRender, ReturnValueSlot, TypeRef, WritePlan, native,
+    RecordId, ReturnPlan, ReturnPlanRender, ReturnValueSlot, TypeRef, WritePlan, native,
 };
 
 use crate::{
@@ -457,6 +457,7 @@ impl<'plan> ParamPlanRender<'plan, Native, IntoRust> for MutableEncodedParameter
         _: &TypeRef,
         _: &WritePlan,
         _: native::BufferShape,
+        _: boltffi_binding::EncodedParamTransport,
         receive: Receive,
     ) -> Self::Output {
         receive == Receive::ByMutRef
@@ -1118,6 +1119,13 @@ impl<'plan> ReturnPlanRender<'plan, Native, OutOfRust> for FallibleSuccess {
         Err(Error::UnsupportedTarget {
             target: "python",
             shape: "fallible success return",
+        })
+    }
+
+    fn native_opaque_record(&mut self, _: RecordId) -> Self::Output {
+        Err(Error::UnsupportedTarget {
+            target: "python",
+            shape: "fallible native opaque record return",
         })
     }
 }

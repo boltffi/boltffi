@@ -98,26 +98,30 @@ impl SourceIndex {
             methods
                 .iter()
                 .enumerate()
-                .map(|(index, method)| {
-                    (
-                        method.source_symbol(),
-                        SymbolLocation::Method(MethodLocation::Root(MethodIndex(index))),
-                    )
+                .filter_map(|(index, method)| {
+                    method.source_symbol().map(|symbol| {
+                        (
+                            symbol,
+                            SymbolLocation::Method(MethodLocation::Root(MethodIndex(index))),
+                        )
+                    })
                 })
                 .chain(
                     streams
                         .iter()
                         .enumerate()
                         .flat_map(|(stream_index, stream)| {
-                            stream.methods().iter().enumerate().map(
+                            stream.methods().iter().enumerate().filter_map(
                                 move |(method_index, method)| {
-                                    (
-                                        method.source_symbol(),
-                                        SymbolLocation::Method(MethodLocation::Stream {
-                                            stream: StreamIndex(stream_index),
-                                            method: MethodIndex(method_index),
-                                        }),
-                                    )
+                                    method.source_symbol().map(|symbol| {
+                                        (
+                                            symbol,
+                                            SymbolLocation::Method(MethodLocation::Stream {
+                                                stream: StreamIndex(stream_index),
+                                                method: MethodIndex(method_index),
+                                            }),
+                                        )
+                                    })
                                 },
                             )
                         }),

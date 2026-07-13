@@ -1,4 +1,5 @@
 use boltffi_ffi_rules::classification::PassableCategory;
+use boltffi_scan::is_boltffi_data_marker;
 use std::collections::HashMap;
 use syn::{Item, ItemEnum, ItemStruct, Type};
 
@@ -13,6 +14,7 @@ pub enum DataTypeCategory {
     Scalar(ScalarEnumRepr),
     Blittable,
     WireEncoded,
+    NativeOpaque,
 }
 
 impl DataTypeCategory {
@@ -360,6 +362,15 @@ impl<'a> DataTypeCollector<'a> {
 }
 
 fn classify_struct_category(item_struct: &ItemStruct) -> DataTypeCategory {
+    if item_struct.attrs.iter().any(|attr| {
+        is_boltffi_data_marker(attr)
+            && attr
+                .parse_args::<syn::Ident>()
+                .is_ok_and(|argument| argument == "opaque")
+    }) {
+        return DataTypeCategory::NativeOpaque;
+    }
+
     match StructDataShape::new(item_struct).passable_category() {
         PassableCategory::Blittable => DataTypeCategory::Blittable,
         PassableCategory::Scalar | PassableCategory::WireEncoded => DataTypeCategory::WireEncoded,
@@ -382,7 +393,112 @@ fn classify_enum_category(item_enum: &ItemEnum) -> DataTypeCategory {
 mod tests {
     use syn::parse_quote;
 
-    use super::{DataTypeCategory, DataTypeRegistry, ScalarEnumRepr};
+    use super::{
+        DataTypeCategory, DataTypeCollector, DataTypeRegistry, ScalarEnumRepr,
+        classify_struct_category,
+    };
+
+    fn registry_for(source: &str) -> DataTypeRegistry {
+        let syntax = syn::parse_file(source).expect("valid source");
+        let mut registry = DataTypeRegistry::default();
+        let mut collector = DataTypeCollector {
+            module_path: Vec::new(),
+            registry: &mut registry,
+        };
+        syntax
+            .items
+            .iter()
+            .try_for_each(|item| collector.collect_item(item))
+            .expect("collect source");
+        registry.finalize_unique_names();
+        registry
+    }
+
+    #[test]
+    fn opaque_data_struct_uses_native_opaque_category_for_owned_marker_paths_only() {
+        for item in [
+            parse_quote!(
+                #[data(opaque)]
+                struct Snapshot {
+                    name: String,
+                }
+            ),
+            parse_quote!(
+                #[boltffi::data(opaque)]
+                struct Snapshot {
+                    name: String,
+                }
+            ),
+        ] {
+            assert_eq!(
+                classify_struct_category(&item),
+                DataTypeCategory::NativeOpaque
+            );
+        }
+
+        let foreign: syn::ItemStruct = parse_quote!(
+            #[other::data(opaque)]
+            struct Snapshot {
+                name: String,
+            }
+        );
+        assert_ne!(
+            classify_struct_category(&foreign),
+            DataTypeCategory::NativeOpaque
+        );
+    }
+
+    #[test]
+    fn collector_recognizes_only_exact_data_and_error_marker_paths() {
+        let registry = registry_for(
+            r#"
+            #[data(opaque)]
+            struct ShortData { value: String }
+            #[boltffi::data(opaque)]
+            struct QualifiedData { value: String }
+            #[error]
+            struct ShortError { value: String }
+            #[boltffi::error]
+            struct QualifiedError { value: String }
+
+            mod nested {
+                #[other::data(opaque)]
+                struct ForeignData { value: String }
+                #[vendor::boltffi::data(opaque)]
+                struct DeepData { value: String }
+                #[other::error]
+                struct ForeignError { value: String }
+                #[vendor::boltffi::error]
+                struct DeepError { value: String }
+            }
+            "#,
+        );
+
+        assert_eq!(
+            registry.category_for(&parse_quote!(ShortData)),
+            Some(DataTypeCategory::NativeOpaque)
+        );
+        assert_eq!(
+            registry.category_for(&parse_quote!(QualifiedData)),
+            Some(DataTypeCategory::NativeOpaque)
+        );
+        assert_eq!(
+            registry.category_for(&parse_quote!(ShortError)),
+            Some(DataTypeCategory::WireEncoded)
+        );
+        assert_eq!(
+            registry.category_for(&parse_quote!(QualifiedError)),
+            Some(DataTypeCategory::WireEncoded)
+        );
+        for ty in [
+            parse_quote!(nested::ForeignData),
+            parse_quote!(nested::DeepData),
+            parse_quote!(nested::ForeignError),
+            parse_quote!(nested::DeepError),
+        ] {
+            assert_eq!(registry.category_for(&ty), None);
+        }
+    }
 
     #[test]
     fn single_segment_unique_name_wins_over_unrelated_alias() {

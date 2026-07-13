@@ -7,7 +7,7 @@ use syn::{ReturnType, Type};
 
 use crate::index::class_types::ClassTypeRegistry;
 use crate::index::custom_types::CustomTypeRegistry;
-use crate::index::data_types::DataTypeRegistry;
+use crate::index::data_types::{DataTypeCategory, DataTypeRegistry};
 use crate::index::type_paths::TypePathKey;
 use crate::lowering::transport::{NamedTypeTransportClassifier, StandardContainer, TypeDescriptor};
 
@@ -223,9 +223,12 @@ impl<'a> ReturnLoweringContext<'a> {
             return self.self_type.cloned();
         }
 
-        self.class_types
-            .contains(rust_type)
-            .then(|| rust_type.clone())
+        (self.class_types.contains(rust_type)
+            || matches!(
+                self.data_types.category_for(rust_type),
+                Some(DataTypeCategory::NativeOpaque)
+            ))
+        .then(|| rust_type.clone())
     }
 
     fn is_self_type(&self, rust_type: &Type) -> bool {

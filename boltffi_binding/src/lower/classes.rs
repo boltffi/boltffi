@@ -951,6 +951,55 @@ mod tests {
     }
 
     #[test]
+    fn class_method_direct_opaque_return_is_rejected_as_native_opaque_record_method() {
+        let mut opaque = RecordDef::new("demo::Opaque".into(), name("Opaque"));
+        opaque.encoding = boltffi_ast::RecordEncoding::NativeOpaque;
+        let class_method = method(
+            "snapshot",
+            Receiver::Shared,
+            ReturnDef::value(TypeExpr::record(
+                "demo::Opaque".into(),
+                SourcePath::single("Opaque"),
+            )),
+        );
+        let mut contract = package();
+        contract.records.push(opaque);
+        contract
+            .classes
+            .push(class("demo::Engine", "Engine", vec![class_method]));
+
+        let error =
+            lower_contract::<Native>(contract).expect_err("opaque class method return must reject");
+        assert!(matches!(
+            error.kind(),
+            LowerErrorKind::UnsupportedType(UnsupportedType::NativeOpaqueRecordMethod)
+        ));
+    }
+
+    #[test]
+    fn class_initializer_opaque_parameter_is_rejected_as_native_opaque_record_parameter() {
+        let mut opaque = RecordDef::new("demo::Opaque".into(), name("Opaque"));
+        opaque.encoding = boltffi_ast::RecordEncoding::NativeOpaque;
+        let mut initializer = method("new", Receiver::None, ReturnDef::value(TypeExpr::SelfType));
+        initializer.parameters.push(param(
+            "opaque",
+            TypeExpr::record("demo::Opaque".into(), SourcePath::single("Opaque")),
+        ));
+        let mut contract = package();
+        contract.records.push(opaque);
+        contract
+            .classes
+            .push(class("demo::Engine", "Engine", vec![initializer]));
+
+        let error = lower_contract::<Native>(contract)
+            .expect_err("opaque class initializer parameter must reject");
+        assert!(matches!(
+            error.kind(),
+            LowerErrorKind::UnsupportedType(UnsupportedType::NativeOpaqueRecordParameter)
+        ));
+    }
+
+    #[test]
     fn async_class_initializer_lowers_to_poll_handle_protocol_on_wasm32() {
         let mut new_engine = method(
             "new",

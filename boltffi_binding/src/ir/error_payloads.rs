@@ -3,11 +3,11 @@ use std::collections::BTreeSet;
 use super::{
     BinderId, BuiltinType, ByteSize, CallbackId, ClassId, ClosureReturn, CodecPlan, CodecRead,
     CodecWrite, CustomTypeId, DataVariantPayload, Decl, DeclarationRef, DirectValueType,
-    DirectVectorElementType, ElementCount, EncodedFieldDecl, EnumDecl, EnumId, ErrorChannel,
-    ExportedCallable, HandlePresence, HandleTarget, ImportedCallable, IncomingParam, IntoRust,
-    MapKind, Op, OutOfRust, OutgoingParam, ParamPlanRender, Primitive, ReadPlan, Receive,
-    RecordDecl, RecordId, ReturnPlanRender, ReturnValueSlot, StreamItemPlanRender, Surface,
-    TypeRef, TypeRefRender, ValueRef, WritePlan,
+    DirectVectorElementType, ElementCount, EncodedFieldDecl, EncodedParamTransport, EnumDecl,
+    EnumId, ErrorChannel, ExportedCallable, HandlePresence, HandleTarget, ImportedCallable,
+    IncomingParam, IntoRust, MapKind, Op, OutOfRust, OutgoingParam, ParamPlanRender, Primitive,
+    ReadPlan, Receive, RecordDecl, RecordId, ReturnPlanRender, ReturnValueSlot,
+    StreamItemPlanRender, Surface, TypeRef, TypeRefRender, ValueRef, WritePlan,
 };
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -372,6 +372,7 @@ impl<'plan, S: Surface> ParamPlanRender<'plan, S, IntoRust> for ErrorPayloadType
         ty: &'plan TypeRef,
         codec: &'plan WritePlan,
         _: S::BufferShape,
+        _: EncodedParamTransport,
         _: Receive,
     ) {
         self.insert_result_errors(ty);
@@ -397,7 +398,14 @@ impl<'plan, S: Surface> ParamPlanRender<'plan, S, OutOfRust> for ErrorPayloadTyp
 
     fn direct(&mut self, _: &'plan DirectValueType, _: ()) {}
 
-    fn encoded(&mut self, ty: &'plan TypeRef, codec: &'plan ReadPlan, _: S::BufferShape, _: ()) {
+    fn encoded(
+        &mut self,
+        ty: &'plan TypeRef,
+        codec: &'plan ReadPlan,
+        _: S::BufferShape,
+        _: EncodedParamTransport,
+        _: (),
+    ) {
         self.insert_result_errors(ty);
         self.insert_read_plan(codec);
     }
@@ -443,6 +451,8 @@ impl<'plan, S: Surface> ReturnPlanRender<'plan, S, IntoRust> for ErrorPayloadTyp
     fn closure(&mut self, closure: &'plan ClosureReturn<S, IntoRust>) {
         self.insert_imported_callable(closure.invoke());
     }
+
+    fn native_opaque_record(&mut self, _: RecordId) {}
 }
 
 impl<'plan, S: Surface> ReturnPlanRender<'plan, S, OutOfRust> for ErrorPayloadTypes {
@@ -479,6 +489,8 @@ impl<'plan, S: Surface> ReturnPlanRender<'plan, S, OutOfRust> for ErrorPayloadTy
     fn closure(&mut self, closure: &'plan ClosureReturn<S, OutOfRust>) {
         self.insert_exported_callable(closure.invoke());
     }
+
+    fn native_opaque_record(&mut self, _: RecordId) {}
 }
 
 impl<'plan, S: Surface> StreamItemPlanRender<'plan, S> for ErrorPayloadTypes {

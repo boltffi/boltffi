@@ -23,7 +23,7 @@ use super::{
     error::UnsupportedType,
     ids::DeclarationIds,
     index::Index,
-    layout, metadata, records,
+    layout, metadata, opaque, records,
     surface::SurfaceLower,
     symbol::{StreamLifecycle, SymbolAllocator},
     types,
@@ -72,6 +72,11 @@ fn lower_item<S: SurfaceLower>(
     ids: &DeclarationIds,
     type_expr: &TypeExpr,
 ) -> Result<StreamItemPlan<S>, LowerError> {
+    if opaque::contains(index, type_expr) {
+        return Err(LowerError::unsupported_type(
+            UnsupportedType::NativeOpaqueRecordStreamItem,
+        ));
+    }
     validate_item_type(type_expr)?;
     match type_expr {
         TypeExpr::Primitive(primitive) => {
@@ -203,12 +208,16 @@ mod tests {
         CanonicalName as SourceName, ClassDef, ClassId as SourceClassId,
         DeprecationInfo as SourceDeprecationInfo, DocComment as SourceDocComment, EnumDef,
         EnumId as SourceEnumId, FieldDef, PackageInfo as SourcePackage, Path as SourcePath,
-        Primitive, RecordDef, RecordId as SourceRecordId, ReprAttr, ReprItem, SourceContract,
-        StreamDef, StreamId as SourceStreamId, StreamMode, TraitDef, TraitId as SourceTraitId,
-        TypeExpr, VariantDef,
+        Primitive, RecordDef, RecordEncoding, RecordId as SourceRecordId, ReprAttr, ReprItem,
+        SourceContract, StreamDef, StreamId as SourceStreamId, StreamMode, TraitDef,
+        TraitId as SourceTraitId, TypeExpr, VariantDef,
     };
 
-    use crate::lower::{LowerError, LowerErrorKind, UnsupportedType, lower};
+    use crate::lower::{
+        LowerError, LowerErrorKind, UnsupportedType, ids::DeclarationIds, index::Index, lower,
+    };
+
+    use super::lower_item;
     use crate::{
         Bindings, ByteSize, CanonicalName, CodecNode, Decl, DirectValueType, Native,
         Primitive as BindingPrimitive, ReadPlan, StreamDecl, StreamId, StreamItemPlan,
@@ -248,6 +257,16 @@ mod tests {
         record.fields.push(FieldDef::new(
             name("y"),
             TypeExpr::Primitive(Primitive::F64),
+        ));
+        record
+    }
+
+    fn opaque_record(id: &str, record_name: &str) -> RecordDef {
+        let mut record = RecordDef::new(SourceRecordId::new(id), name(record_name));
+        record.encoding = RecordEncoding::NativeOpaque;
+        record.fields.push(FieldDef::new(
+            name("value"),
+            TypeExpr::Primitive(Primitive::U32),
         ));
         record
     }
@@ -293,6 +312,61 @@ mod tests {
             .iter()
             .map(|symbol| symbol.name().as_str())
             .collect()
+    }
+
+    #[test]
+    fn native_opaque_stream_item_is_rejected_before_codec_lowering() {
+        let mut contract = package();
+        contract
+            .records
+            .push(opaque_record("demo::Snapshot", "Snapshot"));
+        contract.streams.push(stream(
+            "demo::snapshots",
+            "snapshots",
+            TypeExpr::record(
+                SourceRecordId::new("demo::Snapshot"),
+                SourcePath::single("Snapshot"),
+            ),
+        ));
+
+        let error = lower::<Native>(&contract).expect_err("opaque stream item must reject");
+        assert!(matches!(
+            error.kind(),
+            LowerErrorKind::UnsupportedType(UnsupportedType::NativeOpaqueRecordStreamItem)
+        ));
+    }
+
+    #[test]
+    fn named_opaque_stream_item_is_rejected_by_lower_item_before_record_lowering() {
+        let mut wrapper = RecordDef::new(SourceRecordId::new("demo::Wrapper"), name("Wrapper"));
+        wrapper.fields.push(FieldDef::new(
+            name("snapshot"),
+            TypeExpr::record(
+                SourceRecordId::new("demo::Snapshot"),
+                SourcePath::single("Snapshot"),
+            ),
+        ));
+        let mut contract = package();
+        contract
+            .records
+            .push(opaque_record("demo::Snapshot", "Snapshot"));
+        contract.records.push(wrapper);
+        let index = Index::new(&contract);
+        let ids = DeclarationIds::from_source(&contract).expect("source ids");
+
+        let error = lower_item::<Native>(
+            &index,
+            &ids,
+            &TypeExpr::record(
+                SourceRecordId::new("demo::Wrapper"),
+                SourcePath::single("Wrapper"),
+            ),
+        )
+        .expect_err("nested opaque stream item must reject in the stream-item guard");
+        assert!(matches!(
+            error.kind(),
+            LowerErrorKind::UnsupportedType(UnsupportedType::NativeOpaqueRecordStreamItem)
+        ));
     }
 
     #[test]

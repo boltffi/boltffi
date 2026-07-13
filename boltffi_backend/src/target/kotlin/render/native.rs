@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use boltffi_binding::{
     CallbackDecl, ClassDecl, ConstantDecl, ConstantValueDecl, EnumDecl, ExportedCallable,
@@ -12,8 +12,8 @@ use crate::{
         jni::{
             CallbackCompletionInvoker, CallbackCompletionPayload, CallbackCompletionPayloadValue,
             CallbackHandleLifecycle, CallbackHandleMethod, DirectStreamBatchMethod,
-            JniBridgeContract, JniType, NativeMethod, NativeParameter, NativeParameterKind,
-            SuccessOutValue, SuccessOutWriter,
+            JniBridgeContract, JniType, NativeMethod, NativeOpaqueBorrowWrapper, NativeParameter,
+            NativeParameterKind, SuccessOutValue, SuccessOutWriter,
         },
     },
     core::{Error, Result},
@@ -30,6 +30,7 @@ const JNI_BRIDGE: &str = "jni";
 
 pub struct NativeMethods<'bridge> {
     bridge: &'bridge JniBridgeContract,
+    borrow_wrappers: HashMap<&'bridge str, &'bridge NativeOpaqueBorrowWrapper>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -48,7 +49,14 @@ pub struct NativeFunctionParameter {
 
 impl<'bridge> NativeMethods<'bridge> {
     pub fn new(bridge: &'bridge JniBridgeContract) -> Self {
-        Self { bridge }
+        Self {
+            bridge,
+            borrow_wrappers: bridge
+                .borrow_wrappers()
+                .iter()
+                .map(|wrapper| (wrapper.c_function().as_str(), wrapper))
+                .collect(),
+        }
     }
 
     pub fn function(&self, decl: &FunctionDecl<Native>) -> Result<Vec<NativeFunction>> {
@@ -56,7 +64,67 @@ impl<'bridge> NativeMethods<'bridge> {
     }
 
     pub fn record(&self, decl: &RecordDecl<Native>) -> Result<Vec<NativeFunction>> {
+        // For native opaque records, emit helper native functions (drop, has_*, get_*)
+        // and JNI borrow wrappers (for String/Bytes fields) instead of encoded methods.
+        if let boltffi_binding::RecordDecl::Encoded(encoded) = decl
+            && encoded.is_native_opaque()
+        {
+            return self.native_opaque_helpers(encoded);
+        }
         self.associated(decl.initializers(), decl.methods())
+    }
+
+    fn native_opaque_helpers(
+        &self,
+        record: &boltffi_binding::EncodedRecordDecl<Native>,
+    ) -> Result<Vec<NativeFunction>> {
+        let exports = record
+            .native_opaque_exports()
+            .ok_or(Error::BrokenBridgeContract {
+                bridge: JNI_BRIDGE,
+                invariant: "native opaque record missing helper exports",
+            })?;
+        // drop: void(Long) - from regular JNI method table
+        // dsize: Long(Long) - from regular JNI method table
+        // has_*: Int(Long) - from regular JNI method table
+        // get_*: PrimitiveType(Long) - from regular JNI method table
+        // borrow_*: ByteArray?(Long) - from borrow_wrappers
+        let mut functions: Vec<NativeFunction> = Vec::new();
+        // Scalar helpers (drop, dsize, has_*, get_*)
+        let scalar_symbols: Vec<&boltffi_binding::NativeSymbol> = std::iter::once(exports.drop())
+            .chain(std::iter::once(exports.dsize()))
+            .chain(
+                exports
+                    .fields()
+                    .iter()
+                    .flat_map(|f| f.has().into_iter().chain(f.get())),
+            )
+            .collect();
+        for symbol in scalar_symbols {
+            let method = self
+                .bridge
+                .methods()
+                .iter()
+                .find(|method| method.c_function().name() == symbol.name().as_str())
+                .ok_or(Error::BrokenBridgeContract {
+                    bridge: JNI_BRIDGE,
+                    invariant: "native opaque scalar helper not found in JNI method table",
+                })?;
+            functions.push(NativeFunction::from_method(method)?);
+        }
+        // Borrow wrappers (borrow_*)
+        let borrow_symbols: Vec<&boltffi_binding::NativeSymbol> =
+            exports.fields().iter().filter_map(|f| f.borrow()).collect();
+        for symbol in borrow_symbols {
+            let wrapper = self.borrow_wrappers.get(symbol.name().as_str()).ok_or(
+                Error::BrokenBridgeContract {
+                    bridge: JNI_BRIDGE,
+                    invariant: "native opaque borrow wrapper not found in JNI bridge",
+                },
+            )?;
+            functions.push(NativeFunction::from_borrow_wrapper(wrapper)?);
+        }
+        Ok(functions)
     }
 
     pub fn enumeration(&self, decl: &EnumDecl<Native>) -> Result<Vec<NativeFunction>> {
@@ -213,6 +281,20 @@ impl NativeFunction {
                 .flatten()
                 .collect(),
             KotlinType::native_return(method.returns())?,
+        )
+    }
+
+    /// Creates a borrow wrapper native function: `(jlong handle) -> ByteArray?`.
+    /// The JNI C source generates a wrapper that copies borrowed bytes into a jbyteArray.
+    pub fn from_borrow_wrapper(wrapper: &NativeOpaqueBorrowWrapper) -> Result<Self> {
+        Self::new(
+            Identifier::escape(wrapper.c_function().as_str())?,
+            vec![NativeFunctionParameter {
+                name: Identifier::parse("handle")?,
+                ty: TypeName::long(),
+                slot_width: SlotWidth::Double,
+            }],
+            TypeName::byte_array(true),
         )
     }
 
