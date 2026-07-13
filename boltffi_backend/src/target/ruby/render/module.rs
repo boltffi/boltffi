@@ -137,7 +137,10 @@ impl<'bridge, 'decl> NativeExtension<'bridge, 'decl> {
                 _ => {}
             }
         }
-        let crate_stem = self.package_name.replace('-', "_");
+        // Match the bindgen crate-stem normalization exactly: collapse both
+        // `::` and `-` to `_`. If these disagree, the C header lands in one
+        // `ext/<stem>` directory while `_native.c` includes it from another.
+        let crate_stem = self.package_name.replace("::", "_").replace('-', "_");
         let module_name = upper_camel(&crate_stem);
         let version = self.version;
         let body = chunks.join("\n");
@@ -361,6 +364,14 @@ fn render_class(class: &ClassDecl<Native>, bridge: &CBridgeContract) -> Option<R
             body.push_str(&format!(
                 "    boltffi_ruby_{ident} *existing;\n    TypedData_Get_Struct(self, boltffi_ruby_{ident}, &boltffi_ruby_{ident}_type, existing);\n    if (existing == NULL || existing->handle != 0) rb_raise(rb_eRuntimeError, \"{class_name} is already initialized\");\n"
             ));
+        } else {
+            // Allocate the wrapper (handle=0) before decoding params or calling
+            // the native constructor. If any later step raises, the GC-managed
+            // object owns nothing yet, so no native handle can leak. The handle
+            // is assigned only after the native call succeeds.
+            body.push_str(&format!(
+                "    boltffi_ruby_{ident} *wrapper_data;\n    VALUE obj = TypedData_Make_Struct(self, boltffi_ruby_{ident}, &boltffi_ruby_{ident}_type, wrapper_data);\n    wrapper_data->handle = 0;\n"
+            ));
         }
         for param in &params {
             body.push_str(&param.decl);
@@ -394,9 +405,8 @@ fn render_class(class: &ClassDecl<Native>, bridge: &CBridgeContract) -> Option<R
                     "    boltffi_ruby_{ident} *wrapper_data;\n    TypedData_Get_Struct(self, boltffi_ruby_{ident}, &boltffi_ruby_{ident}_type, wrapper_data);\n    wrapper_data->handle = handle;\n    return self;\n}}\n"
                 ));
             } else {
-                body.push_str(&format!(
-                    "    boltffi_ruby_{ident} *wrapper_data;\n    VALUE obj = TypedData_Make_Struct(self, boltffi_ruby_{ident}, &boltffi_ruby_{ident}_type, wrapper_data);\n    wrapper_data->handle = handle;\n    return obj;\n}}\n"
-                ));
+                // `wrapper_data`/`obj` were allocated in the non-new prologue.
+                body.push_str("    wrapper_data->handle = handle;\n    return obj;\n}\n");
             }
         } else {
             let call = if call_args.is_empty() {
@@ -409,8 +419,10 @@ fn render_class(class: &ClassDecl<Native>, bridge: &CBridgeContract) -> Option<R
                     "    boltffi_ruby_{ident} *wrapper_data;\n    TypedData_Get_Struct(self, boltffi_ruby_{ident}, &boltffi_ruby_{ident}_type, wrapper_data);\n    wrapper_data->handle = {call};\n{cleanup}    return self;\n}}\n"
                 ));
             } else {
+                // `wrapper_data`/`obj` were allocated in the non-new prologue;
+                // the native call runs after allocation so no handle can leak.
                 body.push_str(&format!(
-                    "    boltffi_ruby_{ident} *wrapper_data;\n    VALUE obj = TypedData_Make_Struct(self, boltffi_ruby_{ident}, &boltffi_ruby_{ident}_type, wrapper_data);\n    wrapper_data->handle = {call};\n{cleanup}    return obj;\n}}\n"
+                    "    wrapper_data->handle = {call};\n{cleanup}    return obj;\n}}\n"
                 ));
             }
         }

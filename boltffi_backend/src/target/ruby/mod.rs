@@ -193,9 +193,13 @@ mod tests {
     use crate::{Error, bridge::c::CBridge, core::Target, target::ruby::RubyCExtHost};
 
     fn bindings(source: &str) -> Bindings<Native> {
+        bindings_with_package(source, "demo")
+    }
+
+    fn bindings_with_package(source: &str, package_name: &str) -> Bindings<Native> {
         let source = boltffi_scan::scan_file(
             syn::parse_str(source).expect("valid source"),
-            PackageInfo::new("demo", None),
+            PackageInfo::new(package_name, None),
         )
         .expect("source should scan");
         lower::<Native>(&source).expect("source should lower")
@@ -280,9 +284,13 @@ mod tests {
     }
 
     fn target() -> Target<RubyCExtHost, CBridge> {
+        target_with_header("ext/demo/boltffi.h")
+    }
+
+    fn target_with_header(header: &str) -> Target<RubyCExtHost, CBridge> {
         Target::new(
             RubyCExtHost::new(),
-            CBridge::new("ext/demo/boltffi.h").expect("C header bridge"),
+            CBridge::new(header).expect("C header bridge"),
         )
     }
 
@@ -416,6 +424,39 @@ mod tests {
             })
     }
 
+    fn c_function<'a>(source: &'a str, name: &str) -> &'a str {
+        let signature = format!("{name}(");
+        let start = source
+            .match_indices(&signature)
+            .find_map(|(signature_start, _)| {
+                let line_start = source[..signature_start]
+                    .rfind('\n')
+                    .map_or(0, |line_start| line_start + 1);
+                source[line_start..signature_start]
+                    .starts_with("static ")
+                    .then_some(line_start)
+            })
+            .unwrap_or_else(|| panic!("missing C function {name}"));
+        let function = &source[start..];
+        let end = function
+            .find("\n}\n")
+            .unwrap_or_else(|| panic!("unterminated C function {name}"));
+        &function[..end + 2]
+    }
+
+    fn assert_before(scope: &str, first: &str, second: &str) {
+        let first_position = scope
+            .find(first)
+            .unwrap_or_else(|| panic!("missing {first:?} in {scope}"));
+        let second_position = scope
+            .find(second)
+            .unwrap_or_else(|| panic!("missing {second:?} in {scope}"));
+        assert!(
+            first_position < second_position,
+            "expected {first:?} before {second:?} in {scope}"
+        );
+    }
+
     #[test]
     fn ruby_target_uses_exact_ir_symbol_names_for_native_opaque_fields() {
         // Globally rename two symbols in the binding IR (updating both the
@@ -513,6 +554,37 @@ mod tests {
     }
 
     #[test]
+    fn ruby_target_rejects_native_opaque_fields_reserved_for_lifecycle_methods() {
+        for field_name in ["checked", "close"] {
+            let source = format!(
+                r#"
+                #[data(opaque)]
+                pub struct Resource {{
+                    pub {field_name}: bool,
+                }}
+                #[export]
+                pub fn make() -> Resource {{ todo!() }}
+                "#
+            );
+
+            let err = target()
+                .render(&bindings(&source))
+                .expect_err("reserved native opaque field should fail rendering");
+
+            assert!(
+                matches!(
+                    err,
+                    Error::UnsupportedTarget {
+                        target: "ruby",
+                        shape: "native opaque record field conflicts with generated Ruby lifecycle support",
+                    }
+                ),
+                "unexpected error for {field_name}: {err:?}"
+            );
+        }
+    }
+
+    #[test]
     fn ruby_target_completes_native_extension_package() {
         let output = target()
             .render(&bindings(""))
@@ -536,6 +608,30 @@ mod tests {
             .expect("Ruby library file");
         assert!(lib.contains("require \"demo_native\""));
         assert!(!lib.contains("require_relative"));
+    }
+
+    #[test]
+    fn ruby_target_normalizes_hyphenated_package_layout() {
+        let output = target_with_header("ext/demo_tools/boltffi.h")
+            .render(&bindings_with_package("", "demo-tools"))
+            .expect("Ruby target should render");
+        let paths = output
+            .files()
+            .iter()
+            .map(|file| file.path().as_path().to_owned())
+            .collect::<Vec<_>>();
+
+        assert!(paths.contains(&Path::new("ext/demo_tools/boltffi.h").to_owned()));
+        assert!(paths.contains(&Path::new("ext/demo_tools/_native.c").to_owned()));
+        assert!(paths.contains(&Path::new("lib/demo_tools.rb").to_owned()));
+        assert!(paths.contains(&Path::new("demo_tools.gemspec").to_owned()));
+        let lib = output
+            .files()
+            .iter()
+            .find(|file| file.path().as_path() == Path::new("lib/demo_tools.rb"))
+            .map(|file| file.contents())
+            .expect("Ruby library file");
+        assert!(lib.contains("require \"demo_tools_native\""));
     }
 
     #[test]
@@ -784,7 +880,74 @@ mod tests {
         );
         assert!(extension.contains("Qundef"));
         assert!(extension.contains("RB_OBJ_WRITE"));
+
+        // Every getter must reject access after `close` instead of using a
+        // released native pointer (or serving a stale cache).
+        for getter in ["name", "label", "major"] {
+            let getter = c_function(extension, &format!("boltffi_ruby_sniffed_{getter}"));
+            assert!(
+                getter.contains("boltffi_ruby_sniffed_checked(self)"),
+                "getter must use the checked helper: {getter}"
+            );
+        }
+        assert!(
+            extension
+                .contains("rb_define_method(c_sniffed, \"close\", boltffi_ruby_sniffed_close, 0);")
+        );
+        let close = c_function(extension, "boltffi_ruby_sniffed_close");
+        assert_before(
+            close,
+            "data->native = NULL;",
+            "boltffi_record_native_sniffed_drop(native);",
+        );
+        let checked = c_function(extension, "boltffi_ruby_sniffed_checked");
+        assert!(
+            checked.contains("use of released Sniffed"),
+            "checked helper must name the released class: {checked}"
+        );
     }
+
+    #[test]
+    fn ruby_target_allocates_named_class_constructors_before_converting_parameters() {
+        let output = target()
+            .render(&bindings(
+                r#"
+                pub struct Gadget;
+
+                #[export]
+                impl Gadget {
+                    pub fn create(value: i32) -> Self { todo!() }
+                    pub fn try_create(value: i32) -> Result<Self, String> { todo!() }
+                }
+                "#,
+            ))
+            .expect("Ruby target should render class constructors");
+        let extension = extension(&output);
+
+        for (wrapper, native_call) in [
+            (
+                "boltffi_ruby_gadget_ctor_create",
+                "boltffi_init_class_demo_gadget_create(",
+            ),
+            (
+                "boltffi_ruby_gadget_ctor_try_create",
+                "boltffi_init_class_demo_gadget_try_create(",
+            ),
+        ] {
+            let constructor = c_function(extension, wrapper);
+            assert_before(
+                constructor,
+                "TypedData_Make_Struct(self, boltffi_ruby_gadget",
+                "NUM2INT(arg0)",
+            );
+            assert_before(
+                constructor,
+                "TypedData_Make_Struct(self, boltffi_ruby_gadget",
+                native_call,
+            );
+        }
+    }
+
     #[test]
     fn ruby_target_renders_optional_encoded_record_fields() {
         let output = target()

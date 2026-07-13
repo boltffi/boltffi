@@ -454,11 +454,9 @@ impl Generation {
             Target::Kotlin => self.render_kotlin_bindings(bindings),
             Target::KotlinMultiplatform => self.render_kmp_bindings(bindings),
             Target::CSharp => self.render_csharp_bindings(bindings),
-            Target::Ruby
-            | Target::Swift
-            | Target::TypeScript
-            | Target::Header
-            | Target::Dart => Err(GenerationError::UnsupportedTarget { target }),
+            Target::Ruby | Target::Swift | Target::TypeScript | Target::Header | Target::Dart => {
+                Err(GenerationError::UnsupportedTarget { target })
+            }
         }
     }
 
@@ -612,11 +610,7 @@ impl Generation {
         let extra_entries = self.validate_ruby_extra_files()?;
 
         let bindings = self.bindings::<Native>()?;
-        let crate_stem = bindings
-            .package()
-            .name()
-            .as_path_string()
-            .replace("::", "_");
+        let crate_stem = ruby_package_stem(&bindings.package().name().as_path_string());
         let target = BackendTarget::new(
             RubyCExtHost::new().ractor_safe(self.ruby_ractor_safe),
             CBridge::new(format!("ext/{crate_stem}/boltffi.h")).map_err(GenerationError::Render)?,
@@ -884,6 +878,10 @@ impl Generation {
         }
         build
     }
+}
+
+fn ruby_package_stem(package_name: &str) -> String {
+    package_name.replace("::", "_").replace('-', "_")
 }
 
 /// Failure while generating bindings from embedded crate metadata.
@@ -1696,6 +1694,12 @@ mod tests {
         )
         .unwrap();
         dir
+    }
+
+    #[test]
+    fn ruby_package_stem_normalizes_hyphens_and_paths() {
+        assert_eq!(ruby_package_stem("demo-tools"), "demo_tools");
+        assert_eq!(ruby_package_stem("demo::tools"), "demo_tools");
     }
 
     #[test]
