@@ -372,7 +372,7 @@ impl LoweredParameters {
                         .extend([ptr.to_string(), format!("(nuint){bytes}.Length")]);
                     lowered.proxy_cleanup.push(format!("{pin}.Free();"));
                 }
-                ParamPlan::DirectVec { element } => {
+                ParamPlan::DirectVec { element, .. } => {
                     let ParameterGroup::DirectVector(vector) = group else {
                         return broken_callback("direct-vector callback parameter group");
                     };

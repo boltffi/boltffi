@@ -432,7 +432,7 @@ impl Generation {
             Target::Kotlin => self.render_kotlin_bindings(bindings),
             Target::KotlinMultiplatform => self.render_kmp_bindings(bindings),
             Target::CSharp => self.render_csharp_bindings(bindings),
-            Target::Swift | Target::Java | Target::TypeScript | Target::Header | Target::Dart => {
+            Target::Swift | Target::TypeScript | Target::Header | Target::Dart => {
                 Err(GenerationError::UnsupportedTarget { target })
             }
         }

@@ -635,27 +635,33 @@ mod tests {
     }
 
     #[test]
-    fn csharp_target_writes_mutable_encoded_arrays_back_in_place() {
+    fn csharp_target_passes_mutable_direct_vectors_inout() {
         let bindings = bindings(
             r#"
             #[export]
             pub fn increment(values: &mut [u64]) {
                 if let Some(first) = values.first_mut() { *first += 1; }
             }
+
+            #[export]
+            pub fn invert(values: &mut [bool]) {
+                values.iter_mut().for_each(|value| *value = !*value);
+            }
             "#,
         );
         let output = target(CSharpHost::new())
             .render(&bindings)
-            .expect("mutable encoded arrays should render");
+            .expect("mutable direct vectors should render");
 
         let source = file(&output, "Demo.cs");
         assert!(source.contains("public static void Increment(ulong[] values)"));
-        assert!(source.contains("out FfiBuf valuesOut"));
-        assert!(source.contains("var boltffiUpdated = valuesReader.ReadArray"));
-        assert!(
-            source.contains("global::System.Array.Copy(boltffiUpdated, values, values.Length);")
-        );
-        assert!(source.contains("NativeMethods.FreeBuf(valuesOut);"));
+        assert!(source.contains("[In, Out] ulong[] values"));
+        assert!(source.contains("NativeIncrement(values, (nuint)values.Length)"));
+        assert!(source.contains("public static void Invert(bool[] values)"));
+        assert!(source.contains(
+            "[MarshalAs(UnmanagedType.LPArray, ArraySubType = UnmanagedType.U1)] [In, Out] bool[] values"
+        ));
+        assert!(!source.contains("valuesOut"));
         assert!(output.diagnostics().is_empty());
     }
 

@@ -339,17 +339,21 @@ fn generate_csharp(config: &Config, options: &GenerateOptions) -> Result<()> {
         });
     }
 
-    let selected = SelectedCrate::resolve(config, options)?;
+    let expansion = BindingExpansion::resolve_for_commands(
+        config,
+        &["build", "generate"],
+        &options.cargo_args,
+    )?;
     let output_directory = options
         .output
         .clone()
         .unwrap_or_else(|| config.csharp_output());
 
-    Generation::new(selected.manifest_path)
-        .cargo_args(selected.cargo_args)
+    expansion
+        .generation()
         .coverage_mode(CoverageMode::Partial)
         .csharp_namespace(config.csharp_namespace().map(str::to_owned))
-        .csharp_native_library(selected.artifact_name)
+        .csharp_native_library(expansion.artifact_name())
         .render(Target::CSharp)
         .and_then(|output| {
             print_coverage(Target::CSharp.name(), &output);

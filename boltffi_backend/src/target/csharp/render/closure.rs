@@ -243,6 +243,7 @@ impl ClosureArgument {
                     modifier: "",
                     marshal_i1: false,
                     marshal_bool_array: false,
+                    array_out: false,
                     byte_array: false,
                 },
                 NativeParameter {
@@ -251,6 +252,7 @@ impl ClosureArgument {
                     modifier: "",
                     marshal_i1: false,
                     marshal_bool_array: false,
+                    array_out: false,
                     byte_array: false,
                 },
                 NativeParameter {
@@ -259,6 +261,7 @@ impl ClosureArgument {
                     modifier: "",
                     marshal_i1: false,
                     marshal_bool_array: false,
+                    array_out: false,
                     byte_array: false,
                 },
             ],

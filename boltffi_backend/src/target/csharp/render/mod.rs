@@ -56,6 +56,7 @@ struct NativeParameter {
     modifier: &'static str,
     marshal_i1: bool,
     marshal_bool_array: bool,
+    array_out: bool,
     byte_array: bool,
 }
 
@@ -537,6 +538,7 @@ impl Function {
                         modifier,
                         marshal_i1,
                         marshal_bool_array: false,
+                        array_out: false,
                         byte_array: false,
                     });
                     invocation_arguments.push(Expression::identifier(name));
@@ -601,6 +603,7 @@ impl Function {
                             modifier: "",
                             marshal_i1: false,
                             marshal_bool_array: false,
+                            array_out: false,
                             byte_array: true,
                         },
                         NativeParameter {
@@ -609,6 +612,7 @@ impl Function {
                             modifier: "",
                             marshal_i1: false,
                             marshal_bool_array: false,
+                            array_out: false,
                             byte_array: false,
                         },
                     ]);
@@ -634,6 +638,7 @@ impl Function {
                             modifier: "out ",
                             marshal_i1: false,
                             marshal_bool_array: false,
+                            array_out: false,
                             byte_array: false,
                         });
                         invocation_arguments.push(Expression::new(format!("out FfiBuf {buffer}")));
@@ -715,6 +720,7 @@ impl Function {
                         modifier: "",
                         marshal_i1: false,
                         marshal_bool_array: false,
+                        array_out: false,
                         byte_array: false,
                     });
                     invocation_arguments.push(Expression::new(argument));
@@ -758,6 +764,7 @@ impl Function {
                             modifier: "",
                             marshal_i1: false,
                             marshal_bool_array: false,
+                            array_out: false,
                             byte_array: true,
                         },
                         NativeParameter {
@@ -766,6 +773,7 @@ impl Function {
                             modifier: "",
                             marshal_i1: false,
                             marshal_bool_array: false,
+                            array_out: false,
                             byte_array: false,
                         },
                     ]);
@@ -775,7 +783,7 @@ impl Function {
                     ]);
                     requires_wire_runtime = true;
                 }
-                IncomingParam::Value(ParamPlan::DirectVec { element }) => {
+                IncomingParam::Value(ParamPlan::DirectVec { element, receive }) => {
                     let ParameterGroup::DirectVector(vector) = group else {
                         return broken_contract(
                             "direct-vector parameter does not use a C vector group",
@@ -786,18 +794,33 @@ impl Function {
                             "direct-vector parameter length does not match the C bridge",
                         );
                     }
-                    let pointer_matches =
-                        match (element, c_function.parameter(vector.pointer()).ty()) {
-                            (
-                                DirectVectorElementType::Primitive(primitive),
-                                CBridgeType::ConstPointer(inner),
-                            ) => inner.as_ref() == &CBridgeType::primitive(primitive.primitive())?,
-                            (
-                                DirectVectorElementType::Record(_),
-                                CBridgeType::ConstPointer(inner),
-                            ) => inner.as_ref() == &CBridgeType::Uint8,
-                            _ => false,
-                        };
+                    let pointer_matches = match (
+                        receive,
+                        element,
+                        c_function.parameter(vector.pointer()).ty(),
+                    ) {
+                        (
+                            Receive::ByMutRef,
+                            DirectVectorElementType::Primitive(primitive),
+                            CBridgeType::MutPointer(inner),
+                        )
+                        | (
+                            Receive::ByValue | Receive::ByRef,
+                            DirectVectorElementType::Primitive(primitive),
+                            CBridgeType::ConstPointer(inner),
+                        ) => inner.as_ref() == &CBridgeType::primitive(primitive.primitive())?,
+                        (
+                            Receive::ByMutRef,
+                            DirectVectorElementType::Record(_),
+                            CBridgeType::MutPointer(inner),
+                        )
+                        | (
+                            Receive::ByValue | Receive::ByRef,
+                            DirectVectorElementType::Record(_),
+                            CBridgeType::ConstPointer(inner),
+                        ) => inner.as_ref() == &CBridgeType::Uint8,
+                        _ => false,
+                    };
                     if !pointer_matches {
                         return broken_contract(
                             "direct-vector parameter pointer does not match the C bridge",
@@ -822,6 +845,7 @@ impl Function {
                                 DirectVectorElementType::Primitive(primitive)
                                     if primitive.primitive() == Primitive::Bool
                             ),
+                            array_out: *receive == Receive::ByMutRef,
                             byte_array: true,
                         },
                         NativeParameter {
@@ -830,6 +854,7 @@ impl Function {
                             modifier: "",
                             marshal_i1: false,
                             marshal_bool_array: false,
+                            array_out: false,
                             byte_array: false,
                         },
                     ]);
@@ -1116,6 +1141,7 @@ impl Function {
                         modifier: "out ",
                         marshal_i1: matches!(ty, DirectValueType::Primitive(Primitive::Bool)),
                         marshal_bool_array: false,
+                        array_out: false,
                         byte_array: false,
                     });
                     completion_invocation_arguments
@@ -1147,6 +1173,7 @@ impl Function {
                         modifier: "out ",
                         marshal_i1: false,
                         marshal_bool_array: false,
+                        array_out: false,
                         byte_array: false,
                     });
                     completion_invocation_arguments
@@ -1205,6 +1232,7 @@ impl Function {
                         modifier: "out ",
                         marshal_i1: false,
                         marshal_bool_array: false,
+                        array_out: false,
                         byte_array: false,
                     });
                     completion_invocation_arguments
@@ -1806,6 +1834,7 @@ fn lower_receiver(
                         modifier: "",
                         marshal_i1: false,
                         marshal_bool_array: false,
+                        array_out: false,
                         byte_array: false,
                     },
                     NativeParameter {
@@ -1814,6 +1843,7 @@ fn lower_receiver(
                         modifier: "out ",
                         marshal_i1: false,
                         marshal_bool_array: false,
+                        array_out: false,
                         byte_array: false,
                     },
                 ],
@@ -1838,6 +1868,7 @@ fn lower_receiver(
                     modifier: "",
                     marshal_i1: false,
                     marshal_bool_array: false,
+                    array_out: false,
                     byte_array: false,
                 }],
                 arguments: vec![receiver_expression],
@@ -1872,6 +1903,7 @@ fn lower_class_receiver(
             modifier: "",
             marshal_i1: false,
             marshal_bool_array: false,
+            array_out: false,
             byte_array: false,
         }],
         arguments: vec![Expression::new("this.Handle")],
@@ -1940,6 +1972,7 @@ fn lower_encoded_receiver(
             modifier: "",
             marshal_i1: false,
             marshal_bool_array: false,
+            array_out: false,
             byte_array: true,
         },
         NativeParameter {
@@ -1948,6 +1981,7 @@ fn lower_encoded_receiver(
             modifier: "",
             marshal_i1: false,
             marshal_bool_array: false,
+            array_out: false,
             byte_array: false,
         },
     ];
@@ -1965,6 +1999,7 @@ fn lower_encoded_receiver(
                 modifier: "out ",
                 marshal_i1: false,
                 marshal_bool_array: false,
+                array_out: false,
                 byte_array: false,
             });
             arguments.push(Expression::new(format!("out FfiBuf {buffer}")));
