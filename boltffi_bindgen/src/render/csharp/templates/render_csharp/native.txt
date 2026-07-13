@@ -976,7 +976,7 @@
         internal static extern void {{ ac.poll_method_name }}(IntPtr future, ulong callbackData, BoltFFIAsync.RustFutureContinuationCallback callback);
 
         [DllImport(LibName, EntryPoint = "{{ ac.complete_ffi_name }}")]
-{%- if func.return_type.is_bool() && !func.return_kind.native_returns_ffi_buf() %}
+{%- if func.native_return_needs_i1_marshalling() %}
         [return: MarshalAs(UnmanagedType.I1)]
 {%- endif %}
         internal static extern {{ func.native_return_type() }} {{ ac.complete_method_name }}(IntPtr future, out FfiStatus status);
@@ -990,7 +990,7 @@
 {%- endmatch %}
 {%- else %}
         [DllImport(LibName, EntryPoint = "{{ func.ffi_name }}")]
-{%- if func.return_type.is_bool() && !func.return_kind.native_returns_ffi_buf() %}
+{%- if func.native_return_needs_i1_marshalling() %}
         [return: MarshalAs(UnmanagedType.I1)]
 {%- endif %}
         internal static extern {{ func.native_return_type() }} {{ func.name }}({{ func.native_param_list() }});
@@ -1009,7 +1009,7 @@
         internal static extern void {{ ac.poll_method_name }}(IntPtr future, ulong callbackData, BoltFFIAsync.RustFutureContinuationCallback callback);
 
         [DllImport(LibName, EntryPoint = "{{ ac.complete_ffi_name }}")]
-{%- if method.return_type.is_bool() && !method.return_kind.native_returns_ffi_buf() %}
+{%- if method.native_return_needs_i1_marshalling() %}
         [return: MarshalAs(UnmanagedType.I1)]
 {%- endif %}
         internal static extern {{ method.native_return_type() }} {{ ac.complete_method_name }}(IntPtr future, out FfiStatus status);
@@ -1023,7 +1023,7 @@
 {%- endmatch %}
 {%- else %}
         [DllImport(LibName, EntryPoint = "{{ method.ffi_name }}")]
-{%- if method.return_type.is_bool() && !method.return_kind.native_returns_ffi_buf() %}
+{%- if method.native_return_needs_i1_marshalling() %}
         [return: MarshalAs(UnmanagedType.I1)]
 {%- endif %}
         internal static extern {{ method.native_return_type() }} {{ method.native_method_name }}({{ method.native_param_list(enumeration.class_name, false) }});
@@ -1043,7 +1043,7 @@
         internal static extern void {{ ac.poll_method_name }}(IntPtr future, ulong callbackData, BoltFFIAsync.RustFutureContinuationCallback callback);
 
         [DllImport(LibName, EntryPoint = "{{ ac.complete_ffi_name }}")]
-{%- if method.return_type.is_bool() && !method.return_kind.native_returns_ffi_buf() %}
+{%- if method.native_return_needs_i1_marshalling() %}
         [return: MarshalAs(UnmanagedType.I1)]
 {%- endif %}
         internal static extern {{ method.native_return_type() }} {{ ac.complete_method_name }}(IntPtr future, out FfiStatus status);
@@ -1057,7 +1057,7 @@
 {%- endmatch %}
 {%- else %}
         [DllImport(LibName, EntryPoint = "{{ method.ffi_name }}")]
-{%- if method.return_type.is_bool() && !method.return_kind.native_returns_ffi_buf() %}
+{%- if method.native_return_needs_i1_marshalling() %}
         [return: MarshalAs(UnmanagedType.I1)]
 {%- endif %}
         internal static extern {{ method.native_return_type() }} {{ method.native_method_name }}({{ method.native_param_list(record.class_name, *record.is_blittable) }});
@@ -1085,7 +1085,7 @@
         internal static extern void {{ ac.poll_method_name }}(IntPtr future, ulong callbackData, BoltFFIAsync.RustFutureContinuationCallback callback);
 
         [DllImport(LibName, EntryPoint = "{{ ac.complete_ffi_name }}")]
-{%- if method.return_type.is_bool() && !method.return_kind.native_returns_ffi_buf() %}
+{%- if method.native_return_needs_i1_marshalling() %}
         [return: MarshalAs(UnmanagedType.I1)]
 {%- endif %}
         internal static extern {{ method.native_return_type() }} {{ ac.complete_method_name }}(IntPtr future, out FfiStatus status);
@@ -1099,7 +1099,7 @@
 {%- endmatch %}
 {%- else %}
         [DllImport(LibName, EntryPoint = "{{ method.ffi_name }}")]
-{%- if method.return_type.is_bool() && !method.return_kind.native_returns_ffi_buf() %}
+{%- if method.native_return_needs_i1_marshalling() %}
         [return: MarshalAs(UnmanagedType.I1)]
 {%- endif %}
         internal static extern {{ method.native_return_type() }} {{ method.native_method_name }}({{ method.native_param_list(class.class_name, false) }});

@@ -52,4 +52,13 @@ pub trait CSharpCallablePlan {
     fn native_return_type(&self) -> String {
         native_return_type(self.return_type(), self.return_kind())
     }
+
+    /// Whether the native DllImport declaration needs
+    /// `[return: MarshalAs(UnmanagedType.I1)]`. Only a bool that crosses the
+    /// ABI as a primitive bool qualifies; a bool inside a wire-encoded return
+    /// (e.g. `Result<bool, E>`) crosses as `FfiBuf`, where the directive
+    /// would throw `MarshalDirectiveException` at the P/Invoke boundary.
+    fn native_return_needs_i1_marshalling(&self) -> bool {
+        self.return_type().is_bool() && !self.return_kind().native_returns_ffi_buf()
+    }
 }
