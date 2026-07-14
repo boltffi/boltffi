@@ -513,7 +513,7 @@ mod tests {
         assert!(callback.contains("int Compute(int value);"));
         assert!(callback.contains("string Label(int value);"));
         assert!(callback.contains("catch (MathErrorException boltffiError)"));
-        assert!(callback.contains("catch (BoltException boltffiError)"));
+        assert!(callback.contains("catch (global::System.Exception boltffiError)"));
         assert!(callback.contains("return_out = implementation.Compute(value);"));
         assert!(callback.contains(
             "[global::System.Runtime.InteropServices.MarshalAs(global::System.Runtime.InteropServices.UnmanagedType.I1)] out bool return_out"
@@ -541,6 +541,7 @@ mod tests {
                 async fn enabled(&self) -> bool;
                 async fn fetch_name(&self, key: String) -> String;
                 async fn try_fetch(&self, key: i32) -> Result<String, FetchError>;
+                async fn try_label(&self, key: i32) -> Result<String, String>;
             }
             "#,
         );
@@ -559,6 +560,7 @@ mod tests {
         assert!(callback.contains("GCHandle.Alloc(boltffiCompletion)"));
         assert!(callback.contains("boltffiComplete(1, FfiBuf.FromBytes"));
         assert!(callback.contains("boltffiStatus.code == 1"));
+        assert!(callback.contains("catch (global::System.Exception boltffiError)"));
         assert!(!callback.contains("This callback method shape has not migrated"));
 
         let module = file(&output, "Demo.cs");
@@ -765,6 +767,14 @@ mod tests {
             ) -> Result<bool, MathError> {
                 f()
             }
+
+            #[export]
+            pub fn apply_message(
+                f: impl Fn(i32) -> Result<i32, String>,
+                value: i32,
+            ) -> Result<i32, String> {
+                f(value)
+            }
             "#,
         );
         let output = target(CSharpHost::new())
@@ -778,6 +788,7 @@ mod tests {
             "[global::System.Runtime.InteropServices.MarshalAs(global::System.Runtime.InteropServices.UnmanagedType.I1)] out bool return_out"
         ));
         assert!(source.contains("catch (MathErrorException boltffiError)"));
+        assert!(source.contains("catch (global::System.Exception boltffiError)"));
         assert!(source.contains("return FfiBuf.FromBytes(boltffiErrorWriter.ToArray());"));
         assert!(output.diagnostics().is_empty());
     }

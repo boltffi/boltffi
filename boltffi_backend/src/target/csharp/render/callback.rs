@@ -885,7 +885,7 @@ fn callback_error_exception(
 ) -> Result<(TypeFragment, Expression)> {
     match ty {
         TypeRef::String => Ok((
-            TypeFragment::new("BoltException"),
+            TypeFragment::new("global::System.Exception"),
             Expression::new(format!("{error}.Message")),
         )),
         TypeRef::Record(_) | TypeRef::Enum(_) => {
@@ -1184,6 +1184,7 @@ fn render_async_entry_body(
     }
 
     let mut catches = Vec::new();
+    let mut catches_all_exceptions = false;
     if let ErrorChannel::Encoded {
         placement: ErrorPlacement::ReturnSlot,
         ty,
@@ -1191,6 +1192,7 @@ fn render_async_entry_body(
         shape: native::BufferShape::Buffer,
     } = declaration.callable().error().channel()
     {
+        catches_all_exceptions = matches!(ty, TypeRef::String);
         let error = Identifier::parse("boltffiError")?;
         let writer = Identifier::parse("boltffiErrorWriter")?;
         let (exception, value) = callback_error_exception(ty, &error, context)?;
@@ -1208,7 +1210,9 @@ fn render_async_entry_body(
             indent_lines(&body, 4)
         ));
     }
-    catches.push("catch\n{\n    boltffiComplete(100, default);\n}".to_owned());
+    if !catches_all_exceptions {
+        catches.push("catch\n{\n    boltffiComplete(100, default);\n}".to_owned());
+    }
     let complete_values = |status: &str, value: &str| {
         params
             .iter()

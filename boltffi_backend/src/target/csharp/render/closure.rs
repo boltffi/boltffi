@@ -299,7 +299,7 @@ fn error_exception(
 ) -> Result<(TypeFragment, Expression)> {
     match ty {
         TypeRef::String => Ok((
-            TypeFragment::new("BoltException"),
+            TypeFragment::new("global::System.Exception"),
             Expression::new(format!("{error}.Message")),
         )),
         TypeRef::Record(_) | TypeRef::Enum(_) => {
