@@ -830,9 +830,19 @@ mod tests {
         assert!(source.contains("NativeValuesPopBatch"));
         assert!(source.contains("NativeMethods.FreeBuf(buffer);"));
         assert!(source.contains(
-            "await foreach (var item in ReadAll(receiver, cancellation.Token)) callback(item);"
+            "await foreach (var item in ReadAll(subscription, cancellation.Token)) callback(item);"
         ));
-        assert!(!source.contains("ReadAll(receiver, cancellation.Token).ConfigureAwait(false)"));
+        let callback_subscribe = source
+            .find("ulong subscription = NativeMethods.NativeTicksSubscribe(receiver);")
+            .expect("callback stream should subscribe synchronously");
+        let callback_task = source[callback_subscribe..]
+            .find("global::System.Threading.Tasks.Task.Run(async () =>")
+            .expect("callback stream should start its delivery task")
+            + callback_subscribe;
+        assert!(callback_subscribe < callback_task);
+        assert!(
+            !source.contains("ReadAll(subscription, cancellation.Token).ConfigureAwait(false)")
+        );
         assert!(output.diagnostics().is_empty());
     }
 

@@ -176,15 +176,22 @@ impl Stream {
         } else {
             ""
         };
-        let receiver_argument = if self.owner.is_some() {
-            "receiver, "
+        let read_all_receiver = if matches!(self.mode, StreamMode::Callback) {
+            "ulong subscription, "
         } else {
-            ""
+            receiver
+        };
+        let subscription_setup = if matches!(self.mode, StreamMode::Callback) {
+            String::new()
+        } else {
+            format!(
+                "            ulong subscription = {};\n",
+                self.subscribe_call()
+            )
         };
         let async_runtime = format!(
-            "    internal static class {}\n    {{\n        internal static async global::System.Collections.Generic.IAsyncEnumerable<{item}> ReadAll({receiver}[global::System.Runtime.CompilerServices.EnumeratorCancellation] global::System.Threading.CancellationToken cancellationToken = default)\n        {{\n            ulong subscription = {};\n            if (subscription == 0) yield break;\n            try\n            {{\n                while (true)\n                {{\n                    {item}[] items = ReadBatch(subscription, 16);\n                    foreach ({item} item in items) yield return item;\n                    if (items.Length != 0) continue;\n                    int wait = await global::System.Threading.Tasks.Task.Run(() => NativeMethods.{}(subscription, 100), cancellationToken).ConfigureAwait(false);\n                    if (wait < 0) yield break;\n                }}\n            }}\n            finally\n            {{\n                NativeMethods.{}(subscription);\n                NativeMethods.{}(subscription);\n            }}\n        }}\n\n        internal static {item}[] ReadBatch(ulong subscription, nuint maxCount)\n        {{\n{}\n        }}",
+            "    internal static class {}\n    {{\n        internal static async global::System.Collections.Generic.IAsyncEnumerable<{item}> ReadAll({read_all_receiver}[global::System.Runtime.CompilerServices.EnumeratorCancellation] global::System.Threading.CancellationToken cancellationToken = default)\n        {{\n{subscription_setup}            if (subscription == 0) yield break;\n            try\n            {{\n                while (true)\n                {{\n                    {item}[] items = ReadBatch(subscription, 16);\n                    foreach ({item} item in items) yield return item;\n                    if (items.Length != 0) continue;\n                    int wait = await global::System.Threading.Tasks.Task.Run(() => NativeMethods.{}(subscription, 100), cancellationToken).ConfigureAwait(false);\n                    if (wait < 0) yield break;\n                }}\n            }}\n            finally\n            {{\n                NativeMethods.{}(subscription);\n                NativeMethods.{}(subscription);\n            }}\n        }}\n\n        internal static {item}[] ReadBatch(ulong subscription, nuint maxCount)\n        {{\n{}\n        }}",
             self.runtime,
-            self.subscribe_call(),
             self.wait_method(),
             self.unsubscribe_method(),
             self.free_method(),
@@ -208,9 +215,10 @@ impl Stream {
                 self.free_method(),
             ),
             StreamMode::Callback => format!(
-                "\n\n        internal static {} Subscribe({receiver_only}{})\n        {{\n            var cancellation = new global::System.Threading.CancellationTokenSource();\n            _ = global::System.Threading.Tasks.Task.Run(async () =>\n            {{\n                try\n                {{\n                    await foreach (var item in ReadAll({receiver_argument}cancellation.Token)) callback(item);\n                }}\n                catch (global::System.OperationCanceledException) {{ }}\n            }});\n            return new {}(cancellation);\n        }}\n    }}\n\n    public sealed class {} : global::System.IDisposable\n    {{\n        private global::System.Threading.CancellationTokenSource? cancellation;\n        internal {}(global::System.Threading.CancellationTokenSource cancellation) => this.cancellation = cancellation;\n        public void Cancel() => global::System.Threading.Interlocked.Exchange(ref cancellation, null)?.Cancel();\n        public void Dispose() {{ Cancel(); global::System.GC.SuppressFinalize(this); }}\n        ~{}() => Cancel();\n",
+                "\n\n        internal static {} Subscribe({receiver_only}{})\n        {{\n            ulong subscription = {};\n            var cancellation = new global::System.Threading.CancellationTokenSource();\n            _ = global::System.Threading.Tasks.Task.Run(async () =>\n            {{\n                try\n                {{\n                    await foreach (var item in ReadAll(subscription, cancellation.Token)) callback(item);\n                }}\n                catch (global::System.OperationCanceledException) {{ }}\n            }});\n            return new {}(cancellation);\n        }}\n    }}\n\n    public sealed class {} : global::System.IDisposable\n    {{\n        private global::System.Threading.CancellationTokenSource? cancellation;\n        internal {}(global::System.Threading.CancellationTokenSource cancellation) => this.cancellation = cancellation;\n        public void Cancel() => global::System.Threading.Interlocked.Exchange(ref cancellation, null)?.Cancel();\n        public void Dispose() {{ Cancel(); global::System.GC.SuppressFinalize(this); }}\n        ~{}() => Cancel();\n",
                 self.cancellable,
                 if receiver_only.is_empty() { "global::System.Action<" } else { ", global::System.Action<" },
+                self.subscribe_call(),
                 self.cancellable,
                 self.cancellable,
                 self.cancellable,

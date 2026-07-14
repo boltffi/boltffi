@@ -1005,6 +1005,7 @@ mod tests {
         let plan = csharp_packaging_plan(PathBuf::from("dist/csharp"));
 
         let project = render_csharp_project(&config, &plan).expect("C# project should render");
+        let normalized_project = project.replace('\\', "/");
 
         assert!(project.contains("<Title>Company MyLib</Title>"));
         assert!(project.contains("<Authors>Company Name;Runtime Team</Authors>"));
@@ -1033,11 +1034,11 @@ mod tests {
             )
         );
         assert!(
-            project
+            normalized_project
                 .contains(r#"<None Include="../../assets/icon.png" Pack="true" PackagePath="" />"#)
         );
         assert!(
-            project
+            normalized_project
                 .contains(r#"<None Include="../../docs/README.md" Pack="true" PackagePath="" />"#)
         );
         assert!(!project.contains("https://example.com/default"));

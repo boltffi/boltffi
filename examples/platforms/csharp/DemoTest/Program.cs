@@ -1685,7 +1685,7 @@ public static class DemoTest
         );
         DemoCase("case:options.complex.api_result.should_find_error_code_variant");
         Require(
-            FindApiResult(1) is ApiResult.ErrorCode ec && ec.Value0 == -1,
+            FindApiResult(1) is ApiResult.ErrorCode ec && ec.Field0 == -1,
             "FindApiResult(1) returns ErrorCode(-1)"
         );
         DemoCase("case:options.complex.api_result.should_find_error_with_data_variant");
@@ -2549,7 +2549,7 @@ public static class DemoTest
         DemoCase("case:results.error_enums.process_value.should_return_success_variant");
         Require(ProcessValue(5) is ApiResult.Success, "ProcessValue(5) -> Success");
         DemoCase("case:results.error_enums.process_value.should_return_error_code_variant");
-        Require(ProcessValue(0) is ApiResult.ErrorCode ec && ec.Value0 == -1, "ProcessValue(0) -> ErrorCode(-1)");
+        Require(ProcessValue(0) is ApiResult.ErrorCode ec && ec.Field0 == -1, "ProcessValue(0) -> ErrorCode(-1)");
         DemoCase("case:results.error_enums.process_value.should_return_error_with_data_variant");
         Require(ProcessValue(-3) is ApiResult.ErrorWithData ed && ed.Code == -3 && ed.Detail == -6,
             "ProcessValue(-3) -> ErrorWithData(-3,-6)");
@@ -2679,7 +2679,7 @@ public static class DemoTest
         }
         catch (ComputeErrorException e)
         {
-            Require(e.Error is ComputeError.InvalidInput invalid && invalid.Value0 == -999,
+            Require(e.Error is ComputeError.InvalidInput invalid && invalid.Field0 == -999,
                 "TryComputeAsync typed ComputeError");
         }
         DemoCase("case:async_fns.results.try_compute.should_return_overflow_for_negative_value");
@@ -2874,7 +2874,8 @@ public static class DemoTest
 
         // Returned callbacks are owning proxies; `using` releases the native
         // callback handle deterministically instead of waiting for finalization.
-        using ValueCallbackProxy incrementer = MakeIncrementingCallback(5);
+        ValueCallback incrementer = MakeIncrementingCallback(5);
+        using global::System.IDisposable incrementerLease = (global::System.IDisposable)incrementer;
         Require(InvokeValueCallback(incrementer, 4) == 9, "returned ValueCallback proxy");
 
         MessageFormatter formatter = new MessageFormatterImpl();
@@ -2883,7 +2884,8 @@ public static class DemoTest
         Require(FormatMessageWithOptionalCallback(null, "fallback", "message") == "fallback::message",
             "FormatMessageWithOptionalCallback null");
         // Same ownership contract for returned multi-method callback proxies.
-        using MessageFormatterProxy prefixer = MakeMessagePrefixer("prefix");
+        MessageFormatter prefixer = MakeMessagePrefixer("prefix");
+        using global::System.IDisposable prefixerLease = (global::System.IDisposable)prefixer;
         Require(FormatMessageWithCallback(prefixer, "sync", "formatter") == "prefix::sync::formatter",
             "returned MessageFormatter proxy");
 
@@ -3027,14 +3029,13 @@ public static class DemoTest
         Console.WriteLine("Testing streams (batch mode)...");
         using (var bus = new EventBus())
         {
-            global::System.Threading.Tasks.Task<List<int>> receivedTask =
-                CollectStreamItems(bus.SubscribeValuesBatch(), 3, "batch stream");
+            using SubscribeValuesBatchSubscription subscription = bus.SubscribeValuesBatch();
 
             bus.EmitValue(100);
             bus.EmitValue(200);
             bus.EmitValue(300);
 
-            List<int> received = await receivedTask;
+            List<int> received = CollectBatchStreamItems(subscription, 3, "batch stream");
             Require(received.Count >= 3, $"batch stream received {received.Count} items, expected >= 3");
             Require(received.Contains(100), "batch stream should contain 100");
             Require(received.Contains(200), "batch stream should contain 200");
@@ -3045,14 +3046,26 @@ public static class DemoTest
         Console.WriteLine("Testing streams (callback mode)...");
         using (var bus = new EventBus())
         {
-            global::System.Threading.Tasks.Task<List<int>> receivedTask =
-                CollectStreamItems(bus.SubscribeValuesCallback(), 3, "callback stream");
+            List<int> received = new List<int>();
+            var receivedAll = new global::System.Threading.Tasks.TaskCompletionSource<bool>(
+                global::System.Threading.Tasks.TaskCreationOptions.RunContinuationsAsynchronously);
+            using SubscribeValuesCallbackCancellable subscription = bus.SubscribeValuesCallback(value =>
+            {
+                lock (received)
+                {
+                    received.Add(value);
+                    if (received.Count >= 3) receivedAll.TrySetResult(true);
+                }
+            });
 
             bus.EmitValue(1000);
             bus.EmitValue(2000);
             bus.EmitValue(3000);
 
-            List<int> received = await receivedTask;
+            global::System.Threading.Tasks.Task completed = await global::System.Threading.Tasks.Task.WhenAny(
+                receivedAll.Task,
+                global::System.Threading.Tasks.Task.Delay(TimeSpan.FromSeconds(5)));
+            Require(completed == receivedAll.Task, "callback stream timed out waiting for 3 items");
             Require(received.Count >= 3, $"callback stream received {received.Count} items, expected >= 3");
             Require(received.Contains(1000), "callback stream should contain 1000");
             Require(received.Contains(2000), "callback stream should contain 2000");
@@ -3177,6 +3190,26 @@ public static class DemoTest
             throw new TimeoutException($"{label} should deliver {expectedCount} items within 5 seconds", ex);
         }
 
+        return received;
+    }
+
+    private static List<int> CollectBatchStreamItems(
+        SubscribeValuesBatchSubscription stream,
+        int expectedCount,
+        string label)
+    {
+        DateTime deadline = DateTime.UtcNow.AddSeconds(5);
+        List<int> received = new List<int>();
+
+        while (received.Count < expectedCount && DateTime.UtcNow < deadline)
+        {
+            received.AddRange(stream.PopBatch(16));
+            if (received.Count >= expectedCount) break;
+            if (stream.Wait(100) < 0) break;
+        }
+
+        Require(received.Count >= expectedCount,
+            $"{label} timed out waiting for {expectedCount} items; received {received.Count}");
         return received;
     }
 
