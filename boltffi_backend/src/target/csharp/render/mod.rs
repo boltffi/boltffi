@@ -2,6 +2,7 @@ mod callback;
 mod class;
 mod closure;
 mod constant;
+mod documentation;
 mod enumeration;
 mod record;
 mod stream;
@@ -17,10 +18,11 @@ use std::collections::BTreeMap;
 
 use askama::Template;
 use boltffi_binding::{
-    CanonicalName, ClassId, DeclarationRef, DirectValueType, DirectVectorElementType, ErrorChannel,
-    ErrorPlacement, ExecutionDecl, ExportedCallable, ExportedMethodDecl, FunctionDecl,
-    HandlePresence, HandleTarget, IncomingParam, InitializerDecl, Native, NativeSymbol, OutOfRust,
-    ParamPlan, Primitive, ReadPlan, Receive, ReturnPlan, TypeRef, WritePlan, native,
+    CanonicalName, ClassId, DeclarationRef, DirectValueType, DirectVectorElementType, DocComment,
+    ErrorChannel, ErrorPlacement, ExecutionDecl, ExportedCallable, ExportedMethodDecl,
+    FunctionDecl, HandlePresence, HandleTarget, IncomingParam, InitializerDecl, Native,
+    NativeSymbol, OutOfRust, ParamPlan, Primitive, ReadPlan, Receive, ReturnPlan, TypeRef,
+    WritePlan, native,
 };
 
 use crate::{
@@ -39,6 +41,7 @@ use super::{
     syntax::{ArgumentList, Expression, Identifier, Literal, Statement, TypeFragment},
     type_name,
 };
+use documentation::Documentation;
 
 const TARGET: &str = "csharp";
 
@@ -85,6 +88,7 @@ struct EncodedReceiverPlan<'plan> {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct Function {
+    documentation: Documentation,
     visibility: &'static str,
     name: Identifier,
     native_name: Identifier,
@@ -169,6 +173,11 @@ struct ModuleTemplate<'module> {
 }
 
 impl Function {
+    pub(super) fn with_documentation(mut self, doc: Option<&DocComment>) -> Self {
+        self.documentation = Documentation::summary(doc, "        ");
+        self
+    }
+
     pub(super) fn from_constant_accessor(
         name: &CanonicalName,
         symbol: &NativeSymbol,
@@ -214,6 +223,7 @@ impl Function {
             bridge,
             context,
         )
+        .map(|function| function.with_documentation(declaration.meta().doc()))
     }
 
     pub(super) fn from_initializer(
@@ -236,6 +246,7 @@ impl Function {
             bridge,
             context,
         )
+        .map(|function| function.with_documentation(declaration.meta().doc()))
     }
 
     pub(super) fn from_class_initializer(
@@ -301,6 +312,7 @@ impl Function {
             bridge,
             context,
         )
+        .map(|function| function.with_documentation(declaration.meta().doc()))
     }
 
     pub(super) fn from_initializer_qualified(
@@ -323,6 +335,7 @@ impl Function {
             bridge,
             context,
         )
+        .map(|function| function.with_documentation(declaration.meta().doc()))
     }
 
     pub(super) fn from_method(
@@ -345,6 +358,7 @@ impl Function {
             bridge,
             context,
         )
+        .map(|function| function.with_documentation(declaration.meta().doc()))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -370,6 +384,7 @@ impl Function {
             bridge,
             context,
         )
+        .map(|function| function.with_documentation(declaration.meta().doc()))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1342,6 +1357,7 @@ impl Function {
             .transpose()?;
 
         Ok(Self {
+            documentation: Documentation::default(),
             visibility: "public",
             name,
             native_name,

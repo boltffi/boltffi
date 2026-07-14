@@ -10,7 +10,7 @@ use super::super::{
     name_style::{Name, Namespace},
     syntax::{Identifier, Literal, TypeFragment},
 };
-use super::{Function, handle_carrier_type};
+use super::{Documentation, Function, handle_carrier_type};
 
 #[derive(Template)]
 #[template(path = "target/csharp/class.cs", escape = "none")]
@@ -26,6 +26,7 @@ struct ClassReleaseTemplate<'class> {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::target::csharp) struct Class {
+    documentation: Documentation,
     namespace: Namespace,
     name: Identifier,
     carrier_type: TypeFragment,
@@ -39,6 +40,7 @@ pub(in crate::target::csharp) struct Class {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ClassInitializer {
+    documentation: Documentation,
     function: Function,
     primary: bool,
 }
@@ -64,7 +66,17 @@ impl Class {
                 context,
             ) {
                 Ok((function, primary)) => {
-                    initializers.push(ClassInitializer { function, primary });
+                    let documentation =
+                        Documentation::summary(initializer.meta().doc(), "        ");
+                    let function = match primary {
+                        true => function,
+                        false => function.with_documentation(initializer.meta().doc()),
+                    };
+                    initializers.push(ClassInitializer {
+                        documentation,
+                        function,
+                        primary,
+                    });
                 }
                 Err(error) => {
                     collect_diagnostic(&mut diagnostics, "initializer", initializer.name(), error)?
@@ -85,6 +97,7 @@ impl Class {
             }
         }
         Ok(Self {
+            documentation: Documentation::summary(declaration.meta().doc(), "    "),
             namespace,
             name: name.clone(),
             carrier_type: handle_carrier_type(declaration.handle())?,

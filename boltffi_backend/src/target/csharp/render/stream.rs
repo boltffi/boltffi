@@ -14,10 +14,11 @@ use super::super::{
     syntax::{Identifier, Literal, TypeFragment},
     type_name,
 };
-use super::{FreeBufferTemplate, direct_type};
+use super::{Documentation, FreeBufferTemplate, direct_type};
 use askama::Template;
 
 pub(in crate::target::csharp) struct Stream {
+    documentation: Documentation,
     name: Identifier,
     owner: Option<TypeFragment>,
     item: StreamItem,
@@ -65,6 +66,7 @@ impl Stream {
             .read_batch
             .replace("NativeStreamPopBatch", &format!("Native{name}PopBatch"));
         Ok(Self {
+            documentation: Documentation::summary(declaration.meta().doc(), "        "),
             runtime: Identifier::parse(format!("{name}StreamRuntime"))?,
             subscription: Identifier::parse(format!("{name}Subscription"))?,
             cancellable: Identifier::parse(format!("{name}Cancellable"))?,
@@ -129,7 +131,7 @@ impl Stream {
         let receiver = self.receiver_parameter();
         let separator = if receiver.is_empty() { "" } else { ", " };
         let item = &self.item.ty;
-        Ok(match self.mode {
+        let source = match self.mode {
             StreamMode::Async => format!(
                 "        public static global::System.Collections.Generic.IAsyncEnumerable<{item}> {}({receiver}{separator}global::System.Threading.CancellationToken cancellationToken = default)\n            => {}.ReadAll({}, cancellationToken);\n",
                 self.name,
@@ -151,7 +153,8 @@ impl Stream {
                 self.receiver_argument(),
             ),
             _ => return super::super::unsupported("unknown stream mode"),
-        })
+        };
+        Ok(format!("{}{source}", self.documentation))
     }
 
     fn subscribe_call(&self) -> String {

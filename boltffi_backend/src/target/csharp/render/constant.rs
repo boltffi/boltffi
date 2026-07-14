@@ -8,7 +8,7 @@ use crate::{
 };
 
 use super::super::{name_style::Name, syntax::Literal, type_name};
-use super::Function;
+use super::{Documentation, Function};
 
 pub(in crate::target::csharp) enum Constant {
     Inline(String),
@@ -26,13 +26,14 @@ impl Constant {
                 let name = Name::new(declaration.name()).pascal()?;
                 let ty = type_name::type_ref(ty, context)?;
                 let value = render_value(declaration.value(), value, context)?;
-                let declaration = if is_compile_time_constant(declaration.value(), context) {
+                let modifier = if is_compile_time_constant(declaration.value(), context) {
                     "public const"
                 } else {
                     "public static readonly"
                 };
+                let documentation = Documentation::summary(declaration.meta().doc(), "        ");
                 Ok(Self::Inline(format!(
-                    "        {declaration} {ty} {name} = {value};\n"
+                    "{documentation}        {modifier} {ty} {name} = {value};\n"
                 )))
             }
             ConstantValueDecl::Accessor { symbol, callable } => Function::from_constant_accessor(
@@ -42,6 +43,7 @@ impl Constant {
                 bridge,
                 context,
             )
+            .map(|function| function.with_documentation(declaration.meta().doc()))
             .map(Box::new)
             .map(Self::Accessor),
             _ => super::super::unsupported("unknown constant value"),

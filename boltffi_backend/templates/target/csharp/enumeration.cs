@@ -5,9 +5,9 @@
 
 namespace {{ enumeration.namespace }}
 {
-{% if enumeration.c_style %}    public enum {{ enumeration.name }} : {{ enumeration.underlying_type }}
+{{ enumeration.documentation }}{% if enumeration.c_style %}    public enum {{ enumeration.name }} : {{ enumeration.underlying_type }}
     {
-{% for variant in enumeration.variants %}        {{ variant.name }} = {{ variant.discriminant }}{% if !loop.last %},{% endif %}
+{% for variant in enumeration.variants %}{{ variant.documentation }}        {{ variant.name }} = {{ variant.discriminant }}{% if !loop.last %},{% endif %}
 {% endfor %}    }
 {% if !enumeration.methods.is_empty() %}
     public static class {{ enumeration.name }}Methods
@@ -41,7 +41,7 @@ namespace {{ enumeration.namespace }}
             }
         }
 {% for variant in enumeration.data_variants %}
-        public sealed record {{ variant.name }}({% for field in variant.fields %}{{ field.ty }} {{ field.name }}{% if !loop.last %}, {% endif %}{% endfor %}) : {{ enumeration.name }};
+{{ variant.documentation }}{% for field in variant.fields %}{{ field.parameter_documentation }}{% endfor %}        public sealed record {{ variant.name }}({% for field in variant.fields %}{{ field.ty }} {{ field.name }}{% if !loop.last %}, {% endif %}{% endfor %}) : {{ enumeration.name }};
 {% endfor %}
 {% for function in enumeration.methods %}
 {% include "target/csharp/function.cs" %}

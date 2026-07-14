@@ -7,7 +7,7 @@ using System.Runtime.InteropServices;
 
 namespace {{ record.namespace }}
 {
-{% if record.direct %}    [StructLayout(LayoutKind.Sequential)]
+{{ record.documentation }}{% for field in record.fields %}{{ field.parameter_documentation }}{% endfor %}{% if record.direct %}    [StructLayout(LayoutKind.Sequential)]
 {% endif %}{% if record.methods.is_empty() && !record.codec_payload %}{% if record.fields.is_empty() %}    public readonly record struct {{ record.name }};
 {% else %}    public readonly record struct {{ record.name }}(
 {% for field in record.fields %}        {% if field.marshal_i1 %}[field: MarshalAs(UnmanagedType.I1)] {% endif %}{{ field.ty }} {{ field.name }}{% if !loop.last %},{% endif %}

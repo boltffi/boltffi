@@ -1,4 +1,4 @@
-{% if function.constant_property %}        {{ function.visibility }} static {{ function.public_return_type }} {{ function.name }}
+{{ function.documentation }}{% if function.constant_property %}        {{ function.visibility }} static {{ function.public_return_type }} {{ function.name }}
         {
             get
             {

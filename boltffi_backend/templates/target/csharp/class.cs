@@ -5,7 +5,7 @@
 
 namespace {{ class.namespace }}
 {
-    public sealed class {{ class.name }} : global::System.IDisposable
+{{ class.documentation }}    public sealed class {{ class.name }} : global::System.IDisposable
     {
         private long handle;
 
@@ -17,7 +17,7 @@ namespace {{ class.namespace }}
             this.handle = unchecked((long)(ulong)handle);
         }
 {% for initializer in class.initializers %}{% if initializer.primary %}
-        public {{ class.name }}({% for parameter in initializer.function.parameters %}{{ parameter.ty }} {{ parameter.name }}{% if !loop.last %}, {% endif %}{% endfor %})
+{{ initializer.documentation }}        public {{ class.name }}({% for parameter in initializer.function.parameters %}{{ parameter.ty }} {{ parameter.name }}{% if !loop.last %}, {% endif %}{% endfor %})
             : this({{ initializer.function.name }}({% for parameter in initializer.function.parameters %}{{ parameter.name }}{% if !loop.last %}, {% endif %}{% endfor %}).TakeHandle()) { }
 {% endif %}
 {% let function = initializer.function %}

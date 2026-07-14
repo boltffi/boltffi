@@ -17,7 +17,7 @@ use super::super::{
     syntax::{Expression, Identifier, Statement, TypeFragment},
     type_name,
 };
-use super::{Function, WireTemplate, primitive_type};
+use super::{Documentation, Function, WireTemplate, primitive_type};
 
 #[derive(Template)]
 #[template(path = "target/csharp/record.cs", escape = "none")]
@@ -27,6 +27,7 @@ struct RecordTemplate<'record> {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::target::csharp) struct Record {
+    documentation: Documentation,
     namespace: Namespace,
     name: Identifier,
     direct: bool,
@@ -40,6 +41,7 @@ pub(in crate::target::csharp) struct Record {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Field {
+    parameter_documentation: Documentation,
     name: Identifier,
     ty: TypeFragment,
     marshal_i1: bool,
@@ -96,6 +98,11 @@ impl Record {
                     });
                 }
                 Ok(Field {
+                    parameter_documentation: Documentation::parameter(
+                        field.meta().doc(),
+                        field_name(field.key())?.as_str(),
+                        "    ",
+                    ),
                     name: field_name(field.key())?,
                     ty: primitive_type(primitive),
                     marshal_i1: matches!(primitive, boltffi_binding::Primitive::Bool),
@@ -138,6 +145,7 @@ impl Record {
             )?;
         }
         Ok(Self {
+            documentation: Documentation::summary(declaration.meta().doc(), "    "),
             namespace,
             name,
             direct: true,
@@ -179,6 +187,11 @@ impl Record {
             .iter()
             .map(|field| {
                 Ok(Field {
+                    parameter_documentation: Documentation::parameter(
+                        field.meta().doc(),
+                        field_name(field.key())?.as_str(),
+                        "    ",
+                    ),
                     name: field_name(field.key())?,
                     ty: type_name::type_ref(field.ty(), context)?,
                     marshal_i1: false,
@@ -232,6 +245,7 @@ impl Record {
             )?;
         }
         Ok(Self {
+            documentation: Documentation::summary(declaration.meta().doc(), "    "),
             namespace,
             name,
             direct: false,

@@ -15,7 +15,7 @@ use super::super::{
     syntax::{Expression, Identifier, Statement, TypeFragment},
     type_name,
 };
-use super::{Function, WireTemplate, primitive_type};
+use super::{Documentation, Function, WireTemplate, primitive_type};
 
 #[derive(Template)]
 #[template(path = "target/csharp/enumeration.cs", escape = "none")]
@@ -25,6 +25,7 @@ struct EnumerationTemplate<'enumeration> {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::target::csharp) struct Enumeration {
+    documentation: Documentation,
     namespace: Namespace,
     name: Identifier,
     c_style: bool,
@@ -38,12 +39,14 @@ pub(in crate::target::csharp) struct Enumeration {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Variant {
+    documentation: Documentation,
     name: Identifier,
     discriminant: i128,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct DataVariant {
+    documentation: Documentation,
     name: Identifier,
     tag: u32,
     fields: Vec<DataField>,
@@ -51,6 +54,7 @@ struct DataVariant {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct DataField {
+    parameter_documentation: Documentation,
     key: FieldKey,
     name: Identifier,
     ty: TypeFragment,
@@ -117,6 +121,7 @@ impl Enumeration {
                     });
                 }
                 Ok(Variant {
+                    documentation: Documentation::summary(variant.meta().doc(), "        "),
                     name: Name::new(variant.name()).pascal()?,
                     discriminant: variant.discriminant().get(),
                 })
@@ -152,6 +157,7 @@ impl Enumeration {
             )?;
         }
         Ok(Self {
+            documentation: Documentation::summary(declaration.meta().doc(), "    "),
             namespace,
             name,
             c_style: true,
@@ -197,6 +203,11 @@ impl Enumeration {
                             .iter()
                             .map(|field| {
                                 Ok(DataField {
+                                    parameter_documentation: Documentation::parameter(
+                                        field.meta().doc(),
+                                        data_field_name(field.key())?.as_str(),
+                                        "        ",
+                                    ),
                                     key: field.key().clone(),
                                     name: data_field_name(field.key())?,
                                     ty: type_name::type_ref_qualified(
@@ -232,6 +243,7 @@ impl Enumeration {
                     }
                 };
                 Ok(DataVariant {
+                    documentation: Documentation::summary(variant.meta().doc(), "        "),
                     name: Name::new(variant.name()).pascal()?,
                     tag: variant.tag().get(),
                     fields,
@@ -277,6 +289,7 @@ impl Enumeration {
             )?;
         }
         Ok(Self {
+            documentation: Documentation::summary(declaration.meta().doc(), "    "),
             namespace,
             name,
             c_style: false,

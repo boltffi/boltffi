@@ -1154,6 +1154,121 @@ mod tests {
     }
 
     #[test]
+    fn csharp_target_renders_xml_documentation() {
+        let bindings = bindings(
+            r#"
+            use boltffi::EventSubscription;
+            use std::sync::Arc;
+
+            /// A profile wrapping Vec<String> & friends.
+            #[data]
+            pub struct Profile {
+                /// The display name.
+                pub name: String,
+            }
+
+            #[data(impl)]
+            impl Profile {
+                /// Returns the display-name length.
+                pub fn name_len(&self) -> usize { self.name.len() }
+            }
+
+            /// Available modes.
+            #[repr(u8)]
+            #[data]
+            pub enum Mode {
+                /// Runs quickly.
+                Fast = 1,
+                /// Runs carefully.
+                Slow = 2,
+            }
+
+            /// A job state.
+            #[data]
+            pub enum State {
+                /// No work is active.
+                Idle,
+                /// Work is active.
+                Busy {
+                    /// Number of active jobs.
+                    jobs: u32,
+                },
+            }
+
+            pub struct Counter { value: i32 }
+
+            /// Mutable counter held over FFI.
+            #[export]
+            impl Counter {
+                /// Creates a counter.
+                pub fn new(value: i32) -> Self { Self { value } }
+
+                /// Returns the current value.
+                pub fn get(&self) -> i32 { self.value }
+
+                /// Streams observed values.
+                #[ffi_stream(item = i32)]
+                pub fn values(&self) -> Arc<EventSubscription<i32>> { loop {} }
+            }
+
+            /// Echoes a profile.
+            #[export]
+            pub fn echo_profile(profile: Profile) -> Profile { profile }
+
+            /// The default answer.
+            #[export]
+            pub const ANSWER: u32 = 42;
+            "#,
+        );
+        let output = target(CSharpHost::new())
+            .render(&bindings)
+            .expect("C# XML documentation should render");
+
+        let profile = file(&output, "Profile.cs");
+        assert!(profile.contains(
+            "/// A profile wrapping Vec&lt;String&gt; &amp; friends.\n    /// </summary>"
+        ));
+        assert!(profile.contains(
+            "/// <param name=\"Name\">The display name.</param>\n    public readonly record struct Profile"
+        ));
+        assert!(profile.contains(
+            "/// Returns the display-name length.\n        /// </summary>\n        public nuint NameLen()"
+        ));
+
+        let mode = file(&output, "Mode.cs");
+        assert!(mode.contains("/// Available modes.\n    /// </summary>\n    public enum Mode"));
+        assert!(mode.contains("/// Runs quickly.\n        /// </summary>\n        Fast = 1"));
+
+        let state = file(&output, "State.cs");
+        assert!(state.contains("/// A job state.\n    /// </summary>"));
+        assert!(state.contains("/// No work is active.\n        /// </summary>"));
+        assert!(state.contains(
+            "/// <param name=\"Jobs\">Number of active jobs.</param>\n        public sealed record Busy(uint Jobs)"
+        ));
+
+        let counter = file(&output, "Counter.cs");
+        assert!(counter.contains("/// Mutable counter held over FFI.\n    /// </summary>"));
+        assert!(counter.contains(
+            "/// Creates a counter.\n        /// </summary>\n        public Counter(int value)"
+        ));
+        assert!(counter.contains(
+            "/// Returns the current value.\n        /// </summary>\n        public int Get()"
+        ));
+
+        let module = file(&output, "Demo.cs");
+        assert!(module.contains(
+            "/// Echoes a profile.\n        /// </summary>\n        public static Profile EchoProfile"
+        ));
+        assert!(module.contains(
+            "/// The default answer.\n        /// </summary>\n        public const uint Answer = 42U;"
+        ));
+        assert!(module.contains(
+            "/// Streams observed values.\n        /// </summary>\n        public static global::System.Collections.Generic.IAsyncEnumerable<int> Values"
+        ));
+        assert!(output.diagnostics().is_empty());
+    }
+
+    #[test]
     fn csharp_target_renders_builtins_and_custom_mappings() {
         let bindings = bindings(
             r#"
