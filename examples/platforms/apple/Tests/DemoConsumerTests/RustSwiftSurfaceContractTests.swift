@@ -126,7 +126,7 @@ final class RustSwiftSurfaceContractTests: DemoTestCase {
 
         let rustFiles = try FileManager.default
             .subpathsOfDirectory(atPath: rustSourceRoot.path)
-            .filter { $0.hasSuffix(".rs") }
+            .filter { $0.hasSuffix(".rs") && !featureScopedRustFiles.contains($0) }
             .sorted()
 
         let parsedInventories = try rustFiles.map { relativePath in
@@ -550,6 +550,10 @@ private let typeMemberCoverageGaps: Set<String> = [
     "enums/data_enum.rs::Shape::maybeCircle",
     "records/default_values.rs::ServiceConfig::tryWithRetries",
     "records/default_values.rs::ServiceConfig::maybeWithRetries"
+]
+
+private let featureScopedRustFiles: Set<String> = [
+    "classes/async_factory.rs"
 ]
 
 private func typeMemberCoverageKey(_ rustTypeMember: RustTypeMember) -> String {

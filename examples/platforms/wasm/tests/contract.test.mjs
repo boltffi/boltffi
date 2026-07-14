@@ -16,6 +16,10 @@ const unsupportedTypeMembers = new Set();
 
 const coverageGapTypeMembers = new Set();
 
+const featureScopedRustFiles = new Set([
+  "classes/async_factory.rs",
+]);
+
 const tsKeywords = new Set([
   "break",
   "case",
@@ -271,7 +275,9 @@ function expectedTestPath(rustFile) {
 }
 
 export async function run() {
-  const rustFiles = (await collectRustFiles(rustSourceRoot)).filter((relativePath) => relativePath !== "lib.rs");
+  const rustFiles = (await collectRustFiles(rustSourceRoot)).filter(
+    (relativePath) => relativePath !== "lib.rs" && !featureScopedRustFiles.has(relativePath),
+  );
   const rustInventories = await Promise.all(
     rustFiles.map(async (relativePath) => parseRustInventory(await readFile(join(rustSourceRoot, relativePath), "utf8"), relativePath)),
   );
