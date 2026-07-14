@@ -542,6 +542,7 @@ pub fn run_csharp_generation(
     manifest_path: PathBuf,
     artifact_name: String,
     cargo_args: Vec<String>,
+    toolchain_selector: Option<String>,
 ) -> Result<()> {
     if !config.is_csharp_enabled() {
         return Err(CliError::CommandFailed {
@@ -552,6 +553,7 @@ pub fn run_csharp_generation(
     let output_directory = output.unwrap_or_else(|| config.csharp_output());
     Generation::new(manifest_path)
         .cargo_args(cargo_args)
+        .cargo_toolchain_selector(toolchain_selector)
         .coverage_mode(CoverageMode::Partial)
         .csharp_namespace(config.csharp_namespace().map(str::to_owned))
         .csharp_native_library(artifact_name)

@@ -49,6 +49,8 @@ pub(crate) fn pack_csharp(
             Some(plan.layout.source_directory.clone()),
             &plan.source_directory,
             &plan.artifact_name,
+            plan.generation_cargo_args.clone(),
+            plan.generation_toolchain_selector.clone(),
         )?;
         step.finish_success();
     }
@@ -116,6 +118,8 @@ struct CSharpPackagingPlan {
     target_framework: String,
     artifact_name: String,
     source_directory: PathBuf,
+    generation_cargo_args: Vec<String>,
+    generation_toolchain_selector: Option<String>,
     layout: CSharpPackageLayout,
     packaging_targets: Vec<CSharpPackagingTarget>,
 }
@@ -244,6 +248,8 @@ impl CSharpPackagingPlan {
             target_framework: config.csharp_target_framework(),
             artifact_name,
             source_directory,
+            generation_cargo_args: cargo_command_args,
+            generation_toolchain_selector: toolchain_selector,
             layout,
             packaging_targets,
         })
@@ -764,6 +770,10 @@ mod tests {
             );
             manifest.insert("lib".to_string(), toml::Value::Table(lib));
 
+            let mut features = toml::Table::new();
+            features.insert("ffi".to_string(), toml::Value::Array(Vec::new()));
+            manifest.insert("features".to_string(), toml::Value::Table(features));
+
             toml::to_string(&toml::Value::Table(manifest)).expect("temp Cargo manifest TOML")
         }
     }
@@ -841,6 +851,8 @@ mod tests {
             target_framework: "net10.0".to_string(),
             artifact_name: "demo".to_string(),
             source_directory: PathBuf::from("/tmp/demo"),
+            generation_cargo_args: Vec::new(),
+            generation_toolchain_selector: None,
             layout: CSharpPackageLayout {
                 source_directory: root_directory.join("src"),
                 package_output: root_directory.join("packages"),
@@ -1058,6 +1070,23 @@ mod tests {
             packaging_target.cargo_context.rust_target_triple,
             expected_no_build_rust_target_triple(runtime_identifier)
         );
+
+        std::fs::remove_dir_all(project).expect("cleanup temp cdylib project");
+    }
+
+    #[test]
+    fn csharp_no_build_plan_preserves_cargo_args_for_regeneration() {
+        let project = temp_cdylib_project();
+        let manifest_path = project.join("Cargo.toml");
+        let mut cargo_args = cargo_args_for_manifest(&manifest_path);
+        cargo_args.extend(["--features".to_string(), "ffi".to_string()]);
+        let mut config = config();
+        config.targets.csharp.runtime_identifiers = Some(vec![CSharpRuntimeIdentifier::Current]);
+
+        let plan = CSharpPackagingPlan::from_config(&config, false, &cargo_args, true)
+            .expect("C# packaging should preserve generation Cargo arguments");
+
+        assert_eq!(plan.generation_cargo_args, ["--features", "ffi"]);
 
         std::fs::remove_dir_all(project).expect("cleanup temp cdylib project");
     }

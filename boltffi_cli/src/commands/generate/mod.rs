@@ -257,13 +257,16 @@ pub fn run_generate_csharp_with_output_from_source_dir(
     output: Option<PathBuf>,
     source_directory: &Path,
     crate_name: &str,
+    cargo_args: Vec<String>,
+    toolchain_selector: Option<String>,
 ) -> Result<()> {
     ir::run_csharp_generation(
         config,
         output,
         source_directory.join("Cargo.toml"),
         crate_name.to_owned(),
-        Vec::new(),
+        cargo_args,
+        toolchain_selector,
     )
 }
 
