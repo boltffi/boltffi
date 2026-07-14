@@ -1,3 +1,5 @@
+#[cfg(feature = "csharp-demo")]
+pub mod async_factory;
 pub mod async_methods;
 pub mod borrowed;
 pub mod constructor_matrix;
@@ -8,6 +10,8 @@ pub mod streams;
 pub mod thread_safe;
 pub mod unsafe_single_threaded;
 
+#[cfg(feature = "csharp-demo")]
+pub use async_factory::*;
 pub use async_methods::*;
 pub use borrowed::*;
 pub use constructor_matrix::*;

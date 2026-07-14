@@ -5,6 +5,7 @@ edition = "2024"
 
 [features]
 default = []
+csharp-demo = []
 uniffi = ["dep:uniffi"]
 wasm-bench = ["dep:serde", "dep:serde-wasm-bindgen", "dep:wasm-bindgen", "dep:wasm-bindgen-futures"]
 

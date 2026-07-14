@@ -555,12 +555,13 @@ pub const BINDING_METADATA_ROOT_ENV: &str = "BOLTFFI_BINDING_METADATA_ROOT";
 /// possible surface during metadata extraction.
 pub const BINDING_METADATA_SURFACE_ENV: &str = "BOLTFFI_BINDING_METADATA_SURFACE";
 
-/// Environment variable carrying active Cargo features for metadata scanning.
+/// Environment variable carrying active Cargo features for IR source scanning.
 ///
 /// Cargo feature cfgs are active during the crate build, but proc-macros do
-/// not reliably see `CARGO_FEATURE_*` for the target crate. The metadata
-/// build resolves the active local features and passes them through this
-/// variable so source scanning applies the same cfg gates as the build.
+/// not reliably see `CARGO_FEATURE_*` for the target crate. Metadata and
+/// wrapper-expansion builds resolve the active local features and pass them
+/// through this variable so source scanning applies the same cfg gates as the
+/// build.
 pub const BINDING_METADATA_FEATURES_ENV: &str = "BOLTFFI_BINDING_METADATA_FEATURES";
 
 /// Environment variable the build orchestrator sets to switch IR wrapper

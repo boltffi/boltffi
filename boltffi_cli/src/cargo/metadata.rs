@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -22,6 +23,8 @@ pub(crate) struct CargoMetadataPackage {
     pub(crate) name: String,
     pub(crate) manifest_path: PathBuf,
     pub(crate) targets: Vec<CargoMetadataPackageTarget>,
+    #[serde(default)]
+    pub(crate) features: BTreeMap<String, Vec<String>>,
 }
 
 #[derive(Debug, Deserialize)]

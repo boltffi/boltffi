@@ -1,3 +1,4 @@
+use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
 use std::path::PathBuf;
 use std::process::Command;
@@ -6,7 +7,7 @@ use boltffi_bindgen::cargo::LibraryCargoArgs;
 use boltffi_bindgen::generate::Generation;
 use boltffi_binding::{
     BINDING_EXPANSION_BUILD_ENV, BINDING_EXPANSION_ROOT_ENV, BINDING_EXPANSION_SOURCE_ENV,
-    BINDING_EXPANSION_SURFACE_ENV, BindingMetadataSurface,
+    BINDING_EXPANSION_SURFACE_ENV, BINDING_METADATA_FEATURES_ENV, BindingMetadataSurface,
 };
 
 use crate::cargo::{Cargo, CargoMetadata, SelectedLibrary};
@@ -20,6 +21,7 @@ pub struct BindingExpansion {
     library: SelectedLibrary,
     target_directory: PathBuf,
     cargo_args: LibraryCargoArgs,
+    features: BTreeSet<String>,
     toolchain_selector: Option<String>,
     surface: BindingMetadataSurface,
 }
@@ -125,11 +127,24 @@ impl BindingExpansion {
             cargo_manifest_path,
             preferred_artifact.as_deref(),
         )?;
+        let features = metadata
+            .packages
+            .iter()
+            .find(|package| package.id == library.package_id())
+            .map(|package| active_features(&package.features, &cargo_args))
+            .ok_or_else(|| CliError::CommandFailed {
+                command: format!(
+                    "could not resolve active features for selected cargo package '{}'",
+                    library.package_id()
+                ),
+                status: None,
+            })?;
 
         Ok(Self {
             library,
             target_directory: metadata.target_directory.clone(),
             cargo_args,
+            features,
             toolchain_selector: cargo.toolchain_selector().map(str::to_owned),
             surface,
         })
@@ -162,7 +177,106 @@ impl BindingExpansion {
                 BINDING_EXPANSION_SURFACE_ENV.into(),
                 self.surface.as_str().into(),
             ),
+            (
+                BINDING_METADATA_FEATURES_ENV.into(),
+                self.features
+                    .iter()
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(",")
+                    .into(),
+            ),
         ])
+    }
+}
+
+fn active_features(
+    available: &BTreeMap<String, Vec<String>>,
+    cargo_args: &LibraryCargoArgs,
+) -> BTreeSet<String> {
+    let flags = CargoFeatureFlags::from_args(cargo_args);
+    let mut active: BTreeSet<String> = if flags.all {
+        available.keys().cloned().collect()
+    } else {
+        flags
+            .features
+            .into_iter()
+            .filter_map(|feature| local_feature(&feature, available))
+            .chain(
+                flags
+                    .default
+                    .then_some("default")
+                    .filter(|feature| available.contains_key(*feature))
+                    .map(str::to_owned),
+            )
+            .collect()
+    };
+
+    while let Some(feature) = active
+        .iter()
+        .filter_map(|feature| available.get(feature))
+        .flat_map(|dependencies| dependencies.iter())
+        .filter_map(|dependency| local_feature(dependency, available))
+        .find(|dependency| !active.contains(dependency))
+    {
+        active.insert(feature);
+    }
+
+    active
+}
+
+fn local_feature(feature: &str, available: &BTreeMap<String, Vec<String>>) -> Option<String> {
+    let feature = feature.strip_prefix("dep:").unwrap_or(feature);
+    let feature = feature.split('/').next().unwrap_or(feature);
+    let feature = feature.strip_suffix('?').unwrap_or(feature);
+    available.contains_key(feature).then(|| feature.to_owned())
+}
+
+#[derive(Default)]
+struct CargoFeatureFlags {
+    all: bool,
+    default: bool,
+    features: BTreeSet<String>,
+}
+
+impl CargoFeatureFlags {
+    fn from_args(cargo_args: &LibraryCargoArgs) -> Self {
+        let mut flags = Self {
+            default: true,
+            ..Self::default()
+        };
+        let mut arguments = cargo_args.iter();
+
+        while let Some(argument) = arguments.next() {
+            match argument.as_str() {
+                "--all-features" => flags.all = true,
+                "--no-default-features" => flags.default = false,
+                "--features" | "-F" => {
+                    if let Some(features) = arguments.next() {
+                        flags.extend(features);
+                    }
+                }
+                _ => {
+                    if let Some(features) = argument.strip_prefix("--features=") {
+                        flags.extend(features);
+                    } else if let Some(features) = argument.strip_prefix("-F") {
+                        flags.extend(features.trim_start_matches('='));
+                    }
+                }
+            }
+        }
+
+        flags
+    }
+
+    fn extend(&mut self, features: &str) {
+        self.features.extend(
+            features
+                .split([',', ' '])
+                .map(str::trim)
+                .filter(|feature| !feature.is_empty())
+                .map(str::to_owned),
+        );
     }
 }
 
@@ -178,6 +292,7 @@ impl BindingExpansion {
                 .fixture_cargo_manifest(cargo_manifest_path),
             target_directory: PathBuf::from("/external/workspace/target"),
             cargo_args: LibraryCargoArgs::parse(cargo_args).unwrap(),
+            features: BTreeSet::new(),
             toolchain_selector: Some("+nightly".to_string()),
             surface: BindingMetadataSurface::Native,
         }
@@ -186,16 +301,17 @@ impl BindingExpansion {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::{BTreeMap, BTreeSet};
     use std::ffi::{OsStr, OsString};
     use std::process::Command;
 
     use boltffi_bindgen::cargo::{LibraryCargoArgs, LibraryCargoArgsError};
     use boltffi_binding::{
         BINDING_EXPANSION_BUILD_ENV, BINDING_EXPANSION_ROOT_ENV, BINDING_EXPANSION_SOURCE_ENV,
-        BINDING_EXPANSION_SURFACE_ENV, BindingMetadataSurface,
+        BINDING_EXPANSION_SURFACE_ENV, BINDING_METADATA_FEATURES_ENV, BindingMetadataSurface,
     };
 
-    use super::BindingExpansion;
+    use super::{BindingExpansion, active_features};
     use crate::cargo::fixture::{CargoMetadataFixture, CargoPackageFixture, CargoTargetFixture};
     use crate::cargo::{Cargo, CargoCrateType, SelectedLibrary};
     use crate::cli::CliError;
@@ -212,6 +328,7 @@ mod tests {
             target_directory: crate_root.join("target"),
             cargo_args: LibraryCargoArgs::parse(["--features".to_string(), "ffi".to_string()])
                 .unwrap(),
+            features: BTreeSet::from(["ffi".to_string()]),
             toolchain_selector: Some("+nightly".to_string()),
             surface: BindingMetadataSurface::Native,
         }
@@ -322,6 +439,36 @@ mod tests {
     }
 
     #[test]
+    fn resolves_active_features_from_library_cargo_args() {
+        let available = BTreeMap::from([
+            ("default".to_string(), vec!["base".to_string()]),
+            ("base".to_string(), Vec::new()),
+            ("csharp-demo".to_string(), Vec::new()),
+        ]);
+        let cargo_args =
+            LibraryCargoArgs::parse(["--features".to_string(), "csharp-demo".to_string()]).unwrap();
+
+        assert_eq!(
+            active_features(&available, &cargo_args),
+            BTreeSet::from([
+                "base".to_string(),
+                "csharp-demo".to_string(),
+                "default".to_string(),
+            ])
+        );
+
+        let all = LibraryCargoArgs::parse([
+            "--all-features".to_string(),
+            "--no-default-features".to_string(),
+        ])
+        .unwrap();
+        assert_eq!(
+            active_features(&available, &all),
+            available.keys().cloned().collect()
+        );
+    }
+
+    #[test]
     fn configures_cargo_command_with_selected_expansion() {
         let expansion = expansion();
         let mut command = Command::new("cargo");
@@ -346,6 +493,7 @@ mod tests {
             (BINDING_EXPANSION_ROOT_ENV, crate_root),
             (BINDING_EXPANSION_SOURCE_ENV, source_path),
             (BINDING_EXPANSION_SURFACE_ENV, OsString::from("native")),
+            (BINDING_METADATA_FEATURES_ENV, OsString::from("ffi")),
         ]
         .into_iter()
         .for_each(|(expected_key, expected_value)| {
