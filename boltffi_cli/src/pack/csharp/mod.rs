@@ -4,7 +4,8 @@ use std::process::Command;
 use askama::Template;
 
 use crate::build::{
-    CargoBuildProfile, OutputCallback, resolve_build_profile, run_command_streaming,
+    BindingExpansion, CargoBuildProfile, OutputCallback, resolve_build_profile,
+    run_command_streaming,
 };
 use crate::cargo::Cargo;
 use crate::cli::{CliError, Result};
@@ -37,6 +38,14 @@ pub(crate) fn pack_csharp(
         &options.execution.cargo_args,
         options.execution.no_build,
     )?;
+    let binding_expansion = (!options.execution.no_build)
+        .then(|| {
+            BindingExpansion::resolve(
+                config,
+                &resolve_build_cargo_args(config, &options.execution.cargo_args),
+            )
+        })
+        .transpose()?;
     step.finish_success();
 
     sync_csharp_project(config, &plan)?;
@@ -68,7 +77,13 @@ pub(crate) fn pack_csharp(
         let native_library = if options.execution.no_build {
             existing_csharp_native_library(packaging_target)?
         } else {
-            build_csharp_native_library(packaging_target, &step)?
+            build_csharp_native_library(
+                packaging_target,
+                binding_expansion
+                    .as_ref()
+                    .expect("C# native builds require binding expansion"),
+                &step,
+            )?
         };
         copy_csharp_native_asset(&plan.layout, packaging_target, &native_library)?;
         step.finish_success_with(&format!("{}", native_library.display()));
@@ -276,6 +291,7 @@ fn ensure_csharp_pack_cargo_args_supported(cargo: &Cargo) -> Result<()> {
 
 fn build_csharp_native_library(
     packaging_target: &CSharpPackagingTarget,
+    binding_expansion: &BindingExpansion,
     step: &Step,
 ) -> Result<PathBuf> {
     let cargo_context = &packaging_target.cargo_context;
@@ -298,7 +314,7 @@ fn build_csharp_native_library(
     }
 
     command
-        .arg("build")
+        .arg("rustc")
         .arg("--target")
         .arg(&cargo_context.rust_target_triple)
         .arg("--manifest-path")
@@ -319,6 +335,8 @@ fn build_csharp_native_library(
             status: None,
         })?
         .configure_cargo_build(&mut command);
+    command.arg("--lib");
+    binding_expansion.configure_rustc(&mut command)?;
 
     if step.is_verbose() {
         crate::pack::print_verbose_detail(&format!(
