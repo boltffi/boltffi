@@ -946,16 +946,22 @@ impl Function {
         let (public_return_type, native_return_type, return_marshal_i1, checks_status) =
             match return_plan {
                 ReturnPlan::Void => {
-                    let expected_return = if encoded_error.is_some() {
-                        CBridgeType::Buffer
-                    } else if async_symbols.is_some() {
-                        CBridgeType::Void
-                    } else {
-                        CBridgeType::Status
+                    let (native_return_type, checks_status) = match (
+                        encoded_error.is_some(),
+                        async_symbols.is_some(),
+                        return_function.returns(),
+                    ) {
+                        (true, _, CBridgeType::Buffer) => (TypeFragment::new("FfiBuf"), false),
+                        (false, true, CBridgeType::Void) | (false, false, CBridgeType::Void) => {
+                            (TypeFragment::void(), false)
+                        }
+                        (false, false, CBridgeType::Status) => {
+                            (TypeFragment::new("FfiStatus"), true)
+                        }
+                        _ => {
+                            return broken_contract("void return type does not match the C bridge");
+                        }
                     };
-                    if return_function.returns() != &expected_return {
-                        return broken_contract("void return type does not match the C bridge");
-                    }
                     let public_return_type = match (
                         return_after_status.is_some() || encoded_writeback.is_some(),
                         &call_site,
@@ -966,18 +972,7 @@ impl Function {
                         (true, _) => return unsupported("mutable enum receiver"),
                         (false, _) => TypeFragment::void(),
                     };
-                    (
-                        public_return_type,
-                        if encoded_error.is_some() {
-                            TypeFragment::new("FfiBuf")
-                        } else if async_symbols.is_some() {
-                            TypeFragment::void()
-                        } else {
-                            TypeFragment::new("FfiStatus")
-                        },
-                        false,
-                        encoded_error.is_none() && async_symbols.is_none(),
-                    )
+                    (public_return_type, native_return_type, false, checks_status)
                 }
                 ReturnPlan::DirectViaReturnSlot { ty } => {
                     if encoded_error.is_some() {

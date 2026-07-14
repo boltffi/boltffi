@@ -361,6 +361,26 @@ mod tests {
     }
 
     #[test]
+    fn csharp_target_renders_empty_void_functions_without_status() {
+        let bindings = bindings(
+            r#"
+            #[export]
+            pub fn ping() {}
+            "#,
+        );
+        let output = target(CSharpHost::new())
+            .render(&bindings)
+            .expect("empty void function should render");
+
+        let source = file(&output, "Demo.cs");
+        assert!(source.contains("public static void Ping()"));
+        assert!(source.contains("=> NativeMethods.NativePing();"));
+        assert!(source.contains("internal static extern void NativePing();"));
+        assert!(!source.contains("FfiStatus"));
+        assert!(output.diagnostics().is_empty());
+    }
+
+    #[test]
     fn csharp_target_renders_async_poll_handle_functions() {
         let bindings = bindings(
             r#"
