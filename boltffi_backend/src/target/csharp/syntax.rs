@@ -243,7 +243,27 @@ impl fmt::Display for Literal {
 
 impl Literal {
     pub(crate) fn string(value: &str) -> Self {
-        let escaped = value.replace('\\', "\\\\").replace('"', "\\\"");
+        let mut escaped = String::with_capacity(value.len());
+        for character in value.chars() {
+            match character {
+                '\0' => escaped.push_str("\\0"),
+                '\x07' => escaped.push_str("\\a"),
+                '\x08' => escaped.push_str("\\b"),
+                '\x0C' => escaped.push_str("\\f"),
+                '\n' => escaped.push_str("\\n"),
+                '\r' => escaped.push_str("\\r"),
+                '\t' => escaped.push_str("\\t"),
+                '\x0B' => escaped.push_str("\\v"),
+                '"' => escaped.push_str("\\\""),
+                '\\' => escaped.push_str("\\\\"),
+                character
+                    if character.is_control() || matches!(character, '\u{2028}' | '\u{2029}') =>
+                {
+                    escaped.push_str(&format!("\\u{:04X}", u32::from(character)));
+                }
+                character => escaped.push(character),
+            }
+        }
         Self(format!("\"{escaped}\""))
     }
 }
@@ -282,5 +302,18 @@ mod tests {
     #[test]
     fn string_literal_escapes_csharp_delimiters() {
         assert_eq!(Literal::string("a\\b\"c").to_string(), "\"a\\\\b\\\"c\"");
+    }
+
+    #[test]
+    fn string_literal_escapes_csharp_control_characters() {
+        assert_eq!(
+            Literal::string("\0\x07\x08\x0C\n\r\t\x0B\x1F\x7F\u{85}\u{2028}\u{2029}").to_string(),
+            "\"\\0\\a\\b\\f\\n\\r\\t\\v\\u001F\\u007F\\u0085\\u2028\\u2029\""
+        );
+    }
+
+    #[test]
+    fn string_literal_preserves_printable_unicode() {
+        assert_eq!(Literal::string("caf\u{e9}").to_string(), "\"caf\u{e9}\"");
     }
 }
