@@ -253,7 +253,7 @@ pub(crate) fn build_android_targets(
 
     let build_options = BuildOptions {
         release,
-        selection: BuildSelection::Expanded(binding_expansion.clone()),
+        selection: BuildSelection::Expanded(Box::new(binding_expansion.clone())),
         on_output,
     };
     let builder = Builder::new(config, build_options);

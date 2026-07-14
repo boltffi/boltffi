@@ -122,7 +122,7 @@ fn apple_builder(config: &Config, release: bool, cargo_args: Vec<String>) -> Res
     let expansion = BindingExpansion::resolve(config, &cargo_args)?;
     Ok(Builder::new(
         config,
-        build_options(release, BuildSelection::Expanded(expansion)),
+        build_options(release, BuildSelection::Expanded(Box::new(expansion))),
     ))
 }
 

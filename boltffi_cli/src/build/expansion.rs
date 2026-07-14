@@ -21,7 +21,7 @@ pub struct BindingExpansion {
     library: SelectedLibrary,
     target_directory: PathBuf,
     cargo_args: LibraryCargoArgs,
-    features: BTreeSet<String>,
+    features: Box<str>,
     toolchain_selector: Option<String>,
     surface: BindingMetadataSurface,
 }
@@ -138,7 +138,11 @@ impl BindingExpansion {
                     library.package_id()
                 ),
                 status: None,
-            })?;
+            })?
+            .into_iter()
+            .collect::<Vec<_>>()
+            .join(",")
+            .into_boxed_str();
 
         Ok(Self {
             library,
@@ -179,12 +183,7 @@ impl BindingExpansion {
             ),
             (
                 BINDING_METADATA_FEATURES_ENV.into(),
-                self.features
-                    .iter()
-                    .cloned()
-                    .collect::<Vec<_>>()
-                    .join(",")
-                    .into(),
+                self.features.as_ref().into(),
             ),
         ])
     }
@@ -292,7 +291,7 @@ impl BindingExpansion {
                 .fixture_cargo_manifest(cargo_manifest_path),
             target_directory: PathBuf::from("/external/workspace/target"),
             cargo_args: LibraryCargoArgs::parse(cargo_args).unwrap(),
-            features: BTreeSet::new(),
+            features: "".into(),
             toolchain_selector: Some("+nightly".to_string()),
             surface: BindingMetadataSurface::Native,
         }
@@ -328,7 +327,7 @@ mod tests {
             target_directory: crate_root.join("target"),
             cargo_args: LibraryCargoArgs::parse(["--features".to_string(), "ffi".to_string()])
                 .unwrap(),
-            features: BTreeSet::from(["ffi".to_string()]),
+            features: "ffi".into(),
             toolchain_selector: Some("+nightly".to_string()),
             surface: BindingMetadataSurface::Native,
         }

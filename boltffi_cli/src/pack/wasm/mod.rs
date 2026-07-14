@@ -180,7 +180,7 @@ fn build_wasm_target(
     )?;
     let build_options = BuildOptions {
         release: matches!(profile, WasmProfile::Release),
-        selection: BuildSelection::Expanded(expansion),
+        selection: BuildSelection::Expanded(Box::new(expansion)),
         on_output,
     };
     let builder = Builder::new(config, build_options);
