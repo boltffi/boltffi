@@ -843,6 +843,16 @@ mod tests {
             pub const GREETING: &'static str = "hello";
             #[export]
             pub const DEFAULT_MODE: Mode = Mode::Fast;
+
+            #[data]
+            pub enum State { Idle, Busy(u32) }
+
+            #[export]
+            pub const DEFAULT_STATE: State = State::Idle;
+            #[export]
+            pub const NATIVE_OFFSET: isize = -7;
+            #[export]
+            pub const NATIVE_LIMIT: usize = 9;
             #[export]
             pub const MAGIC: &'static [u8] = b"ffi";
             "#,
@@ -857,6 +867,13 @@ mod tests {
         assert!(source.contains("public const double Half = 0.5;"));
         assert!(source.contains("public const string Greeting = \"hello\";"));
         assert!(source.contains("public const Mode DefaultMode = Mode.Fast;"));
+        assert!(source.contains("public static readonly State DefaultState = new State.Idle();"));
+        assert!(
+            source.contains("public static readonly nint NativeOffset = unchecked((nint)-7L);")
+        );
+        assert!(
+            source.contains("public static readonly nuint NativeLimit = unchecked((nuint)9UL);")
+        );
         assert!(source.contains("public static byte[] Magic"));
         assert!(source.contains("get"));
         assert!(source.contains("NativeMethods.NativeMagic"));
