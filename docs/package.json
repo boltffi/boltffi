@@ -9,9 +9,9 @@
     "astro": "astro"
   },
   "dependencies": {
-    "@astrojs/mdx": "^6.0.0",
+    "@astrojs/mdx": "^7.0.0",
     "@astrojs/prism": "^4.0.0",
-    "@astrojs/react": "^5.0.0",
+    "@astrojs/react": "^6.0.0",
     "@astrojs/sitemap": "^3.7.0",
     "@radix-ui/react-dropdown-menu": "^2.1.16",
     "@radix-ui/react-label": "^2.1.8",
@@ -25,7 +25,7 @@
     "@types/react": "^19.2.13",
     "@types/react-dom": "^19.2.3",
     "@vercel/analytics": "^2.0.0",
-    "astro": "^6.3.1",
+    "astro": "^7.0.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "embla-carousel-react": "^8.6.0",
