@@ -35,7 +35,7 @@ jobs:
     outputs:
       version: ${{ inputs.version }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           token: ${{ secrets.RELEASE_TOKEN }}
           ref: main
@@ -119,7 +119,7 @@ jobs:
             target: x86_64-pc-windows-msvc
             artifact: boltffi-windows-x86_64
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: v${{ needs.release.outputs.version }}
 
@@ -186,7 +186,7 @@ jobs:
     if: ${{ !inputs.skip_publish }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: v${{ needs.release.outputs.version }}
 
@@ -257,7 +257,7 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: v${{ needs.release.outputs.version }}
 

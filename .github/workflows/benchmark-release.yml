@@ -31,7 +31,7 @@ jobs:
             echo "value=${GITHUB_REF}" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ steps.ref.outputs.value }}
 
@@ -126,11 +126,11 @@ jobs:
             echo "value=${GITHUB_REF}" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ steps.ref.outputs.value }}
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: boltffi/benchmarks-dashboard
           token: ${{ secrets.RELEASE_TOKEN }}
