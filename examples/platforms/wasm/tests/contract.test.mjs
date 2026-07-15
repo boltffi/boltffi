@@ -17,6 +17,7 @@ const unsupportedTypeMembers = new Set();
 const coverageGapTypeMembers = new Set();
 
 const featureScopedRustFiles = new Set([
+  "callbacks/csharp_closures.rs",
   "classes/async_factory.rs",
 ]);
 

@@ -2950,6 +2950,8 @@ public static class DemoTest
             "MapVecWithClosure");
         Require(FilterVecWithClosure(v => v > 1, new[] { 0, 1, 2, 3 }).SequenceEqual(new[] { 2, 3 }),
             "FilterVecWithClosure");
+        Require(ApplyVectorClosure(values => values.Sum(), new[] { 1, 2, 3 }) == 6,
+            "case:callbacks.closures.direct_vector_parameter.should_pass_values");
         Require(ApplyOffsetClosure((value, delta) => value + (nint)delta, (nint)10, (nuint)4) == (nint)14,
             "ApplyOffsetClosure");
         Require(ApplyStatusClosure(status => status == Status.Active ? Status.Inactive : Status.Active,

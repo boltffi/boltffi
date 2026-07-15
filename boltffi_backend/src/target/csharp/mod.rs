@@ -720,6 +720,34 @@ mod tests {
     }
 
     #[test]
+    fn csharp_target_renders_direct_vector_closure_parameters() {
+        let bindings = bindings(
+            r#"
+            #[export]
+            pub fn apply_values(f: impl Fn(Vec<i32>) -> i32, values: Vec<i32>) -> i32 {
+                f(values)
+            }
+
+            #[export]
+            pub fn apply_flags(f: impl Fn(Vec<bool>) -> bool, values: Vec<bool>) -> bool {
+                f(values)
+            }
+            "#,
+        );
+        let output = target(CSharpHost::new())
+            .render(&bindings)
+            .expect("direct-vector closures should render");
+
+        let source = file(&output, "Demo.cs");
+        assert!(source.contains("global::System.Func<int[], int> f"));
+        assert!(source.contains("global::System.Func<bool[], bool> f"));
+        assert!(source.contains("ReadRawArray<int>()"));
+        assert!(source.contains("ReadRawBoolArray()"));
+        assert!(source.contains("Unsafe.SizeOf<int>()"));
+        assert!(output.diagnostics().is_empty());
+    }
+
+    #[test]
     fn csharp_target_renders_encoded_closure_parameters() {
         let bindings = bindings(
             r#"

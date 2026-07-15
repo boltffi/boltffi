@@ -1431,6 +1431,24 @@ mod tests {
         source
     }
 
+    fn direct_vector_argument_closure_param_contract() -> SourceContract {
+        let mut function = FunctionDef::new(
+            FunctionId::new("demo::apply"),
+            CanonicalName::single("apply"),
+        );
+        function.parameters = vec![ParameterDef::value(
+            CanonicalName::single("callback"),
+            impl_closure(
+                vec![TypeExpr::Vec(Box::new(TypeExpr::Primitive(Primitive::U32)))],
+                ReturnDef::value(TypeExpr::Primitive(Primitive::U32)),
+            ),
+        )];
+
+        let mut source = SourceContract::new(PackageInfo::new("demo", None));
+        source.functions.push(function);
+        source
+    }
+
     fn closure_return_contract() -> SourceContract {
         let mut function = FunctionDef::new(
             FunctionId::new("demo::make_callback"),
@@ -8041,6 +8059,32 @@ mod tests {
         assert!(
             rendered.contains("< u32 as :: boltffi :: __private :: VecTransport > :: unpack_vec")
         );
+    }
+
+    #[test]
+    fn native_closure_param_expansion_passes_direct_vector_argument() {
+        let source = direct_vector_argument_closure_param_contract();
+        let lowered = lower_with_declarations::<Native>(&source).expect("lowered bindings");
+        let expansion = Expansion::new(&lowered);
+        let syntax = syn::parse_quote! {
+            pub fn apply(callback: impl Fn(Vec<u32>) -> u32) -> u32 {
+                callback(vec![1, 2, 3])
+            }
+        };
+
+        let tokens =
+            expand_function(&expansion, &source.functions[0], syntax).expect("expanded function");
+        let rendered = tokens.to_string();
+        syn::parse2::<syn::File>(tokens.clone()).expect("expanded closure param parses");
+
+        assert!(rendered.contains(
+            "extern \"C\" fn (* mut :: core :: ffi :: c_void , * const u32 , usize) -> u32"
+        ));
+        assert!(rendered.contains("let __boltffi_arg0_ptr = __boltffi_arg0 . as_ptr ()"));
+        assert!(rendered.contains("let __boltffi_arg0_len = __boltffi_arg0 . len ()"));
+        assert!(rendered.contains(
+            "__boltffi_callback_call (__boltffi_callback_owner . context () , __boltffi_arg0_ptr , __boltffi_arg0_len)"
+        ));
     }
 
     #[test]

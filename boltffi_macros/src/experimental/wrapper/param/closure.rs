@@ -1,8 +1,8 @@
 use boltffi_ast::{FnSig, ReturnDef, TypeExpr};
 use boltffi_binding::{
-    ClosureForm, ClosureParameter, ClosureRegistration, ClosureReturn, DirectValueType, ErrorDecl,
-    HandlePresence, ImportedCallable, IntoRust, Native, OutgoingParam, ParamPlan, ReturnPlan,
-    Wasm32, WritePlan, native, wasm32,
+    ClosureForm, ClosureParameter, ClosureRegistration, ClosureReturn, DirectValueType,
+    DirectVectorElementType, ErrorDecl, HandlePresence, ImportedCallable, IntoRust, Native,
+    OutgoingParam, ParamPlan, ReturnPlan, Wasm32, WritePlan, native, wasm32,
 };
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
@@ -427,6 +427,54 @@ impl<'expansion, 'lowered, 'rust, S: RenderSurface>
                     }],
                     call_arguments: vec![quote! { #pointer }, quote! { #length }],
                 })
+            }
+            OutgoingParam::Value(ParamPlan::DirectVec { element, .. }) => {
+                let locals = names::ClosureArgument::new(self.index);
+                let pointer = locals.pointer();
+                let length = locals.length();
+                match element {
+                    DirectVectorElementType::Primitive(primitive) => {
+                        let element_type =
+                            wrapper::type_ref::Renderer.primitive(primitive.primitive())?;
+                        Ok(InvokeParameterTokens {
+                            rust_parameter: quote! { #argument: #rust_type },
+                            ffi_parameter_types: vec![
+                                quote! { *const #element_type },
+                                quote! { usize },
+                            ],
+                            setup: vec![quote! {
+                                let #pointer = #argument.as_ptr();
+                                let #length = #argument.len();
+                            }],
+                            call_arguments: vec![quote! { #pointer }, quote! { #length }],
+                        })
+                    }
+                    DirectVectorElementType::Record(_) => {
+                        let (TypeExpr::Vec(source_element) | TypeExpr::Slice(source_element)) =
+                            self.source
+                        else {
+                            return Err(Error::SourceSyntaxMismatch(
+                                "closure direct-vector argument is missing element type",
+                            ));
+                        };
+                        let rust_element =
+                            rust_api::TypeTokens::new(source_element.as_ref())?.into_type();
+                        let buffer = locals.wire();
+                        Ok(InvokeParameterTokens {
+                            rust_parameter: quote! { #argument: #rust_type },
+                            ffi_parameter_types: vec![quote! { *const u8 }, quote! { usize }],
+                            setup: vec![quote! {
+                                let #buffer = <#rust_element as ::boltffi::__private::VecTransport>::pack_vec(#argument);
+                                let #pointer = #buffer.as_ptr();
+                                let #length = #buffer.len();
+                            }],
+                            call_arguments: vec![quote! { #pointer }, quote! { #length }],
+                        })
+                    }
+                    _ => Err(Error::UnsupportedExpansion(
+                        "closure invoke direct-vector element",
+                    )),
+                }
             }
             OutgoingParam::Value(_) => Err(Error::UnsupportedExpansion(
                 "closure invoke parameter shape",

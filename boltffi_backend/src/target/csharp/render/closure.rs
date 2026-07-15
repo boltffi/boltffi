@@ -1,6 +1,6 @@
 use boltffi_binding::{
-    CanonicalName, ClosureParameter, DirectValueType, ErrorChannel, ErrorPlacement, Native,
-    OutgoingParam, ParamPlan, Primitive, ReturnPlan, TypeRef, native,
+    CanonicalName, ClosureParameter, DirectValueType, DirectVectorElementType, ErrorChannel,
+    ErrorPlacement, Native, OutgoingParam, ParamPlan, Primitive, ReturnPlan, TypeRef, native,
 };
 
 use crate::{
@@ -13,7 +13,7 @@ use super::super::{
     syntax::{Expression, Identifier, Statement, TypeFragment},
     type_name,
 };
-use super::{NativeParameter, Parameter, direct_type};
+use super::{NativeParameter, Parameter, direct_type, direct_vector_element_type};
 
 pub(super) struct ClosureArgument {
     pub(super) parameter: Parameter,
@@ -91,6 +91,44 @@ impl ClosureArgument {
                         "WireReader {reader} = new WireReader({pointer}, {length});"
                     ));
                     invocation_arguments.push(decode.to_string());
+                }
+                ParamPlan::DirectVec { element, .. } => {
+                    let ParameterGroup::DirectVector(vector) = group else {
+                        return broken("direct-vector closure parameter group");
+                    };
+                    requires_wire_runtime = true;
+                    let pointer = Identifier::escape(c_closure.parameter(vector.pointer()).name())?;
+                    let length = Identifier::escape(c_closure.parameter(vector.length()).name())?;
+                    let element_type = direct_vector_element_type(element, None, context)?;
+                    let reader = Identifier::parse(format!("boltffi{pointer}Reader"))?;
+                    public_parameters.push(TypeFragment::new(format!("{element_type}[]")));
+                    native_parameters
+                        .extend([format!("nint {pointer}"), format!("nuint {length}")]);
+                    let byte_length = match element {
+                        DirectVectorElementType::Primitive(primitive)
+                            if primitive.primitive() == Primitive::Bool =>
+                        {
+                            length.to_string()
+                        }
+                        DirectVectorElementType::Primitive(_) => format!(
+                            "checked({length} * (nuint)global::System.Runtime.CompilerServices.Unsafe.SizeOf<{element_type}>())"
+                        ),
+                        DirectVectorElementType::Record(_) => length.to_string(),
+                        _ => {
+                            return super::super::unsupported("closure direct-vector element type");
+                        }
+                    };
+                    entry_setup.push(format!(
+                        "WireReader {reader} = new WireReader({pointer}, {byte_length});"
+                    ));
+                    invocation_arguments.push(match element {
+                        DirectVectorElementType::Primitive(primitive)
+                            if primitive.primitive() == Primitive::Bool =>
+                        {
+                            format!("{reader}.ReadRawBoolArray()")
+                        }
+                        _ => format!("{reader}.ReadRawArray<{element_type}>()"),
+                    });
                 }
                 _ => return super::super::unsupported("closure parameter shape"),
             }
