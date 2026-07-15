@@ -93,6 +93,12 @@ impl TypeRefRender for Renderer<'_, '_> {
         Ok(TypeFragment::new("string"))
     }
 
+    fn interned_string(&mut self, _static_values: &[String]) -> Self::Output {
+        unreachable!(
+            "InternedString type ref reached C# renderer: host does not advertise InternedString capability"
+        )
+    }
+
     fn bytes(&mut self) -> Self::Output {
         Ok(TypeFragment::new("byte[]"))
     }

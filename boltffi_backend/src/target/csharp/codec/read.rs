@@ -92,6 +92,12 @@ impl CodecRead for Reader<'_, '_> {
         Ok(self.call("ReadString", TypeFragment::new("string")))
     }
 
+    fn interned_string(&mut self, _static_values: &[String]) -> Self::Expr {
+        unreachable!(
+            "InternedString codec read reached C# renderer: host does not advertise InternedString capability"
+        )
+    }
+
     fn bytes(&mut self) -> Self::Expr {
         Ok(self.call("ReadBytes", TypeFragment::new("byte[]")))
     }

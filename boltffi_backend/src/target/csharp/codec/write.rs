@@ -82,6 +82,12 @@ impl CodecWrite for Writer<'_, '_> {
         vec![self.write("WriteString", value)]
     }
 
+    fn interned_string(&mut self, _static_values: &[String], _value: &ValueRef) -> Vec<Self::Stmt> {
+        unreachable!(
+            "InternedString codec write reached C# renderer: host does not advertise InternedString capability"
+        )
+    }
+
     fn bytes(&mut self, value: &ValueRef) -> Vec<Self::Stmt> {
         vec![self.write("WriteBytes", value)]
     }
