@@ -7790,6 +7790,7 @@ mod tests {
                 #[cfg(target_arch = "wasm32")]
                 #[unsafe(no_mangle)]
                 pub unsafe extern "C" fn boltffi_function_demo_apply(callback: u32) -> u32 {
+                    #[link(wasm_import_module = "env")]
                     unsafe extern "C" {
                         fn __boltffi_callback_closure____closure__u32_to_u32_call(
                             handle: u32,
@@ -8414,7 +8415,7 @@ mod tests {
             "pub unsafe extern \"C\" fn boltffi_closure_1____closure__box_closure_to_u32_call (__boltffi_context : u32 , __boltffi_arg0 : u32) -> u32"
         ));
         assert!(rendered.contains(
-            "unsafe extern \"C\" { fn __boltffi_callback_closure____closure__u32_to_u32_call (handle : u32 , __boltffi_ffi_arg0 : u32) -> u32 ; fn __boltffi_callback_closure____closure__u32_to_u32_free (handle : u32) ; }"
+            "# [link (wasm_import_module = \"env\")] unsafe extern \"C\" { fn __boltffi_callback_closure____closure__u32_to_u32_call (handle : u32 , __boltffi_ffi_arg0 : u32) -> u32 ; fn __boltffi_callback_closure____closure__u32_to_u32_free (handle : u32) ; }"
         ));
         assert!(rendered.contains(
             "__boltffi_callback_closure____closure__u32_to_u32_call (__boltffi_arg0_owner . handle () , __boltffi_arg0)"

@@ -6,7 +6,7 @@ use boltffi_binding::{
 };
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
-use syn::{Ident, Type};
+use syn::{Ident, LitStr, Type};
 
 use crate::experimental::{
     error::Error,
@@ -237,6 +237,7 @@ impl<'expansion, 'lowered> Input<'expansion, 'lowered, Wasm32> {
         let registration = self.closure.registration().shape();
         let call = Ident::new(registration.call().name().as_str(), ident.span());
         let free = Ident::new(registration.free().name().as_str(), ident.span());
+        let module = LitStr::new(registration.call().module().as_str(), ident.span());
         let names = names::ClosureRegistration::new(ident);
         let owner = names.owner();
         let return_ffi_parameter_types = return_tokens.ffi_parameter_types();
@@ -278,6 +279,7 @@ impl<'expansion, 'lowered> Input<'expansion, 'lowered, Wasm32> {
             ffi_parameters: vec![quote! { #ident: u32 }],
             ffi_parameter_types: vec![quote! { u32 }],
             conversions: vec![quote! {
+                #[link(wasm_import_module = #module)]
                 unsafe extern "C" {
                     fn #call(handle: u32 #(, #ffi_parameters)*) #return_type;
                     fn #free(handle: u32);

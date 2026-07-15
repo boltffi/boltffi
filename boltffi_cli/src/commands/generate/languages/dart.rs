@@ -50,7 +50,7 @@ impl LanguageGenerator for DartGenerator {
         request.write_output(&package_build_dart, &package.build)?;
 
         let package_lib_file =
-            package_lib_dir.join(format!("{}.dart", &request.config().package.name));
+            package_lib_dir.join(format!("{}.dart", request.config().package.name));
         request.write_output(&package_lib_file, &package.lib)?;
 
         Ok(())

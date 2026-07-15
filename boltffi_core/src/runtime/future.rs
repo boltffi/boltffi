@@ -20,6 +20,7 @@ pub enum WasmPollStatus {
 }
 
 #[cfg(target_arch = "wasm32")]
+#[link(wasm_import_module = "env")]
 unsafe extern "C" {
     fn __boltffi_wake(handle: u32);
 }

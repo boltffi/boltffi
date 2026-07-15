@@ -17,6 +17,7 @@ pub enum StreamPollResult {
 pub type StreamContinuationCallback = extern "C" fn(callback_data: u64, StreamPollResult);
 
 #[cfg(target_arch = "wasm32")]
+#[link(wasm_import_module = "env")]
 unsafe extern "C" {
     fn __boltffi_stream_wake(subscription_handle: u32, result: StreamPollResult);
 }

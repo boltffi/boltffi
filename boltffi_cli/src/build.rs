@@ -143,7 +143,7 @@ pub enum BuildSelection {
         package: String,
         cargo_args: Vec<String>,
     },
-    Expanded(BindingExpansion),
+    Expanded(Box<BindingExpansion>),
 }
 
 impl Default for BuildSelection {
@@ -454,7 +454,7 @@ name = "demo"
             &config,
             BuildOptions {
                 release: false,
-                selection: BuildSelection::Expanded(expansion),
+                selection: BuildSelection::Expanded(Box::new(expansion)),
                 on_output: None,
             },
         );

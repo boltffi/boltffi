@@ -395,7 +395,9 @@ mod tests {
     use std::fs;
     #[cfg(unix)]
     use std::os::unix::ffi::{OsStrExt, OsStringExt};
-    use std::path::{Path, PathBuf};
+    use std::path::Path;
+    #[cfg(unix)]
+    use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn parse_config(input: &str) -> Config {

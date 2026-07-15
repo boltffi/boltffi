@@ -205,7 +205,7 @@ fn build_apple_targets(
 
     let build_options = BuildOptions {
         release,
-        selection: BuildSelection::Expanded(selected_crate.clone()),
+        selection: BuildSelection::Expanded(Box::new(selected_crate.clone())),
         on_output,
     };
     let builder = Builder::new(config, build_options);
