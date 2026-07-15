@@ -2319,6 +2319,22 @@ public static class DemoTest
         }
         catch (BoltException) { }
 
+        // Result<bool, String>: the bool travels inside the FfiBuf wire
+        // envelope, so the P/Invoke return must not carry I1 marshalling.
+        DemoCase("case:results.basic.is_even.should_return_parity");
+        Require(IsEven(4), "IsEven(4) is true");
+        Require(!IsEven(3), "IsEven(3) is false");
+        DemoCase("case:results.basic.is_even.should_reject_negative_input");
+        try
+        {
+            IsEven(-1);
+            Require(false, "IsEven(-1) should throw");
+        }
+        catch (BoltException e)
+        {
+            Require(e.Message.Contains("negative input"), "IsEven error message");
+        }
+
         DemoCase("case:results.basic.safe_sqrt.should_return_square_root");
         Require(Math.Abs(SafeSqrt(9.0) - 3.0) < 1e-9, "SafeSqrt(9)");
         DemoCase("case:results.basic.safe_sqrt.should_reject_negative_input");

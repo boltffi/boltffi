@@ -2384,6 +2384,17 @@ public final class DemoTest {
             assert e.getMessage().contains("invalid integer") : "parseInt error";
         }
 
+        demoCase("case:results.basic.is_even.should_return_parity");
+        assert Demo.isEven(4) : "isEven(4) is true";
+        assert !Demo.isEven(3) : "isEven(3) is false";
+        demoCase("case:results.basic.is_even.should_reject_negative_input");
+        try {
+            Demo.isEven(-1);
+            assert false : "isEven should throw on negative input";
+        } catch (RuntimeException e) {
+            assert e.getMessage().contains("negative input") : "isEven error message";
+        }
+
         demoCase("case:results.basic.safe_sqrt.should_return_square_root");
         assert Math.abs(Demo.safeSqrt(16.0) - 4.0) < 0.0001 : "safeSqrt ok";
         demoCase("case:results.basic.safe_sqrt.should_reject_negative_input");

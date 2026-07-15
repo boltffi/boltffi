@@ -30,6 +30,11 @@ export async function run() {
   assert.equal(demo.parseInt("42"), 42);
   globalThis.demoCase("case:results.basic.parse_int.should_reject_invalid_integer");
   assertThrowsWithMessage(() => demo.parseInt("nope"), "invalid integer");
+  globalThis.demoCase("case:results.basic.is_even.should_return_parity");
+  assert.equal(demo.isEven(4), true);
+  assert.equal(demo.isEven(3), false);
+  globalThis.demoCase("case:results.basic.is_even.should_reject_negative_input");
+  assertThrowsWithMessage(() => demo.isEven(-1), "negative input");
   globalThis.demoCase("case:results.basic.validate_name.should_greet_valid_name");
   assert.equal(demo.validateName("Ali"), "Hello, Ali!");
   globalThis.demoCase("case:results.basic.validate_name.should_reject_empty_name");
