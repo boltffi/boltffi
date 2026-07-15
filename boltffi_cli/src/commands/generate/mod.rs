@@ -478,7 +478,7 @@ Email = { type = "java.net.URI", conversion = "url_string" }
         assert!(jvm_internal.contains("private object Native"));
         assert!(jni_glue.contains("#include <boltffi_generated/demo.h>"));
         assert!(build_gradle.contains("kotlin(\"multiplatform\")"));
-        assert!(build_gradle.contains("kotlin(\"multiplatform\") version \"2.3.21\""));
+        assert!(build_gradle.contains("kotlin(\"multiplatform\") version \"2.4.0\""));
         assert!(build_gradle.contains("import org.jetbrains.kotlin.gradle.dsl.JvmTarget"));
         assert!(build_gradle.contains("jvmTarget.set(JvmTarget.JVM_1_8)"));
         assert!(build_gradle.contains("androidTarget {"));
