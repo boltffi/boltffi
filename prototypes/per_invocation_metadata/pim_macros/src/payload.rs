@@ -1,5 +1,6 @@
 use serde::Serialize;
 
+use crate::export::ExportFn;
 use crate::parse::{Record, TypeNode};
 
 /// Host-side serialization: slots stand in for every type the macro cannot name.
@@ -7,6 +8,7 @@ pub fn json(record: &Record) -> serde_json::Result<Vec<u8>> {
     serde_json::to_vec(&Payload {
         kind: "record",
         name: &record.name,
+        direct: record.direct,
         fields: record
             .fields
             .iter()
@@ -15,6 +17,23 @@ pub fn json(record: &Record) -> serde_json::Result<Vec<u8>> {
                 ty: node(&field.ty),
             })
             .collect(),
+    })
+}
+
+pub fn function_json(function: &ExportFn) -> serde_json::Result<Vec<u8>> {
+    serde_json::to_vec(&FunctionPayload {
+        kind: "function",
+        name: &function.name,
+        symbol: &function.symbol,
+        params: function
+            .params
+            .iter()
+            .map(|param| Field {
+                name: &param.name,
+                ty: node(&param.ty),
+            })
+            .collect(),
+        ret: function.ret.as_ref().map(node),
     })
 }
 
@@ -33,7 +52,17 @@ fn node(ty: &TypeNode) -> Node<'_> {
 struct Payload<'a> {
     kind: &'a str,
     name: &'a str,
+    direct: bool,
     fields: Vec<Field<'a>>,
+}
+
+#[derive(Serialize)]
+struct FunctionPayload<'a> {
+    kind: &'a str,
+    name: &'a str,
+    symbol: &'a str,
+    params: Vec<Field<'a>>,
+    ret: Option<Node<'a>>,
 }
 
 #[derive(Serialize)]

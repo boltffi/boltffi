@@ -17,13 +17,14 @@ fn main() -> ExitCode {
         }
     };
 
-    let items = match pim_reader::resolve(&records) {
-        Ok(items) => items,
+    let resolved = match pim_reader::resolve(&records) {
+        Ok(resolved) => resolved,
         Err(error) => {
             eprintln!("{error}");
             return ExitCode::FAILURE;
         }
     };
+    let items = resolved.items;
 
     if json {
         for record in &records {
@@ -44,15 +45,40 @@ fn main() -> ExitCode {
         .max()
         .unwrap_or(0);
 
-    println!("{} record(s) in {}", items.len(), path.display());
+    println!(
+        "{} record(s), {} function(s) in {}",
+        items.len(),
+        resolved.functions.len(),
+        path.display()
+    );
     for item in &items {
-        println!("\n{}", item.canonical_id);
+        println!(
+            "\n{}{}",
+            item.canonical_id,
+            if item.direct { "  [direct]" } else { "" }
+        );
         for field in &item.fields {
             println!("  {:width$}  {}", field.name, field.ty);
         }
         if item.fields.is_empty() {
             println!("  (no fields)");
         }
+    }
+
+    for function in &resolved.functions {
+        let params = function
+            .params
+            .iter()
+            .map(|param| format!("{}: {}", param.name, param.ty))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let ret = function
+            .ret
+            .as_deref()
+            .map(|ty| format!(" -> {ty}"))
+            .unwrap_or_default();
+        println!("\nfn {}({params}){ret}", function.canonical_id);
+        println!("  symbol {}", function.symbol);
     }
 
     ExitCode::SUCCESS

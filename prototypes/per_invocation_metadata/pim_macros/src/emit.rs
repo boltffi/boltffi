@@ -1,6 +1,6 @@
 use proc_macro2::{Literal, TokenStream};
 use quote::quote;
-use syn::ItemStruct;
+use syn::{ItemStruct, Type};
 
 use crate::parse::Record;
 use crate::payload;
@@ -11,12 +11,10 @@ pub fn item(item: &ItemStruct, record: &Record) -> syn::Result<TokenStream> {
         syn::Error::new_spanned(item, format!("pim: cannot serialize the record: {error}"))
     })?;
 
-    let json = Literal::byte_string(&json);
     let name = &item.ident;
     let name_literal = record.name.as_str();
-    let slots = record.slots.types();
-    let mach_o_section = pim_runtime::MACH_O_SECTION;
-    let object_section = pim_runtime::OBJECT_SECTION;
+    let metadata = metadata_block(&json, record.slots.types());
+    let codecs = codecs(item, record);
 
     Ok(quote! {
         #item
@@ -26,6 +24,18 @@ pub fn item(item: &ItemStruct, record: &Record) -> syn::Result<TokenStream> {
             const NAME: &'static str = #name_literal;
         }
 
+        #codecs
+        #metadata
+    })
+}
+
+/// One `#[used]` static per invocation; the module path is whatever `module_path!` says here.
+pub fn metadata_block(json: &[u8], slots: &[Type]) -> TokenStream {
+    let json = Literal::byte_string(json);
+    let mach_o_section = pim_runtime::MACH_O_SECTION;
+    let object_section = pim_runtime::OBJECT_SECTION;
+
+    quote! {
         const _: () = {
             const MODULE: &str = ::core::module_path!();
             const SLOTS: &[&str] = &[
@@ -42,5 +52,78 @@ pub fn item(item: &ItemStruct, record: &Record) -> syn::Result<TokenStream> {
             #[used]
             static METADATA: [u8; LEN] = ::pim_runtime::record::<LEN>(MODULE, SLOTS, JSON);
         };
-    })
+    }
+}
+
+/// Bounds are `where` clauses, so a field without an encoding only errors where a value crosses.
+fn codecs(item: &ItemStruct, record: &Record) -> TokenStream {
+    let name = &item.ident;
+    let field_idents = item
+        .fields
+        .iter()
+        .map(|field| {
+            field
+                .ident
+                .as_ref()
+                .expect("named fields carry an identifier")
+        })
+        .collect::<Vec<_>>();
+    let field_types = item
+        .fields
+        .iter()
+        .map(|field| &field.ty)
+        .collect::<Vec<_>>();
+
+    let codec = if record.direct {
+        quote! {
+            impl<Tag> ::pim_runtime::Codec<Tag> for #name {
+                type FfiType = Self;
+                fn lower(self) -> Self {
+                    self
+                }
+                fn lift(ffi: Self) -> Self {
+                    ffi
+                }
+            }
+        }
+    } else {
+        quote! {
+            impl<Tag> ::pim_runtime::Codec<Tag> for #name
+            where
+                #name: ::pim_runtime::Encode<Tag>,
+            {
+                type FfiType = ::pim_runtime::RawBuffer;
+
+                fn lower(self) -> ::pim_runtime::RawBuffer {
+                    let mut bytes = ::std::vec::Vec::new();
+                    ::pim_runtime::Encode::<Tag>::write(&self, &mut bytes);
+                    ::pim_runtime::RawBuffer::from_vec(bytes)
+                }
+
+                fn lift(ffi: ::pim_runtime::RawBuffer) -> Self {
+                    let bytes = ffi.into_vec();
+                    <Self as ::pim_runtime::Encode<Tag>>::read(&mut bytes.as_slice())
+                }
+            }
+        }
+    };
+
+    quote! {
+        impl<Tag> ::pim_runtime::Encode<Tag> for #name
+        where
+            #(#field_types: ::pim_runtime::Encode<Tag>,)*
+        {
+            fn write(&self, out: &mut ::std::vec::Vec<u8>) {
+                #(::pim_runtime::Encode::<Tag>::write(&self.#field_idents, out);)*
+            }
+
+            fn read(input: &mut &[u8]) -> Self {
+                Self {
+                    #(#field_idents: <#field_types as ::pim_runtime::Encode<Tag>>::read(input),)*
+                }
+            }
+        }
+
+        #codec
+    }
 }

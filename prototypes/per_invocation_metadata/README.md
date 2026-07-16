@@ -24,20 +24,27 @@ name resolution.
 
 `pim_reader` then reads the section back out of the compiled artifact and rebuilds the type graph.
 
+Phase 2 extends the same idea to the wrapper codegen. Each `#[export]` expansion emits, adjacent
+to the function, an `extern "C"` wrapper whose signature goes through
+`<T as Codec<crate::PimTag>>::FfiType` — the compiler picks each type's ABI — plus a record
+carrying the wrapper's link symbol (crate name + item name + a `Span`-derived hash). The
+acceptance test dlopens the artifact and calls wrappers through symbol names read from their own
+records.
+
 ## Crates
 
 | crate | role |
 |---|---|
-| `pim_runtime` | the `TypeInfo` trait, const record framing, and the section parser |
-| `pim_macros` | `#[data]`, `define_record!` (a proc macro that emits a `#[data]` item), `custom_type!`, `scaffolding!` |
+| `pim_runtime` | the `TypeInfo`, `Encode` and `Codec` traits, const record framing, and the section parser |
+| `pim_macros` | `#[data]`, `#[export]`, `define_record!` (a proc macro that emits a `#[data]` item), `custom_type!`, `scaffolding!` |
 | `pim_dep` | a dependency crate with its own `#[data]` types, to test cross-crate references |
 | `pim_toy` | cdylib + rlib exercising every scenario; `tests/ui` holds the compile-fail cases |
-| `pim_reader` | section extractor, slot resolver, table printer, and the acceptance test |
+| `pim_reader` | section extractor, slot resolver, table printer, and the dlopen acceptance tests |
 
 ## Try it
 
 ```sh
-cargo test                                          # 20 tests, incl. 3 compile-fail cases
+cargo test                                          # 30 tests, incl. 4 compile-fail cases
 cargo build -p pim_toy
 cargo run -p pim_reader -- target/debug/libpim_toy.dylib
 ```

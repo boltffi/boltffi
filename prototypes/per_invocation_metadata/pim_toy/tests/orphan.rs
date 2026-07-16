@@ -14,3 +14,8 @@ fn an_unannotated_field_type_is_a_compile_error() {
 fn an_alias_to_a_container_is_a_compile_error() {
     trybuild::TestCases::new().compile_fail("tests/ui/alias_to_container.rs");
 }
+
+#[test]
+fn an_unannotated_export_parameter_is_a_compile_error() {
+    trybuild::TestCases::new().compile_fail("tests/ui/export_unannotated_param.rs");
+}

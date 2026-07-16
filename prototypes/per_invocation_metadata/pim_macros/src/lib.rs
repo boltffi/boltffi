@@ -1,8 +1,10 @@
 //! Stand-in for `#[boltffi::data]`: emits the type's canonical id and its metadata record.
 
 mod emit;
+mod export;
 mod parse;
 mod payload;
+mod symbol;
 
 use proc_macro::TokenStream;
 use quote::quote;
@@ -48,6 +50,17 @@ pub fn data(_attribute: TokenStream, item: TokenStream) -> TokenStream {
     let item = parse_macro_input!(item as ItemStruct);
 
     match parse::record(&item).and_then(|record| emit::item(&item, &record)) {
+        Ok(tokens) => tokens.into(),
+        Err(error) => error.into_compile_error().into(),
+    }
+}
+
+/// Stand-in for `#[boltffi::export]`: emits the adjacent wrapper and the invocation's own record.
+#[proc_macro_attribute]
+pub fn export(_attribute: TokenStream, item: TokenStream) -> TokenStream {
+    let item = parse_macro_input!(item as syn::ItemFn);
+
+    match export::item(&item) {
         Ok(tokens) => tokens.into(),
         Err(error) => error.into_compile_error().into(),
     }

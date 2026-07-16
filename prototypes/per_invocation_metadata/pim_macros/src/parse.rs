@@ -7,8 +7,13 @@ const PRIMITIVES: &[&str] = &[
 
 const SHAPES: &[&str] = &["Vec", "Option", "Box", "HashMap", "Result"];
 
+const DIRECT_PRIMITIVES: &[&str] = &[
+    "bool", "u8", "u16", "u32", "u64", "i8", "i16", "i32", "i64", "f32", "f64",
+];
+
 pub struct Record {
     pub name: String,
+    pub direct: bool,
     pub fields: Vec<Field>,
     pub slots: Slots,
 }
@@ -81,12 +86,29 @@ pub fn record(item: &ItemStruct) -> syn::Result<Record> {
 
     Ok(Record {
         name: item.ident.to_string(),
+        direct: direct(item, &fields),
         fields,
         slots,
     })
 }
 
-fn classify(ty: &Type, slots: &mut Slots) -> syn::Result<TypeNode> {
+/// Conservative: an alias to a primitive downgrades the record to encoded, never the reverse.
+fn direct(item: &ItemStruct, fields: &[Field]) -> bool {
+    let repr_c = item.attrs.iter().any(|attribute| {
+        attribute.path().is_ident("repr")
+            && attribute
+                .parse_args::<syn::Ident>()
+                .is_ok_and(|ident| ident == "C")
+    });
+
+    repr_c
+        && !fields.is_empty()
+        && fields.iter().all(|field| {
+            matches!(&field.ty, TypeNode::Prim(name) if DIRECT_PRIMITIVES.contains(&name.as_str()))
+        })
+}
+
+pub fn classify(ty: &Type, slots: &mut Slots) -> syn::Result<TypeNode> {
     let Type::Path(path) = ty else {
         return Err(syn::Error::new_spanned(
             ty,

@@ -2,7 +2,7 @@
 
 mod resolve;
 
-pub use resolve::{Field, Item, ResolveError, resolve};
+pub use resolve::{Field, Function, Item, ResolveError, Resolved, resolve};
 
 use std::fmt;
 use std::io;

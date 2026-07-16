@@ -1,8 +1,10 @@
 //! Record framing shared by the emitting macro and the artifact reader.
 
+mod codec;
 mod compose;
 mod parse;
 
+pub use codec::{Codec, Encode, RawBuffer};
 pub use compose::{CAPACITY, Meta, TypeMeta};
 pub use parse::{ParseError, RawRecord, records};
 

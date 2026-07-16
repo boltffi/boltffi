@@ -1,6 +1,7 @@
 pim_macros::scaffolding!();
 
 pub mod aliased;
+pub mod api;
 pub mod composed;
 pub mod emitted;
 pub mod fromdep;

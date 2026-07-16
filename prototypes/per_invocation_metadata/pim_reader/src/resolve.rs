@@ -4,13 +4,32 @@ use std::fmt;
 use pim_runtime::RawRecord;
 use serde::Deserialize;
 
-/// A record whose type references have been resolved to canonical ids.
+/// Everything the artifact declared, with type references resolved to canonical ids.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Resolved {
+    pub items: Vec<Item>,
+    pub functions: Vec<Function>,
+}
+
+/// A type record whose references have been resolved to canonical ids.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Item {
     pub canonical_id: String,
     pub name: String,
     pub module: String,
+    pub direct: bool,
     pub fields: Vec<Field>,
+}
+
+/// An exported function: the symbol is the link-layer name, the canonical id the readable one.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Function {
+    pub canonical_id: String,
+    pub name: String,
+    pub module: String,
+    pub symbol: String,
+    pub params: Vec<Field>,
+    pub ret: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -20,45 +39,82 @@ pub struct Field {
 }
 
 /// Joins each record's module path with its slot table, keyed by canonical id.
-pub fn resolve(records: &[RawRecord]) -> Result<Vec<Item>, ResolveError> {
+pub fn resolve(records: &[RawRecord]) -> Result<Resolved, ResolveError> {
     let mut items: BTreeMap<String, Item> = BTreeMap::new();
+    let mut functions: BTreeMap<String, Function> = BTreeMap::new();
 
     for record in records {
-        let item = item(record)?;
-        if let Some(existing) = items.get(&item.canonical_id)
-            && existing != &item
-        {
-            return Err(ResolveError::Conflict {
-                id: item.canonical_id,
-            });
+        match payload(record)? {
+            Payload::Record(payload) => {
+                let item = item(record, payload)?;
+                if let Some(existing) = items.get(&item.canonical_id)
+                    && existing != &item
+                {
+                    return Err(ResolveError::Conflict {
+                        id: item.canonical_id,
+                    });
+                }
+                items.insert(item.canonical_id.clone(), item);
+            }
+            Payload::Function(payload) => {
+                let function = function(record, payload)?;
+                if let Some(existing) = functions.get(&function.canonical_id)
+                    && existing != &function
+                {
+                    return Err(ResolveError::Conflict {
+                        id: function.canonical_id,
+                    });
+                }
+                functions.insert(function.canonical_id.clone(), function);
+            }
         }
-        items.insert(item.canonical_id.clone(), item);
     }
 
-    Ok(items.into_values().collect())
+    Ok(Resolved {
+        items: items.into_values().collect(),
+        functions: functions.into_values().collect(),
+    })
 }
 
-fn item(record: &RawRecord) -> Result<Item, ResolveError> {
-    let payload: Payload = serde_json::from_slice(&record.json)
-        .map_err(|error| ResolveError::Json(error.to_string()))?;
+fn payload(record: &RawRecord) -> Result<Payload, ResolveError> {
+    serde_json::from_slice(&record.json).map_err(|error| ResolveError::Json(error.to_string()))
+}
 
-    let fields = payload
-        .fields
+fn item(record: &RawRecord, payload: RecordPayload) -> Result<Item, ResolveError> {
+    Ok(Item {
+        canonical_id: format!("{}::{}", record.module, payload.name),
+        fields: fields(&payload.fields, &record.slots)?,
+        name: payload.name,
+        module: record.module.clone(),
+        direct: payload.direct,
+    })
+}
+
+fn function(record: &RawRecord, payload: FunctionPayload) -> Result<Function, ResolveError> {
+    Ok(Function {
+        canonical_id: format!("{}::{}", record.module, payload.name),
+        params: fields(&payload.params, &record.slots)?,
+        ret: payload
+            .ret
+            .as_ref()
+            .map(|node| render(node, &record.slots))
+            .transpose()?,
+        name: payload.name,
+        module: record.module.clone(),
+        symbol: payload.symbol,
+    })
+}
+
+fn fields(payload: &[PayloadField], slots: &[String]) -> Result<Vec<Field>, ResolveError> {
+    payload
         .iter()
         .map(|field| {
             Ok(Field {
                 name: field.name.clone(),
-                ty: render(&field.ty, &record.slots)?,
+                ty: render(&field.ty, slots)?,
             })
         })
-        .collect::<Result<Vec<_>, ResolveError>>()?;
-
-    Ok(Item {
-        canonical_id: format!("{}::{}", record.module, payload.name),
-        name: payload.name,
-        module: record.module.clone(),
-        fields,
-    })
+        .collect()
 }
 
 fn render(node: &TypeNode, slots: &[String]) -> Result<String, ResolveError> {
@@ -87,9 +143,26 @@ fn render(node: &TypeNode, slots: &[String]) -> Result<String, ResolveError> {
 }
 
 #[derive(Debug, Deserialize)]
-struct Payload {
+#[serde(tag = "kind", rename_all = "lowercase")]
+enum Payload {
+    Record(RecordPayload),
+    Function(FunctionPayload),
+}
+
+#[derive(Debug, Deserialize)]
+struct RecordPayload {
     name: String,
+    #[serde(default)]
+    direct: bool,
     fields: Vec<PayloadField>,
+}
+
+#[derive(Debug, Deserialize)]
+struct FunctionPayload {
+    name: String,
+    symbol: String,
+    params: Vec<PayloadField>,
+    ret: Option<TypeNode>,
 }
 
 #[derive(Debug, Deserialize)]

@@ -3,12 +3,15 @@
 Prototype of per-invocation metadata capture, motivated by the silent-visibility bug: bindgen
 ignores macro-generated `#[data]`/`#[export]` items while `boltffi generate` exits 0.
 Built and run on the repo's pinned toolchain, **stable rustc 1.95.0, edition 2024, macOS/arm64**.
-Everything below is backed by running code in this workspace — 20 tests via `cargo test`, plus a
-manually run reader pass for the section-survival table in §1.
+Everything below is backed by running code in this workspace — 30 tests via `cargo test` (§1–§5
+are the metadata phase, §6–§9 the expansion phase), plus a manually run reader pass for the
+section-survival table in §1.
 
 **Verdict: the approach works, and it works better than expected.** Every capability question came
-back yes. The costs are real but bounded, and one of them is a new user-facing requirement that the
-team has to decide it is willing to accept.
+back yes — including, in phase 2, the wrapper codegen itself: a `#[export]` invocation can emit its
+own `extern "C"` wrapper, and a reader can call it through the symbol name read from the artifact.
+The costs are real but bounded, and one of them is a new user-facing requirement that the team has
+to decide it is willing to accept.
 
 ---
 
@@ -260,6 +263,119 @@ That was a live risk (the classic inventory-pattern failure) and it did not mate
 
 ---
 
+## 6. Can the wrapper codegen be per-invocation too? (phase 2)
+
+**Yes.** Phase 1 left this as the honest gap: metadata was per-invocation, but the *expansion* —
+the `extern "C"` wrappers behind `expansion_build.rs` — still assumed a whole-crate view. Phase 2
+adds `#[export]`: each invocation emits its own wrapper **adjacent to the function**, plus its own
+metadata record carrying the wrapper's link symbol. The acceptance test dlopens the cdylib and
+calls the wrappers **through symbol names read from their own records** — nothing on the reader
+side ever derives a name.
+
+The current expander consumes four pieces of whole-crate knowledge. Each has a per-invocation
+replacement, and all four are now backed by running code:
+
+| whole-crate dependency today | per-invocation replacement | proven by |
+|---|---|---|
+| sequential `SymbolId`s from `SymbolAllocator` | the record carries its own symbol *name*; ids become a bindgen-side concern | `calls_a_direct_wrapper_by_value` |
+| direct-vs-encoded needs the referenced type's fields (whole-crate `Index`) | decided once at the type's **own** `#[data]` site; use sites are agnostic through `Codec<Tag>::FfiType` | direct and encoded round-trips |
+| crate-root-visible paths (`root_visible_paths`, the whole `pub use` graph) | **machinery deleted**: the wrapper sits next to the item, so types resolve under exactly the tokens the signature wrote | aliased and dependency-re-exported params |
+| error-payload reverse pass over all callables | `Result<T, E>` codec at the boundary; the reverse pass remains a bindgen aggregation over records | `returns_the_error_arm_through_the_result_buffer` |
+
+The third row is the pleasant surprise: per-invocation emission does not merely tolerate losing
+the whole-crate view — it makes `RootModuleTypes`/`root_visible_paths` unnecessary, because
+`nudge(point: GeoPoint, …)` resolves the alias in the scope where the user wrote it. The record
+comes out as `pim_toy::geometry::Point`, and `from_dep(point: pim_dep::DepPoint)` resolves past
+the re-export to `pim_dep::shapes::DepPoint`, both by the compiler.
+
+## 7. Symbol names without a module path, on stable
+
+A proc macro cannot know its module path at expansion time (`module_path!()` answers only at
+const-eval, too late to name an `extern "C"` item). `proc_macro::Span::file`/`line`/`column`
+(stable since 1.88) fill the gap:
+
+```
+pim_{CARGO_CRATE_NAME}_{item_name}_{fnv1a(file:line:column) as 8 hex}
+```
+
+Observed behavior worth recording:
+
+- `make_scaler!(double_it, 2.0)` and `make_scaler!(triple_it, 3.0)` produce the **same span hash**
+  (`56baa5df`) — the span of tokens emitted by a `macro_rules!` points at the macro *definition*,
+  not the call site. The item name in the symbol is what keeps them distinct. The residual
+  collision window — same function name, same macro definition site, different modules — is a
+  **duplicate-symbol link error**: loud, never silent.
+- An `include!(OUT_DIR)` export hashes the OUT_DIR path, so the hash varies across build
+  environments. Correctness is unaffected — the reader takes names from records, and foreign
+  bindings would be generated from the same artifact — but reproducible-build butterflies should
+  be checked at promotion time.
+- The symbol is attached with `#[unsafe(export_name = …)]`; all 8 survive `release-lto`
+  (fat LTO + `strip = "symbols"`), alongside all 27 records.
+
+## 8. The codec moves into the trait system
+
+The whole-crate `Index` exists today to answer one question per referenced type: direct or
+encoded? Phase 2 moves the answer to the type's own definition site. `#[data]` emits
+`impl<Tag> Codec<Tag> for T { type FfiType = …; }` — `Self` when the struct is `#[repr(C)]` with
+all-primitive fields, `RawBuffer` otherwise — and embeds `"direct": true/false` in the record, so
+the compiled ABI and what bindgen reads **agree by construction**. Wrappers never make the choice:
+
+```rust
+extern "C" fn __pim_export_nudge(p0: <GeoPoint as Codec<crate::PimTag>>::FfiType, …)
+    -> <GeoPoint as Codec<crate::PimTag>>::FfiType
+```
+
+compiles warning-free on stable — no `improper_ctypes` complaints, because the lint sees the
+post-projection types. The macro's direct check is deliberately conservative: an alias to a
+primitive downgrades the record to encoded. The unsafe direction (direct ABI without direct
+layout) cannot be expressed.
+
+Two design facts with production consequences:
+
+- **Bounds on generated impls must be lazy.** The `Encode` impls carry `where` clauses per field
+  type instead of typechecking eagerly, so `#[data]` on `Deadline { after: Duration }` still
+  compiles even though `custom_type!` gives `Duration` no encoding — the error surfaces only at
+  an export that actually moves a `Deadline`, shaped by `#[diagnostic::on_unimplemented]`
+  (`export_unannotated_param` ui test: two on-message errors, the first at the exact parameter).
+- **Recursive encoded types hit the trait solver's overflow guard.** `Node { next: Option<Box<Node>> }`
+  is fine as metadata (§3) but `Node: Encode` would recurse through its own `where` clause (E0275)
+  if a wrapper ever instantiated it. The real implementation needs its codec impls written without
+  self-referential bounds (boltffi's actual codec recurses at runtime, so this is a prototype
+  artifact — but it has to be checked, not assumed).
+
+## 9. The dlopen round-trip
+
+The reader loads `libpim_toy.dylib`, looks up each function's symbol **from its record**, and calls:
+
+| call | proves |
+|---|---|
+| `add_vec2(Vec2, Vec2) -> Vec2` | direct records cross by value; ABI matches a hand-declared `#[repr(C)]` mirror |
+| `describe_shape(Shape) -> String` | encoded records cross as owned buffers; field order and framing match |
+| `checked_div(1.0, 0.0)` | the `Result` error arm carries the typed payload (`MathError{1, "division by zero"}`) |
+| `double_it(21.0)` | a `macro_rules!`-emitted export is discoverable *and callable* |
+| `build_script_sum(vec![1.5, 2.5])` | an `include!(OUT_DIR)` export is discoverable and callable |
+| `extra_ping` absent | a cfg-gated export leaves no record and no symbol when the feature is off |
+
+The buffer contract in the prototype is deliberately naive: both sides assume the same process
+and allocator, and the test frees returned buffers by reconstructing the `Vec`. A real
+implementation needs an explicit free export and boltffi's actual byte codec — the framing here
+(LE primitives, `u64`-length-prefixed strings/vecs, tag bytes) is a stand-in.
+
+## What phase 2 still does not cover
+
+- **Callbacks and streams.** The biggest remaining expansion surface (vtables, foreign-to-Rust
+  dispatch, the `trait_path` machinery). Nothing here is evidence about them either way; they need
+  their own phase.
+- **Methods, receivers, async.** `#[export]` rejects them; object/class exports are unexplored.
+- **The wasm32 surface.** One `cfg(target_family)`-selected wrapper variant should replace the
+  env-var-driven dual build, but no wasm artifact was built or read here.
+- **`custom_type!` values at the boundary.** A foreign type can be *referenced* (§4a) but has no
+  `Encode`, so it cannot yet cross as a value — production `custom_type!` needs user-supplied
+  conversions, as UniFFI does.
+- **Bindgen-side aggregation.** The reader lists records and calls symbols; it does not run
+  boltffi's global lowering passes (id allocation, error-payload reverse pass, codec planning over
+  the union). Those move behind the reader per the RFC, but were not prototyped.
+
 ## Implications for the real implementation
 
 **The silent-failure mode disappears entirely, and that is the headline.** Today a type that should be
@@ -297,17 +413,19 @@ What this costs on the boltffi side, in rough order of pain:
    `expansion_build.rs`, along with the whole-crate `boltffi_scan::scan_package` re-scan they gate.
    Every invocation emits its own record.
 3. **Lowering moves from the macro to a bindgen-side aggregator.** The global passes that need the
-   full set — family-indexed ids, the sequential `SymbolAllocator`, the error-payload reverse pass,
-   and the direct/encoded codec choice that needs referenced definitions — then run once, over the
-   union of records, exactly as they do today.
+   full set — family-indexed ids, the sequential `SymbolAllocator`, the error-payload reverse pass —
+   then run once, over the union of records, exactly as they do today. The direct/encoded codec
+   choice leaves the list entirely: §8 moves it to the type's own definition site.
 4. **`Generation::bindings` must stop assuming one blob per surface.** `boltffi_bindgen/src/generate.rs:635-643`
    currently takes the *first* envelope matching the target surface via `.find()`. The transport
    underneath it is already plural (`BFFIMD01` framing decodes N records; `BindingMetadataReader` is
    plural end-to-end with contract-hash dedup), so this is the one consumer that has to change.
 5. **The aggregator must read the linked artifact**, not the rlibs (see §5).
-6. **The expansion build needs the same surgery.** This prototype only covers *metadata*. For a
-   macro-emitted `#[export]` to actually *work*, the wrapper codegen in `expansion_build.rs` needs
-   per-invocation treatment too — it has the same `EMITTED`-guarded rescan. Roughly doubles the
-   macro-side effort, and this prototype says nothing about it.
+6. **The expansion build needs the same surgery.** Phase 1 said nothing about this; phase 2 (§6–§9)
+   now does: per-invocation wrapper emission works end to end for plain functions, and it deletes
+   the `RootModuleTypes`/`root_visible_paths` machinery as a bonus. Callbacks, streams, and methods
+   remain unprototyped — see "What phase 2 still does not cover".
 
-Item 6 is the honest gap in this prototype. Items 1–5 are now de-risked with running code.
+Items 1–6 are now de-risked with running code, for the surface this prototype covers. The open
+edges are the ones listed under "What phase 2 still does not cover": callbacks/streams, methods,
+wasm32, `custom_type!` values, and the bindgen-side aggregation itself.

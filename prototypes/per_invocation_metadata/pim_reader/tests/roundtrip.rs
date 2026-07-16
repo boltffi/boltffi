@@ -158,8 +158,10 @@ fn cfg_is_evaluated_by_the_compiler_not_approximated() {
         std::env::consts::DLL_PREFIX,
         std::env::consts::DLL_SUFFIX
     ));
-    let items = pim_reader::resolve(&pim_reader::read_artifact(&path).expect("artifact reads"))
-        .expect("records resolve")
+    let resolved = pim_reader::resolve(&pim_reader::read_artifact(&path).expect("artifact reads"))
+        .expect("records resolve");
+    let items = resolved
+        .items
         .into_iter()
         .map(|item| (item.canonical_id.clone(), item))
         .collect::<BTreeMap<_, _>>();
@@ -167,6 +169,13 @@ fn cfg_is_evaluated_by_the_compiler_not_approximated() {
     assert!(
         items.contains_key("pim_toy::gated::Extra"),
         "the same item appears once rustc says the feature is on"
+    );
+    assert!(
+        resolved
+            .functions
+            .iter()
+            .any(|function| function.canonical_id == "pim_toy::gated::extra_ping"),
+        "a feature-gated export appears once rustc says the feature is on"
     );
 }
 
@@ -178,7 +187,9 @@ fn items(path: &Path) -> BTreeMap<String, Item> {
 }
 
 fn resolved(path: &Path) -> Vec<Item> {
-    pim_reader::resolve(&records(path)).expect("records resolve")
+    pim_reader::resolve(&records(path))
+        .expect("records resolve")
+        .items
 }
 
 fn records(path: &Path) -> Vec<pim_runtime::RawRecord> {
