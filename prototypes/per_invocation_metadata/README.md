@@ -7,6 +7,9 @@ source files. Motivation: `#[data]`/`#[export]` items emitted by a macro or pull
 
 Read [FINDINGS.md](FINDINGS.md) for the results; the discussion lives in [RFC #665](https://github.com/boltffi/boltffi/issues/665). This README is just the map.
 
+Everything here is prefixed `pim` — **p**er-**i**nvocation **m**etadata: the crates, `PimTag`,
+the `__pimmeta` link section, the exported symbol names.
+
 ## The idea being tested
 
 Each `#[data]` expansion emits two things:
