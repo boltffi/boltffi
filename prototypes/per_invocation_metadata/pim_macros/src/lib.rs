@@ -1,0 +1,66 @@
+//! Stand-in for `#[boltffi::data]`: emits the type's canonical id and its metadata record.
+
+mod emit;
+mod parse;
+mod payload;
+
+use proc_macro::TokenStream;
+use quote::quote;
+use syn::{ItemStruct, Path, parse_macro_input};
+
+/// Declares the crate's tag type. Must sit at the crate root; every emitted reference names it.
+#[proc_macro]
+pub fn scaffolding(_input: TokenStream) -> TokenStream {
+    quote! {
+        pub struct PimTag;
+    }
+    .into()
+}
+
+/// Gives a foreign type a canonical id. Legal only because `PimTag` is local to this crate.
+#[proc_macro]
+pub fn custom_type(input: TokenStream) -> TokenStream {
+    let path = parse_macro_input!(input as Path);
+    let mut segments = path
+        .segments
+        .iter()
+        .map(|segment| segment.ident.to_string())
+        .collect::<Vec<_>>();
+
+    let Some(name) = segments.pop() else {
+        return syn::Error::new_spanned(&path, "pim: expected a type path")
+            .into_compile_error()
+            .into();
+    };
+    let module = segments.join("::");
+
+    quote! {
+        impl ::pim_runtime::TypeInfo<crate::PimTag> for #path {
+            const MODULE: &'static str = #module;
+            const NAME: &'static str = #name;
+        }
+    }
+    .into()
+}
+
+#[proc_macro_attribute]
+pub fn data(_attribute: TokenStream, item: TokenStream) -> TokenStream {
+    let item = parse_macro_input!(item as ItemStruct);
+
+    match parse::record(&item).and_then(|record| emit::item(&item, &record)) {
+        Ok(tokens) => tokens.into(),
+        Err(error) => error.into_compile_error().into(),
+    }
+}
+
+/// A proc macro that emits a `#[data]` item — the case bindgen's source scan cannot see.
+#[proc_macro]
+pub fn define_record(input: TokenStream) -> TokenStream {
+    let body = proc_macro2::TokenStream::from(input);
+
+    quote! {
+        #[::pim_macros::data]
+        pub struct #body
+    }
+    .into()
+}
