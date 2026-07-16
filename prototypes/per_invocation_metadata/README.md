@@ -5,7 +5,7 @@ its FFI surface from **what the compiler actually compiled** instead of from a s
 source files. Motivation: `#[data]`/`#[export]` items emitted by a macro or pulled in with
 `include!` are silently absent from the generated bindings while `boltffi generate` exits 0.
 
-Read [FINDINGS.md](FINDINGS.md) for the results. This README is just the map.
+Read [FINDINGS.md](FINDINGS.md) for the results; the discussion lives in [RFC #665](https://github.com/boltffi/boltffi/issues/665). This README is just the map.
 
 ## The idea being tested
 
