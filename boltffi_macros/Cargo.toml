@@ -21,6 +21,7 @@ boltffi_ffi_rules.workspace = true
 boltffi_ast.workspace = true
 boltffi_binding.workspace = true
 boltffi_scan.workspace = true
+serde_json.workspace = true
 
 [dev-dependencies]
 boltffi_bindgen.workspace = true

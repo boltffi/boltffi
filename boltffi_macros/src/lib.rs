@@ -3,6 +3,7 @@ use quote::quote;
 use syn::{DeriveInput, ItemFn, parse_macro_input};
 
 mod callbacks;
+mod capture;
 mod custom;
 mod data;
 mod experimental;
@@ -34,6 +35,28 @@ pub fn derive_ffi_type(input: TokenStream) -> TokenStream {
 }
 
 fn expand_or_experimental(
+    item: TokenStream,
+    legacy: impl FnOnce(TokenStream) -> TokenStream,
+    dependency: DependencyExpansion,
+) -> TokenStream {
+    expand_with_capture(item, legacy, dependency, capture::ImplCapture::Class)
+}
+
+fn expand_with_capture(
+    item: TokenStream,
+    legacy: impl FnOnce(TokenStream) -> TokenStream,
+    dependency: DependencyExpansion,
+    impl_capture: capture::ImplCapture,
+) -> TokenStream {
+    let captured = capture::item_tokens(item.clone(), impl_capture);
+    let expanded = proc_macro2::TokenStream::from(expand_without_capture(item, legacy, dependency));
+    TokenStream::from(quote! {
+        #expanded
+        #captured
+    })
+}
+
+fn expand_without_capture(
     item: TokenStream,
     legacy: impl FnOnce(TokenStream) -> TokenStream,
     dependency: DependencyExpansion,
@@ -217,12 +240,35 @@ pub fn ffi_trait(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
 #[proc_macro_attribute]
 pub fn custom_ffi(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    custom::ffi::custom_ffi_impl(item)
+    let captured = capture::custom_ffi_tokens(item.clone());
+    let expanded = proc_macro2::TokenStream::from(custom::ffi::custom_ffi_impl(item));
+    TokenStream::from(quote! {
+        #expanded
+        #captured
+    })
 }
 
 #[proc_macro]
 pub fn custom_type(item: TokenStream) -> TokenStream {
-    custom::r#type::custom_type_impl(item)
+    let captured = capture::custom_type_tokens(item.clone());
+    let expanded = proc_macro2::TokenStream::from(custom::r#type::custom_type_impl(item));
+    TokenStream::from(quote! {
+        #expanded
+        #captured
+    })
+}
+
+#[proc_macro]
+pub fn scaffolding(item: TokenStream) -> TokenStream {
+    if !item.is_empty() {
+        return syn::Error::new(
+            proc_macro2::Span::call_site(),
+            "boltffi::scaffolding! takes no arguments",
+        )
+        .to_compile_error()
+        .into();
+    }
+    TokenStream::from(capture::scaffolding_tokens())
 }
 
 #[proc_macro]
@@ -234,10 +280,11 @@ pub fn interned_string_pool(item: TokenStream) -> TokenStream {
 pub fn data(attr: TokenStream, item: TokenStream) -> TokenStream {
     let attr_str = attr.to_string();
     if attr_str.trim() == "impl" {
-        return expand_or_experimental(
+        return expand_with_capture(
             item,
             data::expansion::data_impl_block,
             DependencyExpansion::Legacy,
+            capture::ImplCapture::Methods,
         );
     }
     expand_or_experimental(
@@ -258,7 +305,15 @@ pub fn error(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
 #[proc_macro_derive(Data)]
 pub fn derive_data(input: TokenStream) -> TokenStream {
-    data::expansion::derive_data_impl(input)
+    let expanded = proc_macro2::TokenStream::from(data::expansion::derive_data_impl(input));
+    let captured = capture::unsupported_tokens(
+        "derive(Data)",
+        "derived data is not captured per-invocation yet",
+    );
+    TokenStream::from(quote! {
+        #expanded
+        #captured
+    })
 }
 
 #[proc_macro_attribute]
