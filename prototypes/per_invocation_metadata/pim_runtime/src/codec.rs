@@ -12,6 +12,14 @@ pub struct RawBuffer {
 }
 
 impl RawBuffer {
+    pub const fn null() -> Self {
+        Self {
+            ptr: std::ptr::null_mut(),
+            len: 0,
+            cap: 0,
+        }
+    }
+
     pub fn from_vec(bytes: Vec<u8>) -> Self {
         let mut bytes = ManuallyDrop::new(bytes);
         Self {
@@ -23,6 +31,43 @@ impl RawBuffer {
 
     pub fn into_vec(self) -> Vec<u8> {
         unsafe { Vec::from_raw_parts(self.ptr, self.len, self.cap) }
+    }
+}
+
+/// Trailing out-parameter on every wrapper: the call's panic channel. The wrapper writes
+/// `SUCCESS` on entry; a caught panic flips the code, stores the message, and the wrapper's
+/// return value is [`Codec::poisoned`] — never read it.
+#[repr(C)]
+pub struct CallStatus {
+    pub code: u8,
+    pub panic_message: RawBuffer,
+}
+
+impl CallStatus {
+    pub const SUCCESS: u8 = 0;
+    pub const PANIC: u8 = 1;
+
+    pub const fn success() -> Self {
+        Self {
+            code: Self::SUCCESS,
+            panic_message: RawBuffer::null(),
+        }
+    }
+
+    pub fn fail(&mut self, message: String) {
+        self.code = Self::PANIC;
+        self.panic_message = RawBuffer::from_vec(message.into_bytes());
+    }
+}
+
+/// Renders a caught panic payload for [`CallStatus::fail`].
+pub fn panic_message(panic: Box<dyn std::any::Any + Send>) -> String {
+    match panic.downcast_ref::<&str>() {
+        Some(message) => (*message).to_owned(),
+        None => match panic.downcast::<String>() {
+            Ok(message) => *message,
+            Err(_) => "panic payload is not a string".to_owned(),
+        },
     }
 }
 
@@ -48,6 +93,8 @@ pub trait Codec<Tag>: Sized {
     type FfiType;
     fn lower(self) -> Self::FfiType;
     fn lift(ffi: Self::FfiType) -> Self;
+    /// The value returned alongside a [`CallStatus::PANIC`] status. Never valid to read.
+    fn poisoned() -> Self::FfiType;
 }
 
 fn take<'a>(input: &mut &'a [u8], len: usize) -> &'a [u8] {
@@ -81,6 +128,9 @@ macro_rules! fixed_width {
                 fn lift(ffi: Self) -> Self {
                     ffi
                 }
+                fn poisoned() -> Self {
+                    0 as $ty
+                }
             }
         )*
     };
@@ -105,6 +155,9 @@ impl<Tag> Codec<Tag> for bool {
     }
     fn lift(ffi: bool) -> bool {
         ffi
+    }
+    fn poisoned() -> bool {
+        false
     }
 }
 
@@ -182,6 +235,10 @@ macro_rules! encoded_codec {
                     let bytes = ffi.into_vec();
                     Self::read(&mut bytes.as_slice())
                 }
+
+                fn poisoned() -> RawBuffer {
+                    RawBuffer::null()
+                }
             }
         )*
     };
@@ -201,6 +258,10 @@ impl<Tag, T: Encode<Tag>> Codec<Tag> for Vec<T> {
     fn lift(ffi: RawBuffer) -> Self {
         let bytes = ffi.into_vec();
         Self::read(&mut bytes.as_slice())
+    }
+
+    fn poisoned() -> RawBuffer {
+        RawBuffer::null()
     }
 }
 
@@ -230,12 +291,17 @@ impl<Tag, T: Encode<Tag>, E: Encode<Tag>> Codec<Tag> for Result<T, E> {
             _ => Err(E::read(input)),
         }
     }
+
+    fn poisoned() -> RawBuffer {
+        RawBuffer::null()
+    }
 }
 
 impl<Tag> Codec<Tag> for () {
     type FfiType = ();
     fn lower(self) {}
     fn lift(_: ()) {}
+    fn poisoned() {}
 }
 
 #[cfg(test)]
@@ -257,6 +323,9 @@ mod tests {
         }
         fn lift(ffi: Self) -> Self {
             ffi
+        }
+        fn poisoned() -> Self {
+            Self { x: 0.0, y: 0.0 }
         }
     }
 

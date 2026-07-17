@@ -9,6 +9,14 @@ use serde::Deserialize;
 pub struct Resolved {
     pub items: Vec<Item>,
     pub functions: Vec<Function>,
+    pub scaffolding: Vec<Scaffolding>,
+}
+
+/// One crate's `scaffolding!()` record: crate-level protocol symbols.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Scaffolding {
+    pub module: String,
+    pub free_symbol: String,
 }
 
 /// A type record whose references have been resolved to canonical ids.
@@ -42,6 +50,7 @@ pub struct Field {
 pub fn resolve(records: &[RawRecord]) -> Result<Resolved, ResolveError> {
     let mut items: BTreeMap<String, Item> = BTreeMap::new();
     let mut functions: BTreeMap<String, Function> = BTreeMap::new();
+    let mut scaffolding: BTreeMap<String, Scaffolding> = BTreeMap::new();
 
     for record in records {
         match payload(record)? {
@@ -67,12 +76,25 @@ pub fn resolve(records: &[RawRecord]) -> Result<Resolved, ResolveError> {
                 }
                 functions.insert(function.canonical_id.clone(), function);
             }
+            Payload::Scaffolding(payload) => {
+                let entry = Scaffolding {
+                    module: record.module.clone(),
+                    free_symbol: payload.free_symbol,
+                };
+                if let Some(existing) = scaffolding.get(&entry.module)
+                    && existing != &entry
+                {
+                    return Err(ResolveError::Conflict { id: entry.module });
+                }
+                scaffolding.insert(entry.module.clone(), entry);
+            }
         }
     }
 
     Ok(Resolved {
         items: items.into_values().collect(),
         functions: functions.into_values().collect(),
+        scaffolding: scaffolding.into_values().collect(),
     })
 }
 
@@ -147,6 +169,12 @@ fn render(node: &TypeNode, slots: &[String]) -> Result<String, ResolveError> {
 enum Payload {
     Record(RecordPayload),
     Function(FunctionPayload),
+    Scaffolding(ScaffoldingPayload),
+}
+
+#[derive(Debug, Deserialize)]
+struct ScaffoldingPayload {
+    free_symbol: String,
 }
 
 #[derive(Debug, Deserialize)]

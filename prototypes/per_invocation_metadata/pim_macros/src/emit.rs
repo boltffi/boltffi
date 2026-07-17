@@ -84,6 +84,10 @@ fn codecs(item: &ItemStruct, record: &Record) -> TokenStream {
                 fn lift(ffi: Self) -> Self {
                     ffi
                 }
+                // Sound because `direct` requires `repr(C)` with all-primitive fields.
+                fn poisoned() -> Self {
+                    unsafe { ::core::mem::zeroed() }
+                }
             }
         }
     } else {
@@ -103,6 +107,10 @@ fn codecs(item: &ItemStruct, record: &Record) -> TokenStream {
                 fn lift(ffi: ::pim_runtime::RawBuffer) -> Self {
                     let bytes = ffi.into_vec();
                     <Self as ::pim_runtime::Encode<Tag>>::read(&mut bytes.as_slice())
+                }
+
+                fn poisoned() -> ::pim_runtime::RawBuffer {
+                    ::pim_runtime::RawBuffer::null()
                 }
             }
         }

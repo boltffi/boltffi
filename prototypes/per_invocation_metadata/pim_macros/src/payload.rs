@@ -20,6 +20,13 @@ pub fn json(record: &Record) -> serde_json::Result<Vec<u8>> {
     })
 }
 
+pub fn scaffolding_json(free_symbol: &str) -> serde_json::Result<Vec<u8>> {
+    serde_json::to_vec(&ScaffoldingPayload {
+        kind: "scaffolding",
+        free_symbol,
+    })
+}
+
 pub fn function_json(function: &ExportFn) -> serde_json::Result<Vec<u8>> {
     serde_json::to_vec(&FunctionPayload {
         kind: "function",
@@ -46,6 +53,12 @@ fn node(ty: &TypeNode) -> Node<'_> {
             args: args.iter().map(node).collect(),
         },
     }
+}
+
+#[derive(Serialize)]
+struct ScaffoldingPayload<'a> {
+    kind: &'a str,
+    free_symbol: &'a str,
 }
 
 #[derive(Serialize)]

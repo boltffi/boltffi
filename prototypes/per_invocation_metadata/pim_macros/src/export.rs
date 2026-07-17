@@ -107,11 +107,21 @@ fn wrapper(item: &ItemFn, symbol: &str) -> TokenStream {
     quote! {
         #[unsafe(export_name = #symbol)]
         extern "C" fn #wrapper(
-            #(#idents: <#types as ::pim_runtime::Codec<crate::PimTag>>::FfiType),*
+            #(#idents: <#types as ::pim_runtime::Codec<crate::PimTag>>::FfiType,)*
+            __pim_status: *mut ::pim_runtime::CallStatus,
         ) -> <#ret as ::pim_runtime::Codec<crate::PimTag>>::FfiType {
-            #(let #idents = <#types as ::pim_runtime::Codec<crate::PimTag>>::lift(#idents);)*
-            let out = #name(#(#idents),*);
-            <#ret as ::pim_runtime::Codec<crate::PimTag>>::lower(out)
+            unsafe { *__pim_status = ::pim_runtime::CallStatus::success() };
+            match ::std::panic::catch_unwind(::std::panic::AssertUnwindSafe(move || {
+                #(let #idents = <#types as ::pim_runtime::Codec<crate::PimTag>>::lift(#idents);)*
+                let out = #name(#(#idents),*);
+                <#ret as ::pim_runtime::Codec<crate::PimTag>>::lower(out)
+            })) {
+                Ok(out) => out,
+                Err(panic) => {
+                    unsafe { (*__pim_status).fail(::pim_runtime::panic_message(panic)) };
+                    <#ret as ::pim_runtime::Codec<crate::PimTag>>::poisoned()
+                }
+            }
         }
     }
 }

@@ -65,6 +65,13 @@ fn main() -> ExitCode {
         }
     }
 
+    for scaffolding in &resolved.scaffolding {
+        println!(
+            "\nscaffolding {}\n  free {}",
+            scaffolding.module, scaffolding.free_symbol
+        );
+    }
+
     for function in &resolved.functions {
         let params = function
             .params

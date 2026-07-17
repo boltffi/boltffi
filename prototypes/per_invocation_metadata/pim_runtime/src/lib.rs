@@ -4,7 +4,7 @@ mod codec;
 mod compose;
 mod parse;
 
-pub use codec::{Codec, Encode, RawBuffer};
+pub use codec::{CallStatus, Codec, Encode, RawBuffer, panic_message};
 pub use compose::{CAPACITY, Meta, TypeMeta};
 pub use parse::{ParseError, RawRecord, records};
 

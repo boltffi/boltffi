@@ -11,10 +11,34 @@ use quote::quote;
 use syn::{ItemStruct, Path, parse_macro_input};
 
 /// Declares the crate's tag type. Must sit at the crate root; every emitted reference names it.
+/// Also exports the crate's buffer-free function, its symbol carried by a scaffolding record.
 #[proc_macro]
 pub fn scaffolding(_input: TokenStream) -> TokenStream {
+    let symbol = symbol::export_symbol("free_buffer");
+    let json = match payload::scaffolding_json(&symbol) {
+        Ok(json) => json,
+        Err(error) => {
+            return syn::Error::new(
+                proc_macro2::Span::call_site(),
+                format!("pim: cannot serialize the scaffolding record: {error}"),
+            )
+            .into_compile_error()
+            .into();
+        }
+    };
+    let record = emit::metadata_block(&json, &[]);
+
     quote! {
         pub struct PimTag;
+
+        #record
+
+        #[unsafe(export_name = #symbol)]
+        extern "C" fn __pim_free_buffer(buffer: ::pim_runtime::RawBuffer) {
+            if !buffer.ptr.is_null() {
+                drop(buffer.into_vec());
+            }
+        }
     }
     .into()
 }

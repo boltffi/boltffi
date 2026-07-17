@@ -39,25 +39,57 @@ impl RawBuffer {
     }
 }
 
+#[repr(C)]
+struct CallStatus {
+    code: u8,
+    panic_message: RawBuffer,
+}
+
+impl CallStatus {
+    fn armed() -> Self {
+        Self {
+            code: u8::MAX,
+            panic_message: RawBuffer {
+                ptr: std::ptr::null_mut(),
+                len: 0,
+                cap: 0,
+            },
+        }
+    }
+
+    fn expect_success(&self) {
+        assert_eq!(self.code, 0, "the wrapper reports success");
+    }
+
+    fn panic_message(self) -> String {
+        assert_eq!(self.code, 1, "the wrapper reports a panic");
+        String::from_utf8(self.panic_message.into_vec()).expect("the message is utf-8")
+    }
+}
+
 #[test]
 fn calls_a_direct_wrapper_by_value() {
     let functions = functions();
     let library = library();
-    let add =
-        symbol::<extern "C" fn(Vec2, Vec2) -> Vec2>(&library, &functions["pim_toy::api::add_vec2"]);
+    let add = symbol::<extern "C" fn(Vec2, Vec2, *mut CallStatus) -> Vec2>(
+        &library,
+        &functions["pim_toy::api::add_vec2"],
+    );
 
+    let mut status = CallStatus::armed();
     assert_eq!(
-        add(Vec2 { x: 1.0, y: 2.0 }, Vec2 { x: 3.0, y: 4.0 }),
+        add(Vec2 { x: 1.0, y: 2.0 }, Vec2 { x: 3.0, y: 4.0 }, &mut status),
         Vec2 { x: 4.0, y: 6.0 },
         "a direct record crosses by value through the recorded symbol"
     );
+    status.expect_success();
 }
 
 #[test]
 fn calls_an_encoded_wrapper_through_a_buffer() {
     let functions = functions();
     let library = library();
-    let describe = symbol::<extern "C" fn(RawBuffer) -> RawBuffer>(
+    let describe = symbol::<extern "C" fn(RawBuffer, *mut CallStatus) -> RawBuffer>(
         &library,
         &functions["pim_toy::api::describe_shape"],
     );
@@ -72,7 +104,9 @@ fn calls_an_encoded_wrapper_through_a_buffer() {
     write_f64(&mut shape, 1.0);
     shape.extend_from_slice(&7u64.to_le_bytes());
 
-    let described = describe(RawBuffer::from_vec(shape)).into_vec();
+    let mut status = CallStatus::armed();
+    let described = describe(RawBuffer::from_vec(shape), &mut status).into_vec();
+    status.expect_success();
     assert_eq!(
         read_string(&mut described.as_slice()),
         "Shape #7 at (2, 3) with 2 points",
@@ -84,17 +118,21 @@ fn calls_an_encoded_wrapper_through_a_buffer() {
 fn returns_the_error_arm_through_the_result_buffer() {
     let functions = functions();
     let library = library();
-    let divide = symbol::<extern "C" fn(f64, f64) -> RawBuffer>(
+    let divide = symbol::<extern "C" fn(f64, f64, *mut CallStatus) -> RawBuffer>(
         &library,
         &functions["pim_toy::api::checked_div"],
     );
 
-    let ok = divide(9.0, 3.0).into_vec();
+    let mut status = CallStatus::armed();
+    let ok = divide(9.0, 3.0, &mut status).into_vec();
+    status.expect_success();
     let input = &mut ok.as_slice();
     assert_eq!(read_u8(input), 0, "the ok arm is tagged 0");
     assert_eq!(read_f64(input), 3.0, "the ok payload follows the tag");
 
-    let err = divide(1.0, 0.0).into_vec();
+    let mut status = CallStatus::armed();
+    let err = divide(1.0, 0.0, &mut status).into_vec();
+    status.expect_success();
     let input = &mut err.as_slice();
     assert_eq!(read_u8(input), 1, "the error arm is tagged 1");
     assert_eq!(read_u32(input), 1, "the error payload's code field");
@@ -110,15 +148,19 @@ fn calls_wrappers_a_source_scan_cannot_see() {
     let functions = functions();
     let library = library();
 
-    let double =
-        symbol::<extern "C" fn(f64) -> f64>(&library, &functions["pim_toy::api::double_it"]);
+    let double = symbol::<extern "C" fn(f64, *mut CallStatus) -> f64>(
+        &library,
+        &functions["pim_toy::api::double_it"],
+    );
+    let mut status = CallStatus::armed();
     assert_eq!(
-        double(21.0),
+        double(21.0, &mut status),
         42.0,
         "a macro_rules-emitted export is callable"
     );
+    status.expect_success();
 
-    let sum = symbol::<extern "C" fn(RawBuffer) -> f64>(
+    let sum = symbol::<extern "C" fn(RawBuffer, *mut CallStatus) -> f64>(
         &library,
         &functions["pim_toy::api::build_script_sum"],
     );
@@ -126,11 +168,13 @@ fn calls_wrappers_a_source_scan_cannot_see() {
     values.extend_from_slice(&2u64.to_le_bytes());
     write_f64(&mut values, 1.5);
     write_f64(&mut values, 2.5);
+    let mut status = CallStatus::armed();
     assert_eq!(
-        sum(RawBuffer::from_vec(values)),
+        sum(RawBuffer::from_vec(values), &mut status),
         4.0,
         "an `include!(OUT_DIR)` export is callable"
     );
+    status.expect_success();
 }
 
 #[test]
@@ -165,6 +209,73 @@ fn a_gated_export_is_absent_without_the_feature() {
         !functions().contains_key("pim_toy::gated::extra_ping"),
         "rustc never ran the macro, so no record and no symbol exist"
     );
+}
+
+#[test]
+fn a_panicking_export_reports_through_the_status() {
+    let functions = functions();
+    let library = library();
+    let assert_positive = symbol::<extern "C" fn(f64, *mut CallStatus) -> f64>(
+        &library,
+        &functions["pim_toy::api::assert_positive"],
+    );
+
+    let mut status = CallStatus::armed();
+    assert_eq!(assert_positive(2.0, &mut status), 2.0, "the happy path");
+    status.expect_success();
+
+    let mut status = CallStatus::armed();
+    assert_positive(-1.0, &mut status);
+    assert!(
+        status.panic_message().contains("value must be positive"),
+        "the panic crosses as a status code and message instead of aborting"
+    );
+}
+
+#[test]
+fn a_malformed_buffer_reports_through_the_status() {
+    let functions = functions();
+    let library = library();
+    let describe = symbol::<extern "C" fn(RawBuffer, *mut CallStatus) -> RawBuffer>(
+        &library,
+        &functions["pim_toy::api::describe_shape"],
+    );
+
+    let mut status = CallStatus::armed();
+    describe(RawBuffer::from_vec(vec![1, 2, 3]), &mut status);
+    assert!(
+        !status.panic_message().is_empty(),
+        "a truncated buffer fails the lift inside the wrapper, not the process"
+    );
+}
+
+#[test]
+fn frees_a_returned_buffer_through_the_scaffolding_export() {
+    let resolved = resolved();
+    let library = library();
+    let scaffolding = resolved
+        .scaffolding
+        .iter()
+        .find(|entry| entry.module == "pim_toy")
+        .expect("the crate's `scaffolding!` leaves a record");
+    let free = unsafe {
+        library.get::<extern "C" fn(RawBuffer)>(scaffolding.free_symbol.as_bytes())
+    }
+    .expect("the free export is exported");
+
+    let functions = resolved
+        .functions
+        .iter()
+        .map(|function| (function.canonical_id.clone(), function.clone()))
+        .collect::<BTreeMap<_, _>>();
+    let divide = symbol::<extern "C" fn(f64, f64, *mut CallStatus) -> RawBuffer>(
+        &library,
+        &functions["pim_toy::api::checked_div"],
+    );
+
+    let mut status = CallStatus::armed();
+    free(divide(9.0, 3.0, &mut status));
+    status.expect_success();
 }
 
 fn functions() -> BTreeMap<String, Function> {

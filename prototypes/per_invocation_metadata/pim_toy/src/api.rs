@@ -62,6 +62,12 @@ pub fn checked_div(dividend: f64, divisor: f64) -> Result<f64, MathError> {
     Ok(dividend / divisor)
 }
 
+#[export]
+pub fn assert_positive(value: f64) -> f64 {
+    assert!(value > 0.0, "value must be positive");
+    value
+}
+
 macro_rules! make_scaler {
     ($name:ident, $factor:literal) => {
         #[export]
