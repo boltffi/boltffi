@@ -89,6 +89,7 @@ mod name;
 mod op;
 mod primitive;
 mod reference;
+mod source_fragment;
 mod source_record;
 mod surface;
 mod symbol;
@@ -145,6 +146,9 @@ pub use op::{
 };
 pub use primitive::{IntegerRepr, Primitive};
 pub use reference::DeclarationShape;
+pub use source_fragment::{
+    SELF_ID, SLOT_ID_PREFIX, SourceFragment, SourceFragmentError, TypeNode, aggregate_records,
+};
 pub use source_record::{
     RawSourceRecord, SOURCE_RECORD_MAGIC, SOURCE_SECTION_MACH_O_NAME, SOURCE_SECTION_OBJECT_NAME,
     SourceRecordError, SourceRecordSectionBytes, is_source_record_section,
