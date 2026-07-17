@@ -3,10 +3,12 @@
 mod codec;
 mod compose;
 mod parse;
+mod stream;
 
-pub use codec::{CallStatus, Codec, Encode, RawBuffer, panic_message};
+pub use codec::{CallStatus, CallbackHandle, Codec, Encode, RawBuffer, panic_message};
 pub use compose::{CAPACITY, Meta, TypeMeta};
 pub use parse::{ParseError, RawRecord, records};
+pub use stream::PimStream;
 
 /// Canonical identity of a type, baked in by the macro at the definition site.
 ///

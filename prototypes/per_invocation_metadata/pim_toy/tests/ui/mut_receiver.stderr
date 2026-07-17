@@ -1,0 +1,5 @@
+error: pim: only `&self` receivers are supported
+  --> tests/ui/mut_receiver.rs:13:17
+   |
+13 |     pub fn bump(&mut self) -> u64 {
+   |                 ^^^^^^^^^

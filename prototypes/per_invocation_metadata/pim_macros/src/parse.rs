@@ -110,6 +110,9 @@ fn direct(item: &ItemStruct, fields: &[Field]) -> bool {
 
 pub fn classify(ty: &Type, slots: &mut Slots) -> syn::Result<TypeNode> {
     let Type::Path(path) = ty else {
+        if matches!(ty, Type::TraitObject(_)) {
+            return Ok(TypeNode::Slot(slots.intern(ty)));
+        }
         return Err(syn::Error::new_spanned(
             ty,
             "pim: only path types are supported",

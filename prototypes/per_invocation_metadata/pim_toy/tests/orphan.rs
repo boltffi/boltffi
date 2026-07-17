@@ -19,3 +19,8 @@ fn an_alias_to_a_container_is_a_compile_error() {
 fn an_unannotated_export_parameter_is_a_compile_error() {
     trybuild::TestCases::new().compile_fail("tests/ui/export_unannotated_param.rs");
 }
+
+#[test]
+fn a_mutable_receiver_is_a_compile_error() {
+    trybuild::TestCases::new().compile_fail("tests/ui/mut_receiver.rs");
+}

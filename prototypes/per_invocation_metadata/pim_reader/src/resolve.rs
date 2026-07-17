@@ -9,7 +9,58 @@ use serde::Deserialize;
 pub struct Resolved {
     pub items: Vec<Item>,
     pub functions: Vec<Function>,
+    pub classes: Vec<Class>,
+    pub callbacks: Vec<Callback>,
+    pub streams: Vec<Stream>,
     pub scaffolding: Vec<Scaffolding>,
+}
+
+/// An exported class: constructors and methods callable through a `u64` handle.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Class {
+    pub canonical_id: String,
+    pub name: String,
+    pub module: String,
+    pub constructors: Vec<Method>,
+    pub methods: Vec<Method>,
+    pub free_symbol: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Method {
+    pub name: String,
+    pub symbol: String,
+    pub params: Vec<Field>,
+    pub ret: Option<String>,
+}
+
+/// A callback trait the foreign side implements; method order is the vtable order.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Callback {
+    pub canonical_id: String,
+    pub name: String,
+    pub module: String,
+    pub methods: Vec<CallbackMethod>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CallbackMethod {
+    pub name: String,
+    pub params: Vec<Field>,
+    pub ret: Option<String>,
+}
+
+/// A stream export: subscribe yields the handle the pop and free symbols consume.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Stream {
+    pub canonical_id: String,
+    pub name: String,
+    pub module: String,
+    pub item: String,
+    pub params: Vec<Field>,
+    pub subscribe_symbol: String,
+    pub pop_symbol: String,
+    pub free_symbol: String,
 }
 
 /// One crate's `scaffolding!()` record: crate-level protocol symbols.
@@ -50,6 +101,9 @@ pub struct Field {
 pub fn resolve(records: &[RawRecord]) -> Result<Resolved, ResolveError> {
     let mut items: BTreeMap<String, Item> = BTreeMap::new();
     let mut functions: BTreeMap<String, Function> = BTreeMap::new();
+    let mut classes: BTreeMap<String, Class> = BTreeMap::new();
+    let mut callbacks: BTreeMap<String, Callback> = BTreeMap::new();
+    let mut streams: BTreeMap<String, Stream> = BTreeMap::new();
     let mut scaffolding: BTreeMap<String, Scaffolding> = BTreeMap::new();
 
     for record in records {
@@ -76,6 +130,39 @@ pub fn resolve(records: &[RawRecord]) -> Result<Resolved, ResolveError> {
                 }
                 functions.insert(function.canonical_id.clone(), function);
             }
+            Payload::Class(payload) => {
+                let class = class(record, payload)?;
+                if let Some(existing) = classes.get(&class.canonical_id)
+                    && existing != &class
+                {
+                    return Err(ResolveError::Conflict {
+                        id: class.canonical_id,
+                    });
+                }
+                classes.insert(class.canonical_id.clone(), class);
+            }
+            Payload::Callback(payload) => {
+                let callback = callback(record, payload)?;
+                if let Some(existing) = callbacks.get(&callback.canonical_id)
+                    && existing != &callback
+                {
+                    return Err(ResolveError::Conflict {
+                        id: callback.canonical_id,
+                    });
+                }
+                callbacks.insert(callback.canonical_id.clone(), callback);
+            }
+            Payload::Stream(payload) => {
+                let stream = stream(record, payload)?;
+                if let Some(existing) = streams.get(&stream.canonical_id)
+                    && existing != &stream
+                {
+                    return Err(ResolveError::Conflict {
+                        id: stream.canonical_id,
+                    });
+                }
+                streams.insert(stream.canonical_id.clone(), stream);
+            }
             Payload::Scaffolding(payload) => {
                 let entry = Scaffolding {
                     module: record.module.clone(),
@@ -94,6 +181,9 @@ pub fn resolve(records: &[RawRecord]) -> Result<Resolved, ResolveError> {
     Ok(Resolved {
         items: items.into_values().collect(),
         functions: functions.into_values().collect(),
+        classes: classes.into_values().collect(),
+        callbacks: callbacks.into_values().collect(),
+        streams: streams.into_values().collect(),
         scaffolding: scaffolding.into_values().collect(),
     })
 }
@@ -124,6 +214,67 @@ fn function(record: &RawRecord, payload: FunctionPayload) -> Result<Function, Re
         name: payload.name,
         module: record.module.clone(),
         symbol: payload.symbol,
+    })
+}
+
+fn class(record: &RawRecord, payload: ClassPayload) -> Result<Class, ResolveError> {
+    Ok(Class {
+        canonical_id: format!("{}::{}", record.module, payload.name),
+        constructors: methods(&payload.constructors, &record.slots)?,
+        methods: methods(&payload.methods, &record.slots)?,
+        name: payload.name,
+        module: record.module.clone(),
+        free_symbol: payload.free_symbol,
+    })
+}
+
+fn methods(payload: &[MethodPayload], slots: &[String]) -> Result<Vec<Method>, ResolveError> {
+    payload
+        .iter()
+        .map(|method| {
+            Ok(Method {
+                name: method.name.clone(),
+                symbol: method.symbol.clone(),
+                params: fields(&method.params, slots)?,
+                ret: method.ret.as_ref().map(|node| render(node, slots)).transpose()?,
+            })
+        })
+        .collect()
+}
+
+fn callback(record: &RawRecord, payload: CallbackPayload) -> Result<Callback, ResolveError> {
+    Ok(Callback {
+        canonical_id: format!("{}::{}", record.module, payload.name),
+        methods: payload
+            .methods
+            .iter()
+            .map(|method| {
+                Ok(CallbackMethod {
+                    name: method.name.clone(),
+                    params: fields(&method.params, &record.slots)?,
+                    ret: method
+                        .ret
+                        .as_ref()
+                        .map(|node| render(node, &record.slots))
+                        .transpose()?,
+                })
+            })
+            .collect::<Result<Vec<_>, ResolveError>>()?,
+        name: payload.name,
+        module: record.module.clone(),
+    })
+}
+
+fn stream(record: &RawRecord, payload: StreamPayload) -> Result<Stream, ResolveError> {
+    Ok(Stream {
+        canonical_id: format!("{}::{}", record.module, payload.name),
+        item: render(&payload.item, &record.slots)?,
+        params: fields(&payload.params, &record.slots)?,
+        name: payload.name,
+        module: record.module.clone(),
+        subscribe_symbol: payload.subscribe_symbol,
+        pop_symbol: payload.pop_symbol,
+        free_symbol: payload.free_symbol,
     })
 }
 
@@ -169,7 +320,49 @@ fn render(node: &TypeNode, slots: &[String]) -> Result<String, ResolveError> {
 enum Payload {
     Record(RecordPayload),
     Function(FunctionPayload),
+    Class(ClassPayload),
+    Callback(CallbackPayload),
+    Stream(StreamPayload),
     Scaffolding(ScaffoldingPayload),
+}
+
+#[derive(Debug, Deserialize)]
+struct ClassPayload {
+    name: String,
+    constructors: Vec<MethodPayload>,
+    methods: Vec<MethodPayload>,
+    free_symbol: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct MethodPayload {
+    name: String,
+    symbol: String,
+    params: Vec<PayloadField>,
+    ret: Option<TypeNode>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CallbackPayload {
+    name: String,
+    methods: Vec<CallbackMethodPayload>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CallbackMethodPayload {
+    name: String,
+    params: Vec<PayloadField>,
+    ret: Option<TypeNode>,
+}
+
+#[derive(Debug, Deserialize)]
+struct StreamPayload {
+    name: String,
+    subscribe_symbol: String,
+    pop_symbol: String,
+    free_symbol: String,
+    params: Vec<PayloadField>,
+    item: TypeNode,
 }
 
 #[derive(Debug, Deserialize)]

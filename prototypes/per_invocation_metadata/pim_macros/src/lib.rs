@@ -1,14 +1,17 @@
 //! Stand-in for `#[boltffi::data]`: emits the type's canonical id and its metadata record.
 
+mod callback;
+mod class;
 mod emit;
 mod export;
 mod parse;
 mod payload;
+mod stream;
 mod symbol;
 
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{ItemStruct, Path, parse_macro_input};
+use syn::{ItemStruct, ItemTrait, Path, parse_macro_input};
 
 /// Declares the crate's tag type. Must sit at the crate root; every emitted reference names it.
 /// Also exports the crate's buffer-free function, its symbol carried by a scaffolding record.
@@ -79,12 +82,35 @@ pub fn data(_attribute: TokenStream, item: TokenStream) -> TokenStream {
     }
 }
 
-/// Stand-in for `#[boltffi::export]`: emits the adjacent wrapper and the invocation's own record.
+/// Stand-in for `#[boltffi::export]`: emits the adjacent wrappers and the invocation's own
+/// record — for a function, a `PimStream`-returning function, or a class impl block.
 #[proc_macro_attribute]
 pub fn export(_attribute: TokenStream, item: TokenStream) -> TokenStream {
-    let item = parse_macro_input!(item as syn::ItemFn);
+    let item = parse_macro_input!(item as syn::Item);
 
-    match export::item(&item) {
+    let tokens = match &item {
+        syn::Item::Fn(function) => match stream::returns_stream(function) {
+            Some(item_ty) => stream::item(function, item_ty),
+            None => export::item(function),
+        },
+        syn::Item::Impl(block) => class::item(block),
+        other => Err(syn::Error::new_spanned(
+            other,
+            "pim: only functions and impl blocks can be exported",
+        )),
+    };
+    match tokens {
+        Ok(tokens) => tokens.into(),
+        Err(error) => error.into_compile_error().into(),
+    }
+}
+
+/// Stand-in for a callback attribute: the foreign side implements the trait via a vtable.
+#[proc_macro_attribute]
+pub fn callback(_attribute: TokenStream, item: TokenStream) -> TokenStream {
+    let item = parse_macro_input!(item as ItemTrait);
+
+    match callback::item(&item) {
         Ok(tokens) => tokens.into(),
         Err(error) => error.into_compile_error().into(),
     }

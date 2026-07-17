@@ -2,7 +2,10 @@
 
 mod resolve;
 
-pub use resolve::{Field, Function, Item, ResolveError, Resolved, resolve};
+pub use resolve::{
+    Callback, CallbackMethod, Class, Field, Function, Item, Method, ResolveError, Resolved,
+    Scaffolding, Stream, resolve,
+};
 
 use std::fmt;
 use std::io;

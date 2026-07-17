@@ -29,6 +29,23 @@ pub fn item(item: &ItemStruct, record: &Record) -> syn::Result<TokenStream> {
     })
 }
 
+/// The status-carrying wrapper body: report success, run under `catch_unwind`, and turn a
+/// panic into a status code plus the poison value.
+pub fn trapped(body: &TokenStream, poison: &TokenStream) -> TokenStream {
+    quote! {
+        unsafe { *__pim_status = ::pim_runtime::CallStatus::success() };
+        match ::std::panic::catch_unwind(::std::panic::AssertUnwindSafe(move || {
+            #body
+        })) {
+            Ok(__pim_out) => __pim_out,
+            Err(__pim_panic) => {
+                unsafe { (*__pim_status).fail(::pim_runtime::panic_message(__pim_panic)) };
+                #poison
+            }
+        }
+    }
+}
+
 /// One `#[used]` static per invocation; the module path is whatever `module_path!` says here.
 pub fn metadata_block(json: &[u8], slots: &[Type]) -> TokenStream {
     let json = Literal::byte_string(json);

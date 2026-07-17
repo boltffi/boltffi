@@ -34,6 +34,24 @@ impl RawBuffer {
     }
 }
 
+/// A foreign trait implementation crossing into Rust: an opaque foreign handle plus the
+/// vtable the generated trait impl dispatches through. The `#[callback]` expansion casts
+/// `vtable` to its own repr(C) vtable type.
+#[repr(C)]
+pub struct CallbackHandle {
+    pub data: u64,
+    pub vtable: *const std::ffi::c_void,
+}
+
+impl CallbackHandle {
+    pub const fn null() -> Self {
+        Self {
+            data: 0,
+            vtable: std::ptr::null(),
+        }
+    }
+}
+
 /// Trailing out-parameter on every wrapper: the call's panic channel. The wrapper writes
 /// `SUCCESS` on entry; a caught panic flips the code, stores the message, and the wrapper's
 /// return value is [`Codec::poisoned`] — never read it.

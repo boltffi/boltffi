@@ -46,9 +46,12 @@ fn main() -> ExitCode {
         .unwrap_or(0);
 
     println!(
-        "{} record(s), {} function(s) in {}",
+        "{} record(s), {} function(s), {} class(es), {} callback(s), {} stream(s) in {}",
         items.len(),
         resolved.functions.len(),
+        resolved.classes.len(),
+        resolved.callbacks.len(),
+        resolved.streams.len(),
         path.display()
     );
     for item in &items {
@@ -63,6 +66,29 @@ fn main() -> ExitCode {
         if item.fields.is_empty() {
             println!("  (no fields)");
         }
+    }
+
+    for class in &resolved.classes {
+        println!("\nclass {}", class.canonical_id);
+        for method in class.constructors.iter().chain(&class.methods) {
+            println!("  {}  {}", method.name, method.symbol);
+        }
+        println!("  free  {}", class.free_symbol);
+    }
+
+    for callback in &resolved.callbacks {
+        println!("\ncallback {}", callback.canonical_id);
+        for method in &callback.methods {
+            println!("  {}", method.name);
+        }
+    }
+
+    for stream in &resolved.streams {
+        println!("\nstream {} of {}", stream.canonical_id, stream.item);
+        println!(
+            "  subscribe {}\n  pop {}\n  free {}",
+            stream.subscribe_symbol, stream.pop_symbol, stream.free_symbol
+        );
     }
 
     for scaffolding in &resolved.scaffolding {
