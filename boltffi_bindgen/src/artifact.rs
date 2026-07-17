@@ -424,6 +424,21 @@ mod tests {
     }
 
     #[test]
+    fn reads_source_records_from_compiled_static_library() {
+        let artifact = MetadataArtifact::compile_with_source_records();
+
+        let records = BindingMetadataReader::new([artifact.path()])
+            .read_source_records()
+            .expect("artifact source records read");
+
+        assert_eq!(records.len(), 2, "each invocation's record survives");
+        assert_eq!(records[0].package.name, "demo");
+        assert_eq!(records[0].module, "demo::geometry");
+        assert_eq!(records[0].slots, vec![r#"{"prim":"f64"}"#.to_owned()]);
+        assert_eq!(records[1].module, "demo");
+    }
+
+    #[test]
     fn required_read_rejects_artifact_without_metadata() {
         let artifact = MetadataArtifact::compile_without_metadata();
 
@@ -506,16 +521,43 @@ mod tests {
             Self::compile_with_records_and_kind(1, ArtifactKind::Object)
         }
 
+        fn compile_with_source_records() -> Self {
+            let statics = [
+                source_record_bytes("demo", "1.0.0", "demo::geometry", &[r#"{"prim":"f64"}"#], b"{}"),
+                source_record_bytes("demo", "1.0.0", "demo", &[], b"{}"),
+            ]
+            .iter()
+            .enumerate()
+            .map(|(index, record)| {
+                let length = record.len();
+                let bytes = record
+                    .iter()
+                    .map(u8::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!(
+                    "#[cfg_attr(target_vendor = \"apple\", unsafe(link_section = \"__DATA,__boltffisrc\"))]\n#[cfg_attr(not(target_vendor = \"apple\"), unsafe(link_section = \".boltffisrc\"))]\n#[used]\nstatic BOLTFFI_SOURCE_{index}: [u8; {length}] = [{bytes}];"
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+            Self::compile_source(&statics, ArtifactKind::StaticLibrary)
+        }
+
         fn compile_with_records(records: usize) -> Self {
             Self::compile_with_records_and_kind(records, ArtifactKind::StaticLibrary)
         }
 
         fn compile_with_records_and_kind(records: usize, kind: ArtifactKind) -> Self {
+            Self::compile_source(&Self::source(records), kind)
+        }
+
+        fn compile_source(source_text: &str, kind: ArtifactKind) -> Self {
             let root = temp_root("boltffi-bindgen-metadata");
             fs::create_dir_all(&root).expect("create metadata fixture root");
             let source = root.join("lib.rs");
             let artifact = root.join(kind.file_name());
-            fs::write(&source, Self::source(records)).expect("write metadata fixture source");
+            fs::write(&source, source_text).expect("write metadata fixture source");
 
             let output = Command::new(rustc())
                 .arg("--crate-name")
@@ -653,6 +695,32 @@ mod tests {
             .expect("metadata envelope")
             .to_section_bytes()
             .expect("metadata section bytes")
+    }
+
+    fn source_record_bytes(
+        package: &str,
+        version: &str,
+        module: &str,
+        slots: &[&str],
+        json: &[u8],
+    ) -> Vec<u8> {
+        let mut payload = Vec::new();
+        for field in [package, version, module] {
+            payload.extend_from_slice(&(field.len() as u16).to_le_bytes());
+            payload.extend_from_slice(field.as_bytes());
+        }
+        payload.extend_from_slice(&(slots.len() as u16).to_le_bytes());
+        for slot in slots {
+            payload.extend_from_slice(&(slot.len() as u16).to_le_bytes());
+            payload.extend_from_slice(slot.as_bytes());
+        }
+        payload.extend_from_slice(&(json.len() as u32).to_le_bytes());
+        payload.extend_from_slice(json);
+
+        let mut bytes = b"BFFISRC1".to_vec();
+        bytes.extend_from_slice(&(payload.len() as u64).to_le_bytes());
+        bytes.extend_from_slice(&payload);
+        bytes
     }
 
     fn malformed_archive_member() -> Vec<u8> {
