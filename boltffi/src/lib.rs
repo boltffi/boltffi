@@ -35,6 +35,7 @@ pub use boltffi_core::interned_string_pool;
 
 #[doc(hidden)]
 pub mod __private {
+    pub use boltffi_core::capture;
     pub use boltffi_core::{
         ArcFromCallbackHandle, AsyncCallback, AsyncCallbackString, AsyncCallbackVoid,
         BoxFromCallbackHandle, CallbackForeignType, CallbackHandle, EventSubscription, FfiBuf,
