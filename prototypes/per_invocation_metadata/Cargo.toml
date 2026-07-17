@@ -11,7 +11,7 @@ publish = false
 pim_runtime = { path = "pim_runtime" }
 pim_macros = { path = "pim_macros" }
 pim_dep = { path = "pim_dep" }
-object = "0.39"
+object = { version = "0.39", features = ["wasm"] }
 proc-macro2 = "1.0"
 quote = "1.0"
 serde = { version = "1.0", features = ["derive"] }
