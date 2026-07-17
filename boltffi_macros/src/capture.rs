@@ -51,8 +51,6 @@ pub(crate) fn item_tokens(item: proc_macro::TokenStream, impl_capture: ImplCaptu
         syn::Item::Impl(item) => {
             let self_ty = &*item.self_ty;
             let name = type_leaf_name(self_ty).unwrap_or_else(|| "impl".to_owned());
-            let unsupported =
-                unsupported_tokens(&name, "impl blocks are not captured per-invocation yet");
             match impl_capture {
                 ImplCapture::Class => {
                     let identity = local_identity_tokens(self_ty, &name);

@@ -218,10 +218,10 @@ fn merge_methods(
         return Err(SourceFragmentError::UnresolvedReference { id: target_id });
     };
     for mut method in methods {
-        if let Some(rest) = method.id.as_str().strip_prefix(SLOT_ID_PREFIX) {
-            if let Some((_, tail)) = rest.split_once("::") {
-                method.id = boltffi_ast::MethodId::new(format!("{target_id}::{tail}"));
-            }
+        if let Some(rest) = method.id.as_str().strip_prefix(SLOT_ID_PREFIX)
+            && let Some((_, tail)) = rest.split_once("::")
+        {
+            method.id = boltffi_ast::MethodId::new(format!("{target_id}::{tail}"));
         }
         target_methods.push(method);
     }
