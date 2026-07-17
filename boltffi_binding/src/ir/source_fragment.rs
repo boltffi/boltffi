@@ -45,6 +45,17 @@ pub enum SourceFragment {
     Constant(ConstantDef),
     /// A `custom_type!` registration.
     Custom(CustomTypeDef),
+    /// An invocation the per-invocation capture cannot describe yet.
+    ///
+    /// Its presence means the crate's source records are incomplete; aggregation refuses
+    /// the whole set so consumers fall back to the legacy path instead of shipping a
+    /// silently partial contract.
+    Unsupported {
+        /// Item name at the invocation site.
+        name: String,
+        /// Why the capture could not describe the item.
+        reason: String,
+    },
 }
 
 /// One resolved type node from a slot descriptor.
@@ -85,6 +96,13 @@ pub fn aggregate_records(
                 module: record.module.clone(),
                 message: error.to_string(),
             })?;
+        if let SourceFragment::Unsupported { name, reason } = &fragment {
+            return Err(SourceFragmentError::UnsupportedCapture {
+                module: record.module.clone(),
+                name: name.clone(),
+                reason: reason.clone(),
+            });
+        }
         let slots = record
             .slots
             .iter()
@@ -136,6 +154,7 @@ pub fn aggregate_records(
             SourceFragment::Stream(def) => contract.streams.push(def),
             SourceFragment::Constant(def) => contract.constants.push(def),
             SourceFragment::Custom(def) => contract.customs.push(def),
+            SourceFragment::Unsupported { .. } => {}
         }
     }
 
@@ -167,7 +186,8 @@ fn declared_kind(fragment: &SourceFragment) -> Option<DeclaredKind> {
         SourceFragment::Function(_)
         | SourceFragment::Trait(_)
         | SourceFragment::Stream(_)
-        | SourceFragment::Constant(_) => None,
+        | SourceFragment::Constant(_)
+        | SourceFragment::Unsupported { .. } => None,
     }
 }
 
@@ -181,6 +201,7 @@ fn fragment_id(fragment: &SourceFragment) -> &str {
         SourceFragment::Stream(def) => def.id.as_str(),
         SourceFragment::Constant(def) => def.id.as_str(),
         SourceFragment::Custom(def) => def.id.as_str(),
+        SourceFragment::Unsupported { name, .. } => name,
     }
 }
 
@@ -236,7 +257,7 @@ fn mint_self_ids(fragment: &mut SourceFragment, module: &str) {
                 def.id = ConstantId::new(value);
             }
         }
-        SourceFragment::Custom(_) => {}
+        SourceFragment::Custom(_) | SourceFragment::Unsupported { .. } => {}
     }
 }
 
@@ -281,6 +302,7 @@ fn resolve_fragment(
         SourceFragment::Stream(def) => resolve(&mut def.item_type),
         SourceFragment::Constant(def) => resolve(&mut def.type_expr),
         SourceFragment::Custom(def) => resolve(&mut def.repr),
+        SourceFragment::Unsupported { .. } => Ok(()),
     }
 }
 
@@ -550,6 +572,15 @@ pub enum SourceFragmentError {
         /// The conflicting canonical id.
         id: String,
     },
+    /// A record marks an invocation the capture cannot describe yet.
+    UnsupportedCapture {
+        /// Module path of the emitting invocation.
+        module: String,
+        /// Item name at the invocation site.
+        name: String,
+        /// Why the capture could not describe the item.
+        reason: String,
+    },
 }
 
 impl std::fmt::Display for SourceFragmentError {
@@ -593,6 +624,14 @@ impl std::fmt::Display for SourceFragmentError {
             Self::DuplicateDeclaration { id } => write!(
                 formatter,
                 "two records declare `{id}` with different content"
+            ),
+            Self::UnsupportedCapture {
+                module,
+                name,
+                reason,
+            } => write!(
+                formatter,
+                "`{name}` in `{module}` is not captured per-invocation yet: {reason}"
             ),
         }
     }
@@ -776,6 +815,28 @@ mod tests {
             .expect_err("identical fragments with differing slots fail");
         assert!(
             matches!(error, SourceFragmentError::DuplicateDeclaration { id } if id == "demo::Route")
+        );
+    }
+
+    #[test]
+    fn refuses_a_set_with_an_unsupported_capture() {
+        let unsupported = raw(
+            "demo",
+            &[],
+            serde_json::to_vec(&SourceFragment::Unsupported {
+                name: "Listener".to_owned(),
+                reason: "callback traits are not captured yet".to_owned(),
+            })
+            .expect("fragment serializes"),
+        );
+
+        let error = aggregate_records(
+            &[point_record(), unsupported],
+            PackageInfo::new("demo", None),
+        )
+        .expect_err("incomplete capture refuses the whole set");
+        assert!(
+            matches!(error, SourceFragmentError::UnsupportedCapture { name, .. } if name == "Listener")
         );
     }
 
