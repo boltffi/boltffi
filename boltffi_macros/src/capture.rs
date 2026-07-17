@@ -5,7 +5,8 @@
 
 use boltffi_binding::SourceFragment;
 use boltffi_scan::{
-    capture_class, capture_constant, capture_enum, capture_function, capture_struct, capture_trait,
+    capture_class, capture_constant, capture_enum, capture_function, capture_methods,
+    capture_struct, capture_trait,
 };
 use proc_macro2::{Literal, TokenStream};
 use quote::{format_ident, quote};
@@ -73,7 +74,17 @@ pub(crate) fn item_tokens(item: proc_macro::TokenStream, impl_capture: ImplCaptu
                         #record
                     }
                 }
-                ImplCapture::Methods => unsupported,
+                ImplCapture::Methods => match capture_methods(item) {
+                    Ok(captured) => {
+                        let fragment = SourceFragment::Methods {
+                            target: captured.target,
+                            spelling: captured.spelling,
+                            methods: captured.methods,
+                        };
+                        record_tokens(&fragment, &captured.slots)
+                    }
+                    Err(error) => unsupported_tokens(&name, &error.to_string()),
+                },
             }
         }
         syn::Item::Const(item) => match capture_constant(item) {

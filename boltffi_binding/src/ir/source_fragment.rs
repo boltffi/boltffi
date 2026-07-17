@@ -45,6 +45,15 @@ pub enum SourceFragment {
     Constant(ConstantDef),
     /// A `custom_type!` registration.
     Custom(CustomTypeDef),
+    /// A `#[data(impl)]` methods block, merged into its target declaration.
+    Methods {
+        /// The impl target, as a slot-deferred reference until resolution.
+        target: TypeExpr,
+        /// The impl target's written spelling, part of the dedup key.
+        spelling: String,
+        /// Methods to merge, with ids nested under the target's placeholder.
+        methods: Vec<MethodDef>,
+    },
     /// An invocation the per-invocation capture cannot describe yet.
     ///
     /// Its presence means the crate's source records are incomplete; aggregation refuses
@@ -116,13 +125,13 @@ pub fn aggregate_records(
             })
             .collect::<Result<Vec<_>, _>>()?;
         mint_self_ids(&mut fragment, &record.module);
-        fragments.push((fragment, slots));
+        fragments.push((fragment, slots, record.module.clone()));
     }
 
     let mut kinds = HashMap::new();
     let mut unique: HashMap<String, (&SourceFragment, &[TypeNode])> = HashMap::new();
-    for (fragment, slots) in &fragments {
-        let id = fragment_id(fragment).to_owned();
+    for (fragment, slots, module) in &fragments {
+        let id = fragment_id(fragment, module);
         match unique.entry(id.clone()) {
             Entry::Vacant(entry) => {
                 entry.insert((fragment, slots));
@@ -139,8 +148,9 @@ pub fn aggregate_records(
 
     let mut contract = SourceContract::new(package);
     let mut seen = HashMap::new();
-    for (mut fragment, slots) in fragments {
-        let id = fragment_id(&fragment).to_owned();
+    let mut method_blocks = Vec::new();
+    for (mut fragment, slots, module) in fragments {
+        let id = fragment_id(&fragment, &module);
         if seen.insert(id, ()).is_some() {
             continue;
         }
@@ -154,8 +164,15 @@ pub fn aggregate_records(
             SourceFragment::Stream(def) => contract.streams.push(def),
             SourceFragment::Constant(def) => contract.constants.push(def),
             SourceFragment::Custom(def) => contract.customs.push(def),
+            SourceFragment::Methods {
+                target, methods, ..
+            } => method_blocks.push((target, methods)),
             SourceFragment::Unsupported { .. } => {}
         }
+    }
+
+    for (target, methods) in method_blocks {
+        merge_methods(&mut contract, target, methods)?;
     }
 
     contract.records.sort_by(|a, b| a.id.cmp(&b.id));
@@ -167,6 +184,48 @@ pub fn aggregate_records(
     contract.constants.sort_by(|a, b| a.id.cmp(&b.id));
     contract.customs.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(contract)
+}
+
+fn merge_methods(
+    contract: &mut SourceContract,
+    target: TypeExpr,
+    methods: Vec<MethodDef>,
+) -> Result<(), SourceFragmentError> {
+    let (target_id, target_methods) = match &target {
+        TypeExpr::Record { id, .. } => (
+            id.as_str().to_owned(),
+            contract
+                .records
+                .iter_mut()
+                .find(|record| &record.id == id)
+                .map(|record| &mut record.methods),
+        ),
+        TypeExpr::Enum { id, .. } => (
+            id.as_str().to_owned(),
+            contract
+                .enums
+                .iter_mut()
+                .find(|declared| &declared.id == id)
+                .map(|declared| &mut declared.methods),
+        ),
+        _ => {
+            return Err(SourceFragmentError::UnresolvedReference {
+                id: "a methods block targets a non-data declaration".to_owned(),
+            });
+        }
+    };
+    let Some(target_methods) = target_methods else {
+        return Err(SourceFragmentError::UnresolvedReference { id: target_id });
+    };
+    for mut method in methods {
+        if let Some(rest) = method.id.as_str().strip_prefix(SLOT_ID_PREFIX) {
+            if let Some((_, tail)) = rest.split_once("::") {
+                method.id = boltffi_ast::MethodId::new(format!("{target_id}::{tail}"));
+            }
+        }
+        target_methods.push(method);
+    }
+    Ok(())
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -187,21 +246,32 @@ fn declared_kind(fragment: &SourceFragment) -> Option<DeclaredKind> {
         | SourceFragment::Trait(_)
         | SourceFragment::Stream(_)
         | SourceFragment::Constant(_)
+        | SourceFragment::Methods { .. }
         | SourceFragment::Unsupported { .. } => None,
     }
 }
 
-fn fragment_id(fragment: &SourceFragment) -> &str {
+fn fragment_id(fragment: &SourceFragment, module: &str) -> String {
     match fragment {
-        SourceFragment::Record(def) => def.id.as_str(),
-        SourceFragment::Enum(def) => def.id.as_str(),
-        SourceFragment::Function(def) => def.id.as_str(),
-        SourceFragment::Class(def) => def.id.as_str(),
-        SourceFragment::Trait(def) => def.id.as_str(),
-        SourceFragment::Stream(def) => def.id.as_str(),
-        SourceFragment::Constant(def) => def.id.as_str(),
-        SourceFragment::Custom(def) => def.id.as_str(),
-        SourceFragment::Unsupported { name, .. } => name,
+        SourceFragment::Record(def) => def.id.as_str().to_owned(),
+        SourceFragment::Enum(def) => def.id.as_str().to_owned(),
+        SourceFragment::Function(def) => def.id.as_str().to_owned(),
+        SourceFragment::Class(def) => def.id.as_str().to_owned(),
+        SourceFragment::Trait(def) => def.id.as_str().to_owned(),
+        SourceFragment::Stream(def) => def.id.as_str().to_owned(),
+        SourceFragment::Constant(def) => def.id.as_str().to_owned(),
+        SourceFragment::Custom(def) => def.id.as_str().to_owned(),
+        SourceFragment::Methods {
+            spelling, methods, ..
+        } => {
+            let names = methods
+                .iter()
+                .map(|method| method.name.spelling())
+                .collect::<Vec<_>>()
+                .join(",");
+            format!("{module}::impl {spelling}::{{{names}}}")
+        }
+        SourceFragment::Unsupported { name, .. } => name.clone(),
     }
 }
 
@@ -257,7 +327,9 @@ fn mint_self_ids(fragment: &mut SourceFragment, module: &str) {
                 def.id = ConstantId::new(value);
             }
         }
-        SourceFragment::Custom(_) | SourceFragment::Unsupported { .. } => {}
+        SourceFragment::Custom(_)
+        | SourceFragment::Methods { .. }
+        | SourceFragment::Unsupported { .. } => {}
     }
 }
 
@@ -302,6 +374,12 @@ fn resolve_fragment(
         SourceFragment::Stream(def) => resolve(&mut def.item_type),
         SourceFragment::Constant(def) => resolve(&mut def.type_expr),
         SourceFragment::Custom(def) => resolve(&mut def.repr),
+        SourceFragment::Methods {
+            target, methods, ..
+        } => {
+            resolve(target)?;
+            resolve_methods(methods, &mut resolve)
+        }
         SourceFragment::Unsupported { .. } => Ok(()),
     }
 }

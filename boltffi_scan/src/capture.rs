@@ -4,7 +4,9 @@
 //! `$slot:N` leaf paired with the written path in [`CapturedItem::slots`], for the macro
 //! to project through the compiler at the invocation site.
 
-use boltffi_ast::{ClassDef, ConstantDef, EnumDef, FunctionDef, RecordDef, TraitDef};
+use boltffi_ast::{
+    ClassDef, ConstantDef, EnumDef, FunctionDef, MethodDef, RecordDef, TraitDef, TypeExpr,
+};
 
 use crate::declared_types::DeclaredTypes;
 use crate::path::{ModulePath, ModuleScope};
@@ -46,6 +48,41 @@ pub fn capture_constant(item: &syn::ItemConst) -> Result<CapturedItem<ConstantDe
 /// Captures an exported callback trait as a trait definition.
 pub fn capture_trait(item: &syn::ItemTrait) -> Result<CapturedItem<TraitDef>, ScanError> {
     captured(|scope, declared_types| items::callback::scan_item(item, scope, declared_types))
+}
+
+/// Methods captured from one `#[data(impl)]` block, targeting a slot-deferred type.
+pub struct CapturedMethods {
+    /// The impl target as a slot-deferred type expression.
+    pub target: TypeExpr,
+    /// The impl target's written spelling, for stable dedup keys.
+    pub spelling: String,
+    /// The block's methods, with ids nested under the target's slot placeholder.
+    pub methods: Vec<MethodDef>,
+    /// Written paths of the deferred references, in slot-index order.
+    pub slots: Vec<syn::Path>,
+}
+
+/// Captures a `#[data(impl)]` methods block against its slot-deferred target.
+pub fn capture_methods(item: &syn::ItemImpl) -> Result<CapturedMethods, ScanError> {
+    let scope = ModuleScope::with_spans(ModulePath::root("$self"), &[], None);
+    let mut declared_types = DeclaredTypes::deferred();
+    let scanner = crate::type_expr::Scanner::new(&declared_types, &scope);
+    let target = scanner.scan(&item.self_ty)?;
+    let parent = match &target {
+        TypeExpr::Record { id, .. } => id.as_str().to_owned(),
+        _ => return Err(ScanError::unsupported_type(&item.self_ty)),
+    };
+    let methods = items::impl_methods::scan_value_methods(item, &parent, &scope, &declared_types)?;
+    let spelling = crate::spelling::path(&match &*item.self_ty {
+        syn::Type::Path(path) => path.path.clone(),
+        _ => return Err(ScanError::unsupported_type(&item.self_ty)),
+    });
+    Ok(CapturedMethods {
+        target,
+        spelling,
+        methods,
+        slots: declared_types.take_slots(),
+    })
 }
 
 fn captured<Def>(

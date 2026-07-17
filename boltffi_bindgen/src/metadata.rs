@@ -1145,6 +1145,15 @@ mod tests {
             "class method references resolve through the compiler"
         );
         assert_eq!(contract.constants.len(), 1, "the constant is captured");
+        assert_eq!(
+            contract.records[0].methods.len(),
+            1,
+            "the data(impl) block merges into its record"
+        );
+        assert_eq!(
+            contract.records[0].methods[0].id.as_str(),
+            "metadata_fixture::domain::Point::doubled"
+        );
         let boltffi_ast::ReturnDef::Value(returned) = &contract.functions[0].returns else {
             panic!("origin returns a value");
         };
@@ -1495,6 +1504,13 @@ pub mod domain {
     #[derive(Clone, Copy)]
     pub struct Point {
         pub x: f64,
+    }
+
+    #[boltffi::data(impl)]
+    impl Point {
+        pub fn doubled(&self) -> Point {
+            Point { x: self.x * 2.0 }
+        }
     }
 }
 
