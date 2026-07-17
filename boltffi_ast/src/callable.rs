@@ -186,6 +186,12 @@ pub struct FunctionDef {
     /// Span available during macro expansion.
     #[serde(default, skip_serializing, skip_deserializing)]
     pub source_span: Option<SourceSpan>,
+    /// Native wrapper symbol minted at the macro invocation, when one was emitted.
+    ///
+    /// Per-invocation capture records carry the symbol here because the invocation site
+    /// is the only place that knows the exported wrapper's link name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_symbol: Option<String>,
 }
 
 impl FunctionDef {
@@ -209,6 +215,7 @@ impl FunctionDef {
             user_attrs: Vec::new(),
             source: Source::exported(),
             source_span: None,
+            native_symbol: None,
         }
     }
 }
