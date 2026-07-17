@@ -2,8 +2,10 @@
 //! link-section record, built in const context so type references resolve through rustc.
 
 mod record;
+mod type_info;
 
 pub use record::{
     SOURCE_RECORD_MAGIC, SOURCE_SECTION_MACH_O, SOURCE_SECTION_MACH_O_NAME, SOURCE_SECTION_OBJECT,
     record, record_len,
 };
+pub use type_info::{DESC_CAPACITY, DescBuf, TypeDesc, TypeInfo};
