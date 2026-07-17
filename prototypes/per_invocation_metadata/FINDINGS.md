@@ -225,43 +225,25 @@ Building `pim_toy` for `wasm32-unknown-unknown` and reading the `.wasm` back wor
 - **The OUT_DIR symbol caveat (§7) is now concrete**: the `include!(OUT_DIR)` export gets
   different symbols in the native and wasm builds, because OUT_DIR is per-target-dir.
 
-## What remains uncovered
-
-- **Async**, and with it the wake half (wait/poll) of the real stream protocol.
-- **Rust-to-foreign callbacks** — closures and callback values crossing outward.
-- **`custom_type!` values at the boundary.** Referenceable (§4a) but no `Encode`; production
-  needs user-supplied conversions, as UniFFI does.
-- **Bindgen-side aggregation.** The reader lists records and calls symbols; boltffi's global
-  lowering passes move behind it per the RFC, but were not prototyped.
-- **The real byte codec.** The framing here is a stand-in for boltffi's, and stream/class
-  handles assume single-threaded access.
-
 ## Implications for the real implementation
 
-**The silent-failure mode disappears entirely, and that is the headline.** A referenced type
+**The silent-failure mode disappears entirely.** A referenced type
 without an id is a **compile error at the exact field**, and `#[diagnostic::on_unimplemented]`
-makes it read like a boltffi diagnostic ("`NotData` has no canonical id, so it cannot cross the FFI
-boundary … annotate `NotData` with `#[data]`"). The acceptance bar was "must not exit 0 in
+makes it read like a boltffi diagnostic ("`NotData` has no canonical id, so it cannot cross the FFI boundary … annotate `NotData` with `#[data]`"). The acceptance bar was "must not exit 0 in
 silence"; this does not exit 0 at all. Two further wins: `cfg` is evaluated by rustc instead of
 approximated (`boltffi_scan::ActiveCfg` becomes unnecessary), and records carry scan-level items,
 so the Native/Wasm32 dual metadata build collapses into one.
 
-What this costs on the boltffi side, in rough order of pain:
+Consequences:
 
-1. **`boltffi::scaffolding!()` becomes mandatory.** Breaking API change — decide this first;
-   everything else is contingent on accepting it.
+1. **`boltffi::scaffolding!()` becomes mandatory.** Breaking API change.
 2. **The single-shot `EMITTED: AtomicBool` guards go away** in `metadata_build.rs` and
    `expansion_build.rs`, along with the whole-crate `scan_package` re-scan they gate.
 3. **Lowering moves from the macro to a bindgen-side aggregator.** The global passes —
-   family-indexed ids, `SymbolAllocator`, the error-payload reverse pass — run once over the union
-   of records. The direct/encoded choice leaves the list entirely (§8).
+   family-indexed ids, `SymbolAllocator`, the error-payload reverse pass — run once over the union of records. The direct/encoded choice leaves the list entirely (§8).
 4. **`Generation::bindings` must stop assuming one blob per surface.**
-   `boltffi_bindgen/src/generate.rs:635-643` takes the first envelope matching the target surface;
-   the transport underneath is already plural end-to-end.
+   `boltffi_bindgen/src/generate.rs:635-643` takes the first envelope matching the target surface; the transport underneath is already plural end-to-end.
 5. **The aggregator must read the linked artifact**, not the rlibs (§5).
-6. **The expansion build needs the same surgery.** Proven end to end for plain functions (§6–§9)
-   and for callbacks, streams, and methods (§11), deleting `RootModuleTypes`/`root_visible_paths`
-   as a bonus. The wrapper ABI to freeze includes the call-status out-param (§10).
+6. **The expansion build needs the same surgery.** Proven end to end for plain functions (§6–§9) and for callbacks, streams, and methods (§11), deleting `RootModuleTypes`/`root_visible_paths` as a bonus. The wrapper ABI to freeze includes the call-status out-param (§10).
 
-Items 1–6 are de-risked with running code for the surface this prototype covers; the open edges
-are the ones listed under "What remains uncovered".
+Items 1–6 are de-risked with running code for the surface this prototype covers.
