@@ -288,16 +288,3 @@ fn type_leaf_name(ty: &syn::Type) -> Option<String> {
         _ => None,
     }
 }
-
-fn type_module_spelling(ty: &syn::Type) -> String {
-    let syn::Type::Path(path) = ty else {
-        return String::new();
-    };
-    let segments = path
-        .path
-        .segments
-        .iter()
-        .map(|segment| segment.ident.to_string())
-        .collect::<Vec<_>>();
-    segments[..segments.len().saturating_sub(1)].join("::")
-}

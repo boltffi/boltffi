@@ -1233,7 +1233,7 @@ mod tests {
                 .iter()
                 .filter(|decl| matches!(decl, Decl::Function(_)))
                 .count(),
-            1
+            2
         );
     }
 
