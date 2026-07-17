@@ -2,8 +2,8 @@ use std::num::NonZeroUsize;
 
 use boltffi_ast::{
     AdditionalBound, BaseTrait, BuiltinType, ConstExpr, CustomTypeId, FnSig, FnTrait, FnTraitKind,
-    GenericArgument, MapKind, NamePart, Path, PathRoot, PathSegment, Primitive, ReturnDef,
-    TraitBounds, TypeExpr,
+    GenericArgument, MapKind, NamePart, Path, PathRoot, PathSegment, Primitive, RecordId,
+    ReturnDef, TraitBounds, TypeExpr,
 };
 use quote::ToTokens;
 
@@ -163,6 +163,11 @@ impl<'a> Scanner<'a> {
         let Some(standard_type) = StandardType::from_leaf(&segment.ident.to_string()) else {
             return Ok(None);
         };
+        if self.declared_types.is_deferred() {
+            return Ok(standard_type
+                .accepts_path(&path_without_arguments(&type_path.path))
+                .then_some(standard_type));
+        }
         match self
             .declared_types
             .resolve_type_in_scope(self.scope, &type_path.path)?
@@ -209,6 +214,12 @@ impl<'a> Scanner<'a> {
             return Ok(TypeExpr::Primitive(primitive));
         }
         let path = ast_path(&type_path.path, self)?;
+        if let Some(index) = self.declared_types.defer_slot(&type_path.path) {
+            return Ok(TypeExpr::record(
+                RecordId::new(format!("$slot:{index}")),
+                path,
+            ));
+        }
         match self
             .declared_types
             .resolve_type_in_scope(self.scope, &type_path.path)?
@@ -347,6 +358,9 @@ impl<'a> Scanner<'a> {
             return Ok(None);
         }
         let path = ast_path(&bound.path, self)?;
+        if self.declared_types.is_deferred() {
+            return Ok(None);
+        }
         match self
             .declared_types
             .resolve_type_in_scope(self.scope, &bound.path)?
@@ -428,6 +442,9 @@ impl<'a> Scanner<'a> {
         segment: &syn::PathSegment,
         source: &syn::Type,
     ) -> Result<TypeExpr, ScanError> {
+        if self.declared_types.is_deferred() {
+            return Err(ScanError::unsupported_type(source));
+        }
         let pool = self.single_type_argument(segment, source)?;
         let syn::Type::Path(pool_path) = unwrapped(pool) else {
             return Err(ScanError::unsupported_type(source));
@@ -500,6 +517,9 @@ impl<'a> Scanner<'a> {
     }
 
     fn custom_remote(&self, ty: &syn::Type) -> Result<Option<&CustomTypeId>, ScanError> {
+        if self.declared_types.is_deferred() {
+            return Ok(None);
+        }
         if self.can_resolve_custom_remote(ty)? {
             self.declared_types.resolve_custom_remote(self.scope, ty)
         } else {

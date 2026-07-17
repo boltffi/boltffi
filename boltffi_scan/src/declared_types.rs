@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
 use boltffi_ast::{ClassId, CustomRemoteType, CustomTypeId, EnumId, RecordId, TraitId};
@@ -34,9 +35,50 @@ pub(super) struct DeclaredTypes {
     custom_by_remote_shape: HashMap<String, CustomRemoteShapeMatch>,
     interned_string_pools: HashMap<String, Vec<String>>,
     source_types: TypeNamespace,
+    deferred_slots: Option<RefCell<SlotTable>>,
+}
+
+/// Named type references collected while scanning in deferred-resolution mode.
+#[derive(Default)]
+struct SlotTable {
+    paths: Vec<syn::Path>,
+    by_spelling: HashMap<String, usize>,
 }
 
 impl DeclaredTypes {
+    /// Creates an empty registry that defers every named reference to a slot,
+    /// for scanning one macro invocation without whole-crate knowledge.
+    pub(super) fn deferred() -> Self {
+        Self {
+            deferred_slots: Some(RefCell::default()),
+            ..Self::default()
+        }
+    }
+
+    pub(super) fn is_deferred(&self) -> bool {
+        self.deferred_slots.is_some()
+    }
+
+    pub(super) fn defer_slot(&self, path: &syn::Path) -> Option<usize> {
+        let slots = self.deferred_slots.as_ref()?;
+        let mut slots = slots.borrow_mut();
+        let spelling = spelling::path(path);
+        if let Some(index) = slots.by_spelling.get(&spelling) {
+            return Some(*index);
+        }
+        let index = slots.paths.len();
+        slots.paths.push(path.clone());
+        slots.by_spelling.insert(spelling, index);
+        Some(index)
+    }
+
+    pub(super) fn take_slots(&mut self) -> Vec<syn::Path> {
+        self.deferred_slots
+            .take()
+            .map(|slots| slots.into_inner().paths)
+            .unwrap_or_default()
+    }
+
     #[cfg(test)]
     pub(super) fn new() -> Self {
         Self::default()
