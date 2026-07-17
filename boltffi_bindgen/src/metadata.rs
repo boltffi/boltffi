@@ -1122,7 +1122,7 @@ mod tests {
             .expect("write metadata fixture manifest");
             fs::write(
                 source_dir.join("lib.rs"),
-                "#[cfg(feature = \"native-ffi\")]\npub mod ffi;\n",
+                "boltffi::scaffolding!();\n\n#[cfg(feature = \"native-ffi\")]\npub mod ffi;\n",
             )
             .expect("write metadata fixture lib");
             fs::write(
@@ -1239,6 +1239,8 @@ pub fn view() -> CoreFfi {
         fn with_boltffi_macros() -> Self {
             Self {
                 code: r#"
+boltffi::scaffolding!();
+
 pub mod domain {
     use boltffi::data;
 
