@@ -21,8 +21,10 @@ quote.workspace = true
 boltffi_core.workspace = true
 boltffi_ast.workspace = true
 boltffi_backend.workspace = true
+boltffi_bindgen.workspace = true
 boltffi_binding.workspace = true
 boltffi_scan.workspace = true
+libloading = "0.8"
 syn.workspace = true
 
 [lints]
