@@ -21,8 +21,9 @@ mod unsupported;
 mod visibility;
 
 pub use capture::{
-    CapturedItem, CapturedMethods, capture_class, capture_constant, capture_enum, capture_function,
-    capture_methods, capture_struct, capture_trait,
+    CapturedItem, CapturedMethods, capture_class, capture_constant, capture_custom,
+    capture_custom_ffi, capture_enum, capture_function, capture_methods, capture_struct,
+    capture_trait,
 };
 pub use cfg::ActiveCfg;
 pub use error::ScanError;

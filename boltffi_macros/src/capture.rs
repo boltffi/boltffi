@@ -231,29 +231,31 @@ pub(crate) fn custom_ffi_tokens(item: proc_macro::TokenStream) -> TokenStream {
 }
 
 pub(crate) fn custom_type_tokens(item: proc_macro::TokenStream) -> TokenStream {
-    let Ok(spec) = crate::custom::r#type::parse_spec(item) else {
-        return unsupported_tokens(
-            "custom_type!",
-            "custom types are not captured per-invocation yet",
-        );
+    let Ok(spec) = crate::custom::r#type::parse_spec(item.clone()) else {
+        return unsupported_tokens("custom_type!", "custom_type! spec did not parse");
     };
     let remote = &spec.remote;
-    let name = type_leaf_name(remote).unwrap_or_else(|| spec.name.to_string());
-    let module = type_module_spelling(remote);
-    let unsupported = unsupported_tokens(&name, "custom types are not captured per-invocation yet");
+    let name = spec.name.to_string();
+    let record = match boltffi_scan::capture_custom(proc_macro2::TokenStream::from(item)) {
+        Ok(captured) => record_tokens(&SourceFragment::Custom(captured.def), &captured.slots),
+        Err(error) => unsupported_tokens(&name, &error.to_string()),
+    };
     quote! {
         const _: () = {
             impl ::boltffi::__private::capture::TypeInfo<crate::__BoltffiTag> for #remote {
-                const MODULE: &'static str = #module;
+                const MODULE: &'static str = ::core::module_path!();
                 const NAME: &'static str = #name;
             }
 
             impl ::boltffi::__private::capture::TypeDesc<crate::__BoltffiTag> for #remote {
                 const DESC: ::boltffi::__private::capture::DescBuf =
-                    ::boltffi::__private::capture::DescBuf::named(#module, #name);
+                    ::boltffi::__private::capture::DescBuf::named(
+                        ::core::module_path!(),
+                        #name,
+                    );
             }
         };
-        #unsupported
+        #record
     }
 }
 

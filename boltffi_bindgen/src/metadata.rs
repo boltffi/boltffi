@@ -1125,10 +1125,12 @@ mod tests {
             "metadata_fixture::domain::Point",
             "the record's identity comes from its defining module"
         );
-        assert_eq!(contract.functions.len(), 1);
-        assert_eq!(
-            contract.functions[0].id.as_str(),
-            "metadata_fixture::api::origin"
+        assert_eq!(contract.functions.len(), 2);
+        assert!(
+            contract
+                .functions
+                .iter()
+                .any(|function| function.id.as_str() == "metadata_fixture::api::origin")
         );
         assert_eq!(contract.classes.len(), 1, "the class impl is captured");
         assert_eq!(
@@ -1145,6 +1147,24 @@ mod tests {
             "class method references resolve through the compiler"
         );
         assert_eq!(contract.constants.len(), 1, "the constant is captured");
+        assert_eq!(contract.customs.len(), 1, "the custom type is captured");
+        assert_eq!(
+            contract.customs[0].id.as_str(),
+            "metadata_fixture::clock::Stamp"
+        );
+        let stamp_fn = contract
+            .functions
+            .iter()
+            .find(|function| function.id.as_str() == "metadata_fixture::api::stamp_value")
+            .expect("the custom-typed function is captured");
+        assert!(
+            matches!(
+                &stamp_fn.parameters[0].type_expr,
+                boltffi_ast::TypeExpr::Custom { id, .. }
+                    if id.as_str() == "metadata_fixture::clock::Stamp"
+            ),
+            "the custom reference classifies through its defining fragment"
+        );
         assert_eq!(
             contract.records[0].methods.len(),
             1,
@@ -1174,7 +1194,8 @@ mod tests {
                 .iter()
                 .filter(|decl| matches!(decl, Decl::Record(_) | Decl::Function(_)))
                 .count(),
-            2
+            3,
+            "the point record and both functions lower"
         );
     }
 
@@ -1514,9 +1535,24 @@ pub mod domain {
     }
 }
 
+pub mod clock {
+    use boltffi::custom_type;
+
+    pub struct Stamp(pub i64);
+
+    custom_type!(
+        Stamp,
+        remote = Stamp,
+        repr = i64,
+        into_ffi = |stamp: &Stamp| stamp.0,
+        try_from_ffi = |value: i64| Ok::<_, boltffi::CustomTypeConversionError>(Stamp(value)),
+    );
+}
+
 pub mod api {
     use boltffi::export;
 
+    use crate::clock::Stamp;
     use crate::domain::Point;
 
     #[export]
@@ -1526,6 +1562,11 @@ pub mod api {
 
     #[export]
     pub const LIMIT: u32 = 8;
+
+    #[export]
+    pub fn stamp_value(stamp: Stamp) -> i64 {
+        stamp.0
+    }
 
     pub struct Session {
         origin: Point,

@@ -5,7 +5,8 @@
 //! to project through the compiler at the invocation site.
 
 use boltffi_ast::{
-    ClassDef, ConstantDef, EnumDef, FunctionDef, MethodDef, RecordDef, TraitDef, TypeExpr,
+    ClassDef, ConstantDef, CustomTypeDef, EnumDef, FunctionDef, MethodDef, RecordDef, TraitDef,
+    TypeExpr,
 };
 
 use crate::declared_types::DeclaredTypes;
@@ -48,6 +49,22 @@ pub fn capture_constant(item: &syn::ItemConst) -> Result<CapturedItem<ConstantDe
 /// Captures an exported callback trait as a trait definition.
 pub fn capture_trait(item: &syn::ItemTrait) -> Result<CapturedItem<TraitDef>, ScanError> {
     captured(|scope, declared_types| items::callback::scan_item(item, scope, declared_types))
+}
+
+/// Captures a `custom_type!` invocation's spec tokens as a custom type definition.
+pub fn capture_custom(
+    tokens: proc_macro2::TokenStream,
+) -> Result<CapturedItem<CustomTypeDef>, ScanError> {
+    captured(|scope, declared_types| {
+        items::custom_type::scan_macro_tokens(tokens.clone(), scope, declared_types)
+    })
+}
+
+/// Captures a `#[custom_ffi]` trait impl as a custom type definition.
+pub fn capture_custom_ffi(item: &syn::ItemImpl) -> Result<CapturedItem<CustomTypeDef>, ScanError> {
+    captured(|scope, declared_types| {
+        items::custom_type::scan_trait_impl_item(item, scope, declared_types)
+    })
 }
 
 /// Methods captured from one `#[data(impl)]` block, targeting a slot-deferred type.

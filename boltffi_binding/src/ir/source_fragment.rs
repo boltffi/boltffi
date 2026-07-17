@@ -10,10 +10,10 @@ use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 
 use boltffi_ast::{
-    ClassDef, ClassId, ConstantDef, ConstantId, CustomTypeDef, EnumDef, EnumId, FieldDef,
-    FunctionDef, FunctionId, MethodDef, NamePart, PackageInfo, Path, PathSegment, Primitive,
-    RecordDef, RecordId, ReturnDef, SourceContract, StreamDef, StreamId, TraitDef, TraitId,
-    TypeExpr, VariantPayload,
+    ClassDef, ClassId, ConstantDef, ConstantId, CustomTypeConverter, CustomTypeDef, CustomTypeId,
+    EnumDef, EnumId, FieldDef, FunctionDef, FunctionId, MethodDef, NamePart, PackageInfo, Path,
+    PathSegment, Primitive, RecordDef, RecordId, ReturnDef, SourceContract, StreamDef, StreamId,
+    TraitDef, TraitId, TypeExpr, VariantPayload,
 };
 use serde::{Deserialize, Serialize};
 
@@ -327,9 +327,31 @@ fn mint_self_ids(fragment: &mut SourceFragment, module: &str) {
                 def.id = ConstantId::new(value);
             }
         }
-        SourceFragment::Custom(_)
-        | SourceFragment::Methods { .. }
-        | SourceFragment::Unsupported { .. } => {}
+        SourceFragment::Custom(def) => {
+            if let Some(value) = minted(def.id.as_str(), module) {
+                def.id = CustomTypeId::new(value);
+            }
+            mint_converter_module(&mut def.converters.into_ffi, module);
+            mint_converter_module(&mut def.converters.try_from_ffi, module);
+        }
+        SourceFragment::Methods { .. } | SourceFragment::Unsupported { .. } => {}
+    }
+}
+
+fn mint_converter_module(converter: &mut CustomTypeConverter, module: &str) {
+    if let CustomTypeConverter::Path(path) = converter
+        && path
+            .segments
+            .first()
+            .is_some_and(|segment| segment.name.as_str() == SELF_ID)
+    {
+        let mut segments = module
+            .split("::")
+            .skip(1)
+            .map(PathSegment::new)
+            .collect::<Vec<_>>();
+        segments.extend(path.segments.drain(1..));
+        path.segments = segments;
     }
 }
 
