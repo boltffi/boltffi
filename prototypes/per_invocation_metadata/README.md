@@ -27,16 +27,16 @@ name resolution.
 
 `pim_reader` then reads the section back out of the compiled artifact and rebuilds the type graph.
 
-Phase 2 extends the same idea to the wrapper codegen. Each `#[export]` expansion emits, adjacent
+The same idea extends to the wrapper codegen. Each `#[export]` expansion emits, adjacent
 to the function, an `extern "C"` wrapper whose signature goes through
 `<T as Codec<crate::PimTag>>::FfiType` — the compiler picks each type's ABI — plus a record
 carrying the wrapper's link symbol (crate name + item name + a `Span`-derived hash). The
 acceptance test dlopens the artifact and calls wrappers through symbol names read from their own
 records.
 
-Phase 3 closes the edges phase 2 left open: every wrapper catches panics into a trailing
-call-status out-param, callbacks (vtables), streams, and class methods all expand
-per-invocation too, and a wasm32 smoke test pins how the records behave under wasm-ld.
+The edges expand per-invocation too: every wrapper catches panics into a trailing
+call-status out-param, callbacks (vtables), streams, and class methods all emit at their
+own invocation site, and a wasm32 smoke test pins how the records behave under wasm-ld.
 
 ## Crates
 

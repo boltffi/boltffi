@@ -4,12 +4,12 @@ Prototype of **p**er-**i**nvocation **m**etadata capture — "pim", the prefix o
 and section name in this workspace — motivated by the silent-visibility bug: bindgen ignores
 macro-generated `#[data]`/`#[export]` items while `boltffi generate` exits 0. Built and run on the
 repo's pinned toolchain, **stable rustc 1.95.0, edition 2024, macOS/arm64**. Everything below is
-backed by running code — 38 tests via `cargo test` (§1–§5 are the metadata phase, §6–§9 the
-expansion phase, §10–§12 phase 3: panics, callbacks/streams/methods, wasm32) plus a manual
+backed by running code — 38 tests via `cargo test` (§1–§5 metadata capture, §6–§9 wrapper
+expansion, §10–§12 panics, callbacks/streams/methods, and wasm32) plus a manual
 reader pass for the section-survival numbers in §1.
 
 **Verdict: the approach works, and it works better than expected.** Every capability question came
-back yes — including, in phase 2, the wrapper codegen itself: a `#[export]` invocation can emit its
+back yes — including the wrapper codegen itself: a `#[export]` invocation can emit its
 own `extern "C"` wrapper, and a reader can call it through the symbol name read from the artifact.
 The costs are real but bounded, and one of them is a user-facing requirement the team has to decide
 to accept (§4a).
@@ -26,7 +26,7 @@ anyway.
 
 Section survival, the risk I most expected to bite, is a non-issue: record counts are identical in
 `dev` and `release-lto` (`lto = "fat"`, `strip = "symbols"`, `codegen-units = 1`,
-`panic = "abort"`) — 17/17 at phase 1, 34/34 with phase 3's full surface (§7). `#[used]` +
+`panic = "abort"`) — 17/17 with the metadata records alone, 34/34 with the full surface (§7). `#[used]` +
 `link_section` survives the profile that actually ships.
 
 ## 2. Are macro-emitted and `include!`'d items captured?
@@ -83,12 +83,7 @@ ever saw — all compose (`pim_toy::composed`, 3 tests). The price is a fixed ca
 const `assert!`), because length-generic arrays need nightly `generic_const_exprs`.
 **Recommendation: skip the vocabulary, go straight to the composable descriptor.**
 
-### 4c. Generics have no canonical id
-
-`#[data]` rejects generic structs outright. Boltffi does not support generic FFI types today
-either — a hard ceiling, not a to-do.
-
-### 4d. A clippy ICE, worth knowing before someone hits it
+### 4c. A clippy ICE, worth knowing before someone hits it
 
 Reconstructing a `&'static str` from a `static [u8; N]` in const context ICEs clippy 1.95
 (`mir/consts.rs:176: expected memory, got Static`); rustc is fine, and `const` instead of `static`
@@ -107,7 +102,7 @@ classic inventory-pattern failure does not materialize.
 
 ---
 
-## 6. Can the wrapper codegen be per-invocation too? (phase 2)
+## 6. Can the wrapper codegen be per-invocation too?
 
 **Yes.** Each `#[export]` emits its own wrapper adjacent to the function, plus a record carrying
 the wrapper's link symbol; the acceptance test dlopens the cdylib and calls wrappers **through
@@ -138,8 +133,8 @@ survive `release-lto` via `#[unsafe(export_name = …)]`, alongside all 34 recor
 
 ## 8. The codec moves into the trait system
 
-The whole-crate `Index` exists to answer one question per type: direct or encoded? Phase 2 moves
-the answer to the type's own `#[data]` site: `impl<Tag> Codec<Tag> for T` with
+The whole-crate `Index` exists to answer one question per type: direct or encoded? The answer
+moves to the type's own `#[data]` site: `impl<Tag> Codec<Tag> for T` with
 `FfiType = Self` (`#[repr(C)]`, all-primitive) or `RawBuffer`, plus `"direct"` in the record — so
 the compiled ABI and what bindgen reads **agree by construction**. Wrapper signatures project
 through `Codec::FfiType` and compile warning-free (no `improper_ctypes`; the lint sees the
@@ -176,10 +171,10 @@ The reader loads `libpim_toy.dylib`, looks up each function's symbol **from its 
 | `extra_ping` absent | a cfg-gated export leaves no record and no symbol when the feature is off |
 
 The buffer contract is deliberately naive: both sides assume the same process and allocator.
-Phase 3 added the explicit free export (per crate, via `scaffolding!()`, §10); the byte framing
-itself remains a stand-in for boltffi's real codec.
+The explicit free export is per crate, via `scaffolding!()` (§10); the byte framing itself
+remains a stand-in for boltffi's real codec.
 
-## 10. Panics become status codes, not aborts (phase 3)
+## 10. Panics become status codes, not aborts
 
 Every wrapper gains a trailing `*mut CallStatus` and runs its body under `catch_unwind`: a
 panicking function body or a malformed buffer flips the status and returns `Codec::poisoned()`
@@ -193,8 +188,8 @@ the foreign binding's discipline.
 
 ## 11. Callbacks, streams, and methods decompose per-invocation too
 
-The three unprototyped expansion surfaces each derive entirely at their own invocation site —
-none needed whole-crate knowledge:
+The three expansion surfaces each derive entirely at their own invocation site — none needed
+whole-crate knowledge:
 
 - **`#[callback]` on a trait** emits the repr(C) vtable (free slot first, then methods in
   declaration order — the record pins the order), the foreign dispatch impl, and the
@@ -245,5 +240,3 @@ Consequences:
    `boltffi_bindgen/src/generate.rs:635-643` takes the first envelope matching the target surface; the transport underneath is already plural end-to-end.
 5. **The aggregator must read the linked artifact**, not the rlibs (§5).
 6. **The expansion build needs the same surgery.** Proven end to end for plain functions (§6–§9) and for callbacks, streams, and methods (§11), deleting `RootModuleTypes`/`root_visible_paths` as a bonus. The wrapper ABI to freeze includes the call-status out-param (§10).
-
-Items 1–6 are de-risked with running code for the surface this prototype covers.
