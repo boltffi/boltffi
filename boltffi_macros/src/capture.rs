@@ -4,7 +4,9 @@
 //! makes bindgen fall back to the legacy path rather than ship a partial contract.
 
 use boltffi_binding::SourceFragment;
-use boltffi_scan::{capture_enum, capture_function, capture_struct};
+use boltffi_scan::{
+    capture_class, capture_constant, capture_enum, capture_function, capture_struct, capture_trait,
+};
 use proc_macro2::{Literal, TokenStream};
 use quote::{format_ident, quote};
 
@@ -41,10 +43,10 @@ pub(crate) fn item_tokens(item: proc_macro::TokenStream, impl_capture: ImplCaptu
             Ok(captured) => record_tokens(&SourceFragment::Function(captured.def), &captured.slots),
             Err(error) => unsupported_tokens(&item.sig.ident.to_string(), &error.to_string()),
         },
-        syn::Item::Trait(item) => unsupported_tokens(
-            &item.ident.to_string(),
-            "callback traits are not captured per-invocation yet",
-        ),
+        syn::Item::Trait(item) => match capture_trait(item) {
+            Ok(captured) => record_tokens(&SourceFragment::Trait(captured.def), &captured.slots),
+            Err(error) => unsupported_tokens(&item.ident.to_string(), &error.to_string()),
+        },
         syn::Item::Impl(item) => {
             let self_ty = &*item.self_ty;
             let name = type_leaf_name(self_ty).unwrap_or_else(|| "impl".to_owned());
@@ -53,20 +55,47 @@ pub(crate) fn item_tokens(item: proc_macro::TokenStream, impl_capture: ImplCaptu
             match impl_capture {
                 ImplCapture::Class => {
                     let identity = local_identity_tokens(self_ty, &name);
+                    let record = if has_stream_methods(item) {
+                        unsupported_tokens(
+                            &name,
+                            "stream methods are not captured per-invocation yet",
+                        )
+                    } else {
+                        match capture_class(item) {
+                            Ok(captured) => {
+                                record_tokens(&SourceFragment::Class(captured.def), &captured.slots)
+                            }
+                            Err(error) => unsupported_tokens(&name, &error.to_string()),
+                        }
+                    };
                     quote! {
                         #identity
-                        #unsupported
+                        #record
                     }
                 }
                 ImplCapture::Methods => unsupported,
             }
         }
-        syn::Item::Const(item) => unsupported_tokens(
-            &item.ident.to_string(),
-            "constant exports are not captured per-invocation yet",
-        ),
+        syn::Item::Const(item) => match capture_constant(item) {
+            Ok(captured) => record_tokens(&SourceFragment::Constant(captured.def), &captured.slots),
+            Err(error) => unsupported_tokens(&item.ident.to_string(), &error.to_string()),
+        },
         _ => TokenStream::new(),
     }
+}
+
+fn has_stream_methods(item: &syn::ItemImpl) -> bool {
+    item.items.iter().any(|member| {
+        matches!(
+            member,
+            syn::ImplItem::Fn(function) if function.attrs.iter().any(|attr| {
+                attr.path()
+                    .segments
+                    .last()
+                    .is_some_and(|segment| segment.ident == "ffi_stream")
+            })
+        )
+    })
 }
 
 fn data_unsupported_tokens(ident: &syn::Ident, reason: &str) -> TokenStream {

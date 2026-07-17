@@ -41,6 +41,14 @@ pub fn scan(
         })
 }
 
+pub(crate) fn scan_item(
+    item: &syn::ItemImpl,
+    scope: &ModuleScope,
+    declared_types: &DeclaredTypes,
+) -> Result<ClassDef, ScanError> {
+    build(item, scope, declared_types, ClassThreadSafety::default())
+}
+
 fn build(
     item: &syn::ItemImpl,
     scope: &ModuleScope,
@@ -78,6 +86,11 @@ fn resolve_target_id(
     scope: &ModuleScope,
     declared_types: &DeclaredTypes,
 ) -> Result<ClassId, ScanError> {
+    if declared_types.is_deferred() {
+        let spelling = target.spelling();
+        let leaf = spelling.rsplit("::").next().unwrap_or(spelling);
+        return Ok(ClassId::new(scope.path().qualified(leaf)));
+    }
     let path = declared_types
         .resolve_impl_target(scope, target)?
         .ok_or_else(|| ScanError::UnsupportedClassImpl {

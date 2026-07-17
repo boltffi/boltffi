@@ -26,6 +26,14 @@ pub fn scan(
     build_item(marked.item(), marked.scope(), declared_types)
 }
 
+pub(crate) fn scan_item(
+    item: &syn::ItemConst,
+    scope: &ModuleScope,
+    declared_types: &DeclaredTypes,
+) -> Result<ConstantDef, ScanError> {
+    build_item(item, scope, declared_types)
+}
+
 fn build_item(
     item: &syn::ItemConst,
     scope: &ModuleScope,

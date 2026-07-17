@@ -4,7 +4,7 @@
 //! `$slot:N` leaf paired with the written path in [`CapturedItem::slots`], for the macro
 //! to project through the compiler at the invocation site.
 
-use boltffi_ast::{EnumDef, FunctionDef, RecordDef};
+use boltffi_ast::{ClassDef, ConstantDef, EnumDef, FunctionDef, RecordDef, TraitDef};
 
 use crate::declared_types::DeclaredTypes;
 use crate::path::{ModulePath, ModuleScope};
@@ -31,6 +31,21 @@ pub fn capture_enum(item: &syn::ItemEnum) -> Result<CapturedItem<EnumDef>, ScanE
 /// Captures an `#[export]` free function as a function definition.
 pub fn capture_function(item: &syn::ItemFn) -> Result<CapturedItem<FunctionDef>, ScanError> {
     captured(|scope, declared_types| items::function::scan_item(item, scope, declared_types))
+}
+
+/// Captures an `#[export] impl` block as a class definition.
+pub fn capture_class(item: &syn::ItemImpl) -> Result<CapturedItem<ClassDef>, ScanError> {
+    captured(|scope, declared_types| items::class::scan_item(item, scope, declared_types))
+}
+
+/// Captures an `#[export]` constant as a constant definition.
+pub fn capture_constant(item: &syn::ItemConst) -> Result<CapturedItem<ConstantDef>, ScanError> {
+    captured(|scope, declared_types| items::constant::scan_item(item, scope, declared_types))
+}
+
+/// Captures an exported callback trait as a trait definition.
+pub fn capture_trait(item: &syn::ItemTrait) -> Result<CapturedItem<TraitDef>, ScanError> {
+    captured(|scope, declared_types| items::callback::scan_item(item, scope, declared_types))
 }
 
 fn captured<Def>(
@@ -156,6 +171,57 @@ mod tests {
             ),
             "the return type defers through the option"
         );
+    }
+
+    #[test]
+    fn captures_a_class_impl_with_methods() {
+        let item: syn::ItemImpl = syn::parse_quote! {
+            impl Counter {
+                pub fn new(initial: i32) -> Self {
+                    unimplemented!()
+                }
+
+                pub fn add(&self, amount: i32) -> i32 {
+                    unimplemented!()
+                }
+            }
+        };
+
+        let captured = capture_class(&item).expect("class impl captures");
+
+        assert_eq!(captured.def.id.as_str(), "$self::Counter");
+        assert_eq!(captured.def.methods.len(), 2);
+        assert_eq!(
+            captured.def.methods[0].id.as_str(),
+            "$self::Counter::new",
+            "method ids nest under the class placeholder"
+        );
+    }
+
+    #[test]
+    fn captures_a_callback_trait() {
+        let item: syn::ItemTrait = syn::parse_quote! {
+            pub trait Listener {
+                fn on_event(&self, message: String);
+            }
+        };
+
+        let captured = capture_trait(&item).expect("trait captures");
+
+        assert_eq!(captured.def.id.as_str(), "$self::Listener");
+        assert_eq!(captured.def.methods.len(), 1);
+    }
+
+    #[test]
+    fn captures_a_constant() {
+        let item: syn::ItemConst = syn::parse_quote! {
+            pub const LIMIT: u32 = 42;
+        };
+
+        let captured = capture_constant(&item).expect("constant captures");
+
+        assert_eq!(captured.def.id.as_str(), "$self::LIMIT");
+        assert!(captured.slots.is_empty());
     }
 
     #[test]

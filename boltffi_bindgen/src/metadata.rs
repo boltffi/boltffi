@@ -1130,6 +1130,21 @@ mod tests {
             contract.functions[0].id.as_str(),
             "metadata_fixture::api::origin"
         );
+        assert_eq!(contract.classes.len(), 1, "the class impl is captured");
+        assert_eq!(
+            contract.classes[0].id.as_str(),
+            "metadata_fixture::api::Session"
+        );
+        assert_eq!(contract.classes[0].methods.len(), 2);
+        assert!(
+            matches!(
+                &contract.classes[0].methods[1].returns,
+                boltffi_ast::ReturnDef::Value(boltffi_ast::TypeExpr::Record { id, .. })
+                    if id.as_str() == "metadata_fixture::domain::Point"
+            ),
+            "class method references resolve through the compiler"
+        );
+        assert_eq!(contract.constants.len(), 1, "the constant is captured");
         let boltffi_ast::ReturnDef::Value(returned) = &contract.functions[0].returns else {
             panic!("origin returns a value");
         };
@@ -1491,6 +1506,24 @@ pub mod api {
     #[export]
     pub fn origin() -> Point {
         Point { x: 0.0 }
+    }
+
+    #[export]
+    pub const LIMIT: u32 = 8;
+
+    pub struct Session {
+        origin: Point,
+    }
+
+    #[export]
+    impl Session {
+        pub fn new() -> Self {
+            Self { origin: Point { x: 0.0 } }
+        }
+
+        pub fn shift(&self, by: f64) -> Point {
+            Point { x: self.origin.x + by }
+        }
     }
 }
 "#

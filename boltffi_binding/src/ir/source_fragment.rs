@@ -27,7 +27,7 @@ pub const SLOT_ID_PREFIX: &str = "$slot:";
 
 /// One declaration captured by one macro invocation.
 #[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(rename_all = "snake_case")]
 pub enum SourceFragment {
     /// A `#[data]` struct.
     Record(RecordDef),
