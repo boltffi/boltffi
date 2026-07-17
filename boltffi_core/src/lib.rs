@@ -5,6 +5,7 @@ extern crate self as boltffi_core;
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 pub mod callback;
+pub mod capture;
 pub mod custom_ffi;
 pub mod handle;
 pub mod interned_string;
