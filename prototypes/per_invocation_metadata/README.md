@@ -34,6 +34,10 @@ carrying the wrapper's link symbol (crate name + item name + a `Span`-derived ha
 acceptance test dlopens the artifact and calls wrappers through symbol names read from their own
 records.
 
+Phase 3 closes the edges phase 2 left open: every wrapper catches panics into a trailing
+call-status out-param, callbacks (vtables), streams, and class methods all expand
+per-invocation too, and a wasm32 smoke test pins how the records behave under wasm-ld.
+
 ## Crates
 
 | crate | role |
@@ -47,7 +51,10 @@ records.
 ## Try it
 
 ```sh
-cargo test                                          # 30 tests, incl. 4 compile-fail cases
+cargo test                                          # 38 tests, incl. 5 compile-fail cases
 cargo build -p pim_toy
 cargo run -p pim_reader -- target/debug/libpim_toy.dylib
 ```
+
+The wasm32 test skips itself with a note if the `wasm32-unknown-unknown` target is not
+installed.

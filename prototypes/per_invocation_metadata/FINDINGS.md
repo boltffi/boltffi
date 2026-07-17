@@ -4,8 +4,9 @@ Prototype of **p**er-**i**nvocation **m**etadata capture — "pim", the prefix o
 and section name in this workspace — motivated by the silent-visibility bug: bindgen ignores
 macro-generated `#[data]`/`#[export]` items while `boltffi generate` exits 0. Built and run on the
 repo's pinned toolchain, **stable rustc 1.95.0, edition 2024, macOS/arm64**. Everything below is
-backed by running code — 30 tests via `cargo test` (§1–§5 are the metadata phase, §6–§9 the
-expansion phase) plus a manual reader pass for the section-survival numbers in §1.
+backed by running code — 38 tests via `cargo test` (§1–§5 are the metadata phase, §6–§9 the
+expansion phase, §10–§12 phase 3: panics, callbacks/streams/methods, wasm32) plus a manual
+reader pass for the section-survival numbers in §1.
 
 **Verdict: the approach works, and it works better than expected.** Every capability question came
 back yes — including, in phase 2, the wrapper codegen itself: a `#[export]` invocation can emit its
@@ -25,7 +26,7 @@ anyway.
 
 Section survival, the risk I most expected to bite, is a non-issue: record counts are identical in
 `dev` and `release-lto` (`lto = "fat"`, `strip = "symbols"`, `codegen-units = 1`,
-`panic = "abort"`) — 17/17 at phase 1, 27/27 with phase 2's function records (§7). `#[used]` +
+`panic = "abort"`) — 17/17 at phase 1, 34/34 with phase 3's full surface (§7). `#[used]` +
 `link_section` survives the profile that actually ships.
 
 ## 2. Are macro-emitted and `include!`'d items captured?
@@ -132,8 +133,8 @@ Recorded behavior: exports emitted by one `macro_rules!` share a span hash — t
 macro *definition* — and the item name keeps them distinct; the residual collision window
 (same name, same macro definition site, different modules) is a duplicate-symbol **link error**,
 loud, never silent. An `include!(OUT_DIR)` export hashes the OUT_DIR path, so reproducible-build
-implications should be checked at promotion time. All 8 symbols survive `release-lto` via
-`#[unsafe(export_name = …)]`, alongside all 27 records.
+implications should be checked at promotion time — §12 makes this concrete. All 19 symbols
+survive `release-lto` via `#[unsafe(export_name = …)]`, alongside all 34 records.
 
 ## 8. The codec moves into the trait system
 
@@ -174,25 +175,66 @@ The reader loads `libpim_toy.dylib`, looks up each function's symbol **from its 
 | `build_script_sum(vec![1.5, 2.5])` | an `include!(OUT_DIR)` export is discoverable and callable |
 | `extra_ping` absent | a cfg-gated export leaves no record and no symbol when the feature is off |
 
-The buffer contract is deliberately naive: both sides assume the same process and allocator, and
-the test frees returned buffers by reconstructing the `Vec`. A real implementation needs an
-explicit free export and boltffi's actual byte codec — the framing here is a stand-in.
+The buffer contract is deliberately naive: both sides assume the same process and allocator.
+Phase 3 added the explicit free export (per crate, via `scaffolding!()`, §10); the byte framing
+itself remains a stand-in for boltffi's real codec.
 
-## What phase 2 still does not cover
+## 10. Panics become status codes, not aborts (phase 3)
 
-- **Callbacks and streams.** The biggest remaining expansion surface (vtables, foreign-to-Rust
-  dispatch, the `trait_path` machinery); needs its own phase.
-- **Methods, receivers, async.** `#[export]` rejects them; object/class exports are unexplored.
-- **Panic handling.** Wrappers call the user's function and `lift()` bare inside `extern "C"` — a
-  panicking function body, or a malformed buffer (the prototype codec panics on truncated input),
-  aborts the process from a foreign call. Production wrappers need `catch_unwind` and an error
-  return, which may reshape the wrapper signature this phase designed; decide before freezing it.
-- **The wasm32 surface.** One `cfg(target_family)`-selected wrapper variant should replace the
-  env-var-driven dual build, but no wasm artifact was built or read here.
-- **`custom_type!` values at the boundary.** Referenceable (§4a) but no `Encode`; production needs
-  user-supplied conversions, as UniFFI does.
+Every wrapper gains a trailing `*mut CallStatus` and runs its body under `catch_unwind`: a
+panicking function body or a malformed buffer flips the status and returns `Codec::poisoned()`
+— the poison value is part of the codec, and `zeroed` is sound for direct types precisely
+because direct requires `repr(C)` + primitives (§8). **The change is additive**: return values
+stay in return position, so §9's direct-by-value result is untouched. `scaffolding!()` now also
+exports the crate's buffer-free function, its symbol carried by a scaffolding record. Two
+boundaries: under `panic = "abort"` (the `release-lto` profile) the catch never fires and the
+process aborts as today, and a foreign implementation panicking inside a vtable method remains
+the foreign binding's discipline.
+
+## 11. Callbacks, streams, and methods decompose per-invocation too
+
+The three unprototyped expansion surfaces each derive entirely at their own invocation site —
+none needed whole-crate knowledge:
+
+- **`#[callback]` on a trait** emits the repr(C) vtable (free slot first, then methods in
+  declaration order — the record pins the order), the foreign dispatch impl, and the
+  `Codec for Box<dyn Trait>` whose `FfiType` is a runtime `CallbackHandle`. Export use sites
+  stay agnostic — the same move that made direct-vs-encoded per-invocation (§8).
+- **`#[export]` on an impl block** emits constructor/method/free wrappers behind a `u64`
+  handle; `&self` receivers only (a ui test pins the `&mut self` rejection), and a null handle
+  is a status error, not a crash.
+- **`#[export]` on a `PimStream<T>`-returning function** emits subscribe/pop/free adjacent to
+  the function; pop encodes `Option<T>` through the same `Encode` path. Detection is by the
+  `PimStream` name, so the alias caveat of §4b applies to it.
+
+The dlopen tests drive all three through symbols read from their own records. Not covered:
+Rust-to-foreign callback passing (closures), and the async wake half of the real stream
+protocol (wait/poll), which belongs with async.
+
+## 12. wasm32: records survive, with two deviations
+
+Building `pim_toy` for `wasm32-unknown-unknown` and reading the `.wasm` back works (`object`'s
+`wasm` feature); the crate's own records, all wrapper symbols, and every protocol resolve
+**identically** to the native artifact. Two deviations, pinned as test assertions:
+
+- **wasm-ld drops a dependency's unreferenced records.** The inventory failure §5 says native
+  linkers avoid does materialize on wasm — `pim_dep`'s item records vanish, and its scaffolding
+  record survives only by riding its exported free function. `#[used(linker)]` would fix it but
+  is still unstable. Wasm aggregation must read the per-crate rlibs (complete per §5) or tether
+  records to exported symbols.
+- **The OUT_DIR symbol caveat (§7) is now concrete**: the `include!(OUT_DIR)` export gets
+  different symbols in the native and wasm builds, because OUT_DIR is per-target-dir.
+
+## What remains uncovered
+
+- **Async**, and with it the wake half (wait/poll) of the real stream protocol.
+- **Rust-to-foreign callbacks** — closures and callback values crossing outward.
+- **`custom_type!` values at the boundary.** Referenceable (§4a) but no `Encode`; production
+  needs user-supplied conversions, as UniFFI does.
 - **Bindgen-side aggregation.** The reader lists records and calls symbols; boltffi's global
   lowering passes move behind it per the RFC, but were not prototyped.
+- **The real byte codec.** The framing here is a stand-in for boltffi's, and stream/class
+  handles assume single-threaded access.
 
 ## Implications for the real implementation
 
@@ -217,9 +259,9 @@ What this costs on the boltffi side, in rough order of pain:
    `boltffi_bindgen/src/generate.rs:635-643` takes the first envelope matching the target surface;
    the transport underneath is already plural end-to-end.
 5. **The aggregator must read the linked artifact**, not the rlibs (§5).
-6. **The expansion build needs the same surgery.** Proven end to end for plain functions (§6–§9),
-   deleting `RootModuleTypes`/`root_visible_paths` as a bonus; callbacks, streams, and methods
-   remain unprototyped.
+6. **The expansion build needs the same surgery.** Proven end to end for plain functions (§6–§9)
+   and for callbacks, streams, and methods (§11), deleting `RootModuleTypes`/`root_visible_paths`
+   as a bonus. The wrapper ABI to freeze includes the call-status out-param (§10).
 
 Items 1–6 are de-risked with running code for the surface this prototype covers; the open edges
-are the ones listed under "What phase 2 still does not cover".
+are the ones listed under "What remains uncovered".
