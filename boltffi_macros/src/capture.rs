@@ -265,21 +265,18 @@ fn record_tokens(fragment: &SourceFragment, slots: &[syn::Path]) -> TokenStream 
 
 pub(crate) fn custom_ffi_tokens(item: proc_macro::TokenStream) -> TokenStream {
     let Ok(item) = syn::parse::<syn::ItemImpl>(item) else {
-        return unsupported_tokens(
-            "custom_ffi",
-            "custom FFI impls are not captured per-invocation yet",
-        );
+        return unsupported_tokens("custom_ffi", "custom_ffi impl did not parse");
     };
     let self_ty = &*item.self_ty;
     let name = type_leaf_name(self_ty).unwrap_or_else(|| "custom_ffi".to_owned());
     let identity = local_identity_tokens(self_ty, &name);
-    let unsupported = unsupported_tokens(
-        &name,
-        "custom FFI impls are not captured per-invocation yet",
-    );
+    let record = match boltffi_scan::capture_custom_ffi(&item) {
+        Ok(captured) => record_tokens(&SourceFragment::Custom(captured.def), &captured.slots),
+        Err(error) => unsupported_tokens(&name, &error.to_string()),
+    };
     quote! {
         #identity
-        #unsupported
+        #record
     }
 }
 

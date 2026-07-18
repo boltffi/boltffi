@@ -1125,7 +1125,7 @@ mod tests {
             "metadata_fixture::domain::Point",
             "the record's identity comes from its defining module"
         );
-        assert_eq!(contract.functions.len(), 4);
+        assert_eq!(contract.functions.len(), 5);
         let browser_fn = contract
             .functions
             .iter()
@@ -1210,10 +1210,32 @@ mod tests {
             "the stream item resolves cross-module through the compiler"
         );
         assert_eq!(contract.constants.len(), 1, "the constant is captured");
-        assert_eq!(contract.customs.len(), 1, "the custom type is captured");
-        assert_eq!(
-            contract.customs[0].id.as_str(),
-            "metadata_fixture::clock::Stamp"
+        assert_eq!(contract.customs.len(), 2, "both custom types are captured");
+        assert!(
+            contract
+                .customs
+                .iter()
+                .any(|custom| custom.id.as_str() == "metadata_fixture::clock::Stamp")
+        );
+        assert!(
+            contract
+                .customs
+                .iter()
+                .any(|custom| custom.id.as_str() == "metadata_fixture::clock::Label"),
+            "the custom_ffi impl is captured"
+        );
+        let label_fn = contract
+            .functions
+            .iter()
+            .find(|function| function.id.as_str() == "metadata_fixture::api::label_text")
+            .expect("the custom_ffi-typed function is captured");
+        assert!(
+            matches!(
+                &label_fn.parameters[0].type_expr,
+                boltffi_ast::TypeExpr::Custom { id, .. }
+                    if id.as_str() == "metadata_fixture::clock::Label"
+            ),
+            "the custom_ffi reference classifies through its defining fragment"
         );
         let stamp_fn = contract
             .functions
@@ -1262,8 +1284,8 @@ mod tests {
                 .iter()
                 .filter(|decl| matches!(decl, Decl::Record(_) | Decl::Function(_)))
                 .count(),
-            5,
-            "the point record and all four functions lower"
+            6,
+            "the point record and all five functions lower"
         );
     }
 
@@ -1339,7 +1361,7 @@ mod tests {
             boltffi_binding::aggregate_records(&source.source_records, source.package.clone())
                 .expect("wasm32-built records aggregate");
         assert_eq!(contract.records.len(), 1);
-        assert_eq!(contract.functions.len(), 4);
+        assert_eq!(contract.functions.len(), 5);
         assert_eq!(contract.classes.len(), 1);
         assert_eq!(contract.streams.len(), 1);
 
@@ -1351,8 +1373,8 @@ mod tests {
                 .iter()
                 .filter(|decl| matches!(decl, Decl::Record(_) | Decl::Function(_)))
                 .count(),
-            5,
-            "the point record and all four functions lower from the wasm32 artifacts"
+            6,
+            "the point record and all five functions lower from the wasm32 artifacts"
         );
     }
 
@@ -1390,7 +1412,7 @@ mod tests {
                 .iter()
                 .filter(|decl| matches!(decl, Decl::Function(_)))
                 .count(),
-            4
+            5
         );
     }
 
@@ -1693,7 +1715,7 @@ pub mod domain {
 }
 
 pub mod clock {
-    use boltffi::custom_type;
+    use boltffi::{CustomFfiConvertible, custom_ffi, custom_type};
 
     pub struct Stamp(pub i64);
 
@@ -1704,6 +1726,22 @@ pub mod clock {
         into_ffi = |stamp: &Stamp| stamp.0,
         try_from_ffi = |value: i64| Ok::<_, boltffi::CustomTypeConversionError>(Stamp(value)),
     );
+
+    pub struct Label(pub String);
+
+    #[custom_ffi]
+    impl CustomFfiConvertible for Label {
+        type FfiRepr = String;
+        type Error = String;
+
+        fn into_ffi(&self) -> String {
+            self.0.clone()
+        }
+
+        fn try_from_ffi(repr: String) -> Result<Self, String> {
+            Ok(Label(repr))
+        }
+    }
 }
 
 pub mod pools {
@@ -1720,13 +1758,18 @@ pub mod api {
 
     use boltffi::{EventSubscription, InternedString, export, ffi_stream};
 
-    use crate::clock::Stamp;
+    use crate::clock::{Label, Stamp};
     use crate::domain::Point;
     use crate::pools::Browser;
 
     #[export]
     pub fn origin() -> Point {
         Point { x: 0.0 }
+    }
+
+    #[export]
+    pub fn label_text(label: Label) -> String {
+        label.0
     }
 
     #[export]
