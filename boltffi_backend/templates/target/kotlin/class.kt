@@ -1,15 +1,31 @@
 {{ class.documentation() }}class {{ class.name() }} internal constructor(internal val handle: Long) : AutoCloseable {
+    private val __boltffi_calls = java.util.concurrent.atomic.AtomicLong(1L)
     private val __boltffi_closed = java.util.concurrent.atomic.AtomicBoolean(false)
 
     override fun close() {
         if (__boltffi_closed.compareAndSet(false, true)) {
-            Native.{{ class.release() }}(handle)
+            boltffiRelease()
         }
     }
 
     internal fun boltffiHandle(): Long {
         check(!__boltffi_closed.get()) { "{{ class.name() }} is closed" }
         return handle
+    }
+
+    internal fun boltffiRetain(): Long {
+        while (true) {
+            check(!__boltffi_closed.get()) { "{{ class.name() }} is closed" }
+            val calls = __boltffi_calls.get()
+            check(calls != 0L) { "{{ class.name() }} is closed" }
+            if (__boltffi_calls.compareAndSet(calls, calls + 1L)) return handle
+        }
+    }
+
+    internal fun boltffiRelease() {
+        if (__boltffi_calls.decrementAndGet() == 0L) {
+            Native.{{ class.release() }}(handle)
+        }
     }
 {%- for initializer in class.initializers() %}
 {%- if initializer.constructor() %}
@@ -146,20 +162,25 @@
         boltffiCallAsync(
 {%- endif %}
             createFuture = {
-{%- for statement in async_call.create_setup() %}
-                {{ statement }}
-{%- endfor %}
-{%- if async_call.has_create_cleanup() %}
+                val __boltffi_receiver = boltffiRetain()
                 try {
-                    {{ async_call.create() }}
-                } finally {
-{%- for statement in async_call.create_cleanup() %}
+{%- for statement in async_call.create_setup() %}
                     {{ statement }}
 {%- endfor %}
-                }
+{%- if async_call.has_create_cleanup() %}
+                    try {
+                        {{ async_call.create() }}
+                    } finally {
+{%- for statement in async_call.create_cleanup() %}
+                        {{ statement }}
+{%- endfor %}
+                    }
 {%- else %}
-                {{ async_call.create() }}
+                    {{ async_call.create() }}
 {%- endif %}
+                } finally {
+                    boltffiRelease()
+                }
             },
             poll = { future, contHandle -> Native.{{ async_call.poll() }}(future, contHandle) },
             complete = { future ->
@@ -171,24 +192,29 @@
             cancel = { future -> Native.{{ async_call.cancel() }}(future) },
         )
 {%- else %}
+        val __boltffi_receiver = boltffiRetain()
+        try {
 {%- for statement in method.setup() %}
-        {{ statement }}
+            {{ statement }}
 {%- endfor %}
 {%- if method.has_cleanup() %}
-        try {
+            try {
 {%- for statement in method.call() %}
-            {{ statement }}
+                {{ statement }}
 {%- endfor %}
-        } finally {
+            } finally {
 {%- for statement in method.cleanup() %}
-            {{ statement }}
+                {{ statement }}
 {%- endfor %}
-        }
+            }
 {%- else %}
 {%- for statement in method.call() %}
-        {{ statement }}
+            {{ statement }}
 {%- endfor %}
 {%- endif %}
+        } finally {
+            boltffiRelease()
+        }
 {%- endif %}
     }
 {%- endfor %}
