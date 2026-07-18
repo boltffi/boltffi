@@ -488,6 +488,7 @@ impl Function {
             context,
         )?;
         requires_wire_runtime |= encoded_error.is_some();
+        let mut receiver_guard = None;
 
         if let Some(receive) = callable.receiver() {
             let group =
@@ -523,6 +524,7 @@ impl Function {
             return_after_status = receiver.return_after_status;
             encoded_writeback = receiver.encoded_writeback;
             setup.extend(receiver.setup);
+            receiver_guard = receiver.guard;
             requires_wire_runtime |= receiver.requires_wire_runtime;
         }
 
@@ -1316,8 +1318,10 @@ impl Function {
                 encoded_writeback.as_ref(),
                 encoded_error.as_ref(),
                 handle_return.as_ref(),
+                receiver_guard.as_ref(),
             )?),
             None => (!setup.is_empty()
+                || receiver_guard.is_some()
                 || encoded_return.is_some()
                 || encoded_writeback.is_some()
                 || encoded_error.is_some()
@@ -1334,6 +1338,7 @@ impl Function {
                     encoded_error.as_ref(),
                     handle_return.as_ref(),
                     &parameter_writebacks,
+                    receiver_guard.as_ref(),
                 )
             })
             .transpose()?,
@@ -1623,6 +1628,7 @@ fn render_callable_body(
     encoded_error: Option<&EncodedError>,
     handle_return: Option<&HandleReturn>,
     parameter_writebacks: &[MutableParameterWriteback],
+    guard: Option<&ReceiverGuard>,
 ) -> Result<Statement> {
     let mut lines = setup.iter().map(ToString::to_string).collect::<Vec<_>>();
     if let Some(error) = encoded_error {
@@ -1640,7 +1646,7 @@ fn render_callable_body(
         } else if let Some(value) = return_after_status {
             lines.push(format!("return {value};"));
         }
-        return Ok(Statement::new(indent(&lines.join("\n"), 12)));
+        return finish_callable_body(lines, guard);
     }
 
     if let Some(handle) = handle_return {
@@ -1650,7 +1656,7 @@ fn render_callable_body(
             handle.native_type,
             handle_value_expression(handle.ty.clone(), &local, handle.nullable, handle.callback,),
         ));
-        return Ok(Statement::new(indent(&lines.join("\n"), 12)));
+        return finish_callable_body(lines, guard);
     }
 
     match encoded_return {
@@ -1672,7 +1678,21 @@ fn render_callable_body(
         }
         None => lines.push(format!("return {invocation};")),
     }
-    Ok(Statement::new(indent(&lines.join("\n"), 12)))
+    finish_callable_body(lines, guard)
+}
+
+fn finish_callable_body(lines: Vec<String>, guard: Option<&ReceiverGuard>) -> Result<Statement> {
+    let body = lines.join("\n");
+    let body = match guard {
+        Some(guard) => format!(
+            "{}\ntry\n{{\n{}\n}}\nfinally\n{{\n{}\n}}",
+            guard.retain,
+            indent(&body, 4),
+            indent(&guard.release.to_string(), 4),
+        ),
+        None => body,
+    };
+    Ok(Statement::new(indent(&body, 12)))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1689,6 +1709,7 @@ fn render_async_body(
     encoded_writeback: Option<&EncodedReturn>,
     encoded_error: Option<&EncodedError>,
     handle_return: Option<&HandleReturn>,
+    guard: Option<&ReceiverGuard>,
 ) -> Result<Statement> {
     if encoded_writeback.is_some() {
         return unsupported("mutable encoded value in async function");
@@ -1770,9 +1791,16 @@ fn render_async_body(
         true => "CallAsyncVoid".to_owned(),
         false => format!("CallAsync<{public_return_type}>"),
     };
+    let create = match guard {
+        Some(guard) => format!(
+            "() =>\n    {{\n        {}\n        try\n        {{\n            return {start};\n        }}\n        finally\n        {{\n            {}\n        }}\n    }}",
+            guard.retain, guard.release,
+        ),
+        None => format!("() => {start}"),
+    };
     let mut lines = setup.iter().map(ToString::to_string).collect::<Vec<_>>();
     lines.push(format!(
-        "return BoltFFIAsync.{call}(\n    () => {start},\n    NativeMethods.{},\n    {future} =>\n    {{\n{}\n    }},\n    NativeMethods.{},\n    NativeMethods.{},\n    cancellationToken);",
+        "return BoltFFIAsync.{call}(\n    {create},\n    NativeMethods.{},\n    {future} =>\n    {{\n{}\n    }},\n    NativeMethods.{},\n    NativeMethods.{},\n    cancellationToken);",
         asynchronous.poll_name,
         indent(&completion.join("\n"), 8),
         asynchronous.cancel_name,
@@ -1824,7 +1852,16 @@ struct LoweredReceiver {
     return_after_status: Option<Expression>,
     encoded_writeback: Option<EncodedReturn>,
     setup: Vec<Statement>,
+    guard: Option<ReceiverGuard>,
     requires_wire_runtime: bool,
+}
+
+/// In-flight guard for class receivers: retain declares the handle local and
+/// increments the call counter, release decrements it and frees the native
+/// allocation once the counter drains after `Dispose()`.
+struct ReceiverGuard {
+    retain: Statement,
+    release: Statement,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1882,6 +1919,7 @@ fn lower_receiver(
                 return_after_status: Some(Expression::identifier(output_name)),
                 encoded_writeback: None,
                 setup: Vec::new(),
+                guard: None,
                 requires_wire_runtime: false,
             })
         }
@@ -1903,6 +1941,7 @@ fn lower_receiver(
                 return_after_status: None,
                 encoded_writeback: None,
                 setup: Vec::new(),
+                guard: None,
                 requires_wire_runtime: false,
             })
         }
@@ -1934,10 +1973,17 @@ fn lower_class_receiver(
             array_out: false,
             byte_array: false,
         }],
-        arguments: vec![Expression::new("this.Handle")],
+        arguments: vec![Expression::new("boltffiReceiver")],
         return_after_status: None,
         encoded_writeback: None,
-        setup: vec![Statement::new("ThrowIfDisposed();")],
+        setup: Vec::new(),
+        guard: Some(ReceiverGuard {
+            retain: Statement::new(format!(
+                "{} boltffiReceiver = BoltffiRetain();",
+                handle_carrier_type(carrier)?
+            )),
+            release: Statement::new("BoltffiRelease();"),
+        }),
         requires_wire_runtime: false,
     })
 }
@@ -2054,6 +2100,7 @@ fn lower_encoded_receiver(
         return_after_status: None,
         encoded_writeback,
         setup,
+        guard: None,
         requires_wire_runtime: true,
     })
 }

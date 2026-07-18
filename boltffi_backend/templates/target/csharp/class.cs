@@ -8,8 +8,20 @@ namespace {{ class.namespace }}
 {{ class.documentation }}    public sealed class {{ class.name }} : global::System.IDisposable
     {
         private long handle;
+        private long calls = 1;
+        private int closed;
 
-        internal {{ class.carrier_type }} Handle => unchecked(({{ class.carrier_type }})(ulong)global::System.Threading.Interlocked.Read(ref handle));
+        private {{ class.carrier_type }} RawHandle => unchecked(({{ class.carrier_type }})(ulong)global::System.Threading.Interlocked.Read(ref handle));
+
+        internal {{ class.carrier_type }} Handle
+        {
+            get
+            {
+                if (global::System.Threading.Volatile.Read(ref closed) != 0)
+                    throw new global::System.ObjectDisposedException(nameof({{ class.name }}));
+                return RawHandle;
+            }
+        }
 
         internal {{ class.name }}({{ class.carrier_type }} handle)
         {
@@ -27,18 +39,37 @@ namespace {{ class.namespace }}
 {% endfor %}{% for function in class.methods %}
 {% include "target/csharp/function.cs" %}
 {% endfor %}
-        private {{ class.carrier_type }} TakeHandle() => unchecked(({{ class.carrier_type }})(ulong)global::System.Threading.Interlocked.Exchange(ref handle, 0));
-
-        private void ThrowIfDisposed()
+        private {{ class.carrier_type }} TakeHandle()
         {
-            if (global::System.Threading.Interlocked.Read(ref handle) == 0)
-                throw new global::System.ObjectDisposedException(nameof({{ class.name }}));
+            global::System.Threading.Interlocked.Exchange(ref closed, 1);
+            global::System.Threading.Interlocked.Exchange(ref calls, 0);
+            return RawHandle;
+        }
+
+        private {{ class.carrier_type }} BoltffiRetain()
+        {
+            while (true)
+            {
+                if (global::System.Threading.Volatile.Read(ref closed) != 0)
+                    throw new global::System.ObjectDisposedException(nameof({{ class.name }}));
+                long calls = global::System.Threading.Interlocked.Read(ref this.calls);
+                if (calls == 0)
+                    throw new global::System.ObjectDisposedException(nameof({{ class.name }}));
+                if (global::System.Threading.Interlocked.CompareExchange(ref this.calls, calls + 1, calls) == calls)
+                    return RawHandle;
+            }
+        }
+
+        private void BoltffiRelease()
+        {
+            if (global::System.Threading.Interlocked.Decrement(ref calls) == 0)
+                NativeMethods.{{ class.release_name }}(RawHandle);
         }
 
         private void Release()
         {
-            {{ class.carrier_type }} released = unchecked(({{ class.carrier_type }})(ulong)global::System.Threading.Interlocked.Exchange(ref handle, 0));
-            if (released != 0) NativeMethods.{{ class.release_name }}(released);
+            if (global::System.Threading.Interlocked.Exchange(ref closed, 1) == 0)
+                BoltffiRelease();
         }
 
         ~{{ class.name }}() => Release();

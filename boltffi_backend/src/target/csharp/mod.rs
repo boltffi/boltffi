@@ -1216,7 +1216,11 @@ mod tests {
         assert!(class.contains("public int Get()"));
         assert!(class.contains("public void Increment()"));
         assert!(class.contains("public static int Add(int a, int b)"));
-        assert!(class.contains("ThrowIfDisposed();"));
+        assert!(class.contains("private ulong BoltffiRetain()"));
+        assert!(class.contains("private void BoltffiRelease()"));
+        assert!(class.contains("ulong boltffiReceiver = BoltffiRetain();"));
+        assert!(class.contains("BoltffiRelease();"));
+        assert!(class.contains("NativeMethods.NativeCounterRelease(RawHandle);"));
         assert!(class.contains("~Counter() => Release();"));
 
         let module = file(&output, "Demo.cs");

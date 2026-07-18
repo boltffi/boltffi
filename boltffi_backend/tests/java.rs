@@ -336,6 +336,10 @@ const CLASSES: &str = r#"
         pub fn get(&self) -> i32 { self.value }
 
         pub fn set(&mut self, value: i32) { self.value = value; }
+
+        pub fn label(&self, prefix: String) -> String {
+            format!("{prefix}{}", self.value)
+        }
     }
 
     pub struct FallibleOnly {
@@ -1532,9 +1536,19 @@ fn java_target_renders_class_ownership_and_handle_calls_from_binding_ir() {
     );
     assert!(counter.contains("public int get()"));
     assert!(counter.contains("public void set(int value)"));
+    assert!(counter.contains("long boltffiRetain()"));
+    assert!(counter.contains("void boltffiRelease()"));
+    assert!(counter.contains("if (calls.decrementAndGet() == 0L) {"));
+    assert!(counter.contains("long __boltffi_receiver = this.boltffiRetain();"));
     assert!(
-        counter.contains("Native.boltffi_method_class_demo_counter_set(this.rawHandle(), value);")
+        counter
+            .contains("Native.boltffi_method_class_demo_counter_set(__boltffi_receiver, value);")
     );
+    assert!(counter.contains("public String label(String prefix)"));
+    assert!(counter.contains(
+        "long __boltffi_receiver = this.boltffiRetain();\n        try {\n    WireLease __boltffi_prefix_wire = WireWriterPool.acquire(WireSizes.string(prefix));"
+    ));
+    assert!(counter.contains("    } finally {\n        __boltffi_prefix_wire.close();\n    }\n} finally {\n    this.boltffiRelease();\n}"));
 
     assert!(fallible.contains("public FallibleOnly(String name)"));
     assert!(fallible.contains("private static long __boltffiCreateHandle0(String name)"));
@@ -1549,7 +1563,7 @@ fn java_target_renders_class_ownership_and_handle_calls_from_binding_ir() {
     );
     assert!(factory.contains("public Counter maybe(int value)"));
     assert!(factory.contains(
-        "long __boltffi_handle = Native.boltffi_method_class_demo_factory_maybe(this.rawHandle(), value);"
+        "long __boltffi_handle = Native.boltffi_method_class_demo_factory_maybe(__boltffi_receiver, value);"
     ));
     assert!(
         factory.contains("return (__boltffi_handle == 0L ? null : new Counter(__boltffi_handle));")
@@ -1990,7 +2004,8 @@ fn java_target_renders_async_functions_and_methods_from_poll_handle_protocols() 
     assert!(
         worker.contains("public java.util.concurrent.CompletableFuture<Integer> run(int value)")
     );
-    assert!(worker.contains("this.rawHandle()"));
+    assert!(worker.contains("long __boltffi_receiver = this.boltffiRetain();"));
+    assert!(worker.contains("this.boltffiRelease();"));
     assert!(output.coverage().unsupported().is_empty());
 }
 
