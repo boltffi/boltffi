@@ -1724,7 +1724,7 @@ pub mod api {
         origin: Point,
     }
 
-    #[export]
+    #[export(single_threaded)]
     impl Session {
         pub fn new() -> Self {
             Self { origin: Point { x: 0.0 } }

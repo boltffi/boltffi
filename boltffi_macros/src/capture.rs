@@ -24,8 +24,9 @@ fn facade() -> TokenStream {
 
 /// How an impl block relates to type identity at this entry point.
 pub(crate) enum ImplCapture {
-    /// `#[export] impl` declares a class; the self type gets its identity here.
-    Class,
+    /// `#[export] impl` declares a class; the self type gets its identity here. Carries
+    /// the export marker's argument tokens for the thread-safety choice.
+    Class(TokenStream),
     /// `#[data(impl)]` adds methods to a type whose identity the `#[data]` site owns.
     Methods,
 }
@@ -63,9 +64,9 @@ pub(crate) fn item_tokens(item: proc_macro::TokenStream, impl_capture: ImplCaptu
             let self_ty = &*item.self_ty;
             let name = type_leaf_name(self_ty).unwrap_or_else(|| "impl".to_owned());
             match impl_capture {
-                ImplCapture::Class => {
+                ImplCapture::Class(marker_args) => {
                     let identity = local_identity_tokens(self_ty, &name);
-                    let record = match capture_class(item) {
+                    let record = match capture_class(item, marker_args) {
                         Ok(captured) => {
                             record_tokens(&SourceFragment::Class(captured.def), &captured.slots)
                         }

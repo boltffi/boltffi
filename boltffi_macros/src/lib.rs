@@ -39,7 +39,12 @@ fn expand_or_experimental(
     legacy: impl FnOnce(TokenStream) -> TokenStream,
     dependency: DependencyExpansion,
 ) -> TokenStream {
-    expand_with_capture(item, legacy, dependency, capture::ImplCapture::Class)
+    expand_with_capture(
+        item,
+        legacy,
+        dependency,
+        capture::ImplCapture::Class(proc_macro2::TokenStream::new()),
+    )
 }
 
 fn expand_with_capture(
@@ -371,10 +376,12 @@ pub fn export(attr: TokenStream, item: TokenStream) -> TokenStream {
     }
 
     if let Ok(item_impl) = syn::parse::<syn::ItemImpl>(item_clone.clone()) {
-        return expand_or_experimental(
+        let marker_args = proc_macro2::TokenStream::from(attr.clone());
+        return expand_with_capture(
             TokenStream::from(quote!(#item_impl)),
             |item| exports::methods::export_impl(attr, item),
             DependencyExpansion::Preserve,
+            capture::ImplCapture::Class(marker_args),
         );
     }
 

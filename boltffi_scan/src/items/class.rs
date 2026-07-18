@@ -45,8 +45,9 @@ pub(crate) fn scan_item(
     item: &syn::ItemImpl,
     scope: &ModuleScope,
     declared_types: &DeclaredTypes,
+    thread_safety: ClassThreadSafety,
 ) -> Result<ClassDef, ScanError> {
-    build(item, scope, declared_types, ClassThreadSafety::default())
+    build(item, scope, declared_types, thread_safety)
 }
 
 fn build(

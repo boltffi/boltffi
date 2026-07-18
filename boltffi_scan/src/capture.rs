@@ -51,8 +51,17 @@ pub fn capture_function(item: &syn::ItemFn) -> Result<CapturedItem<FunctionDef>,
 }
 
 /// Captures an `#[export] impl` block as a class definition.
-pub fn capture_class(item: &syn::ItemImpl) -> Result<CapturedItem<ClassDef>, ScanError> {
-    captured(|scope, declared_types| items::class::scan_item(item, scope, declared_types))
+///
+/// The `marker_args` parameter is the export marker's argument tokens, which carry the
+/// class thread-safety choice.
+pub fn capture_class(
+    item: &syn::ItemImpl,
+    marker_args: proc_macro2::TokenStream,
+) -> Result<CapturedItem<ClassDef>, ScanError> {
+    let thread_safety = crate::marker::export_marker_from_args(marker_args)?.class_thread_safety();
+    captured(|scope, declared_types| {
+        items::class::scan_item(item, scope, declared_types, thread_safety)
+    })
 }
 
 /// Captures the `#[ffi_stream]` methods of an `#[export] impl` block as stream definitions.
@@ -299,7 +308,8 @@ mod tests {
             }
         };
 
-        let captured = capture_class(&item).expect("class impl captures");
+        let captured =
+            capture_class(&item, proc_macro2::TokenStream::new()).expect("class impl captures");
 
         assert_eq!(captured.def.id.as_str(), "$self::Counter");
         assert_eq!(captured.def.methods.len(), 2);
@@ -307,6 +317,28 @@ mod tests {
             captured.def.methods[0].id.as_str(),
             "$self::Counter::new",
             "method ids nest under the class placeholder"
+        );
+        assert_eq!(
+            captured.def.thread_safety,
+            boltffi_ast::ClassThreadSafety::default()
+        );
+    }
+
+    #[test]
+    fn captures_single_threaded_class_thread_safety() {
+        let item: syn::ItemImpl = syn::parse_quote! {
+            impl Counter {
+                pub fn bump(&mut self) {}
+            }
+        };
+
+        let captured =
+            capture_class(&item, quote::quote!(single_threaded)).expect("class impl captures");
+
+        assert_eq!(
+            captured.def.thread_safety,
+            boltffi_ast::ClassThreadSafety::UnsafeSingleThreaded,
+            "the export marker's thread-safety choice rides the fragment"
         );
     }
 
