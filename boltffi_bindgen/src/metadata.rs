@@ -1125,7 +1125,24 @@ mod tests {
             "metadata_fixture::domain::Point",
             "the record's identity comes from its defining module"
         );
-        assert_eq!(contract.functions.len(), 3);
+        assert_eq!(contract.functions.len(), 4);
+        let browser_fn = contract
+            .functions
+            .iter()
+            .find(|function| function.id.as_str() == "metadata_fixture::api::browser_len")
+            .expect("the interned-string function is captured");
+        assert!(
+            matches!(
+                &browser_fn.parameters[0].type_expr,
+                boltffi_ast::TypeExpr::InternedString {
+                    pool_id,
+                    static_values,
+                    ..
+                } if pool_id == "metadata_fixture::pools::Browser"
+                    && static_values == &["Chrome".to_owned(), "Firefox".to_owned()]
+            ),
+            "the pool's values inline at the use site through its fragment"
+        );
         assert!(
             contract
                 .functions
@@ -1245,8 +1262,8 @@ mod tests {
                 .iter()
                 .filter(|decl| matches!(decl, Decl::Record(_) | Decl::Function(_)))
                 .count(),
-            4,
-            "the point record and all three functions lower"
+            5,
+            "the point record and all four functions lower"
         );
     }
 
@@ -1284,7 +1301,7 @@ mod tests {
                 .iter()
                 .filter(|decl| matches!(decl, Decl::Function(_)))
                 .count(),
-            3
+            4
         );
     }
 
@@ -1600,13 +1617,23 @@ pub mod clock {
     );
 }
 
+pub mod pools {
+    boltffi::interned_string_pool! {
+        pub Browser {
+            CHROME = "Chrome",
+            FIREFOX = "Firefox",
+        }
+    }
+}
+
 pub mod api {
     use std::sync::Arc;
 
-    use boltffi::{EventSubscription, export, ffi_stream};
+    use boltffi::{EventSubscription, InternedString, export, ffi_stream};
 
     use crate::clock::Stamp;
     use crate::domain::Point;
+    use crate::pools::Browser;
 
     #[export]
     pub fn origin() -> Point {
@@ -1619,6 +1646,14 @@ pub mod api {
     #[export]
     pub fn stamp_value(stamp: Stamp) -> i64 {
         stamp.0
+    }
+
+    #[export]
+    pub fn browser_len(name: InternedString<Browser>) -> u32 {
+        match name.repr() {
+            boltffi::InternedStringRepr::Interned(id) => *id,
+            boltffi::InternedStringRepr::Dynamic(value) => value.len() as u32,
+        }
     }
 
     #[boltffi::error]

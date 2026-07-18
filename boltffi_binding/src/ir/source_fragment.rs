@@ -45,6 +45,13 @@ pub enum SourceFragment {
     Constant(ConstantDef),
     /// A `custom_type!` registration.
     Custom(CustomTypeDef),
+    /// An `interned_string_pool!` declaration; its values inline at every use site.
+    InternedStringPool {
+        /// Canonical pool id, written `$self::Name` until minting.
+        id: String,
+        /// Static values addressable by wire id, in declaration order.
+        values: Vec<String>,
+    },
     /// A `#[data(impl)]` methods block, merged into its target declaration.
     Methods {
         /// The impl target, as a slot-deferred reference until resolution.
@@ -128,7 +135,7 @@ pub fn aggregate_records(
         fragments.push((fragment, slots, record.module.clone()));
     }
 
-    let mut kinds = HashMap::new();
+    let mut declared = Declared::default();
     let mut unique: HashMap<String, (&SourceFragment, &[TypeNode])> = HashMap::new();
     for (fragment, slots, module) in &fragments {
         let id = fragment_id(fragment, module);
@@ -142,7 +149,10 @@ pub fn aggregate_records(
             }
         }
         if let Some(kind) = declared_kind(fragment) {
-            kinds.insert(id, kind);
+            declared.kinds.insert(id, kind);
+        }
+        if let SourceFragment::InternedStringPool { id, values } = fragment {
+            declared.pools.insert(id.clone(), values.clone());
         }
     }
 
@@ -154,7 +164,7 @@ pub fn aggregate_records(
         if seen.insert(id, ()).is_some() {
             continue;
         }
-        resolve_fragment(&mut fragment, &slots, &kinds)?;
+        resolve_fragment(&mut fragment, &slots, &declared)?;
         match fragment {
             SourceFragment::Record(def) => contract.records.push(def),
             SourceFragment::Enum(def) => contract.enums.push(def),
@@ -167,7 +177,7 @@ pub fn aggregate_records(
             SourceFragment::Methods {
                 target, methods, ..
             } => method_blocks.push((target, methods)),
-            SourceFragment::Unsupported { .. } => {}
+            SourceFragment::InternedStringPool { .. } | SourceFragment::Unsupported { .. } => {}
         }
     }
 
@@ -236,6 +246,12 @@ enum DeclaredKind {
     Custom,
 }
 
+#[derive(Debug, Default)]
+struct Declared {
+    kinds: HashMap<String, DeclaredKind>,
+    pools: HashMap<String, Vec<String>>,
+}
+
 fn declared_kind(fragment: &SourceFragment) -> Option<DeclaredKind> {
     match fragment {
         SourceFragment::Record(_) => Some(DeclaredKind::Record),
@@ -246,6 +262,7 @@ fn declared_kind(fragment: &SourceFragment) -> Option<DeclaredKind> {
         | SourceFragment::Trait(_)
         | SourceFragment::Stream(_)
         | SourceFragment::Constant(_)
+        | SourceFragment::InternedStringPool { .. }
         | SourceFragment::Methods { .. }
         | SourceFragment::Unsupported { .. } => None,
     }
@@ -261,6 +278,7 @@ fn fragment_id(fragment: &SourceFragment, module: &str) -> String {
         SourceFragment::Stream(def) => def.id.as_str().to_owned(),
         SourceFragment::Constant(def) => def.id.as_str().to_owned(),
         SourceFragment::Custom(def) => def.id.as_str().to_owned(),
+        SourceFragment::InternedStringPool { id, .. } => id.clone(),
         SourceFragment::Methods {
             spelling, methods, ..
         } => {
@@ -334,6 +352,11 @@ fn mint_self_ids(fragment: &mut SourceFragment, module: &str) {
             mint_converter_module(&mut def.converters.into_ffi, module);
             mint_converter_module(&mut def.converters.try_from_ffi, module);
         }
+        SourceFragment::InternedStringPool { id, .. } => {
+            if let Some(value) = minted(id, module) {
+                *id = value;
+            }
+        }
         SourceFragment::Methods { .. } | SourceFragment::Unsupported { .. } => {}
     }
 }
@@ -366,9 +389,9 @@ fn mint_methods(methods: &mut [MethodDef], prefix: &str) {
 fn resolve_fragment(
     fragment: &mut SourceFragment,
     slots: &[TypeNode],
-    kinds: &HashMap<String, DeclaredKind>,
+    declared: &Declared,
 ) -> Result<(), SourceFragmentError> {
-    let mut resolve = |expr: &mut TypeExpr| resolve_expr(expr, slots, kinds);
+    let mut resolve = |expr: &mut TypeExpr| resolve_expr(expr, slots, declared);
     match fragment {
         SourceFragment::Record(def) => {
             resolve_fields(&mut def.fields, &mut resolve)?;
@@ -396,6 +419,7 @@ fn resolve_fragment(
         SourceFragment::Stream(def) => resolve(&mut def.item_type),
         SourceFragment::Constant(def) => resolve(&mut def.type_expr),
         SourceFragment::Custom(def) => resolve(&mut def.repr),
+        SourceFragment::InternedStringPool { .. } => Ok(()),
         SourceFragment::Methods {
             target, methods, ..
         } => {
@@ -443,21 +467,33 @@ fn resolve_callable(
 fn resolve_expr(
     expr: &mut TypeExpr,
     slots: &[TypeNode],
-    kinds: &HashMap<String, DeclaredKind>,
+    declared: &Declared,
 ) -> Result<(), SourceFragmentError> {
     if let TypeExpr::Record { id, path } = expr
         && let Some(index) = id.as_str().strip_prefix(SLOT_ID_PREFIX)
     {
-        let index: usize = index
-            .parse()
-            .map_err(|_| SourceFragmentError::UnknownSlot {
-                slot: index.to_owned(),
-            })?;
-        let node = slots.get(index).ok_or(SourceFragmentError::MissingSlot {
-            index,
-            available: slots.len(),
-        })?;
-        *expr = node_expr(node, Some(path.clone()), kinds)?;
+        let node = slot_node(index, slots)?;
+        *expr = node_expr(node, Some(path.clone()), &declared.kinds)?;
+        return Ok(());
+    }
+    if let TypeExpr::InternedString {
+        pool_id,
+        static_values,
+        ..
+    } = expr
+        && let Some(index) = pool_id.strip_prefix(SLOT_ID_PREFIX)
+    {
+        let TypeNode::Id { id } = slot_node(index, slots)? else {
+            return Err(SourceFragmentError::UnresolvedReference {
+                id: pool_id.clone(),
+            });
+        };
+        let values = declared
+            .pools
+            .get(id)
+            .ok_or_else(|| SourceFragmentError::UnresolvedReference { id: id.clone() })?;
+        *pool_id = id.clone();
+        *static_values = values.clone();
         return Ok(());
     }
 
@@ -466,25 +502,25 @@ fn resolve_expr(
         | TypeExpr::Arc(inner)
         | TypeExpr::Vec(inner)
         | TypeExpr::Slice(inner)
-        | TypeExpr::Option(inner) => resolve_expr(inner, slots, kinds),
+        | TypeExpr::Option(inner) => resolve_expr(inner, slots, declared),
         TypeExpr::Result { ok, err } => {
-            resolve_expr(ok, slots, kinds)?;
-            resolve_expr(err, slots, kinds)
+            resolve_expr(ok, slots, declared)?;
+            resolve_expr(err, slots, declared)
         }
         TypeExpr::Map { key, value, .. } => {
-            resolve_expr(key, slots, kinds)?;
-            resolve_expr(value, slots, kinds)
+            resolve_expr(key, slots, declared)?;
+            resolve_expr(value, slots, declared)
         }
         TypeExpr::Tuple(elements) => {
             for element in elements {
-                resolve_expr(element, slots, kinds)?;
+                resolve_expr(element, slots, declared)?;
             }
             Ok(())
         }
-        TypeExpr::FnPtr(signature) => resolve_fn_sig(signature, slots, kinds),
+        TypeExpr::FnPtr(signature) => resolve_fn_sig(signature, slots, declared),
         TypeExpr::Dyn(bounds) | TypeExpr::ImplTrait(bounds) => {
             if let boltffi_ast::BaseTrait::Function(function_trait) = &mut bounds.base {
-                resolve_fn_sig(&mut function_trait.signature, slots, kinds)?;
+                resolve_fn_sig(&mut function_trait.signature, slots, declared)?;
             }
             Ok(())
         }
@@ -492,16 +528,31 @@ fn resolve_expr(
     }
 }
 
+fn slot_node<'slots>(
+    index: &str,
+    slots: &'slots [TypeNode],
+) -> Result<&'slots TypeNode, SourceFragmentError> {
+    let index: usize = index
+        .parse()
+        .map_err(|_| SourceFragmentError::UnknownSlot {
+            slot: index.to_owned(),
+        })?;
+    slots.get(index).ok_or(SourceFragmentError::MissingSlot {
+        index,
+        available: slots.len(),
+    })
+}
+
 fn resolve_fn_sig(
     signature: &mut boltffi_ast::FnSig,
     slots: &[TypeNode],
-    kinds: &HashMap<String, DeclaredKind>,
+    declared: &Declared,
 ) -> Result<(), SourceFragmentError> {
     for parameter in &mut signature.parameters {
-        resolve_expr(parameter, slots, kinds)?;
+        resolve_expr(parameter, slots, declared)?;
     }
     if let ReturnDef::Value(expr) = &mut signature.returns {
-        resolve_expr(expr, slots, kinds)?;
+        resolve_expr(expr, slots, declared)?;
     }
     Ok(())
 }
@@ -903,6 +954,54 @@ mod tests {
             ),
             "the item type resolves through its slot"
         );
+    }
+
+    #[test]
+    fn inlines_interned_string_pool_values_at_use_sites() {
+        let pool = raw(
+            "demo::pools",
+            &[],
+            serde_json::to_vec(&SourceFragment::InternedStringPool {
+                id: format!("{SELF_ID}::Browser"),
+                values: vec!["Chrome".to_owned(), "Firefox".to_owned()],
+            })
+            .expect("fragment serializes"),
+        );
+        let holder = raw(
+            "demo",
+            &[r#"{"id":"demo::pools::Browser"}"#],
+            record_fragment(vec![FieldDef::new(
+                name("browser"),
+                TypeExpr::interned_string(
+                    Path::single("InternedString"),
+                    format!("{SLOT_ID_PREFIX}0"),
+                    Path::single("Browser"),
+                    Vec::new(),
+                ),
+            )]),
+        );
+
+        let contract = aggregate_records(&[holder, pool], PackageInfo::new("demo", None))
+            .expect("records aggregate");
+
+        match &contract.records[0].fields[0].type_expr {
+            TypeExpr::InternedString {
+                pool_id,
+                static_values,
+                ..
+            } => {
+                assert_eq!(
+                    pool_id, "demo::pools::Browser",
+                    "the pool reference resolves through its slot"
+                );
+                assert_eq!(
+                    static_values,
+                    &["Chrome".to_owned(), "Firefox".to_owned()],
+                    "the declaring fragment's values inline at the use site"
+                );
+            }
+            other => panic!("interned string did not resolve: {other:?}"),
+        }
     }
 
     #[test]

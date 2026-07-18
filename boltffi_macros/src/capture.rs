@@ -11,6 +11,17 @@ use boltffi_scan::{
 use proc_macro2::{Literal, TokenStream};
 use quote::{format_ident, quote};
 
+/// Resolves the facade crate's path at the invocation site, honoring renames.
+fn facade() -> TokenStream {
+    match proc_macro_crate::crate_name("boltffi") {
+        Ok(proc_macro_crate::FoundCrate::Name(name)) => {
+            let name = format_ident!("{name}");
+            quote! { ::#name }
+        }
+        _ => quote! { ::boltffi },
+    }
+}
+
 /// How an impl block relates to type identity at this entry point.
 pub(crate) enum ImplCapture {
     /// `#[export] impl` declares a class; the self type gets its identity here.
@@ -97,6 +108,30 @@ pub(crate) fn item_tokens(item: proc_macro::TokenStream, impl_capture: ImplCaptu
     }
 }
 
+pub(crate) fn interned_string_pool_tokens(item: proc_macro::TokenStream) -> TokenStream {
+    if proc_macro_crate::crate_name("boltffi").is_err() {
+        return TokenStream::new();
+    }
+    match boltffi_scan::capture_interned_string_pool(proc_macro2::TokenStream::from(item)) {
+        Ok(pool) => {
+            let ident = format_ident!("{}", pool.name);
+            let identity = local_identity_tokens(&ident, &pool.name);
+            let record = record_tokens(
+                &SourceFragment::InternedStringPool {
+                    id: format!("$self::{}", pool.name),
+                    values: pool.values,
+                },
+                &[],
+            );
+            quote! {
+                #identity
+                #record
+            }
+        }
+        Err(error) => unsupported_tokens("interned_string_pool", &error.to_string()),
+    }
+}
+
 pub(crate) fn error_item_tokens(item: proc_macro::TokenStream) -> TokenStream {
     let Ok(item) = syn::parse::<syn::Item>(item) else {
         return TokenStream::new();
@@ -151,18 +186,19 @@ pub(crate) fn scaffolding_tokens() -> TokenStream {
 fn data_tokens(ident: &syn::Ident, fragment: SourceFragment, slots: &[syn::Path]) -> TokenStream {
     let name = ident.to_string();
     let record = record_tokens(&fragment, slots);
+    let facade = facade();
     quote! {
         const _: () = {
-            impl<Tag> ::boltffi::__private::capture::TypeInfo<Tag> for #ident {
+            impl<Tag> #facade::__private::capture::TypeInfo<Tag> for #ident {
                 const MODULE: &'static str = ::core::module_path!();
                 const NAME: &'static str = #name;
             }
 
-            impl<Tag> ::boltffi::__private::capture::TypeDesc<Tag> for #ident {
-                const DESC: ::boltffi::__private::capture::DescBuf =
-                    ::boltffi::__private::capture::DescBuf::named(
-                        <#ident as ::boltffi::__private::capture::TypeInfo<Tag>>::MODULE,
-                        <#ident as ::boltffi::__private::capture::TypeInfo<Tag>>::NAME,
+            impl<Tag> #facade::__private::capture::TypeDesc<Tag> for #ident {
+                const DESC: #facade::__private::capture::DescBuf =
+                    #facade::__private::capture::DescBuf::named(
+                        <#ident as #facade::__private::capture::TypeInfo<Tag>>::MODULE,
+                        <#ident as #facade::__private::capture::TypeInfo<Tag>>::NAME,
                     );
             }
         };
@@ -175,14 +211,15 @@ fn record_tokens(fragment: &SourceFragment, slots: &[syn::Path]) -> TokenStream 
         Ok(json) => Literal::byte_string(&json),
         Err(_) => return TokenStream::new(),
     };
+    let facade = facade();
     let descs = slots
         .iter()
         .enumerate()
         .map(|(index, path)| {
             let ident = format_ident!("DESC_{index}");
             quote! {
-                const #ident: &'static ::boltffi::__private::capture::DescBuf =
-                    &<#path as ::boltffi::__private::capture::TypeDesc<crate::__BoltffiTag>>::DESC;
+                const #ident: &'static #facade::__private::capture::DescBuf =
+                    &<#path as #facade::__private::capture::TypeDesc<crate::__BoltffiTag>>::DESC;
             }
         })
         .collect::<Vec<_>>();
@@ -198,7 +235,7 @@ fn record_tokens(fragment: &SourceFragment, slots: &[syn::Path]) -> TokenStream 
             #(#descs)*
             const SLOTS: &[&str] = &[#(#desc_refs),*];
             const JSON: &[u8] = #json;
-            const LEN: usize = ::boltffi::__private::capture::record_len(
+            const LEN: usize = #facade::__private::capture::record_len(
                 ::core::env!("CARGO_PKG_NAME"),
                 ::core::env!("CARGO_PKG_VERSION"),
                 ::core::module_path!(),
@@ -214,7 +251,7 @@ fn record_tokens(fragment: &SourceFragment, slots: &[syn::Path]) -> TokenStream 
                 unsafe(link_section = ".boltffisrc")
             )]
             #[used]
-            static RECORD: [u8; LEN] = ::boltffi::__private::capture::record(
+            static RECORD: [u8; LEN] = #facade::__private::capture::record(
                 ::core::env!("CARGO_PKG_NAME"),
                 ::core::env!("CARGO_PKG_VERSION"),
                 ::core::module_path!(),
@@ -255,16 +292,17 @@ pub(crate) fn custom_type_tokens(item: proc_macro::TokenStream) -> TokenStream {
         Ok(captured) => record_tokens(&SourceFragment::Custom(captured.def), &captured.slots),
         Err(error) => unsupported_tokens(&name, &error.to_string()),
     };
+    let facade = facade();
     quote! {
         const _: () = {
-            impl ::boltffi::__private::capture::TypeInfo<crate::__BoltffiTag> for #remote {
+            impl #facade::__private::capture::TypeInfo<crate::__BoltffiTag> for #remote {
                 const MODULE: &'static str = ::core::module_path!();
                 const NAME: &'static str = #name;
             }
 
-            impl ::boltffi::__private::capture::TypeDesc<crate::__BoltffiTag> for #remote {
-                const DESC: ::boltffi::__private::capture::DescBuf =
-                    ::boltffi::__private::capture::DescBuf::named(
+            impl #facade::__private::capture::TypeDesc<crate::__BoltffiTag> for #remote {
+                const DESC: #facade::__private::capture::DescBuf =
+                    #facade::__private::capture::DescBuf::named(
                         ::core::module_path!(),
                         #name,
                     );
@@ -275,18 +313,19 @@ pub(crate) fn custom_type_tokens(item: proc_macro::TokenStream) -> TokenStream {
 }
 
 fn local_identity_tokens<T: quote::ToTokens>(self_ty: &T, name: &str) -> TokenStream {
+    let facade = facade();
     quote! {
         const _: () = {
-            impl<Tag> ::boltffi::__private::capture::TypeInfo<Tag> for #self_ty {
+            impl<Tag> #facade::__private::capture::TypeInfo<Tag> for #self_ty {
                 const MODULE: &'static str = ::core::module_path!();
                 const NAME: &'static str = #name;
             }
 
-            impl<Tag> ::boltffi::__private::capture::TypeDesc<Tag> for #self_ty {
-                const DESC: ::boltffi::__private::capture::DescBuf =
-                    ::boltffi::__private::capture::DescBuf::named(
-                        <#self_ty as ::boltffi::__private::capture::TypeInfo<Tag>>::MODULE,
-                        <#self_ty as ::boltffi::__private::capture::TypeInfo<Tag>>::NAME,
+            impl<Tag> #facade::__private::capture::TypeDesc<Tag> for #self_ty {
+                const DESC: #facade::__private::capture::DescBuf =
+                    #facade::__private::capture::DescBuf::named(
+                        <#self_ty as #facade::__private::capture::TypeInfo<Tag>>::MODULE,
+                        <#self_ty as #facade::__private::capture::TypeInfo<Tag>>::NAME,
                     );
             }
         };

@@ -86,6 +86,25 @@ pub fn capture_custom_ffi(item: &syn::ItemImpl) -> Result<CapturedItem<CustomTyp
     })
 }
 
+/// One `interned_string_pool!` declaration, captured from its invocation tokens.
+pub struct CapturedPool {
+    /// The pool type's declared name.
+    pub name: String,
+    /// Static values addressable by wire id, in declaration order.
+    pub values: Vec<String>,
+}
+
+/// Captures an `interned_string_pool!` invocation's declaration tokens.
+pub fn capture_interned_string_pool(
+    tokens: proc_macro2::TokenStream,
+) -> Result<CapturedPool, ScanError> {
+    let spec = items::interned_string_pool::Spec::parse_tokens(tokens)?;
+    Ok(CapturedPool {
+        name: spec.name().to_string(),
+        values: spec.values().to_vec(),
+    })
+}
+
 /// Methods captured from one `#[data(impl)]` block, targeting a slot-deferred type.
 pub struct CapturedMethods {
     /// The impl target as a slot-deferred type expression.
@@ -385,6 +404,46 @@ mod tests {
 
         assert_eq!(captured.def.id.as_str(), "$self::LIMIT");
         assert!(captured.slots.is_empty());
+    }
+
+    #[test]
+    fn captures_an_interned_string_pool_declaration() {
+        let captured = capture_interned_string_pool(quote::quote! {
+            pub Browser {
+                CHROME = "Chrome",
+                FIREFOX = "Firefox",
+            }
+        })
+        .expect("pool captures");
+
+        assert_eq!(captured.name, "Browser");
+        assert_eq!(captured.values, ["Chrome", "Firefox"]);
+    }
+
+    #[test]
+    fn captures_interned_string_references_with_deferred_pools() {
+        let item: syn::ItemFn = syn::parse_quote! {
+            pub fn browser(name: InternedString<Browser>) -> u32 {
+                unimplemented!()
+            }
+        };
+
+        let captured = capture_function(&item).expect("function captures");
+
+        assert_eq!(captured.slots.len(), 1, "the pool reference takes the slot");
+        assert_eq!(
+            captured.slots[0].to_token_stream().to_string(),
+            "Browser",
+            "the slot holds the pool's written path, not InternedString"
+        );
+        assert!(
+            matches!(
+                &captured.def.parameters[0].type_expr,
+                TypeExpr::InternedString { pool_id, static_values, .. }
+                    if pool_id == "$slot:0" && static_values.is_empty()
+            ),
+            "the pool defers to its slot with values left for aggregation"
+        );
     }
 
     #[test]

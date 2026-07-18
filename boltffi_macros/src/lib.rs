@@ -289,7 +289,16 @@ pub fn scaffolding(item: TokenStream) -> TokenStream {
 
 #[proc_macro]
 pub fn interned_string_pool(item: TokenStream) -> TokenStream {
-    interned_string::interned_string_pool_impl(item)
+    let captured = if experimental_build_active() {
+        proc_macro2::TokenStream::new()
+    } else {
+        capture::interned_string_pool_tokens(item.clone())
+    };
+    let expanded = proc_macro2::TokenStream::from(interned_string::interned_string_pool_impl(item));
+    TokenStream::from(quote! {
+        #expanded
+        #captured
+    })
 }
 
 #[proc_macro_attribute]

@@ -446,9 +446,6 @@ impl<'a> Scanner<'a> {
         segment: &syn::PathSegment,
         source: &syn::Type,
     ) -> Result<TypeExpr, ScanError> {
-        if self.declared_types.is_deferred() {
-            return Err(ScanError::unsupported_type(source));
-        }
         let pool = self.single_type_argument(segment, source)?;
         let syn::Type::Path(pool_path) = unwrapped(pool) else {
             return Err(ScanError::unsupported_type(source));
@@ -461,6 +458,14 @@ impl<'a> Scanner<'a> {
                 .any(|segment| !matches!(segment.arguments, syn::PathArguments::None))
         {
             return Err(ScanError::unsupported_type(source));
+        }
+        if let Some(index) = self.declared_types.defer_slot(&pool_path.path) {
+            return Ok(TypeExpr::interned_string(
+                interned_string_base_path(&type_path.path),
+                format!("$slot:{index}"),
+                ast_path_without_arguments(&pool_path.path),
+                Vec::new(),
+            ));
         }
         let (pool_canonical_path, static_values) = self
             .declared_types
