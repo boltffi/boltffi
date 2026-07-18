@@ -1125,7 +1125,7 @@ mod tests {
             "metadata_fixture::domain::Point",
             "the record's identity comes from its defining module"
         );
-        assert_eq!(contract.functions.len(), 5);
+        assert_eq!(contract.functions.len(), 8);
         let browser_fn = contract
             .functions
             .iter()
@@ -1210,7 +1210,11 @@ mod tests {
             "the stream item resolves cross-module through the compiler"
         );
         assert_eq!(contract.constants.len(), 1, "the constant is captured");
-        assert_eq!(contract.customs.len(), 2, "both custom types are captured");
+        assert_eq!(
+            contract.customs.len(),
+            3,
+            "all three custom types are captured"
+        );
         assert!(
             contract
                 .customs
@@ -1236,6 +1240,41 @@ mod tests {
                     if id.as_str() == "metadata_fixture::clock::Label"
             ),
             "the custom_ffi reference classifies through its defining fragment"
+        );
+        assert_eq!(contract.traits.len(), 1, "the callback trait is captured");
+        assert_eq!(
+            contract.traits[0].id.as_str(),
+            "metadata_fixture::api::Doubler"
+        );
+        let doubler_fn = contract
+            .functions
+            .iter()
+            .find(|function| function.id.as_str() == "metadata_fixture::api::apply_doubler")
+            .expect("the impl-Trait function is captured");
+        assert!(
+            matches!(
+                &doubler_fn.parameters[0].type_expr,
+                boltffi_ast::TypeExpr::ImplTrait(bounds)
+                    if matches!(
+                        &bounds.base,
+                        boltffi_ast::BaseTrait::Named { id, .. }
+                            if id.as_str() == "metadata_fixture::api::Doubler"
+                    )
+            ),
+            "the impl-Trait callback resolves through the trait's dyn identity"
+        );
+        let span_fn = contract
+            .functions
+            .iter()
+            .find(|function| function.id.as_str() == "metadata_fixture::clock::range_width")
+            .expect("the generic-remote function is captured");
+        assert!(
+            matches!(
+                &span_fn.parameters[0].type_expr,
+                boltffi_ast::TypeExpr::Custom { id, .. }
+                    if id.as_str() == "metadata_fixture::clock::ByteSpan"
+            ),
+            "the generic remote classifies through its custom_type! fragment"
         );
         let stamp_fn = contract
             .functions
@@ -1284,8 +1323,8 @@ mod tests {
                 .iter()
                 .filter(|decl| matches!(decl, Decl::Record(_) | Decl::Function(_)))
                 .count(),
-            6,
-            "the point record and all five functions lower"
+            9,
+            "the point record and all eight functions lower"
         );
     }
 
@@ -1361,7 +1400,7 @@ mod tests {
             boltffi_binding::aggregate_records(&source.source_records, source.package.clone())
                 .expect("wasm32-built records aggregate");
         assert_eq!(contract.records.len(), 1);
-        assert_eq!(contract.functions.len(), 5);
+        assert_eq!(contract.functions.len(), 8);
         assert_eq!(contract.classes.len(), 1);
         assert_eq!(contract.streams.len(), 1);
 
@@ -1373,8 +1412,8 @@ mod tests {
                 .iter()
                 .filter(|decl| matches!(decl, Decl::Record(_) | Decl::Function(_)))
                 .count(),
-            6,
-            "the point record and all five functions lower from the wasm32 artifacts"
+            9,
+            "the point record and all eight functions lower from the wasm32 artifacts"
         );
     }
 
@@ -1412,7 +1451,7 @@ mod tests {
                 .iter()
                 .filter(|decl| matches!(decl, Decl::Function(_)))
                 .count(),
-            5
+            8
         );
     }
 
@@ -1715,9 +1754,26 @@ pub mod domain {
 }
 
 pub mod clock {
+    use std::ops::Range;
+
     use boltffi::{CustomFfiConvertible, custom_ffi, custom_type};
 
     pub struct Stamp(pub i64);
+
+    custom_type!(
+        ByteSpan,
+        remote = Range<u32>,
+        repr = u64,
+        into_ffi = |span: &Range<u32>| (u64::from(span.start) << 32) | u64::from(span.end),
+        try_from_ffi = |bits: u64| {
+            Ok::<_, boltffi::CustomTypeConversionError>((bits >> 32) as u32..bits as u32)
+        },
+    );
+
+    #[boltffi::export]
+    pub fn range_width(span: Range<u32>) -> u32 {
+        span.end - span.start
+    }
 
     custom_type!(
         Stamp,
@@ -1770,6 +1826,21 @@ pub mod api {
     #[export]
     pub fn label_text(label: Label) -> String {
         label.0
+    }
+
+    #[export]
+    pub trait Doubler {
+        fn double(&self, value: i32) -> i32;
+    }
+
+    #[export]
+    pub fn apply_doubler(doubler: impl Doubler, value: i32) -> i32 {
+        doubler.double(value)
+    }
+
+    #[export]
+    pub fn apply_boxed_doubler(doubler: Box<dyn Doubler>, value: i32) -> i32 {
+        doubler.double(value)
     }
 
     #[export]

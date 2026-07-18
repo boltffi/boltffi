@@ -57,7 +57,14 @@ pub(crate) fn item_tokens(item: proc_macro::TokenStream, impl_capture: ImplCaptu
             Err(error) => unsupported_tokens(&item.sig.ident.to_string(), &error.to_string()),
         },
         syn::Item::Trait(item) => match capture_trait(item) {
-            Ok(captured) => record_tokens(&SourceFragment::Trait(captured.def), &captured.slots),
+            Ok(captured) => {
+                let identity = trait_identity_tokens(item);
+                let record = record_tokens(&SourceFragment::Trait(captured.def), &captured.slots);
+                quote! {
+                    #identity
+                    #record
+                }
+            }
             Err(error) => unsupported_tokens(&item.ident.to_string(), &error.to_string()),
         },
         syn::Item::Impl(item) => {
@@ -184,7 +191,11 @@ pub(crate) fn scaffolding_tokens() -> TokenStream {
     }
 }
 
-fn data_tokens(ident: &syn::Ident, fragment: SourceFragment, slots: &[syn::Path]) -> TokenStream {
+fn data_tokens(
+    ident: &syn::Ident,
+    fragment: SourceFragment,
+    slots: &[boltffi_scan::SlotSource],
+) -> TokenStream {
     let name = ident.to_string();
     let record = record_tokens(&fragment, slots);
     let facade = facade();
@@ -207,7 +218,7 @@ fn data_tokens(ident: &syn::Ident, fragment: SourceFragment, slots: &[syn::Path]
     }
 }
 
-fn record_tokens(fragment: &SourceFragment, slots: &[syn::Path]) -> TokenStream {
+fn record_tokens(fragment: &SourceFragment, slots: &[boltffi_scan::SlotSource]) -> TokenStream {
     let json = match serde_json::to_vec(fragment) {
         Ok(json) => Literal::byte_string(&json),
         Err(_) => return TokenStream::new(),
@@ -216,11 +227,16 @@ fn record_tokens(fragment: &SourceFragment, slots: &[syn::Path]) -> TokenStream 
     let descs = slots
         .iter()
         .enumerate()
-        .map(|(index, path)| {
+        .map(|(index, source)| {
             let ident = format_ident!("DESC_{index}");
+            let desc = match source {
+                boltffi_scan::SlotSource::Type(ty) => quote! {
+                    &<#ty as #facade::__private::capture::TypeDesc<crate::__BoltffiTag>>::DESC
+                },
+                boltffi_scan::SlotSource::TraitValue(path) => quote! { &#path },
+            };
             quote! {
-                const #ident: &'static #facade::__private::capture::DescBuf =
-                    &<#path as #facade::__private::capture::TypeDesc<crate::__BoltffiTag>>::DESC;
+                const #ident: &'static #facade::__private::capture::DescBuf = #desc;
             }
         })
         .collect::<Vec<_>>();
@@ -307,6 +323,22 @@ pub(crate) fn custom_type_tokens(item: proc_macro::TokenStream) -> TokenStream {
             }
         };
         #record
+    }
+}
+
+/// A trait's descriptor lives in the value namespace under the trait's own
+/// name, so use sites reach it through the same written path as the bound —
+/// with no dyn-compatibility requirement on the trait.
+fn trait_identity_tokens(item: &syn::ItemTrait) -> TokenStream {
+    let vis = &item.vis;
+    let ident = &item.ident;
+    let name = ident.to_string();
+    let facade = facade();
+    quote! {
+        #[doc(hidden)]
+        #[allow(non_upper_case_globals)]
+        #vis const #ident: #facade::__private::capture::DescBuf =
+            #facade::__private::capture::DescBuf::named(::core::module_path!(), #name);
     }
 }
 

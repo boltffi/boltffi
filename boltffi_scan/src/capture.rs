@@ -13,12 +13,30 @@ use crate::declared_types::DeclaredTypes;
 use crate::path::{ModulePath, ModuleScope};
 use crate::{ScanError, items};
 
+/// One deferred reference, in the form the record emitter projects it through.
+pub enum SlotSource {
+    /// A type whose descriptor comes from its `TypeDesc` impl.
+    Type(Box<syn::Type>),
+    /// A trait bound whose descriptor is the value-namespace const the trait's
+    /// definition site emits under the trait's own name.
+    TraitValue(syn::Path),
+}
+
+impl quote::ToTokens for SlotSource {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        match self {
+            Self::Type(ty) => ty.to_tokens(tokens),
+            Self::TraitValue(path) => path.to_tokens(tokens),
+        }
+    }
+}
+
 /// One item scanned in deferred-resolution mode.
 pub struct CapturedItem<Def> {
     /// The declaration with placeholder ids and slot leaves.
     pub def: Def,
-    /// Written paths of the deferred references, in slot-index order.
-    pub slots: Vec<syn::Path>,
+    /// Written references, in slot-index order.
+    pub slots: Vec<SlotSource>,
 }
 
 /// Captures a `#[data]` struct as a record definition.
@@ -122,8 +140,8 @@ pub struct CapturedMethods {
     pub spelling: String,
     /// The block's methods, with ids nested under the target's slot placeholder.
     pub methods: Vec<MethodDef>,
-    /// Written paths of the deferred references, in slot-index order.
-    pub slots: Vec<syn::Path>,
+    /// Written references, in slot-index order.
+    pub slots: Vec<SlotSource>,
 }
 
 /// Captures a `#[data(impl)]` methods block against its slot-deferred target.
@@ -213,6 +231,65 @@ mod tests {
         assert!(
             matches!(&captured.def.fields[2].type_expr, TypeExpr::String),
             "standard leaves never take a slot"
+        );
+    }
+
+    #[test]
+    fn captures_trait_bounds_as_value_namespace_slots() {
+        let item: syn::ItemFn = syn::parse_quote! {
+            pub fn apply(callback: impl ValueCallback, boxed: Box<dyn ValueCallback + Send>) -> i32 {
+                0
+            }
+        };
+
+        let captured = capture_function(&item).expect("function captures");
+
+        assert_eq!(
+            captured.slots.len(),
+            1,
+            "impl and dyn references to one trait share a slot"
+        );
+        assert!(
+            matches!(&captured.slots[0], SlotSource::TraitValue(path)
+                if path.to_token_stream().to_string() == "ValueCallback"),
+            "trait slots reference the descriptor const by the written path"
+        );
+        assert!(
+            matches!(
+                &captured.def.parameters[0].type_expr,
+                TypeExpr::ImplTrait(bounds)
+                    if matches!(
+                        &bounds.base,
+                        boltffi_ast::BaseTrait::Named { id, .. } if id.as_str() == "$slot:0"
+                    )
+            ),
+            "the impl-Trait base defers to the trait slot"
+        );
+    }
+
+    #[test]
+    fn captures_generic_remote_paths_as_whole_type_slots() {
+        let item: syn::ItemFn = syn::parse_quote! {
+            pub fn width(span: Range<u32>) -> u32 {
+                0
+            }
+        };
+
+        let captured = capture_function(&item).expect("function captures");
+
+        assert_eq!(captured.slots.len(), 1);
+        assert!(
+            matches!(&captured.slots[0], SlotSource::Type(ty)
+                if ty.to_token_stream().to_string() == "Range < u32 >"),
+            "the generic path defers whole, compiler-resolved at the custom's impl"
+        );
+        assert!(
+            matches!(
+                &captured.def.parameters[0].type_expr,
+                TypeExpr::Record { id, path }
+                    if id.as_str() == "$slot:0" && path.last().is_some_and(|segment| segment.name.as_str() == "Range")
+            ),
+            "the provisional leaf carries the argument-less written path"
         );
     }
 

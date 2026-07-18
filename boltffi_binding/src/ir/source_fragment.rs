@@ -244,6 +244,7 @@ enum DeclaredKind {
     Enum,
     Class,
     Custom,
+    Trait,
 }
 
 #[derive(Debug, Default)]
@@ -258,8 +259,8 @@ fn declared_kind(fragment: &SourceFragment) -> Option<DeclaredKind> {
         SourceFragment::Enum(_) => Some(DeclaredKind::Enum),
         SourceFragment::Class(_) => Some(DeclaredKind::Class),
         SourceFragment::Custom(_) => Some(DeclaredKind::Custom),
+        SourceFragment::Trait(_) => Some(DeclaredKind::Trait),
         SourceFragment::Function(_)
-        | SourceFragment::Trait(_)
         | SourceFragment::Stream(_)
         | SourceFragment::Constant(_)
         | SourceFragment::InternedStringPool { .. }
@@ -519,8 +520,25 @@ fn resolve_expr(
         }
         TypeExpr::FnPtr(signature) => resolve_fn_sig(signature, slots, declared),
         TypeExpr::Dyn(bounds) | TypeExpr::ImplTrait(bounds) => {
-            if let boltffi_ast::BaseTrait::Function(function_trait) = &mut bounds.base {
-                resolve_fn_sig(&mut function_trait.signature, slots, declared)?;
+            match &mut bounds.base {
+                boltffi_ast::BaseTrait::Function(function_trait) => {
+                    resolve_fn_sig(&mut function_trait.signature, slots, declared)?;
+                }
+                boltffi_ast::BaseTrait::Named { id, .. } => {
+                    if let Some(index) = id.as_str().strip_prefix(SLOT_ID_PREFIX) {
+                        let TypeNode::Id { id: resolved } = slot_node(index, slots)? else {
+                            return Err(SourceFragmentError::UnresolvedReference {
+                                id: id.as_str().to_owned(),
+                            });
+                        };
+                        if declared.kinds.get(resolved) != Some(&DeclaredKind::Trait) {
+                            return Err(SourceFragmentError::UnresolvedReference {
+                                id: resolved.clone(),
+                            });
+                        }
+                        *id = boltffi_ast::TraitId::new(resolved.clone());
+                    }
+                }
             }
             Ok(())
         }
@@ -574,6 +592,9 @@ fn node_expr(
                 DeclaredKind::Class => TypeExpr::class(ClassId::new(id.clone()), path),
                 DeclaredKind::Custom => {
                     TypeExpr::custom(boltffi_ast::CustomTypeId::new(id.clone()), path)
+                }
+                DeclaredKind::Trait => {
+                    return Err(SourceFragmentError::UnresolvedReference { id: id.clone() });
                 }
             })
         }

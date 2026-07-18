@@ -3,6 +3,7 @@ use std::collections::{HashMap, HashSet};
 
 use boltffi_ast::{ClassId, CustomRemoteType, CustomTypeId, EnumId, RecordId, TraitId};
 
+use crate::capture::SlotSource;
 use crate::impl_target;
 use crate::items;
 use crate::marked::MarkedItems;
@@ -41,7 +42,7 @@ pub(super) struct DeclaredTypes {
 /// Named type references collected while scanning in deferred-resolution mode.
 #[derive(Default)]
 struct SlotTable {
-    paths: Vec<syn::Path>,
+    sources: Vec<SlotSource>,
     by_spelling: HashMap<String, usize>,
 }
 
@@ -60,22 +61,42 @@ impl DeclaredTypes {
     }
 
     pub(super) fn defer_slot(&self, path: &syn::Path) -> Option<usize> {
+        self.defer_slot_keyed(spelling::path(path), || {
+            SlotSource::Type(Box::new(syn::Type::Path(syn::TypePath {
+                qself: None,
+                path: path.clone(),
+            })))
+        })
+    }
+
+    /// Defers a trait bound's path as a value-namespace slot, so the descriptor
+    /// resolves through the const the trait's definition site emits.
+    pub(super) fn defer_trait_slot(&self, path: &syn::Path) -> Option<usize> {
+        self.defer_slot_keyed(format!("trait {}", spelling::path(path)), || {
+            SlotSource::TraitValue(path.clone())
+        })
+    }
+
+    fn defer_slot_keyed(
+        &self,
+        spelling: String,
+        source: impl FnOnce() -> SlotSource,
+    ) -> Option<usize> {
         let slots = self.deferred_slots.as_ref()?;
         let mut slots = slots.borrow_mut();
-        let spelling = spelling::path(path);
         if let Some(index) = slots.by_spelling.get(&spelling) {
             return Some(*index);
         }
-        let index = slots.paths.len();
-        slots.paths.push(path.clone());
+        let index = slots.sources.len();
+        slots.sources.push(source());
         slots.by_spelling.insert(spelling, index);
         Some(index)
     }
 
-    pub(super) fn take_slots(&mut self) -> Vec<syn::Path> {
+    pub(super) fn take_slots(&mut self) -> Vec<SlotSource> {
         self.deferred_slots
             .take()
-            .map(|slots| slots.into_inner().paths)
+            .map(|slots| slots.into_inner().sources)
             .unwrap_or_default()
     }
 
