@@ -1125,12 +1125,38 @@ mod tests {
             "metadata_fixture::domain::Point",
             "the record's identity comes from its defining module"
         );
-        assert_eq!(contract.functions.len(), 2);
+        assert_eq!(contract.functions.len(), 3);
         assert!(
             contract
                 .functions
                 .iter()
                 .any(|function| function.id.as_str() == "metadata_fixture::api::origin")
+        );
+        assert_eq!(contract.enums.len(), 1, "the error enum is captured");
+        assert!(
+            contract.enums[0].user_attrs.iter().any(|attr| {
+                attr.path
+                    .last()
+                    .is_some_and(|segment| segment.name.as_str() == "error")
+            }),
+            "the error marker rides the captured enum"
+        );
+        let shift_fn = contract
+            .functions
+            .iter()
+            .find(|function| function.id.as_str() == "metadata_fixture::api::checked_shift")
+            .expect("the fallible function is captured");
+        assert!(
+            matches!(
+                &shift_fn.returns,
+                boltffi_ast::ReturnDef::Value(boltffi_ast::TypeExpr::Result { err, .. })
+                    if matches!(
+                        err.as_ref(),
+                        boltffi_ast::TypeExpr::Enum { id, .. }
+                            if id.as_str() == "metadata_fixture::api::ShiftError"
+                    )
+            ),
+            "the error reference classifies as an enum through its defining fragment"
         );
         assert_eq!(contract.classes.len(), 1, "the class impl is captured");
         assert_eq!(
@@ -1194,7 +1220,12 @@ mod tests {
             contract.records[0].methods[0].id.as_str(),
             "metadata_fixture::domain::Point::doubled"
         );
-        let boltffi_ast::ReturnDef::Value(returned) = &contract.functions[0].returns else {
+        let origin_fn = contract
+            .functions
+            .iter()
+            .find(|function| function.id.as_str() == "metadata_fixture::api::origin")
+            .expect("origin is captured");
+        let boltffi_ast::ReturnDef::Value(returned) = &origin_fn.returns else {
             panic!("origin returns a value");
         };
         assert!(
@@ -1214,8 +1245,8 @@ mod tests {
                 .iter()
                 .filter(|decl| matches!(decl, Decl::Record(_) | Decl::Function(_)))
                 .count(),
-            3,
-            "the point record and both functions lower"
+            4,
+            "the point record and all three functions lower"
         );
     }
 
@@ -1253,7 +1284,7 @@ mod tests {
                 .iter()
                 .filter(|decl| matches!(decl, Decl::Function(_)))
                 .count(),
-            2
+            3
         );
     }
 
@@ -1588,6 +1619,29 @@ pub mod api {
     #[export]
     pub fn stamp_value(stamp: Stamp) -> i64 {
         stamp.0
+    }
+
+    #[boltffi::error]
+    #[derive(Clone, Debug)]
+    pub enum ShiftError {
+        OutOfRange,
+    }
+
+    impl std::fmt::Display for ShiftError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "out of range")
+        }
+    }
+
+    impl std::error::Error for ShiftError {}
+
+    #[export]
+    pub fn checked_shift(point: Point, by: f64) -> Result<Point, ShiftError> {
+        if by.is_finite() {
+            Ok(Point { x: point.x + by })
+        } else {
+            Err(ShiftError::OutOfRange)
+        }
     }
 
     pub struct Session {

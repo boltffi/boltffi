@@ -5,8 +5,8 @@
 
 use boltffi_binding::SourceFragment;
 use boltffi_scan::{
-    capture_class, capture_constant, capture_enum, capture_function, capture_methods,
-    capture_streams, capture_struct, capture_trait,
+    capture_class, capture_constant, capture_enum, capture_error_enum, capture_error_struct,
+    capture_function, capture_methods, capture_streams, capture_struct, capture_trait,
 };
 use proc_macro2::{Literal, TokenStream};
 use quote::{format_ident, quote};
@@ -92,6 +92,31 @@ pub(crate) fn item_tokens(item: proc_macro::TokenStream, impl_capture: ImplCaptu
         syn::Item::Const(item) => match capture_constant(item) {
             Ok(captured) => record_tokens(&SourceFragment::Constant(captured.def), &captured.slots),
             Err(error) => unsupported_tokens(&item.ident.to_string(), &error.to_string()),
+        },
+        _ => TokenStream::new(),
+    }
+}
+
+pub(crate) fn error_item_tokens(item: proc_macro::TokenStream) -> TokenStream {
+    let Ok(item) = syn::parse::<syn::Item>(item) else {
+        return TokenStream::new();
+    };
+    match &item {
+        syn::Item::Struct(item) => match capture_error_struct(item) {
+            Ok(captured) => data_tokens(
+                &item.ident,
+                SourceFragment::Record(captured.def),
+                &captured.slots,
+            ),
+            Err(error) => data_unsupported_tokens(&item.ident, &error.to_string()),
+        },
+        syn::Item::Enum(item) => match capture_error_enum(item) {
+            Ok(captured) => data_tokens(
+                &item.ident,
+                SourceFragment::Enum(captured.def),
+                &captured.slots,
+            ),
+            Err(error) => data_unsupported_tokens(&item.ident, &error.to_string()),
         },
         _ => TokenStream::new(),
     }

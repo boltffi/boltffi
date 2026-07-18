@@ -31,6 +31,20 @@ pub fn capture_enum(item: &syn::ItemEnum) -> Result<CapturedItem<EnumDef>, ScanE
     captured(|scope, declared_types| items::enumeration::scan_item(item, scope, declared_types))
 }
 
+/// Captures an `#[error]` struct as a record definition carrying the error marker.
+pub fn capture_error_struct(item: &syn::ItemStruct) -> Result<CapturedItem<RecordDef>, ScanError> {
+    let mut captured = capture_struct(item)?;
+    crate::marker::Marker::Error.append_value_attrs(&mut captured.def.user_attrs);
+    Ok(captured)
+}
+
+/// Captures an `#[error]` enum as an enum definition carrying the error marker.
+pub fn capture_error_enum(item: &syn::ItemEnum) -> Result<CapturedItem<EnumDef>, ScanError> {
+    let mut captured = capture_enum(item)?;
+    crate::marker::Marker::Error.append_value_attrs(&mut captured.def.user_attrs);
+    Ok(captured)
+}
+
 /// Captures an `#[export]` free function as a function definition.
 pub fn capture_function(item: &syn::ItemFn) -> Result<CapturedItem<FunctionDef>, ScanError> {
     captured(|scope, declared_types| items::function::scan_item(item, scope, declared_types))
@@ -208,6 +222,26 @@ mod tests {
 
         assert_eq!(captured.def.id.as_str(), "$self::Shape");
         assert_eq!(captured.slots.len(), 1);
+    }
+
+    #[test]
+    fn captures_error_items_with_the_error_marker() {
+        let item: syn::ItemEnum = syn::parse_quote! {
+            pub enum MathError {
+                DivisionByZero,
+            }
+        };
+
+        let captured = capture_error_enum(&item).expect("error enum captures");
+
+        assert!(
+            captured.def.user_attrs.iter().any(|attr| {
+                attr.path
+                    .last()
+                    .is_some_and(|segment| segment.name.as_str() == "error")
+            }),
+            "the error marker rides as a user attr"
+        );
     }
 
     #[test]

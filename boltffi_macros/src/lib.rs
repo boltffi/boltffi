@@ -312,11 +312,20 @@ pub fn data(attr: TokenStream, item: TokenStream) -> TokenStream {
 
 #[proc_macro_attribute]
 pub fn error(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    expand_or_experimental(
+    let captured = if experimental_build_active() {
+        proc_macro2::TokenStream::new()
+    } else {
+        capture::error_item_tokens(item.clone())
+    };
+    let expanded = proc_macro2::TokenStream::from(expand_without_capture(
         data::repr::materialize(item),
         data::expansion::data_impl,
         DependencyExpansion::Legacy,
-    )
+    ));
+    TokenStream::from(quote! {
+        #expanded
+        #captured
+    })
 }
 
 #[proc_macro_derive(Data)]
