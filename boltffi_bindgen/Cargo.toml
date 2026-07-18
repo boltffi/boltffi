@@ -27,6 +27,7 @@ indexmap = "2.7"
 object.workspace = true
 
 [dev-dependencies]
+boltffi_scan.workspace = true
 insta.workspace = true
 rstest.workspace = true
 

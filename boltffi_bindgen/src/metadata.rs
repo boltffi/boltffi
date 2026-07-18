@@ -1268,6 +1268,47 @@ mod tests {
     }
 
     #[test]
+    fn cargo_build_source_records_lower_equivalently_to_the_legacy_scan() {
+        if cfg!(miri) {
+            return;
+        }
+
+        let fixture = FixtureCrate::with_boltffi_macros();
+
+        let source = BindingMetadataBuild::new(fixture.manifest())
+            .read_source()
+            .expect("cargo source metadata read");
+        let contract =
+            boltffi_binding::aggregate_records(&source.source_records, source.package.clone())
+                .expect("records aggregate");
+        let actual =
+            boltffi_binding::lower::<Native>(&contract).expect("aggregated contract lowers");
+
+        let lib_rs = fixture
+            .manifest()
+            .parent()
+            .expect("fixture manifest has a directory")
+            .join("src/lib.rs");
+        let mut scanned = boltffi_scan::scan_source(&lib_rs, source.package.clone())
+            .expect("legacy scan reads the fixture source");
+        scanned.records.sort_by(|a, b| a.id.cmp(&b.id));
+        scanned.enums.sort_by(|a, b| a.id.cmp(&b.id));
+        scanned.functions.sort_by(|a, b| a.id.cmp(&b.id));
+        scanned.classes.sort_by(|a, b| a.id.cmp(&b.id));
+        scanned.traits.sort_by(|a, b| a.id.cmp(&b.id));
+        scanned.streams.sort_by(|a, b| a.id.cmp(&b.id));
+        scanned.constants.sort_by(|a, b| a.id.cmp(&b.id));
+        scanned.customs.sort_by(|a, b| a.id.cmp(&b.id));
+        let expected = boltffi_binding::lower::<Native>(&scanned).expect("scanned contract lowers");
+
+        assert_eq!(
+            actual.decls(),
+            expected.decls(),
+            "records-fed lowering matches the legacy scanner's declarations"
+        );
+    }
+
+    #[test]
     fn cargo_build_reads_macro_emitted_metadata_without_expanding_wrappers() {
         if cfg!(miri) {
             return;
