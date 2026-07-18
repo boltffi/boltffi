@@ -867,7 +867,7 @@ mod tests {
     use boltffi_ast::{PackageInfo, SourceContract};
     use boltffi_binding::{
         BINDING_METADATA_SURFACE_ENV, BindingMetadataEnvelope, BindingMetadataSection,
-        BindingMetadataSurface, Decl, Native, SerializedBindings, lower_with_declarations,
+        BindingMetadataSurface, Decl, Native, SerializedBindings, Wasm32, lower_with_declarations,
     };
 
     use super::{
@@ -1305,6 +1305,54 @@ mod tests {
             actual.decls(),
             expected.decls(),
             "records-fed lowering matches the legacy scanner's declarations"
+        );
+
+        let actual_wasm = boltffi_binding::lower::<Wasm32>(&contract)
+            .expect("aggregated contract lowers to wasm32");
+        let expected_wasm =
+            boltffi_binding::lower::<Wasm32>(&scanned).expect("scanned contract lowers to wasm32");
+        assert_eq!(
+            actual_wasm.decls(),
+            expected_wasm.decls(),
+            "the same host-built records serve the wasm32 surface without cross-compiling"
+        );
+    }
+
+    #[test]
+    fn cargo_build_reads_source_records_from_a_wasm32_target_build() {
+        if cfg!(miri) {
+            return;
+        }
+        if !wasm32_target_installed() {
+            eprintln!("skipping: the wasm32-unknown-unknown target is not installed");
+            return;
+        }
+
+        let fixture = FixtureCrate::with_boltffi_macros();
+
+        let source = BindingMetadataBuild::new(fixture.manifest())
+            .target("wasm32-unknown-unknown")
+            .read_source()
+            .expect("wasm32 source metadata read");
+
+        let contract =
+            boltffi_binding::aggregate_records(&source.source_records, source.package.clone())
+                .expect("wasm32-built records aggregate");
+        assert_eq!(contract.records.len(), 1);
+        assert_eq!(contract.functions.len(), 4);
+        assert_eq!(contract.classes.len(), 1);
+        assert_eq!(contract.streams.len(), 1);
+
+        let bindings =
+            boltffi_binding::lower::<Wasm32>(&contract).expect("wasm32-built contract lowers");
+        assert_eq!(
+            bindings
+                .decls()
+                .iter()
+                .filter(|decl| matches!(decl, Decl::Record(_) | Decl::Function(_)))
+                .count(),
+            5,
+            "the point record and all four functions lower from the wasm32 artifacts"
         );
     }
 
@@ -1876,6 +1924,23 @@ pub mod api {
         let lowered = lower_with_declarations::<Native>(&source).expect("empty source lowers");
         BindingMetadataEnvelope::new(SerializedBindings::native(lowered.into_bindings()))
             .expect("metadata envelope")
+    }
+
+    fn wasm32_target_installed() -> bool {
+        std::process::Command::new("rustc")
+            .args([
+                "--print",
+                "target-libdir",
+                "--target",
+                "wasm32-unknown-unknown",
+            ])
+            .output()
+            .ok()
+            .filter(|output| output.status.success())
+            .map(|output| PathBuf::from(String::from_utf8_lossy(&output.stdout).trim()))
+            .is_some_and(|libdir| {
+                fs::read_dir(libdir).is_ok_and(|mut entries| entries.next().is_some())
+            })
     }
 
     fn workspace_crate(name: &str) -> PathBuf {
