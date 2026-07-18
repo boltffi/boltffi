@@ -869,6 +869,43 @@ mod tests {
     }
 
     #[test]
+    fn mints_stream_ids_and_owners() {
+        let mut stream = StreamDef::new(
+            StreamId::new(format!("{SELF_ID}::Engine::points")),
+            name("points"),
+            slot_leaf(0, "Point"),
+        );
+        stream.owner = Some(ClassId::new(format!("{SELF_ID}::Engine")));
+        let stream = raw(
+            "demo::runtime",
+            &[r#"{"id":"demo::geometry::Point"}"#],
+            serde_json::to_vec(&SourceFragment::Stream(stream)).expect("fragment serializes"),
+        );
+
+        let contract = aggregate_records(&[stream, point_record()], PackageInfo::new("demo", None))
+            .expect("records aggregate");
+
+        assert_eq!(contract.streams.len(), 1);
+        assert_eq!(
+            contract.streams[0].id,
+            StreamId::new("demo::runtime::Engine::points"),
+            "stream ids mint from the invocation's module path"
+        );
+        assert_eq!(
+            contract.streams[0].owner,
+            Some(ClassId::new("demo::runtime::Engine")),
+            "the owner placeholder mints against the same module"
+        );
+        assert!(
+            matches!(
+                &contract.streams[0].item_type,
+                TypeExpr::Record { id, .. } if id == &RecordId::new("demo::geometry::Point")
+            ),
+            "the item type resolves through its slot"
+        );
+    }
+
+    #[test]
     fn rejects_a_reference_no_record_declares() {
         let route = raw(
             "demo",

@@ -1146,6 +1146,26 @@ mod tests {
             ),
             "class method references resolve through the compiler"
         );
+        assert_eq!(contract.streams.len(), 1, "the stream method is captured");
+        assert_eq!(
+            contract.streams[0].id.as_str(),
+            "metadata_fixture::api::Session::moves"
+        );
+        assert_eq!(
+            contract.streams[0]
+                .owner
+                .as_ref()
+                .map(|owner| owner.as_str()),
+            Some("metadata_fixture::api::Session")
+        );
+        assert!(
+            matches!(
+                &contract.streams[0].item_type,
+                boltffi_ast::TypeExpr::Record { id, .. }
+                    if id.as_str() == "metadata_fixture::domain::Point"
+            ),
+            "the stream item resolves cross-module through the compiler"
+        );
         assert_eq!(contract.constants.len(), 1, "the constant is captured");
         assert_eq!(contract.customs.len(), 1, "the custom type is captured");
         assert_eq!(
@@ -1550,7 +1570,9 @@ pub mod clock {
 }
 
 pub mod api {
-    use boltffi::export;
+    use std::sync::Arc;
+
+    use boltffi::{EventSubscription, export, ffi_stream};
 
     use crate::clock::Stamp;
     use crate::domain::Point;
@@ -1580,6 +1602,11 @@ pub mod api {
 
         pub fn shift(&self, by: f64) -> Point {
             Point { x: self.origin.x + by }
+        }
+
+        #[ffi_stream(item = Point)]
+        pub fn moves(&self) -> Arc<EventSubscription<Point>> {
+            todo!()
         }
     }
 }

@@ -5,8 +5,8 @@
 //! to project through the compiler at the invocation site.
 
 use boltffi_ast::{
-    ClassDef, ConstantDef, CustomTypeDef, EnumDef, FunctionDef, MethodDef, RecordDef, TraitDef,
-    TypeExpr,
+    ClassDef, ConstantDef, CustomTypeDef, EnumDef, FunctionDef, MethodDef, RecordDef, StreamDef,
+    TraitDef, TypeExpr,
 };
 
 use crate::declared_types::DeclaredTypes;
@@ -39,6 +39,11 @@ pub fn capture_function(item: &syn::ItemFn) -> Result<CapturedItem<FunctionDef>,
 /// Captures an `#[export] impl` block as a class definition.
 pub fn capture_class(item: &syn::ItemImpl) -> Result<CapturedItem<ClassDef>, ScanError> {
     captured(|scope, declared_types| items::class::scan_item(item, scope, declared_types))
+}
+
+/// Captures the `#[ffi_stream]` methods of an `#[export] impl` block as stream definitions.
+pub fn capture_streams(item: &syn::ItemImpl) -> Result<CapturedItem<Vec<StreamDef>>, ScanError> {
+    captured(|scope, declared_types| items::stream::scan_item(item, scope, declared_types))
 }
 
 /// Captures an `#[export]` constant as a constant definition.
@@ -249,6 +254,76 @@ mod tests {
             captured.def.methods[0].id.as_str(),
             "$self::Counter::new",
             "method ids nest under the class placeholder"
+        );
+    }
+
+    #[test]
+    fn captures_stream_methods_with_deferred_item_types() {
+        let item: syn::ItemImpl = syn::parse_quote! {
+            impl Engine {
+                pub fn start(&self) {}
+
+                #[ffi_stream(item = Point, mode = "batch")]
+                pub fn points(&self) -> Arc<EventSubscription<Point>> {
+                    unimplemented!()
+                }
+            }
+        };
+
+        let captured = capture_streams(&item).expect("streams capture");
+
+        assert_eq!(captured.def.len(), 1, "only stream methods produce streams");
+        assert_eq!(captured.def[0].id.as_str(), "$self::Engine::points");
+        assert_eq!(
+            captured.def[0].owner.as_ref().map(|owner| owner.as_str()),
+            Some("$self::Engine")
+        );
+        assert_eq!(captured.def[0].mode, boltffi_ast::StreamMode::Batch);
+        assert!(
+            matches!(
+                &captured.def[0].item_type,
+                TypeExpr::Record { id, .. } if id.as_str() == "$slot:0"
+            ),
+            "the item type defers to its slot"
+        );
+        assert_eq!(
+            captured.slots.len(),
+            1,
+            "the runtime wrapper types never take slots"
+        );
+    }
+
+    #[test]
+    fn captures_stream_methods_with_qualified_runtime_types() {
+        let item: syn::ItemImpl = syn::parse_quote! {
+            impl Engine {
+                #[ffi_stream(item = i32)]
+                pub fn values(&self) -> std::sync::Arc<boltffi::EventSubscription<i32>> {
+                    unimplemented!()
+                }
+            }
+        };
+
+        let captured = capture_streams(&item).expect("streams capture");
+
+        assert_eq!(captured.def.len(), 1);
+        assert!(matches!(&captured.def[0].item_type, TypeExpr::Primitive(_)));
+    }
+
+    #[test]
+    fn rejects_stream_methods_without_subscription_returns() {
+        let item: syn::ItemImpl = syn::parse_quote! {
+            impl Engine {
+                #[ffi_stream(item = i32)]
+                pub fn values(&self) -> i32 {
+                    unimplemented!()
+                }
+            }
+        };
+
+        assert!(
+            capture_streams(&item).is_err(),
+            "the subscription return shape stays required"
         );
     }
 

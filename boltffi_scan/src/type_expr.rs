@@ -28,6 +28,10 @@ impl<'a> Scanner<'a> {
         self.scope
     }
 
+    pub(crate) fn is_deferred(&self) -> bool {
+        self.declared_types.is_deferred()
+    }
+
     pub fn scan(&self, ty: &syn::Type) -> Result<TypeExpr, ScanError> {
         let unwrapped = unwrapped(ty);
         if let Some(custom) = self.custom_remote(unwrapped)? {
