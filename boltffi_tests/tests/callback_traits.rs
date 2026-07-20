@@ -725,3 +725,46 @@ mod async_fetcher_foreign_failure {
         assert_eq!(result, 0);
     }
 }
+
+mod async_factory_foreign_failure {
+    use super::*;
+    use boltffi::__private::{BoxFromCallbackHandle, CallbackHandle, FfiStatus};
+    use std::ffi::c_void;
+
+    extern "C" fn free_handle(_handle: u64) {}
+
+    extern "C" fn clone_handle(handle: u64) -> u64 {
+        handle
+    }
+
+    extern "C" fn failing_make(
+        _handle: u64,
+        completion: extern "C" fn(*mut c_void, FfiStatus, CallbackHandle),
+        completion_data: *mut c_void,
+    ) {
+        completion(
+            completion_data,
+            FfiStatus::INTERNAL_ERROR,
+            CallbackHandle::NULL,
+        );
+    }
+
+    static FAILING_VTABLE: AsyncCallbackFactoryVTable = AsyncCallbackFactoryVTable {
+        free: free_handle,
+        clone: clone_handle,
+        make: failing_make,
+    };
+
+    #[tokio::test]
+    #[should_panic(expected = "required handle")]
+    async fn completion_failure_panics_for_a_required_handle_return() {
+        unsafe {
+            boltffi_register_callback_boltffi_tests_callbacks_async_callback_factory(
+                &FAILING_VTABLE,
+            );
+        }
+        let handle = boltffi_create_callback_boltffi_tests_callbacks_async_callback_factory(9);
+        let factory = unsafe { ForeignAsyncCallbackFactory::box_from_callback_handle(handle) };
+        let _ = invoke_async_factory_impl(*factory, 5).await;
+    }
+}
