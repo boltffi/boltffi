@@ -2619,7 +2619,12 @@ where
                     .expect("async callback mutex poisoned");
                 if state.completed {
                     if state.status.is_err() {
-                        panic!("async callback failed");
+                        eprintln!(
+                            "boltffi: an infallible async callback completed with a failure \
+                             status; the trait method has no Result to report it through, so \
+                             this is a host language binding bug, not a normal error -- \
+                             continuing as if it completed successfully"
+                        );
                     }
                     std::task::Poll::Ready(())
                 } else {
@@ -2691,7 +2696,12 @@ where
                     .expect("async callback mutex poisoned");
                 if let Some(__boltffi_result) = state.result.take() {
                     if state.status.is_err() {
-                        panic!("async callback failed");
+                        eprintln!(
+                            "boltffi: an infallible async callback completed with a failure \
+                             status; the trait method has no Result to report it through, so \
+                             this is a host language binding bug, not a normal error -- \
+                             continuing with the completion value anyway"
+                        );
                     }
                     std::task::Poll::Ready(#value)
                 } else {
@@ -2759,7 +2769,12 @@ where
                     .expect("async callback mutex poisoned");
                 if let Some(__boltffi_result) = state.result.take() {
                     if state.status.is_err() {
-                        panic!("async callback failed");
+                        panic!(
+                            "boltffi: an infallible async callback completed with a failure \
+                             status; the trait method has no Result to report it through and \
+                             its payload requires wire-decoding, which has no defined shape on \
+                             failure -- this is a host language binding bug, not a normal error"
+                        );
                     }
                     std::task::Poll::Ready(#value)
                 } else {
@@ -2934,7 +2949,12 @@ where
                 match __boltffi_registry.take_completion(__boltffi_request) {
                     Some(__boltffi_completion) => {
                         if !__boltffi_completion.code.is_success() {
-                            panic!("async callback failed");
+                            eprintln!(
+                                "boltffi: an infallible async callback completed with a failure \
+                                 status; the trait method has no Result to report it through, \
+                                 so this is a host language binding bug, not a normal error -- \
+                                 continuing as if it completed successfully"
+                            );
                         }
                         drop(__boltffi_guard.take());
                         std::task::Poll::Ready(())
@@ -2993,7 +3013,13 @@ where
                 match __boltffi_registry.take_completion(__boltffi_request) {
                     Some(__boltffi_completion) => {
                         if !__boltffi_completion.code.is_success() {
-                            panic!("async callback failed");
+                            panic!(
+                                "boltffi: an infallible async callback completed with a failure \
+                                 status; the trait method has no Result to report it through \
+                                 and its payload requires wire-decoding, which has no defined \
+                                 shape on failure -- this is a host language binding bug, not a \
+                                 normal error"
+                            );
                         }
                         drop(__boltffi_guard.take());
                         std::task::Poll::Ready(#value)

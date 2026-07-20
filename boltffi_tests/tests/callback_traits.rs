@@ -687,3 +687,41 @@ mod struct_method_callbacks {
         assert_eq!(result, None);
     }
 }
+
+mod async_fetcher_foreign_failure {
+    use super::*;
+    use boltffi::__private::{BoxFromCallbackHandle, FfiStatus};
+    use std::ffi::c_void;
+
+    extern "C" fn free_handle(_handle: u64) {}
+
+    extern "C" fn clone_handle(handle: u64) -> u64 {
+        handle
+    }
+
+    extern "C" fn failing_fetch(
+        _handle: u64,
+        _key: u32,
+        completion: extern "C" fn(*mut c_void, FfiStatus, u64),
+        completion_data: *mut c_void,
+    ) {
+        completion(completion_data, FfiStatus::INTERNAL_ERROR, 0);
+    }
+
+    static FAILING_VTABLE: AsyncFetcherVTable = AsyncFetcherVTable {
+        free: free_handle,
+        clone: clone_handle,
+        fetch: failing_fetch,
+    };
+
+    #[tokio::test]
+    async fn completion_failure_resolves_instead_of_panicking() {
+        unsafe {
+            boltffi_register_callback_boltffi_tests_callbacks_async_fetcher(&FAILING_VTABLE);
+        }
+        let handle = boltffi_create_callback_boltffi_tests_callbacks_async_fetcher(7);
+        let fetcher = unsafe { ForeignAsyncFetcher::box_from_callback_handle(handle) };
+        let result = invoke_async_impl(*fetcher, 5).await;
+        assert_eq!(result, 0);
+    }
+}
