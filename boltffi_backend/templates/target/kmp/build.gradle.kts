@@ -2,7 +2,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     kotlin("multiplatform") version "2.4.0"
-    id("com.android.library") version "8.5.2"
+    id("com.android.library") version "8.13.2"
 }
 
 kotlin {
