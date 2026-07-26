@@ -760,6 +760,7 @@ const STREAM_FLOW_RUNTIME_PROBE: &str = r#"
             AtomicInteger unsubscribed = new AtomicInteger();
             AtomicInteger freed = new AtomicInteger();
             CountDownLatch completed = new CountDownLatch(1);
+            CountDownLatch released = new CountDownLatch(1);
             java.util.concurrent.CopyOnWriteArrayList<Integer> received =
                 new java.util.concurrent.CopyOnWriteArrayList<>();
             StreamSubscription<Integer> stream = StreamSubscription.batch(
@@ -769,7 +770,10 @@ const STREAM_FLOW_RUNTIME_PROBE: &str = r#"
                     : Collections.emptyList(),
                 (handle, timeout) -> -1,
                 handle -> unsubscribed.incrementAndGet(),
-                handle -> freed.incrementAndGet()
+                handle -> {
+                    freed.incrementAndGet();
+                    released.countDown();
+                }
             );
             stream.toPublisher().subscribe(new Flow.Subscriber<Integer>() {
                 public void onSubscribe(Flow.Subscription subscription) {
@@ -789,6 +793,7 @@ const STREAM_FLOW_RUNTIME_PROBE: &str = r#"
                 }
             });
             require(completed.await(5, TimeUnit.SECONDS), "publisher completion");
+            require(released.await(5, TimeUnit.SECONDS), "publisher release");
             require(received.equals(Arrays.asList(17, 19)), "publisher values");
             require(unsubscribed.get() == 1, "publisher unsubscribe");
             require(freed.get() == 1, "publisher free");
