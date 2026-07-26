@@ -248,8 +248,8 @@ impl CStyle {
                 .iter()
                 .map(|variant| CStyleVariant::from_declaration(variant, source_primitive, version))
                 .collect::<Result<Vec<_>>>()?,
-            constants: AssociatedConstants::from_owner(
-                ConstantOwner::Enum(enumeration.id()),
+            constants: AssociatedConstants::from_c_style_enum(
+                enumeration,
                 bridge,
                 native_owner,
                 version,

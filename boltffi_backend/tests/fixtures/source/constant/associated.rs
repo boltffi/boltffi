@@ -27,6 +27,8 @@ pub enum Mode {
 #[data(impl)]
 impl Mode {
     pub const DEFAULT: Self = Self::Fast;
+    pub const FALLBACK: Self = Self::DEFAULT;
+    pub const VARIANT_COUNT: u8 = 2;
 }
 
 #[data]

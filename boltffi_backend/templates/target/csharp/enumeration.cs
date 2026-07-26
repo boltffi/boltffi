@@ -10,13 +10,23 @@ namespace {{ enumeration.namespace }}
 {% for variant in enumeration.variants %}{{ variant.documentation }}        {{ variant.name }} = {{ variant.discriminant }}{% if !loop.last || !enumeration.constant_aliases.is_empty() %},{% endif %}
 {% endfor %}{% for alias in enumeration.constant_aliases %}{{ alias }}{% if !loop.last %},{% endif %}
 {% endfor %}    }
-{% if !enumeration.methods.is_empty() %}
+{%- if !constants.is_empty() %}
+
+    public static class {{ enumeration.name }}Constants
+    {
+{% for constant in constants %}
+{{ constant }}
+{% endfor %}    }
+{%- endif %}
+{%- if !enumeration.methods.is_empty() %}
+
     public static class {{ enumeration.name }}Methods
     {
 {% for function in enumeration.methods %}
 {% include "target/csharp/function.cs" %}
 {% endfor %}    }
-{% endif %}{% else %}    public abstract record {{ enumeration.name }}
+{%- endif %}
+{% else %}    public abstract record {{ enumeration.name }}
     {
         internal static {{ enumeration.name }} Decode(WireReader reader) =>
             reader.ReadU32() switch

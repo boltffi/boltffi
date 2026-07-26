@@ -1,12 +1,12 @@
 use askama::Template as AskamaTemplate;
 use boltffi_binding::{
-    ConstantDecl, ConstantOwner, ConstantValueDecl, DefaultValue, ExportedCallable, Native,
-    NativeSymbol, TypeRef,
+    CStyleEnumDecl, ConstantDecl, ConstantOwner, ConstantValueDecl, DefaultValue, ExportedCallable,
+    Native, NativeSymbol, TypeRef,
 };
 
 use crate::{
     bridge::jni::JniBridgeContract,
-    core::{Emitted, RenderContext, Result},
+    core::{Emitted, Error, RenderContext, Result},
     target::kotlin::{
         KotlinHost,
         name_style::Name,
@@ -144,6 +144,58 @@ impl Constant {
 }
 
 impl AssociatedConstants {
+    pub(super) fn from_c_style_enum(
+        enumeration: &CStyleEnumDecl<Native>,
+        host: &KotlinHost,
+        bridge: Option<&JniBridgeContract>,
+        context: &RenderContext<Native>,
+    ) -> Result<Self> {
+        bridge
+            .map(|bridge| {
+                let variants = enumeration
+                    .variants()
+                    .iter()
+                    .map(|variant| {
+                        let name = match enumeration.is_error_payload() {
+                            true => Name::new(variant.name()).variant()?,
+                            false => Name::new(variant.name()).enum_entry()?,
+                        };
+                        Ok((variant.name(), name))
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+                context
+                    .associated_constants(ConstantOwner::Enum(enumeration.id()))
+                    .map(|declaration| {
+                        let constant_name = Name::new(declaration.name()).constant()?;
+                        let colliding_variant = variants
+                            .iter()
+                            .find(|(_, variant_name)| variant_name == &constant_name);
+                        match colliding_variant {
+                            None => Constant::from_associated(declaration, host, bridge, context)
+                                .map(Some),
+                            Some((variant, _))
+                                if matches!(
+                                    declaration.owned_enum_variant_alias(),
+                                    Some((owner, aliased_variant))
+                                        if owner == enumeration.id()
+                                            && aliased_variant == *variant
+                                ) =>
+                            {
+                                Ok(None)
+                            }
+                            Some(_) => Err(Error::KotlinNameCollision {
+                                scope: Name::new(enumeration.name()).type_name().to_string(),
+                                name: constant_name.to_string(),
+                            }),
+                        }
+                    })
+                    .collect::<Result<Vec<_>>>()
+                    .map(|constants| constants.into_iter().flatten().collect())
+            })
+            .transpose()
+            .map(|constants| Self(constants.unwrap_or_default()))
+    }
+
     pub(super) fn from_owner(
         owner: ConstantOwner,
         host: &KotlinHost,

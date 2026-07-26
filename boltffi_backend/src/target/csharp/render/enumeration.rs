@@ -15,7 +15,7 @@ use super::super::{
     syntax::{Expression, Identifier, Statement, TypeFragment},
     type_name,
 };
-use super::{AssociatedConstants, Constant, Documentation, Function, WireTemplate, primitive_type};
+use super::{AssociatedConstants, Documentation, Function, WireTemplate, primitive_type};
 
 #[derive(Template)]
 #[template(path = "target/csharp/enumeration.cs", escape = "none")]
@@ -168,10 +168,8 @@ impl Enumeration {
                 ),
             )?;
         }
-        let constant_aliases = context
-            .associated_constants(ConstantOwner::Enum(declaration.id()))
-            .map(|constant| Constant::c_style_alias(constant, declaration.id()))
-            .collect::<Result<Vec<_>>>()?;
+        let (constant_aliases, constants) =
+            AssociatedConstants::from_c_style_enum(declaration, &namespace, bridge, context)?;
         Ok(Self {
             documentation: Documentation::summary(declaration.meta().doc(), "    "),
             namespace,
@@ -182,7 +180,7 @@ impl Enumeration {
             variants,
             data_variants: Vec::new(),
             constant_aliases,
-            constants: AssociatedConstants::default(),
+            constants,
             methods,
             diagnostics,
         })

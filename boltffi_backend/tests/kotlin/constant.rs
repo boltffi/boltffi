@@ -19,6 +19,8 @@ fn kotlin_target_renders_associated_constants_in_the_companion_object() {
     assert!(source.contains("get() = 4.toUByte()"));
     assert!(source.contains("val DEFAULT: Mode\n"));
     assert!(source.contains("get() = Mode.FAST"));
+    assert!(source.contains("val FALLBACK: Mode\n"));
+    assert!(source.contains("val VARIANT_COUNT: UByte\n"));
     assert!(source.contains("val INITIAL: State\n"));
     assert!(source.contains("get() = State.Idle"));
     assert!(source.contains("val MAX_COLORS: UByte\n"));
@@ -27,4 +29,12 @@ fn kotlin_target_renders_associated_constants_in_the_companion_object() {
     assert!(source.contains("color_black"));
     assert!(!source.contains("\nval BLACK: Color"));
     assert!(!source.contains("UNEXPORTED_ASSOCIATED"));
+}
+
+#[test]
+fn kotlin_target_omits_redundant_enum_aliases_after_name_normalization() {
+    let source = rendered_fixture("constant/enum_alias_collision");
+
+    assert!(source.contains("DEFAULT("));
+    assert!(!source.contains("val DEFAULT: Mode"));
 }

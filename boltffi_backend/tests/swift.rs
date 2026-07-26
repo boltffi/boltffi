@@ -452,10 +452,20 @@ fn swift_target_renders_associated_constants_on_the_owner() {
     assert!(source.contains("public static var black: Color"));
     assert!(source.contains("public static let channelCount: UInt8 = 4"));
     assert!(source.contains("public static let `default`: Mode = Mode.fast"));
+    assert!(source.contains("public static var fallback: Mode"));
+    assert!(source.contains("public static let variantCount: UInt8 = 2"));
     assert!(source.contains("public static let initial: State = State.idle"));
     assert!(source.contains("public static let maxColors: UInt8 = 16"));
     assert!(!source.contains("\npublic var black: Color"));
     assert!(!source.contains("unexportedAssociated"));
+}
+
+#[test]
+fn swift_target_omits_redundant_enum_aliases_after_name_normalization() {
+    let source = rendered_fixture("constant/enum_alias_collision");
+
+    assert!(source.contains("case `default` = 1"));
+    assert!(!source.contains("static let `default`"));
 }
 
 #[test]

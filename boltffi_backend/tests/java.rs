@@ -94,6 +94,8 @@ const DIRECT_RECORD_CALLS: &str = r#"
 
 const ASSOCIATED_CONSTANTS: &str = include_str!("fixtures/source/constant/associated.rs");
 
+const ENUM_ALIAS_COLLISION: &str = include_str!("fixtures/source/constant/enum_alias_collision.rs");
+
 const TOP_LEVEL_CONSTANTS: &str =
     include_str!("fixtures/source/constant/literals_and_accessors.rs");
 
@@ -1375,10 +1377,21 @@ fn java_target_renders_associated_constants_on_the_owner() {
     assert!(color.contains("public static final byte CHANNEL_COUNT = (byte) (4);"));
     assert!(color.contains("private static Color __boltffiReadConstant"));
     assert!(mode.contains("public static final Mode DEFAULT = Mode.FAST;"));
+    assert!(mode.contains("public static final Mode FALLBACK = __boltffiReadConstant"));
+    assert!(mode.contains("public static final byte VARIANT_COUNT = (byte) (2);"));
     assert!(state.contains("public static final State INITIAL = new State.Idle();"));
     assert!(palette.contains("public static final byte MAX_COLORS = (byte) (16);"));
     assert!(!palette.contains("UNEXPORTED_ASSOCIATED"));
     assert!(!java_source(&output, "com.boltffi.demo", "Demo").contains(" BLACK "));
+}
+
+#[test]
+fn java_target_omits_redundant_enum_aliases_after_name_normalization() {
+    let output = render(ENUM_ALIAS_COLLISION, CoverageMode::Complete);
+    let mode = java_source(&output, "com.boltffi.demo", "Mode");
+
+    assert!(mode.contains("DEFAULT((byte) (1))"));
+    assert!(!mode.contains("public static final Mode DEFAULT"));
 }
 
 #[test]
@@ -2621,6 +2634,13 @@ fn generated_associated_constants_compile_for_java_eight_when_available() {
         JavaHost::new("com.boltffi.demo", "Demo").expect("Java host"),
     );
     compile_generated_java(&compiler, &output, "boltffi-java-associated-constants");
+
+    let collision = render_with_host(
+        ENUM_ALIAS_COLLISION,
+        CoverageMode::Complete,
+        JavaHost::new("com.boltffi.demo", "Demo").expect("Java host"),
+    );
+    compile_generated_java(&compiler, &collision, "boltffi-java-enum-alias-collision");
 }
 
 #[test]

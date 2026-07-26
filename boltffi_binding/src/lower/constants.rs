@@ -202,6 +202,9 @@ fn enum_variant_from_path(
             && canonical_name_matches_segment(&variant.name, variant_segment.name.as_str())
     });
     let Some(variant) = variant else {
+        if associated_self {
+            return Ok(None);
+        }
         return Err(LowerError::invalid_constant_value(&constant.id));
     };
     Ok(Some(DefaultValue::EnumVariant {
@@ -654,6 +657,52 @@ mod tests {
             }
             other => panic!("expected associated accessor constant, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn associated_enum_constant_alias_lowers_via_accessor() {
+        use boltffi_ast::{EnumDef, EnumId as SourceEnumId, PathSegment, VariantDef};
+
+        let mut contract = package();
+        let enum_id = SourceEnumId::new("demo::Mode");
+        let mut mode = EnumDef::new(enum_id.clone(), name("Mode"));
+        mode.variants.push(VariantDef::unit(name("Fast")));
+        contract.enums.push(mode);
+
+        let mut default = constant(
+            "demo::Mode::DEFAULT",
+            "DEFAULT",
+            TypeExpr::SelfType,
+            ConstExpr::Path(SourcePath::new(
+                boltffi_ast::PathRoot::Relative,
+                vec![PathSegment::new("Self"), PathSegment::new("Fast")],
+            )),
+        );
+        default.owner = Some(SourceConstantOwner::Enum(enum_id.clone()));
+        contract.constants.push(default);
+
+        let mut fallback = constant(
+            "demo::Mode::FALLBACK",
+            "FALLBACK",
+            TypeExpr::SelfType,
+            ConstExpr::Path(SourcePath::new(
+                boltffi_ast::PathRoot::Relative,
+                vec![PathSegment::new("Self"), PathSegment::new("DEFAULT")],
+            )),
+        );
+        fallback.owner = Some(SourceConstantOwner::Enum(enum_id));
+        contract.constants.push(fallback);
+
+        let bindings = lower::<Native>(&contract).expect("associated enum alias should lower");
+        let fallback = constant_decls(&bindings)
+            .into_iter()
+            .find(|constant| constant.name() == &CanonicalName::single("FALLBACK"))
+            .expect("fallback constant");
+
+        assert!(matches!(
+            fallback.value(),
+            ConstantValueDecl::Accessor { .. }
+        ));
     }
 
     #[test]

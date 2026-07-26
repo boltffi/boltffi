@@ -80,7 +80,7 @@ impl EnumClass {
                 .iter()
                 .map(EnumVariant::from_variant)
                 .collect::<Result<Vec<_>>>()?,
-            constants: package.constants_for_owner(ConstantOwner::Enum(enumeration.id()))?,
+            constants: package.constants_for_c_style_enum(enumeration)?,
             wire: None,
             constructors: Self::constructors(enumeration.initializers(), &symbols, package)?,
             static_methods: Self::static_methods(enumeration.methods(), &symbols, package)?,

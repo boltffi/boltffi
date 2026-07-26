@@ -2602,6 +2602,21 @@ impl<S: Surface> ConstantDecl<S> {
         &self.value
     }
 
+    #[doc = "Returns the owner and variant when this constant aliases a variant of its owning enum."]
+    pub fn owned_enum_variant_alias(&self) -> Option<(EnumId, &CanonicalName)> {
+        match (self.owner, &self.value) {
+            (
+                Some(ConstantOwner::Enum(owner)),
+                ConstantValueDecl::Inline {
+                    ty: TypeRef::Enum(value_type),
+                    value: DefaultValue::EnumVariant { variant_name, .. },
+                    ..
+                },
+            ) if owner == *value_type => Some((owner, variant_name)),
+            _ => None,
+        }
+    }
+
     fn uses_result_codec(&self) -> bool {
         self.value.uses_result_codec()
     }

@@ -1,9 +1,9 @@
 use askama::Template as AskamaTemplate;
-use boltffi_binding::{ConstantDecl, ConstantOwner, ConstantValueDecl, Native};
+use boltffi_binding::{CStyleEnumDecl, ConstantDecl, ConstantOwner, ConstantValueDecl, Native};
 
 use crate::{
     bridge::jni::JniBridgeContract,
-    core::{Emitted, RenderContext, Result},
+    core::{Emitted, Error, RenderContext, Result},
     target::java::{
         JavaHost, JavaVersion,
         name_style::Name,
@@ -108,6 +108,47 @@ impl Constant {
         self.extend(Emitted::primary(self.render_member()?))
     }
 
+    fn from_c_style_enum(
+        declaration: &ConstantDecl<Native>,
+        enumeration: &CStyleEnumDecl<Native>,
+        bridge: &JniBridgeContract,
+        native_owner: &TypeIdentifier,
+        version: JavaVersion,
+        context: &RenderContext<Native>,
+    ) -> Result<Option<Self>> {
+        let constant = Self::from_declaration(declaration, bridge, native_owner, version, context)?;
+        let colliding_variant = enumeration.variants().iter().try_fold(
+            None,
+            |colliding_variant, variant| -> Result<_> {
+                match colliding_variant {
+                    Some(_) => Ok(colliding_variant),
+                    None => {
+                        let variant_name = Name::new(variant.name()).enum_entry(version)?;
+                        Ok((variant_name == constant.name).then_some(variant))
+                    }
+                }
+            },
+        )?;
+        match colliding_variant {
+            None => Ok(Some(constant)),
+            Some(variant)
+                if matches!(
+                    declaration.owned_enum_variant_alias(),
+                    Some((owner, aliased_variant))
+                        if owner == enumeration.id() && aliased_variant == variant.name()
+                ) =>
+            {
+                Ok(None)
+            }
+            Some(_) => Err(Error::JavaNameCollision {
+                scope: Name::new(enumeration.name())
+                    .type_name(version)?
+                    .to_string(),
+                name: constant.name.to_string(),
+            }),
+        }
+    }
+
     pub fn render_member(&self) -> Result<String> {
         Ok(ConstantTemplate { constant: self }.render()?)
     }
@@ -162,6 +203,29 @@ impl Constant {
 }
 
 impl AssociatedConstants {
+    pub(super) fn from_c_style_enum(
+        enumeration: &CStyleEnumDecl<Native>,
+        bridge: &JniBridgeContract,
+        native_owner: &TypeIdentifier,
+        version: JavaVersion,
+        context: &RenderContext<Native>,
+    ) -> Result<Self> {
+        context
+            .associated_constants(ConstantOwner::Enum(enumeration.id()))
+            .map(|constant| {
+                Constant::from_c_style_enum(
+                    constant,
+                    enumeration,
+                    bridge,
+                    native_owner,
+                    version,
+                    context,
+                )
+            })
+            .collect::<Result<Vec<_>>>()
+            .map(|constants| Self(constants.into_iter().flatten().collect()))
+    }
+
     pub(super) fn from_owner(
         owner: ConstantOwner,
         bridge: &JniBridgeContract,

@@ -1,8 +1,7 @@
 use askama::Template;
 use boltffi_binding::{
-    CStyleEnumDecl, CStyleVariantDecl, ConstantOwner, DataEnumDecl, DataVariantDecl,
-    DataVariantPayload, EncodedFieldDecl, EnumDecl, ExportedMethodDecl, FieldKey, Native,
-    NativeSymbol,
+    CStyleEnumDecl, CStyleVariantDecl, DataEnumDecl, DataVariantDecl, DataVariantPayload,
+    EncodedFieldDecl, EnumDecl, ExportedMethodDecl, FieldKey, Native, NativeSymbol,
 };
 
 use crate::{
@@ -230,8 +229,9 @@ impl Enumeration {
                     .map(CStyleVariant::from_declaration)
                     .collect::<Result<Vec<_>>>()?,
             },
-            constants: AssociatedConstants::from_owner(
-                ConstantOwner::Enum(enumeration.id()),
+            constants: AssociatedConstants::from_enum(
+                enumeration.id(),
+                enumeration.variants().iter().map(CStyleVariantDecl::name),
                 bridge,
                 context,
             )?,
@@ -284,8 +284,9 @@ impl Enumeration {
                     .map(|variant| DataVariant::from_declaration(variant, context))
                     .collect::<Result<Vec<_>>>()?,
             },
-            constants: AssociatedConstants::from_owner(
-                ConstantOwner::Enum(enumeration.id()),
+            constants: AssociatedConstants::from_enum(
+                enumeration.id(),
+                enumeration.variants().iter().map(DataVariantDecl::name),
                 bridge,
                 context,
             )?,

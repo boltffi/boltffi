@@ -1035,6 +1035,8 @@ mod tests {
             #[data(impl)]
             impl Mode {
                 pub const DEFAULT: Self = Self::Fast;
+                pub const FALLBACK: Self = Self::DEFAULT;
+                pub const VARIANT_COUNT: u8 = 2;
             }
 
             pub struct Palette;
@@ -1063,9 +1065,39 @@ mod tests {
         assert!(source.contains("public static Color Black"));
         assert!(source.contains("public const byte ChannelCount = 4;"));
         assert!(mode.contains("Default = Fast"));
+        assert!(mode.contains("public static class ModeConstants"));
+        assert!(mode.contains("public static Mode Fallback"));
+        assert!(mode.contains("public const byte VariantCount = 2;"));
         assert!(palette.contains("public const byte MaxColors = 16;"));
         assert!(!palette.contains("UnexportedAssociated"));
         assert!(output.diagnostics().is_empty());
+    }
+
+    #[test]
+    fn csharp_target_omits_redundant_enum_aliases_after_name_normalization() {
+        let bindings = bindings(
+            r#"
+            #[repr(u8)]
+            #[data]
+            pub enum Mode {
+                Default = 1,
+                Fast = 2,
+            }
+
+            #[data(impl)]
+            impl Mode {
+                pub const DEFAULT: Self = Self::Default;
+            }
+            "#,
+        );
+        let output = target(CSharpHost::new())
+            .render(&bindings)
+            .expect("redundant alias should render");
+        let mode = file(&output, "Mode.cs");
+
+        assert!(mode.contains("Default = 1"));
+        assert!(!mode.contains("Default = Default"));
+        assert!(!mode.contains("ModeConstants"));
     }
 
     #[test]

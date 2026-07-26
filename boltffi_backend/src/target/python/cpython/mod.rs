@@ -1827,6 +1827,8 @@ mod tests {
                 #[data(impl)]
                 impl Mode {
                     pub const DEFAULT: Self = Self::Fast;
+                    pub const FALLBACK: Self = Self::DEFAULT;
+                    pub const VARIANT_COUNT: u8 = 2;
                 }
 
                 pub struct Palette;
@@ -1856,6 +1858,8 @@ mod tests {
         assert!(init.contains("Color.BLACK = _native.color_black()"));
         assert!(init.contains("Color.CHANNEL_COUNT = 4"));
         assert!(init.contains("Mode.DEFAULT = Mode.FAST"));
+        assert!(init.contains("Mode.FALLBACK = _native.mode_fallback()"));
+        assert!(init.contains("Mode.VARIANT_COUNT = 2"));
         assert!(init.contains("Palette.MAX_COLORS = 16"));
         assert!(stub.contains("BLACK: ClassVar[Color]"));
         assert!(stub.contains("CHANNEL_COUNT: ClassVar[int]"));
@@ -1863,6 +1867,33 @@ mod tests {
         assert!(stub.contains("MAX_COLORS: ClassVar[int]"));
         assert!(!stub.contains("UNEXPORTED_ASSOCIATED"));
         assert!(!init.contains("\"BLACK\","));
+    }
+
+    #[test]
+    fn python_target_omits_redundant_enum_aliases_after_name_normalization() {
+        let output = target()
+            .render(&bindings(
+                r#"
+                #[repr(u8)]
+                #[data]
+                pub enum Mode {
+                    Default = 1,
+                    Fast = 2,
+                }
+
+                #[data(impl)]
+                impl Mode {
+                    pub const DEFAULT: Self = Self::Default;
+                }
+                "#,
+            ))
+            .expect("redundant alias should render");
+        let init = file(&output, "demo/__init__.py");
+        let stub = file(&output, "demo/__init__.pyi");
+
+        assert!(init.contains("DEFAULT = 1"));
+        assert!(!init.contains("Mode.DEFAULT ="));
+        assert!(!stub.contains("DEFAULT: ClassVar[Mode]"));
     }
 
     #[test]

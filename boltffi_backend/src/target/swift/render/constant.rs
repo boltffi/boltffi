@@ -1,6 +1,7 @@
 use askama::Template;
 use boltffi_binding::{
-    ConstantDecl, ConstantOwner, ConstantValueDecl, ExportedCallable, Native, NativeSymbol,
+    CanonicalName, ConstantDecl, ConstantOwner, ConstantValueDecl, EnumId, ExportedCallable,
+    Native, NativeSymbol,
 };
 
 use crate::{
@@ -64,6 +65,43 @@ impl AssociatedConstants {
             .map(|constant| Constant::from_associated(constant, bridge, context))
             .collect::<Result<Vec<_>>>()
             .map(Self)
+    }
+
+    pub(super) fn from_enum<'variant>(
+        enumeration: EnumId,
+        variants: impl IntoIterator<Item = &'variant CanonicalName>,
+        bridge: &CBridgeContract,
+        context: &RenderContext<Native>,
+    ) -> Result<Self> {
+        let variants = variants
+            .into_iter()
+            .map(|variant| Ok((variant, Name::new(variant).variant()?)))
+            .collect::<Result<Vec<_>>>()?;
+        context
+            .associated_constants(ConstantOwner::Enum(enumeration))
+            .map(|declaration| {
+                let constant = Constant::from_associated(declaration, bridge, context)?;
+                let colliding_variant = variants
+                    .iter()
+                    .find(|(_, variant_name)| variant_name == &constant.name);
+                match colliding_variant {
+                    None => Ok(Some(constant)),
+                    Some((variant, _))
+                        if matches!(
+                            declaration.owned_enum_variant_alias(),
+                            Some((owner, aliased_variant))
+                                if owner == enumeration && aliased_variant == *variant
+                        ) =>
+                    {
+                        Ok(None)
+                    }
+                    Some(_) => Err(SwiftHost::unsupported(
+                        "enum associated constant name collision",
+                    )),
+                }
+            })
+            .collect::<Result<Vec<_>>>()
+            .map(|constants| Self(constants.into_iter().flatten().collect()))
     }
 
     pub(super) fn render(&self) -> Result<Vec<String>> {

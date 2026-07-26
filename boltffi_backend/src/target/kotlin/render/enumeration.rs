@@ -333,12 +333,7 @@ impl Enumeration {
         Ok(Self {
             name,
             error,
-            constants: AssociatedConstants::from_owner(
-                ConstantOwner::Enum(enumeration.id()),
-                host,
-                bridge,
-                context,
-            )?,
+            constants: AssociatedConstants::from_c_style_enum(enumeration, host, bridge, context)?,
             body: Body::CStyle {
                 value_type: KotlinPrimitive::new(primitive).native_type()?,
                 repr: primitive,

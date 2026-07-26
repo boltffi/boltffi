@@ -2,9 +2,9 @@ use std::path::PathBuf;
 
 use askama::Template as AskamaTemplate;
 use boltffi_binding::{
-    CanonicalName, ClassDecl, ClassId, CodecNode, ConstantDecl, ConstantOwner, CustomTypeDecl,
-    CustomTypeId, DeclarationRef, EncodedRecordDecl, EnumDecl, EnumId, FunctionDecl, Native,
-    RecordDecl, RecordId, StreamDecl, TypeRef,
+    CStyleEnumDecl, CanonicalName, ClassDecl, ClassId, CodecNode, ConstantDecl, ConstantOwner,
+    CustomTypeDecl, CustomTypeId, DeclarationRef, EncodedRecordDecl, EnumDecl, EnumId,
+    FunctionDecl, Native, RecordDecl, RecordId, StreamDecl, TypeRef,
 };
 
 use crate::{
@@ -465,6 +465,47 @@ impl<'bindings> Package<'bindings> {
             .filter(|constant| constant.owner() == Some(owner))
             .map(|constant| ConstantStub::from_declaration(constant, self))
             .collect()
+    }
+
+    fn constants_for_c_style_enum(
+        &self,
+        enumeration: &CStyleEnumDecl<Native>,
+    ) -> Result<Vec<ConstantStub>> {
+        self.declarations
+            .constants
+            .iter()
+            .copied()
+            .filter(|constant| constant.owner() == Some(ConstantOwner::Enum(enumeration.id())))
+            .map(|constant| {
+                let constant_name = Name::new(constant.name()).constant()?;
+                let colliding_variant = enumeration.variants().iter().try_fold(
+                    None,
+                    |colliding_variant, variant| -> Result<_> {
+                        match colliding_variant {
+                            Some(_) => Ok(colliding_variant),
+                            None => {
+                                let variant_name = Name::new(variant.name()).constant()?;
+                                Ok((variant_name == constant_name).then_some(variant))
+                            }
+                        }
+                    },
+                )?;
+                match colliding_variant {
+                    Some(variant)
+                        if matches!(
+                            constant.owned_enum_variant_alias(),
+                            Some((owner, aliased_variant))
+                                if owner == enumeration.id()
+                                    && aliased_variant == variant.name()
+                        ) =>
+                    {
+                        Ok(None)
+                    }
+                    _ => ConstantStub::from_declaration(constant, self).map(Some),
+                }
+            })
+            .collect::<Result<Vec<_>>>()
+            .map(|constants| constants.into_iter().flatten().collect())
     }
 
     fn records(&self) -> Result<Vec<RecordClass>> {
