@@ -334,26 +334,11 @@ Values such as `Color { ... }` are constructed in Rust and delivered through a g
 
 ## Supported values
 
-A constant's declared type follows the same support rules as a function return type. Rust must also permit the value in a `const` declaration.
-
-| Rust constant | Examples | Generated delivery |
-|---------------|----------|--------------------|
-| Boolean | `bool` | Inline |
-| Integer | `u8`, `i32`, `u64`, `usize` | Inline when the value fits the declared type |
-| Floating point | `f32`, `f64` | Inline |
-| String | `&str`, `&'static str` | Inline for string literals |
-| C-style enum | `Mode::Fast`, `Self::Fast` | Inline |
-| Byte data | `&'static [u8]` | Native accessor |
-| Tuple | `(u32, u32)` | Native accessor |
-| `#[data]` record | `Color`, `Point` | Native accessor |
-| `#[data]` enum | `Mode`, `State` | Inline for a C-style variant or native accessor for an encoded value |
-| Computed expression | `6 * 7`, `Self { ... }` | Native accessor when it cannot be represented inline |
-
-Inline and accessor-backed constants have the same public API. The distinction only controls how BoltFFI delivers the value.
+Constants can use the same types as exported function results, including primitives, strings, byte slices, tuples, and types marked with `#[data]`. Associated constants can use `Self` for values of their owner type.
 
 ## Limits
 
-Most constant restrictions come from Rust's const evaluator and the normal return-type support of each target.
+Global and associated constants support the same value types. Their placement controls where the generated API exposes them.
 
 ### Global constants
 
@@ -367,9 +352,3 @@ Most constant restrictions come from Rust's const evaluator and the normal retur
 - Record and enum constants belong in `#[data(impl)]`; class constants belong in `#[export]`.
 - Only public constants become part of the generated API. Private constants remain available to the Rust implementation, and `#[skip]` can omit a public constant.
 - A C-style enum associated constant must alias a variant of that same enum when C# is generated. C# enums cannot contain static fields or properties. A primitive or record constant intended for all targets can instead be placed on a record or class, or exported globally.
-
-### Constant values
-
-- The expression must be valid in a Rust `const` declaration.
-- The declared type must be supported as a return value by every selected target.
-- Borrowed constants are limited to `&str` and `&[u8]`. Records and enums are exported by value rather than by reference.
