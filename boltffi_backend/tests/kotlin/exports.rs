@@ -83,6 +83,18 @@ fn kotlin_target_renders_encoded_records_through_codec_methods() {
 }
 
 #[test]
+fn kotlin_target_encodes_direct_records_nested_in_wire_values() {
+    let rendered = rendered_fixture("records/encoded_with_direct_record");
+
+    assert!(rendered.contains("internal fun wireSize(): Int {\n        return 9"));
+    assert!(rendered.contains("writer.writeI32(x)"));
+    assert!(rendered.contains("reader.readI32()"));
+    assert!(rendered.contains("buffer.`get`(offset + 8)"));
+    assert!(rendered.contains("start.writeTo(writer)"));
+    assert!(rendered.contains("Point.fromReader(reader)"));
+}
+
+#[test]
 fn kotlin_target_renders_data_enums_through_codec_methods() {
     insta::assert_snapshot!(rendered_source(SourceFixture::many([
         "records/person",

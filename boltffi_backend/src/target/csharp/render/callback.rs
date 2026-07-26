@@ -1,8 +1,8 @@
 use askama::Template;
 use boltffi_binding::{
-    CallbackDecl, CanonicalName, DirectVectorElementType, ErrorChannel, ErrorPlacement,
-    ExecutionDecl, HandlePresence, HandleTarget, ImportedMethodDecl, IntoRust, Native,
-    OutgoingParam, ParamPlan, Primitive, ReturnPlan, TypeRef, VTableSlot, native,
+    CallbackDecl, CanonicalName, DirectValueType, DirectVectorElementType, EnumDecl, ErrorChannel,
+    ErrorPlacement, ExecutionDecl, HandlePresence, HandleTarget, ImportedMethodDecl, IntoRust,
+    Native, OutgoingParam, ParamPlan, Primitive, ReturnPlan, TypeRef, VTableSlot, native,
 };
 
 use crate::{
@@ -241,6 +241,10 @@ impl CallbackMethod {
         self.requires_wire_runtime
             || self.native_return_type.to_string() == "FfiBuf"
             || self.native_parameters.contains("FfiBuf")
+            || self
+                .completion_delegate
+                .as_deref()
+                .is_some_and(|delegate| delegate.contains("FfiBuf"))
     }
 }
 
@@ -1113,6 +1117,7 @@ fn render_async_entry_body(
     if params.len() > 3 {
         return broken_callback("async callback completion payload count");
     }
+    let payload_is_buffer = payload.is_some() && params[2] == CBridgeType::Buffer;
     let arguments = parameters.entry_arguments.join(", ");
     let call = format!("await implementation.{method_name}({arguments}).ConfigureAwait(false)");
     let mut success = vec![
@@ -1124,6 +1129,17 @@ fn render_async_entry_body(
         ReturnPlan::Void => {
             success.push(format!("{call};"));
             success.push("boltffiComplete(0, default);".to_owned());
+        }
+        ReturnPlan::DirectViaReturnSlot { ty } | ReturnPlan::DirectViaOutPointer { ty }
+            if payload_is_buffer =>
+        {
+            let write = direct_wire_write(ty, "boltffiSuccessWriter", "boltffiValue", context)?;
+            success.push(format!("var boltffiValue = {call};"));
+            success.push("WireWriter boltffiSuccessWriter = new WireWriter();".to_owned());
+            success.push(write);
+            success.push(
+                "boltffiComplete(0, FfiBuf.FromBytes(boltffiSuccessWriter.ToArray()));".to_owned(),
+            );
         }
         ReturnPlan::DirectViaReturnSlot { .. } | ReturnPlan::DirectViaOutPointer { .. } => {
             success.push(format!("var boltffiValue = {call};"));
@@ -1265,6 +1281,7 @@ fn render_async_proxy_body(
         return broken_callback("async callback completion signature");
     }
     let has_payload = params.len() == 3;
+    let payload_is_buffer = has_payload && params[2] == CBridgeType::Buffer;
     let returns_void = matches!(declaration.callable().returns().plan(), ReturnPlan::Void);
     let task_type = match returns_void {
         true => TypeFragment::new("bool"),
@@ -1293,8 +1310,19 @@ fn render_async_proxy_body(
     let mut success = Vec::new();
     match declaration.callable().returns().plan() {
         ReturnPlan::Void => success.push("boltffiCompletionSource.TrySetResult(true);".to_owned()),
+        ReturnPlan::DirectViaReturnSlot { ty } | ReturnPlan::DirectViaOutPointer { ty }
+            if payload_is_buffer =>
+        {
+            success.push(
+                "WireReader boltffiSuccessReader = new WireReader(boltffiPayload);".to_owned(),
+            );
+            success.push(format!(
+                "boltffiCompletionSource.TrySetResult({});",
+                direct_wire_read(ty, "boltffiSuccessReader", context)?
+            ));
+        }
         ReturnPlan::DirectViaReturnSlot { .. } | ReturnPlan::DirectViaOutPointer { .. } => {
-            success.push("boltffiCompletionSource.TrySetResult(boltffiPayload);".to_owned())
+            success.push("boltffiCompletionSource.TrySetResult(boltffiPayload);".to_owned());
         }
         ReturnPlan::EncodedViaReturnSlot { codec, .. }
         | ReturnPlan::EncodedViaOutPointer { codec, .. } => {
@@ -1396,7 +1424,6 @@ fn render_async_proxy_body(
         "else\n{\n    boltffiCompletionSource.TrySetException(new global::System.InvalidOperationException($\"callback failed with status code {boltffiStatus.code}\"));\n}"
             .to_owned(),
     );
-    let payload_is_buffer = has_payload && params[2] == CBridgeType::Buffer;
     body.push(format!(
         "{bridge_name}.{method_name}Completion boltffiCompletion = {completion_parameters} =>\n{{\n    try\n    {{\n{}\n    }}\n    catch (global::System.Exception boltffiException)\n    {{\n        boltffiCompletionSource.TrySetException(boltffiException);\n    }}\n    finally\n    {{\n{}        if (boltffiCompletionHandle.IsAllocated) boltffiCompletionHandle.Free();\n    }}\n}};",
         indent_lines(&status, 8),
@@ -1456,6 +1483,57 @@ fn render_async_proxy_body(
     ));
     body.push("return boltffiCompletionSource.Task;".to_owned());
     Ok(Statement::new(indent_lines(&body, 12)))
+}
+
+fn direct_wire_write(
+    ty: &DirectValueType,
+    writer: &str,
+    value: &str,
+    context: &RenderContext<Native>,
+) -> Result<String> {
+    match ty {
+        DirectValueType::Primitive(primitive) => Ok(format!(
+            "{writer}.{}({value});",
+            primitive_write_method(*primitive)
+        )),
+        DirectValueType::Record(_) => Ok(format!("{value}.Encode({writer});")),
+        DirectValueType::Enum(id) => {
+            let Some(EnumDecl::CStyle(enumeration)) = context.enumeration(*id) else {
+                return super::unsupported("direct callback enum wire write");
+            };
+            let primitive = enumeration.repr().primitive();
+            Ok(format!(
+                "{writer}.{}(({}){value});",
+                primitive_write_method(primitive),
+                primitive_type(primitive)
+            ))
+        }
+        _ => super::unsupported("direct callback wire write"),
+    }
+}
+
+fn direct_wire_read(
+    ty: &DirectValueType,
+    reader: &str,
+    context: &RenderContext<Native>,
+) -> Result<String> {
+    match ty {
+        DirectValueType::Primitive(primitive) => {
+            Ok(format!("{reader}.{}()", primitive_read_method(*primitive)))
+        }
+        DirectValueType::Record(_) => Ok(format!("{}.Decode({reader})", direct_type(ty, context)?)),
+        DirectValueType::Enum(id) => {
+            let Some(EnumDecl::CStyle(enumeration)) = context.enumeration(*id) else {
+                return super::unsupported("direct callback enum wire read");
+            };
+            Ok(format!(
+                "({}){reader}.{}()",
+                direct_type(ty, context)?,
+                primitive_read_method(enumeration.repr().primitive())
+            ))
+        }
+        _ => super::unsupported("direct callback wire read"),
+    }
 }
 
 fn unsupported_body(slot: &CallbackSlot) -> Result<Statement> {

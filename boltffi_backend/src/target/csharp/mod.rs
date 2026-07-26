@@ -207,7 +207,13 @@ impl host::HostBackend for CSharpHost {
         bridge: &Self::Bridge,
         context: &RenderContext<Self::Surface>,
     ) -> Result<Emitted> {
-        render::Constant::from_declaration(decl, bridge, context)?.render()
+        render::Constant::from_declaration(
+            decl,
+            &self.namespace_for(context.bindings())?,
+            bridge,
+            context,
+        )?
+        .render()
     }
 
     fn custom_type(
@@ -535,6 +541,12 @@ mod tests {
                 Missing,
             }
 
+            #[data]
+            pub struct Point {
+                pub x: i32,
+                pub y: i32,
+            }
+
             #[export]
             #[allow(async_fn_in_trait)]
             pub trait Fetcher {
@@ -543,6 +555,7 @@ mod tests {
                 async fn fetch_name(&self, key: String) -> String;
                 async fn try_fetch(&self, key: i32) -> Result<String, FetchError>;
                 async fn try_label(&self, key: i32) -> Result<String, String>;
+                async fn transform(&self, point: Point) -> Result<Point, FetchError>;
             }
             "#,
         );
@@ -562,6 +575,12 @@ mod tests {
         assert!(callback.contains("boltffiComplete(1, FfiBuf.FromBytes"));
         assert!(callback.contains("boltffiStatus.code == 1"));
         assert!(callback.contains("catch (global::System.Exception boltffiError)"));
+        assert!(callback.contains("boltffiValue.Encode(boltffiSuccessWriter);"));
+        assert!(
+            callback.contains(
+                "boltffiCompletionSource.TrySetResult(Point.Decode(boltffiSuccessReader));"
+            )
+        );
         assert!(!callback.contains("This callback method shape has not migrated"));
 
         let module = file(&output, "Demo.cs");
@@ -653,7 +672,7 @@ mod tests {
             "public static global::Demo.Point[] EchoPoints(global::Demo.Point[] values)"
         ));
         assert!(source.contains(
-            "NativeEchoPoints(values, (nuint)(values.Length * Marshal.SizeOf<global::Demo.Point>()))"
+            "NativeEchoPoints(values, (nuint)(values.Length * global::System.Runtime.InteropServices.Marshal.SizeOf<global::Demo.Point>()))"
         ));
         assert!(source.contains("return resultReader.ReadRawArray<global::Demo.Point>();"));
         assert!(output.diagnostics().is_empty());
@@ -751,7 +770,7 @@ mod tests {
     }
 
     #[test]
-    fn csharp_target_renders_encoded_closure_parameters() {
+    fn csharp_target_renders_direct_record_and_encoded_string_closure_parameters() {
         let bindings = bindings(
             r#"
             #[data]
@@ -771,7 +790,9 @@ mod tests {
         let source = file(&output, "Demo.cs");
         assert!(source.contains("global::System.Func<Point, Point> f"));
         assert!(source.contains("global::System.Func<string, string> f"));
-        assert!(source.contains("Point.Decode(boltffi"));
+        assert!(source.contains("internal delegate Point NativeApplyPointFClosureCall"));
+        assert!(source.contains("return implementation(arg0);"));
+        assert!(!source.contains("Point.Decode(boltffi"));
         assert!(source.contains("return FfiBuf.FromBytes(boltffiReturnWriter.ToArray());"));
         assert!(source.contains("internal static extern FfiBuf BufFromBytes"));
         assert!(output.diagnostics().is_empty());
@@ -934,6 +955,8 @@ mod tests {
             pub const GREETING: &'static str = "hello";
             #[export]
             pub const DEFAULT_MODE: Mode = Mode::Fast;
+            #[export]
+            pub const MODE: Mode = Mode::Fast;
 
             #[data]
             pub enum State { Idle, Busy(u32) }
@@ -957,8 +980,13 @@ mod tests {
         assert!(source.contains("public const uint Limit = 1024U;"));
         assert!(source.contains("public const double Half = 0.5;"));
         assert!(source.contains("public const string Greeting = \"hello\";"));
-        assert!(source.contains("public const Mode DefaultMode = Mode.Fast;"));
-        assert!(source.contains("public static readonly State DefaultState = new State.Idle();"));
+        assert!(
+            source.contains("public const global::Demo.Mode DefaultMode = global::Demo.Mode.Fast;")
+        );
+        assert!(source.contains("public const global::Demo.Mode Mode = global::Demo.Mode.Fast;"));
+        assert!(source.contains(
+            "public static readonly global::Demo.State DefaultState = new global::Demo.State.Idle();"
+        ));
         assert!(
             source.contains("public static readonly nint NativeOffset = unchecked((nint)-7L);")
         );

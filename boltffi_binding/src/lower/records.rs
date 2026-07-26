@@ -41,7 +41,8 @@ pub fn lower<S: SurfaceLower>(
 /// `#[repr(C)]` on the emitted struct; expansion verifies the resulting
 /// layout against the lowered record layout with compile-time assertions.
 /// A record that declares a different `repr` keeps the layout intent it
-/// wrote and crosses encoded.
+/// wrote and crosses encoded. Records whose size or field offsets change
+/// between supported native ABI alignment profiles also cross encoded.
 pub fn is_direct(record: &SourceRecord) -> bool {
     primitive::has_effective_repr_c(&record.repr)
         && !record.fields.is_empty()
@@ -49,6 +50,7 @@ pub fn is_direct(record: &SourceRecord) -> bool {
             .fields
             .iter()
             .all(|field| primitive::direct_field_type(&field.type_expr).is_some())
+        && layout::has_portable_byte_layout(record)
 }
 
 fn lower_one<S: SurfaceLower>(
@@ -295,6 +297,21 @@ mod tests {
             "demo::Index",
             "index",
             vec![field("raw", TypeExpr::Primitive(Primitive::USize))],
+        ));
+
+        encoded_record(&bindings);
+    }
+
+    #[test]
+    fn classifies_abi_variant_primitive_record_as_encoded() {
+        let bindings = lower_record::<Native>(record(
+            "demo::Trade",
+            "trade",
+            vec![
+                field("id", TypeExpr::Primitive(Primitive::I64)),
+                field("symbol_id", TypeExpr::Primitive(Primitive::I32)),
+                field("price", TypeExpr::Primitive(Primitive::F64)),
+            ],
         ));
 
         encoded_record(&bindings);

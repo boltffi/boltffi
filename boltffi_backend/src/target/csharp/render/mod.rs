@@ -884,7 +884,7 @@ impl Function {
                             Expression::new(format!("(nuint){name}.Length"))
                         }
                         DirectVectorElementType::Record(_) => Expression::new(format!(
-                            "(nuint)({name}.Length * Marshal.SizeOf<{element_type}>())"
+                            "(nuint)({name}.Length * global::System.Runtime.InteropServices.Marshal.SizeOf<{element_type}>())"
                         )),
                         _ => return unsupported("direct-vector element type"),
                     });

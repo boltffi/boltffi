@@ -115,8 +115,8 @@ impl CodecRead for Reader<'_> {
         self.call("readBytes")
     }
 
-    fn direct_record(&mut self, _id: RecordId) -> Self::Expr {
-        Self::unsupported("direct-record wire read")
+    fn direct_record(&mut self, id: RecordId) -> Self::Expr {
+        self.encoded_record(id)
     }
 
     fn encoded_record(&mut self, id: RecordId) -> Self::Expr {

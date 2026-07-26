@@ -295,8 +295,8 @@ impl CodecWrite for Writer<'_> {
         ]
     }
 
-    fn direct_record(&mut self, _id: RecordId, _value: &ValueRef) -> Vec<Self::Stmt> {
-        Self::unsupported("direct-record wire write")
+    fn direct_record(&mut self, id: RecordId, value: &ValueRef) -> Vec<Self::Stmt> {
+        self.encoded_record(id, value)
     }
 
     fn encoded_record(&mut self, _id: RecordId, value: &ValueRef) -> Vec<Self::Stmt> {

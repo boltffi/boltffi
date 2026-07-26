@@ -500,13 +500,7 @@ mod tests {
         }
 
         fn compile_with_records_and_kind(records: usize, kind: ArtifactKind) -> Self {
-            let root = std::env::temp_dir().join(format!(
-                "boltffi-bindgen-metadata-{}",
-                SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .expect("system time after unix epoch")
-                    .as_nanos()
-            ));
+            let root = temp_root("boltffi-bindgen-metadata");
             fs::create_dir_all(&root).expect("create metadata fixture root");
             let source = root.join("lib.rs");
             let artifact = root.join(kind.file_name());

@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "boltffi"
-version = "0.27.5"
+version = "0.28.0"
 dependencies = [
  "boltffi_core",
  "boltffi_macros",
@@ -12,14 +12,14 @@ dependencies = [
 
 [[package]]
 name = "boltffi_ast"
-version = "0.27.5"
+version = "0.28.0"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "boltffi_binding"
-version = "0.27.5"
+version = "0.28.0"
 dependencies = [
  "boltffi_ast",
  "serde",
@@ -28,7 +28,7 @@ dependencies = [
 
 [[package]]
 name = "boltffi_core"
-version = "0.27.5"
+version = "0.28.0"
 dependencies = [
  "boltffi_macros",
  "url",
@@ -37,7 +37,7 @@ dependencies = [
 
 [[package]]
 name = "boltffi_ffi_rules"
-version = "0.27.5"
+version = "0.28.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -47,7 +47,7 @@ dependencies = [
 
 [[package]]
 name = "boltffi_macros"
-version = "0.27.5"
+version = "0.28.0"
 dependencies = [
  "boltffi_ast",
  "boltffi_binding",
@@ -61,7 +61,7 @@ dependencies = [
 
 [[package]]
 name = "boltffi_scan"
-version = "0.27.5"
+version = "0.28.0"
 dependencies = [
  "boltffi_ast",
  "proc-macro2",

@@ -996,9 +996,17 @@ mod tests {
             .expect("browser module");
 
         assert!(browser.contents().contains("export interface Point"));
-        assert!(browser.contents().contains("size: (value) => 24"));
-        assert!(browser.contents().contains("writer.skip(7);"));
-        assert!(browser.contents().contains("reader.skip(7);"));
+        assert!(
+            browser
+                .contents()
+                .contains("size: (value) => ((8 + 1) + 8)")
+        );
+        assert!(
+            browser
+                .contents()
+                .contains("writer.writeBool(value.active);")
+        );
+        assert!(browser.contents().contains("reader.readBool();"));
         assert!(browser.contents().contains("export interface User"));
         assert!(browser.contents().contains(
             "size: (value) => (wireStringSize(value.name) + (4 + (value.scores.length * 4)))"
@@ -1086,15 +1094,13 @@ mod tests {
         assert!(browser.contents().contains(
             "const __boltffi_value_writer = _module.allocWriter(PointCodec.size(value));"
         ));
+        assert!(browser.contents().contains(
+            "const __boltffiReader = _module.takePackedBuffer((_exports.boltffi_function_demo_echo_point"
+        ));
         assert!(
             browser
                 .contents()
-                .contains("const __boltffiReturnWriter = _module.allocWriter(24);")
-        );
-        assert!(
-            browser
-                .contents()
-                .contains("PointCodec.decode(_module.readerFromWriter(__boltffiReturnWriter))")
+                .contains("return PointCodec.decode(__boltffiReader);")
         );
         assert!(
             browser
@@ -1120,7 +1126,7 @@ mod tests {
         assert!(
             browser
                 .contents()
-                .contains("return MutablePointCodec.decode(__boltffiReceiverReader);")
+                .contains("Object.assign(self, MutablePointCodec.decode(_module.readerFromWriter(__boltffi_self_writer)));")
         );
     }
 

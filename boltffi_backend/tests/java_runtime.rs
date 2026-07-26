@@ -42,6 +42,7 @@ const RUST_SOURCE: &str = r#"
     pub struct EncodedPoint {
         pub x: f64,
         pub y: f64,
+        pub active: bool,
     }
 
     #[data]
@@ -58,7 +59,7 @@ const RUST_SOURCE: &str = r#"
 
     #[data(impl)]
     impl EncodedPoint {
-        pub fn new(x: f64, y: f64) -> Self { Self { x, y } }
+        pub fn new(x: f64, y: f64, active: bool) -> Self { Self { x, y, active } }
 
         pub fn sum(&self) -> f64 { self.x + self.y }
 
@@ -186,22 +187,23 @@ static void write_f64_le(uint8_t *bytes, double value) {
     write_u64_le(bytes, bits);
 }
 
-static FfiBuf_u8 encoded_point(double x, double y) {
-    uint8_t *bytes = malloc(16);
+static FfiBuf_u8 encoded_point(double x, double y, bool active) {
+    uint8_t *bytes = malloc(17);
     write_f64_le(bytes, x);
     write_f64_le(bytes + 8, y);
-    return (FfiBuf_u8){bytes, 16, 16, 1};
+    bytes[16] = active ? 1 : 0;
+    return (FfiBuf_u8){bytes, 17, 17, 1};
 }
 
-FfiBuf_u8 boltffi_init_record_demo_encoded_point_new(double x, double y) {
-    return encoded_point(x, y);
+FfiBuf_u8 boltffi_init_record_demo_encoded_point_new(double x, double y, bool active) {
+    return encoded_point(x, y, active);
 }
 
 double boltffi_method_record_demo_encoded_point_sum(
     const uint8_t *receiver_ptr,
     uintptr_t receiver_len
 ) {
-    if (receiver_len != 16) return -1.0;
+    if (receiver_len != 17) return -1.0;
     return read_f64_le(receiver_ptr) + read_f64_le(receiver_ptr + 8);
 }
 
@@ -211,10 +213,11 @@ FfiStatus boltffi_method_record_demo_encoded_point_scale(
     FfiBuf_u8 *receiver_out,
     double factor
 ) {
-    if (receiver_len != 16 || receiver_out == NULL) return FFI_STATUS_INVALID_ARG;
+    if (receiver_len != 17 || receiver_out == NULL) return FFI_STATUS_INVALID_ARG;
     *receiver_out = encoded_point(
         read_f64_le(receiver_ptr) * factor,
-        read_f64_le(receiver_ptr + 8) * factor
+        read_f64_le(receiver_ptr + 8) * factor,
+        receiver_ptr[16] != 0
     );
     return FFI_STATUS_OK;
 }
@@ -322,11 +325,17 @@ public final class RuntimeSmoke {
         Point point = Demo.roundTripPoint(new Point(3.25, -7.5));
         verify(point.x() == 3.25 && point.y() == -7.5, "direct record");
 
-        EncodedPoint encoded = EncodedPoint._new(3.0, 4.0);
-        verify(encoded.x() == 3.0 && encoded.y() == 4.0, "encoded initializer");
+        EncodedPoint encoded = EncodedPoint._new(3.0, 4.0, true);
+        verify(
+            encoded.x() == 3.0 && encoded.y() == 4.0 && encoded.active(),
+            "encoded initializer"
+        );
         verify(encoded.sum() == 7.0, "encoded receiver");
         EncodedPoint scaled = encoded.scale(2.0);
-        verify(scaled.x() == 6.0 && scaled.y() == 8.0, "encoded mutation");
+        verify(
+            scaled.x() == 6.0 && scaled.y() == 8.0 && scaled.active(),
+            "encoded mutation"
+        );
         EncodedPoint echoed = Demo.roundTripEncodedPoint(scaled);
         verify(echoed.equals(scaled), "encoded round trip");
 

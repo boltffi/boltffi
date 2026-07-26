@@ -141,7 +141,9 @@ pub struct Parameter {
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum Argument {
     Direct(Expression),
+    BorrowedDirect(BorrowedDirectArgument),
     Encoded(EncodedArgument),
+    MutableDirect(MutableDirectArgument),
     MutableEncoded(MutableEncodedArgument),
     DirectVector(BorrowedVector),
     Closure(Box<ClosureArgument>),
@@ -150,6 +152,20 @@ enum Argument {
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct EncodedArgument {
     buffer: ArgumentBuffer,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct BorrowedDirectArgument {
+    input: Expression,
+    storage: Identifier,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct MutableDirectArgument {
+    target: Expression,
+    input: Expression,
+    output: Identifier,
+    value: DirectValue,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1030,6 +1046,27 @@ impl Receiver {
         }
     }
 
+    pub fn direct_record(
+        id: RecordId,
+        name: &CanonicalName,
+        bridge: &CBridgeContract,
+        context: &RenderContext<Native>,
+    ) -> Result<Self> {
+        let value = DirectValue::new(&DirectValueType::Record(id), bridge, context)?;
+        let target = Expression::new("self");
+        let input = value.c_value(target.clone());
+        Ok(Self {
+            kind: ReceiverKind::Value,
+            argument: Argument::Direct(input.clone()),
+            mutable_argument: Some(Argument::MutableDirect(MutableDirectArgument::new(
+                &Name::new(name),
+                target,
+                input,
+                value,
+            )?)),
+        })
+    }
+
     pub fn encoded(
         name: &CanonicalName,
         read: &ReadPlan,
@@ -1149,7 +1186,7 @@ impl Invocation {
             c_return_channel: return_function.return_channel(),
             parameter_groups: return_function.parameter_groups(),
         })?;
-        Self::check_mutable_encoded_arguments(&arguments, &returns, &error, asynchronous.as_ref())?;
+        Self::check_mutable_value_arguments(&arguments, &returns, &error, asynchronous.as_ref())?;
         Ok(Self {
             symbol: c_function.name().to_owned(),
             parameters,
@@ -1318,6 +1355,10 @@ impl Invocation {
         exit: BodyExit,
     ) -> Result<String> {
         match arguments.split_first() {
+            Some((Argument::BorrowedDirect(argument), rest)) => Ok(argument.wrap(
+                Self::render_scoped_body(rest, returns, error, call, indent, exit)?,
+                indent,
+            )),
             Some((Argument::Encoded(argument), rest)) => Ok(argument.wrap(
                 Self::render_scoped_body(
                     rest,
@@ -1330,6 +1371,17 @@ impl Invocation {
                 indent,
                 exit,
             )),
+            Some((Argument::MutableDirect(argument), rest)) => argument.wrap(
+                Self::render_scoped_body(
+                    rest,
+                    returns,
+                    error,
+                    call,
+                    &format!("{indent}    "),
+                    exit,
+                )?,
+                indent,
+            ),
             Some((Argument::MutableEncoded(argument), rest)) => argument.wrap(
                 Self::render_scoped_body(
                     rest,
@@ -1373,6 +1425,10 @@ impl Invocation {
         indent: &str,
     ) -> Result<String> {
         match arguments.split_first() {
+            Some((Argument::BorrowedDirect(argument), rest)) => Ok(argument.wrap(
+                Self::render_scoped_initializer_body(rest, returns, error, call, indent)?,
+                indent,
+            )),
             Some((Argument::Encoded(argument), rest)) => Ok(argument.wrap(
                 Self::render_scoped_initializer_body(
                     rest,
@@ -1384,6 +1440,16 @@ impl Invocation {
                 indent,
                 BodyExit::CompleteEffect,
             )),
+            Some((Argument::MutableDirect(argument), rest)) => argument.wrap(
+                Self::render_scoped_initializer_body(
+                    rest,
+                    returns,
+                    error,
+                    call,
+                    &format!("{indent}    "),
+                )?,
+                indent,
+            ),
             Some((Argument::MutableEncoded(argument), rest)) => argument.wrap(
                 Self::render_scoped_initializer_body(
                     rest,
@@ -1426,6 +1492,12 @@ impl Invocation {
         scope: Scope<'plan, Syntax>,
     ) -> Result<String> {
         match arguments.split_first() {
+            Some((Argument::BorrowedDirect(argument), rest)) => Ok(argument.wrap(
+                Self::render_scoped_value_initializer_body(
+                    rest, returns, error, call, indent, lexical, scope,
+                )?,
+                indent,
+            )),
             Some((Argument::Encoded(argument), rest)) => Ok(argument.wrap(
                 Self::render_scoped_value_initializer_body(
                     rest,
@@ -1439,6 +1511,18 @@ impl Invocation {
                 indent,
                 BodyExit::CompleteEffect,
             )),
+            Some((Argument::MutableDirect(argument), rest)) => argument.wrap(
+                Self::render_scoped_value_initializer_body(
+                    rest,
+                    returns,
+                    error,
+                    call,
+                    &format!("{indent}    "),
+                    lexical,
+                    scope,
+                )?,
+                indent,
+            ),
             Some((Argument::MutableEncoded(argument), rest)) => argument.wrap(
                 Self::render_scoped_value_initializer_body(
                     rest,
@@ -1487,6 +1571,12 @@ impl Invocation {
         scope: Scope<'plan, Syntax>,
     ) -> Result<ScopedInitializerValue<'plan>> {
         match arguments.split_first() {
+            Some((Argument::BorrowedDirect(argument), rest)) => {
+                Self::render_scoped_value_initializer_value(
+                    rest, returns, error, call, indent, lexical, scope,
+                )?
+                .wrap(|source| Ok(argument.wrap(source, indent)))
+            }
             Some((Argument::Encoded(argument), rest)) => {
                 let declaration = lexical
                     .allocate(scope, &GeneratedLocal::ReturnBuffer.suffixed_stem("value"))?;
@@ -1509,9 +1599,9 @@ impl Invocation {
                     .into_parts();
                 Ok(ScopedInitializerValue::Bound { source, reference })
             }
-            Some((Argument::MutableEncoded(_), _)) => Err(SwiftHost::unsupported(
-                "mutable encoded value initializer argument",
-            )),
+            Some((Argument::MutableDirect(_) | Argument::MutableEncoded(_), _)) => {
+                Err(SwiftHost::unsupported("mutable value initializer argument"))
+            }
             Some((Argument::DirectVector(argument), rest)) => {
                 let declaration = lexical
                     .allocate(scope, &GeneratedLocal::ReturnBuffer.suffixed_stem("value"))?;
@@ -1558,6 +1648,10 @@ impl Invocation {
         handle: &Identifier,
     ) -> Result<String> {
         match arguments.split_first() {
+            Some((Argument::BorrowedDirect(argument), rest)) => Ok(argument.wrap(
+                Self::render_scoped_initializer_handle(rest, returns, error, call, indent, handle)?,
+                indent,
+            )),
             Some((Argument::Encoded(argument), rest)) => Ok(argument.bind(
                 handle,
                 Self::render_scoped_initializer_handle_value(
@@ -1570,6 +1664,17 @@ impl Invocation {
                 indent,
                 error.fallible(),
             )),
+            Some((Argument::MutableDirect(argument), rest)) => argument.wrap(
+                Self::render_scoped_initializer_handle(
+                    rest,
+                    returns,
+                    error,
+                    call,
+                    &format!("{indent}    "),
+                    handle,
+                )?,
+                indent,
+            ),
             Some((Argument::MutableEncoded(argument), rest)) => argument.wrap(
                 Self::render_scoped_initializer_handle(rest, returns, error, call, indent, handle)?,
                 indent,
@@ -1605,6 +1710,10 @@ impl Invocation {
         indent: &str,
     ) -> Result<String> {
         match arguments.split_first() {
+            Some((Argument::BorrowedDirect(argument), rest)) => Ok(argument.wrap(
+                Self::render_scoped_initializer_handle_value(rest, returns, error, call, indent)?,
+                indent,
+            )),
             Some((Argument::Encoded(argument), rest)) => Ok(argument.wrap(
                 Self::render_scoped_initializer_handle_value(
                     rest,
@@ -1616,6 +1725,16 @@ impl Invocation {
                 indent,
                 returns.exit(error.fallible()),
             )),
+            Some((Argument::MutableDirect(argument), rest)) => argument.wrap(
+                Self::render_scoped_initializer_handle_value(
+                    rest,
+                    returns,
+                    error,
+                    call,
+                    &format!("{indent}    "),
+                )?,
+                indent,
+            ),
             Some((Argument::MutableEncoded(argument), rest)) => argument.wrap(
                 Self::render_scoped_initializer_handle_value(
                     rest,
@@ -1658,6 +1777,10 @@ impl Invocation {
         exit: BodyExit,
     ) -> Result<String> {
         match arguments.split_first() {
+            Some((Argument::BorrowedDirect(argument), rest)) => Ok(argument.wrap(
+                Self::render_scoped_factory_body(rest, returns, error, call, indent, exit)?,
+                indent,
+            )),
             Some((Argument::Encoded(argument), rest)) => Ok(argument.wrap(
                 Self::render_scoped_factory_body(
                     rest,
@@ -1670,6 +1793,17 @@ impl Invocation {
                 indent,
                 exit,
             )),
+            Some((Argument::MutableDirect(argument), rest)) => argument.wrap(
+                Self::render_scoped_factory_body(
+                    rest,
+                    returns,
+                    error,
+                    call,
+                    &format!("{indent}    "),
+                    exit,
+                )?,
+                indent,
+            ),
             Some((Argument::MutableEncoded(argument), rest)) => argument.wrap(
                 Self::render_scoped_factory_body(
                     rest,
@@ -1725,12 +1859,25 @@ impl Invocation {
         future: &Identifier,
     ) -> Result<String> {
         match arguments.split_first() {
+            Some((Argument::BorrowedDirect(argument), rest)) => Ok(argument.wrap(
+                Self::render_scoped_async_start(rest, start_call, indent, future)?,
+                indent,
+            )),
             Some((Argument::Encoded(argument), rest)) => Ok(argument.bind(
                 future,
                 Self::render_scoped_async_start_value(rest, start_call, &format!("{indent}    "))?,
                 indent,
                 false,
             )),
+            Some((Argument::MutableDirect(argument), rest)) => argument.wrap(
+                Self::render_scoped_async_start(
+                    rest,
+                    start_call,
+                    &format!("{indent}    "),
+                    future,
+                )?,
+                indent,
+            ),
             Some((Argument::MutableEncoded(argument), rest)) => argument.wrap(
                 Self::render_scoped_async_start(rest, start_call, indent, future)?,
                 indent,
@@ -1758,11 +1905,19 @@ impl Invocation {
         indent: &str,
     ) -> Result<String> {
         match arguments.split_first() {
+            Some((Argument::BorrowedDirect(argument), rest)) => Ok(argument.wrap(
+                Self::render_scoped_async_start_value(rest, start_call, indent)?,
+                indent,
+            )),
             Some((Argument::Encoded(argument), rest)) => Ok(argument.wrap(
                 Self::render_scoped_async_start_value(rest, start_call, &format!("{indent}    "))?,
                 indent,
                 BodyExit::ReturnValue,
             )),
+            Some((Argument::MutableDirect(argument), rest)) => argument.wrap(
+                Self::render_scoped_async_start_value(rest, start_call, &format!("{indent}    "))?,
+                indent,
+            ),
             Some((Argument::MutableEncoded(argument), rest)) => argument.wrap(
                 Self::render_scoped_async_start_value(rest, start_call, &format!("{indent}    "))?,
                 indent,
@@ -1836,29 +1991,23 @@ impl Invocation {
         }
     }
 
-    fn check_mutable_encoded_arguments(
+    fn check_mutable_value_arguments(
         arguments: &[Argument],
         returns: &Return,
         error: &ErrorConversion,
         asynchronous: Option<&AsyncCall>,
     ) -> Result<()> {
-        if !arguments.iter().any(Argument::mutable_encoded) {
+        if !arguments.iter().any(Argument::mutable_value) {
             return Ok(());
         }
         if returns.ty.is_some() {
-            return Err(SwiftHost::unsupported(
-                "mutable encoded parameter with return value",
-            ));
+            return Err(SwiftHost::unsupported("mutable value with return value"));
         }
         if error.fallible() {
-            return Err(SwiftHost::unsupported(
-                "mutable encoded parameter with error channel",
-            ));
+            return Err(SwiftHost::unsupported("mutable value with error channel"));
         }
         if asynchronous.is_some() {
-            return Err(SwiftHost::unsupported(
-                "mutable encoded parameter with async execution",
-            ));
+            return Err(SwiftHost::unsupported("mutable value with async execution"));
         }
         Ok(())
     }
@@ -1897,7 +2046,9 @@ impl Argument {
     fn arguments(&self) -> Vec<Expression> {
         match self {
             Self::Direct(argument) => vec![argument.clone()],
+            Self::BorrowedDirect(argument) => argument.arguments(),
             Self::Encoded(argument) => argument.arguments(),
+            Self::MutableDirect(argument) => argument.arguments(),
             Self::MutableEncoded(argument) => argument.arguments(),
             Self::DirectVector(argument) => argument.arguments(),
             Self::Closure(argument) => argument.arguments(),
@@ -1911,12 +2062,39 @@ impl Argument {
     fn uses_scope(&self) -> bool {
         matches!(
             self,
-            Self::Encoded(_) | Self::MutableEncoded(_) | Self::DirectVector(_)
+            Self::BorrowedDirect(_)
+                | Self::Encoded(_)
+                | Self::MutableDirect(_)
+                | Self::MutableEncoded(_)
+                | Self::DirectVector(_)
         )
     }
 
-    fn mutable_encoded(&self) -> bool {
-        matches!(self, Self::MutableEncoded(_))
+    fn mutable_value(&self) -> bool {
+        matches!(self, Self::MutableDirect(_) | Self::MutableEncoded(_))
+    }
+}
+
+impl BorrowedDirectArgument {
+    fn new(source_name: &Name, input: Expression) -> Result<Self> {
+        Ok(Self {
+            input,
+            storage: source_name.generated("storage")?,
+        })
+    }
+
+    fn arguments(&self) -> Vec<Expression> {
+        vec![Expression::address(Expression::identifier(
+            self.storage.clone(),
+        ))]
+    }
+
+    fn wrap(&self, body: String, indent: &str) -> String {
+        [
+            Statement::inferred_var(&self.storage, self.input.clone()).indented(indent),
+            body,
+        ]
+        .join("\n")
     }
 }
 
@@ -1971,6 +2149,40 @@ impl EncodedArgument {
             self.buffer.bytes_statement().indented(indent),
             self.buffer.binding_scope(binding, body, indent, throwing)
         )
+    }
+}
+
+impl MutableDirectArgument {
+    fn new(
+        source_name: &Name,
+        target: Expression,
+        input: Expression,
+        value: DirectValue,
+    ) -> Result<Self> {
+        Ok(Self {
+            target,
+            input,
+            output: source_name.generated("out")?,
+            value,
+        })
+    }
+
+    fn arguments(&self) -> Vec<Expression> {
+        vec![
+            self.input.clone(),
+            Expression::address(Expression::identifier(self.output.clone())),
+        ]
+    }
+
+    fn wrap(&self, body: String, indent: &str) -> Result<String> {
+        let output = Expression::identifier(self.output.clone());
+        Ok([
+            Statement::var_value(&self.output, self.value.storage_type(), self.input.clone())
+                .indented(indent),
+            format!("{}do {{\n{}\n{}}}", indent, body, indent),
+            Statement::assign(&self.target, self.value.swift_value(output)).indented(indent),
+        ]
+        .join("\n"))
     }
 }
 
@@ -2140,10 +2352,17 @@ impl<'plan> ParamPlanRender<'plan, Native, IntoRust> for ParameterPlan<'_, '_> {
             return Err(SwiftHost::unsupported("mutable direct parameter"));
         }
         let direct = DirectValue::new(ty, self.bridge, self.context)?;
+        let input = direct.c_value(Expression::identifier(self.name.clone()));
+        let argument = match (ty, receive) {
+            (DirectValueType::Record(_), Receive::ByRef) => {
+                Argument::BorrowedDirect(BorrowedDirectArgument::new(&self.source_name, input)?)
+            }
+            _ => Argument::Direct(input),
+        };
         Ok(Parameter {
             name: self.name.clone(),
             ty: direct.api_type().clone(),
-            argument: Argument::Direct(direct.c_value(Expression::identifier(self.name.clone()))),
+            argument,
         })
     }
 

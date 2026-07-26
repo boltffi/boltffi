@@ -221,7 +221,7 @@ where
         .render()?;
         Ok(quote! {
             const _: [(); #size] = [(); ::core::mem::size_of::<#record>()];
-            const _: [(); #alignment] = [(); ::core::mem::align_of::<#record>()];
+            const _: [(); 0] = [(); #alignment % ::core::mem::align_of::<#record>()];
             #(#field_offsets)*
 
             unsafe impl ::boltffi::__private::Passable for #record {
