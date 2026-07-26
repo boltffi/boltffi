@@ -1,0 +1,333 @@
+---
+title: "Constants"
+description: "Export Rust constants as module-level values or associate them with records, enums, and classes across Swift, Kotlin, Java, C#, TypeScript, and Python."
+---
+
+import CodeComparison from "../../components/CodeComparisonWrapper.astro";
+
+# Constants
+
+BoltFFI exports two kinds of constants:
+
+- A global constant is a standalone Rust `const` marked with `#[export]`.
+- An associated constant belongs to an exported record, enum, or class.
+
+Both forms produce immutable values in the generated API. BoltFFI emits simple literals directly in generated source and reads values that require Rust evaluation through a generated native accessor.
+
+## Global constants
+
+Mark a standalone public constant with `#[export]`. Swift, Kotlin, TypeScript, and Python expose it at module scope. Java and C# place it on the generated module class because those languages do not have module-level values.
+
+<CodeComparison
+  title=""
+  rust={`#[export]
+pub const API_VERSION: u32 = 3;
+
+#[export]
+pub const SERVICE_NAME: &'static str = "BoltFFI";`}
+  swift={`public let apiVersion: UInt32 = 3
+public let serviceName: String = "BoltFFI"
+
+let version = apiVersion`}
+  kotlin={`val apiVersion: UInt = 3.toUInt()
+val serviceName: String = "BoltFFI"
+
+val version = apiVersion`}
+  java={`public final class Demo {
+    public static final int API_VERSION = 3;
+    public static final String SERVICE_NAME = "BoltFFI";
+}
+
+int version = Demo.API_VERSION;`}
+  csharp={`public static class Demo
+{
+    public const uint ApiVersion = 3U;
+    public const string ServiceName = "BoltFFI";
+}
+
+uint version = Demo.ApiVersion;`}
+  typescript={`export const apiVersion: number = 3
+export const serviceName: string = "BoltFFI"
+
+const version = apiVersion`}
+  python={`api_version: int = 3
+service_name: str = "BoltFFI"
+
+version = api_version`}
+/>
+
+The Rust name is converted to the naming convention of each target. `API_VERSION` becomes `apiVersion` in Swift, Kotlin, and TypeScript, `API_VERSION` in Java, `ApiVersion` in C#, and `api_version` in Python.
+
+## Associated constants
+
+Associated constants are declared inside the same exported impl blocks used for methods and constructors:
+
+- Use `#[data(impl)]` for a struct or enum marked with `#[data]`.
+- Use `#[export]` for a class impl.
+
+Every public constant in the marked impl is generated on its owner type. The constant may use `Self` or any other supported constant type.
+
+<CodeComparison
+  title=""
+  rust={`#[data]
+pub struct Color {
+    pub r: u8,
+    pub g: u8,
+    pub b: u8,
+    pub a: u8,
+}
+
+#[data(impl)]
+impl Color {
+    pub const BLACK: Self = Self {
+        r: 0,
+        g: 0,
+        b: 0,
+        a: 255,
+    };
+
+    pub const CHANNEL_COUNT: u8 = 4;
+}
+
+#[repr(u8)]
+#[data]
+pub enum Mode {
+    Fast = 1,
+    Slow = 2,
+}
+
+#[data(impl)]
+impl Mode {
+    pub const DEFAULT: Self = Self::Fast;
+}
+
+pub struct Palette;
+
+#[export]
+impl Palette {
+    pub const MAX_COLORS: u8 = 16;
+
+    pub fn new() -> Self {
+        Self
+    }
+}`}
+  swift={`public struct Color {
+    public var r: UInt8
+    public var g: UInt8
+    public var b: UInt8
+    public var a: UInt8
+
+    public static var black: Color { get }
+    public static let channelCount: UInt8
+}
+
+public enum Mode: UInt8 {
+    case fast = 1
+    case slow = 2
+
+    public static let \`default\`: Mode
+}
+
+public final class Palette {
+    public static let maxColors: UInt8
+}
+
+let color = Color.black
+let mode = Mode.default
+let limit = Palette.maxColors`}
+  kotlin={`data class Color(
+    val r: UByte,
+    val g: UByte,
+    val b: UByte,
+    val a: UByte,
+) {
+    companion object {
+        val BLACK: Color
+        val CHANNEL_COUNT: UByte
+    }
+}
+
+enum class Mode(val value: Byte) {
+    FAST(1.toByte()),
+    SLOW(2.toByte());
+
+    companion object {
+        val DEFAULT: Mode
+    }
+}
+
+class Palette {
+    companion object {
+        val MAX_COLORS: UByte
+    }
+}
+
+val color = Color.BLACK
+val mode = Mode.DEFAULT
+val limit = Palette.MAX_COLORS`}
+  java={`public final class Color {
+    public final byte r;
+    public final byte g;
+    public final byte b;
+    public final byte a;
+
+    public static final Color BLACK;
+    public static final byte CHANNEL_COUNT = (byte) 4;
+}
+
+public enum Mode {
+    FAST((byte) 1),
+    SLOW((byte) 2);
+
+    public static final Mode DEFAULT = Mode.FAST;
+}
+
+public final class Palette implements AutoCloseable {
+    public static final byte MAX_COLORS = (byte) 16;
+}
+
+Color color = Color.BLACK;
+Mode mode = Mode.DEFAULT;
+byte limit = Palette.MAX_COLORS;`}
+  csharp={`public readonly record struct Color(
+    byte R,
+    byte G,
+    byte B,
+    byte A)
+{
+    public static Color Black { get; }
+    public const byte ChannelCount = 4;
+}
+
+public enum Mode : byte
+{
+    Fast = 1,
+    Slow = 2,
+    Default = Fast,
+}
+
+public sealed class Palette : IDisposable
+{
+    public const byte MaxColors = 16;
+}
+
+Color color = Color.Black;
+Mode mode = Mode.Default;
+byte limit = Palette.MaxColors;`}
+  typescript={`export interface Color {
+  readonly r: number
+  readonly g: number
+  readonly b: number
+  readonly a: number
+}
+
+export const Color: {
+  readonly BLACK: Color
+  readonly CHANNEL_COUNT: number
+}
+
+export type Mode = 1 | 2
+
+export const Mode: {
+  readonly Fast: 1
+  readonly Slow: 2
+  readonly DEFAULT: 1
+}
+
+export class Palette {
+  static readonly MAX_COLORS: number
+}
+
+const color = Color.BLACK
+const mode: Mode = Mode.DEFAULT
+const limit = Palette.MAX_COLORS`}
+  python={`from dataclasses import dataclass
+from enum import IntEnum
+from typing import ClassVar
+
+@dataclass(frozen=True)
+class Color:
+    BLACK: ClassVar["Color"]
+    CHANNEL_COUNT: ClassVar[int]
+
+    r: int
+    g: int
+    b: int
+    a: int
+
+class Mode(IntEnum):
+    FAST = 1
+    SLOW = 2
+
+    DEFAULT: ClassVar["Mode"]
+
+class Palette:
+    MAX_COLORS: ClassVar[int]
+
+color = Color.BLACK
+mode = Mode.DEFAULT
+limit = Palette.MAX_COLORS`}
+/>
+
+`Color.BLACK` uses `Self`, `Color.CHANNEL_COUNT` uses a primitive, `Mode.DEFAULT` aliases an enum variant, and `Palette.MAX_COLORS` belongs to a Rust-backed class. In every target, the value remains attached to the type that owns it.
+
+## Supported types
+
+A constant's declared type must be supported as a BoltFFI return type. Rust must also permit the value in a `const` declaration.
+
+| Rust constant | Examples | Generated delivery |
+|---------------|----------|--------------------|
+| Boolean | `bool` | Inline |
+| Integer | `u8`, `i32`, `u64`, `usize` | Inline when the value fits the declared type |
+| Floating point | `f32`, `f64` | Inline |
+| String | `&str`, `&'static str` | Inline for string literals |
+| C-style enum | `Mode::Fast`, `Self::Fast` | Inline |
+| Byte data | `&'static [u8]` | Native accessor |
+| Tuple | `(u32, u32)` | Native accessor |
+| Record or data enum | `Color`, `State` | Native accessor |
+| Computed expression | `6 * 7`, `Self { ... }` | Native accessor when it cannot be represented inline |
+
+Inline and accessor-backed constants have the same public API. The distinction only controls how BoltFFI delivers the value.
+
+Borrowed constant types are limited to strings and byte slices. Other borrowed values are not exported.
+
+## Export rules
+
+A global constant is exported only when the declaration has `#[export]`:
+
+```rust
+#[export]
+pub const PUBLIC_LIMIT: u32 = 100;
+
+pub const INTERNAL_LIMIT: u32 = 50;
+```
+
+An associated constant is exported only when it is public and belongs to an explicitly exported impl block:
+
+```rust
+#[data(impl)]
+impl Color {
+    pub const WHITE: Self = Self {
+        r: 255,
+        g: 255,
+        b: 255,
+        a: 255,
+    };
+
+    const COMPONENT_COUNT: u8 = 4;
+
+    #[skip]
+    pub const INTERNAL_FORMAT: u8 = 1;
+}
+
+impl Color {
+    pub const RUST_ONLY: Self = Self {
+        r: 1,
+        g: 2,
+        b: 3,
+        a: 4,
+    };
+}
+```
+
+`Color.WHITE` is exported. `COMPONENT_COUNT` is private, `INTERNAL_FORMAT` is skipped, and `RUST_ONLY` belongs to an unmarked impl block, so none of them appear in generated bindings.

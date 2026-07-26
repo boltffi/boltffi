@@ -10,7 +10,7 @@ import TypeTable from "../../components/TypeTableWrapper.astro";
 
 Records are value types: structs and enums marked with `#[data]`. When a record crosses the boundary, it gets copied. The target language receives its own copy of the data.
 
-Classes are different. A class lives in Rust, and the target language holds a reference to it. See [Classes](/docs/classes) for when to use one over the other.
+Classes are different. A class lives in Rust, and the target language holds a reference to it. See [Classes](/docs/classes) for when to use one over the other. Records may also define [associated constants](/docs/constants#associated-constants).
 
 ## Structs
 

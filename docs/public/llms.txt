@@ -141,6 +141,7 @@ pub fn distance(from: Point, to: Point) -> f64 {
 - /docs/getting-started - Setup guide
 - /docs/types - Type mappings
 - /docs/functions - Exporting functions
+- /docs/constants - Exporting global and associated constants
 - /docs/async - Async support
 - /docs/classes - Classes with methods
 - /docs/streaming - Async streams

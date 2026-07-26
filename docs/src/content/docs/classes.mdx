@@ -10,9 +10,9 @@ import TypeTable from "../../components/TypeTableWrapper.astro";
 
 BoltFFI has two ways to expose a struct: as data or as a class.
 
-Data (`#[data]`) is for plain values. A `Point { x, y }` or a `User { id, name, email }`. Data is copied when it crosses the boundary. The target language gets a struct or record with public fields. You can also attach methods and constructors with `#[data(impl)]`. See [Records](/docs/records#methods-and-constructors).
+Data (`#[data]`) is for plain values. A `Point { x, y }` or a `User { id, name, email }`. Data is copied when it crosses the boundary. The target language gets a struct or record with public fields. You can also attach methods, constructors, and [associated constants](/docs/constants#associated-constants) with `#[data(impl)]`. See [Records](/docs/records#methods-and-constructors).
 
-Classes (`#[export] impl`) are for objects with behavior. A `DatabaseConnection` or a `HttpClient`. The object lives in Rust, the target language holds a reference to it. Methods operate on that reference. The object is not copied - there's one instance, and both sides point to it.
+Classes (`#[export] impl`) are for objects with behavior. A `DatabaseConnection` or a `HttpClient`. The object lives in Rust, the target language holds a reference to it. Methods operate on that reference. The object is not copied - there's one instance, and both sides point to it. The exported impl may also define [associated constants](/docs/constants#associated-constants).
 
 Use data when you're passing values around. Use classes when you're managing state or resources.
 
