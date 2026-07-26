@@ -1,7 +1,8 @@
 use askama::Template as AskamaTemplate;
 use boltffi_binding::{
     CanonicalName, DefaultValue, DirectFieldDecl, DirectRecordDecl, EncodedRecordDecl,
-    ExportedMethodDecl, FieldKey, InitializerDecl, Native, NativeSymbol, RecordDecl, RecordId,
+    ExportedMethodDecl, FieldKey, InitializerDecl, Native, NativeSymbol, Primitive, RecordDecl,
+    RecordId,
 };
 
 use crate::{
@@ -504,7 +505,8 @@ struct Field {
 
 impl Field {
     fn new(source: &DirectFieldDecl, c_field: &c::Field) -> Result<Self> {
-        let primitive = primitive::Runtime::new(source.ty().primitive());
+        let binding_primitive = source.ty().primitive();
+        let primitive = primitive::Runtime::new(binding_primitive);
         let python_name = Self::python_name(source.key())?;
         Ok(Self {
             value_name: Identifier::escape(format!("{python_name}_value"))?,
@@ -515,32 +517,78 @@ impl Field {
             default: source
                 .meta()
                 .default()
-                .map(Self::default_literal)
+                .map(|value| Self::default_literal(value, binding_primitive))
                 .transpose()?,
             primitive,
         })
     }
 
-    fn default_literal(value: &DefaultValue) -> Result<String> {
-        match value {
-            DefaultValue::Bool(value) => Ok(if *value { "true" } else { "false" }.to_owned()),
-            DefaultValue::Integer(value) => Ok(value.get().to_string()),
-            DefaultValue::Float(value) => {
-                let float = value.to_f64();
-                if float == f64::INFINITY {
-                    Ok("INFINITY".to_owned())
-                } else if float == f64::NEG_INFINITY {
-                    Ok("-INFINITY".to_owned())
-                } else if float.is_nan() {
-                    Ok("NAN".to_owned())
-                } else {
-                    Ok(format!("{float:?}"))
-                }
+    fn default_literal(value: &DefaultValue, primitive: Primitive) -> Result<String> {
+        match (primitive, value) {
+            (Primitive::Bool, DefaultValue::Bool(value)) => {
+                Ok(if *value { "true" } else { "false" }.to_owned())
             }
-            _ => Err(Error::UnsupportedTarget {
-                target: "python",
-                shape: "non-scalar direct record field default",
-            }),
+            (Primitive::I8, DefaultValue::Integer(value)) => {
+                Self::bounded_integer_literal::<i8>(value.get())
+            }
+            (Primitive::U8, DefaultValue::Integer(value)) => {
+                Self::bounded_integer_literal::<u8>(value.get())
+            }
+            (Primitive::I16, DefaultValue::Integer(value)) => {
+                Self::bounded_integer_literal::<i16>(value.get())
+            }
+            (Primitive::U16, DefaultValue::Integer(value)) => {
+                Self::bounded_integer_literal::<u16>(value.get())
+            }
+            (Primitive::I32, DefaultValue::Integer(value)) => {
+                Self::bounded_integer_literal::<i32>(value.get())
+            }
+            (Primitive::U32, DefaultValue::Integer(value)) => {
+                Self::bounded_integer_literal::<u32>(value.get())
+            }
+            (Primitive::I64 | Primitive::ISize, DefaultValue::Integer(value)) => {
+                Self::bounded_integer_literal::<i64>(value.get())
+            }
+            (Primitive::U64 | Primitive::USize, DefaultValue::Integer(value)) => {
+                Self::bounded_integer_literal::<u64>(value.get())
+            }
+            (Primitive::F32, DefaultValue::Float(value)) => {
+                let value = value.to_f64();
+                if value.is_finite() && value.abs() > f32::MAX.into() {
+                    return Err(Self::invalid_default("direct record field default range"));
+                }
+                Ok(Self::float_literal(value))
+            }
+            (Primitive::F64, DefaultValue::Float(value)) => Ok(Self::float_literal(value.to_f64())),
+            _ => Err(Self::invalid_default("direct record field default type")),
+        }
+    }
+
+    fn bounded_integer_literal<Integer>(value: i128) -> Result<String>
+    where
+        Integer: TryFrom<i128>,
+    {
+        Integer::try_from(value)
+            .map(|_| value.to_string())
+            .map_err(|_| Self::invalid_default("direct record field default range"))
+    }
+
+    fn float_literal(value: f64) -> String {
+        if value == f64::INFINITY {
+            "INFINITY".to_owned()
+        } else if value == f64::NEG_INFINITY {
+            "-INFINITY".to_owned()
+        } else if value.is_nan() {
+            "NAN".to_owned()
+        } else {
+            format!("{value:?}")
+        }
+    }
+
+    fn invalid_default(shape: &'static str) -> Error {
+        Error::UnsupportedTarget {
+            target: "python",
+            shape,
         }
     }
 

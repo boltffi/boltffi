@@ -1652,6 +1652,92 @@ mod tests {
     }
 
     #[test]
+    fn python_target_renders_empty_encoded_record_without_zero_length_array() {
+        let output = target()
+            .render(&bindings(
+                r#"
+                #[data]
+                pub struct Empty {}
+
+                #[export]
+                pub fn echo_empty(value: Empty) -> Empty {
+                    value
+                }
+                "#,
+            ))
+            .expect("Python target should render empty encoded records");
+        let extension = extension(&output);
+
+        assert!(extension.contains("PyObject **values = NULL;"));
+        assert!(!extension.contains("PyObject *values[0]"));
+        assert!(
+            extension.contains(
+                "result = PyObject_Vectorcall(boltffi_python_empty_type, values, 0, NULL);"
+            )
+        );
+    }
+
+    #[test]
+    fn python_target_renders_non_finite_direct_record_defaults_portably() {
+        let output = target()
+            .render(&bindings(
+                r#"
+                #[data]
+                pub struct Limits {
+                    #[boltffi::default(1e999)]
+                    pub upper: f64,
+                    #[boltffi::default(-1e999)]
+                    pub lower: f64,
+                }
+                "#,
+            ))
+            .expect("Python target should render non-finite direct record defaults");
+        let extension = extension(&output);
+
+        assert!(extension.contains("#include <math.h>"));
+        assert!(extension.contains("value.upper = INFINITY;"));
+        assert!(extension.contains("value.lower = -INFINITY;"));
+    }
+
+    #[test]
+    fn python_target_rejects_out_of_range_direct_record_defaults() {
+        let cases = [
+            (
+                r#"
+                #[data]
+                pub struct InvalidIntegerDefault {
+                    #[boltffi::default(300)]
+                    pub value: u8,
+                }
+                "#,
+                "out-of-range u8 default",
+            ),
+            (
+                r#"
+                #[data]
+                pub struct InvalidFloatDefault {
+                    #[boltffi::default(3.5e38)]
+                    pub value: f32,
+                }
+                "#,
+                "out-of-range f32 default",
+            ),
+        ];
+
+        for (source, description) in cases {
+            let error = target().render(&bindings(source)).expect_err(description);
+
+            assert_eq!(
+                error,
+                Error::UnsupportedTarget {
+                    target: "python",
+                    shape: "direct record field default range",
+                }
+            );
+        }
+    }
+
+    #[test]
     fn python_target_renders_uuid_as_python_uuid() {
         let output = target()
             .render(&bindings(

@@ -319,7 +319,11 @@ done:
 
 static PyObject *{{ owned_decoder }}_read(boltffi_python_wire_reader *reader) {
     PyObject *result = NULL;
+{%- if fields.is_empty() %}
+    PyObject **values = NULL;
+{%- else %}
     PyObject *values[{{ fields.len() }}] = {0};
+{%- endif %}
 {%- for field in fields %}
     {
 {%- match field.codec() %}
