@@ -1265,6 +1265,12 @@ static void boltffi_tests_async_compute(uint64_t handle, int32_t a, int32_t b, v
     callback(context, FFI_STATUS_OK, (int64_t)handle + (int64_t)a * b);
 }
 
+static void boltffi_tests_async_make_callback(uint64_t handle, void (*callback)(void *, FfiStatus, BoltFFICallbackHandle), void *context) {
+    BoltFFICallbackHandle value_callback =
+        boltffi_create_callback_boltffi_tests_callbacks_sync_value_callback(handle);
+    callback(context, FFI_STATUS_OK, value_callback);
+}
+
 static int boltffi_tests_check_callbacks(void) {
     ___SyncValueCallbackVTable value_vtable = {
         boltffi_tests_callback_free,
@@ -1320,6 +1326,11 @@ static int boltffi_tests_check_callbacks(void) {
         boltffi_tests_async_load,
         boltffi_tests_async_compute
     };
+    ___AsyncCallbackFactoryVTable async_factory_vtable = {
+        boltffi_tests_callback_free,
+        boltffi_tests_callback_clone,
+        boltffi_tests_async_make_callback
+    };
     boltffi_register_callback_boltffi_tests_callbacks_sync_value_callback(&value_vtable);
     boltffi_register_callback_boltffi_tests_callbacks_sync_data_provider(&provider_vtable);
     boltffi_register_callback_boltffi_tests_callbacks_sync_vec_callback(&vec_vtable);
@@ -1330,6 +1341,7 @@ static int boltffi_tests_check_callbacks(void) {
     boltffi_register_callback_boltffi_tests_callbacks_async_fetcher(&async_fetch_vtable);
     boltffi_register_callback_boltffi_tests_callbacks_async_option_fetcher(&async_option_vtable);
     boltffi_register_callback_boltffi_tests_callbacks_async_multi_method(&async_multi_vtable);
+    boltffi_register_callback_boltffi_tests_callbacks_async_callback_factory(&async_factory_vtable);
     BoltFFICallbackHandle callback = boltffi_create_callback_boltffi_tests_callbacks_sync_value_callback(5);
     if (boltffi_function_boltffi_tests_callbacks_invoke_sync_impl(callback, 10) != 15) {
         return 711;
@@ -1508,6 +1520,27 @@ static int boltffi_tests_check_callbacks(void) {
     boltffi_async_function_boltffi_tests_callbacks_invoke_async_multi_impl_free(async_multi_future);
     if (async_multi_status.code != FFI_STATUS_OK.code || async_multi_result != 23) {
         return 754;
+    }
+    BoltFFICallbackHandle async_factory =
+        boltffi_create_callback_boltffi_tests_callbacks_async_callback_factory(12);
+    RustFutureHandle async_factory_future =
+        boltffi_function_boltffi_tests_callbacks_invoke_async_factory_impl(async_factory, 5);
+    boltffi_async_function_boltffi_tests_callbacks_invoke_async_factory_impl_poll(
+        async_factory_future,
+        0,
+        boltffi_tests_async_noop
+    );
+    FfiStatus async_factory_status = FFI_STATUS_INTERNAL_ERROR;
+    int32_t async_factory_result =
+        boltffi_async_function_boltffi_tests_callbacks_invoke_async_factory_impl_complete(
+            async_factory_future,
+            &async_factory_status
+        );
+    boltffi_async_function_boltffi_tests_callbacks_invoke_async_factory_impl_free(
+        async_factory_future
+    );
+    if (async_factory_status.code != FFI_STATUS_OK.code || async_factory_result != 17) {
+        return 755;
     }
     const uint8_t record[27] = {
         3, 0, 0, 0, 'o', 'l', 'd',
