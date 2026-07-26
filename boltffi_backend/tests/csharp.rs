@@ -1,8 +1,11 @@
-use std::{fs, path::Path, process::Command, time::UNIX_EPOCH};
+use std::{fs, path::Path, process::Command, sync::Mutex, time::UNIX_EPOCH};
 
 use boltffi_ast::PackageInfo;
 use boltffi_backend::{GeneratedOutput, Target, bridge::c::CBridge, target::csharp::CSharpHost};
 use boltffi_binding::{Bindings, Native, lower};
+
+// NuGet first-run setup uses a process-global migration mutex.
+static DOTNET_BUILD_LOCK: Mutex<()> = Mutex::new(());
 
 fn bindings(source: &str) -> Bindings<Native> {
     let source = boltffi_scan::scan_file(
@@ -137,6 +140,10 @@ fn csharp_target_qualifies_a_free_function_named_after_its_return_record() {
 }
 
 fn compile_csharp_with_dotnet_when_available(output: &GeneratedOutput, prefix: &str) {
+    let _dotnet_build_guard = DOTNET_BUILD_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+
     if Command::new("dotnet").arg("--version").output().is_err() {
         return;
     }
