@@ -98,7 +98,6 @@ const sections: Section[] = [
       { id: "associated-constants", label: "Associated Constants" },
       { id: "data-constants", label: "Data Constants" },
       { id: "supported-values", label: "Supported Values" },
-      { id: "limits", label: "Limits" },
     ]
   },
   { 

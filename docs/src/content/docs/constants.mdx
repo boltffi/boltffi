@@ -335,20 +335,3 @@ Values such as `Color { ... }` are constructed in Rust and delivered through a g
 ## Supported values
 
 Constants can use the same types as exported function results, including primitives, strings, byte slices, tuples, and types marked with `#[data]`. Associated constants can use `Self` for values of their owner type.
-
-## Limits
-
-Global and associated constants support the same value types. Their placement controls where the generated API exposes them.
-
-### Global constants
-
-- Each global constant needs its own `#[export]` marker.
-- A global constant cannot use `Self` because it has no owner.
-- Java and C# expose global constants on the generated module class.
-
-### Associated constants
-
-- The owner must be an exported record, enum, or class.
-- Record and enum constants belong in `#[data(impl)]`; class constants belong in `#[export]`.
-- Only public constants become part of the generated API. Private constants remain available to the Rust implementation, and `#[skip]` can omit a public constant.
-- A C-style enum associated constant must alias a variant of that same enum when C# is generated. C# enums cannot contain static fields or properties. A primitive or record constant intended for all targets can instead be placed on a record or class, or exported globally.
