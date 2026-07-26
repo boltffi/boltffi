@@ -1,6 +1,7 @@
 ---
 import BaseLayout from './BaseLayout.astro';
 import DocsHeader from '../components/DocsHeader.astro';
+import DocsLlmActions from '../components/DocsLlmActions';
 import Sidebar from '../components/Sidebar';
 
 type JsonLdDocument = Record<string, unknown>;
@@ -9,18 +10,32 @@ interface Props {
   title: string;
   description?: string;
   activeSection: string;
-  canonicalUrl?: string;
+  canonicalUrl: string;
+  markdownUrl: string;
+  markdownPath: string;
+  llmsIndexUrl: string;
   openGraphType?: 'article' | 'website';
   structuredData?: JsonLdDocument | JsonLdDocument[];
 }
 
-const { title, description, activeSection, canonicalUrl, openGraphType, structuredData } = Astro.props;
+const {
+  title,
+  description,
+  activeSection,
+  canonicalUrl,
+  markdownUrl,
+  markdownPath,
+  llmsIndexUrl,
+  openGraphType,
+  structuredData,
+} = Astro.props;
 ---
 
 <BaseLayout
   title={title}
   description={description}
   canonicalUrl={canonicalUrl}
+  markdownUrl={markdownUrl}
   openGraphType={openGraphType}
   structuredData={structuredData}
 >
@@ -30,6 +45,13 @@ const { title, description, activeSection, canonicalUrl, openGraphType, structur
       <Sidebar activeSection={activeSection} client:load />
       <main class="flex-1 min-w-0 py-10 px-6 lg:px-12">
         <article class="animate-fade-in prose prose-invert prose-headings:text-foreground prose-p:text-muted-foreground prose-a:text-primary prose-strong:text-foreground prose-code:before:content-none prose-code:after:content-none prose-code:border-0 prose-pre:bg-[hsl(var(--code-bg))] prose-pre:border prose-pre:border-border max-w-none">
+          <DocsLlmActions
+            title={title}
+            markdownUrl={markdownPath}
+            sourceUrl={canonicalUrl}
+            llmsIndexUrl={llmsIndexUrl}
+            client:load
+          />
           <slot />
         </article>
       </main>

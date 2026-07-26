@@ -1,30 +1,9 @@
 ---
 import { getCollection, render } from 'astro:content';
 import DocsLayout from '../../layouts/DocsLayout.astro';
+import { DocumentationCorpus } from '../../lib/documentation';
 
 type JsonLdDocument = Record<string, unknown>;
-
-const PAGE_ORDER = [
-  'overview',
-  'getting-started',
-  'installation',
-  'quick-start',
-  'types',
-  'records',
-  'classes',
-  'functions',
-  'constants',
-  'async',
-  'callbacks',
-  'streaming',
-  'errors',
-  'custom-types',
-  'packaging',
-  'configuration',
-  'experimental',
-  'async-internals',
-  'tutorial',
-];
 
 export async function getStaticPaths() {
   const docs = await getCollection('docs');
@@ -38,16 +17,19 @@ const { entry } = Astro.props;
 const { Content } = await render(entry);
 
 const allDocs = await getCollection('docs');
-const currentIndex = PAGE_ORDER.indexOf(entry.id);
-const prevSlug = currentIndex > 0 ? PAGE_ORDER[currentIndex - 1] : null;
-const nextSlug = currentIndex < PAGE_ORDER.length - 1 ? PAGE_ORDER[currentIndex + 1] : null;
-const prevEntry = prevSlug ? allDocs.find(d => d.id === prevSlug) : null;
-const nextEntry = nextSlug ? allDocs.find(d => d.id === nextSlug) : null;
+const corpus = new DocumentationCorpus(allDocs);
+const page = corpus.page(entry.id);
+const { previous, next } = corpus.neighbors(entry.id);
+const prevEntry = previous?.entry;
+const nextEntry = next?.entry;
 const activeSection = entry.id;
-const title = entry.data.title || entry.id.charAt(0).toUpperCase() + entry.id.slice(1).replace(/-/g, ' ');
-const description = entry.data.description;
+const title = page.title;
+const description = page.description;
 const siteUrl = Astro.site ?? new URL('https://boltffi.dev');
-const canonicalUrl = new URL(`/docs/${entry.id}`, siteUrl).toString();
+const canonicalUrl = page.htmlUrl(siteUrl);
+const markdownUrl = page.markdownUrl(siteUrl);
+const markdownPath = page.markdownPath;
+const llmsIndexUrl = new URL('/llms.txt', siteUrl).toString();
 const docsIndexUrl = new URL('/docs/overview', siteUrl).toString();
 const breadcrumbStructuredData: JsonLdDocument = {
   '@context': 'https://schema.org',
@@ -112,6 +94,9 @@ const structuredData: JsonLdDocument[] = [breadcrumbStructuredData, pageStructur
   description={description}
   activeSection={activeSection}
   canonicalUrl={canonicalUrl}
+  markdownUrl={markdownUrl}
+  markdownPath={markdownPath}
+  llmsIndexUrl={llmsIndexUrl}
   openGraphType={entry.id === 'overview' ? 'website' : 'article'}
   structuredData={structuredData}
 >

@@ -4,7 +4,8 @@
   "version": "0.0.1",
   "scripts": {
     "dev": "astro dev",
-    "build": "astro build",
+    "build": "astro build && npm run test:llm",
+    "test:llm": "node scripts/verify-llm-output.mjs",
     "preview": "astro preview",
     "astro": "astro"
   },
@@ -36,9 +37,15 @@
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-hook-form": "^7.71.1",
+    "remark-gfm": "^4.0.1",
+    "remark-mdx": "^3.1.1",
+    "remark-parse": "^11.0.0",
+    "remark-stringify": "^11.0.0",
     "sharp": "^0.35.0",
     "tailwind-merge": "^3.4.0",
     "tailwindcss": "4.3.2",
-    "tailwindcss-animate": "^1.0.7"
+    "tailwindcss-animate": "^1.0.7",
+    "unified": "^11.0.5",
+    "unist-util-visit": "^5.1.0"
   }
 }

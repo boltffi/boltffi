@@ -20,7 +20,44 @@
       "permanent": true
     }
   ],
+  "rewrites": [
+    {
+      "source": "/docs/:slug([^/.]+)",
+      "has": [
+        {
+          "type": "header",
+          "key": "Accept",
+          "value": ".*text/markdown.*"
+        }
+      ],
+      "destination": "/docs/:slug.md"
+    }
+  ],
   "headers": [
+    {
+      "source": "/docs/:slug([^/.]+)",
+      "headers": [
+        { "key": "Vary", "value": "Accept" }
+      ]
+    },
+    {
+      "source": "/docs/:slug.md",
+      "headers": [
+        { "key": "Content-Type", "value": "text/markdown; charset=utf-8" }
+      ]
+    },
+    {
+      "source": "/llms.txt",
+      "headers": [
+        { "key": "Content-Type", "value": "text/markdown; charset=utf-8" }
+      ]
+    },
+    {
+      "source": "/llms-full.txt",
+      "headers": [
+        { "key": "Content-Type", "value": "text/markdown; charset=utf-8" }
+      ]
+    },
     {
       "source": "/(.*)",
       "headers": [
