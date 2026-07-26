@@ -224,9 +224,18 @@ impl Record {
             context,
         )?
         .into_parts();
-        let (instance_methods, instance_diagnostics) =
-            Self::methods(record.methods(), Some(Receiver::direct()), bridge, context)?
-                .into_parts();
+        let (instance_methods, instance_diagnostics) = Self::methods(
+            record.methods(),
+            Some(Receiver::direct_record(
+                record.id(),
+                record.name(),
+                bridge,
+                context,
+            )?),
+            bridge,
+            context,
+        )?
+        .into_parts();
         initializers.extend(value_initializers);
         diagnostics.extend(static_diagnostics);
         diagnostics.extend(instance_diagnostics);

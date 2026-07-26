@@ -20,6 +20,7 @@ use askama::Template;
 pub(in crate::target::csharp) struct Stream {
     documentation: Documentation,
     name: Identifier,
+    qualified: Identifier,
     owner: Option<TypeFragment>,
     item: StreamItem,
     mode: StreamMode,
@@ -59,22 +60,29 @@ impl Stream {
                     invariant: "stream protocol is missing from the C bridge",
                 })?;
         let name = Name::new(declaration.name()).pascal()?;
+        let owner = declaration
+            .owner()
+            .map(|owner| type_name::class(owner, context))
+            .transpose()?;
+        let qualified = match &owner {
+            Some(owner) => Identifier::parse(format!("{owner}{name}"))?,
+            None => name.clone(),
+        };
         let mut item = declaration
             .item()
             .render_with(&mut StreamItemRenderer { context })?;
-        item.read_batch = item
-            .read_batch
-            .replace("NativeStreamPopBatch", &format!("Native{name}PopBatch"));
+        item.read_batch = item.read_batch.replace(
+            "NativeStreamPopBatch",
+            &format!("Native{qualified}PopBatch"),
+        );
         Ok(Self {
             documentation: Documentation::summary(declaration.meta().doc(), "        "),
-            runtime: Identifier::parse(format!("{name}StreamRuntime"))?,
-            subscription: Identifier::parse(format!("{name}Subscription"))?,
-            cancellable: Identifier::parse(format!("{name}Cancellable"))?,
+            runtime: Identifier::parse(format!("{qualified}StreamRuntime"))?,
+            subscription: Identifier::parse(format!("{qualified}Subscription"))?,
+            cancellable: Identifier::parse(format!("{qualified}Cancellable"))?,
             name,
-            owner: declaration
-                .owner()
-                .map(|owner| type_name::class(owner, context))
-                .transpose()?,
+            qualified,
+            owner,
             item,
             mode: declaration.mode(),
             subscribe: protocol.subscribe().name().to_owned(),
@@ -93,7 +101,7 @@ impl Stream {
             .with_aux(AuxChunk::Helper {
                 id: HelperId::new(CanonicalName::single(format!(
                     "csharp_stream_{}",
-                    self.name
+                    self.qualified
                 ))),
                 text: self.native_source().into(),
             });
@@ -255,19 +263,19 @@ impl Stream {
     }
 
     fn subscribe_method(&self) -> String {
-        format!("Native{}Subscribe", self.name)
+        format!("Native{}Subscribe", self.qualified)
     }
     fn pop_method(&self) -> String {
-        format!("Native{}PopBatch", self.name)
+        format!("Native{}PopBatch", self.qualified)
     }
     fn wait_method(&self) -> String {
-        format!("Native{}Wait", self.name)
+        format!("Native{}Wait", self.qualified)
     }
     fn unsubscribe_method(&self) -> String {
-        format!("Native{}Unsubscribe", self.name)
+        format!("Native{}Unsubscribe", self.qualified)
     }
     fn free_method(&self) -> String {
-        format!("Native{}Free", self.name)
+        format!("Native{}Free", self.qualified)
     }
 
     fn pop_native_source(&self) -> String {

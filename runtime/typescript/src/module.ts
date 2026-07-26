@@ -1437,18 +1437,10 @@ function createImportModuleProxy(moduleName: string): Record<string, WebAssembly
 }
 
 export async function instantiateBoltFFI(
-  source: BufferSource | Response,
+  source: BufferSource | Response | WebAssembly.Module,
   expectedVersion: number,
   imports?: BoltFFIImports
 ): Promise<BoltFFIModule> {
-  let wasmSource: BufferSource;
-
-  if (source instanceof Response) {
-    wasmSource = await source.arrayBuffer();
-  } else {
-    wasmSource = source;
-  }
-
   const asyncManager = new AsyncFutureManager();
   const streamManager = new StreamPollManager();
 
@@ -1462,7 +1454,13 @@ export async function instantiateBoltFFI(
     __wbindgen_externref_xform__: createImportModuleProxy("__wbindgen_externref_xform__"),
   };
 
-  const { instance } = await WebAssembly.instantiate(wasmSource, importObject);
+  let instance: WebAssembly.Instance;
+  if (source instanceof WebAssembly.Module) {
+    instance = await WebAssembly.instantiate(source, importObject);
+  } else {
+    const wasmSource = source instanceof Response ? await source.arrayBuffer() : source;
+    ({ instance } = await WebAssembly.instantiate(wasmSource, importObject));
+  }
   const module = new BoltFFIModule(instance, asyncManager, streamManager);
 
   const actualVersion = module.exports.boltffi_wasm_abi_version();

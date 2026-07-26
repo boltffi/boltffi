@@ -207,6 +207,7 @@ impl Function {
 
     pub(super) fn from_declaration(
         declaration: &FunctionDecl<Native>,
+        type_namespace: Option<&Namespace>,
         bridge: &CBridgeContract,
         context: &RenderContext<Native>,
     ) -> Result<Self> {
@@ -218,7 +219,7 @@ impl Function {
             declaration.symbol(),
             declaration.callable(),
             CallSite::Free,
-            None,
+            type_namespace,
             None,
             bridge,
             context,
@@ -231,6 +232,7 @@ impl Function {
         owner: DirectValueType,
         owner_name: &Identifier,
         extension: bool,
+        type_namespace: Option<&Namespace>,
         bridge: &CBridgeContract,
         context: &RenderContext<Native>,
     ) -> Result<Self> {
@@ -241,7 +243,7 @@ impl Function {
             owner,
             owner_name,
             extension,
-            None,
+            type_namespace,
             None,
             bridge,
             context,
@@ -254,6 +256,7 @@ impl Function {
         _owner: ClassId,
         owner_name: &Identifier,
         carrier: native::HandleCarrier,
+        type_namespace: Option<&Namespace>,
         bridge: &CBridgeContract,
         context: &RenderContext<Native>,
     ) -> Result<(Self, bool)> {
@@ -277,7 +280,7 @@ impl Function {
                 name: owner_name.clone(),
                 carrier,
             },
-            None,
+            type_namespace,
             None,
             bridge,
             context,
@@ -293,6 +296,7 @@ impl Function {
         _owner: ClassId,
         owner_name: &Identifier,
         carrier: native::HandleCarrier,
+        type_namespace: Option<&Namespace>,
         bridge: &CBridgeContract,
         context: &RenderContext<Native>,
     ) -> Result<Self> {
@@ -307,7 +311,7 @@ impl Function {
                 name: owner_name.clone(),
                 carrier,
             },
-            None,
+            type_namespace,
             None,
             bridge,
             context,
@@ -343,6 +347,7 @@ impl Function {
         owner: DirectValueType,
         owner_name: &Identifier,
         extension: bool,
+        type_namespace: Option<&Namespace>,
         bridge: &CBridgeContract,
         context: &RenderContext<Native>,
     ) -> Result<Self> {
@@ -353,7 +358,7 @@ impl Function {
             owner,
             owner_name,
             extension,
-            None,
+            type_namespace,
             None,
             bridge,
             context,
@@ -879,7 +884,7 @@ impl Function {
                             Expression::new(format!("(nuint){name}.Length"))
                         }
                         DirectVectorElementType::Record(_) => Expression::new(format!(
-                            "(nuint)({name}.Length * Marshal.SizeOf<{element_type}>())"
+                            "(nuint)({name}.Length * global::System.Runtime.InteropServices.Marshal.SizeOf<{element_type}>())"
                         )),
                         _ => return unsupported("direct-vector element type"),
                     });

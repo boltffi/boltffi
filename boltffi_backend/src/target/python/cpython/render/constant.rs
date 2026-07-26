@@ -4,7 +4,10 @@ use crate::{
     bridge::python_cext::{ExtensionMethod, PythonCExtBridgeContract},
     core::{Emitted, Error, RenderContext, Result},
     target::python::{
-        cpython::render::{direct_vector, function, primitive, result},
+        cpython::{
+            codec,
+            render::{direct_vector, function, primitive, result},
+        },
         name_style::Name,
     },
 };
@@ -74,6 +77,13 @@ impl Constant {
             .as_ref()
             .into_iter()
             .flat_map(function::Function::direct_vector_elements)
+    }
+
+    pub fn native_sequences(&self) -> impl Iterator<Item = codec::NativeSequence> + '_ {
+        self.function
+            .as_ref()
+            .into_iter()
+            .flat_map(function::Function::native_sequences)
     }
 
     pub fn owned_buffer(&self) -> Option<result::OwnedBuffer> {

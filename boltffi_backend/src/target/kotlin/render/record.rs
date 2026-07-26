@@ -41,8 +41,13 @@ pub struct Record {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum RecordBody {
-    Direct { size: u64 },
-    Encoded { size: Expression },
+    Direct {
+        size: u64,
+        wire_size: Option<Expression>,
+    },
+    Encoded {
+        size: Expression,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -87,15 +92,15 @@ impl Record {
 
     pub fn size(&self) -> u64 {
         match self.body {
-            RecordBody::Direct { size } => size,
+            RecordBody::Direct { size, .. } => size,
             RecordBody::Encoded { .. } => 0,
         }
     }
 
     pub fn wire_size(&self) -> Option<&Expression> {
         match &self.body {
+            RecordBody::Direct { wire_size, .. } => wire_size.as_ref(),
             RecordBody::Encoded { size } => Some(size),
-            RecordBody::Direct { .. } => None,
         }
     }
 
@@ -196,16 +201,28 @@ impl Record {
         context: &RenderContext<Native>,
     ) -> Result<Self> {
         let buffer = Identifier::parse("buffer")?;
+        let reader = Identifier::parse("reader")?;
+        let writer = Identifier::parse("writer")?;
+        let wire_size = record
+            .fields()
+            .iter()
+            .map(|field| KotlinPrimitive::new(field.ty().primitive()).wire_size())
+            .try_fold(0_u64, |total, field_size| {
+                field_size.map(|field_size| total + field_size)
+            })?;
         Ok(Self {
             name: Name::new(record.name()).type_name(),
             body: RecordBody::Direct {
                 size: record.layout().size().get(),
+                wire_size: record
+                    .is_codec_payload()
+                    .then(|| Expression::integer(wire_size)),
             },
             error: record.is_error_payload(),
             fields: record
                 .fields()
                 .iter()
-                .map(|field| Field::from_direct(field, record, &buffer, context))
+                .map(|field| Field::from_direct(field, record, &buffer, &reader, &writer, context))
                 .collect::<Result<Vec<_>>>()?,
             initializers: Self::initializer_calls(record.initializers(), host, bridge, context)?,
             static_methods: Self::methods(record.methods(), None, host, bridge, context)?,
@@ -402,6 +419,8 @@ impl Field {
         field: &DirectFieldDecl,
         record: &DirectRecordDecl<Native>,
         buffer: &Identifier,
+        reader: &Identifier,
+        writer: &Identifier,
         context: &RenderContext<Native>,
     ) -> Result<Self> {
         let name = Self::identifier(field.key())?;
@@ -419,6 +438,7 @@ impl Field {
             _ => Expression::identifier(base).add(Expression::integer(offset)),
         };
         let primitive = field.ty().primitive();
+        let wire_method_suffix = KotlinPrimitive::new(primitive).wire_method_suffix()?;
         let default = field
             .meta()
             .default()
@@ -426,21 +446,29 @@ impl Field {
             .transpose()?;
         Ok(Self {
             ty: KotlinPrimitive::new(primitive).api_type()?,
-            read: KotlinPrimitive::new(primitive).buffer_read(buffer, offset)?,
+            read: Expression::call(
+                Expression::identifier(reader.clone()),
+                Identifier::parse(format!("read{wire_method_suffix}"))?,
+                ArgumentList::default(),
+            ),
             read_from_base: Some(
                 KotlinPrimitive::new(primitive).buffer_read_at(buffer, position.clone())?,
             ),
-            write: KotlinPrimitive::new(primitive).buffer_write(
-                buffer,
-                offset,
-                Expression::identifier(name.clone()),
-            )?,
+            write: Statement::expression(Expression::call(
+                Expression::identifier(writer.clone()),
+                Identifier::parse(format!("write{wire_method_suffix}"))?,
+                [Expression::identifier(name.clone())]
+                    .into_iter()
+                    .collect::<ArgumentList>(),
+            )),
             write_from_base: Some(KotlinPrimitive::new(primitive).buffer_write_at(
                 buffer,
                 position,
                 Expression::identifier(name.clone()),
             )?),
-            size: None,
+            size: Some(Expression::integer(
+                KotlinPrimitive::new(primitive).wire_size()?,
+            )),
             default,
             name,
         })

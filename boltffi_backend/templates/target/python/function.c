@@ -7,6 +7,9 @@ static PyObject *{{ wrapper }}(PyObject *self, PyObject *const *args, Py_ssize_t
 {%- for param in params %}
 {%- if param.is_direct() %}
     {{ param.c_type() }} {{ param.name() }};
+{%- if param.has_mutation() %}
+    {{ param.c_type() }} {{ param.mutation_buffer() }} = {0};
+{%- endif %}
 {%- endif %}
 {%- if param.is_encoded() %}
     PyObject *{{ param.wire() }} = NULL;

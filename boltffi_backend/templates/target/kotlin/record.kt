@@ -113,10 +113,9 @@ data class {{ record.name() }}(
     {% if record.error() && field.is_string_message() %}override {% endif %}val {{ field.name() }}: {{ field.ty() }}{% if let Some(default) = field.default() %} = {{ default }}{% endif %}{% if !loop.last %},{% endif %}
 {%- endfor %}
 ){% if record.error() %} : Exception({% if let Some(message) = record.error_message() %}{{ message }}{% endif %}){% endif %} {
-    internal fun wireSize(): Int {
 {%- if let Some(wire_size) = record.wire_size() %}
+    internal fun wireSize(): Int {
         return {{ wire_size }}
-{%- endif %}
     }
 
     internal fun writeTo(writer: WireWriter) {
@@ -124,6 +123,7 @@ data class {{ record.name() }}(
         {{ field.write() }}
 {%- endfor %}
     }
+{%- endif %}
 
     internal fun toByteArray(): ByteArray {
         val buffer = WireWriterPool.acquire(wireSize())
@@ -259,6 +259,17 @@ data class {{ record.name() }}(
     {% if record.error() && field.is_string_message() %}override {% endif %}val {{ field.name() }}: {{ field.ty() }}{% if let Some(default) = field.default() %} = {{ default }}{% endif %}{% if !loop.last %},{% endif %}
 {%- endfor %}
 ){% if record.error() %} : Exception({% if let Some(message) = record.error_message() %}{{ message }}{% endif %}){% endif %} {
+{%- if let Some(wire_size) = record.wire_size() %}
+    internal fun wireSize(): Int {
+        return {{ wire_size }}
+    }
+
+    internal fun writeTo(writer: WireWriter) {
+{%- for field in record.fields() %}
+        {{ field.write() }}
+{%- endfor %}
+    }
+{%- endif %}
     internal fun toByteArray(): ByteArray {
         val buffer = java.nio.ByteBuffer
             .allocate(STRUCT_SIZE)
@@ -283,6 +294,16 @@ data class {{ record.name() }}(
 
     companion object {
         internal const val STRUCT_SIZE: Int = {{ record.size() }}
+
+{%- if record.wire_size().is_some() %}
+        internal fun fromReader(reader: WireReader): {{ record.name() }} {
+            return {{ record.name() }}(
+{%- for field in record.fields() %}
+                {{ field.read() }}{% if !loop.last %},{% endif %}
+{%- endfor %}
+            )
+        }
+{%- endif %}
 
         internal fun fromByteArray(bytes: ByteArray): {{ record.name() }} {
             require(bytes.size == STRUCT_SIZE)

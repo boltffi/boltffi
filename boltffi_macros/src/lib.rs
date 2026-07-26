@@ -241,7 +241,7 @@ pub fn data(attr: TokenStream, item: TokenStream) -> TokenStream {
         );
     }
     expand_or_experimental(
-        item,
+        data::repr::materialize(item),
         data::expansion::data_impl,
         DependencyExpansion::Legacy,
     )
@@ -250,7 +250,7 @@ pub fn data(attr: TokenStream, item: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn error(_attr: TokenStream, item: TokenStream) -> TokenStream {
     expand_or_experimental(
-        item,
+        data::repr::materialize(item),
         data::expansion::data_impl,
         DependencyExpansion::Legacy,
     )

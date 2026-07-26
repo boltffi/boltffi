@@ -2,7 +2,7 @@ use boltffi_binding::{DirectVectorElementType, Native};
 
 use crate::{
     bridge::{
-        c::{Identifier, TypeFragment},
+        c::{Expression, Identifier, TypeFragment},
         python_cext::PythonCExtBridgeContract,
     },
     core::{Error, RenderContext, Result},
@@ -67,6 +67,34 @@ impl Element {
 
     pub fn vector_decoder(&self) -> &Identifier {
         &self.vector_decoder
+    }
+
+    /// Returns the conversion that readies a Python sequence for the C call.
+    ///
+    /// A primitive element crosses as a typed pointer with an element count,
+    /// so the parser leaves the count untouched. A record element crosses as
+    /// packed bytes with a byte length, so the encoder scales the count by
+    /// the element size. The split mirrors the C bridge parameter contract.
+    pub fn argument_parser(&self) -> &Identifier {
+        match self.slot.primitive() {
+            Some(_) => &self.vector_parser,
+            None => &self.vector_encoder,
+        }
+    }
+
+    /// Returns the pointer and length expressions the C call receives.
+    pub fn argument_expressions(&self, pointer: Identifier, length: Identifier) -> Vec<Expression> {
+        let length = Expression::identifier(length);
+        match self.slot.primitive() {
+            Some(_) => vec![
+                Expression::cast(
+                    TypeFragment::new(format!("const {} *", self.c_type())),
+                    Expression::identifier(pointer),
+                ),
+                length,
+            ],
+            None => vec![Expression::identifier(pointer), length],
+        }
     }
 
     pub fn runtime_primitive(&self) -> Option<primitive::Runtime> {

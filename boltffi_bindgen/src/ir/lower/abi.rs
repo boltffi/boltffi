@@ -591,6 +591,9 @@ impl<'c> Lowerer<'c> {
 
     pub(super) fn codec_from_transport(&self, value: &Transport) -> CodecPlan {
         match value {
+            Transport::Scalar(ScalarOrigin::CStyleEnum { enum_id, .. }) => {
+                self.build_codec(&TypeExpr::Enum(enum_id.clone()))
+            }
             Transport::Scalar(origin) => CodecPlan::Primitive(origin.primitive()),
             Transport::Composite(layout) => {
                 self.build_codec(&TypeExpr::Record(layout.record_id.clone()))

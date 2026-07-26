@@ -130,6 +130,7 @@ impl Record {
                     owner.clone(),
                     &name,
                     false,
+                    Some(&namespace),
                     bridge,
                     context,
                 ),
@@ -141,7 +142,15 @@ impl Record {
                 &mut diagnostics,
                 "method",
                 method.name(),
-                Function::from_method(method, owner.clone(), &name, false, bridge, context),
+                Function::from_method(
+                    method,
+                    owner.clone(),
+                    &name,
+                    false,
+                    Some(&namespace),
+                    bridge,
+                    context,
+                ),
             )?;
         }
         Ok(Self {
@@ -221,6 +230,7 @@ impl Record {
                     owner.clone(),
                     &name,
                     false,
+                    Some(&namespace),
                     bridge,
                     context,
                 ),
@@ -238,7 +248,7 @@ impl Record {
                     &name,
                     declaration.read(),
                     declaration.write(),
-                    None,
+                    Some(&namespace),
                     bridge,
                     context,
                 ),

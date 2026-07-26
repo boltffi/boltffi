@@ -8,7 +8,7 @@ internal class BoltFfiStreamContext(
     private val poll: (Long, Long) -> Unit,
     private val unsubscribe: (Long) -> Unit,
     private val free: (Long) -> Unit,
-    private val processItems: (ByteArray) -> Unit,
+    private val processItems: suspend (ByteArray) -> Unit,
     private val finish: () -> Unit
 ) {
     private val lifecycle = java.util.concurrent.atomic.AtomicInteger(0)
@@ -39,7 +39,7 @@ internal class BoltFfiStreamContext(
         }
     }
 
-    private fun handlePoll(pollResult: Byte) {
+    private suspend fun handlePoll(pollResult: Byte) {
         val closed = pollResult == BOLTFFI_STREAM_POLL_CLOSED
         if (!processing.compareAndSet(0, 1)) {
             finalizeIfIdle()
@@ -62,7 +62,7 @@ internal class BoltFfiStreamContext(
         }
     }
 
-    private fun drain() {
+    private suspend fun drain() {
         while (true) {
             val bytes = popBatch(subscription, batchSize)
                 ?: throw IllegalStateException("BoltFFI stream pop_batch returned null")

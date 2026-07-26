@@ -154,7 +154,7 @@ const CUSTOM_TYPES: &str = r#"
     pub fn maybe_timestamp(timestamp: Option<TimestampRust>) -> Option<TimestampRust> { timestamp }
 "#;
 
-const ENCODED_RECORD_CALLS: &str = r#"
+const IMPLICIT_DIRECT_RECORD_CALLS: &str = r#"
     #[data]
     pub struct Point {
         pub x: f64,
@@ -1934,8 +1934,8 @@ fn java_target_rejects_class_lifecycle_signature_collisions() {
 }
 
 #[test]
-fn java_target_renders_data_record_calls_through_shared_jni_carriers() {
-    let output = render(ENCODED_RECORD_CALLS, CoverageMode::Complete);
+fn java_target_renders_implicit_direct_record_calls_through_shared_jni_carriers() {
+    let output = render(IMPLICIT_DIRECT_RECORD_CALLS, CoverageMode::Complete);
     let point = java_source(&output, "com.boltffi.demo", "Point");
     let module = java_source(&output, "com.boltffi.demo", "Demo");
 
@@ -1949,10 +1949,8 @@ fn java_target_renders_data_record_calls_through_shared_jni_carriers() {
     assert!(point.contains("public Point add(Point other)"));
     assert!(point.contains("public static double pathLength(java.util.List<Point> points)"));
     assert!(module.contains("public static Point echoPoint(Point point)"));
-    assert!(module.contains("WireWriterPool.acquire(point.wireSize())"));
-    assert!(module.contains("point.writeTo(__boltffi_point_writer)"));
-    assert!(module.contains("__boltffi_point_wire.directBuffer()"));
-    assert!(!module.contains("point.toDirectBuffer()"));
+    assert!(module.contains("point.toDirectBuffer()"));
+    assert!(module.contains("Point.fromByteArray"));
 }
 
 #[test]
@@ -2631,17 +2629,21 @@ fn generated_custom_types_compile_for_java_eight_when_available() {
 }
 
 #[test]
-fn generated_encoded_record_calls_compile_for_java_eight_when_available() {
+fn generated_implicit_direct_record_calls_compile_for_java_eight_when_available() {
     let Some(compiler) = JavaCompiler::discover() else {
         return;
     };
 
     let output = render_with_host(
-        ENCODED_RECORD_CALLS,
+        IMPLICIT_DIRECT_RECORD_CALLS,
         CoverageMode::Complete,
         JavaHost::new("com.boltffi.demo", "Demo").expect("Java host"),
     );
-    compile_generated_java(&compiler, &output, "boltffi-java-encoded-record-calls");
+    compile_generated_java(
+        &compiler,
+        &output,
+        "boltffi-java-implicit-direct-record-calls",
+    );
 }
 
 #[test]

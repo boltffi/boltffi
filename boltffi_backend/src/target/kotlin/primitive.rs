@@ -199,10 +199,6 @@ impl KotlinPrimitive {
         })
     }
 
-    pub fn buffer_read(self, buffer: &Identifier, offset: u64) -> Result<Expression> {
-        self.buffer_read_at(buffer, Expression::integer(offset))
-    }
-
     pub fn buffer_read_at(self, buffer: &Identifier, offset: Expression) -> Result<Expression> {
         match self.primitive {
             Primitive::Bool => Ok(Self::buffer_call(buffer, "get", [offset])?
@@ -223,15 +219,6 @@ impl KotlinPrimitive {
             Primitive::F64 => Self::buffer_call(buffer, "getDouble", [offset]),
             _ => Err(KotlinHost::unsupported("unknown direct record field read")),
         }
-    }
-
-    pub fn buffer_write(
-        self,
-        buffer: &Identifier,
-        offset: u64,
-        value: Expression,
-    ) -> Result<Statement> {
-        self.buffer_write_at(buffer, Expression::integer(offset), value)
     }
 
     pub fn buffer_write_at(
@@ -300,7 +287,7 @@ impl KotlinPrimitive {
     ) -> Result<Expression> {
         Ok(Expression::call(
             Expression::identifier(buffer.clone()),
-            Identifier::parse(method)?,
+            Identifier::escape(method)?,
             arguments.into_iter().collect::<ArgumentList>(),
         ))
     }

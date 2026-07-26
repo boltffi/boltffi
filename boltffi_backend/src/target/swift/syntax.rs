@@ -577,6 +577,10 @@ impl Statement {
         Self::new(format!("var {identifier}: {ty} = {expression}"))
     }
 
+    pub fn inferred_var(identifier: impl fmt::Display, expression: impl fmt::Display) -> Self {
+        Self::new(format!("var {identifier} = {expression}"))
+    }
+
     pub fn var_nil(identifier: impl fmt::Display, ty: impl fmt::Display) -> Self {
         Self::new(format!("var {identifier}: {ty} = nil"))
     }

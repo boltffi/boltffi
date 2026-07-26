@@ -647,6 +647,24 @@ mod tests {
     }
 
     #[test]
+    fn browser_init_accepts_a_precompiled_wasm_module_source() {
+        let output = TypeScriptHost::new("demo")
+            .expect("host constructs")
+            .into_target()
+            .render(&bindings())
+            .expect("target renders");
+
+        let browser = output
+            .files()
+            .iter()
+            .find(|file| file.path().as_path().ends_with("demo.ts"))
+            .expect("browser module");
+        assert!(browser.contents().contains(
+            "export default async function init(source: BufferSource | Response | WebAssembly.Module): Promise<void>"
+        ));
+    }
+
+    #[test]
     fn renders_primitive_functions_through_the_wasm_surface() {
         let output = TypeScriptHost::new("demo")
             .expect("host constructs")
@@ -978,9 +996,17 @@ mod tests {
             .expect("browser module");
 
         assert!(browser.contents().contains("export interface Point"));
-        assert!(browser.contents().contains("size: (value) => 24"));
-        assert!(browser.contents().contains("writer.skip(7);"));
-        assert!(browser.contents().contains("reader.skip(7);"));
+        assert!(
+            browser
+                .contents()
+                .contains("size: (value) => ((8 + 1) + 8)")
+        );
+        assert!(
+            browser
+                .contents()
+                .contains("writer.writeBool(value.active);")
+        );
+        assert!(browser.contents().contains("reader.readBool();"));
         assert!(browser.contents().contains("export interface User"));
         assert!(browser.contents().contains(
             "size: (value) => (wireStringSize(value.name) + (4 + (value.scores.length * 4)))"
@@ -1068,15 +1094,13 @@ mod tests {
         assert!(browser.contents().contains(
             "const __boltffi_value_writer = _module.allocWriter(PointCodec.size(value));"
         ));
+        assert!(browser.contents().contains(
+            "const __boltffiReader = _module.takePackedBuffer((_exports.boltffi_function_demo_echo_point"
+        ));
         assert!(
             browser
                 .contents()
-                .contains("const __boltffiReturnWriter = _module.allocWriter(24);")
-        );
-        assert!(
-            browser
-                .contents()
-                .contains("PointCodec.decode(_module.readerFromWriter(__boltffiReturnWriter))")
+                .contains("return PointCodec.decode(__boltffiReader);")
         );
         assert!(
             browser
@@ -1102,7 +1126,7 @@ mod tests {
         assert!(
             browser
                 .contents()
-                .contains("return MutablePointCodec.decode(__boltffiReceiverReader);")
+                .contains("Object.assign(self, MutablePointCodec.decode(_module.readerFromWriter(__boltffi_self_writer)));")
         );
     }
 
