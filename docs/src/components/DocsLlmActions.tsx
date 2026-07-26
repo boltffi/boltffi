@@ -90,7 +90,6 @@ export default function DocsLlmActions({
         </div>
         <div className="min-w-0">
           <p className="text-sm font-medium text-foreground">Use this page with an LLM</p>
-          <p className="text-xs text-muted-foreground">Clean Markdown without the site chrome</p>
         </div>
       </div>
       <div className="flex items-center gap-2">
