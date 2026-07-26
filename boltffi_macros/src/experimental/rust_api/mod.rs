@@ -5,8 +5,8 @@ mod ty;
 mod visibility;
 
 pub use callable::{
-    Callable, CallbackCarrier, CallbackObject, CallbackReturn, ClassHandle, Fallible, HandleReturn,
-    MethodDeclarations, Parameter, Return,
+    Callable, CallableOwner, CallbackCarrier, CallbackObject, CallbackReturn, ClassHandle,
+    Fallible, HandleReturn, MethodDeclarations, Parameter, Return,
 };
 pub use closure::{Closure, ClosureSourceForm};
 pub use crate_root::RootModuleTypes;

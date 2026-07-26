@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 
 use boltffi_ast::{
-    ClassDef, EnumDef, Path, PathRoot, RecordDef, SourceContract, StreamDef, TraitDef,
+    ClassDef, ConstantDef, ConstantOwner, EnumDef, Path, PathRoot, RecordDef, SourceContract,
+    StreamDef, TraitDef,
 };
 use boltffi_binding::{Native, SerializedBindings, Wasm32};
 use proc_macro2::TokenStream;
@@ -11,7 +12,7 @@ use syn::Type;
 use crate::experimental::{
     error::Error,
     expansion::Expansion,
-    metadata,
+    metadata, rust_api,
     surface::RenderSurface,
     wrapper::{self, Render},
 };
@@ -417,8 +418,14 @@ where
             .constants
             .iter()
             .map(|source| {
-                wrapper::constant::Renderer::new(self.expansion.constant(source)?, self.expansion)
-                    .render()
+                let renderer = wrapper::constant::Renderer::new(
+                    self.expansion.constant(source)?,
+                    self.expansion,
+                );
+                match self.constant_owner(source)? {
+                    Some((owner, rust_type)) => renderer.with_owner(owner, rust_type).render(),
+                    None => renderer.render(),
+                }
             })
             .collect()
     }
@@ -453,6 +460,59 @@ where
             })
             .transpose()
     }
+
+    fn constant_owner(
+        &self,
+        constant: &ConstantDef,
+    ) -> Result<Option<(rust_api::CallableOwner<'lowered>, TokenStream)>, Error> {
+        let Some(owner) = constant.owner.as_ref() else {
+            return Ok(None);
+        };
+        let owner_id = owner.as_str();
+        let rust_type = self
+            .visible_paths
+            .get(owner_id)
+            .map(Self::path_tokens)
+            .transpose()?
+            .unwrap_or(Self::source_type(owner_id)?);
+        let owner = match owner {
+            ConstantOwner::Record(id) => self
+                .support
+                .records
+                .iter()
+                .find(|record| &record.id == id)
+                .map(rust_api::CallableOwner::Record),
+            ConstantOwner::Enum(id) => self
+                .support
+                .enums
+                .iter()
+                .find(|enumeration| &enumeration.id == id)
+                .map(rust_api::CallableOwner::Enum),
+            ConstantOwner::Class(id) => self
+                .support
+                .classes
+                .iter()
+                .find(|class| &class.id == id)
+                .map(rust_api::CallableOwner::Class),
+        }
+        .ok_or(Error::SourceSyntaxMismatch(
+            "associated constant owner declaration is missing",
+        ))?;
+        Ok(Some((owner, rust_type)))
+    }
+
+    fn source_type(id: &str) -> Result<TokenStream, Error> {
+        let name = id.rsplit("::").next().ok_or(Error::SourceSyntaxMismatch(
+            "associated constant owner id is empty",
+        ))?;
+        syn::parse_str::<syn::Ident>(name)
+            .map(|name| quote! { #name })
+            .map_err(|_| {
+                Error::SourceSyntaxMismatch(
+                    "associated constant owner name is not a Rust identifier",
+                )
+            })
+    }
 }
 
 #[cfg(test)]
@@ -463,10 +523,11 @@ mod tests {
     use std::process::Command;
 
     use boltffi_ast::{
-        CanonicalName, ClassDef, ConstExpr, ConstantDef, ConstantId, EnumDef, EnumId, FieldDef,
-        FunctionDef, FunctionId, Literal, MethodDef, MethodId, PackageInfo, ParameterDef, PathRoot,
-        PathSegment, Primitive, Receiver, RecordDef, ReprAttr, ReprItem, ReturnDef, SourceContract,
-        SourceName, StreamDef, StreamId, TraitDef, TraitId, TypeExpr, VariantDef,
+        CanonicalName, ClassDef, ConstExpr, ConstantDef, ConstantId, ConstantOwner, EnumDef,
+        EnumId, FieldDef, FunctionDef, FunctionId, Literal, MethodDef, MethodId, PackageInfo,
+        ParameterDef, PathRoot, PathSegment, Primitive, Receiver, RecordDef, ReprAttr, ReprItem,
+        ReturnDef, SourceContract, SourceName, StreamDef, StreamId, TraitDef, TraitId, TypeExpr,
+        VariantDef,
     };
     use boltffi_bindgen::artifact::BindingMetadataReader;
     use boltffi_binding::{
@@ -518,6 +579,95 @@ mod tests {
         assert!(rendered.contains("fn boltffi_stream_demo_events_subscribe () -> u64"));
         assert!(rendered.contains("let subscription = events ()"));
         assert_generated_crate_checks("expander_ownerless_stream", ownerless_stream_crate(tokens));
+    }
+
+    #[test]
+    fn renders_associated_constant_access_through_its_owner() {
+        let mut source = SourceContract::new(PackageInfo::new("demo", None));
+        let mut color = RecordDef::new("demo::Color".into(), CanonicalName::single("Color"));
+        color.repr = ReprAttr::new(vec![ReprItem::C]);
+        color.fields = ["r", "g", "b", "a"]
+            .into_iter()
+            .map(|field| {
+                FieldDef::new(
+                    CanonicalName::single(field),
+                    TypeExpr::Primitive(Primitive::U8),
+                )
+            })
+            .collect();
+        source.records.push(color);
+        let mut black = ConstantDef::new(
+            ConstantId::new("demo::Color::BLACK"),
+            SourceName::new("BLACK", CanonicalName::single("BLACK")),
+            TypeExpr::SelfType,
+            ConstExpr::Raw("Self::rgba(0, 0, 0, 255)".to_owned()),
+        );
+        black.owner = Some(ConstantOwner::Record("demo::Color".into()));
+        source.constants.push(black);
+        let lowered = lower_with_declarations::<Native>(&source).expect("contract lowers");
+        let expansion = Expansion::new(&lowered);
+
+        let tokens = expander::Expander::new(&source)
+            .native(&expansion)
+            .expect("contract expands");
+        let rendered = tokens.to_string();
+
+        assert!(rendered.contains("Color :: BLACK"));
+        assert_generated_crate_checks(
+            "expander_associated_constant",
+            quote! {
+                #![allow(dead_code)]
+
+                #[derive(Clone, Copy)]
+                #[repr(C)]
+                pub struct Color {
+                    pub r: u8,
+                    pub g: u8,
+                    pub b: u8,
+                    pub a: u8,
+                }
+
+                impl Color {
+                    pub const BLACK: Self = Self { r: 0, g: 0, b: 0, a: 255 };
+                }
+
+                #tokens
+            },
+        );
+    }
+
+    #[test]
+    fn unmarked_associated_constants_do_not_reach_macro_expansion() {
+        let source = boltffi_scan::scan_file(
+            syn::parse_str(
+                r#"
+                pub struct Engine;
+
+                #[export]
+                impl Engine {
+                    pub fn new() -> Self {
+                        Self
+                    }
+                }
+
+                impl Engine {
+                    pub const UNEXPORTED_ASSOCIATED: u8 = 99;
+                }
+                "#,
+            )
+            .expect("valid source"),
+            PackageInfo::new("demo", None),
+        )
+        .expect("source scans");
+        assert!(source.constants.is_empty());
+
+        let lowered = lower_with_declarations::<Native>(&source).expect("contract lowers");
+        let expansion = Expansion::new(&lowered);
+        let tokens = expander::Expander::new(&source)
+            .native(&expansion)
+            .expect("contract expands");
+
+        assert!(!tokens.to_string().contains("unexported_associated"));
     }
 
     #[test]

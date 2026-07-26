@@ -184,7 +184,13 @@ fn scan_marked_with_declarations(
     let streams = items::stream::scan(marked.classes(), declared_types)?;
     items::impl_block::attach_methods(marked.impls(), declared_types, &mut records, &mut enums)?;
     let functions = scan_each(marked.functions(), declared_types, items::function::scan)?;
-    let constants = scan_each(marked.constants(), declared_types, items::constant::scan)?;
+    let constants = scan_each(marked.constants(), declared_types, items::constant::scan)?
+        .into_iter()
+        .chain(items::constant::scan_associated(
+            marked.exported_impls(),
+            declared_types,
+        )?)
+        .collect();
 
     let mut contract = SourceContract::new(package);
     contract.records = records;
@@ -421,7 +427,7 @@ fn scan_each<I, T>(
 mod tests {
     use super::*;
     use boltffi_ast::{
-        AttributeInput, ClassId, ConstExpr, ConstantId, CustomRemoteGenericArgument,
+        AttributeInput, ClassId, ConstExpr, ConstantId, ConstantOwner, CustomRemoteGenericArgument,
         CustomRemotePath, CustomRemotePathSegment, CustomRemoteType, CustomTypeConverter,
         CustomTypeId, DefaultValue, DeprecationInfo, EnumId, IntegerLiteral, Literal, Path,
         PathRoot, PathSegment, Primitive, Receiver, RecordDef, RecordId, ReturnDef, StreamId,
@@ -1902,6 +1908,78 @@ mod tests {
         assert_eq!(
             contract.constants[1].value,
             ConstExpr::Literal(Literal::Integer(IntegerLiteral::new(42, "42")))
+        );
+    }
+
+    #[test]
+    fn scans_public_constants_from_explicitly_exported_impls() {
+        let contract = scan(
+            "#[data] pub struct Color { pub r: u8, pub g: u8, pub b: u8, pub a: u8 } \
+             #[data(impl)] impl Color { \
+                 pub const BLACK: Self = Self::rgba(0, 0, 0, 255); \
+                 const PRIVATE: Self = Self::BLACK; \
+                 #[skip] pub const HIDDEN: Self = Self::BLACK; \
+             } \
+             #[data] pub enum Mode { Fast, Slow } \
+             #[data(impl)] impl Mode { pub const DEFAULT: Self = Self::Fast; } \
+             pub struct Engine; \
+             #[export] impl Engine { \
+                 pub const DEFAULT: Self = Self::new(); \
+                 pub fn new() -> Self { todo!() } \
+             }",
+        );
+
+        assert_eq!(contract.constants.len(), 3);
+        assert_eq!(
+            contract.constants[0].owner,
+            Some(ConstantOwner::Record(RecordId::new("demo::Color")))
+        );
+        assert_eq!(
+            contract.constants[0].id,
+            ConstantId::new("demo::Color::BLACK")
+        );
+        assert_eq!(contract.constants[0].type_expr, TypeExpr::SelfType);
+        assert_eq!(
+            contract.constants[1].owner,
+            Some(ConstantOwner::Enum(EnumId::new("demo::Mode")))
+        );
+        assert_eq!(
+            contract.constants[2].owner,
+            Some(ConstantOwner::Class(ClassId::new("demo::Engine")))
+        );
+    }
+
+    #[test]
+    fn ignores_associated_constants_outside_exported_impls() {
+        let contract = scan(
+            "#[data] pub struct Record { pub raw: u32 } \
+             impl Record { pub const VALUE: u32 = 1; } \
+             #[data] pub enum Enumeration { Value } \
+             impl Enumeration { pub const DEFAULT: Self = Self::Value; } \
+             pub struct Class; \
+             #[export] impl Class { pub fn new() -> Self { Self } } \
+             impl Class { pub const VALUE: u32 = 1; }",
+        );
+
+        assert!(contract.constants.is_empty());
+    }
+
+    #[test]
+    fn validates_markers_on_associated_constants() {
+        let error = try_scan(
+            "#[data] pub struct Value { pub raw: u32 } \
+             #[data(impl)] impl Value { \
+                 #[ffi_stream(item = u32)] pub const INVALID: u32 = 1; \
+             }",
+        )
+        .expect_err("stream marker belongs to methods");
+
+        assert_eq!(
+            error,
+            ScanError::InvalidMarkerPlacement {
+                marker: "ffi_stream".to_owned(),
+                item: "associated const".to_owned(),
+            }
         );
     }
 

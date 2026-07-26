@@ -1,15 +1,15 @@
 use std::collections::HashMap;
 
 use boltffi_ast::{
-    ClassId as SourceClassId, ConstantId as SourceConstantId, CustomTypeId as SourceCustomTypeId,
-    DeclarationId as SourceDeclarationId, EnumId as SourceEnumId, FunctionId as SourceFunctionId,
-    RecordId as SourceRecordId, SourceContract, StreamId as SourceStreamId,
-    TraitId as SourceTraitId,
+    ClassId as SourceClassId, ConstantId as SourceConstantId, ConstantOwner as SourceConstantOwner,
+    CustomTypeId as SourceCustomTypeId, DeclarationId as SourceDeclarationId,
+    EnumId as SourceEnumId, FunctionId as SourceFunctionId, RecordId as SourceRecordId,
+    SourceContract, StreamId as SourceStreamId, TraitId as SourceTraitId,
 };
 
 use crate::{
-    CallbackId, ClassId, ConstantId, CustomTypeId, DeclarationId, EnumId, FunctionId, RecordId,
-    StreamId,
+    CallbackId, ClassId, ConstantId, ConstantOwner, CustomTypeId, DeclarationId, EnumId,
+    FunctionId, RecordId, StreamId,
 };
 
 use super::{LowerError, error::DeclarationFamily};
@@ -142,6 +142,14 @@ impl DeclarationIds {
                 _ => None,
             },
         )
+    }
+
+    pub fn constant_owner(&self, owner: &SourceConstantOwner) -> Result<ConstantOwner, LowerError> {
+        match owner {
+            SourceConstantOwner::Record(id) => self.record(id).map(ConstantOwner::Record),
+            SourceConstantOwner::Enum(id) => self.enumeration(id).map(ConstantOwner::Enum),
+            SourceConstantOwner::Class(id) => self.class(id).map(ConstantOwner::Class),
+        }
     }
 
     pub fn stream(&self, id: &SourceStreamId) -> Result<StreamId, LowerError> {

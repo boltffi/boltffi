@@ -2,13 +2,14 @@ use std::{collections::BTreeSet, fmt};
 
 use crate::{
     BinderId, BuiltinType, ByteSize, CallbackId, ClassId, ClosureReturn, CodecPlan, CodecRead,
-    CodecWrite, ConstantDecl, ConstantValueDecl, CustomTypeDecl, CustomTypeId, DataVariantPayload,
-    Decl, DeclarationId, DeclarationRef, DirectValueType, DirectVectorElementType, ElementCount,
-    EnumDecl, EnumId, ErrorChannel, ExportedCallable, FieldKey, HandlePresence, HandleTarget,
-    ImportedCallable, IncomingParam, InitializerDecl, IntoRust, IntrinsicOp, MapKind, Op, OpRender,
-    OutOfRust, OutgoingParam, ParamPlan, ParamPlanRender, Primitive, ReadPlan, Receive, RecordDecl,
-    RecordId, ReturnPlan, ReturnPlanRender, ReturnTypeRef, ReturnValueSlot, StreamDecl, StreamId,
-    StreamItemPlanRender, Surface, TypeRef, TypeRefRender, ValueRef, WritePlan,
+    CodecWrite, ConstantDecl, ConstantOwner, ConstantValueDecl, CustomTypeDecl, CustomTypeId,
+    DataVariantPayload, Decl, DeclarationId, DeclarationRef, DirectValueType,
+    DirectVectorElementType, ElementCount, EnumDecl, EnumId, ErrorChannel, ExportedCallable,
+    FieldKey, HandlePresence, HandleTarget, ImportedCallable, IncomingParam, InitializerDecl,
+    IntoRust, IntrinsicOp, MapKind, Op, OpRender, OutOfRust, OutgoingParam, ParamPlan,
+    ParamPlanRender, Primitive, ReadPlan, Receive, RecordDecl, RecordId, ReturnPlan,
+    ReturnPlanRender, ReturnTypeRef, ReturnValueSlot, StreamDecl, StreamId, StreamItemPlanRender,
+    Surface, TypeRef, TypeRefRender, ValueRef, WritePlan,
 };
 
 /// The declaration form required by an IR reference.
@@ -220,6 +221,13 @@ impl DeclarationReferences {
     }
 
     fn insert_constant<S: Surface>(&mut self, constant: &ConstantDecl<S>) {
+        constant.owner().into_iter().for_each(|owner| {
+            self.insert(match owner {
+                ConstantOwner::Record(id) => DeclarationReference::record(id),
+                ConstantOwner::Enum(id) => DeclarationReference::enumeration(id),
+                ConstantOwner::Class(id) => DeclarationReference::class(id),
+            });
+        });
         if let ConstantValueDecl::Inline { ty, .. } = constant.value() {
             self.insert_type(ty);
         }
@@ -801,6 +809,11 @@ mod tests {
                 pub x: i32,
             }
 
+            #[data(impl)]
+            impl Point {
+                pub const DIMENSIONS: u8 = 1;
+            }
+
             #[repr(i32)]
             #[data]
             pub enum Mode {
@@ -838,6 +851,7 @@ mod tests {
             "#,
         );
         let point = declaration_id(&bindings, "Point");
+        let dimensions = declaration_id(&bindings, "DIMENSIONS");
         let mode = declaration_id(&bindings, "Mode");
         let wrapped = declaration_id(&bindings, "Wrapped");
         let listener = declaration_id(&bindings, "Listener");
@@ -847,6 +861,7 @@ mod tests {
         let default_mode = declaration_id(&bindings, "DEFAULT_MODE");
 
         assert!(references(&bindings, wrapped).contains(&point));
+        assert_eq!(references(&bindings, dimensions), BTreeSet::from([point]));
         assert!(references(&bindings, listener).contains(&point));
         assert!(references(&bindings, engine).contains(&point));
         assert!(references(&bindings, engine).contains(&engine));

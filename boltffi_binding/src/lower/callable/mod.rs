@@ -56,8 +56,9 @@ mod params;
 mod returns;
 
 use boltffi_ast::{
-    BaseTrait, CanonicalName as SourceName, ClassId, ExecutionKind, FnSig, FnTrait, FunctionDef,
-    MethodDef, ParameterDef, Receiver, ReturnDef, TraitBounds, TraitId, TypeExpr,
+    BaseTrait, CanonicalName as SourceName, ClassId, ConstantOwner as SourceConstantOwner,
+    ExecutionKind, FnSig, FnTrait, FunctionDef, MethodDef, ParameterDef, Receiver, ReturnDef,
+    TraitBounds, TraitId, TypeExpr,
 };
 
 use crate::{
@@ -93,6 +94,27 @@ pub enum CallableOwner<'src> {
 }
 
 impl<'src> CallableOwner<'src> {
+    pub fn from_constant(
+        index: &'src Index<'src>,
+        owner: Option<&SourceConstantOwner>,
+    ) -> Result<Self, LowerError> {
+        match owner {
+            Some(SourceConstantOwner::Record(id)) => index
+                .record(id)
+                .map(Self::Record)
+                .ok_or_else(|| LowerError::unknown_record(id)),
+            Some(SourceConstantOwner::Enum(id)) => index
+                .enumeration(id)
+                .map(Self::Enum)
+                .ok_or_else(|| LowerError::unknown_enum(id)),
+            Some(SourceConstantOwner::Class(id)) => index
+                .class(id)
+                .map(Self::Class)
+                .ok_or_else(|| LowerError::unknown_class(id)),
+            None => Ok(Self::Function),
+        }
+    }
+
     fn self_type_expr(self) -> Result<boltffi_ast::TypeExpr, LowerError> {
         match self {
             Self::Record(record) => Ok(boltffi_ast::TypeExpr::record(
@@ -571,9 +593,9 @@ pub fn lower_constant_accessor<S: SurfaceLower>(
     index: &Index,
     ids: &DeclarationIds,
     allocator: &mut SymbolAllocator,
+    owner: CallableOwner<'_>,
     type_expr: &boltffi_ast::TypeExpr,
 ) -> Result<ExportedCallable<S>, LowerError> {
-    let owner = CallableOwner::Function;
     let return_def = boltffi_ast::ReturnDef::value(type_expr.clone());
     let (returns, error) = returns::lower::<S, _>(
         index,

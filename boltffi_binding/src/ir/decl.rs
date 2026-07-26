@@ -1590,6 +1590,19 @@ pub enum DataVariantPayload {
 }
 
 impl DataVariantPayload {
+    /// Returns whether the variant carries no value.
+    pub const fn is_unit(&self) -> bool {
+        matches!(self, Self::Unit)
+    }
+
+    /// Returns the fields carried by the variant.
+    pub fn fields(&self) -> &[EncodedFieldDecl] {
+        match self {
+            Self::Unit => &[],
+            Self::Tuple(fields) | Self::Struct(fields) => fields,
+        }
+    }
+
     fn uses_result_codec(&self) -> bool {
         match self {
             Self::Tuple(fields) | Self::Struct(fields) => {
@@ -2525,6 +2538,9 @@ impl StreamProtocol {
     }
 }
 
+/// An exported type that owns an associated constant.
+pub type ConstantOwner = boltffi_ast::ConstantOwner<RecordId, EnumId, ClassId>;
+
 /// A named constant value the contract exposes.
 #[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 #[serde(bound(
@@ -2534,6 +2550,8 @@ impl StreamProtocol {
 pub struct ConstantDecl<S: Surface> {
     id: ConstantId,
     name: CanonicalName,
+    #[serde(default)]
+    owner: Option<ConstantOwner>,
     meta: DeclMeta,
     value: ConstantValueDecl<S>,
 }
@@ -2548,9 +2566,15 @@ impl<S: Surface> ConstantDecl<S> {
         Self {
             id,
             name,
+            owner: None,
             meta,
             value,
         }
+    }
+
+    pub(crate) fn with_owner(mut self, owner: ConstantOwner) -> Self {
+        self.owner = Some(owner);
+        self
     }
 
     /// Returns the constant id.
@@ -2561,6 +2585,11 @@ impl<S: Surface> ConstantDecl<S> {
     /// Returns the canonical name.
     pub fn name(&self) -> &CanonicalName {
         &self.name
+    }
+
+    /// Returns the exported type that owns this constant.
+    pub const fn owner(&self) -> Option<ConstantOwner> {
+        self.owner
     }
 
     /// Returns the declaration metadata.

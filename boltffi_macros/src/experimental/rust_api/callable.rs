@@ -19,7 +19,7 @@ pub struct Callable<'source> {
 }
 
 #[derive(Clone, Copy)]
-enum CallableOwner<'source> {
+pub enum CallableOwner<'source> {
     Record(&'source RecordDef),
     Enum(&'source EnumDef),
     Class(&'source ClassDef),
@@ -49,6 +49,17 @@ impl<'source> Callable<'source> {
             parameters: &[],
             returns: CallableReturn::Constant(&constant.type_expr),
             owner: None,
+        }
+    }
+
+    pub fn associated_constant(
+        constant: &'source ConstantDef,
+        owner: CallableOwner<'source>,
+    ) -> Self {
+        Self {
+            parameters: &[],
+            returns: CallableReturn::Constant(&constant.type_expr),
+            owner: Some(owner),
         }
     }
 
