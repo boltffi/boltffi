@@ -3,6 +3,8 @@ package {{ package }};
 {% if let Some(doc) = enumeration.doc() %}{{ doc }}
 {% endif %}{% if enumeration.flat_error() %}public enum {{ enumeration.name() }} {
 {% for variant in enumeration.variants() %}    {{ variant.name() }}{% if !loop.last %},{% else %};{% endif %}
+{% endfor %}{% for constant in enumeration.constants() %}
+{% include "target/java/constant.java" %}
 {% endfor %}
     private static final {{ enumeration.name() }}[] VALUES = values();
 
@@ -45,6 +47,9 @@ package {{ package }};
         }
     }
 {% else if enumeration.sealed() %}public sealed interface {{ enumeration.name() }} permits {% for variant in enumeration.variants() %}{{ enumeration.name() }}.{{ variant.name() }}{% if !loop.last %}, {% endif %}{% endfor %} {
+{%- for constant in enumeration.constants() %}
+{% include "target/java/constant.java" %}
+{% endfor %}
 {% for variant in enumeration.variants() %}
 {% if let Some(doc) = variant.doc() %}{{ doc }}
 {% endif %}    record {{ variant.name() }}({% for field in variant.fields() %}{{ field.ty() }} {{ field.name() }}{% if !loop.last %}, {% endif %}{% endfor %}) implements {{ enumeration.name() }} {
@@ -80,6 +85,9 @@ package {{ package }};
         }
     }
 {% else %}public abstract class {{ enumeration.name() }}{% if enumeration.error() %} extends RuntimeException{% endif %} {
+{%- for constant in enumeration.constants() %}
+{% include "target/java/constant.java" %}
+{% endfor %}
 {% if enumeration.error() %}    protected {{ enumeration.name() }}(String message) {
         super(message);
     }

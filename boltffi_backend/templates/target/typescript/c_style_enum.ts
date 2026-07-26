@@ -6,8 +6,12 @@ export type {{ name }} =
 
 export const {{ name }} = {
 {% for variant in variants %}  {{ variant.name }}: {{ variant.value }},
+{% endfor %}{% for constant in constants.members %}  {{ constant }}
 {% endfor %}{% for method in methods %}  {{ method }}
 {% endfor %}} as const;
+{% for function in constants.functions %}
+{{ function }}
+{% endfor %}
 {% if error %}
 export class {{ name }}Exception extends Error {
   constructor(public readonly code: {{ name }}) {

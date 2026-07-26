@@ -45,6 +45,12 @@ export class {{ name }} {
       throw new Error("{{ name }} has been disposed");
     }
   }
+{% for constant in constants.members %}
+  {{ constant }}
+{% endfor %}
 {% for method in methods %}
   {{ method }}
 {% endfor %}}
+{% for function in constants.functions %}
+{{ function }}
+{% endfor %}

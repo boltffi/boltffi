@@ -1,7 +1,7 @@
 use askama::Template as AskamaTemplate;
 use boltffi_binding::{
-    CStyleEnumDecl, CStyleVariantDecl, DataEnumDecl, DataVariantDecl, DataVariantPayload, EnumDecl,
-    EnumId, Native,
+    CStyleEnumDecl, CStyleVariantDecl, ConstantOwner, DataEnumDecl, DataVariantDecl,
+    DataVariantPayload, EnumDecl, EnumId, Native,
 };
 
 use crate::{
@@ -14,11 +14,14 @@ use crate::{
         name_style::Name,
         primitive::Primitive,
         render::{
-            ValueIdentity,
+            AssociatedConstants, Constant, ValueIdentity,
             call::{AssociatedCallContext, Call, ValueCalls, ValueReceiver},
             record::Field,
+            type_name::JavaType,
         },
-        syntax::{Expression, Identifier, Javadoc, Statement, TypeIdentifier, TypeName},
+        syntax::{
+            ArgumentList, Expression, Identifier, Javadoc, Statement, TypeIdentifier, TypeName,
+        },
     },
 };
 
@@ -49,6 +52,7 @@ pub struct CStyle {
     long_value: bool,
     error: bool,
     variants: Vec<CStyleVariant>,
+    constants: AssociatedConstants,
     calls: ValueCalls,
     doc: Option<Javadoc>,
 }
@@ -59,6 +63,7 @@ pub struct Data {
     form: DataForm,
     error: bool,
     variants: Vec<DataVariant>,
+    constants: AssociatedConstants,
     calls: ValueCalls,
     doc: Option<Javadoc>,
 }
@@ -68,6 +73,12 @@ pub enum DataForm {
     Sealed,
     Abstract,
     FlatError,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum VariantInitialization {
+    External,
+    OwningType,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -157,6 +168,30 @@ impl Enumeration {
             _ => Err(JavaHost::unsupported("unknown enum direct carrier")),
         }
     }
+
+    pub fn constant_variant(
+        id: EnumId,
+        variant_name: &boltffi_binding::CanonicalName,
+        initialization: VariantInitialization,
+        version: JavaVersion,
+        context: &RenderContext<Native>,
+    ) -> Result<Expression> {
+        let enumeration = context
+            .enumeration(id)
+            .ok_or(JavaHost::broken_bridge_contract(
+                "constant enum type was not found in render context",
+            ))?;
+        let owner = TypeName::named(Name::new(enumeration.name()).type_name(version)?);
+        match enumeration {
+            EnumDecl::CStyle(_) => Ok(Expression::static_member(
+                owner,
+                Name::new(variant_name).enum_entry(version)?,
+            )),
+            EnumDecl::Data(enumeration) => DataForm::classify(enumeration, version, context)?
+                .constant_variant(enumeration, owner, variant_name, initialization, version),
+            _ => Err(JavaHost::unsupported("unknown enum constant value")),
+        }
+    }
 }
 
 impl CStyle {
@@ -178,6 +213,10 @@ impl CStyle {
 
     pub fn variants(&self) -> &[CStyleVariant] {
         &self.variants
+    }
+
+    pub fn constants(&self) -> &[Constant] {
+        self.constants.as_slice()
     }
 
     pub fn calls(&self) -> &ValueCalls {
@@ -209,6 +248,13 @@ impl CStyle {
                 .iter()
                 .map(|variant| CStyleVariant::from_declaration(variant, source_primitive, version))
                 .collect::<Result<Vec<_>>>()?,
+            constants: AssociatedConstants::from_owner(
+                ConstantOwner::Enum(enumeration.id()),
+                bridge,
+                native_owner,
+                version,
+                context,
+            )?,
             calls: ValueCalls::from_declarations(
                 enumeration.initializers(),
                 enumeration.methods(),
@@ -231,12 +277,16 @@ impl CStyle {
             true => emitted.with_aux(Runtime::async_helper()?),
             false => emitted,
         };
-        self.calls.iter().try_fold(emitted, |emitted, call| {
-            Ok(call
-                .native_forwards()?
-                .into_iter()
-                .fold(emitted, Emitted::with_aux))
-        })
+        let emitted = self
+            .calls
+            .iter()
+            .try_fold(emitted, |emitted, call| -> Result<_> {
+                Ok(call
+                    .native_forwards()?
+                    .into_iter()
+                    .fold(emitted, Emitted::with_aux))
+            })?;
+        self.constants.extend(emitted)
     }
 }
 
@@ -255,6 +305,10 @@ impl Data {
 
     pub fn variants(&self) -> &[DataVariant] {
         &self.variants
+    }
+
+    pub fn constants(&self) -> &[Constant] {
+        self.constants.as_slice()
     }
 
     pub fn calls(&self) -> &ValueCalls {
@@ -284,24 +338,19 @@ impl Data {
             .map(|variant| DataVariant::from_declaration(variant, package, version, context))
             .collect::<Result<Vec<_>>>()?;
         let error = enumeration.is_error_payload();
-        let form = if error && variants.iter().all(DataVariant::unit) {
-            DataForm::FlatError
-        } else if !error
-            && version.supports_sealed()
-            && variants
-                .iter()
-                .flat_map(|variant| variant.fields.iter())
-                .all(Field::native_record_safe)
-        {
-            DataForm::Sealed
-        } else {
-            DataForm::Abstract
-        };
+        let form = DataForm::classify(enumeration, version, context)?;
         Ok(Self {
             name: name.clone(),
             form,
             error,
             variants,
+            constants: AssociatedConstants::from_owner(
+                ConstantOwner::Enum(enumeration.id()),
+                bridge,
+                native_owner,
+                version,
+                context,
+            )?,
             calls: ValueCalls::from_declarations(
                 enumeration.initializers(),
                 enumeration.methods(),
@@ -349,12 +398,75 @@ impl Data {
             true => emitted.with_aux(ValueIdentity::helper()?),
             false => emitted,
         };
-        self.calls.iter().try_fold(emitted, |emitted, call| {
-            Ok(call
-                .native_forwards()?
-                .into_iter()
-                .fold(emitted, Emitted::with_aux))
-        })
+        let emitted = self
+            .calls
+            .iter()
+            .try_fold(emitted, |emitted, call| -> Result<_> {
+                Ok(call
+                    .native_forwards()?
+                    .into_iter()
+                    .fold(emitted, Emitted::with_aux))
+            })?;
+        self.constants.extend(emitted)
+    }
+}
+
+impl DataForm {
+    fn classify(
+        enumeration: &DataEnumDecl<Native>,
+        version: JavaVersion,
+        context: &RenderContext<Native>,
+    ) -> Result<Self> {
+        if enumeration.is_error_payload()
+            && enumeration
+                .variants()
+                .iter()
+                .all(|variant| variant.payload().is_unit())
+        {
+            return Ok(Self::FlatError);
+        }
+        let native_record_safe = enumeration
+            .variants()
+            .iter()
+            .flat_map(|variant| variant.payload().fields())
+            .try_fold(true, |safe, field| match safe {
+                true => JavaType::field(field.ty(), version, context)
+                    .map(|field| field.native_record_safe()),
+                false => Ok(false),
+            })?;
+        match !enumeration.is_error_payload() && version.supports_sealed() && native_record_safe {
+            true => Ok(Self::Sealed),
+            false => Ok(Self::Abstract),
+        }
+    }
+
+    fn constant_variant(
+        self,
+        enumeration: &DataEnumDecl<Native>,
+        owner: TypeName,
+        variant_name: &boltffi_binding::CanonicalName,
+        initialization: VariantInitialization,
+        version: JavaVersion,
+    ) -> Result<Expression> {
+        let variant = enumeration
+            .variants()
+            .iter()
+            .find(|variant| variant.name() == variant_name && variant.payload().is_unit())
+            .ok_or_else(|| JavaHost::unsupported("data enum constant variant"))?;
+        let variant = Name::new(variant.name()).variant(version)?;
+        match (self, initialization) {
+            (Self::FlatError, _) => Ok(Expression::static_member(
+                owner,
+                Identifier::parse_for(variant.as_str(), version)?,
+            )),
+            (Self::Sealed, _) | (Self::Abstract, VariantInitialization::OwningType) => Ok(
+                Expression::construct(TypeName::nested(owner, variant), ArgumentList::default()),
+            ),
+            (Self::Abstract, VariantInitialization::External) => Ok(Expression::static_member(
+                TypeName::nested(owner, variant),
+                Identifier::known("INSTANCE"),
+            )),
+        }
     }
 }
 

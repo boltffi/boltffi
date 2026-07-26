@@ -52,6 +52,24 @@ impl Name {
             .join("_")
     }
 
+    pub fn constant(&self) -> Result<Identifier> {
+        Identifier::escape(self.enum_member())
+    }
+
+    pub fn associated_constant(
+        owner: &CanonicalName,
+        constant: &CanonicalName,
+    ) -> Result<Identifier> {
+        let name = owner
+            .parts()
+            .iter()
+            .chain(constant.parts())
+            .map(NamePart::as_str)
+            .collect::<Vec<_>>()
+            .join("_");
+        Identifier::escape(name)
+    }
+
     pub fn position_field(position: u32) -> Result<Identifier> {
         Identifier::parse(format!("field_{position}"))
     }

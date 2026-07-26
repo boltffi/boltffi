@@ -134,6 +134,9 @@ impl host::HostBackend for TypeScriptHost {
         _bridge: &Self::Bridge,
         context: &RenderContext<Self::Surface>,
     ) -> Result<Emitted> {
+        if decl.owner().is_some() {
+            return Ok(Emitted::primary(""));
+        }
         Constant::from_declaration(decl, context)?.render()
     }
 
@@ -296,6 +299,18 @@ mod tests {
                 pub const BUSY: State = State::Busy { jobs: 3 };
                 "#,
             )
+            .expect("valid source"),
+            PackageInfo::new("demo", None),
+        )
+        .expect("source scans");
+        lower::<Wasm32>(&source).expect("source lowers")
+    }
+
+    fn associated_constant_bindings() -> Bindings<Wasm32> {
+        let source = boltffi_scan::scan_file(
+            syn::parse_str(include_str!(
+                "../../../tests/fixtures/source/constant/associated.rs"
+            ))
             .expect("valid source"),
             PackageInfo::new("demo", None),
         )
@@ -957,6 +972,31 @@ mod tests {
         assert!(browser.contents().contains("  busy = _readBusy();"));
         assert!(node.contents().contains("const _exports: BoltFFIExports"));
         assert!(node.contents().contains("  bytes = _readBytes();"));
+    }
+
+    #[test]
+    fn renders_associated_constants_on_the_owner_value() {
+        let output = TypeScriptHost::new("demo")
+            .expect("host builds")
+            .into_target()
+            .render(&associated_constant_bindings())
+            .expect("target renders");
+        let browser = output
+            .files()
+            .iter()
+            .find(|file| file.path().as_path().ends_with("demo.ts"))
+            .expect("browser module");
+        let source = browser.contents();
+
+        assert!(source.contains("BLACK: undefined as unknown as Color,"));
+        assert!(source.contains("CHANNEL_COUNT: 4,"));
+        assert!(source.contains("const _readColorBlack = (): Color =>"));
+        assert!(source.contains("Object.assign(Color, { BLACK: _readColorBlack() });"));
+        assert!(source.contains("DEFAULT: 1,"));
+        assert!(source.contains("INITIAL: { tag: \"Idle\" },"));
+        assert!(source.contains("static readonly MAX_COLORS: number = 16;"));
+        assert!(!source.contains("export let black:"));
+        assert!(!source.contains("UNEXPORTED_ASSOCIATED"));
     }
 
     #[test]

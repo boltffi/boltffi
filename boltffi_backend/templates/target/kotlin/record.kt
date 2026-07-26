@@ -27,6 +27,10 @@ object {{ record.name() }}{% if record.error() %} : Exception(){% endif %} {
         return {{ record.name() }}
     }
 {%- endif %}
+{%- for constant in constants %}
+
+{{ constant }}
+{%- endfor %}
 {%- for initializer in record.initializers() %}
 
     fun {{ initializer.name() }}({% for parameter in initializer.parameters() %}{{ parameter.name() }}: {{ parameter.ty() }}{% if !loop.last %}, {% endif %}{% endfor %}){% if let Some(return_type) = initializer.returns() %}: {{ return_type }}{% endif %} {
@@ -149,6 +153,10 @@ data class {{ record.name() }}(
             val reader = WireReader(bytes)
             return fromReader(reader)
         }
+{%- for constant in constants %}
+
+{{ constant }}
+{%- endfor %}
 {%- for initializer in record.initializers() %}
 
         fun {{ initializer.name() }}({% for parameter in initializer.parameters() %}{{ parameter.name() }}: {{ parameter.ty() }}{% if !loop.last %}, {% endif %}{% endfor %}){% if let Some(return_type) = initializer.returns() %}: {{ return_type }}{% endif %} {
@@ -320,6 +328,10 @@ data class {{ record.name() }}(
 {%- endfor %}
             )
         }
+{%- for constant in constants %}
+
+{{ constant }}
+{%- endfor %}
 {%- for initializer in record.initializers() %}
 
         fun {{ initializer.name() }}({% for parameter in initializer.parameters() %}{{ parameter.name() }}: {{ parameter.ty() }}{% if !loop.last %}, {% endif %}{% endfor %}){% if let Some(return_type) = initializer.returns() %}: {{ return_type }}{% endif %} {

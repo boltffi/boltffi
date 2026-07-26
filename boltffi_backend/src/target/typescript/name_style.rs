@@ -1,6 +1,6 @@
 use std::{fmt, path::PathBuf};
 
-use boltffi_binding::CanonicalName;
+use boltffi_binding::{CanonicalName, NamePart};
 
 use crate::core::{Result, name_case};
 
@@ -45,6 +45,22 @@ impl Name {
 
     pub fn identifier(&self) -> Result<Identifier> {
         Identifier::escape(name_case::lower_camel(&self.0))
+    }
+
+    pub fn constant_identifier(&self) -> Result<Identifier> {
+        Identifier::escape(
+            self.0
+                .parts()
+                .iter()
+                .map(NamePart::as_str)
+                .map(str::to_ascii_uppercase)
+                .collect::<Vec<_>>()
+                .join("_"),
+        )
+    }
+
+    pub fn helper_suffix(&self) -> String {
+        name_case::upper_camel_parts(self.0.parts())
     }
 
     pub fn type_name(&self) -> TypeName {

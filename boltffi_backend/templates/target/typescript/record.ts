@@ -24,8 +24,12 @@ const {{ codec }}: WireCodec<{{ name }}> = {
 {% endfor %}    };
   },
 };
-{% if !methods.is_empty() %}
+{% if !methods.is_empty() || !constants.members.is_empty() %}
 export const {{ name }} = {
-{% for method in methods %}  {{ method }}
+{% for constant in constants.members %}  {{ constant }}
+{% endfor %}{% for method in methods %}  {{ method }}
 {% endfor %}};
 {% endif %}
+{% for function in constants.functions %}
+{{ function }}
+{% endfor %}

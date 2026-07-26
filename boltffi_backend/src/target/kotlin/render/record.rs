@@ -1,8 +1,8 @@
 use askama::Template as AskamaTemplate;
 use boltffi_binding::{
-    CanonicalName, DirectFieldDecl, DirectRecordDecl, EncodedFieldDecl, EncodedRecordDecl,
-    ExportedMethodDecl, FieldKey, InitializerDecl, Native, NativeSymbol, Receive, RecordDecl,
-    RecordId, TypeRef,
+    CanonicalName, ConstantOwner, DirectFieldDecl, DirectRecordDecl, EncodedFieldDecl,
+    EncodedRecordDecl, ExportedMethodDecl, FieldKey, InitializerDecl, Native, NativeSymbol,
+    Receive, RecordDecl, RecordId, TypeRef,
 };
 
 use crate::{
@@ -14,6 +14,7 @@ use crate::{
         name_style::Name,
         primitive::KotlinPrimitive,
         render::{
+            AssociatedConstants,
             default_value::DefaultExpression,
             field::EncodedField,
             function::{ExportedCall, ExportedCallRenderer, ReceiverCarrier, ReceiverMutation},
@@ -26,6 +27,7 @@ use crate::{
 #[template(path = "target/kotlin/record.kt", escape = "none")]
 struct RecordTemplate {
     record: Record,
+    constants: Vec<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -34,6 +36,7 @@ pub struct Record {
     body: RecordBody,
     error: bool,
     fields: Vec<Field>,
+    constants: AssociatedConstants,
     initializers: Vec<ExportedCall>,
     static_methods: Vec<ExportedCall>,
     instance_methods: Vec<ExportedCall>,
@@ -83,7 +86,15 @@ impl Record {
     }
 
     pub fn render(self) -> Result<Emitted> {
-        Ok(Emitted::primary(RecordTemplate { record: self }.render()?))
+        let prefix = if self.empty() { "    " } else { "        " };
+        let constants = self.constants.render(prefix)?;
+        Ok(Emitted::primary(
+            RecordTemplate {
+                record: self,
+                constants,
+            }
+            .render()?,
+        ))
     }
 
     pub fn name(&self) -> &TypeName {
@@ -219,6 +230,12 @@ impl Record {
                     .then(|| Expression::integer(wire_size)),
             },
             error: record.is_error_payload(),
+            constants: AssociatedConstants::from_owner(
+                ConstantOwner::Record(record.id()),
+                host,
+                Some(bridge),
+                context,
+            )?,
             fields: record
                 .fields()
                 .iter()
@@ -262,6 +279,12 @@ impl Record {
             name: Name::new(record.name()).type_name(),
             body: RecordBody::Encoded { size },
             error: record.is_error_payload(),
+            constants: AssociatedConstants::from_owner(
+                ConstantOwner::Record(record.id()),
+                host,
+                Some(bridge),
+                context,
+            )?,
             fields: record
                 .fields()
                 .iter()

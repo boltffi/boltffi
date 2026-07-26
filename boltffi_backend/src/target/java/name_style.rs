@@ -183,6 +183,10 @@ impl Name {
         )
     }
 
+    pub fn constant(&self, version: JavaVersion) -> Result<Identifier> {
+        self.enum_entry(version)
+    }
+
     pub fn generated(&self, suffix: &str, version: JavaVersion) -> Result<Identifier> {
         Identifier::parse_for(
             format!("__boltffi_{}_{suffix}", self.lower_camel()),

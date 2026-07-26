@@ -257,6 +257,13 @@ impl ReturnType {
             [value],
         )))
     }
+
+    pub fn type_name(&self) -> Option<TypeName> {
+        match self {
+            Self::Void => None,
+            Self::Value(value) => Some(value.type_name()),
+        }
+    }
 }
 
 impl fmt::Display for ReturnType {
@@ -279,6 +286,14 @@ impl ValueType {
     fn boxed(&self, version: JavaVersion) -> TypeName {
         match self {
             Self::Primitive(primitive) => TypeName::boxed_primitive(*primitive, version),
+            Self::Record(record) => TypeName::named(record.clone()),
+            Self::Reference(reference) => reference.clone(),
+        }
+    }
+
+    pub fn type_name(&self) -> TypeName {
+        match self {
+            Self::Primitive(primitive) => TypeName::primitive(*primitive),
             Self::Record(record) => TypeName::named(record.clone()),
             Self::Reference(reference) => reference.clone(),
         }

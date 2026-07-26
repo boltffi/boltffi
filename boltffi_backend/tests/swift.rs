@@ -446,6 +446,19 @@ fn swift_target_renders_constants() {
 }
 
 #[test]
+fn swift_target_renders_associated_constants_on_the_owner() {
+    let source = rendered_fixture("constant/associated");
+
+    assert!(source.contains("public static var black: Color"));
+    assert!(source.contains("public static let channelCount: UInt8 = 4"));
+    assert!(source.contains("public static let `default`: Mode = Mode.fast"));
+    assert!(source.contains("public static let initial: State = State.idle"));
+    assert!(source.contains("public static let maxColors: UInt8 = 16"));
+    assert!(!source.contains("\npublic var black: Color"));
+    assert!(!source.contains("unexportedAssociated"));
+}
+
+#[test]
 fn swift_target_passes_primitive_direct_vectors() {
     insta::assert_snapshot!(rendered_fixture("direct_vector/primitive_vector_parameter"));
 }

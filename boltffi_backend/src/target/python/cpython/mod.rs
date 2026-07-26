@@ -194,8 +194,8 @@ impl host::HostBackend for PythonCExtHost {
             .flat_map(|declaration| declaration.emitted().diagnostics().iter().cloned())
             .collect();
         let package = Package::new(
-            bindings,
             bridge,
+            context,
             self.package_module(bindings)?,
             self.resolved_distribution(bindings)?,
             self.package_version(bindings),
@@ -1791,6 +1791,78 @@ mod tests {
         ));
         assert!(init.contains("\"magic\","));
         assert!(stub.contains("magic: bytes"));
+    }
+
+    #[test]
+    fn python_target_renders_associated_constants_on_the_owner() {
+        let output = target()
+            .render(&bindings(
+                r#"
+                #[repr(C)]
+                #[data]
+                pub struct Color {
+                    pub r: u8,
+                    pub g: u8,
+                    pub b: u8,
+                    pub a: u8,
+                }
+
+                #[data(impl)]
+                impl Color {
+                    pub const BLACK: Self = Self::rgba(0, 0, 0, 255);
+                    pub const CHANNEL_COUNT: u8 = 4;
+
+                    const fn rgba(r: u8, g: u8, b: u8, a: u8) -> Self {
+                        Self { r, g, b, a }
+                    }
+                }
+
+                #[repr(u8)]
+                #[data]
+                pub enum Mode {
+                    Fast = 1,
+                    Slow = 2,
+                }
+
+                #[data(impl)]
+                impl Mode {
+                    pub const DEFAULT: Self = Self::Fast;
+                }
+
+                pub struct Palette;
+
+                #[export]
+                impl Palette {
+                    pub const MAX_COLORS: u8 = 16;
+
+                    pub fn new() -> Self {
+                        Self
+                    }
+                }
+
+                impl Palette {
+                    pub const UNEXPORTED_ASSOCIATED: u8 = 99;
+                }
+                "#,
+            ))
+            .expect("Python target should render associated constants");
+        let extension = extension(&output);
+        let init = file(&output, "demo/__init__.py");
+        let stub = file(&output, "demo/__init__.pyi");
+
+        assert!(extension.contains(
+            "{\"color_black\", (PyCFunction)boltffi_python_callable_wrapper_boltffi_const_demo_color_black"
+        ));
+        assert!(init.contains("Color.BLACK = _native.color_black()"));
+        assert!(init.contains("Color.CHANNEL_COUNT = 4"));
+        assert!(init.contains("Mode.DEFAULT = Mode.FAST"));
+        assert!(init.contains("Palette.MAX_COLORS = 16"));
+        assert!(stub.contains("BLACK: ClassVar[Color]"));
+        assert!(stub.contains("CHANNEL_COUNT: ClassVar[int]"));
+        assert!(stub.contains("DEFAULT: ClassVar[Mode]"));
+        assert!(stub.contains("MAX_COLORS: ClassVar[int]"));
+        assert!(!stub.contains("UNEXPORTED_ASSOCIATED"));
+        assert!(!init.contains("\"BLACK\","));
     }
 
     #[test]

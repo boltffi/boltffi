@@ -1,6 +1,7 @@
 use askama::Template as AskamaTemplate;
 use boltffi_binding::{
-    ConstantDecl, ConstantValueDecl, DefaultValue, ExportedCallable, Native, NativeSymbol, TypeRef,
+    ConstantDecl, ConstantOwner, ConstantValueDecl, DefaultValue, ExportedCallable, Native,
+    NativeSymbol, TypeRef,
 };
 
 use crate::{
@@ -20,21 +21,41 @@ use crate::{
 
 #[derive(AskamaTemplate)]
 #[template(path = "target/kotlin/constant.kt", escape = "none")]
-struct ConstantTemplate {
-    constant: Constant,
+struct ConstantTemplate<'constant> {
+    constant: &'constant Constant,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Constant {
-    inline: Option<Inline>,
-    accessor: Option<ExportedCall>,
+    body: Body,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Inline {
+pub(super) struct AssociatedConstants(Vec<Constant>);
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum Inline {
+    Stored(InlineValue),
+    Computed(InlineValue),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum Body {
+    Inline(Inline),
+    Accessor(Box<ExportedCall>),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct InlineValue {
     name: Identifier,
     ty: TypeName,
     value: Expression,
+}
+
+#[derive(Clone, Copy)]
+enum Scope {
+    TopLevel,
+    Associated,
 }
 
 impl Constant {
@@ -44,57 +65,74 @@ impl Constant {
         bridge: &JniBridgeContract,
         context: &RenderContext<Native>,
     ) -> Result<Self> {
+        Self::build(declaration, Scope::TopLevel, host, bridge, context)
+    }
+
+    fn from_associated(
+        declaration: &ConstantDecl<Native>,
+        host: &KotlinHost,
+        bridge: &JniBridgeContract,
+        context: &RenderContext<Native>,
+    ) -> Result<Self> {
+        Self::build(declaration, Scope::Associated, host, bridge, context)
+    }
+
+    fn build(
+        declaration: &ConstantDecl<Native>,
+        scope: Scope,
+        host: &KotlinHost,
+        bridge: &JniBridgeContract,
+        context: &RenderContext<Native>,
+    ) -> Result<Self> {
+        let name = scope.name(declaration)?;
         match declaration.value() {
             ConstantValueDecl::Inline { ty, value, .. } => Ok(Self {
-                inline: Some(Inline::new(declaration, ty, value, context)?),
-                accessor: None,
+                body: Body::Inline(scope.inline(InlineValue::new(name, ty, value, context)?)),
             }),
             ConstantValueDecl::Accessor { symbol, callable } => Ok(Self {
-                inline: None,
-                accessor: Some(Self::build_accessor(
-                    declaration,
-                    symbol,
-                    callable,
-                    host,
-                    bridge,
-                    context,
-                )?),
+                body: Body::Accessor(Box::new(Self::build_accessor(
+                    name, symbol, callable, host, bridge, context,
+                )?)),
             }),
             _ => Err(KotlinHost::unsupported("unknown constant value")),
         }
     }
 
     pub fn render(self) -> Result<Emitted> {
-        Ok(Emitted::primary(
-            ConstantTemplate { constant: self }
-                .render()?
-                .trim()
-                .to_owned(),
-        ))
+        Ok(Emitted::primary(self.render_source()?))
     }
 
-    pub fn inline(&self) -> Option<&Inline> {
-        self.inline.as_ref()
+    fn render_associated(&self, prefix: &str) -> Result<String> {
+        self.render_source().map(|source| {
+            source
+                .lines()
+                .map(|line| format!("{prefix}{line}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        })
     }
 
-    pub fn accessor(&self) -> Option<&ExportedCall> {
-        self.accessor.as_ref()
+    fn render_source(&self) -> Result<String> {
+        Ok(ConstantTemplate { constant: self }
+            .render()?
+            .trim()
+            .to_owned())
+    }
+
+    fn body(&self) -> &Body {
+        &self.body
     }
 
     fn build_accessor(
-        declaration: &ConstantDecl<Native>,
+        name: Identifier,
         symbol: &NativeSymbol,
         callable: &ExportedCallable<Native>,
         host: &KotlinHost,
         bridge: &JniBridgeContract,
         context: &RenderContext<Native>,
     ) -> Result<ExportedCall> {
-        let call = ExportedCallRenderer::new(host, bridge, context).exported(
-            Name::new(declaration.name()).function()?,
-            symbol,
-            callable,
-            None,
-        )?;
+        let call = ExportedCallRenderer::new(host, bridge, context)
+            .exported(name, symbol, callable, None)?;
         if call.async_call().is_some() {
             return Err(KotlinHost::unsupported("async constant accessor"));
         }
@@ -105,29 +143,71 @@ impl Constant {
     }
 }
 
-impl Inline {
+impl AssociatedConstants {
+    pub(super) fn from_owner(
+        owner: ConstantOwner,
+        host: &KotlinHost,
+        bridge: Option<&JniBridgeContract>,
+        context: &RenderContext<Native>,
+    ) -> Result<Self> {
+        bridge
+            .map(|bridge| {
+                context
+                    .associated_constants(owner)
+                    .map(|constant| Constant::from_associated(constant, host, bridge, context))
+                    .collect::<Result<Vec<_>>>()
+            })
+            .transpose()
+            .map(|constants| Self(constants.unwrap_or_default()))
+    }
+
+    pub(super) fn render(&self, prefix: &str) -> Result<Vec<String>> {
+        self.0
+            .iter()
+            .map(|constant| constant.render_associated(prefix))
+            .collect()
+    }
+}
+
+impl InlineValue {
     fn new(
-        declaration: &ConstantDecl<Native>,
+        name: Identifier,
         ty: &TypeRef,
         value: &DefaultValue,
         context: &RenderContext<Native>,
     ) -> Result<Self> {
         Ok(Self {
-            name: Name::new(declaration.name()).function()?,
+            name,
             ty: KotlinType::type_ref(ty, context)?,
             value: DefaultExpression::render(ty, value, context)?,
         })
     }
 
-    pub fn name(&self) -> &Identifier {
+    fn name(&self) -> &Identifier {
         &self.name
     }
 
-    pub fn ty(&self) -> &TypeName {
+    fn ty(&self) -> &TypeName {
         &self.ty
     }
 
-    pub fn value(&self) -> &Expression {
+    fn value(&self) -> &Expression {
         &self.value
+    }
+}
+
+impl Scope {
+    fn name(self, declaration: &ConstantDecl<Native>) -> Result<Identifier> {
+        match self {
+            Self::TopLevel => Name::new(declaration.name()).function(),
+            Self::Associated => Name::new(declaration.name()).constant(),
+        }
+    }
+
+    fn inline(self, value: InlineValue) -> Inline {
+        match self {
+            Self::TopLevel => Inline::Stored(value),
+            Self::Associated => Inline::Computed(value),
+        }
     }
 }

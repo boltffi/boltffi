@@ -1,5 +1,5 @@
 use askama::Template as AskamaTemplate;
-use boltffi_binding::{ClassDecl, Wasm32};
+use boltffi_binding::{ClassDecl, ConstantOwner, Wasm32};
 
 use crate::core::{CoverageMode, Diagnostic, Emitted, Error, RenderContext, Result};
 
@@ -7,7 +7,7 @@ use super::super::{
     name_style::Name,
     syntax::{Identifier, MethodDeclaration, TypeName},
 };
-use super::Function;
+use super::{AssociatedConstants, Function};
 
 #[derive(AskamaTemplate)]
 #[template(path = "target/typescript/class.ts", escape = "none")]
@@ -16,6 +16,7 @@ pub struct Class {
     finalizer: Identifier,
     release: Identifier,
     methods: Vec<MethodDeclaration>,
+    constants: AssociatedConstants,
     diagnostics: Vec<Diagnostic>,
 }
 
@@ -69,6 +70,7 @@ impl Class {
             finalizer,
             release: Identifier::parse(declaration.release().name().as_str())?,
             methods,
+            constants: AssociatedConstants::class(ConstantOwner::Class(declaration.id()), context)?,
             diagnostics,
         })
     }

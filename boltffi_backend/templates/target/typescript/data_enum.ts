@@ -3,11 +3,15 @@
 export type {{ name }} =
 {% for variant in variants %}  | { readonly tag: {{ variant.tag }}{% for field in variant.fields %}; readonly {{ field.key }}: {{ field.ty }}{% endfor %} }{% if loop.last %};{% endif %}
 {% endfor %}
-{% if !methods.is_empty() %}
+{% if !methods.is_empty() || !constants.members.is_empty() %}
 export const {{ name }} = {
-{% for method in methods %}  {{ method }}
+{% for constant in constants.members %}  {{ constant }}
+{% endfor %}{% for method in methods %}  {{ method }}
 {% endfor %}};
 {% endif %}
+{% for function in constants.functions %}
+{{ function }}
+{% endfor %}
 {% if error %}
 export class {{ name }}Exception extends Error {
   constructor(public readonly value: {{ name }}) {

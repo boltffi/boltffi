@@ -1,7 +1,7 @@
 use askama::Template;
 use boltffi_binding::{
-    CanonicalName, DirectRecordDecl, DirectValueType, EncodedRecordDecl, FieldKey, Native,
-    RecordDecl,
+    CanonicalName, ConstantOwner, DirectRecordDecl, DirectValueType, EncodedRecordDecl, FieldKey,
+    Native, RecordDecl,
 };
 
 use crate::{
@@ -17,12 +17,13 @@ use super::super::{
     syntax::{Expression, Identifier, Statement, TypeFragment},
     type_name,
 };
-use super::{Documentation, Function, WireTemplate, primitive_type};
+use super::{AssociatedConstants, Documentation, Function, WireTemplate, primitive_type};
 
 #[derive(Template)]
 #[template(path = "target/csharp/record.cs", escape = "none")]
 struct RecordTemplate<'record> {
     record: &'record Record,
+    constants: &'record [String],
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -35,6 +36,7 @@ pub(in crate::target::csharp) struct Record {
     error_payload: bool,
     error_message_field: Option<Identifier>,
     fields: Vec<Field>,
+    constants: AssociatedConstants,
     methods: Vec<Function>,
     diagnostics: Vec<Diagnostic>,
 }
@@ -153,6 +155,12 @@ impl Record {
                 ),
             )?;
         }
+        let constants = AssociatedConstants::from_owner(
+            ConstantOwner::Record(declaration.id()),
+            &namespace,
+            bridge,
+            context,
+        )?;
         Ok(Self {
             documentation: Documentation::summary(declaration.meta().doc(), "    "),
             namespace,
@@ -165,6 +173,7 @@ impl Record {
                 .find(|field| field.name.as_str() == "Message")
                 .map(|field| field.name.clone()),
             fields,
+            constants,
             methods,
             diagnostics,
         })
@@ -254,6 +263,12 @@ impl Record {
                 ),
             )?;
         }
+        let constants = AssociatedConstants::from_owner(
+            ConstantOwner::Record(declaration.id()),
+            &namespace,
+            bridge,
+            context,
+        )?;
         Ok(Self {
             documentation: Documentation::summary(declaration.meta().doc(), "    "),
             namespace,
@@ -266,21 +281,27 @@ impl Record {
                 .find(|field| field.name.as_str() == "Message")
                 .map(|field| field.name.clone()),
             fields,
+            constants,
             methods,
             diagnostics,
         })
     }
 
     pub(in crate::target::csharp) fn render(&self) -> Result<Emitted> {
-        let mut emitted = Emitted::primary(RecordTemplate { record: self }.render()?)
-            .with_diagnostics(self.diagnostics.iter().cloned());
-        for method in &self.methods {
-            let (_, aux, diagnostics) = method.render()?.into_parts();
-            for chunk in aux {
-                emitted = emitted.with_aux(chunk);
+        let constants = self.constants.members()?;
+        let emitted = Emitted::primary(
+            RecordTemplate {
+                record: self,
+                constants: &constants,
             }
-            emitted = emitted.with_diagnostics(diagnostics);
-        }
+            .render()?,
+        )
+        .with_diagnostics(self.diagnostics.iter().cloned());
+        let emitted = self
+            .methods
+            .iter()
+            .try_fold(emitted, |emitted, method| method.add_support(emitted))?;
+        let mut emitted = self.constants.add_support(emitted)?;
         if self.codec_payload {
             emitted = emitted.with_aux(AuxChunk::ForwardDecl(WireTemplate.render()?.into()));
         }

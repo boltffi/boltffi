@@ -1,7 +1,7 @@
 use askama::Template as AskamaTemplate;
 use boltffi_binding::{
-    ConstantDecl, ConstantValueDecl, DeclarationRef, DefaultValue, EnumDecl, Primitive, TypeRef,
-    Wasm32,
+    CStyleEnumDecl, ConstantDecl, ConstantOwner, ConstantValueDecl, DeclarationRef, DefaultValue,
+    EnumDecl, IntegerRepr, Primitive, TypeRef, Wasm32,
 };
 
 use crate::core::{Emitted, Error, RenderContext, RenderedDeclaration, Result};
@@ -15,18 +15,33 @@ use super::{Function, Type};
 #[derive(AskamaTemplate)]
 #[template(path = "target/typescript/constant.ts", escape = "none")]
 pub struct Constant {
-    inline: Option<Inline>,
-    accessor: Option<Accessor>,
+    owner: Option<TypeName>,
+    name: Identifier,
+    body: Body,
+}
+
+pub(super) struct AssociatedConstants {
+    pub(super) members: Vec<String>,
+    pub(super) functions: Vec<String>,
+}
+
+#[derive(Clone, Copy)]
+enum MemberStyle {
+    Object,
+    Class,
+}
+
+enum Body {
+    Inline(Inline),
+    Accessor(Accessor),
 }
 
 struct Inline {
-    name: Identifier,
     ty: TypeName,
     value: Expression,
 }
 
 struct Accessor {
-    name: Identifier,
     ty: TypeName,
     reader: Identifier,
     function: String,
@@ -37,30 +52,36 @@ impl Constant {
         declaration: &ConstantDecl<Wasm32>,
         context: &RenderContext<Wasm32>,
     ) -> Result<Self> {
+        let owner = declaration
+            .owner()
+            .map(|owner| Self::owner_name(owner, context))
+            .transpose()?;
+        let name = if owner.is_some() {
+            Name::new(declaration.name()).constant_identifier()?
+        } else {
+            Name::new(declaration.name()).identifier()?
+        };
         match declaration.value() {
             ConstantValueDecl::Inline { ty, value, .. } => Ok(Self {
-                inline: Some(Inline {
-                    name: Name::new(declaration.name()).identifier()?,
+                owner,
+                name,
+                body: Body::Inline(Inline {
                     ty: Type::from_ref(ty, context)?,
-                    value: Self::default_value(ty, value, context)?,
+                    value: Self::default_value(declaration, ty, value, context)?,
                 }),
-                accessor: None,
             }),
             ConstantValueDecl::Accessor { symbol, callable } => {
                 let function =
                     Function::constant_accessor(declaration.name(), symbol, callable, context)?;
-                let name = Name::new(declaration.name()).identifier()?;
-                let spelling = name.to_string();
-                let mut characters = spelling.chars();
-                let reader_suffix = characters
-                    .next()
-                    .map(|first| first.to_uppercase().chain(characters).collect::<String>())
-                    .ok_or_else(|| Self::unsupported("constant accessor name"))?;
-                let reader = Identifier::parse(format!("_read{reader_suffix}"))?;
+                let reader = Identifier::parse(format!(
+                    "_read{}{}",
+                    owner.as_ref().map(ToString::to_string).unwrap_or_default(),
+                    Name::new(declaration.name()).helper_suffix()
+                ))?;
                 Ok(Self {
-                    inline: None,
-                    accessor: Some(Accessor {
-                        name,
+                    owner,
+                    name,
+                    body: Body::Accessor(Accessor {
                         ty: function.return_type().clone(),
                         function: function.render_local(&reader)?,
                         reader,
@@ -85,27 +106,31 @@ impl Constant {
                 DeclarationRef::Constant(constant) => Some(constant),
                 _ => None,
             })
-            .map(|declaration| Self::from_declaration(declaration, context))
-            .filter_map(|constant| match constant {
-                Ok(Self {
-                    accessor: Some(accessor),
-                    ..
-                }) => Some(Ok(format!(
-                    "  {} = {}();\n",
-                    accessor.name, accessor.reader
-                ))),
-                Ok(_) => None,
-                Err(error) => Some(Err(error)),
+            .filter_map(|declaration| {
+                Self::from_declaration(declaration, context)
+                    .map(|constant| constant.initializer())
+                    .transpose()
             })
             .collect::<Result<Vec<_>>>()
             .map(|initializers| initializers.concat())
     }
 
     fn default_value(
+        declaration: &ConstantDecl<Wasm32>,
         ty: &TypeRef,
         value: &DefaultValue,
         context: &RenderContext<Wasm32>,
     ) -> Result<Expression> {
+        if let (
+            Some(ConstantOwner::Enum(owner)),
+            TypeRef::Enum(type_id),
+            DefaultValue::EnumVariant { variant_name, .. },
+        ) = (declaration.owner(), ty, value)
+            && owner == *type_id
+            && let Some(EnumDecl::CStyle(enumeration)) = context.enumeration(owner)
+        {
+            return Self::c_style_variant(enumeration, variant_name);
+        }
         match value {
             DefaultValue::Bool(value) => Ok(Expression::boolean(*value)),
             DefaultValue::Integer(value)
@@ -146,10 +171,110 @@ impl Constant {
         }
     }
 
+    fn c_style_variant(
+        enumeration: &CStyleEnumDecl<Wasm32>,
+        variant_name: &boltffi_binding::CanonicalName,
+    ) -> Result<Expression> {
+        let discriminant = enumeration
+            .variants()
+            .iter()
+            .find(|variant| variant.name() == variant_name)
+            .map(|variant| variant.discriminant().get())
+            .ok_or_else(|| Self::unsupported("associated enum constant variant"))?;
+        Ok(Expression::integer_literal(match enumeration.repr() {
+            IntegerRepr::I64 | IntegerRepr::U64 => IntegerLiteral::bigint(discriminant),
+            _ => IntegerLiteral::number(discriminant),
+        }))
+    }
+
+    fn body(&self) -> &Body {
+        &self.body
+    }
+
+    fn type_name(&self) -> &TypeName {
+        match &self.body {
+            Body::Inline(inline) => &inline.ty,
+            Body::Accessor(accessor) => &accessor.ty,
+        }
+    }
+
+    fn initial_value(&self) -> String {
+        match &self.body {
+            Body::Inline(inline) => inline.value.to_string(),
+            Body::Accessor(_) => format!("undefined as unknown as {}", self.type_name()),
+        }
+    }
+
+    fn member(&self, style: MemberStyle) -> String {
+        match style {
+            MemberStyle::Object => format!("{}: {},", self.name, self.initial_value()),
+            MemberStyle::Class => format!(
+                "static readonly {}: {} = {};",
+                self.name,
+                self.type_name(),
+                self.initial_value()
+            ),
+        }
+    }
+
+    fn initializer(&self) -> Option<String> {
+        let Body::Accessor(accessor) = &self.body else {
+            return None;
+        };
+        Some(match &self.owner {
+            Some(owner) => format!(
+                "  Object.assign({}, {{ {}: {}() }});\n",
+                owner, self.name, accessor.reader
+            ),
+            None => format!("  {} = {}();\n", self.name, accessor.reader),
+        })
+    }
+
+    fn owner_name(owner: ConstantOwner, context: &RenderContext<Wasm32>) -> Result<TypeName> {
+        let name = context
+            .constant_owner_name(owner)
+            .ok_or_else(|| Self::unsupported("missing associated constant owner"))?;
+        Ok(Name::new(name).type_name())
+    }
+
     fn unsupported(shape: &'static str) -> Error {
         Error::UnsupportedTarget {
             target: "typescript",
             shape,
         }
+    }
+}
+
+impl AssociatedConstants {
+    pub(super) fn object(owner: ConstantOwner, context: &RenderContext<Wasm32>) -> Result<Self> {
+        Self::new(owner, MemberStyle::Object, context)
+    }
+
+    pub(super) fn class(owner: ConstantOwner, context: &RenderContext<Wasm32>) -> Result<Self> {
+        Self::new(owner, MemberStyle::Class, context)
+    }
+
+    fn new(
+        owner: ConstantOwner,
+        style: MemberStyle,
+        context: &RenderContext<Wasm32>,
+    ) -> Result<Self> {
+        let constants = context
+            .associated_constants(owner)
+            .map(|constant| Constant::from_declaration(constant, context))
+            .collect::<Result<Vec<_>>>()?;
+        Ok(Self {
+            members: constants
+                .iter()
+                .map(|constant| constant.member(style))
+                .collect(),
+            functions: constants
+                .iter()
+                .filter_map(|constant| match &constant.body {
+                    Body::Accessor(accessor) => Some(accessor.function.clone()),
+                    Body::Inline(_) => None,
+                })
+                .collect(),
+        })
     }
 }

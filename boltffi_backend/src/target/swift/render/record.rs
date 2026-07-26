@@ -1,7 +1,7 @@
 use askama::Template;
 use boltffi_binding::{
-    DirectFieldDecl, DirectRecordDecl, EncodedFieldDecl, EncodedRecordDecl, ExportedMethodDecl,
-    FieldKey, Native, NativeSymbol, RecordDecl, TypeRef,
+    ConstantOwner, DirectFieldDecl, DirectRecordDecl, EncodedFieldDecl, EncodedRecordDecl,
+    ExportedMethodDecl, FieldKey, Native, NativeSymbol, RecordDecl, TypeRef,
 };
 
 use crate::{
@@ -14,7 +14,7 @@ use crate::{
         name_style::Name,
         primitive::SwiftPrimitive,
         render::{
-            Documentation, SwiftType,
+            AssociatedConstants, Documentation, SwiftType,
             function::{
                 AssociatedFunction, AssociatedFunctions, Initializer, Receiver, ValueFunctions,
                 ValueType,
@@ -28,6 +28,7 @@ use crate::{
 #[template(path = "target/swift/record.swift", escape = "none")]
 struct RecordTemplate<'a> {
     record: &'a Record,
+    constants: Vec<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -37,6 +38,7 @@ pub struct Record {
     conforms_to_error: bool,
     body: RecordBody,
     fields: Vec<Field>,
+    constants: AssociatedConstants,
     initializers: Vec<Initializer>,
     static_methods: Vec<AssociatedFunction>,
     instance_methods: Vec<AssociatedFunction>,
@@ -88,7 +90,11 @@ impl Record {
     }
 
     pub fn render(&self) -> Result<Emitted> {
-        let mut source = RecordTemplate { record: self }.render()?;
+        let mut source = RecordTemplate {
+            record: self,
+            constants: self.constants.render()?,
+        }
+        .render()?;
         source.push_str("\n\n");
         let emitted = Emitted::primary(source).with_diagnostics(self.diagnostics.clone());
         let emitted = match self.requires_wire_runtime() {
@@ -178,6 +184,7 @@ impl Record {
 
     fn requires_wire_runtime(&self) -> bool {
         self.body.requires_wire_runtime()
+            || self.constants.requires_wire_runtime()
             || self
                 .initializers
                 .iter()
@@ -253,6 +260,11 @@ impl Record {
                 .zip(c_record.fields())
                 .map(|(field, c_field)| Field::from_direct(field, c_field.name()))
                 .collect::<Result<Vec<_>>>()?,
+            constants: AssociatedConstants::from_owner(
+                ConstantOwner::Record(record.id()),
+                bridge,
+                context,
+            )?,
             initializers,
             static_methods,
             instance_methods,
@@ -303,6 +315,11 @@ impl Record {
                 .iter()
                 .map(|field| Field::from_encoded(field, context, &reader, &writer))
                 .collect::<Result<Vec<_>>>()?,
+            constants: AssociatedConstants::from_owner(
+                ConstantOwner::Record(record.id()),
+                bridge,
+                context,
+            )?,
             initializers,
             static_methods,
             instance_methods,

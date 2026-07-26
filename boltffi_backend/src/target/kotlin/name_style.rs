@@ -115,6 +115,10 @@ impl Name {
         Identifier::escape(self.screaming_snake())
     }
 
+    pub fn constant(&self) -> Result<Identifier> {
+        self.enum_entry()
+    }
+
     pub fn generated(&self, suffix: &str) -> Result<Identifier> {
         Identifier::parse(format!("__boltffi_{}_{}", self.lower_camel(), suffix))
     }

@@ -92,6 +92,13 @@ const DIRECT_RECORD_CALLS: &str = r#"
     }
 "#;
 
+const ASSOCIATED_CONSTANTS: &str = include_str!("fixtures/source/constant/associated.rs");
+
+const TOP_LEVEL_CONSTANTS: &str =
+    include_str!("fixtures/source/constant/literals_and_accessors.rs");
+
+const DATA_ENUM_CONSTANT: &str = include_str!("fixtures/source/constant/data_enum.rs");
+
 const ENCODED_RECORD: &str = r#"
     #[data]
     pub struct Profile {
@@ -1352,6 +1359,45 @@ fn java_target_uses_class_semantics_for_primitive_array_fields() {
 }
 
 #[test]
+fn java_target_renders_associated_constants_on_the_owner() {
+    let output = render(ASSOCIATED_CONSTANTS, CoverageMode::Complete);
+    let color = java_source(&output, "com.boltffi.demo", "Color");
+    let mode = java_source(&output, "com.boltffi.demo", "Mode");
+    let state = java_source(&output, "com.boltffi.demo", "State");
+    let palette = java_source(&output, "com.boltffi.demo", "Palette");
+
+    assert!(color.contains("public static final Color BLACK = __boltffiReadConstant"));
+    assert!(color.contains("public static final byte CHANNEL_COUNT = (byte) (4);"));
+    assert!(color.contains("private static Color __boltffiReadConstant"));
+    assert!(mode.contains("public static final Mode DEFAULT = Mode.FAST;"));
+    assert!(state.contains("public static final State INITIAL = new State.Idle();"));
+    assert!(palette.contains("public static final byte MAX_COLORS = (byte) (16);"));
+    assert!(!palette.contains("UNEXPORTED_ASSOCIATED"));
+    assert!(!java_source(&output, "com.boltffi.demo", "Demo").contains(" BLACK "));
+}
+
+#[test]
+fn java_target_renders_top_level_constants_in_the_module() {
+    let output = render(TOP_LEVEL_CONSTANTS, CoverageMode::Complete);
+    let module = java_source(&output, "com.boltffi.demo", "Demo");
+
+    assert!(module.contains("public static final boolean ENABLED = true;"));
+    assert!(module.contains("public static final int LIMIT = 1024;"));
+    assert!(module.contains("public static final double HALF = 0.5;"));
+    assert!(module.contains("public static final String GREETING = \"hello\";"));
+    assert!(module.contains("public static final Mode DEFAULT_MODE = Mode.FAST;"));
+    assert!(module.contains("public static final byte[] MAGIC = __boltffiReadConstant"));
+}
+
+#[test]
+fn java_target_renders_data_enum_constants_for_the_selected_enum_form() {
+    let output = render(DATA_ENUM_CONSTANT, CoverageMode::Complete);
+    let module = java_source(&output, "com.boltffi.demo", "Demo");
+
+    assert!(module.contains("public static final State IDLE = State.Idle.INSTANCE;"));
+}
+
+#[test]
 fn java_target_uses_error_record_messages_for_exceptions() {
     let output = render(ERROR_RECORD, CoverageMode::Complete);
     let error = java_source(&output, "com.boltffi.demo", "AppError");
@@ -2556,6 +2602,43 @@ fn generated_primitive_java_compiles_for_java_eight_when_available() {
         JavaHost::new("com.boltffi.demo", "Demo").expect("Java host"),
     );
     compile_generated_java(&compiler, &output, "boltffi-java-primitives");
+}
+
+#[test]
+fn generated_associated_constants_compile_for_java_eight_when_available() {
+    let Some(compiler) = JavaCompiler::discover() else {
+        return;
+    };
+
+    let output = render_with_host(
+        ASSOCIATED_CONSTANTS,
+        CoverageMode::Complete,
+        JavaHost::new("com.boltffi.demo", "Demo").expect("Java host"),
+    );
+    compile_generated_java(&compiler, &output, "boltffi-java-associated-constants");
+}
+
+#[test]
+fn generated_top_level_constants_compile_for_java_eight_when_available() {
+    let Some(compiler) = JavaCompiler::discover() else {
+        return;
+    };
+
+    [TOP_LEVEL_CONSTANTS, DATA_ENUM_CONSTANT]
+        .into_iter()
+        .enumerate()
+        .for_each(|(index, source)| {
+            let output = render_with_host(
+                source,
+                CoverageMode::Complete,
+                JavaHost::new("com.boltffi.demo", "Demo").expect("Java host"),
+            );
+            compile_generated_java(
+                &compiler,
+                &output,
+                &format!("boltffi-java-top-level-constants-{index}"),
+            );
+        });
 }
 
 #[test]

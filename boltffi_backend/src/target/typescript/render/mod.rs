@@ -16,6 +16,7 @@ mod type_name;
 pub use callback::Callback;
 pub use class::Class;
 pub use closure::ClosureAdapter;
+use constant::AssociatedConstants;
 pub use constant::Constant;
 pub use custom_type::CustomType;
 pub use enumeration::Enumeration;

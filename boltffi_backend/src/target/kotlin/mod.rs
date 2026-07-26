@@ -344,6 +344,9 @@ impl host::HostBackend for KotlinHost {
         bridge: &Self::Bridge,
         context: &RenderContext<Self::Surface>,
     ) -> Result<Emitted> {
+        if decl.owner().is_some() {
+            return Ok(Emitted::primary(""));
+        }
         render::Constant::from_declaration(decl, self, bridge, context)?.render()
     }
 

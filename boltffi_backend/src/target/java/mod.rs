@@ -31,7 +31,7 @@ use crate::{
 
 pub use crate::target::jvm::DesktopLoader as JavaDesktopLoader;
 pub use name_style::{JavaFile, JavaPackage};
-use render::{Call, Callback, Class, Enumeration, ErasedSignature, Module, Record};
+use render::{Call, Callback, Class, Constant, Enumeration, ErasedSignature, Module, Record};
 use syntax::{Syntax, TypeIdentifier};
 pub use version::JavaVersion;
 
@@ -379,10 +379,7 @@ impl JavaHost {
             .stable(BindingCapability::Callbacks)
             .stable(BindingCapability::Streams)
             .stable(BindingCapability::CustomTypes)
-            .unsupported(
-                BindingCapability::Constants,
-                "Java constant migration is pending",
-            )
+            .stable(BindingCapability::Constants)
     }
 }
 
@@ -474,11 +471,21 @@ impl host::HostBackend for JavaHost {
 
     fn constant(
         &self,
-        _: &ConstantDecl<Self::Surface>,
-        _: &Self::Bridge,
-        _: &RenderContext<Self::Surface>,
+        declaration: &ConstantDecl<Self::Surface>,
+        bridge: &Self::Bridge,
+        context: &RenderContext<Self::Surface>,
     ) -> Result<Emitted> {
-        Err(Self::unsupported("constant declaration"))
+        if declaration.owner().is_some() {
+            return Ok(Emitted::primary(""));
+        }
+        Constant::from_declaration(
+            declaration,
+            bridge,
+            &self.native_owner(),
+            self.java_version,
+            context,
+        )?
+        .render()
     }
 
     fn custom_type(

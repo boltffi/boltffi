@@ -9,7 +9,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
     {{ class.name() }}({{ class.handle() }} handle) {
         this.handle = handle;
-    }
+    }{% for constant in class.constants() %}
+{% include "target/java/constant.java" %}
+{% endfor %}
 {% for constructor in class.constructors() %}
 {% if let Some(doc) = constructor.call().doc() %}{{ doc }}
 {% endif %}    public {{ class.name() }}({% for parameter in constructor.call().parameters() %}{{ parameter.ty() }} {{ parameter.name() }}{% if !loop.last %}, {% endif %}{% endfor %}) {

@@ -2,14 +2,16 @@ use std::path::PathBuf;
 
 use askama::Template as AskamaTemplate;
 use boltffi_binding::{
-    Bindings, CanonicalName, ClassDecl, ClassId, CodecNode, ConstantDecl, CustomTypeDecl,
+    CanonicalName, ClassDecl, ClassId, CodecNode, ConstantDecl, ConstantOwner, CustomTypeDecl,
     CustomTypeId, DeclarationRef, EncodedRecordDecl, EnumDecl, EnumId, FunctionDecl, Native,
     RecordDecl, RecordId, StreamDecl, TypeRef,
 };
 
 use crate::{
     bridge::python_cext::PythonCExtBridgeContract,
-    core::{Error, FilePath, GeneratedFile, GeneratedOutput, RenderedDeclaration, Result},
+    core::{
+        Error, FilePath, GeneratedFile, GeneratedOutput, RenderContext, RenderedDeclaration, Result,
+    },
     target::python::{
         codec::{CodecAdapters, EnumCodec, FixedStruct, ReadFunction, WriteFunction},
         cpython::{
@@ -62,6 +64,7 @@ struct InitTemplate {
     enums: Vec<EnumClass>,
     classes: Vec<Class>,
     constants: Vec<ConstantStub>,
+    associated_constants: Vec<ConstantStub>,
     functions: Vec<FunctionStub>,
 }
 
@@ -70,6 +73,7 @@ struct InitTemplate {
 struct StubTemplate {
     uses_sequence_annotations: bool,
     uses_callable_annotations: bool,
+    has_associated_constants: bool,
     has_data_enums: bool,
     records: Vec<RecordClass>,
     enums: Vec<EnumClass>,
@@ -96,6 +100,7 @@ pub struct Package<'bindings> {
     declarations: PackageDeclarations<'bindings>,
     codec_adapters: CodecAdapters<'bindings>,
     bridge: &'bindings PythonCExtBridgeContract,
+    context: &'bindings RenderContext<'bindings, Native>,
     module: PackageModule,
     distribution: String,
     version: Option<String>,
@@ -104,8 +109,8 @@ pub struct Package<'bindings> {
 
 impl<'bindings> Package<'bindings> {
     pub fn new(
-        bindings: &'bindings Bindings<Native>,
         bridge: &'bindings PythonCExtBridgeContract,
+        context: &'bindings RenderContext<'bindings, Native>,
         module: PackageModule,
         distribution: String,
         version: Option<String>,
@@ -119,8 +124,9 @@ impl<'bindings> Package<'bindings> {
             .collect::<Vec<_>>();
         Self {
             declarations,
-            codec_adapters: CodecAdapters::from_declarations(bindings, &declaration_refs),
+            codec_adapters: CodecAdapters::from_declarations(context.bindings(), &declaration_refs),
             bridge,
+            context,
             module,
             distribution,
             version,
@@ -136,6 +142,14 @@ impl<'bindings> Package<'bindings> {
         let enums = self.enums()?;
         let classes = self.classes()?;
         let constants = self.constants()?;
+        let associated_constants = records
+            .iter()
+            .flat_map(|record| &record.constants)
+            .chain(enums.iter().flat_map(|enumeration| &enumeration.constants))
+            .chain(classes.iter().flat_map(|class| &class.constants))
+            .cloned()
+            .collect::<Vec<_>>();
+        let has_associated_constants = !associated_constants.is_empty();
         let functions = self.functions();
         let codec_decoders = self
             .codec_adapters
@@ -167,6 +181,9 @@ impl<'bindings> Package<'bindings> {
             || enums.iter().any(EnumClass::uses_wire_helpers)
             || classes.iter().any(Class::uses_wire_helpers)
             || constants.iter().any(ConstantStub::uses_wire_helpers)
+            || associated_constants
+                .iter()
+                .any(ConstantStub::uses_wire_helpers)
             || stubs.iter().any(FunctionStub::uses_wire_helpers)
             || !self.codec_adapters.is_empty();
         let uses_async_helpers = records.iter().any(RecordClass::uses_async_helpers)
@@ -222,6 +239,7 @@ impl<'bindings> Package<'bindings> {
                             enums: enums.clone(),
                             classes: classes.clone(),
                             constants: constants.clone(),
+                            associated_constants,
                             functions: stubs.clone(),
                         }
                         .render()?,
@@ -233,6 +251,7 @@ impl<'bindings> Package<'bindings> {
                         StubTemplate {
                             uses_sequence_annotations,
                             uses_callable_annotations,
+                            has_associated_constants,
                             has_data_enums: enums.iter().any(EnumClass::has_wire),
                             records,
                             enums,
@@ -433,6 +452,17 @@ impl<'bindings> Package<'bindings> {
             .constants
             .iter()
             .copied()
+            .filter(|constant| constant.owner().is_none())
+            .map(|constant| ConstantStub::from_declaration(constant, self))
+            .collect()
+    }
+
+    fn constants_for_owner(&self, owner: ConstantOwner) -> Result<Vec<ConstantStub>> {
+        self.declarations
+            .constants
+            .iter()
+            .copied()
+            .filter(|constant| constant.owner() == Some(owner))
             .map(|constant| ConstantStub::from_declaration(constant, self))
             .collect()
     }
@@ -485,6 +515,18 @@ impl<'bindings> Package<'bindings> {
             .copied()
             .filter(|stream| stream.owner() == Some(class))
             .collect()
+    }
+
+    fn constant_owner_canonical_name(
+        &self,
+        owner: ConstantOwner,
+    ) -> Result<&'bindings CanonicalName> {
+        self.context
+            .constant_owner_name(owner)
+            .ok_or(Error::UnsupportedTarget {
+                target: "python",
+                shape: "unknown associated constant owner",
+            })
     }
 
     fn enum_variant_expression(

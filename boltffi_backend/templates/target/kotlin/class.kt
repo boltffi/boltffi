@@ -17,9 +17,13 @@ class {{ class.name() }} internal constructor(internal val handle: Long) : AutoC
     constructor({% for parameter in initializer.call().parameters() %}{{ parameter.name() }}: {{ parameter.ty() }}{% if !loop.last %}, {% endif %}{% endfor %}) : this({{ initializer.call().name() }}({% for parameter in initializer.call().parameters() %}{{ parameter.name() }}{% if !loop.last %}, {% endif %}{% endfor %}).handle)
 {%- endif %}
 {%- endfor %}
-{%- if !class.initializers().is_empty() || !class.static_methods().is_empty() %}
+{%- if !class.initializers().is_empty() || !class.static_methods().is_empty() || !constants.is_empty() %}
 
     companion object {
+{%- for constant in constants %}
+
+{{ constant }}
+{%- endfor %}
 {%- for initializer in class.initializers() %}
         fun {{ initializer.call().name() }}({% for parameter in initializer.call().parameters() %}{{ parameter.name() }}: {{ parameter.ty() }}{% if !loop.last %}, {% endif %}{% endfor %}){% if let Some(return_type) = initializer.call().returns() %}: {{ return_type }}{% endif %} {
 {%- for statement in initializer.call().setup() %}

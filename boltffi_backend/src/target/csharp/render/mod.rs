@@ -9,7 +9,7 @@ mod stream;
 
 pub(in crate::target::csharp) use callback::Callback;
 pub(in crate::target::csharp) use class::Class;
-pub(in crate::target::csharp) use constant::Constant;
+pub(in crate::target::csharp) use constant::{AssociatedConstants, Constant};
 pub(in crate::target::csharp) use enumeration::Enumeration;
 pub(in crate::target::csharp) use record::Record;
 pub(in crate::target::csharp) use stream::Stream;
@@ -1397,12 +1397,10 @@ impl Function {
     }
 
     pub(super) fn render(&self) -> Result<Emitted> {
-        let mut emitted = Emitted::primary(FunctionTemplate { function: self }.render()?).with_aux(
-            AuxChunk::Helper {
-                id: self.helper_id.clone(),
-                text: NativeFunctionTemplate { function: self }.render()?.into(),
-            },
-        );
+        let mut emitted = Emitted::primary(self.render_source()?).with_aux(AuxChunk::Helper {
+            id: self.helper_id.clone(),
+            text: NativeFunctionTemplate { function: self }.render()?.into(),
+        });
         if let Some(asynchronous) = &self.asynchronous {
             emitted = emitted
                 .with_aux(AuxChunk::ForwardDecl(AsyncRuntimeTemplate.render()?.into()))
@@ -1445,6 +1443,20 @@ impl Function {
             }),
             None => emitted,
         })
+    }
+
+    fn render_source(&self) -> Result<String> {
+        FunctionTemplate { function: self }
+            .render()
+            .map_err(Into::into)
+    }
+
+    pub(super) fn add_support(&self, emitted: Emitted) -> Result<Emitted> {
+        let (_, auxiliary, diagnostics) = self.render()?.into_parts();
+        Ok(auxiliary
+            .into_iter()
+            .fold(emitted, Emitted::with_aux)
+            .with_diagnostics(diagnostics))
     }
 }
 

@@ -1,4 +1,4 @@
-use boltffi_binding::{ClassDecl, Native};
+use boltffi_binding::{ClassDecl, ConstantOwner, Native};
 
 use crate::{
     core::{Error, Result},
@@ -8,12 +8,13 @@ use crate::{
     },
 };
 
-use super::{AssociatedCallable, ClassStream, NameScope, Package};
+use super::{AssociatedCallable, ClassStream, ConstantStub, NameScope, Package};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Class {
     pub class_name: Identifier,
     pub release_method: Identifier,
+    pub constants: Vec<ConstantStub>,
     pub init: Vec<AssociatedCallable>,
     pub constructors: Vec<AssociatedCallable>,
     pub static_methods: Vec<AssociatedCallable>,
@@ -64,6 +65,7 @@ impl Class {
         Ok(Self {
             class_name,
             release_method: symbols.release()?,
+            constants: package.constants_for_owner(ConstantOwner::Class(declaration.id()))?,
             init,
             constructors,
             static_methods,
@@ -95,7 +97,10 @@ impl Class {
 
     pub fn validate_names(&self) -> Result<()> {
         NameScope::new(format!("class `{}`", self.class_name))
-            .insert_all(self.callables().map(AssociatedCallable::member_name))
+            .insert_all(self.constants.iter().map(ConstantStub::member_name))
+            .and_then(|scope| {
+                scope.insert_all(self.callables().map(AssociatedCallable::member_name))
+            })
             .and_then(|scope| scope.insert_all(self.streams.iter().map(ClassStream::member_name)))
             .map(|_| ())?;
         self.callables()
