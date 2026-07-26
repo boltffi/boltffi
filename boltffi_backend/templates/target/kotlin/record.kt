@@ -19,6 +19,9 @@ object {{ record.name() }}{% if record.error() %} : Exception(){% endif %} {
 {%- else %}
     internal fun toByteArray(): ByteArray = ByteArray(0)
 
+    internal fun toDirectBuffer(): java.nio.ByteBuffer =
+        java.nio.ByteBuffer.allocateDirect(0)
+
     internal fun fromByteArray(bytes: ByteArray): {{ record.name() }} {
         require(bytes.size == 0)
         return {{ record.name() }}
@@ -262,6 +265,14 @@ data class {{ record.name() }}(
             .order(java.nio.ByteOrder.nativeOrder())
         writeTo(buffer, 0)
         return buffer.array()
+    }
+
+    internal fun toDirectBuffer(): java.nio.ByteBuffer {
+        val buffer = java.nio.ByteBuffer
+            .allocateDirect(STRUCT_SIZE)
+            .order(java.nio.ByteOrder.nativeOrder())
+        writeTo(buffer, 0)
+        return buffer
     }
 
     internal fun writeTo(buffer: java.nio.ByteBuffer, offset: Int) {

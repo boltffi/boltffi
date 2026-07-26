@@ -40,6 +40,7 @@ pub fn lower<S: SurfaceLower, D: Direction + LowerClosure<S>>(
     ids: &DeclarationIds,
     allocator: &mut SymbolAllocator,
     owner: CallableOwner,
+    root_encoding: codecs::RootEncoding,
     return_def: &ReturnDef,
 ) -> Result<Lowered<S, D>, LowerError>
 where
@@ -55,7 +56,8 @@ where
                 let ok_type_expr = substitute_self_type(owner, ok)?;
                 let err_type_expr = substitute_self_type(owner, err)?;
                 let success =
-                    lower_return_plan::<S, D>(index, ids, allocator, &ok_type_expr)?.into_out();
+                    lower_return_plan::<S, D>(index, ids, allocator, root_encoding, &ok_type_expr)?
+                        .into_out();
                 let error = lower_error::<S, D>(index, ids, &err_type_expr)?;
                 return Ok((
                     ReturnDecl::new(ElementMeta::new(None, None, None), success),
@@ -68,7 +70,8 @@ where
                 ));
             }
             let type_expr = substitute_self_type(owner, type_expr)?;
-            let plan = lower_plain_return::<S, D>(index, ids, allocator, &type_expr)?;
+            let plan =
+                lower_plain_return::<S, D>(index, ids, allocator, root_encoding, &type_expr)?;
             Ok((
                 ReturnDecl::new(ElementMeta::new(None, None, None), plan),
                 ErrorDecl::none(),
@@ -81,6 +84,7 @@ fn lower_plain_return<S: SurfaceLower, D: Direction + LowerClosure<S>>(
     index: &Index,
     ids: &DeclarationIds,
     allocator: &mut SymbolAllocator,
+    root_encoding: codecs::RootEncoding,
     type_expr: &TypeExpr,
 ) -> Result<ReturnPlan<S, D>, LowerError>
 where
@@ -88,7 +92,7 @@ where
 {
     match specialize_return::<S, D>(index, ids, type_expr)? {
         Some(plan) => Ok(plan),
-        None => lower_return_plan::<S, D>(index, ids, allocator, type_expr),
+        None => lower_return_plan::<S, D>(index, ids, allocator, root_encoding, type_expr),
     }
 }
 
@@ -100,7 +104,7 @@ fn specialize_return<S: SurfaceLower, D: Direction>(
 where
     D::Opposite: ParamDirection<S>,
 {
-    let specialization = ValueSpecialization::from_type_expr(index, ids, type_expr)?;
+    let specialization = ValueSpecialization::from_type_expr::<S>(index, ids, type_expr)?;
     Ok(match specialization {
         Some(ValueSpecialization::ScalarOption(primitive)) => {
             Some(ReturnPlan::ScalarOptionViaReturnSlot { primitive })
@@ -133,6 +137,7 @@ fn lower_return_plan<S: SurfaceLower, D: Direction + LowerClosure<S>>(
     index: &Index,
     ids: &DeclarationIds,
     allocator: &mut SymbolAllocator,
+    root_encoding: codecs::RootEncoding,
     type_expr: &TypeExpr,
 ) -> Result<ReturnPlan<S, D>, LowerError>
 where
@@ -162,8 +167,10 @@ where
             ty: DirectValueType::primitive(Primitive::from(*primitive)),
         }),
         TypeExpr::Record { id, .. } if index.record(id).is_some_and(records::is_direct) => {
-            Ok(ReturnPlan::DirectViaReturnSlot {
-                ty: DirectValueType::record(ids.record(id)?),
+            let ty = DirectValueType::record(ids.record(id)?);
+            Ok(match S::direct_record_return_slot() {
+                crate::ReturnValueSlot::ReturnSlot => ReturnPlan::DirectViaReturnSlot { ty },
+                crate::ReturnValueSlot::OutPointer => ReturnPlan::DirectViaOutPointer { ty },
             })
         }
         TypeExpr::Enum { id, .. } if index.enumeration(id).is_some_and(enums::is_c_style) => {
@@ -173,6 +180,7 @@ where
         }
         TypeExpr::String
         | TypeExpr::Str
+        | TypeExpr::InternedString { .. }
         | TypeExpr::Builtin(_)
         | TypeExpr::Slice(_)
         | TypeExpr::Record { .. }
@@ -184,7 +192,8 @@ where
         | TypeExpr::Map { .. }
         | TypeExpr::Custom { .. } => {
             let ty = types::lower(ids, type_expr)?;
-            let codec_node = codecs::node(index, ids, type_expr, ValueRef::self_value())?;
+            let codec_node =
+                root_encoding.node::<S>(index, ids, type_expr, ValueRef::self_value())?;
             Ok(ReturnPlan::EncodedViaReturnSlot {
                 ty,
                 codec: D::make_codec(ValueRef::self_value(), codec_node),

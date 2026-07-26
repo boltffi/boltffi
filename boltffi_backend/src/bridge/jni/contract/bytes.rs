@@ -1,25 +1,22 @@
-//! Encoded byte-array parameters passed from Java into Rust.
+//! Encoded direct-buffer parameters passed from the JVM into Rust.
 //!
-//! Encoded values enter JNI as `jbyteArray`, but the lower C bridge accepts only
-//! borrowed bytes: pointer plus length. That conversion has a lifetime rule. The
-//! generated method must borrow the Java array, call the C bridge while the
-//! borrow is alive, then release the array on every exit path.
+//! Encoded values enter JNI as a direct buffer plus an exact used length, while
+//! the lower C bridge accepts a borrowed pointer plus length.
 //!
 //! This module records the stable names for that borrow. It does not decide what
 //! the bytes mean and it does not inspect codec plans. By this point lowering
 //! has already selected an encoded parameter; the JNI contract only describes
-//! how the Java array is held long enough to reach the C ABI.
+//! how the direct buffer is held long enough to reach the C ABI.
 
 use crate::{
     bridge::c::{self, Identifier},
     core::Result,
 };
 
-/// A Java byte-array parameter borrowed as C pointer and length arguments.
+/// A JVM direct-buffer parameter borrowed as C pointer and length arguments.
 ///
-/// The parameter owns the Java-facing name and the generated local variables
-/// used by the native method body. Cleanup is rendered from these same names so
-/// the borrow and release paths stay tied together.
+/// The parameter owns the JVM-facing buffer and length names and the generated
+/// pointer local used by the native method body.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct BytesParameter {
@@ -30,7 +27,7 @@ pub struct BytesParameter {
 }
 
 impl BytesParameter {
-    /// Returns the generated JNI byte-array parameter name.
+    /// Returns the generated JNI direct-buffer parameter name.
     pub fn name(&self) -> &Identifier {
         &self.name
     }
@@ -40,7 +37,7 @@ impl BytesParameter {
         &self.pointer
     }
 
-    /// Returns the local length variable passed to the C bridge.
+    /// Returns the generated JNI payload-length parameter.
     pub fn length(&self) -> &Identifier {
         &self.length
     }

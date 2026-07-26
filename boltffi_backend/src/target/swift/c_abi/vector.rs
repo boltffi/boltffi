@@ -1,5 +1,5 @@
 use boltffi_binding::{
-    DirectVectorElementType, DirectVectorPrimitive, Native, Primitive, RecordId,
+    DirectVectorElementType, DirectVectorPrimitive, Native, Primitive, Receive, RecordId,
 };
 
 use std::iter;
@@ -68,6 +68,7 @@ enum Decode {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Scope {
     TypedBuffer,
+    MutableTypedBuffer,
     RawBytes,
 }
 
@@ -88,12 +89,27 @@ impl DirectVector {
         &self.ty
     }
 
-    pub fn borrowed(&self, source_name: &Name, value: Identifier) -> Result<BorrowedVector> {
-        self.borrowed_with(
+    pub fn borrowed(
+        &self,
+        source_name: &Name,
+        value: Identifier,
+        receive: Receive,
+    ) -> Result<BorrowedVector> {
+        let borrowed = self.borrowed_with(
             value,
             source_name.generated("buffer")?,
             source_name.generated("storage")?,
-        )
+        )?;
+        match receive {
+            Receive::ByValue | Receive::ByRef => Ok(borrowed),
+            Receive::ByMutRef if matches!(self.storage, Storage::Primitive { .. }) => {
+                Ok(borrowed.mutable())
+            }
+            Receive::ByMutRef => Err(SwiftHost::unsupported(
+                "mutable direct-record vector parameter",
+            )),
+            _ => Err(SwiftHost::unsupported("unknown direct-vector receive mode")),
+        }
     }
 
     fn borrowed_with(
@@ -415,6 +431,11 @@ impl BorrowedVector {
         self
     }
 
+    fn mutable(mut self) -> Self {
+        self.scope = Scope::MutableTypedBuffer;
+        self
+    }
+
     fn with_byte_arguments(mut self) -> Self {
         let pointer = Expression::call(
             Expression::member(
@@ -510,6 +531,7 @@ impl Scope {
     fn method(self) -> &'static str {
         match self {
             Self::TypedBuffer => "withUnsafeBufferPointer",
+            Self::MutableTypedBuffer => "withUnsafeMutableBufferPointer",
             Self::RawBytes => "withUnsafeBytes",
         }
     }

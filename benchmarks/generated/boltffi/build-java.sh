@@ -5,6 +5,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$SCRIPT_DIR/../../.."
 DEMO_DIR="$ROOT_DIR/examples/demo"
 BENCH_OVERLAY="$DEMO_DIR/boltffi.benchmark.toml"
+if [[ $# -ne 0 ]]; then
+    echo "Usage: $0" >&2
+    exit 1
+fi
 
 export CARGO_TARGET_DIR="$SCRIPT_DIR/target"
 
@@ -43,8 +47,26 @@ cd "$DEMO_DIR"
 
 cargo build --release -p boltffi_cli --manifest-path "$ROOT_DIR/Cargo.toml"
 
+rm -rf "$SCRIPT_DIR/dist/java"
 "$SCRIPT_DIR/target/release/boltffi" \
     --overlay "$BENCH_OVERLAY" \
     pack java \
     --release \
     --regenerate
+
+OUTPUT_DIR="$SCRIPT_DIR/dist/java"
+JNI_LIBRARY_FILENAME="$(printf '' | rustc --crate-name demo_jni --crate-type cdylib --print file-names -)"
+JNI_LIBRARY="$OUTPUT_DIR/$JNI_LIBRARY_FILENAME"
+
+require_file() {
+    local required_path="$1"
+    if [[ ! -f "$required_path" ]]; then
+        echo "Java generation did not produce $required_path" >&2
+        exit 1
+    fi
+}
+
+require_file "$OUTPUT_DIR/com/example/bench_boltffi/BenchBoltFFI.java"
+require_file "$OUTPUT_DIR/jni/jni_glue.c"
+require_file "$OUTPUT_DIR/jni/demo.h"
+require_file "$JNI_LIBRARY"

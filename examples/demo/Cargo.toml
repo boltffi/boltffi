@@ -5,6 +5,7 @@ edition = "2024"
 
 [features]
 default = []
+csharp-demo = []
 uniffi = ["dep:uniffi"]
 wasm-bench = ["dep:serde", "dep:serde-wasm-bindgen", "dep:wasm-bindgen", "dep:wasm-bindgen-futures"]
 
@@ -29,3 +30,6 @@ uuid = "1"
 url = "2"
 wasm-bindgen = { version = "0.2.108", optional = true }
 wasm-bindgen-futures = { version = "0.4.48", optional = true }
+
+[profile.release]
+debug = 1

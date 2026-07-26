@@ -137,7 +137,7 @@ Benchmarks are defined in Rust in `examples/demo`. You do **not** touch separate
 4. **Call it from each harness** that should time it. This is still hand-written, but the code is now thin (just call the bound function or construct the bound object). Harness sources:
    - Swift: [`harnesses/swift-macos-bench/Sources/{BoltFFI,Uniffi,AsyncRunner}/main.swift`](./harnesses/swift-macos-bench/Sources)
    - Kotlin (JNI + JNA/UniFFI): [`harnesses/kotlin-jvm-bench/src/main/kotlin/com/example/bench_compare/JmhBenchmarks.kt`](./harnesses/kotlin-jvm-bench/src/main/kotlin/com/example/bench_compare/JmhBenchmarks.kt)
-   - Java FFM: [`harnesses/java-jvm-bench/src/main/java/com/example/bench_compare/{BoltffiJavaBench,UniffiJavaBench}.java`](./harnesses/java-jvm-bench/src/main/java/com/example/bench_compare)
+   - Java FFM: [`harnesses/java-jvm-bench/src/jmh/java/com/example/bench_compare/{BoltffiJavaBench,UniffiJavaBench}.java`](./harnesses/java-jvm-bench/src/jmh/java/com/example/bench_compare)
    - Python: [`harnesses/python-bench/bench.py`](./harnesses/python-bench/bench.py)
    - WASM: [`harnesses/wasm-bench/bench.mjs`](./harnesses/wasm-bench/bench.mjs)
    - .NET: [`harnesses/dotnet-bench/{WireReaderBenchmarks,EnumWireBenchmarks}.cs`](./harnesses/dotnet-bench)

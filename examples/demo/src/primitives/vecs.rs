@@ -286,12 +286,7 @@ pub fn echo_vec_vec_bool(v: Vec<Vec<bool>>) -> Vec<Vec<bool>> {
 #[demo_bench_macros::demo_case(
     "primitives.vecs.nested_isize.should_roundtrip_values",
     justification = "Ensure a nested isize vector crosses the wire and returns unchanged.",
-    directions = "Call `primitives::vecs::echo_vec_vec_isize` through the generated binding and assert a nested isize vector crosses the wire and returns unchanged.",
-    exclude(
-        typescript,
-        reason = ExclusionReason::ImplementationGap,
-        details = "#203: TypeScript nested Vec<Vec<isize>> lowering passes plain Number values to BigInt setters in the generated writer. Include this case when the nested isize writer coerces elements to BigInt."
-    )
+    directions = "Call `primitives::vecs::echo_vec_vec_isize` through the generated binding and assert a nested isize vector crosses the wire and returns unchanged."
 )]
 #[export]
 pub fn echo_vec_vec_isize(v: Vec<Vec<isize>>) -> Vec<Vec<isize>> {
@@ -301,12 +296,7 @@ pub fn echo_vec_vec_isize(v: Vec<Vec<isize>>) -> Vec<Vec<isize>> {
 #[demo_bench_macros::demo_case(
     "primitives.vecs.nested_usize.should_roundtrip_values",
     justification = "Ensure a nested usize vector crosses the wire and returns unchanged.",
-    directions = "Call `primitives::vecs::echo_vec_vec_usize` through the generated binding and assert a nested usize vector crosses the wire and returns unchanged.",
-    exclude(
-        typescript,
-        reason = ExclusionReason::ImplementationGap,
-        details = "#203: TypeScript nested Vec<Vec<usize>> lowering passes plain Number values to BigInt setters in the generated writer. Include this case when the nested usize writer coerces elements to BigInt."
-    )
+    directions = "Call `primitives::vecs::echo_vec_vec_usize` through the generated binding and assert a nested usize vector crosses the wire and returns unchanged."
 )]
 #[export]
 pub fn echo_vec_vec_usize(v: Vec<Vec<usize>>) -> Vec<Vec<usize>> {

@@ -8,8 +8,8 @@ expression: "rendered_fixture(\"exports/result_values\")"
 package com.boltffi.demo
 @Suppress("FunctionName")
 private object Native {
-    @JvmStatic external fun boltffi_function_demo_result_to_string(value: ByteArray): ByteArray?
-    @JvmStatic external fun boltffi_function_demo_echo_response(response: ByteArray): ByteArray?
+    @JvmStatic external fun boltffi_function_demo_result_to_string(value: java.nio.ByteBuffer, __boltffi_value_len: Int): ByteArray?
+    @JvmStatic external fun boltffi_function_demo_echo_response(response: java.nio.ByteBuffer, __boltffi_response_len: Int): ByteArray?
 }
 
 
@@ -54,7 +54,7 @@ fun resultToString(value: BoltFFIResult<Int, String>): String {
     val __boltffi_value_writer = __boltffi_value_wire.writer
     __boltffi_value_writer.writeResult(value, { __boltffi_value_writer, __boltffi_value_0 -> __boltffi_value_writer.writeI32(__boltffi_value_0) }, { __boltffi_value_writer, __boltffi_value_0 -> __boltffi_value_writer.writeString(__boltffi_value_0) })
     try {
-        val __boltffi_result = Native.boltffi_function_demo_result_to_string(__boltffi_value_wire.bytes()) ?: throw IllegalStateException("null buffer returned")
+        val __boltffi_result = Native.boltffi_function_demo_result_to_string(__boltffi_value_wire.directBuffer(), __boltffi_value_wire.size()) ?: throw IllegalStateException("null buffer returned")
         val __boltffi_reader = WireReader(__boltffi_result)
         return __boltffi_reader.readString()
     } finally {
@@ -67,7 +67,7 @@ fun echoResponse(response: Response): Response {
     val __boltffi_response_writer = __boltffi_response_wire.writer
     response.writeTo(__boltffi_response_writer)
     try {
-        val __boltffi_result = Native.boltffi_function_demo_echo_response(__boltffi_response_wire.bytes()) ?: throw IllegalStateException("null buffer returned")
+        val __boltffi_result = Native.boltffi_function_demo_echo_response(__boltffi_response_wire.directBuffer(), __boltffi_response_wire.size()) ?: throw IllegalStateException("null buffer returned")
         val __boltffi_reader = WireReader(__boltffi_result)
         return Response.fromReader(__boltffi_reader)
     } finally {

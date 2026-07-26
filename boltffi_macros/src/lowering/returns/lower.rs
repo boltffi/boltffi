@@ -242,6 +242,16 @@ impl ObjectHandleReturn {
                     None => ::core::ptr::null_mut(),
                 }
             }
+        } else if self.is_fallible() {
+            quote! {
+                match #value {
+                    Ok(value) => Box::into_raw(Box::new(value)),
+                    Err(error) => {
+                        ::boltffi::__private::set_last_error(format!("{error:?}"));
+                        ::core::ptr::null_mut()
+                    }
+                }
+            }
         } else {
             quote! {
                 Box::into_raw(Box::new(#value))

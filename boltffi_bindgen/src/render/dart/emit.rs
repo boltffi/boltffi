@@ -151,7 +151,7 @@ pub fn render_value(expr: &ValueExpr) -> String {
 pub fn type_expr_dart_type(ty: &TypeExpr) -> String {
     match ty {
         TypeExpr::Primitive(p) => primitive_dart_type(*p),
-        TypeExpr::String => "String".to_string(),
+        TypeExpr::String | TypeExpr::Str => "String".to_string(),
         TypeExpr::Vec(inner) => match inner.as_ref() {
             TypeExpr::Primitive(primitive) => match primitive {
                 PrimitiveType::I32 => "$$typed_data.Int32List".to_string(),

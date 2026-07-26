@@ -8,6 +8,7 @@ mod data;
 mod experimental;
 mod exports;
 mod index;
+mod interned_string;
 mod lowering;
 mod safety;
 
@@ -35,9 +36,16 @@ pub fn derive_ffi_type(input: TokenStream) -> TokenStream {
 fn expand_or_experimental(
     item: TokenStream,
     legacy: impl FnOnce(TokenStream) -> TokenStream,
+    dependency: DependencyExpansion,
 ) -> TokenStream {
     match experimental::expansion_build::item() {
         experimental::expansion_build::Item::Inactive => {}
+        experimental::expansion_build::Item::Dependency => {
+            return match dependency {
+                DependencyExpansion::Legacy => legacy(item),
+                DependencyExpansion::Preserve => strip_boltffi_attrs(item),
+            };
+        }
         experimental::expansion_build::Item::Preserve => return strip_boltffi_attrs(item),
         experimental::expansion_build::Item::Tokens(tokens) => {
             let item = proc_macro2::TokenStream::from(strip_boltffi_attrs(item));
@@ -65,6 +73,11 @@ fn expand_or_experimental(
         }
         experimental::metadata_build::Item::Error(tokens) => TokenStream::from(tokens),
     }
+}
+
+enum DependencyExpansion {
+    Legacy,
+    Preserve,
 }
 
 fn strip_boltffi_attrs(item: TokenStream) -> TokenStream {
@@ -181,7 +194,11 @@ fn is_boltffi_helper_path(path: &syn::Path) -> bool {
 
 #[proc_macro_attribute]
 pub fn ffi_export(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    expand_or_experimental(item, exports::function::ffi_export_impl)
+    expand_or_experimental(
+        item,
+        exports::function::ffi_export_impl,
+        DependencyExpansion::Preserve,
+    )
 }
 
 #[proc_macro_attribute]
@@ -191,7 +208,11 @@ pub fn ffi_stream(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
 #[proc_macro_attribute]
 pub fn ffi_trait(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    expand_or_experimental(item, callbacks::trait_export::ffi_trait_impl)
+    expand_or_experimental(
+        item,
+        callbacks::trait_export::ffi_trait_impl,
+        DependencyExpansion::Preserve,
+    )
 }
 
 #[proc_macro_attribute]
@@ -204,18 +225,35 @@ pub fn custom_type(item: TokenStream) -> TokenStream {
     custom::r#type::custom_type_impl(item)
 }
 
+#[proc_macro]
+pub fn interned_string_pool(item: TokenStream) -> TokenStream {
+    interned_string::interned_string_pool_impl(item)
+}
+
 #[proc_macro_attribute]
 pub fn data(attr: TokenStream, item: TokenStream) -> TokenStream {
     let attr_str = attr.to_string();
     if attr_str.trim() == "impl" {
-        return expand_or_experimental(item, data::expansion::data_impl_block);
+        return expand_or_experimental(
+            item,
+            data::expansion::data_impl_block,
+            DependencyExpansion::Legacy,
+        );
     }
-    expand_or_experimental(data::repr::materialize(item), data::expansion::data_impl)
+    expand_or_experimental(
+        data::repr::materialize(item),
+        data::expansion::data_impl,
+        DependencyExpansion::Legacy,
+    )
 }
 
 #[proc_macro_attribute]
 pub fn error(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    expand_or_experimental(data::repr::materialize(item), data::expansion::data_impl)
+    expand_or_experimental(
+        data::repr::materialize(item),
+        data::expansion::data_impl,
+        DependencyExpansion::Legacy,
+    )
 }
 
 #[proc_macro_derive(Data)]
@@ -227,16 +265,28 @@ pub fn derive_data(input: TokenStream) -> TokenStream {
 pub fn export(attr: TokenStream, item: TokenStream) -> TokenStream {
     let item_clone = item.clone();
 
+    if let Ok(item_const) = syn::parse::<syn::ItemConst>(item_clone.clone()) {
+        return expand_or_experimental(
+            TokenStream::from(quote!(#item_const)),
+            strip_boltffi_attrs,
+            DependencyExpansion::Preserve,
+        );
+    }
+
     if let Ok(item_fn) = syn::parse::<ItemFn>(item_clone.clone()) {
-        return expand_or_experimental(TokenStream::from(quote!(#item_fn)), |item| {
-            exports::function::ffi_export_impl(item)
-        });
+        return expand_or_experimental(
+            TokenStream::from(quote!(#item_fn)),
+            exports::function::ffi_export_impl,
+            DependencyExpansion::Preserve,
+        );
     }
 
     if let Ok(item_impl) = syn::parse::<syn::ItemImpl>(item_clone.clone()) {
-        return expand_or_experimental(TokenStream::from(quote!(#item_impl)), |item| {
-            exports::methods::export_impl(attr, item)
-        });
+        return expand_or_experimental(
+            TokenStream::from(quote!(#item_impl)),
+            |item| exports::methods::export_impl(attr, item),
+            DependencyExpansion::Preserve,
+        );
     }
 
     if let Ok(item_trait) = syn::parse::<syn::ItemTrait>(item_clone) {
@@ -245,7 +295,7 @@ pub fn export(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     syn::Error::new_spanned(
         proc_macro2::TokenStream::from(item),
-        "export can only be applied to fn, impl, or trait",
+        "export can only be applied to const, fn, impl, or trait",
     )
     .to_compile_error()
     .into()

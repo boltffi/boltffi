@@ -6,10 +6,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use boltffi_ast::PackageInfo;
 use boltffi_binding::{
     BINDING_EXPANSION_BUILD_ENV, BINDING_EXPANSION_ROOT_ENV, BINDING_EXPANSION_SOURCE_ENV,
-    BINDING_EXPANSION_SURFACE_ENV, BindingMetadataSurface, LowerError, Native, Wasm32,
-    lower_with_declarations,
+    BINDING_EXPANSION_SURFACE_ENV, BINDING_METADATA_FEATURES_ENV, BindingMetadataSurface,
+    LowerError, Native, Wasm32, lower_with_declarations,
 };
-use boltffi_scan::{ScanError, ScanInput};
+use boltffi_scan::{ActiveCfg, ScanError, ScanInput};
 use proc_macro2::{Span, TokenStream};
 use quote::quote_spanned;
 
@@ -20,6 +20,7 @@ use crate::experimental::{
 
 pub enum Item {
     Inactive,
+    Dependency,
     Preserve,
     Tokens(TokenStream),
     Error(TokenStream),
@@ -38,7 +39,7 @@ pub fn item() -> Item {
             .render()
             .map(Item::Tokens)
             .unwrap_or_else(|error| Item::Error(error.into_compile_error())),
-        Ok(None) => Item::Inactive,
+        Ok(None) => Item::Dependency,
         Err(error) => Item::Error(error.into_compile_error()),
     }
 }
@@ -69,7 +70,9 @@ impl Request {
 
     fn render(self) -> Result<TokenStream, BuildError> {
         let scan = boltffi_scan::scan_package(
-            &ScanInput::new(&self.source, self.package).with_manifest_dir(&self.root),
+            &ScanInput::new(&self.source, self.package)
+                .with_manifest_dir(&self.root)
+                .with_cfg(active_cfg()),
         )?;
         let source = scan.root_with_support();
         let complete = scan.complete();
@@ -79,10 +82,9 @@ impl Request {
             .collect::<Vec<_>>();
         let root_types =
             RootModuleTypes::with_visible_paths(&complete.package, visible_paths.clone());
-        let root = root_types.contract(scan.root());
         let source = root_types.contract(&source);
-        let complete = root_types.contract(complete);
-        let expander = Expander::with_support(&root, &complete, visible_paths);
+        let root = root_types.contract(scan.root());
+        let expander = Expander::with_support(&root, &source, visible_paths);
 
         match requested_surface()? {
             BindingMetadataSurface::Native => {
@@ -185,4 +187,18 @@ fn requested_root() -> Result<PathBuf, BuildError> {
 
 fn canonical(path: &Path) -> PathBuf {
     path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+}
+
+fn active_cfg() -> ActiveCfg {
+    let features = env::var(BINDING_METADATA_FEATURES_ENV)
+        .ok()
+        .into_iter()
+        .flat_map(|features| {
+            features
+                .split(',')
+                .filter(|feature| !feature.is_empty())
+                .map(str::to_owned)
+                .collect::<Vec<_>>()
+        });
+    ActiveCfg::from_cargo_env().with_features(features)
 }

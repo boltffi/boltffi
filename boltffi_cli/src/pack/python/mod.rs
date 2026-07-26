@@ -46,6 +46,7 @@ pub(crate) fn pack_python(
             plan.cargo_context.manifest_path.clone(),
             plan.cargo_context.artifact_name.clone(),
             plan.cargo_context.cargo_command_args.clone(),
+            plan.cargo_context.toolchain_selector.clone(),
         )?;
         step.finish_success();
     }

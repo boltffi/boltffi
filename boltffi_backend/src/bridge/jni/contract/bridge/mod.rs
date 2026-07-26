@@ -13,8 +13,9 @@
 //! helpers are needed, or which closure signatures must be registered.
 
 mod build;
+mod index;
 
-use boltffi_binding::Native;
+use boltffi_binding::{CallbackId, Native, SymbolId};
 
 use crate::{
     bridge::{
@@ -26,8 +27,9 @@ use crate::{
 
 use super::{
     CallbackCompletionInvoker, CallbackHandleLifecycle, CallbackRegistration, ClosureRegistration,
-    NativeMethod, StreamProtocolMethods, SuccessOutWriter,
+    DirectStreamBatchMethod, NativeMethod, StreamProtocolMethods, SuccessOutWriter,
 };
+use index::SourceIndex;
 
 /// A complete JNI bridge contract for one generated C source file.
 ///
@@ -43,6 +45,7 @@ pub struct JniBridgeContract {
     source_path: FilePath,
     c_header: HeaderInclude,
     free_buffer: Identifier,
+    buffer_with_len: Identifier,
     callback_handle_lifecycle: Option<CallbackHandleLifecycle>,
     callbacks: Vec<CallbackRegistration>,
     callback_completions: Vec<CallbackCompletionInvoker>,
@@ -50,6 +53,7 @@ pub struct JniBridgeContract {
     closures: Vec<ClosureRegistration>,
     methods: Vec<NativeMethod>,
     streams: Vec<StreamProtocolMethods>,
+    source_index: SourceIndex,
 }
 
 impl JniBridgeContract {
@@ -73,6 +77,10 @@ impl JniBridgeContract {
         &self.free_buffer
     }
 
+    pub(crate) fn buffer_with_len(&self) -> &Identifier {
+        &self.buffer_with_len
+    }
+
     /// Returns callback handle lifecycle methods when Rust-owned callback handles are exposed.
     pub fn callback_handle_lifecycle(&self) -> Option<&CallbackHandleLifecycle> {
         self.callback_handle_lifecycle.as_ref()
@@ -81,6 +89,11 @@ impl JniBridgeContract {
     /// Returns generated callback registrations.
     pub fn callbacks(&self) -> &[CallbackRegistration] {
         &self.callbacks
+    }
+
+    /// Returns the JNI registration selected for a source callback.
+    pub fn source_callback(&self, callback: CallbackId) -> Option<&CallbackRegistration> {
+        self.source_index.callback(callback, &self.callbacks)
     }
 
     /// Returns async callback completion invokers.
@@ -101,6 +114,17 @@ impl JniBridgeContract {
     /// Returns generated native methods.
     pub fn methods(&self) -> &[NativeMethod] {
         &self.methods
+    }
+
+    /// Returns the JNI native method selected for a source symbol.
+    pub fn source_method(&self, symbol: SymbolId) -> Option<&NativeMethod> {
+        self.source_index
+            .method(symbol, &self.methods, &self.streams)
+    }
+
+    /// Returns the direct stream batch method selected for a source symbol.
+    pub fn source_direct_batch(&self, symbol: SymbolId) -> Option<&DirectStreamBatchMethod> {
+        self.source_index.direct_batch(symbol, &self.streams)
     }
 
     /// Returns generated stream protocol methods.

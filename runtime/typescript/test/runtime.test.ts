@@ -1,6 +1,18 @@
-import { describe, expect, it } from "vitest";
-import { AsyncFutureManager, BoltFFIModule } from "../src/module.js";
-import { WireReader, WireWriter, wireErr, wireOk } from "../src/wire.js";
+import { describe, expect, it, vi } from "vitest";
+import { AsyncFutureManager, BoltFFIModule, instantiateBoltFFI } from "../src/module.js";
+import { CallbackRegistry } from "../src/callback.js";
+import { StreamPollManager, StreamPollResult, StreamSession } from "../src/stream.js";
+import {
+  WireReader,
+  WireWriter,
+  utf8ByteCount,
+  wireArraySize,
+  wireMapSize,
+  wireErr,
+  wireOk,
+  wireOptionalSize,
+  wireResultSize,
+} from "../src/wire.js";
 
 type ExportFunction = (...args: number[]) => number | void;
 
@@ -65,6 +77,15 @@ function createHarness(): RuntimeHarness {
       allocations.set(pointer, newSize);
       return pointer;
     },
+    boltffi_wasm_alloc_owned_bytes: (size: number) => {
+      if (size === 0) {
+        return 0;
+      }
+      const pointer = nextPointer;
+      nextPointer += size;
+      allocations.set(pointer, size);
+      return pointer;
+    },
     boltffi_wasm_free_string_return: (ptr: number, len: number) => {
       if (ptr === 0 || len === 0) {
         return;
@@ -77,7 +98,8 @@ function createHarness(): RuntimeHarness {
 
   const instance = { exports } as unknown as WebAssembly.Instance;
   const asyncManager = new AsyncFutureManager();
-  return { module: new BoltFFIModule(instance, asyncManager), freedAllocations };
+  const streamManager = new StreamPollManager();
+  return { module: new BoltFFIModule(instance, asyncManager, streamManager), freedAllocations };
 }
 
 describe("WireReader and WireWriter", () => {
@@ -92,8 +114,8 @@ describe("WireReader and WireWriter", () => {
     writer.writeU32(3_456_789_012);
     writer.writeI64(-9_000_000_000n);
     writer.writeU64(18_000_000_000n);
-    writer.writeISize(-17n);
-    writer.writeUSize(23n);
+    writer.writeISize(-17);
+    writer.writeUSize(23);
     writer.writeF32(Math.PI);
     writer.writeF64(Math.E);
     writer.writeString("boltffi");
@@ -109,8 +131,8 @@ describe("WireReader and WireWriter", () => {
     expect(reader.readU32()).toBe(3_456_789_012);
     expect(reader.readI64()).toBe(-9_000_000_000n);
     expect(reader.readU64()).toBe(18_000_000_000n);
-    expect(reader.readISize()).toBe(-17n);
-    expect(reader.readUSize()).toBe(23n);
+    expect(reader.readISize()).toBe(-17);
+    expect(reader.readUSize()).toBe(23);
     expect(reader.readF32()).toBeCloseTo(Math.PI, 5);
     expect(reader.readF64()).toBeCloseTo(Math.E, 12);
     expect(reader.readString()).toBe("boltffi");
@@ -122,11 +144,62 @@ describe("WireReader and WireWriter", () => {
     writer.writeOptional<number>(null, (value) => writer.writeI32(value));
     writer.writeOptional<number>(33, (value) => writer.writeI32(value));
     writer.writeArray<number>([4, 5, 6], (value) => writer.writeU32(value));
+    writer.writeU32(2);
+    writer.writeString("first");
+    writer.writeI32(10);
+    writer.writeString("second");
+    writer.writeI32(20);
 
     const reader = new WireReader(writer.getBytes().buffer);
     expect(reader.readOptional(() => reader.readI32())).toBeNull();
     expect(reader.readOptional(() => reader.readI32())).toBe(33);
     expect(reader.readArray(() => reader.readU32())).toEqual([4, 5, 6]);
+    expect(reader.readMap(() => reader.readString(), () => reader.readI32())).toEqual(
+      new Map([
+        ["first", 10],
+        ["second", 20],
+      ])
+    );
+    expect(wireOptionalSize(null, () => 8)).toBe(1);
+    expect(wireOptionalSize(33n, () => 8)).toBe(9);
+  });
+
+  it("encodes and decodes maps without intermediate entry arrays", () => {
+    const values = new Map([
+      ["first", [1, 2]],
+      ["second", [3]],
+    ]);
+    const writer = new WireWriter();
+    writer.writeMap(
+      values,
+      (key) => writer.writeString(key),
+      (value) => writer.writeArray(value, (item) => writer.writeI32(item))
+    );
+
+    expect(writer.len).toBe(
+      wireMapSize(values, (key) => 4 + utf8ByteCount(key), (value) => 4 + value.length * 4)
+    );
+
+    const reader = new WireReader(writer.getBytes().buffer);
+    expect(
+      reader.readMap(
+        () => reader.readString(),
+        () => reader.readArray(() => reader.readI32())
+      )
+    ).toEqual(values);
+  });
+
+  it("decodes primitive sequences through bulk array readers", () => {
+    const writer = new WireWriter();
+    writer.writeArray([true, false, true], (value) => writer.writeBool(value));
+    writer.writeArray([-7, 12], (value) => writer.writeISize(value));
+    writer.writeArray([9, 14], (value) => writer.writeUSize(value));
+
+    const reader = new WireReader(writer.getBytes().buffer);
+    expect(reader.readBoolArray()).toEqual([true, false, true]);
+    expect(Array.from(reader.readISizeArray())).toEqual([-7, 12]);
+    expect(Array.from(reader.readUSizeArray())).toEqual([9, 14]);
+    expect(wireArraySize(["a", "boltffi"], utf8ByteCount)).toBe(12);
   });
 
   it("decodes readResult success and error branches", () => {
@@ -201,6 +274,8 @@ describe("WireWriter result encoding", () => {
     const errReader = new WireReader(errWriter.getBytes().buffer);
     expect(errReader.readU8()).toBe(1);
     expect(errReader.readU32()).toBe(7);
+    expect(wireResultSize(wireOk(42), () => 4, () => 8)).toBe(5);
+    expect(wireResultSize(wireErr("failure"), () => 4, (error) => error.length)).toBe(8);
   });
 
   it("uses Error objects as err branch fallback", () => {
@@ -331,6 +406,71 @@ describe("BoltFFIModule memory operations", () => {
     expect(freedAllocations).toContainEqual([allocation.ptr, allocation.allocationSize]);
   });
 
+  it("copies mutable primitive buffers back with typed-array bulk operations", () => {
+    const { module } = createHarness();
+    const allocation = module.allocU64Array(BigUint64Array.from([1n, 2n]));
+    const updated = BigUint64Array.from([9n, 10n]);
+    module.writeToMemory(
+      allocation.ptr,
+      new Uint8Array(updated.buffer, updated.byteOffset, updated.byteLength)
+    );
+    const target = new BigUint64Array(2);
+
+    module.copyPrimitiveBufferInto(allocation, target, "u64");
+
+    expect(Array.from(target)).toEqual([9n, 10n]);
+  });
+
+  it("borrows callback vectors directly from Wasm memory", () => {
+    const { module } = createHarness();
+    const allocation = module.allocI32Array([3, 5, 8]);
+    const borrowed = module.borrowI32Array(allocation.ptr, allocation.len);
+
+    borrowed[1] = 13;
+
+    expect(Array.from(module.borrowI32Array(allocation.ptr, allocation.len))).toEqual([3, 13, 8]);
+  });
+
+  it("publishes callback vector ownership through the Wasm return slot", () => {
+    const { module } = createHarness();
+    const allocation = module.allocI32Array([2, 4, 6]);
+
+    module.writeReturnSlot(allocation, 4);
+
+    expect(module.readReturnSlot()).toEqual({
+      ptr: allocation.ptr,
+      len: 12,
+      cap: 12,
+      align: 4,
+    });
+  });
+
+  it("writes the three-word callback buffer descriptor without touching adjacent memory", () => {
+    const { module } = createHarness();
+    const descriptorPointer = 64;
+    module.writeToMemory(descriptorPointer + 12, Uint8Array.from([0xaa, 0xbb, 0xcc, 0xdd]));
+
+    module.writeCallbackBuffer(descriptorPointer, 1024, 24, 32);
+
+    const bytes = module.readFromMemory(descriptorPointer, 16);
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    expect(view.getUint32(0, true)).toBe(1024);
+    expect(view.getUint32(4, true)).toBe(24);
+    expect(view.getUint32(8, true)).toBe(32);
+    expect(Array.from(bytes.subarray(12))).toEqual([0xaa, 0xbb, 0xcc, 0xdd]);
+  });
+
+  it("writes packed callback success values to unaligned Wasm stack slots", () => {
+    const { module } = createHarness();
+    const pointer = 20;
+    const value = 0x0102_0304_0506_0708n;
+
+    module.writeU64(pointer, value);
+
+    const bytes = module.readFromMemory(pointer, 8);
+    expect(new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getBigUint64(0, true)).toBe(value);
+  });
+
   it("reuses pooled writers when capacity matches", () => {
     const { module } = createHarness();
     const writer = module.allocWriter(8);
@@ -341,6 +481,69 @@ describe("BoltFFIModule memory operations", () => {
     const reusedWriter = module.allocWriter(8);
     expect(reusedWriter.ptr).toBe(pointer);
     expect(reusedWriter.len).toBe(0);
+  });
+
+  it("round-trips specialized wire strings and bytes", () => {
+    const { module, freedAllocations } = createHarness();
+    const stringAllocation = module.allocWireString("boltffi");
+    const bytesAllocation = module.allocWireBytes(Uint8Array.from([1, 2, 3]));
+    const packedString =
+      BigInt(stringAllocation.ptr) | (BigInt(stringAllocation.len) << 32n);
+    const packedBytes =
+      BigInt(bytesAllocation.ptr) | (BigInt(bytesAllocation.len) << 32n);
+
+    expect(module.takePackedWireString(packedString)).toBe("boltffi");
+    expect(Array.from(module.takePackedWireBytes(packedBytes))).toEqual([1, 2, 3]);
+    expect(freedAllocations).toContainEqual([
+      stringAllocation.ptr,
+      stringAllocation.len,
+    ]);
+    expect(freedAllocations).toContainEqual([
+      bytesAllocation.ptr,
+      bytesAllocation.len,
+    ]);
+
+    const unicodeAllocation = module.allocWireString("BoltFFI ⚡");
+    const packedUnicode =
+      BigInt(unicodeAllocation.ptr) | (BigInt(unicodeAllocation.len) << 32n);
+    expect(module.takePackedWireString(packedUnicode)).toBe("BoltFFI ⚡");
+  });
+
+  it("transfers owned UTF-8 strings without wire framing", () => {
+    const { module, freedAllocations } = createHarness();
+    const ascii = module.allocOwnedString("boltffi");
+    const packedAscii = BigInt(ascii.ptr) | (BigInt(ascii.len) << 32n);
+    expect(module.takePackedUtf8String(packedAscii)).toBe("boltffi");
+
+    const unicode = module.allocOwnedString("BoltFFI ⚡");
+    const packedUnicode = BigInt(unicode.ptr) | (BigInt(unicode.len) << 32n);
+    expect(module.takePackedUtf8String(packedUnicode)).toBe("BoltFFI ⚡");
+    expect(freedAllocations).toContainEqual([ascii.ptr, ascii.len]);
+    expect(freedAllocations).toContainEqual([unicode.ptr, unicode.len]);
+  });
+
+  it("preserves every optional f64 state", () => {
+    const { module } = createHarness();
+    expect(module.unpackOptionF64(4.5)).toBe(4.5);
+
+    module.writeToMemory(16, Uint8Array.from([0, 0, 0, 0]));
+    expect(module.unpackOptionF64(Number.NaN)).toBeNull();
+
+    module.writeToMemory(16, Uint8Array.from([1, 0, 0, 0]));
+    expect(Number.isNaN(module.unpackOptionF64(Number.NaN))).toBe(true);
+
+    const negativeZero = module.unpackOptionF64Bits(module.packOptionF64Bits(-0));
+    expect(Object.is(negativeZero, -0)).toBe(true);
+    expect(module.unpackOptionF64Bits(module.packOptionF64Bits(null))).toBeNull();
+    expect(Number.isNaN(module.unpackOptionF64Bits(module.packOptionF64Bits(Number.NaN)))).toBe(true);
+  });
+
+  it("packs scalar callback options", () => {
+    const { module } = createHarness();
+    expect(Number.isNaN(module.packOptionScalar(null))).toBe(true);
+    expect(module.packOptionScalar(true)).toBe(1);
+    expect(module.packOptionScalar(false)).toBe(0);
+    expect(module.packOptionScalar(-17)).toBe(-17);
   });
 });
 
@@ -358,5 +561,167 @@ describe("BoltFFIModule async completion", () => {
     ).toThrow("invalid argument");
 
     expect(freedAllocations).toContainEqual([256, 4]);
+  });
+});
+
+describe("StreamSession", () => {
+  it("drains batches and releases a subscription exactly once", () => {
+    const unsubscribe = vi.fn();
+    const free = vi.fn();
+    const session = new StreamSession(
+      7,
+      (_handle, maxCount) => [1, 2, 3].slice(0, maxCount),
+      () => {},
+      new StreamPollManager(),
+      unsubscribe,
+      free
+    );
+
+    expect(session.popBatch(2)).toEqual([1, 2]);
+    session.dispose();
+    session.dispose();
+
+    expect(unsubscribe).toHaveBeenCalledOnce();
+    expect(unsubscribe).toHaveBeenCalledWith(7);
+    expect(free).toHaveBeenCalledOnce();
+    expect(free).toHaveBeenCalledWith(7);
+    expect(session.popBatch()).toEqual([]);
+  });
+
+  it("delivers asynchronously produced items through AsyncIterator", async () => {
+    const batches: number[][] = [[]];
+    const polls = new StreamPollManager();
+    const poll = vi.fn();
+    const unsubscribe = vi.fn((handle: number) => polls.wake(handle, StreamPollResult.Closed));
+    const free = vi.fn();
+    const session = new StreamSession(
+      3,
+      () => batches.shift() ?? [],
+      poll,
+      polls,
+      unsubscribe,
+      free
+    );
+    const iterator = session[Symbol.asyncIterator]();
+    const next = iterator.next();
+
+    await Promise.resolve();
+    expect(poll).toHaveBeenCalledOnce();
+    expect(poll).toHaveBeenCalledWith(3);
+    batches.push([9]);
+    polls.wake(3, StreamPollResult.Ready);
+
+    expect(await next).toEqual({ value: 9, done: false });
+    await iterator.return?.();
+    expect(unsubscribe).toHaveBeenCalledOnce();
+    expect(free).toHaveBeenCalledOnce();
+  });
+
+  it("finishes an invalid subscription without polling or lifecycle calls", async () => {
+    const poll = vi.fn();
+    const unsubscribe = vi.fn();
+    const free = vi.fn();
+    const session = new StreamSession(
+      0,
+      () => [],
+      poll,
+      new StreamPollManager(),
+      unsubscribe,
+      free
+    );
+
+    expect(await session[Symbol.asyncIterator]().next()).toEqual({ value: undefined, done: true });
+    expect(poll).not.toHaveBeenCalled();
+    expect(unsubscribe).not.toHaveBeenCalled();
+    expect(free).not.toHaveBeenCalled();
+  });
+
+  it("wakes and frees a parked iterator when unsubscribed", async () => {
+    const polls = new StreamPollManager();
+    const unsubscribe = vi.fn((handle: number) => polls.wake(handle, StreamPollResult.Closed));
+    const free = vi.fn();
+    const session = new StreamSession(11, () => [], () => {}, polls, unsubscribe, free);
+    const next = session[Symbol.asyncIterator]().next();
+
+    await Promise.resolve();
+    session.unsubscribe();
+
+    expect(await next).toEqual({ value: undefined, done: true });
+    expect(unsubscribe).toHaveBeenCalledOnce();
+    expect(free).toHaveBeenCalledOnce();
+  });
+
+  it("releases a callback subscription when the consumer throws", async () => {
+    const unsubscribe = vi.fn();
+    const free = vi.fn();
+    const session = new StreamSession(
+      13,
+      () => [1],
+      () => {},
+      new StreamPollManager(),
+      unsubscribe,
+      free
+    );
+    const cancellable = session.consume(() => {
+      throw new Error("consumer failed");
+    });
+
+    await expect(cancellable.done).rejects.toThrow("consumer failed");
+    expect(unsubscribe).toHaveBeenCalledOnce();
+    expect(unsubscribe).toHaveBeenCalledWith(13);
+    expect(free).toHaveBeenCalledOnce();
+    expect(free).toHaveBeenCalledWith(13);
+  });
+});
+
+describe("CallbackRegistry", () => {
+  it("retains callback values until the final release", () => {
+    const registry = new CallbackRegistry<(value: number) => number>("Transform");
+    const callback = (value: number): number => value * 2;
+    const handle = registry.register(callback);
+
+    expect(handle).toBe(0x80000000);
+    expect(registry.get(handle)(3)).toBe(6);
+    expect(registry.retain(handle)).toBe(handle);
+    registry.release(handle);
+    expect(registry.get(handle)).toBe(callback);
+    registry.release(handle);
+    expect(() => registry.get(handle)).toThrow("Transform callback handle");
+  });
+});
+
+// Minimal module: 1-page memory, boltffi_wasm_abi_version() -> 7, boltffi_wasm_return_slot_addr() -> 0.
+const MINIMAL_BOLTFFI_WASM = new Uint8Array([
+  0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00, 0x01, 0x05, 0x01, 0x60, 0x00, 0x01, 0x7f, 0x03,
+  0x03, 0x02, 0x00, 0x00, 0x05, 0x03, 0x01, 0x00, 0x01, 0x07, 0x45, 0x03, 0x06, 0x6d, 0x65, 0x6d,
+  0x6f, 0x72, 0x79, 0x02, 0x00, 0x18, 0x62, 0x6f, 0x6c, 0x74, 0x66, 0x66, 0x69, 0x5f, 0x77, 0x61,
+  0x73, 0x6d, 0x5f, 0x61, 0x62, 0x69, 0x5f, 0x76, 0x65, 0x72, 0x73, 0x69, 0x6f, 0x6e, 0x00, 0x00,
+  0x1d, 0x62, 0x6f, 0x6c, 0x74, 0x66, 0x66, 0x69, 0x5f, 0x77, 0x61, 0x73, 0x6d, 0x5f, 0x72, 0x65,
+  0x74, 0x75, 0x72, 0x6e, 0x5f, 0x73, 0x6c, 0x6f, 0x74, 0x5f, 0x61, 0x64, 0x64, 0x72, 0x00, 0x01,
+  0x0a, 0x0b, 0x02, 0x04, 0x00, 0x41, 0x07, 0x0b, 0x04, 0x00, 0x41, 0x00, 0x0b,
+]);
+
+describe("instantiateBoltFFI", () => {
+  it("accepts an ArrayBuffer source", async () => {
+    const mod = await instantiateBoltFFI(MINIMAL_BOLTFFI_WASM.buffer, 7);
+    expect(mod.exports.boltffi_wasm_abi_version()).toBe(7);
+  });
+
+  it("accepts a Response source", async () => {
+    const response = new Response(MINIMAL_BOLTFFI_WASM);
+    const mod = await instantiateBoltFFI(response, 7);
+    expect(mod.exports.boltffi_wasm_abi_version()).toBe(7);
+  });
+
+  it("accepts an already-compiled WebAssembly.Module source", async () => {
+    const precompiled = await WebAssembly.compile(MINIMAL_BOLTFFI_WASM);
+    const mod = await instantiateBoltFFI(precompiled, 7);
+    expect(mod.exports.boltffi_wasm_abi_version()).toBe(7);
+  });
+
+  it("throws a clear ABI mismatch error rather than silently continuing", async () => {
+    await expect(instantiateBoltFFI(MINIMAL_BOLTFFI_WASM.buffer, 99)).rejects.toThrow(
+      "BoltFFI ABI version mismatch: expected 99, got 7"
+    );
   });
 });

@@ -34,6 +34,20 @@ pub enum TypeExpr {
     String,
     /// The borrowed `str` type.
     Str,
+    /// A `boltffi::InternedString<Pool>` value.
+    InternedString {
+        /// Path to the `InternedString` type as written at this use site.
+        path: Path,
+        /// Canonical pool identity (e.g. `"demo::pools::BrowserName"`).
+        ///
+        /// Used by `RootModuleTypes` to rewrite `pool` to its crate-rooted
+        /// form, exactly like record/enum/class ids rewrite their paths.
+        pool_id: String,
+        /// Path to the pool type as written at this use site.
+        pool: Path,
+        /// Static values addressable by wire id.
+        static_values: Vec<String>,
+    },
     /// A BoltFFI-owned builtin value type.
     Builtin(BuiltinType),
     /// A struct exported as a BoltFFI record.
@@ -128,6 +142,21 @@ impl TypeExpr {
     /// Builds a builtin type expression.
     pub const fn builtin(kind: BuiltinType) -> Self {
         Self::Builtin(kind)
+    }
+
+    /// Builds an interned UTF-8 string type expression.
+    pub fn interned_string(
+        path: Path,
+        pool_id: impl Into<String>,
+        pool: Path,
+        static_values: Vec<String>,
+    ) -> Self {
+        Self::InternedString {
+            path,
+            pool_id: pool_id.into(),
+            pool,
+            static_values,
+        }
     }
 
     /// Builds a `dyn Trait` expression for a declared callback trait.

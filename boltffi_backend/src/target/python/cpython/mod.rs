@@ -193,17 +193,19 @@ impl host::HostBackend for PythonCExtHost {
             .iter()
             .flat_map(|declaration| declaration.emitted().diagnostics().iter().cloned())
             .collect();
+        let package = Package::new(
+            bindings,
+            bridge,
+            self.package_module(bindings)?,
+            self.resolved_distribution(bindings)?,
+            self.package_version(bindings),
+            self.native_library_name(bindings)?,
+            &declarations,
+        )
+        .render()?;
         let mut output = GeneratedOutput::combine([
             render::NativeModule::new(bridge, context, declarations).render()?,
-            Package::new(
-                bindings,
-                bridge,
-                self.package_module(bindings)?,
-                self.resolved_distribution(bindings)?,
-                self.package_version(bindings),
-                self.native_library_name(bindings)?,
-            )
-            .render()?,
+            package,
         ]);
         output.append(GeneratedOutput::new(Vec::new(), diagnostics));
         Ok(output)
@@ -326,6 +328,155 @@ mod tests {
                 .native_module_source_path(&bindings),
             Ok(Path::new("demo_api/_native.c").to_path_buf())
         );
+    }
+
+    // Covers target-owned Python API and CPython extension artifacts, not the
+    // C ABI/loader output built before capability filtering.
+    #[test]
+    fn python_target_partial_render_prunes_interned_named_declarations_from_target_artifacts() {
+        let output = target()
+            .render_partial(&bindings(
+                r#"
+                use boltffi::InternedString;
+
+                boltffi::interned_string_pool! {
+                    pub BrowserName {
+                        Chrome = "Chrome",
+                    }
+                }
+
+                #[data]
+                pub struct InternedRecord {
+                    name: InternedString<BrowserName>,
+                }
+
+                #[data]
+                pub enum InternedEnum {
+                    Name(InternedString<BrowserName>),
+                }
+
+                #[data]
+                pub struct RecordEnvelope {
+                    value: InternedRecord,
+                }
+
+                #[export]
+                pub fn record_parameter(value: InternedRecord) {
+                    let _ = value;
+                }
+
+                #[export]
+                pub fn record_return() -> InternedRecord {
+                    unimplemented!()
+                }
+
+                #[export]
+                pub fn enum_parameter(value: InternedEnum) {
+                    let _ = value;
+                }
+
+                #[export]
+                pub fn enum_return() -> InternedEnum {
+                    unimplemented!()
+                }
+
+                #[export]
+                pub fn record_envelope_return() -> RecordEnvelope {
+                    unimplemented!()
+                }
+
+                #[export]
+                pub fn ping() -> u32 {
+                    1
+                }
+                "#,
+            ))
+            .expect("partial Python render should prune InternedString declarations");
+        let init = file(&output, "demo/__init__.py");
+        let stub = file(&output, "demo/__init__.pyi");
+        let extension = extension(&output);
+        let c_abi = file(&output, "boltffi.h");
+
+        assert!(init.contains("def ping() -> int:"));
+        assert!(stub.contains("def ping() -> int: ..."));
+        assert!(extension.contains("boltffi_function_demo_ping"));
+        assert!(file(&output, "setup.py").contains("packages=[\"demo\"]"));
+        assert!(file(&output, "pyproject.toml").contains("setuptools>=68"));
+
+        for omitted in [
+            "InternedRecord",
+            "InternedEnum",
+            "RecordEnvelope",
+            "record_parameter",
+            "record_return",
+            "enum_parameter",
+            "enum_return",
+            "record_envelope_return",
+        ] {
+            assert!(
+                !init.contains(omitted),
+                "package implementation retained pruned declaration {omitted}"
+            );
+            assert!(
+                !stub.contains(omitted),
+                "package stub retained pruned declaration {omitted}"
+            );
+        }
+        for omitted in [
+            "record_parameter",
+            "record_return",
+            "enum_parameter",
+            "enum_return",
+            "record_envelope_return",
+        ] {
+            assert!(
+                !extension.contains(&format!(
+                    "boltffi_python_callable_wrapper_boltffi_function_demo_{omitted}"
+                )),
+                "native extension retained pruned callable wrapper {omitted}"
+            );
+            assert!(
+                !extension.contains(&format!("{{\"{omitted}\",")),
+                "native extension retained pruned method-table entry {omitted}"
+            );
+        }
+
+        // Codec adapters are selected from target-rendered declarations, not the
+        // complete bridge contract. A primitive-only target must not retain their
+        // package registration, native registry, or generated adapter functions.
+        assert!(
+            !init.contains("_register_wire_codec"),
+            "package retained wire codec registration for a pruned declaration"
+        );
+        for omitted in [
+            "boltffi_python_wire_codecs",
+            "boltffi_python_register_wire_codec",
+            "static PyObject *boltffi_python_decode_read_",
+            "static int boltffi_python_encode_write_",
+            "boltffi_python_wrapper_register_interned_record",
+            "boltffi_python_interned_record_type",
+            "boltffi_python_wire_interned_record",
+            "boltffi_python_decode_owned_interned_record",
+            "boltffi_python_wrapper_register_interned_enum",
+            "boltffi_python_interned_enum_type",
+            "boltffi_python_wire_interned_enum",
+            "boltffi_python_decode_owned_interned_enum",
+        ] {
+            assert!(
+                !extension.contains(omitted),
+                "native extension retained pruned codec or data-type artifact {omitted}"
+            );
+        }
+
+        // C ABI/loader generation intentionally precedes target capability
+        // filtering to preserve complete native-library pairing, so it can retain
+        // omitted declarations. Python API and CPython target wrappers above must
+        // still prune them.
+        assert!(
+            c_abi.contains("boltffi_function_demo_record_parameter"),
+            "C ABI should retain declarations generated before target filtering"
+        );
+        assert_eq!(output.coverage().unsupported().len(), 8);
     }
 
     #[test]
@@ -523,6 +674,41 @@ mod tests {
     }
 
     #[test]
+    fn python_target_renders_borrowed_direct_record_param_as_addressed_local() {
+        let output = target()
+            .render(&bindings(
+                r#"
+                #[repr(C)]
+                #[data]
+                pub struct Point {
+                    pub x: f64,
+                    pub y: f64,
+                }
+
+                #[export]
+                pub fn distance(point: &Point) -> f64 {
+                    point.x
+                }
+                "#,
+            ))
+            .expect("Python target should render borrowed direct record params");
+        let extension = extension(&output);
+        let stub = file(&output, "demo/__init__.pyi");
+
+        assert!(extension.contains("___Point point;"));
+        assert!(extension.contains("boltffi_python_parse_point(args[0], &point)"));
+        assert!(
+            extension.contains("boltffi_python_boltffi_function_demo_distance(&point)"),
+            "borrowed direct records should stay Python record-shaped and pass an addressed local to the pointer-shaped C ABI\n{extension}"
+        );
+        assert!(
+            !extension.contains("boltffi_python_boltffi_function_demo_distance(point)"),
+            "borrowed direct records must not keep passing the local by value after the C ABI becomes pointer-shaped\n{extension}"
+        );
+        assert!(stub.contains("def distance(point: Point) -> float: ..."));
+    }
+
+    #[test]
     fn python_target_renders_direct_record_vector_function_wrapper() {
         let output = target()
             .render(&bindings(
@@ -601,6 +787,30 @@ mod tests {
         ));
         assert!(stub.contains("from collections.abc import Sequence"));
         assert!(stub.contains("def echo_numbers(values: Sequence[int]) -> list[int]: ..."));
+    }
+
+    #[test]
+    fn python_target_returns_mutated_primitive_slices() {
+        let output = target()
+            .render(&bindings(
+                r#"
+                #[export]
+                pub fn increment(values: &mut [u64]) {
+                    values.iter_mut().for_each(|value| *value += 1);
+                }
+                "#,
+            ))
+            .expect("Python target should render mutable primitive slice");
+        let extension = extension(&output);
+        let stub = file(&output, "demo/__init__.pyi");
+
+        assert!(extension.contains(
+            "FfiStatus status = boltffi_python_boltffi_function_demo_increment((uint64_t *)values_ptr, values_len);"
+        ));
+        assert!(extension.contains(
+            "result = boltffi_python_box_vec_u64((const uint64_t *)values_ptr, values_len);"
+        ));
+        assert!(stub.contains("def increment(values: Sequence[int]) -> Sequence[int]: ..."));
     }
 
     #[test]

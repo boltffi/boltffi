@@ -2,6 +2,7 @@ mod args;
 pub(crate) mod config;
 #[cfg(test)]
 pub(crate) mod fixture;
+mod library;
 mod metadata;
 
 use std::path::{Path, PathBuf};
@@ -11,6 +12,7 @@ use crate::config::Config;
 
 use self::args::CargoArguments;
 
+pub(crate) use self::library::SelectedLibrary;
 #[cfg(test)]
 pub(crate) use self::metadata::CargoCrateType;
 pub(crate) use self::metadata::CargoMetadata;
@@ -73,6 +75,22 @@ impl Cargo {
         metadata: &CargoMetadata,
         manifest_path: &Path,
     ) -> Option<String> {
+        let preferred_artifact = config.crate_artifact_name();
+        self.effective_package_selector_with_artifact(
+            config,
+            metadata,
+            manifest_path,
+            Some(&preferred_artifact),
+        )
+    }
+
+    pub(crate) fn effective_package_selector_with_artifact(
+        &self,
+        config: &Config,
+        metadata: &CargoMetadata,
+        manifest_path: &Path,
+        preferred_artifact: Option<&str>,
+    ) -> Option<String> {
         if let Some(package_selector) = self.package_selector() {
             return Some(package_selector.to_string());
         }
@@ -84,7 +102,9 @@ impl Cargo {
                 .any(|package| package.manifest_path == manifest_path);
 
         (!manifest_selects_package)
-            .then(|| self.infer_package_selector(config, metadata, manifest_path))
+            .then(|| {
+                self.infer_package_selector(config, metadata, manifest_path, preferred_artifact)
+            })
             .flatten()
     }
 
@@ -126,6 +146,7 @@ impl Cargo {
         config: &Config,
         metadata: &CargoMetadata,
         manifest_path: &Path,
+        preferred_artifact: Option<&str>,
     ) -> Option<String> {
         metadata
             .packages
@@ -144,11 +165,11 @@ impl Cargo {
                     .then(|| package.name.clone())
             })
             .or_else(|| {
-                let crate_artifact_name = config.crate_artifact_name();
+                let preferred_artifact = preferred_artifact?;
                 let mut matching_packages = metadata
                     .packages
                     .iter()
-                    .filter(|package| package.has_target(&crate_artifact_name));
+                    .filter(|package| package.has_target(preferred_artifact));
                 let package = matching_packages.next()?;
                 matching_packages
                     .next()
@@ -565,6 +586,46 @@ mod tests {
             );
 
         assert_eq!(package_selector.as_deref(), Some("workspace-member"));
+    }
+
+    #[test]
+    fn binding_expansion_selects_exact_cargo_artifact_without_name_rewriting() {
+        let metadata = metadata_fixture()
+            .package(
+                CargoPackageFixture::manifest_package(
+                    "selected-member",
+                    "/tmp/workspace/selected/Cargo.toml",
+                    "0.1.0",
+                )
+                .target(CargoTargetFixture::library(
+                    "ffi_member",
+                    [CargoCrateType::Cdylib],
+                )),
+            )
+            .package(
+                CargoPackageFixture::manifest_package(
+                    "other-member",
+                    "/tmp/workspace/other/Cargo.toml",
+                    "0.1.0",
+                )
+                .target(CargoTargetFixture::library(
+                    "other_ffi",
+                    [CargoCrateType::Cdylib],
+                )),
+            )
+            .metadata();
+        let mut config = config(Some("ffi_member"));
+        config.package.name = "distribution-name".to_owned();
+
+        let package_selector = cargo(&["--manifest-path", "/tmp/workspace/Cargo.toml"])
+            .effective_package_selector_with_artifact(
+                &config,
+                &metadata,
+                Path::new("/tmp/workspace/Cargo.toml"),
+                config.package.crate_name.as_deref(),
+            );
+
+        assert_eq!(package_selector.as_deref(), Some("selected-member"));
     }
 
     #[test]

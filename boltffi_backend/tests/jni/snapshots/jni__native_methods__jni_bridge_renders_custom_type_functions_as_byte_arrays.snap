@@ -10,35 +10,45 @@ FfiBuf_u8 boltffi_function_demo_keep_timestamp(const uint8_t *value_ptr, uintptr
 <jni source includes>
 <jni exception helpers>
 <jni byte-array helpers>
-JNIEXPORT jbyteArray JNICALL Java_com_boltffi_demo_Native_boltffi_1function_1demo_1keep_1timestamp(JNIEnv *env, jclass cls, jbyteArray value) {
+static bool boltffi_jni_direct_buffer_address(JNIEnv *env, jobject buffer, jlong required_capacity, void **address) {
+    if (buffer == NULL) {
+        boltffi_jni_throw_illegal_argument(env, "BoltFFI direct buffer argument was null");
+        return false;
+    }
+    if (required_capacity < 0) {
+        boltffi_jni_throw_illegal_argument(env, "BoltFFI direct buffer length was negative");
+        return false;
+    }
+    jlong capacity = (*env)->GetDirectBufferCapacity(env, buffer);
+    if (capacity < 0) {
+        boltffi_jni_throw_illegal_argument(env, "BoltFFI argument was not a direct buffer");
+        return false;
+    }
+    if (capacity < required_capacity) {
+        boltffi_jni_throw_illegal_argument(env, "BoltFFI direct buffer capacity was too small");
+        return false;
+    }
+    *address = (*env)->GetDirectBufferAddress(env, buffer);
+    if (*address == NULL && required_capacity != 0) {
+        boltffi_jni_throw_illegal_argument(env, "BoltFFI direct buffer address was unavailable");
+        return false;
+    }
+    return true;
+}
+
+JNIEXPORT jbyteArray JNICALL Java_com_boltffi_demo_Native_boltffi_1function_1demo_1keep_1timestamp(JNIEnv *env, jclass cls, jobject value, jint __boltffi_value_len) {
     (void)cls;
 
-    jbyte *__boltffi_value_ptr = NULL;
-    jsize __boltffi_value_len = 0;
+    void *__boltffi_value_ptr = NULL;
 
-    if (value == NULL) {
-        boltffi_jni_throw_illegal_argument(env, "BoltFFI array argument was null");
-        goto __boltffi_error;
-    }
-    __boltffi_value_len = (*env)->GetArrayLength(env, value);
-    __boltffi_value_ptr = (*env)->GetByteArrayElements(env, value, NULL);
-    if (__boltffi_value_ptr == NULL) {
+    if (!boltffi_jni_direct_buffer_address(env, value, (jlong)__boltffi_value_len, &__boltffi_value_ptr)) {
         goto __boltffi_error;
     }
 
     (void)env;
     FfiBuf_u8 __boltffi_result = boltffi_function_demo_keep_timestamp((const uint8_t *)__boltffi_value_ptr, (uintptr_t)__boltffi_value_len);
 
-    if (__boltffi_value_ptr != NULL) {
-        (*env)->ReleaseByteArrayElements(env, value, __boltffi_value_ptr, JNI_ABORT);
-        __boltffi_value_ptr = NULL;
-    }
-
     return boltffi_jni_buffer_to_byte_array(env, __boltffi_result);
 __boltffi_error:
-    if (__boltffi_value_ptr != NULL) {
-        (*env)->ReleaseByteArrayElements(env, value, __boltffi_value_ptr, JNI_ABORT);
-        __boltffi_value_ptr = NULL;
-    }
     return NULL;
 }

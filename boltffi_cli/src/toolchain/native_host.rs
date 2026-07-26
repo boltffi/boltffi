@@ -85,13 +85,43 @@ pub struct NativeHostToolchain {
 }
 
 impl NativeHostToolchain {
+    pub fn discover_matrix(
+        toolchain_selector: Option<&str>,
+        cargo_args: &[String],
+        cargo_manifest_path: &Path,
+        targets: &[JavaHostTarget],
+    ) -> Result<Vec<(JavaHostTarget, Self)>> {
+        let current_host = JavaHostTarget::current().ok_or_else(|| CliError::CommandFailed {
+            command:
+                "JVM packaging is only supported on darwin-arm64, darwin-x86_64, linux-x86_64, linux-aarch64, and windows-x86_64 hosts".to_string(),
+            status: None,
+        })?;
+
+        targets
+            .iter()
+            .copied()
+            .map(|target| {
+                Self::discover(
+                    toolchain_selector,
+                    cargo_args,
+                    cargo_manifest_path,
+                    target,
+                    current_host,
+                )
+                .map(|toolchain| (target, toolchain))
+            })
+            .collect()
+    }
+
     pub fn discover(
         toolchain_selector: Option<&str>,
         cargo_args: &[String],
+        cargo_manifest_path: &Path,
         target: JavaHostTarget,
         current_host: JavaHostTarget,
     ) -> Result<Self> {
-        Self::discover_for_platform(toolchain_selector, cargo_args, target, current_host, "JVM")
+        let cargo_args = Self::cargo_discovery_args(cargo_args, cargo_manifest_path);
+        Self::discover_for_platform(toolchain_selector, &cargo_args, target, current_host, "JVM")
     }
 
     pub fn discover_csharp(
@@ -241,10 +271,13 @@ impl NativeHostToolchain {
     pub fn rust_target_triple(&self) -> &str {
         &self.rust_target_triple
     }
+
+    pub fn cargo_environment(&self) -> impl Iterator<Item = (String, String)> + '_ {
+        self.cargo_linker_env.iter().cloned()
+    }
+
     pub fn configure_cargo_build(&self, command: &mut Command) {
-        if let Some((key, value)) = self.cargo_linker_env.as_ref() {
-            command.env(key, value);
-        }
+        command.envs(self.cargo_environment());
     }
 
     pub fn linker_command(&self) -> Command {
@@ -265,6 +298,17 @@ impl NativeHostToolchain {
 
     pub fn jni_rustflag_linker_args(&self) -> &[String] {
         &self.jni_rustflag_linker_args
+    }
+
+    fn cargo_discovery_args(cargo_args: &[String], cargo_manifest_path: &Path) -> Vec<String> {
+        cargo_args
+            .iter()
+            .cloned()
+            .chain([
+                "--manifest-path".to_string(),
+                cargo_manifest_path.display().to_string(),
+            ])
+            .collect()
     }
 }
 
@@ -1623,8 +1667,10 @@ mod tests {
     };
     use crate::cli::CliError;
     use crate::target::{JavaHostTarget, NativeHostPlatform};
+    use std::ffi::OsStr;
     use std::fs;
     use std::path::{Path, PathBuf};
+    use std::process::Command;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
@@ -1649,6 +1695,45 @@ mod tests {
         assert_eq!(
             cargo_linker_env_key("x86_64-unknown-linux-gnu"),
             "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER"
+        );
+    }
+
+    #[test]
+    fn configures_cargo_with_the_selected_cross_linker_environment() {
+        let toolchain = NativeHostToolchain {
+            rust_target_triple: "x86_64-unknown-linux-gnu".to_string(),
+            cargo_linker_env: Some((
+                "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER".to_string(),
+                "/opt/cross/bin/clang".to_string(),
+            )),
+            jni_compiler_program: PathBuf::from("/opt/cross/bin/clang"),
+            jni_compiler_args: Vec::new(),
+            jni_rustflag_linker_args: Vec::new(),
+        };
+        let mut command = Command::new("cargo");
+
+        toolchain.configure_cargo_build(&mut command);
+
+        assert!(command.get_envs().any(|(key, value)| {
+            key == "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER"
+                && value == Some(OsStr::new("/opt/cross/bin/clang"))
+        }));
+    }
+
+    #[test]
+    fn jvm_toolchain_discovery_uses_the_selected_invocation_manifest() {
+        let arguments = NativeHostToolchain::cargo_discovery_args(
+            &["--config=net.offline=true".to_string()],
+            Path::new("/external/workspace/Cargo.toml"),
+        );
+
+        assert_eq!(
+            arguments,
+            [
+                "--config=net.offline=true".to_string(),
+                "--manifest-path".to_string(),
+                "/external/workspace/Cargo.toml".to_string(),
+            ]
         );
     }
 

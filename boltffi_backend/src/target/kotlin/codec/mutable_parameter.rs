@@ -39,6 +39,14 @@ impl CodecRead for MutableParameter {
         Self::unsupported()
     }
 
+    fn interned_string(&mut self, _static_values: &[String]) -> Self::Expr {
+        // Kotlin does not advertise InternedString capability; the capability gate
+        // ensures this branch is never reached for valid bindings.
+        unreachable!(
+            "InternedString codec read reached Kotlin mutable-parameter renderer: host does not advertise InternedString capability"
+        )
+    }
+
     fn bytes(&mut self) -> Self::Expr {
         Ok(MutableParameterValue::Copyable)
     }

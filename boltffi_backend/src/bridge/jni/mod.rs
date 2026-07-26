@@ -25,6 +25,7 @@ mod name;
 mod template;
 
 pub use bridge::JniBridge;
+pub(crate) use contract::ClosureRecordArgument;
 pub use contract::{
     BytesParameter, BytesWriteback, CallbackArgument, CallbackBytesArgument, CallbackCParameter,
     CallbackClosureArgument, CallbackClosureHandle, CallbackClosureReturn,

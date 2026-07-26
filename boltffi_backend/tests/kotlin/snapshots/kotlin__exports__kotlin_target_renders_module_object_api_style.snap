@@ -11,7 +11,7 @@ private object Native {
     @JvmStatic external fun boltffi_function_demo_add(left: Int, right: Int): Int
     @JvmStatic external fun boltffi_function_demo_enabled(flag: Boolean): Boolean
     @JvmStatic external fun boltffi_function_demo_refresh(): Unit
-    @JvmStatic external fun boltffi_function_demo_echo_bytes(bytes: ByteArray): ByteArray?
+    @JvmStatic external fun boltffi_function_demo_echo_bytes(bytes: java.nio.ByteBuffer, __boltffi_bytes_len: Int): ByteArray?
 }
 
 object Demo {
@@ -32,7 +32,7 @@ object Demo {
         val __boltffi_bytes_writer = __boltffi_bytes_wire.writer
         __boltffi_bytes_writer.writeBytes(bytes)
         try {
-            val __boltffi_result = Native.boltffi_function_demo_echo_bytes(__boltffi_bytes_wire.bytes()) ?: throw IllegalStateException("null buffer returned")
+            val __boltffi_result = Native.boltffi_function_demo_echo_bytes(__boltffi_bytes_wire.directBuffer(), __boltffi_bytes_wire.size()) ?: throw IllegalStateException("null buffer returned")
             val __boltffi_reader = WireReader(__boltffi_result)
             return __boltffi_reader.readBytes()
         } finally {

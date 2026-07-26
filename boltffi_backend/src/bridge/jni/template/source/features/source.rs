@@ -28,6 +28,7 @@ pub struct SourceFeatures {
     pub checks_error_buffer: bool,
     pub uses_byte_arrays: bool,
     pub uses_record_arrays: bool,
+    pub uses_direct_buffers: bool,
     pub uses_exceptions: bool,
     pub uses_lifecycle: bool,
     pub uses_continuations: bool,
@@ -67,22 +68,26 @@ impl SourceFeatures {
             || streams.returns_direct_batches;
         let uses_record_arrays = methods.uses_record_arrays
             || callbacks.uses_record_arrays
+            || closures.uses_records
             || closures.returns_records
             || callbacks.returns_records
             || completions.uses_record_arrays
             || success_writers_use_record_arrays;
+        let uses_direct_buffers = methods.uses_direct_buffers || callbacks.uses_direct_buffers;
 
         Self {
             uses_limits: uses_byte_arrays
                 || uses_record_arrays
                 || callbacks.uses_direct_vectors
                 || closures.uses_direct_vectors
+                || closures.uses_records
                 || methods.checks_error_buffer
                 || callbacks.checks_error_buffer,
             checks_status: methods.checks_status || callbacks.checks_status,
             checks_error_buffer: methods.checks_error_buffer || callbacks.checks_error_buffer,
             uses_byte_arrays,
             uses_record_arrays,
+            uses_direct_buffers,
             uses_exceptions: callbacks.uses_byte_arrays
                 || callbacks.uses_direct_vectors
                 || callbacks.uses_record_arrays
@@ -99,7 +104,9 @@ impl SourceFeatures {
                 || completions.uses_byte_arrays
                 || !success_out_writers.is_empty()
                 || streams.returns_direct_batches
-                || methods.uses_exceptions,
+                || methods.uses_exceptions
+                || methods.uses_callback_parameters
+                || uses_direct_buffers,
             uses_continuations: methods.uses_continuations,
             uses_lifecycle: methods.uses_continuations
                 || callbacks.has_registrations
@@ -108,7 +115,8 @@ impl SourceFeatures {
                 || callbacks.has_handle_methods
                 || callbacks.returns_callback_handles
                 || closures.returns_callback_handles
-                || methods.returns_callback_handles,
+                || methods.returns_callback_handles
+                || methods.uses_callback_parameters,
             uses_closure_handles,
         }
     }

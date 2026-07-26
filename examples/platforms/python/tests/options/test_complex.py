@@ -73,3 +73,9 @@ class ComplexOptionsTests(DemoTestCase):
         self.assertEqual(demo.echo_vec_optional_i32([]), [])
         self.demo_case("case:options.complex.vec_optional_i32.should_roundtrip_all_none")
         self.assertEqual(demo.echo_vec_optional_i32([None, None, None]), [None, None, None])
+
+    def test_optional_shape_radius(self) -> None:
+        self.demo_case("case:options.complex.shape.should_return_radius_for_circle")
+        self.assertEqual(demo.radius_if_circle(demo.ShapeCircle(5.0)), 5.0)
+        self.demo_case("case:options.complex.shape.should_return_none_for_non_circle")
+        self.assertIsNone(demo.radius_if_circle(demo.ShapeRectangle(3.0, 4.0)))

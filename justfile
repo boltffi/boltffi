@@ -111,7 +111,7 @@ lint:
     cargo clippy --workspace --all-targets -- -D warnings
 
 # Run format check + clippy + tests
-check: fmt-check lint test
+check: fmt-check lint test bench-script-test
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Benchmarks
@@ -119,15 +119,18 @@ check: fmt-check lint test
 
 # Audit benchmark harness names against the shared catalog
 bench-audit:
-    python3 benchmarks/scripts/audit_benchmark_catalog.py
+    PYTHONDONTWRITEBYTECODE=1 python3 benchmarks/scripts/audit_benchmark_catalog.py
+
+bench-script-test:
+    PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s benchmarks/scripts -p 'test_*.py'
 
 # Audit benchmark coverage against the callable exports in examples/demo
 bench-demo-audit:
-    python3 benchmarks/scripts/audit_demo_export_coverage.py
+    PYTHONDONTWRITEBYTECODE=1 python3 benchmarks/scripts/audit_demo_export_coverage.py
 
 # Render the machine-readable demo benchmark family plan
 bench-demo-plan:
-    python3 benchmarks/scripts/render_demo_benchmark_policy.py
+    PYTHONDONTWRITEBYTECODE=1 python3 benchmarks/scripts/render_demo_benchmark_policy.py
 
 # Swift benchmark (macOS CLI) - builds xcframework and runs benchmark
 bench-swift:
@@ -275,7 +278,7 @@ clean-all: clean clean-benchmarks
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Run CI checks locally (format + lint + test)
-ci: fmt-check lint test
+ci: fmt-check lint test bench-script-test
 
 # Run full CI including Miri (slow)
 ci-full: ci test-miri

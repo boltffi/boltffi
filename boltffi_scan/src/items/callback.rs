@@ -114,6 +114,7 @@ fn method_from_signature(
         attributes::public_source(scanner.scope(), method.span()),
         parent,
         scanner,
+        signature::MethodReturns::Trait,
     )
 }
 
@@ -196,6 +197,11 @@ mod tests {
             scan("trait Loader { async fn load(&self, key: u32) -> u64; }").expect("scan");
 
         assert_eq!(callback.methods[0].execution, ExecutionKind::Async);
+    }
+
+    #[test]
+    fn rejects_borrowed_string_callback_return() {
+        assert!(scan("trait Labeler { fn label(&self) -> &'static str; }").is_err());
     }
 
     #[test]

@@ -28,7 +28,7 @@ export async function run() {
     { x: 4, y: 5, timestamp: 6n },
   ]);
   assert.equal(await emptyStore.asyncSum(), 12);
-  assert.equal(await emptyStore.asyncLen(), 2n);
+  assert.equal(await emptyStore.asyncLen(), 2);
   emptyStore.dispose();
 
   const sampledStore = demo.DataStore.withSampleData();

@@ -678,7 +678,7 @@ impl<'plan> ParamPlanRender<'plan, Native, OutOfRust> for ClosureArgumentArity {
         })
     }
 
-    fn direct_vector(&mut self, _: &DirectVectorElementType) -> Self::Output {
+    fn direct_vector(&mut self, _: &DirectVectorElementType, _: ()) -> Self::Output {
         Ok(2)
     }
 }
@@ -743,7 +743,7 @@ impl<'plan, 'render> ParamPlanRender<'plan, Native, OutOfRust> for ClosureArgume
         })
     }
 
-    fn direct_vector(&mut self, element: &DirectVectorElementType) -> Self::Output {
+    fn direct_vector(&mut self, element: &DirectVectorElementType, _: ()) -> Self::Output {
         Argument::direct_vector(
             self.name.clone(),
             self.object.clone(),

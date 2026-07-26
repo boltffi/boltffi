@@ -1,19 +1,11 @@
 static bool {{ closure.load }}(JNIEnv *env) {
-    jclass local_class = (*env)->FindClass(env, {{ closure.class }});
-    if (local_class == NULL) {
+    if (!boltffi_jni_lookup_global_class_with_diagnostic(env, {{ closure.class.lookup() }}, {{ closure.class.diagnostic() }}, &{{ closure.global_class }})) {
         return false;
     }
-    {{ closure.global_class }} = (*env)->NewGlobalRef(env, local_class);
-    (*env)->DeleteLocalRef(env, local_class);
-    if ({{ closure.global_class }} == NULL) {
-        return false;
-    }
-    {{ closure.call_method }} = (*env)->GetStaticMethodID(env, {{ closure.global_class }}, "call", {{ closure.method_signature }});
-    if ({{ closure.call_method }} == NULL) {
+    if (!boltffi_jni_lookup_static_method_with_diagnostic(env, {{ closure.global_class }}, {{ closure.class.diagnostic() }}, "call", "call", {{ closure.method_signature.lookup() }}, {{ closure.method_signature.diagnostic() }}, &{{ closure.call_method }})) {
         goto fail;
     }
-    {{ closure.free_method }} = (*env)->GetStaticMethodID(env, {{ closure.global_class }}, "free", "(J)V");
-    if ({{ closure.free_method }} == NULL) {
+    if (!boltffi_jni_lookup_static_method_with_diagnostic(env, {{ closure.global_class }}, {{ closure.class.diagnostic() }}, "free", "free", "(J)V", "(J)V", &{{ closure.free_method }})) {
         goto fail;
     }
     return true;

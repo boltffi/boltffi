@@ -58,6 +58,16 @@ pub fn repeat_string(v: String, count: u32) -> String {
     v.repeat(count as usize)
 }
 
+#[demo_bench_macros::demo_case(
+    "primitives.strings.borrowed_static_string.should_return_value",
+    justification = "Ensure an exported borrowed static string return is encoded as a host string.",
+    directions = "Call `primitives::strings::borrowed_static_string` through the generated binding and assert it returns the expected host string."
+)]
+#[export]
+pub fn borrowed_static_string() -> &'static str {
+    "borrowed static"
+}
+
 #[export]
 #[benchmark_candidate(function, uniffi, wasm_bindgen)]
 pub fn generate_string(size: i32) -> String {

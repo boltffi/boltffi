@@ -1,6 +1,6 @@
 ---
 source: boltffi_backend/tests/kotlin/exports.rs
-expression: "rendered_fixture(\"exports/encoded_record_functions\")"
+expression: "rendered_source(SourceFixture::many([\"enums/role\", \"records/encoded_user\",\n\"exports/encoded_record_functions\",]))"
 ---
 ===== com/boltffi/demo/Demo.kt =====
 @file:OptIn(kotlin.ExperimentalUnsignedTypes::class)
@@ -8,7 +8,7 @@ expression: "rendered_fixture(\"exports/encoded_record_functions\")"
 package com.boltffi.demo
 @Suppress("FunctionName")
 private object Native {
-    @JvmStatic external fun boltffi_function_demo_echo_user(user: ByteArray): ByteArray?
+    @JvmStatic external fun boltffi_function_demo_echo_user(user: java.nio.ByteBuffer, __boltffi_user_len: Int): ByteArray?
 }
 
 
@@ -76,7 +76,7 @@ fun echoUser(user: User): User {
     val __boltffi_user_writer = __boltffi_user_wire.writer
     user.writeTo(__boltffi_user_writer)
     try {
-        val __boltffi_result = Native.boltffi_function_demo_echo_user(__boltffi_user_wire.bytes()) ?: throw IllegalStateException("null buffer returned")
+        val __boltffi_result = Native.boltffi_function_demo_echo_user(__boltffi_user_wire.directBuffer(), __boltffi_user_wire.size()) ?: throw IllegalStateException("null buffer returned")
         val __boltffi_reader = WireReader(__boltffi_result)
         return User.fromReader(__boltffi_reader)
     } finally {

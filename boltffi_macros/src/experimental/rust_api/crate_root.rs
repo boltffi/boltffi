@@ -202,6 +202,9 @@ impl RootModuleTypes {
             TypeExpr::Enum { id, path } => self.root_declaration_path(id.as_str(), path),
             TypeExpr::Class { id, path } => self.root_declaration_path(id.as_str(), path),
             TypeExpr::Custom { id, path } => self.custom_path(id.as_str(), path),
+            TypeExpr::InternedString { pool_id, pool, .. } => {
+                self.root_declaration_path(pool_id, pool);
+            }
             TypeExpr::Dyn(bounds) | TypeExpr::ImplTrait(bounds) => {
                 self.trait_bounds_with_self(bounds, self_type)
             }
@@ -337,6 +340,38 @@ mod tests {
                 .map(|segment| segment.name.as_str())
                 .collect::<Vec<_>>(),
             vec!["records", "Point"]
+        );
+    }
+
+    #[test]
+    fn rewrites_interned_string_pool_paths_to_crate_root() {
+        let mut contract = SourceContract::new(PackageInfo::new("demo", None));
+        let mut function = FunctionDef::new(
+            FunctionId::new("demo::api::browser"),
+            CanonicalName::single("browser"),
+        );
+        function.returns = ReturnDef::value(TypeExpr::interned_string(
+            boltffi_ast::Path::single("InternedString"),
+            "demo::pools::BrowserName",
+            boltffi_ast::Path::single("BrowserName"),
+            vec!["Chrome".to_owned()],
+        ));
+        contract.functions.push(function);
+
+        let rooted = RootModuleTypes::new(&contract.package).contract(&contract);
+        let ReturnDef::Value(TypeExpr::InternedString { pool, pool_id, .. }) =
+            &rooted.functions[0].returns
+        else {
+            panic!("expected interned string return");
+        };
+        assert_eq!(pool_id, "demo::pools::BrowserName");
+        assert_eq!(pool.root, PathRoot::Crate);
+        assert_eq!(
+            pool.segments
+                .iter()
+                .map(|segment| segment.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["pools", "BrowserName"]
         );
     }
 

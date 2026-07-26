@@ -12,7 +12,7 @@
 
 use std::collections::BTreeSet;
 
-use boltffi_binding::CallbackId;
+use boltffi_binding::{CallbackId, DeclarationId};
 
 use crate::{
     bridge::{
@@ -24,7 +24,7 @@ use crate::{
 
 use super::{
     CallbackCompletionInvoker, CallbackHandleLifecycle, CallbackRegistration, ClosureRegistration,
-    JniBridgeContract, NativeMethod, StreamProtocolMethods, SuccessOutWriter,
+    JniBridgeContract, NativeMethod, StreamProtocolMethods, SuccessOutWriter, index::SourceIndex,
 };
 
 impl JniBridgeContract {
@@ -59,16 +59,15 @@ impl JniBridgeContract {
             .transpose()?;
         let callback_completions = CallbackCompletionInvoker::from_callbacks(&class, &callbacks)?;
         let success_out_writers = SuccessOutWriter::from_c_bridge(&class, c_bridge)?;
-        let stream_function_names = c_bridge
-            .streams()
-            .iter()
-            .flat_map(c::Stream::functions)
-            .map(|function| function.name().to_owned())
-            .collect::<BTreeSet<_>>();
         let methods = c_bridge
             .functions()
             .iter()
-            .filter(|function| !stream_function_names.contains(function.name()))
+            .filter(|function| {
+                !matches!(
+                    function.source_declaration(),
+                    Some(DeclarationId::Stream(_))
+                )
+            })
             .map(|function| NativeMethod::new(&class, function, c_bridge.callbacks(), &closures))
             .collect::<Result<Vec<_>>>()?;
         let streams = c_bridge
@@ -83,6 +82,7 @@ impl JniBridgeContract {
                 )
             })
             .collect::<Result<Vec<_>>>()?;
+        let source_index = SourceIndex::new(&callbacks, &methods, &streams)?;
         Ok(Self {
             capabilities: c_bridge
                 .capabilities()
@@ -90,12 +90,14 @@ impl JniBridgeContract {
                 .stable(BridgeCapability::Jni),
             c_header: HeaderInclude::from_files(&source_path, c_bridge.header_path())?,
             free_buffer: Identifier::parse(c_bridge.support().buffer_free()?.name())?,
+            buffer_with_len: Identifier::parse(c_bridge.support().buffer_with_len()?.name())?,
             callback_handle_lifecycle,
             callbacks,
             callback_completions,
             success_out_writers,
             methods,
             streams,
+            source_index,
             closures,
             class,
             source_path,

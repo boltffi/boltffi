@@ -2,7 +2,10 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Arc, Mutex};
 
-use crate::build::{CargoBuildProfile, OutputCallback, run_command_streaming};
+use boltffi_backend::target::jvm::{LibraryName, NativeLibraries};
+
+use crate::build::{BindingExpansion, CargoBuildProfile, OutputCallback, run_command_streaming};
+use crate::cargo::SelectedLibrary;
 use crate::cli::{CliError, Result};
 use crate::config::Config;
 use crate::pack::PackError;
@@ -10,7 +13,7 @@ use crate::pack::{format_command_for_log, print_cargo_line, print_verbose_detail
 use crate::reporter::Step;
 use crate::target::JavaHostTarget;
 
-use super::plan::{JvmCargoContext, JvmCrateOutputs, JvmPackagingTarget};
+use super::plan::{JvmCargoContext, JvmPackagingTarget};
 
 pub(crate) struct JvmBuildArtifacts {
     pub(crate) native_static_libraries: Vec<String>,
@@ -22,7 +25,7 @@ pub(crate) struct JvmBuildArtifacts {
 pub(crate) struct JvmNativePackageLayout {
     pub(crate) jni_dir: PathBuf,
     pub(crate) header_name: String,
-    pub(crate) jni_library_name: String,
+    pub(crate) jni_library_name: LibraryName,
     pub(crate) native_output_root: PathBuf,
     pub(crate) flat_output_root: Option<PathBuf>,
     pub(crate) strip_symbols: bool,
@@ -30,17 +33,46 @@ pub(crate) struct JvmNativePackageLayout {
 }
 
 impl JvmNativePackageLayout {
-    pub(crate) fn java(config: &Config, artifact_name: &str) -> Self {
+    pub(crate) fn java(config: &Config, artifact_name: &str) -> Result<Self> {
         let java_output = config.java_jvm_output();
+        let libraries =
+            NativeLibraries::from_artifact(artifact_name).map_err(Self::invalid_library)?;
 
-        Self {
+        Ok(Self {
             jni_dir: java_output.join("jni"),
             header_name: artifact_name.to_string(),
-            jni_library_name: artifact_name.to_string(),
+            jni_library_name: libraries.desktop_jni().clone(),
             native_output_root: java_output.join("native"),
             flat_output_root: Some(java_output),
             strip_symbols: config.java_jvm_strip_symbols(),
             debug_symbols_enabled: config.java_jvm_debug_symbols_enabled(),
+        })
+    }
+
+    pub(crate) fn kotlin_desktop(
+        config: &Config,
+        jni_dir: PathBuf,
+        header_name: impl Into<String>,
+        native_output_root: PathBuf,
+    ) -> Result<Self> {
+        let libraries =
+            NativeLibraries::from_artifact(config.resolved_android_kotlin_desktop_library_name())
+                .map_err(Self::invalid_library)?;
+        Ok(Self {
+            jni_dir,
+            header_name: header_name.into(),
+            jni_library_name: libraries.desktop_jni().clone(),
+            native_output_root,
+            flat_output_root: None,
+            strip_symbols: false,
+            debug_symbols_enabled: false,
+        })
+    }
+
+    fn invalid_library(error: boltffi_backend::Error) -> CliError {
+        CliError::CommandFailed {
+            command: format!("resolve JVM library names: {error}"),
+            status: None,
         }
     }
 }
@@ -309,7 +341,7 @@ pub(crate) struct JniLinkerArgs<'a> {
     pub(crate) release: bool,
     pub(crate) output_lib: &'a Path,
     pub(crate) jni_glue: &'a Path,
-    pub(crate) link_input: &'a Path,
+    pub(crate) link_input: &'a JvmNativeLinkInput,
     pub(crate) jni_dir: &'a Path,
     pub(crate) jni_include_directories: &'a JniIncludeDirectories,
     pub(crate) rustflag_linker_args: &'a [String],
@@ -345,6 +377,7 @@ pub(crate) enum JvmNativeLinkInput {
 }
 
 impl JvmNativeLinkInput {
+    #[cfg(test)]
     pub(crate) fn path(&self) -> &Path {
         match self {
             Self::Staticlib(path) | Self::Cdylib(path) => path,
@@ -368,8 +401,10 @@ pub(crate) fn compile_jni_library(
     build_artifacts: &JvmBuildArtifacts,
     step: &Step,
 ) -> Result<JvmPackagedNativeOutput> {
-    let layout =
-        JvmNativePackageLayout::java(config, &packaging_target.cargo_context.artifact_name);
+    let layout = JvmNativePackageLayout::java(
+        config,
+        packaging_target.cargo_context.library.artifact_name(),
+    )?;
     compile_jni_library_with_layout(packaging_target, build_artifacts, &layout, step)
 }
 
@@ -395,21 +430,19 @@ pub(crate) fn compile_jni_library_with_layout(
         return Err(CliError::FileNotFound(header));
     }
 
-    let artifact_name = &cargo_context.artifact_name;
-    let jni_library_name = &layout.jni_library_name;
+    let library = &cargo_context.library;
+    let jni_library_name = layout.jni_library_name.as_str();
     let link_input = resolve_jvm_native_link_input(
         &cargo_context.artifact_directory(),
         host_target,
-        artifact_name,
-        cargo_context.crate_outputs,
+        library,
         build_artifacts.static_library_filename(),
     )?;
     let compatibility_shared_library = bundled_jvm_shared_library_path(
         &link_input,
         &cargo_context.artifact_directory(),
         host_target,
-        artifact_name,
-        cargo_context.crate_outputs,
+        library,
     );
 
     let host_native_output = layout.native_output_root.join(host_target.canonical_name());
@@ -420,7 +453,7 @@ pub(crate) fn compile_jni_library_with_layout(
         }
     })?;
 
-    let output_lib = host_native_output.join(host_target.jni_library_filename(jni_library_name));
+    let output_lib = host_native_output.join(host_target.shared_library_filename(jni_library_name));
     let jni_include_directories = resolve_jni_include_directories(cargo_context)?;
     let has_shared_library_copy = compatibility_shared_library.is_some();
     let mut debug_info_sidecars = Vec::new();
@@ -432,7 +465,7 @@ pub(crate) fn compile_jni_library_with_layout(
             release: strip_symbols,
             output_lib: &output_lib,
             jni_glue: &jni_glue,
-            link_input: link_input.path(),
+            link_input: &link_input,
             jni_dir,
             jni_include_directories: &jni_include_directories,
             rustflag_linker_args: packaging_target.toolchain.jni_rustflag_linker_args(),
@@ -447,7 +480,7 @@ pub(crate) fn compile_jni_library_with_layout(
             release: strip_symbols,
             output_lib: &output_lib,
             jni_glue: &jni_glue,
-            link_input: link_input.path(),
+            link_input: &link_input,
             jni_dir,
             jni_include_directories: &jni_include_directories,
             rustflag_linker_args: packaging_target.toolchain.jni_rustflag_linker_args(),
@@ -498,7 +531,7 @@ pub(crate) fn compile_jni_library_with_layout(
         && let Some(flat_output_root) = &layout.flat_output_root
     {
         let compatibility_jni_copy =
-            flat_output_root.join(host_target.jni_library_filename(jni_library_name));
+            flat_output_root.join(host_target.shared_library_filename(jni_library_name));
         std::fs::copy(&output_lib, &compatibility_jni_copy).map_err(|source| {
             CliError::CopyFailed {
                 from: output_lib.clone(),
@@ -652,6 +685,7 @@ fn apple_dsym_bundle_path(path: &Path) -> PathBuf {
 pub(crate) fn build_jvm_native_library(
     packaging_target: &JvmPackagingTarget,
     release: bool,
+    binding_expansion: Option<&BindingExpansion>,
     step: &Step,
 ) -> Result<JvmBuildArtifacts> {
     let cargo_context = &packaging_target.cargo_context;
@@ -683,7 +717,11 @@ pub(crate) fn build_jvm_native_library(
     }
 
     command
-        .arg("build")
+        .arg(if binding_expansion.is_some() {
+            "rustc"
+        } else {
+            "build"
+        })
         .arg("--target")
         .arg(&cargo_context.rust_target_triple);
     apply_jvm_cargo_package_selection(&mut command, cargo_context);
@@ -696,6 +734,10 @@ pub(crate) fn build_jvm_native_library(
     packaging_target
         .toolchain
         .configure_cargo_build(&mut command);
+    if let Some(expansion) = binding_expansion {
+        command.arg("--lib");
+        expansion.configure_rustc(&mut command)?;
+    }
 
     if !run_command_streaming(&mut command, on_output.as_ref()) {
         return Err(PackError::BuildFailed {
@@ -711,8 +753,8 @@ pub(crate) fn build_jvm_native_library(
     let mut native_link_search_paths = Vec::new();
 
     let native_static_libraries = if native_static_libraries.is_empty() {
-        let static_library_filename = if cargo_context.crate_outputs.builds_staticlib {
-            resolve_static_library_filename(cargo_context)?
+        let static_library_filename = if cargo_context.library.builds_staticlib() {
+            resolve_static_library_filename(cargo_context, binding_expansion)?
         } else {
             None
         };
@@ -720,20 +762,21 @@ pub(crate) fn build_jvm_native_library(
             .as_ref()
             .map(|filename| cargo_context.artifact_directory().join(filename));
 
-        if cargo_context.crate_outputs.builds_staticlib
+        if cargo_context.library.builds_staticlib()
             && staticlib_path
                 .as_ref()
                 .is_some_and(|staticlib_path| staticlib_path.exists())
         {
-            let link_metadata = query_native_link_metadata(packaging_target, release)?;
+            let link_metadata =
+                query_native_link_metadata(packaging_target, release, binding_expansion)?;
             native_link_search_paths = link_metadata.native_link_search_paths;
             link_metadata.native_static_libraries
         } else {
             native_static_libraries
         }
     } else {
-        let static_library_filename = if cargo_context.crate_outputs.builds_staticlib {
-            resolve_static_library_filename(cargo_context)?
+        let static_library_filename = if cargo_context.library.builds_staticlib() {
+            resolve_static_library_filename(cargo_context, binding_expansion)?
         } else {
             None
         };
@@ -741,20 +784,21 @@ pub(crate) fn build_jvm_native_library(
             .as_ref()
             .map(|filename| cargo_context.artifact_directory().join(filename));
 
-        if cargo_context.crate_outputs.builds_staticlib
+        if cargo_context.library.builds_staticlib()
             && staticlib_path
                 .as_ref()
                 .is_some_and(|staticlib_path| staticlib_path.exists())
         {
             native_link_search_paths =
-                query_native_link_metadata(packaging_target, release)?.native_link_search_paths;
+                query_native_link_metadata(packaging_target, release, binding_expansion)?
+                    .native_link_search_paths;
         }
 
         native_static_libraries
     };
 
-    let static_library_filename = if cargo_context.crate_outputs.builds_staticlib {
-        resolve_static_library_filename(cargo_context)?
+    let static_library_filename = if cargo_context.library.builds_staticlib() {
+        resolve_static_library_filename(cargo_context, binding_expansion)?
     } else {
         None
     };
@@ -769,12 +813,11 @@ pub(crate) fn build_jvm_native_library(
 pub(crate) fn resolve_jvm_native_link_input(
     artifact_directory: &Path,
     host_target: JavaHostTarget,
-    artifact_name: &str,
-    crate_outputs: JvmCrateOutputs,
+    library: &SelectedLibrary,
     static_library_filename: Option<&str>,
 ) -> Result<JvmNativeLinkInput> {
     let staticlib_path = static_library_filename.map(|filename| artifact_directory.join(filename));
-    if crate_outputs.builds_staticlib
+    if library.builds_staticlib()
         && staticlib_path
             .as_ref()
             .is_some_and(|staticlib_path| staticlib_path.exists())
@@ -784,18 +827,22 @@ pub(crate) fn resolve_jvm_native_link_input(
         ));
     }
 
-    let cdylib_path = artifact_directory.join(host_target.shared_library_filename(artifact_name));
-    if crate_outputs.builds_cdylib && cdylib_path.exists() {
+    let cdylib_path =
+        artifact_directory.join(host_target.shared_library_filename(library.artifact_name()));
+    if library.builds_cdylib() && cdylib_path.exists() {
         return Ok(JvmNativeLinkInput::Cdylib(cdylib_path));
     }
 
-    if crate_outputs.builds_staticlib {
+    if library.builds_staticlib() {
         return Err(CliError::FileNotFound(staticlib_path.unwrap_or_else(
-            || artifact_directory.join(host_target.static_library_filename(artifact_name)),
+            || {
+                artifact_directory
+                    .join(host_target.static_library_filename(library.artifact_name()))
+            },
         )));
     }
 
-    if crate_outputs.builds_cdylib {
+    if library.builds_cdylib() {
         return Err(CliError::FileNotFound(cdylib_path));
     }
 
@@ -810,15 +857,14 @@ pub(crate) fn resolve_jvm_native_link_input(
 pub(crate) fn existing_jvm_shared_library_path(
     artifact_directory: &Path,
     host_target: JavaHostTarget,
-    artifact_name: &str,
-    crate_outputs: JvmCrateOutputs,
+    library: &SelectedLibrary,
 ) -> Option<PathBuf> {
-    if !crate_outputs.builds_cdylib {
+    if !library.builds_cdylib() {
         return None;
     }
 
     let shared_library_path =
-        artifact_directory.join(host_target.shared_library_filename(artifact_name));
+        artifact_directory.join(host_target.shared_library_filename(library.artifact_name()));
     shared_library_path.exists().then_some(shared_library_path)
 }
 
@@ -826,19 +872,13 @@ pub(crate) fn bundled_jvm_shared_library_path(
     link_input: &JvmNativeLinkInput,
     artifact_directory: &Path,
     host_target: JavaHostTarget,
-    artifact_name: &str,
-    crate_outputs: JvmCrateOutputs,
+    library: &SelectedLibrary,
 ) -> Option<PathBuf> {
     if link_input.links_staticlib() {
         return None;
     }
 
-    existing_jvm_shared_library_path(
-        artifact_directory,
-        host_target,
-        artifact_name,
-        crate_outputs,
-    )
+    existing_jvm_shared_library_path(artifact_directory, host_target, library)
 }
 
 pub(crate) fn parse_native_static_libraries(line: &str) -> Option<Vec<String>> {
@@ -991,7 +1031,9 @@ pub(crate) fn clang_style_jni_linker_args(args: &JniLinkerArgs<'_>) -> Vec<Strin
         "-o".to_string(),
         args.output_lib.display().to_string(),
         args.jni_glue.display().to_string(),
-        args.link_input.display().to_string(),
+    ]);
+    resolved_args.extend(clang_link_input_args(args.host_target, args.link_input));
+    resolved_args.extend([
         format!("-I{}", args.jni_dir.display()),
         format!("-I{}", args.jni_include_directories.shared.display()),
         format!("-I{}", args.jni_include_directories.platform.display()),
@@ -1002,6 +1044,7 @@ pub(crate) fn clang_style_jni_linker_args(args: &JniLinkerArgs<'_>) -> Vec<Strin
         args.host_target,
         args.native_static_libraries,
     ));
+    resolved_args.extend(clang_undefined_symbol_policy_flags(args.host_target));
     resolved_args.extend(clang_release_optimization_flags(
         args.host_target,
         args.release,
@@ -1010,6 +1053,37 @@ pub(crate) fn clang_style_jni_linker_args(args: &JniLinkerArgs<'_>) -> Vec<Strin
         resolved_args.push(rpath_flag.to_string());
     }
     resolved_args
+}
+
+fn clang_undefined_symbol_policy_flags(host_target: JavaHostTarget) -> Vec<String> {
+    match host_target {
+        JavaHostTarget::LinuxX86_64 | JavaHostTarget::LinuxAarch64 => {
+            vec!["-Wl,--no-undefined".to_string()]
+        }
+        _ => Vec::new(),
+    }
+}
+
+fn clang_link_input_args(
+    host_target: JavaHostTarget,
+    link_input: &JvmNativeLinkInput,
+) -> Vec<String> {
+    match link_input {
+        JvmNativeLinkInput::Cdylib(path) => vec![path.display().to_string()],
+        JvmNativeLinkInput::Staticlib(path) => match host_target {
+            JavaHostTarget::DarwinArm64 | JavaHostTarget::DarwinX86_64 => {
+                vec![format!("-Wl,-force_load,{}", path.display())]
+            }
+            JavaHostTarget::LinuxX86_64 | JavaHostTarget::LinuxAarch64 => vec![
+                "-Wl,--whole-archive".to_string(),
+                path.display().to_string(),
+                "-Wl,--no-whole-archive".to_string(),
+            ],
+            JavaHostTarget::Current | JavaHostTarget::WindowsX86_64 => {
+                vec![path.display().to_string()]
+            }
+        },
+    }
 }
 
 pub(crate) fn clang_release_optimization_flags(
@@ -1021,28 +1095,40 @@ pub(crate) fn clang_release_optimization_flags(
     }
 
     match host_target {
-        JavaHostTarget::DarwinArm64 | JavaHostTarget::DarwinX86_64 => vec!["-Wl,-x".to_string()],
-        JavaHostTarget::LinuxX86_64 | JavaHostTarget::LinuxAarch64 => {
-            vec!["-Wl,--strip-all".to_string()]
+        JavaHostTarget::DarwinArm64 | JavaHostTarget::DarwinX86_64 => {
+            vec!["-O3".to_string(), "-Wl,-x".to_string()]
         }
-        JavaHostTarget::Current | JavaHostTarget::WindowsX86_64 => Vec::new(),
+        JavaHostTarget::LinuxX86_64 | JavaHostTarget::LinuxAarch64 => {
+            vec!["-O3".to_string(), "-Wl,--strip-all".to_string()]
+        }
+        JavaHostTarget::Current | JavaHostTarget::WindowsX86_64 => vec!["-O3".to_string()],
     }
 }
 
 pub(crate) fn clang_cl_jni_linker_args(args: &JniLinkerArgs<'_>) -> Result<Vec<String>> {
     let mut resolved_args = vec!["/LD".to_string()];
+    if args.release {
+        resolved_args.push("/O2".to_string());
+    }
     if args.emit_debug_info {
         resolved_args.push("/Z7".to_string());
     }
     resolved_args.extend([
         args.jni_glue.display().to_string(),
-        args.link_input.display().to_string(),
         format!("/I{}", args.jni_dir.display()),
         format!("/I{}", args.jni_include_directories.shared.display()),
         format!("/I{}", args.jni_include_directories.platform.display()),
         "/link".to_string(),
         format!("/OUT:{}", args.output_lib.display()),
     ]);
+    match args.link_input {
+        JvmNativeLinkInput::Staticlib(path) => {
+            resolved_args.push(format!("/WHOLEARCHIVE:{}", path.display()));
+        }
+        JvmNativeLinkInput::Cdylib(path) => {
+            resolved_args.push(path.display().to_string());
+        }
+    }
     if args.emit_debug_info {
         resolved_args.push("/DEBUG".to_string());
     }
@@ -1330,6 +1416,7 @@ pub(crate) fn target_specific_java_include_env_key(rust_target_triple: &str) -> 
 pub(crate) fn query_native_link_metadata(
     packaging_target: &JvmPackagingTarget,
     release: bool,
+    binding_expansion: Option<&BindingExpansion>,
 ) -> Result<NativeLinkMetadata> {
     let cargo_context = &packaging_target.cargo_context;
     let crate_directory = std::env::current_dir().map_err(|source| CliError::CommandFailed {
@@ -1357,12 +1444,17 @@ pub(crate) fn query_native_link_metadata(
     command
         .args(&cargo_context.cargo_command_args)
         .arg("--message-format=json-render-diagnostics")
-        .arg("--lib")
-        .arg("--")
-        .arg("--print=native-static-libs");
+        .arg("--lib");
     packaging_target
         .toolchain
         .configure_cargo_build(&mut command);
+    match binding_expansion {
+        Some(expansion) => expansion.configure_rustc(&mut command)?,
+        None => {
+            command.arg("--");
+        }
+    }
+    command.arg("--print=native-static-libs");
 
     let output = command.output().map_err(|source| CliError::CommandFailed {
         command: format!("cargo rustc --print=native-static-libs: {source}"),
@@ -1428,8 +1520,11 @@ fn strip_ansi_escape_codes(input: &str) -> String {
     output
 }
 
-fn resolve_static_library_filename(cargo_context: &JvmCargoContext) -> Result<Option<String>> {
-    let artifact_name = &cargo_context.artifact_name;
+fn resolve_static_library_filename(
+    cargo_context: &JvmCargoContext,
+    binding_expansion: Option<&BindingExpansion>,
+) -> Result<Option<String>> {
+    let artifact_name = cargo_context.library.artifact_name();
 
     if cargo_context.host_target != JavaHostTarget::WindowsX86_64 {
         return Ok(Some(
@@ -1439,7 +1534,7 @@ fn resolve_static_library_filename(cargo_context: &JvmCargoContext) -> Result<Op
         ));
     }
 
-    let filenames = query_library_filenames(cargo_context)?;
+    let filenames = query_library_filenames(cargo_context, binding_expansion)?;
     select_windows_static_library_filename(artifact_name, &filenames)
         .map(Some)
         .ok_or_else(|| CliError::CommandFailed {
@@ -1451,7 +1546,10 @@ fn resolve_static_library_filename(cargo_context: &JvmCargoContext) -> Result<Op
         })
 }
 
-fn query_library_filenames(cargo_context: &JvmCargoContext) -> Result<Vec<String>> {
+fn query_library_filenames(
+    cargo_context: &JvmCargoContext,
+    binding_expansion: Option<&BindingExpansion>,
+) -> Result<Vec<String>> {
     let crate_directory = std::env::current_dir().map_err(|source| CliError::CommandFailed {
         command: format!("current_dir: {source}"),
         status: None,
@@ -1474,11 +1572,14 @@ fn query_library_filenames(cargo_context: &JvmCargoContext) -> Result<Vec<String
         command.arg("--release");
     }
 
-    command
-        .args(&cargo_context.cargo_command_args)
-        .arg("--lib")
-        .arg("--")
-        .arg("--print=file-names");
+    command.args(&cargo_context.cargo_command_args).arg("--lib");
+    match binding_expansion {
+        Some(expansion) => expansion.configure_rustc(&mut command)?,
+        None => {
+            command.arg("--");
+        }
+    }
+    command.arg("--print=file-names");
 
     let output = command.output().map_err(|source| CliError::CommandFailed {
         command: format!("cargo rustc --print=file-names: {source}"),
@@ -1511,41 +1612,45 @@ fn query_library_filenames(cargo_context: &JvmCargoContext) -> Result<Vec<String
 fn apply_jvm_cargo_package_selection(command: &mut Command, cargo_context: &JvmCargoContext) {
     command
         .arg("--manifest-path")
-        .arg(&cargo_context.cargo_manifest_path);
-    if let Some(package_selector) = cargo_context.package_selector.as_deref() {
-        command.arg("-p").arg(package_selector);
-    }
+        .arg(cargo_context.library.cargo_manifest_path())
+        .arg("-p")
+        .arg(cargo_context.library.package_id());
 }
 
 #[cfg(test)]
 mod tests {
     use std::fs;
     use std::path::{Path, PathBuf};
+    use std::process::Command;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
 
     use super::{
-        DesktopJniStripMode, JniIncludeDirectories, JniLinkerArgs, apple_dsym_bundle_path,
+        DesktopJniStripMode, JniIncludeDirectories, JniLinkerArgs, JvmNativeLinkInput,
+        JvmNativePackageLayout, apple_dsym_bundle_path, apply_jvm_cargo_package_selection,
         bundled_jvm_shared_library_path, clang_cl_jni_linker_args,
         clang_native_static_library_flags, clang_release_optimization_flags,
-        clang_style_jni_linker_args, compiler_tool_version_suffix, desktop_jni_strip_mode,
-        existing_jvm_shared_library_path, extract_library_filenames, extract_link_search_paths,
-        extract_native_static_libraries, handle_missing_linux_strip_program,
-        link_search_path_flags, linux_strip_program_candidates, msvc_link_search_path_flags,
-        msvc_native_static_library_flags, msvc_rustflag_linker_args, parse_native_static_libraries,
-        resolve_jni_include_directories_with_overrides, resolve_jvm_native_link_input,
-        resolve_linux_strip_program, select_windows_static_library_filename,
-        should_generate_apple_dsym_sidecars, target_prefixed_binutils_prefix,
-        target_prefixed_strip_tool_candidates, target_specific_java_home_env_key,
-        target_specific_java_include_env_key, validate_desktop_jni_symbol_stripping,
-        vendorless_linux_target_triple,
+        clang_style_jni_linker_args, clang_undefined_symbol_policy_flags,
+        compiler_tool_version_suffix, desktop_jni_strip_mode, existing_jvm_shared_library_path,
+        extract_library_filenames, extract_link_search_paths, extract_native_static_libraries,
+        handle_missing_linux_strip_program, link_search_path_flags, linux_strip_program_candidates,
+        msvc_link_search_path_flags, msvc_native_static_library_flags, msvc_rustflag_linker_args,
+        parse_native_static_libraries, resolve_jni_include_directories_with_overrides,
+        resolve_jvm_native_link_input, resolve_linux_strip_program,
+        select_windows_static_library_filename, should_generate_apple_dsym_sidecars,
+        target_prefixed_binutils_prefix, target_prefixed_strip_tool_candidates,
+        target_specific_java_home_env_key, target_specific_java_include_env_key,
+        validate_desktop_jni_symbol_stripping, vendorless_linux_target_triple,
     };
+    use boltffi_bindgen::cargo::LibraryCargoArgs;
+
     use crate::build::CargoBuildProfile;
+    use crate::cargo::SelectedLibrary;
     use crate::cli::CliError;
     use crate::config::{CargoConfig, Config, PackageConfig, TargetsConfig};
-    use crate::pack::java::plan::{JvmCargoContext, JvmCrateOutputs};
+    use crate::pack::java::plan::JvmCargoContext;
     use crate::target::JavaHostTarget;
 
     fn temporary_directory(prefix: &str) -> PathBuf {
@@ -1562,18 +1667,17 @@ mod tests {
             rust_target_triple: "x86_64-unknown-linux-gnu".to_string(),
             release: false,
             build_profile: CargoBuildProfile::Debug,
-            artifact_name: "demo".to_string(),
-            cargo_manifest_path: root.join("Cargo.toml"),
-            manifest_path: root.join("Cargo.toml"),
-            package_selector: None,
+            library: SelectedLibrary::fixture("demo", root.join("Cargo.toml"), "demo")
+                .fixture_outputs(true, false),
             target_directory: root.join("target"),
-            cargo_command_args: Vec::new(),
+            cargo_command_args: LibraryCargoArgs::default(),
             toolchain_selector: None,
-            crate_outputs: JvmCrateOutputs {
-                builds_staticlib: true,
-                builds_cdylib: false,
-            },
         }
+    }
+
+    fn selected_library(builds_staticlib: bool, builds_cdylib: bool) -> SelectedLibrary {
+        SelectedLibrary::fixture("demo", "/tmp/demo/Cargo.toml", "demo")
+            .fixture_outputs(builds_staticlib, builds_cdylib)
     }
 
     fn config(strip_symbols: bool) -> Config {
@@ -1592,6 +1696,32 @@ mod tests {
         };
         config.targets.java.jvm.strip_symbols = strip_symbols;
         config
+    }
+
+    #[test]
+    fn java_layout_uses_backend_artifact_library_names() {
+        let layout = JvmNativePackageLayout::java(&config(false), "demo_core").unwrap();
+
+        assert_eq!(layout.jni_library_name.as_str(), "demo_core_jni");
+    }
+
+    #[test]
+    fn cargo_package_selection_uses_the_resolved_invocation_and_package() {
+        let root = Path::new("/tmp/workspace");
+        let cargo_context = cargo_context(root, JavaHostTarget::LinuxX86_64);
+        let mut command = Command::new("cargo");
+
+        apply_jvm_cargo_package_selection(&mut command, &cargo_context);
+
+        assert_eq!(
+            command.get_args().collect::<Vec<_>>(),
+            vec![
+                "--manifest-path",
+                "/tmp/workspace/Cargo.toml",
+                "-p",
+                cargo_context.library.package_id(),
+            ]
+        );
     }
 
     #[test]
@@ -1828,13 +1958,14 @@ mod tests {
             shared: PathBuf::from("/tmp/jdk/include"),
             platform: PathBuf::from("/tmp/jdk/include/win32"),
         };
+        let link_input = JvmNativeLinkInput::Staticlib(PathBuf::from("/tmp/target/demo.lib"));
 
         let args = clang_cl_jni_linker_args(&JniLinkerArgs {
             host_target: JavaHostTarget::WindowsX86_64,
             release: true,
             output_lib: Path::new("/tmp/out/demo_jni.dll"),
             jni_glue: Path::new("/tmp/jni/jni_glue.c"),
-            link_input: Path::new("/tmp/target/demo.lib"),
+            link_input: &link_input,
             jni_dir: Path::new("/tmp/jni"),
             jni_include_directories: &include_directories,
             rustflag_linker_args: &["-L/tmp/rustflag-native".to_string(), "-luser32".to_string()],
@@ -1849,13 +1980,14 @@ mod tests {
             args,
             vec![
                 "/LD".to_string(),
+                "/O2".to_string(),
                 "/tmp/jni/jni_glue.c".to_string(),
-                "/tmp/target/demo.lib".to_string(),
                 "/I/tmp/jni".to_string(),
                 "/I/tmp/jdk/include".to_string(),
                 "/I/tmp/jdk/include/win32".to_string(),
                 "/link".to_string(),
                 "/OUT:/tmp/out/demo_jni.dll".to_string(),
+                "/WHOLEARCHIVE:/tmp/target/demo.lib".to_string(),
                 "/LIBPATH:/tmp/rustflag-native".to_string(),
                 "user32.lib".to_string(),
                 "/LIBPATH:/tmp/native".to_string(),
@@ -1871,13 +2003,14 @@ mod tests {
             shared: PathBuf::from("/tmp/jdk/include"),
             platform: PathBuf::from("/tmp/jdk/include/darwin"),
         };
+        let link_input = JvmNativeLinkInput::Staticlib(PathBuf::from("/tmp/target/libdemo.a"));
 
         let args = clang_style_jni_linker_args(&JniLinkerArgs {
             host_target: JavaHostTarget::DarwinArm64,
             release: false,
             output_lib: Path::new("/tmp/out/libdemo_jni.dylib"),
             jni_glue: Path::new("/tmp/jni/jni_glue.c"),
-            link_input: Path::new("/tmp/target/libdemo.a"),
+            link_input: &link_input,
             jni_dir: Path::new("/tmp/jni"),
             jni_include_directories: &include_directories,
             rustflag_linker_args: &[],
@@ -1902,7 +2035,7 @@ mod tests {
                 "-o".to_string(),
                 "/tmp/out/libdemo_jni.dylib".to_string(),
                 "/tmp/jni/jni_glue.c".to_string(),
-                "/tmp/target/libdemo.a".to_string(),
+                "-Wl,-force_load,/tmp/target/libdemo.a".to_string(),
                 "-I/tmp/jni".to_string(),
                 "-I/tmp/jdk/include".to_string(),
                 "-I/tmp/jdk/include/darwin".to_string(),
@@ -1920,13 +2053,14 @@ mod tests {
             shared: PathBuf::from("/tmp/jdk/include"),
             platform: PathBuf::from("/tmp/jdk/include/linux"),
         };
+        let link_input = JvmNativeLinkInput::Staticlib(PathBuf::from("/tmp/target/libdemo.a"));
 
         let args = clang_style_jni_linker_args(&JniLinkerArgs {
             host_target: JavaHostTarget::LinuxX86_64,
             release: false,
             output_lib: Path::new("/tmp/out/libdemo_jni.so"),
             jni_glue: Path::new("/tmp/jni/jni_glue.c"),
-            link_input: Path::new("/tmp/target/libdemo.a"),
+            link_input: &link_input,
             jni_dir: Path::new("/tmp/jni"),
             jni_include_directories: &include_directories,
             rustflag_linker_args: &[],
@@ -1940,18 +2074,33 @@ mod tests {
     }
 
     #[test]
+    fn linux_clang_jni_linker_args_reject_undefined_symbols_by_default() {
+        let flags = clang_undefined_symbol_policy_flags(JavaHostTarget::LinuxX86_64);
+
+        assert_eq!(flags, vec!["-Wl,--no-undefined".to_string()]);
+    }
+
+    #[test]
+    fn darwin_clang_jni_linker_args_use_default_undefined_symbol_policy() {
+        let flags = clang_undefined_symbol_policy_flags(JavaHostTarget::DarwinArm64);
+
+        assert!(flags.is_empty());
+    }
+
+    #[test]
     fn builds_clang_cl_jni_linker_args_with_debug_info_flags() {
         let include_directories = JniIncludeDirectories {
             shared: PathBuf::from("/tmp/jdk/include"),
             platform: PathBuf::from("/tmp/jdk/include/win32"),
         };
+        let link_input = JvmNativeLinkInput::Staticlib(PathBuf::from("/tmp/target/demo.lib"));
 
         let args = clang_cl_jni_linker_args(&JniLinkerArgs {
             host_target: JavaHostTarget::WindowsX86_64,
             release: false,
             output_lib: Path::new("/tmp/out/demo_jni.dll"),
             jni_glue: Path::new("/tmp/jni/jni_glue.c"),
-            link_input: Path::new("/tmp/target/demo.lib"),
+            link_input: &link_input,
             jni_dir: Path::new("/tmp/jni"),
             jni_include_directories: &include_directories,
             rustflag_linker_args: &[],
@@ -1970,14 +2119,17 @@ mod tests {
     fn adds_darwin_release_jni_strip_flags() {
         let flags = clang_release_optimization_flags(JavaHostTarget::DarwinArm64, true);
 
-        assert_eq!(flags, vec!["-Wl,-x".to_string()]);
+        assert_eq!(flags, vec!["-O3".to_string(), "-Wl,-x".to_string()]);
     }
 
     #[test]
     fn adds_linux_release_jni_strip_flags() {
         let flags = clang_release_optimization_flags(JavaHostTarget::LinuxX86_64, true);
 
-        assert_eq!(flags, vec!["-Wl,--strip-all".to_string()]);
+        assert_eq!(
+            flags,
+            vec!["-O3".to_string(), "-Wl,--strip-all".to_string()]
+        );
     }
 
     #[test]
@@ -2447,15 +2599,12 @@ mod tests {
         let cdylib = profile_dir.join("libdemo.dylib");
         fs::write(&staticlib, []).expect("write staticlib");
         fs::write(&cdylib, []).expect("write cdylib");
+        let library = selected_library(true, true);
 
         let resolved = resolve_jvm_native_link_input(
             &profile_dir,
             JavaHostTarget::DarwinArm64,
-            "demo",
-            JvmCrateOutputs {
-                builds_staticlib: true,
-                builds_cdylib: true,
-            },
+            &library,
             Some("libdemo.a"),
         )
         .expect("expected link input");
@@ -2475,15 +2624,12 @@ mod tests {
         let cdylib = profile_dir.join("libdemo.dylib");
         fs::write(&staticlib, []).expect("write staticlib");
         fs::write(&cdylib, []).expect("write cdylib");
+        let library = selected_library(true, true);
 
         let resolved = resolve_jvm_native_link_input(
             &profile_dir,
             JavaHostTarget::DarwinArm64,
-            "demo",
-            JvmCrateOutputs {
-                builds_staticlib: true,
-                builds_cdylib: true,
-            },
+            &library,
             Some("libdemo.a"),
         )
         .expect("expected link input");
@@ -2491,11 +2637,7 @@ mod tests {
             &resolved,
             &profile_dir,
             JavaHostTarget::DarwinArm64,
-            "demo",
-            JvmCrateOutputs {
-                builds_staticlib: true,
-                builds_cdylib: true,
-            },
+            &library,
         );
 
         assert_eq!(resolved.path(), staticlib.as_path());
@@ -2512,15 +2654,12 @@ mod tests {
 
         let cdylib = profile_dir.join("libdemo.dylib");
         fs::write(&cdylib, []).expect("write cdylib");
+        let library = selected_library(false, true);
 
         let resolved = resolve_jvm_native_link_input(
             &profile_dir,
             JavaHostTarget::DarwinArm64,
-            "demo",
-            JvmCrateOutputs {
-                builds_staticlib: false,
-                builds_cdylib: true,
-            },
+            &library,
             None,
         )
         .expect("expected link input");
@@ -2528,11 +2667,7 @@ mod tests {
             &resolved,
             &profile_dir,
             JavaHostTarget::DarwinArm64,
-            "demo",
-            JvmCrateOutputs {
-                builds_staticlib: false,
-                builds_cdylib: true,
-            },
+            &library,
         )
         .expect("expected shared library compatibility copy");
 
@@ -2552,15 +2687,12 @@ mod tests {
         let cdylib = profile_dir.join("libdemo.dylib");
         fs::write(&staticlib, []).expect("write stale staticlib");
         fs::write(&cdylib, []).expect("write current cdylib");
+        let library = selected_library(false, true);
 
         let resolved = resolve_jvm_native_link_input(
             &profile_dir,
             JavaHostTarget::DarwinArm64,
-            "demo",
-            JvmCrateOutputs {
-                builds_staticlib: false,
-                builds_cdylib: true,
-            },
+            &library,
             None,
         )
         .expect("expected link input");
@@ -2578,16 +2710,10 @@ mod tests {
 
         let cdylib = profile_dir.join("libdemo.dylib");
         fs::write(&cdylib, []).expect("write stale shared library");
+        let library = selected_library(true, false);
 
-        let compatibility_shared_library = existing_jvm_shared_library_path(
-            &profile_dir,
-            JavaHostTarget::DarwinArm64,
-            "demo",
-            JvmCrateOutputs {
-                builds_staticlib: true,
-                builds_cdylib: false,
-            },
-        );
+        let compatibility_shared_library =
+            existing_jvm_shared_library_path(&profile_dir, JavaHostTarget::DarwinArm64, &library);
 
         assert!(compatibility_shared_library.is_none());
 

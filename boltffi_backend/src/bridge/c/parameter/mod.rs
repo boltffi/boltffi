@@ -80,9 +80,18 @@ impl Parameter {
 
     /// Creates the pointer half of a borrowed byte-slice C ABI parameter group.
     pub fn byte_pointer(name: &str) -> Result<Self> {
+        Self::byte_pointer_with_type(name, Type::ConstPointer(Box::new(Type::Uint8)))
+    }
+
+    /// Creates the pointer half of a mutable byte-slice C ABI parameter group.
+    pub fn mutable_byte_pointer(name: &str) -> Result<Self> {
+        Self::byte_pointer_with_type(name, Type::MutPointer(Box::new(Type::Uint8)))
+    }
+
+    fn byte_pointer_with_type(name: &str, ty: Type) -> Result<Self> {
         Self::with_role(
             format!("{name}_ptr"),
-            Type::ConstPointer(Box::new(Type::Uint8)),
+            ty,
             ParameterRole::BytePointer(Identifier::escape(name)?),
         )
     }
@@ -98,9 +107,25 @@ impl Parameter {
 
     /// Creates the pointer half of a borrowed direct-vector C ABI parameter group.
     pub fn direct_vector_pointer(name: &str, element: DirectVectorElementAbi) -> Result<Self> {
+        Self::direct_vector_pointer_with_type(name, element.clone(), element.pointer_type())
+    }
+
+    /// Creates the pointer half of a mutable direct-vector C ABI parameter group.
+    pub fn mutable_direct_vector_pointer(
+        name: &str,
+        element: DirectVectorElementAbi,
+    ) -> Result<Self> {
+        Self::direct_vector_pointer_with_type(name, element.clone(), element.mutable_pointer_type())
+    }
+
+    fn direct_vector_pointer_with_type(
+        name: &str,
+        element: DirectVectorElementAbi,
+        ty: Type,
+    ) -> Result<Self> {
         Self::with_role(
             format!("{name}_ptr"),
-            element.pointer_type(),
+            ty,
             ParameterRole::DirectVectorPointer {
                 name: Identifier::escape(name)?,
                 element,

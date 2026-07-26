@@ -107,6 +107,22 @@ fn get_fallible_service_value(handle: u64, key: i32) -> Result<i32, FixtureError
     decode_out_result(&error, value)
 }
 
+fn try_make_counter(handle: u64, initial: i32) -> Result<u64, FixtureError> {
+    let mut counter_handle: u64 = 0;
+    let error = unsafe {
+        boltffi_method_class_boltffi_tests_results_fallible_service_try_make_counter(
+            handle,
+            initial,
+            &mut counter_handle,
+        )
+    };
+    if error.is_empty() {
+        Ok(counter_handle)
+    } else {
+        Err(decode_buf(&error))
+    }
+}
+
 fn add_marker(map: u64, id: i32) -> u64 {
     unsafe {
         boltffi_method_class_boltffi_tests_classes_fixture_map_add_marker(
@@ -1763,6 +1779,35 @@ mod fallible_service_ffi {
         };
         let result: Option<i32> = decode_buf(&buf);
         assert_eq!(result, None);
+        unsafe { boltffi_release_class_boltffi_tests_results_fallible_service(handle) };
+    }
+
+    #[test]
+    fn try_make_counter_positive_returns_class_handle() {
+        let handle = boltffi_init_class_boltffi_tests_results_fallible_service_new();
+
+        let result = try_make_counter(handle, 7);
+        let counter_handle = result.expect("positive initial should yield a counter handle");
+        assert_ne!(counter_handle, 0);
+
+        // The returned handle is a live TestCounter; its get() should
+        // echo the initial value we passed through the Result payload.
+        let value =
+            unsafe { boltffi_method_class_boltffi_tests_classes_test_counter_get(counter_handle) };
+        assert_eq!(value, 7);
+
+        unsafe {
+            boltffi_release_class_boltffi_tests_classes_test_counter(counter_handle);
+            boltffi_release_class_boltffi_tests_results_fallible_service(handle);
+        }
+    }
+
+    #[test]
+    fn try_make_counter_negative_returns_invalid_input_error() {
+        let handle = boltffi_init_class_boltffi_tests_results_fallible_service_new();
+
+        let result = try_make_counter(handle, -1);
+        assert_eq!(result, Err(FixtureError::InvalidInput));
 
         unsafe { boltffi_release_class_boltffi_tests_results_fallible_service(handle) };
     }

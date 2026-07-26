@@ -17,3 +17,18 @@ pub async fn load_name() -> String {
 pub async fn load_point() -> Point {
     Point { x: 1, y: 2 }
 }
+
+#[error]
+pub enum SaveError {
+    Failed,
+}
+
+#[export]
+pub async fn save() -> Result<(), SaveError> {
+    Ok(())
+}
+
+#[export]
+pub async fn save_checked(value: i32) -> Result<i32, SaveError> {
+    Ok(value)
+}

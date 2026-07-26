@@ -50,19 +50,6 @@ impl NativeParameter {
         &self.kind
     }
 
-    /// Returns the JNI parameter type.
-    pub fn ty(&self) -> TypeFragment {
-        match &self.kind {
-            NativeParameterKind::Scalar(parameter) => parameter.ty().as_type_fragment(),
-            NativeParameterKind::Bytes(_) => TypeFragment::new("jbyteArray"),
-            NativeParameterKind::DirectVector(parameter) => parameter.array_type(),
-            NativeParameterKind::Record(_) => TypeFragment::new("jbyteArray"),
-            NativeParameterKind::Callback(parameter) => parameter.ty(),
-            NativeParameterKind::Closure(parameter) => parameter.ty(),
-            NativeParameterKind::Continuation(parameter) => parameter.ty(),
-        }
-    }
-
     /// Returns C bridge call arguments produced from this JNI parameter.
     pub fn c_arguments(&self) -> Result<Vec<Expression>> {
         match &self.kind {
@@ -85,13 +72,11 @@ impl NativeParameter {
             }))
             .collect()),
             NativeParameterKind::DirectVector(parameter) => Ok(parameter.c_arguments()),
-            NativeParameterKind::Record(parameter) => Ok(std::iter::once(Expression::identifier(
-                parameter.local().clone(),
-            ))
-            .chain(parameter.writeback().map(|writeback| {
-                Expression::address_of(Expression::identifier(writeback.local().clone()))
-            }))
-            .collect()),
+            NativeParameterKind::Record(parameter) => Ok(std::iter::once(parameter.c_argument())
+                .chain(parameter.writeback().map(|writeback| {
+                    Expression::address_of(Expression::identifier(writeback.local().clone()))
+                }))
+                .collect()),
             NativeParameterKind::Callback(parameter) => Ok(vec![parameter.c_argument()]),
             NativeParameterKind::Closure(parameter) => Ok(parameter.c_arguments()),
             NativeParameterKind::Continuation(parameter) => parameter.c_arguments(),
@@ -137,6 +122,11 @@ impl NativeParameter {
         }
     }
 
+    /// Returns whether this parameter supplies a callback handle.
+    pub fn is_callback(&self) -> bool {
+        matches!(self.kind, NativeParameterKind::Callback(_))
+    }
+
     /// Returns whether this parameter supplies a C poll continuation.
     pub fn is_continuation(&self) -> bool {
         matches!(self.kind, NativeParameterKind::Continuation(_))
@@ -149,11 +139,11 @@ impl NativeParameter {
 pub enum NativeParameterKind {
     /// A scalar JNI parameter passed directly to the C bridge.
     Scalar(ScalarParameter),
-    /// A `jbyteArray` expanded to pointer and length C bridge arguments.
+    /// A direct buffer plus exact length expanded to pointer and length C bridge arguments.
     Bytes(BytesParameter),
     /// A Java primitive array expanded to pointer and length C bridge arguments.
     DirectVector(DirectVectorParameter),
-    /// A `jbyteArray` copied into one direct C record value.
+    /// A direct buffer copied into one direct C record value.
     Record(RecordParameter),
     /// A `jlong` Java callback handle converted through a C callback constructor.
     Callback(CallbackParameter),

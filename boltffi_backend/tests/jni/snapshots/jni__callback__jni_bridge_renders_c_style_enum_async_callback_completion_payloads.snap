@@ -82,25 +82,16 @@ static ___ListenerVTable g____ListenerVTable_vtable = {
 };
 
 static bool boltffi_jni_load____ListenerVTable_callbacks(JNIEnv *env) {
-    jclass local_class = (*env)->FindClass(env, "com/boltffi/demo/ListenerCallbacks");
-    if (local_class == NULL) {
+    if (!boltffi_jni_lookup_global_class_with_diagnostic(env, "com/boltffi/demo/ListenerCallbacks", "com/boltffi/demo/ListenerCallbacks", &g____ListenerVTable_class)) {
         return false;
     }
-    g____ListenerVTable_class = (*env)->NewGlobalRef(env, local_class);
-    (*env)->DeleteLocalRef(env, local_class);
-    if (g____ListenerVTable_class == NULL) {
-        return false;
-    }
-    g____ListenerVTable_free_method = (*env)->GetStaticMethodID(env, g____ListenerVTable_class, "free", "(J)V");
-    if (g____ListenerVTable_free_method == NULL) {
+    if (!boltffi_jni_lookup_static_method_with_diagnostic(env, g____ListenerVTable_class, "com/boltffi/demo/ListenerCallbacks", "free", "free", "(J)V", "(J)V", &g____ListenerVTable_free_method)) {
         goto fail;
     }
-    g____ListenerVTable_clone_method = (*env)->GetStaticMethodID(env, g____ListenerVTable_class, "clone", "(J)J");
-    if (g____ListenerVTable_clone_method == NULL) {
+    if (!boltffi_jni_lookup_static_method_with_diagnostic(env, g____ListenerVTable_class, "com/boltffi/demo/ListenerCallbacks", "clone", "clone", "(J)J", "(J)J", &g____ListenerVTable_clone_method)) {
         goto fail;
     }
-    g____ListenerVTable_mode_method = (*env)->GetStaticMethodID(env, g____ListenerVTable_class, "mode", "(JJJ)V");
-    if (g____ListenerVTable_mode_method == NULL) {
+    if (!boltffi_jni_lookup_static_method_with_diagnostic(env, g____ListenerVTable_class, "com/boltffi/demo/ListenerCallbacks", "mode", "mode", "(JJJ)V", "(JJJ)V", &g____ListenerVTable_mode_method)) {
         goto fail;
     }
     boltffi_register_callback_demo_listener(&g____ListenerVTable_vtable);
@@ -145,16 +136,12 @@ JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1async_1callback_1co
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
     (void)reserved;
     JNIEnv *env = NULL;
-    if ((*vm)->GetEnv(vm, (void **)&env, JNI_VERSION_1_6) != JNI_OK) {
+    jint env_result = (*vm)->GetEnv(vm, (void **)&env, JNI_VERSION_1_6);
+    if (env_result != JNI_OK) {
+        fprintf(stderr, "BoltFFI JNI_OnLoad failed: GetEnv(JNI_VERSION_1_6) returned %d\n", (int)env_result);
         return JNI_ERR;
     }
-    jclass local_class = (*env)->FindClass(env, "com/boltffi/demo/Native");
-    if (local_class == NULL) {
-        return JNI_ERR;
-    }
-    boltffi_jni_native_class = (*env)->NewGlobalRef(env, local_class);
-    (*env)->DeleteLocalRef(env, local_class);
-    if (boltffi_jni_native_class == NULL) {
+    if (!boltffi_jni_lookup_global_class_with_diagnostic(env, "com/boltffi/demo/Native", "com/boltffi/demo/Native", &boltffi_jni_native_class)) {
         return JNI_ERR;
     }
     if (!boltffi_jni_load____ListenerVTable_callbacks(env)) {

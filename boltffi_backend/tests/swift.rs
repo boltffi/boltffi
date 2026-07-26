@@ -222,6 +222,13 @@ fn swift_target_renders_stream_protocols() {
 }
 
 #[test]
+fn swift_target_renders_stream_runtime() {
+    insta::assert_snapshot!(rendered_swift_runtime(SourceFixture::one(
+        "stream/protocol_functions"
+    )));
+}
+
+#[test]
 fn swift_target_renders_callback_handle_parameters() {
     insta::assert_snapshot!(rendered_partial_fixture(
         "callback/foreign_callback_parameter"
@@ -361,6 +368,15 @@ fn swift_target_renders_async_callback_return_shapes() {
 }
 
 #[test]
+fn swift_target_renders_async_callback_unit_results() {
+    let rendered = rendered_fixture("callback/async_callback_unit_result");
+
+    assert!(rendered.contains("completion?(completionContext, FfiStatus(code: 0), FfiBuf_u8())"));
+
+    insta::assert_snapshot!(rendered);
+}
+
+#[test]
 fn swift_target_renders_async_callback_handle_returns() {
     insta::assert_snapshot!(rendered_fixture(
         "callback/async_callback_returning_callback_handle"
@@ -385,6 +401,13 @@ fn swift_target_renders_documented_record_and_enum_methods() {
 }
 
 #[test]
+fn swift_target_allocates_scoped_optional_initializer_locals() {
+    insta::assert_snapshot!(rendered_fixture(
+        "associated/scoped_optional_enum_initializer"
+    ));
+}
+
+#[test]
 fn swift_target_renders_class_handles_and_methods() {
     insta::assert_snapshot!(rendered_fixture("exports/kotlin_class_handles"));
 }
@@ -402,6 +425,13 @@ fn swift_target_renders_constants() {
 #[test]
 fn swift_target_passes_primitive_direct_vectors() {
     insta::assert_snapshot!(rendered_fixture("direct_vector/primitive_vector_parameter"));
+}
+
+#[test]
+fn swift_target_passes_mutable_primitive_slices_inout() {
+    insta::assert_snapshot!(rendered_fixture(
+        "direct_vector/mutable_primitive_slice_parameter"
+    ));
 }
 
 #[test]

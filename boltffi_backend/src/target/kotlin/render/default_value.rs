@@ -1,7 +1,7 @@
-use boltffi_binding::{DefaultValue, FloatValue, Primitive, TypeRef};
+use boltffi_binding::{DefaultValue, EnumDecl, FloatValue, Native, Primitive, TypeRef};
 
 use crate::{
-    core::Result,
+    core::{RenderContext, Result},
     target::kotlin::{
         KotlinHost,
         name_style::Name,
@@ -13,7 +13,11 @@ use crate::{
 pub struct DefaultExpression;
 
 impl DefaultExpression {
-    pub fn render(ty: &TypeRef, value: &DefaultValue) -> Result<Expression> {
+    pub fn render(
+        ty: &TypeRef,
+        value: &DefaultValue,
+        context: &RenderContext<Native>,
+    ) -> Result<Expression> {
         match value {
             DefaultValue::Bool(value) => Ok(Expression::bool(*value)),
             DefaultValue::Integer(value) => match ty {
@@ -27,10 +31,25 @@ impl DefaultExpression {
             DefaultValue::EnumVariant {
                 enum_name,
                 variant_name,
-            } => Ok(Expression::property(
-                Name::new(enum_name).type_name(),
-                Name::new(variant_name).enum_entry()?,
-            )),
+            } => match ty {
+                TypeRef::Enum(id) => context
+                    .enumeration(*id)
+                    .ok_or(KotlinHost::broken_bridge_contract(
+                        "enum default type was not found",
+                    ))
+                    .and_then(|enumeration| {
+                        let variant = match enumeration {
+                            EnumDecl::CStyle(_) => Name::new(variant_name).enum_entry()?,
+                            EnumDecl::Data(_) => Name::new(variant_name).variant()?,
+                            _ => return Err(KotlinHost::unsupported("enum default declaration")),
+                        };
+                        Ok(Expression::property(
+                            Name::new(enum_name).type_name(),
+                            variant,
+                        ))
+                    }),
+                _ => Err(KotlinHost::unsupported("enum default type")),
+            },
             DefaultValue::Null => Ok(Expression::null()),
             _ => Err(KotlinHost::unsupported("unknown default literal")),
         }

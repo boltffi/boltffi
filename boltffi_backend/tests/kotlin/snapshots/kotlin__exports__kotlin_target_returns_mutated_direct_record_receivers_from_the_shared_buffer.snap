@@ -1,0 +1,64 @@
+---
+source: boltffi_backend/tests/kotlin/exports.rs
+expression: "rendered_fixture(\"associated/mutable_record_receiver\")"
+---
+===== com/boltffi/demo/Demo.kt =====
+@file:OptIn(kotlin.ExperimentalUnsignedTypes::class)
+
+package com.boltffi.demo
+@Suppress("FunctionName")
+private object Native {
+    @JvmStatic external fun boltffi_method_record_demo_point_move_by(`receiver`: java.nio.ByteBuffer, dx: Double): Unit
+}
+
+
+data class Point(
+    val x: Double,
+    val y: Double
+) {
+    internal fun toByteArray(): ByteArray {
+        val buffer = java.nio.ByteBuffer
+            .allocate(STRUCT_SIZE)
+            .order(java.nio.ByteOrder.nativeOrder())
+        writeTo(buffer, 0)
+        return buffer.array()
+    }
+
+    internal fun toDirectBuffer(): java.nio.ByteBuffer {
+        val buffer = java.nio.ByteBuffer
+            .allocateDirect(STRUCT_SIZE)
+            .order(java.nio.ByteOrder.nativeOrder())
+        writeTo(buffer, 0)
+        return buffer
+    }
+
+    internal fun writeTo(buffer: java.nio.ByteBuffer, offset: Int) {
+        buffer.putDouble(offset, x)
+        buffer.putDouble(offset + 8, y)
+    }
+
+    companion object {
+        internal const val STRUCT_SIZE: Int = 16
+
+        internal fun fromByteArray(bytes: ByteArray): Point {
+            require(bytes.size == STRUCT_SIZE)
+            val buffer = java.nio.ByteBuffer
+                .wrap(bytes)
+                .order(java.nio.ByteOrder.nativeOrder())
+            return fromBuffer(buffer, 0)
+        }
+
+        internal fun fromBuffer(buffer: java.nio.ByteBuffer, offset: Int): Point {
+            return Point(
+                buffer.getDouble(offset),
+                buffer.getDouble(offset + 8)
+            )
+        }
+    }
+
+    fun moveBy(dx: Double): Point {
+        val __boltffi_receiver = this.toDirectBuffer()
+        Native.boltffi_method_record_demo_point_move_by(__boltffi_receiver, dx)
+        return Point.fromBuffer(__boltffi_receiver, 0)
+    }
+}

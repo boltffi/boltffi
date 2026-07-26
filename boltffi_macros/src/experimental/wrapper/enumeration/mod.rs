@@ -5,7 +5,7 @@ use boltffi_binding::{
 };
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{Ident, Type, parse_str};
+use syn::{Ident, Type, parse_quote, parse_str};
 
 use crate::experimental::{
     error::Error,
@@ -82,6 +82,47 @@ impl<'expansion, 'lowered, S: RenderSurface> Renderer<'expansion, 'lowered, S> {
             _ => Err(Error::UnsupportedExpansion("unknown enum declaration")),
         }
     }
+
+    pub fn render_exports(self, rust_type: Type) -> Result<TokenStream, Error>
+    where
+        S: RenderSurface,
+        wrapper::arguments::SyncRenderer: Render<
+                S,
+                wrapper::arguments::Input<'expansion, 'lowered, S>,
+                Output = wrapper::arguments::Tokens,
+            >,
+        wrapper::returns::Failure: Render<S, wrapper::returns::FailureInput<'expansion, 'lowered, S>, Output = TokenStream>,
+        wrapper::returns::Renderer: Render<
+                S,
+                wrapper::returns::Input<'expansion, 'lowered, S>,
+                Output = wrapper::returns::Tokens,
+            >,
+        wrapper::async_call::Renderer:
+            Render<S, wrapper::async_call::Input<'expansion, 'lowered, S>, Output = TokenStream>,
+        wrapper::param::direct::Renderer:
+            Render<S, wrapper::param::direct::Input, Output = wrapper::param::Tokens>,
+        wrapper::param::encoded::Renderer: Render<
+                S,
+                wrapper::param::encoded::Input<'expansion, 'lowered, S>,
+                Output = wrapper::param::Tokens,
+            >,
+    {
+        match self.pair.binding() {
+            EnumDecl::CStyle(binding) => CStyle {
+                source: self.pair.source(),
+                binding,
+                expansion: self.expansion,
+            }
+            .exports(rust_type),
+            EnumDecl::Data(binding) => Data {
+                source: self.pair.source(),
+                binding: binding.as_ref(),
+                expansion: self.expansion,
+            }
+            .exports(rust_type),
+            _ => Err(Error::UnsupportedExpansion("unknown enum declaration")),
+        }
+    }
 }
 
 impl<'expansion, 'lowered, S> CStyle<'expansion, 'lowered, S>
@@ -128,7 +169,8 @@ where
             .collect::<Result<Vec<_>, _>>()?;
         let exports = exports::Renderer::new(
             self.source,
-            enumeration.clone(),
+            quote! { #enumeration },
+            parse_quote! { #enumeration },
             exports::Receiver::Direct {
                 ty: DirectValueType::enumeration(self.binding.id()),
             },
@@ -226,6 +268,21 @@ where
         })
     }
 
+    fn exports(self, rust_type: Type) -> Result<TokenStream, Error> {
+        exports::Renderer::new(
+            self.source,
+            quote! { #rust_type },
+            rust_type,
+            exports::Receiver::Direct {
+                ty: DirectValueType::enumeration(self.binding.id()),
+            },
+            self.binding.initializers(),
+            self.binding.methods(),
+            self.expansion,
+        )
+        .render()
+    }
+
     fn repr_type(&self) -> Result<Type, Error> {
         match self.binding.repr() {
             IntegerRepr::I8 => parse_str("i8"),
@@ -312,7 +369,8 @@ where
             .collect::<Result<Vec<_>, _>>()?;
         let exports = exports::Renderer::new(
             self.source,
-            enumeration.clone(),
+            quote! { #enumeration },
+            parse_quote! { #enumeration },
             exports::Receiver::Encoded {
                 codec: self.binding.write(),
             },
@@ -382,6 +440,21 @@ where
 
             #exports
         })
+    }
+
+    fn exports(self, rust_type: Type) -> Result<TokenStream, Error> {
+        exports::Renderer::new(
+            self.source,
+            quote! { #rust_type },
+            rust_type,
+            exports::Receiver::Encoded {
+                codec: self.binding.write(),
+            },
+            self.binding.initializers(),
+            self.binding.methods(),
+            self.expansion,
+        )
+        .render()
     }
 
     fn variants(&self) -> Result<Vec<DataVariant<'expansion, 'lowered, S>>, Error> {

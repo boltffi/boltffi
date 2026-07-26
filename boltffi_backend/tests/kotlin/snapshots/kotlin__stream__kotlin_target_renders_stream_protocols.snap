@@ -49,6 +49,14 @@ data class Point(
         return buffer.array()
     }
 
+    internal fun toDirectBuffer(): java.nio.ByteBuffer {
+        val buffer = java.nio.ByteBuffer
+            .allocateDirect(STRUCT_SIZE)
+            .order(java.nio.ByteOrder.nativeOrder())
+        writeTo(buffer, 0)
+        return buffer
+    }
+
     internal fun writeTo(buffer: java.nio.ByteBuffer, offset: Int) {
         buffer.putDouble(offset, x)
         buffer.putDouble(offset + 8, y)
@@ -82,11 +90,16 @@ class Engine internal constructor(internal val handle: Long) : AutoCloseable {
             Native.boltffi_release_class_demo_engine(handle)
         }
     }
+
+    internal fun boltffiHandle(): Long {
+        check(!__boltffi_closed.get()) { "Engine is closed" }
+        return handle
+    }
 }
 
 fun Engine.points(): PointsSubscription =
     PointsSubscription(
-        handle = Native.boltffi_stream_demo_engine_points_subscribe(handle),
+        handle = Native.boltffi_stream_demo_engine_points_subscribe(boltffiHandle()),
         popBatch = Native::boltffi_stream_demo_engine_points_pop_batch,
         wait = Native::boltffi_stream_demo_engine_points_wait,
         unsubscribe = Native::boltffi_stream_demo_engine_points_unsubscribe,
@@ -129,7 +142,7 @@ class PointsSubscription(
 }
 
 fun Engine.names(): kotlinx.coroutines.flow.Flow<String> = kotlinx.coroutines.flow.callbackFlow {
-    val subscription = Native.boltffi_stream_demo_engine_names_subscribe(handle)
+    val subscription = Native.boltffi_stream_demo_engine_names_subscribe(boltffiHandle())
     if (subscription == 0L) {
         close()
         return@callbackFlow
@@ -147,7 +160,7 @@ fun Engine.names(): kotlinx.coroutines.flow.Flow<String> = kotlinx.coroutines.fl
             val count = reader.readU32().toInt()
             val items = List(count) { reader.readString() }
             items.forEach { item ->
-                trySend(item)
+                send(item)
             }
         },
         finish = { close() }
@@ -157,7 +170,7 @@ fun Engine.names(): kotlinx.coroutines.flow.Flow<String> = kotlinx.coroutines.fl
 }
 
 fun Engine.ticks(callback: (Int) -> Unit): TicksCancellable {
-    val subscription = Native.boltffi_stream_demo_engine_ticks_subscribe(handle)
+    val subscription = Native.boltffi_stream_demo_engine_ticks_subscribe(boltffiHandle())
     if (subscription == 0L) return TicksCancellable {}
     val context = BoltFfiStreamContext(
         scope = boltffiCallbackScope,

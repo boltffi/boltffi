@@ -2,7 +2,30 @@ use boltffi_ast::{BaseTrait, TypeExpr};
 
 use crate::{CodecNode, CodecPlan, FieldKey, Op, Primitive, ReadPlan, ValueRef, WritePlan};
 
-use super::{LowerError, enums, ids::DeclarationIds, index::Index, records, types};
+use super::{
+    LowerError, enums, ids::DeclarationIds, index::Index, records, surface::SurfaceLower, types,
+};
+
+#[derive(Clone, Copy)]
+pub enum RootEncoding {
+    Surface,
+    Framed,
+}
+
+impl RootEncoding {
+    pub fn node<S: SurfaceLower>(
+        self,
+        index: &Index,
+        ids: &DeclarationIds,
+        type_expr: &TypeExpr,
+        value: ValueRef,
+    ) -> Result<CodecNode, LowerError> {
+        match (self, type_expr) {
+            (Self::Surface, TypeExpr::String) => Ok(S::root_string_codec()),
+            _ => node(index, ids, type_expr, value),
+        }
+    }
+}
 
 /// Lowers a source type expression into one [`CodecNode`] in the
 /// codec tree.
@@ -21,6 +44,9 @@ pub fn node(
     Ok(match type_expr {
         TypeExpr::Primitive(primitive) => CodecNode::Primitive(Primitive::from(*primitive)),
         TypeExpr::String | TypeExpr::Str => CodecNode::String,
+        TypeExpr::InternedString { static_values, .. } => CodecNode::InternedString {
+            static_values: static_values.clone(),
+        },
         TypeExpr::Builtin(kind) => CodecNode::Builtin(*kind),
         TypeExpr::Vec(inner) | TypeExpr::Slice(inner) if types::is_byte_primitive(inner) => {
             CodecNode::Bytes

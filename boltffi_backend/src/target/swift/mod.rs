@@ -3,6 +3,7 @@
 mod c_abi;
 mod codec;
 mod default_value;
+mod lexical;
 mod name_style;
 mod primitive;
 mod render;

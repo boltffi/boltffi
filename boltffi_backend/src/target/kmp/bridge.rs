@@ -4,8 +4,6 @@ use crate::core::{
     BridgeCapabilities, BridgeContract, GeneratedOutput, Result, bridge, contract::sealed,
 };
 
-use super::Syntax;
-
 /// No-op bridge used while KMP target emission is moving into the IR backend.
 ///
 /// Later milestones can replace this bridge contract with the concrete ABI
@@ -40,7 +38,6 @@ impl bridge::BridgeBackend for KmpBridge {
     type Surface = Native;
     type Input = Bindings<Native>;
     type Contract = KmpBridgeContract;
-    type Syntax = Syntax;
 
     fn build_contract(&self, _input: &Self::Input) -> Result<Self::Contract> {
         Ok(KmpBridgeContract::empty())

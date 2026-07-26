@@ -7,6 +7,7 @@ pub struct JniModule {
     pub jni_prefix: String,
     pub package_path: String,
     pub module_name: String,
+    pub header_include: String,
     pub class_name: String,
     pub has_async: bool,
     pub has_async_runtime: bool,
@@ -166,7 +167,6 @@ pub struct JniCallbackTrait {
     pub sync_methods: Vec<JniCallbackMethod>,
     pub async_methods: Vec<JniAsyncCallbackMethod>,
     pub proxy_sync_methods: Vec<JniCallbackProxySyncMethod>,
-    pub proxy_async_methods: Vec<JniCallbackProxyAsyncMethod>,
 }
 
 #[derive(Clone)]
@@ -1041,35 +1041,6 @@ pub struct JniCallbackProxySyncMethod {
     pub jni_return_type: String,
     pub jni_c_return_type: String,
     pub jni_return_expr: String,
-}
-
-#[derive(Clone)]
-pub struct JniCallbackProxyAsyncMethod {
-    pub vtable_field: String,
-    pub native_name: String,
-    pub jni_name: String,
-    pub jni_params: String,
-    pub params: Vec<JniParam>,
-    pub return_c_type: Option<String>,
-    pub success_method_name: String,
-    pub success_method_id: String,
-    pub success_signature: String,
-    pub failure_method_name: String,
-    pub failure_method_id: String,
-}
-
-impl JniCallbackProxyAsyncMethod {
-    pub fn has_return(&self) -> bool {
-        self.return_c_type.is_some()
-    }
-
-    pub fn is_wire(&self) -> bool {
-        self.return_c_type.as_deref() == Some("wire")
-    }
-
-    pub fn return_c_type(&self) -> &str {
-        self.return_c_type.as_deref().unwrap_or("")
-    }
 }
 
 #[derive(Clone)]

@@ -63,6 +63,26 @@ impl ServiceConfig {
     }
 
     #[demo_bench_macros::demo_case(
+        "records.default_values.service_config.from_non_empty_name.should_return_config_for_non_empty_values",
+        justification = "Ensure ServiceConfig::from_non_empty_name returns a config for non-empty borrowed name and region values.",
+        directions = "Call `records::default_values::ServiceConfig::from_non_empty_name` through the generated binding with non-empty borrowed name and region values and assert it returns the expected ServiceConfig."
+    )]
+    #[demo_bench_macros::demo_case(
+        "records.default_values.service_config.from_non_empty_name.should_return_none_for_empty_values",
+        justification = "Ensure ServiceConfig::from_non_empty_name returns None when either borrowed input is empty.",
+        directions = "Call `records::default_values::ServiceConfig::from_non_empty_name` through the generated binding with an empty borrowed name or region and assert it returns None."
+    )]
+    pub fn from_non_empty_name(name: &str, region: &str) -> Option<Self> {
+        (!name.is_empty() && !region.is_empty()).then(|| Self {
+            name: name.to_string(),
+            retries: 3,
+            region: region.to_string(),
+            endpoint: None,
+            backup_endpoint: Some("https://default".to_string()),
+        })
+    }
+
+    #[demo_bench_macros::demo_case(
         "records.default_values.service_config.should_describe_values",
         justification = "Ensure ServiceConfig::describe formats defaulted and explicit fields into a stable string.",
         directions = "Call `records::default_values::ServiceConfig::describe` through the generated binding and assert ServiceConfig::describe formats defaulted and explicit fields into a stable string."
@@ -98,11 +118,6 @@ impl ServiceConfig {
             java,
             reason = ExclusionReason::CoverageGap,
             details = "This C# regression case is not asserted by the Java demo suite yet. Add it when Java demo coverage expands for fallible non-blittable record constructors."
-        ),
-        exclude(
-            typescript,
-            reason = ExclusionReason::CoverageGap,
-            details = "This C# regression case is not asserted by the TypeScript demo suite yet. Add it when TypeScript demo coverage expands for fallible non-blittable record constructors."
         )
     )]
     #[demo_bench_macros::demo_case(
@@ -118,11 +133,6 @@ impl ServiceConfig {
             java,
             reason = ExclusionReason::CoverageGap,
             details = "This C# regression case is not asserted by the Java demo suite yet. Add it when Java demo coverage expands for fallible non-blittable record constructors."
-        ),
-        exclude(
-            typescript,
-            reason = ExclusionReason::CoverageGap,
-            details = "This C# regression case is not asserted by the TypeScript demo suite yet. Add it when TypeScript demo coverage expands for fallible non-blittable record constructors."
         )
     )]
     pub fn try_with_retries(retries: i32) -> Result<Self, String> {
@@ -152,11 +162,6 @@ impl ServiceConfig {
             java,
             reason = ExclusionReason::CoverageGap,
             details = "This C# regression case is not asserted by the Java demo suite yet. Add it when Java demo coverage expands for optional non-blittable record constructors."
-        ),
-        exclude(
-            typescript,
-            reason = ExclusionReason::CoverageGap,
-            details = "This C# regression case is not asserted by the TypeScript demo suite yet. Add it when TypeScript demo coverage expands for optional non-blittable record constructors."
         )
     )]
     #[demo_bench_macros::demo_case(
@@ -172,11 +177,6 @@ impl ServiceConfig {
             java,
             reason = ExclusionReason::CoverageGap,
             details = "This C# regression case is not asserted by the Java demo suite yet. Add it when Java demo coverage expands for optional non-blittable record constructors."
-        ),
-        exclude(
-            typescript,
-            reason = ExclusionReason::CoverageGap,
-            details = "This C# regression case is not asserted by the TypeScript demo suite yet. Add it when TypeScript demo coverage expands for optional non-blittable record constructors."
         )
     )]
     pub fn maybe_with_retries(retries: i32) -> Option<Self> {

@@ -457,7 +457,7 @@ impl<'plan> ParamPlanRender<'plan, Native, OutOfRust> for ClosureTypeName<'_> {
         primitive_name(primitive).map(|name| format!("Opt{name}"))
     }
 
-    fn direct_vector(&mut self, element: &'plan DirectVectorElementType) -> Self::Output {
+    fn direct_vector(&mut self, element: &'plan DirectVectorElementType, _: ()) -> Self::Output {
         self.direct_vector_type(element)
     }
 }
@@ -523,6 +523,14 @@ impl TypeRefRender for ClosureTypeName<'_> {
 
     fn string(&mut self) -> Self::Output {
         Ok("String".to_owned())
+    }
+
+    fn interned_string(&mut self, _static_values: &[String]) -> Self::Output {
+        // Kotlin does not advertise InternedString capability; the capability gate
+        // ensures this branch is never reached for valid bindings.
+        unreachable!(
+            "InternedString type ref reached Kotlin closure renderer: host does not advertise InternedString capability"
+        )
     }
 
     fn bytes(&mut self) -> Self::Output {
@@ -856,7 +864,7 @@ impl ClosureReturnValue {
                     host,
                     context,
                 )?;
-                let (setup, expression, cleanup) = write.into_parts();
+                let (setup, expression, cleanup) = write.into_array_parts();
                 Ok(std::iter::once(Statement::value(result, call))
                     .chain(setup)
                     .chain(std::iter::once(Statement::value(bytes.clone(), expression)))
@@ -874,7 +882,7 @@ impl ClosureReturnValue {
                 let bytes = source_name.generated("bytes")?;
                 let write = ScalarOption::new(*primitive)
                     .write_value(source_name, Expression::identifier(result.clone()))?;
-                let (setup, expression, cleanup) = write.into_parts();
+                let (setup, expression, cleanup) = write.into_array_parts();
                 Ok(std::iter::once(Statement::value(result, call))
                     .chain(setup)
                     .chain(std::iter::once(Statement::value(bytes.clone(), expression)))
@@ -951,13 +959,13 @@ impl ClosureReturnValue {
             }
             ReturnConversion::Encoded { codec, source_name } => Ok(WireBuffer::new(source_name)?
                 .write_value(codec, value, host, context)?
-                .into_parts()),
+                .into_array_parts()),
             ReturnConversion::ScalarOption {
                 primitive,
                 source_name,
             } => Ok(ScalarOption::new(*primitive)
                 .write_value(source_name, value)?
-                .into_parts()),
+                .into_array_parts()),
             ReturnConversion::DirectVector(vector) => {
                 Ok((Vec::new(), vector.byte_array_expression(value)?, Vec::new()))
             }
@@ -997,7 +1005,7 @@ impl FallibleReturn<'_> {
             host,
             context,
         )?;
-        let (setup, expression, cleanup) = write.into_parts();
+        let (setup, expression, cleanup) = write.into_array_parts();
         Ok(Expression::run(
             setup
                 .into_iter()

@@ -347,7 +347,7 @@ impl<'bindings> KmpAdmission<'bindings> {
             ParamPlan::Encoded { ty, .. } => self.type_ref_capabilities(ty),
             ParamPlan::Handle { target, .. } => handle_capability(target),
             ParamPlan::ScalarOption { .. } => Vec::new(),
-            ParamPlan::DirectVec { element } => match element {
+            ParamPlan::DirectVec { element, .. } => match element {
                 boltffi_binding::DirectVectorElementType::Primitive(_) => Vec::new(),
                 boltffi_binding::DirectVectorElementType::Record(_) => {
                     vec![KmpCapability::DirectRecords]

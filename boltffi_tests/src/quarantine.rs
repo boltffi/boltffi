@@ -1,20 +1,3 @@
-#[cfg(boltffi_pending_constants)]
-use crate::FixtureStatus;
-#[cfg(boltffi_pending_constants)]
-use boltffi::*;
-
-#[cfg(boltffi_pending_constants)]
-#[export]
-pub const FIXTURE_LIMIT: u32 = 42;
-
-#[cfg(boltffi_pending_constants)]
-#[export]
-pub const FIXTURE_LABEL: &str = "fixture";
-
-#[cfg(boltffi_pending_constants)]
-#[export]
-pub const FIXTURE_DEFAULT_STATUS: FixtureStatus = FixtureStatus::Pending;
-
 #[cfg(boltffi_pending_closure_return)]
 use boltffi::*;
 

@@ -11,11 +11,13 @@
 //! exact fields the Askama method template prints.
 
 mod array;
+mod direct_buffer;
 mod parameter;
 mod record;
 mod view;
 
 pub use array::BorrowedArrayParameterView;
+pub use direct_buffer::DirectBufferParameterView;
 pub use parameter::NativeParameterView;
 pub use record::RecordParameterView;
 pub use view::NativeMethodView;

@@ -206,6 +206,7 @@ public final class DemoTest {
         assert Demo.stringLength("🌍") == 4 : "stringLength(emoji 4 bytes)";
         assert Demo.stringIsEmpty("") : "case:primitives.strings.string.should_detect_empty stringIsEmpty(empty)";
         assert Demo.repeatString("ab", 3).equals("ababab") : "case:primitives.strings.string.should_repeat_value repeatString(ab, 3)";
+        assert Demo.borrowedStaticString().equals("borrowed static") : "case:primitives.strings.borrowed_static_string.should_return_value";
         System.out.println("  PASS\n");
     }
 
@@ -590,6 +591,14 @@ public final class DemoTest {
         assert ServiceConfig.fromBorrowedName("borrowed").describe().equals("borrowed:3:standard:none:https://default") : "ServiceConfig.fromBorrowedName";
         demoCase("case:records.default_values.service_config.from_string_ref_name.should_return_config");
         assert ServiceConfig.fromStringRefName("stringref").describe().equals("stringref:3:standard:none:https://default") : "ServiceConfig.fromStringRefName";
+        demoCase("case:records.default_values.service_config.from_non_empty_name.should_return_config_for_non_empty_values");
+        Optional<ServiceConfig> validatedConfig = ServiceConfig.fromNonEmptyName("optional", "eu-west");
+        assert validatedConfig.isPresent() : "ServiceConfig.fromNonEmptyName(optional, eu-west)";
+        assert validatedConfig.get().name().equals("optional") : "ServiceConfig.fromNonEmptyName name";
+        assert validatedConfig.get().region().equals("eu-west") : "ServiceConfig.fromNonEmptyName region";
+        demoCase("case:records.default_values.service_config.from_non_empty_name.should_return_none_for_empty_values");
+        assert !ServiceConfig.fromNonEmptyName("", "eu-west").isPresent() : "ServiceConfig.fromNonEmptyName empty name";
+        assert !ServiceConfig.fromNonEmptyName("optional", "").isPresent() : "ServiceConfig.fromNonEmptyName empty region";
         System.out.println("  PASS\n");
     }
 
@@ -1432,6 +1441,12 @@ public final class DemoTest {
         for (Optional<Integer> v : echoedAllNone) {
             assert !v.isPresent() : "echoVecOptionalI32 all-none entry";
         }
+
+        demoCase("case:options.complex.shape.should_return_radius_for_circle");
+        Optional<Double> circleRadius = Demo.radiusIfCircle(new Shape.Circle(5.0));
+        assert circleRadius.isPresent() && Math.abs(circleRadius.get() - 5.0) < 0.0001 : "radiusIfCircle circle";
+        demoCase("case:options.complex.shape.should_return_none_for_non_circle");
+        assert !Demo.radiusIfCircle(new Shape.Rectangle(3.0, 4.0)).isPresent() : "radiusIfCircle non-circle";
 
         demoCase("case:options.primitives.bool.should_roundtrip_some");
         Optional<Boolean> optBoolSome = Demo.echoOptionalBool(Optional.of(true));
@@ -2367,6 +2382,17 @@ public final class DemoTest {
             assert false : "parseInt should throw on invalid input";
         } catch (RuntimeException e) {
             assert e.getMessage().contains("invalid integer") : "parseInt error";
+        }
+
+        demoCase("case:results.basic.is_even.should_return_parity");
+        assert Demo.isEven(4) : "isEven(4) is true";
+        assert !Demo.isEven(3) : "isEven(3) is false";
+        demoCase("case:results.basic.is_even.should_reject_negative_input");
+        try {
+            Demo.isEven(-1);
+            assert false : "isEven should throw on negative input";
+        } catch (RuntimeException e) {
+            assert e.getMessage().contains("negative input") : "isEven error message";
         }
 
         demoCase("case:results.basic.safe_sqrt.should_return_square_root");

@@ -6,8 +6,8 @@ use boltffi_binding::{
     ClosureReturn, DirectValueType, DirectVectorElementType, Direction, ErrorChannel,
     ErrorPlacement, ExecutionDecl, ExportedCallable, HandlePresence, HandleTarget,
     ImportedCallable, ImportedMethodDecl, IncomingParam, IntoRust, Native, OutOfRust,
-    OutgoingParam, ParamDecl, ParamPlanRender, Primitive, ReturnPlanRender, ReturnValueSlot,
-    Surface, TypeRef, VTableSlot, native,
+    OutgoingParam, ParamDecl, ParamPlanRender, Primitive, Receive, ReturnPlanRender,
+    ReturnValueSlot, Surface, TypeRef, VTableSlot, native,
 };
 
 use crate::{
@@ -557,7 +557,7 @@ impl<'plan> ParamPlanRender<'plan, Native, OutOfRust> for ProxyRequirements {
 
     fn scalar_option(&mut self, _: Primitive) -> Self::Output {}
 
-    fn direct_vector(&mut self, _: &'plan DirectVectorElementType) -> Self::Output {}
+    fn direct_vector(&mut self, _: &'plan DirectVectorElementType, _: ()) -> Self::Output {}
 }
 
 impl<'plan> ReturnPlanRender<'plan, Native, OutOfRust> for ProxyRequirements {
@@ -1091,7 +1091,11 @@ impl Return {
             ReturnConversion::Void => Statement::new(
                 [
                     Statement::expression(call).to_string(),
-                    completion.success_statement(None).to_string(),
+                    completion
+                        .success_statement(
+                            completion.expects_buffer_payload().then(Self::empty_error),
+                        )
+                        .to_string(),
                 ]
                 .join("\n"),
             ),
@@ -1826,7 +1830,7 @@ impl<'plan> ParamPlanRender<'plan, Native, OutOfRust> for ParameterPlan<'_, '_> 
         })
     }
 
-    fn direct_vector(&mut self, element: &'plan DirectVectorElementType) -> Self::Output {
+    fn direct_vector(&mut self, element: &'plan DirectVectorElementType, _: ()) -> Self::Output {
         let ParameterGroup::DirectVector(group) = self.group else {
             return Err(Error::BrokenBridgeContract {
                 bridge: SwiftHost::TARGET,
@@ -1837,7 +1841,7 @@ impl<'plan> ParamPlanRender<'plan, Native, OutOfRust> for ParameterPlan<'_, '_> 
         let pointer = Identifier::escape(self.slot.parameter(group.pointer()).name())?;
         let length = Identifier::escape(self.slot.parameter(group.length()).name())?;
         let received = vector.received(&self.source_name, pointer.clone(), length.clone())?;
-        let proxy = vector.borrowed(&self.source_name, self.name.clone())?;
+        let proxy = vector.borrowed(&self.source_name, self.name.clone(), Receive::ByValue)?;
         Ok(Parameter {
             name: self.name.clone(),
             ty: vector.ty().clone(),
@@ -1892,7 +1896,7 @@ impl<'plan> ParamPlanRender<'plan, Native, OutOfRust> for ProxyParameterSupport<
         Ok(())
     }
 
-    fn direct_vector(&mut self, _: &'plan DirectVectorElementType) -> Self::Output {
+    fn direct_vector(&mut self, _: &'plan DirectVectorElementType, _: ()) -> Self::Output {
         Ok(())
     }
 }

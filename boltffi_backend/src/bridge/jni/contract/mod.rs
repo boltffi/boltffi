@@ -47,6 +47,7 @@ pub use callback::{
     CallbackHandleLifecycle, CallbackHandleMethod, CallbackMethod, CallbackParameter,
     CallbackRecordArgument, CallbackRegistration, CallbackReturn,
 };
+pub(crate) use closure::ClosureRecordArgument;
 pub use closure::{
     CallbackClosureHandle, ClosureArgument, ClosureBytesArgument, ClosureCParameter,
     ClosureDirectVectorArgument, ClosureHandleArgument, ClosureParameter, ClosureRegistration,

@@ -129,6 +129,12 @@ impl<'package> CodecWrite for Writer<'package> {
         ]
     }
 
+    fn interned_string(&mut self, _static_values: &[String], _value: &ValueRef) -> Vec<Self::Stmt> {
+        unreachable!(
+            "InternedString codec write reached Python renderer: host does not advertise InternedString capability"
+        )
+    }
+
     fn bytes(&mut self, value: &ValueRef) -> Vec<Self::Stmt> {
         vec![
             self.value(value)

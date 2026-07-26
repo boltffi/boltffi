@@ -1,9 +1,8 @@
 //! JVM class paths used by generated JNI glue.
 //!
 //! The generated bridge talks about the same class in several languages. Java
-//! source uses dotted package names, JNI lookup uses slash-separated paths, file
-//! routing uses path segments, and exported native methods use the class inside
-//! an escaped `Java_*` symbol.
+//! binary names use dotted package names, JNI lookup uses slash-separated paths,
+//! and exported native methods use the class inside an escaped `Java_*` symbol.
 //!
 //! This module stores one validated class path and exposes those spellings from
 //! that single value. Callers do not split package strings or hand-roll JNI
@@ -34,13 +33,10 @@ impl JvmClassPath {
                 .map(JvmNameSegment::package)
                 .collect::<Result<Vec<_>>>()?,
         };
-        Ok(Self {
-            package,
-            class: JvmNameSegment::class(class)?,
-        })
+        Self::from_parts(package, JvmNameSegment::class(class)?)
     }
 
-    /// Returns the Java source spelling of this class path.
+    /// Returns the dotted JVM binary name.
     pub fn as_java_path(&self) -> String {
         self.package
             .iter()
@@ -67,26 +63,23 @@ impl JvmClassPath {
 
     /// Creates the generated callback bridge class in the same JVM package.
     pub fn callback_class(&self, callback: &CanonicalName) -> Result<Self> {
-        Ok(Self {
-            package: self.package.clone(),
-            class: JvmNameSegment::callback_class(callback)?,
-        })
+        Self::from_parts(
+            self.package.clone(),
+            JvmNameSegment::callback_class(callback)?,
+        )
     }
 
     /// Creates the generated closure bridge class in the same JVM package.
     pub fn closure_class(&self, signature: &ClosureSignature) -> Result<Self> {
-        Ok(Self {
-            package: self.package.clone(),
-            class: JvmNameSegment::closure_class(signature)?,
-        })
+        Self::from_parts(
+            self.package.clone(),
+            JvmNameSegment::closure_class(signature)?,
+        )
     }
 
     /// Creates a class in the same JVM package.
     pub fn sibling_class(&self, class: impl Into<String>) -> Result<Self> {
-        Ok(Self {
-            package: self.package.clone(),
-            class: JvmNameSegment::class(class)?,
-        })
+        Self::from_parts(self.package.clone(), JvmNameSegment::class(class)?)
     }
 
     /// Returns the class path as the prefix used by a JNI exported symbol.
@@ -97,6 +90,19 @@ impl JvmClassPath {
             .map(JvmNameSegment::jni_escape)
             .collect::<Vec<_>>()
             .join("_")
+    }
+
+    fn from_parts(package: Vec<JvmNameSegment>, class: JvmNameSegment) -> Result<Self> {
+        let class_path = Self { package, class };
+        class_path.validate_jni_prefix()?;
+        Ok(class_path)
+    }
+
+    fn validate_jni_prefix(&self) -> Result<()> {
+        self.package
+            .iter()
+            .chain(std::iter::once(&self.class))
+            .try_for_each(JvmNameSegment::validate_jni_escape)
     }
 }
 

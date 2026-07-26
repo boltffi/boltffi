@@ -4,7 +4,11 @@ use boltffi_binding::{
     FunctionId, RecordDecl, RecordId, StreamDecl, StreamId, Surface,
 };
 
-use crate::core::{CoverageMode, CustomTypeMapping, ResolvedCustomTypeMappings};
+use crate::core::capabilities::BindingCapabilityAnalysis;
+use crate::core::{
+    BindingCapability, CapabilityRequirements, CoverageMode, CustomTypeMapping,
+    ResolvedCustomTypeMappings,
+};
 
 /// Read-only state shared while one target renders a binding contract.
 #[non_exhaustive]
@@ -12,6 +16,7 @@ pub struct RenderContext<'bindings, S: Surface> {
     bindings: &'bindings Bindings<S>,
     target: &'static str,
     custom_type_mappings: ResolvedCustomTypeMappings,
+    capability_analysis: Option<BindingCapabilityAnalysis>,
     coverage_mode: CoverageMode,
 }
 
@@ -26,6 +31,7 @@ impl<'bindings, S: Surface> RenderContext<'bindings, S> {
             bindings,
             target,
             custom_type_mappings: ResolvedCustomTypeMappings::default(),
+            capability_analysis: None,
             coverage_mode,
         }
     }
@@ -33,6 +39,12 @@ impl<'bindings, S: Surface> RenderContext<'bindings, S> {
     /// Adds resolved custom type mappings.
     pub fn with_custom_type_mappings(mut self, mappings: ResolvedCustomTypeMappings) -> Self {
         self.custom_type_mappings = mappings;
+        self
+    }
+
+    /// Adds contract-scoped capability analysis for this render.
+    pub(crate) fn with_capability_analysis(mut self, analysis: BindingCapabilityAnalysis) -> Self {
+        self.capability_analysis = Some(analysis);
         self
     }
 
@@ -49,6 +61,16 @@ impl<'bindings, S: Surface> RenderContext<'bindings, S> {
     /// Returns the coverage policy for this render.
     pub const fn coverage_mode(&self) -> CoverageMode {
         self.coverage_mode
+    }
+
+    /// Returns requirements precomputed for one declaration in this contract.
+    pub(crate) fn capability_requirements(
+        &self,
+        declaration: DeclarationId,
+    ) -> Option<&CapabilityRequirements<BindingCapability>> {
+        self.capability_analysis
+            .as_ref()
+            .and_then(|analysis| analysis.declaration_requirements(declaration))
     }
 
     /// Returns the record declaration with the given id.

@@ -7,7 +7,7 @@ use crate::experimental::{
     error::Error,
     expansion::Expansion,
     rust_api,
-    surface::RenderSurface,
+    surface::{InfallibleVoidReturn, RenderSurface},
     wrapper::{self, Render, names},
 };
 
@@ -27,6 +27,7 @@ pub struct RustInvocation {
     call: TokenStream,
     conversions: Vec<TokenStream>,
     writebacks: Vec<TokenStream>,
+    has_ffi_parameters: bool,
 }
 
 impl RustInvocation {
@@ -35,6 +36,7 @@ impl RustInvocation {
         call: TokenStream,
         conversions: Vec<TokenStream>,
         writebacks: Vec<TokenStream>,
+        has_ffi_parameters: bool,
     ) -> Self {
         let span = owner.span();
         Self {
@@ -43,6 +45,7 @@ impl RustInvocation {
             call,
             conversions,
             writebacks,
+            has_ffi_parameters,
         }
     }
 
@@ -53,7 +56,13 @@ impl RustInvocation {
         arguments: Vec<TokenStream>,
     ) -> Self {
         let call = quote! { #function(#(#arguments),*) };
-        Self::new(function, call, conversions, writebacks)
+        Self::new(
+            function,
+            call,
+            conversions,
+            writebacks,
+            !arguments.is_empty(),
+        )
     }
 }
 
@@ -182,10 +191,27 @@ where
             call,
             conversions,
             writebacks,
+            has_ffi_parameters,
             ..
         } = input.invocation;
         let locals = names::Locals::new(span);
         match input.returns.plan() {
+            ReturnPlan::Void
+                if S::INFALLIBLE_VOID_RETURN == InfallibleVoidReturn::Direct
+                    && !has_ffi_parameters
+                    && conversions.is_empty()
+                    && writebacks.is_empty() =>
+            {
+                Ok(Tokens {
+                    items: Vec::new(),
+                    ffi_parameters: Vec::new(),
+                    return_type: TokenStream::new(),
+                    body: quote! {
+                        #(#conversions)*
+                        #call;
+                    },
+                })
+            }
             ReturnPlan::Void => Ok(Tokens {
                 items: Vec::new(),
                 ffi_parameters: Vec::new(),
@@ -252,7 +278,7 @@ where
                     "binding encoded return requires a source return type",
                 ))?;
                 let result = locals.result();
-                let encoded_input = match input.source.borrowed_constant() {
+                let encoded_input = match input.source.borrowed_value()? {
                     true => {
                         encoded::Input::borrowed(codec, *shape, result.clone(), input.expansion)
                     }
@@ -362,7 +388,31 @@ where
                 })
             }
             ReturnPlan::DirectViaOutPointer { .. } => {
-                Err(Error::UnsupportedExpansion("direct out-pointer return"))
+                let rust_type = input.rust_type.as_ref().ok_or(Error::SourceSyntaxMismatch(
+                    "binding direct out-pointer return requires a source return type",
+                ))?;
+                let result = locals.result();
+                let out = locals.return_out();
+                Ok(Tokens {
+                    items: Vec::new(),
+                    ffi_parameters: vec![quote! {
+                        #out: *mut <#rust_type as ::boltffi::__private::Passable>::Out
+                    }],
+                    return_type: TokenStream::new(),
+                    body: quote! {
+                        #(#conversions)*
+                        let #result: #rust_type = #call;
+                        #(#writebacks)*
+                        if !#out.is_null() {
+                            unsafe {
+                                ::core::ptr::write(
+                                    #out,
+                                    <#rust_type as ::boltffi::__private::Passable>::pack(#result),
+                                );
+                            }
+                        }
+                    },
+                })
             }
             ReturnPlan::EncodedViaOutPointer { .. } => {
                 Err(Error::UnsupportedExpansion("encoded out-pointer return"))
@@ -430,10 +480,10 @@ where
                     return #value;
                 })
             }
-            ReturnPlan::ScalarOptionViaReturnSlot { .. } => {
+            ReturnPlan::ScalarOptionViaReturnSlot { primitive } => {
                 <scalar_option::Failure as Render<S, _>>::render(
                     scalar_option::Failure,
-                    scalar_option::FailureInput,
+                    scalar_option::FailureInput::new(*primitive),
                 )
             }
             ReturnPlan::DirectVecViaReturnSlot { .. } => {
@@ -448,6 +498,26 @@ where
                 handle::Failure,
                 handle::FailureInput::new(target.clone(), *carrier),
             ),
+            ReturnPlan::DirectViaOutPointer { .. } => {
+                let rust_type = input
+                    .source
+                    .written_type()?
+                    .ok_or(Error::SourceSyntaxMismatch("direct return type is missing"))?;
+                let output = names::Locals::new(proc_macro2::Span::call_site()).return_out();
+                Ok(quote! {
+                    if !#output.is_null() {
+                        unsafe {
+                            ::core::ptr::write(
+                                #output,
+                                ::core::mem::MaybeUninit::<
+                                    <#rust_type as ::boltffi::__private::Passable>::Out
+                                >::zeroed().assume_init(),
+                            );
+                        }
+                    }
+                    return;
+                })
+            }
             ReturnPlan::ClosureViaOutPointer(_) => Ok(quote! {
                 return ::boltffi::__private::FfiStatus::INVALID_ARG;
             }),

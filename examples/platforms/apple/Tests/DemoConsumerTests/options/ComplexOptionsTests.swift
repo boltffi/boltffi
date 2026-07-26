@@ -68,5 +68,10 @@ final class ComplexOptionsTests: DemoTestCase {
         demoCase("case:options.complex.vec_optional_i32.should_roundtrip_all_none")
         let allNone: [Int32?] = [nil, nil, nil]
         XCTAssertEqual(echoVecOptionalI32(v: allNone), allNone)
+
+        demoCase("case:options.complex.shape.should_return_radius_for_circle")
+        XCTAssertEqual(radiusIfCircle(shape: .circle(radius: 5.0)), 5.0)
+        demoCase("case:options.complex.shape.should_return_none_for_non_circle")
+        XCTAssertNil(radiusIfCircle(shape: .rectangle(width: 3.0, height: 4.0)))
     }
 }

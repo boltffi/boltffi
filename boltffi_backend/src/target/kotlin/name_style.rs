@@ -4,12 +4,8 @@ use std::path::PathBuf;
 use boltffi_binding::{CanonicalName, NamePart};
 
 use crate::{
-    bridge::jni::JvmClassPath,
     core::{Error, Result, name_case},
-    target::kotlin::{
-        KotlinHost,
-        syntax::{Identifier, TypeName},
-    },
+    target::kotlin::syntax::{Identifier, TypeName},
 };
 
 /// A Kotlin package name backed by the JVM package grammar.
@@ -24,12 +20,6 @@ pub struct KotlinFile {
     name: String,
 }
 
-/// A native library name accepted by Kotlin's runtime loader.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct KotlinLibrary {
-    name: String,
-}
-
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Name {
     source: CanonicalName,
@@ -39,7 +29,9 @@ impl KotlinPackage {
     /// Parses a Kotlin package name.
     pub fn parse(name: impl Into<String>) -> Result<Self> {
         let name = name.into();
-        JvmClassPath::new(name.clone(), "Native")?;
+        name.split('.')
+            .map(Identifier::parse)
+            .collect::<Result<Vec<_>>>()?;
         Ok(Self { name })
     }
 
@@ -96,33 +88,6 @@ impl fmt::Display for KotlinFile {
     }
 }
 
-impl KotlinLibrary {
-    /// Parses a Kotlin native library load name.
-    pub fn parse(name: impl Into<String>) -> Result<Self> {
-        let name = name.into();
-        if !name.is_empty()
-            && !name
-                .chars()
-                .any(|character| matches!(character, '/' | '\\'))
-        {
-            Ok(Self { name })
-        } else {
-            Err(KotlinHost::unsupported("kotlin native library name"))
-        }
-    }
-
-    /// Returns the library name passed to Kotlin's runtime loader.
-    pub fn as_str(&self) -> &str {
-        &self.name
-    }
-}
-
-impl fmt::Display for KotlinLibrary {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(self.as_str())
-    }
-}
-
 impl Name {
     pub fn new(name: &CanonicalName) -> Self {
         Self {
@@ -170,5 +135,24 @@ impl Name {
             .map(str::to_ascii_uppercase)
             .collect::<Vec<_>>()
             .join("_")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::KotlinPackage;
+
+    #[test]
+    fn package_requires_kotlin_source_identifiers() {
+        ["9demo", "demo-name", "demo.😀", "demo..nested"]
+            .into_iter()
+            .for_each(|package| assert!(KotlinPackage::parse(package).is_err()));
+    }
+
+    #[test]
+    fn package_accepts_ascii_source_identifiers() {
+        let package = KotlinPackage::parse("com.boltffi.demo").expect("valid Kotlin package");
+
+        assert_eq!(package.as_str(), "com.boltffi.demo");
     }
 }

@@ -8,7 +8,7 @@
 
 use boltffi_binding::{Bindings, Surface};
 
-use crate::core::{BridgeContract, GeneratedOutput, LanguageSyntax, Result, contract::sealed};
+use crate::core::{BridgeContract, GeneratedOutput, Result, contract::sealed};
 
 /// Backend for one bridge layer.
 #[allow(private_bounds)]
@@ -19,9 +19,6 @@ pub trait BridgeBackend: sealed::BridgeBackend {
     type Input;
     /// Contract produced for layers or hosts above this bridge.
     type Contract: BridgeContract<Surface = Self::Surface>;
-    /// Language syntax fragments this bridge emits.
-    type Syntax: LanguageSyntax;
-
     /// Builds the bridge contract from the input value.
     fn build_contract(&self, input: &Self::Input) -> Result<Self::Contract>;
 

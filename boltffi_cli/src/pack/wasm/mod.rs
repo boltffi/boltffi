@@ -3,7 +3,12 @@ mod npm;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::build::{BuildOptions, Builder, OutputCallback, all_successful, failed_targets};
+use boltffi_binding::BindingMetadataSurface;
+
+use crate::build::{
+    BindingExpansion, BuildOptions, BuildSelection, Builder, OutputCallback, all_successful,
+    failed_targets,
+};
 use crate::cli::{CliError, Result};
 use crate::commands::generate::{GenerateOptions, GenerateTarget, run_generate_with_output};
 use crate::commands::pack::PackWasmOptions;
@@ -91,7 +96,7 @@ pub(crate) fn pack_wasm(
                 target: GenerateTarget::Typescript,
                 output: Some(config.wasm_typescript_output()),
                 experimental: false,
-                ir: false,
+                ir: true,
                 cargo_args: build_cargo_args.clone(),
             },
         )?;
@@ -168,11 +173,14 @@ fn build_wasm_target(
         None
     };
 
+    let expansion = BindingExpansion::resolve_for_surface(
+        config,
+        build_cargo_args,
+        BindingMetadataSurface::Wasm32,
+    )?;
     let build_options = BuildOptions {
         release: matches!(profile, WasmProfile::Release),
-        package: Some(config.library_name().to_string()),
-        cargo_args: build_cargo_args.to_vec(),
-        env: Vec::new(),
+        selection: BuildSelection::Expanded(Box::new(expansion)),
         on_output,
     };
     let builder = Builder::new(config, build_options);

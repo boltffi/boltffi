@@ -588,15 +588,15 @@ impl<'a> StructWireExpansion<'a> {
             .zip(render_context.field_types.iter())
             .map(|(field_name, field_type)| {
                 let decode_expr = WireTypePlan::new(field_type, self.custom_types)
-                    .decode_from_expr(quote! { &buf[position..] });
+                    .decode_from_expr(quote! { &buf[__boltffi_position..] });
                 let field_name_literal = field_name.to_string();
                 quote! {
-                    let (#field_name, size) = #decode_expr.map_err(|error| {
+                    let (#field_name, __boltffi_size) = #decode_expr.map_err(|error| {
                         eprintln!("[boltffi] wire decode error in {}.{} at position {} (buf_len={}): {:?}",
-                            #struct_name_literal, #field_name_literal, position, buf.len(), error);
+                            #struct_name_literal, #field_name_literal, __boltffi_position, buf.len(), error);
                         error
                     })?;
-                    position += size;
+                    __boltffi_position += __boltffi_size;
                 }
             });
         let struct_name = render_context.struct_name;
@@ -607,9 +607,9 @@ impl<'a> StructWireExpansion<'a> {
         quote! {
             impl #impl_generics ::boltffi::__private::wire::WireDecode for #struct_name #ty_generics #where_clause {
                 fn decode_from(buf: &[u8]) -> ::boltffi::__private::wire::DecodeResult<Self> {
-                    let mut position = 0usize;
+                    let mut __boltffi_position = 0usize;
                     #(#decode_fields)*
-                    Ok((Self { #(#field_names_for_struct),* }, position))
+                    Ok((Self { #(#field_names_for_struct),* }, __boltffi_position))
                 }
             }
         }
@@ -764,17 +764,17 @@ impl<'a> EnumWireExpansion<'a> {
                             let encode_expr = WireTypePlan::new(field_type, self.custom_types)
                                 .encode_to_expr(quote! { #binding }, quote! { #field_buffer });
                             quote! {
-                                let #field_buffer = &mut buf[written..];
-                                written += #encode_expr;
+                                let #field_buffer = &mut buf[__boltffi_written..];
+                                __boltffi_written += #encode_expr;
                             }
                         },
                     );
                     quote! {
                         Self::#variant_name(#(#field_bindings),*) => {
                             buf[0..4].copy_from_slice(&(#discriminant_i32 as i32).to_le_bytes());
-                            let mut written = 4usize;
+                            let mut __boltffi_written = 4usize;
                             #(#encode_fields)*
-                            written
+                            __boltffi_written
                         }
                     }
                 }
@@ -799,16 +799,16 @@ impl<'a> EnumWireExpansion<'a> {
                                 let encode_expr = WireTypePlan::new(field_type, self.custom_types)
                                     .encode_to_expr(quote! { #binding }, quote! { #field_buffer });
                                 quote! {
-                                    let #field_buffer = &mut buf[written..];
-                                    written += #encode_expr;
+                                    let #field_buffer = &mut buf[__boltffi_written..];
+                                    __boltffi_written += #encode_expr;
                                 }
                             });
                     quote! {
                         Self::#variant_name { #(#field_names),* } => {
                             buf[0..4].copy_from_slice(&(#discriminant_i32 as i32).to_le_bytes());
-                            let mut written = 4usize;
+                            let mut __boltffi_written = 4usize;
                             #(#encode_fields)*
-                            written
+                            __boltffi_written
                         }
                     }
                 }
@@ -858,18 +858,18 @@ impl<'a> EnumWireExpansion<'a> {
                     let decode_fields = field_bindings.iter().zip(field_types.iter()).map(
                         |(binding, field_type)| {
                             let decode_expr = WireTypePlan::new(field_type, self.custom_types)
-                                .decode_from_expr(quote! { &buf[position..] });
+                                .decode_from_expr(quote! { &buf[__boltffi_position..] });
                             quote! {
-                                let (#binding, size) = #decode_expr?;
-                                position += size;
+                                let (#binding, __boltffi_size) = #decode_expr?;
+                                __boltffi_position += __boltffi_size;
                             }
                         },
                     );
                     quote! {
                         #discriminant_i32 => {
-                            let mut position = 4usize;
+                            let mut __boltffi_position = 4usize;
                             #(#decode_fields)*
-                            Ok((Self::#variant_name(#(#field_bindings),*), position))
+                            Ok((Self::#variant_name(#(#field_bindings),*), __boltffi_position))
                         }
                     }
                 }
@@ -887,18 +887,18 @@ impl<'a> EnumWireExpansion<'a> {
                     let decode_fields = field_names.iter().zip(field_types.iter()).map(
                         |(field_name, field_type)| {
                             let decode_expr = WireTypePlan::new(field_type, self.custom_types)
-                                .decode_from_expr(quote! { &buf[position..] });
+                                .decode_from_expr(quote! { &buf[__boltffi_position..] });
                             quote! {
-                                let (#field_name, size) = #decode_expr?;
-                                position += size;
+                                let (#field_name, __boltffi_size) = #decode_expr?;
+                                __boltffi_position += __boltffi_size;
                             }
                         },
                     );
                     quote! {
                         #discriminant_i32 => {
-                            let mut position = 4usize;
+                            let mut __boltffi_position = 4usize;
                             #(#decode_fields)*
-                            Ok((Self::#variant_name { #(#field_names),* }, position))
+                            Ok((Self::#variant_name { #(#field_names),* }, __boltffi_position))
                         }
                     }
                 }
@@ -922,5 +922,145 @@ impl<'a> EnumWireExpansion<'a> {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use syn::parse_quote;
+
+    fn render_struct(item: &ItemStruct) -> String {
+        let custom_types = CustomTypeRegistry::default();
+        generate_wire_impls(item, &custom_types).to_string()
+    }
+
+    fn render_enum(item: &ItemEnum) -> String {
+        let custom_types = CustomTypeRegistry::default();
+        generate_enum_wire_impls(item, &custom_types).to_string()
+    }
+
+    #[test]
+    fn struct_with_size_field_uses_prefixed_decode_bindings() {
+        let item: ItemStruct = parse_quote! {
+            pub struct Buffer {
+                pub name: String,
+                pub size: u32,
+            }
+        };
+        let generated = render_struct(&item);
+
+        assert!(
+            !generated.contains("let (size , size)"),
+            "duplicate `size` binding still present: {generated}"
+        );
+        assert!(
+            generated.contains("__boltffi_size"),
+            "expected __boltffi_size in decode, got: {generated}"
+        );
+        assert!(
+            generated.contains("__boltffi_position"),
+            "expected __boltffi_position in decode, got: {generated}"
+        );
+    }
+
+    #[test]
+    fn struct_with_position_field_uses_prefixed_decode_bindings() {
+        let item: ItemStruct = parse_quote! {
+            pub struct Cursor {
+                pub position: u32,
+                pub data: String,
+            }
+        };
+        let generated = render_struct(&item);
+
+        assert!(
+            generated.contains("let (position , __boltffi_size)"),
+            "expected field `position` bound alongside __boltffi_size, got: {generated}"
+        );
+        assert!(
+            generated.contains("__boltffi_position += __boltffi_size"),
+            "expected __boltffi_position increment, got: {generated}"
+        );
+    }
+
+    #[test]
+    fn enum_named_variant_with_size_field_uses_prefixed_decode_bindings() {
+        let item: ItemEnum = parse_quote! {
+            pub enum Message {
+                Data { size: u32, payload: String },
+                Empty,
+            }
+        };
+        let generated = render_enum(&item);
+
+        assert!(
+            !generated.contains("let (size , size)"),
+            "duplicate `size` binding still present: {generated}"
+        );
+        assert!(
+            generated.contains("let (size , __boltffi_size)"),
+            "expected field `size` bound alongside __boltffi_size, got: {generated}"
+        );
+        assert!(
+            generated.contains("__boltffi_position"),
+            "expected __boltffi_position in enum decode, got: {generated}"
+        );
+    }
+
+    #[test]
+    fn enum_named_variant_with_written_field_uses_prefixed_encode_bindings() {
+        let item: ItemEnum = parse_quote! {
+            pub enum Log {
+                Entry { written: u64, text: String },
+                None,
+            }
+        };
+        let generated = render_enum(&item);
+
+        assert!(
+            generated.contains("__boltffi_written"),
+            "expected __boltffi_written in enum encode, got: {generated}"
+        );
+        assert!(
+            generated.contains("let mut __boltffi_written = 4usize"),
+            "expected prefixed written counter, got: {generated}"
+        );
+    }
+
+    #[test]
+    fn enum_unnamed_variant_decode_uses_prefixed_bindings() {
+        let item: ItemEnum = parse_quote! {
+            pub enum Shape {
+                Rect(u32, u32),
+                Circle(u32),
+            }
+        };
+        let generated = render_enum(&item);
+
+        assert!(
+            generated.contains("__boltffi_size"),
+            "expected __boltffi_size in enum unnamed decode, got: {generated}"
+        );
+        assert!(
+            generated.contains("__boltffi_position"),
+            "expected __boltffi_position in enum unnamed decode, got: {generated}"
+        );
+    }
+
+    #[test]
+    fn struct_encode_with_size_field_accesses_via_self() {
+        let item: ItemStruct = parse_quote! {
+            pub struct Buffer {
+                pub name: String,
+                pub size: u32,
+            }
+        };
+        let generated = render_struct(&item);
+
+        assert!(
+            generated.contains("& self . size"),
+            "expected self.size access in encode, got: {generated}"
+        );
     }
 }

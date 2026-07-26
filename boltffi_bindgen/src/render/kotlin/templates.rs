@@ -1,11 +1,12 @@
 use askama::Template;
 
 use super::plan::{
-    KotlinConstructor, KotlinMethod,
+    KotlinConstructor, KotlinFunction, KotlinMethod,
     KotlinMethodImpl::{AsyncMethod, SyncMethod},
     KotlinModule, KotlinStreamMode,
 };
 
+/// Renders doc text as a Kotlin KDoc block with block-comment delimiters neutralized.
 pub fn kdoc_block(doc: &Option<String>, indent: &str) -> String {
     match doc {
         Some(text) => {
@@ -14,6 +15,7 @@ pub fn kdoc_block(doc: &Option<String>, indent: &str) -> String {
                 if line.is_empty() {
                     result.push_str(&format!("{indent} *\n"));
                 } else {
+                    let line = sanitize_kdoc_line(line);
                     result.push_str(&format!("{indent} * {line}\n"));
                 }
             });
@@ -22,6 +24,10 @@ pub fn kdoc_block(doc: &Option<String>, indent: &str) -> String {
         }
         None => String::new(),
     }
+}
+
+fn sanitize_kdoc_line(line: &str) -> String {
+    line.replace("/*", "/ *").replace("*/", "* /")
 }
 
 pub fn kotlin_integer_literal(value: &i128, kotlin_type: &str) -> String {
@@ -278,6 +284,10 @@ pub struct ClosureInterfaceTemplate<'a> {
 pub struct KotlinEmitter;
 
 impl KotlinEmitter {
+    pub fn emit_function(function: &KotlinFunction) -> String {
+        render_function(function)
+    }
+
     pub fn emit(module: &KotlinModule) -> String {
         let preamble = PreambleTemplate {
             package_name: &module.package_name,
@@ -385,58 +395,10 @@ impl KotlinEmitter {
             declarations.push(rendered);
         });
 
-        module.functions.iter().for_each(|function| {
-            let rendered = if function.is_async() {
-                let async_call = function.async_call.as_ref().unwrap();
-                AsyncFunctionTemplate {
-                    func_name: &function.func_name,
-                    signature_params: &function.signature_params,
-                    return_type: function.return_type.as_deref(),
-                    wire_writers: &function.wire_writers,
-                    wire_writer_closes: &function.wire_writer_closes,
-                    native_args: &function.native_args,
-                    throws: function.throws,
-                    err_type: &function.err_type,
-                    ffi_name: &function.ffi_name,
-                    include_handle: false,
-                    ffi_poll: &async_call.poll,
-                    ffi_complete: &async_call.complete,
-                    ffi_cancel: &async_call.cancel,
-                    ffi_free: &async_call.free,
-                    return_is_unit: async_call.return_is_unit,
-                    return_is_direct: async_call.return_is_direct,
-                    direct_return_is_nullable: async_call.direct_return_is_nullable,
-                    return_cast: &async_call.return_cast,
-                    decode_expr: &async_call.decode_expr,
-                    is_blittable_return: async_call.is_blittable_return,
-                    doc: &function.doc,
-                }
-                .render()
-                .unwrap()
-            } else {
-                WireFunctionTemplate {
-                    func_name: &function.func_name,
-                    signature_params: &function.signature_params,
-                    return_type: function.return_type.as_deref(),
-                    wire_writers: &function.wire_writers,
-                    wire_writer_closes: &function.wire_writer_closes,
-                    native_args: &function.native_args,
-                    throws: function.throws,
-                    err_type: &function.err_type,
-                    ffi_name: &function.ffi_name,
-                    return_is_unit: function.return_is_unit,
-                    return_is_direct: function.return_is_direct,
-                    direct_return_is_nullable: function.direct_return_is_nullable,
-                    return_cast: &function.return_cast,
-                    decode_expr: &function.decode_expr,
-                    is_blittable_return: function.is_blittable_return,
-                    doc: &function.doc,
-                }
-                .render()
-                .unwrap()
-            };
-            declarations.push(rendered);
-        });
+        module
+            .functions
+            .iter()
+            .for_each(|function| declarations.push(render_function(function)));
 
         module.classes.iter().for_each(|class| {
             let rendered = ClassTemplate {
@@ -529,6 +491,58 @@ impl KotlinEmitter {
     }
 }
 
+fn render_function(function: &KotlinFunction) -> String {
+    if function.is_async() {
+        let async_call = function.async_call.as_ref().unwrap();
+        AsyncFunctionTemplate {
+            func_name: &function.func_name,
+            signature_params: &function.signature_params,
+            return_type: function.return_type.as_deref(),
+            wire_writers: &function.wire_writers,
+            wire_writer_closes: &function.wire_writer_closes,
+            native_args: &function.native_args,
+            throws: function.throws,
+            err_type: &function.err_type,
+            ffi_name: &function.ffi_name,
+            include_handle: false,
+            ffi_poll: &async_call.poll,
+            ffi_complete: &async_call.complete,
+            ffi_cancel: &async_call.cancel,
+            ffi_free: &async_call.free,
+            return_is_unit: async_call.return_is_unit,
+            return_is_direct: async_call.return_is_direct,
+            direct_return_is_nullable: async_call.direct_return_is_nullable,
+            return_cast: &async_call.return_cast,
+            decode_expr: &async_call.decode_expr,
+            is_blittable_return: async_call.is_blittable_return,
+            doc: &function.doc,
+        }
+        .render()
+        .unwrap()
+    } else {
+        WireFunctionTemplate {
+            func_name: &function.func_name,
+            signature_params: &function.signature_params,
+            return_type: function.return_type.as_deref(),
+            wire_writers: &function.wire_writers,
+            wire_writer_closes: &function.wire_writer_closes,
+            native_args: &function.native_args,
+            throws: function.throws,
+            err_type: &function.err_type,
+            ffi_name: &function.ffi_name,
+            return_is_unit: function.return_is_unit,
+            return_is_direct: function.return_is_direct,
+            direct_return_is_nullable: function.direct_return_is_nullable,
+            return_cast: &function.return_cast,
+            decode_expr: &function.decode_expr,
+            is_blittable_return: function.is_blittable_return,
+            doc: &function.doc,
+        }
+        .render()
+        .unwrap()
+    }
+}
+
 #[cfg(all(test, not(miri)))]
 mod tests {
     use askama::Template;
@@ -540,6 +554,20 @@ mod tests {
         KotlinRecordField, KotlinSignatureParam, KotlinWireWriter,
     };
     use super::*;
+
+    #[test]
+    fn kdoc_block_neutralizes_embedded_block_comment_markers() {
+        let doc = Some("Safe docs */ fun injected() {} /* still docs".to_string());
+        let rendered = kdoc_block(&doc, "");
+        let body = rendered
+            .strip_prefix("/**\n")
+            .and_then(|source| source.strip_suffix(" */\n"))
+            .expect("KDoc wrapper");
+
+        assert!(!body.contains("*/"), "{rendered}");
+        assert!(!body.contains("/*"), "{rendered}");
+        assert!(body.contains("Safe docs * / fun injected() {} / * still docs"));
+    }
 
     #[test]
     fn snapshot_record_with_field_docs() {

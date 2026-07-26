@@ -14,16 +14,43 @@ FfiStatus boltffi_method_record_demo_point_move_by(___Point receiver, ___Point *
 <jni source includes>
 <jni exception helpers>
 <jni status helper>
-<jni record helpers>
-JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1method_1record_1demo_1point_1move_1by(JNIEnv *env, jclass cls, jbyteArray receiver, jdouble dx) {
+static bool boltffi_jni_direct_buffer_address(JNIEnv *env, jobject buffer, jlong required_capacity, void **address) {
+    if (buffer == NULL) {
+        boltffi_jni_throw_illegal_argument(env, "BoltFFI direct buffer argument was null");
+        return false;
+    }
+    if (required_capacity < 0) {
+        boltffi_jni_throw_illegal_argument(env, "BoltFFI direct buffer length was negative");
+        return false;
+    }
+    jlong capacity = (*env)->GetDirectBufferCapacity(env, buffer);
+    if (capacity < 0) {
+        boltffi_jni_throw_illegal_argument(env, "BoltFFI argument was not a direct buffer");
+        return false;
+    }
+    if (capacity < required_capacity) {
+        boltffi_jni_throw_illegal_argument(env, "BoltFFI direct buffer capacity was too small");
+        return false;
+    }
+    *address = (*env)->GetDirectBufferAddress(env, buffer);
+    if (*address == NULL && required_capacity != 0) {
+        boltffi_jni_throw_illegal_argument(env, "BoltFFI direct buffer address was unavailable");
+        return false;
+    }
+    return true;
+}
+
+JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1method_1record_1demo_1point_1move_1by(JNIEnv *env, jclass cls, jobject receiver, jdouble dx) {
     (void)cls;
 
+    void *__boltffi_receiver_ptr = NULL;
     ___Point __boltffi_receiver_value;
     ___Point __boltffi_receiver_out;
 
-    if (!boltffi_jni_read_record(env, receiver, (uintptr_t)sizeof(___Point), &__boltffi_receiver_value)) {
+    if (!boltffi_jni_direct_buffer_address(env, receiver, (jlong)sizeof(___Point), &__boltffi_receiver_ptr)) {
         goto __boltffi_error;
     }
+    memcpy(&__boltffi_receiver_value, __boltffi_receiver_ptr, sizeof(___Point));
 
     FfiStatus __boltffi_status = boltffi_method_record_demo_point_move_by(__boltffi_receiver_value, &__boltffi_receiver_out, dx);
 
@@ -32,10 +59,7 @@ JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1method_1record_1dem
         return;
     }
 
-    (*env)->SetByteArrayRegion(env, receiver, 0, (jsize)sizeof(___Point), (const jbyte *)&__boltffi_receiver_out);
-    if ((*env)->ExceptionCheck(env)) {
-        goto __boltffi_error;
-    }
+    memcpy(__boltffi_receiver_ptr, &__boltffi_receiver_out, sizeof(___Point));
     return;
 __boltffi_error:
     return;

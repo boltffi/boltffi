@@ -13,7 +13,10 @@ use crate::{
         CBridgeContract, ClosureReturnParameter, Function as CFunction, ParameterGroup,
         ReturnChannel,
     },
-    core::{AuxChunk, Diagnostic, Emitted, Error, HelperId, RenderContext, Result, TextChunk},
+    core::{
+        AuxChunk, Diagnostic, Emitted, Error, HelperId, RenderContext, Result, TextChunk,
+        lexical::{LexicalPlan, LocalReference, Scope, with_lexical_plan},
+    },
     target::swift::{
         SwiftHost,
         c_abi::{BorrowedVector, DirectValue, DirectVector, ReturnedVector},
@@ -21,13 +24,15 @@ use crate::{
             ArgumentBuffer, OwnedBuffer, ReadExpression, Reader, ScalarOption, WriteStatement,
             Writer,
         },
+        lexical::ScopeForm,
         name_style::{GeneratedLocal, Name},
         primitive::SwiftPrimitive,
         render::callback::CallbackHandle,
         render::closure::ClosureArgument,
         render::{Documentation, SwiftType},
         syntax::{
-            ArgumentList, Expression, Identifier, Literal, ParameterList, Statement, TypeName,
+            ArgumentList, Expression, Identifier, Literal, ParameterList, Statement, Syntax,
+            TypeName,
         },
     },
 };
@@ -163,6 +168,61 @@ enum BodyExit {
     ThrowingReturnValue,
     ThrowingEffect,
     CompleteEffect,
+}
+
+enum ScopedInitializerValue<'plan> {
+    Bound {
+        source: String,
+        reference: LocalReference<'plan, Syntax>,
+    },
+    Terminal(String),
+}
+
+impl<'plan> ScopedInitializerValue<'plan> {
+    fn into_bound(self) -> Result<(String, LocalReference<'plan, Syntax>)> {
+        match self {
+            Self::Bound { source, reference } => Ok((source, reference)),
+            Self::Terminal(_) => Err(Error::UnexpectedBindingShape {
+                layer: "Swift lexical planner",
+                shape: "scoped value initializer without a bound result",
+            }),
+        }
+    }
+
+    fn into_scope_body(
+        self,
+        lexical: &LexicalPlan<'plan, Syntax>,
+        scope: Scope<'plan, Syntax>,
+        indent: &str,
+    ) -> Result<String> {
+        match self {
+            Self::Bound { source, reference } => {
+                let value =
+                    lexical
+                        .resolve(scope, &reference)
+                        .ok_or(Error::UnexpectedBindingShape {
+                            layer: "Swift lexical planner",
+                            shape: "nested value initializer local escaped its scope",
+                        })?;
+                Ok([
+                    source,
+                    Statement::returns(Expression::identifier(value.clone())).indented(indent),
+                ]
+                .join("\n"))
+            }
+            Self::Terminal(source) => Ok(source),
+        }
+    }
+
+    fn wrap(self, render: impl FnOnce(String) -> Result<String>) -> Result<Self> {
+        match self {
+            Self::Bound { source, reference } => Ok(Self::Bound {
+                source: render(source)?,
+                reference,
+            }),
+            Self::Terminal(source) => render(source).map(Self::Terminal),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1175,18 +1235,32 @@ impl Invocation {
     }
 
     fn render_value_initializer_body(&self, indent: &str) -> Result<String> {
+        with_lexical_plan::<Syntax, _>(|lexical| {
+            self.render_value_initializer_body_with(indent, lexical)
+        })
+    }
+
+    fn render_value_initializer_body_with<'plan>(
+        &self,
+        indent: &str,
+        lexical: &mut LexicalPlan<'plan, Syntax>,
+    ) -> Result<String> {
+        let scope = self.reserve_value_initializer_parameters(lexical)?;
         if Self::has_scoped_arguments(&self.arguments) {
-            let value = GeneratedLocal::ReturnBuffer.suffixed("value")?;
-            let setup = Self::render_scoped_value_initializer_value(
+            let (setup, reference) = Self::render_scoped_value_initializer_value(
                 &self.arguments,
                 &self.returns,
                 &self.error,
                 self.call(),
                 indent,
-                &value,
-            )?;
-            let assign = Return::assign_initializer_value(
-                Expression::identifier(value),
+                lexical,
+                scope,
+            )?
+            .into_bound()?;
+            let assign = Return::assign_initializer_reference(
+                lexical,
+                scope,
+                reference,
                 indent,
                 self.returns.optional(),
             )?;
@@ -1198,7 +1272,26 @@ impl Invocation {
             &self.error,
             self.call(),
             indent,
+            lexical,
+            scope,
         )
+    }
+
+    fn reserve_value_initializer_parameters<'plan>(
+        &self,
+        lexical: &mut LexicalPlan<'plan, Syntax>,
+    ) -> Result<Scope<'plan, Syntax>> {
+        let scope = lexical.root();
+        self.parameters.iter().try_for_each(|parameter| {
+            lexical
+                .reserve_external(scope, parameter.name.clone())
+                .map(|_| ())
+                .ok_or(Error::UnexpectedBindingShape {
+                    layer: "Swift lexical planner",
+                    shape: "duplicate value initializer parameter",
+                })
+        })?;
+        Ok(scope)
     }
 
     fn render_factory_body(&self, indent: &str, fallible: bool) -> Result<String> {
@@ -1323,12 +1416,14 @@ impl Invocation {
         }
     }
 
-    fn render_scoped_value_initializer_body(
+    fn render_scoped_value_initializer_body<'plan>(
         arguments: &[Argument],
         returns: &Return,
         error: &ErrorConversion,
         call: Expression,
         indent: &str,
+        lexical: &mut LexicalPlan<'plan, Syntax>,
+        scope: Scope<'plan, Syntax>,
     ) -> Result<String> {
         match arguments.split_first() {
             Some((Argument::Encoded(argument), rest)) => Ok(argument.wrap(
@@ -1338,6 +1433,8 @@ impl Invocation {
                     error,
                     call,
                     &format!("{indent}    "),
+                    lexical,
+                    scope,
                 )?,
                 indent,
                 BodyExit::CompleteEffect,
@@ -1349,6 +1446,8 @@ impl Invocation {
                     error,
                     call,
                     &format!("{indent}    "),
+                    lexical,
+                    scope,
                 )?,
                 indent,
             ),
@@ -1359,77 +1458,94 @@ impl Invocation {
                     error,
                     call,
                     &format!("{indent}    "),
+                    lexical,
+                    scope,
                 )?,
                 indent,
                 false,
             )),
             Some((Argument::Closure(argument), rest)) => Ok(argument.wrap(
-                Self::render_scoped_value_initializer_body(rest, returns, error, call, indent)?,
+                Self::render_scoped_value_initializer_body(
+                    rest, returns, error, call, indent, lexical, scope,
+                )?,
                 indent,
             )),
-            Some((Argument::Direct(_), rest)) => {
-                Self::render_scoped_value_initializer_body(rest, returns, error, call, indent)
-            }
-            None => returns.value_initializer_body(call, error, indent),
+            Some((Argument::Direct(_), rest)) => Self::render_scoped_value_initializer_body(
+                rest, returns, error, call, indent, lexical, scope,
+            ),
+            None => returns.value_initializer_body(call, error, indent, lexical, scope),
         }
     }
 
-    fn render_scoped_value_initializer_value(
+    fn render_scoped_value_initializer_value<'plan>(
         arguments: &[Argument],
         returns: &Return,
         error: &ErrorConversion,
         call: Expression,
         indent: &str,
-        binding: &Identifier,
-    ) -> Result<String> {
+        lexical: &mut LexicalPlan<'plan, Syntax>,
+        scope: Scope<'plan, Syntax>,
+    ) -> Result<ScopedInitializerValue<'plan>> {
         match arguments.split_first() {
-            Some((Argument::Encoded(argument), rest)) => Ok(argument.bind(
-                binding,
-                Self::render_scoped_value_initializer_value(
+            Some((Argument::Encoded(argument), rest)) => {
+                let declaration = lexical
+                    .allocate(scope, &GeneratedLocal::ReturnBuffer.suffixed_stem("value"))?;
+                let closure = lexical.child(scope, ScopeForm::Closure);
+                let nested_indent = format!("{indent}    ");
+                let body = Self::render_scoped_value_initializer_value(
                     rest,
                     returns,
                     error,
                     call,
-                    &format!("{indent}    "),
-                    binding,
-                )?,
-                indent,
-                error.fallible(),
+                    &nested_indent,
+                    lexical,
+                    closure,
+                )?
+                .into_scope_body(lexical, closure, &nested_indent)?;
+                let (source, reference) = lexical
+                    .declare(declaration, |binding| {
+                        argument.bind(binding, body, indent, error.fallible())
+                    })
+                    .into_parts();
+                Ok(ScopedInitializerValue::Bound { source, reference })
+            }
+            Some((Argument::MutableEncoded(_), _)) => Err(SwiftHost::unsupported(
+                "mutable encoded value initializer argument",
             )),
-            Some((Argument::MutableEncoded(argument), rest)) => argument.wrap(
-                Self::render_scoped_value_initializer_value(
+            Some((Argument::DirectVector(argument), rest)) => {
+                let declaration = lexical
+                    .allocate(scope, &GeneratedLocal::ReturnBuffer.suffixed_stem("value"))?;
+                let closure = lexical.child(scope, ScopeForm::Closure);
+                let nested_indent = format!("{indent}    ");
+                let body = Self::render_scoped_value_initializer_value(
                     rest,
                     returns,
                     error,
                     call,
-                    &format!("{indent}    "),
-                    binding,
-                )?,
-                indent,
-            ),
-            Some((Argument::DirectVector(argument), rest)) => Ok(argument.wrap_binding(
-                binding,
+                    &nested_indent,
+                    lexical,
+                    closure,
+                )?
+                .into_scope_body(lexical, closure, &nested_indent)?;
+                let (source, reference) = lexical
+                    .declare(declaration, |binding| {
+                        argument.wrap_binding(binding, body, indent, error.fallible())
+                    })
+                    .into_parts();
+                Ok(ScopedInitializerValue::Bound { source, reference })
+            }
+            Some((Argument::Closure(argument), rest)) => {
                 Self::render_scoped_value_initializer_value(
-                    rest,
-                    returns,
-                    error,
-                    call,
-                    &format!("{indent}    "),
-                    binding,
-                )?,
-                indent,
-                error.fallible(),
-            )),
-            Some((Argument::Closure(argument), rest)) => Ok(argument.wrap(
-                Self::render_scoped_value_initializer_value(
-                    rest, returns, error, call, indent, binding,
-                )?,
-                indent,
-            )),
+                    rest, returns, error, call, indent, lexical, scope,
+                )?
+                .wrap(|source| Ok(argument.wrap(source, indent)))
+            }
             Some((Argument::Direct(_), rest)) => Self::render_scoped_value_initializer_value(
-                rest, returns, error, call, indent, binding,
+                rest, returns, error, call, indent, lexical, scope,
             ),
-            None => returns.body(call, error, indent),
+            None => returns
+                .body(call, error, indent)
+                .map(ScopedInitializerValue::Terminal),
         }
     }
 
@@ -2114,14 +2230,24 @@ impl<'plan> ParamPlanRender<'plan, Native, IntoRust> for ParameterPlan<'_, '_> {
         })
     }
 
-    fn direct_vector(&mut self, element: &'plan DirectVectorElementType) -> Self::Output {
+    fn direct_vector(
+        &mut self,
+        element: &'plan DirectVectorElementType,
+        receive: Receive,
+    ) -> Self::Output {
         let vector = DirectVector::from_element(element, self.bridge, self.context)?;
+        let ty = match receive {
+            Receive::ByMutRef => TypeName::new(format!("inout {}", vector.ty())),
+            _ => vector.ty().clone(),
+        };
         Ok(Parameter {
             name: self.name.clone(),
-            ty: vector.ty().clone(),
-            argument: Argument::DirectVector(
-                vector.borrowed(&self.source_name, self.name.clone())?,
-            ),
+            ty,
+            argument: Argument::DirectVector(vector.borrowed(
+                &self.source_name,
+                self.name.clone(),
+                receive,
+            )?),
         })
     }
 }
@@ -2372,11 +2498,13 @@ impl Return {
             .join("\n"))
     }
 
-    fn value_initializer_body(
+    fn value_initializer_body<'plan>(
         &self,
         call: Expression,
         error: &ErrorConversion,
         indent: &str,
+        lexical: &mut LexicalPlan<'plan, Syntax>,
+        scope: Scope<'plan, Syntax>,
     ) -> Result<String> {
         let setup = self
             .success
@@ -2385,8 +2513,12 @@ impl Return {
         let error = error.body(call.clone(), indent)?;
         let success = self.success.as_ref().map(SuccessSlot::expression);
         let result = match (success, error.consumes_call()) {
-            (Some(value), _) => Some(self.value_initializer_body_for_value(value, indent)?),
-            (None, false) => Some(self.value_initializer_body_for_value(call, indent)?),
+            (Some(value), _) => {
+                Some(self.value_initializer_body_for_value(value, indent, lexical, scope)?)
+            }
+            (None, false) => {
+                Some(self.value_initializer_body_for_value(call, indent, lexical, scope)?)
+            }
             (None, true) => None,
         };
         Ok([setup, Some(error.text), result]
@@ -2397,15 +2529,21 @@ impl Return {
             .join("\n"))
     }
 
-    fn value_initializer_body_for_value(&self, value: Expression, indent: &str) -> Result<String> {
+    fn value_initializer_body_for_value<'plan>(
+        &self,
+        value: Expression,
+        indent: &str,
+        lexical: &mut LexicalPlan<'plan, Syntax>,
+        scope: Scope<'plan, Syntax>,
+    ) -> Result<String> {
         match &self.conversion {
             ReturnConversion::Encoded(encoded)
                 if value == Expression::identifier(encoded.buffer.binding().clone()) =>
             {
-                encoded.value_initializer_body_from_buffer(indent, self.optional)
+                encoded.value_initializer_body_from_buffer(indent, self.optional, lexical, scope)
             }
             ReturnConversion::Encoded(encoded) => {
-                encoded.value_initializer_body(value, indent, self.optional)
+                encoded.value_initializer_body(value, indent, self.optional, lexical, scope)
             }
             ReturnConversion::DirectVector { .. }
             | ReturnConversion::ClassHandle(_)
@@ -2414,22 +2552,80 @@ impl Return {
                 Err(SwiftHost::unsupported("value initializer return"))
             }
             ReturnConversion::Direct | ReturnConversion::FromC(_) => {
-                Self::assign_initializer_value(self.expression(value), indent, self.optional)
+                Self::assign_initializer_value(
+                    self.expression(value),
+                    indent,
+                    self.optional,
+                    lexical,
+                    scope,
+                )
             }
         }
     }
 
-    fn assign_initializer_value(value: Expression, indent: &str, optional: bool) -> Result<String> {
+    fn assign_initializer_value<'plan>(
+        value: Expression,
+        indent: &str,
+        optional: bool,
+        lexical: &mut LexicalPlan<'plan, Syntax>,
+        scope: Scope<'plan, Syntax>,
+    ) -> Result<String> {
         if !optional {
             return Ok(Statement::assign("self", value).indented(indent));
         }
-        let binding = GeneratedLocal::ReturnBuffer.suffixed("value")?;
+        let declaration =
+            lexical.allocate(scope, &GeneratedLocal::ReturnBuffer.suffixed_stem("value"))?;
+        let (statement, reference) = lexical
+            .declare(declaration, |binding| {
+                Statement::let_value(binding, value).indented(indent)
+            })
+            .into_parts();
         Ok([
-            Statement::let_value(&binding, value).indented(indent),
-            format!("{indent}guard let {binding} = {binding} else {{ return nil }}"),
-            Statement::assign("self", &binding).indented(indent),
+            statement,
+            Self::assign_initializer_reference(lexical, scope, reference, indent, optional)?,
         ]
         .join("\n"))
+    }
+
+    fn assign_initializer_reference<'plan>(
+        lexical: &mut LexicalPlan<'plan, Syntax>,
+        scope: Scope<'plan, Syntax>,
+        reference: LocalReference<'plan, Syntax>,
+        indent: &str,
+        optional: bool,
+    ) -> Result<String> {
+        let source =
+            lexical
+                .resolve(scope, &reference)
+                .cloned()
+                .ok_or(Error::UnexpectedBindingShape {
+                    layer: "Swift lexical planner",
+                    shape: "invisible value initializer local",
+                })?;
+        if !optional {
+            return Ok(Statement::assign("self", source).indented(indent));
+        }
+        let continuation = lexical.child(scope, ScopeForm::GuardContinuation);
+        let declaration =
+            lexical
+                .shadow(continuation, &reference)
+                .ok_or(Error::UnexpectedBindingShape {
+                    layer: "Swift lexical planner",
+                    shape: "invalid value initializer guard binding",
+                })?;
+        let (guard, guarded) = lexical
+            .declare(declaration, |binding| {
+                format!("{indent}guard let {binding} = {source} else {{ return nil }}")
+            })
+            .into_parts();
+        let value =
+            lexical
+                .resolve(continuation, &guarded)
+                .ok_or(Error::UnexpectedBindingShape {
+                    layer: "Swift lexical planner",
+                    shape: "invisible guarded value initializer local",
+                })?;
+        Ok([guard, Statement::assign("self", value).indented(indent)].join("\n"))
     }
 
     fn factory_body(
@@ -2586,20 +2782,28 @@ impl EncodedReturn {
         .join("\n"))
     }
 
-    fn value_initializer_body(
+    fn value_initializer_body<'plan>(
         &self,
         call: Expression,
         indent: &str,
         optional: bool,
+        lexical: &mut LexicalPlan<'plan, Syntax>,
+        scope: Scope<'plan, Syntax>,
     ) -> Result<String> {
         Ok([
             Statement::let_value(self.buffer.binding(), call).indented(indent),
-            self.value_initializer_body_from_buffer(indent, optional)?,
+            self.value_initializer_body_from_buffer(indent, optional, lexical, scope)?,
         ]
         .join("\n"))
     }
 
-    fn value_initializer_body_from_buffer(&self, indent: &str, optional: bool) -> Result<String> {
+    fn value_initializer_body_from_buffer<'plan>(
+        &self,
+        indent: &str,
+        optional: bool,
+        lexical: &mut LexicalPlan<'plan, Syntax>,
+        scope: Scope<'plan, Syntax>,
+    ) -> Result<String> {
         let decode_call = self.buffer.decode(&self.reader, &self.decode)?;
         Ok([
             Statement::defer(Expression::call(
@@ -2609,7 +2813,7 @@ impl EncodedReturn {
                     .collect::<ArgumentList>(),
             ))
             .indented(indent),
-            Return::assign_initializer_value(decode_call, indent, optional)?,
+            Return::assign_initializer_value(decode_call, indent, optional, lexical, scope)?,
         ]
         .join("\n"))
     }

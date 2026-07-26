@@ -116,6 +116,7 @@ class DemoValueTypesTest {
         assertEquals(5u, stringLength("café"), "case:primitives.strings.string.should_report_utf8_byte_length")
         assertEquals(true, stringIsEmpty(""), "case:primitives.strings.string.should_detect_empty")
         assertEquals("ababab", repeatString("ab", 3u), "case:primitives.strings.string.should_repeat_value")
+        assertEquals("borrowed static", borrowedStaticString(), "case:primitives.strings.borrowed_static_string.should_return_value")
 
         assertContentEquals(byteArrayOf(1, 2, 3, 4), echoBytes(byteArrayOf(1, 2, 3, 4)), "case:bytes.bytes.should_roundtrip_values")
         assertEquals(3u, bytesLength(byteArrayOf(9, 8, 7)), "case:bytes.bytes.should_report_length")
@@ -365,6 +366,11 @@ class DemoValueTypesTest {
         assertEquals(emptyList(), echoVecOptionalI32(emptyList()))
         demoCase("case:options.complex.vec_optional_i32.should_roundtrip_all_none")
         assertEquals(listOf(null, null, null), echoVecOptionalI32(listOf(null, null, null)))
+
+        demoCase("case:options.complex.shape.should_return_radius_for_circle")
+        assertDoubleEquals(5.0, radiusIfCircle(Shape.Circle(5.0))!!)
+        demoCase("case:options.complex.shape.should_return_none_for_non_circle")
+        assertNull(radiusIfCircle(Shape.Rectangle(3.0, 4.0)))
     }
 
     @Test
@@ -381,6 +387,11 @@ class DemoValueTypesTest {
         assertEquals(42, parseInt("42"))
         demoCase("case:results.basic.parse_int.should_reject_invalid_integer")
         assertMessageContains(assertFailsWith<FfiException> { parseInt("not-a-number") }, "invalid integer")
+        demoCase("case:results.basic.is_even.should_return_parity")
+        assertEquals(true, isEven(4))
+        assertEquals(false, isEven(3))
+        demoCase("case:results.basic.is_even.should_reject_negative_input")
+        assertMessageContains(assertFailsWith<FfiException> { isEven(-1) }, "negative input")
         demoCase("case:results.basic.validate_name.should_greet_valid_name")
         assertEquals("Hello, Ada!", validateName("Ada"))
         demoCase("case:results.basic.validate_name.should_reject_empty_name")
@@ -950,6 +961,13 @@ class DemoValueTypesTest {
         assertEquals("borrowed:3:standard:none:https://default", ServiceConfig.fromBorrowedName("borrowed").describe())
         demoCase("case:records.default_values.service_config.from_string_ref_name.should_return_config")
         assertEquals("stringref:3:standard:none:https://default", ServiceConfig.fromStringRefName("stringref").describe())
+        demoCase("case:records.default_values.service_config.from_non_empty_name.should_return_config_for_non_empty_values")
+        val validatedConfig = ServiceConfig.fromNonEmptyName("optional", "eu-west")
+        assertEquals("optional", validatedConfig?.name)
+        assertEquals("eu-west", validatedConfig?.region)
+        demoCase("case:records.default_values.service_config.from_non_empty_name.should_return_none_for_empty_values")
+        assertNull(ServiceConfig.fromNonEmptyName("", "eu-west"))
+        assertNull(ServiceConfig.fromNonEmptyName("optional", ""))
         demoCase("case:records.default_values.service_config.try_with_retries.should_return_config")
         assertEquals("generated:5:standard:none:https://default", ServiceConfig.tryWithRetries(5).describe())
         demoCase("case:records.default_values.service_config.try_with_retries.should_reject_negative_retries")

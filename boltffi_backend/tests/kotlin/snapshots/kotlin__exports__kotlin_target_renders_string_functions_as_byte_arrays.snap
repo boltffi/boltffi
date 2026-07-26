@@ -8,8 +8,8 @@ expression: "rendered_fixture(\"exports/string_functions\")"
 package com.boltffi.demo
 @Suppress("FunctionName")
 private object Native {
-    @JvmStatic external fun boltffi_function_demo_echo_string(message: ByteArray): ByteArray?
-    @JvmStatic external fun boltffi_function_demo_echo_str(message: ByteArray): ByteArray?
+    @JvmStatic external fun boltffi_function_demo_echo_string(message: java.nio.ByteBuffer, __boltffi_message_len: Int): ByteArray?
+    @JvmStatic external fun boltffi_function_demo_echo_str(message: java.nio.ByteBuffer, __boltffi_message_len: Int): ByteArray?
 }
 
 fun echoString(message: String): String {
@@ -17,7 +17,7 @@ fun echoString(message: String): String {
     val __boltffi_message_writer = __boltffi_message_wire.writer
     __boltffi_message_writer.writeString(message)
     try {
-        val __boltffi_result = Native.boltffi_function_demo_echo_string(__boltffi_message_wire.bytes()) ?: throw IllegalStateException("null buffer returned")
+        val __boltffi_result = Native.boltffi_function_demo_echo_string(__boltffi_message_wire.directBuffer(), __boltffi_message_wire.size()) ?: throw IllegalStateException("null buffer returned")
         val __boltffi_reader = WireReader(__boltffi_result)
         return __boltffi_reader.readString()
     } finally {
@@ -30,7 +30,7 @@ fun echoStr(message: String): String {
     val __boltffi_message_writer = __boltffi_message_wire.writer
     __boltffi_message_writer.writeString(message)
     try {
-        val __boltffi_result = Native.boltffi_function_demo_echo_str(__boltffi_message_wire.bytes()) ?: throw IllegalStateException("null buffer returned")
+        val __boltffi_result = Native.boltffi_function_demo_echo_str(__boltffi_message_wire.directBuffer(), __boltffi_message_wire.size()) ?: throw IllegalStateException("null buffer returned")
         val __boltffi_reader = WireReader(__boltffi_result)
         return __boltffi_reader.readString()
     } finally {

@@ -14,6 +14,7 @@ pub struct JniGlueTemplate<'a> {
     pub jni_prefix: &'a str,
     pub package_path: &'a str,
     pub module_name: &'a str,
+    pub header_include: &'a str,
     pub class_name: &'a str,
     pub has_async: bool,
     pub has_async_runtime: bool,
@@ -34,6 +35,7 @@ impl<'a> JniGlueTemplate<'a> {
             jni_prefix: module.jni_prefix.as_str(),
             package_path: module.package_path.as_str(),
             module_name: module.module_name.as_str(),
+            header_include: module.header_include.as_str(),
             class_name: module.class_name.as_str(),
             has_async: module.has_async,
             has_async_runtime: module.has_async_runtime,
@@ -368,6 +370,38 @@ mod tests {
         assert!(
             !glue.contains("boltffiFutureContinuationCallback"),
             "must not look up Kotlin method that was never generated"
+        );
+    }
+
+    #[test]
+    fn jni_onload_reports_class_and_method_lookup_failures() {
+        let module = build_test_module();
+        let mut ir_module = module.clone();
+        let contract = ir::build_contract(&mut ir_module);
+        let abi_contract = ir::Lowerer::new(&contract).to_abi_contract();
+        let jni_module = JniLowerer::new(
+            &contract,
+            &abi_contract,
+            "com.example".to_string(),
+            "Native".to_string(),
+        )
+        .lower();
+
+        let glue = JniEmitter::emit(&jni_module);
+
+        assert!(
+            glue.contains("BoltFFI JNI_OnLoad failed: could not find JVM class"),
+            "JNI_OnLoad should report the missing class name before returning JNI_ERR"
+        );
+        assert!(
+            glue.contains("BoltFFI JNI_OnLoad failed: could not resolve static method %s.%s%s"),
+            "JNI_OnLoad should report the class, method, and signature for missing static methods"
+        );
+        assert!(
+            glue.contains(
+                "boltffi_lookup_static_method_for_load(env, g_Listener_callbacks_class, \"com/example/ListenerCallbacks\", \"on_value\", \"(JI)V\", &g_Listener_on_value_method)"
+            ),
+            "callback registration should pass the failing method details through the reporting helper"
         );
     }
 

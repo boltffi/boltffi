@@ -44,6 +44,11 @@ pub fn lower(index: &Index, ids: &DeclarationIds) -> Result<Vec<CustomTypeDecl>,
 fn lower_one(ids: &DeclarationIds, custom: &SourceCustom) -> Result<CustomTypeDecl, LowerError> {
     let custom_id = ids.custom(&custom.id)?;
     let representation = types::lower(ids, &custom.repr)?;
+    if representation.contains_interned_string() {
+        return Err(LowerError::unsupported_type(
+            UnsupportedType::InternedStringCustomRepresentation,
+        ));
+    }
     Ok(CustomTypeDecl::new(
         custom_id,
         CanonicalName::from(&custom.name),
@@ -103,7 +108,7 @@ mod tests {
         ReturnDef, SourceContract, TypeExpr,
     };
 
-    use crate::lower::{LowerError, LowerErrorKind, lower};
+    use crate::lower::{LowerError, LowerErrorKind, UnsupportedType, lower};
     use crate::{
         Bindings, CanonicalName, CodecNode, CustomTypeDecl, CustomTypeId, Decl, Native, ParamPlan,
         Primitive as BindingPrimitive, Receive, RecordId, ReturnPlan, SurfaceLower, TypeRef,
@@ -204,6 +209,26 @@ mod tests {
         let decl = only_custom(&bindings);
 
         assert_eq!(decl.representation(), &TypeRef::String);
+    }
+
+    #[test]
+    fn interned_string_repr_is_rejected_before_wrapper_rendering() {
+        let error = lower_customs::<Native>(vec![custom_type(
+            "demo::Browser",
+            "Browser",
+            TypeExpr::interned_string(
+                SourcePath::single("InternedString"),
+                "demo::BrowserName",
+                SourcePath::single("BrowserName"),
+                vec!["Chrome".to_owned()],
+            ),
+        )])
+        .expect_err("interned custom representation must reject");
+
+        assert!(matches!(
+            error.kind(),
+            LowerErrorKind::UnsupportedType(UnsupportedType::InternedStringCustomRepresentation)
+        ));
     }
 
     #[test]

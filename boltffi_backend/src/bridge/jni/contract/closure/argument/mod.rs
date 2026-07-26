@@ -15,6 +15,7 @@ mod direct_vector;
 mod handle;
 mod jvm;
 mod parameters;
+mod record;
 mod scalar;
 mod setup;
 mod success_out;
@@ -23,6 +24,7 @@ pub use bytes::ClosureBytesArgument;
 pub use c_abi::ClosureCParameter;
 pub use direct_vector::ClosureDirectVectorArgument;
 pub use handle::ClosureHandleArgument;
+pub(crate) use record::ClosureRecordArgument;
 pub use scalar::ClosureScalarArgument;
 pub use success_out::ClosureSuccessOutArgument;
 
@@ -38,6 +40,7 @@ enum ClosureArgumentKind {
     Scalar(ClosureScalarArgument),
     Bytes(ClosureBytesArgument),
     DirectVector(ClosureDirectVectorArgument),
+    Record(ClosureRecordArgument),
     Closure(ClosureHandleArgument),
     SuccessOut(ClosureSuccessOutArgument),
 }

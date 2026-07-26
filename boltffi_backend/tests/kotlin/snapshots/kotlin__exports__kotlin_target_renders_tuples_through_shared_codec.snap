@@ -1,0 +1,58 @@
+---
+source: boltffi_backend/tests/kotlin/exports.rs
+expression: "rendered_fixture(\"exports/tuple_functions\")"
+---
+===== com/boltffi/demo/Demo.kt =====
+@file:OptIn(kotlin.ExperimentalUnsignedTypes::class)
+
+package com.boltffi.demo
+@Suppress("FunctionName")
+private object Native {
+    @JvmStatic external fun boltffi_function_demo_echo_pair(value: java.nio.ByteBuffer, __boltffi_value_len: Int): ByteArray?
+    @JvmStatic external fun boltffi_function_demo_echo_triple(value: java.nio.ByteBuffer, __boltffi_value_len: Int): ByteArray?
+    @JvmStatic external fun boltffi_const_demo_pair(): ByteArray?
+    @JvmStatic external fun boltffi_const_demo_triple(): ByteArray?
+}
+
+val pair: Pair<UInt, UInt>
+    get() {
+        val __boltffi_result = Native.boltffi_const_demo_pair() ?: throw IllegalStateException("null buffer returned")
+        val __boltffi_reader = WireReader(__boltffi_result)
+        return Pair(__boltffi_reader.readU32(), __boltffi_reader.readU32())
+    }
+
+val triple: Triple<UInt, UInt, UInt>
+    get() {
+        val __boltffi_result = Native.boltffi_const_demo_triple() ?: throw IllegalStateException("null buffer returned")
+        val __boltffi_reader = WireReader(__boltffi_result)
+        return Triple(__boltffi_reader.readU32(), __boltffi_reader.readU32(), __boltffi_reader.readU32())
+    }
+
+fun echoPair(value: Pair<UInt, String>): Pair<UInt, String> {
+    val __boltffi_value_wire = WireWriterPool.acquire(0 + 4 + 4 + Utf8Codec.maxBytes(value.field1))
+    val __boltffi_value_writer = __boltffi_value_wire.writer
+    __boltffi_value_writer.writeU32(value.field0)
+    __boltffi_value_writer.writeString(value.field1)
+    try {
+        val __boltffi_result = Native.boltffi_function_demo_echo_pair(__boltffi_value_wire.directBuffer(), __boltffi_value_wire.size()) ?: throw IllegalStateException("null buffer returned")
+        val __boltffi_reader = WireReader(__boltffi_result)
+        return Pair(__boltffi_reader.readU32(), __boltffi_reader.readString())
+    } finally {
+        __boltffi_value_wire.close()
+    }
+}
+
+fun echoTriple(value: Triple<UInt, String, Boolean>): Triple<UInt, String, Boolean> {
+    val __boltffi_value_wire = WireWriterPool.acquire(0 + 4 + 4 + Utf8Codec.maxBytes(value.field1) + 1)
+    val __boltffi_value_writer = __boltffi_value_wire.writer
+    __boltffi_value_writer.writeU32(value.field0)
+    __boltffi_value_writer.writeString(value.field1)
+    __boltffi_value_writer.writeBool(value.field2)
+    try {
+        val __boltffi_result = Native.boltffi_function_demo_echo_triple(__boltffi_value_wire.directBuffer(), __boltffi_value_wire.size()) ?: throw IllegalStateException("null buffer returned")
+        val __boltffi_reader = WireReader(__boltffi_result)
+        return Triple(__boltffi_reader.readU32(), __boltffi_reader.readString(), __boltffi_reader.readBool())
+    } finally {
+        __boltffi_value_wire.close()
+    }
+}

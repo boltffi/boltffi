@@ -1,4 +1,0 @@
-framework module {{ module_name }} {
-    header "{{ header_path }}"
-    export *
-}

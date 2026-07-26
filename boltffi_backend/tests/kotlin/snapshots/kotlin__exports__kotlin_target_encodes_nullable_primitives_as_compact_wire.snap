@@ -8,7 +8,7 @@ expression: "rendered_fixture(\"exports/nullable_primitive_functions\")"
 package com.boltffi.demo
 @Suppress("FunctionName")
 private object Native {
-    @JvmStatic external fun boltffi_function_demo_maybe_add(value: ByteArray): ByteArray?
+    @JvmStatic external fun boltffi_function_demo_maybe_add(value: java.nio.ByteBuffer, __boltffi_value_len: Int): ByteArray?
 }
 
 fun maybeAdd(value: Int?): UInt? {
@@ -16,7 +16,7 @@ fun maybeAdd(value: Int?): UInt? {
     val __boltffi_value_writer = __boltffi_value_wire.writer
     __boltffi_value_writer.writeOptionalI32(value)
     try {
-        val __boltffi_result = Native.boltffi_function_demo_maybe_add(__boltffi_value_wire.bytes()) ?: throw IllegalStateException("null buffer returned")
+        val __boltffi_result = Native.boltffi_function_demo_maybe_add(__boltffi_value_wire.directBuffer(), __boltffi_value_wire.size()) ?: throw IllegalStateException("null buffer returned")
         val __boltffi_reader = WireReader(__boltffi_result)
         return __boltffi_reader.readOptionalU32()
     } finally {

@@ -17,7 +17,8 @@ use crate::{
         jni::{
             NativeMethod, SuccessOutReturn,
             template::method::{
-                BorrowedArrayParameterView, NativeParameterView, RecordParameterView,
+                BorrowedArrayParameterView, DirectBufferParameterView, NativeParameterView,
+                RecordParameterView,
             },
         },
     },
@@ -32,7 +33,8 @@ pub struct NativeMethodView {
     pub c_result_type: TypeFragment,
     pub parameters: Vec<NativeParameterView>,
     pub borrowed_arrays: Vec<BorrowedArrayParameterView>,
-    pub record_arrays: Vec<RecordParameterView>,
+    pub direct_buffers: Vec<DirectBufferParameterView>,
+    pub record_buffers: Vec<RecordParameterView>,
     pub arguments: ArgumentList,
     pub returns_void: bool,
     pub returns_boolean: bool,
@@ -44,6 +46,7 @@ pub struct NativeMethodView {
     pub checks_completion_status: bool,
     pub checks_error_buffer: bool,
     pub success_out: Option<SuccessOutReturn>,
+    pub uses_callback_parameters: bool,
     pub uses_continuations: bool,
     pub has_error_label: bool,
 }
@@ -55,7 +58,12 @@ impl NativeMethodView {
             .iter()
             .flat_map(BorrowedArrayParameterView::from_parameter)
             .collect::<Result<Vec<_>>>()?;
-        let record_arrays = method
+        let direct_buffers = method
+            .parameters()
+            .iter()
+            .filter_map(DirectBufferParameterView::from_parameter)
+            .collect::<Vec<_>>();
+        let record_buffers = method
             .parameters()
             .iter()
             .filter_map(|parameter| parameter.record().map(RecordParameterView::from_record))
@@ -68,11 +76,14 @@ impl NativeMethodView {
             parameters: method
                 .parameters()
                 .iter()
-                .map(NativeParameterView::from_parameter)
+                .flat_map(NativeParameterView::from_parameter)
                 .collect(),
-            has_error_label: !borrowed_arrays.is_empty() || !record_arrays.is_empty(),
+            has_error_label: !borrowed_arrays.is_empty()
+                || !direct_buffers.is_empty()
+                || !record_buffers.is_empty(),
             borrowed_arrays,
-            record_arrays,
+            direct_buffers,
+            record_buffers,
             arguments: method.arguments()?,
             returns_void: method.returns_void(),
             returns_boolean: method.returns_boolean(),
@@ -86,6 +97,10 @@ impl NativeMethodView {
             checks_completion_status: method.checks_completion_status(),
             checks_error_buffer: method.checks_error_buffer(),
             success_out: method.success_out().cloned(),
+            uses_callback_parameters: method
+                .parameters()
+                .iter()
+                .any(|parameter| parameter.is_callback()),
             uses_continuations: method
                 .parameters()
                 .iter()

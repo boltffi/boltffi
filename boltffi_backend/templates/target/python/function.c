@@ -15,7 +15,7 @@ static PyObject *{{ wrapper }}(PyObject *self, PyObject *const *args, Py_ssize_t
     PyObject *{{ param.wire() }} = NULL;
     const uint8_t *{{ param.pointer() }} = NULL;
     uintptr_t {{ param.length() }} = 0;
-{%- if param.has_mutation() %}
+{%- if param.has_mutation_buffer() %}
     FfiBuf_u8 {{ param.mutation_buffer() }} = {0};
 {%- endif %}
 {%- endif %}
@@ -88,7 +88,7 @@ static PyObject *{{ wrapper }}(PyObject *self, PyObject *const *args, Py_ssize_t
         PyErr_Format(PyExc_RuntimeError, "native call failed with status %d", status.code);
         goto done;
     }
-    result = {{ mutation.decoder() }}({{ mutation.buffer() }});
+    result = {{ mutation.conversion() }};
 {%- else %}
 {%- if returns.is_void() %}
     {{ storage }}({%- for arg in call_args %}{{ arg }}{% if !loop.last %}, {% endif %}{%- endfor %});

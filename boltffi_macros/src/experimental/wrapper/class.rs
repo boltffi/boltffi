@@ -153,6 +153,7 @@ impl<'expansion, 'lowered, S: RenderSurface> Renderer<'expansion, 'lowered, S> {
         });
         let shared = operations.shared().then(|| {
             quote! {
+                #[inline(always)]
                 unsafe fn shared<'class>(handle: *mut Self) -> &'class #class {
                     unsafe { &*(*handle).value.get() }
                 }
@@ -160,6 +161,7 @@ impl<'expansion, 'lowered, S: RenderSurface> Renderer<'expansion, 'lowered, S> {
         });
         let mutable = operations.mutable().then(|| {
             quote! {
+                #[inline(always)]
                 unsafe fn mutable<'class>(handle: *mut Self) -> &'class mut #class {
                     unsafe { &mut *(*handle).value.get() }
                 }

@@ -11,6 +11,7 @@ pub(super) struct MarkedItems<'source> {
     classes: Vec<Marked<'source, syn::ItemImpl>>,
     constants: Vec<Marked<'source, syn::ItemConst>>,
     customs: Vec<MarkedCustom<'source>>,
+    interned_string_pools: Vec<MarkedInternedStringPool<'source>>,
     impls: Vec<Marked<'source, syn::ItemImpl>>,
 }
 
@@ -39,6 +40,7 @@ impl<'source> MarkedItems<'source> {
             classes: Vec::new(),
             constants: Vec::new(),
             customs: Vec::new(),
+            interned_string_pools: Vec::new(),
             impls: Vec::new(),
         }
     }
@@ -71,6 +73,10 @@ impl<'source> MarkedItems<'source> {
         &self.customs
     }
 
+    pub(super) fn interned_string_pools(&self) -> &[MarkedInternedStringPool<'source>] {
+        &self.interned_string_pools
+    }
+
     pub(super) fn impls(&self) -> &[Marked<'source, syn::ItemImpl>] {
         &self.impls
     }
@@ -89,6 +95,15 @@ impl<'source> MarkedItems<'source> {
                 return Err(marker.invalid_placement(item_kind(item)));
             }
             self.customs.push(MarkedCustom::new(scope, item_macro));
+            return Ok(());
+        }
+
+        if let Some(item_macro) = interned_string_pool_macro(item) {
+            if let Some(marker) = Marker::detect(attrs(item))? {
+                return Err(marker.invalid_placement(item_kind(item)));
+            }
+            self.interned_string_pools
+                .push(MarkedInternedStringPool::new(scope, item_macro));
             return Ok(());
         }
 
@@ -185,6 +200,25 @@ impl<'source> MarkedCustom<'source> {
     }
 }
 
+pub(super) struct MarkedInternedStringPool<'source> {
+    scope: &'source ModuleScope,
+    item: &'source syn::ItemMacro,
+}
+
+impl<'source> MarkedInternedStringPool<'source> {
+    fn new(scope: &'source ModuleScope, item: &'source syn::ItemMacro) -> Self {
+        Self { scope, item }
+    }
+
+    pub(super) fn module(&self) -> &'source ModulePath {
+        self.scope.path()
+    }
+
+    pub(super) fn item(&self) -> &'source syn::ItemMacro {
+        self.item
+    }
+}
+
 pub(super) struct Marked<'source, T> {
     scope: &'source ModuleScope,
     marker: Marker,
@@ -224,6 +258,13 @@ fn custom_type_macro(item: &syn::Item) -> Option<&syn::ItemMacro> {
     custom_type_path(&item_macro.mac.path).then_some(item_macro)
 }
 
+fn interned_string_pool_macro(item: &syn::Item) -> Option<&syn::ItemMacro> {
+    let syn::Item::Macro(item_macro) = item else {
+        return None;
+    };
+    interned_string_pool_path(&item_macro.mac.path).then_some(item_macro)
+}
+
 fn custom_type_path(path: &syn::Path) -> bool {
     let segments = path
         .segments
@@ -233,6 +274,22 @@ fn custom_type_path(path: &syn::Path) -> bool {
     match segments.as_slice() {
         [name] => path.leading_colon.is_none() && name == "custom_type",
         [namespace, name] => namespace == "boltffi" && name == "custom_type",
+        _ => false,
+    }
+}
+
+fn interned_string_pool_path(path: &syn::Path) -> bool {
+    let segments = path
+        .segments
+        .iter()
+        .map(|segment| segment.ident.to_string())
+        .collect::<Vec<_>>();
+    match segments.as_slice() {
+        [name] => path.leading_colon.is_none() && name == "interned_string_pool",
+        [namespace, name] => {
+            matches!(namespace.as_str(), "boltffi" | "boltffi_core")
+                && name == "interned_string_pool"
+        }
         _ => false,
     }
 }
@@ -411,5 +468,20 @@ mod tests {
         let marked = MarkedItems::collect(&tree).expect("marked items");
 
         assert_eq!(marked.customs().len(), 0);
+    }
+
+    #[test]
+    fn collects_core_qualified_interned_string_pool_macro() {
+        let tree = tree(
+            r#"boltffi_core::interned_string_pool! {
+                pub struct BrowserName {
+                    CHROME = "Chrome",
+                }
+            }"#,
+        );
+
+        let marked = MarkedItems::collect(&tree).expect("marked items");
+
+        assert_eq!(marked.interned_string_pools().len(), 1);
     }
 }

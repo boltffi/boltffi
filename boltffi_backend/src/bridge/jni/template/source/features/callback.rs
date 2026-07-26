@@ -17,6 +17,7 @@ pub struct CallbackFeatures {
     pub uses_byte_arrays: bool,
     pub uses_direct_vectors: bool,
     pub uses_record_arrays: bool,
+    pub uses_direct_buffers: bool,
     pub uses_handles: bool,
     pub checks_status: bool,
     pub checks_error_buffer: bool,
@@ -38,8 +39,7 @@ impl CallbackFeatures {
                     .iter()
                     .any(|method| !method.byte_arrays.is_empty())
                     || callback.handle_methods.iter().any(|method| {
-                        !method.borrowed_arrays.is_empty()
-                            || method.returns_bytes
+                        method.returns_bytes
                             || method.returns_record
                             || method.completion.as_ref().is_some_and(|completion| {
                                 completion.payload_bytes || completion.payload_record
@@ -64,13 +64,17 @@ impl CallbackFeatures {
                     .iter()
                     .any(|method| !method.record_arrays.is_empty())
                     || callback.handle_methods.iter().any(|method| {
-                        !method.record_arrays.is_empty()
-                            || method.returns_record
+                        method.returns_record
                             || method
                                 .completion
                                 .as_ref()
                                 .is_some_and(|completion| completion.payload_record)
                     })
+            }),
+            uses_direct_buffers: callbacks.iter().any(|callback| {
+                callback.handle_methods.iter().any(|method| {
+                    !method.direct_buffers.is_empty() || !method.record_buffers.is_empty()
+                })
             }),
             uses_handles: callbacks.iter().any(|callback| {
                 callback

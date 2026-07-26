@@ -17,6 +17,7 @@ pub mod error;
 pub mod files;
 /// Host backend traits.
 pub mod host;
+pub(crate) mod lexical;
 pub(crate) mod name_case;
 /// Typed language syntax fragments.
 pub mod syntax;

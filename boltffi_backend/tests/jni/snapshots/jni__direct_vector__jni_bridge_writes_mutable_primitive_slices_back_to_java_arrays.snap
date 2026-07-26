@@ -1,0 +1,47 @@
+---
+source: boltffi_backend/tests/jni/direct_vector.rs
+expression: "rendered_fixture(\"direct_vector/mutable_primitive_slice_parameter\")"
+---
+===== jni/demo.h =====
+<c abi support declarations>
+FfiStatus boltffi_function_demo_increment(uint64_t *values_ptr, uintptr_t values_len);
+
+===== jni/jni_glue.c =====
+<jni source includes>
+<jni exception helpers>
+<jni status helper>
+JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1function_1demo_1increment(JNIEnv *env, jclass cls, jlongArray values) {
+    (void)cls;
+
+    jlong *__boltffi_values_ptr = NULL;
+    jsize __boltffi_values_len = 0;
+
+    if (values == NULL) {
+        boltffi_jni_throw_illegal_argument(env, "BoltFFI array argument was null");
+        goto __boltffi_error;
+    }
+    __boltffi_values_len = (*env)->GetArrayLength(env, values);
+    __boltffi_values_ptr = (*env)->GetLongArrayElements(env, values, NULL);
+    if (__boltffi_values_ptr == NULL) {
+        goto __boltffi_error;
+    }
+
+    FfiStatus __boltffi_status = boltffi_function_demo_increment((uint64_t *)__boltffi_values_ptr, (uintptr_t)__boltffi_values_len);
+
+    if (__boltffi_values_ptr != NULL) {
+        (*env)->ReleaseLongArrayElements(env, values, __boltffi_values_ptr, 0);
+        __boltffi_values_ptr = NULL;
+    }
+    if (__boltffi_status.code != 0) {
+        boltffi_jni_throw_status(env, __boltffi_status);
+        return;
+    }
+
+    return;
+__boltffi_error:
+    if (__boltffi_values_ptr != NULL) {
+        (*env)->ReleaseLongArrayElements(env, values, __boltffi_values_ptr, 0);
+        __boltffi_values_ptr = NULL;
+    }
+    return;
+}

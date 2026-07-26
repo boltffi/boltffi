@@ -18,6 +18,9 @@ pub fn lower(ids: &DeclarationIds, type_expr: &TypeExpr) -> Result<TypeRef, Lowe
         TypeExpr::String => TypeRef::String,
         TypeExpr::Str => TypeRef::String,
         TypeExpr::Builtin(kind) => TypeRef::Builtin(*kind),
+        TypeExpr::InternedString { static_values, .. } => TypeRef::InternedString {
+            static_values: static_values.clone(),
+        },
         TypeExpr::Vec(inner) | TypeExpr::Slice(inner) if is_byte_primitive(inner) => TypeRef::Bytes,
         TypeExpr::Record { id, .. } => TypeRef::Record(ids.record(id)?),
         TypeExpr::Enum { id, .. } => TypeRef::Enum(ids.enumeration(id)?),

@@ -16,7 +16,7 @@ mod registration;
 
 pub use argument::{
     ClosureBytesArgumentView, ClosureCParameterView, ClosureDirectVectorArgumentView,
-    ClosureHandleArgumentView,
+    ClosureHandleArgumentView, ClosureRecordArgumentView,
 };
 pub use callback_handle::CallbackClosureHandleView;
 pub use registration::ClosureRegistrationView;

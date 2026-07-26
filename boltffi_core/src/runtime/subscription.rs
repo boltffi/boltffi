@@ -16,6 +16,16 @@ pub enum StreamPollResult {
 
 pub type StreamContinuationCallback = extern "C" fn(callback_data: u64, StreamPollResult);
 
+#[cfg(target_arch = "wasm32")]
+unsafe extern "C" {
+    fn __boltffi_stream_wake(subscription_handle: u32, result: StreamPollResult);
+}
+
+#[cfg(target_arch = "wasm32")]
+extern "C" fn wasm_stream_wake(callback_data: u64, result: StreamPollResult) {
+    unsafe { __boltffi_stream_wake(callback_data as u32, result) };
+}
+
 struct StreamContinuationPolicy;
 
 impl ContinuationSignalPolicy for StreamContinuationPolicy {
@@ -135,6 +145,11 @@ impl<T: Send + 'static> EventSubscription<T> {
 
         self.continuation_scheduler
             .store_continuation(callback, callback_data);
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn poll_wasm(&self, subscription_handle: u32) {
+        self.poll(u64::from(subscription_handle), wasm_stream_wake);
     }
 
     pub fn unsubscribe(&self) {

@@ -36,16 +36,28 @@ fn bindings(source: &str) -> boltffi_binding::Bindings<Native> {
 }
 
 pub fn bridge(source: &str) -> BridgeOutput<JniBridgeContract> {
+    bridge_with_class(source, "Native")
+}
+
+fn bridge_with_class(source: &str, class: &str) -> BridgeOutput<JniBridgeContract> {
+    bridge_with_owner(source, "com.boltffi.demo", class)
+}
+
+fn bridge_with_owner(source: &str, package: &str, class: &str) -> BridgeOutput<JniBridgeContract> {
     let bindings = bindings(source);
     let stack = BridgeLayer::new(
         CBridge::new("jni/demo.h").expect("C header bridge"),
-        JniBridge::new("com.boltffi.demo", "Native", "jni/jni_glue.c").expect("JNI bridge"),
+        JniBridge::new(package, class, "jni/jni_glue.c").expect("JNI bridge"),
     );
     stack.build(&bindings).expect("JNI bridge stack")
 }
 
 pub fn files(source: &str) -> Vec<(String, String)> {
-    bridge(source)
+    files_with_class(source, "Native")
+}
+
+pub fn files_with_class(source: &str, class: &str) -> Vec<(String, String)> {
+    bridge_with_class(source, class)
         .output()
         .files()
         .iter()
@@ -56,6 +68,10 @@ pub fn files(source: &str) -> Vec<(String, String)> {
             )
         })
         .collect()
+}
+
+pub fn rendered_fixture_with_class_support(name: &str, class: &str) -> String {
+    rendered_files_with_support(&files_with_class(&fixture(name), class))
 }
 
 pub fn rendered_fixture(name: &str) -> String {
@@ -122,7 +138,7 @@ fn normalized_source(contents: &str) -> String {
     [
         SourceBlock::new(
             "static JavaVM *boltffi_jni_vm",
-            "static void boltffi_jni_exit",
+            "static inline void boltffi_jni_exit",
             "<jni thread runtime>",
         ),
         SourceBlock::new(
@@ -142,7 +158,7 @@ fn normalized_source(contents: &str) -> String {
         ),
         SourceBlock::new(
             "static jbyteArray boltffi_jni_buffer_to_byte_array",
-            "static FfiBuf_u8 boltffi_jni_byte_array_to_buffer",
+            "static inline FfiBuf_u8 boltffi_jni_byte_array_to_buffer",
             "<jni byte-array helpers>",
         ),
         SourceBlock::new(

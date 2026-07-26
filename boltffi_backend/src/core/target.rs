@@ -1,9 +1,10 @@
 use boltffi_binding::{Bindings, Decl, DeclarationRef, Surface};
 
+use crate::core::capabilities::BindingCapabilityAnalysis;
 use crate::core::{
-    BindingCapability, BridgeContract, CapabilityRequirements, CoverageMode, CoverageReport,
-    DeclarationLabel, Error, GeneratedOutput, HostCapabilities, RenderContext, RenderedDeclaration,
-    Result, UnsupportedDeclaration, bridge, contract::sealed, host,
+    BridgeContract, CoverageMode, CoverageReport, DeclarationLabel, Error, GeneratedOutput,
+    HostCapabilities, RenderContext, RenderedDeclaration, Result, UnsupportedDeclaration, bridge,
+    contract::sealed, host,
 };
 
 /// A bridge layer stacked above another bridge stack.
@@ -130,15 +131,19 @@ where
         let bridge = self.stack.build(bindings)?;
         let (contract, mut output) = bridge.into_parts();
         let host_capabilities = self.host.binding_capabilities();
+        let capability_analysis = BindingCapabilityAnalysis::new(bindings);
         if matches!(mode, CoverageMode::Complete) {
-            let binding_requirements = CapabilityRequirements::from_bindings(bindings);
-            host_capabilities.require_binding(self.host.name(), &binding_requirements)?;
+            host_capabilities.require_binding(
+                self.host.name(),
+                capability_analysis.contract_requirements(),
+            )?;
         }
         contract
             .capabilities()
             .require_bridge(self.host.name(), &self.host.bridge_capabilities())?;
         let context = RenderContext::new(bindings, self.host.name(), mode)
-            .with_custom_type_mappings(self.host.custom_type_mappings(bindings)?);
+            .with_custom_type_mappings(self.host.custom_type_mappings(bindings)?)
+            .with_capability_analysis(capability_analysis);
         let preflight_coverage = self
             .host
             .preflight_coverage(bindings, &contract, &context)?;
@@ -177,27 +182,39 @@ where
     ) -> Result<(Vec<RenderedDeclaration<'decl, S::Surface>>, CoverageReport)> {
         let declaration = DeclarationRef::from(decl);
         let label = DeclarationLabel::from_ref(declaration);
-        let capability = BindingCapability::from_decl(decl);
-        let status = host_capabilities.status(capability);
-        if !status.is_stable() {
-            if matches!(mode, CoverageMode::Complete) {
-                return Err(Error::BindingCapability {
-                    target: self.host.name(),
-                    capability,
-                    status,
-                });
-            }
-            if !status.renderable_in_partial() {
-                accumulator
-                    .1
-                    .push(UnsupportedDeclaration::new(label, status.reason()));
-                return Ok(accumulator);
+        let decl_requirements = context
+            .capability_requirements(decl.id())
+            .expect("render context must analyze every binding declaration");
+        // Check all per-declaration requirements before renderer invocation.
+        // In complete mode every missing capability is a hard error; in partial
+        // mode a declaration that cannot be rendered is silently skipped and
+        // added to the coverage report. Keep a renderable non-stable status so
+        // supplemental requirements (such as InternedString) still mark
+        // partial coverage incomplete after their declaration renders.
+        let mut partial_status = None;
+        for capability in decl_requirements.iter() {
+            let status = host_capabilities.status(capability);
+            if !status.is_stable() {
+                if matches!(mode, CoverageMode::Complete) {
+                    return Err(Error::BindingCapability {
+                        target: self.host.name(),
+                        capability,
+                        status,
+                    });
+                }
+                if !status.renderable_in_partial() {
+                    accumulator
+                        .1
+                        .push(UnsupportedDeclaration::new(label, status.reason()));
+                    return Ok(accumulator);
+                }
+                partial_status.get_or_insert(status);
             }
         }
 
         match self.render_declaration(decl, bridge, context) {
             Ok(rendered) => {
-                if !status.is_stable() {
+                if let Some(status) = partial_status {
                     accumulator
                         .1
                         .push(UnsupportedDeclaration::new(label.clone(), status.reason()));
@@ -278,9 +295,9 @@ mod tests {
 
     use crate::core::{
         BindingCapability, BridgeCapabilities, BridgeCapability, BridgeContract,
-        CapabilityRequirements, Emitted, Error, GeneratedOutput, HostCapabilities, LanguageSyntax,
-        RenderContext, RenderedDeclaration, Result, bridge, contract::sealed, host,
-        syntax::sealed as syntax_sealed,
+        CapabilityRequirements, CapabilityStatus, Emitted, Error, GeneratedOutput,
+        HostCapabilities, LanguageSyntax, RenderContext, RenderedDeclaration, Result, bridge,
+        contract::sealed, host, syntax::sealed as syntax_sealed,
     };
 
     #[derive(Clone)]
@@ -349,7 +366,6 @@ mod tests {
         type Surface = Native;
         type Input = Bindings<Native>;
         type Contract = NativeContract;
-        type Syntax = TestSyntax;
 
         fn build_contract(&self, _input: &Self::Input) -> Result<Self::Contract> {
             Ok(NativeContract {
@@ -513,5 +529,361 @@ mod tests {
         assert_eq!(unsupported[0].declaration().kind(), "function");
         assert_eq!(unsupported[0].declaration().name(), "add");
         assert_eq!(unsupported[0].reason(), "capability was not advertised");
+    }
+
+    fn interned_function_bindings() -> Bindings<Native> {
+        let source = boltffi_scan::scan_file(
+            syn::parse_str(
+                r#"
+                use boltffi::InternedString;
+
+                boltffi::interned_string_pool! {
+                    pub BrowserName {
+                        Chrome = "Chrome",
+                    }
+                }
+
+                #[export]
+                pub fn browser() -> InternedString<BrowserName> {
+                    BrowserName::CHROME
+                }
+                "#,
+            )
+            .expect("valid source"),
+            PackageInfo::new("demo", None),
+        )
+        .expect("source scans");
+        lower::<Native>(&source).expect("source lowers")
+    }
+
+    fn interned_named_type_bindings() -> Bindings<Native> {
+        let source = boltffi_scan::scan_file(
+            syn::parse_str(
+                r#"
+                use boltffi::InternedString;
+
+                boltffi::interned_string_pool! {
+                    pub BrowserName {
+                        Chrome = "Chrome",
+                    }
+                }
+
+                #[data]
+                pub struct InternedRecord {
+                    name: InternedString<BrowserName>,
+                }
+
+                #[data]
+                pub enum InternedEnum {
+                    Name(InternedString<BrowserName>),
+                }
+
+                #[data]
+                pub struct RecordEnvelope {
+                    value: InternedRecord,
+                }
+
+                #[export]
+                pub fn record_parameter(value: InternedRecord) {
+                    let _ = value;
+                }
+
+                #[export]
+                pub fn record_return() -> InternedRecord {
+                    unimplemented!()
+                }
+
+                #[export]
+                pub fn enum_parameter(value: InternedEnum) {
+                    let _ = value;
+                }
+
+                #[export]
+                pub fn enum_return() -> InternedEnum {
+                    unimplemented!()
+                }
+
+                #[export]
+                pub fn record_envelope_return() -> RecordEnvelope {
+                    unimplemented!()
+                }
+                "#,
+            )
+            .expect("valid source"),
+            PackageInfo::new("demo", None),
+        )
+        .expect("source scans");
+        lower::<Native>(&source).expect("source lowers")
+    }
+
+    /// A host that advertises declaration kinds but not `InternedString`.
+    #[derive(Clone, Copy)]
+    struct FunctionsOnlyHost {
+        interned_status: Option<CapabilityStatus>,
+        require_pruning: bool,
+    }
+
+    impl FunctionsOnlyHost {
+        fn without_interned_string() -> Self {
+            Self {
+                interned_status: None,
+                require_pruning: true,
+            }
+        }
+
+        fn with_renderable_interned_string(status: CapabilityStatus) -> Self {
+            Self {
+                interned_status: Some(status),
+                require_pruning: false,
+            }
+        }
+    }
+
+    impl host::HostBackend for FunctionsOnlyHost {
+        type Surface = Native;
+        type Bridge = NativeContract;
+        type Syntax = TestSyntax;
+
+        fn name(&self) -> &'static str {
+            "functions-only"
+        }
+
+        fn binding_capabilities(&self) -> HostCapabilities {
+            let capabilities = HostCapabilities::new()
+                .stable(BindingCapability::Records)
+                .stable(BindingCapability::Enums)
+                .stable(BindingCapability::Functions);
+            match self.interned_status {
+                None => capabilities,
+                Some(CapabilityStatus::Stable) => {
+                    capabilities.stable(BindingCapability::InternedString)
+                }
+                Some(CapabilityStatus::Experimental { reason }) => {
+                    capabilities.experimental(BindingCapability::InternedString, reason)
+                }
+                Some(CapabilityStatus::InProgress { reason }) => {
+                    capabilities.in_progress(BindingCapability::InternedString, reason)
+                }
+                Some(CapabilityStatus::Unsupported { reason }) => {
+                    capabilities.unsupported(BindingCapability::InternedString, reason)
+                }
+            }
+        }
+
+        fn bridge_capabilities(&self) -> CapabilityRequirements<BridgeCapability> {
+            CapabilityRequirements::new().require(BridgeCapability::CAbi)
+        }
+
+        fn record(
+            &self,
+            _decl: &boltffi_binding::RecordDecl<Self::Surface>,
+            _bridge: &Self::Bridge,
+            _context: &RenderContext<Self::Surface>,
+        ) -> Result<Emitted> {
+            if self.require_pruning {
+                panic!("unsupported declaration must be pruned before renderer invocation");
+            }
+            Ok(Emitted::placeholder())
+        }
+
+        fn enumeration(
+            &self,
+            _decl: &boltffi_binding::EnumDecl<Self::Surface>,
+            _bridge: &Self::Bridge,
+            _context: &RenderContext<Self::Surface>,
+        ) -> Result<Emitted> {
+            if self.require_pruning {
+                panic!("unsupported declaration must be pruned before renderer invocation");
+            }
+            Ok(Emitted::placeholder())
+        }
+
+        fn function(
+            &self,
+            _decl: &boltffi_binding::FunctionDecl<Self::Surface>,
+            _bridge: &Self::Bridge,
+            _context: &RenderContext<Self::Surface>,
+        ) -> Result<Emitted> {
+            if self.require_pruning {
+                panic!("unsupported declaration must be pruned before renderer invocation");
+            }
+            Ok(Emitted::placeholder())
+        }
+
+        fn class(
+            &self,
+            _decl: &boltffi_binding::ClassDecl<Self::Surface>,
+            _bridge: &Self::Bridge,
+            _context: &RenderContext<Self::Surface>,
+        ) -> Result<Emitted> {
+            Ok(Emitted::placeholder())
+        }
+
+        fn callback(
+            &self,
+            _decl: &boltffi_binding::CallbackDecl<Self::Surface>,
+            _bridge: &Self::Bridge,
+            _context: &RenderContext<Self::Surface>,
+        ) -> Result<Emitted> {
+            Ok(Emitted::placeholder())
+        }
+
+        fn stream(
+            &self,
+            _decl: &boltffi_binding::StreamDecl<Self::Surface>,
+            _bridge: &Self::Bridge,
+            _context: &RenderContext<Self::Surface>,
+        ) -> Result<Emitted> {
+            Ok(Emitted::placeholder())
+        }
+
+        fn constant(
+            &self,
+            _decl: &boltffi_binding::ConstantDecl<Self::Surface>,
+            _bridge: &Self::Bridge,
+            _context: &RenderContext<Self::Surface>,
+        ) -> Result<Emitted> {
+            Ok(Emitted::placeholder())
+        }
+
+        fn custom_type(
+            &self,
+            _decl: &boltffi_binding::CustomTypeDecl,
+            _bridge: &Self::Bridge,
+            _context: &RenderContext<Self::Surface>,
+        ) -> Result<Emitted> {
+            Ok(Emitted::placeholder())
+        }
+
+        fn assemble<'decl>(
+            &self,
+            _bindings: &Bindings<Self::Surface>,
+            _bridge: &Self::Bridge,
+            _context: &RenderContext<Self::Surface>,
+            declarations: Vec<RenderedDeclaration<'decl, Self::Surface>>,
+        ) -> Result<GeneratedOutput> {
+            if self.require_pruning {
+                assert!(
+                    declarations.is_empty(),
+                    "unsupported declarations must be excluded from assembly"
+                );
+            } else {
+                assert_eq!(
+                    declarations.len(),
+                    1,
+                    "renderable declarations must reach assembly"
+                );
+            }
+            Ok(GeneratedOutput::empty())
+        }
+    }
+
+    impl sealed::HostBackend for FunctionsOnlyHost {}
+
+    #[test]
+    fn partial_render_skips_interned_function_when_host_lacks_interned_string_capability() {
+        // A host with Functions but no InternedString should skip an interned
+        // function in partial mode and add it to the coverage report.
+        let target = super::Target::new(FunctionsOnlyHost::without_interned_string(), NativeBridge);
+        let output = target
+            .render_partial(&interned_function_bindings())
+            .expect("partial render should succeed, skipping the interned function");
+        let unsupported = output.coverage().unsupported();
+
+        assert_eq!(
+            unsupported.len(),
+            1,
+            "expected exactly one skipped declaration"
+        );
+        assert_eq!(unsupported[0].declaration().kind(), "function");
+        assert_eq!(unsupported[0].declaration().name(), "browser");
+        assert_eq!(unsupported[0].reason(), "capability was not advertised");
+    }
+
+    #[test]
+    fn partial_render_prunes_named_types_and_transitive_callers_before_renderer_invocation() {
+        let target = super::Target::new(FunctionsOnlyHost::without_interned_string(), NativeBridge);
+        let output = target
+            .render_partial(&interned_named_type_bindings())
+            .expect("partial render should prune named interned-string dependencies");
+        let unsupported = output.coverage().unsupported();
+
+        let names: Vec<_> = unsupported
+            .iter()
+            .map(|declaration| declaration.declaration().name())
+            .collect();
+        assert_eq!(
+            names,
+            [
+                "interned::record",
+                "record::envelope",
+                "interned::enum",
+                "record::parameter",
+                "record::return",
+                "enum::parameter",
+                "enum::return",
+                "record::envelope::return",
+            ]
+        );
+        assert!(
+            unsupported
+                .iter()
+                .all(|declaration| declaration.reason() == "capability was not advertised"),
+            "all declarations should be pruned by the InternedString capability gate"
+        );
+    }
+
+    fn assert_renderable_supplemental_status_is_reported(status: CapabilityStatus, reason: &str) {
+        let target = super::Target::new(
+            FunctionsOnlyHost::with_renderable_interned_string(status),
+            NativeBridge,
+        );
+        let output = target
+            .render_partial(&interned_function_bindings())
+            .expect("partial render should render a supported declaration");
+        let unsupported = output.coverage().unsupported();
+
+        assert_eq!(unsupported.len(), 1);
+        assert_eq!(unsupported[0].declaration().kind(), "function");
+        assert_eq!(unsupported[0].declaration().name(), "browser");
+        assert_eq!(unsupported[0].reason(), reason);
+        assert!(!output.coverage().is_complete());
+    }
+
+    #[test]
+    fn partial_render_reports_experimental_supplemental_capability() {
+        assert_renderable_supplemental_status_is_reported(
+            CapabilityStatus::Experimental {
+                reason: "InternedString is experimental",
+            },
+            "InternedString is experimental",
+        );
+    }
+
+    #[test]
+    fn partial_render_reports_in_progress_supplemental_capability() {
+        assert_renderable_supplemental_status_is_reported(
+            CapabilityStatus::InProgress {
+                reason: "InternedString is in progress",
+            },
+            "InternedString is in progress",
+        );
+    }
+
+    #[test]
+    fn complete_render_rejects_interned_function_when_host_lacks_interned_string_capability() {
+        let target = super::Target::new(FunctionsOnlyHost::without_interned_string(), NativeBridge);
+        let error = target
+            .render(&interned_function_bindings())
+            .expect_err("complete render should reject InternedString usage");
+
+        assert!(matches!(
+            error,
+            Error::BindingCapability {
+                target: "functions-only",
+                capability: BindingCapability::InternedString,
+                ..
+            }
+        ));
     }
 }

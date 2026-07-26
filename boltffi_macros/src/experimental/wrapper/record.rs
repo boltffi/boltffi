@@ -5,7 +5,7 @@ use boltffi_binding::{
 };
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{Ident, Type};
+use syn::{Ident, Type, parse_quote};
 
 use crate::experimental::{
     error::Error,
@@ -52,7 +52,8 @@ struct EncodedFieldTokens {
 
 struct RecordOwner<'lowered> {
     source: &'lowered RecordDef,
-    record: Ident,
+    record: TokenStream,
+    rust_type: Type,
     receiver: ReceiverKind<'lowered>,
 }
 
@@ -112,6 +113,47 @@ impl<'expansion, 'lowered, S: RenderSurface> Renderer<'expansion, 'lowered, S> {
             _ => Err(Error::UnsupportedExpansion("unknown record declaration")),
         }
     }
+
+    pub fn render_exports(self, rust_type: Type) -> Result<TokenStream, Error>
+    where
+        S: RenderSurface,
+        wrapper::arguments::SyncRenderer: Render<
+                S,
+                wrapper::arguments::Input<'expansion, 'lowered, S>,
+                Output = wrapper::arguments::Tokens,
+            >,
+        wrapper::returns::Failure: Render<S, wrapper::returns::FailureInput<'expansion, 'lowered, S>, Output = TokenStream>,
+        wrapper::returns::Renderer: Render<
+                S,
+                wrapper::returns::Input<'expansion, 'lowered, S>,
+                Output = wrapper::returns::Tokens,
+            >,
+        wrapper::async_call::Renderer:
+            Render<S, wrapper::async_call::Input<'expansion, 'lowered, S>, Output = TokenStream>,
+        wrapper::param::direct::Record:
+            Render<S, wrapper::param::direct::RecordInput, Output = wrapper::param::Tokens>,
+        wrapper::param::encoded::Renderer: Render<
+                S,
+                wrapper::param::encoded::Input<'expansion, 'lowered, S>,
+                Output = wrapper::param::Tokens,
+            >,
+    {
+        match self.pair.binding() {
+            RecordDecl::Direct(binding) => Direct {
+                source: self.pair.source(),
+                binding,
+                expansion: self.expansion,
+            }
+            .exports(rust_type),
+            RecordDecl::Encoded(binding) => Encoded {
+                source: self.pair.source(),
+                binding,
+                expansion: self.expansion,
+            }
+            .exports(rust_type),
+            _ => Err(Error::UnsupportedExpansion("unknown record declaration")),
+        }
+    }
 }
 
 impl<'expansion, 'lowered, S> Direct<'expansion, 'lowered, S>
@@ -168,7 +210,8 @@ where
         let exports = associated_fn::Renderer::new(
             RecordOwner {
                 source: self.source,
-                record: record.clone(),
+                record: quote! { #record },
+                rust_type: parse_quote! { #record },
                 receiver: ReceiverKind::Direct,
             },
             self.binding.initializers(),
@@ -246,6 +289,21 @@ where
             #exports
         })
     }
+
+    fn exports(self, rust_type: Type) -> Result<TokenStream, Error> {
+        associated_fn::Renderer::new(
+            RecordOwner {
+                source: self.source,
+                record: quote! { #rust_type },
+                rust_type,
+                receiver: ReceiverKind::Direct,
+            },
+            self.binding.initializers(),
+            self.binding.methods(),
+            self.expansion,
+        )
+        .render()
+    }
 }
 
 impl<'expansion, 'lowered, S> Encoded<'expansion, 'lowered, S>
@@ -298,7 +356,8 @@ where
         let exports = associated_fn::Renderer::new(
             RecordOwner {
                 source: self.source,
-                record: record.clone(),
+                record: quote! { #record },
+                rust_type: parse_quote! { #record },
                 receiver: ReceiverKind::Encoded {
                     codec: self.binding.write(),
                 },
@@ -350,6 +409,23 @@ where
 
             #exports
         })
+    }
+
+    fn exports(self, rust_type: Type) -> Result<TokenStream, Error> {
+        associated_fn::Renderer::new(
+            RecordOwner {
+                source: self.source,
+                record: quote! { #rust_type },
+                rust_type,
+                receiver: ReceiverKind::Encoded {
+                    codec: self.binding.write(),
+                },
+            },
+            self.binding.initializers(),
+            self.binding.methods(),
+            self.expansion,
+        )
+        .render()
     }
 
     fn fields(&self) -> Result<Vec<EncodedFieldTokens>, Error> {
@@ -536,7 +612,8 @@ where
         &self,
         export: associated_fn::ReceiverExport<'expansion, 'lowered, S>,
     ) -> Result<(export::ReceiverTokens, export::RustCall), Error> {
-        self.receiver.render(self.source, &self.record, export)
+        self.receiver
+            .render(self.source, &self.record, &self.rust_type, export)
     }
 }
 
@@ -544,7 +621,8 @@ impl<'receiver> ReceiverKind<'receiver> {
     fn render<'expansion, S>(
         self,
         source: &'receiver RecordDef,
-        record: &Ident,
+        record: &TokenStream,
+        rust_type: &Type,
         export: associated_fn::ReceiverExport<'expansion, 'receiver, S>,
     ) -> Result<(export::ReceiverTokens, export::RustCall), Error>
     where
@@ -569,8 +647,6 @@ impl<'receiver> ReceiverKind<'receiver> {
         let expansion = export.expansion();
         match (self, receive) {
             (Self::Direct, Some(receive)) => {
-                let rust_type = names::SourceSpelling::new(&source.name)
-                    .ty("source record name is not a Rust type")?;
                 let receiver = names::Locals::new(method.span()).receiver();
                 let requires_failure_return =
                     matches!(S::DIRECT_RECORD_PARAMS, DirectRecordCrossing::Pointer);
@@ -591,7 +667,7 @@ impl<'receiver> ReceiverKind<'receiver> {
                 let direct_writeback = self.direct_writeback(
                     receive,
                     &receiver,
-                    &rust_type,
+                    rust_type,
                     tokens.writebacks().is_empty(),
                     failure,
                 )?;

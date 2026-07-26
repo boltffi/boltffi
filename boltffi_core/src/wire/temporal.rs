@@ -77,22 +77,23 @@ impl EpochTimestampWireValue {
     }
 
     pub(crate) fn into_system_time(self) -> Option<SystemTime> {
-        self.is_valid().then(|| {
-            let total_nanos = (self.seconds as i128) * NANOS_PER_SECOND + self.nanos as i128;
+        if !self.is_valid() {
+            return None;
+        }
+        let total_nanos = (self.seconds as i128) * NANOS_PER_SECOND + self.nanos as i128;
 
-            if total_nanos >= 0 {
-                let duration = Duration::new(
-                    (total_nanos / NANOS_PER_SECOND) as u64,
-                    (total_nanos % NANOS_PER_SECOND) as u32,
-                );
-                UNIX_EPOCH + duration
-            } else {
-                let absolute_nanos = (-total_nanos) as u128;
-                let absolute_seconds = (absolute_nanos / NANOS_PER_SECOND as u128) as u64;
-                let absolute_fraction = (absolute_nanos % NANOS_PER_SECOND as u128) as u32;
-                UNIX_EPOCH - Duration::new(absolute_seconds, absolute_fraction)
-            }
-        })
+        if total_nanos >= 0 {
+            let duration = Duration::new(
+                (total_nanos / NANOS_PER_SECOND) as u64,
+                (total_nanos % NANOS_PER_SECOND) as u32,
+            );
+            UNIX_EPOCH.checked_add(duration)
+        } else {
+            let absolute_nanos = (-total_nanos) as u128;
+            let absolute_seconds = (absolute_nanos / NANOS_PER_SECOND as u128) as u64;
+            let absolute_fraction = (absolute_nanos % NANOS_PER_SECOND as u128) as u32;
+            UNIX_EPOCH.checked_sub(Duration::new(absolute_seconds, absolute_fraction))
+        }
     }
 
     #[cfg(feature = "chrono")]

@@ -42,7 +42,7 @@ fn kotlin_type_for_type_expr(ty: &TypeExpr) -> String {
             PrimitiveType::F32 => "Float".to_string(),
             PrimitiveType::F64 => "Double".to_string(),
         },
-        TypeExpr::String => "String".to_string(),
+        TypeExpr::String | TypeExpr::Str => "String".to_string(),
         TypeExpr::Vec(inner) => match inner.as_ref() {
             TypeExpr::Primitive(primitive) => match primitive {
                 PrimitiveType::I32 | PrimitiveType::U32 => "IntArray".to_string(),

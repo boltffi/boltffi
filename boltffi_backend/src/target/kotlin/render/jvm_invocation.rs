@@ -224,7 +224,7 @@ impl<'plan> ParamPlanRender<'plan, Native, OutOfRust> for Renderer<'_> {
         })
     }
 
-    fn direct_vector(&mut self, element: &'plan DirectVectorElementType) -> Self::Output {
+    fn direct_vector(&mut self, element: &'plan DirectVectorElementType, _: ()) -> Self::Output {
         let vector = DirectVector::from_element(element, self.context)?;
         let decoded = vector.decoded_argument(&self.source_name, self.name.clone())?;
         Ok(Parameter {

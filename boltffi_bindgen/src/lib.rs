@@ -4,6 +4,7 @@
 #![allow(dead_code)]
 
 pub mod artifact;
+pub mod cargo;
 pub mod generate;
 pub mod ir;
 pub mod metadata;

@@ -1,4 +1,4 @@
-pub const WASM_ABI_VERSION: u32 = 1;
+pub const WASM_ABI_VERSION: u32 = 2;
 
 #[cfg(any(test, target_arch = "wasm32"))]
 use std::alloc::{Layout, alloc, dealloc};
@@ -95,6 +95,23 @@ pub(crate) unsafe fn boltffi_wasm_free_string_return_impl(ptr: usize, len: usize
 }
 
 #[cfg(any(test, target_arch = "wasm32"))]
+fn boltffi_wasm_alloc_owned_bytes_impl(len: usize) -> usize {
+    if len == 0 {
+        return 0;
+    }
+    let layout = match Layout::array::<u8>(len) {
+        Ok(layout) => layout,
+        Err(_) => return 0,
+    };
+    let pointer = unsafe { alloc(layout) };
+    if pointer.is_null() {
+        0
+    } else {
+        pointer as usize
+    }
+}
+
+#[cfg(any(test, target_arch = "wasm32"))]
 fn boltffi_wasm_realloc_impl(ptr: usize, old_size: usize, new_size: usize) -> usize {
     if new_size == 0 {
         boltffi_wasm_free_impl(ptr, old_size);
@@ -130,6 +147,12 @@ pub fn write_return_slot(ptr: u32, len: u32, cap: u32, align: u32) {
         core::ptr::write_volatile(&raw mut RETURN_SLOT[2], cap);
         core::ptr::write_volatile(&raw mut RETURN_SLOT[3], align);
     }
+}
+
+#[cfg(target_arch = "wasm32")]
+#[inline(always)]
+pub fn write_option_f64_presence(present: bool) {
+    unsafe { core::ptr::write_volatile(&raw mut RETURN_SLOT[0], u32::from(present)) }
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -210,6 +233,11 @@ mod exports {
     }
 
     #[unsafe(no_mangle)]
+    pub extern "C" fn boltffi_wasm_alloc_owned_bytes(len: u32) -> u32 {
+        super::boltffi_wasm_alloc_owned_bytes_impl(len as usize) as u32
+    }
+
+    #[unsafe(no_mangle)]
     pub extern "C" fn boltffi_wasm_free_buf(ptr: u32, size: u32, align: u32) {
         super::boltffi_wasm_free_buf_impl(ptr as usize, size as usize, align as usize);
     }
@@ -218,13 +246,14 @@ mod exports {
 #[cfg(test)]
 mod tests {
     use super::{
-        WASM_ABI_VERSION, boltffi_wasm_alloc_impl, boltffi_wasm_free_buf_impl,
-        boltffi_wasm_free_impl, boltffi_wasm_free_string_return_impl, boltffi_wasm_realloc_impl,
+        WASM_ABI_VERSION, boltffi_wasm_alloc_impl, boltffi_wasm_alloc_owned_bytes_impl,
+        boltffi_wasm_free_buf_impl, boltffi_wasm_free_impl, boltffi_wasm_free_string_return_impl,
+        boltffi_wasm_realloc_impl,
     };
 
     #[test]
     fn wasm_abi_version_is_stable() {
-        assert_eq!(WASM_ABI_VERSION, 1);
+        assert_eq!(WASM_ABI_VERSION, 2);
     }
 
     #[test]
@@ -302,5 +331,14 @@ mod tests {
         let len = boxed.len();
         std::mem::forget(boxed);
         unsafe { boltffi_wasm_free_string_return_impl(ptr, len) };
+    }
+
+    #[test]
+    fn owned_byte_allocation_matches_string_return_release() {
+        let len = 16;
+        let pointer = boltffi_wasm_alloc_owned_bytes_impl(len);
+        assert_ne!(pointer, 0);
+        unsafe { core::ptr::write_bytes(pointer as *mut u8, 0, len) };
+        unsafe { boltffi_wasm_free_string_return_impl(pointer, len) };
     }
 }

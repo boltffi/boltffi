@@ -1,4 +1,4 @@
-static jbyteArray boltffi_jni_bytes_to_byte_array(JNIEnv *env, const uint8_t *bytes, uintptr_t len) {
+static inline jbyteArray boltffi_jni_bytes_to_byte_array(JNIEnv *env, const uint8_t *bytes, uintptr_t len) {
     if (bytes == NULL && len != 0) {
         boltffi_jni_throw_runtime(env, "BoltFFI byte slice pointer was null with non-zero length");
         return NULL;
@@ -13,10 +13,6 @@ static jbyteArray boltffi_jni_bytes_to_byte_array(JNIEnv *env, const uint8_t *by
     }
     if (len != 0) {
         (*env)->SetByteArrayRegion(env, array, 0, (jsize)len, (const jbyte *)bytes);
-        if ((*env)->ExceptionCheck(env)) {
-            (*env)->DeleteLocalRef(env, array);
-            return NULL;
-        }
     }
     return array;
 }

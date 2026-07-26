@@ -17,7 +17,9 @@ pub struct MethodFeatures {
     pub uses_continuations: bool,
     pub returns_byte_arrays: bool,
     pub uses_record_arrays: bool,
+    pub uses_direct_buffers: bool,
     pub uses_exceptions: bool,
+    pub uses_callback_parameters: bool,
     pub returns_callback_handles: bool,
 }
 
@@ -30,9 +32,10 @@ impl MethodFeatures {
             checks_error_buffer: methods.iter().any(|method| method.checks_error_buffer),
             uses_continuations: methods.iter().any(|method| method.uses_continuations),
             returns_byte_arrays: methods.iter().any(|method| method.returns_bytes),
-            uses_record_arrays: methods
-                .iter()
-                .any(|method| method.returns_record || !method.record_arrays.is_empty()),
+            uses_record_arrays: methods.iter().any(|method| method.returns_record),
+            uses_direct_buffers: methods.iter().any(|method| {
+                !method.direct_buffers.is_empty() || !method.record_buffers.is_empty()
+            }),
             uses_exceptions: methods.iter().any(|method| {
                 method.checks_status
                     || method.checks_completion_status
@@ -41,8 +44,10 @@ impl MethodFeatures {
                     || method.returns_record
                     || method.returns_callback
                     || !method.borrowed_arrays.is_empty()
-                    || !method.record_arrays.is_empty()
+                    || !method.direct_buffers.is_empty()
+                    || !method.record_buffers.is_empty()
             }),
+            uses_callback_parameters: methods.iter().any(|method| method.uses_callback_parameters),
             returns_callback_handles: methods.iter().any(|method| method.returns_callback),
         }
     }

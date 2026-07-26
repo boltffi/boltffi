@@ -1,0 +1,69 @@
+name: Publish crates
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+    secrets:
+      CARGO_TOKEN:
+        required: true
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish (e.g., 0.28.0 or 0.28.0-beta.1)'
+        required: true
+        type: string
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish v${{ inputs.version }} to crates.io
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: v${{ inputs.version }}
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache: false
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Publish workspace crates
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_TOKEN }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+
+          package_selection=()
+          while IFS= read -r crate; do
+            if cargo info --registry crates-io "$crate@$VERSION" >/dev/null 2>&1; then
+              echo "$crate $VERSION is already published; skipping"
+            else
+              package_selection+=(--package "$crate")
+            fi
+          done < <(
+            cargo metadata --no-deps --format-version 1 |
+              jq -r '
+                .workspace_members[] as $member
+                | .packages[]
+                | select(.id == $member and .publish != [])
+                | .name
+              '
+          )
+
+          if ((${#package_selection[@]} == 0)); then
+            echo "Every workspace crate is already published at $VERSION"
+            exit 0
+          fi
+
+          cargo publish "${package_selection[@]}"

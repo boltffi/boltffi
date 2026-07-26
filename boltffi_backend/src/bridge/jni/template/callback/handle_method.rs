@@ -12,12 +12,14 @@
 
 use crate::{
     bridge::{
-        c::{ArgumentList, Expression, Identifier, Literal, Statement, TypeFragment},
+        c::{ArgumentList, Expression, Identifier, Statement, TypeFragment},
         jni::{
             CallbackCompletionPayload, CallbackHandleClosureReturn, CallbackHandleCompletion,
             CallbackHandleMethod, SuccessOutReturn,
+            name::LookupText,
             template::method::{
-                BorrowedArrayParameterView, NativeParameterView, RecordParameterView,
+                BorrowedArrayParameterView, DirectBufferParameterView, NativeParameterView,
+                RecordParameterView,
             },
         },
     },
@@ -32,7 +34,8 @@ pub struct CallbackHandleMethodView {
     pub slot: Identifier,
     pub parameters: Vec<NativeParameterView>,
     pub borrowed_arrays: Vec<BorrowedArrayParameterView>,
-    pub record_arrays: Vec<RecordParameterView>,
+    pub direct_buffers: Vec<DirectBufferParameterView>,
+    pub record_buffers: Vec<RecordParameterView>,
     pub arguments: ArgumentList,
     pub completion: Option<CallbackHandleCompletionView>,
     pub returns_void: bool,
@@ -56,7 +59,12 @@ impl CallbackHandleMethodView {
             .iter()
             .flat_map(BorrowedArrayParameterView::from_parameter)
             .collect::<Result<Vec<_>>>()?;
-        let record_arrays = method
+        let direct_buffers = method
+            .parameters()
+            .iter()
+            .filter_map(DirectBufferParameterView::from_parameter)
+            .collect::<Vec<_>>();
+        let record_buffers = method
             .parameters()
             .iter()
             .filter_map(|parameter| parameter.record().map(RecordParameterView::from_record))
@@ -70,10 +78,11 @@ impl CallbackHandleMethodView {
             parameters: method
                 .parameters()
                 .iter()
-                .map(NativeParameterView::from_parameter)
+                .flat_map(NativeParameterView::from_parameter)
                 .collect(),
             borrowed_arrays,
-            record_arrays,
+            direct_buffers,
+            record_buffers,
             arguments: method.arguments()?,
             completion: method
                 .completion()
@@ -100,12 +109,12 @@ impl CallbackHandleMethodView {
 pub struct CallbackHandleCompletionView {
     pub function: Identifier,
     pub context: Identifier,
-    pub success_method: Identifier,
+    pub success_method: LookupText,
     pub success_method_id: Identifier,
-    pub success_signature: Literal,
-    pub failure_method: Identifier,
+    pub success_signature: LookupText,
+    pub failure_method: LookupText,
     pub failure_method_id: Identifier,
-    pub failure_signature: Literal,
+    pub failure_signature: LookupText,
     pub has_payload: bool,
     pub payload_c_type: TypeFragment,
     pub payload_jni_type: TypeFragment,
@@ -136,12 +145,12 @@ impl CallbackHandleCompletionView {
         Self {
             function: completion.function().clone(),
             context: completion.context().clone(),
-            success_method: completion.success_method().clone(),
+            success_method: LookupText::new(completion.success_method().as_str()),
             success_method_id: completion.success_method_id().clone(),
-            success_signature: Literal::string(completion.success_signature()),
-            failure_method: completion.failure_method().clone(),
+            success_signature: LookupText::new(completion.success_signature()),
+            failure_method: LookupText::new(completion.failure_method().as_str()),
             failure_method_id: completion.failure_method_id().clone(),
-            failure_signature: Literal::string("(J)V"),
+            failure_signature: LookupText::new("(J)V"),
             has_payload: payload.is_some(),
             payload_c_type: payload
                 .map(CallbackCompletionPayload::c_type)

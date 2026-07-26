@@ -92,10 +92,18 @@ impl DirectVectorElementAbi {
     }
 
     pub(in crate::bridge::c::parameter) fn pointer_type(&self) -> Type {
-        Type::ConstPointer(Box::new(match self {
+        Type::ConstPointer(Box::new(self.element_type()))
+    }
+
+    pub(in crate::bridge::c::parameter) fn mutable_pointer_type(&self) -> Type {
+        Type::MutPointer(Box::new(self.element_type()))
+    }
+
+    fn element_type(&self) -> Type {
+        match self {
             Self::Typed(element) => element.clone(),
             Self::PackedBytes => Type::Uint8,
-        }))
+        }
     }
 
     pub(in crate::bridge::c::parameter) fn length_name(&self, name: &str) -> String {

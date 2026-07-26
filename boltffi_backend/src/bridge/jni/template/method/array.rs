@@ -12,7 +12,7 @@
 use crate::{
     bridge::{
         c::{Identifier, TypeFragment},
-        jni::{BytesParameter, DirectVectorParameter, NativeParameter},
+        jni::{DirectVectorParameter, NativeParameter},
     },
     core::Result,
 };
@@ -31,8 +31,8 @@ pub struct BorrowedArrayParameterView {
     pub element_type: TypeFragment,
     pub getter: &'static str,
     pub releaser: &'static str,
+    pub release_mode: &'static str,
     pub stack_copy: Option<BorrowedArrayStackCopyView>,
-    pub writeback: Option<BorrowedArrayWritebackView>,
 }
 
 /// Stack-copy template fields for one borrowed primitive array.
@@ -48,29 +48,7 @@ pub struct BorrowedArrayStackCopyView {
     pub region_getter: &'static str,
 }
 
-#[derive(Clone)]
-pub struct BorrowedArrayWritebackView {
-    pub local: Identifier,
-}
-
 impl BorrowedArrayParameterView {
-    pub fn from_bytes(parameter: &BytesParameter) -> Self {
-        Self {
-            name: parameter.name().clone(),
-            pointer: parameter.pointer().clone(),
-            length: parameter.length().clone(),
-            element_type: TypeFragment::new("jbyte"),
-            getter: "GetByteArrayElements",
-            releaser: "ReleaseByteArrayElements",
-            stack_copy: None,
-            writeback: parameter
-                .writeback()
-                .map(|writeback| BorrowedArrayWritebackView {
-                    local: writeback.local().clone(),
-                }),
-        }
-    }
-
     pub fn from_direct_vector(parameter: &DirectVectorParameter) -> Result<Self> {
         Ok(Self {
             name: parameter.name().clone(),
@@ -79,7 +57,7 @@ impl BorrowedArrayParameterView {
             element_type: parameter.element_type(),
             getter: parameter.getter(),
             releaser: parameter.releaser(),
-            writeback: None,
+            release_mode: parameter.release_mode(),
             stack_copy: parameter
                 .stack_copy()
                 .map(|stack_copy| -> Result<BorrowedArrayStackCopyView> {
@@ -101,9 +79,6 @@ impl BorrowedArrayParameterView {
     }
 
     pub fn from_parameter(parameter: &NativeParameter) -> Option<Result<Self>> {
-        parameter
-            .bytes()
-            .map(|parameter| Ok(Self::from_bytes(parameter)))
-            .or_else(|| parameter.direct_vector().map(Self::from_direct_vector))
+        parameter.direct_vector().map(Self::from_direct_vector)
     }
 }

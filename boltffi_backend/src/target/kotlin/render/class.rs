@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, fmt};
 
 use askama::Template as AskamaTemplate;
 use boltffi_binding::{
@@ -12,8 +12,11 @@ use crate::{
     target::kotlin::{
         KotlinFactoryStyle, KotlinHost,
         name_style::Name,
-        render::function::{ExportedCall, ExportedCallRenderer},
-        syntax::{Expression, Identifier, Statement, TypeName},
+        render::{
+            function::{ExportedCall, ExportedCallRenderer, ReceiverCarrier},
+            signature::validate_reserved_members,
+        },
+        syntax::{ArgumentList, Expression, Identifier, Statement, TypeName},
     },
 };
 
@@ -41,6 +44,26 @@ pub struct Initializer {
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct ConstructorSignature(Vec<String>);
 
+/// Handle read through the generated closed-check accessor. Check-then-act:
+/// a `close()` racing the native call is not covered.
+fn guarded_handle(receiver: impl fmt::Display, presence: HandlePresence) -> Result<Expression> {
+    let accessor = Identifier::parse("boltffiHandle")?;
+    match presence {
+        HandlePresence::Required => Ok(Expression::call(
+            receiver,
+            accessor,
+            ArgumentList::from_iter([]),
+        )),
+        HandlePresence::Nullable => {
+            Ok(
+                Expression::safe_call(receiver, accessor, ArgumentList::from_iter([]))
+                    .or_else(Expression::long(0)),
+            )
+        }
+        _ => Err(KotlinHost::unsupported("unknown class handle presence")),
+    }
+}
+
 impl Class {
     pub fn from_declaration(
         decl: &ClassDecl<Native>,
@@ -54,18 +77,28 @@ impl Class {
             .iter()
             .map(|initializer| Initializer::from_declaration(initializer, host, bridge, context))
             .collect::<Result<Vec<_>>>()?;
+        let name = Self::type_name(decl.name())?;
+        let instance_methods = Self::methods(
+            decl.methods(),
+            Some(guarded_handle("this", HandlePresence::Required)?),
+            host,
+            bridge,
+            context,
+        )?;
+        validate_reserved_members(
+            &name,
+            &["close", "boltffiHandle"],
+            instance_methods
+                .iter()
+                .filter(|method| method.parameters().is_empty())
+                .map(ExportedCall::name),
+        )?;
         Ok(Self {
-            name: Self::type_name(decl.name())?,
             release: Identifier::escape(decl.release().name().as_str())?,
             initializers: Initializer::apply_factory_style(initializers, factory_style),
             static_methods: Self::methods(decl.methods(), None, host, bridge, context)?,
-            instance_methods: Self::methods(
-                decl.methods(),
-                Some(Expression::property("this", Identifier::parse("handle")?)),
-                host,
-                bridge,
-                context,
-            )?,
+            instance_methods,
+            name,
         })
     }
 
@@ -118,11 +151,11 @@ impl Class {
             .iter()
             .filter(|method| method.callable().receiver().is_some() == receiver.is_some())
             .map(|method| {
-                let native_prefix = match (method.callable().receiver(), receiver.clone()) {
+                let receiver = match (method.callable().receiver(), receiver.clone()) {
                     (Some(Receive::ByRef | Receive::ByMutRef | Receive::ByValue), Some(handle)) => {
-                        vec![handle]
+                        Some(ReceiverCarrier::direct(handle))
                     }
-                    (None, None) => Vec::new(),
+                    (None, None) => None,
                     _ => {
                         return Err(KotlinHost::unsupported("class method receiver"));
                     }
@@ -131,7 +164,7 @@ impl Class {
                     Name::new(method.name()).function()?,
                     method.target(),
                     method.callable(),
-                    native_prefix,
+                    receiver,
                 )
             })
             .collect()
@@ -150,7 +183,7 @@ impl Initializer {
                 Name::new(initializer.name()).function()?,
                 initializer.symbol(),
                 initializer.callable(),
-                Vec::new(),
+                None,
             )
             .map(|call| Self {
                 call,
@@ -234,14 +267,7 @@ impl ClassHandle {
     }
 
     pub fn parameter_argument(&self, value: Expression) -> Result<Expression> {
-        let handle = Identifier::parse("handle")?;
-        match self.presence {
-            HandlePresence::Required => Ok(Expression::property(value, handle)),
-            HandlePresence::Nullable => {
-                Ok(Expression::safe_property(value, handle).or_else(Expression::long(0)))
-            }
-            _ => Err(KotlinHost::unsupported("unknown class handle presence")),
-        }
+        guarded_handle(value, self.presence)
     }
 
     pub fn value_expression(&self, value: Expression) -> Result<Expression> {

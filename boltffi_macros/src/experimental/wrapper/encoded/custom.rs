@@ -312,6 +312,10 @@ impl<'expansion, 'lowered, S: RenderSurface> Incoming<'expansion, 'lowered, S> {
     }
 
     pub fn convert(&self, value: TokenStream) -> Result<IncomingConversion, Error> {
+        if !self.codec.contains_custom() {
+            return Ok(IncomingTransform::identity(quote! { _ }).apply(value));
+        }
+
         let transform = self
             .codec
             .render_read_with(&mut IncomingConverter::new(self.expansion))?;
@@ -343,6 +347,13 @@ impl<'expansion, S: RenderSurface> CodecRead for IncomingConverter<'expansion, S
 
     fn string(&mut self) -> Self::Expr {
         Ok(IncomingTransform::identity(quote! { String }))
+    }
+
+    fn interned_string(&mut self, _static_values: &[String]) -> Self::Expr {
+        // The pool type belongs to the source signature, not the codec IR.
+        // `_` preserves the decoded InternedString<P> type while allowing a
+        // sibling custom conversion to provide the enclosing representation.
+        Ok(IncomingTransform::identity(quote! { _ }))
     }
 
     fn bytes(&mut self) -> Self::Expr {
@@ -655,6 +666,10 @@ impl<'expansion, S: RenderSurface> CodecRead for OutgoingConverter<'expansion, S
     }
 
     fn string(&mut self) -> Self::Expr {
+        Ok(OutgoingTransform::Identity)
+    }
+
+    fn interned_string(&mut self, _static_values: &[String]) -> Self::Expr {
         Ok(OutgoingTransform::Identity)
     }
 

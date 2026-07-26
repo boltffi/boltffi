@@ -1,5 +1,6 @@
-use askama::Template as AskamaTemplate;
 use std::collections::HashSet;
+
+use askama::Template as AskamaTemplate;
 
 use boltffi_binding::{BuiltinType, DeclarationRef, Native};
 
@@ -9,11 +10,18 @@ use crate::{
         Diagnostic, Error, FilePath, GeneratedFile, GeneratedOutput, RenderContext,
         RenderedDeclaration, Result,
     },
-    target::kotlin::{
-        KotlinApiStyle, KotlinHost, KotlinPackage, NativeLibraries,
-        render::{
-            closure::Closures,
-            native::{NativeFunction, NativeMethods},
+    target::{
+        jvm::{
+            DesktopLoader, NativeLibraries,
+            resource::{PLATFORMS, Platform},
+        },
+        kotlin::{
+            KotlinApiStyle, KotlinHost, KotlinPackage,
+            render::{
+                closure::Closures,
+                native::{NativeFunction, NativeMethods},
+            },
+            syntax::Literal,
         },
     },
 };
@@ -22,7 +30,8 @@ use crate::{
 #[template(path = "target/kotlin/module.kt", escape = "none")]
 struct ModuleTemplate {
     package: KotlinPackage,
-    native_libraries: NativeLibraries,
+    native_libraries: LibraryLiterals,
+    resource_platforms: &'static [Platform],
     runtime: String,
     closures: String,
     native_functions: Vec<NativeFunction>,
@@ -62,6 +71,45 @@ struct RuntimeFeatures {
     record_vectors: bool,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct LibraryLiterals {
+    android: Literal,
+    desktop_jni: Literal,
+    desktop_fallback: Literal,
+    desktop_loader: DesktopLoader,
+}
+
+impl LibraryLiterals {
+    fn new(libraries: &NativeLibraries) -> Self {
+        Self {
+            android: Literal::string(libraries.android().as_str()),
+            desktop_jni: Literal::string(libraries.desktop_jni().as_str()),
+            desktop_fallback: Literal::string(libraries.desktop_fallback().as_str()),
+            desktop_loader: libraries.desktop_loader(),
+        }
+    }
+
+    fn android(&self) -> &Literal {
+        &self.android
+    }
+
+    fn desktop_jni(&self) -> &Literal {
+        &self.desktop_jni
+    }
+
+    fn desktop_fallback(&self) -> &Literal {
+        &self.desktop_fallback
+    }
+
+    fn bundled_desktop_loader(&self) -> bool {
+        self.desktop_loader.loads_bundled()
+    }
+
+    fn system_desktop_loader(&self) -> bool {
+        self.desktop_loader.loads_system()
+    }
+}
+
 pub struct Module<'host, 'bridge, 'decl> {
     host: &'host KotlinHost,
     bridge: &'bridge JniBridgeContract,
@@ -92,7 +140,8 @@ impl<'host, 'bridge, 'decl> Module<'host, 'bridge, 'decl> {
         let features = RuntimeFeatures::from_declarations(&self.declarations);
         let contents = ModuleTemplate {
             package: self.host.package().clone(),
-            native_libraries: self.host.native_libraries().clone(),
+            native_libraries: LibraryLiterals::new(self.host.native_libraries()),
+            resource_platforms: PLATFORMS,
             runtime: Runtime::new(features).render()?,
             closures,
             native_functions,

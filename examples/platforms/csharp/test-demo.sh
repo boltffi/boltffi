@@ -25,7 +25,10 @@ while [[ $# -gt 0 ]]; do
 done
 
 cargo_profile="debug"
-pack_command=(cargo run --quiet --manifest-path "$manifest_path" -p boltffi_cli -- pack csharp)
+pack_command=(cargo run --quiet --manifest-path "$manifest_path" -p boltffi_cli -- \
+  --cargo-arg=--features \
+  --cargo-arg=csharp-demo \
+  pack csharp)
 if [[ "$configuration" == "Release" ]]; then
   cargo_profile="release"
   pack_command+=(--release)

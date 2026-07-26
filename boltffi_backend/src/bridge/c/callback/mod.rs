@@ -2,7 +2,7 @@ mod slot;
 
 pub use slot::CallbackSlot;
 
-use boltffi_binding::{CallbackDecl, CallbackId, CanonicalName, Native};
+use boltffi_binding::{CallbackDecl, CallbackId, CanonicalName, DeclarationId, Native};
 
 use crate::core::Result;
 
@@ -55,6 +55,7 @@ impl Callback {
 impl Callback {
     /// Creates the C callback declaration for a lowered callback trait.
     pub fn from_decl(callback: &CallbackDecl<Native>, names: &Names) -> Result<Self> {
+        let declaration = DeclarationId::Callback(callback.id());
         let vtable_name = Identifier::parse(format!("{}VTable", names.callback(callback.id())?))?;
         let vtable = callback.protocol().vtable();
         let free = Field::new(
@@ -83,16 +84,18 @@ impl Callback {
                 .chain(methods.iter().map(CallbackSlot::field))
                 .collect(),
         );
-        let register = Function::new(
-            callback.protocol().register().name().as_str(),
+        let register = Function::exported(
+            declaration,
+            callback.protocol().register(),
             vec![Parameter::new(
                 "vtable",
                 Type::ConstPointer(Box::new(Type::Named(vtable_name.clone()))),
             )?],
             Type::Void,
         )?;
-        let create_handle = Function::new(
-            callback.protocol().create_handle().name().as_str(),
+        let create_handle = Function::exported(
+            declaration,
+            callback.protocol().create_handle(),
             vec![Parameter::new("handle", Type::Uint64)?],
             Type::CallbackHandle(callback.id()),
         )?;

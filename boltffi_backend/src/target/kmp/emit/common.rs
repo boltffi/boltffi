@@ -76,7 +76,7 @@ fn render_primitive_type(primitive: Primitive) -> Result<String> {
 }
 
 impl RenderedFunction {
-    fn from_plan(function: &KmpFunctionPlan) -> Result<Self> {
+    pub(crate) fn from_plan(function: &KmpFunctionPlan) -> Result<Self> {
         Ok(Self {
             name: function.name().to_string(),
             native_symbol: function.native_symbol().to_string(),

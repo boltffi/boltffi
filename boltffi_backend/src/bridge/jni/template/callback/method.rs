@@ -12,7 +12,7 @@
 
 use crate::bridge::{
     c::{ArgumentList, Expression, Identifier, Literal, TypeFragment},
-    jni::CallbackMethod,
+    jni::{CallbackMethod, name::LookupText},
 };
 
 use super::{
@@ -23,9 +23,10 @@ use super::{
 
 pub struct CallbackMethodView {
     pub function: Identifier,
-    pub method: Identifier,
+    pub vtable_slot: Identifier,
+    pub method_name: LookupText,
     pub method_id: Identifier,
-    pub signature: Literal,
+    pub signature: LookupText,
     pub c_return_type: TypeFragment,
     pub returns_void: bool,
     pub returns_byte_array: bool,
@@ -51,9 +52,10 @@ impl CallbackMethodView {
     pub fn from_method(method: &CallbackMethod) -> Self {
         Self {
             function: method.function().clone(),
-            method: method.method().clone(),
+            vtable_slot: method.method().clone(),
+            method_name: LookupText::new(method.method().as_str()),
             method_id: method.method_id().clone(),
-            signature: Literal::string(method.signature()),
+            signature: LookupText::new(method.signature()),
             c_return_type: method.c_return_type().clone(),
             returns_void: method.returns_void(),
             returns_byte_array: method.returns_byte_array(),

@@ -1,4 +1,4 @@
-static bool boltffi_jni_enter(JNIEnv **env, int *attached) {
+static inline bool boltffi_jni_enter(JNIEnv **env, int *attached) {
     if (boltffi_jni_vm == NULL) {
         return false;
     }

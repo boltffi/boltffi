@@ -32,6 +32,23 @@ static BoltFFICallbackHandle *boltffi_jni_callback_handle_ref(jlong handle) {
     return handle == 0 ? NULL : (BoltFFICallbackHandle *)(uintptr_t)handle;
 }
 
+typedef BoltFFICallbackHandle (*BoltFFICallbackCreate)(uint64_t handle);
+
+static BoltFFICallbackHandle boltffi_jni_callback_parameter(uint64_t handle, BoltFFICallbackCreate create) {
+    if ((handle & 1u) != 0u) {
+        return create(handle);
+    }
+    const BoltFFICallbackHandle *stored_callback = boltffi_jni_callback_handle_ref((jlong)handle);
+    const BoltFFICallbackVTablePrefix *vtable = boltffi_jni_callback_vtable_prefix(stored_callback);
+    if (stored_callback == NULL || stored_callback->handle == 0 || vtable == NULL || vtable->clone == NULL) {
+        return (BoltFFICallbackHandle){0};
+    }
+    return (BoltFFICallbackHandle){
+        .handle = vtable->clone(stored_callback->handle),
+        .vtable = stored_callback->vtable,
+    };
+}
+
 static void boltffi_jni_callback_handle_release(BoltFFICallbackHandle *callback) {
     if (callback == NULL) {
         return;

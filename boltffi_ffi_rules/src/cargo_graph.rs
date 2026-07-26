@@ -200,28 +200,37 @@ impl PackageGraph {
             ))
         })?;
 
-        packages
-            .iter()
-            .find(|package| {
-                package
-                    .manifest_path
-                    .canonicalize()
-                    .is_ok_and(|path| path == canonical_manifest)
-            })
-            .or_else(|| {
-                root_module_name.and_then(|module_name| {
-                    packages.iter().find(|package| {
-                        package.library_target_name().as_deref() == Some(module_name)
-                    })
-                })
-            })
-            .map(|package| PackageId::new(package.id.clone()))
-            .ok_or_else(|| {
-                LoadError::new(format!(
-                    "cargo metadata did not include package for {}",
-                    manifest_path.display()
-                ))
-            })
+        let missing = || {
+            LoadError::new(format!(
+                "cargo metadata did not include package for {}",
+                manifest_path.display()
+            ))
+        };
+
+        if let Some(package) = packages.iter().find(|package| {
+            package
+                .manifest_path
+                .canonicalize()
+                .is_ok_and(|path| path == canonical_manifest)
+        }) {
+            return Ok(PackageId::new(package.id.clone()));
+        }
+
+        let module_name = root_module_name
+            .map(naming::cargo_crate_name)
+            .ok_or_else(missing)?;
+        let mut candidates = packages.iter().filter(|package| {
+            package.is_local()
+                && package.library_target_name().as_deref() == Some(module_name.as_str())
+        });
+        match (candidates.next(), candidates.next()) {
+            (Some(package), None) => Ok(PackageId::new(package.id.clone())),
+            (Some(_), Some(_)) => Err(LoadError::new(format!(
+                "multiple local packages match module name `{module_name}` for {}",
+                manifest_path.display()
+            ))),
+            (None, _) => Err(missing()),
+        }
     }
 
     fn collect_reachable_exported_dependencies(
@@ -478,5 +487,119 @@ impl LegacyExportDetector {
                     .require_list()
                     .is_ok_and(|meta| meta.tokens.to_string().contains("FfiType"))
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn crate_manifest_path() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml")
+    }
+
+    fn virtual_root_manifest_path() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("crate dir has a parent")
+            .join("Cargo.toml")
+    }
+
+    fn package_with_library_target(id: &str, target_name: &str) -> CargoPackage {
+        CargoPackage {
+            id: id.to_owned(),
+            manifest_path: crate_manifest_path(),
+            source: None,
+            targets: vec![CargoTarget {
+                name: target_name.to_owned(),
+                kind: vec!["lib".to_owned()],
+                src_path: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/lib.rs"),
+            }],
+        }
+    }
+
+    #[test]
+    fn resolves_root_by_manifest_path() {
+        let packages = vec![package_with_library_target("my-lib-id", "my_lib")];
+
+        let root_id = PackageGraph::resolve_root_id(&packages, &crate_manifest_path(), None)
+            .expect("manifest path match");
+
+        assert_eq!(root_id, PackageId::new("my-lib-id".to_owned()));
+    }
+
+    #[test]
+    fn falls_back_to_module_name_for_virtual_root_manifest() {
+        let packages = vec![package_with_library_target("my-lib-id", "my_lib")];
+
+        let root_id =
+            PackageGraph::resolve_root_id(&packages, &virtual_root_manifest_path(), Some("my_lib"))
+                .expect("module name fallback match");
+
+        assert_eq!(root_id, PackageId::new("my-lib-id".to_owned()));
+    }
+
+    #[test]
+    fn module_name_fallback_normalizes_dashed_crate_names() {
+        let packages = vec![package_with_library_target("my-lib-id", "my_lib")];
+
+        let root_id =
+            PackageGraph::resolve_root_id(&packages, &virtual_root_manifest_path(), Some("my-lib"))
+                .expect("dashed module name normalizes to library target name");
+
+        assert_eq!(root_id, PackageId::new("my-lib-id".to_owned()));
+    }
+
+    #[test]
+    fn module_name_fallback_ignores_registry_packages() {
+        let registry_package = CargoPackage {
+            source: Some("registry+https://github.com/rust-lang/crates.io-index".to_owned()),
+            ..package_with_library_target("registry-id", "my_lib")
+        };
+        let packages = vec![
+            registry_package,
+            package_with_library_target("local-id", "my_lib"),
+        ];
+
+        let root_id =
+            PackageGraph::resolve_root_id(&packages, &virtual_root_manifest_path(), Some("my_lib"))
+                .expect("local package match");
+
+        assert_eq!(root_id, PackageId::new("local-id".to_owned()));
+    }
+
+    #[test]
+    fn module_name_fallback_errors_on_ambiguous_matches() {
+        let packages = vec![
+            package_with_library_target("underscore-id", "foo_bar"),
+            package_with_library_target("dash-id", "foo-bar"),
+        ];
+
+        let error = PackageGraph::resolve_root_id(
+            &packages,
+            &virtual_root_manifest_path(),
+            Some("foo-bar"),
+        )
+        .expect_err("ambiguous module name");
+
+        assert!(error.to_string().contains("multiple local packages"));
+    }
+
+    #[test]
+    fn errors_when_no_package_matches_manifest_or_module_name() {
+        let packages = vec![package_with_library_target("my-lib-id", "my_lib")];
+
+        let error = PackageGraph::resolve_root_id(
+            &packages,
+            &virtual_root_manifest_path(),
+            Some("other-lib"),
+        )
+        .expect_err("no matching package");
+
+        assert!(
+            error
+                .to_string()
+                .contains("cargo metadata did not include package")
+        );
     }
 }

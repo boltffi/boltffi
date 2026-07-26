@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::path::SpanMap;
-use crate::{ModulePath, ModuleScope, ScanError};
+use crate::{ActiveCfg, ModulePath, ModuleScope, ScanError};
 
 #[derive(Clone)]
 pub struct SourceTree {
@@ -10,11 +10,20 @@ pub struct SourceTree {
 
 impl SourceTree {
     pub fn load(root: &Path, crate_name: &str) -> Result<Self, ScanError> {
+        Self::load_with_cfg(root, crate_name, &ActiveCfg::default())
+    }
+
+    pub fn load_with_cfg(
+        root: &Path,
+        crate_name: &str,
+        cfg: &ActiveCfg,
+    ) -> Result<Self, ScanError> {
         walk(
             ModulePath::root(crate_name),
             &module_dir(root),
             parse(root)?,
             SourceMode::Files,
+            cfg,
         )
         .map(|modules| Self { modules })
     }
@@ -25,6 +34,7 @@ impl SourceTree {
             Path::new("."),
             ParsedFile::inline(file.items),
             SourceMode::Inline,
+            &ActiveCfg::default(),
         )
         .map(|modules| Self { modules })
     }
@@ -37,11 +47,21 @@ impl SourceTree {
 
     #[cfg(test)]
     pub fn in_memory(crate_name: &str, items: Vec<syn::Item>) -> Result<Self, ScanError> {
+        Self::in_memory_with_cfg(crate_name, items, &ActiveCfg::default())
+    }
+
+    #[cfg(test)]
+    pub fn in_memory_with_cfg(
+        crate_name: &str,
+        items: Vec<syn::Item>,
+        cfg: &ActiveCfg,
+    ) -> Result<Self, ScanError> {
         walk(
             ModulePath::root(crate_name),
             Path::new("."),
             ParsedFile::inline(items),
             SourceMode::Inline,
+            cfg,
         )
         .map(|modules| Self { modules })
     }
@@ -79,6 +99,7 @@ fn walk(
     dir: &Path,
     file: ParsedFile,
     source_mode: SourceMode,
+    cfg: &ActiveCfg,
 ) -> Result<Vec<SourceModule>, ScanError> {
     let spans = file.spans;
     let (own_items, mut child_modules) = file.items.into_iter().try_fold(
@@ -92,6 +113,7 @@ fn walk(
                         item_mod.clone(),
                         spans.clone(),
                         source_mode,
+                        cfg,
                     )?);
                     own_items.push(syn::Item::Mod(item_mod));
                 }
@@ -110,8 +132,9 @@ fn descend(
     item_mod: syn::ItemMod,
     parent_spans: Option<SpanMap>,
     source_mode: SourceMode,
+    cfg: &ActiveCfg,
 ) -> Result<Vec<SourceModule>, ScanError> {
-    if has_cfg(&item_mod.attrs) {
+    if !cfg.matches_attrs(&item_mod.attrs)? {
         return Ok(Vec::new());
     }
     let name = item_mod.ident.to_string();
@@ -125,11 +148,12 @@ fn descend(
                 spans: parent_spans,
             },
             source_mode,
+            cfg,
         ),
         None if source_mode == SourceMode::Files => {
             let path = resolve(parent, dir, &name, &item_mod.attrs)?;
             let file = parse(&path)?;
-            walk(child, &module_dir(&path), file, source_mode)
+            walk(child, &module_dir(&path), file, source_mode, cfg)
         }
         None => Err(ScanError::ModuleNotFound {
             module: parent.qualified(&name),
@@ -183,15 +207,6 @@ fn resolve(
             searched: vec![flat.display().to_string(), nested.display().to_string()],
         })
     }
-}
-
-fn has_cfg(attrs: &[syn::Attribute]) -> bool {
-    attrs.iter().any(|attr| {
-        attr.path()
-            .segments
-            .last()
-            .is_some_and(|segment| segment.ident == "cfg")
-    })
 }
 
 fn path_attr(attrs: &[syn::Attribute]) -> Option<String> {
@@ -342,7 +357,7 @@ mod tests {
     }
 
     #[test]
-    fn cfg_gated_modules_are_not_loaded_without_cfg_evaluation() {
+    fn inactive_cfg_gated_modules_are_not_loaded() {
         let tree = SourceTree::in_memory(
             "demo",
             parse_items("#[cfg(feature = \"ffi\")] pub mod gated;"),
@@ -350,5 +365,40 @@ mod tests {
         .expect("cfg-gated module is skipped");
 
         assert_eq!(module_paths(&tree), vec!["demo::".to_owned()]);
+    }
+
+    #[test]
+    fn active_feature_cfg_loads_inline_module() {
+        let cfg = ActiveCfg::default().with_feature("ffi");
+        let tree = SourceTree::in_memory_with_cfg(
+            "demo",
+            parse_items("#[cfg(feature = \"ffi\")] pub mod gated { pub struct Point; }"),
+            &cfg,
+        )
+        .expect("cfg-gated module is active");
+
+        assert_eq!(
+            module_paths(&tree),
+            vec!["demo::gated::".to_owned(), "demo::".to_owned()]
+        );
+    }
+
+    #[test]
+    fn active_feature_cfg_loads_external_module() {
+        let dir = std::env::temp_dir().join("boltffi_scan_tree_cfg_feature");
+        std::fs::create_dir_all(&dir).expect("create fixture dir");
+        let root = dir.join("lib.rs");
+        std::fs::write(
+            &root,
+            "#[cfg(feature = \"native-ffi\")] pub mod ffi; pub struct Root;",
+        )
+        .expect("write root");
+        std::fs::write(dir.join("ffi.rs"), "pub struct CoreFfi;").expect("write ffi");
+
+        let cfg = ActiveCfg::default().with_feature("native_ffi");
+        let tree = SourceTree::load_with_cfg(&root, "demo", &cfg).expect("load tree");
+
+        std::fs::remove_dir_all(&dir).ok();
+        assert!(module_paths(&tree).contains(&"demo::ffi::".to_owned()));
     }
 }

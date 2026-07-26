@@ -2,6 +2,7 @@ use boltffi::*;
 use demo_bench_macros::benchmark_candidate;
 
 use crate::enums::c_style::Status;
+use crate::enums::data_enum::Shape;
 use crate::records::blittable::Point;
 use crate::results::ApiResult;
 
@@ -237,4 +238,30 @@ pub fn find_api_result(code: i32) -> Option<ApiResult> {
 #[export]
 pub fn echo_vec_optional_i32(v: Vec<Option<i32>>) -> Vec<Option<i32>> {
     v
+}
+
+/// Reads the radius out of a `Shape::Circle`, `None` for any other variant.
+///
+/// A `#[export]` function taking a `#[data]` enum with a data-carrying
+/// variant and returning `Option<{scalar}>` previously failed to compile:
+/// the native (`FfiBuf`-returning) function's invalid-argument early
+/// return used the wasm `f64::NAN` convention instead of an empty
+/// `FfiBuf`. Regression test for
+/// https://github.com/boltffi/boltffi/issues/621.
+#[demo_bench_macros::demo_case(
+    "options.complex.shape.should_return_radius_for_circle",
+    justification = "Ensure radius_if_circle returns Some containing the radius when the Shape data enum is Circle.",
+    directions = "Call `options::complex::radius_if_circle` through the generated binding and assert radius_if_circle returns Some containing the radius when the Shape data enum is Circle."
+)]
+#[demo_bench_macros::demo_case(
+    "options.complex.shape.should_return_none_for_non_circle",
+    justification = "Ensure radius_if_circle returns None when the Shape data enum is not Circle.",
+    directions = "Call `options::complex::radius_if_circle` through the generated binding and assert radius_if_circle returns None when the Shape data enum is not Circle."
+)]
+#[export]
+pub fn radius_if_circle(shape: Shape) -> Option<f64> {
+    match shape {
+        Shape::Circle { radius } => Some(radius),
+        _ => None,
+    }
 }

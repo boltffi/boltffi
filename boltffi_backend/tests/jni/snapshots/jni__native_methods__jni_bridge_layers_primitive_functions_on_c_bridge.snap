@@ -6,14 +6,39 @@ expression: "rendered_fixture(\"exports/primitive_functions\")"
 <c abi support declarations>
 int32_t boltffi_function_demo_add(int32_t left, int32_t right);
 bool boltffi_function_demo_enabled(bool flag);
-FfiStatus boltffi_function_demo_refresh(void);
+void boltffi_function_demo_refresh(void);
 FfiBuf_u8 boltffi_function_demo_echo_bytes(const uint8_t *bytes_ptr, uintptr_t bytes_len);
 
 ===== jni/jni_glue.c =====
 <jni source includes>
 <jni exception helpers>
-<jni status helper>
 <jni byte-array helpers>
+static bool boltffi_jni_direct_buffer_address(JNIEnv *env, jobject buffer, jlong required_capacity, void **address) {
+    if (buffer == NULL) {
+        boltffi_jni_throw_illegal_argument(env, "BoltFFI direct buffer argument was null");
+        return false;
+    }
+    if (required_capacity < 0) {
+        boltffi_jni_throw_illegal_argument(env, "BoltFFI direct buffer length was negative");
+        return false;
+    }
+    jlong capacity = (*env)->GetDirectBufferCapacity(env, buffer);
+    if (capacity < 0) {
+        boltffi_jni_throw_illegal_argument(env, "BoltFFI argument was not a direct buffer");
+        return false;
+    }
+    if (capacity < required_capacity) {
+        boltffi_jni_throw_illegal_argument(env, "BoltFFI direct buffer capacity was too small");
+        return false;
+    }
+    *address = (*env)->GetDirectBufferAddress(env, buffer);
+    if (*address == NULL && required_capacity != 0) {
+        boltffi_jni_throw_illegal_argument(env, "BoltFFI direct buffer address was unavailable");
+        return false;
+    }
+    return true;
+}
+
 JNIEXPORT jint JNICALL Java_com_boltffi_demo_Native_boltffi_1function_1demo_1add(JNIEnv *env, jclass cls, jint left, jint right) {
     (void)cls;
 
@@ -35,45 +60,25 @@ JNIEXPORT jboolean JNICALL Java_com_boltffi_demo_Native_boltffi_1function_1demo_
 JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1function_1demo_1refresh(JNIEnv *env, jclass cls) {
     (void)cls;
 
-    FfiStatus __boltffi_status = boltffi_function_demo_refresh();
-
-    if (__boltffi_status.code != 0) {
-        boltffi_jni_throw_status(env, __boltffi_status);
-        return;
-    }
+    (void)env;
+    boltffi_function_demo_refresh();
 
     return;
 }
 
-JNIEXPORT jbyteArray JNICALL Java_com_boltffi_demo_Native_boltffi_1function_1demo_1echo_1bytes(JNIEnv *env, jclass cls, jbyteArray bytes) {
+JNIEXPORT jbyteArray JNICALL Java_com_boltffi_demo_Native_boltffi_1function_1demo_1echo_1bytes(JNIEnv *env, jclass cls, jobject bytes, jint __boltffi_bytes_len) {
     (void)cls;
 
-    jbyte *__boltffi_bytes_ptr = NULL;
-    jsize __boltffi_bytes_len = 0;
+    void *__boltffi_bytes_ptr = NULL;
 
-    if (bytes == NULL) {
-        boltffi_jni_throw_illegal_argument(env, "BoltFFI array argument was null");
-        goto __boltffi_error;
-    }
-    __boltffi_bytes_len = (*env)->GetArrayLength(env, bytes);
-    __boltffi_bytes_ptr = (*env)->GetByteArrayElements(env, bytes, NULL);
-    if (__boltffi_bytes_ptr == NULL) {
+    if (!boltffi_jni_direct_buffer_address(env, bytes, (jlong)__boltffi_bytes_len, &__boltffi_bytes_ptr)) {
         goto __boltffi_error;
     }
 
     (void)env;
     FfiBuf_u8 __boltffi_result = boltffi_function_demo_echo_bytes((const uint8_t *)__boltffi_bytes_ptr, (uintptr_t)__boltffi_bytes_len);
 
-    if (__boltffi_bytes_ptr != NULL) {
-        (*env)->ReleaseByteArrayElements(env, bytes, __boltffi_bytes_ptr, JNI_ABORT);
-        __boltffi_bytes_ptr = NULL;
-    }
-
     return boltffi_jni_buffer_to_byte_array(env, __boltffi_result);
 __boltffi_error:
-    if (__boltffi_bytes_ptr != NULL) {
-        (*env)->ReleaseByteArrayElements(env, bytes, __boltffi_bytes_ptr, JNI_ABORT);
-        __boltffi_bytes_ptr = NULL;
-    }
     return NULL;
 }

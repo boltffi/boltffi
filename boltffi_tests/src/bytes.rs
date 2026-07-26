@@ -22,8 +22,3 @@ pub fn fill_bytes(out: &mut [u8]) -> u32 {
 pub fn echo_bytes(data: Vec<u8>) -> Vec<u8> {
     data
 }
-
-#[export]
-pub fn grow_bytes(data: &mut Vec<u8>, extra: u8) {
-    data.push(extra);
-}

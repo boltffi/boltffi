@@ -11,7 +11,7 @@ private object Native {
     @JvmStatic external fun boltffi_success_bytes(returnOut: Long, value: ByteArray): Unit
 }
 
-interface MessageMapper {
+fun interface MessageMapper {
     fun mapMessage(key: Int): String
 }
 

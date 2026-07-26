@@ -1,4 +1,7 @@
-use boltffi_binding::{DirectValueType, IncomingParam, IntoRust, ParamDecl, ParamPlan, Receive};
+use boltffi_binding::{
+    DirectValueType, DirectVectorElementType, IncomingParam, IntoRust, ParamDecl, ParamPlan,
+    Receive, TypeRef,
+};
 use proc_macro2::TokenStream;
 
 use crate::experimental::{
@@ -20,15 +23,24 @@ pub struct Renderer;
 
 pub fn requires_failure_return<S: RenderSurface>(param: &ParamDecl<S, IntoRust>) -> bool {
     match param.payload() {
-        IncomingParam::Value(ParamPlan::Direct { ty, .. }) => {
-            matches!(S::DIRECT_RECORD_PARAMS, DirectRecordCrossing::Pointer)
-                && matches!(ty, DirectValueType::Record(_))
+        IncomingParam::Value(ParamPlan::Direct { ty, receive }) => {
+            matches!(ty, DirectValueType::Record(_))
+                && (matches!(S::DIRECT_RECORD_PARAMS, DirectRecordCrossing::Pointer)
+                    || (S::BORROWED_DIRECT_RECORD_PARAMS
+                        && matches!(receive, Receive::ByRef | Receive::ByMutRef)))
         }
         IncomingParam::Value(ParamPlan::Encoded { .. })
         | IncomingParam::Value(ParamPlan::Handle { .. })
         | IncomingParam::Value(ParamPlan::ScalarOption { .. })
-        | IncomingParam::Value(ParamPlan::DirectVec { .. })
         | IncomingParam::Closure(_) => true,
+        IncomingParam::Value(ParamPlan::DirectVec {
+            element: DirectVectorElementType::Record(_),
+            ..
+        }) => true,
+        IncomingParam::Value(ParamPlan::DirectVec {
+            element: DirectVectorElementType::Primitive(_),
+            ..
+        }) => false,
         IncomingParam::Value(_) => true,
     }
 }
@@ -122,6 +134,7 @@ where
                 codec,
                 shape,
                 receive,
+                ty,
                 ..
             }) => {
                 let encoded_input = encoded::Input::new(
@@ -132,8 +145,9 @@ where
                     input.failure,
                     input.expansion,
                 );
-                let encoded_input = match receive {
-                    Receive::ByMutRef => encoded_input.with_writeback(),
+                let encoded_input = match (receive, ty) {
+                    (Receive::ByMutRef, TypeRef::Bytes) => encoded_input.into_mutable_bytes(),
+                    (Receive::ByMutRef, _) => encoded_input.with_writeback(),
                     _ => encoded_input,
                 };
                 <encoded::Renderer as Render<S, _>>::render(encoded::Renderer, encoded_input)
@@ -150,11 +164,12 @@ where
                     ),
                 )
             }
-            IncomingParam::Value(ParamPlan::DirectVec { element }) => {
+            IncomingParam::Value(ParamPlan::DirectVec { element, receive }) => {
                 <direct_vec::Renderer as Render<S, _>>::render(
                     direct_vec::Renderer,
                     direct_vec::Input::new(
                         element,
+                        *receive,
                         input.source.direct_vec_element_type()?,
                         ident,
                         input.failure,

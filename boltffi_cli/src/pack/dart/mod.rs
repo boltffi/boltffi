@@ -1,7 +1,7 @@
 use crate::{
     build::{
-        BuildOptions, Builder, CargoBuildProfile, OutputCallback, all_successful, failed_targets,
-        resolve_build_profile,
+        BuildOptions, BuildSelection, Builder, CargoBuildProfile, OutputCallback, all_successful,
+        failed_targets, resolve_build_profile,
     },
     cargo::Cargo,
     cli::{CliError, Result},
@@ -28,9 +28,10 @@ fn build_dart_targets(
 
     let build_options = BuildOptions {
         release,
-        package: Some(config.library_name().to_string()),
-        cargo_args: build_cargo_args.to_vec(),
-        env: Vec::new(),
+        selection: BuildSelection::Package {
+            package: config.library_name().to_string(),
+            cargo_args: build_cargo_args.to_vec(),
+        },
         on_output,
     };
     let builder = Builder::new(config, build_options);

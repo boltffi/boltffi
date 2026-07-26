@@ -1,6 +1,0 @@
-const _wasmBytes = readFileSync(_wasmPath);
-const _module: BoltFFIModule = instantiateBoltFFISync(_wasmBytes, EXPECTED_ABI_VERSION, { env: _callbackImports });
-const _exports: BoltFFIExports = _module.exports;
-
-export const initialized = Promise.resolve();
-export default function init(): Promise<void> { return Promise.resolve(); }

@@ -32,3 +32,10 @@ class StringsTests(DemoTestCase):
 
     def test_repeat_string(self) -> None:
         self.assertEqual(demo.repeat_string("ab", 3), "ababab", "case:primitives.strings.string.should_repeat_value")
+
+    def test_borrowed_static_string(self) -> None:
+        self.assertEqual(
+            demo.borrowed_static_string(),
+            "borrowed static",
+            "case:primitives.strings.borrowed_static_string.should_return_value",
+        )

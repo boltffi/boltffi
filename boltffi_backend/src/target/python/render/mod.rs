@@ -9,7 +9,7 @@ use boltffi_binding::{
 
 use crate::{
     bridge::python_cext::PythonCExtBridgeContract,
-    core::{Error, FilePath, GeneratedFile, GeneratedOutput, Result},
+    core::{Error, FilePath, GeneratedFile, GeneratedOutput, RenderedDeclaration, Result},
     target::python::{
         codec::{CodecAdapters, EnumCodec, FixedStruct, ReadFunction, WriteFunction},
         cpython::{
@@ -93,8 +93,8 @@ struct SetupTemplate {
 }
 
 pub struct Package<'bindings> {
-    bindings: &'bindings Bindings<Native>,
     declarations: PackageDeclarations<'bindings>,
+    codec_adapters: CodecAdapters<'bindings>,
     bridge: &'bindings PythonCExtBridgeContract,
     module: PackageModule,
     distribution: String,
@@ -110,10 +110,16 @@ impl<'bindings> Package<'bindings> {
         distribution: String,
         version: Option<String>,
         library: String,
+        rendered: &[RenderedDeclaration<'bindings, Native>],
     ) -> Self {
+        let declarations = PackageDeclarations::from_rendered(rendered);
+        let declaration_refs = rendered
+            .iter()
+            .map(RenderedDeclaration::declaration)
+            .collect::<Vec<_>>();
         Self {
-            bindings,
-            declarations: PackageDeclarations::new(bindings),
+            declarations,
+            codec_adapters: CodecAdapters::from_declarations(bindings, &declaration_refs),
             bridge,
             module,
             distribution,
@@ -131,13 +137,14 @@ impl<'bindings> Package<'bindings> {
         let classes = self.classes()?;
         let constants = self.constants()?;
         let functions = self.functions();
-        let codec_adapters = CodecAdapters::from_bindings(self.bindings);
-        let codec_decoders = codec_adapters
+        let codec_decoders = self
+            .codec_adapters
             .decoders()
             .iter()
             .map(|adapter| ReadFunction::from_adapter(adapter, &self))
             .collect::<Result<Vec<_>>>()?;
-        let codec_encoders = codec_adapters
+        let codec_encoders = self
+            .codec_adapters
             .encoders()
             .iter()
             .map(|adapter| WriteFunction::from_adapter(adapter, &self))
@@ -161,7 +168,7 @@ impl<'bindings> Package<'bindings> {
             || classes.iter().any(Class::uses_wire_helpers)
             || constants.iter().any(ConstantStub::uses_wire_helpers)
             || stubs.iter().any(FunctionStub::uses_wire_helpers)
-            || !codec_adapters.is_empty();
+            || !self.codec_adapters.is_empty();
         let uses_async_helpers = records.iter().any(RecordClass::uses_async_helpers)
             || enums.iter().any(EnumClass::uses_async_helpers)
             || classes.iter().any(Class::uses_async_helpers)
@@ -255,11 +262,10 @@ struct PackageDeclarations<'bindings> {
 }
 
 impl<'bindings> PackageDeclarations<'bindings> {
-    fn new(bindings: &'bindings Bindings<Native>) -> Self {
-        bindings
-            .decls()
+    fn from_rendered(rendered: &[RenderedDeclaration<'bindings, Native>]) -> Self {
+        rendered
             .iter()
-            .map(DeclarationRef::from)
+            .map(RenderedDeclaration::declaration)
             .fold(Self::default(), Self::insert)
     }
 

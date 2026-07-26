@@ -75,12 +75,7 @@ impl EventBus {
             "classes::streams::StreamMessage",
             "classes::streams::EventBus::emit_message",
             "classes::streams::EventBus::subscribe_messages",
-        ],
-        exclude(
-            typescript,
-            reason = ExclusionReason::ImplementationGap,
-            details = "The WASM/TypeScript backend does not currently expose class stream subscriptions. Include this case when WASM stream subscriptions are implemented."
-        )
+        ]
     )]
     #[ffi_stream(item = StreamMessage)]
     pub fn subscribe_messages(&self) -> Arc<EventSubscription<StreamMessage>> {

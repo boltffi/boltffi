@@ -5,7 +5,7 @@ use boltffi_binding::{
 };
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::Ident;
+use syn::{Ident, Type};
 
 use crate::experimental::{
     error::Error,
@@ -17,7 +17,8 @@ use crate::experimental::{
 
 pub struct Renderer<'expansion, 'lowered, S: RenderSurface> {
     source: &'lowered EnumDef,
-    enumeration: Ident,
+    enumeration: TokenStream,
+    rust_type: Type,
     receiver: Receiver<'lowered>,
     initializers: &'lowered [InitializerDecl<S>],
     methods: &'lowered [ExportedMethodDecl<S, NativeSymbol>],
@@ -26,7 +27,8 @@ pub struct Renderer<'expansion, 'lowered, S: RenderSurface> {
 
 struct EnumOwner<'lowered> {
     source: &'lowered EnumDef,
-    enumeration: Ident,
+    enumeration: TokenStream,
+    rust_type: Type,
     receiver: Receiver<'lowered>,
 }
 
@@ -39,7 +41,8 @@ pub enum Receiver<'lowered> {
 impl<'expansion, 'lowered, S: RenderSurface> Renderer<'expansion, 'lowered, S> {
     pub fn new(
         source: &'lowered EnumDef,
-        enumeration: Ident,
+        enumeration: TokenStream,
+        rust_type: Type,
         receiver: Receiver<'lowered>,
         initializers: &'lowered [InitializerDecl<S>],
         methods: &'lowered [ExportedMethodDecl<S, NativeSymbol>],
@@ -48,6 +51,7 @@ impl<'expansion, 'lowered, S: RenderSurface> Renderer<'expansion, 'lowered, S> {
         Self {
             source,
             enumeration,
+            rust_type,
             receiver,
             initializers,
             methods,
@@ -83,6 +87,7 @@ impl<'expansion, 'lowered, S: RenderSurface> Renderer<'expansion, 'lowered, S> {
             EnumOwner {
                 source: self.source,
                 enumeration: self.enumeration,
+                rust_type: self.rust_type,
                 receiver: self.receiver,
             },
             self.initializers,
@@ -129,6 +134,7 @@ where
             }
             Some(receive) => self.receiver.clone().render(
                 self.source,
+                &self.rust_type,
                 receive,
                 export.method().clone(),
                 export.failure(),
@@ -142,6 +148,7 @@ impl<'lowered> Receiver<'lowered> {
     fn render<'expansion, S>(
         self,
         source: &'lowered EnumDef,
+        rust_type: &Type,
         receive: Receive,
         method: Ident,
         failure: associated_fn::ReceiverFailure<'expansion, 'lowered, S>,
@@ -159,7 +166,7 @@ impl<'lowered> Receiver<'lowered> {
         wrapper::returns::Failure: Render<S, wrapper::returns::FailureInput<'expansion, 'lowered, S>, Output = TokenStream>,
     {
         match self {
-            Self::Direct { ty } => Self::render_direct::<S>(source, &ty, receive, method),
+            Self::Direct { ty } => Self::render_direct::<S>(rust_type, &ty, receive, method),
             Self::Encoded { codec } => {
                 Self::render_encoded::<S>(source, codec, receive, method, failure, expansion)
             }
@@ -167,7 +174,7 @@ impl<'lowered> Receiver<'lowered> {
     }
 
     fn render_direct<S>(
-        source: &EnumDef,
+        rust_type: &Type,
         ty: &DirectValueType,
         receive: Receive,
         method: Ident,
@@ -182,15 +189,13 @@ impl<'lowered> Receiver<'lowered> {
                 "mutable enum receiver without writeback",
             ));
         }
-        let rust_type =
-            names::SourceSpelling::new(&source.name).ty("source enum name is not a Rust type")?;
         let receiver = names::Locals::new(method.span()).receiver();
         let tokens = <wrapper::param::direct::Renderer as Render<S, _>>::render(
             wrapper::param::direct::Renderer,
             wrapper::param::direct::Input::new(
                 ty,
                 receive,
-                rust_type,
+                rust_type.clone(),
                 receiver.clone(),
                 TokenStream::new(),
             ),

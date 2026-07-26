@@ -104,6 +104,18 @@ pub enum BackendError {
         /// Invalid identifier text.
         identifier: String,
     },
+    /// A generated C# identifier was invalid.
+    #[error("invalid C# identifier `{identifier}`")]
+    InvalidCSharpIdentifier {
+        /// Invalid identifier text.
+        identifier: String,
+    },
+    /// A generated C# namespace was invalid.
+    #[error("invalid C# namespace `{namespace}`")]
+    InvalidCSharpNamespace {
+        /// Invalid namespace text.
+        namespace: String,
+    },
     /// A generated C include path was invalid.
     #[error("invalid C include path `{path}`")]
     InvalidCIncludePath {
@@ -146,12 +158,21 @@ pub enum BackendError {
         /// Invalid identifier text.
         identifier: String,
     },
+    /// A generated Java identifier was invalid.
+    #[error("invalid Java identifier `{identifier}`")]
+    InvalidJavaIdentifier {
+        /// Invalid identifier text.
+        identifier: String,
+    },
     /// A generated Swift identifier was invalid.
     #[error("invalid Swift identifier `{identifier}`")]
     InvalidSwiftIdentifier {
         /// Invalid identifier text.
         identifier: String,
     },
+    #[allow(missing_docs)]
+    #[error("invalid TypeScript identifier `{identifier}`")]
+    InvalidTypeScriptIdentifier { identifier: String },
     /// Two generated Python declarations require the same name in one scope.
     #[error("python name collision in {scope}: `{name}` is used by {existing} and {colliding}")]
     PythonNameCollision {
@@ -170,6 +191,14 @@ pub enum BackendError {
         /// Kotlin scope where the collision was found.
         scope: String,
         /// Generated Kotlin name used more than once.
+        name: String,
+    },
+    /// Two generated Java declarations require the same name in one scope.
+    #[error("java name collision in {scope}: `{name}` is already used")]
+    JavaNameCollision {
+        /// Java scope where the collision was found.
+        scope: String,
+        /// Generated Java name used more than once.
         name: String,
     },
     /// A backend template failed to render.

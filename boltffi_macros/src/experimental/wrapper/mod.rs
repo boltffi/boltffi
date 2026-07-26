@@ -2,6 +2,7 @@ use super::error::Error;
 use super::surface::RenderSurface;
 
 mod names;
+mod scalar_option;
 
 pub mod arguments;
 mod associated_fn;

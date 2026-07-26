@@ -587,6 +587,15 @@ fn collect_demo_exports(repo_root: &Path) -> AppResult<BTreeSet<String>> {
 fn collect_item_exports(items: &[Item], module: &str, exports: &mut BTreeSet<String>) {
     for item in items {
         match item {
+            Item::Const(item_const)
+                if is_public(&item_const.vis) && has_export_attr(&item_const.attrs) =>
+            {
+                exports.insert(make_export_id(
+                    module,
+                    &item_const.ident.to_string(),
+                    None,
+                ));
+            }
             Item::Enum(item_enum)
                 if is_public(&item_enum.vis) && has_data_attr(&item_enum.attrs) =>
             {

@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -22,6 +23,8 @@ pub(crate) struct CargoMetadataPackage {
     pub(crate) name: String,
     pub(crate) manifest_path: PathBuf,
     pub(crate) targets: Vec<CargoMetadataPackageTarget>,
+    #[serde(default)]
+    pub(crate) features: BTreeMap<String, Vec<String>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -192,28 +195,41 @@ impl CargoMetadataPackage {
         preferred_artifact_name: &str,
         manifest_path: &Path,
     ) -> Result<&CargoMetadataPackageTarget> {
+        self.targets
+            .iter()
+            .find(|target| target.builds_ffi() && target.name == preferred_artifact_name)
+            .map_or_else(|| self.resolve_ffi_library_target(None, manifest_path), Ok)
+    }
+
+    pub(crate) fn resolve_ffi_library_target(
+        &self,
+        preferred_artifact_name: Option<&str>,
+        manifest_path: &Path,
+    ) -> Result<&CargoMetadataPackageTarget> {
         let ffi_targets = self
             .targets
             .iter()
             .filter(|target| target.builds_ffi())
             .collect::<Vec<_>>();
 
-        if let Some(target) = ffi_targets
-            .iter()
-            .copied()
-            .find(|target| target.name == preferred_artifact_name)
-        {
-            return Ok(target);
-        }
-
-        if ffi_targets.len() == 1 {
-            return Ok(ffi_targets[0]);
+        match preferred_artifact_name {
+            Some(preferred_artifact_name) => {
+                if let Some(target) = ffi_targets
+                    .iter()
+                    .copied()
+                    .find(|target| target.name == preferred_artifact_name)
+                {
+                    return Ok(target);
+                }
+            }
+            None if ffi_targets.len() == 1 => return Ok(ffi_targets[0]),
+            None => {}
         }
 
         Err(CliError::CommandFailed {
             command: format!(
                 "could not find library target '{}' in cargo metadata for '{}'",
-                preferred_artifact_name,
+                preferred_artifact_name.unwrap_or("<unique ffi library>"),
                 manifest_path.display()
             ),
             status: None,
@@ -404,6 +420,34 @@ mod tests {
             .expect("package lookup");
 
         assert_eq!(package.id, "path+file:///tmp/workspace#workspace-b@1.2.3");
+    }
+
+    #[test]
+    fn explicit_ffi_artifact_selection_never_falls_back_to_the_only_target() {
+        let manifest_path = Path::new("/tmp/workspace/Cargo.toml");
+        let metadata = metadata_fixture()
+            .package(
+                CargoPackageFixture::manifest_package("workspace", manifest_path, "0.1.0").target(
+                    CargoTargetFixture::library("actual_artifact", [CargoCrateType::StaticLib]),
+                ),
+            )
+            .metadata();
+        let package = metadata
+            .find_package(manifest_path, None)
+            .expect("package lookup");
+
+        assert!(
+            package
+                .resolve_ffi_library_target(Some("configured_artifact"), manifest_path)
+                .is_err()
+        );
+        assert_eq!(
+            package
+                .resolve_ffi_library_target(None, manifest_path)
+                .expect("unique target inference")
+                .name,
+            "actual_artifact"
+        );
     }
 
     #[test]

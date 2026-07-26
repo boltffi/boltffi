@@ -216,6 +216,14 @@ impl TypeRefRender for SwiftTypeRef<'_> {
         Ok(TypeSpelling::string())
     }
 
+    fn interned_string(&mut self, _static_values: &[String]) -> Self::Output {
+        // Swift does not advertise InternedString capability; the capability gate
+        // ensures this branch is never reached for valid bindings.
+        unreachable!(
+            "InternedString type ref reached Swift renderer: host does not advertise InternedString capability"
+        )
+    }
+
     fn bytes(&mut self) -> Self::Output {
         Ok(TypeSpelling::value(TypeName::data()))
     }

@@ -22,7 +22,7 @@ private object Native {
     }
 }
 
-interface Child {
+fun interface Child {
     fun onValue(value: UInt): UInt
 }
 
@@ -70,7 +70,7 @@ object ChildBridge {
     }
 }
 
-interface Sibling {
+fun interface Sibling {
     fun onName(name: String)
 }
 

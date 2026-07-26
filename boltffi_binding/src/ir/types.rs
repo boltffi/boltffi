@@ -1,9 +1,11 @@
+use std::collections::BTreeSet;
+
 use boltffi_ast::BuiltinType;
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 
 use crate::{
-    ByteAlignment, ByteSize, CallbackId, ClassId, CustomTypeId, EnumId, Primitive, RecordId,
-    StreamId,
+    ByteAlignment, ByteSize, CallbackId, ClassId, CustomTypeId, DeclarationId, EnumId, Primitive,
+    RecordId, StreamId,
 };
 
 /// The value a binding declaration accepts or returns.
@@ -25,6 +27,11 @@ pub enum TypeRef {
     Primitive(Primitive),
     /// UTF-8 string value.
     String,
+    /// UTF-8 string value with a backend-provided static intern table.
+    InternedString {
+        /// Static values addressable by wire id before falling back to dynamic bytes.
+        static_values: Vec<String>,
+    },
     /// Byte buffer value.
     Bytes,
     /// Record reference.
@@ -70,6 +77,72 @@ impl TypeRef {
             Self::Tuple(elements) => elements.iter().any(|element| element.uses_builtin(kind)),
             Self::Result { ok, err } => ok.uses_builtin(kind) || err.uses_builtin(kind),
             Self::Map { key, value } => key.uses_builtin(kind) || value.uses_builtin(kind),
+            _ => false,
+        }
+    }
+
+    /// Appends every family-tagged declaration referenced by this type tree.
+    pub fn append_referenced_declarations(&self, references: &mut BTreeSet<DeclarationId>) {
+        match self {
+            Self::Record(id) => {
+                references.insert(DeclarationId::Record(*id));
+            }
+            Self::Enum(id) => {
+                references.insert(DeclarationId::Enum(*id));
+            }
+            Self::Class(id) => {
+                references.insert(DeclarationId::Class(*id));
+            }
+            Self::Callback(id) => {
+                references.insert(DeclarationId::Callback(*id));
+            }
+            Self::Custom(id) => {
+                references.insert(DeclarationId::CustomType(*id));
+            }
+            Self::Optional(inner) | Self::Sequence(inner) => {
+                inner.append_referenced_declarations(references);
+            }
+            Self::Tuple(elements) => elements
+                .iter()
+                .for_each(|element| element.append_referenced_declarations(references)),
+            Self::Result { ok, err } => {
+                ok.append_referenced_declarations(references);
+                err.append_referenced_declarations(references);
+            }
+            Self::Map { key, value } => {
+                key.append_referenced_declarations(references);
+                value.append_referenced_declarations(references);
+            }
+            Self::Primitive(_)
+            | Self::String
+            | Self::InternedString { .. }
+            | Self::Bytes
+            | Self::Builtin(_) => {}
+        }
+    }
+
+    /// Returns whether this type tree references a declaration.
+    pub fn references_declaration(&self, declaration: DeclarationId) -> bool {
+        let mut references = BTreeSet::new();
+        self.append_referenced_declarations(&mut references);
+        references.contains(&declaration)
+    }
+
+    /// Returns whether this type tree contains an [`InternedString`](TypeRef::InternedString).
+    ///
+    /// Used by the capability gate to detect bindings that require the
+    /// `InternedString` host capability.
+    pub fn contains_interned_string(&self) -> bool {
+        match self {
+            Self::InternedString { .. } => true,
+            Self::Optional(inner) | Self::Sequence(inner) => inner.contains_interned_string(),
+            Self::Tuple(elements) => elements.iter().any(TypeRef::contains_interned_string),
+            Self::Result { ok, err } => {
+                ok.contains_interned_string() || err.contains_interned_string()
+            }
+            Self::Map { key, value } => {
+                key.contains_interned_string() || value.contains_interned_string()
+            }
             _ => false,
         }
     }
@@ -272,6 +345,9 @@ pub trait TypeRefRender {
     /// Renders a UTF-8 string.
     fn string(&mut self) -> Self::Output;
 
+    /// Renders a tagged interned-string value.
+    fn interned_string(&mut self, static_values: &[String]) -> Self::Output;
+
     /// Renders a byte buffer.
     fn bytes(&mut self) -> Self::Output;
 
@@ -319,6 +395,7 @@ impl TypeRefWalker {
         match ty {
             TypeRef::Primitive(primitive) => renderer.primitive(*primitive),
             TypeRef::String => renderer.string(),
+            TypeRef::InternedString { static_values } => renderer.interned_string(static_values),
             TypeRef::Bytes => renderer.bytes(),
             TypeRef::Record(id) => renderer.record(*id),
             TypeRef::Enum(id) => renderer.enumeration(*id),

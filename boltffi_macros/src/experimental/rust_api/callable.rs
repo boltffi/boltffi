@@ -238,8 +238,9 @@ impl<'source> Parameter<'source> {
     }
 
     pub fn direct_vec(self) -> Result<(), Error> {
-        match self.type_expr().as_ref() {
-            TypeExpr::Vec(_) => Ok(()),
+        match (self.definition.passing, self.type_expr().as_ref()) {
+            (ParameterPassing::Value, TypeExpr::Vec(_))
+            | (ParameterPassing::Ref | ParameterPassing::RefMut, TypeExpr::Slice(_)) => Ok(()),
             _ => Err(Error::SourceSyntaxMismatch(
                 "source parameter is not a direct vector",
             )),
@@ -248,7 +249,7 @@ impl<'source> Parameter<'source> {
 
     pub fn direct_vec_element_type(self) -> Result<Type, Error> {
         let source_type = self.type_expr();
-        let TypeExpr::Vec(element) = source_type.as_ref() else {
+        let (TypeExpr::Vec(element) | TypeExpr::Slice(element)) = source_type.as_ref() else {
             return Err(Error::SourceSyntaxMismatch(
                 "source direct-vector parameter is missing element type",
             ));
@@ -467,7 +468,7 @@ impl<'source> Return<'source> {
         ) {
             return Ok(None);
         }
-        if let CallableReturn::Constant(TypeExpr::Str | TypeExpr::Slice(_)) = self.definition {
+        if self.borrowed_value()? {
             let type_expr = self.value_type()?;
             return TypeTokens::parameter(ParameterPassing::Ref, type_expr.as_ref())
                 .map(TypeTokens::into_type)
@@ -481,11 +482,15 @@ impl<'source> Return<'source> {
         }
     }
 
-    pub fn borrowed_constant(self) -> bool {
-        matches!(
-            self.definition,
-            CallableReturn::Constant(TypeExpr::Str | TypeExpr::Slice(_))
-        )
+    pub fn borrowed_value(self) -> Result<bool, Error> {
+        match self.definition {
+            CallableReturn::Declaration(ReturnDef::Value(TypeExpr::Str | TypeExpr::Slice(_)))
+            | CallableReturn::Constant(TypeExpr::Str | TypeExpr::Slice(_)) => Ok(true),
+            CallableReturn::Declaration(ReturnDef::Value(_)) | CallableReturn::Constant(_) => {
+                Ok(false)
+            }
+            CallableReturn::Declaration(ReturnDef::Void) => Ok(false),
+        }
     }
 
     pub fn value_type(self) -> Result<Cow<'source, TypeExpr>, Error> {
@@ -560,7 +565,7 @@ impl<'source> Return<'source> {
     pub fn fallible(self) -> Result<Fallible<'source>, Error> {
         match self.value_type()? {
             Cow::Borrowed(TypeExpr::Result { ok, err }) => Ok(Fallible::Borrowed { ok, err }),
-            Cow::Owned(TypeExpr::Result { ok, err }) => Ok(Fallible::Owned { ok: *ok, err: *err }),
+            Cow::Owned(TypeExpr::Result { ok, err }) => Ok(Fallible::Owned { ok, err }),
             _ => Err(Error::SourceSyntaxMismatch("source return is not a Result")),
         }
     }
@@ -573,8 +578,8 @@ pub enum Fallible<'source> {
         err: &'source TypeExpr,
     },
     Owned {
-        ok: TypeExpr,
-        err: TypeExpr,
+        ok: Box<TypeExpr>,
+        err: Box<TypeExpr>,
     },
 }
 

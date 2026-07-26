@@ -110,6 +110,8 @@ where
         let rust_call = self
             .rust_call
             .expression(wrapper_arguments.rust_arguments());
+        let has_ffi_parameters = !self.receiver.ffi_parameters.is_empty()
+            || !wrapper_arguments.ffi_parameters().is_empty();
         let rust_invocation = wrapper::returns::RustInvocation::new(
             self.rust_call.owner,
             rust_call,
@@ -124,6 +126,7 @@ where
                 .cloned()
                 .chain(self.receiver.writebacks)
                 .collect(),
+            has_ffi_parameters,
         );
         let return_tokens = <wrapper::returns::Renderer as Render<S, _>>::render(
             wrapper::returns::Renderer,

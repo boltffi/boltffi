@@ -390,7 +390,7 @@ const benchmarkCases = [
   {
     name: 'inc_u64',
     boltffi: () => {
-      const values = [0n];
+      const values = BigUint64Array.of(0n);
       boltffi.incU64(values);
       return values[0];
     },

@@ -7,6 +7,7 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 pub mod callback;
 pub mod custom_ffi;
 pub mod handle;
+pub mod interned_string;
 pub mod passable;
 pub mod ringbuffer;
 pub mod runtime;
@@ -20,6 +21,20 @@ pub use boltffi_macros::{
     Data, FfiType, custom_ffi, custom_type, data, default, error, export, ffi_export, ffi_stream,
     ffi_trait, name, skip,
 };
+
+/// Defines a static interned-string pool.
+///
+/// ```
+/// boltffi_core::interned_string_pool! {
+///     pub BrowserName {
+///         Chrome = "Chrome",
+///     }
+/// }
+///
+/// let value = boltffi_core::InternedString::<BrowserName>::from_str("Chrome");
+/// assert_eq!(value, BrowserName::CHROME);
+/// ```
+pub use boltffi_macros::interned_string_pool;
 #[cfg(target_arch = "wasm32")]
 pub use callback::WasmCallbackOwner;
 pub use callback::{
@@ -28,6 +43,7 @@ pub use callback::{
 };
 pub use custom_ffi::CustomFfiConvertible;
 pub use handle::HandleBox;
+pub use interned_string::{InternedString, InternedStringPool, InternedStringRepr};
 pub use passable::{Passable, VecTransport, WirePassable};
 pub use ringbuffer::SpscRingBuffer;
 pub use runtime::async_callback;
@@ -58,7 +74,8 @@ pub use wasm::WASM_ABI_VERSION;
 pub use wasm::WasmCallbackOutBuf;
 #[cfg(target_arch = "wasm32")]
 pub use wasm::{
-    take_packed_bytes, take_packed_utf8_string, take_return_slot_vec, write_return_slot,
+    take_packed_bytes, take_packed_utf8_string, take_return_slot_vec, write_option_f64_presence,
+    write_return_slot,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -130,4 +147,19 @@ pub extern "C" fn boltffi_clear_last_error() {
 pub fn fail_with_error(status: FfiStatus, message: impl Into<String>) -> FfiStatus {
     set_last_error(message);
     status
+}
+
+#[cfg(test)]
+mod interned_string_pool_tests {
+    crate::interned_string_pool! {
+        InternalBrowserName {
+            Chrome = "Chrome",
+        }
+    }
+
+    #[test]
+    fn expands_with_the_core_crate_self_alias() {
+        let value = crate::InternedString::<InternalBrowserName>::from_str("Chrome");
+        assert_eq!(value, InternalBrowserName::CHROME);
+    }
 }

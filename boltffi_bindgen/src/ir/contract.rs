@@ -11,7 +11,7 @@ use crate::ir::types::BuiltinDef;
 ///
 /// Records, enums, classes, callbacks, free functions. What the crate exports.
 /// Nothing here knows about wire encoding or parameter passing. That happens
-/// when [`Lowerer`](crate::ir::Lowerer) turns this into an [`AbiContract`].
+/// when [`Lowerer`](crate::ir::Lowerer) turns this into an [`AbiContract`](crate::ir::abi::AbiContract).
 #[derive(Debug, Clone)]
 pub struct FfiContract {
     pub package: PackageInfo,

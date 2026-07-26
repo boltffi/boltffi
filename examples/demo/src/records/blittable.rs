@@ -486,13 +486,7 @@ pub fn generate_trades(count: i32) -> Vec<Trade> {
 #[demo_bench_macros::demo_case(
     "records.blittable.trades.should_sum_volumes",
     justification = "Ensure sum_trade_volumes receives Trade records and sums their i64 volume fields.",
-    directions = "Call `records::blittable::sum_trade_volumes` through the generated binding and assert sum_trade_volumes receives Trade records and sums their i64 volume fields.",
-
-    exclude(
-        typescript,
-        reason = ExclusionReason::ImplementationGap,
-        details = "#202: TypeScript encodes Vec<Trade> parameters with packed field layout instead of repr(C), so the internal i32-then-f64 padding in Trade is lost and downstream sums are corrupted. Include this case when Vec<BlittableRecord> parameter encoding matches repr(C) padding."
-    )
+    directions = "Call `records::blittable::sum_trade_volumes` through the generated binding and assert sum_trade_volumes receives Trade records and sums their i64 volume fields."
 )]
 #[export]
 #[benchmark_candidate(function, uniffi, wasm_bindgen)]
@@ -503,13 +497,7 @@ pub fn sum_trade_volumes(trades: Vec<Trade>) -> i64 {
 #[demo_bench_macros::demo_case(
     "records.blittable.trades.should_aggregate_with_locations",
     justification = "Ensure aggregate_location_trade_stats receives Location and Trade vectors together and combines open-location count with total trade volume.",
-    directions = "Call `records::blittable::aggregate_location_trade_stats` through the generated binding and assert aggregate_location_trade_stats receives Location and Trade vectors together and combines open-location count with total trade volume.",
-
-    exclude(
-        typescript,
-        reason = ExclusionReason::ImplementationGap,
-        details = "#202: TypeScript encodes Vec<Trade> parameters with packed field layout instead of repr(C), so the internal i32-then-f64 padding in Trade is lost and downstream sums are corrupted. Include this case when Vec<BlittableRecord> parameter encoding matches repr(C) padding."
-    )
+    directions = "Call `records::blittable::aggregate_location_trade_stats` through the generated binding and assert aggregate_location_trade_stats receives Location and Trade vectors together and combines open-location count with total trade volume."
 )]
 #[export]
 #[benchmark_candidate(function, uniffi, wasm_bindgen)]

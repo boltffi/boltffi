@@ -9,7 +9,7 @@
 
 use super::{
     ClosureArgument, ClosureArgumentKind, ClosureBytesArgument, ClosureDirectVectorArgument,
-    ClosureHandleArgument,
+    ClosureHandleArgument, ClosureRecordArgument,
 };
 
 use crate::bridge::jni::SuccessOutArgument;
@@ -22,6 +22,7 @@ impl ClosureArgument {
             ClosureArgumentKind::Scalar(_)
             | ClosureArgumentKind::Bytes(_)
             | ClosureArgumentKind::DirectVector(_)
+            | ClosureArgumentKind::Record(_)
             | ClosureArgumentKind::Closure(_) => None,
         }
     }
@@ -32,6 +33,7 @@ impl ClosureArgument {
             ClosureArgumentKind::Scalar(_) => None,
             ClosureArgumentKind::Bytes(argument) => Some(argument),
             ClosureArgumentKind::DirectVector(_) => None,
+            ClosureArgumentKind::Record(_) => None,
             ClosureArgumentKind::Closure(_) => None,
             ClosureArgumentKind::SuccessOut(_) => None,
         }
@@ -48,6 +50,7 @@ impl ClosureArgument {
             ClosureArgumentKind::DirectVector(argument) => Some(argument),
             ClosureArgumentKind::Scalar(_)
             | ClosureArgumentKind::Bytes(_)
+            | ClosureArgumentKind::Record(_)
             | ClosureArgumentKind::Closure(_)
             | ClosureArgumentKind::SuccessOut(_) => None,
         }
@@ -60,8 +63,24 @@ impl ClosureArgument {
             ClosureArgumentKind::Scalar(_)
             | ClosureArgumentKind::Bytes(_)
             | ClosureArgumentKind::DirectVector(_)
+            | ClosureArgumentKind::Record(_)
             | ClosureArgumentKind::SuccessOut(_) => None,
         }
+    }
+
+    pub(crate) fn call_record(&self) -> Option<&ClosureRecordArgument> {
+        match &self.kind {
+            ClosureArgumentKind::Record(argument) => Some(argument),
+            ClosureArgumentKind::Scalar(_)
+            | ClosureArgumentKind::Bytes(_)
+            | ClosureArgumentKind::DirectVector(_)
+            | ClosureArgumentKind::Closure(_)
+            | ClosureArgumentKind::SuccessOut(_) => None,
+        }
+    }
+
+    pub(crate) fn handle_record(&self) -> Option<&ClosureRecordArgument> {
+        self.call_record()
     }
 
     /// Returns the direct-vector argument when the JVM sends an array.

@@ -10,27 +10,15 @@ const repositoryRoot = dirname(dirname(dirname(wasmRoot)));
 const rustSourceRoot = join(repositoryRoot, "examples", "demo", "src");
 const generatedDeclarationPath = join(wasmRoot, "dist", "demo.d.ts");
 
-// Blocked on #203: nested Vec<Vec<isize>>/Vec<Vec<usize>> writer passes
-// plain Number to setBigInt64; re-enable once the TS/WASM lowering coerces.
-const unsupportedTopLevelFunctions = new Set([
-  "primitives/vecs.rs::echoVecVecIsize",
-  "primitives/vecs.rs::echoVecVecUsize",
-]);
+const unsupportedTopLevelFunctions = new Set();
 
-const unsupportedTypeMembers = new Set([
-  "classes/streams.rs::EventBus::subscribeValues",
-  "classes/streams.rs::EventBus::subscribePoints",
-  "classes/streams.rs::EventBus::subscribeMessages",
-  "classes/streams.rs::EventBus::subscribeValuesBatch",
-  "classes/streams.rs::EventBus::subscribeValuesCallback",
-]);
+const unsupportedTypeMembers = new Set();
 
-// These members are generated for wasm, but the wasm demo tests do not exercise
-// the C# regression cases yet. The demo metadata tracks them as coverage gaps.
-const coverageGapTypeMembers = new Set([
-  "enums/data_enum.rs::Shape::maybeCircle",
-  "records/default_values.rs::ServiceConfig::tryWithRetries",
-  "records/default_values.rs::ServiceConfig::maybeWithRetries",
+const coverageGapTypeMembers = new Set();
+
+const featureScopedRustFiles = new Set([
+  "callbacks/csharp_closures.rs",
+  "classes/async_factory.rs",
 ]);
 
 const tsKeywords = new Set([
@@ -102,7 +90,10 @@ function generatedTypeMemberName(item, generatedSurface) {
   if (generatedSurface.classes[item.typeName]) {
     return item.rustName === "new" ? "new" : escapeTsName(item.generatedName);
   }
-  if (generatedSurface.namespaces[item.typeName] && item.rustName === "new") {
+  if (
+    item.rustName === "new" &&
+    (generatedSurface.namespaces[item.typeName] || generatedSurface.companions[item.typeName]?.has("fromRaw"))
+  ) {
     return "fromRaw";
   }
   if (generatedSurface.companions[item.typeName]) {
@@ -219,18 +210,20 @@ function parseGeneratedSurface(source) {
     ]),
   );
 
-  const interfaces = Object.fromEntries(
-    [...source.matchAll(/^export interface (\w+) \{([\s\S]*?)^\}/gm)].map((match) => [
-      match[1],
-      new Set([...match[2].matchAll(/^\s+(\w+)\(/gm)].map((methodMatch) => methodMatch[1])),
-    ]),
-  );
+  const interfaces = {};
+  for (const match of source.matchAll(/^export interface (\w+) \{([\s\S]*?)^\}/gm)) {
+    const members = interfaces[match[1]] ?? new Set();
+    for (const methodMatch of match[2].matchAll(/^\s+(\w+)\(/gm)) {
+      members.add(methodMatch[1]);
+    }
+    interfaces[match[1]] = members;
+  }
 
   const companions = Object.fromEntries(
     [...source.matchAll(/^export declare const (\w+): \{([\s\S]*?)^\};/gm)].map((match) => [
       match[1],
       new Set(
-        [...match[2].matchAll(/^\s+"?(\w+)"?(?:\(|: \()/gm)].map((methodMatch) => methodMatch[1]),
+        [...match[2].matchAll(/^\s+(?:readonly\s+)?"?(\w+)"?(?:\(|: \()/gm)].map((methodMatch) => methodMatch[1]),
       ),
     ]),
   );
@@ -283,7 +276,9 @@ function expectedTestPath(rustFile) {
 }
 
 export async function run() {
-  const rustFiles = (await collectRustFiles(rustSourceRoot)).filter((relativePath) => relativePath !== "lib.rs");
+  const rustFiles = (await collectRustFiles(rustSourceRoot)).filter(
+    (relativePath) => relativePath !== "lib.rs" && !featureScopedRustFiles.has(relativePath),
+  );
   const rustInventories = await Promise.all(
     rustFiles.map(async (relativePath) => parseRustInventory(await readFile(join(rustSourceRoot, relativePath), "utf8"), relativePath)),
   );

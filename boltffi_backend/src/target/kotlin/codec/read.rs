@@ -11,6 +11,7 @@ use crate::{
         primitive::KotlinPrimitive,
         render::{Enumeration, Record},
         syntax::{ArgumentList, Expression, Identifier, TypeName},
+        tuple::Arity,
     },
 };
 
@@ -100,6 +101,14 @@ impl CodecRead for Reader<'_> {
 
     fn string(&mut self) -> Self::Expr {
         self.call("readString")
+    }
+
+    fn interned_string(&mut self, _static_values: &[String]) -> Self::Expr {
+        // Kotlin does not advertise InternedString capability; the capability gate
+        // ensures this branch is never reached for valid bindings.
+        unreachable!(
+            "InternedString codec read reached Kotlin renderer: host does not advertise InternedString capability"
+        )
     }
 
     fn bytes(&mut self) -> Self::Expr {
@@ -211,8 +220,14 @@ impl CodecRead for Reader<'_> {
         }
     }
 
-    fn tuple(&mut self, _elements: Vec<Self::Expr>) -> Self::Expr {
-        Self::unsupported("tuple wire read")
+    fn tuple(&mut self, elements: Vec<Self::Expr>) -> Self::Expr {
+        let arity = Arity::from_count(elements.len())?;
+        elements
+            .into_iter()
+            .map(|element| element.map(ReadExpression::into_expression))
+            .collect::<Result<Vec<_>>>()
+            .and_then(|elements| arity.expression(elements))
+            .map(ReadExpression::new)
     }
 
     fn result(&mut self, ok: Self::Expr, err: Self::Expr) -> Self::Expr {

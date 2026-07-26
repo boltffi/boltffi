@@ -1,1 +1,0 @@
-    public delegate {{ closure.method.return_type }} {{ closure.public_name }}({% for param in closure.method.public_params %}{{ param.csharp_type }} {{ param.name }}{% if !loop.last %}, {% endif %}{% endfor %});

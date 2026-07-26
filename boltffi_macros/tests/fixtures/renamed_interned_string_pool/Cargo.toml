@@ -1,0 +1,10 @@
+[workspace]
+
+[package]
+name = "renamed_interned_string_pool"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+boltffi_renamed = { package = "boltffi", path = "../../../../boltffi" }

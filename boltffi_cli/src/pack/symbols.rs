@@ -398,7 +398,7 @@ pub(crate) fn ensure_existing_debug_symbol_artifacts_are_usable(
         if !artifact_has_debug_info_and_symbols(artifact_path)? {
             return Err(CliError::CommandFailed {
                 command: format!(
-                    "{config_path}.enabled requires existing unstripped artifacts with embedded debuginfo for --no-build packaging; '{}' is missing debug info or symbols",
+                    "{config_path}.enabled requires unstripped artifacts with embedded debuginfo; '{}' is missing debug info or symbols",
                     artifact_path.display()
                 ),
                 status: None,
@@ -414,7 +414,7 @@ fn build_manifest_entry(artifact: &DebugSymbolArtifact) -> DebugSymbolManifestEn
         path: normalized_archive_path(&artifact.archive_path),
         kind: artifact.kind.as_str(),
         target_triple: artifact.target_triple.clone(),
-        platform: artifact.platform.map(platform_name),
+        platform: artifact.platform.map(Platform::canonical_name),
         architecture: artifact.architecture.map(Architecture::canonical_name),
         abi: artifact.abi.clone(),
         host_target: artifact.host_target.clone(),
@@ -1216,17 +1216,6 @@ fn split_shell_words(input: &str) -> Vec<String> {
 
 fn normalized_archive_path(path: &Path) -> String {
     path.to_string_lossy().replace('\\', "/")
-}
-
-fn platform_name(platform: Platform) -> &'static str {
-    match platform {
-        Platform::Ios => "ios",
-        Platform::IosSimulator => "ios-simulator",
-        Platform::MacOs => "macos",
-        Platform::Android => "android",
-        Platform::Wasm => "wasm",
-        Platform::Linux => "linux",
-    }
 }
 
 impl DebugSymbolArtifactKind {

@@ -1029,6 +1029,58 @@ mod records {
         let (decoded, _) = ManyFields::decode_from(&buf).unwrap();
         assert_eq!(decoded, original);
     }
+
+    #[test]
+    fn record_with_size_field_roundtrip() {
+        // A field named `size` used to collide with the internal `size`
+        // binding in the generated wire decode code, producing
+        // `let (size, size) = ...` — a duplicate binding error.
+        #[data]
+        #[derive(Debug, Clone, PartialEq)]
+        struct Buffer {
+            name: String,
+            size: u32,
+        }
+
+        let original = Buffer {
+            name: "payload.bin".to_string(),
+            size: 4096,
+        };
+
+        let mut buf = vec![0u8; original.wire_size()];
+        original.encode_to(&mut buf);
+
+        let (decoded, consumed) = Buffer::decode_from(&buf).unwrap();
+        assert_eq!(consumed, original.wire_size());
+        assert_eq!(decoded, original);
+    }
+
+    #[test]
+    fn record_with_size_and_position_fields_roundtrip() {
+        // Fields named `size` and `position` both collided with internal
+        // bindings in the generated wire decode code. `position` was
+        // silently shadowed, corrupting subsequent field decodes.
+        #[data]
+        #[derive(Debug, Clone, PartialEq)]
+        struct Cursor {
+            position: u32,
+            size: u32,
+            data: String,
+        }
+
+        let original = Cursor {
+            position: 128,
+            size: 512,
+            data: "hello".to_string(),
+        };
+
+        let mut buf = vec![0u8; original.wire_size()];
+        original.encode_to(&mut buf);
+
+        let (decoded, consumed) = Cursor::decode_from(&buf).unwrap();
+        assert_eq!(consumed, original.wire_size());
+        assert_eq!(decoded, original);
+    }
 }
 
 mod wire_size {
@@ -1385,5 +1437,59 @@ mod enums {
             let (decoded, _) = Many::decode_from(&buf).unwrap();
             assert_eq!(&decoded, variant);
         }
+    }
+
+    #[test]
+    fn enum_struct_variant_with_size_field_roundtrip() {
+        // A variant field named `size` used to collide with the internal
+        // `size` binding in the generated enum wire decode code.
+        #[data]
+        #[derive(Debug, Clone, PartialEq)]
+        enum Packet {
+            Empty,
+            Data { size: u32, payload: String },
+        }
+
+        let data = Packet::Data {
+            size: 256,
+            payload: "abc".to_string(),
+        };
+        let mut buf = vec![0u8; data.wire_size()];
+        data.encode_to(&mut buf);
+        let (decoded, consumed) = Packet::decode_from(&buf).unwrap();
+        assert_eq!(consumed, data.wire_size());
+        assert_eq!(decoded, data);
+
+        let empty = Packet::Empty;
+        let mut buf = vec![0u8; empty.wire_size()];
+        empty.encode_to(&mut buf);
+        let (decoded, _) = Packet::decode_from(&buf).unwrap();
+        assert_eq!(decoded, empty);
+    }
+
+    #[test]
+    fn enum_tuple_variant_with_size_field_roundtrip() {
+        // A tuple variant whose payload happens to be named `size` by
+        // convention still works — tuple variants use `f0`/`f1` bindings,
+        // but the internal `size`/`position` counters must still not
+        // collide with any user-adjacent naming.
+        #[data]
+        #[derive(Debug, Clone, PartialEq)]
+        enum Command {
+            Resize(u32, u32),
+            SetSize(u32),
+        }
+
+        let resize = Command::Resize(800, 600);
+        let mut buf = vec![0u8; resize.wire_size()];
+        resize.encode_to(&mut buf);
+        let (decoded, _) = Command::decode_from(&buf).unwrap();
+        assert_eq!(decoded, resize);
+
+        let set = Command::SetSize(1024);
+        let mut buf = vec![0u8; set.wire_size()];
+        set.encode_to(&mut buf);
+        let (decoded, _) = Command::decode_from(&buf).unwrap();
+        assert_eq!(decoded, set);
     }
 }

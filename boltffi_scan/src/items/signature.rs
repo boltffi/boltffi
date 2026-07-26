@@ -1,6 +1,6 @@
 use boltffi_ast::{
-    ExecutionKind, MethodDef, MethodId, ParameterDef, ParameterPassing, Receiver, Source,
-    SourceName,
+    ExecutionKind, MethodDef, MethodId, ParameterDef, ParameterPassing, Receiver, ReturnDef,
+    Source, SourceName,
 };
 use syn::spanned::Spanned;
 
@@ -28,6 +28,7 @@ pub(super) fn method(
     source: Source,
     parent: &str,
     scanner: &Scanner<'_>,
+    returns: MethodReturns,
 ) -> Result<MethodDef, ScanError> {
     let ident = &signature.ident;
     validate(signature, format!("method {parent}::{ident}"))?;
@@ -39,13 +40,28 @@ pub(super) fn method(
     let metadata = Attributes::new(attrs, scanner);
     method.execution = execution(signature);
     method.parameters = parameters(signature, scanner)?;
-    method.returns = scanner.scan_return(&signature.output)?;
+    method.returns = returns.scan(scanner, &signature.output)?;
     method.source = source;
     method.source_span = method.source.span.clone();
     method.doc = metadata.doc();
     method.deprecated = metadata.deprecated()?;
     method.user_attrs = metadata.user_attrs();
     Ok(method)
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum MethodReturns {
+    Export,
+    Trait,
+}
+
+impl MethodReturns {
+    fn scan(self, scanner: &Scanner<'_>, output: &syn::ReturnType) -> Result<ReturnDef, ScanError> {
+        match self {
+            Self::Export => scanner.scan_export_return(output),
+            Self::Trait => scanner.scan_return(output),
+        }
+    }
 }
 
 pub(super) fn parameter(

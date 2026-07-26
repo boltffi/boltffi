@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use boltffi::*;
 
+use crate::TestCounter;
 use crate::{FixtureMessageRecord, FixtureRect, FixtureShape, FixtureStatus};
 
 struct YieldOnce(bool);
@@ -182,6 +183,18 @@ impl FallibleService {
             1 => Err(FixtureError::NotFound),
             _ if key < 0 => Ok(None),
             _ => Ok(Some(key * 4)),
+        }
+    }
+
+    /// Returns a fresh `TestCounter` class handle, or an error when the
+    /// requested initial value is negative. Exercises the
+    /// `Result<Class, Error>` return shape where the success payload must
+    /// lower as a class handle, not as an encoded record.
+    pub fn try_make_counter(&self, initial: i32) -> Result<TestCounter, FixtureError> {
+        if initial < 0 {
+            Err(FixtureError::InvalidInput)
+        } else {
+            Ok(TestCounter::new(initial))
         }
     }
 }

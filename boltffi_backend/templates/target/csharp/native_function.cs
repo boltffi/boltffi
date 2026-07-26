@@ -1,0 +1,3 @@
+        [DllImport(LibName, EntryPoint = {{ function.entry_point }})]
+{% if function.return_marshal_i1 %}        [return: MarshalAs(UnmanagedType.I1)]
+{% endif %}        internal static extern {{ function.native_return_type }} {{ function.native_name }}({% for parameter in function.native_parameters %}{% if parameter.marshal_bool_array %}[MarshalAs(UnmanagedType.LPArray, ArraySubType = UnmanagedType.U1)] {% else if parameter.marshal_i1 %}[MarshalAs(UnmanagedType.I1)] {% endif %}{% if parameter.byte_array %}[In{% if parameter.array_out %}, Out{% endif %}] {% endif %}{{ parameter.modifier }}{{ parameter.ty }} {{ parameter.name }}{% if !loop.last %}, {% endif %}{% endfor %});

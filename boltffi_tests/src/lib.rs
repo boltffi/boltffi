@@ -19,12 +19,13 @@ mod callbacks;
 mod classes;
 mod closures;
 mod collections;
+mod constants;
 pub mod contract;
 mod customs;
 mod enums;
 mod options;
 mod primitives;
-#[cfg(any(boltffi_pending_constants, boltffi_pending_closure_return))]
+#[cfg(boltffi_pending_closure_return)]
 mod quarantine;
 mod records_direct;
 mod records_encoded;
@@ -39,11 +40,12 @@ pub use callbacks::*;
 pub use classes::*;
 pub use closures::*;
 pub use collections::*;
+pub use constants::*;
 pub use customs::*;
 pub use enums::*;
 pub use options::*;
 pub use primitives::*;
-#[cfg(any(boltffi_pending_constants, boltffi_pending_closure_return))]
+#[cfg(boltffi_pending_closure_return)]
 pub use quarantine::*;
 pub use records_direct::*;
 pub use records_encoded::*;

@@ -1,4 +1,7 @@
-use std::{borrow::Borrow, fmt};
+use std::{
+    borrow::Borrow,
+    fmt::{self, Write},
+};
 
 use crate::core::{LanguageSyntax, Result, syntax::sealed};
 
@@ -151,6 +154,24 @@ impl Literal {
 
     pub(crate) fn string(value: &str) -> Self {
         Self(format!("{value:?}"))
+    }
+
+    pub(crate) fn byte_string(bytes: &[u8]) -> Self {
+        let contents =
+            bytes
+                .iter()
+                .fold(String::with_capacity(bytes.len()), |mut literal, byte| {
+                    match byte {
+                        b'"' => literal.push_str("\\\""),
+                        b'\\' => literal.push_str("\\\\"),
+                        b'?' => literal.push_str("\\077"),
+                        0x20..=0x7e => literal.push(char::from(*byte)),
+                        _ => write!(&mut literal, "\\{byte:03o}")
+                            .expect("writing a byte escape to a string"),
+                    }
+                    literal
+                });
+        Self(format!("\"{contents}\""))
     }
 }
 

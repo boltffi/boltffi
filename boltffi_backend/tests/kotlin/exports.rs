@@ -1,5 +1,8 @@
-use boltffi_backend::target::kotlin::{
-    KotlinApiStyle, KotlinCustomMapping, KotlinFactoryStyle, KotlinHost,
+use boltffi_backend::{
+    Error,
+    target::kotlin::{
+        KotlinApiStyle, KotlinCustomMapping, KotlinDesktopLoader, KotlinFactoryStyle, KotlinHost,
+    },
 };
 
 use super::{
@@ -15,6 +18,27 @@ fn kotlin_target_renders_primitive_function_stack() {
 #[test]
 fn kotlin_target_renders_shared_runtime_support() {
     insta::assert_snapshot!(rendered_fixture_with_runtime("exports/primitive_functions"));
+}
+
+#[test]
+fn kotlin_target_closes_native_loader_if_body_when_desktop_loader_is_none() {
+    let host = KotlinHost::new("com.boltffi.demo", "Demo")
+        .expect("Kotlin host")
+        .desktop_loader(KotlinDesktopLoader::None);
+
+    let files = files_with_host(&fixture("exports/primitive_functions"), host);
+    let (_, contents) = files
+        .iter()
+        .find(|(path, _)| path.ends_with(".kt"))
+        .expect("Kotlin target should render a Kotlin source file");
+
+    let open_braces = contents.matches('{').count();
+    let close_braces = contents.matches('}').count();
+    assert_eq!(
+        open_braces, close_braces,
+        "unbalanced braces ({open_braces} open, {close_braces} close) when desktop_loader is \
+         none:\n{contents}"
+    );
 }
 
 #[test]
@@ -42,6 +66,11 @@ fn kotlin_target_renders_string_functions_as_byte_arrays() {
 #[test]
 fn kotlin_target_renders_direct_records_and_function_bridges() {
     insta::assert_snapshot!(rendered_fixture("exports/direct_records_and_c_style_enums"));
+}
+
+#[test]
+fn kotlin_target_returns_mutated_direct_record_receivers_from_the_shared_buffer() {
+    insta::assert_snapshot!(rendered_fixture("associated/mutable_record_receiver"));
 }
 
 #[test]
@@ -91,6 +120,11 @@ fn kotlin_target_qualifies_shadowed_data_enum_payloads() {
 }
 
 #[test]
+fn kotlin_target_qualifies_kotlin_primitive_names_shadowed_by_a_sibling_variant() {
+    insta::assert_snapshot!(rendered_fixture("enums/primitive_shadow"));
+}
+
+#[test]
 fn kotlin_target_renders_result_values_through_shared_codec() {
     insta::assert_snapshot!(rendered_fixture("exports/result_values"));
 }
@@ -98,6 +132,11 @@ fn kotlin_target_renders_result_values_through_shared_codec() {
 #[test]
 fn kotlin_target_renders_map_values_through_shared_codec() {
     insta::assert_snapshot!(rendered_fixture("exports/map_functions"));
+}
+
+#[test]
+fn kotlin_target_renders_tuples_through_shared_codec() {
+    insta::assert_snapshot!(rendered_fixture("exports/tuple_functions"));
 }
 
 #[test]
@@ -112,7 +151,105 @@ fn kotlin_target_encodes_nullable_primitives_as_compact_wire() {
 
 #[test]
 fn kotlin_target_renders_class_handles_and_associated_callables() {
-    insta::assert_snapshot!(rendered_fixture("exports/kotlin_class_handles"));
+    let rendered = rendered_fixture("exports/kotlin_class_handles");
+
+    assert!(rendered.contains("internal fun boltffiHandle(): Long {"));
+    assert!(rendered.contains("check(!__boltffi_closed.get()) { \"Engine is closed\" }"));
+    assert!(
+        rendered.contains("Native.boltffi_method_class_demo_engine_value(this.boltffiHandle())")
+    );
+    assert!(!rendered.contains("this.handle"));
+    assert!(rendered.contains("other.boltffiHandle()"));
+    assert!(rendered.contains("other?.boltffiHandle() ?: 0L"));
+    assert!(!rendered.contains("other.handle"));
+    assert!(!rendered.contains("other?.handle"));
+
+    insta::assert_snapshot!(rendered);
+}
+
+#[test]
+fn kotlin_target_rejects_methods_shadowing_generated_class_members() {
+    let render = |source: &str| {
+        KotlinHost::new("com.boltffi.demo", "Demo")
+            .expect("Kotlin host")
+            .into_target()
+            .expect("Kotlin target")
+            .render(&super::bindings(source))
+    };
+
+    let error = render(
+        r#"
+        pub struct Engine {
+            value: i64,
+        }
+
+        #[export]
+        impl Engine {
+            pub fn new() -> Self {
+                Self { value: 0 }
+            }
+
+            pub fn boltffi_handle(&self) -> i64 {
+                self.value
+            }
+        }
+        "#,
+    )
+    .expect_err("a method shadowing the generated handle accessor must not render");
+    assert!(
+        matches!(
+            &error,
+            Error::KotlinNameCollision { scope, name }
+                if scope == "Engine" && name == "boltffiHandle()"
+        ),
+        "{error:?}"
+    );
+
+    let error = render(
+        r#"
+        pub struct Engine {
+            value: i64,
+        }
+
+        #[export]
+        impl Engine {
+            pub fn new() -> Self {
+                Self { value: 0 }
+            }
+
+            pub fn close(&self) {}
+        }
+        "#,
+    )
+    .expect_err("a method shadowing the generated close() must not render");
+    assert!(
+        matches!(
+            &error,
+            Error::KotlinNameCollision { scope, name }
+                if scope == "Engine" && name == "close()"
+        ),
+        "{error:?}"
+    );
+
+    render(
+        r#"
+        pub struct Engine {
+            value: i64,
+        }
+
+        #[export]
+        impl Engine {
+            pub fn new() -> Self {
+                Self { value: 0 }
+            }
+
+            pub fn close(&self, force: bool) {
+                let _ = force;
+            }
+        }
+        "#,
+    )
+    .expect("close overloads taking parameters remain valid");
 }
 
 #[test]

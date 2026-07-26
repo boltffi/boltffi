@@ -10,7 +10,9 @@ version = "1.0-SNAPSHOT"
 
 val uniffiDir = "${projectDir}/../../adapters/uniffi/target/release"
 val boltffiJvmDir = "${projectDir}/../../generated/boltffi/dist/java"
-val nativePath = listOf(uniffiDir, boltffiJvmDir).joinToString(File.pathSeparator)
+val boltffiJavaSourceDir = file(boltffiJvmDir)
+val nativePath = listOf(uniffiDir, boltffiJavaSourceDir.absolutePath)
+    .joinToString(File.pathSeparator)
 
 repositories {
     mavenCentral()
@@ -24,16 +26,28 @@ val buildUniffiJava by tasks.registering(Exec::class) {
 val buildBoltffiJava by tasks.registering(Exec::class) {
     workingDir = projectDir
     commandLine("../../generated/boltffi/build-java.sh")
+    outputs.upToDateWhen { false }
 }
 
 tasks.named("compileJava") {
-    dependsOn(buildUniffiJava)
-    dependsOn(buildBoltffiJava)
+    dependsOn(buildUniffiJava, buildBoltffiJava)
 }
 
 tasks.matching { it.name.startsWith("jmh") }.configureEach {
-    dependsOn(buildUniffiJava)
-    dependsOn(buildBoltffiJava)
+    dependsOn(buildUniffiJava, buildBoltffiJava)
+}
+
+val benchmarkJavaLauncher = javaToolchains.launcherFor {
+    languageVersion = JavaLanguageVersion.of(25)
+}
+tasks.register("writeBenchmarkJavaLauncher") {
+    val destination = layout.buildDirectory.file("java-launcher.txt")
+    outputs.file(destination)
+    doLast {
+        destination.get().asFile.writeText(
+            benchmarkJavaLauncher.get().executablePath.asFile.absolutePath + "\n",
+        )
+    }
 }
 
 tasks.named("jmh") {
@@ -74,7 +88,7 @@ java {
     sourceSets {
         named("main") {
             java.srcDir("${projectDir}/../../adapters/uniffi/dist/java")
-            java.srcDir("${projectDir}/../../generated/boltffi/dist/java")
+            java.srcDir(boltffiJavaSourceDir)
         }
     }
 }

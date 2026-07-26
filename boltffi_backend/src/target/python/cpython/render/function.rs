@@ -476,7 +476,7 @@ impl<'plan> ParamPlanRender<'plan, Native, IntoRust> for MutableEncodedParameter
         false
     }
 
-    fn direct_vector(&mut self, _: &DirectVectorElementType) -> Self::Output {
+    fn direct_vector(&mut self, _: &DirectVectorElementType, _: Receive) -> Self::Output {
         false
     }
 }

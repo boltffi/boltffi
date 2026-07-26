@@ -33,6 +33,11 @@ impl SupportFunctions {
                     Type::Buffer,
                 )?,
                 Function::new(
+                    "boltffi_buf_with_len",
+                    vec![Parameter::new("len", Type::PointerWidth)?],
+                    Type::Buffer,
+                )?,
+                Function::new(
                     "boltffi_last_error_message",
                     vec![Parameter::new(
                         "out",
@@ -60,6 +65,13 @@ impl SupportFunctions {
         self.function(
             "boltffi_buf_from_bytes",
             "missing C buffer copy support symbol",
+        )
+    }
+
+    pub(crate) fn buffer_with_len(&self) -> Result<&Function> {
+        self.function(
+            "boltffi_buf_with_len",
+            "missing C buffer allocation support symbol",
         )
     }
 

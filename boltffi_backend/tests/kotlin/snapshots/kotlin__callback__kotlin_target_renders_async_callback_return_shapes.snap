@@ -1,6 +1,6 @@
 ---
 source: boltffi_backend/tests/kotlin/callback.rs
-expression: "rendered_fixture(\"callback/async_callback_return_shapes\")"
+expression: rendered
 ---
 ===== com/boltffi/demo/Demo.kt =====
 @file:OptIn(kotlin.ExperimentalUnsignedTypes::class)
@@ -36,6 +36,14 @@ data class Point(
             .order(java.nio.ByteOrder.nativeOrder())
         writeTo(buffer, 0)
         return buffer.array()
+    }
+
+    internal fun toDirectBuffer(): java.nio.ByteBuffer {
+        val buffer = java.nio.ByteBuffer
+            .allocateDirect(STRUCT_SIZE)
+            .order(java.nio.ByteOrder.nativeOrder())
+        writeTo(buffer, 0)
+        return buffer
     }
 
     internal fun writeTo(buffer: java.nio.ByteBuffer, offset: Int) {

@@ -280,22 +280,24 @@ private final class BoltFFIStreamContext<Item>: BoltFFIStreamPollContext, @unche
             finalizeIfIdle()
             return
         }
-        defer {
-            _ = withUnsafeMutablePointer(to: &processing) { atomicCompareExchange($0, 1, 0) }
-            finalizeIfIdle()
+        let reschedule = processPoll(result)
+        _ = withUnsafeMutablePointer(to: &processing) { atomicCompareExchange($0, 1, 0) }
+        finalizeIfIdle()
+        if reschedule {
+            schedulePoll()
         }
+    }
+
+    private func processPoll(_ result: Int8) -> Bool {
         guard withUnsafeMutablePointer(to: &lifecycle, { atomicCompareExchange($0, 0, 0) }) else {
-            return
+            return false
         }
         drain()
         if result == BoltFFIStreamPollResult.closed.rawValue {
             requestTermination()
-            return
+            return false
         }
-        guard withUnsafeMutablePointer(to: &lifecycle, { atomicCompareExchange($0, 0, 0) }) else {
-            return
-        }
-        schedulePoll()
+        return withUnsafeMutablePointer(to: &lifecycle) { atomicCompareExchange($0, 0, 0) }
     }
 
     private func drain() {

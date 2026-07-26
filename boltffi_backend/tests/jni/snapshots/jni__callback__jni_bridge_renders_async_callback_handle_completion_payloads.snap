@@ -93,25 +93,16 @@ static ___ChildVTable g____ChildVTable_vtable = {
 };
 
 static bool boltffi_jni_load____ChildVTable_callbacks(JNIEnv *env) {
-    jclass local_class = (*env)->FindClass(env, "com/boltffi/demo/ChildCallbacks");
-    if (local_class == NULL) {
+    if (!boltffi_jni_lookup_global_class_with_diagnostic(env, "com/boltffi/demo/ChildCallbacks", "com/boltffi/demo/ChildCallbacks", &g____ChildVTable_class)) {
         return false;
     }
-    g____ChildVTable_class = (*env)->NewGlobalRef(env, local_class);
-    (*env)->DeleteLocalRef(env, local_class);
-    if (g____ChildVTable_class == NULL) {
-        return false;
-    }
-    g____ChildVTable_free_method = (*env)->GetStaticMethodID(env, g____ChildVTable_class, "free", "(J)V");
-    if (g____ChildVTable_free_method == NULL) {
+    if (!boltffi_jni_lookup_static_method_with_diagnostic(env, g____ChildVTable_class, "com/boltffi/demo/ChildCallbacks", "free", "free", "(J)V", "(J)V", &g____ChildVTable_free_method)) {
         goto fail;
     }
-    g____ChildVTable_clone_method = (*env)->GetStaticMethodID(env, g____ChildVTable_class, "clone", "(J)J");
-    if (g____ChildVTable_clone_method == NULL) {
+    if (!boltffi_jni_lookup_static_method_with_diagnostic(env, g____ChildVTable_class, "com/boltffi/demo/ChildCallbacks", "clone", "clone", "(J)J", "(J)J", &g____ChildVTable_clone_method)) {
         goto fail;
     }
-    g____ChildVTable_on_value_method = (*env)->GetStaticMethodID(env, g____ChildVTable_class, "on_value", "(JI)I");
-    if (g____ChildVTable_on_value_method == NULL) {
+    if (!boltffi_jni_lookup_static_method_with_diagnostic(env, g____ChildVTable_class, "com/boltffi/demo/ChildCallbacks", "on_value", "on_value", "(JI)I", "(JI)I", &g____ChildVTable_on_value_method)) {
         goto fail;
     }
     boltffi_register_callback_demo_child(&g____ChildVTable_vtable);
@@ -209,25 +200,16 @@ static ___SiblingVTable g____SiblingVTable_vtable = {
 };
 
 static bool boltffi_jni_load____SiblingVTable_callbacks(JNIEnv *env) {
-    jclass local_class = (*env)->FindClass(env, "com/boltffi/demo/SiblingCallbacks");
-    if (local_class == NULL) {
+    if (!boltffi_jni_lookup_global_class_with_diagnostic(env, "com/boltffi/demo/SiblingCallbacks", "com/boltffi/demo/SiblingCallbacks", &g____SiblingVTable_class)) {
         return false;
     }
-    g____SiblingVTable_class = (*env)->NewGlobalRef(env, local_class);
-    (*env)->DeleteLocalRef(env, local_class);
-    if (g____SiblingVTable_class == NULL) {
-        return false;
-    }
-    g____SiblingVTable_free_method = (*env)->GetStaticMethodID(env, g____SiblingVTable_class, "free", "(J)V");
-    if (g____SiblingVTable_free_method == NULL) {
+    if (!boltffi_jni_lookup_static_method_with_diagnostic(env, g____SiblingVTable_class, "com/boltffi/demo/SiblingCallbacks", "free", "free", "(J)V", "(J)V", &g____SiblingVTable_free_method)) {
         goto fail;
     }
-    g____SiblingVTable_clone_method = (*env)->GetStaticMethodID(env, g____SiblingVTable_class, "clone", "(J)J");
-    if (g____SiblingVTable_clone_method == NULL) {
+    if (!boltffi_jni_lookup_static_method_with_diagnostic(env, g____SiblingVTable_class, "com/boltffi/demo/SiblingCallbacks", "clone", "clone", "(J)J", "(J)J", &g____SiblingVTable_clone_method)) {
         goto fail;
     }
-    g____SiblingVTable_on_name_method = (*env)->GetStaticMethodID(env, g____SiblingVTable_class, "on_name", "(J[B)V");
-    if (g____SiblingVTable_on_name_method == NULL) {
+    if (!boltffi_jni_lookup_static_method_with_diagnostic(env, g____SiblingVTable_class, "com/boltffi/demo/SiblingCallbacks", "on_name", "on_name", "(J[B)V", "(J[B)V", &g____SiblingVTable_on_name_method)) {
         goto fail;
     }
     boltffi_register_callback_demo_sibling(&g____SiblingVTable_vtable);
@@ -340,29 +322,19 @@ static ___ListenerVTable g____ListenerVTable_vtable = {
 };
 
 static bool boltffi_jni_load____ListenerVTable_callbacks(JNIEnv *env) {
-    jclass local_class = (*env)->FindClass(env, "com/boltffi/demo/ListenerCallbacks");
-    if (local_class == NULL) {
+    if (!boltffi_jni_lookup_global_class_with_diagnostic(env, "com/boltffi/demo/ListenerCallbacks", "com/boltffi/demo/ListenerCallbacks", &g____ListenerVTable_class)) {
         return false;
     }
-    g____ListenerVTable_class = (*env)->NewGlobalRef(env, local_class);
-    (*env)->DeleteLocalRef(env, local_class);
-    if (g____ListenerVTable_class == NULL) {
-        return false;
-    }
-    g____ListenerVTable_free_method = (*env)->GetStaticMethodID(env, g____ListenerVTable_class, "free", "(J)V");
-    if (g____ListenerVTable_free_method == NULL) {
+    if (!boltffi_jni_lookup_static_method_with_diagnostic(env, g____ListenerVTable_class, "com/boltffi/demo/ListenerCallbacks", "free", "free", "(J)V", "(J)V", &g____ListenerVTable_free_method)) {
         goto fail;
     }
-    g____ListenerVTable_clone_method = (*env)->GetStaticMethodID(env, g____ListenerVTable_class, "clone", "(J)J");
-    if (g____ListenerVTable_clone_method == NULL) {
+    if (!boltffi_jni_lookup_static_method_with_diagnostic(env, g____ListenerVTable_class, "com/boltffi/demo/ListenerCallbacks", "clone", "clone", "(J)J", "(J)J", &g____ListenerVTable_clone_method)) {
         goto fail;
     }
-    g____ListenerVTable_child_method = (*env)->GetStaticMethodID(env, g____ListenerVTable_class, "child", "(JJJ)V");
-    if (g____ListenerVTable_child_method == NULL) {
+    if (!boltffi_jni_lookup_static_method_with_diagnostic(env, g____ListenerVTable_class, "com/boltffi/demo/ListenerCallbacks", "child", "child", "(JJJ)V", "(JJJ)V", &g____ListenerVTable_child_method)) {
         goto fail;
     }
-    g____ListenerVTable_sibling_method = (*env)->GetStaticMethodID(env, g____ListenerVTable_class, "sibling", "(JJJ)V");
-    if (g____ListenerVTable_sibling_method == NULL) {
+    if (!boltffi_jni_lookup_static_method_with_diagnostic(env, g____ListenerVTable_class, "com/boltffi/demo/ListenerCallbacks", "sibling", "sibling", "(JJJ)V", "(JJJ)V", &g____ListenerVTable_sibling_method)) {
         goto fail;
     }
     boltffi_register_callback_demo_listener(&g____ListenerVTable_vtable);
@@ -429,16 +401,12 @@ JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1async_1callback_1co
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
     (void)reserved;
     JNIEnv *env = NULL;
-    if ((*vm)->GetEnv(vm, (void **)&env, JNI_VERSION_1_6) != JNI_OK) {
+    jint env_result = (*vm)->GetEnv(vm, (void **)&env, JNI_VERSION_1_6);
+    if (env_result != JNI_OK) {
+        fprintf(stderr, "BoltFFI JNI_OnLoad failed: GetEnv(JNI_VERSION_1_6) returned %d\n", (int)env_result);
         return JNI_ERR;
     }
-    jclass local_class = (*env)->FindClass(env, "com/boltffi/demo/Native");
-    if (local_class == NULL) {
-        return JNI_ERR;
-    }
-    boltffi_jni_native_class = (*env)->NewGlobalRef(env, local_class);
-    (*env)->DeleteLocalRef(env, local_class);
-    if (boltffi_jni_native_class == NULL) {
+    if (!boltffi_jni_lookup_global_class_with_diagnostic(env, "com/boltffi/demo/Native", "com/boltffi/demo/Native", &boltffi_jni_native_class)) {
         return JNI_ERR;
     }
     if (!boltffi_jni_load____ChildVTable_callbacks(env)) {

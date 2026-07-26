@@ -1,11 +1,7 @@
 static jmethodID boltffi_jni_continuation_method = NULL;
 
 static bool boltffi_jni_continuation_load(JNIEnv *env) {
-    boltffi_jni_continuation_method = (*env)->GetStaticMethodID(env, boltffi_jni_native_class, "boltffiFutureContinuationCallback", "(JB)V");
-    if (boltffi_jni_continuation_method == NULL) {
-        return false;
-    }
-    return true;
+    return boltffi_jni_lookup_static_method_with_diagnostic(env, boltffi_jni_native_class, {{ class_name.diagnostic() }}, "boltffiFutureContinuationCallback", "boltffiFutureContinuationCallback", "(JB)V", "(JB)V", &boltffi_jni_continuation_method);
 }
 
 static void boltffi_jni_continuation_unload(JNIEnv *env) {

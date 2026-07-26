@@ -13,7 +13,9 @@ static {{ closure.c_return_type }} {{ closure.call }}(void *user_data{% for para
 {% include "bridge/jni/closure/closure_handle_declarations.c" %}
 {% include "bridge/jni/closure/byte_arrays.c" %}
 {% include "bridge/jni/closure/direct_vector_declarations.c" %}
+{% include "bridge/jni/closure/record_declarations.c" %}
 {% include "bridge/jni/closure/direct_vectors.c" %}
+{% include "bridge/jni/closure/records.c" %}
 {% include "bridge/jni/closure/closure_handles.c" %}
 {%- if closure.returns_void %}
     (*env)->CallStaticVoidMethod(env, {{ closure.global_class }}, {{ closure.call_method }}, handle{% if closure.has_jni_arguments %}, {{ closure.jni_arguments }}{% endif %});
@@ -36,11 +38,6 @@ static {{ closure.c_return_type }} {{ closure.call }}(void *user_data{% for para
 {%- if closure.returns_bytes %}
     {{ closure.c_return_type }} result = boltffi_jni_byte_array_to_buffer(env, __boltffi_return_array);
     (*env)->DeleteLocalRef(env, __boltffi_return_array);
-    if (boltffi_jni_clear_exception(env)) {
-{% include "bridge/jni/closure/cleanup.c" %}
-        boltffi_jni_exit(env, attached);
-        return {{ closure.failure_value }};
-    }
 {%- else if closure.returns_record %}
     {{ closure.c_return_type }} result = {0};
     if (!boltffi_jni_read_record(env, __boltffi_return_array, (uintptr_t)sizeof(result), &result)) {

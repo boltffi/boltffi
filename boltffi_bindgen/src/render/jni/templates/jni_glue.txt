@@ -9,7 +9,7 @@
 #if defined(__ANDROID__)
 #include <pthread.h>
 #endif
-#include <{{ module_name }}.h>
+#include <{{ header_include }}>
 
 static inline bool boltffi_exception_pending(JNIEnv* env) {
     return (*env)->ExceptionCheck(env);
@@ -20,6 +20,14 @@ static inline bool boltffi_consume_pending_exception(JNIEnv* env) {
     (*env)->ExceptionClear(env);
     return true;
 }
+
+{%- if has_async %}
+static inline void boltffi_describe_pending_load_exception(JNIEnv* env) {
+    if (!boltffi_exception_pending(env)) return;
+    (*env)->ExceptionDescribe(env);
+    (*env)->ExceptionClear(env);
+}
+{%- endif %}
 
 static inline void boltffi_throw_out_of_memory(JNIEnv* env, const char* message) {
     jclass oom_class = (*env)->FindClass(env, "java/lang/OutOfMemoryError");
@@ -340,6 +348,29 @@ static inline bool boltffi_lookup_static_method(
     return false;
 }
 
+{%- if has_async %}
+static inline bool boltffi_lookup_static_method_for_load(
+    JNIEnv* env,
+    jclass cls,
+    const char* class_name,
+    const char* name,
+    const char* signature,
+    jmethodID* out_method
+) {
+    *out_method = (*env)->GetStaticMethodID(env, cls, name, signature);
+    if (*out_method != NULL) return true;
+    fprintf(
+        stderr,
+        "BoltFFI JNI_OnLoad failed: could not resolve static method %s.%s%s\n",
+        class_name,
+        name,
+        signature
+    );
+    boltffi_describe_pending_load_exception(env);
+    return false;
+}
+{%- endif %}
+
 typedef enum {
     BOLTFFI_GLOBAL_CLASS_OK = 0,
     BOLTFFI_GLOBAL_CLASS_MISSING = 1,
@@ -366,6 +397,35 @@ static inline BoltFFIGlobalClassResult boltffi_lookup_global_class(
     *out_class = global_class;
     return BOLTFFI_GLOBAL_CLASS_OK;
 }
+
+{%- if has_async %}
+static inline bool boltffi_lookup_required_global_class(
+    JNIEnv* env,
+    const char* class_name,
+    jclass* out_class
+) {
+    *out_class = NULL;
+    jclass local_class = (*env)->FindClass(env, class_name);
+    if (local_class == NULL) {
+        fprintf(stderr, "BoltFFI JNI_OnLoad failed: could not find JVM class '%s'\n", class_name);
+        boltffi_describe_pending_load_exception(env);
+        return false;
+    }
+    jclass global_class = (*env)->NewGlobalRef(env, local_class);
+    (*env)->DeleteLocalRef(env, local_class);
+    if (global_class == NULL) {
+        fprintf(
+            stderr,
+            "BoltFFI JNI_OnLoad failed: could not create global reference for JVM class '%s'\n",
+            class_name
+        );
+        boltffi_describe_pending_load_exception(env);
+        return false;
+    }
+    *out_class = global_class;
+    return true;
+}
+{%- endif %}
 
 typedef enum {
     BOLTFFI_STATIC_CALL_CACHE_UNINIT = 0,
@@ -592,11 +652,11 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
         return JNI_ERR;
     }
 {%- if has_async_runtime %}
-    if (boltffi_lookup_global_class(env, "{{ package_path }}/Native", &g_callback_class) != BOLTFFI_GLOBAL_CLASS_OK) {
+    if (!boltffi_lookup_required_global_class(env, "{{ package_path }}/Native", &g_callback_class)) {
         g_callback_class = NULL;
         return JNI_ERR;
     }
-    if (!boltffi_lookup_static_method(env, g_callback_class, "boltffiFutureContinuationCallback", "(JB)V", &g_callback_method)) {
+    if (!boltffi_lookup_static_method_for_load(env, g_callback_class, "{{ package_path }}/Native", "boltffiFutureContinuationCallback", "(JB)V", &g_callback_method)) {
         (*env)->DeleteGlobalRef(env, g_callback_class);
         g_callback_class = NULL;
         g_callback_method = NULL;
@@ -1228,10 +1288,6 @@ static jmethodID g_{{ cb.trait_name }}_{{ method.ffi_name }}_method = NULL;
 {%- for method in cb.async_methods %}
 static jmethodID g_{{ cb.trait_name }}_{{ method.ffi_name }}_method = NULL;
 {%- endfor %}
-{%- for method in cb.proxy_async_methods %}
-static jmethodID {{ method.failure_method_id }} = NULL;
-static jmethodID {{ method.success_method_id }} = NULL;
-{%- endfor %}
 {%- for method in cb.proxy_sync_methods %}
 
 JNIEXPORT {{ method.jni_return_type }} JNICALL {{ method.jni_name }}(JNIEnv *env, jclass cls, jlong handle{{ method.jni_params }}) {
@@ -1338,129 +1394,6 @@ boltffi_input_cleanup:
     FfiBuf_u8 _buf = {.ptr = _out_ptr, .len = (size_t)_out_len, .cap = (size_t)_out_len, .align = 1};
     return boltffi_buf_to_jbytearray(env, _buf);
 {%- endif %}
-}
-{%- endfor %}
-{%- for method in cb.proxy_async_methods %}
-
-static void {{ cb.trait_name }}_{{ method.vtable_field }}_proxy_callback(uint64_t callback_data{% if method.is_wire() %}, const uint8_t* result_ptr, size_t result_len{% elif method.has_return() %}, {{ method.return_c_type() }} result{% endif %}, FfiStatus status) {
-    JNIEnv* env;
-    int attached = 0;
-    if (boltffi_jni_callback_enter(&env, &attached) != JNI_OK) {
-        return;
-    }
-    if (status.code != 0) {
-        (*env)->CallStaticVoidMethod(env, g_{{ cb.trait_name }}_callbacks_class, {{ method.failure_method_id }}, (jlong)callback_data);
-        boltffi_consume_pending_exception(env);
-        boltffi_jni_callback_exit(env, attached);
-        return;
-    }
-{%- if method.is_wire() %}
-    jbyteArray _result = (*env)->NewByteArray(env, (jsize)result_len);
-    if (_result == NULL) {
-        boltffi_consume_pending_exception(env);
-        (*env)->CallStaticVoidMethod(env, g_{{ cb.trait_name }}_callbacks_class, {{ method.failure_method_id }}, (jlong)callback_data);
-        boltffi_consume_pending_exception(env);
-        boltffi_jni_callback_exit(env, attached);
-        return;
-    }
-    if (result_len > 0 && result_ptr != NULL) {
-        (*env)->SetByteArrayRegion(env, _result, 0, (jsize)result_len, (const jbyte*)result_ptr);
-        if ((*env)->ExceptionCheck(env)) {
-            (*env)->ExceptionClear(env);
-            (*env)->DeleteLocalRef(env, _result);
-            (*env)->CallStaticVoidMethod(env, g_{{ cb.trait_name }}_callbacks_class, {{ method.failure_method_id }}, (jlong)callback_data);
-            boltffi_consume_pending_exception(env);
-            boltffi_jni_callback_exit(env, attached);
-            return;
-        }
-    }
-    (*env)->CallStaticVoidMethod(env, g_{{ cb.trait_name }}_callbacks_class, {{ method.success_method_id }}, (jlong)callback_data, _result);
-    (*env)->DeleteLocalRef(env, _result);
-{%- elif method.has_return() %}
-{%- if method.return_c_type() == "BoltFFICallbackHandle" %}
-    jlong _result_handle = boltffi_jvm_callback_handle_new_owned(env, result);
-    if (boltffi_exception_pending(env)) {
-        boltffi_consume_pending_exception(env);
-        (*env)->CallStaticVoidMethod(env, g_{{ cb.trait_name }}_callbacks_class, {{ method.failure_method_id }}, (jlong)callback_data);
-        boltffi_consume_pending_exception(env);
-        boltffi_jni_callback_exit(env, attached);
-        return;
-    }
-    (*env)->CallStaticVoidMethod(env, g_{{ cb.trait_name }}_callbacks_class, {{ method.success_method_id }}, (jlong)callback_data, _result_handle);
-{%- else %}
-    (*env)->CallStaticVoidMethod(env, g_{{ cb.trait_name }}_callbacks_class, {{ method.success_method_id }}, (jlong)callback_data, result);
-{%- endif %}
-{%- else %}
-    (*env)->CallStaticVoidMethod(env, g_{{ cb.trait_name }}_callbacks_class, {{ method.success_method_id }}, (jlong)callback_data);
-{%- endif %}
-    boltffi_consume_pending_exception(env);
-    boltffi_jni_callback_exit(env, attached);
-}
-
-JNIEXPORT void JNICALL {{ method.jni_name }}(JNIEnv *env, jclass cls, jlong handle{{ method.jni_params }}) {
-    if (handle == 0) {
-        boltffi_throw_runtime(env, "invalid callback handle");
-        return;
-    }
-    bool _boltffi_input_error = false;
-{%- for param in method.params %}
-{%- if param.is_string() %}
-    const char* _{{ param.name }}_c = {{ param.name }} ? (*env)->GetStringUTFChars(env, {{ param.name }}, NULL) : NULL;
-    if ({{ param.name }} != NULL && _{{ param.name }}_c == NULL) _boltffi_input_error = true;
-{%- endif %}
-{%- if param.is_primitive_array() %}
-{% include "_primitive_array_input.txt" %}
-{%- endif %}
-{%- if param.is_buffer() %}
-    jlong _{{ param.name }}_size = (*env)->GetDirectBufferCapacity(env, {{ param.name }});
-    uint8_t* _{{ param.name }}_ptr = (uint8_t*)(*env)->GetDirectBufferAddress(env, {{ param.name }});
-    uintptr_t _{{ param.name }}_len = {{ param.buffer_len_expr() }};
-{%- if param.has_buffer_len_check() %}
-    {{ param.buffer_len_check() }}
-{%- endif %}
-{%- endif %}
-{%- if param.is_composite() %}
-    jlong _{{ param.name }}_size = (*env)->GetDirectBufferCapacity(env, {{ param.name }});
-    uint8_t* _{{ param.name }}_ptr = (uint8_t*)(*env)->GetDirectBufferAddress(env, {{ param.name }});
-    {{ param.composite_c_type() }} _{{ param.name }}_val;
-    if (_{{ param.name }}_ptr && _{{ param.name }}_size >= (jlong)sizeof({{ param.composite_c_type() }})) {
-        memcpy(&_{{ param.name }}_val, _{{ param.name }}_ptr, sizeof({{ param.composite_c_type() }}));
-    } else {
-        memset(&_{{ param.name }}_val, 0, sizeof({{ param.composite_c_type() }}));
-        _boltffi_input_error = true;
-    }
-{%- endif %}
-
-{%- endfor %}
-    BoltFFICallbackHandle* callback = boltffi_jvm_callback_handle_ref(handle);
-    if (_boltffi_input_error) goto boltffi_input_cleanup;
-    if (callback == NULL || callback->handle == 0 || callback->vtable == NULL) {
-        boltffi_throw_runtime(env, "invalid callback handle");
-        goto boltffi_input_cleanup;
-    }
-    const {{ cb.vtable_type }}* vtable = (const {{ cb.vtable_type }}*)callback->vtable;
-    if (vtable == NULL || vtable->{{ method.vtable_field }} == NULL) {
-        boltffi_throw_runtime(env, "callback method unavailable");
-        goto boltffi_input_cleanup;
-    }
-    vtable->{{ method.vtable_field }}(
-        callback->handle{% if method.params.len() > 0 %}, {% endif %}{% for param in method.params %}{{ param.ffi_arg() }}{% if !loop.last %}, {% endif %}{% endfor %}{% if method.params.len() > 0 %}, {% endif %}{{ cb.trait_name }}_{{ method.vtable_field }}_proxy_callback,
-        (uint64_t)callbackData
-    );
-boltffi_input_cleanup:
-{%- for param in method.params %}
-{%- if param.is_primitive_array() %}
-{%- if param.array_has_stack_copy_fast_path() %}
-    if (_{{ param.name }}_needs_release) (*env)->{{ param.array_release_elements_fn() }}(env, {{ param.name }}, ({{ param.array_elements_ptr_type() }})_{{ param.name }}_ptr, {{ param.array_release_mode() }});
-{%- else %}
-    if (_{{ param.name }}_ptr != NULL) (*env)->{{ param.array_release_elements_fn() }}(env, {{ param.name }}, ({{ param.array_elements_ptr_type() }})_{{ param.name }}_ptr, {{ param.array_release_mode() }});
-{%- endif %}
-{%- endif %}
-{%- if param.is_string() %}
-    if (_{{ param.name }}_c) (*env)->ReleaseStringUTFChars(env, {{ param.name }}, _{{ param.name }}_c);
-{%- endif %}
-
-{%- endfor %}
 }
 {%- endfor %}
 
@@ -1613,17 +1546,13 @@ static BoltFFICallbackInitResult init_{{ cb.trait_name }}_callbacks(JNIEnv* env)
     if (class_result != BOLTFFI_GLOBAL_CLASS_OK) {
         return BOLTFFI_CALLBACK_INIT_FATAL;
     }
-    if (!boltffi_lookup_static_method(env, g_{{ cb.trait_name }}_callbacks_class, "free", "(J)V", &g_{{ cb.trait_name }}_free_method)) goto fail;
-    if (!boltffi_lookup_static_method(env, g_{{ cb.trait_name }}_callbacks_class, "clone", "(J)J", &g_{{ cb.trait_name }}_clone_method)) goto fail;
+    if (!boltffi_lookup_static_method_for_load(env, g_{{ cb.trait_name }}_callbacks_class, "{{ cb.callbacks_class }}", "free", "(J)V", &g_{{ cb.trait_name }}_free_method)) goto fail;
+    if (!boltffi_lookup_static_method_for_load(env, g_{{ cb.trait_name }}_callbacks_class, "{{ cb.callbacks_class }}", "clone", "(J)J", &g_{{ cb.trait_name }}_clone_method)) goto fail;
 {%- for method in cb.sync_methods %}
-    if (!boltffi_lookup_static_method(env, g_{{ cb.trait_name }}_callbacks_class, "{{ method.jni_method_name }}", "{{ method.jni_signature }}", &g_{{ cb.trait_name }}_{{ method.ffi_name }}_method)) goto fail;
+    if (!boltffi_lookup_static_method_for_load(env, g_{{ cb.trait_name }}_callbacks_class, "{{ cb.callbacks_class }}", "{{ method.jni_method_name }}", "{{ method.jni_signature }}", &g_{{ cb.trait_name }}_{{ method.ffi_name }}_method)) goto fail;
 {%- endfor %}
 {%- for method in cb.async_methods %}
-    if (!boltffi_lookup_static_method(env, g_{{ cb.trait_name }}_callbacks_class, "{{ method.jni_method_name }}", "{{ method.jni_signature }}", &g_{{ cb.trait_name }}_{{ method.ffi_name }}_method)) goto fail;
-{%- endfor %}
-{%- for method in cb.proxy_async_methods %}
-    if (!boltffi_lookup_static_method(env, g_{{ cb.trait_name }}_callbacks_class, "{{ method.success_method_name }}", "{{ method.success_signature }}", &{{ method.success_method_id }})) goto fail;
-    if (!boltffi_lookup_static_method(env, g_{{ cb.trait_name }}_callbacks_class, "{{ method.failure_method_name }}", "(J)V", &{{ method.failure_method_id }})) goto fail;
+    if (!boltffi_lookup_static_method_for_load(env, g_{{ cb.trait_name }}_callbacks_class, "{{ cb.callbacks_class }}", "{{ method.jni_method_name }}", "{{ method.jni_signature }}", &g_{{ cb.trait_name }}_{{ method.ffi_name }}_method)) goto fail;
 {%- endfor %}
     {{ cb.register_fn }}(&g_{{ cb.trait_name }}_vtable);
     return BOLTFFI_CALLBACK_INIT_OK;
@@ -1662,10 +1591,6 @@ JNIEXPORT void JNICALL JNI_OnUnload(JavaVM* vm, void* reserved) {
 {%- endfor %}
 {%- for method in cb.async_methods %}
     g_{{ cb.trait_name }}_{{ method.ffi_name }}_method = NULL;
-{%- endfor %}
-{%- for method in cb.proxy_async_methods %}
-    {{ method.success_method_id }} = NULL;
-    {{ method.failure_method_id }} = NULL;
 {%- endfor %}
 {%- endfor %}
 }

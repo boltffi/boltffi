@@ -328,6 +328,7 @@ impl<'source> CallbackValueType<'source> {
             | TypeExpr::Unit
             | TypeExpr::String
             | TypeExpr::Str
+            | TypeExpr::InternedString { .. }
             | TypeExpr::Builtin(_)
             | TypeExpr::Record { .. }
             | TypeExpr::Enum { .. }

@@ -22,6 +22,7 @@ const JNI_BRIDGE: &str = "jni";
 pub struct CallbackParameter {
     name: Identifier,
     create_handle: Identifier,
+    resolve_handle: Identifier,
 }
 
 impl CallbackParameter {
@@ -38,11 +39,14 @@ impl CallbackParameter {
     /// Returns the expression passed to the C bridge function.
     pub fn c_argument(&self) -> Expression {
         Expression::call(
-            self.create_handle.clone(),
-            ArgumentList::from_iter([Expression::cast(
-                TypeFragment::new("uint64_t"),
-                Expression::identifier(self.name.clone()),
-            )]),
+            self.resolve_handle.clone(),
+            ArgumentList::from_iter([
+                Expression::cast(
+                    TypeFragment::new("uint64_t"),
+                    Expression::identifier(self.name.clone()),
+                ),
+                Expression::identifier(self.create_handle.clone()),
+            ]),
         )
     }
 
@@ -64,6 +68,7 @@ impl CallbackParameter {
         Ok(Some(Self {
             name: Identifier::escape(parameter.name())?,
             create_handle: Identifier::parse(declaration.create_handle().name())?,
+            resolve_handle: Identifier::parse("boltffi_jni_callback_parameter")?,
         }))
     }
 }

@@ -517,6 +517,10 @@ impl Config {
         self.targets.apple.debug_symbols.enabled
     }
 
+    pub fn apple_debug_symbols_archive_enabled(&self) -> bool {
+        self.targets.apple.debug_symbols.archive_enabled()
+    }
+
     pub fn apple_debug_symbols_output(&self) -> PathBuf {
         self.targets
             .apple
@@ -605,6 +609,10 @@ impl Config {
         self.targets.android.kotlin.desktop_loader
     }
 
+    pub fn android_kotlin_desktop_pack_enabled(&self) -> bool {
+        self.targets.android.kotlin.desktop_pack.enabled
+    }
+
     pub fn android_kotlin_api_style(&self) -> KotlinApiStyle {
         self.targets.android.kotlin.api_style
     }
@@ -640,8 +648,16 @@ impl Config {
             .unwrap_or_else(|| self.targets.android.output.join("jniLibs"))
     }
 
+    pub fn android_kotlin_desktop_pack_output(&self) -> PathBuf {
+        self.targets.android.output.join("desktopJniLibs")
+    }
+
     pub fn android_debug_symbols_enabled(&self) -> bool {
         self.targets.android.debug_symbols.enabled
+    }
+
+    pub fn android_debug_symbols_archive_enabled(&self) -> bool {
+        self.targets.android.debug_symbols.archive_enabled()
     }
 
     pub fn android_debug_symbols_output(&self) -> PathBuf {
@@ -765,23 +781,27 @@ impl Config {
             .collect()
     }
 
+    pub fn cargo_args_for_commands(&self, command_names: &[&str]) -> Vec<String> {
+        self.cargo
+            .global_args
+            .iter()
+            .chain(command_names.iter().flat_map(|command_name| {
+                self.cargo
+                    .command_args
+                    .get(*command_name)
+                    .into_iter()
+                    .flat_map(|args| args.iter())
+            }))
+            .cloned()
+            .collect()
+    }
+
     fn is_experimental_enabled(&self, exp: &Experimental) -> bool {
         let key = match exp {
             Experimental::WholeTarget(target) => target.name().to_string(),
             Experimental::Feature { target, name } => format!("{}.{}", target.name(), name),
         };
         self.experimental.contains(&key)
-    }
-
-    pub fn typescript_experimental(
-        &self,
-    ) -> boltffi_bindgen::render::typescript::TypeScriptExperimental {
-        boltffi_bindgen::render::typescript::TypeScriptExperimental {
-            async_streams: self.is_experimental_enabled(&Experimental::Feature {
-                target: Target::TypeScript,
-                name: "async_streams",
-            }),
-        }
     }
 
     pub fn java_package(&self) -> String {
@@ -814,6 +834,10 @@ impl Config {
 
     pub fn java_jvm_debug_symbols_enabled(&self) -> bool {
         self.targets.java.jvm.debug_symbols.enabled
+    }
+
+    pub fn java_jvm_debug_symbols_archive_enabled(&self) -> bool {
+        self.targets.java.jvm.debug_symbols.archive_enabled()
     }
 
     pub fn java_jvm_debug_symbols_output(&self) -> PathBuf {
@@ -849,6 +873,10 @@ impl Config {
 
     pub fn java_android_output(&self) -> PathBuf {
         self.targets.java.android.output.clone()
+    }
+
+    pub fn java_android_min_sdk(&self) -> u32 {
+        self.targets.java.android.min_sdk
     }
 
     pub fn python_output(&self) -> PathBuf {
@@ -1684,9 +1712,13 @@ name = "mylib"
 
 [targets.java.jvm]
 enabled = true
+
+[targets.apple.debug_symbols]
+enabled = true
 "#,
         );
 
+        assert!(config.apple_debug_symbols_archive_enabled());
         assert_eq!(
             config.apple_debug_symbols_output(),
             PathBuf::from("dist/apple/symbols")
@@ -1713,6 +1745,7 @@ enabled = true
 output = "dist/apple/debug-artifacts"
 format = "zip"
 bundle = "unstripped"
+standalone_archive = false
 
 [targets.android.debug_symbols]
 enabled = true
@@ -1747,6 +1780,9 @@ output = "dist/java/debug-artifacts"
             config.apple_debug_symbols_bundle(),
             DebugSymbolsBundle::Unstripped
         );
+        assert!(!config.apple_debug_symbols_archive_enabled());
+        assert!(config.android_debug_symbols_archive_enabled());
+        assert!(config.java_jvm_debug_symbols_archive_enabled());
     }
 
     #[test]
@@ -1978,6 +2014,34 @@ build = ["--features", "mobile"]
                 "--locked".to_string(),
                 "--features".to_string(),
                 "mobile".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn merges_global_and_multiple_command_specific_cargo_args() {
+        let config = parse_config(
+            r#"
+[package]
+name = "mylib"
+
+[cargo]
+global_args = ["--locked"]
+
+[cargo.command_args]
+build = ["--features", "mobile"]
+generate = ["--profile", "metadata"]
+"#,
+        );
+
+        assert_eq!(
+            config.cargo_args_for_commands(&["build", "generate"]),
+            vec![
+                "--locked".to_string(),
+                "--features".to_string(),
+                "mobile".to_string(),
+                "--profile".to_string(),
+                "metadata".to_string()
             ]
         );
     }

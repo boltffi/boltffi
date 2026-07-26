@@ -50,6 +50,14 @@ data class Point(
         return buffer.array()
     }
 
+    internal fun toDirectBuffer(): java.nio.ByteBuffer {
+        val buffer = java.nio.ByteBuffer
+            .allocateDirect(STRUCT_SIZE)
+            .order(java.nio.ByteOrder.nativeOrder())
+        writeTo(buffer, 0)
+        return buffer
+    }
+
     internal fun writeTo(buffer: java.nio.ByteBuffer, offset: Int) {
         buffer.putInt(offset, x)
         buffer.putInt(offset + 4, y)

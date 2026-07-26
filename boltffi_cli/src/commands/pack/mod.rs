@@ -15,7 +15,8 @@ pub(crate) use crate::pack::apple::pack_apple;
 pub(crate) use crate::pack::csharp::pack_csharp;
 pub(crate) use crate::pack::dart::pack_dart;
 pub(crate) use crate::pack::java::{
-    check_java_packaging_prereqs, ensure_java_no_build_supported, pack_java, prepare_java_packaging,
+    check_java_packaging_prereqs, ensure_java_no_build_supported, pack_java, pack_prepared_java,
+    prepare_java_pack,
 };
 pub(crate) use crate::pack::kmp::{ensure_kmp_no_build_supported, pack_kmp};
 pub(crate) use crate::pack::python::pack_python;
@@ -28,7 +29,7 @@ pub fn run_pack(config: &Config, command: PackCommand, reporter: &Reporter) -> R
         PackCommand::Android(options) => pack_android(config, options, reporter),
         PackCommand::Kmp(options) => pack_kmp(config, options, reporter),
         PackCommand::Wasm(options) => pack_wasm(config, options, reporter),
-        PackCommand::Java(options) => pack_java(config, options, None, reporter),
+        PackCommand::Java(options) => pack_java(config, options, reporter),
         PackCommand::Python(options) => pack_python(config, options, reporter),
         PackCommand::Dart(options) => pack_dart(config, options, reporter),
         PackCommand::CSharp(options) => pack_csharp(config, options, reporter),

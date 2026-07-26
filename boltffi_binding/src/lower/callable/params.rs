@@ -38,6 +38,7 @@ pub fn lower<S: SurfaceLower, D: Direction + LowerClosure<S>>(
     ids: &DeclarationIds,
     allocator: &mut SymbolAllocator,
     owner: CallableOwner,
+    root_encoding: codecs::RootEncoding,
     parameters: &[ParameterDef],
 ) -> Result<Vec<ParamDecl<S, D>>, LowerError>
 where
@@ -45,7 +46,7 @@ where
 {
     parameters
         .iter()
-        .map(|parameter| lower_one::<S, D>(index, ids, allocator, owner, parameter))
+        .map(|parameter| lower_one::<S, D>(index, ids, allocator, owner, root_encoding, parameter))
         .collect()
 }
 
@@ -54,6 +55,7 @@ fn lower_one<S: SurfaceLower, D: Direction + LowerClosure<S>>(
     ids: &DeclarationIds,
     allocator: &mut SymbolAllocator,
     owner: CallableOwner,
+    root_encoding: codecs::RootEncoding,
     parameter: &ParameterDef,
 ) -> Result<ParamDecl<S, D>, LowerError>
 where
@@ -72,20 +74,21 @@ where
         return D::lower_closure_param(index, ids, allocator, canonical_name, meta, closure);
     }
     let value = ValueRef::named(canonical_name.clone());
-    let plan = lower_plain_plan::<S, D>(index, ids, &type_expr, value, receive)?;
+    let plan = lower_plain_plan::<S, D>(index, ids, root_encoding, &type_expr, value, receive)?;
     Ok(ParamDecl::value(canonical_name, meta, plan))
 }
 
 fn lower_plain_plan<S: SurfaceLower, D: Direction>(
     index: &Index,
     ids: &DeclarationIds,
+    root_encoding: codecs::RootEncoding,
     type_expr: &TypeExpr,
     value: ValueRef,
     receive: Receive,
 ) -> Result<ParamPlan<S, D>, LowerError> {
     match specialize_param::<S, D>(index, ids, type_expr, receive)? {
         Some(plan) => Ok(plan),
-        None => lower_plan::<S, D>(index, ids, type_expr, value, receive),
+        None => lower_plan::<S, D>(index, ids, root_encoding, type_expr, value, receive),
     }
 }
 
@@ -95,15 +98,15 @@ fn specialize_param<S: SurfaceLower, D: Direction>(
     type_expr: &TypeExpr,
     receive: Receive,
 ) -> Result<Option<ParamPlan<S, D>>, LowerError> {
-    if !matches!(receive, Receive::ByValue) {
-        return Ok(None);
-    }
-    let specialization = ValueSpecialization::from_type_expr(index, ids, type_expr)?;
+    let specialization = ValueSpecialization::from_parameter::<S>(index, ids, type_expr, receive)?;
     Ok(match specialization {
         Some(ValueSpecialization::ScalarOption(primitive)) => {
             Some(ParamPlan::ScalarOption { primitive })
         }
-        Some(ValueSpecialization::DirectVector(element)) => Some(ParamPlan::DirectVec { element }),
+        Some(ValueSpecialization::DirectVector(element)) => Some(ParamPlan::DirectVec {
+            element,
+            receive: D::receive_from(receive),
+        }),
         None => None,
     })
 }
@@ -119,6 +122,7 @@ fn receive_for_passing(passing: ParameterPassing) -> Receive {
 fn lower_plan<S: SurfaceLower, D: Direction>(
     index: &Index,
     ids: &DeclarationIds,
+    root_encoding: codecs::RootEncoding,
     type_expr: &TypeExpr,
     value: ValueRef,
     receive: Receive,
@@ -168,6 +172,7 @@ fn lower_plan<S: SurfaceLower, D: Direction>(
         }
         TypeExpr::String
         | TypeExpr::Str
+        | TypeExpr::InternedString { .. }
         | TypeExpr::Builtin(_)
         | TypeExpr::Slice(_)
         | TypeExpr::Record { .. }
@@ -179,7 +184,7 @@ fn lower_plan<S: SurfaceLower, D: Direction>(
         | TypeExpr::Map { .. }
         | TypeExpr::Custom { .. } => {
             let ty = types::lower(ids, type_expr)?;
-            let codec_node = codecs::node(index, ids, type_expr, value.clone())?;
+            let codec_node = root_encoding.node::<S>(index, ids, type_expr, value.clone())?;
             Ok(ParamPlan::Encoded {
                 ty,
                 codec: D::make_codec(value, codec_node),

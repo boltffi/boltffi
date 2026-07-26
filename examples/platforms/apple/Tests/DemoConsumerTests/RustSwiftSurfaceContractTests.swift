@@ -126,7 +126,7 @@ final class RustSwiftSurfaceContractTests: DemoTestCase {
 
         let rustFiles = try FileManager.default
             .subpathsOfDirectory(atPath: rustSourceRoot.path)
-            .filter { $0.hasSuffix(".rs") }
+            .filter { $0.hasSuffix(".rs") && !featureScopedRustFiles.contains($0) }
             .sorted()
 
         let parsedInventories = try rustFiles.map { relativePath in
@@ -552,6 +552,11 @@ private let typeMemberCoverageGaps: Set<String> = [
     "records/default_values.rs::ServiceConfig::maybeWithRetries"
 ]
 
+private let featureScopedRustFiles: Set<String> = [
+    "callbacks/csharp_closures.rs",
+    "classes/async_factory.rs"
+]
+
 private func typeMemberCoverageKey(_ rustTypeMember: RustTypeMember) -> String {
     "\(rustTypeMember.rustFile)::\(rustTypeMember.typeName)::\(rustTypeMember.swiftName)"
 }
@@ -572,6 +577,7 @@ private let rustToSwiftCoverageFile: [String: String] = [
     "classes/streams.rs": "classes/StreamsTests.swift",
     "classes/thread_safe.rs": "classes/ThreadSafeTests.swift",
     "classes/unsafe_single_threaded.rs": "classes/UnsafeSingleThreadedTests.swift",
+    "collections/mod.rs": "collections/CollectionsTests.swift",
     "custom_types/mod.rs": "custom_types/CustomTypesTests.swift",
     "enums/c_style.rs": "enums/CStyleEnumsTests.swift",
     "enums/complex_variants.rs": "enums/ComplexVariantsEnumsTests.swift",

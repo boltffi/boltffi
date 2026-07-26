@@ -19,6 +19,7 @@ impl ClosureArgument {
             ClosureArgumentKind::Scalar(argument) => argument.jvm_arguments(),
             ClosureArgumentKind::Bytes(argument) => argument.jvm_arguments(),
             ClosureArgumentKind::DirectVector(argument) => argument.jvm_arguments(),
+            ClosureArgumentKind::Record(argument) => argument.jvm_arguments(),
             ClosureArgumentKind::Closure(argument) => argument.jvm_arguments(),
             ClosureArgumentKind::SuccessOut(argument) => argument.jvm_arguments(),
         }
@@ -35,6 +36,7 @@ impl ClosureArgument {
             ClosureArgumentKind::Scalar(argument) => argument.rust_arguments(),
             ClosureArgumentKind::Bytes(argument) => argument.rust_arguments(),
             ClosureArgumentKind::DirectVector(argument) => argument.rust_arguments(),
+            ClosureArgumentKind::Record(argument) => argument.rust_arguments(),
             ClosureArgumentKind::Closure(argument) => argument.rust_arguments(),
             ClosureArgumentKind::SuccessOut(argument) => argument.rust_arguments(),
         }
@@ -51,6 +53,7 @@ impl ClosureArgument {
             ClosureArgumentKind::Scalar(argument) => argument.jni_signature(),
             ClosureArgumentKind::Bytes(argument) => argument.jni_signature(),
             ClosureArgumentKind::DirectVector(argument) => argument.jni_signature(),
+            ClosureArgumentKind::Record(argument) => argument.jni_signature(),
             ClosureArgumentKind::Closure(argument) => argument.jni_signature(),
             ClosureArgumentKind::SuccessOut(argument) => argument.jni_signature(),
         }

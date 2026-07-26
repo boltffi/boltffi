@@ -98,11 +98,6 @@ impl Shape {
             java,
             reason = ExclusionReason::CoverageGap,
             details = "This C# regression case is not asserted by the Java demo suite yet. Add it when Java demo coverage expands for optional data-enum constructors."
-        ),
-        exclude(
-            typescript,
-            reason = ExclusionReason::CoverageGap,
-            details = "This C# regression case is not asserted by the TypeScript demo suite yet. Add it when TypeScript demo coverage expands for optional data-enum constructors."
         )
     )]
     #[demo_bench_macros::demo_case(
@@ -118,11 +113,6 @@ impl Shape {
             java,
             reason = ExclusionReason::CoverageGap,
             details = "This C# regression case is not asserted by the Java demo suite yet. Add it when Java demo coverage expands for optional data-enum constructors."
-        ),
-        exclude(
-            typescript,
-            reason = ExclusionReason::CoverageGap,
-            details = "This C# regression case is not asserted by the TypeScript demo suite yet. Add it when TypeScript demo coverage expands for optional data-enum constructors."
         )
     )]
     pub fn maybe_circle(radius: f64) -> Option<Self> {

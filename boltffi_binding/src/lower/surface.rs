@@ -19,7 +19,7 @@
 
 use boltffi_ast::FnSig;
 
-use crate::{Native, Surface, Wasm32, native, wasm32};
+use crate::{Native, Primitive, ReturnValueSlot, Surface, Wasm32, native, wasm32};
 
 use super::async_protocol::AsyncProtocolBuilder;
 use super::callbacks::CallbackProtocolBuilder;
@@ -67,6 +67,15 @@ pub trait SurfaceLower:
     #[doc(hidden)]
     fn encoded_return_shape() -> Self::BufferShape;
 
+    #[doc(hidden)]
+    fn scalar_option(primitive: Primitive) -> Option<Primitive>;
+
+    #[doc(hidden)]
+    fn root_string_codec() -> crate::CodecNode;
+
+    #[doc(hidden)]
+    fn direct_record_return_slot() -> ReturnValueSlot;
+
     /// Handle carrier used for a class instance crossing.
     ///
     /// Native classes cross as a 64-bit token
@@ -112,6 +121,18 @@ impl SurfaceLower for Native {
         native::BufferShape::Buffer
     }
 
+    fn scalar_option(primitive: Primitive) -> Option<Primitive> {
+        Some(primitive)
+    }
+
+    fn root_string_codec() -> crate::CodecNode {
+        crate::CodecNode::String
+    }
+
+    fn direct_record_return_slot() -> ReturnValueSlot {
+        ReturnValueSlot::ReturnSlot
+    }
+
     fn class_handle_carrier() -> Self::HandleCarrier {
         native::HandleCarrier::U64
     }
@@ -145,6 +166,31 @@ impl SurfaceLower for Wasm32 {
 
     fn encoded_return_shape() -> Self::BufferShape {
         wasm32::BufferShape::Packed
+    }
+
+    fn scalar_option(primitive: Primitive) -> Option<Primitive> {
+        matches!(
+            primitive,
+            Primitive::Bool
+                | Primitive::I8
+                | Primitive::U8
+                | Primitive::I16
+                | Primitive::U16
+                | Primitive::I32
+                | Primitive::U32
+                | Primitive::ISize
+                | Primitive::USize
+                | Primitive::F64
+        )
+        .then_some(primitive)
+    }
+
+    fn root_string_codec() -> crate::CodecNode {
+        crate::CodecNode::Utf8String
+    }
+
+    fn direct_record_return_slot() -> ReturnValueSlot {
+        ReturnValueSlot::OutPointer
     }
 
     fn class_handle_carrier() -> Self::HandleCarrier {

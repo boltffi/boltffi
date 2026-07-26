@@ -1,8 +1,64 @@
-use super::rendered_fixture;
+use boltffi_binding::DeclarationRef;
+
+use super::{
+    bindings, bridge, rendered_fixture, rendered_fixture_with_support, source::SourceFixture,
+};
+
+#[test]
+fn jni_bridge_indexes_callback_registrations_by_source_id() {
+    let source = SourceFixture::one("callback/foreign_callback_parameter").read();
+    let bindings = bindings(&source);
+    let callback = bindings
+        .decls()
+        .iter()
+        .find_map(|decl| match DeclarationRef::from(decl) {
+            DeclarationRef::Callback(callback) => Some(callback),
+            _ => None,
+        })
+        .expect("callback fixture declaration");
+    let output = bridge(&source);
+    let contract = output.contract();
+
+    assert_eq!(
+        contract
+            .source_callback(callback.id())
+            .map(|registration| registration.id()),
+        Some(callback.id())
+    );
+}
 
 #[test]
 fn jni_bridge_renders_callback_handle_parameters() {
-    insta::assert_snapshot!(rendered_fixture("callback/foreign_callback_parameter"));
+    let rendered = rendered_fixture("callback/foreign_callback_parameter");
+
+    assert!(rendered.contains("static BoltFFICallbackHandle boltffi_jni_callback_parameter"));
+
+    insta::assert_snapshot!(rendered);
+}
+
+#[test]
+fn jni_bridge_renders_constructor_callback_parameters() {
+    let rendered = rendered_fixture("callback/constructor_callback_parameter");
+
+    assert!(rendered.contains("boltffi_jni_callback_parameter((uint64_t)notifier"));
+    assert!(rendered.contains("static BoltFFICallbackHandle boltffi_jni_callback_parameter"));
+
+    insta::assert_snapshot!(rendered);
+}
+
+#[test]
+fn jni_bridge_reports_lifecycle_lookup_failures() {
+    let rendered = rendered_fixture_with_support("callback/foreign_callback_parameter");
+
+    assert!(rendered.contains(
+        "boltffi_jni_lookup_global_class_with_diagnostic(env, \"com/boltffi/demo/Native\", \"com/boltffi/demo/Native\", &boltffi_jni_native_class)"
+    ));
+    assert!(rendered.contains(
+        "boltffi_jni_lookup_global_class_with_diagnostic(env, \"com/boltffi/demo/ListenerCallbacks\", \"com/boltffi/demo/ListenerCallbacks\", &g____ListenerVTable_class)"
+    ));
+    assert!(rendered.contains(
+        "boltffi_jni_lookup_static_method_with_diagnostic(env, g____ListenerVTable_class, \"com/boltffi/demo/ListenerCallbacks\", \"on_value\", \"on_value\", \"(JI)I\", \"(JI)I\", &g____ListenerVTable_on_value_method)"
+    ));
 }
 
 #[test]

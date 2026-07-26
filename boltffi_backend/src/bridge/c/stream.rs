@@ -1,6 +1,6 @@
 use boltffi_binding::{
-    ByteSize, DirectValueType, Native, ReadPlan, StreamDecl, StreamItemPlan, StreamItemPlanRender,
-    TypeRef, native,
+    ByteSize, DeclarationId, DirectValueType, Native, NativeSymbol, ReadPlan, StreamDecl,
+    StreamItemPlan, StreamItemPlanRender, TypeRef, native,
 };
 
 use crate::core::Result;
@@ -39,7 +39,8 @@ pub struct DirectStreamBatch {
 }
 
 struct StreamBatchBuilder<'stream> {
-    symbol: &'stream str,
+    declaration: DeclarationId,
+    symbol: &'stream NativeSymbol,
     subscription: Type,
     names: &'stream Names,
 }
@@ -47,6 +48,7 @@ struct StreamBatchBuilder<'stream> {
 impl Stream {
     /// Creates the C stream protocol from a lowered stream declaration.
     pub fn from_decl(stream: &StreamDecl<Native>, names: &Names) -> Result<Self> {
+        let declaration = DeclarationId::Stream(stream.id());
         let protocol = stream.protocol();
         let subscription = Type::handle_carrier(stream.handle())?;
         let subscribe_params = stream
@@ -62,27 +64,31 @@ impl Stream {
             .collect();
 
         Ok(Self {
-            subscribe: Function::new(
-                protocol.subscribe().name().as_str(),
+            subscribe: Function::exported(
+                declaration,
+                protocol.subscribe(),
                 subscribe_params,
                 subscription.clone(),
             )?,
             pop_batch: StreamBatch::from_plan(
-                protocol.pop_batch().name().as_str(),
+                declaration,
+                protocol.pop_batch(),
                 stream.item(),
                 subscription.clone(),
                 names,
             )?,
-            wait: Function::new(
-                protocol.wait().name().as_str(),
+            wait: Function::exported(
+                declaration,
+                protocol.wait(),
                 vec![
                     Parameter::new("subscription", subscription.clone())?,
                     Parameter::new("timeout_milliseconds", Type::Uint32)?,
                 ],
                 Type::WaitResult,
             )?,
-            poll: Function::new(
-                protocol.poll().name().as_str(),
+            poll: Function::exported(
+                declaration,
+                protocol.poll(),
                 vec![
                     Parameter::new("subscription", subscription.clone())?,
                     Parameter::continuation_data("callback")?,
@@ -90,13 +96,15 @@ impl Stream {
                 ],
                 Type::Void,
             )?,
-            unsubscribe: Function::new(
-                protocol.unsubscribe().name().as_str(),
+            unsubscribe: Function::exported(
+                declaration,
+                protocol.unsubscribe(),
                 vec![Parameter::new("subscription", subscription.clone())?],
                 Type::Void,
             )?,
-            free: Function::new(
-                protocol.free().name().as_str(),
+            free: Function::exported(
+                declaration,
+                protocol.free(),
                 vec![Parameter::new("subscription", subscription)?],
                 Type::Void,
             )?,
@@ -164,12 +172,14 @@ impl StreamBatch {
     }
 
     fn from_plan(
-        symbol: &str,
+        declaration: DeclarationId,
+        symbol: &NativeSymbol,
         item: &StreamItemPlan<Native>,
         subscription: Type,
         names: &Names,
     ) -> Result<Self> {
         item.render_with(&mut StreamBatchBuilder {
+            declaration,
             symbol,
             subscription,
             names,
@@ -199,7 +209,8 @@ impl<'plan> StreamItemPlanRender<'plan, Native> for StreamBatchBuilder<'_> {
 
     fn direct(&mut self, ty: &'plan DirectValueType, size: ByteSize) -> Self::Output {
         let item = self.names.direct_value(ty)?;
-        Function::new(
+        Function::exported(
+            self.declaration,
             self.symbol,
             vec![
                 Parameter::new("subscription", self.subscription.clone())?,
@@ -223,7 +234,8 @@ impl<'plan> StreamItemPlanRender<'plan, Native> for StreamBatchBuilder<'_> {
         _: &'plan ReadPlan,
         shape: native::BufferShape,
     ) -> Self::Output {
-        Function::new(
+        Function::exported(
+            self.declaration,
             self.symbol,
             vec![
                 Parameter::new("subscription", self.subscription.clone())?,

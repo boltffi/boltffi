@@ -9,6 +9,7 @@ final class StringsTests: DemoTestCase {
         XCTAssertEqual(stringLength(v: "café"), 5, "case:primitives.strings.string.should_report_utf8_byte_length")
         XCTAssertEqual(stringIsEmpty(v: ""), true, "case:primitives.strings.string.should_detect_empty")
         XCTAssertEqual(repeatString(v: "ab", count: 3), "ababab", "case:primitives.strings.string.should_repeat_value")
+        XCTAssertEqual(borrowedStaticString(), "borrowed static", "case:primitives.strings.borrowed_static_string.should_return_value")
         XCTAssertEqual(generateString(size: 4), "xxxx")
     }
 }

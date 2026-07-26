@@ -1,19 +1,26 @@
 //! Kotlin Multiplatform file emission from lowered KMP plans.
 
-use std::path::{Path, PathBuf};
+use std::{
+    collections::BTreeSet,
+    path::{Path, PathBuf},
+};
 
 use crate::core::{Error, FilePath, GeneratedFile, GeneratedOutput, Result};
 
-use super::plan::{KmpModule, KmpPlatform};
+use super::{
+    names,
+    plan::{KmpApiBody, KmpFunctionPlan, KmpModule, KmpPlatform},
+};
 
 mod common;
 mod gradle;
 mod jvm;
 mod output;
 
-pub use output::{KMP_SUPPORT_REPORT_FILE, KMP_SUPPORT_REPORT_SCHEMA_VERSION};
-
-use output::KmpSupportMetadata;
+pub use output::{
+    KMP_GENERATED_C_HEADER_DIR, KMP_SUPPORT_REPORT_FILE, KMP_SUPPORT_REPORT_SCHEMA_VERSION,
+    KmpSupportApiMetadata, KmpSupportMetadata,
+};
 
 /// Options that affect KMP output files but not support admission.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -71,6 +78,7 @@ impl KmpEmitter {
     pub fn emit(&self, module: &KmpModule) -> Result<GeneratedOutput> {
         validate_emission_options(&self.options)?;
         validate_platform_matrix(module)?;
+        validate_module_plan(module)?;
 
         let source_package_path = package_path(self.options.package_name());
         let internal_package = format!("{}.jvm", self.options.package_name());
@@ -152,6 +160,9 @@ fn validate_emission_options(options: &KmpEmissionOptions) -> Result<()> {
 fn validate_package_name(package_name: &str) -> Result<()> {
     for segment in package_name.split('.') {
         validate_relative_path_component(segment)?;
+        if !names::is_valid_package_segment(segment) {
+            return Err(invalid_emission_options());
+        }
     }
 
     Ok(())
@@ -201,6 +212,71 @@ fn validate_platform_matrix(module: &KmpModule) -> Result<()> {
     Ok(())
 }
 
+fn validate_module_plan(module: &KmpModule) -> Result<()> {
+    let mut function_signatures = BTreeSet::new();
+    let mut native_signatures = BTreeSet::new();
+    for api in module.common().apis() {
+        if let KmpApiBody::Function(function) = api.body() {
+            validate_function_plan(function)?;
+            let signature = function_signature_key(function)?;
+            if !function_signatures.insert(signature) {
+                return Err(invalid_module_plan());
+            }
+            let native_signature = native_signature_key(function)?;
+            if !native_signatures.insert(native_signature) {
+                return Err(invalid_module_plan());
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_function_plan(function: &KmpFunctionPlan) -> Result<()> {
+    if !names::is_valid_identifier(function.name()) {
+        return Err(invalid_module_plan());
+    }
+    if !names::is_valid_identifier(function.native_symbol()) {
+        return Err(invalid_module_plan());
+    }
+    let mut param_names = BTreeSet::new();
+    for param in function.params() {
+        if !names::is_valid_identifier(param.name()) {
+            return Err(invalid_module_plan());
+        }
+        if !param_names.insert(param.name()) {
+            return Err(invalid_module_plan());
+        }
+    }
+
+    Ok(())
+}
+
+fn function_signature_key(function: &KmpFunctionPlan) -> Result<String> {
+    signature_key(function.name(), function)
+}
+
+fn native_signature_key(function: &KmpFunctionPlan) -> Result<String> {
+    signature_key(function.native_symbol(), function)
+}
+
+fn signature_key(name: &str, function: &KmpFunctionPlan) -> Result<String> {
+    let params = function
+        .params()
+        .iter()
+        .map(|param| common::render_type(param.ty()))
+        .collect::<Result<Vec<_>>>()?
+        .join(", ");
+    Ok(format!("{name}({params})"))
+}
+
+fn invalid_module_plan() -> Error {
+    Error::UnsupportedTarget {
+        target: "kotlin_multiplatform",
+        shape: "invalid KMP module plan",
+    }
+}
+
 fn package_path(package_name: &str) -> PathBuf {
     package_name.split('.').collect()
 }
@@ -212,9 +288,9 @@ fn source_set_kotlin_dir(source_set: &str, package_path: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::super::{
-        KmpApiPlan, KmpCapability, KmpCapabilitySet, KmpCommonModule, KmpFunctionPlan, KmpModule,
-        KmpParamPlan, KmpPlatform, KmpPlatformModule, KmpSupportApi, KmpSupportMode,
-        KmpSupportReport, KmpTypePlan,
+        KmpApiPlan, KmpCapability, KmpCapabilitySet, KmpCommonModule, KmpFunctionPlan,
+        KmpJvmDelegateFunction, KmpJvmDelegateOutput, KmpModule, KmpParamPlan, KmpPlatform,
+        KmpPlatformModule, KmpSupportApi, KmpSupportMode, KmpSupportReport, KmpTypePlan,
     };
     use super::{KmpEmissionOptions, KmpEmitter};
 
@@ -267,7 +343,7 @@ mod tests {
                     "roundTrip",
                     "boltffi_function_demo_round_trip",
                     vec![KmpParamPlan::new(
-                        "value",
+                        "`value`",
                         KmpTypePlan::Primitive(boltffi_binding::Primitive::U32),
                     )],
                     Some(KmpTypePlan::Primitive(boltffi_binding::Primitive::U32)),
@@ -320,6 +396,86 @@ mod tests {
         )
     }
 
+    fn signed_function_delegate(
+        internal_package: &str,
+        extra_jni_glue: &str,
+    ) -> KmpJvmDelegateOutput {
+        signed_function_delegate_with_add_name(internal_package, "add", extra_jni_glue)
+    }
+
+    fn signed_function_delegate_with_add_name(
+        internal_package: &str,
+        add_kotlin_name: &str,
+        extra_jni_glue: &str,
+    ) -> KmpJvmDelegateOutput {
+        KmpJvmDelegateOutput::new(
+            internal_package,
+            "private const val BOLTFFI_LIBRARY_NAME: String = \"boltffi_demo\"\n",
+            vec![
+                KmpJvmDelegateFunction::new(
+                    "boltffi_function_demo_add",
+                    add_kotlin_name,
+                    vec![
+                        KmpTypePlan::Primitive(boltffi_binding::Primitive::I32),
+                        KmpTypePlan::Primitive(boltffi_binding::Primitive::I32),
+                    ],
+                    Some(KmpTypePlan::Primitive(boltffi_binding::Primitive::I32)),
+                    "/* delegated JNI glue */\n",
+                ),
+                KmpJvmDelegateFunction::new(
+                    "boltffi_function_demo_pruned",
+                    "pruned",
+                    vec![KmpTypePlan::Primitive(boltffi_binding::Primitive::I32)],
+                    Some(KmpTypePlan::Primitive(boltffi_binding::Primitive::I32)),
+                    extra_jni_glue,
+                ),
+            ],
+        )
+    }
+
+    fn signed_function_module_with_delegate(delegate: KmpJvmDelegateOutput) -> KmpModule {
+        signed_function_module().with_jvm_delegate(delegate)
+    }
+
+    fn function_module_with_delegate_functions(
+        functions: Vec<KmpFunctionPlan>,
+        delegate_functions: Vec<KmpJvmDelegateFunction>,
+    ) -> KmpModule {
+        let apis = functions
+            .into_iter()
+            .map(|function| {
+                KmpApiPlan::function(
+                    function.name().to_string(),
+                    KmpCapabilitySet::from_iter([KmpCapability::SyncCallables]),
+                    function,
+                )
+            })
+            .collect::<Vec<_>>();
+        let admitted = apis
+            .iter()
+            .map(|api| KmpSupportApi::admitted("function", api.name()))
+            .collect();
+
+        KmpModule::new(
+            KmpCommonModule::new(apis),
+            vec![
+                KmpPlatformModule::new(KmpPlatform::Jvm, KmpPlatform::Jvm.capabilities()),
+                KmpPlatformModule::new(KmpPlatform::Android, KmpPlatform::Android.capabilities()),
+            ],
+            KmpSupportReport::new(
+                KmpSupportMode::Strict,
+                vec![KmpPlatform::Jvm, KmpPlatform::Android],
+                admitted,
+                Vec::new(),
+            ),
+        )
+        .with_jvm_delegate(KmpJvmDelegateOutput::new(
+            "com.example.demo.jvm",
+            "private const val BOLTFFI_LIBRARY_NAME: String = \"boltffi_demo\"\n",
+            delegate_functions,
+        ))
+    }
+
     fn jvm_only_module() -> KmpModule {
         KmpModule::new(
             KmpCommonModule::new(Vec::new()),
@@ -355,6 +511,16 @@ mod tests {
         ));
     }
 
+    fn assert_invalid_module_plan(error: crate::Error) {
+        assert!(matches!(
+            error,
+            crate::Error::UnsupportedTarget {
+                target: "kotlin_multiplatform",
+                shape: "invalid KMP module plan"
+            }
+        ));
+    }
+
     #[test]
     fn emitter_rejects_module_names_that_escape_output_root() {
         for module_name in ["/tmp/owned", "../owned", "..", "bad/name", "bad\\name"] {
@@ -382,6 +548,355 @@ mod tests {
                 .expect_err("package names must map to relative package path components");
 
             assert_invalid_emission_options(error);
+        }
+    }
+
+    #[test]
+    fn emitter_rejects_invalid_kotlin_package_names() {
+        for package_name in [
+            "com.example.2demo",
+            "com.example.bad-name",
+            "com.example.class",
+        ] {
+            let error = KmpEmitter::new(KmpEmissionOptions::new(package_name, "Demo", 24))
+                .emit(&empty_module())
+                .expect_err("package names must be valid Kotlin package declarations");
+
+            assert_invalid_emission_options(error);
+        }
+    }
+
+    #[test]
+    fn emitter_allows_soft_keyword_package_segments() {
+        for package_name in [
+            "com.example.data",
+            "com.example.internal",
+            "com.example.value",
+        ] {
+            KmpEmitter::new(KmpEmissionOptions::new(package_name, "Demo", 24))
+                .emit(&empty_module())
+                .expect("soft keywords are valid package segments");
+        }
+    }
+
+    #[test]
+    fn emitter_rejects_invalid_function_plan_identifiers() {
+        let module = KmpModule::new(
+            KmpCommonModule::new(vec![KmpApiPlan::function(
+                "2d",
+                KmpCapabilitySet::from_iter([KmpCapability::SyncCallables]),
+                KmpFunctionPlan::new(
+                    "2d",
+                    "boltffi_function_demo__2d",
+                    vec![KmpParamPlan::new(
+                        "ok",
+                        KmpTypePlan::Primitive(boltffi_binding::Primitive::I32),
+                    )],
+                    Some(KmpTypePlan::Primitive(boltffi_binding::Primitive::I32)),
+                ),
+            )]),
+            vec![
+                KmpPlatformModule::new(KmpPlatform::Jvm, KmpPlatform::Jvm.capabilities()),
+                KmpPlatformModule::new(KmpPlatform::Android, KmpPlatform::Android.capabilities()),
+            ],
+            KmpSupportReport::new(
+                KmpSupportMode::Strict,
+                vec![KmpPlatform::Jvm, KmpPlatform::Android],
+                vec![KmpSupportApi::admitted("function", "2d")],
+                Vec::new(),
+            ),
+        )
+        .with_jvm_delegate(KmpJvmDelegateOutput::new(
+            "com.example.demo.jvm",
+            "private const val BOLTFFI_LIBRARY_NAME: String = \"boltffi_demo\"\n",
+            vec![KmpJvmDelegateFunction::new(
+                "boltffi_function_demo__2d",
+                "2d",
+                vec![KmpTypePlan::Primitive(boltffi_binding::Primitive::I32)],
+                Some(KmpTypePlan::Primitive(boltffi_binding::Primitive::I32)),
+                "/* delegated JNI glue */\n",
+            )],
+        ));
+
+        let error = KmpEmitter::new(KmpEmissionOptions::new("com.example.demo", "Demo", 24))
+            .emit(&module)
+            .expect_err("manually constructed invalid function names must fail before rendering");
+
+        assert_invalid_module_plan(error);
+    }
+
+    #[test]
+    fn emitter_rejects_invalid_parameter_plan_identifiers() {
+        let module = KmpModule::new(
+            KmpCommonModule::new(vec![KmpApiPlan::function(
+                "add",
+                KmpCapabilitySet::from_iter([KmpCapability::SyncCallables]),
+                KmpFunctionPlan::new(
+                    "add",
+                    "boltffi_function_demo_add",
+                    vec![KmpParamPlan::new(
+                        "bad-name",
+                        KmpTypePlan::Primitive(boltffi_binding::Primitive::I32),
+                    )],
+                    Some(KmpTypePlan::Primitive(boltffi_binding::Primitive::I32)),
+                ),
+            )]),
+            vec![
+                KmpPlatformModule::new(KmpPlatform::Jvm, KmpPlatform::Jvm.capabilities()),
+                KmpPlatformModule::new(KmpPlatform::Android, KmpPlatform::Android.capabilities()),
+            ],
+            KmpSupportReport::new(
+                KmpSupportMode::Strict,
+                vec![KmpPlatform::Jvm, KmpPlatform::Android],
+                vec![KmpSupportApi::admitted("function", "add")],
+                Vec::new(),
+            ),
+        )
+        .with_jvm_delegate(KmpJvmDelegateOutput::new(
+            "com.example.demo.jvm",
+            "private const val BOLTFFI_LIBRARY_NAME: String = \"boltffi_demo\"\n",
+            vec![KmpJvmDelegateFunction::new(
+                "boltffi_function_demo_add",
+                "add",
+                vec![KmpTypePlan::Primitive(boltffi_binding::Primitive::I32)],
+                Some(KmpTypePlan::Primitive(boltffi_binding::Primitive::I32)),
+                "/* delegated JNI glue */\n",
+            )],
+        ));
+
+        let error = KmpEmitter::new(KmpEmissionOptions::new("com.example.demo", "Demo", 24))
+            .emit(&module)
+            .expect_err("manually constructed invalid parameter names must fail before rendering");
+
+        assert_invalid_module_plan(error);
+    }
+
+    #[test]
+    fn emitter_rejects_invalid_native_symbol_plan_identifiers() {
+        let module = function_module_with_delegate_functions(
+            vec![KmpFunctionPlan::new(
+                "add",
+                "bad-name",
+                vec![KmpParamPlan::new(
+                    "left",
+                    KmpTypePlan::Primitive(boltffi_binding::Primitive::I32),
+                )],
+                Some(KmpTypePlan::Primitive(boltffi_binding::Primitive::I32)),
+            )],
+            vec![KmpJvmDelegateFunction::new(
+                "bad-name",
+                "add",
+                vec![KmpTypePlan::Primitive(boltffi_binding::Primitive::I32)],
+                Some(KmpTypePlan::Primitive(boltffi_binding::Primitive::I32)),
+                "/* delegated JNI glue */\n",
+            )],
+        );
+
+        let error = KmpEmitter::new(KmpEmissionOptions::new("com.example.demo", "Demo", 24))
+            .emit(&module)
+            .expect_err("manually constructed invalid native symbols must fail before rendering");
+
+        assert_invalid_module_plan(error);
+    }
+
+    #[test]
+    fn emitter_rejects_duplicate_parameter_names_in_manual_function_plans() {
+        let module = function_module_with_delegate_functions(
+            vec![KmpFunctionPlan::new(
+                "add",
+                "boltffi_function_demo_add",
+                vec![
+                    KmpParamPlan::new(
+                        "left",
+                        KmpTypePlan::Primitive(boltffi_binding::Primitive::I32),
+                    ),
+                    KmpParamPlan::new(
+                        "left",
+                        KmpTypePlan::Primitive(boltffi_binding::Primitive::I32),
+                    ),
+                ],
+                Some(KmpTypePlan::Primitive(boltffi_binding::Primitive::I32)),
+            )],
+            vec![KmpJvmDelegateFunction::new(
+                "boltffi_function_demo_add",
+                "add",
+                vec![
+                    KmpTypePlan::Primitive(boltffi_binding::Primitive::I32),
+                    KmpTypePlan::Primitive(boltffi_binding::Primitive::I32),
+                ],
+                Some(KmpTypePlan::Primitive(boltffi_binding::Primitive::I32)),
+                "/* delegated JNI glue */\n",
+            )],
+        );
+
+        let error = KmpEmitter::new(KmpEmissionOptions::new("com.example.demo", "Demo", 24))
+            .emit(&module)
+            .expect_err("manual function plans with duplicate parameter names must fail");
+
+        assert_invalid_module_plan(error);
+    }
+
+    #[test]
+    fn emitter_rejects_duplicate_function_signatures_in_manual_modules() {
+        let module = function_module_with_delegate_functions(
+            vec![
+                KmpFunctionPlan::new(
+                    "add",
+                    "boltffi_function_demo_add",
+                    vec![KmpParamPlan::new(
+                        "left",
+                        KmpTypePlan::Primitive(boltffi_binding::Primitive::I32),
+                    )],
+                    Some(KmpTypePlan::Primitive(boltffi_binding::Primitive::I32)),
+                ),
+                KmpFunctionPlan::new(
+                    "add",
+                    "boltffi_function_demo_add_again",
+                    vec![KmpParamPlan::new(
+                        "right",
+                        KmpTypePlan::Primitive(boltffi_binding::Primitive::I32),
+                    )],
+                    Some(KmpTypePlan::Primitive(boltffi_binding::Primitive::I32)),
+                ),
+            ],
+            vec![
+                KmpJvmDelegateFunction::new(
+                    "boltffi_function_demo_add",
+                    "add",
+                    vec![KmpTypePlan::Primitive(boltffi_binding::Primitive::I32)],
+                    Some(KmpTypePlan::Primitive(boltffi_binding::Primitive::I32)),
+                    "/* delegated JNI glue */\n",
+                ),
+                KmpJvmDelegateFunction::new(
+                    "boltffi_function_demo_add_again",
+                    "add",
+                    vec![KmpTypePlan::Primitive(boltffi_binding::Primitive::I32)],
+                    Some(KmpTypePlan::Primitive(boltffi_binding::Primitive::I32)),
+                    "/* delegated JNI glue */\n",
+                ),
+            ],
+        );
+
+        let error = KmpEmitter::new(KmpEmissionOptions::new("com.example.demo", "Demo", 24))
+            .emit(&module)
+            .expect_err("manual modules with duplicate function signatures must fail");
+
+        assert_invalid_module_plan(error);
+    }
+
+    #[test]
+    fn emitter_rejects_duplicate_native_signatures_in_manual_modules() {
+        let module = function_module_with_delegate_functions(
+            vec![
+                KmpFunctionPlan::new(
+                    "add",
+                    "boltffi_function_demo_add",
+                    vec![KmpParamPlan::new(
+                        "left",
+                        KmpTypePlan::Primitive(boltffi_binding::Primitive::I32),
+                    )],
+                    Some(KmpTypePlan::Primitive(boltffi_binding::Primitive::I32)),
+                ),
+                KmpFunctionPlan::new(
+                    "sum",
+                    "boltffi_function_demo_add",
+                    vec![KmpParamPlan::new(
+                        "right",
+                        KmpTypePlan::Primitive(boltffi_binding::Primitive::I32),
+                    )],
+                    Some(KmpTypePlan::Primitive(boltffi_binding::Primitive::I32)),
+                ),
+            ],
+            vec![
+                KmpJvmDelegateFunction::new(
+                    "boltffi_function_demo_add",
+                    "add",
+                    vec![KmpTypePlan::Primitive(boltffi_binding::Primitive::I32)],
+                    Some(KmpTypePlan::Primitive(boltffi_binding::Primitive::I32)),
+                    "/* delegated JNI glue */\n",
+                ),
+                KmpJvmDelegateFunction::new(
+                    "boltffi_function_demo_add",
+                    "sum",
+                    vec![KmpTypePlan::Primitive(boltffi_binding::Primitive::I32)],
+                    Some(KmpTypePlan::Primitive(boltffi_binding::Primitive::I32)),
+                    "/* delegated JNI glue */\n",
+                ),
+            ],
+        );
+
+        let error = KmpEmitter::new(KmpEmissionOptions::new("com.example.demo", "Demo", 24))
+            .emit(&module)
+            .expect_err("manual modules with duplicate native signatures must fail");
+
+        assert_invalid_module_plan(error);
+    }
+
+    #[test]
+    fn emitter_rejects_underscore_only_plan_identifiers() {
+        for (function, delegate) in [
+            (
+                KmpFunctionPlan::new(
+                    "_",
+                    "boltffi_function_demo_add",
+                    vec![KmpParamPlan::new(
+                        "left",
+                        KmpTypePlan::Primitive(boltffi_binding::Primitive::I32),
+                    )],
+                    Some(KmpTypePlan::Primitive(boltffi_binding::Primitive::I32)),
+                ),
+                KmpJvmDelegateFunction::new(
+                    "boltffi_function_demo_add",
+                    "_",
+                    vec![KmpTypePlan::Primitive(boltffi_binding::Primitive::I32)],
+                    Some(KmpTypePlan::Primitive(boltffi_binding::Primitive::I32)),
+                    "/* delegated JNI glue */\n",
+                ),
+            ),
+            (
+                KmpFunctionPlan::new(
+                    "add",
+                    "boltffi_function_demo_add",
+                    vec![KmpParamPlan::new(
+                        "__",
+                        KmpTypePlan::Primitive(boltffi_binding::Primitive::I32),
+                    )],
+                    Some(KmpTypePlan::Primitive(boltffi_binding::Primitive::I32)),
+                ),
+                KmpJvmDelegateFunction::new(
+                    "boltffi_function_demo_add",
+                    "add",
+                    vec![KmpTypePlan::Primitive(boltffi_binding::Primitive::I32)],
+                    Some(KmpTypePlan::Primitive(boltffi_binding::Primitive::I32)),
+                    "/* delegated JNI glue */\n",
+                ),
+            ),
+            (
+                KmpFunctionPlan::new(
+                    "add",
+                    "_",
+                    vec![KmpParamPlan::new(
+                        "left",
+                        KmpTypePlan::Primitive(boltffi_binding::Primitive::I32),
+                    )],
+                    Some(KmpTypePlan::Primitive(boltffi_binding::Primitive::I32)),
+                ),
+                KmpJvmDelegateFunction::new(
+                    "_",
+                    "add",
+                    vec![KmpTypePlan::Primitive(boltffi_binding::Primitive::I32)],
+                    Some(KmpTypePlan::Primitive(boltffi_binding::Primitive::I32)),
+                    "/* delegated JNI glue */\n",
+                ),
+            ),
+        ] {
+            let module = function_module_with_delegate_functions(vec![function], vec![delegate]);
+
+            let error = KmpEmitter::new(KmpEmissionOptions::new("com.example.demo", "Demo", 24))
+                .emit(&module)
+                .expect_err("underscore-only identifiers must fail before rendering");
+
+            assert_invalid_module_plan(error);
         }
     }
 
@@ -428,6 +943,62 @@ mod tests {
                 shape: "KMP JNI glue emission"
             }
         ));
+    }
+
+    #[test]
+    fn emitter_rejects_delegate_with_mismatched_internal_package() {
+        let error = KmpEmitter::new(KmpEmissionOptions::new("com.acme.demo", "Demo", 24))
+            .emit(&signed_function_module_with_delegate(
+                signed_function_delegate("com.example.demo.jvm", ""),
+            ))
+            .expect_err("delegate package must match emitted actual wrappers");
+
+        assert!(matches!(
+            error,
+            crate::Error::UnsupportedTarget {
+                target: "kotlin_multiplatform",
+                shape: "KMP JNI glue emission"
+            }
+        ));
+    }
+
+    #[test]
+    fn emitter_rejects_delegate_with_mismatched_internal_entrypoint() {
+        let error = KmpEmitter::new(KmpEmissionOptions::new("com.example.demo", "Demo", 24))
+            .emit(&signed_function_module_with_delegate(
+                signed_function_delegate_with_add_name("com.example.demo.jvm", "demoAdd", ""),
+            ))
+            .expect_err("delegate entrypoint must match the actual wrapper call");
+
+        assert!(matches!(
+            error,
+            crate::Error::UnsupportedTarget {
+                target: "kotlin_multiplatform",
+                shape: "KMP JNI glue emission"
+            }
+        ));
+    }
+
+    #[test]
+    fn emitter_filters_delegate_source_to_admitted_functions() {
+        let output = KmpEmitter::new(KmpEmissionOptions::new("com.example.demo", "Demo", 24))
+            .emit(&signed_function_module_with_delegate(
+                signed_function_delegate(
+                    "com.example.demo.jvm",
+                    "int boltffi_function_demo_pruned(int value) { return value; }\n",
+                ),
+            ))
+            .expect("delegated primitive sync function should emit");
+
+        let internal = file(&output, "src/jvmMain/kotlin/com/example/demo/jvm/Demo.kt");
+        assert!(internal.contains("BOLTFFI_LIBRARY_NAME"));
+        assert!(internal.contains("fun add(left: Int, right: Int): Int"));
+        assert!(internal.contains("@JvmStatic external fun boltffi_function_demo_add"));
+        assert!(!internal.contains("pruned"));
+
+        let jni = file(&output, "src/jvmMain/c/jni_glue.c");
+        assert!(jni.contains("delegated JNI glue"));
+        assert!(!jni.contains("boltffi_function_demo_pruned"));
     }
 
     #[test]

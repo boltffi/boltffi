@@ -14,9 +14,9 @@ import kotlinx.coroutines.channels.awaitClose
 @Suppress("FunctionName")
 private object Native {
     init {
-        val androidLibrary = "{{ native_libraries.android() }}"
-        val desktopPreferredLibrary = "{{ native_libraries.desktop_jni() }}"
-        val desktopFallbackLibrary = "{{ native_libraries.desktop_fallback() }}"
+        val androidLibrary = {{ native_libraries.android() }}
+        val desktopPreferredLibrary = {{ native_libraries.desktop_jni() }}
+        val desktopFallbackLibrary = {{ native_libraries.desktop_fallback() }}
         val vmName = System.getProperty("java.vm.name").orEmpty()
         val isAndroidRuntime =
             vmName.contains("dalvik", ignoreCase = true) ||
@@ -30,6 +30,8 @@ private object Native {
 {%- elif native_libraries.system_desktop_loader() %}
         } else {
             System.loadLibrary(desktopFallbackLibrary)
+        }
+{%- else %}
         }
 {%- endif %}
     }
@@ -137,18 +139,10 @@ private object Native {
         val osName = System.getProperty("os.name").orEmpty().lowercase()
         val osArch = System.getProperty("os.arch").orEmpty().lowercase()
         return when {
-            (osName.contains("mac") || osName.contains("darwin")) &&
-                (osArch == "aarch64" || osArch == "arm64") ->
-                listOf("darwin-arm64", "darwin-aarch64")
-            (osName.contains("mac") || osName.contains("darwin")) && osArch == "x86_64" ->
-                listOf("darwin-x86_64", "darwin-x86-64")
-            osName.contains("linux") && (osArch == "x86_64" || osArch == "amd64") ->
-                listOf("linux-x86_64", "linux-x86-64")
-            osName.contains("linux") && (osArch == "aarch64" || osArch == "arm64") ->
-                listOf("linux-aarch64", "linux-arm64")
-            osName.contains("windows") && (osArch == "x86_64" || osArch == "amd64") ->
-                listOf("windows-x86_64", "windows-x86-64", "win32-x86_64")
-            else -> emptyList()
+{% for platform in resource_platforms %}            ({% for operating_system in platform.operating_systems() %}osName.contains("{{ operating_system }}"){% if !loop.last %} || {% endif %}{% endfor %}) &&
+                ({% for architecture in platform.architectures() %}osArch == "{{ architecture }}"{% if !loop.last %} || {% endif %}{% endfor %}) ->
+                listOf({% for directory in platform.directories() %}"{{ directory }}"{% if !loop.last %}, {% endif %}{% endfor %})
+{% endfor %}            else -> emptyList()
         }
     }
 {%- endif %}

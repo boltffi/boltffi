@@ -4,5 +4,5 @@ mod plan;
 mod templates;
 
 pub use emit::JniEmitter;
-pub use lower::{JniLowerer, JniStringEncoding, JvmBindingStyle};
+pub use lower::{JniLowerer, JniStringEncoding};
 pub use plan::*;

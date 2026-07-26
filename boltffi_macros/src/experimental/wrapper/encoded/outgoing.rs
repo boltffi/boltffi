@@ -1,4 +1,4 @@
-use boltffi_binding::CodecNode;
+use boltffi_binding::{CodecNode, OwnedWireEncoding};
 use proc_macro2::TokenStream;
 use quote::quote;
 
@@ -21,13 +21,15 @@ impl<'expansion, 'lowered, S: RenderSurface> Value<'expansion, 'lowered, S> {
         super::require_runtime_wire(self.codec)?;
         let conversion = super::custom::Outgoing::new(self.codec, self.expansion);
         if !conversion.has_custom_conversion() {
-            return Ok(quote! { ::boltffi::__private::FfiBuf::wire_encode(&#value) });
+            return Ok(Self::owned_buffer(self.codec.owned_wire_encoding(), value));
         }
         let value = conversion.convert(value)?;
+        let buffer =
+            Self::owned_buffer(self.codec.owned_wire_encoding(), quote! { __boltffi_wire });
         Ok(quote! {
             {
                 let __boltffi_wire = #value;
-                ::boltffi::__private::FfiBuf::wire_encode(&__boltffi_wire)
+                #buffer
             }
         })
     }
@@ -45,5 +47,22 @@ impl<'expansion, 'lowered, S: RenderSurface> Value<'expansion, 'lowered, S> {
                 ::boltffi::__private::FfiBuf::wire_encode(&__boltffi_wire)
             }
         })
+    }
+
+    fn owned_buffer(encoding: OwnedWireEncoding, value: TokenStream) -> TokenStream {
+        match encoding {
+            OwnedWireEncoding::String => {
+                quote! { ::boltffi::__private::FfiBuf::wire_encode_owned_string(#value) }
+            }
+            OwnedWireEncoding::Utf8String => {
+                quote! { ::boltffi::__private::FfiBuf::from_vec(#value.into_bytes()) }
+            }
+            OwnedWireEncoding::Bytes => {
+                quote! { ::boltffi::__private::FfiBuf::wire_encode_owned_bytes(#value) }
+            }
+            _ => {
+                quote! { ::boltffi::__private::FfiBuf::wire_encode(&#value) }
+            }
+        }
     }
 }

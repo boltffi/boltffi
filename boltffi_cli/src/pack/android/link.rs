@@ -16,6 +16,16 @@ pub struct AndroidPackager<'a> {
     libraries: Vec<BuiltLibrary>,
     release: bool,
     binding_mode: AndroidBindingMode,
+    layout: AndroidPackageLayout,
+}
+
+/// Paths used while compiling and staging Android JNI libraries.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub(crate) struct AndroidPackageLayout {
+    pub(crate) jni_glue_path: PathBuf,
+    pub(crate) header_include_dir: PathBuf,
+    pub(crate) header_name: String,
+    pub(crate) jnilibs_path: PathBuf,
 }
 
 pub struct AndroidOutput;
@@ -27,17 +37,32 @@ struct AndroidLinkedOutput {
 }
 
 impl<'a> AndroidPackager<'a> {
-    pub fn new(
+    /// Builds an Android packager for the standalone Kotlin Android output layout.
+    pub fn new(config: &'a Config, libraries: Vec<BuiltLibrary>, release: bool) -> Self {
+        let layout = AndroidPackageLayout::kotlin(config);
+        Self::new_with_layout(
+            config,
+            libraries,
+            release,
+            AndroidBindingMode::Kotlin,
+            layout,
+        )
+    }
+
+    /// Builds an Android packager with an explicit layout supplied by the owning package flow.
+    pub(crate) fn new_with_layout(
         config: &'a Config,
         libraries: Vec<BuiltLibrary>,
         release: bool,
         binding_mode: AndroidBindingMode,
+        layout: AndroidPackageLayout,
     ) -> Self {
         Self {
             config,
             libraries,
             release,
             binding_mode,
+            layout,
         }
     }
 
@@ -65,8 +90,8 @@ impl<'a> AndroidPackager<'a> {
         })?;
 
         let jni_glue_path = self.android_jni_glue_path()?;
-        let header_include_dir = self.config.android_header_output();
-        let header_path = header_include_dir.join(format!("{}.h", self.config.library_name()));
+        let header_include_dir = self.layout.header_include_dir.clone();
+        let header_path = header_include_dir.join(format!("{}.h", self.layout.header_name));
         if !header_path.exists() {
             return Err(CliError::FileNotFound(header_path));
         }
@@ -82,7 +107,7 @@ impl<'a> AndroidPackager<'a> {
             )?);
         }
 
-        if self.android_debug_symbols_enabled() {
+        if self.android_debug_symbols_archive_enabled() {
             write_android_debug_symbols(self.config, &linked_outputs)?;
         }
 
@@ -129,27 +154,11 @@ impl<'a> AndroidPackager<'a> {
     }
 
     fn android_jnilibs_path(&self) -> PathBuf {
-        match self.binding_mode {
-            AndroidBindingMode::Kotlin => self.config.android_pack_output(),
-            AndroidBindingMode::KotlinMultiplatform => self
-                .config
-                .kotlin_multiplatform_output()
-                .join("src/androidMain/jniLibs"),
-        }
+        self.layout.jnilibs_path.clone()
     }
 
     fn android_jni_glue_path(&self) -> Result<PathBuf> {
-        let jni_glue_path = match self.binding_mode {
-            AndroidBindingMode::Kotlin => self
-                .config
-                .android_kotlin_output()
-                .join("jni")
-                .join("jni_glue.c"),
-            AndroidBindingMode::KotlinMultiplatform => self
-                .config
-                .kotlin_multiplatform_output()
-                .join("src/androidMain/c/jni_glue.c"),
-        };
+        let jni_glue_path = self.layout.jni_glue_path.clone();
         jni_glue_path
             .exists()
             .then_some(jni_glue_path.clone())
@@ -223,6 +232,26 @@ impl<'a> AndroidPackager<'a> {
     fn android_debug_symbols_enabled(&self) -> bool {
         matches!(self.binding_mode, AndroidBindingMode::Kotlin)
             && self.config.android_debug_symbols_enabled()
+    }
+
+    fn android_debug_symbols_archive_enabled(&self) -> bool {
+        matches!(self.binding_mode, AndroidBindingMode::Kotlin)
+            && self.config.android_debug_symbols_archive_enabled()
+    }
+}
+
+impl AndroidPackageLayout {
+    /// Builds the default layout for standalone Kotlin Android packaging.
+    pub(crate) fn kotlin(config: &Config) -> Self {
+        Self {
+            jni_glue_path: config
+                .android_kotlin_output()
+                .join("jni")
+                .join("jni_glue.c"),
+            header_include_dir: config.android_header_output(),
+            header_name: config.library_name().to_string(),
+            jnilibs_path: config.android_pack_output(),
+        }
     }
 }
 
@@ -356,8 +385,8 @@ fn run_command(mut command: Command) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{
-        AndroidPackager, android_export_version_script, android_jni_compile_args,
-        android_shared_link_args,
+        AndroidPackageLayout, AndroidPackager, android_export_version_script,
+        android_jni_compile_args, android_shared_link_args,
     };
     use crate::config::Config;
     use crate::pack::android::AndroidBindingMode;
@@ -373,6 +402,15 @@ mod tests {
         let parsed: Config = toml::from_str(input).expect("toml parse failed");
         parsed.validate().expect("config validation failed");
         parsed
+    }
+
+    fn kmp_android_layout(output_root: &Path) -> AndroidPackageLayout {
+        AndroidPackageLayout {
+            jni_glue_path: output_root.join("src/androidMain/c/jni_glue.c"),
+            header_include_dir: output_root.join("src/androidMain/c"),
+            header_name: "demo".to_string(),
+            jnilibs_path: output_root.join("src/androidMain/jniLibs"),
+        }
     }
 
     #[test]
@@ -410,7 +448,6 @@ output = "{}"
                 path: root.join("libdemo.a"),
             }],
             false,
-            AndroidBindingMode::Kotlin,
         );
         let android_libs = packager.filter_android_libraries();
 
@@ -447,7 +484,7 @@ output = "{}"
 "#,
             kotlin_output.display()
         ));
-        let packager = AndroidPackager::new(&config, Vec::new(), false, AndroidBindingMode::Kotlin);
+        let packager = AndroidPackager::new(&config, Vec::new(), false);
 
         assert_eq!(
             packager.android_jni_glue_path().expect("jni glue path"),
@@ -479,7 +516,7 @@ output = "{}"
             pack_output.display(),
             kmp_output.display()
         ));
-        let packager = AndroidPackager::new(&config, Vec::new(), false, AndroidBindingMode::Kotlin);
+        let packager = AndroidPackager::new(&config, Vec::new(), false);
 
         assert_eq!(packager.android_jnilibs_path(), pack_output);
     }
@@ -495,13 +532,13 @@ name = "demo"
 library_name = "configured-library"
 "#,
         );
-        let legacy_packager =
-            AndroidPackager::new(&config, Vec::new(), false, AndroidBindingMode::Kotlin);
-        let kmp_packager = AndroidPackager::new(
+        let legacy_packager = AndroidPackager::new(&config, Vec::new(), false);
+        let kmp_packager = AndroidPackager::new_with_layout(
             &config,
             Vec::new(),
             false,
             AndroidBindingMode::KotlinMultiplatform,
+            kmp_android_layout(Path::new("kmp")),
         );
 
         assert_eq!(legacy_packager.android_library_name(), "configured-library");
@@ -534,11 +571,12 @@ output = "{}"
 "#,
             kmp_output.display()
         ));
-        let packager = AndroidPackager::new(
+        let packager = AndroidPackager::new_with_layout(
             &config,
             Vec::new(),
             false,
             AndroidBindingMode::KotlinMultiplatform,
+            kmp_android_layout(&kmp_output),
         );
 
         assert_eq!(
@@ -571,17 +609,70 @@ output = "{}"
             android_pack_output.display(),
             kmp_output.display()
         ));
-        let packager = AndroidPackager::new(
+        let packager = AndroidPackager::new_with_layout(
             &config,
             Vec::new(),
             false,
             AndroidBindingMode::KotlinMultiplatform,
+            kmp_android_layout(&kmp_output),
         );
 
         assert_eq!(
             packager.android_jnilibs_path(),
             kmp_output.join("src/androidMain/jniLibs")
         );
+    }
+
+    #[test]
+    fn kmp_android_packager_uses_explicit_layout_paths() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time went backwards")
+            .as_nanos();
+        let root =
+            std::env::temp_dir().join(format!("boltffi-android-kmp-explicit-layout-test-{unique}"));
+        let config_kmp_output = root.join("config-kmp");
+        let layout_kmp_output = root.join("layout-kmp");
+        let expected_glue = layout_kmp_output.join("src/androidMain/c/jni_glue.c");
+        let expected_jnilibs = layout_kmp_output.join("src/androidMain/jniLibs");
+        fs::create_dir_all(expected_glue.parent().expect("jni glue parent"))
+            .expect("create layout jni dir");
+        fs::write(&expected_glue, []).expect("write layout jni glue");
+
+        let config = parse_config(&format!(
+            r#"
+experimental = ["kotlin_multiplatform"]
+
+[package]
+name = "demo"
+
+[targets.kotlin_multiplatform]
+enabled = true
+output = "{}"
+"#,
+            config_kmp_output.display()
+        ));
+        let layout = AndroidPackageLayout {
+            jni_glue_path: expected_glue.clone(),
+            header_include_dir: layout_kmp_output.join("src/androidMain/c"),
+            header_name: "demo".to_string(),
+            jnilibs_path: expected_jnilibs.clone(),
+        };
+        let packager = AndroidPackager::new_with_layout(
+            &config,
+            Vec::new(),
+            false,
+            AndroidBindingMode::KotlinMultiplatform,
+            layout,
+        );
+
+        assert_eq!(
+            packager.android_jni_glue_path().expect("jni glue path"),
+            expected_glue
+        );
+        assert_eq!(packager.android_jnilibs_path(), expected_jnilibs);
+
+        fs::remove_dir_all(&root).expect("cleanup temp dir");
     }
 
     #[test]
@@ -595,13 +686,13 @@ name = "demo"
 enabled = true
 "#,
         );
-        let legacy_packager =
-            AndroidPackager::new(&config, Vec::new(), false, AndroidBindingMode::Kotlin);
-        let kmp_packager = AndroidPackager::new(
+        let legacy_packager = AndroidPackager::new(&config, Vec::new(), false);
+        let kmp_packager = AndroidPackager::new_with_layout(
             &config,
             Vec::new(),
             false,
             AndroidBindingMode::KotlinMultiplatform,
+            kmp_android_layout(Path::new("kmp")),
         );
 
         assert!(legacy_packager.android_debug_symbols_enabled());

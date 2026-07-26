@@ -708,7 +708,7 @@ impl<'plan> ParamPlanRender<'plan, Native, OutOfRust> for ClosureParameterType<'
         })
     }
 
-    fn direct_vector(&mut self, element: &'plan DirectVectorElementType) -> Self::Output {
+    fn direct_vector(&mut self, element: &'plan DirectVectorElementType, _: ()) -> Self::Output {
         let vector = DirectVector::from_element(element, self.bridge, self.context)?;
         let pointer = self.suffixed("ptr")?;
         let length = self.suffixed("len")?;

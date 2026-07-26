@@ -209,6 +209,7 @@ public static class DemoTest
         Require(RepeatString("ab", 3u) == "ababab", "case:primitives.strings.string.should_repeat_value repeatString(ab, 3)");
         Require(RepeatString("x", 0u) == "", "repeatString(x, 0)");
         Require(RepeatString("🌟", 2u) == "🌟🌟", "repeatString(emoji, 2)");
+        Require(BorrowedStaticString() == "borrowed static", "case:primitives.strings.borrowed_static_string.should_return_value");
         Console.WriteLine("  PASS\n");
     }
 
@@ -609,6 +610,13 @@ public static class DemoTest
             ServiceConfig.FromStringRefName("stringref").Describe() == "stringref:3:standard:none:https://default",
             "ServiceConfig.FromStringRefName(string)"
         );
+        DemoCase("case:records.default_values.service_config.from_non_empty_name.should_return_config_for_non_empty_values");
+        ServiceConfig? validatedConfig = ServiceConfig.FromNonEmptyName("optional", "eu-west");
+        Require(validatedConfig?.Name == "optional", "ServiceConfig.FromNonEmptyName name");
+        Require(validatedConfig?.Region == "eu-west", "ServiceConfig.FromNonEmptyName region");
+        DemoCase("case:records.default_values.service_config.from_non_empty_name.should_return_none_for_empty_values");
+        Require(ServiceConfig.FromNonEmptyName("", "eu-west") is null, "ServiceConfig.FromNonEmptyName empty name");
+        Require(ServiceConfig.FromNonEmptyName("optional", "") is null, "ServiceConfig.FromNonEmptyName empty region");
 
         Console.WriteLine("  PASS\n");
     }
@@ -1677,7 +1685,7 @@ public static class DemoTest
         );
         DemoCase("case:options.complex.api_result.should_find_error_code_variant");
         Require(
-            FindApiResult(1) is ApiResult.ErrorCode ec && ec.Value0 == -1,
+            FindApiResult(1) is ApiResult.ErrorCode ec && ec.Field0 == -1,
             "FindApiResult(1) returns ErrorCode(-1)"
         );
         DemoCase("case:options.complex.api_result.should_find_error_with_data_variant");
@@ -1837,6 +1845,11 @@ public static class DemoTest
             EchoVecOptionalI32(new int?[] { 10, 20, 30 }).SequenceEqual(new int?[] { 10, 20, 30 }),
             "EchoVecOptionalI32 all-Some preserved"
         );
+
+        DemoCase("case:options.complex.shape.should_return_radius_for_circle");
+        Require(RadiusIfCircle(new Shape.Circle(5.0)) == 5.0, "RadiusIfCircle(Circle) returns Some(radius)");
+        DemoCase("case:options.complex.shape.should_return_none_for_non_circle");
+        Require(RadiusIfCircle(new Shape.Rectangle(3.0, 4.0)) == null, "RadiusIfCircle(Rectangle) returns None");
 
         Console.WriteLine("  PASS\n");
     }
@@ -2306,6 +2319,22 @@ public static class DemoTest
         }
         catch (BoltException) { }
 
+        // Result<bool, String>: the bool travels inside the FfiBuf wire
+        // envelope, so the P/Invoke return must not carry I1 marshalling.
+        DemoCase("case:results.basic.is_even.should_return_parity");
+        Require(IsEven(4), "IsEven(4) is true");
+        Require(!IsEven(3), "IsEven(3) is false");
+        DemoCase("case:results.basic.is_even.should_reject_negative_input");
+        try
+        {
+            IsEven(-1);
+            Require(false, "IsEven(-1) should throw");
+        }
+        catch (BoltException e)
+        {
+            Require(e.Message.Contains("negative input"), "IsEven error message");
+        }
+
         DemoCase("case:results.basic.safe_sqrt.should_return_square_root");
         Require(Math.Abs(SafeSqrt(9.0) - 3.0) < 1e-9, "SafeSqrt(9)");
         DemoCase("case:results.basic.safe_sqrt.should_reject_negative_input");
@@ -2536,7 +2565,7 @@ public static class DemoTest
         DemoCase("case:results.error_enums.process_value.should_return_success_variant");
         Require(ProcessValue(5) is ApiResult.Success, "ProcessValue(5) -> Success");
         DemoCase("case:results.error_enums.process_value.should_return_error_code_variant");
-        Require(ProcessValue(0) is ApiResult.ErrorCode ec && ec.Value0 == -1, "ProcessValue(0) -> ErrorCode(-1)");
+        Require(ProcessValue(0) is ApiResult.ErrorCode ec && ec.Field0 == -1, "ProcessValue(0) -> ErrorCode(-1)");
         DemoCase("case:results.error_enums.process_value.should_return_error_with_data_variant");
         Require(ProcessValue(-3) is ApiResult.ErrorWithData ed && ed.Code == -3 && ed.Detail == -6,
             "ProcessValue(-3) -> ErrorWithData(-3,-6)");
@@ -2666,7 +2695,7 @@ public static class DemoTest
         }
         catch (ComputeErrorException e)
         {
-            Require(e.Error is ComputeError.InvalidInput invalid && invalid.Value0 == -999,
+            Require(e.Error is ComputeError.InvalidInput invalid && invalid.Field0 == -999,
                 "TryComputeAsync typed ComputeError");
         }
         DemoCase("case:async_fns.results.try_compute.should_return_overflow_for_negative_value");
@@ -2740,6 +2769,12 @@ public static class DemoTest
     private static async System.Threading.Tasks.Task TestAsyncClassMethods()
     {
         Console.WriteLine("Testing async class methods...");
+
+        DemoCase("case:classes.async_methods.async_factory.new.should_construct_from_async_initializer");
+        using (var factory = await AsyncFactory.New(42))
+        {
+            Require(factory.Value() == 42, "AsyncFactory.New constructs an initialized class handle");
+        }
 
         using (var worker = new AsyncWorker("worker"))
         {
@@ -2855,7 +2890,8 @@ public static class DemoTest
 
         // Returned callbacks are owning proxies; `using` releases the native
         // callback handle deterministically instead of waiting for finalization.
-        using ValueCallbackProxy incrementer = MakeIncrementingCallback(5);
+        ValueCallback incrementer = MakeIncrementingCallback(5);
+        using global::System.IDisposable incrementerLease = (global::System.IDisposable)incrementer;
         Require(InvokeValueCallback(incrementer, 4) == 9, "returned ValueCallback proxy");
 
         MessageFormatter formatter = new MessageFormatterImpl();
@@ -2864,7 +2900,8 @@ public static class DemoTest
         Require(FormatMessageWithOptionalCallback(null, "fallback", "message") == "fallback::message",
             "FormatMessageWithOptionalCallback null");
         // Same ownership contract for returned multi-method callback proxies.
-        using MessageFormatterProxy prefixer = MakeMessagePrefixer("prefix");
+        MessageFormatter prefixer = MakeMessagePrefixer("prefix");
+        using global::System.IDisposable prefixerLease = (global::System.IDisposable)prefixer;
         Require(FormatMessageWithCallback(prefixer, "sync", "formatter") == "prefix::sync::formatter",
             "returned MessageFormatter proxy");
 
@@ -2929,6 +2966,8 @@ public static class DemoTest
             "MapVecWithClosure");
         Require(FilterVecWithClosure(v => v > 1, new[] { 0, 1, 2, 3 }).SequenceEqual(new[] { 2, 3 }),
             "FilterVecWithClosure");
+        Require(ApplyVectorClosure(values => values.Sum(), new[] { 1, 2, 3 }) == 6,
+            "case:callbacks.closures.direct_vector_parameter.should_pass_values");
         Require(ApplyOffsetClosure((value, delta) => value + (nint)delta, (nint)10, (nuint)4) == (nint)14,
             "ApplyOffsetClosure");
         Require(ApplyStatusClosure(status => status == Status.Active ? Status.Inactive : Status.Active,
@@ -3008,14 +3047,13 @@ public static class DemoTest
         Console.WriteLine("Testing streams (batch mode)...");
         using (var bus = new EventBus())
         {
-            global::System.Threading.Tasks.Task<List<int>> receivedTask =
-                CollectStreamItems(bus.SubscribeValuesBatch(), 3, "batch stream");
+            using EventBusSubscribeValuesBatchSubscription subscription = bus.SubscribeValuesBatch();
 
             bus.EmitValue(100);
             bus.EmitValue(200);
             bus.EmitValue(300);
 
-            List<int> received = await receivedTask;
+            List<int> received = CollectBatchStreamItems(subscription, 3, "batch stream");
             Require(received.Count >= 3, $"batch stream received {received.Count} items, expected >= 3");
             Require(received.Contains(100), "batch stream should contain 100");
             Require(received.Contains(200), "batch stream should contain 200");
@@ -3026,14 +3064,26 @@ public static class DemoTest
         Console.WriteLine("Testing streams (callback mode)...");
         using (var bus = new EventBus())
         {
-            global::System.Threading.Tasks.Task<List<int>> receivedTask =
-                CollectStreamItems(bus.SubscribeValuesCallback(), 3, "callback stream");
+            List<int> received = new List<int>();
+            var receivedAll = new global::System.Threading.Tasks.TaskCompletionSource<bool>(
+                global::System.Threading.Tasks.TaskCreationOptions.RunContinuationsAsynchronously);
+            using EventBusSubscribeValuesCallbackCancellable subscription = bus.SubscribeValuesCallback(value =>
+            {
+                lock (received)
+                {
+                    received.Add(value);
+                    if (received.Count >= 3) receivedAll.TrySetResult(true);
+                }
+            });
 
             bus.EmitValue(1000);
             bus.EmitValue(2000);
             bus.EmitValue(3000);
 
-            List<int> received = await receivedTask;
+            global::System.Threading.Tasks.Task completed = await global::System.Threading.Tasks.Task.WhenAny(
+                receivedAll.Task,
+                global::System.Threading.Tasks.Task.Delay(TimeSpan.FromSeconds(5)));
+            Require(completed == receivedAll.Task, "callback stream timed out waiting for 3 items");
             Require(received.Count >= 3, $"callback stream received {received.Count} items, expected >= 3");
             Require(received.Contains(1000), "callback stream should contain 1000");
             Require(received.Contains(2000), "callback stream should contain 2000");
@@ -3158,6 +3208,26 @@ public static class DemoTest
             throw new TimeoutException($"{label} should deliver {expectedCount} items within 5 seconds", ex);
         }
 
+        return received;
+    }
+
+    private static List<int> CollectBatchStreamItems(
+        EventBusSubscribeValuesBatchSubscription stream,
+        int expectedCount,
+        string label)
+    {
+        DateTime deadline = DateTime.UtcNow.AddSeconds(5);
+        List<int> received = new List<int>();
+
+        while (received.Count < expectedCount && DateTime.UtcNow < deadline)
+        {
+            received.AddRange(stream.PopBatch(16));
+            if (received.Count >= expectedCount) break;
+            if (stream.Wait(100) < 0) break;
+        }
+
+        Require(received.Count >= expectedCount,
+            $"{label} timed out waiting for {expectedCount} items; received {received.Count}");
         return received;
     }
 

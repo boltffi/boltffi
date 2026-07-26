@@ -23,6 +23,7 @@ impl SourceCrate {
         }
     }
 
+    #[cfg(test)]
     pub fn new(source_directory: impl AsRef<Path>, crate_name: impl Into<String>) -> Self {
         Self {
             source_directory: source_directory.as_ref().to_path_buf(),
@@ -56,12 +57,6 @@ pub enum ScanPointerWidth {
     /// pointer widths, or when the backend handles the distinction later.
     Flexible,
 
-    /// Specialize using the pointer width of the machine running the CLI.
-    ///
-    /// This is the right choice for host-bound generation paths where the
-    /// produced bindings are tied to the current build environment.
-    Host,
-
     /// Specialize using an explicit pointer width in bits.
     ///
     /// This is used for backends with a known target data model, such as a
@@ -73,11 +68,6 @@ impl ScanPointerWidth {
     fn resolved_bits(self) -> Option<u8> {
         match self {
             Self::Flexible => None,
-            Self::Host => match usize::BITS {
-                32 => Some(32),
-                64 => Some(64),
-                _ => None,
-            },
             Self::Fixed(pointer_width_bits) => Some(pointer_width_bits),
         }
     }
@@ -117,10 +107,6 @@ impl<'a> GenerateRequest<'a> {
 
     pub fn output_override(&self) -> Option<&Path> {
         self.output_override.as_deref()
-    }
-
-    pub fn source_crate(&self) -> &SourceCrate {
-        &self.source_crate
     }
 
     pub fn lowered_crate(&self, pointer_width: ScanPointerWidth) -> Result<LoweredCrate> {

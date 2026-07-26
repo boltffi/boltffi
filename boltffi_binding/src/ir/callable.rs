@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::marker::PhantomData;
@@ -8,9 +9,10 @@ use boltffi_ast::FnTraitKind;
 
 use crate::{
     AsyncProtocolIntrospect, BindingError, BindingErrorKind, BufferShapeRules, BuiltinType,
-    CallableScope, CanonicalName, ClosureRegistrationIntrospect, ClosureSignature, DirectValueType,
-    DirectVectorElementType, Direction, ElementMeta, ForeignBody, HandlePresence, HandleTarget,
-    IntegerRepr, IntoRust, NativeSymbol, OutOfRust, Primitive, RustBody, Surface, TypeRef,
+    CallableScope, CanonicalName, ClosureRegistrationIntrospect, ClosureSignature, DeclarationId,
+    DirectValueType, DirectVectorElementType, Direction, ElementMeta, ForeignBody, HandlePresence,
+    HandleTarget, IntegerRepr, IntoRust, NativeSymbol, OutOfRust, Primitive, RustBody, Surface,
+    TypeRef,
 };
 
 /// One call shape ready to be turned into target code.
@@ -163,6 +165,33 @@ where
             || self.error.uses_builtin_codec(kind)
     }
 
+    /// Appends every family-tagged declaration referenced by this callable.
+    pub(crate) fn append_referenced_declarations(&self, references: &mut BTreeSet<DeclarationId>) {
+        self.params
+            .iter()
+            .for_each(|param| param.append_referenced_declarations(references));
+        self.returns.append_referenced_declarations(references);
+        self.error.append_referenced_declarations(references);
+    }
+
+    /// Returns whether any value crossing in this callable references a declaration.
+    pub(crate) fn references_declaration(&self, declaration: DeclarationId) -> bool {
+        self.params
+            .iter()
+            .any(|param| param.references_declaration(declaration))
+            || self.returns.references_declaration(declaration)
+            || self.error.references_declaration(declaration)
+    }
+
+    /// Returns whether any value crossing in this callable references an interned string.
+    pub(crate) fn contains_interned_string(&self) -> bool {
+        self.params
+            .iter()
+            .any(|param| param.contains_interned_string())
+            || self.returns.contains_interned_string()
+            || self.error.contains_interned_string()
+    }
+
     /// Returns whether any value crossing in this callable uses a direct record vector.
     pub fn uses_direct_record_vector(&self) -> bool {
         self.params.iter().any(ParamDecl::uses_direct_record_vector)
@@ -207,6 +236,18 @@ pub trait ParamDirection<S: Surface>: Direction {
 
     /// Returns whether the payload carries a direct record vector.
     fn uses_direct_record_vector(payload: &Self::Payload) -> bool;
+
+    /// Appends declarations referenced by the payload.
+    fn append_referenced_declarations(
+        payload: &Self::Payload,
+        references: &mut BTreeSet<DeclarationId>,
+    );
+
+    /// Returns whether the payload references a declaration.
+    fn references_declaration(payload: &Self::Payload, declaration: DeclarationId) -> bool;
+
+    /// Returns whether the payload references an interned string.
+    fn contains_interned_string(payload: &Self::Payload) -> bool;
 }
 
 /// One incoming parameter crossing.
@@ -321,6 +362,30 @@ impl<S: Surface> ParamDirection<S> for IntoRust {
             IncomingParam::Closure(closure) => closure.uses_direct_record_vector(),
         }
     }
+
+    fn append_referenced_declarations(
+        payload: &Self::Payload,
+        references: &mut BTreeSet<DeclarationId>,
+    ) {
+        match payload {
+            IncomingParam::Value(plan) => plan.append_referenced_declarations(references),
+            IncomingParam::Closure(closure) => closure.append_referenced_declarations(references),
+        }
+    }
+
+    fn references_declaration(payload: &Self::Payload, declaration: DeclarationId) -> bool {
+        match payload {
+            IncomingParam::Value(plan) => plan.references_declaration(declaration),
+            IncomingParam::Closure(closure) => closure.references_declaration(declaration),
+        }
+    }
+
+    fn contains_interned_string(payload: &Self::Payload) -> bool {
+        match payload {
+            IncomingParam::Value(plan) => plan.contains_interned_string(),
+            IncomingParam::Closure(closure) => closure.contains_interned_string(),
+        }
+    }
 }
 
 impl<S: Surface> ParamDirection<S> for OutOfRust {
@@ -362,6 +427,30 @@ impl<S: Surface> ParamDirection<S> for OutOfRust {
         match payload {
             OutgoingParam::Value(plan) => plan.uses_direct_record_vector(),
             OutgoingParam::Closure(closure) => closure.uses_direct_record_vector(),
+        }
+    }
+
+    fn append_referenced_declarations(
+        payload: &Self::Payload,
+        references: &mut BTreeSet<DeclarationId>,
+    ) {
+        match payload {
+            OutgoingParam::Value(plan) => plan.append_referenced_declarations(references),
+            OutgoingParam::Closure(closure) => closure.append_referenced_declarations(references),
+        }
+    }
+
+    fn references_declaration(payload: &Self::Payload, declaration: DeclarationId) -> bool {
+        match payload {
+            OutgoingParam::Value(plan) => plan.references_declaration(declaration),
+            OutgoingParam::Closure(closure) => closure.references_declaration(declaration),
+        }
+    }
+
+    fn contains_interned_string(payload: &Self::Payload) -> bool {
+        match payload {
+            OutgoingParam::Value(plan) => plan.contains_interned_string(),
+            OutgoingParam::Closure(closure) => closure.contains_interned_string(),
         }
     }
 }
@@ -420,6 +509,18 @@ impl<S: Surface, D: ParamDirection<S>> ParamDecl<S, D> {
 
     fn uses_direct_record_vector(&self) -> bool {
         D::uses_direct_record_vector(&self.payload)
+    }
+
+    fn append_referenced_declarations(&self, references: &mut BTreeSet<DeclarationId>) {
+        D::append_referenced_declarations(&self.payload, references);
+    }
+
+    fn references_declaration(&self, declaration: DeclarationId) -> bool {
+        D::references_declaration(&self.payload, declaration)
+    }
+
+    fn contains_interned_string(&self) -> bool {
+        D::contains_interned_string(&self.payload)
     }
 }
 
@@ -536,6 +637,18 @@ where
     fn uses_direct_record_vector(&self) -> bool {
         self.crossing.uses_direct_record_vector()
     }
+
+    fn append_referenced_declarations(&self, references: &mut BTreeSet<DeclarationId>) {
+        self.crossing.append_referenced_declarations(references);
+    }
+
+    fn references_declaration(&self, declaration: DeclarationId) -> bool {
+        self.crossing.references_declaration(declaration)
+    }
+
+    fn contains_interned_string(&self) -> bool {
+        self.crossing.contains_interned_string()
+    }
 }
 
 /// Closure payload at a return slot.
@@ -606,6 +719,18 @@ where
 
     fn uses_direct_record_vector(&self) -> bool {
         self.crossing.uses_direct_record_vector()
+    }
+
+    fn append_referenced_declarations(&self, references: &mut BTreeSet<DeclarationId>) {
+        self.crossing.append_referenced_declarations(references);
+    }
+
+    fn references_declaration(&self, declaration: DeclarationId) -> bool {
+        self.crossing.references_declaration(declaration)
+    }
+
+    fn contains_interned_string(&self) -> bool {
+        self.crossing.contains_interned_string()
     }
 }
 
@@ -683,6 +808,18 @@ where
 
     fn uses_direct_record_vector(&self) -> bool {
         self.invoke.uses_direct_record_vector()
+    }
+
+    fn append_referenced_declarations(&self, references: &mut BTreeSet<DeclarationId>) {
+        self.invoke.append_referenced_declarations(references);
+    }
+
+    fn references_declaration(&self, declaration: DeclarationId) -> bool {
+        self.invoke.references_declaration(declaration)
+    }
+
+    fn contains_interned_string(&self) -> bool {
+        self.invoke.contains_interned_string()
     }
 }
 
@@ -798,14 +935,16 @@ pub enum ParamPlan<S: Surface, D: Direction> {
         /// Inner primitive.
         primitive: Primitive,
     },
-    /// `Vec<T>` for primitive or direct-record `T` through the
+    /// An owned vector or borrowed primitive slice through the
     /// surface's direct-vector path.
     ///
-    /// Native uses `VecTransport::pack_vec` / `unpack_vec`. Wasm32 uses
-    /// a `(ptr, len, cap, align)` quadruple.
+    /// Native uses pointer-plus-length transport. Wasm32 uses a
+    /// `(ptr, len, cap, align)` quadruple for owned vectors.
     DirectVec {
         /// Element type.
         element: DirectVectorElementType,
+        /// Rust-side receive mode.
+        receive: D::Receive,
     },
 }
 
@@ -830,7 +969,7 @@ impl<S: Surface, D: Direction> ParamPlan<S, D> {
                 receive,
             } => renderer.handle(target, *carrier, *presence, *receive),
             Self::ScalarOption { primitive } => renderer.scalar_option(*primitive),
-            Self::DirectVec { element } => renderer.direct_vector(element),
+            Self::DirectVec { element, receive } => renderer.direct_vector(element, *receive),
         }
     }
 
@@ -859,9 +998,103 @@ impl<S: Surface, D: Direction> ParamPlan<S, D> {
         matches!(
             self,
             Self::DirectVec {
-                element: DirectVectorElementType::Record(_)
+                element: DirectVectorElementType::Record(_),
+                ..
             }
         )
+    }
+
+    fn append_referenced_declarations(&self, references: &mut BTreeSet<DeclarationId>) {
+        match self {
+            Self::Direct { ty, .. } => append_direct_value_references(ty, references),
+            Self::Encoded { ty, codec, .. } => {
+                ty.append_referenced_declarations(references);
+                D::codec_append_referenced_declarations(codec, references);
+            }
+            Self::Handle { target, .. } => append_handle_references(target, references),
+            Self::DirectVec { element, .. } => append_direct_vector_references(element, references),
+            Self::ScalarOption { .. } => {}
+        }
+    }
+
+    fn references_declaration(&self, declaration: DeclarationId) -> bool {
+        match self {
+            Self::Direct { ty, .. } => direct_value_references_declaration(ty, declaration),
+            Self::Encoded { ty, codec, .. } => {
+                ty.references_declaration(declaration)
+                    || D::codec_references_declaration(codec, declaration)
+            }
+            Self::Handle { target, .. } => handle_references_declaration(target, declaration),
+            Self::DirectVec { element, .. } => {
+                direct_vector_references_declaration(element, declaration)
+            }
+            Self::ScalarOption { .. } => false,
+        }
+    }
+
+    fn contains_interned_string(&self) -> bool {
+        match self {
+            Self::Encoded { codec, .. } => D::codec_uses_interned_string(codec),
+            _ => false,
+        }
+    }
+}
+
+fn append_direct_value_references(ty: &DirectValueType, references: &mut BTreeSet<DeclarationId>) {
+    match ty {
+        DirectValueType::Record(id) => {
+            references.insert(DeclarationId::Record(*id));
+        }
+        DirectValueType::Enum(id) => {
+            references.insert(DeclarationId::Enum(*id));
+        }
+        DirectValueType::Primitive(_) => {}
+    }
+}
+
+fn append_direct_vector_references(
+    element: &DirectVectorElementType,
+    references: &mut BTreeSet<DeclarationId>,
+) {
+    if let DirectVectorElementType::Record(id) = element {
+        references.insert(DeclarationId::Record(*id));
+    }
+}
+
+fn append_handle_references(target: &HandleTarget, references: &mut BTreeSet<DeclarationId>) {
+    match target {
+        HandleTarget::Class(id) => {
+            references.insert(DeclarationId::Class(*id));
+        }
+        HandleTarget::Callback(id) => {
+            references.insert(DeclarationId::Callback(*id));
+        }
+        HandleTarget::Stream(id) => {
+            references.insert(DeclarationId::Stream(*id));
+        }
+    }
+}
+
+fn direct_value_references_declaration(ty: &DirectValueType, declaration: DeclarationId) -> bool {
+    match ty {
+        DirectValueType::Record(id) => declaration == DeclarationId::Record(*id),
+        DirectValueType::Enum(id) => declaration == DeclarationId::Enum(*id),
+        DirectValueType::Primitive(_) => false,
+    }
+}
+
+fn direct_vector_references_declaration(
+    element: &DirectVectorElementType,
+    declaration: DeclarationId,
+) -> bool {
+    matches!(element, DirectVectorElementType::Record(id) if declaration == DeclarationId::Record(*id))
+}
+
+fn handle_references_declaration(target: &HandleTarget, declaration: DeclarationId) -> bool {
+    match target {
+        HandleTarget::Class(id) => declaration == DeclarationId::Class(*id),
+        HandleTarget::Callback(id) => declaration == DeclarationId::Callback(*id),
+        HandleTarget::Stream(id) => declaration == DeclarationId::Stream(*id),
     }
 }
 
@@ -900,7 +1133,11 @@ pub trait ParamPlanRender<'plan, S: Surface, D: Direction> {
     fn scalar_option(&mut self, primitive: Primitive) -> Self::Output;
 
     /// Renders a direct-vector parameter.
-    fn direct_vector(&mut self, element: &'plan DirectVectorElementType) -> Self::Output;
+    fn direct_vector(
+        &mut self,
+        element: &'plan DirectVectorElementType,
+        receive: D::Receive,
+    ) -> Self::Output;
 }
 
 /// A callable's return slot.
@@ -954,6 +1191,18 @@ where
 
     fn uses_direct_record_vector(&self) -> bool {
         self.plan.uses_direct_record_vector()
+    }
+
+    fn append_referenced_declarations(&self, references: &mut BTreeSet<DeclarationId>) {
+        self.plan.append_referenced_declarations(references);
+    }
+
+    fn references_declaration(&self, declaration: DeclarationId) -> bool {
+        self.plan.references_declaration(declaration)
+    }
+
+    fn contains_interned_string(&self) -> bool {
+        self.plan.contains_interned_string()
     }
 }
 
@@ -1205,6 +1454,60 @@ where
         }
     }
 
+    fn append_referenced_declarations(&self, references: &mut BTreeSet<DeclarationId>) {
+        match self {
+            Self::DirectViaReturnSlot { ty } | Self::DirectViaOutPointer { ty } => {
+                append_direct_value_references(ty, references);
+            }
+            Self::EncodedViaReturnSlot { ty, codec, .. }
+            | Self::EncodedViaOutPointer { ty, codec, .. } => {
+                ty.append_referenced_declarations(references);
+                D::codec_append_referenced_declarations(codec, references);
+            }
+            Self::HandleViaReturnSlot { target, .. } | Self::HandleViaOutPointer { target, .. } => {
+                append_handle_references(target, references);
+            }
+            Self::DirectVecViaReturnSlot { element } => {
+                append_direct_vector_references(element, references);
+            }
+            Self::ClosureViaOutPointer(closure) => {
+                closure.append_referenced_declarations(references)
+            }
+            Self::Void | Self::ScalarOptionViaReturnSlot { .. } => {}
+        }
+    }
+
+    fn references_declaration(&self, declaration: DeclarationId) -> bool {
+        match self {
+            Self::DirectViaReturnSlot { ty } | Self::DirectViaOutPointer { ty } => {
+                direct_value_references_declaration(ty, declaration)
+            }
+            Self::EncodedViaReturnSlot { ty, codec, .. }
+            | Self::EncodedViaOutPointer { ty, codec, .. } => {
+                ty.references_declaration(declaration)
+                    || D::codec_references_declaration(codec, declaration)
+            }
+            Self::HandleViaReturnSlot { target, .. } | Self::HandleViaOutPointer { target, .. } => {
+                handle_references_declaration(target, declaration)
+            }
+            Self::DirectVecViaReturnSlot { element } => {
+                direct_vector_references_declaration(element, declaration)
+            }
+            Self::ClosureViaOutPointer(closure) => closure.references_declaration(declaration),
+            Self::Void | Self::ScalarOptionViaReturnSlot { .. } => false,
+        }
+    }
+
+    fn contains_interned_string(&self) -> bool {
+        match self {
+            Self::EncodedViaReturnSlot { codec, .. } | Self::EncodedViaOutPointer { codec, .. } => {
+                D::codec_uses_interned_string(codec)
+            }
+            Self::ClosureViaOutPointer(closure) => closure.contains_interned_string(),
+            _ => false,
+        }
+    }
+
     /// Switches a `*ViaReturnSlot` variant to its `*ViaOutPointer`
     /// counterpart. Called when the matching error channel takes the
     /// return slot.
@@ -1368,6 +1671,40 @@ impl<S: Surface, D: Direction> ErrorDecl<S, D> {
         match self {
             Self::EncodedViaReturnSlot { codec, .. } | Self::EncodedViaOutPointer { codec, .. } => {
                 D::codec_uses_builtin(codec, kind)
+            }
+            _ => false,
+        }
+    }
+
+    fn append_referenced_declarations(&self, references: &mut BTreeSet<DeclarationId>) {
+        match self {
+            Self::EncodedViaReturnSlot { ty, codec, .. }
+            | Self::EncodedViaOutPointer { ty, codec, .. } => {
+                ty.append_referenced_declarations(references);
+                D::codec_append_referenced_declarations(codec, references);
+            }
+            Self::None(_) | Self::StatusViaReturnSlot { .. } | Self::StatusViaOutPointer { .. } => {
+            }
+        }
+    }
+
+    fn references_declaration(&self, declaration: DeclarationId) -> bool {
+        match self {
+            Self::EncodedViaReturnSlot { ty, codec, .. }
+            | Self::EncodedViaOutPointer { ty, codec, .. } => {
+                ty.references_declaration(declaration)
+                    || D::codec_references_declaration(codec, declaration)
+            }
+            Self::None(_) | Self::StatusViaReturnSlot { .. } | Self::StatusViaOutPointer { .. } => {
+                false
+            }
+        }
+    }
+
+    fn contains_interned_string(&self) -> bool {
+        match self {
+            Self::EncodedViaReturnSlot { codec, .. } | Self::EncodedViaOutPointer { codec, .. } => {
+                D::codec_uses_interned_string(codec)
             }
             _ => false,
         }

@@ -1,5 +1,6 @@
-{%- for parameter in method.record_arrays %}
-    if (!boltffi_jni_read_record(env, {{ parameter.name }}, (uintptr_t)sizeof({{ parameter.c_type }}), &{{ parameter.local }})) {
+{%- for parameter in method.record_buffers %}
+    if (!boltffi_jni_direct_buffer_address(env, {{ parameter.name }}, (jlong)sizeof({{ parameter.c_type }}), &{{ parameter.pointer }})) {
         goto __boltffi_error;
     }
+    memcpy(&{{ parameter.local }}, {{ parameter.pointer }}, sizeof({{ parameter.c_type }}));
 {%- endfor %}

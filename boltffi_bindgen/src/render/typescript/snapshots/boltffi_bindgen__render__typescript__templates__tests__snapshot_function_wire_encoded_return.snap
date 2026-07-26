@@ -1,9 +1,0 @@
----
-source: boltffi_bindgen/src/render/typescript/templates.rs
-expression: template.render().unwrap()
----
-export function getUsers(): User[] {
-  const packed = (_exports.boltffi_get_users as Function)() as bigint;
-  const reader = _module.takePackedBuffer(packed);
-  return reader.readArray(() => decodeUser(reader));
-}

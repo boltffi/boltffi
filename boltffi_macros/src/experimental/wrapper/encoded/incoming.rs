@@ -39,6 +39,9 @@ impl<'expansion, 'lowered, S: RenderSurface> Value<'expansion, 'lowered, S> {
     pub fn decode(&self, input: Input) -> Result<TokenStream, Error> {
         super::require_runtime_wire(self.codec)?;
         input.target.incoming_encoded_type().require_supported()?;
+        if matches!(self.codec, CodecNode::Utf8String) {
+            return input.utf8_string();
+        }
         match input.target.borrow() {
             rust_api::DecodeBorrow::Owned => input.owned(
                 self.codec,
@@ -147,6 +150,52 @@ impl Input {
             length: length.clone(),
             failure: failure.clone(),
         }
+    }
+
+    fn utf8_string(&self) -> Result<TokenStream, Error> {
+        let rust_type = self.target.owned();
+        match self.target.borrow() {
+            rust_api::DecodeBorrow::Owned => {
+                self.owned_utf8_string(rust_type, &self.binding, false)
+            }
+            borrow => {
+                let storage = names::Parameter::new(&self.binding).storage();
+                let owned = self.owned_utf8_string(rust_type, &storage, borrow.mutable())?;
+                let binding = &self.binding;
+                let borrowed = self.borrow(&storage, borrow)?;
+                Ok(quote! {
+                    #owned
+                    let #binding = #borrowed;
+                })
+            }
+        }
+    }
+
+    fn owned_utf8_string(
+        &self,
+        rust_type: &Type,
+        binding: &Ident,
+        mutable: bool,
+    ) -> Result<TokenStream, Error> {
+        let pointer = &self.pointer;
+        let length = &self.length;
+        let failure = &self.failure;
+        let mutability = mutable.then(|| quote! { mut });
+        Ok(quote! {
+            let #mutability #binding: #rust_type = {
+                if #pointer.is_null() && #length > 0 {
+                    ::boltffi::__private::set_last_error(format!(
+                        "{}: null pointer with non-zero length (buf_len={})",
+                        stringify!(#binding),
+                        #length
+                    ));
+                    #failure
+                }
+                let __boltffi_packed =
+                    (#pointer as u32 as u64) | ((#length as u32 as u64) << 32);
+                unsafe { ::boltffi::__private::take_packed_utf8_string(__boltffi_packed) }
+            };
+        })
     }
 
     fn reference<'lowered, S: RenderSurface>(

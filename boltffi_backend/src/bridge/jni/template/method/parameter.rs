@@ -10,7 +10,7 @@
 
 use crate::bridge::{
     c::{Identifier, TypeFragment},
-    jni::NativeParameter,
+    jni::{NativeParameter, NativeParameterKind},
 };
 
 /// One parameter in the generated `Java_*` function signature.
@@ -20,10 +20,42 @@ pub struct NativeParameterView {
 }
 
 impl NativeParameterView {
-    pub fn from_parameter(parameter: &NativeParameter) -> Self {
-        Self {
-            name: parameter.name().clone(),
-            ty: parameter.ty(),
+    pub fn from_parameter(parameter: &NativeParameter) -> Vec<Self> {
+        match parameter.kind() {
+            NativeParameterKind::Scalar(parameter) => vec![Self {
+                name: parameter.name().clone(),
+                ty: parameter.ty().as_type_fragment(),
+            }],
+            NativeParameterKind::Bytes(parameter) => vec![
+                Self {
+                    name: parameter.name().clone(),
+                    ty: TypeFragment::new("jobject"),
+                },
+                Self {
+                    name: parameter.length().clone(),
+                    ty: TypeFragment::new("jint"),
+                },
+            ],
+            NativeParameterKind::DirectVector(parameter) => vec![Self {
+                name: parameter.name().clone(),
+                ty: parameter.array_type(),
+            }],
+            NativeParameterKind::Record(parameter) => vec![Self {
+                name: parameter.name().clone(),
+                ty: TypeFragment::new("jobject"),
+            }],
+            NativeParameterKind::Callback(parameter) => vec![Self {
+                name: parameter.name().clone(),
+                ty: parameter.ty(),
+            }],
+            NativeParameterKind::Closure(parameter) => vec![Self {
+                name: parameter.name().clone(),
+                ty: parameter.ty(),
+            }],
+            NativeParameterKind::Continuation(parameter) => vec![Self {
+                name: parameter.name().clone(),
+                ty: parameter.ty(),
+            }],
         }
     }
 }

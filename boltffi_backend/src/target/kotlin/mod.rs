@@ -5,6 +5,7 @@ mod name_style;
 mod primitive;
 mod render;
 mod syntax;
+mod tuple;
 
 use std::path::PathBuf;
 
@@ -23,27 +24,16 @@ use crate::{
         GeneratedOutput, HostCapabilities, RenderContext, RenderedDeclaration,
         ResolvedCustomTypeMappings, Result, Target, contract::sealed, host,
     },
+    target::jvm::{LibraryName, NativeLibraries},
 };
 
 pub use crate::core::{
     CustomTypeConversion as KotlinCustomConversion, CustomTypeMapping as KotlinCustomMapping,
 };
+pub use crate::target::jvm::{DesktopLoader as KotlinDesktopLoader, LibraryName as KotlinLibrary};
 use name_style::Name;
-pub use name_style::{KotlinFile, KotlinLibrary, KotlinPackage};
+pub use name_style::{KotlinFile, KotlinPackage};
 use syntax::{ArgumentList, Expression, Identifier, Syntax, TypeName};
-
-/// Desktop native-library loading policy for the generated Kotlin module.
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
-#[non_exhaustive]
-pub enum KotlinDesktopLoader {
-    /// Load bundled native resources first, then fall back to the system loader.
-    #[default]
-    Bundled,
-    /// Load the desktop fallback library through `System.loadLibrary`.
-    System,
-    /// Do not emit a desktop native-library load path.
-    None,
-}
 
 /// Public API layout for generated Kotlin declarations.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
@@ -65,14 +55,6 @@ pub enum KotlinFactoryStyle {
     Constructors,
     /// Render initializers only as companion object methods.
     CompanionMethods,
-}
-
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-struct NativeLibraries {
-    android: KotlinLibrary,
-    desktop_jni: KotlinLibrary,
-    desktop_fallback: KotlinLibrary,
-    desktop_loader: KotlinDesktopLoader,
 }
 
 /// Kotlin host renderer for a generated JNI owner class.
@@ -99,7 +81,7 @@ impl KotlinHost {
             file: KotlinFile::parse(file)?,
             c_header: PathBuf::from("jni/boltffi.h"),
             jni_source: PathBuf::from("jni/jni_glue.c"),
-            native_libraries: NativeLibraries::default()?,
+            native_libraries: NativeLibraries::boltffi()?,
             api_style: KotlinApiStyle::default(),
             factory_style: KotlinFactoryStyle::default(),
             custom_mappings: crate::core::CustomTypeMappingSet::default(),
@@ -120,25 +102,31 @@ impl KotlinHost {
 
     /// Selects the Android native library load name.
     pub fn android_library(mut self, library: impl Into<String>) -> Result<Self> {
-        self.native_libraries.android = KotlinLibrary::parse(library)?;
+        self.native_libraries = self
+            .native_libraries
+            .with_android(LibraryName::parse(library)?);
         Ok(self)
     }
 
     /// Selects the desktop JNI wrapper library load name.
     pub fn desktop_jni_library(mut self, library: impl Into<String>) -> Result<Self> {
-        self.native_libraries.desktop_jni = KotlinLibrary::parse(library)?;
+        self.native_libraries = self
+            .native_libraries
+            .with_desktop_jni(LibraryName::parse(library)?);
         Ok(self)
     }
 
     /// Selects the desktop fallback library load name.
     pub fn desktop_fallback_library(mut self, library: impl Into<String>) -> Result<Self> {
-        self.native_libraries.desktop_fallback = KotlinLibrary::parse(library)?;
+        self.native_libraries = self
+            .native_libraries
+            .with_desktop_fallback(LibraryName::parse(library)?);
         Ok(self)
     }
 
     /// Selects the desktop native-library loading policy.
     pub fn desktop_loader(mut self, loader: KotlinDesktopLoader) -> Self {
-        self.native_libraries.desktop_loader = loader;
+        self.native_libraries = self.native_libraries.with_desktop_loader(loader);
         self
     }
 
@@ -250,37 +238,6 @@ impl KotlinHost {
             bridge: Self::TARGET,
             invariant,
         }
-    }
-}
-
-impl NativeLibraries {
-    fn default() -> Result<Self> {
-        Ok(Self {
-            android: KotlinLibrary::parse("boltffi")?,
-            desktop_jni: KotlinLibrary::parse("boltffi_jni")?,
-            desktop_fallback: KotlinLibrary::parse("boltffi")?,
-            desktop_loader: KotlinDesktopLoader::default(),
-        })
-    }
-
-    fn android(&self) -> &KotlinLibrary {
-        &self.android
-    }
-
-    fn desktop_jni(&self) -> &KotlinLibrary {
-        &self.desktop_jni
-    }
-
-    fn desktop_fallback(&self) -> &KotlinLibrary {
-        &self.desktop_fallback
-    }
-
-    fn bundled_desktop_loader(&self) -> bool {
-        matches!(self.desktop_loader, KotlinDesktopLoader::Bundled)
-    }
-
-    fn system_desktop_loader(&self) -> bool {
-        matches!(self.desktop_loader, KotlinDesktopLoader::System)
     }
 }
 

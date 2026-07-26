@@ -82,6 +82,7 @@ fn scan_item(
                     attributes::source(&method.vis, scanner.scope(), method.span()),
                     parent,
                     scanner,
+                    signature::MethodReturns::Export,
                 )),
                 Ok(false) => None,
                 Err(error) => Some(Err(error)),

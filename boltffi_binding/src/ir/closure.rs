@@ -1,6 +1,8 @@
 use std::fmt;
 
-use boltffi_ast::{FnSig, Primitive as AstPrimitive, ReturnDef, TypeExpr};
+use boltffi_ast::{
+    ConstExpr, FnSig, GenericArgument, Path, Primitive as AstPrimitive, ReturnDef, TypeExpr,
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -118,6 +120,13 @@ impl fmt::Display for TypeSignature<'_> {
             TypeExpr::Enum { id, .. } => formatter.write_str(&source_type_signature(id.as_str())),
             TypeExpr::Class { id, .. } => formatter.write_str(&source_type_signature(id.as_str())),
             TypeExpr::Custom { id, .. } => formatter.write_str(&source_type_signature(id.as_str())),
+            TypeExpr::InternedString { pool_id, .. } => {
+                write!(
+                    formatter,
+                    "InternedString{}",
+                    source_type_signature(pool_id)
+                )
+            }
             TypeExpr::ImplTrait(bounds) | TypeExpr::Dyn(bounds) => match &bounds.base {
                 boltffi_ast::BaseTrait::Named { id, .. } => {
                     formatter.write_str(&source_type_signature(id.as_str()))
@@ -165,6 +174,41 @@ fn source_type_signature(source_id: &str) -> String {
         .filter(|segment| !segment.is_empty())
         .map(capitalize)
         .collect()
+}
+
+fn path_signature(path: &Path) -> String {
+    path.segments
+        .iter()
+        .map(|segment| {
+            let mut signature = capitalize(segment.name.as_str());
+            segment
+                .arguments
+                .iter()
+                .for_each(|argument| signature.push_str(&generic_argument_signature(argument)));
+            signature
+        })
+        .collect()
+}
+
+fn generic_argument_signature(argument: &GenericArgument) -> String {
+    match argument {
+        GenericArgument::Type(type_expr) => TypeSignature(type_expr).to_string(),
+        GenericArgument::Const(expr) => const_expr_signature(expr),
+        GenericArgument::AssociatedType { name, type_expr } => {
+            format!("{}{}", capitalize(name.as_str()), TypeSignature(type_expr))
+        }
+    }
+}
+
+fn const_expr_signature(expr: &ConstExpr) -> String {
+    match expr {
+        ConstExpr::Literal(literal) => source_type_signature(&format!("{:?}", literal)),
+        ConstExpr::Path(path) => path_signature(path),
+        ConstExpr::Array(elements) | ConstExpr::Tuple(elements) => {
+            elements.iter().map(const_expr_signature).collect()
+        }
+        ConstExpr::Raw(text) => source_type_signature(text),
+    }
 }
 
 fn primitive_signature(primitive: AstPrimitive) -> String {
@@ -216,6 +260,16 @@ mod tests {
         TypeExpr::record(RecordId::new(id), Path::single(path))
     }
 
+    fn interned_string_in_module(module: &str, pool: &str) -> TypeExpr {
+        let pool_id = format!("demo::{module}::{pool}");
+        TypeExpr::interned_string(
+            Path::single("InternedString"),
+            &pool_id,
+            Path::single(pool),
+            vec!["Chrome".to_owned()],
+        )
+    }
+
     #[test]
     fn signature_keeps_nested_source_shape() {
         let closure = closure(
@@ -244,6 +298,27 @@ mod tests {
         assert_eq!(
             ClosureSignature::from_fn_signature(&second).symbol_part(),
             "___closure__b_point"
+        );
+    }
+
+    #[test]
+    fn signature_includes_canonical_interned_string_pool_identity() {
+        let first = closure(
+            vec![interned_string_in_module("a", "BrowserName")],
+            ReturnDef::Void,
+        );
+        let second = closure(
+            vec![interned_string_in_module("b", "BrowserName")],
+            ReturnDef::Void,
+        );
+
+        assert_eq!(
+            ClosureSignature::from_fn_signature(&first).symbol_part(),
+            "___closure__interned_string_demo_a_browser_name"
+        );
+        assert_eq!(
+            ClosureSignature::from_fn_signature(&second).symbol_part(),
+            "___closure__interned_string_demo_b_browser_name"
         );
     }
 

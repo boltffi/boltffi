@@ -15,6 +15,7 @@ pub struct ClosureFeatures {
     pub has_registrations: bool,
     pub uses_byte_arrays: bool,
     pub uses_direct_vectors: bool,
+    pub uses_records: bool,
     pub returns_byte_arrays: bool,
     pub returns_records: bool,
     pub returns_callback_handles: bool,
@@ -30,6 +31,9 @@ impl ClosureFeatures {
             uses_direct_vectors: closures.iter().any(|closure| {
                 !closure.direct_vectors.is_empty() || !closure.handle_direct_vectors.is_empty()
             }),
+            uses_records: closures
+                .iter()
+                .any(|closure| !closure.records.is_empty() || !closure.handle_records.is_empty()),
             returns_byte_arrays: closures
                 .iter()
                 .any(|closure| closure.returns_bytes || closure.returns_record),

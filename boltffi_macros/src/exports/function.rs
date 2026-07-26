@@ -437,13 +437,33 @@ fn ffi_export_item_impl(input: ItemFn) -> proc_macro2::TokenStream {
             let option_scalar_encoding = WasmOptionScalarEncoding::from_option_rust_type(inner_ty)
                 .expect("OptionScalar return must have a primitive Option inner type");
             let some_expression = option_scalar_encoding.some_expression(&option_value_ident);
-            let call_and_bind = quote! {
-                #(#conversions)*
-                let #result_ident: #inner_ty = #fn_name(#(#call_args),*);
-            };
+
+            let native_on_error = return_abi.native_invalid_arg_early_return_statement();
+            let wasm_on_error = return_abi.wasm_invalid_arg_early_return_statement();
+            let FfiParams {
+                conversions: native_conversions,
+                call_args: native_call_args,
+                ..
+            } = transform_params(
+                fn_inputs,
+                &return_lowering,
+                &callback_registry,
+                &native_on_error,
+            );
+            let FfiParams {
+                conversions: wasm_conversions,
+                call_args: wasm_call_args,
+                ..
+            } = transform_params(
+                fn_inputs,
+                &return_lowering,
+                &callback_registry,
+                &wasm_on_error,
+            );
 
             let wasm_body = quote! {
-                #call_and_bind
+                #(#wasm_conversions)*
+                let #result_ident: #inner_ty = #fn_name(#(#wasm_call_args),*);
                 match #result_ident {
                     Some(#option_value_ident) => #some_expression,
                     None => f64::NAN,
@@ -451,7 +471,8 @@ fn ffi_export_item_impl(input: ItemFn) -> proc_macro2::TokenStream {
             };
 
             let native_body = quote! {
-                #call_and_bind
+                #(#native_conversions)*
+                let #result_ident: #inner_ty = #fn_name(#(#native_call_args),*);
                 ::boltffi::__private::FfiBuf::wire_encode(&#result_ident)
             };
 

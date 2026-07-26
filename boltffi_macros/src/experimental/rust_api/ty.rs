@@ -115,6 +115,12 @@ impl DecodeTarget {
         &self.source
     }
 
+    /// Returns true when the source type is a slice (`&mut [u8]`), as opposed to an owned
+    /// collection (`&mut Vec<u8>`). Used to select direct mutable-slice ABI vs wire-decode.
+    pub fn is_slice_source(&self) -> bool {
+        matches!(&self.source, TypeExpr::Slice(_))
+    }
+
     pub fn incoming_encoded_type(&self) -> IncomingEncodedType {
         IncomingEncodedType::new(&self.source)
     }
@@ -261,6 +267,10 @@ impl TypeTokens {
             | TypeExpr::Enum { path, .. }
             | TypeExpr::Class { path, .. }
             | TypeExpr::Custom { path, .. } => Self::path_tokens(path)?,
+            TypeExpr::InternedString { pool, .. } => {
+                let pool = Self::path_tokens(pool)?;
+                quote! { ::boltffi::InternedString<#pool> }
+            }
             TypeExpr::Dyn(bound) => {
                 let bound = Self::trait_bound_tokens(bound)?;
                 quote! { dyn #bound }
@@ -473,5 +483,82 @@ impl TypeTokens {
             Literal::String(value) => format!("{value:?}"),
             Literal::Bytes(value) => format!("{value:?}"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use boltffi_ast::{PackageInfo, Path, PathRoot, PathSegment, ReturnDef, TypeExpr};
+
+    use super::TypeTokens;
+    use crate::experimental::rust_api::crate_root::RootModuleTypes;
+
+    #[test]
+    fn renders_interned_string_with_typed_crate_rooted_pool_path() {
+        let type_expr = TypeExpr::interned_string(
+            Path::new(
+                PathRoot::Relative,
+                vec![
+                    PathSegment::new("boltffi"),
+                    PathSegment::new("InternedString"),
+                ],
+            ),
+            "demo::pools::BrowserName",
+            Path::new(
+                PathRoot::Crate,
+                vec![PathSegment::new("pools"), PathSegment::new("BrowserName")],
+            ),
+            vec!["Chrome".to_owned()],
+        );
+
+        let rendered = TypeTokens::tokens(&type_expr)
+            .expect("typed pool path should render")
+            .to_string();
+        assert_eq!(
+            rendered,
+            ":: boltffi :: InternedString < crate :: pools :: BrowserName >"
+        );
+    }
+
+    #[test]
+    fn scan_root_and_render_preserves_nested_pool_path() {
+        let source = boltffi_scan::scan_file(
+            syn::parse_str(
+                r#"
+                mod pools {
+                    boltffi::interned_string_pool! {
+                        pub BrowserName {
+                            CHROME = "Chrome",
+                        }
+                    }
+                }
+
+                mod api {
+                    use boltffi::InternedString;
+                    use crate::pools::BrowserName;
+
+                    #[export]
+                    pub fn browser() -> InternedString<BrowserName> {
+                        BrowserName::CHROME
+                    }
+                }
+                "#,
+            )
+            .expect("valid source"),
+            PackageInfo::new("demo", None),
+        )
+        .expect("source should scan");
+        let rooted = RootModuleTypes::new(&source.package).contract(&source);
+        let ReturnDef::Value(return_type) = &rooted.functions[0].returns else {
+            panic!("expected value return");
+        };
+
+        let rendered = TypeTokens::tokens(return_type)
+            .expect("scanned interned string should render")
+            .to_string();
+        assert_eq!(
+            rendered,
+            ":: boltffi :: InternedString < crate :: pools :: BrowserName >"
+        );
     }
 }

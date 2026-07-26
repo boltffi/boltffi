@@ -8,16 +8,16 @@ expression: "rendered_fixture(\"exports/builtin_functions\")"
 package com.boltffi.demo
 @Suppress("FunctionName")
 private object Native {
-    @JvmStatic external fun boltffi_function_demo_echo_duration(value: ByteArray): ByteArray?
+    @JvmStatic external fun boltffi_function_demo_echo_duration(value: java.nio.ByteBuffer, __boltffi_value_len: Int): ByteArray?
     @JvmStatic external fun boltffi_function_demo_make_duration(seconds: Long, nanos: Int): ByteArray?
-    @JvmStatic external fun boltffi_function_demo_duration_as_millis(value: ByteArray): Long
-    @JvmStatic external fun boltffi_function_demo_echo_system_time(value: ByteArray): ByteArray?
-    @JvmStatic external fun boltffi_function_demo_system_time_to_millis(value: ByteArray): Long
+    @JvmStatic external fun boltffi_function_demo_duration_as_millis(value: java.nio.ByteBuffer, __boltffi_value_len: Int): Long
+    @JvmStatic external fun boltffi_function_demo_echo_system_time(value: java.nio.ByteBuffer, __boltffi_value_len: Int): ByteArray?
+    @JvmStatic external fun boltffi_function_demo_system_time_to_millis(value: java.nio.ByteBuffer, __boltffi_value_len: Int): Long
     @JvmStatic external fun boltffi_function_demo_millis_to_system_time(value: Long): ByteArray?
-    @JvmStatic external fun boltffi_function_demo_echo_uuid(value: ByteArray): ByteArray?
-    @JvmStatic external fun boltffi_function_demo_uuid_to_string(value: ByteArray): ByteArray?
-    @JvmStatic external fun boltffi_function_demo_echo_url(value: ByteArray): ByteArray?
-    @JvmStatic external fun boltffi_function_demo_url_to_string(value: ByteArray): ByteArray?
+    @JvmStatic external fun boltffi_function_demo_echo_uuid(value: java.nio.ByteBuffer, __boltffi_value_len: Int): ByteArray?
+    @JvmStatic external fun boltffi_function_demo_uuid_to_string(value: java.nio.ByteBuffer, __boltffi_value_len: Int): ByteArray?
+    @JvmStatic external fun boltffi_function_demo_echo_url(value: java.nio.ByteBuffer, __boltffi_value_len: Int): ByteArray?
+    @JvmStatic external fun boltffi_function_demo_url_to_string(value: java.nio.ByteBuffer, __boltffi_value_len: Int): ByteArray?
 }
 
 fun echoDuration(value: java.time.Duration): java.time.Duration {
@@ -25,7 +25,7 @@ fun echoDuration(value: java.time.Duration): java.time.Duration {
     val __boltffi_value_writer = __boltffi_value_wire.writer
     __boltffi_value_writer.writeDuration(value)
     try {
-        val __boltffi_result = Native.boltffi_function_demo_echo_duration(__boltffi_value_wire.bytes()) ?: throw IllegalStateException("null buffer returned")
+        val __boltffi_result = Native.boltffi_function_demo_echo_duration(__boltffi_value_wire.directBuffer(), __boltffi_value_wire.size()) ?: throw IllegalStateException("null buffer returned")
         val __boltffi_reader = WireReader(__boltffi_result)
         return __boltffi_reader.readDuration()
     } finally {
@@ -44,7 +44,7 @@ fun durationAsMillis(value: java.time.Duration): ULong {
     val __boltffi_value_writer = __boltffi_value_wire.writer
     __boltffi_value_writer.writeDuration(value)
     try {
-        return Native.boltffi_function_demo_duration_as_millis(__boltffi_value_wire.bytes()).toULong()
+        return Native.boltffi_function_demo_duration_as_millis(__boltffi_value_wire.directBuffer(), __boltffi_value_wire.size()).toULong()
     } finally {
         __boltffi_value_wire.close()
     }
@@ -55,7 +55,7 @@ fun echoSystemTime(value: java.time.Instant): java.time.Instant {
     val __boltffi_value_writer = __boltffi_value_wire.writer
     __boltffi_value_writer.writeInstant(value)
     try {
-        val __boltffi_result = Native.boltffi_function_demo_echo_system_time(__boltffi_value_wire.bytes()) ?: throw IllegalStateException("null buffer returned")
+        val __boltffi_result = Native.boltffi_function_demo_echo_system_time(__boltffi_value_wire.directBuffer(), __boltffi_value_wire.size()) ?: throw IllegalStateException("null buffer returned")
         val __boltffi_reader = WireReader(__boltffi_result)
         return __boltffi_reader.readInstant()
     } finally {
@@ -68,7 +68,7 @@ fun systemTimeToMillis(value: java.time.Instant): ULong {
     val __boltffi_value_writer = __boltffi_value_wire.writer
     __boltffi_value_writer.writeInstant(value)
     try {
-        return Native.boltffi_function_demo_system_time_to_millis(__boltffi_value_wire.bytes()).toULong()
+        return Native.boltffi_function_demo_system_time_to_millis(__boltffi_value_wire.directBuffer(), __boltffi_value_wire.size()).toULong()
     } finally {
         __boltffi_value_wire.close()
     }
@@ -85,7 +85,7 @@ fun echoUuid(value: java.util.UUID): java.util.UUID {
     val __boltffi_value_writer = __boltffi_value_wire.writer
     __boltffi_value_writer.writeUuid(value)
     try {
-        val __boltffi_result = Native.boltffi_function_demo_echo_uuid(__boltffi_value_wire.bytes()) ?: throw IllegalStateException("null buffer returned")
+        val __boltffi_result = Native.boltffi_function_demo_echo_uuid(__boltffi_value_wire.directBuffer(), __boltffi_value_wire.size()) ?: throw IllegalStateException("null buffer returned")
         val __boltffi_reader = WireReader(__boltffi_result)
         return __boltffi_reader.readUuid()
     } finally {
@@ -98,7 +98,7 @@ fun uuidToString(value: java.util.UUID): String {
     val __boltffi_value_writer = __boltffi_value_wire.writer
     __boltffi_value_writer.writeUuid(value)
     try {
-        val __boltffi_result = Native.boltffi_function_demo_uuid_to_string(__boltffi_value_wire.bytes()) ?: throw IllegalStateException("null buffer returned")
+        val __boltffi_result = Native.boltffi_function_demo_uuid_to_string(__boltffi_value_wire.directBuffer(), __boltffi_value_wire.size()) ?: throw IllegalStateException("null buffer returned")
         val __boltffi_reader = WireReader(__boltffi_result)
         return __boltffi_reader.readString()
     } finally {
@@ -111,7 +111,7 @@ fun echoUrl(value: java.net.URI): java.net.URI {
     val __boltffi_value_writer = __boltffi_value_wire.writer
     __boltffi_value_writer.writeUri(value)
     try {
-        val __boltffi_result = Native.boltffi_function_demo_echo_url(__boltffi_value_wire.bytes()) ?: throw IllegalStateException("null buffer returned")
+        val __boltffi_result = Native.boltffi_function_demo_echo_url(__boltffi_value_wire.directBuffer(), __boltffi_value_wire.size()) ?: throw IllegalStateException("null buffer returned")
         val __boltffi_reader = WireReader(__boltffi_result)
         return __boltffi_reader.readUri()
     } finally {
@@ -124,7 +124,7 @@ fun urlToString(value: java.net.URI): String {
     val __boltffi_value_writer = __boltffi_value_wire.writer
     __boltffi_value_writer.writeUri(value)
     try {
-        val __boltffi_result = Native.boltffi_function_demo_url_to_string(__boltffi_value_wire.bytes()) ?: throw IllegalStateException("null buffer returned")
+        val __boltffi_result = Native.boltffi_function_demo_url_to_string(__boltffi_value_wire.directBuffer(), __boltffi_value_wire.size()) ?: throw IllegalStateException("null buffer returned")
         val __boltffi_reader = WireReader(__boltffi_result)
         return __boltffi_reader.readString()
     } finally {

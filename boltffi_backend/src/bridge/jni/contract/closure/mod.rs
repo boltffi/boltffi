@@ -17,6 +17,7 @@ mod names;
 mod parameter;
 mod registration;
 
+pub(crate) use argument::ClosureRecordArgument;
 pub use argument::{
     ClosureArgument, ClosureBytesArgument, ClosureCParameter, ClosureDirectVectorArgument,
     ClosureHandleArgument,

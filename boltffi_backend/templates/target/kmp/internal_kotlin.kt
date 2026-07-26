@@ -2,22 +2,26 @@
 
 package {{ internal_package }}
 {% if !functions.is_empty() %}
-
-class FfiException(val code: kotlin.Int, message: kotlin.String) : kotlin.Exception(message)
-
 private object Native {
-{%- for function in functions %}
+{%- for line in runtime_lines %}
+    {{ line }}
+{%- endfor %}
+{%- for function in native_functions %}
     @JvmStatic external fun {{ function.native_symbol() }}({% for parameter in function.params() %}{{ parameter.name() }}: {{ parameter.ty() }}{% if !loop.last %}, {% endif %}{% endfor %}){% if let Some(return_type) = function.returns() %}: {{ return_type }}{% endif %}
 {%- endfor %}
 }
-{%- for function in functions %}
-
-fun {{ function.name() }}({% for parameter in function.params() %}{{ parameter.name() }}: {{ parameter.ty() }}{% if !loop.last %}, {% endif %}{% endfor %}){% if let Some(return_type) = function.returns() %}: {{ return_type }}{% endif %} {
-{%- if function.returns_value() %}
-    return Native.{{ function.native_symbol() }}({% for parameter in function.params() %}{{ parameter.name() }}{% if !loop.last %}, {% endif %}{% endfor %})
+{% for function in functions %}
+{%- if function.has_source() %}
+{% for line in function.source_lines() %}{{ line }}
+{%- endfor %}
 {%- else %}
-    Native.{{ function.native_symbol() }}({% for parameter in function.params() %}{{ parameter.name() }}{% if !loop.last %}, {% endif %}{% endfor %})
+fun {{ function.function().name() }}({% for parameter in function.function().params() %}{{ parameter.name() }}: {{ parameter.ty() }}{% if !loop.last %}, {% endif %}{% endfor %}){% if let Some(return_type) = function.function().returns() %}: {{ return_type }}{% endif %} {
+{%- if function.function().returns_value() %}
+    return Native.{{ function.function().native_symbol() }}({% for parameter in function.function().params() %}{{ parameter.name() }}{% if !loop.last %}, {% endif %}{% endfor %})
+{%- else %}
+    Native.{{ function.function().native_symbol() }}({% for parameter in function.function().params() %}{{ parameter.name() }}{% if !loop.last %}, {% endif %}{% endfor %})
 {%- endif %}
 }
+{%- endif %}
 {%- endfor %}
 {% endif %}

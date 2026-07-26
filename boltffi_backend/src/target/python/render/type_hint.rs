@@ -44,6 +44,14 @@ impl TypeHint {
         plan.render_with(&mut ReturnHint { package })
     }
 
+    pub fn from_direct_vector_parameter(
+        element: &DirectVectorElementType,
+        package: &Package,
+    ) -> Result<Self> {
+        let element = Self::from_direct_vector_element(element, package)?;
+        Ok(Self::sequence(TypeAnnotation::sequence(element.annotation)))
+    }
+
     pub fn from_primitive(primitive: Primitive) -> Result<Self> {
         Ok(match primitive {
             Primitive::Bool => Self::new(TypeAnnotation::bool()),
@@ -77,14 +85,6 @@ impl TypeHint {
 
     fn from_parameter_type_ref(ty: &TypeRef, package: &Package) -> Result<Self> {
         ty.render_with(&mut TypeRefHint::parameter(package))
-    }
-
-    fn from_direct_vector_parameter(
-        element: &DirectVectorElementType,
-        package: &Package,
-    ) -> Result<Self> {
-        let element = Self::from_direct_vector_element(element, package)?;
-        Ok(Self::sequence(TypeAnnotation::sequence(element.annotation)))
     }
 
     fn from_direct_vector_return(
@@ -179,6 +179,12 @@ impl<'package> TypeRefRender for TypeRefHint<'package> {
 
     fn string(&mut self) -> Self::Output {
         Ok(TypeHint::new(TypeAnnotation::string()))
+    }
+
+    fn interned_string(&mut self, _static_values: &[String]) -> Self::Output {
+        unreachable!(
+            "InternedString type ref reached Python renderer: host does not advertise InternedString capability"
+        )
     }
 
     fn bytes(&mut self) -> Self::Output {
@@ -319,7 +325,7 @@ impl<'plan, 'package> ParamPlanRender<'plan, Native, IntoRust> for ParameterHint
         )))
     }
 
-    fn direct_vector(&mut self, element: &DirectVectorElementType) -> Self::Output {
+    fn direct_vector(&mut self, element: &DirectVectorElementType, _: Receive) -> Self::Output {
         TypeHint::from_direct_vector_parameter(element, self.package)
     }
 }

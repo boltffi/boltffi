@@ -1,4 +1,4 @@
-interface {{ callback.name() }} {
+{% if callback.fun_interface() %}fun {% endif %}interface {{ callback.name() }} {
 {%- for method in callback.methods() %}
     {% if method.asynchronous() %}suspend {% endif %}fun {{ method.name() }}({% for parameter in method.public_parameters() %}{{ parameter.name() }}: {{ parameter.ty() }}{% if !loop.last %}, {% endif %}{% endfor %}){% if let Some(return_type) = method.public_return() %}: {{ return_type }}{% endif %}
 {%- endfor %}
@@ -63,21 +63,22 @@ object {{ callback.callbacks_name() }} {
 {%- if !callback.handle_methods().is_empty() %}
 
 private class {{ callback.handle_name() }}(private val handle: Long) : {{ callback.name() }}, AutoCloseable {
-    private var closed = false
+    private val __boltffi_closed = java.util.concurrent.atomic.AtomicBoolean(false)
 
     override fun close() {
 {%- if let Some(release) = callback.handle_release() %}
-        if (!closed) {
+        if (__boltffi_closed.compareAndSet(false, true)) {
             Native.{{ release }}(handle)
-            closed = true
         }
 {%- endif %}
     }
 
     private fun requireOpen(): Long {
-        check(!closed) { "callback handle is closed" }
+        check(!__boltffi_closed.get()) { "callback handle is closed" }
         return handle
     }
+
+    fun rawHandle(): Long = requireOpen()
 {%- for method in callback.handle_methods() %}
 
     override fun {{ method.name() }}({% for parameter in method.parameters() %}{{ parameter.name() }}: {{ parameter.ty() }}{% if !loop.last %}, {% endif %}{% endfor %}){% if let Some(return_type) = method.returns() %}: {{ return_type }}{% endif %} {
@@ -106,6 +107,11 @@ private class {{ callback.handle_name() }}(private val handle: Long) : {{ callba
 
 object {{ callback.bridge_name() }} {
     fun create(value: {{ callback.name() }}): Long {
+{%- if !callback.handle_methods().is_empty() %}
+        if (value is {{ callback.handle_name() }}) {
+            return value.rawHandle()
+        }
+{%- endif %}
         return {{ callback.map_name() }}.insert(value)
     }
 }

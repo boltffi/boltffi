@@ -10,7 +10,7 @@
 //! of deciding record mutability from the source type.
 
 use crate::{
-    bridge::c::{self, Identifier},
+    bridge::c::{self, Expression, Identifier},
     core::{Error, Result},
 };
 
@@ -24,6 +24,7 @@ const JNI_BRIDGE: &str = "jni";
 pub struct RecordParameter {
     name: Identifier,
     value: RecordValue,
+    pointer: Identifier,
     local: Identifier,
     writeback: Option<RecordWriteback>,
 }
@@ -44,6 +45,16 @@ impl RecordParameter {
         &self.local
     }
 
+    /// Returns the direct-buffer address used during the native call.
+    pub fn pointer(&self) -> &Identifier {
+        &self.pointer
+    }
+
+    /// Returns the expression passed to the C bridge function.
+    pub fn c_argument(&self) -> Expression {
+        self.value.c_argument(self.local.clone())
+    }
+
     /// Returns the mutation writeback contract when the C bridge expects one.
     pub fn writeback(&self) -> Option<&RecordWriteback> {
         self.writeback.as_ref()
@@ -57,6 +68,7 @@ impl RecordParameter {
         let name = Identifier::escape(parameter.name())?;
         Ok(Some(Self {
             local: Identifier::parse(format!("__boltffi_{}_value", name.as_str()))?,
+            pointer: Identifier::parse(format!("__boltffi_{}_ptr", name.as_str()))?,
             name,
             value,
             writeback: None,
@@ -78,6 +90,7 @@ impl RecordParameter {
         let name = Identifier::escape(writeback.name())?;
         Ok(Self {
             local: Identifier::parse(format!("__boltffi_{}_value", name.as_str()))?,
+            pointer: Identifier::parse(format!("__boltffi_{}_ptr", name.as_str()))?,
             name,
             value,
             writeback: Some(RecordWriteback::from_c_parameter(

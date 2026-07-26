@@ -1,0 +1,41 @@
+---
+source: boltffi_backend/tests/java.rs
+expression: "java_source(&render(PRIMITIVE_FUNCTIONS, CoverageMode::Complete),\n\"com.boltffi.demo\", \"Demo\")"
+---
+package com.boltffi.demo;
+
+final class Native {
+    static {
+        String virtualMachineName = System.getProperty("java.vm.name", "")
+            .toLowerCase(java.util.Locale.ROOT);
+        boolean androidRuntime = virtualMachineName.contains("dalvik")
+            || virtualMachineName.contains("art");
+        if (androidRuntime) {
+            System.loadLibrary("boltffi");
+        }
+    }
+
+    private Native() {}
+
+    static native long boltffi_function_demo_carriers(boolean flag, byte signed_byte, byte unsigned_byte, short signed_short, short unsigned_short, int signed_word, int unsigned_word, long signed_wide, long unsigned_wide, long signed_size, long unsigned_size, float single, double double_);
+
+    static native boolean boltffi_function_demo_enabled(boolean flag);
+
+    static native void boltffi_function_demo_refresh();
+}
+
+public final class Demo {
+    private Demo() {}
+
+    public static long carriers(boolean flag, byte signedByte, byte unsignedByte, short signedShort, short unsignedShort, int signedWord, int unsignedWord, long signedWide, long unsignedWide, long signedSize, long unsignedSize, float single, double _double) {
+        return Native.boltffi_function_demo_carriers(flag, signedByte, unsignedByte, signedShort, unsignedShort, signedWord, unsignedWord, signedWide, unsignedWide, signedSize, unsignedSize, single, _double);
+    }
+
+    public static boolean enabled(boolean flag) {
+        return Native.boltffi_function_demo_enabled(flag);
+    }
+
+    public static void refresh() {
+        Native.boltffi_function_demo_refresh();
+    }
+}

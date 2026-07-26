@@ -248,7 +248,7 @@ pub(crate) enum PackTargetArg {
 
     #[command(
         about = "Build + package Android artifacts",
-        long_about = "Build + package Android artifacts.\n\nOutputs:\n  - Kotlin/JNI: {targets.android.kotlin.output}\n  - jniLibs:    {targets.android.pack.output}\n"
+        long_about = "Build + package Android artifacts.\n\nOutputs:\n  - Kotlin/JNI:             {targets.android.kotlin.output}\n  - jniLibs:                {targets.android.pack.output}\n  - Kotlin desktop natives: {targets.android.output}/desktopJniLibs when targets.android.kotlin.desktop_pack.enabled is true and targets.android.kotlin.desktop_loader is bundled\n"
     )]
     Android {
         #[arg(long)]
@@ -306,7 +306,13 @@ pub(crate) enum PackTargetArg {
         #[arg(long)]
         release: bool,
 
-        #[arg(long, default_value = "true")]
+        #[arg(
+            long,
+            default_value = "true",
+            default_missing_value = "true",
+            num_args = 0..=1,
+            action = clap::ArgAction::Set
+        )]
         regenerate: bool,
 
         #[arg(long)]
@@ -1399,6 +1405,49 @@ enabled = true
     }
 
     #[test]
+    fn cli_parses_java_regeneration_selection() {
+        let default =
+            Cli::try_parse_from(["boltffi", "pack", "java"]).expect("cli parse should succeed");
+        let enabled = Cli::try_parse_from(["boltffi", "pack", "java", "--regenerate"])
+            .expect("cli parse should succeed");
+        let disabled = Cli::try_parse_from(["boltffi", "pack", "java", "--regenerate", "false"])
+            .expect("cli parse should succeed");
+
+        assert!(matches!(
+            default.command,
+            Commands::Pack {
+                target: PackTargetArg::Java {
+                    regenerate: true,
+                    ..
+                }
+            }
+        ));
+        assert!(matches!(
+            enabled.command,
+            Commands::Pack {
+                target: PackTargetArg::Java {
+                    regenerate: true,
+                    ..
+                }
+            }
+        ));
+        assert!(matches!(
+            disabled.command,
+            Commands::Pack {
+                target: PackTargetArg::Java {
+                    regenerate: false,
+                    ..
+                }
+            }
+        ));
+    }
+
+    #[test]
+    fn cli_rejects_removed_java_legacy_flag() {
+        assert!(Cli::try_parse_from(["boltffi", "pack", "java", "--legacy"]).is_err());
+    }
+
+    #[test]
     fn cli_parses_pack_android_experimental_flag() {
         let cli = Cli::try_parse_from(["boltffi", "pack", "android", "--experimental"])
             .expect("cli parse should succeed");
@@ -1518,6 +1567,9 @@ enabled = true
 
 #[derive(Debug, thiserror::Error)]
 pub enum CliError {
+    #[error(transparent)]
+    LibraryCargoArgs(#[from] boltffi_bindgen::cargo::LibraryCargoArgsError),
+
     #[error("config error: {0}")]
     Config(Box<ConfigError>),
 

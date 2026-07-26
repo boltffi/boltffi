@@ -138,6 +138,25 @@ pub fn parse_int(input: String) -> Result<i32, String> {
 }
 
 #[demo_bench_macros::demo_case(
+    "results.basic.is_even.should_return_parity",
+    justification = "Ensure is_even delivers both bool payloads through the Result wire envelope, since a fallible bool return crosses the FFI as an encoded buffer rather than a primitive bool.",
+    directions = "Call `results::basic::is_even` through the generated binding and assert it returns true for an even input and false for an odd input."
+)]
+#[demo_bench_macros::demo_case(
+    "results.basic.is_even.should_reject_negative_input",
+    justification = "Ensure is_even returns a language-native error when the input is negative.",
+    directions = "Call `results::basic::is_even` through the generated binding and assert is_even returns a language-native error when the input is negative."
+)]
+#[export]
+pub fn is_even(value: i32) -> Result<bool, String> {
+    if value < 0 {
+        Err("negative input".to_string())
+    } else {
+        Ok(value % 2 == 0)
+    }
+}
+
+#[demo_bench_macros::demo_case(
     "results.basic.validate_name.should_greet_valid_name",
     justification = "Ensure validate_name returns a greeting for a non-empty name within the length limit.",
     directions = "Call `results::basic::validate_name` through the generated binding and assert validate_name returns a greeting for a non-empty name within the length limit."

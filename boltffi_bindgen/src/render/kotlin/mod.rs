@@ -9,7 +9,7 @@ pub use emit::*;
 pub use lower::KotlinLowerer;
 pub use names::NamingConvention;
 pub use plan::*;
-pub use templates::KotlinEmitter;
+pub use templates::{KotlinEmitter, kdoc_block};
 
 use boltffi_ffi_rules::naming::{LibraryName, Name};
 

@@ -6,6 +6,11 @@ class {{ class.name() }} internal constructor(internal val handle: Long) : AutoC
             Native.{{ class.release() }}(handle)
         }
     }
+
+    internal fun boltffiHandle(): Long {
+        check(!__boltffi_closed.get()) { "{{ class.name() }} is closed" }
+        return handle
+    }
 {%- for initializer in class.initializers() %}
 {%- if initializer.constructor() %}
 

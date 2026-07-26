@@ -18,14 +18,42 @@ ___Mode boltffi_function_demo_echo_mode(___Mode mode);
 <jni source includes>
 <jni exception helpers>
 <jni record helpers>
-JNIEXPORT jbyteArray JNICALL Java_com_boltffi_demo_Native_boltffi_1function_1demo_1echo_1point(JNIEnv *env, jclass cls, jbyteArray point) {
+static bool boltffi_jni_direct_buffer_address(JNIEnv *env, jobject buffer, jlong required_capacity, void **address) {
+    if (buffer == NULL) {
+        boltffi_jni_throw_illegal_argument(env, "BoltFFI direct buffer argument was null");
+        return false;
+    }
+    if (required_capacity < 0) {
+        boltffi_jni_throw_illegal_argument(env, "BoltFFI direct buffer length was negative");
+        return false;
+    }
+    jlong capacity = (*env)->GetDirectBufferCapacity(env, buffer);
+    if (capacity < 0) {
+        boltffi_jni_throw_illegal_argument(env, "BoltFFI argument was not a direct buffer");
+        return false;
+    }
+    if (capacity < required_capacity) {
+        boltffi_jni_throw_illegal_argument(env, "BoltFFI direct buffer capacity was too small");
+        return false;
+    }
+    *address = (*env)->GetDirectBufferAddress(env, buffer);
+    if (*address == NULL && required_capacity != 0) {
+        boltffi_jni_throw_illegal_argument(env, "BoltFFI direct buffer address was unavailable");
+        return false;
+    }
+    return true;
+}
+
+JNIEXPORT jbyteArray JNICALL Java_com_boltffi_demo_Native_boltffi_1function_1demo_1echo_1point(JNIEnv *env, jclass cls, jobject point) {
     (void)cls;
 
+    void *__boltffi_point_ptr = NULL;
     ___Point __boltffi_point_value;
 
-    if (!boltffi_jni_read_record(env, point, (uintptr_t)sizeof(___Point), &__boltffi_point_value)) {
+    if (!boltffi_jni_direct_buffer_address(env, point, (jlong)sizeof(___Point), &__boltffi_point_ptr)) {
         goto __boltffi_error;
     }
+    memcpy(&__boltffi_point_value, __boltffi_point_ptr, sizeof(___Point));
 
     (void)env;
     ___Point __boltffi_result = boltffi_function_demo_echo_point(__boltffi_point_value);

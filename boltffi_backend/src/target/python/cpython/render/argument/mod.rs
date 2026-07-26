@@ -127,13 +127,17 @@ impl Conversion {
 
     pub fn call_args(&self) -> Result<Vec<c::Expression>> {
         match &self.kind {
-            Kind::Direct(direct) => Ok(std::iter::once(c::Expression::identifier(
-                self.name.clone(),
-            ))
-            .chain(direct.mutation.as_ref().map(|mutation| {
-                c::Expression::address_of(c::Expression::identifier(mutation.buffer().clone()))
-            }))
-            .collect()),
+            Kind::Direct(direct) => Ok(std::iter::once(direct.call_arg(self.name.clone()))
+                .chain(
+                    direct
+                        .mutation
+                        .as_ref()
+                        .and_then(MutationOutput::buffer)
+                        .cloned()
+                        .map(c::Expression::identifier)
+                        .map(c::Expression::address_of),
+                )
+                .collect()),
             Kind::Buffered(buffered) => buffered.call_args(),
             Kind::Closure(closure) => closure
                 .call_args()
@@ -281,6 +285,16 @@ impl Conversion {
         }
     }
 
+    pub fn has_mutation_buffer(&self) -> bool {
+        match &self.kind {
+            Kind::Direct(direct) => direct.mutation.as_ref(),
+            Kind::Buffered(buffered) => buffered.mutation.as_ref(),
+            Kind::Closure(_) => None,
+        }
+        .and_then(MutationOutput::buffer)
+        .is_some()
+    }
+
     pub fn has_mutation(&self) -> bool {
         self.mutation().is_some()
     }
@@ -291,7 +305,7 @@ impl Conversion {
             Kind::Direct(direct) => direct.mutation.as_ref(),
             Kind::Closure(_) => None,
         }
-        .map(MutationOutput::buffer)
+        .and_then(MutationOutput::buffer)
         .unwrap_or_else(|| unreachable!("parameter has no mutation output"))
     }
 
@@ -377,10 +391,11 @@ impl Conversion {
         }
     }
 
-    fn from_direct_slot(
+    fn from_direct_slot_with_passing(
         index: usize,
         name: Identifier,
         direct: direct::NativeSlot,
+        passing: DirectPassing,
     ) -> Result<Self> {
         Ok(Self {
             index,
@@ -389,6 +404,7 @@ impl Conversion {
                 c_type: direct.c_type().clone(),
                 parser: direct.parser().clone(),
                 mutation: None,
+                passing,
             }),
             primitive: direct.primitive(),
         })
@@ -411,6 +427,7 @@ impl Conversion {
                 c_type: carrier.c_type()?,
                 parser: carrier.parser()?,
                 mutation: None,
+                passing: DirectPassing::Value,
             }),
             primitive: Some(carrier),
         })
@@ -432,6 +449,7 @@ impl Conversion {
                 c_type: TypeFragment::anonymous(&Type::CallbackHandle(callback))?,
                 parser: symbols.parser(presence).clone(),
                 mutation: None,
+                passing: DirectPassing::Value,
             }),
             primitive: None,
         })
@@ -493,6 +511,7 @@ impl Conversion {
                 c_type: direct.c_type().clone(),
                 parser: direct.parser().clone(),
                 mutation,
+                passing: DirectPassing::Value,
             }),
             primitive: None,
         })
@@ -508,7 +527,7 @@ impl Conversion {
         let pointer = Identifier::parse(format!("{name}_ptr"))?;
         let length = Identifier::parse(format!("{name}_len"))?;
         let mutation = match receive {
-            Receive::ByMutRef => encoded.mutation_output(&name)?,
+            Receive::ByMutRef => encoded.mutation_output(&name, &pointer, &length)?,
             Receive::ByValue | Receive::ByRef => None,
             _ => {
                 return Err(Error::UnsupportedTarget {
@@ -545,11 +564,18 @@ struct ParameterConversion<'render> {
 impl<'render> ParameterConversion<'render> {
     fn direct_type(&self, ty: &DirectValueType, receive: Receive) -> Result<Conversion> {
         match receive {
-            Receive::ByValue | Receive::ByRef => Conversion::from_direct_slot(
-                self.index,
-                self.name.clone(),
-                direct::NativeSlot::from_direct_value(ty, self.bridge, self.context)?,
-            ),
+            Receive::ByValue | Receive::ByRef => {
+                let passing = match (ty, receive) {
+                    (DirectValueType::Record(_), Receive::ByRef) => DirectPassing::Address,
+                    _ => DirectPassing::Value,
+                };
+                Conversion::from_direct_slot_with_passing(
+                    self.index,
+                    self.name.clone(),
+                    direct::NativeSlot::from_direct_value(ty, self.bridge, self.context)?,
+                    passing,
+                )
+            }
             _ => Err(Error::UnsupportedTarget {
                 target: "python",
                 shape: "borrowed direct parameter",
@@ -650,11 +676,15 @@ impl<'plan, 'render> ParamPlanRender<'plan, Native, IntoRust> for ParameterConve
         )
     }
 
-    fn direct_vector(&mut self, element: &DirectVectorElementType) -> Self::Output {
+    fn direct_vector(
+        &mut self,
+        element: &DirectVectorElementType,
+        receive: Receive,
+    ) -> Self::Output {
         Conversion::encoded(
             self.index,
             self.name.clone(),
-            Receive::ByValue,
+            receive,
             BufferedArgument::DirectVector(direct_vector::Element::from_element(
                 element,
                 self.bridge,
@@ -674,6 +704,23 @@ struct Direct {
     c_type: c::TypeFragment,
     parser: Identifier,
     mutation: Option<MutationOutput>,
+    passing: DirectPassing,
+}
+
+#[derive(Clone, Copy)]
+enum DirectPassing {
+    Value,
+    Address,
+}
+
+impl Direct {
+    fn call_arg(&self, name: Identifier) -> c::Expression {
+        let value = c::Expression::identifier(name);
+        match self.passing {
+            DirectPassing::Value => value,
+            DirectPassing::Address => c::Expression::address_of(value),
+        }
+    }
 }
 
 enum EitherIter<Left, Right> {
@@ -722,7 +769,12 @@ impl BufferedParam {
     }
 
     fn c_arity(&self) -> usize {
-        2 + usize::from(self.mutation.is_some())
+        2 + usize::from(
+            self.mutation
+                .as_ref()
+                .and_then(MutationOutput::buffer)
+                .is_some(),
+        )
     }
 
     fn is_raw_wire(&self) -> bool {

@@ -74,12 +74,12 @@ export class WireReader {
     return value;
   }
 
-  readISize(): bigint {
-    return this.readI64();
+  readISize(): number {
+    return this.readI32();
   }
 
-  readUSize(): bigint {
-    return this.readU64();
+  readUSize(): number {
+    return this.readU32();
   }
 
   readF32(): number {
@@ -122,6 +122,13 @@ export class WireReader {
     return result;
   }
 
+  readBoolArray(): boolean[] {
+    const len = this.readU32();
+    const values = new Uint8Array(this.view.buffer, this.offset, len);
+    this.offset += len;
+    return Array.from(values, (value) => value !== 0);
+  }
+
   private readTypedArray<T extends ArrayBufferView>(
     typedArray: TypedArrayConstructor<T>,
     len: number
@@ -154,6 +161,14 @@ export class WireReader {
   readU32Array(): Uint32Array {
     const len = this.readU32();
     return this.readTypedArray(Uint32Array, len);
+  }
+
+  readISizeArray(): Int32Array {
+    return this.readI32Array();
+  }
+
+  readUSizeArray(): Uint32Array {
+    return this.readU32Array();
   }
 
   readI64Array(): BigInt64Array {
@@ -193,6 +208,17 @@ export class WireReader {
     return result;
   }
 
+  readMap<K, V>(readKey: () => K, readValue: () => V): Map<K, V> {
+    const len = this.readU32();
+    const result = new Map<K, V>();
+    let index = 0;
+    while (index < len) {
+      result.set(readKey(), readValue());
+      index += 1;
+    }
+    return result;
+  }
+
   readResult<T, E>(readOk: () => T, readErr: () => E): T {
     const tag = this.readU8();
     if (tag === 0) {
@@ -208,7 +234,7 @@ export class WireReader {
   }
 
   readTimestamp(): Date {
-    const secs = this.readU64();
+    const secs = this.readI64();
     const nanos = this.readU32();
     const ms = Number(secs) * 1000 + Math.floor(nanos / 1_000_000);
     return new Date(ms);
@@ -252,6 +278,40 @@ export function wireErr<E>(error: E): WireErr<E> {
   return { tag: "err", error };
 }
 
+export function matchWireResult<T, E, R>(
+  value: T | WireResult<T, E> | Error,
+  ok: (value: T) => R,
+  err: (error: E) => R
+): R {
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    "tag" in value &&
+    value.tag === "ok" &&
+    "value" in value
+  ) {
+    return ok(value.value as T);
+  }
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    "tag" in value &&
+    value.tag === "err" &&
+    "error" in value
+  ) {
+    return err(value.error as E);
+  }
+  if (value instanceof Error) {
+    return err(value as E);
+  }
+  if (typeof value === "object" && value !== null) {
+    throw new Error(
+      "Ambiguous Result object. Pass wireOk(value) or wireErr(error) for object payloads."
+    );
+  }
+  return ok(value as T);
+}
+
 export class WireWriter {
   private localBuffer: ArrayBuffer;
   private localView: DataView;
@@ -287,6 +347,21 @@ export class WireWriter {
     writer.wasmAllocator = allocator;
     writer.wasmPtr = pointer;
     writer.allocationSize = normalizedSize;
+    return writer;
+  }
+
+  static withWasmRegion(pointer: number, size: number, buffer: () => ArrayBuffer): WireWriter {
+    const writer = new WireWriter(1);
+    writer.wasmAllocator = {
+      alloc: () => pointer,
+      realloc: () => {
+        throw new Error("Fixed WASM region exceeded its capacity");
+      },
+      free: () => {},
+      buffer,
+    };
+    writer.wasmPtr = pointer;
+    writer.allocationSize = size;
     return writer;
   }
 
@@ -439,12 +514,12 @@ export class WireWriter {
     this.offset += 8;
   }
 
-  writeISize(value: bigint): void {
-    this.writeI64(value);
+  writeISize(value: number): void {
+    this.writeI32(value);
   }
 
-  writeUSize(value: bigint): void {
-    this.writeU64(value);
+  writeUSize(value: number): void {
+    this.writeU32(value);
   }
 
   writeF32(value: number): void {
@@ -483,52 +558,41 @@ export class WireWriter {
     }
   }
 
-  writeArray<T>(values: T[], writeElement: (v: T) => void): void {
+  writeArray<T>(values: ArrayLike<T> & Iterable<T>, writeElement: (v: T) => void): void {
     this.writeU32(values.length);
     for (const v of values) {
       writeElement(v);
     }
   }
 
-  writeResult<T, E>(
-    value: T | E | WireResult<T, E>,
+  writeMap<K, V>(
+    values: ReadonlyMap<K, V>,
+    writeKey: (key: K) => void,
+    writeValue: (value: V) => void
+  ): void {
+    this.writeU32(values.size);
+    values.forEach((value, key) => {
+      writeKey(key);
+      writeValue(value);
+    });
+  }
+
+  writeResult<T, E = never>(
+    value: T | WireResult<T, E> | Error,
     writeOk: (v: T) => void,
     writeErr: (e: E) => void
   ): void {
-    if (
-      typeof value === "object" &&
-      value !== null &&
-      "tag" in value &&
-      value.tag === "ok" &&
-      "value" in value
-    ) {
-      this.writeU8(0);
-      writeOk(value.value as T);
-      return;
-    }
-    if (
-      typeof value === "object" &&
-      value !== null &&
-      "tag" in value &&
-      value.tag === "err" &&
-      "error" in value
-    ) {
-      this.writeU8(1);
-      writeErr(value.error as E);
-      return;
-    }
-    if (value instanceof Error) {
-      this.writeU8(1);
-      writeErr(value as E);
-      return;
-    }
-    if (typeof value === "object" && value !== null) {
-      throw new Error(
-        "Ambiguous Result object. Pass wireOk(value) or wireErr(error) for object payloads."
-      );
-    }
-    this.writeU8(0);
-    writeOk(value as T);
+    matchWireResult(
+      value,
+      (ok) => {
+        this.writeU8(0);
+        writeOk(ok);
+      },
+      (err) => {
+        this.writeU8(1);
+        writeErr(err);
+      }
+    );
   }
 
   writeDuration(value: Duration): void {
@@ -538,9 +602,10 @@ export class WireWriter {
 
   writeTimestamp(value: Date): void {
     const ms = value.getTime();
-    const secs = BigInt(Math.floor(ms / 1000));
-    const nanos = (ms % 1000) * 1_000_000;
-    this.writeU64(secs);
+    const wholeSeconds = Math.floor(ms / 1000);
+    const secs = BigInt(wholeSeconds);
+    const nanos = (ms - wholeSeconds * 1000) * 1_000_000;
+    this.writeI64(secs);
     this.writeU32(nanos);
   }
 
@@ -551,10 +616,46 @@ export class WireWriter {
     this.writeU64(hi);
     this.writeU64(lo);
   }
+
+  writeUrl(value: string): void {
+    this.writeString(value);
+  }
 }
 
 export function wireStringSize(value: string): number {
   return 4 + UTF8_ENCODER.encode(value).length;
+}
+
+export function utf8ByteCount(value: string): number {
+  return UTF8_ENCODER.encode(value).length;
+}
+
+export function wireOptionalSize<T>(value: T | null, size: (value: T) => number): number {
+  return value === null ? 1 : 1 + size(value);
+}
+
+export function wireArraySize<T>(values: readonly T[], size: (value: T) => number): number {
+  return values.reduce((bytes, value) => bytes + size(value), 4);
+}
+
+export function wireMapSize<K, V>(
+  values: ReadonlyMap<K, V>,
+  keySize: (key: K) => number,
+  valueSize: (value: V) => number
+): number {
+  let bytes = 4;
+  values.forEach((value, key) => {
+    bytes += keySize(key) + valueSize(value);
+  });
+  return bytes;
+}
+
+export function wireResultSize<T, E = never>(
+  value: T | WireResult<T, E> | Error,
+  ok: (value: T) => number,
+  err: (error: E) => number
+): number {
+  return 1 + matchWireResult(value, ok, err);
 }
 
 export interface WireCodec<T> {

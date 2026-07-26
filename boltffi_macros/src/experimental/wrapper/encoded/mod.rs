@@ -22,6 +22,8 @@ impl RuntimeWireCodec {
         match codec {
             CodecNode::Primitive(_)
             | CodecNode::String
+            | CodecNode::Utf8String
+            | CodecNode::InternedString { .. }
             | CodecNode::Bytes
             | CodecNode::DirectRecord(_)
             | CodecNode::EncodedRecord(_)
@@ -70,5 +72,20 @@ impl RuntimeWireCodec {
             CodecNode::Tuple(_) => Err(Error::UnsupportedExpansion("encoded tuple arity")),
             _ => self.require_supported(codec),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::require_runtime_wire;
+    use boltffi_binding::CodecNode;
+
+    #[test]
+    fn runtime_wire_accepts_nested_interned_strings() {
+        let codec = CodecNode::Optional(Box::new(CodecNode::InternedString {
+            static_values: vec!["Chrome".to_owned()],
+        }));
+
+        assert!(require_runtime_wire(&codec).is_ok());
     }
 }

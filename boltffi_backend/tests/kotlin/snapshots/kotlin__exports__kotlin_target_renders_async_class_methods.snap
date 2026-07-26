@@ -33,6 +33,11 @@ class Engine internal constructor(internal val handle: Long) : AutoCloseable {
         }
     }
 
+    internal fun boltffiHandle(): Long {
+        check(!__boltffi_closed.get()) { "Engine is closed" }
+        return handle
+    }
+
     constructor() : this(new().handle)
 
     companion object {
@@ -44,7 +49,7 @@ class Engine internal constructor(internal val handle: Long) : AutoCloseable {
     suspend fun compute(value: UInt): UInt {
         return boltffiCallAsync(
             createFuture = {
-                Native.boltffi_method_class_demo_engine_compute(this.handle, value.toInt())
+                Native.boltffi_method_class_demo_engine_compute(this.boltffiHandle(), value.toInt())
             },
             poll = { future, contHandle -> Native.boltffi_async_method_class_demo_engine_compute_poll(future, contHandle) },
             complete = { future ->

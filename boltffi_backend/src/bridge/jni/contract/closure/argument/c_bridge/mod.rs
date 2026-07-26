@@ -54,9 +54,16 @@ impl ClosureArgument {
         group: &c::ParameterGroup,
     ) -> Result<Self> {
         match group {
-            c::ParameterGroup::Value(index) => Ok(Self {
-                kind: ClosureArgumentKind::Scalar(scalar::from_index(call, *index)?),
-            }),
+            c::ParameterGroup::Value(index) => {
+                let parameter = call.parameter(*index);
+                let kind = match parameter.ty() {
+                    c::Type::DirectRecord(_) => ClosureArgumentKind::Record(
+                        super::ClosureRecordArgument::from_parameter(parameter)?,
+                    ),
+                    _ => ClosureArgumentKind::Scalar(scalar::from_index(call, *index)?),
+                };
+                Ok(Self { kind })
+            }
             c::ParameterGroup::ByteSlice(bytes) => Ok(Self {
                 kind: ClosureArgumentKind::Bytes(bytes::from_group(call, bytes)?),
             }),

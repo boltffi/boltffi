@@ -1,6 +1,6 @@
 ---
 source: boltffi_backend/tests/kotlin/callback.rs
-expression: "rendered_fixture(\"callback/callback_handle_return\")"
+expression: rendered
 ---
 ===== com/boltffi/demo/Demo.kt =====
 @file:OptIn(kotlin.ExperimentalUnsignedTypes::class)
@@ -9,7 +9,7 @@ package com.boltffi.demo
 @Suppress("FunctionName")
 private object Native {
     @JvmStatic external fun boltffi_callback_handle_demo_listener_on_value(handle: Long, value: Int): Int
-    @JvmStatic external fun boltffi_callback_handle_demo_listener_on_name(handle: Long, name: ByteArray): Unit
+    @JvmStatic external fun boltffi_callback_handle_demo_listener_on_name(handle: Long, name: java.nio.ByteBuffer, __boltffi_name_len: Int): Unit
     @JvmStatic external fun boltffi_function_demo_make_listener(): Long
     @JvmStatic external fun boltffi_callback_handle_clone(handle: Long): Long
     @JvmStatic external fun boltffi_callback_handle_release(handle: Long): Unit
@@ -67,19 +67,20 @@ object ListenerCallbacks {
 }
 
 private class ListenerHandle(private val handle: Long) : Listener, AutoCloseable {
-    private var closed = false
+    private val __boltffi_closed = java.util.concurrent.atomic.AtomicBoolean(false)
 
     override fun close() {
-        if (!closed) {
+        if (__boltffi_closed.compareAndSet(false, true)) {
             Native.boltffi_callback_handle_release(handle)
-            closed = true
         }
     }
 
     private fun requireOpen(): Long {
-        check(!closed) { "callback handle is closed" }
+        check(!__boltffi_closed.get()) { "callback handle is closed" }
         return handle
     }
+
+    fun rawHandle(): Long = requireOpen()
 
     override fun onValue(value: UInt): UInt {
         return Native.boltffi_callback_handle_demo_listener_on_value(this.requireOpen(), value.toInt()).toUInt()
@@ -90,7 +91,7 @@ private class ListenerHandle(private val handle: Long) : Listener, AutoCloseable
         val __boltffi_name_writer = __boltffi_name_wire.writer
         __boltffi_name_writer.writeString(name)
         try {
-            Native.boltffi_callback_handle_demo_listener_on_name(this.requireOpen(), __boltffi_name_wire.bytes())
+            Native.boltffi_callback_handle_demo_listener_on_name(this.requireOpen(), __boltffi_name_wire.directBuffer(), __boltffi_name_wire.size())
         } finally {
             __boltffi_name_wire.close()
         }
@@ -99,6 +100,9 @@ private class ListenerHandle(private val handle: Long) : Listener, AutoCloseable
 
 object ListenerBridge {
     fun create(value: Listener): Long {
+        if (value is ListenerHandle) {
+            return value.rawHandle()
+        }
         return ListenerMap.insert(value)
     }
 }

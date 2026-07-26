@@ -7,7 +7,7 @@ expression: "rendered_fixture(\"callback/callback_encoded_return\")"
 
 package com.boltffi.demo
 
-interface Listener {
+fun interface Listener {
     fun name(): String
 }
 

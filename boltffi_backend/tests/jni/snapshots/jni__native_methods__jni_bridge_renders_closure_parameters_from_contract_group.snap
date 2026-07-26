@@ -48,21 +48,13 @@ static void boltffi_jni____closure__u32_to_u32_release(void *user_data) {
 }
 
 static bool boltffi_jni_load____closure__u32_to_u32(JNIEnv *env) {
-    jclass local_class = (*env)->FindClass(env, "com/boltffi/demo/ClosureU32ToU32Callbacks");
-    if (local_class == NULL) {
+    if (!boltffi_jni_lookup_global_class_with_diagnostic(env, "com/boltffi/demo/ClosureU32ToU32Callbacks", "com/boltffi/demo/ClosureU32ToU32Callbacks", &g____closure__u32_to_u32_class)) {
         return false;
     }
-    g____closure__u32_to_u32_class = (*env)->NewGlobalRef(env, local_class);
-    (*env)->DeleteLocalRef(env, local_class);
-    if (g____closure__u32_to_u32_class == NULL) {
-        return false;
-    }
-    g____closure__u32_to_u32_call_method = (*env)->GetStaticMethodID(env, g____closure__u32_to_u32_class, "call", "(JI)I");
-    if (g____closure__u32_to_u32_call_method == NULL) {
+    if (!boltffi_jni_lookup_static_method_with_diagnostic(env, g____closure__u32_to_u32_class, "com/boltffi/demo/ClosureU32ToU32Callbacks", "call", "call", "(JI)I", "(JI)I", &g____closure__u32_to_u32_call_method)) {
         goto fail;
     }
-    g____closure__u32_to_u32_free_method = (*env)->GetStaticMethodID(env, g____closure__u32_to_u32_class, "free", "(J)V");
-    if (g____closure__u32_to_u32_free_method == NULL) {
+    if (!boltffi_jni_lookup_static_method_with_diagnostic(env, g____closure__u32_to_u32_class, "com/boltffi/demo/ClosureU32ToU32Callbacks", "free", "free", "(J)V", "(J)V", &g____closure__u32_to_u32_free_method)) {
         goto fail;
     }
     return true;
@@ -84,16 +76,12 @@ static void boltffi_jni_unload____closure__u32_to_u32(JNIEnv *env) {
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
     (void)reserved;
     JNIEnv *env = NULL;
-    if ((*vm)->GetEnv(vm, (void **)&env, JNI_VERSION_1_6) != JNI_OK) {
+    jint env_result = (*vm)->GetEnv(vm, (void **)&env, JNI_VERSION_1_6);
+    if (env_result != JNI_OK) {
+        fprintf(stderr, "BoltFFI JNI_OnLoad failed: GetEnv(JNI_VERSION_1_6) returned %d\n", (int)env_result);
         return JNI_ERR;
     }
-    jclass local_class = (*env)->FindClass(env, "com/boltffi/demo/Native");
-    if (local_class == NULL) {
-        return JNI_ERR;
-    }
-    boltffi_jni_native_class = (*env)->NewGlobalRef(env, local_class);
-    (*env)->DeleteLocalRef(env, local_class);
-    if (boltffi_jni_native_class == NULL) {
+    if (!boltffi_jni_lookup_global_class_with_diagnostic(env, "com/boltffi/demo/Native", "com/boltffi/demo/Native", &boltffi_jni_native_class)) {
         return JNI_ERR;
     }
     if (!boltffi_jni_load____closure__u32_to_u32(env)) {

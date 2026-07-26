@@ -15,6 +15,7 @@ use crate::bridge::{c::Identifier, jni::RecordParameter};
 pub struct RecordParameterView {
     pub name: Identifier,
     pub c_type: Identifier,
+    pub pointer: Identifier,
     pub local: Identifier,
     pub writeback: Option<RecordWritebackView>,
 }
@@ -24,6 +25,7 @@ impl RecordParameterView {
         Self {
             name: parameter.name().clone(),
             c_type: parameter.c_type().clone(),
+            pointer: parameter.pointer().clone(),
             local: parameter.local().clone(),
             writeback: parameter.writeback().map(|writeback| RecordWritebackView {
                 c_type: parameter.c_type().clone(),

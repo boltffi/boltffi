@@ -3,7 +3,7 @@ use std::{fmt, path::PathBuf};
 use boltffi_binding::CanonicalName;
 
 use crate::{
-    core::{Error, Result, name_case},
+    core::{Error, Result, lexical::NameStem, name_case},
     target::swift::syntax::{Identifier, TypeName},
 };
 
@@ -146,6 +146,14 @@ impl Name {
 }
 
 impl GeneratedLocal {
+    pub fn stem(self) -> NameStem {
+        NameStem::new(self.role())
+    }
+
+    pub fn suffixed_stem(self, suffix: &str) -> NameStem {
+        self.stem().suffixed(suffix)
+    }
+
     pub fn identifier(self) -> Result<Identifier> {
         Identifier::parse(format!(
             "boltffi{}",

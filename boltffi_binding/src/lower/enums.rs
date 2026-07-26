@@ -1145,7 +1145,7 @@ mod tests {
                 receive: Receive::ByValue,
             } => {
                 assert_eq!(ty, &TypeRef::String);
-                assert_eq!(codec.root(), &CodecNode::String);
+                assert_eq!(codec.root(), &CodecNode::Utf8String);
                 assert_eq!(codec.value(), &ValueRef::named(binding_name("label")));
             }
             other => panic!("expected wasm32 slice param shape, got {other:?}"),
@@ -1169,7 +1169,7 @@ mod tests {
             method.callable().returns().plan(),
             &ReturnPlan::EncodedViaReturnSlot {
                 ty: TypeRef::String,
-                codec: ReadPlan::new(CodecNode::String),
+                codec: ReadPlan::new(CodecNode::Utf8String),
                 shape: wasm32::BufferShape::Packed,
             }
         );

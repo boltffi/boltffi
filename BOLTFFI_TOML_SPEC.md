@@ -138,11 +138,13 @@ Uuid = { type = "UUID", conversion = "uuid_string" }
 
 ### `[targets.apple.debug_symbols]` (optional)
 
-Companion archive output for Apple slice libraries collected by `boltffi pack apple`.
+Debug information for Apple slice libraries collected by `boltffi pack apple`.
 
-- `enabled` (bool): Emit a debug-symbol archive alongside Apple packaging output.
+- `enabled` (bool): Preserve and validate debug information in packaged Apple libraries.
   - Default: `false`
   - Validation: release-like packaging profiles must enable Cargo debuginfo or packaging fails
+- `standalone_archive` (bool): Emit a companion debug-symbol archive alongside Apple packaging output.
+  - Default: `true`
 - `output` (path, optional): Directory where the debug-symbol archive is written.
   - Default: `{targets.apple.output}/symbols`
 - `format` (`zip`): Archive format.
@@ -185,6 +187,12 @@ Companion archive output for Apple slice libraries collected by `boltffi pack ap
   - `bundled`: extract bundled desktop natives when present, otherwise fall back to `System.loadLibrary`
   - `system`: call `System.loadLibrary` on desktop JVMs
   - `none`: skip desktop JVM loading and assume the host process has already loaded the native library
+- `desktop_pack.enabled` (bool): Whether `boltffi pack android` also builds
+  Kotlin-compatible desktop JNI libraries for the generated Kotlin bindings.
+  - Default: `false`
+  - Requires `desktop_loader = "bundled"` to produce desktop native resources.
+  - Uses `[targets.java.jvm].host_targets` to select desktop host targets.
+  - Output: `{targets.android.output}/desktopJniLibs/<host-target>/`
 - `api_style` (`top_level` | `module_object`): How functions are exposed.
   - Default: `top_level`
 - `factory_style` (`constructors` | `companion_methods`): How factory constructors are exposed.
@@ -214,11 +222,13 @@ Uuid = { type = "java.util.UUID", conversion = "uuid_string" }
 
 ### `[targets.android.debug_symbols]` (optional)
 
-Companion archive output for Android JNI libraries collected by `boltffi pack android`.
+Debug information for Android JNI libraries collected by `boltffi pack android`.
 
-- `enabled` (bool): Emit a debug-symbol archive alongside Android packaging output.
+- `enabled` (bool): Preserve and validate debug information in packaged Android libraries.
   - Default: `false`
   - Validation: release-like packaging profiles must enable Cargo debuginfo or packaging fails
+- `standalone_archive` (bool): Emit a companion debug-symbol archive alongside Android packaging output.
+  - Default: `true`
 - `output` (path, optional): Directory where the debug-symbol archive is written.
   - Default: `{targets.android.output}/symbols`
 - `format` (`zip`): Archive format.
@@ -283,11 +293,13 @@ Desktop JVM target configuration.
 
 ### `[targets.java.jvm.debug_symbols]` (optional)
 
-Companion archive output for desktop JNI libraries collected by `boltffi pack java`.
+Debug information for desktop JNI libraries collected by `boltffi pack java`.
 
-- `enabled` (bool): Emit a debug-symbol archive alongside JVM packaging output.
+- `enabled` (bool): Preserve and validate debug information in packaged JVM libraries.
   - Default: `false`
   - Validation: release-like packaging profiles must enable Cargo debuginfo or packaging fails
+- `standalone_archive` (bool): Emit a companion debug-symbol archive alongside JVM packaging output.
+  - Default: `true`
 - `output` (path, optional): Directory where the debug-symbol archive is written.
   - Default: `{targets.java.jvm.output}/symbols`
 - `format` (`zip`): Archive format.

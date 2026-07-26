@@ -5,7 +5,7 @@ impl<'c> Lowerer<'c> {
         match type_expr {
             TypeExpr::Void => CodecPlan::Void,
             TypeExpr::Primitive(primitive) => CodecPlan::Primitive(*primitive),
-            TypeExpr::String => CodecPlan::String,
+            TypeExpr::String | TypeExpr::Str => CodecPlan::String,
             TypeExpr::Builtin(id) => CodecPlan::Builtin(id.clone()),
             TypeExpr::Option(inner) => CodecPlan::Option(Box::new(self.build_codec(inner))),
             TypeExpr::Vec(inner) => CodecPlan::Vec {

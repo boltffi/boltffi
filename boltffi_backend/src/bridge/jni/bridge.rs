@@ -18,7 +18,7 @@ use boltffi_binding::Native;
 
 use crate::{
     bridge::{
-        c::{CBridgeContract, Syntax},
+        c::CBridgeContract,
         jni::{JniBridgeContract, JvmClassPath, template},
     },
     core::{Emitted, FileLayout, FilePath, GeneratedOutput, Result, bridge, contract::sealed},
@@ -70,7 +70,6 @@ impl bridge::BridgeBackend for JniBridge {
     type Surface = Native;
     type Input = CBridgeContract;
     type Contract = JniBridgeContract;
-    type Syntax = Syntax;
 
     fn build_contract(&self, input: &Self::Input) -> Result<Self::Contract> {
         JniBridgeContract::from_c_bridge(self.class.clone(), self.path.clone(), input)

@@ -17,6 +17,7 @@ use crate::{
         c::{Identifier, Literal},
         jni::{
             CallbackHandleLifecycle, JniBridgeContract,
+            name::{LookupText, ModifiedUtf8},
             template::{
                 callback::{CallbackCompletionInvokerView, CallbackRegistrationView},
                 closure::{CallbackClosureHandleView, ClosureRegistrationView},
@@ -33,14 +34,16 @@ use crate::{
 #[template(path = "bridge/jni/source.c", escape = "none")]
 struct SourceFileTemplate {
     c_header: Literal,
-    class_name: Literal,
+    class_name: LookupText,
     error_buffer_exception_class: Literal,
     free_buffer: Identifier,
+    buffer_with_len: Identifier,
     uses_limits: bool,
     checks_status: bool,
     checks_error_buffer: bool,
     uses_byte_arrays: bool,
     uses_record_arrays: bool,
+    uses_direct_buffers: bool,
     uses_exceptions: bool,
     uses_lifecycle: bool,
     uses_continuations: bool,
@@ -127,19 +130,22 @@ impl SourceFile {
         };
         let rendered = SourceFileTemplate {
             c_header: Literal::string(contract.c_header().as_str()),
-            class_name: Literal::string(&contract.class().as_jni_class_name()),
-            error_buffer_exception_class: Literal::string(
+            class_name: LookupText::new(&contract.class().as_jni_class_name()),
+            error_buffer_exception_class: ModifiedUtf8::new(
                 &contract
                     .class()
                     .sibling_class("BoltFfiErrorBufferException")?
                     .as_jni_class_name(),
-            ),
+            )
+            .literal(),
             free_buffer: contract.free_buffer().clone(),
+            buffer_with_len: contract.buffer_with_len().clone(),
             uses_limits: features.uses_limits,
             checks_status: features.checks_status,
             checks_error_buffer: features.checks_error_buffer,
             uses_byte_arrays: features.uses_byte_arrays,
             uses_record_arrays: features.uses_record_arrays,
+            uses_direct_buffers: features.uses_direct_buffers,
             uses_exceptions: features.uses_exceptions,
             uses_lifecycle: features.uses_lifecycle,
             uses_continuations: features.uses_continuations,

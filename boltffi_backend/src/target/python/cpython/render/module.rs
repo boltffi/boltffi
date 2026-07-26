@@ -67,9 +67,15 @@ impl<'render, 'bindings> NativeModule<'render, 'bindings> {
 
     pub fn render(self) -> Result<GeneratedOutput> {
         let bridge = self.bridge;
+        let declaration_refs = self
+            .declarations
+            .iter()
+            .map(RenderedDeclaration::declaration)
+            .collect::<Vec<_>>();
         let declarations =
             ModuleDeclarations::collect(self.bridge, self.context, &self.declarations)?;
-        let codec_adapters = CodecAdapters::from_bindings(self.context.bindings());
+        let codec_adapters =
+            CodecAdapters::from_declarations(self.context.bindings(), &declaration_refs);
         let codec_decoders = codec_adapters
             .decoders()
             .iter()

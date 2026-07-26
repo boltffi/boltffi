@@ -79,9 +79,9 @@ impl NativeParameter {
                 ClosureParameter::from_c_group(closure, closures)
                     .map(|closure| Some(Self::new(NativeParameterKind::Closure(closure))))
             }
-            c::ParameterGroup::ClosureReturn(_) => Err(Error::BrokenBridgeContract {
+            c::ParameterGroup::ClosureReturn(_) => Err(Error::UnsupportedBridge {
                 bridge: JNI_BRIDGE,
-                invariant: "closure return out-pointer cannot appear on a JNI native method",
+                shape: "closure return out-pointer on a native method",
             }),
         }
     }
@@ -95,5 +95,59 @@ impl NativeParameter {
                     .map(|scalar| Self::new(NativeParameterKind::Scalar(scalar))),
             },
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::bridge::c::{Function, Identifier, Parameter, Type};
+
+    use super::*;
+
+    fn point_type() -> Type {
+        Type::DirectRecord(Identifier::parse("___Point").expect("record identifier"))
+    }
+
+    fn native_parameters_for(point: Type) -> Vec<NativeParameter> {
+        let function = Function::new(
+            "boltffi_function_demo_distance",
+            vec![Parameter::new("point", point).expect("parameter")],
+            Type::Float64,
+        )
+        .expect("function");
+        NativeParameter::from_c_function(&function, &[], &[]).expect("jni parameters")
+    }
+
+    #[test]
+    fn borrowed_direct_record_parameter_remains_record_shaped_for_jni() {
+        let params = native_parameters_for(Type::ConstPointer(Box::new(point_type())));
+
+        assert_eq!(params.len(), 1);
+        assert!(
+            params[0].record().is_some(),
+            "borrowed direct records must stay record-shaped instead of falling through to jlong"
+        );
+    }
+
+    #[test]
+    fn borrowed_direct_record_jni_call_argument_addresses_local_copy() {
+        let params = native_parameters_for(Type::ConstPointer(Box::new(point_type())));
+        let arguments = params[0]
+            .c_arguments()
+            .expect("record parameter call arguments");
+
+        assert_eq!(arguments.len(), 1);
+        assert_eq!(arguments[0].to_string(), "&__boltffi_point_value");
+    }
+
+    #[test]
+    fn by_value_direct_record_jni_call_argument_stays_local_value() {
+        let params = native_parameters_for(point_type());
+        let arguments = params[0]
+            .c_arguments()
+            .expect("record parameter call arguments");
+
+        assert_eq!(arguments.len(), 1);
+        assert_eq!(arguments[0].to_string(), "__boltffi_point_value");
     }
 }

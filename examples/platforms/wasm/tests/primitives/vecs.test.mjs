@@ -64,6 +64,17 @@ export async function run() {
   assertArrayEqual(vvb[1], []);
   assertArrayEqual(vvb[2], [false]);
 
+  globalThis.demoCase("case:primitives.vecs.nested_isize.should_roundtrip_values");
+  assert.deepEqual(
+    demo.echoVecVecIsize([[1, -2], [], [3]]).map((values) => Array.from(values)),
+    [[1, -2], [], [3]],
+  );
+  globalThis.demoCase("case:primitives.vecs.nested_usize.should_roundtrip_values");
+  assert.deepEqual(
+    demo.echoVecVecUsize([[1, 2], [], [3]]).map((values) => Array.from(values)),
+    [[1, 2], [], [3]],
+  );
+
   globalThis.demoCase("case:primitives.vecs.nested_string.should_roundtrip_utf8_values");
   assert.deepEqual(
     demo.echoVecVecString([["hello", "world"], [], ["café", "🌍"]]),

@@ -1,5 +1,7 @@
-use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+
+use boltffi_backend::target::jvm::NativeLibraries;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Platform {
@@ -80,11 +82,9 @@ impl NativeHostPlatform {
     }
 
     pub fn jni_library_filename(self, artifact_name: &str) -> String {
-        match self {
-            Self::DarwinArm64 | Self::DarwinX86_64 => format!("lib{artifact_name}_jni.dylib"),
-            Self::LinuxX86_64 | Self::LinuxAarch64 => format!("lib{artifact_name}_jni.so"),
-            Self::WindowsX86_64 => format!("{artifact_name}_jni.dll"),
-        }
+        let libraries = NativeLibraries::from_artifact(artifact_name)
+            .expect("Cargo artifact should form portable JVM library names");
+        self.shared_library_filename(libraries.desktop_jni().as_str())
     }
 
     pub fn jni_platform(self) -> &'static str {
@@ -525,6 +525,17 @@ impl RustTarget {
 }
 
 impl Platform {
+    pub const fn canonical_name(self) -> &'static str {
+        match self {
+            Self::Ios => "ios",
+            Self::IosSimulator => "ios-simulator",
+            Self::MacOs => "macos",
+            Self::Android => "android",
+            Self::Wasm => "wasm",
+            Self::Linux => "linux",
+        }
+    }
+
     pub const fn architectures(self) -> &'static [Architecture] {
         match self {
             Platform::Ios => Architecture::IOS,

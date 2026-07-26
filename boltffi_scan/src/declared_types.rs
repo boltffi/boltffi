@@ -16,6 +16,7 @@ pub(super) enum DeclaredType {
     Trait(TraitId),
     Class(ClassId),
     Custom(CustomTypeId),
+    InternedStringPool(String),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -31,6 +32,7 @@ pub(super) struct DeclaredTypes {
     by_path: HashMap<String, DeclaredType>,
     custom_by_remote_exact: HashMap<String, CustomTypeId>,
     custom_by_remote_shape: HashMap<String, CustomRemoteShapeMatch>,
+    interned_string_pools: HashMap<String, Vec<String>>,
     source_types: TypeNamespace,
 }
 
@@ -85,6 +87,16 @@ impl DeclaredTypes {
             }
             declared_types.register_custom_type(marked.scope(), id, spec.remote_type())
         })?;
+        marked
+            .interned_string_pools()
+            .iter()
+            .try_for_each(|marked| {
+                let spec = items::interned_string_pool::Spec::parse(marked)?;
+                declared_types.register_interned_string_pool(
+                    marked.module().qualified(&spec.name().to_string()),
+                    spec.values().to_vec(),
+                )
+            })?;
         Ok(declared_types)
     }
 
@@ -112,8 +124,32 @@ impl DeclaredTypes {
             .expect("test declaration registration must not conflict");
     }
 
+    #[cfg(test)]
+    pub(super) fn register_test_interned_string_pool(
+        &mut self,
+        path: impl Into<String>,
+        values: Vec<String>,
+    ) {
+        self.register_interned_string_pool(path.into(), values)
+            .expect("test pool registration must not conflict");
+    }
+
     pub(super) fn resolve(&self, path: &str) -> Option<&DeclaredType> {
         self.by_path.get(path)
+    }
+
+    pub(super) fn resolve_interned_string_pool_entry(
+        &self,
+        scope: &ModuleScope,
+        path: &syn::Path,
+    ) -> Result<Option<(&str, &[String])>, ScanError> {
+        let Some(path) = self.resolve_source_path(scope, path, || spelling::path(path))? else {
+            return Ok(None);
+        };
+        Ok(self
+            .interned_string_pools
+            .get_key_value(&path)
+            .map(|(path, values)| (path.as_str(), values.as_slice())))
     }
 
     pub(super) fn paths(&self) -> impl Iterator<Item = &str> {
@@ -352,6 +388,16 @@ impl DeclaredTypes {
         }
     }
 
+    fn register_interned_string_pool(
+        &mut self,
+        path: String,
+        values: Vec<String>,
+    ) -> Result<(), ScanError> {
+        self.register(DeclaredType::InternedStringPool(path.clone()))?;
+        self.interned_string_pools.insert(path, values);
+        Ok(())
+    }
+
     fn register(&mut self, declared_type: DeclaredType) -> Result<(), ScanError> {
         let path = declared_type.path().to_owned();
         match self.by_path.get(&path) {
@@ -385,6 +431,7 @@ impl DeclaredType {
             Self::Trait(id) => id.as_str(),
             Self::Class(id) => id.as_str(),
             Self::Custom(id) => id.as_str(),
+            Self::InternedStringPool(path) => path,
         }
     }
 
@@ -395,6 +442,7 @@ impl DeclaredType {
             Self::Trait(_) => DeclaredKind::Trait,
             Self::Class(_) => DeclaredKind::Class,
             Self::Custom(_) => DeclaredKind::Custom,
+            Self::InternedStringPool(_) => DeclaredKind::InternedStringPool,
         }
     }
 }
@@ -412,6 +460,7 @@ enum DeclaredKind {
     Trait,
     Class,
     Custom,
+    InternedStringPool,
 }
 
 impl DeclaredKind {
@@ -422,6 +471,7 @@ impl DeclaredKind {
             Self::Trait => "trait",
             Self::Class => "class",
             Self::Custom => "custom type",
+            Self::InternedStringPool => "interned string pool",
         }
     }
 

@@ -11,7 +11,7 @@ private object Native {
     @JvmStatic external fun boltffi_success_i32(returnOut: Long, value: Int): Unit
 }
 
-interface StatusMapper {
+fun interface StatusMapper {
     fun mapStatus(status: Int): Int
 }
 

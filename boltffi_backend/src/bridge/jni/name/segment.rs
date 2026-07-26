@@ -1,13 +1,12 @@
-//! Validated JVM name segments.
+//! Validated JVM binary-name segments.
 //!
 //! Package segments, class names, generated callback classes, and generated
-//! closure classes all have to be valid JVM identifiers before they can become
-//! file paths, class lookups, or JNI symbols. Treating them as raw strings would
-//! move that validation to every caller.
+//! closure classes share the JVM's unqualified binary-name constraints. They
+//! may contain characters rejected by Java source identifiers, but cannot
+//! contain `.`, `;`, `[`, or `/`.
 //!
-//! This module owns the segment validation rule and the derived generated names
-//! used by callbacks and closures. Higher layers compose segments; they do not
-//! sanitize names themselves.
+//! This module owns that validation and the generated callback and closure
+//! names.
 
 use boltffi_binding::{CanonicalName, ClosureSignature};
 
@@ -50,7 +49,11 @@ impl JvmNameSegment {
     }
 
     pub(in crate::bridge::jni::name) fn jni_escape(&self) -> String {
-        JniSymbolName::escape_part(&self.name)
+        JniSymbolName::escape_validated_part(&self.name)
+    }
+
+    pub(in crate::bridge::jni::name) fn validate_jni_escape(&self) -> Result<()> {
+        JniSymbolName::escape_part(&self.name).map(drop)
     }
 
     fn canonical_class(name: &CanonicalName) -> String {
@@ -66,11 +69,31 @@ impl JvmNameSegment {
     }
 
     fn valid(name: &str) -> bool {
-        let mut characters = name.chars();
-        characters.next().is_some_and(|character| {
-            character == '_' || character == '$' || character.is_ascii_alphabetic()
-        }) && characters.all(|character| {
-            character == '_' || character == '$' || character.is_ascii_alphanumeric()
-        })
+        !name.is_empty()
+            && !name
+                .chars()
+                .any(|character| matches!(character, '.' | ';' | '[' | '/'))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::JvmNameSegment;
+
+    #[test]
+    fn accepts_jvm_binary_name_segments() {
+        assert!(JvmNameSegment::package("δοκιμή").is_ok());
+        assert!(JvmNameSegment::package("東京").is_ok());
+        assert!(JvmNameSegment::class("Модуль$Native").is_ok());
+        assert!(JvmNameSegment::class("9-€-😀").is_ok());
+    }
+
+    #[test]
+    fn rejects_jvm_binary_name_separators() {
+        assert!(JvmNameSegment::package("").is_err());
+        assert!(JvmNameSegment::package("nested.package").is_err());
+        assert!(JvmNameSegment::class("Native/Class").is_err());
+        assert!(JvmNameSegment::class("Native;Class").is_err());
+        assert!(JvmNameSegment::class("Native[Class").is_err());
     }
 }

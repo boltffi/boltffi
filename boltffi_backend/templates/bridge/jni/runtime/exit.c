@@ -1,4 +1,4 @@
-static void boltffi_jni_exit(JNIEnv *env, int attached) {
+static inline void boltffi_jni_exit(JNIEnv *env, int attached) {
 #if defined(__ANDROID__)
     if (env != NULL) {
         (*env)->PopLocalFrame(env, NULL);

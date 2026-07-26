@@ -1,0 +1,16 @@
+---
+source: boltffi_backend/tests/kotlin/direct_vector.rs
+expression: "rendered_fixture(\"direct_vector/mutable_primitive_slice_parameter\")"
+---
+===== com/boltffi/demo/Demo.kt =====
+@file:OptIn(kotlin.ExperimentalUnsignedTypes::class)
+
+package com.boltffi.demo
+@Suppress("FunctionName")
+private object Native {
+    @JvmStatic external fun boltffi_function_demo_increment(values: LongArray): Unit
+}
+
+fun increment(values: ULongArray) {
+    Native.boltffi_function_demo_increment(values.asLongArray())
+}

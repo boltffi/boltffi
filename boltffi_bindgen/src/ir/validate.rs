@@ -309,7 +309,7 @@ fn validate_field_type(
 
 fn validate_type_expr(expr: &TypeExpr, catalog: &TypeCatalog) -> Result<(), String> {
     match expr {
-        TypeExpr::Void | TypeExpr::Primitive(_) | TypeExpr::String => Ok(()),
+        TypeExpr::Void | TypeExpr::Primitive(_) | TypeExpr::String | TypeExpr::Str => Ok(()),
         TypeExpr::Record(id) => catalog
             .resolve_record(id)
             .map(|_| ())
@@ -408,6 +408,7 @@ fn is_wire_encodable(ty: &TypeExpr) -> bool {
         TypeExpr::Void
         | TypeExpr::Primitive(_)
         | TypeExpr::String
+        | TypeExpr::Str
         | TypeExpr::Record(_)
         | TypeExpr::Enum(_)
         | TypeExpr::Custom(_)

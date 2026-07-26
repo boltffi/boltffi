@@ -19,14 +19,13 @@ use crate::ir::ops::SizeExpr;
 use crate::ir::plan::{AbiType, Mutability, SpanContent};
 use crate::ir::types::{PrimitiveType, TypeExpr};
 use crate::ir::{ParamRole, ReturnShape, Transport};
-use crate::render::java::NamingConvention as JavaNamingConvention;
 use crate::render::kotlin::{NamingConvention as KotlinNamingConvention, primitives};
 
 use super::plan::{
     JniArrayReleaseMode, JniAsyncCallbackInvoker, JniAsyncCallbackMethod, JniAsyncCompleteKind,
     JniAsyncFunction, JniBufferLength, JniCallbackCParam, JniCallbackMethod,
-    JniCallbackProxyAsyncMethod, JniCallbackProxySyncMethod, JniCallbackReturn, JniCallbackTrait,
-    JniClass, JniClosureTrampoline, JniClosureTrampolineReturn, JniFunction, JniFunctionReturn,
+    JniCallbackProxySyncMethod, JniCallbackReturn, JniCallbackTrait, JniClass,
+    JniClosureTrampoline, JniClosureTrampolineReturn, JniFunction, JniFunctionReturn,
     JniInvokerResult, JniModule, JniOptionInnerKind, JniOptionView, JniParam, JniParamKind,
     JniPrimitiveArrayElementsKind, JniResultVariant, JniResultView, JniStream, JniWireCtor,
     JniWireFunction, JniWireMethod, TrampolineReturnStrategy,
@@ -67,13 +66,6 @@ pub enum JniStringEncoding {
     ByteArray,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum JvmBindingStyle {
-    Java,
-    #[default]
-    Kotlin,
-}
-
 // Tuned in PR #165 from 128 down to 8. Keep this small unless fresh
 // benchmarks show a larger stack copy beats the extra stack traffic.
 const UTF8_STACK_COPY_MAX_LEN: usize = 8;
@@ -83,8 +75,8 @@ pub struct JniLowerer<'a> {
     abi: &'a AbiContract,
     package: String,
     class_name: String,
+    header_include: Option<String>,
     string_encoding: JniStringEncoding,
-    jvm_binding_style: JvmBindingStyle,
 }
 
 impl<'a> JniLowerer<'a> {
@@ -99,8 +91,8 @@ impl<'a> JniLowerer<'a> {
             abi,
             package,
             class_name,
+            header_include: None,
             string_encoding: JniStringEncoding::default(),
-            jvm_binding_style: JvmBindingStyle::default(),
         }
     }
 
@@ -109,8 +101,8 @@ impl<'a> JniLowerer<'a> {
         self
     }
 
-    pub fn with_jvm_binding_style(mut self, binding_style: JvmBindingStyle) -> Self {
-        self.jvm_binding_style = binding_style;
+    pub fn with_header_include(mut self, header_include: impl Into<String>) -> Self {
+        self.header_include = Some(header_include.into());
         self
     }
 
@@ -119,6 +111,10 @@ impl<'a> JniLowerer<'a> {
         let jni_prefix = self.jni_prefix();
         let package_path = self.package.replace('.', "/");
         let module_name = self.contract.package.name.clone();
+        let header_include = self
+            .header_include
+            .clone()
+            .unwrap_or_else(|| format!("{module_name}.h"));
         let used_callbacks = self.collect_used_callbacks();
 
         let functions = self
@@ -193,6 +189,7 @@ impl<'a> JniLowerer<'a> {
             jni_prefix,
             package_path,
             module_name,
+            header_include,
             class_name: self.class_name.clone(),
             has_async,
             has_async_runtime,
@@ -215,24 +212,11 @@ impl<'a> JniLowerer<'a> {
     }
 
     fn jvm_class_name(&self, name: &str) -> String {
-        match self.jvm_binding_style {
-            JvmBindingStyle::Java => JavaNamingConvention::class_name(name),
-            JvmBindingStyle::Kotlin => KotlinNamingConvention::class_name(name),
-        }
+        KotlinNamingConvention::class_name(name)
     }
 
     fn jvm_callback_interface_name(&self, callback: &CallbackTraitDef) -> String {
-        match (self.jvm_binding_style, &callback.kind) {
-            (JvmBindingStyle::Java, CallbackKind::Closure) => {
-                let signature_id = callback
-                    .id
-                    .as_str()
-                    .strip_prefix("__Closure_")
-                    .unwrap_or(callback.id.as_str());
-                format!("Closure{}", signature_id)
-            }
-            _ => self.jvm_class_name(callback.id.as_str()),
-        }
+        self.jvm_class_name(callback.id.as_str())
     }
 
     fn jvm_callback_bridge_name(&self, callback: &CallbackTraitDef) -> String {
@@ -955,7 +939,7 @@ impl<'a> JniLowerer<'a> {
 
         match ty {
             TypeExpr::Primitive(p) => self.primitive_jni_type(*p).to_string(),
-            TypeExpr::String => "jstring".to_string(),
+            TypeExpr::String | TypeExpr::Str => "jstring".to_string(),
             TypeExpr::Handle(_) | TypeExpr::Callback(_) => "jlong".to_string(),
             TypeExpr::Enum(_) => "jint".to_string(),
             _ => "jlong".to_string(),
@@ -1151,7 +1135,7 @@ impl<'a> JniLowerer<'a> {
         record_info: Option<RecordParamInfo>,
         data_enum_info: Option<DataEnumParamInfo>,
     ) -> String {
-        if matches!(ty, TypeExpr::String) {
+        if matches!(ty, TypeExpr::String | TypeExpr::Str) {
             return format!(
                 "(const uint8_t*)_{}_c, (_{}_c != NULL) ? strlen(_{}_c) : 0",
                 name, name, name
@@ -1244,12 +1228,14 @@ impl<'a> JniLowerer<'a> {
                 jni_return: self.primitive_return_jni_type(*p),
                 is_void: false,
             },
-            TypeExpr::String | TypeExpr::Vec(_) | TypeExpr::Option(_) | TypeExpr::Result { .. } => {
-                JniFunctionReturn {
-                    jni_return: "jobject".to_string(),
-                    is_void: false,
-                }
-            }
+            TypeExpr::String
+            | TypeExpr::Str
+            | TypeExpr::Vec(_)
+            | TypeExpr::Option(_)
+            | TypeExpr::Result { .. } => JniFunctionReturn {
+                jni_return: "jobject".to_string(),
+                is_void: false,
+            },
             TypeExpr::Enum(id) => self
                 .contract
                 .catalog
@@ -1291,7 +1277,7 @@ impl<'a> JniLowerer<'a> {
         ret_shape: &ReturnShape,
     ) -> JniReturnMeta {
         if self.supports_direct_utf8_string_return()
-            && matches!(returns, ReturnDef::Value(TypeExpr::String))
+            && matches!(returns, ReturnDef::Value(TypeExpr::String | TypeExpr::Str))
             && Self::is_utf8_string_return(ret_shape)
         {
             return Self::utf8_string_return_meta();
@@ -1366,6 +1352,7 @@ impl<'a> JniLowerer<'a> {
                     }
                 }
                 TypeExpr::String
+                | TypeExpr::Str
                 | TypeExpr::Record(_)
                 | TypeExpr::Enum(_)
                 | TypeExpr::Vec(_)
@@ -1416,7 +1403,7 @@ impl<'a> JniLowerer<'a> {
     }
 
     fn supports_direct_utf8_string_return(&self) -> bool {
-        matches!(self.jvm_binding_style, JvmBindingStyle::Kotlin)
+        true
     }
 
     fn utf8_string_return_meta() -> JniReturnMeta {
@@ -1463,7 +1450,7 @@ impl<'a> JniLowerer<'a> {
         ret_shape: &ReturnShape,
     ) -> JniAsyncCompleteKind {
         if self.supports_direct_utf8_string_return()
-            && matches!(returns, ReturnDef::Value(TypeExpr::String))
+            && matches!(returns, ReturnDef::Value(TypeExpr::String | TypeExpr::Str))
             && Self::is_utf8_string_return(ret_shape)
         {
             return JniAsyncCompleteKind::WireEncoded;
@@ -1527,7 +1514,7 @@ impl<'a> JniLowerer<'a> {
                 c_type: self.primitive_c_type(*p),
                 jni_type: self.primitive_return_jni_type(*p),
             },
-            TypeExpr::String => JniResultVariant::String,
+            TypeExpr::String | TypeExpr::Str => JniResultVariant::String,
             TypeExpr::Record(id) => JniResultVariant::Record {
                 c_type: self.jvm_class_name(id.as_str()),
                 jni_type: "jobject".to_string(),
@@ -1608,14 +1595,14 @@ impl<'a> JniLowerer<'a> {
                     JniOptionInnerKind::Primitive32
                 }
             }
-            TypeExpr::String => JniOptionInnerKind::String,
+            TypeExpr::String | TypeExpr::Str => JniOptionInnerKind::String,
             TypeExpr::Record(_) => JniOptionInnerKind::Record,
             TypeExpr::Enum(_) if is_data_enum => JniOptionInnerKind::Enum,
             TypeExpr::Enum(_) => JniOptionInnerKind::Enum,
             TypeExpr::Vec(vec_inner) => match vec_inner.as_ref() {
                 TypeExpr::Primitive(_) => JniOptionInnerKind::VecPrimitive,
                 TypeExpr::Record(_) => JniOptionInnerKind::VecRecord,
-                TypeExpr::String => JniOptionInnerKind::VecString,
+                TypeExpr::String | TypeExpr::Str => JniOptionInnerKind::VecString,
                 TypeExpr::Enum(_) => JniOptionInnerKind::VecEnum,
                 _ => JniOptionInnerKind::VecPrimitive,
             },
@@ -1709,8 +1696,6 @@ impl<'a> JniLowerer<'a> {
     ) -> JniCallbackTrait {
         let trait_name = self.jvm_callback_interface_name(callback);
         let callbacks_class = self.jvm_callback_bridge_name(callback);
-        let supports_callback_proxy_sync_wrap = self.supports_callback_proxy_sync_wrap();
-        let supports_callback_proxy_async_wrap = self.supports_callback_proxy_async_wrap();
         let abi_methods: HashMap<_, _> = abi_callback
             .methods
             .iter()
@@ -1728,23 +1713,18 @@ impl<'a> JniLowerer<'a> {
             })
             .collect();
 
-        let proxy_sync_methods =
-            if supports_callback_proxy_sync_wrap {
-                callback
-                    .methods
-                    .iter()
-                    .filter(|method| !method.is_async())
-                    .filter(|method| self.callback_method_supported(callback, method))
-                    .filter_map(|method| {
-                        let abi_method = abi_methods.get(&method.id)?;
-                        Some(self.lower_callback_proxy_sync_method(
-                            callback, method, abi_method, jni_prefix,
-                        ))
-                    })
-                    .collect()
-            } else {
-                Vec::new()
-            };
+        let proxy_sync_methods = callback
+            .methods
+            .iter()
+            .filter(|method| !method.is_async())
+            .filter(|method| self.callback_method_supported(callback, method))
+            .filter_map(|method| {
+                let abi_method = abi_methods.get(&method.id)?;
+                Some(
+                    self.lower_callback_proxy_sync_method(callback, method, abi_method, jni_prefix),
+                )
+            })
+            .collect();
 
         let async_methods = callback
             .methods
@@ -1756,23 +1736,6 @@ impl<'a> JniLowerer<'a> {
                 Some(self.lower_async_callback_method(method, abi_method, jni_prefix))
             })
             .collect();
-
-        let proxy_async_methods = if supports_callback_proxy_async_wrap {
-            callback
-                .methods
-                .iter()
-                .filter(|method| method.is_async())
-                .filter(|method| self.callback_method_supported(callback, method))
-                .filter_map(|method| {
-                    let abi_method = abi_methods.get(&method.id)?;
-                    Some(self.lower_callback_proxy_async_method(
-                        callback, method, abi_method, jni_prefix,
-                    ))
-                })
-                .collect()
-        } else {
-            Vec::new()
-        };
 
         let trait_name_for_native = self.jvm_callback_interface_name(callback);
         let proxy_clone_name = format!("boltffiCallback{}Clone", trait_name_for_native);
@@ -1799,19 +1762,7 @@ impl<'a> JniLowerer<'a> {
             sync_methods,
             async_methods,
             proxy_sync_methods,
-            proxy_async_methods,
         }
-    }
-
-    fn supports_callback_proxy_sync_wrap(&self) -> bool {
-        matches!(
-            self.jvm_binding_style,
-            JvmBindingStyle::Java | JvmBindingStyle::Kotlin
-        )
-    }
-
-    fn supports_callback_proxy_async_wrap(&self) -> bool {
-        matches!(self.jvm_binding_style, JvmBindingStyle::Java)
     }
 
     fn lower_callback_proxy_sync_method(
@@ -1830,8 +1781,8 @@ impl<'a> JniLowerer<'a> {
             .collect::<Vec<_>>();
         let native_name = format!(
             "boltffiCallback{}{}",
-            JavaNamingConvention::class_name(callback.id.as_str()),
-            JavaNamingConvention::class_name(method.id.as_str())
+            naming::to_upper_camel_case(callback.id.as_str()),
+            naming::to_upper_camel_case(method.id.as_str())
         );
         let return_meta = self.return_meta_for_shape(&method.returns, Some(&abi_method.returns));
 
@@ -1851,59 +1802,6 @@ impl<'a> JniLowerer<'a> {
             jni_return_type: return_meta.jni_return_type,
             jni_c_return_type: return_meta.jni_c_return_type,
             jni_return_expr: return_meta.jni_return_expr,
-        }
-    }
-
-    fn lower_callback_proxy_async_method(
-        &self,
-        callback: &CallbackTraitDef,
-        method: &CallbackMethodDef,
-        abi_method: &AbiCallbackMethod,
-        jni_prefix: &str,
-    ) -> JniCallbackProxyAsyncMethod {
-        let abi_inputs = self.callback_input_abi_params(&method.params, abi_method);
-        let params = method
-            .params
-            .iter()
-            .zip(abi_inputs.iter())
-            .map(|(param, abi_param)| self.lower_param(param, abi_param))
-            .collect::<Vec<_>>();
-        let native_name = format!(
-            "boltffiCallback{}{}",
-            JavaNamingConvention::class_name(callback.id.as_str()),
-            JavaNamingConvention::class_name(method.id.as_str())
-        );
-        let method_name = JavaNamingConvention::class_name(method.id.as_str());
-        let callback_trait_name = self.jvm_callback_interface_name(callback);
-
-        JniCallbackProxyAsyncMethod {
-            vtable_field: abi_method.vtable_field.as_str().to_string(),
-            native_name: native_name.clone(),
-            jni_name: format!(
-                "Java_{}_Native_{}",
-                jni_prefix,
-                native_name.replace('_', "_1")
-            ),
-            jni_params: format!(
-                "{}{}",
-                self.format_jni_params(&params),
-                ", jlong callbackData"
-            ),
-            params,
-            return_c_type: self.async_callback_return_c_type(&abi_method.returns),
-            success_method_name: format!("complete{}", method_name),
-            success_method_id: format!(
-                "g_{}_{}_success_method",
-                callback_trait_name,
-                abi_method.vtable_field.as_str()
-            ),
-            success_signature: self.callback_proxy_success_signature(&abi_method.returns),
-            failure_method_name: format!("fail{}", method_name),
-            failure_method_id: format!(
-                "g_{}_{}_failure_method",
-                callback_trait_name,
-                abi_method.vtable_field.as_str()
-            ),
         }
     }
 
@@ -2256,7 +2154,7 @@ impl<'a> JniLowerer<'a> {
                 };
                 format!(
                     "CallbackHandle{}",
-                    JavaNamingConvention::class_name(callback_id.as_str())
+                    naming::to_upper_camel_case(callback_id.as_str())
                 )
             }
             ValueReturnStrategy::CompositeValue | ValueReturnStrategy::Buffer(_) => {
@@ -3062,7 +2960,7 @@ mod tests {
     #[test]
     fn kotlin_async_string_complete_uses_wire_encoded_status_path() {
         let contract = contract_with_async_string_function();
-        let lowerer = lowerer_from_contract_with_binding_style(&contract, JvmBindingStyle::Kotlin);
+        let lowerer = lowerer_from_contract(&contract);
         let module = lowerer.lower();
         let async_fn = module
             .async_functions
@@ -3394,13 +3292,6 @@ mod tests {
         )
     }
 
-    fn lowerer_from_contract_with_binding_style(
-        contract: &FfiContract,
-        binding_style: JvmBindingStyle,
-    ) -> JniLowerer<'_> {
-        lowerer_from_contract(contract).with_jvm_binding_style(binding_style)
-    }
-
     fn closure_return_shape_from_contract(
         mut contract: FfiContract,
         returns: ReturnDef,
@@ -3444,106 +3335,10 @@ mod tests {
     }
 
     #[test]
-    fn java_binding_style_preserves_closure_signature_underscores() {
-        let mut contract = FfiContract {
-            package: PackageInfo {
-                name: "test".to_string(),
-                version: None,
-            },
-            catalog: TypeCatalog::default(),
-            functions: vec![],
-        };
-
-        contract.catalog.insert_callback(CallbackTraitDef {
-            id: CallbackId::new("__Closure_I32_I32ToI32"),
-            methods: vec![CallbackMethodDef {
-                id: MethodId::new("call"),
-                params: vec![
-                    ParamDef {
-                        name: ParamName::new("left"),
-                        type_expr: TypeExpr::Primitive(PrimitiveType::I32),
-                        passing: ParamPassing::Value,
-                        doc: None,
-                    },
-                    ParamDef {
-                        name: ParamName::new("right"),
-                        type_expr: TypeExpr::Primitive(PrimitiveType::I32),
-                        passing: ParamPassing::Value,
-                        doc: None,
-                    },
-                ],
-                returns: ReturnDef::Value(TypeExpr::Primitive(PrimitiveType::I32)),
-                execution_kind: ExecutionKind::Sync,
-                doc: None,
-            }],
-            kind: CallbackKind::Closure,
-            doc: None,
-        });
-
-        let lowerer = lowerer_from_contract_with_binding_style(&contract, JvmBindingStyle::Java);
-        let callback = contract
-            .catalog
-            .resolve_callback(&CallbackId::new("__Closure_I32_I32ToI32"))
-            .expect("expected closure callback definition");
-        let trampoline = lowerer.lower_closure_trampoline(callback, "com/test");
-
-        assert_eq!(
-            trampoline.callbacks_class_jni_path,
-            "com/test/ClosureI32_I32ToI32Callbacks"
-        );
-    }
-
-    #[test]
-    fn callback_proxy_record_return_uses_wire_buffer_path() {
-        let contract =
-            contract_with_point_transformer_callback(CallbackKind::Trait, "PointTransformer");
-        let lowerer = lowerer_from_contract_with_binding_style(&contract, JvmBindingStyle::Java);
-        let module = lowerer.lower();
-        let callback = module
-            .callback_traits
-            .iter()
-            .find(|callback| callback.trait_name == "PointTransformer")
-            .expect("expected point transformer callback");
-        let proxy_method = callback
-            .proxy_sync_methods
-            .iter()
-            .find(|method| method.vtable_field == "transform")
-            .expect("expected proxy transform method");
-
-        assert!(!proxy_method.return_is_direct);
-        assert!(proxy_method.return_composite_c_type.is_none());
-        assert_eq!(proxy_method.jni_return_type, "jbyteArray");
-    }
-
-    #[test]
-    fn closure_proxy_record_return_uses_wire_buffer_path() {
-        let contract = contract_with_point_transformer_callback(
-            CallbackKind::Closure,
-            "__Closure_PointToPoint",
-        );
-        let lowerer = lowerer_from_contract_with_binding_style(&contract, JvmBindingStyle::Java);
-        let callback = contract
-            .catalog
-            .resolve_callback(&CallbackId::new("__Closure_PointToPoint"))
-            .expect("expected point closure");
-        let trampoline = lowerer.lower_closure_trampoline(callback, "com/test");
-
-        assert!(!trampoline.proxy_sync_method.return_is_direct);
-        assert!(
-            trampoline
-                .proxy_sync_method
-                .return_composite_c_type
-                .is_none()
-        );
-        assert_eq!(trampoline.proxy_sync_method.jni_return_type, "jbyteArray");
-    }
-
-    #[test]
-    fn kotlin_binding_style_only_generates_sync_callback_proxy_methods() {
+    fn only_generates_sync_callback_proxy_methods() {
         let sync_contract =
             contract_with_point_transformer_callback(CallbackKind::Trait, "PointTransformer");
-        let sync_lowerer =
-            lowerer_from_contract_with_binding_style(&sync_contract, JvmBindingStyle::Kotlin);
+        let sync_lowerer = lowerer_from_contract(&sync_contract);
         let sync_module = sync_lowerer.lower();
         let sync_callback = sync_module
             .callback_traits
@@ -3552,11 +3347,9 @@ mod tests {
             .expect("expected point transformer callback");
 
         assert!(!sync_callback.proxy_sync_methods.is_empty());
-        assert!(sync_callback.proxy_async_methods.is_empty());
 
         let async_contract = contract_with_async_fetcher_callback();
-        let async_lowerer =
-            lowerer_from_contract_with_binding_style(&async_contract, JvmBindingStyle::Kotlin);
+        let async_lowerer = lowerer_from_contract(&async_contract);
         let async_module = async_lowerer.lower();
         let async_callback = async_module
             .callback_traits
@@ -3565,28 +3358,12 @@ mod tests {
             .expect("expected async fetcher callback");
 
         assert!(async_callback.proxy_sync_methods.is_empty());
-        assert!(async_callback.proxy_async_methods.is_empty());
     }
 
     #[test]
-    fn java_binding_style_host_string_return_uses_wire_buffer_path() {
+    fn host_string_return_uses_direct_jstring_path() {
         let contract = contract_with_string_function();
-        let lowerer = lowerer_from_contract_with_binding_style(&contract, JvmBindingStyle::Java);
-        let module = lowerer.lower();
-        let wire_fn = module
-            .wire_functions
-            .iter()
-            .find(|function| function.ffi_name == "boltffi_get_name")
-            .expect("expected get_name wire function");
-
-        assert!(!wire_fn.return_is_direct);
-        assert_eq!(wire_fn.jni_return_type, "jbyteArray");
-    }
-
-    #[test]
-    fn kotlin_binding_style_host_string_return_uses_direct_jstring_path() {
-        let contract = contract_with_string_function();
-        let lowerer = lowerer_from_contract_with_binding_style(&contract, JvmBindingStyle::Kotlin);
+        let lowerer = lowerer_from_contract(&contract);
         let module = lowerer.lower();
         let wire_fn = module
             .wire_functions
@@ -3600,24 +3377,9 @@ mod tests {
     }
 
     #[test]
-    fn java_binding_style_value_type_string_return_uses_wire_buffer_path() {
+    fn value_type_string_return_uses_direct_jstring_path() {
         let contract = contract_with_string_value_method();
-        let lowerer = lowerer_from_contract_with_binding_style(&contract, JvmBindingStyle::Java);
-        let module = lowerer.lower();
-        let wire_fn = module
-            .wire_functions
-            .iter()
-            .find(|function| function.ffi_name.contains("label"))
-            .expect("expected value method wire function");
-
-        assert!(!wire_fn.return_is_direct);
-        assert_eq!(wire_fn.jni_return_type, "jbyteArray");
-    }
-
-    #[test]
-    fn kotlin_binding_style_value_type_string_return_uses_direct_jstring_path() {
-        let contract = contract_with_string_value_method();
-        let lowerer = lowerer_from_contract_with_binding_style(&contract, JvmBindingStyle::Kotlin);
+        let lowerer = lowerer_from_contract(&contract);
         let module = lowerer.lower();
         let wire_fn = module
             .wire_functions

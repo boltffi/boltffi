@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import statistics
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
@@ -117,6 +118,7 @@ SUITES = {
                 "attributes": {
                     "subject_key": "boltffi_java",
                     "binding_package": "com.example.bench_boltffi",
+                    "generator": "binding_ir",
                 },
             },
             "uniffi_java": {
@@ -150,6 +152,7 @@ def main() -> None:
     parser.add_argument("--suite", choices=sorted(SUITES), required=True)
     parser.add_argument("--results", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--artifact", action="append", type=Path, default=[])
     parser.add_argument("--profile", default="release")
     args = parser.parse_args()
 
@@ -201,7 +204,7 @@ def main() -> None:
             "collector": collector_context(
                 invocation=f"jmh_to_benchmark_run.py --suite {args.suite} --results {args.results}"
             ),
-            "artifacts": artifacts([args.results]),
+            "artifacts": artifacts([args.results, *args.artifact]),
         },
         "environment": {
             "host": host_context(),
@@ -279,7 +282,7 @@ def build_variant(
             "unit": metric_unit(primary_metric["scoreUnit"]),
             "estimator": estimator_for_mode(entry.get("mode")),
             "value": float(primary_metric["score"]),
-            "std_dev": float(primary_metric["scoreError"]) if primary_metric.get("scoreError") is not None else None,
+            "std_dev": sample_standard_deviation(raw_samples),
             "min": min(raw_samples) if raw_samples else None,
             "max": max(raw_samples) if raw_samples else None,
             "percentiles": {
@@ -316,6 +319,10 @@ def flatten_raw_samples(primary_metric: dict[str, Any]) -> list[float]:
     if flattened_samples:
         return flattened_samples
     return [float(primary_metric["score"])]
+
+
+def sample_standard_deviation(samples: list[float]) -> float | None:
+    return statistics.stdev(samples) if len(samples) > 1 else None
 
 
 def build_runtime_attributes(entry: dict[str, Any]) -> dict[str, Any]:

@@ -12,9 +12,13 @@
 //! uppercase fragments, or hand-roll underscore escaping.
 
 mod class_path;
+mod lookup_text;
+mod modified_utf8;
 mod segment;
 mod symbol;
 
 pub use class_path::JvmClassPath;
+pub use lookup_text::LookupText;
+pub use modified_utf8::ModifiedUtf8;
 pub use segment::JvmNameSegment;
 pub use symbol::JniSymbolName;

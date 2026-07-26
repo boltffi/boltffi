@@ -6,6 +6,13 @@ fn kotlin_target_passes_signed_primitive_vectors_as_jni_arrays() {
 }
 
 #[test]
+fn kotlin_target_passes_mutable_primitive_slices_as_jni_arrays() {
+    insta::assert_snapshot!(rendered_fixture(
+        "direct_vector/mutable_primitive_slice_parameter"
+    ));
+}
+
+#[test]
 fn kotlin_target_preserves_unsigned_primitive_vector_arrays() {
     let rendered = rendered_fixture("direct_vector/unsigned_primitive_vector_parameter");
 

@@ -309,6 +309,9 @@ pub enum UnsupportedType {
     StreamItem,
     /// A custom type converter cannot be represented as a binding converter.
     CustomConverter,
+    /// An interned string cannot currently serve as a custom type representation
+    /// because representation conversion does not retain the pool's Rust type.
+    InternedStringCustomRepresentation,
 }
 
 impl fmt::Display for UnsupportedType {
@@ -332,6 +335,7 @@ impl fmt::Display for UnsupportedType {
             Self::OpaqueRustContainer => "opaque Rust pointer container",
             Self::StreamItem => "stream item type",
             Self::CustomConverter => "custom type converter",
+            Self::InternedStringCustomRepresentation => "InternedString custom type representation",
         })
     }
 }

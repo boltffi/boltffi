@@ -9,6 +9,7 @@ pub enum TypeExpr {
     Void,
     Primitive(PrimitiveType),
     String,
+    Str,
 
     Vec(Box<TypeExpr>),
     Option(Box<TypeExpr>),

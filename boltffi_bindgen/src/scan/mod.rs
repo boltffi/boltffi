@@ -2579,7 +2579,10 @@ fn rust_type_to_ffi_type(
             if let Type::Path(inner) = &*type_ref.elem {
                 let ident = inner.path.segments.last()?.ident.to_string();
                 if ident == "str" {
-                    return Some(MType::String);
+                    return match position {
+                        FfiTypePosition::Return => Some(MType::Str),
+                        FfiTypePosition::Value => Some(MType::String),
+                    };
                 }
             }
             if let Type::Slice(slice) = &*type_ref.elem {

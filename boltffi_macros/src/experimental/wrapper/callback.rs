@@ -7,8 +7,8 @@ use boltffi_binding::{
     CanonicalName, ClosureForm, ClosureParameter, ClosureReturn, CodecNode, DirectValueType,
     DirectVectorElementType, Direction, ErrorDecl, ExecutionDecl, ExportedCallable, HandlePresence,
     HandleTarget, ImportSymbol, ImportedCallable, ImportedMethodDecl, IntoRust, Native, OutOfRust,
-    OutgoingParam, ParamDecl, ParamDirection, ParamPlan, Primitive, ReadPlan, ReturnPlan, TypeRef,
-    VTableSlot, Wasm32, native, wasm32,
+    OutgoingParam, ParamDecl, ParamDirection, ParamPlan, Primitive, ReadPlan, ReturnPlan,
+    ReturnValueSlot, TypeRef, VTableSlot, Wasm32, native, wasm32,
 };
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote};
@@ -18,7 +18,7 @@ use crate::experimental::{
     error::Error,
     expansion::{DeclarationPair, Expansion},
     rust_api,
-    surface::RenderSurface,
+    surface::{DirectRecordCrossing, RenderSurface},
     wrapper::{self, Render},
 };
 
@@ -837,6 +837,7 @@ impl<'lowered, S: RenderSurface, TargetName> CallbackMethods<'lowered, S, Target
             | TypeExpr::Unit
             | TypeExpr::String
             | TypeExpr::Str
+            | TypeExpr::InternedString { .. }
             | TypeExpr::Builtin(_)
             | TypeExpr::Record { .. }
             | TypeExpr::Enum { .. }
@@ -1273,7 +1274,7 @@ impl<'expansion, 'lowered, S: CallbackMethodSurface> MethodParameter<'expansion,
             OutgoingParam::Value(ParamPlan::ScalarOption { primitive }) => {
                 self.foreign_scalar_option_tokens(*primitive)
             }
-            OutgoingParam::Value(ParamPlan::DirectVec { element }) => {
+            OutgoingParam::Value(ParamPlan::DirectVec { element, .. }) => {
                 self.foreign_direct_vec_tokens(element)
             }
             OutgoingParam::Value(_) => Err(Error::UnsupportedExpansion(
@@ -1328,6 +1329,30 @@ impl<'expansion, 'lowered, S: CallbackMethodSurface> MethodParameter<'expansion,
             (ParameterPassing::RefMut, DirectValueType::Primitive(_)) => Err(
                 Error::UnsupportedExpansion("mutable borrowed callback method parameter"),
             ),
+            (ParameterPassing::Value, DirectValueType::Record(_)) => {
+                let rust_type = rust_api::TypeTokens::new(&self.source.type_expr)?.into_type();
+                let packed = wrapper::names::Parameter::new(ident.as_ident()).packed();
+                match S::DIRECT_RECORD_PARAMS {
+                    DirectRecordCrossing::Value => Ok(ForeignMethodParameterTokens::new(
+                        quote! { <#rust_type as ::boltffi::__private::Passable>::Out },
+                        vec![quote! {
+                            let #packed = <#rust_type as ::boltffi::__private::Passable>::pack(#ident);
+                        }],
+                        quote! { #packed },
+                    )),
+                    DirectRecordCrossing::Pointer => {
+                        let pointer = wrapper::names::Parameter::new(ident.as_ident()).pointer();
+                        Ok(ForeignMethodParameterTokens::new(
+                            quote! { *const u8 },
+                            vec![quote! {
+                                let #packed = <#rust_type as ::boltffi::__private::Passable>::pack(#ident);
+                                let #pointer = &#packed as *const _ as *const u8;
+                            }],
+                            quote! { #pointer },
+                        ))
+                    }
+                }
+            }
             (ParameterPassing::Value, _) => {
                 let rust_type = rust_api::TypeTokens::new(&self.source.type_expr)?.into_type();
                 let ffi_type = quote! { <#rust_type as ::boltffi::__private::Passable>::Out };
@@ -1364,8 +1389,12 @@ impl<'expansion, 'lowered, S: CallbackMethodSurface> MethodParameter<'expansion,
         let buffer = parameter_names.buffer();
         let pointer = parameter_names.pointer();
         let length = parameter_names.length();
-        let foreign_value = wrapper::encoded::outgoing::Value::new(codec.root(), self.expansion)
-            .buffer(quote! { #ident })?;
+        let outgoing = wrapper::encoded::outgoing::Value::new(codec.root(), self.expansion);
+        let foreign_value = match self.source.passing {
+            ParameterPassing::Value => outgoing.buffer(quote! { #ident })?,
+            ParameterPassing::Ref => outgoing.borrowed_buffer(quote! { #ident })?,
+            ParameterPassing::RefMut => unreachable!(),
+        };
         match S::callback_encoded_parameter(shape)? {
             CallbackEncodedParameter::Slice => Ok(ForeignMethodParameterTokens::new(
                 quote! { *const u8 },
@@ -1870,6 +1899,7 @@ where
     Void,
     Direct {
         ty: &'lowered DirectValueType,
+        slot: ReturnValueSlot,
     },
     Encoded {
         codec: &'lowered D::Codec,
@@ -1934,7 +1964,14 @@ where
     fn from_plan(plan: &'lowered ReturnPlan<S, D>) -> Result<Self, Error> {
         match plan {
             ReturnPlan::Void => Ok(Self::Void),
-            ReturnPlan::DirectViaReturnSlot { ty } => Ok(Self::Direct { ty }),
+            ReturnPlan::DirectViaReturnSlot { ty } => Ok(Self::Direct {
+                ty,
+                slot: ReturnValueSlot::ReturnSlot,
+            }),
+            ReturnPlan::DirectViaOutPointer { ty } => Ok(Self::Direct {
+                ty,
+                slot: ReturnValueSlot::OutPointer,
+            }),
             ReturnPlan::EncodedViaReturnSlot { codec, shape, ty } => Ok(Self::Encoded {
                 codec,
                 shape: *shape,
@@ -2054,9 +2091,17 @@ where
         match error {
             ErrorDecl::None(_) => match InfallibleMethodReturn::from_plan(plan)? {
                 InfallibleMethodReturn::Void => Ok(CallbackReturnAbi::empty()),
-                InfallibleMethodReturn::Direct { ty } => Ok(CallbackReturnAbi::direct(
-                    Self::direct_return_type(ty, source)?,
-                )),
+                InfallibleMethodReturn::Direct { ty, slot } => match slot {
+                    ReturnValueSlot::ReturnSlot => Ok(CallbackReturnAbi::direct(
+                        Self::direct_return_type(ty, source)?,
+                    )),
+                    ReturnValueSlot::OutPointer => {
+                        Ok(CallbackReturnAbi::direct_out(Self::source_type(source)?))
+                    }
+                    _ => Err(Error::UnsupportedExpansion(
+                        "unknown callback direct return slot",
+                    )),
+                },
                 InfallibleMethodReturn::Encoded { shape, ty, .. } => {
                     Ok(S::callback_encoded_return(shape, ty)?.abi())
                 }
@@ -2136,6 +2181,7 @@ where
             }
             InfallibleMethodReturn::Direct {
                 ty: DirectValueType::Primitive(primitive),
+                ..
             } => {
                 let ffi_type = wrapper::type_ref::Renderer.primitive(*primitive)?;
                 Ok(quote! { ::boltffi::__private::AsyncCallback<#ffi_type> })
@@ -2173,6 +2219,7 @@ where
             }
             InfallibleMethodReturn::Direct {
                 ty: DirectValueType::Primitive(primitive),
+                ..
             } => {
                 let ffi_type = wrapper::type_ref::Renderer.primitive(*primitive)?;
                 Ok(self.native_async_value_body(ffi_type, call, quote! { __boltffi_result }))
@@ -2251,6 +2298,7 @@ where
             }
             InfallibleMethodReturn::Direct {
                 ty: DirectValueType::Primitive(primitive),
+                ..
             } => {
                 let ffi_type = wrapper::type_ref::Renderer.primitive(*primitive)?;
                 let value = Self::wasm_completion_value(ffi_type);
@@ -2875,8 +2923,9 @@ where
         quote! {
             let __boltffi_registry = ::boltffi::__private::AsyncCallbackRegistry::current();
             let __boltffi_request = __boltffi_registry.allocate();
-            let __boltffi_guard =
-                ::boltffi::__private::AsyncCallbackRequestGuard::new(__boltffi_request);
+            let mut __boltffi_guard = Some(
+                ::boltffi::__private::AsyncCallbackRequestGuard::new(__boltffi_request)
+            );
             unsafe {
                 #call;
             }
@@ -2887,7 +2936,7 @@ where
                         if !__boltffi_completion.code.is_success() {
                             panic!("async callback failed");
                         }
-                        drop(__boltffi_guard);
+                        drop(__boltffi_guard.take());
                         std::task::Poll::Ready(())
                     }
                     None => std::task::Poll::Pending,
@@ -2905,8 +2954,9 @@ where
         quote! {
             let __boltffi_registry = ::boltffi::__private::AsyncCallbackRegistry::current();
             let __boltffi_request = __boltffi_registry.allocate();
-            let __boltffi_guard =
-                ::boltffi::__private::AsyncCallbackRequestGuard::new(__boltffi_request);
+            let mut __boltffi_guard = Some(
+                ::boltffi::__private::AsyncCallbackRequestGuard::new(__boltffi_request)
+            );
             unsafe {
                 #call;
             }
@@ -2919,7 +2969,7 @@ where
                         } else {
                             Err(#error)
                         };
-                        drop(__boltffi_guard);
+                        drop(__boltffi_guard.take());
                         std::task::Poll::Ready(__boltffi_return)
                     }
                     None => std::task::Poll::Pending,
@@ -2932,8 +2982,9 @@ where
         quote! {
             let __boltffi_registry = ::boltffi::__private::AsyncCallbackRegistry::current();
             let __boltffi_request = __boltffi_registry.allocate();
-            let __boltffi_guard =
-                ::boltffi::__private::AsyncCallbackRequestGuard::new(__boltffi_request);
+            let mut __boltffi_guard = Some(
+                ::boltffi::__private::AsyncCallbackRequestGuard::new(__boltffi_request)
+            );
             unsafe {
                 #call;
             }
@@ -2944,7 +2995,7 @@ where
                         if !__boltffi_completion.code.is_success() {
                             panic!("async callback failed");
                         }
-                        drop(__boltffi_guard);
+                        drop(__boltffi_guard.take());
                         std::task::Poll::Ready(#value)
                     }
                     None => std::task::Poll::Pending,
@@ -3024,17 +3075,38 @@ where
                     #call;
                 }
             }),
-            InfallibleMethodReturn::Direct {
-                ty: DirectValueType::Primitive(_),
-            } => Ok(quote! { unsafe { #call } }),
-            InfallibleMethodReturn::Direct { .. } => {
-                let rust_type = self.direct_source_type()?;
-                Ok(quote! {
-                    unsafe {
-                        <#rust_type as ::boltffi::__private::Passable>::unpack(#call)
-                    }
-                })
-            }
+            InfallibleMethodReturn::Direct { ty, slot } => match (ty, slot) {
+                (DirectValueType::Primitive(_), ReturnValueSlot::ReturnSlot) => {
+                    Ok(quote! { unsafe { #call } })
+                }
+                (_, ReturnValueSlot::ReturnSlot) => {
+                    let rust_type = self.direct_source_type()?;
+                    Ok(quote! {
+                        unsafe {
+                            <#rust_type as ::boltffi::__private::Passable>::unpack(#call)
+                        }
+                    })
+                }
+                (_, ReturnValueSlot::OutPointer) => {
+                    let rust_type = self.direct_source_type()?;
+                    Ok(quote! {
+                        {
+                            let mut __boltffi_return_out = ::core::mem::MaybeUninit::<
+                                <#rust_type as ::boltffi::__private::Passable>::Out
+                            >::uninit();
+                            unsafe {
+                                #call;
+                                <#rust_type as ::boltffi::__private::Passable>::unpack(
+                                    __boltffi_return_out.assume_init()
+                                )
+                            }
+                        }
+                    })
+                }
+                _ => Err(Error::UnsupportedExpansion(
+                    "unknown callback direct return slot",
+                )),
+            },
             InfallibleMethodReturn::Encoded { codec, shape, ty } => {
                 let source = self.source.value_type()?;
                 let rust_type = rust_api::TypeTokens::new(source.as_ref())?.into_type();
@@ -3091,17 +3163,38 @@ where
             InfallibleMethodReturn::Void => Ok(quote! {
                 #call;
             }),
-            InfallibleMethodReturn::Direct {
-                ty: DirectValueType::Primitive(_),
-            } => Ok(quote! { #call }),
-            InfallibleMethodReturn::Direct { .. } => {
-                let rust_type = self.direct_source_type()?;
-                Ok(quote! {
-                    unsafe {
-                        <#rust_type as ::boltffi::__private::Passable>::unpack(#call)
-                    }
-                })
-            }
+            InfallibleMethodReturn::Direct { ty, slot } => match (ty, slot) {
+                (DirectValueType::Primitive(_), ReturnValueSlot::ReturnSlot) => {
+                    Ok(quote! { #call })
+                }
+                (_, ReturnValueSlot::ReturnSlot) => {
+                    let rust_type = self.direct_source_type()?;
+                    Ok(quote! {
+                        unsafe {
+                            <#rust_type as ::boltffi::__private::Passable>::unpack(#call)
+                        }
+                    })
+                }
+                (_, ReturnValueSlot::OutPointer) => {
+                    let rust_type = self.direct_source_type()?;
+                    Ok(quote! {
+                        {
+                            let mut __boltffi_return_out = ::core::mem::MaybeUninit::<
+                                <#rust_type as ::boltffi::__private::Passable>::Out
+                            >::uninit();
+                            #call;
+                            unsafe {
+                                <#rust_type as ::boltffi::__private::Passable>::unpack(
+                                    __boltffi_return_out.assume_init()
+                                )
+                            }
+                        }
+                    })
+                }
+                _ => Err(Error::UnsupportedExpansion(
+                    "unknown callback direct return slot",
+                )),
+            },
             InfallibleMethodReturn::Encoded { codec, shape, ty } => {
                 let source = self.source.value_type()?;
                 let rust_type = rust_api::TypeTokens::new(source.as_ref())?.into_type();
@@ -3220,15 +3313,38 @@ where
         }
         match InfallibleMethodReturn::new(local_return.plan, local_return.error)? {
             InfallibleMethodReturn::Void => Ok(LocalMethodBody::new(quote! { #call })),
-            InfallibleMethodReturn::Direct {
-                ty: DirectValueType::Primitive(_),
-            } => Ok(LocalMethodBody::new(quote! { #call })),
-            InfallibleMethodReturn::Direct { .. } => {
-                let rust_type = self.direct_source_type()?;
-                Ok(LocalMethodBody::new(quote! {
-                    <#rust_type as ::boltffi::__private::Passable>::pack(#call)
-                }))
-            }
+            InfallibleMethodReturn::Direct { ty, slot } => match (ty, slot) {
+                (DirectValueType::Primitive(_), ReturnValueSlot::ReturnSlot) => {
+                    Ok(LocalMethodBody::new(quote! { #call }))
+                }
+                (_, ReturnValueSlot::ReturnSlot) => {
+                    let rust_type = self.direct_source_type()?;
+                    Ok(LocalMethodBody::new(quote! {
+                        <#rust_type as ::boltffi::__private::Passable>::pack(#call)
+                    }))
+                }
+                (_, ReturnValueSlot::OutPointer) => {
+                    let rust_type = self.direct_source_type()?;
+                    Ok(LocalMethodBody::new(quote! {
+                        {
+                            let __boltffi_result: #rust_type = #call;
+                            if !__boltffi_return_out.is_null() {
+                                unsafe {
+                                    ::core::ptr::write(
+                                        __boltffi_return_out,
+                                        <#rust_type as ::boltffi::__private::Passable>::pack(
+                                            __boltffi_result
+                                        ),
+                                    );
+                                }
+                            }
+                        }
+                    }))
+                }
+                _ => Err(Error::UnsupportedExpansion(
+                    "unknown callback direct return slot",
+                )),
+            },
             InfallibleMethodReturn::Encoded { codec, shape, ty } => {
                 S::callback_encoded_return(shape, ty)?
                     .local_body(call, codec.root(), self.expansion)
@@ -4283,34 +4399,18 @@ impl CallbackMethodSurface for Wasm32 {
         value: &Ident,
     ) -> Result<ForeignMethodParameterTokens, Error> {
         let encoded = wrapper::names::Parameter::new(value).packed();
-        let body = match primitive {
-            Primitive::Bool => quote! {
-                match #value {
-                    Some(value) if value => 1.0,
-                    Some(_) => 0.0,
-                    None => f64::NAN,
-                }
-            },
-            Primitive::F64 => quote! { #value.unwrap_or(f64::NAN) },
-            Primitive::I8
-            | Primitive::U8
-            | Primitive::I16
-            | Primitive::U16
-            | Primitive::I32
-            | Primitive::U32
-            | Primitive::I64
-            | Primitive::U64
-            | Primitive::ISize
-            | Primitive::USize
-            | Primitive::F32 => quote! {
-                #value.map(|value| value as f64).unwrap_or(f64::NAN)
-            },
-            _ => return Err(Error::UnsupportedExpansion("scalar option primitive")),
-        };
+        let present = wrapper::names::Locals::new(value.span()).value();
+        let scalar = wrapper::scalar_option::WasmScalar::new(primitive, present.clone());
+        let ffi_type = scalar.carrier_type();
+        let none = scalar.none();
+        let some = scalar.outgoing()?;
         Ok(ForeignMethodParameterTokens::new(
-            quote! { f64 },
+            ffi_type,
             vec![quote! {
-                let #encoded = #body;
+                let #encoded = match #value {
+                    Some(#present) => #some,
+                    None => #none,
+                };
             }],
             quote! { #encoded },
         ))
@@ -4608,6 +4708,22 @@ impl CallbackReturnAbi {
             foreign_return_type: return_type.clone(),
             local_return_type: return_type,
             ..Self::empty()
+        }
+    }
+
+    fn direct_out(rust_type: Type) -> Self {
+        let output = quote! { __boltffi_return_out };
+        let parameter = quote! {
+            #output: *mut <#rust_type as ::boltffi::__private::Passable>::Out
+        };
+        let argument = quote! { #output.as_mut_ptr() };
+        Self {
+            foreign_ffi_parameters: vec![parameter.clone()],
+            foreign_arguments: vec![argument.clone()],
+            foreign_return_type: TokenStream::new(),
+            local_ffi_parameters: vec![parameter],
+            local_arguments: vec![argument],
+            local_return_type: TokenStream::new(),
         }
     }
 }

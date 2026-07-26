@@ -1,12 +1,20 @@
 use std::collections::BTreeSet;
 
 use super::{
-    CallbackDecl, CallbackProtocolIntrospect, ClassDecl, CodecNode, ConstantValueDecl, Decl,
-    DeclarationRef, EnumDecl, EnumId, ErrorChannel, ExportedCallable, ExportedMethodDecl,
-    FunctionDecl, ImportedCallable, IncomingParam, InitializerDecl, IntoRust, NativeSymbol,
-    OutOfRust, OutgoingParam, ParamPlan, ReadPlan, RecordDecl, RecordId, ReturnPlan, StreamDecl,
-    StreamItemPlan, Surface, TypeRef, WritePlan,
+    BinderId, BuiltinType, ByteSize, CallbackId, ClassId, ClosureReturn, CodecPlan, CodecRead,
+    CodecWrite, CustomTypeId, DataVariantPayload, Decl, DeclarationRef, DirectValueType,
+    DirectVectorElementType, ElementCount, EncodedFieldDecl, EnumDecl, EnumId, ErrorChannel,
+    ExportedCallable, HandlePresence, HandleTarget, ImportedCallable, IncomingParam, IntoRust,
+    MapKind, Op, OutOfRust, OutgoingParam, ParamPlanRender, Primitive, ReadPlan, Receive,
+    RecordDecl, RecordId, ReturnPlanRender, ReturnValueSlot, StreamItemPlanRender, Surface,
+    TypeRef, TypeRefRender, ValueRef, WritePlan,
 };
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum ErrorPayloadReference {
+    Record(RecordId),
+    Enumeration(EnumId),
+}
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct ErrorPayloadTypes {
@@ -19,238 +27,467 @@ impl ErrorPayloadTypes {
     pub(crate) fn from_decls<S: Surface>(decls: &[Decl<S>]) -> Self {
         decls
             .iter()
-            .map(DeclarationRef::from)
             .fold(Self::default(), |mut payloads, declaration| {
-                payloads.insert_declaration(declaration);
+                payloads.insert_declaration_shape(DeclarationRef::from(declaration));
+                declaration
+                    .exported_callables()
+                    .for_each(|callable| payloads.insert_exported_callable(callable));
+                declaration
+                    .imported_callables()
+                    .for_each(|callable| payloads.insert_imported_callable(callable));
                 payloads
             })
     }
 
-    pub(crate) fn mark_decls<S: Surface>(&self, decls: &mut [Decl<S>]) {
+    pub(crate) fn apply_decls<S: Surface>(&self, decls: &mut [Decl<S>]) {
         decls.iter_mut().for_each(|decl| match decl {
             Decl::Record(record) => {
-                if self.codec_records.contains(&record.id()) {
-                    record.mark_codec_payload();
-                }
-                if self.records.contains(&record.id()) {
-                    record.mark_error_payload();
-                }
+                record.set_codec_payload(self.codec_records.contains(&record.id()));
+                record.set_error_payload(self.records.contains(&record.id()));
             }
-            Decl::Enum(enumeration) if self.enumerations.contains(&enumeration.id()) => {
-                enumeration.mark_error_payload();
+            Decl::Enum(enumeration) => {
+                enumeration.set_error_payload(self.enumerations.contains(&enumeration.id()));
             }
             _ => {}
         });
     }
 
-    fn insert_declaration<S: Surface>(&mut self, declaration: DeclarationRef<'_, S>) {
+    fn insert_declaration_shape<S: Surface>(&mut self, declaration: DeclarationRef<'_, S>) {
         match declaration {
-            DeclarationRef::Function(function) => self.insert_function(function),
-            DeclarationRef::Record(record) => self.insert_record(record),
-            DeclarationRef::Enum(enumeration) => self.insert_enum(enumeration),
-            DeclarationRef::Class(class) => self.insert_class(class),
-            DeclarationRef::Constant(constant) => {
-                if let ConstantValueDecl::Accessor { callable, .. } = constant.value() {
-                    self.insert_exported_callable(callable);
-                }
+            DeclarationRef::Record(RecordDecl::Encoded(record)) => {
+                self.insert_encoded_fields(record.fields());
+                self.insert_codec_plan(record.codec());
             }
-            DeclarationRef::Callback(callback) => self.insert_callback(callback),
-            DeclarationRef::Stream(stream) => self.insert_stream(stream),
-            DeclarationRef::CustomType(_) => {}
+            DeclarationRef::Enum(EnumDecl::Data(enumeration)) => {
+                enumeration
+                    .variants()
+                    .iter()
+                    .for_each(|variant| match variant.payload() {
+                        DataVariantPayload::Tuple(fields) | DataVariantPayload::Struct(fields) => {
+                            self.insert_encoded_fields(fields)
+                        }
+                        DataVariantPayload::Unit => {}
+                    });
+                self.insert_codec_plan(enumeration.codec());
+            }
+            DeclarationRef::Stream(stream) => {
+                stream.item().render_with(self);
+            }
+            DeclarationRef::Record(RecordDecl::Direct(_))
+            | DeclarationRef::Enum(EnumDecl::CStyle(_))
+            | DeclarationRef::Function(_)
+            | DeclarationRef::Class(_)
+            | DeclarationRef::Callback(_)
+            | DeclarationRef::Constant(_)
+            | DeclarationRef::CustomType(_) => {}
         }
     }
 
-    fn insert_function<S: Surface>(&mut self, function: &FunctionDecl<S>) {
-        self.insert_exported_callable(function.callable());
-    }
-
-    fn insert_record<S: Surface>(&mut self, record: &RecordDecl<S>) {
-        if let RecordDecl::Encoded(record) = record {
-            self.insert_read_plan(record.read());
-            self.insert_write_plan(record.write());
-        }
-        self.insert_associated(record.initializers(), record.methods());
-    }
-
-    fn insert_enum<S: Surface>(&mut self, enumeration: &EnumDecl<S>) {
-        if let EnumDecl::Data(enumeration) = enumeration {
-            self.insert_read_plan(enumeration.read());
-            self.insert_write_plan(enumeration.write());
-        }
-        self.insert_associated(enumeration.initializers(), enumeration.methods());
-    }
-
-    fn insert_class<S: Surface>(&mut self, class: &ClassDecl<S>) {
-        self.insert_associated(class.initializers(), class.methods());
-    }
-
-    fn insert_callback<S: Surface>(&mut self, callback: &CallbackDecl<S>) {
-        callback
-            .protocol()
-            .method_callables()
-            .for_each(|callable| self.insert_imported_callable(callable));
-        if let Some(protocol) = callback.local_protocol() {
-            protocol
-                .methods()
-                .iter()
-                .for_each(|method| self.insert_exported_callable(method.callable()));
-        }
-    }
-
-    fn insert_stream<S: Surface>(&mut self, stream: &StreamDecl<S>) {
-        self.insert_stream_item(stream.item());
-    }
-
-    fn insert_stream_item<S: Surface>(&mut self, item: &StreamItemPlan<S>) {
-        if let StreamItemPlan::Encoded { ty, read, .. } = item {
-            self.insert_read_plan(read);
-            self.insert_result_errors(ty);
-        }
-    }
-
-    fn insert_associated<S: Surface>(
-        &mut self,
-        initializers: &[InitializerDecl<S>],
-        methods: &[ExportedMethodDecl<S, NativeSymbol>],
-    ) {
-        initializers
-            .iter()
-            .for_each(|initializer| self.insert_exported_callable(initializer.callable()));
-        methods
-            .iter()
-            .for_each(|method| self.insert_exported_callable(method.callable()));
+    fn insert_encoded_fields(&mut self, fields: &[EncodedFieldDecl]) {
+        fields.iter().for_each(|field| {
+            self.insert_result_errors(field.ty());
+            self.insert_codec_plan(field.codec());
+        });
     }
 
     fn insert_exported_callable<S: Surface>(&mut self, callable: &ExportedCallable<S>) {
-        if let ErrorChannel::Encoded { ty, .. } = callable.error().channel() {
-            self.insert_error_payload(ty);
-        }
         callable
             .params()
             .iter()
             .for_each(|parameter| match parameter.payload() {
-                IncomingParam::Value(plan) => self.insert_incoming_param_plan(plan),
-                IncomingParam::Closure(closure) => self.insert_imported_callable(closure.invoke()),
+                IncomingParam::Value(plan) => plan.render_with(self),
+                IncomingParam::Closure(closure) => {
+                    self.insert_imported_callable(closure.invoke());
+                }
             });
-        self.insert_exported_return_plan(callable.returns().plan());
+        callable.returns().plan().render_with(self);
+        if let ErrorChannel::Encoded { ty, codec, .. } = callable.error().channel() {
+            self.insert_error_payload(ty);
+            self.insert_read_plan(codec);
+        }
     }
 
     fn insert_imported_callable<S: Surface>(&mut self, callable: &ImportedCallable<S>) {
-        if let ErrorChannel::Encoded { ty, .. } = callable.error().channel() {
-            self.insert_error_payload(ty);
-        }
         callable
             .params()
             .iter()
             .for_each(|parameter| match parameter.payload() {
-                OutgoingParam::Value(plan) => self.insert_outgoing_param_plan(plan),
-                OutgoingParam::Closure(closure) => self.insert_exported_callable(closure.invoke()),
+                OutgoingParam::Value(plan) => plan.render_with(self),
+                OutgoingParam::Closure(closure) => {
+                    self.insert_exported_callable(closure.invoke());
+                }
             });
-        self.insert_imported_return_plan(callable.returns().plan());
-    }
-
-    fn insert_incoming_param_plan<S: Surface>(&mut self, plan: &ParamPlan<S, IntoRust>) {
-        if let ParamPlan::Encoded { ty, codec, .. } = plan {
+        callable.returns().plan().render_with(self);
+        if let ErrorChannel::Encoded { ty, codec, .. } = callable.error().channel() {
+            self.insert_error_payload(ty);
             self.insert_write_plan(codec);
-            self.insert_result_errors(ty);
-        }
-    }
-
-    fn insert_outgoing_param_plan<S: Surface>(&mut self, plan: &ParamPlan<S, OutOfRust>) {
-        if let ParamPlan::Encoded { ty, codec, .. } = plan {
-            self.insert_read_plan(codec);
-            self.insert_result_errors(ty);
-        }
-    }
-
-    fn insert_exported_return_plan<S: Surface>(&mut self, plan: &ReturnPlan<S, OutOfRust>) {
-        match plan {
-            ReturnPlan::EncodedViaReturnSlot { ty, codec, .. }
-            | ReturnPlan::EncodedViaOutPointer { ty, codec, .. } => {
-                self.insert_read_plan(codec);
-                self.insert_result_errors(ty);
-            }
-            ReturnPlan::ClosureViaOutPointer(closure) => {
-                self.insert_exported_callable(closure.invoke());
-            }
-            _ => {}
-        }
-    }
-
-    fn insert_imported_return_plan<S: Surface>(&mut self, plan: &ReturnPlan<S, IntoRust>) {
-        match plan {
-            ReturnPlan::EncodedViaReturnSlot { ty, codec, .. }
-            | ReturnPlan::EncodedViaOutPointer { ty, codec, .. } => {
-                self.insert_write_plan(codec);
-                self.insert_result_errors(ty);
-            }
-            ReturnPlan::ClosureViaOutPointer(closure) => {
-                self.insert_imported_callable(closure.invoke());
-            }
-            _ => {}
         }
     }
 
     fn insert_error_payload(&mut self, ty: &TypeRef) {
-        match ty {
-            TypeRef::Record(record) => {
-                self.records.insert(*record);
-            }
-            TypeRef::Enum(enumeration) => {
-                self.enumerations.insert(*enumeration);
-            }
-            _ => {}
-        }
-    }
-
-    fn insert_read_plan(&mut self, plan: &ReadPlan) {
-        self.insert_codec_payloads(plan.root());
-    }
-
-    fn insert_write_plan(&mut self, plan: &WritePlan) {
-        self.insert_codec_payloads(plan.root());
-    }
-
-    fn insert_codec_payloads(&mut self, node: &CodecNode) {
-        match node {
-            CodecNode::DirectRecord(record) => {
-                self.codec_records.insert(*record);
-            }
-            CodecNode::Custom { representation, .. } => {
-                self.insert_codec_payloads(representation);
-            }
-            CodecNode::Optional(inner) => self.insert_codec_payloads(inner),
-            CodecNode::Sequence { element, .. } => self.insert_codec_payloads(element),
-            CodecNode::Tuple(elements) => elements.iter().for_each(|element| {
-                self.insert_codec_payloads(element);
-            }),
-            CodecNode::Result { ok, err } => {
-                self.insert_codec_payloads(ok);
-                self.insert_codec_payloads(err);
-            }
-            CodecNode::Map { key, value, .. } => {
-                self.insert_codec_payloads(key);
-                self.insert_codec_payloads(value);
-            }
-            _ => {}
-        }
+        ty.render_with(self)
+            .into_iter()
+            .for_each(|reference| self.insert_payload(reference));
     }
 
     fn insert_result_errors(&mut self, ty: &TypeRef) {
-        match ty {
-            TypeRef::Optional(inner) | TypeRef::Sequence(inner) => self.insert_result_errors(inner),
-            TypeRef::Tuple(elements) => elements.iter().for_each(|element| {
-                self.insert_result_errors(element);
-            }),
-            TypeRef::Result { ok, err } => {
-                self.insert_result_errors(ok);
-                self.insert_error_payload(err);
+        let _ = ty.render_with(self);
+    }
+
+    fn insert_payload(&mut self, reference: ErrorPayloadReference) {
+        match reference {
+            ErrorPayloadReference::Record(record) => {
+                self.records.insert(record);
             }
-            TypeRef::Map { key, value, .. } => {
-                self.insert_result_errors(key);
-                self.insert_result_errors(value);
+            ErrorPayloadReference::Enumeration(enumeration) => {
+                self.enumerations.insert(enumeration);
             }
-            _ => {}
         }
+    }
+
+    fn insert_codec_plan(&mut self, plan: &CodecPlan) {
+        self.insert_read_plan(plan.read());
+        self.insert_write_plan(plan.write());
+    }
+
+    fn insert_read_plan(&mut self, plan: &ReadPlan) {
+        plan.render_with(self);
+    }
+
+    fn insert_write_plan(&mut self, plan: &WritePlan) {
+        plan.render_with(self);
+    }
+}
+
+impl TypeRefRender for ErrorPayloadTypes {
+    type Output = Option<ErrorPayloadReference>;
+
+    fn primitive(&mut self, _: Primitive) -> Self::Output {
+        None
+    }
+
+    fn string(&mut self) -> Self::Output {
+        None
+    }
+
+    fn interned_string(&mut self, _: &[String]) -> Self::Output {
+        None
+    }
+
+    fn bytes(&mut self) -> Self::Output {
+        None
+    }
+
+    fn record(&mut self, id: RecordId) -> Self::Output {
+        Some(ErrorPayloadReference::Record(id))
+    }
+
+    fn enumeration(&mut self, id: EnumId) -> Self::Output {
+        Some(ErrorPayloadReference::Enumeration(id))
+    }
+
+    fn class(&mut self, _: ClassId) -> Self::Output {
+        None
+    }
+
+    fn callback(&mut self, _: CallbackId) -> Self::Output {
+        None
+    }
+
+    fn custom(&mut self, _: CustomTypeId) -> Self::Output {
+        None
+    }
+
+    fn builtin(&mut self, _: BuiltinType) -> Self::Output {
+        None
+    }
+
+    fn optional(&mut self, _: Self::Output) -> Self::Output {
+        None
+    }
+
+    fn sequence(&mut self, _: Self::Output) -> Self::Output {
+        None
+    }
+
+    fn tuple(&mut self, _: Vec<Self::Output>) -> Self::Output {
+        None
+    }
+
+    fn result(&mut self, _: Self::Output, error: Self::Output) -> Self::Output {
+        error
+            .into_iter()
+            .for_each(|reference| self.insert_payload(reference));
+        None
+    }
+
+    fn map(&mut self, _: Self::Output, _: Self::Output) -> Self::Output {
+        None
+    }
+}
+
+impl CodecRead for ErrorPayloadTypes {
+    type Expr = ();
+
+    fn primitive(&mut self, _: Primitive) {}
+
+    fn string(&mut self) {}
+
+    fn interned_string(&mut self, _: &[String]) {}
+
+    fn bytes(&mut self) {}
+
+    fn direct_record(&mut self, id: RecordId) {
+        self.codec_records.insert(id);
+    }
+
+    fn encoded_record(&mut self, _: RecordId) {}
+
+    fn c_style_enum(&mut self, _: EnumId) {}
+
+    fn data_enum(&mut self, _: EnumId) {}
+
+    fn class_handle(&mut self, _: ClassId) {}
+
+    fn callback_handle(&mut self, _: CallbackId) {}
+
+    fn custom(&mut self, _: CustomTypeId, _: Self::Expr) {}
+
+    fn builtin(&mut self, _: BuiltinType) {}
+
+    fn optional(&mut self, _: Self::Expr) {}
+
+    fn sequence(&mut self, _: &Op<ElementCount>, _: Self::Expr) {}
+
+    fn tuple(&mut self, _: Vec<Self::Expr>) {}
+
+    fn result(&mut self, _: Self::Expr, _: Self::Expr) {}
+
+    fn map(&mut self, _: MapKind, _: Self::Expr, _: Self::Expr) {}
+}
+
+impl CodecWrite for ErrorPayloadTypes {
+    type Stmt = ();
+
+    fn primitive(&mut self, _: Primitive, _: &ValueRef) -> Vec<Self::Stmt> {
+        Vec::new()
+    }
+
+    fn string(&mut self, _: &ValueRef) -> Vec<Self::Stmt> {
+        Vec::new()
+    }
+
+    fn interned_string(&mut self, _: &[String], _: &ValueRef) -> Vec<Self::Stmt> {
+        Vec::new()
+    }
+
+    fn bytes(&mut self, _: &ValueRef) -> Vec<Self::Stmt> {
+        Vec::new()
+    }
+
+    fn direct_record(&mut self, id: RecordId, _: &ValueRef) -> Vec<Self::Stmt> {
+        self.codec_records.insert(id);
+        Vec::new()
+    }
+
+    fn encoded_record(&mut self, _: RecordId, _: &ValueRef) -> Vec<Self::Stmt> {
+        Vec::new()
+    }
+
+    fn c_style_enum(&mut self, _: EnumId, _: &ValueRef) -> Vec<Self::Stmt> {
+        Vec::new()
+    }
+
+    fn data_enum(&mut self, _: EnumId, _: &ValueRef) -> Vec<Self::Stmt> {
+        Vec::new()
+    }
+
+    fn class_handle(&mut self, _: ClassId, _: &ValueRef) -> Vec<Self::Stmt> {
+        Vec::new()
+    }
+
+    fn callback_handle(&mut self, _: CallbackId, _: &ValueRef) -> Vec<Self::Stmt> {
+        Vec::new()
+    }
+
+    fn custom<F>(&mut self, _: CustomTypeId, value: &ValueRef, representation: F) -> Vec<Self::Stmt>
+    where
+        F: FnOnce(&mut Self, &ValueRef) -> Vec<Self::Stmt>,
+    {
+        representation(self, value)
+    }
+
+    fn builtin(&mut self, _: BuiltinType, _: &ValueRef) -> Vec<Self::Stmt> {
+        Vec::new()
+    }
+
+    fn optional(&mut self, _: &ValueRef, _: BinderId, _: Vec<Self::Stmt>) -> Vec<Self::Stmt> {
+        Vec::new()
+    }
+
+    fn sequence(
+        &mut self,
+        _: &ValueRef,
+        _: &Op<ElementCount>,
+        _: BinderId,
+        _: Vec<Self::Stmt>,
+    ) -> Vec<Self::Stmt> {
+        Vec::new()
+    }
+
+    fn tuple(&mut self, _: &ValueRef, _: Vec<Vec<Self::Stmt>>) -> Vec<Self::Stmt> {
+        Vec::new()
+    }
+
+    fn result(
+        &mut self,
+        _: &ValueRef,
+        _: BinderId,
+        _: Vec<Self::Stmt>,
+        _: Vec<Self::Stmt>,
+    ) -> Vec<Self::Stmt> {
+        Vec::new()
+    }
+
+    fn map(
+        &mut self,
+        _: MapKind,
+        _: &ValueRef,
+        _: BinderId,
+        _: Vec<Self::Stmt>,
+        _: BinderId,
+        _: Vec<Self::Stmt>,
+    ) -> Vec<Self::Stmt> {
+        Vec::new()
+    }
+}
+
+impl<'plan, S: Surface> ParamPlanRender<'plan, S, IntoRust> for ErrorPayloadTypes {
+    type Output = ();
+
+    fn direct(&mut self, _: &'plan DirectValueType, _: Receive) {}
+
+    fn encoded(
+        &mut self,
+        ty: &'plan TypeRef,
+        codec: &'plan WritePlan,
+        _: S::BufferShape,
+        _: Receive,
+    ) {
+        self.insert_result_errors(ty);
+        self.insert_write_plan(codec);
+    }
+
+    fn handle(
+        &mut self,
+        _: &'plan HandleTarget,
+        _: S::HandleCarrier,
+        _: HandlePresence,
+        _: Receive,
+    ) {
+    }
+
+    fn scalar_option(&mut self, _: Primitive) {}
+
+    fn direct_vector(&mut self, _: &'plan DirectVectorElementType, _: Receive) {}
+}
+
+impl<'plan, S: Surface> ParamPlanRender<'plan, S, OutOfRust> for ErrorPayloadTypes {
+    type Output = ();
+
+    fn direct(&mut self, _: &'plan DirectValueType, _: ()) {}
+
+    fn encoded(&mut self, ty: &'plan TypeRef, codec: &'plan ReadPlan, _: S::BufferShape, _: ()) {
+        self.insert_result_errors(ty);
+        self.insert_read_plan(codec);
+    }
+
+    fn handle(&mut self, _: &'plan HandleTarget, _: S::HandleCarrier, _: HandlePresence, _: ()) {}
+
+    fn scalar_option(&mut self, _: Primitive) {}
+
+    fn direct_vector(&mut self, _: &'plan DirectVectorElementType, _: ()) {}
+}
+
+impl<'plan, S: Surface> ReturnPlanRender<'plan, S, IntoRust> for ErrorPayloadTypes {
+    type Output = ();
+
+    fn void(&mut self) {}
+
+    fn direct(&mut self, _: ReturnValueSlot, _: &'plan DirectValueType) {}
+
+    fn encoded(
+        &mut self,
+        _: ReturnValueSlot,
+        ty: &'plan TypeRef,
+        codec: &'plan WritePlan,
+        _: S::BufferShape,
+    ) {
+        self.insert_result_errors(ty);
+        self.insert_write_plan(codec);
+    }
+
+    fn handle(
+        &mut self,
+        _: ReturnValueSlot,
+        _: &'plan HandleTarget,
+        _: S::HandleCarrier,
+        _: HandlePresence,
+    ) {
+    }
+
+    fn scalar_option(&mut self, _: Primitive) {}
+
+    fn direct_vector(&mut self, _: &'plan DirectVectorElementType) {}
+
+    fn closure(&mut self, closure: &'plan ClosureReturn<S, IntoRust>) {
+        self.insert_imported_callable(closure.invoke());
+    }
+}
+
+impl<'plan, S: Surface> ReturnPlanRender<'plan, S, OutOfRust> for ErrorPayloadTypes {
+    type Output = ();
+
+    fn void(&mut self) {}
+
+    fn direct(&mut self, _: ReturnValueSlot, _: &'plan DirectValueType) {}
+
+    fn encoded(
+        &mut self,
+        _: ReturnValueSlot,
+        ty: &'plan TypeRef,
+        codec: &'plan ReadPlan,
+        _: S::BufferShape,
+    ) {
+        self.insert_result_errors(ty);
+        self.insert_read_plan(codec);
+    }
+
+    fn handle(
+        &mut self,
+        _: ReturnValueSlot,
+        _: &'plan HandleTarget,
+        _: S::HandleCarrier,
+        _: HandlePresence,
+    ) {
+    }
+
+    fn scalar_option(&mut self, _: Primitive) {}
+
+    fn direct_vector(&mut self, _: &'plan DirectVectorElementType) {}
+
+    fn closure(&mut self, closure: &'plan ClosureReturn<S, OutOfRust>) {
+        self.insert_exported_callable(closure.invoke());
+    }
+}
+
+impl<'plan, S: Surface> StreamItemPlanRender<'plan, S> for ErrorPayloadTypes {
+    type Output = ();
+
+    fn direct(&mut self, _: &'plan DirectValueType, _: ByteSize) {}
+
+    fn encoded(&mut self, ty: &'plan TypeRef, read: &'plan ReadPlan, _: S::BufferShape) {
+        self.insert_result_errors(ty);
+        self.insert_read_plan(read);
     }
 }

@@ -118,6 +118,7 @@ fn create_default_config(package_name: &str) -> Config {
                     module_name: None,
                     library_name: None,
                     desktop_loader: Default::default(),
+                    desktop_pack: Default::default(),
                     api_style: Default::default(),
                     error_style: ErrorStyle::default(),
                     factory_style: KotlinFactoryStyle::default(),

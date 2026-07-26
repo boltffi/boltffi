@@ -93,7 +93,7 @@ impl Constant {
             Name::new(declaration.name()).function()?,
             symbol,
             callable,
-            Vec::new(),
+            None,
         )?;
         if call.async_call().is_some() {
             return Err(KotlinHost::unsupported("async constant accessor"));
@@ -115,7 +115,7 @@ impl Inline {
         Ok(Self {
             name: Name::new(declaration.name()).function()?,
             ty: KotlinType::type_ref(ty, context)?,
-            value: DefaultExpression::render(ty, value)?,
+            value: DefaultExpression::render(ty, value, context)?,
         })
     }
 

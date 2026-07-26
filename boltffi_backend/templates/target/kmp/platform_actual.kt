@@ -2,21 +2,14 @@
 
 package {{ package_name }}
 {% if !functions.is_empty() %}
-
-private fun {{ internal_package }}.FfiException.toBoltFfiCommon(): FfiException =
-    FfiException(code, message ?: "")
 {%- for function in functions %}
 
 actual fun {{ function.name() }}({% for parameter in function.params() %}{{ parameter.name() }}: {{ parameter.ty() }}{% if !loop.last %}, {% endif %}{% endfor %}){% if let Some(return_type) = function.returns() %}: {{ return_type }}{% endif %} {
-    try {
 {%- if function.returns_value() %}
-        return {{ internal_package }}.{{ function.name() }}({% for parameter in function.params() %}{{ parameter.name() }}{% if !loop.last %}, {% endif %}{% endfor %})
+    return {{ internal_package }}.{{ function.name() }}({% for parameter in function.params() %}{{ parameter.name() }}{% if !loop.last %}, {% endif %}{% endfor %})
 {%- else %}
-        {{ internal_package }}.{{ function.name() }}({% for parameter in function.params() %}{{ parameter.name() }}{% if !loop.last %}, {% endif %}{% endfor %})
+    {{ internal_package }}.{{ function.name() }}({% for parameter in function.params() %}{{ parameter.name() }}{% if !loop.last %}, {% endif %}{% endfor %})
 {%- endif %}
-    } catch (err: {{ internal_package }}.FfiException) {
-        throw err.toBoltFfiCommon()
-    }
 }
 {%- endfor %}
 {% endif %}

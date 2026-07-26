@@ -119,6 +119,9 @@ pub struct ReturnLoweringContext<'a> {
 pub struct ObjectHandleReturn {
     pointee: Type,
     nullable: bool,
+    /// `Result<Class, E>` / `Result<Self, E>`: the Ok payload becomes a
+    /// handle and the Err payload crosses via the last-error channel.
+    fallible: bool,
 }
 
 impl ObjectHandleReturn {
@@ -126,6 +129,7 @@ impl ObjectHandleReturn {
         Self {
             pointee,
             nullable: false,
+            fallible: false,
         }
     }
 
@@ -133,6 +137,15 @@ impl ObjectHandleReturn {
         Self {
             pointee,
             nullable: true,
+            fallible: false,
+        }
+    }
+
+    fn fallible(pointee: Type) -> Self {
+        Self {
+            pointee,
+            nullable: false,
+            fallible: true,
         }
     }
 
@@ -142,6 +155,10 @@ impl ObjectHandleReturn {
 
     pub fn is_nullable(&self) -> bool {
         self.nullable
+    }
+
+    pub fn is_fallible(&self) -> bool {
+        self.fallible
     }
 }
 
@@ -192,6 +209,9 @@ impl<'a> ReturnLoweringContext<'a> {
             Some(StandardContainer::Option(inner_type)) => self
                 .object_handle_pointee(inner_type)
                 .map(ObjectHandleReturn::nullable),
+            Some(StandardContainer::Result { ok, .. }) => self
+                .object_handle_pointee(ok)
+                .map(ObjectHandleReturn::fallible),
             _ => self
                 .object_handle_pointee(rust_type)
                 .map(ObjectHandleReturn::required),
@@ -229,17 +249,22 @@ impl<'a> ReturnLoweringContext<'a> {
 
     pub fn lower_type(&self, rust_type: &Type) -> ResolvedReturn {
         let value_strategy = classify_value_return_strategy(rust_type, self);
-        let return_contract = ReturnContract::new(value_strategy, ErrorReturnStrategy::None);
         if matches!(value_strategy, ValueReturnStrategy::ObjectHandle)
             && let Some(object_handle) = self.object_handle_return(rust_type)
         {
+            let error_strategy = if object_handle.is_fallible() {
+                ErrorReturnStrategy::StatusCode
+            } else {
+                ErrorReturnStrategy::None
+            };
             return ResolvedReturn::with_object_handle(
                 rust_type.clone(),
-                return_contract,
+                ReturnContract::new(value_strategy, error_strategy),
                 object_handle,
             );
         }
 
+        let return_contract = ReturnContract::new(value_strategy, ErrorReturnStrategy::None);
         ResolvedReturn::new(rust_type.clone(), return_contract)
     }
 }

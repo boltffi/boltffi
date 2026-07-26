@@ -7,7 +7,8 @@ use crate::reporter::Reporter;
 use super::{
     PackAllOptions, PackAndroidOptions, PackAppleOptions, PackCSharpOptions, PackDartOptions,
     PackJavaOptions, PackKmpOptions, PackPythonOptions, PackWasmOptions, pack_android, pack_apple,
-    pack_csharp, pack_dart, pack_java, pack_kmp, pack_python, pack_wasm, prepare_java_packaging,
+    pack_csharp, pack_dart, pack_kmp, pack_prepared_java, pack_python, pack_wasm,
+    prepare_java_pack,
 };
 
 pub(super) fn pack_all(
@@ -27,13 +28,15 @@ pub(super) fn pack_all(
         options.experimental,
         "pack all",
     )?;
-    let prepared_java_packaging = config
+    let prepared_java_pack = config
         .should_process(Target::Java, options.experimental)
         .then(|| {
-            prepare_java_packaging(
+            prepare_java_pack(
                 config,
-                options.execution.release,
-                &options.execution.cargo_args,
+                PackJavaOptions {
+                    execution: options.execution.clone(),
+                    experimental: options.experimental,
+                },
             )
         })
         .transpose()?;
@@ -89,16 +92,8 @@ pub(super) fn pack_all(
         packed_any = true;
     }
 
-    if config.should_process(Target::Java, options.experimental) {
-        pack_java(
-            config,
-            PackJavaOptions {
-                execution: options.execution.clone(),
-                experimental: options.experimental,
-            },
-            prepared_java_packaging,
-            reporter,
-        )?;
+    if let Some(prepared_java_pack) = prepared_java_pack {
+        pack_prepared_java(config, prepared_java_pack, reporter)?;
         packed_any = true;
     }
 

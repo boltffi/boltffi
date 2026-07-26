@@ -14,8 +14,9 @@ use crate::core::DeclarationLabel;
 use super::{
     names,
     plan::{
-        KmpApiPlan, KmpCommonModule, KmpFunctionPlan, KmpModule, KmpParamPlan, KmpPlatform,
-        KmpPlatformModule, KmpSupportMode, KmpSupportReport, KmpTypePlan,
+        KmpApiPlan, KmpCommonModule, KmpFunctionPlan, KmpJvmDelegateOutput, KmpModule,
+        KmpParamPlan, KmpPlatform, KmpPlatformModule, KmpSupportMode, KmpSupportReport,
+        KmpTypePlan,
     },
 };
 
@@ -25,6 +26,7 @@ use super::{
 pub struct KmpLoweringOptions {
     selected_platforms: Vec<KmpPlatform>,
     support_mode: KmpSupportMode,
+    jvm_delegate: Option<KmpJvmDelegateOutput>,
 }
 
 impl Default for KmpLoweringOptions {
@@ -32,6 +34,7 @@ impl Default for KmpLoweringOptions {
         Self {
             selected_platforms: KmpPlatform::default_selected(),
             support_mode: KmpSupportMode::Strict,
+            jvm_delegate: None,
         }
     }
 }
@@ -54,6 +57,12 @@ impl KmpLoweringOptions {
         self
     }
 
+    /// Sets JVM-family delegate output available for platform body emission.
+    pub fn jvm_delegate(mut self, delegate: KmpJvmDelegateOutput) -> Self {
+        self.jvm_delegate = Some(delegate);
+        self
+    }
+
     /// Returns the selected KMP platforms.
     pub fn platforms(&self) -> &[KmpPlatform] {
         &self.selected_platforms
@@ -62,6 +71,11 @@ impl KmpLoweringOptions {
     /// Returns the support mode.
     pub const fn mode(&self) -> KmpSupportMode {
         self.support_mode
+    }
+
+    /// Returns JVM-family delegate output, if available.
+    pub const fn jvm_delegate_output(&self) -> Option<&KmpJvmDelegateOutput> {
+        self.jvm_delegate.as_ref()
     }
 }
 
@@ -100,7 +114,12 @@ impl KmpLowerer {
             let mut declaration_records = Vec::new();
             for record in admission.evaluate_decl(decl) {
                 let support_record = if record.is_admitted() {
-                    match admitted_api_plan(decl, &record, &mut function_signatures) {
+                    match admitted_api_plan(
+                        decl,
+                        &record,
+                        self.options.jvm_delegate_output(),
+                        &mut function_signatures,
+                    ) {
                         Ok(api) => {
                             admitted.push(api);
                             record
@@ -154,11 +173,11 @@ impl KmpLowerer {
             .map(|platform| KmpPlatformModule::new(*platform, platform.capabilities()))
             .collect();
 
-        Ok(KmpModule::new(
-            KmpCommonModule::new(admitted),
-            platforms,
-            support_report,
-        ))
+        let mut module = KmpModule::new(KmpCommonModule::new(admitted), platforms, support_report);
+        if let Some(delegate) = self.options.jvm_delegate.clone() {
+            module = module.with_jvm_delegate(delegate);
+        }
+        Ok(module)
     }
 
     /// Returns the lowerer options.
@@ -318,42 +337,31 @@ impl KmpDeclarationSupport {
 fn admitted_api_plan(
     decl: &Decl<Native>,
     record: &admission::KmpAdmissionRecord,
+    jvm_delegate: Option<&KmpJvmDelegateOutput>,
     function_signatures: &mut BTreeSet<String>,
 ) -> std::result::Result<KmpApiPlan, String> {
-    if let Some(reason) =
-        body_emission_rejection(DeclarationRef::from(decl), record, function_signatures)
-    {
-        return Err(reason);
-    }
-
-    Ok(KmpApiPlan::new(
-        record.kind(),
-        record.name(),
-        record.required_capabilities().clone(),
-    ))
-}
-
-fn body_emission_rejection(
-    declaration: DeclarationRef<'_, Native>,
-    record: &admission::KmpAdmissionRecord,
-    function_signatures: &mut BTreeSet<String>,
-) -> Option<String> {
     if !record.is_admitted() {
-        return None;
+        return Err("KMP API was not admitted".to_string());
     }
 
-    match (record.kind(), declaration) {
+    match (record.kind(), DeclarationRef::from(decl)) {
         ("function", DeclarationRef::Function(function)) => {
-            let function_plan = lower_function_plan(function, function_signatures);
-            Some(match function_plan {
-                Ok(function_plan) => format!(
+            let function_plan = lower_native_function_plan(function)?;
+            if jvm_delegate.is_some_and(|delegate| delegate.covers_function(&function_plan)) {
+                reserve_function_signature(&function_plan, function_signatures)?;
+                Ok(KmpApiPlan::function(
+                    record.name(),
+                    record.required_capabilities().clone(),
+                    function_plan,
+                ))
+            } else {
+                Err(format!(
                     "KMP JNI glue emission has not been delegated for function {}",
                     function_plan.name()
-                ),
-                Err(reason) => reason,
-            })
+                ))
+            }
         }
-        _ => Some(format!(
+        _ => Err(format!(
             "KMP declaration body emission has not been ported for {} {}",
             record.kind(),
             record.name()
@@ -361,9 +369,9 @@ fn body_emission_rejection(
     }
 }
 
-fn lower_function_plan(
+/// Builds the KMP function plan for a native free function declaration.
+pub fn lower_native_function_plan(
     function: &FunctionDecl<Native>,
-    function_signatures: &mut BTreeSet<String>,
 ) -> std::result::Result<KmpFunctionPlan, String> {
     let callable = function.callable();
     if callable.receiver().is_some()
@@ -403,6 +411,9 @@ fn lower_function_plan(
                 ));
             }
             let name = names::param_name(param.name());
+            if !names::is_valid_identifier(&name) {
+                return Err(format!("invalid Kotlin parameter name {name}"));
+            }
             if !param_names.insert(name.clone()) {
                 return Err(format!("duplicate Kotlin parameter name {name}"));
             }
@@ -431,9 +442,8 @@ fn lower_function_plan(
         }
     };
     let name = names::callable_name(function.name());
-    let signature = function_signature_key(&name, &params);
-    if !function_signatures.insert(signature.clone()) {
-        return Err(format!("duplicate Kotlin function signature {signature}"));
+    if !names::is_valid_identifier(&name) {
+        return Err(format!("invalid Kotlin function name {name}"));
     }
 
     Ok(KmpFunctionPlan::new(
@@ -442,6 +452,18 @@ fn lower_function_plan(
         params,
         returns,
     ))
+}
+
+fn reserve_function_signature(
+    function: &KmpFunctionPlan,
+    function_signatures: &mut BTreeSet<String>,
+) -> std::result::Result<(), String> {
+    let signature = function_signature_key(function.name(), function.params());
+    if !function_signatures.insert(signature.clone()) {
+        return Err(format!("duplicate Kotlin function signature {signature}"));
+    }
+
+    Ok(())
 }
 
 fn function_signature_key(name: &str, params: &[KmpParamPlan]) -> String {
@@ -486,17 +508,24 @@ fn primitive_has_direct_jvm_carrier(primitive: Primitive) -> bool {
 #[cfg(test)]
 mod tests {
     use boltffi_ast::PackageInfo;
-    use boltffi_binding::{Bindings, Native, lower as lower_bindings};
+    use boltffi_binding::{Bindings, Decl, Native, lower as lower_bindings};
 
     use super::{
         super::plan::{KmpPlatform, KmpSupportMode},
         KmpLowerError, KmpLowerer, KmpLoweringOptions,
     };
+    use crate::target::kmp::{
+        KmpApiBody, KmpJvmDelegateFunction, KmpJvmDelegateOutput, KmpTypePlan,
+    };
 
     fn bindings(source: &str) -> Bindings<Native> {
+        bindings_for_package("demo", source)
+    }
+
+    fn bindings_for_package(package_name: &str, source: &str) -> Bindings<Native> {
         let source = boltffi_scan::scan_file(
             syn::parse_str(source).expect("valid source fixture"),
-            PackageInfo::new("demo", None),
+            PackageInfo::new(package_name, None),
         )
         .expect("source should scan");
         lower_bindings::<Native>(&source).expect("source should lower")
@@ -507,6 +536,74 @@ mod tests {
             KmpLowerError::UnsupportedApis { report } => report,
             other => panic!("unexpected KMP lower error: {other:?}"),
         }
+    }
+
+    fn add_delegate_with_signature(
+        native_symbol: &str,
+        param_types: Vec<KmpTypePlan>,
+    ) -> KmpJvmDelegateOutput {
+        add_delegate_with_signature_and_jni_glue(
+            native_symbol,
+            "add",
+            param_types,
+            "/* delegated JNI glue */\n",
+        )
+    }
+
+    fn add_delegate_with_signature_and_jni_glue(
+        native_symbol: &str,
+        kotlin_name: &str,
+        param_types: Vec<KmpTypePlan>,
+        jni_glue_source: &str,
+    ) -> KmpJvmDelegateOutput {
+        KmpJvmDelegateOutput::new(
+            "com.example.boltffi.jvm",
+            "",
+            vec![KmpJvmDelegateFunction::new(
+                native_symbol,
+                kotlin_name,
+                param_types,
+                Some(KmpTypePlan::Primitive(boltffi_binding::Primitive::I32)),
+                jni_glue_source,
+            )],
+        )
+    }
+
+    fn add_delegate_with_native_symbol(native_symbol: &str) -> KmpJvmDelegateOutput {
+        add_delegate_with_signature(
+            native_symbol,
+            vec![
+                KmpTypePlan::Primitive(boltffi_binding::Primitive::I32),
+                KmpTypePlan::Primitive(boltffi_binding::Primitive::I32),
+            ],
+        )
+    }
+
+    fn add_delegate() -> KmpJvmDelegateOutput {
+        add_delegate_with_native_symbol("boltffi_function_demo_add")
+    }
+
+    fn unary_i32_delegate(native_symbol: &str) -> KmpJvmDelegateOutput {
+        unary_i32_delegates(&[native_symbol])
+    }
+
+    fn unary_i32_delegates(native_symbols: &[&str]) -> KmpJvmDelegateOutput {
+        KmpJvmDelegateOutput::new(
+            "com.example.boltffi.jvm",
+            "",
+            native_symbols
+                .iter()
+                .map(|native_symbol| {
+                    KmpJvmDelegateFunction::new(
+                        *native_symbol,
+                        "pingPong",
+                        vec![KmpTypePlan::Primitive(boltffi_binding::Primitive::I32)],
+                        Some(KmpTypePlan::Primitive(boltffi_binding::Primitive::I32)),
+                        "/* delegated JNI glue */\n",
+                    )
+                })
+                .collect(),
+        )
     }
 
     #[test]
@@ -531,6 +628,209 @@ mod tests {
                 .expect("rejection reason")
                 .contains("JNI glue emission")
         );
+    }
+
+    #[test]
+    fn strict_lowerer_admits_sync_function_covered_by_jvm_delegate() {
+        let module = KmpLowerer::new(KmpLoweringOptions::new().jvm_delegate(add_delegate()))
+            .lower(&bindings(
+                r#"
+                #[export]
+                pub fn add(left: i32, right: i32) -> i32 {
+                    left + right
+                }
+                "#,
+            ))
+            .expect("covered primitive sync function should be admitted");
+
+        assert_eq!(module.common().apis().len(), 1);
+        assert_eq!(module.common().apis()[0].kind(), "function");
+        assert_eq!(module.common().apis()[0].name(), "add");
+        assert_eq!(module.support_report().admitted_apis().len(), 1);
+        assert!(module.support_report().rejected_apis().is_empty());
+        assert!(module.jvm_delegate().is_some());
+    }
+
+    #[test]
+    fn native_function_plan_replaces_hyphenated_package_segments() {
+        let bindings = bindings_for_package(
+            "my-crate",
+            r#"
+            #[export]
+            pub fn add(left: i32, right: i32) -> i32 {
+                left + right
+            }
+            "#,
+        );
+        let function = bindings
+            .decls()
+            .iter()
+            .find_map(|decl| match decl {
+                Decl::Function(function) => Some(function.as_ref()),
+                _ => None,
+            })
+            .expect("function should lower");
+        let function_plan =
+            super::lower_native_function_plan(function).expect("primitive sync function");
+
+        assert_eq!(
+            function_plan.native_symbol(),
+            "boltffi_function_my_crate_add"
+        );
+    }
+
+    #[test]
+    fn strict_lowerer_rejects_delegate_with_mismatched_native_symbol() {
+        let error = KmpLowerer::new(
+            KmpLoweringOptions::new().jvm_delegate(add_delegate_with_native_symbol("add")),
+        )
+        .lower(&bindings(
+            r#"
+            #[export]
+            pub fn add(left: i32, right: i32) -> i32 {
+                left + right
+            }
+            "#,
+        ))
+        .expect_err("delegates must cover the same native symbol");
+        let report = unsupported_report(error);
+
+        assert!(report.rejected_apis().iter().any(|api| {
+            api.kind() == "function"
+                && api.name() == "add"
+                && api
+                    .reason()
+                    .expect("rejection reason")
+                    .contains("JNI glue emission")
+        }));
+    }
+
+    #[test]
+    fn strict_lowerer_rejects_delegate_with_mismatched_parameter_types() {
+        let error = KmpLowerer::new(KmpLoweringOptions::new().jvm_delegate(
+            add_delegate_with_signature(
+                "boltffi_function_demo_add",
+                vec![
+                    KmpTypePlan::Primitive(boltffi_binding::Primitive::I64),
+                    KmpTypePlan::Primitive(boltffi_binding::Primitive::I32),
+                ],
+            ),
+        ))
+        .lower(&bindings(
+            r#"
+            #[export]
+            pub fn add(left: i32, right: i32) -> i32 {
+                left + right
+            }
+            "#,
+        ))
+        .expect_err("delegates must cover the same parameter types");
+        let report = unsupported_report(error);
+
+        assert!(report.rejected_apis().iter().any(|api| {
+            api.kind() == "function"
+                && api.name() == "add"
+                && api
+                    .reason()
+                    .expect("rejection reason")
+                    .contains("JNI glue emission")
+        }));
+    }
+
+    #[test]
+    fn strict_lowerer_rejects_delegate_with_empty_jni_glue() {
+        let error = KmpLowerer::new(KmpLoweringOptions::new().jvm_delegate(
+            add_delegate_with_signature_and_jni_glue(
+                "boltffi_function_demo_add",
+                "add",
+                vec![
+                    KmpTypePlan::Primitive(boltffi_binding::Primitive::I32),
+                    KmpTypePlan::Primitive(boltffi_binding::Primitive::I32),
+                ],
+                "  \n",
+            ),
+        ))
+        .lower(&bindings(
+            r#"
+            #[export]
+            pub fn add(left: i32, right: i32) -> i32 {
+                left + right
+            }
+            "#,
+        ))
+        .expect_err("delegates without JNI glue must not admit APIs");
+        let report = unsupported_report(error);
+
+        assert!(report.rejected_apis().iter().any(|api| {
+            api.kind() == "function"
+                && api.name() == "add"
+                && api
+                    .reason()
+                    .expect("rejection reason")
+                    .contains("JNI glue emission")
+        }));
+    }
+
+    #[test]
+    fn strict_lowerer_rejects_invalid_kotlin_function_names() {
+        let error = KmpLowerer::new(KmpLoweringOptions::new().jvm_delegate(
+            add_delegate_with_signature_and_jni_glue(
+                "boltffi_function_demo__2d",
+                "2d",
+                vec![KmpTypePlan::Primitive(boltffi_binding::Primitive::I32)],
+                "/* delegated JNI glue */\n",
+            ),
+        ))
+        .lower(&bindings(
+            r#"
+            #[export]
+            pub fn _2d(value: i32) -> i32 {
+                value
+            }
+            "#,
+        ))
+        .expect_err("invalid Kotlin function names must be rejected before emission");
+        let report = unsupported_report(error);
+
+        assert!(report.rejected_apis().iter().any(|api| {
+            api.kind() == "function"
+                && api.name() == "2d"
+                && api
+                    .reason()
+                    .expect("rejection reason")
+                    .contains("invalid Kotlin function name")
+        }));
+    }
+
+    #[test]
+    fn strict_lowerer_rejects_invalid_kotlin_parameter_names() {
+        let error = KmpLowerer::new(KmpLoweringOptions::new().jvm_delegate(
+            add_delegate_with_signature_and_jni_glue(
+                "boltffi_function_demo_add",
+                "add",
+                vec![KmpTypePlan::Primitive(boltffi_binding::Primitive::I32)],
+                "/* delegated JNI glue */\n",
+            ),
+        ))
+        .lower(&bindings(
+            r#"
+            #[export]
+            pub fn add(_2d: i32) -> i32 {
+                _2d
+            }
+            "#,
+        ))
+        .expect_err("invalid Kotlin parameter names must be rejected before emission");
+        let report = unsupported_report(error);
+
+        assert!(report.rejected_apis().iter().any(|api| {
+            api.kind() == "function"
+                && api.name() == "add"
+                && api
+                    .reason()
+                    .expect("rejection reason")
+                    .contains("invalid Kotlin parameter name")
+        }));
     }
 
     #[test]
@@ -581,18 +881,24 @@ mod tests {
 
     #[test]
     fn strict_lowerer_rejects_duplicate_kotlin_function_signatures() {
-        let error = super::lower(&bindings(
+        let error = KmpLowerer::new(KmpLoweringOptions::new().jvm_delegate(unary_i32_delegates(
+            &[
+                "boltffi_function_demo_ping_pong",
+                "boltffi_function_demo_ping__pong",
+            ],
+        )))
+        .lower(&bindings(
             r#"
-            #[export]
-            pub fn ping_pong(value: i32) -> i32 {
-                value
-            }
+                #[export]
+                pub fn ping_pong(value: i32) -> i32 {
+                    value
+                }
 
-            #[export]
-            pub fn ping__pong(value: i32) -> i32 {
-                value
-            }
-            "#,
+                #[export]
+                pub fn ping__pong(value: i32) -> i32 {
+                    value
+                }
+                "#,
         ))
         .expect_err("duplicate Kotlin callable signatures should fail closed");
         let report = unsupported_report(error);
@@ -605,6 +911,35 @@ mod tests {
                     .expect("rejection reason")
                     .contains("duplicate Kotlin function signature")
         }));
+    }
+
+    #[test]
+    fn preview_prune_does_not_reserve_signature_for_delegate_missing_function() {
+        let module = KmpLowerer::new(
+            KmpLoweringOptions::new()
+                .support_mode(KmpSupportMode::PreviewPruneUnsupported)
+                .jvm_delegate(unary_i32_delegate("boltffi_function_demo_ping__pong")),
+        )
+        .lower(&bindings(
+            r#"
+            #[export]
+            pub fn ping_pong(value: i32) -> i32 {
+                value
+            }
+
+            #[export]
+            pub fn ping__pong(value: i32) -> i32 {
+                value
+            }
+            "#,
+        ))
+        .expect("preview pruning should admit the covered duplicate sibling");
+
+        assert_eq!(module.common().apis().len(), 1);
+        let KmpApiBody::Function(function) = module.common().apis()[0].body() else {
+            panic!("expected admitted function body");
+        };
+        assert_eq!(function.native_symbol(), "boltffi_function_demo_ping__pong");
     }
 
     #[test]

@@ -28,6 +28,10 @@
 {% include "bridge/jni/source/records.c" %}
 {%- endif %}
 
+{%- if uses_direct_buffers %}
+{% include "bridge/jni/source/direct_buffers.c" %}
+{%- endif %}
+
 {%- if uses_callback_handles %}
 {% include "bridge/jni/callback.c" %}
 {%- endif %}

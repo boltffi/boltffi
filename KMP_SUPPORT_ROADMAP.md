@@ -8,11 +8,11 @@ Restart the KMP implementation around a Python-style architecture:
 - Packaging pipeline: `plan -> layout -> build/stage/package`
 - Strict support contract: every API emitted into `commonMain` must compile and run on every selected KMP target.
 
-The current KMP branch contains useful lessons, tests, naming helpers, target mapping, Gradle snippets, and JVM/Android delegation ideas. It should not be kept as the owner of the new design. In particular, the Apple path should be deleted or quarantined until it can be rebuilt around explicit capability admission and real Kotlin/Native actuals.
+The pre-reset KMP branch contained useful lessons, tests, naming helpers, target mapping, Gradle snippets, and JVM/Android delegation ideas. It should not be kept as the owner of the new design. In particular, Apple support should stay deleted or quarantined until it can be rebuilt around explicit capability admission and real Kotlin/Native actuals.
 
 ## Why Reset
 
-The current KMP path grew through several PRs:
+The previous KMP path grew through several PRs:
 
 - Apple cinterop scaffolding
 - Native data/function actuals
@@ -21,7 +21,7 @@ The current KMP path grew through several PRs:
 - Class-member support pruning
 - Support-surface refactoring
 
-That work proved important details, but it also left the implementation with the wrong shape. Today `boltffi_bindgen/src/render/kmp/mod.rs` mixes support admission, common API rendering, JVM/Android actuals, Apple actuals, Gradle files, cinterop files, JNI reuse, source filtering, and tests. `boltffi_bindgen/src/render/kmp/apple.rs` then carries a large inline Kotlin/Native runtime and still emits `NotImplementedError` paths for unsupported shapes. `boltffi_cli/src/pack/kmp.rs` packages Android and JVM resources but does not stage or link Apple static libraries.
+That work proved important details, but it also left the implementation with the wrong shape. Before the M0/M1 reset, `boltffi_bindgen/src/render/kmp/mod.rs` mixed support admission, common API rendering, JVM/Android actuals, Apple actuals, Gradle files, cinterop files, JNI reuse, source filtering, and tests. The old `boltffi_bindgen/src/render/kmp/apple.rs` carried a large inline Kotlin/Native runtime and emitted `NotImplementedError` paths for unsupported shapes. The old single-file `boltffi_cli/src/pack/kmp.rs` packaged Android and JVM resources but did not stage or link Apple static libraries.
 
 By contrast, the newer Python backend is cleaner:
 
@@ -52,20 +52,30 @@ M0 is complete:
 - `pack kmp` verifies generated support metadata against the effective config.
 - Production KMP generation has no `NotImplementedError` or `NativeRuntimeNotImplemented` fallback path for admitted APIs.
 
-M1a through M1c are complete:
+M1 is complete:
 
 - M1a introduced the new IR KMP backend skeleton under `boltffi_backend/src/target/kmp`.
 - M1b introduced the KMP plan/lower/admission model, support reports, platform capability intersection, and plan-level tests.
 - M1c introduced emit/file-list parity for the default JVM/Android KMP project skeleton from the IR plan.
+- M1d introduced the KMP packaging plan/layout foundation under `boltffi_cli/src/pack/kmp`.
 - M1c keeps behavior intentionally strict: unsupported or currently unrenderable APIs fail in strict mode and are omitted only in explicit preview-prune mode.
 - Empty or fully pruned JVM/Android source sets remain package-only skeletons; they do not emit runtime declarations for APIs that were not admitted.
 - M1c does not provide real JVM/Android API body parity. That starts in M2.
+- M1d keeps behavior unchanged: KMP packaging still reuses the existing JVM/Android packagers, while generated-project paths now live behind `KmpPackageLayout`.
 
-Remaining M1 work, if kept before M2, is packaging foundation only:
+M2 has started:
 
-- Add `KmpPackagingPlan` and `KmpPackageLayout`.
-- Move KMP packaging path calculation behind layout-owned helpers.
-- Do not expand generated API behavior in this step.
+- M2a introduced a backend-owned JVM-family delegate seam for KMP.
+- `commonMain` expect declarations remain KMP-owned, while JVM/Android internal Kotlin and JNI glue can be supplied by a delegate owned outside `boltffi_backend`.
+- The backend can admit a delegated infallible sync primitive free function in strict mode through internal delegate tests.
+- M2b-a introduced the `boltffi_bindgen` adapter scaffold that converts `FfiContract` + `AbiContract` into backend JVM-family delegate output for the admitted primitive sync surface.
+- M2b-b wired production IR KMP generation through that delegate for the admitted primitive sync surface.
+- M2c let the delegate supply trusted generated internal Kotlin function bodies, so JVM/Android emission now reuses the mature Kotlin/JNI function renderer for the currently admitted surface.
+- M2d added a production-generation smoke that validates the strict primitive-sync KMP module shape across common, JVM actual, Android actual, internal Kotlin/JNI, Gradle, and support metadata.
+- M2e isolated generated KMP C headers under `boltffi_generated/`, made KMP pack validate JVM/Android glue against that generated-header contract, and removed stale root headers that could shadow regenerated headers.
+- M2f added an opt-in Gradle smoke that writes the IR-generated primitive-sync KMP module and runs configured Gradle tasks when explicitly enabled.
+- M2g deleted the legacy non-IR KMP generator path; production `generate kmp` now routes through IR, KMP pack validates backend-owned support metadata, and `render/kmp` only retains the JVM-family delegate adapter.
+- Unsupported KMP surfaces remain strict and fail-closed unless explicit preview pruning is enabled.
 
 ## Target Architecture
 
@@ -107,13 +117,19 @@ Suggested core structs:
 
 ### CLI Packaging Layout
 
-Split `boltffi_cli/src/pack/kmp.rs` into a package:
+M1d split the old `boltffi_cli/src/pack/kmp.rs` into the current package foundation:
 
 ```text
 boltffi_cli/src/pack/kmp/
   mod.rs
   plan.rs
   layout.rs
+```
+
+Future packaging slices can continue splitting orchestration by responsibility:
+
+```text
+boltffi_cli/src/pack/kmp/
   generate.rs
   jvm.rs
   android.rs
@@ -134,7 +150,7 @@ Goal: remove the ambiguous half-supported Apple state.
 
 Work:
 
-- Decide whether to delete current `render/kmp/apple.rs` outright or move it behind a quarantined reference module outside the production path.
+- Decide whether to delete the old production `render/kmp/apple.rs` outright or move it behind a quarantined reference module outside the production path.
 - Replace current KMP docs that promise runtime throws for unsupported Apple shapes.
 - Write the support contract in `BOLTFFI_TOML_SPEC.md` and user docs.
 - Add a failing/diagnostic test proving admitted APIs cannot emit `NotImplementedError`.
@@ -167,10 +183,11 @@ Completed:
 - M1a: IR KMP backend skeleton.
 - M1b: KMP plan/lower/admission, platform modules, support report, capability intersection, and plan-level tests.
 - M1c: emit/file-list parity skeleton for common/JVM/Android from the IR plan.
+- M1d: KMP packaging plan/layout foundation under `boltffi_cli/src/pack/kmp`.
 
 Remaining:
 
-- M1d: KMP packaging plan/layout foundation. This should calculate paths and validation state only; it should not add new generated API behavior.
+- None.
 
 Exit criteria:
 
@@ -194,20 +211,182 @@ Verification:
   - `cargo fmt --check`
   - `git diff --check`
   - `rg "NotImplementedError|NativeRuntimeNotImplemented" boltffi_bindgen/src/render/kmp boltffi_backend/src/target/kmp`
+- M1d exit check passed:
+  - `cargo test -p boltffi_cli -- --quiet`
+  - `cargo test -p boltffi_backend kmp -- --nocapture`
+  - `cargo test -p boltffi_bindgen kmp`
+  - `cargo fmt --check`
+  - `git diff --check`
+  - `rg "NotImplementedError|NativeRuntimeNotImplemented" boltffi_bindgen/src/render/kmp boltffi_backend/src/target/kmp`
 
 ### M2: JVM And Android Parity
 
 Goal: rebuild the useful part first, cut production JVM/Android KMP over to the new architecture, and remove the old production KMP path.
 
-Work:
+#### M2a: Backend Delegate Seam
 
-- Generate `commonMain`, `jvmMain`, and `androidMain`.
-- Delegate JVM/Android implementation to existing Kotlin/JNI lowerers and emitters.
-- Keep common-to-JVM conversion plans explicit.
+Goal: prove the KMP backend can admit and emit an infallible sync primitive free function only when a JVM-family delegate is supplied, without claiming production Kotlin/JNI integration.
+
+Completed:
+
+- Added a backend-owned JVM-family delegate seam.
+- Kept `commonMain` expect declarations KMP-owned.
+- Kept strict mode fail-closed when no delegate covers a function.
+- Added backend tests for delegated primitive sync functions, native-symbol/type/name matching, package mismatch rejection, and preview-prune duplicate handling.
+- Added an IR CLI regression test proving production `generate kmp --ir` remains fail-closed for unsupported KMP surfaces.
+
+M2a non-goals at the time:
+
+- Do not wire `boltffi_bindgen::Generation::kmp_host()` to Kotlin/JNI output.
+- Do not model the mature Kotlin/JNI shared `Native` runtime or C translation-unit preamble as production behavior.
+- Do not claim generated KMP projects with non-empty APIs compile through the IR path.
+
+Exit criteria:
+
+- Backend-level delegate seam tests pass.
+- Production IR KMP remains fail-closed without the real delegate adapter.
+- No KMP fallback stubs or `NotImplementedError` paths are emitted for admitted APIs.
+
+Verification:
+
+- `cargo test -p boltffi_backend kmp -- --nocapture`
+- `cargo test -p boltffi_cli ir_kmp_strict_generation_still_fails_closed_for_unsupported_surface`
+- `cargo fmt --check`
+- `git diff --check`
+- `rg "NotImplementedError|NativeRuntimeNotImplemented" boltffi_bindgen/src/render/kmp boltffi_backend/src/target/kmp`
+
+#### M2b: Kotlin/JNI Delegate Adapter
+
+Goal: connect production IR KMP generation to the mature Kotlin/JNI lowerers/emitters.
+
+M2b-a completed:
+
+- Added the `boltffi_bindgen` bridge from `FfiContract` + `AbiContract` to `KmpJvmDelegateOutput` without wiring it into production IR generation.
+- Reused the existing Kotlin/JNI lowerers and emitters to build delegate Kotlin/JNI output for infallible primitive sync functions.
+- Preserved the shared Kotlin `Native` runtime as members of the same object that declares external methods.
+- Preserved shared JNI preamble/includes once per generated translation unit and isolated per-function JNI glue.
+- Kept non-primitive/common-to-JVM conversion cases uncovered until an explicit conversion plan exists.
+
+M2b-b completed:
+
+- Wired production IR KMP generation through `Generation::render_kmp()` to build a JVM-family delegate from backend `Bindings<Native>`.
+- Preserved backend native symbols when adapting metadata bindings into the legacy Kotlin/JNI lowerer shape.
+- Shared KMP default package/module constants from the backend host so delegate package matching cannot drift from host defaults.
+- Added a production-host regression proving an infallible primitive sync free function renders common/JVM/Android output through the new delegate path.
+- Kept unsupported KMP surfaces strict and fail-closed after delegate wiring.
+
+#### M2c: Delegate-Owned Internal Kotlin Bodies
+
+Goal: keep the KMP backend in charge of common/platform file shape while letting the JVM-family delegate own the internal Kotlin function body implementation.
+
+Completed:
+
+- Added delegate-owned internal Kotlin function source to the backend JVM delegate model.
+- Updated JVM/Android emission to prefer delegate-supplied internal Kotlin bodies, retaining direct `Native.*` body rendering only as a manual-delegate fallback.
+- Kept backend admission based on typed delegate coverage and non-empty JNI glue; delegate-owned Kotlin source is trusted generated output, not arbitrary Kotlin input validated by the backend.
+- Reused the mature Kotlin/JNI function renderer from `boltffi_bindgen` for admitted primitive sync functions, rewriting only the backend-planned Kotlin function name, native symbol, and parameter names.
+- Added focused backend and adapter regressions proving delegate-owned internal Kotlin source is propagated into generated KMP JVM output.
+- Did not admit new API categories; strings, records, async, classes, callbacks, and broader value conversion remain future explicit plan work.
+
+#### M2d: Current Surface Compile-Readiness Smoke
+
+Goal: prove the currently admitted production IR KMP surface is internally coherent before widening API coverage.
+
+Completed:
+
+- Added a strict production-generation smoke for one infallible primitive sync function.
+- Verified the generated file list includes common, JVM actual, Android actual, JVM-family internal Kotlin, JVM/Android JNI glue, Gradle files, and support metadata.
+- Verified common `expect`, JVM/Android `actual`, internal delegate function, `Native` external declaration, JNI glue, Gradle JVM/Android targets, and strict support metadata agree for that function.
+- Kept this as a deterministic Rust test rather than a default Gradle invocation so normal test runs do not depend on plugin downloads or local Android/Gradle setup.
+- Did not admit new API categories or change generation/packaging behavior.
+
+#### M2e: Generated Header Isolation For KMP JNI
+
+Goal: make the generated JVM/Android KMP JNI glue consume cbindgen headers from a generated-header namespace so stale root-level headers cannot shadow regenerated bindings.
+
+Completed:
+
+- Added a delegate-controlled JNI header include so KMP JVM/Android glue includes `boltffi_generated/<module>.h` while standalone non-KMP JNI keeps its existing `<module>.h` default.
+- Made KMP pack read and validate both JVM and Android `jni_glue.c` files before packaging.
+- Required both source sets to include the same generated header, or both to have no generated include only for empty/comment-only glue that falls back to the selected package header.
+- Rejected stale unqualified includes, mismatched generated includes, duplicate generated includes, path-like generated include basenames, and duplicate unqualified preamble-name includes that match the selected generated header basename.
+- Taught header generation to create nested parent directories for `boltffi_generated/<module>.h`.
+- Removed stale root-level `.h` files from KMP JVM/Android C source roots while preserving nested generated headers and non-header files.
+- Kept the cleanup and validation scoped to KMP packaging; standalone Java/JNI generation behavior remains unchanged except for the shared lowerer accepting an explicit header include.
+
+Verification:
+
+- `cargo test -p boltffi_cli kmp`
+- `cargo test -p boltffi_bindgen kmp`
+- `cargo test -p boltffi_bindgen jni`
+- `cargo test -p boltffi_backend kmp`
+- `cargo check -p boltffi_cli`
+- `cargo fmt --check`
+- `git diff --check`
+- `rg "NotImplementedError|NativeRuntimeNotImplemented|boltffiNativeRuntimeNotImplemented" boltffi_bindgen/src/render/kmp boltffi_backend/src/target/kmp`
+
+#### M2f: Environment-Gated Gradle Compile Smoke
+
+Goal: prove the current admitted JVM/Android KMP project compiles through Gradle before widening API coverage or deleting more legacy code.
+
+Completed:
+
+- Added `kmp_generation_gradle_smoke_compiles_current_project_when_enabled`.
+- The test is skipped by default and runs only when `BOLTFFI_KMP_GRADLE_SMOKE=1` or another true value is set.
+- The smoke writes the strict primitive-sync KMP module generated through the IR path to a temporary Gradle project.
+- The default Gradle task is `compileKotlinJvm`.
+- The generated KMP project configures `androidTarget`, so opt-in runs require Gradle plus Android SDK/tooling even when the default task is JVM-only.
+- `BOLTFFI_KMP_GRADLE` can override the Gradle executable with a command on `PATH`, an absolute path, or a repository-relative path, and `BOLTFFI_KMP_GRADLE_TASKS` can override or extend the task list for Android-capable environments.
+- The slice does not admit strings, records, callbacks, classes, or Apple targets.
+
+Exit criteria:
+
+- CI/local developers can opt into a real generated-project compile check.
+- The smoke exercises the IR-generated KMP files that pack will consume.
+- Failures point to generation, Gradle configuration, or packaging layout with actionable diagnostics.
+
+Verification:
+
+- Default skipped smoke: `cargo test -p boltffi_bindgen kmp_generation_gradle_smoke_compiles_current_project_when_enabled`
+- Opt-in Gradle smoke: `BOLTFFI_KMP_GRADLE_SMOKE=1 cargo test -p boltffi_bindgen kmp_generation_gradle_smoke_compiles_current_project_when_enabled`
+- Optional custom tasks: `BOLTFFI_KMP_GRADLE_SMOKE=1 BOLTFFI_KMP_GRADLE_TASKS="compileKotlinJvm assemble" cargo test -p boltffi_bindgen kmp_generation_gradle_smoke_compiles_current_project_when_enabled`
+
+#### M2g: Delete Legacy Non-IR KMP JVM/Android Production Path
+
+Goal: make IR generation the only production KMP JVM/Android path before starting Apple support.
+
+Completed:
+
+- Removed the legacy CLI generator path in `boltffi_cli/src/commands/generate/languages/kmp.rs`; stale generated-output cleanup now lives with the IR KMP writer.
+- Kept `boltffi generate kmp --experimental` routed through `commands::generate::ir` and `Generation::render(Target::KotlinMultiplatform)`.
+- Deleted tests that depended on `KMPEmitter::emit` and retained route-level, backend, delegate-adapter, and packaging tests under their current owners.
+- Deleted the monolithic `boltffi_bindgen/src/render/kmp/mod.rs` renderer body; `render/kmp` now only exposes the JVM-family delegate adapter.
+- Moved generated support metadata parsing and the generated-header directory constant to `boltffi_backend::target::kmp`.
+- KMP pack now validates backend-owned support metadata instead of importing legacy bindgen KMP report structs.
+
+Exit criteria:
+
+- `KMPEmitter::emit` is gone from the source tree.
+- The legacy `KMPGenerator` path is deleted.
+- `boltffi generate kmp --experimental` and `pack kmp` still work for the currently admitted JVM/Android surface through the IR path.
+- No KMP-specific duplicate JNI implementation remains outside the delegate adapter.
+
+Verification:
+
+- Generated KMP project still matches the M2d/M2f smoke expectations.
+- `rg "KMPEmitter|KMPGenerator|commands/generate/languages/kmp|KmpSupportPolicy|boltffi_bindgen::render::kmp" boltffi_bindgen/src boltffi_cli/src` finds no legacy production KMP generation path.
+- `rg "boltffiNativeRuntimeNotImplemented|NotImplementedError|NativeRuntimeNotImplemented" boltffi_bindgen/src/render/kmp boltffi_backend/src/target/kmp` confirms no legacy fallback runtime path remains.
+
+Remaining M2 work after M2g:
+
+- Extend admitted JVM/Android coverage beyond infallible primitive sync functions through explicit common-to-JVM conversion plans.
+- Preserve the shared Kotlin `Native` runtime inside the owner object that declares external methods as more API shapes are admitted.
+- Preserve shared JNI C preamble/includes/helpers once per generated translation unit as more API shapes are admitted.
+- Keep delegate functions filtered to the admitted KMP support surface.
+- Wire the M2f environment-gated Gradle compile/assemble smoke into CI once Android-capable Gradle workers are provisioned.
 - Keep Android `jniLibs` packaging through the existing Android packager.
 - Keep JVM native resources through the existing JVM packager.
-- Delete the old monolithic `KMPEmitter` production flow after JVM/Android parity is proven.
-- Delete the old single-file `pack/kmp.rs` shape after the new `pack/kmp/*` orchestration owns JVM/Android packaging.
+- Keep JVM/Android packaging on the new `pack/kmp/*` orchestration while production parity moves over.
 - Retain only migrated helpers, snippets, and tests with clear ownership in the new modules.
 
 Exit criteria:
@@ -379,20 +558,24 @@ Verification:
 
 1. Done: reset docs and support contract.
 2. Done: introduce KMP plan/lower/emit skeleton and support report.
-3. Next: move packaging to `pack/kmp/*` with no feature expansion.
-4. Rebuild JVM/Android KMP generation and packaging.
-5. Add Apple target/layout planning and static library staging.
-6. Add Apple sync value actuals.
-7. Add Apple classes/handles.
-8. Add callbacks.
-9. Add async and streams.
-10. Add publication/demo/CI/docs hardening.
+3. Done: move packaging to `pack/kmp/*` with no feature expansion.
+4. In progress: rebuild JVM/Android KMP generation and packaging.
+5. Done: connect `boltffi_bindgen` Kotlin/JNI lowerers to the KMP JVM delegate seam.
+6. Done: prove current JVM/Android primitive-sync KMP shape and generated-header isolation.
+7. Done: add an environment-gated Gradle compile smoke for the current admitted JVM/Android surface.
+8. Done: delete the legacy non-IR KMP JVM/Android production path.
+9. Next: add Apple target/layout planning and static library staging.
+10. Add Apple sync value actuals.
+11. Add Apple classes/handles.
+12. Add callbacks.
+13. Add async and streams.
+14. Add publication/demo/CI/docs hardening.
 
 ## Salvage Plan
 
 Reuse:
 
-- Target enums and Apple target selection logic from `target.rs` and current KMP generator.
+- Target enums and Apple target selection logic from `target.rs` and the legacy KMP generator.
 - JVM/Android delegation concept.
 - Existing Android and JVM packagers.
 - Naming helpers where they match generated Kotlin conventions.
@@ -400,7 +583,7 @@ Reuse:
 
 Reference only:
 
-- Apple runtime snippets in `render/kmp/apple.rs`.
+- Apple runtime snippets formerly in `render/kmp/apple.rs`.
 - cinterop Gradle snippets.
 - Support-surface pruning tests.
 

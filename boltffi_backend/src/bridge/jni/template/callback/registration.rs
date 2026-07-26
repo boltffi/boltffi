@@ -10,14 +10,14 @@
 //! every callback class through the same path.
 
 use crate::bridge::{
-    c::{Identifier, Literal},
-    jni::CallbackRegistration,
+    c::Identifier,
+    jni::{CallbackRegistration, name::LookupText},
 };
 
 use super::{CallbackHandleMethodView, CallbackMethodView};
 
 pub struct CallbackRegistrationView {
-    pub class: Literal,
+    pub class: LookupText,
     pub global_class: Identifier,
     pub free_method: Identifier,
     pub clone_method: Identifier,
@@ -35,7 +35,7 @@ pub struct CallbackRegistrationView {
 impl CallbackRegistrationView {
     pub fn from_registration(registration: &CallbackRegistration) -> crate::core::Result<Self> {
         Ok(Self {
-            class: Literal::string(&registration.class().as_jni_class_name()),
+            class: LookupText::new(&registration.class().as_jni_class_name()),
             global_class: registration.global_class().clone(),
             free_method: registration.free_method().clone(),
             clone_method: registration.clone_method().clone(),

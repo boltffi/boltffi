@@ -9,6 +9,8 @@
 //! contract instead of stitching names, parameters, and return handling from
 //! separate places.
 
+use boltffi_binding::SymbolId;
+
 use crate::{
     bridge::{
         c::{self, ArgumentList, Expression, Identifier},
@@ -23,6 +25,7 @@ const JNI_BRIDGE: &str = "jni";
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct NativeMethod {
+    source_symbol: SymbolId,
     c_function: c::Function,
     symbol: JniSymbolName,
     returns: NativeReturn,
@@ -37,12 +40,24 @@ impl NativeMethod {
         callbacks: &[c::Callback],
         closures: &[ClosureRegistration],
     ) -> Result<Self> {
+        let source_symbol = function
+            .source_symbol()
+            .ok_or(Error::BrokenBridgeContract {
+                bridge: JNI_BRIDGE,
+                invariant: "JNI native method has no source symbol",
+            })?;
         Ok(Self {
+            source_symbol,
             symbol: JniSymbolName::native_method(class, function.name())?,
             returns: NativeReturn::from_c_function(function)?,
             parameters: NativeParameter::from_c_function(function, callbacks, closures)?,
             c_function: function.clone(),
         })
+    }
+
+    /// Returns the source native symbol id.
+    pub const fn source_symbol(&self) -> SymbolId {
+        self.source_symbol
     }
 
     /// Returns the C bridge function this method calls.

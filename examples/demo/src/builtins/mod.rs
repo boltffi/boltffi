@@ -51,8 +51,8 @@ pub fn duration_as_millis(d: Duration) -> u64 {
     ),
     exclude(
         typescript,
-        reason = ExclusionReason::CoverageGap,
-        details = "TypeScript has no assertion for pre-epoch SystemTime values in the demo suite yet; add the marker at the scenario-specific test when coverage lands."
+        reason = ExclusionReason::ImplementationGap,
+        details = "Rust SystemTime on wasm32-unknown-unknown cannot construct values before UNIX_EPOCH, so the TypeScript target rejects this wire value instead of trapping or fabricating a different timestamp."
     )
 )]
 #[export]

@@ -22,6 +22,11 @@ class GPSSimulator internal constructor(internal val handle: Long) : AutoCloseab
         }
     }
 
+    internal fun boltffiHandle(): Long {
+        check(!__boltffi_closed.get()) { "GPSSimulator is closed" }
+        return handle
+    }
+
     constructor(enabled: Boolean) : this(new(enabled).handle)
 
     companion object {
@@ -31,6 +36,6 @@ class GPSSimulator internal constructor(internal val handle: Long) : AutoCloseab
     }
 
     fun enabled(): Boolean {
-        return Native.boltffi_method_class_demo_gps_simulator_enabled(this.handle)
+        return Native.boltffi_method_class_demo_gps_simulator_enabled(this.boltffiHandle())
     }
 }

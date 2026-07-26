@@ -60,4 +60,9 @@ export async function run() {
   assert.deepEqual(demo.echoVecOptionalI32([]), []);
   globalThis.demoCase("case:options.complex.vec_optional_i32.should_roundtrip_all_none");
   assert.deepEqual(demo.echoVecOptionalI32([null, null, null]), [null, null, null]);
+
+  globalThis.demoCase("case:options.complex.shape.should_return_radius_for_circle");
+  assert.equal(demo.radiusIfCircle({ tag: "Circle", radius: 5 }), 5);
+  globalThis.demoCase("case:options.complex.shape.should_return_none_for_non_circle");
+  assert.equal(demo.radiusIfCircle({ tag: "Rectangle", width: 3, height: 4 }), null);
 }

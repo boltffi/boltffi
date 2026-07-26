@@ -72,6 +72,7 @@ typedef struct {
 void boltffi_free_string(FfiString string);
 void boltffi_free_buf(FfiBuf_u8 buf);
 FfiBuf_u8 boltffi_buf_from_bytes(const uint8_t *ptr, uintptr_t len);
+FfiBuf_u8 boltffi_buf_with_len(uintptr_t len);
 FfiStatus boltffi_last_error_message(FfiString *out);
 void boltffi_clear_last_error(void);
 typedef struct {

@@ -2,7 +2,7 @@ use crate::types::FfiBuf;
 
 /// Packs and unpacks `Vec<Self>` using the ABI representation chosen for `Self`.
 ///
-/// This trait models sequence transport separately from [`Passable`], which only
+/// This trait models sequence transport separately from [`crate::Passable`], which only
 /// describes the ABI form of a single value.
 pub trait VecTransport: Sized {
     /// Packs an owned vector into an FFI-owned byte buffer.

@@ -7,6 +7,7 @@ export async function run() {
   assert.equal(demo.echoOptionalI32(null), null);
   globalThis.demoCase("case:options.primitives.f64.should_roundtrip_some");
   assert.equal(demo.echoOptionalF64(4.5), 4.5);
+  assert.equal(Number.isNaN(demo.echoOptionalF64(Number.NaN)), true);
   globalThis.demoCase("case:options.primitives.f64.should_roundtrip_none");
   assert.equal(demo.echoOptionalF64(null), null);
   globalThis.demoCase("case:options.primitives.bool.should_roundtrip_some");

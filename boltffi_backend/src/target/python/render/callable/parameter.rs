@@ -153,7 +153,7 @@ impl<'plan, 'package> ParamPlanRender<'plan, Native, IntoRust> for StubArgument<
         Ok(Expression::identifier(self.name.clone()))
     }
 
-    fn direct_vector(&mut self, _: &DirectVectorElementType) -> Self::Output {
+    fn direct_vector(&mut self, _: &DirectVectorElementType, _: Receive) -> Self::Output {
         Ok(Expression::identifier(self.name.clone()))
     }
 }
@@ -210,7 +210,7 @@ impl<'plan, 'package> ParamPlanRender<'plan, Native, IntoRust> for WireHelperUse
         Ok(false)
     }
 
-    fn direct_vector(&mut self, _: &DirectVectorElementType) -> Self::Output {
+    fn direct_vector(&mut self, _: &DirectVectorElementType, _: Receive) -> Self::Output {
         Ok(false)
     }
 }

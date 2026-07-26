@@ -1948,7 +1948,7 @@ mod tests {
                 codec,
                 shape: wasm32::BufferShape::Slice,
                 receive: Receive::ByValue,
-            } => assert_eq!(codec.root(), &CodecNode::String),
+            } => assert_eq!(codec.root(), &CodecNode::Utf8String),
             other => panic!("expected wasm32 slice param shape, got {other:?}"),
         }
     }
@@ -1968,7 +1968,7 @@ mod tests {
                 ty: TypeRef::String,
                 codec,
                 shape: wasm32::BufferShape::Packed,
-            } => assert_eq!(codec.root(), &CodecNode::String),
+            } => assert_eq!(codec.root(), &CodecNode::Utf8String),
             other => panic!("expected wasm32 packed return shape, got {other:?}"),
         }
     }

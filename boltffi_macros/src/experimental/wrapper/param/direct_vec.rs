@@ -1,4 +1,4 @@
-use boltffi_binding::{DirectVectorElementType, Primitive};
+use boltffi_binding::{DirectVectorElementType, Primitive, Receive};
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{Ident, Type};
@@ -15,6 +15,7 @@ pub struct Renderer;
 
 pub struct Input {
     element: DirectVectorElementType,
+    receive: Receive,
     rust_element: Type,
     ident: Ident,
     failure: TokenStream,
@@ -23,12 +24,14 @@ pub struct Input {
 impl Input {
     pub fn new(
         element: &DirectVectorElementType,
+        receive: Receive,
         rust_element: Type,
         ident: Ident,
         failure: TokenStream,
     ) -> Self {
         Self {
             element: element.clone(),
+            receive,
             rust_element,
             ident,
             failure,
@@ -45,11 +48,11 @@ where
     fn render(self, input: Input) -> Result<Self::Output, Error> {
         match &input.element {
             DirectVectorElementType::Primitive(primitive) => {
-                PrimitiveVec::new(primitive.primitive(), input.ident).tokens()
+                PrimitiveVec::new(primitive.primitive(), input.receive, input.ident).tokens()
             }
             DirectVectorElementType::Record(_) => {
                 let rust_element = input.rust_element;
-                PassableVec::new(rust_element, input.ident, input.failure).tokens()
+                PassableVec::new(input.receive, rust_element, input.ident, input.failure).tokens()
             }
             _ => Err(Error::UnsupportedExpansion("direct-vector element")),
         }
@@ -58,12 +61,17 @@ where
 
 struct PrimitiveVec {
     primitive: Primitive,
+    receive: Receive,
     ident: Ident,
 }
 
 impl PrimitiveVec {
-    fn new(primitive: Primitive, ident: Ident) -> Self {
-        Self { primitive, ident }
+    fn new(primitive: Primitive, receive: Receive, ident: Ident) -> Self {
+        Self {
+            primitive,
+            receive,
+            ident,
+        }
     }
 
     fn tokens(self) -> Result<Tokens, Error> {
@@ -72,35 +80,76 @@ impl PrimitiveVec {
         let pointer = locals.pointer();
         let length = locals.length();
         let element_type = wrapper::type_ref::Renderer.primitive(self.primitive)?;
-        Ok(Tokens {
-            items: Vec::new(),
-            ffi_parameters: vec![
-                quote! { #pointer: *const #element_type },
-                quote! { #length: usize },
-            ],
-            ffi_parameter_types: vec![quote! { *const #element_type }, quote! { usize }],
-            conversions: vec![quote! {
-                let #ident: Vec<#element_type> = if #pointer.is_null() {
-                    Vec::new()
-                } else {
-                    unsafe { ::core::slice::from_raw_parts(#pointer, #length) }.to_vec()
-                };
-            }],
-            writebacks: Vec::new(),
-            argument: quote! { #ident },
-        })
+        match self.receive {
+            Receive::ByValue => Ok(Tokens {
+                items: Vec::new(),
+                ffi_parameters: vec![
+                    quote! { #pointer: *const #element_type },
+                    quote! { #length: usize },
+                ],
+                ffi_parameter_types: vec![quote! { *const #element_type }, quote! { usize }],
+                conversions: vec![quote! {
+                    let #ident: Vec<#element_type> = if #pointer.is_null() {
+                        Vec::new()
+                    } else {
+                        unsafe { ::core::slice::from_raw_parts(#pointer, #length) }.to_vec()
+                    };
+                }],
+                writebacks: Vec::new(),
+                argument: quote! { #ident },
+            }),
+            Receive::ByRef => Ok(Tokens {
+                items: Vec::new(),
+                ffi_parameters: vec![
+                    quote! { #pointer: *const #element_type },
+                    quote! { #length: usize },
+                ],
+                ffi_parameter_types: vec![quote! { *const #element_type }, quote! { usize }],
+                conversions: vec![quote! {
+                    let #ident: &[#element_type] = if #pointer.is_null() {
+                        &[]
+                    } else {
+                        unsafe { ::core::slice::from_raw_parts(#pointer, #length) }
+                    };
+                }],
+                writebacks: Vec::new(),
+                argument: quote! { #ident },
+            }),
+            Receive::ByMutRef => Ok(Tokens {
+                items: Vec::new(),
+                ffi_parameters: vec![
+                    quote! { #pointer: *mut #element_type },
+                    quote! { #length: usize },
+                ],
+                ffi_parameter_types: vec![quote! { *mut #element_type }, quote! { usize }],
+                conversions: vec![quote! {
+                    let #ident: &mut [#element_type] = if #pointer.is_null() {
+                        &mut []
+                    } else {
+                        unsafe { ::core::slice::from_raw_parts_mut(#pointer, #length) }
+                    };
+                }],
+                writebacks: Vec::new(),
+                argument: quote! { #ident },
+            }),
+            _ => Err(Error::UnsupportedExpansion(
+                "unknown direct-vector receive mode",
+            )),
+        }
     }
 }
 
 struct PassableVec {
+    receive: Receive,
     element: Type,
     ident: Ident,
     failure: TokenStream,
 }
 
 impl PassableVec {
-    fn new(element: Type, ident: Ident, failure: TokenStream) -> Self {
+    fn new(receive: Receive, element: Type, ident: Ident, failure: TokenStream) -> Self {
         Self {
+            receive,
             element,
             ident,
             failure,
@@ -108,6 +157,11 @@ impl PassableVec {
     }
 
     fn tokens(self) -> Result<Tokens, Error> {
+        if self.receive != Receive::ByValue {
+            return Err(Error::UnsupportedExpansion(
+                "borrowed direct-record vector parameter",
+            ));
+        }
         let element = &self.element;
         let ident = &self.ident;
         let failure = self.failure;

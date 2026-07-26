@@ -37,7 +37,7 @@ private object ClosureToBoxDemoListenerCallbacks {
     }
 }
 
-interface Listener {
+fun interface Listener {
     fun onValue(value: UInt): UInt
 }
 

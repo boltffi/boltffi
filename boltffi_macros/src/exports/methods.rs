@@ -1911,6 +1911,224 @@ mod tests {
     }
 
     #[test]
+    fn instance_method_returning_result_of_exported_class_does_not_wire_encode() {
+        // Regression: `Result<Class, E>` returns must not lower to a
+        // whole-Result `wire_encode`, which would require the class type
+        // to implement `WireEncode`/`WireDecode`. The class is a handle,
+        // not a wire value, so the success payload must cross as an
+        // object handle and the error must cross via the last-error
+        // channel — mirroring the factory-constructor fallible path.
+        let impl_block = parse_impl(
+            r#"
+            impl Map {
+                pub fn try_make_marker(&self, value: i32) -> Result<Marker, String> {
+                    if value < 0 {
+                        Err("negative".to_string())
+                    } else {
+                        Ok(Marker)
+                    }
+                }
+            }
+            "#,
+        );
+        let method = impl_block
+            .items
+            .iter()
+            .find_map(|item| match item {
+                syn::ImplItem::Fn(method) => Some(method),
+                _ => None,
+            })
+            .expect("instance method should exist");
+        let type_name = impl_type_name(&impl_block).expect("impl type name should resolve");
+
+        let generated = generate_sync_method_export(
+            MethodCallable::new(method),
+            &type_name,
+            "Map",
+            &class_return_lowering(),
+            callback_registry(),
+        )
+        .expect("instance export should be generated")
+        .to_string();
+
+        // The bug: the whole Result was wire-encoded, emitting
+        // `FfiBuf :: wire_encode (& result)` which fails to compile
+        // because `Marker` (a class) does not implement WireEncode /
+        // WireDecode.
+        assert!(
+            !generated.contains("FfiBuf :: wire_encode"),
+            "Result<Class, E> must not wire-encode the whole Result; got:\n{generated}"
+        );
+        // The success payload must cross as an object handle.
+        assert!(
+            generated.contains("Box :: into_raw (Box :: new (value))"),
+            "Result<Class, E> Ok payload must become an object handle; got:\n{generated}"
+        );
+        // The error must cross via the last-error channel.
+        assert!(
+            generated.contains("set_last_error"),
+            "Result<Class, E> Err payload must use set_last_error; got:\n{generated}"
+        );
+    }
+
+    #[test]
+    fn instance_method_returning_result_of_self_does_not_wire_encode() {
+        // `Result<Self, E>` on an instance method (not a factory
+        // constructor) must lower the same way as `Result<Class, E>`:
+        // handle out + last-error, never whole-Result wire_encode.
+        let impl_block = parse_impl(
+            r#"
+            impl Map {
+                pub fn try_clone(&self) -> Result<Self, String> {
+                    Ok(Map)
+                }
+            }
+            "#,
+        );
+        let method = impl_block
+            .items
+            .iter()
+            .find_map(|item| match item {
+                syn::ImplItem::Fn(method) => Some(method),
+                _ => None,
+            })
+            .expect("instance method should exist");
+        let type_name = impl_type_name(&impl_block).expect("impl type name should resolve");
+
+        let generated = generate_sync_method_export(
+            MethodCallable::new(method),
+            &type_name,
+            "Map",
+            &self_return_lowering(),
+            callback_registry(),
+        )
+        .expect("instance export should be generated")
+        .to_string();
+
+        assert!(
+            !generated.contains("FfiBuf :: wire_encode"),
+            "Result<Self, E> must not wire-encode the whole Result; got:\n{generated}"
+        );
+        assert!(
+            generated.contains("Box :: into_raw (Box :: new (value))"),
+            "Result<Self, E> Ok payload must become an object handle; got:\n{generated}"
+        );
+        assert!(
+            generated.contains("set_last_error"),
+            "Result<Self, E> Err payload must use set_last_error; got:\n{generated}"
+        );
+    }
+
+    #[test]
+    fn static_method_returning_result_of_exported_class_does_not_wire_encode() {
+        // A static (non-constructor) method returning
+        // `Result<OtherClass, E>` must also avoid whole-Result
+        // wire_encode and route through handle + last-error.
+        let impl_block = parse_impl(
+            r#"
+            impl Map {
+                pub fn borrow_marker(id: i32) -> Result<Marker, String> {
+                    if id < 0 {
+                        Err("bad id".to_string())
+                    } else {
+                        Ok(Marker)
+                    }
+                }
+            }
+            "#,
+        );
+        let method = impl_block
+            .items
+            .iter()
+            .find_map(|item| match item {
+                syn::ImplItem::Fn(method) => Some(method),
+                _ => None,
+            })
+            .expect("static method should exist");
+        let type_name = impl_type_name(&impl_block).expect("impl type name should resolve");
+
+        let generated = generate_sync_method_export(
+            MethodCallable::new(method),
+            &type_name,
+            "Map",
+            &class_return_lowering(),
+            callback_registry(),
+        )
+        .expect("static export should be generated")
+        .to_string();
+
+        assert!(
+            !generated.contains("FfiBuf :: wire_encode"),
+            "static Result<Class, E> must not wire-encode the whole Result; got:\n{generated}"
+        );
+        assert!(
+            generated.contains("Box :: into_raw (Box :: new (value))"),
+            "static Result<Class, E> Ok payload must become an object handle; got:\n{generated}"
+        );
+        assert!(
+            generated.contains("set_last_error"),
+            "static Result<Class, E> Err payload must use set_last_error; got:\n{generated}"
+        );
+    }
+
+    #[test]
+    fn instance_method_returning_result_of_record_still_wire_encodes() {
+        // Regression guard: `Result<Record, E>` must keep wire-encoding
+        // the whole Result, because records implement WireEncode /
+        // WireDecode. Only class/Self payloads are object handles and
+        // must bypass the wire path. `UserProfile` is a #[data] record
+        // (WireEncoded), not a class, so this must NOT lower to an
+        // object handle.
+        let impl_block = parse_impl(
+            r#"
+            impl Service {
+                pub fn fetch_profile(&self, id: i32) -> Result<UserProfile, String> {
+                    if id < 0 {
+                        Err("bad id".to_string())
+                    } else {
+                        Ok(UserProfile)
+                    }
+                }
+            }
+            "#,
+        );
+        let method = impl_block
+            .items
+            .iter()
+            .find_map(|item| match item {
+                syn::ImplItem::Fn(method) => Some(method),
+                _ => None,
+            })
+            .expect("instance method should exist");
+        let type_name = impl_type_name(&impl_block).expect("impl type name should resolve");
+
+        let generated = generate_sync_method_export(
+            MethodCallable::new(method),
+            &type_name,
+            "Service",
+            &return_lowering(),
+            callback_registry(),
+        )
+        .expect("instance export should be generated")
+        .to_string();
+
+        // Records cross as wire-encoded values, so the whole Result
+        // must be wire-encoded — the opposite of the class case.
+        assert!(
+            generated.contains("FfiBuf :: wire_encode"),
+            "Result<Record, E> must wire-encode the whole Result; got:\n{generated}"
+        );
+        assert!(
+            !generated.contains("Box :: into_raw"),
+            "Result<Record, E> must not lower to an object handle; got:\n{generated}"
+        );
+        assert!(
+            !generated.contains("set_last_error"),
+            "Result<Record, E> must not use the last-error handle path; got:\n{generated}"
+        );
+    }
+
+    #[test]
     fn instance_method_returning_self_lowers_to_object_handle() {
         let impl_block = parse_impl(
             r#"

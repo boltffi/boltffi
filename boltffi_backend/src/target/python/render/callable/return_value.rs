@@ -256,8 +256,19 @@ impl<'plan, 'package> ParamPlanRender<'plan, Native, IntoRust>
         Ok(None)
     }
 
-    fn direct_vector(&mut self, _: &DirectVectorElementType) -> Self::Output {
-        Ok(None)
+    fn direct_vector(
+        &mut self,
+        element: &DirectVectorElementType,
+        receive: Receive,
+    ) -> Self::Output {
+        match receive {
+            Receive::ByMutRef => Ok(Some(ReturnStub {
+                annotation: TypeHint::from_direct_vector_parameter(element, self.package)?
+                    .into_annotation(),
+                value: ReturnedValue::Native,
+            })),
+            _ => Ok(None),
+        }
     }
 }
 

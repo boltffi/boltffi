@@ -107,6 +107,14 @@ impl CodecRead for Reader<'_, '_> {
         Ok(ReadExpression::string(self.read("readString").expression))
     }
 
+    fn interned_string(&mut self, _static_values: &[String]) -> Self::Expr {
+        // Swift does not advertise InternedString capability; the capability gate
+        // ensures this branch is never reached for valid bindings.
+        unreachable!(
+            "InternedString codec read reached Swift renderer: host does not advertise InternedString capability"
+        )
+    }
+
     fn bytes(&mut self) -> Self::Expr {
         Ok(self.read("readBytes"))
     }

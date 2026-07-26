@@ -1,6 +1,6 @@
 use std::{error::Error, fmt};
 
-use crate::{ContractVersion, DeclarationId, SymbolId};
+use crate::{ContractVersion, DeclarationId, DeclarationShape, SymbolId};
 
 /// A reason a binding contract could not be exposed.
 ///
@@ -38,6 +38,21 @@ impl fmt::Display for BindingError {
             BindingErrorKind::DuplicateDeclarationId(id) => {
                 write!(formatter, "duplicate declaration id {id:?}")
             }
+            BindingErrorKind::UnknownDeclarationId(id) => {
+                write!(formatter, "unknown declaration id {id:?}")
+            }
+            BindingErrorKind::MissingDeclarationReference { owner, referenced } => write!(
+                formatter,
+                "declaration {owner:?} references missing declaration {referenced:?}"
+            ),
+            BindingErrorKind::InvalidDeclarationReference {
+                owner,
+                referenced,
+                expected,
+            } => write!(
+                formatter,
+                "declaration {owner:?} references {referenced:?} as {expected}, but the declaration has a different shape"
+            ),
             BindingErrorKind::DuplicateSymbolId(id) => {
                 write!(formatter, "duplicate native symbol id {id:?}")
             }
@@ -56,7 +71,13 @@ impl fmt::Display for BindingError {
             BindingErrorKind::UnregisteredSymbol(name) => {
                 write!(
                     formatter,
-                    "native symbol `{name}` referenced by a declaration but missing from the symbol table"
+                    "native symbol `{name}` is absent from the symbol table"
+                )
+            }
+            BindingErrorKind::UnreferencedSymbol(name) => {
+                write!(
+                    formatter,
+                    "native symbol `{name}` is not referenced by a declaration"
                 )
             }
             BindingErrorKind::ReturnSlotConflict => {
@@ -91,6 +112,24 @@ pub enum BindingErrorKind {
     },
     /// Two top-level declarations share the same id.
     DuplicateDeclarationId(DeclarationId),
+    /// A requested declaration id is not present in the contract.
+    UnknownDeclarationId(DeclarationId),
+    /// A declaration references an id absent from the contract.
+    MissingDeclarationReference {
+        /// Declaration that owns the reference.
+        owner: DeclarationId,
+        /// Referenced declaration that is absent.
+        referenced: DeclarationId,
+    },
+    /// A declaration reference requires a different declaration shape.
+    InvalidDeclarationReference {
+        /// Declaration that owns the reference.
+        owner: DeclarationId,
+        /// Referenced declaration with the incompatible shape.
+        referenced: DeclarationId,
+        /// Shape required by the reference site.
+        expected: DeclarationShape,
+    },
     /// Two native symbols share the same id.
     DuplicateSymbolId(SymbolId),
     /// Two native symbols share the same exported name.
@@ -101,9 +140,10 @@ pub enum BindingErrorKind {
     InvalidVTableSlot(String),
     /// A wasm import module name is empty.
     InvalidImportModule(String),
-    /// A declaration references a native symbol that is not present in
-    /// the contract's [`crate::NativeSymbolTable`].
+    /// A declaration references a native symbol absent from the symbol table.
     UnregisteredSymbol(String),
+    /// The symbol table contains a native symbol not referenced by a declaration.
+    UnreferencedSymbol(String),
     /// A callable's return shape and error channel both claim the native
     /// return slot.
     ReturnSlotConflict,

@@ -9,6 +9,8 @@
 //! the C callback contract and then rendered as a single registration block in
 //! the JNI source file.
 
+use boltffi_binding::CallbackId;
+
 use crate::{
     bridge::{
         c::{self, Identifier},
@@ -21,6 +23,7 @@ use crate::{
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct CallbackRegistration {
+    id: CallbackId,
     class: JvmClassPath,
     global_class: Identifier,
     free_method: Identifier,
@@ -47,6 +50,7 @@ impl CallbackRegistration {
     ) -> Result<Self> {
         let stem = callback.vtable().name();
         Ok(Self {
+            id: callback.id(),
             class: class.callback_class(callback.name())?,
             global_class: Identifier::parse(format!("g_{stem}_class"))?,
             free_method: Identifier::parse(format!("g_{stem}_free_method"))?,
@@ -68,6 +72,11 @@ impl CallbackRegistration {
                 .transpose()?
                 .unwrap_or_default(),
         })
+    }
+
+    /// Returns the source callback id.
+    pub const fn id(&self) -> CallbackId {
+        self.id
     }
 
     /// Returns the JVM callback bridge class.

@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use boltffi_binding::Native;
 
 use crate::{
-    bridge::c::{CBridgeContract, Syntax},
+    bridge::c::CBridgeContract,
     core::{Emitted, FileLayout, FilePath, GeneratedOutput, Result, bridge, contract::sealed},
 };
 
@@ -46,7 +46,6 @@ impl bridge::BridgeBackend for PythonCExtBridge {
     type Surface = Native;
     type Input = CBridgeContract;
     type Contract = PythonCExtBridgeContract;
-    type Syntax = Syntax;
 
     fn build_contract(&self, input: &Self::Input) -> Result<Self::Contract> {
         PythonCExtBridgeContract::from_c_bridge(self.module.clone(), self.path.clone(), input)

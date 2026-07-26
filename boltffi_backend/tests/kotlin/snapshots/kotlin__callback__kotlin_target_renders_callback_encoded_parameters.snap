@@ -7,7 +7,7 @@ expression: "rendered_fixture(\"callback/callback_byte_slice_parameter\")"
 
 package com.boltffi.demo
 
-interface Listener {
+fun interface Listener {
     fun onName(name: String)
 }
 

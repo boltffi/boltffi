@@ -116,6 +116,12 @@ impl<'package> CodecRead for Reader<'package> {
         Self::reader_call(Identifier::parse("string")?).map(ReadValue::general)
     }
 
+    fn interned_string(&mut self, _static_values: &[String]) -> Self::Expr {
+        unreachable!(
+            "InternedString codec read reached Python renderer: host does not advertise InternedString capability"
+        )
+    }
+
     fn bytes(&mut self) -> Self::Expr {
         Self::reader_call(Identifier::parse("bytes")?).map(ReadValue::general)
     }

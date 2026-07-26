@@ -34,7 +34,14 @@ pub struct DirectVectorParameter {
     length: Identifier,
     pointer_type: TypeFragment,
     jni_type: JniType,
+    access: ArrayAccess,
     stack_copy: Option<DirectVectorStackCopy>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ArrayAccess {
+    Read,
+    ReadWrite,
 }
 
 /// Stack storage policy for a small primitive direct-vector parameter.
@@ -96,6 +103,14 @@ impl DirectVectorParameter {
         self.jni_type.array_elements_releaser()
     }
 
+    /// Returns the JNI array release mode.
+    pub const fn release_mode(&self) -> &'static str {
+        match self.access {
+            ArrayAccess::Read => "JNI_ABORT",
+            ArrayAccess::ReadWrite => "0",
+        }
+    }
+
     /// Returns the stack-copy path for small primitive arrays.
     pub fn stack_copy(&self) -> Option<&DirectVectorStackCopy> {
         self.stack_copy.as_ref()
@@ -118,14 +133,20 @@ impl DirectVectorParameter {
     /// Creates a direct-vector JNI parameter from a C direct-vector parameter group.
     pub fn from_c_group(vector: &c::DirectVectorParameter, function: &c::Function) -> Result<Self> {
         let pointer = function.parameter(vector.pointer());
+        let access = match pointer.ty() {
+            c::Type::MutPointer(_) => ArrayAccess::ReadWrite,
+            _ => ArrayAccess::Read,
+        };
         let jni_type = JniType::from_direct_vector_element(vector.element())?;
         Ok(Self {
             pointer: Identifier::parse(format!("__boltffi_{}_ptr", vector.name()))?,
             length: Identifier::parse(format!("__boltffi_{}_len", vector.name()))?,
             pointer_type: TypeFragment::anonymous(pointer.ty())?,
-            stack_copy: matches!(vector.element(), DirectVectorElementAbi::Typed(_))
-                .then(|| DirectVectorStackCopy::for_primitive(jni_type)),
+            stack_copy: (access == ArrayAccess::Read
+                && matches!(vector.element(), DirectVectorElementAbi::Typed(_)))
+            .then(|| DirectVectorStackCopy::for_primitive(jni_type)),
             jni_type,
+            access,
             name: Identifier::escape(vector.name())?,
         })
     }

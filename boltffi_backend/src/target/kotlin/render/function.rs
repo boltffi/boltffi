@@ -64,17 +64,24 @@ pub struct ExportedCallRenderer<'render> {
     context: &'render RenderContext<'render, Native>,
 }
 
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct ReceiverCarrier {
+    expressions: Vec<Expression>,
+    setup: Vec<Statement>,
+    cleanup: Vec<Statement>,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExportedParameter {
     signature: signature::Parameter,
-    native_argument: Expression,
+    native_arguments: Vec<Expression>,
     mutation: Option<ParameterMutation>,
     setup: Vec<Statement>,
     cleanup: Vec<Statement>,
 }
 
 struct NativeArgument {
-    expression: Expression,
+    expressions: Vec<Expression>,
     mutation: Option<ParameterMutation>,
     setup: Vec<Statement>,
     cleanup: Vec<Statement>,
@@ -94,29 +101,48 @@ struct FunctionReturn {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct EncodedReceiverMutation {
-    ty: TypeName,
-    package: Option<KotlinPackage>,
+pub enum ReceiverMutation {
+    Direct {
+        ty: TypeName,
+        buffer: Identifier,
+    },
+    Encoded {
+        ty: TypeName,
+        package: Option<KotlinPackage>,
+    },
 }
 
 enum ReceiverBinding {
     None,
     Package(KotlinPackage),
-    EncodedMutation(EncodedReceiverMutation),
+    Mutation(ReceiverMutation),
 }
 
-impl EncodedReceiverMutation {
-    pub fn new(ty: TypeName) -> Self {
-        Self { ty, package: None }
+impl ReceiverMutation {
+    pub fn direct(ty: TypeName, buffer: Identifier) -> Self {
+        Self::Direct { ty, buffer }
+    }
+
+    pub fn encoded(ty: TypeName) -> Self {
+        Self::Encoded { ty, package: None }
     }
 
     pub fn with_package(mut self, package: &KotlinPackage) -> Self {
-        self.package = Some(package.clone());
+        if let Self::Encoded {
+            package: mutation_package,
+            ..
+        } = &mut self
+        {
+            *mutation_package = Some(package.clone());
+        }
         self
     }
 
     fn package(&self) -> Option<&KotlinPackage> {
-        self.package.as_ref()
+        match self {
+            Self::Direct { .. } => None,
+            Self::Encoded { package, .. } => package.as_ref(),
+        }
     }
 }
 
@@ -125,13 +151,13 @@ impl ReceiverBinding {
         match self {
             Self::None => None,
             Self::Package(package) => Some(package),
-            Self::EncodedMutation(receiver) => receiver.package(),
+            Self::Mutation(receiver) => receiver.package(),
         }
     }
 
-    fn into_mutation(self) -> Option<EncodedReceiverMutation> {
+    fn into_mutation(self) -> Option<ReceiverMutation> {
         match self {
-            Self::EncodedMutation(receiver) => Some(receiver),
+            Self::Mutation(receiver) => Some(receiver),
             Self::None | Self::Package(_) => None,
         }
     }
@@ -175,6 +201,10 @@ enum ReturnConversion {
     Void,
     Direct(Primitive),
     ByteArrayValue(TypeName),
+    DirectReceiverWriteback {
+        ty: TypeName,
+        buffer: Identifier,
+    },
     DirectEnum(TypeName),
     DirectVector(DirectVector),
     Encoded {
@@ -199,7 +229,7 @@ impl Function {
                 Name::new(decl.name()).function()?,
                 decl.symbol(),
                 decl.callable(),
-                Vec::new(),
+                None,
             )
             .map(Self::from_call)
     }
@@ -273,9 +303,9 @@ impl<'render> ExportedCallRenderer<'render> {
         name: Identifier,
         symbol: &NativeSymbol,
         callable: &ExportedCallable<Native>,
-        native_prefix: Vec<Expression>,
+        receiver: Option<ReceiverCarrier>,
     ) -> Result<ExportedCall> {
-        self.build(name, symbol, callable, native_prefix, ReceiverBinding::None)
+        self.build(name, symbol, callable, receiver, ReceiverBinding::None)
     }
 
     pub fn with_package(
@@ -283,32 +313,32 @@ impl<'render> ExportedCallRenderer<'render> {
         name: Identifier,
         symbol: &NativeSymbol,
         callable: &ExportedCallable<Native>,
-        native_prefix: Vec<Expression>,
+        receiver: Option<ReceiverCarrier>,
         package: &KotlinPackage,
     ) -> Result<ExportedCall> {
         self.build(
             name,
             symbol,
             callable,
-            native_prefix,
+            receiver,
             ReceiverBinding::Package(package.clone()),
         )
     }
 
-    pub fn with_encoded_receiver_mutation(
+    pub fn with_receiver_mutation(
         &self,
         name: Identifier,
         symbol: &NativeSymbol,
         callable: &ExportedCallable<Native>,
-        native_prefix: Vec<Expression>,
-        receiver_mutation: EncodedReceiverMutation,
+        receiver: ReceiverCarrier,
+        receiver_mutation: ReceiverMutation,
     ) -> Result<ExportedCall> {
         self.build(
             name,
             symbol,
             callable,
-            native_prefix,
-            ReceiverBinding::EncodedMutation(receiver_mutation),
+            Some(receiver),
+            ReceiverBinding::Mutation(receiver_mutation),
         )
     }
 
@@ -317,7 +347,7 @@ impl<'render> ExportedCallRenderer<'render> {
         name: Identifier,
         symbol: &NativeSymbol,
         callable: &ExportedCallable<Native>,
-        native_prefix: Vec<Expression>,
+        receiver_carrier: Option<ReceiverCarrier>,
         receiver: ReceiverBinding,
     ) -> Result<ExportedCall> {
         let package = receiver.package();
@@ -344,18 +374,22 @@ impl<'render> ExportedCallRenderer<'render> {
                     callable,
                 ))?;
         if let Some(receiver_mutation) = receiver.into_mutation() {
-            function_return =
-                function_return.with_byte_array_receiver_writeback(receiver_mutation.ty)?;
+            function_return = function_return.with_receiver_writeback(receiver_mutation)?;
         }
         if let Some(mutation) = ExportedCall::parameter_mutation(&parameters)? {
             function_return = function_return.with_parameter_mutation(mutation)?;
         }
-        let native_arguments = native_prefix
+        let ReceiverCarrier {
+            expressions: receiver_arguments,
+            setup: receiver_setup,
+            cleanup: receiver_cleanup,
+        } = receiver_carrier.unwrap_or_default();
+        let native_arguments = receiver_arguments
             .into_iter()
             .chain(
                 parameters
                     .iter()
-                    .map(|parameter| parameter.native_argument().clone()),
+                    .flat_map(|parameter| parameter.native_arguments().iter().cloned()),
             )
             .collect::<Vec<_>>();
         let native_call = NativeCall::new(
@@ -363,13 +397,18 @@ impl<'render> ExportedCallRenderer<'render> {
             native_arguments,
         );
         let error_conversion = ErrorConversion::from_channel(callable.error().channel())?;
-        let setup = parameters
-            .iter()
-            .flat_map(|parameter| parameter.setup().iter().cloned())
+        let setup = receiver_setup
+            .into_iter()
+            .chain(
+                parameters
+                    .iter()
+                    .flat_map(|parameter| parameter.setup().iter().cloned()),
+            )
             .collect::<Vec<_>>();
         let cleanup = parameters
             .iter()
             .flat_map(|parameter| parameter.cleanup().iter().cloned())
+            .chain(receiver_cleanup)
             .collect::<Vec<_>>();
         let returns = function_return.ty.clone();
         match callable.execution() {
@@ -416,7 +455,43 @@ impl<'render> ExportedCallRenderer<'render> {
     }
 }
 
+impl ReceiverCarrier {
+    pub fn direct(expression: Expression) -> Self {
+        Self {
+            expressions: vec![expression],
+            setup: Vec::new(),
+            cleanup: Vec::new(),
+        }
+    }
+
+    pub fn encoded(write: EncodedWrite) -> Self {
+        let (setup, expressions, cleanup) = write.into_direct_parts();
+        Self {
+            expressions,
+            setup,
+            cleanup,
+        }
+    }
+
+    pub fn direct_writeback(buffer: Identifier, expression: Expression) -> Self {
+        Self {
+            expressions: vec![Expression::identifier(buffer.clone())],
+            setup: vec![Statement::value(buffer, expression)],
+            cleanup: Vec::new(),
+        }
+    }
+}
+
 impl ExportedCall {
+    pub(crate) fn requalify_types(mut self, requalify: &dyn Fn(TypeName) -> TypeName) -> Self {
+        self.returns = self.returns.take().map(requalify);
+        for parameter in &mut self.parameters {
+            let ty = requalify(parameter.signature.ty().clone());
+            parameter.signature = signature::Parameter::new(parameter.signature.name().clone(), ty);
+        }
+        self
+    }
+
     pub fn name(&self) -> &Identifier {
         &self.name
     }
@@ -489,7 +564,7 @@ impl ExportedParameter {
             ),
         };
         Ok(Self {
-            native_argument: native_argument.expression,
+            native_arguments: native_argument.expressions,
             mutation: native_argument.mutation,
             signature: signature::Parameter::new(name, ty),
             setup: native_argument.setup,
@@ -505,8 +580,8 @@ impl ExportedParameter {
         self.signature.ty()
     }
 
-    fn native_argument(&self) -> &Expression {
-        &self.native_argument
+    fn native_arguments(&self) -> &[Expression] {
+        &self.native_arguments
     }
 
     fn setup(&self) -> &[Statement] {
@@ -557,7 +632,7 @@ struct NativeArgumentRender<'context> {
 impl NativeArgument {
     fn direct(expression: Expression) -> Self {
         Self {
-            expression,
+            expressions: vec![expression],
             mutation: None,
             setup: Vec::new(),
             cleanup: Vec::new(),
@@ -565,9 +640,9 @@ impl NativeArgument {
     }
 
     fn encoded(write: EncodedWrite, mutation: Option<ParameterMutation>) -> Self {
-        let (setup, expression, cleanup) = write.into_parts();
+        let (setup, expressions, cleanup) = write.into_direct_parts();
         Self {
-            expression,
+            expressions,
             mutation,
             setup,
             cleanup,
@@ -842,7 +917,7 @@ impl<'plan> ParamPlanRender<'plan, Native, IntoRust> for NativeArgumentRender<'_
                 .native_argument(value)
                 .map(NativeArgument::direct),
             DirectValueType::Record(_) => {
-                Record::encode_expression(value).map(NativeArgument::direct)
+                Record::direct_buffer_expression(value).map(NativeArgument::direct)
             }
             DirectValueType::Enum(enumeration) => {
                 Enumeration::native_argument(*enumeration, value, self.context)
@@ -903,7 +978,11 @@ impl<'plan> ParamPlanRender<'plan, Native, IntoRust> for NativeArgumentRender<'_
             .map(|write| NativeArgument::encoded(write, None))
     }
 
-    fn direct_vector(&mut self, element: &'plan DirectVectorElementType) -> Self::Output {
+    fn direct_vector(
+        &mut self,
+        element: &'plan DirectVectorElementType,
+        _: Receive,
+    ) -> Self::Output {
         DirectVector::from_element(element, self.context).and_then(|vector| {
             vector
                 .native_argument(Expression::identifier(self.name.clone()))
@@ -1132,9 +1211,15 @@ impl FunctionReturn {
         })
     }
 
-    fn with_byte_array_receiver_writeback(self, receiver_type: TypeName) -> Result<Self> {
+    fn with_receiver_writeback(self, mutation: ReceiverMutation) -> Result<Self> {
         match self.ty {
-            None => Ok(Self::byte_array_value(receiver_type)),
+            None => Ok(match mutation {
+                ReceiverMutation::Direct { ty, buffer } => Self {
+                    ty: Some(ty.clone()),
+                    conversion: ReturnConversion::DirectReceiverWriteback { ty, buffer },
+                },
+                ReceiverMutation::Encoded { ty, .. } => Self::byte_array_value(ty),
+            }),
             Some(_) => Err(KotlinHost::unsupported(
                 "mutable receiver with explicit return",
             )),
@@ -1197,6 +1282,19 @@ impl FunctionReturn {
                     )),
                 ])
             }
+            ReturnConversion::DirectReceiverWriteback { ty, buffer } => Ok(vec![
+                Statement::expression(call),
+                Statement::expression(Expression::call(
+                    ty.clone(),
+                    Identifier::parse("fromBuffer")?,
+                    [
+                        Expression::identifier(buffer.clone()),
+                        Expression::integer(0),
+                    ]
+                    .into_iter()
+                    .collect::<ArgumentList>(),
+                )),
+            ]),
             ReturnConversion::DirectEnum(ty) => Ok(vec![Statement::expression(Expression::call(
                 ty.clone(),
                 Identifier::parse("fromValue")?,

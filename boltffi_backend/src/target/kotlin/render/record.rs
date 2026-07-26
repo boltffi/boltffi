@@ -10,13 +10,13 @@ use crate::{
     core::{Emitted, RenderContext, Result},
     target::kotlin::{
         KotlinHost,
-        codec::Sizer,
+        codec::{Sizer, WireBuffer},
         name_style::Name,
         primitive::KotlinPrimitive,
         render::{
             default_value::DefaultExpression,
             field::EncodedField,
-            function::{EncodedReceiverMutation, ExportedCall, ExportedCallRenderer},
+            function::{ExportedCall, ExportedCallRenderer, ReceiverCarrier, ReceiverMutation},
         },
         syntax::{ArgumentList, Expression, Identifier, Statement, TypeName},
     },
@@ -47,8 +47,8 @@ enum RecordBody {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Receiver {
-    argument: Expression,
-    writeback: TypeName,
+    carrier: ReceiverCarrier,
+    mutation: ReceiverMutation,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -173,6 +173,14 @@ impl Record {
         ))
     }
 
+    pub fn direct_buffer_expression(value: Expression) -> Result<Expression> {
+        Ok(Expression::call(
+            value,
+            Identifier::parse("toDirectBuffer")?,
+            Default::default(),
+        ))
+    }
+
     pub fn decode_expression(record: TypeName, value: Expression) -> Result<Expression> {
         Ok(Expression::call(
             record,
@@ -197,13 +205,13 @@ impl Record {
             fields: record
                 .fields()
                 .iter()
-                .map(|field| Field::from_direct(field, record, &buffer))
+                .map(|field| Field::from_direct(field, record, &buffer, context))
                 .collect::<Result<Vec<_>>>()?,
             initializers: Self::initializer_calls(record.initializers(), host, bridge, context)?,
             static_methods: Self::methods(record.methods(), None, host, bridge, context)?,
             instance_methods: Self::methods(
                 record.methods(),
-                Some(Self::receiver(record.name())?),
+                Some(Self::direct_receiver(record.name())?),
                 host,
                 bridge,
                 context,
@@ -248,7 +256,7 @@ impl Record {
             static_methods: Self::methods(record.methods(), None, host, bridge, context)?,
             instance_methods: Self::methods(
                 record.methods(),
-                Some(Self::receiver(record.name())?),
+                Some(Self::encoded_receiver(record.name())?),
                 host,
                 bridge,
                 context,
@@ -274,7 +282,7 @@ impl Record {
                     Name::new(initializer.name()).function()?,
                     initializer.symbol(),
                     initializer.callable(),
-                    Vec::new(),
+                    None,
                 )
             })
             .collect()
@@ -293,25 +301,24 @@ impl Record {
             .filter(|method| method.callable().receiver().is_some() == receiver.is_some())
             .map(
                 |method| match (method.callable().receiver(), receiver.clone()) {
-                    (Some(Receive::ByMutRef), Some(receiver)) => calls
-                        .with_encoded_receiver_mutation(
-                            Name::new(method.name()).function()?,
-                            method.target(),
-                            method.callable(),
-                            vec![receiver.argument],
-                            EncodedReceiverMutation::new(receiver.writeback),
-                        ),
+                    (Some(Receive::ByMutRef), Some(receiver)) => calls.with_receiver_mutation(
+                        Name::new(method.name()).function()?,
+                        method.target(),
+                        method.callable(),
+                        receiver.carrier,
+                        receiver.mutation,
+                    ),
                     (Some(Receive::ByRef | Receive::ByValue), Some(receiver)) => calls.exported(
                         Name::new(method.name()).function()?,
                         method.target(),
                         method.callable(),
-                        vec![receiver.argument],
+                        Some(receiver.carrier),
                     ),
                     (None, None) => calls.exported(
                         Name::new(method.name()).function()?,
                         method.target(),
                         method.callable(),
-                        Vec::new(),
+                        None,
                     ),
                     _ => Err(KotlinHost::unsupported("record method receiver")),
                 },
@@ -319,14 +326,37 @@ impl Record {
             .collect()
     }
 
-    fn receiver(name: &CanonicalName) -> Result<Receiver> {
+    fn direct_receiver(name: &CanonicalName) -> Result<Receiver> {
+        let buffer = Identifier::parse("__boltffi_receiver")?;
         Ok(Receiver {
-            argument: Expression::call(
+            carrier: ReceiverCarrier::direct_writeback(
+                buffer.clone(),
+                Self::direct_buffer_expression(Expression::this())?,
+            ),
+            mutation: ReceiverMutation::direct(Name::new(name).type_name(), buffer),
+        })
+    }
+
+    fn encoded_receiver(name: &CanonicalName) -> Result<Receiver> {
+        let buffer = WireBuffer::new(&Name::new(name))?;
+        let writer = buffer.writer().clone();
+        let write = buffer.write_statements(
+            Expression::call(
                 Expression::this(),
-                Identifier::parse("toByteArray")?,
+                Identifier::parse("wireSize")?,
                 ArgumentList::default(),
             ),
-            writeback: Name::new(name).type_name(),
+            vec![Statement::expression(Expression::call(
+                Expression::this(),
+                Identifier::parse("writeTo")?,
+                [Expression::identifier(writer)]
+                    .into_iter()
+                    .collect::<ArgumentList>(),
+            ))],
+        )?;
+        Ok(Receiver {
+            carrier: ReceiverCarrier::encoded(write),
+            mutation: ReceiverMutation::encoded(Name::new(name).type_name()),
         })
     }
 }
@@ -372,6 +402,7 @@ impl Field {
         field: &DirectFieldDecl,
         record: &DirectRecordDecl<Native>,
         buffer: &Identifier,
+        context: &RenderContext<Native>,
     ) -> Result<Self> {
         let name = Self::identifier(field.key())?;
         let offset = record
@@ -391,7 +422,7 @@ impl Field {
         let default = field
             .meta()
             .default()
-            .map(|value| DefaultExpression::render(&TypeRef::Primitive(primitive), value))
+            .map(|value| DefaultExpression::render(&TypeRef::Primitive(primitive), value, context))
             .transpose()?;
         Ok(Self {
             ty: KotlinPrimitive::new(primitive).api_type()?,
@@ -427,7 +458,7 @@ impl Field {
         let default = field
             .meta()
             .default()
-            .map(|value| DefaultExpression::render(field.ty(), value))
+            .map(|value| DefaultExpression::render(field.ty(), value, context))
             .transpose()?;
         let field = EncodedField::from_declaration(field, host, context, reader, writer, current)?;
         Ok(Self {

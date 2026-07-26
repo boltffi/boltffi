@@ -11,6 +11,12 @@ private object Utf8Codec {
     fun maxBytes(value: String): Int = value.length * 3
 }
 
+private val <First, Second> Pair<First, Second>.field0: First get() = first
+private val <First, Second> Pair<First, Second>.field1: Second get() = second
+private val <First, Second, Third> Triple<First, Second, Third>.field0: First get() = first
+private val <First, Second, Third> Triple<First, Second, Third>.field1: Second get() = second
+private val <First, Second, Third> Triple<First, Second, Third>.field2: Third get() = third
+
 class FfiException(message: String) : RuntimeException(message)
 
 internal class BoltFfiErrorBufferException(val bytes: ByteArray) : RuntimeException("BoltFFI call failed")
@@ -331,6 +337,10 @@ internal class WireWriter(initialCapacity: Int) {
         return bytes
     }
 
+    fun directBuffer(): java.nio.ByteBuffer = buffer
+
+    fun size(): Int = position
+
     fun writeBool(value: Boolean) {
         ensureCapacity(1)
         buffer.put(position, if (value) 1.toByte() else 0.toByte())
@@ -592,6 +602,10 @@ private class BorrowedWireWriter(
 ) : AutoCloseable {
     fun bytes(): ByteArray = writer.toByteArray()
 
+    fun directBuffer(): java.nio.ByteBuffer = writer.directBuffer()
+
+    fun size(): Int = writer.size()
+
     override fun close() {
         state.release()
     }
@@ -734,21 +748,28 @@ private object Native {
             (osName.contains("mac") || osName.contains("darwin")) &&
                 (osArch == "aarch64" || osArch == "arm64") ->
                 listOf("darwin-arm64", "darwin-aarch64")
-            (osName.contains("mac") || osName.contains("darwin")) && osArch == "x86_64" ->
+            (osName.contains("mac") || osName.contains("darwin")) &&
+                (osArch == "x86_64" || osArch == "amd64") ->
                 listOf("darwin-x86_64", "darwin-x86-64")
-            osName.contains("linux") && (osArch == "x86_64" || osArch == "amd64") ->
+            (osName.contains("linux")) &&
+                (osArch == "x86_64" || osArch == "amd64") ->
                 listOf("linux-x86_64", "linux-x86-64")
-            osName.contains("linux") && (osArch == "aarch64" || osArch == "arm64") ->
+            (osName.contains("linux")) &&
+                (osArch == "aarch64" || osArch == "arm64") ->
                 listOf("linux-aarch64", "linux-arm64")
-            osName.contains("windows") && (osArch == "x86_64" || osArch == "amd64") ->
+            (osName.contains("windows")) &&
+                (osArch == "x86_64" || osArch == "amd64") ->
                 listOf("windows-x86_64", "windows-x86-64", "win32-x86_64")
+            (osName.contains("windows")) &&
+                (osArch == "aarch64" || osArch == "arm64") ->
+                listOf("windows-aarch64", "windows-arm64", "win32-arm64")
             else -> emptyList()
         }
     }
     @JvmStatic external fun boltffi_function_demo_add(left: Int, right: Int): Int
     @JvmStatic external fun boltffi_function_demo_enabled(flag: Boolean): Boolean
     @JvmStatic external fun boltffi_function_demo_refresh(): Unit
-    @JvmStatic external fun boltffi_function_demo_echo_bytes(bytes: ByteArray): ByteArray?
+    @JvmStatic external fun boltffi_function_demo_echo_bytes(bytes: java.nio.ByteBuffer, __boltffi_bytes_len: Int): ByteArray?
 }
 
 fun add(left: Int, right: Int): Int {
@@ -768,7 +789,7 @@ fun echoBytes(bytes: ByteArray): ByteArray {
     val __boltffi_bytes_writer = __boltffi_bytes_wire.writer
     __boltffi_bytes_writer.writeBytes(bytes)
     try {
-        val __boltffi_result = Native.boltffi_function_demo_echo_bytes(__boltffi_bytes_wire.bytes()) ?: throw IllegalStateException("null buffer returned")
+        val __boltffi_result = Native.boltffi_function_demo_echo_bytes(__boltffi_bytes_wire.directBuffer(), __boltffi_bytes_wire.size()) ?: throw IllegalStateException("null buffer returned")
         val __boltffi_reader = WireReader(__boltffi_result)
         return __boltffi_reader.readBytes()
     } finally {

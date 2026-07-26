@@ -13,18 +13,18 @@
 use crate::{
     bridge::{
         c::{ArgumentList, Expression, Identifier, Literal, TypeFragment},
-        jni::{ClosureArgument, ClosureRegistration},
+        jni::{ClosureArgument, ClosureRegistration, name::LookupText},
     },
     core::Result,
 };
 
 use super::{
     ClosureBytesArgumentView, ClosureCParameterView, ClosureDirectVectorArgumentView,
-    ClosureHandleArgumentView,
+    ClosureHandleArgumentView, ClosureRecordArgumentView,
 };
 
 pub struct ClosureRegistrationView {
-    pub class: Literal,
+    pub class: LookupText,
     pub global_class: Identifier,
     pub call_method: Identifier,
     pub free_method: Identifier,
@@ -39,18 +39,20 @@ pub struct ClosureRegistrationView {
     pub returns_record: bool,
     pub returns_callback_handle: bool,
     pub callback_handle_constructor: Option<Identifier>,
-    pub method_signature: Literal,
+    pub method_signature: LookupText,
     pub call_method_suffix: String,
     pub failure_value: Expression,
     pub c_parameters: Vec<ClosureCParameterView>,
     pub byte_arrays: Vec<ClosureBytesArgumentView>,
     pub direct_vectors: Vec<ClosureDirectVectorArgumentView>,
+    pub records: Vec<ClosureRecordArgumentView>,
     pub closure_handles: Vec<ClosureHandleArgumentView>,
     pub jni_arguments: ArgumentList,
     pub has_jni_arguments: bool,
     pub handle_parameters: Vec<ClosureCParameterView>,
     pub handle_byte_arrays: Vec<ClosureBytesArgumentView>,
     pub handle_direct_vectors: Vec<ClosureDirectVectorArgumentView>,
+    pub handle_records: Vec<ClosureRecordArgumentView>,
     pub rust_arguments: ArgumentList,
     pub has_rust_arguments: bool,
 }
@@ -59,7 +61,7 @@ impl ClosureRegistrationView {
     pub fn from_registration(registration: &ClosureRegistration) -> Result<Self> {
         let arguments = registration.arguments();
         Ok(Self {
-            class: Literal::string(&registration.class().as_jni_class_name()),
+            class: LookupText::new(&registration.class().as_jni_class_name()),
             global_class: registration.global_class().clone(),
             call_method: registration.call_method().clone(),
             free_method: registration.free_method().clone(),
@@ -74,7 +76,7 @@ impl ClosureRegistrationView {
             returns_record: registration.returns_record(),
             returns_callback_handle: registration.returns_callback_handle(),
             callback_handle_constructor: registration.callback_handle_constructor().cloned(),
-            method_signature: Literal::string(&registration.method_signature()),
+            method_signature: LookupText::new(&registration.method_signature()),
             call_method_suffix: registration
                 .call_method_suffix()
                 .unwrap_or_default()
@@ -97,6 +99,11 @@ impl ClosureRegistrationView {
                 .filter_map(ClosureArgument::call_direct_vector)
                 .map(ClosureDirectVectorArgumentView::from_argument)
                 .collect::<Result<Vec<_>>>()?,
+            records: arguments
+                .iter()
+                .filter_map(ClosureArgument::call_record)
+                .map(ClosureRecordArgumentView::from_argument)
+                .collect(),
             closure_handles: arguments
                 .iter()
                 .filter_map(ClosureArgument::call_closure)
@@ -119,6 +126,11 @@ impl ClosureRegistrationView {
                 .filter_map(ClosureArgument::handle_direct_vector)
                 .map(ClosureDirectVectorArgumentView::from_argument)
                 .collect::<Result<Vec<_>>>()?,
+            handle_records: arguments
+                .iter()
+                .filter_map(ClosureArgument::handle_record)
+                .map(ClosureRecordArgumentView::from_argument)
+                .collect(),
             rust_arguments: ClosureArgument::rust_argument_list(arguments),
             has_rust_arguments: !arguments.is_empty(),
         })

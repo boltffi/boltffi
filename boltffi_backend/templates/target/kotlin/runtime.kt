@@ -2,6 +2,12 @@ private object Utf8Codec {
     fun maxBytes(value: String): Int = value.length * 3
 }
 
+private val <First, Second> Pair<First, Second>.field0: First get() = first
+private val <First, Second> Pair<First, Second>.field1: Second get() = second
+private val <First, Second, Third> Triple<First, Second, Third>.field0: First get() = first
+private val <First, Second, Third> Triple<First, Second, Third>.field1: Second get() = second
+private val <First, Second, Third> Triple<First, Second, Third>.field2: Third get() = third
+
 class FfiException(message: String) : RuntimeException(message)
 
 internal class BoltFfiErrorBufferException(val bytes: ByteArray) : RuntimeException("BoltFFI call failed")
@@ -346,6 +352,10 @@ internal class WireWriter(initialCapacity: Int) {
         return bytes
     }
 
+    fun directBuffer(): java.nio.ByteBuffer = buffer
+
+    fun size(): Int = position
+
     fun writeBool(value: Boolean) {
         ensureCapacity(1)
         buffer.put(position, if (value) 1.toByte() else 0.toByte())
@@ -606,6 +616,10 @@ private class BorrowedWireWriter(
     val writer: WireWriter,
 ) : AutoCloseable {
     fun bytes(): ByteArray = writer.toByteArray()
+
+    fun directBuffer(): java.nio.ByteBuffer = writer.directBuffer()
+
+    fun size(): Int = writer.size()
 
     override fun close() {
         state.release()

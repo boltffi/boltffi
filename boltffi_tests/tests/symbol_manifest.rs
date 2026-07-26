@@ -21,28 +21,11 @@ struct PendingExpansion {
     failure: &'static str,
 }
 
-const PENDING_EXPANSIONS: &[PendingExpansion] = &[
-    PendingExpansion {
-        item: "FIXTURE_DEFAULT_STATUS",
-        row: "decl:constant:inline:c-style-enum",
-        failure: "export can only be applied to fn, impl, or trait",
-    },
-    PendingExpansion {
-        item: "FIXTURE_LABEL",
-        row: "decl:constant:accessor:str",
-        failure: "export can only be applied to fn, impl, or trait",
-    },
-    PendingExpansion {
-        item: "FIXTURE_LIMIT",
-        row: "decl:constant:inline:u32",
-        failure: "export can only be applied to fn, impl, or trait",
-    },
-    PendingExpansion {
-        item: "try_make_adder",
-        row: "return:closure:out-pointer+error:encoded:return-slot",
-        failure: "expected `FfiBuf`, found `FfiStatus`",
-    },
-];
+const PENDING_EXPANSIONS: &[PendingExpansion] = &[PendingExpansion {
+    item: "try_make_adder",
+    row: "return:closure:out-pointer+error:encoded:return-slot",
+    failure: "expected `FfiBuf`, found `FfiStatus`",
+}];
 
 #[cfg(not(miri))]
 fn source_contract() -> boltffi_ast::SourceContract {
@@ -200,28 +183,11 @@ fn quarantined_rows_have_registered_failures() {
         .inspect(|pending| assert!(source.contains(pending.item)))
         .copied()
         .collect::<BTreeSet<_>>();
-    let expected = [
-        PendingExpansion {
-            item: "FIXTURE_DEFAULT_STATUS",
-            row: "decl:constant:inline:c-style-enum",
-            failure: "export can only be applied to fn, impl, or trait",
-        },
-        PendingExpansion {
-            item: "FIXTURE_LABEL",
-            row: "decl:constant:accessor:str",
-            failure: "export can only be applied to fn, impl, or trait",
-        },
-        PendingExpansion {
-            item: "FIXTURE_LIMIT",
-            row: "decl:constant:inline:u32",
-            failure: "export can only be applied to fn, impl, or trait",
-        },
-        PendingExpansion {
-            item: "try_make_adder",
-            row: "return:closure:out-pointer+error:encoded:return-slot",
-            failure: "expected `FfiBuf`, found `FfiStatus`",
-        },
-    ]
+    let expected = [PendingExpansion {
+        item: "try_make_adder",
+        row: "return:closure:out-pointer+error:encoded:return-slot",
+        failure: "expected `FfiBuf`, found `FfiStatus`",
+    }]
     .into_iter()
     .collect::<BTreeSet<_>>();
     assert_eq!(actual, expected);
@@ -271,6 +237,7 @@ fn lowering_produces_the_claimed_crossing_matrix() {
     let expected = [
         "decl:callback",
         "decl:class",
+        "decl:constant",
         "decl:custom-type",
         "decl:enum:c-style",
         "decl:enum:data",

@@ -1,7 +1,10 @@
 use std::path::Path;
 
+use boltffi_binding::DeclarationRef;
+
 use super::{
-    bridge_fixture, rendered_fixture, rendered_fixture_with_support, rendered_source,
+    bindings, bridge, bridge_fixture, bridge_with_owner, rendered_fixture,
+    rendered_fixture_with_class_support, rendered_fixture_with_support, rendered_source,
     source::SourceFixture,
 };
 
@@ -32,6 +35,59 @@ fn jni_bridge_contract_records_class_and_source_path() {
     assert_eq!(
         contract.methods()[0].symbol().to_string(),
         "Java_com_boltffi_demo_Native_boltffi_1function_1demo_1add"
+    );
+}
+
+#[test]
+fn jni_bridge_uses_utf8_diagnostics_for_supplementary_class_names() {
+    let source = SourceFixture::one("callback/foreign_callback_parameter").read();
+    let output = bridge_with_owner(&source, "com.boltffi.𐐀runtime", "Native");
+    let source = output
+        .output()
+        .files()
+        .iter()
+        .find(|file| {
+            file.path()
+                .as_path()
+                .extension()
+                .is_some_and(|ext| ext == "c")
+        })
+        .expect("generated JNI source")
+        .contents();
+
+    assert!(source.contains(
+        "boltffi_jni_lookup_global_class_with_diagnostic(env, \"com/boltffi/\\355\\240\\201\\355\\260\\200runtime/Native\", \"com/boltffi/\\360\\220\\220\\200runtime/Native\", &boltffi_jni_native_class)"
+    ));
+    assert!(source.contains(
+        "boltffi_jni_lookup_static_method_with_diagnostic(env, g____ListenerVTable_class, \"com/boltffi/\\360\\220\\220\\200runtime/ListenerCallbacks\", \"on_value\", \"on_value\", \"(JI)I\", \"(JI)I\", &g____ListenerVTable_on_value_method)"
+    ));
+    assert!(source.contains(
+        "could not resolve static method %s.%s%s\\n\", diagnostic_class_name, diagnostic_method_name, diagnostic_signature"
+    ));
+}
+
+#[test]
+fn jni_bridge_indexes_native_methods_by_source_symbol() {
+    let source = SourceFixture::one("exports/single_function").read();
+    let bindings = bindings(&source);
+    let function = bindings
+        .decls()
+        .iter()
+        .find_map(|decl| match DeclarationRef::from(decl) {
+            DeclarationRef::Function(function) => Some(function),
+            _ => None,
+        })
+        .expect("function fixture declaration");
+    let output = bridge(&source);
+    let method = output
+        .contract()
+        .source_method(function.symbol().id())
+        .expect("JNI method for source symbol");
+
+    assert_eq!(method.source_symbol(), function.symbol().id());
+    assert_eq!(
+        method.c_function().name(),
+        function.symbol().name().as_str()
     );
 }
 
@@ -78,6 +134,18 @@ fn jni_bridge_preserves_rust_pascal_type_spelling() {
 #[test]
 fn jni_bridge_renders_async_class_methods() {
     insta::assert_snapshot!(rendered_fixture("exports/async_class_methods"));
+}
+
+#[test]
+fn jni_bridge_reports_custom_continuation_owner_class() {
+    let rendered = rendered_fixture_with_class_support("exports/async_class_methods", "Bindings");
+
+    assert!(rendered.contains(
+        "boltffi_jni_lookup_static_method_with_diagnostic(env, boltffi_jni_native_class, \"com/boltffi/demo/Bindings\", \"boltffiFutureContinuationCallback\", \"boltffiFutureContinuationCallback\", \"(JB)V\", \"(JB)V\", &boltffi_jni_continuation_method)"
+    ));
+    assert!(!rendered.contains(
+        "boltffi_jni_lookup_static_method_with_diagnostic(env, boltffi_jni_native_class, \"Native\", \"boltffiFutureContinuationCallback\""
+    ));
 }
 
 #[test]

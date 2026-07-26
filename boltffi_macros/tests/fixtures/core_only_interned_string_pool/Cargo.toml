@@ -1,0 +1,10 @@
+[workspace]
+
+[package]
+name = "core_only_interned_string_pool"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+boltffi_core = { path = "../../../../boltffi_core" }

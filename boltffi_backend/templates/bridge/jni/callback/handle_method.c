@@ -18,6 +18,7 @@ JNIEXPORT {{ method.return_type }} JNICALL {{ method.symbol }}(JNIEnv *env, jcla
         goto __boltffi_error;
     }
 {% include "bridge/jni/method/borrowed_arrays.c" %}
+{% include "bridge/jni/method/direct_buffers.c" %}
 {% include "bridge/jni/method/records.c" %}
 {%- if method.returns_closure %}
 {%- match method.closure_return %}

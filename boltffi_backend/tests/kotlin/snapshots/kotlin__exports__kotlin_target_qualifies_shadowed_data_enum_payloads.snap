@@ -23,6 +23,7 @@ sealed class StorageError {
         }
     }
 
+
     object InvalidPath : StorageError() {
         internal override fun wireSize(): Int {
             return 4
@@ -78,6 +79,7 @@ sealed class RecorderError {
             buffer.close()
         }
     }
+
 
     object InvalidConfig : RecorderError() {
         internal override fun wireSize(): Int {

@@ -1,7 +1,0 @@
----
-source: boltffi_bindgen/src/render/typescript/templates.rs
-expression: template.render().unwrap()
----
-export function reset(): void {
-  (_exports.boltffi_reset as Function)();
-}

@@ -470,6 +470,23 @@ mod tests {
     }
 
     #[test]
+    fn codec_from_transport_keeps_c_style_enum_identity() {
+        let mut contract = test_contract();
+        contract.catalog.insert_enum(c_style_enum_with_method());
+        let lowerer = lowerer_for_contract(&contract);
+
+        let codec = lowerer.codec_from_transport(&Transport::Scalar(ScalarOrigin::CStyleEnum {
+            tag_type: PrimitiveType::I32,
+            enum_id: EnumId::new("Direction"),
+        }));
+
+        assert!(matches!(
+            codec,
+            CodecPlan::Enum { id, .. } if id.as_str() == "Direction"
+        ));
+    }
+
+    #[test]
     fn build_codec_string() {
         let contract = test_contract();
         let lowerer = lowerer_for_contract(&contract);

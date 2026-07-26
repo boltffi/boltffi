@@ -8,7 +8,7 @@ expression: "rendered_fixture(\"exports/custom_type_functions\")"
 package com.boltffi.demo
 @Suppress("FunctionName")
 private object Native {
-    @JvmStatic external fun boltffi_function_demo_keep_timestamp(value: ByteArray): ByteArray?
+    @JvmStatic external fun boltffi_function_demo_keep_timestamp(value: java.nio.ByteBuffer, __boltffi_value_len: Int): ByteArray?
 }
 
 typealias Timestamp = Long
@@ -18,7 +18,7 @@ fun keepTimestamp(value: Long): Long {
     val __boltffi_value_writer = __boltffi_value_wire.writer
     __boltffi_value_writer.writeI64(value)
     try {
-        val __boltffi_result = Native.boltffi_function_demo_keep_timestamp(__boltffi_value_wire.bytes()) ?: throw IllegalStateException("null buffer returned")
+        val __boltffi_result = Native.boltffi_function_demo_keep_timestamp(__boltffi_value_wire.directBuffer(), __boltffi_value_wire.size()) ?: throw IllegalStateException("null buffer returned")
         val __boltffi_reader = WireReader(__boltffi_result)
         return __boltffi_reader.readI64()
     } finally {

@@ -2,15 +2,32 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize, Serialize, Clone, Default)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(default)]
 pub struct DebugSymbolsConfig {
-    #[serde(default)]
     pub enabled: bool,
     pub output: Option<PathBuf>,
-    #[serde(default)]
     pub format: DebugSymbolsFormat,
-    #[serde(default)]
     pub bundle: DebugSymbolsBundle,
+    pub standalone_archive: bool,
+}
+
+impl Default for DebugSymbolsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            output: None,
+            format: DebugSymbolsFormat::default(),
+            bundle: DebugSymbolsBundle::default(),
+            standalone_archive: true,
+        }
+    }
+}
+
+impl DebugSymbolsConfig {
+    pub fn archive_enabled(&self) -> bool {
+        self.enabled && self.standalone_archive
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, Default)]

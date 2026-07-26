@@ -449,6 +449,19 @@ impl<'expansion, 'lowered, S: RenderSurface> Return<'expansion, 'lowered, S> {
                     rust_type.clone(),
                 ))))
             }
+            ReturnPlan::DirectViaOutPointer { .. } => {
+                if !matches!(self.source, ReturnDef::Value(_)) {
+                    return Err(Error::SourceSyntaxMismatch(
+                        "source closure invoke return does not match binding return plan",
+                    ));
+                }
+                let rust_type = self.rust_type.ok_or(Error::SourceSyntaxMismatch(
+                    "closure invoke direct return requires source return type",
+                ))?;
+                Ok(Some(InvokeReturn::direct_passable_out(Box::new(
+                    rust_type.clone(),
+                ))))
+            }
             ReturnPlan::EncodedViaReturnSlot { .. } => Ok(None),
             _ => Err(Error::UnsupportedExpansion(
                 "rust closure invoke return shape",
@@ -705,6 +718,7 @@ enum InvokeReturnKind {
     Void,
     DirectPrimitive { ffi_type: TokenStream },
     DirectPassable { rust_type: Box<Type> },
+    DirectPassableOut { rust_type: Box<Type> },
     NativeEncoded { value: TokenStream },
     WasmEncoded { value: TokenStream },
     Fallible(Box<FallibleClosureReturn>),
@@ -726,6 +740,12 @@ impl InvokeReturn {
     fn direct_passable(rust_type: Box<Type>) -> Self {
         Self {
             kind: InvokeReturnKind::DirectPassable { rust_type },
+        }
+    }
+
+    fn direct_passable_out(rust_type: Box<Type>) -> Self {
+        Self {
+            kind: InvokeReturnKind::DirectPassableOut { rust_type },
         }
     }
 
@@ -754,6 +774,7 @@ impl InvokeReturn {
             InvokeReturnKind::DirectPassable { rust_type } => {
                 quote! { -> <#rust_type as ::boltffi::__private::Passable>::Out }
             }
+            InvokeReturnKind::DirectPassableOut { .. } => TokenStream::new(),
             InvokeReturnKind::NativeEncoded { .. } => quote! { -> ::boltffi::__private::FfiBuf },
             InvokeReturnKind::WasmEncoded { .. } => quote! { -> u64 },
             InvokeReturnKind::Fallible(fallible) => fallible.error.return_type.clone(),
@@ -762,6 +783,12 @@ impl InvokeReturn {
 
     pub fn ffi_parameters(&self) -> Vec<TokenStream> {
         match &self.kind {
+            InvokeReturnKind::DirectPassableOut { rust_type } => {
+                let output = names::Locals::new(Span::call_site()).return_out();
+                vec![quote! {
+                    #output: *mut <#rust_type as ::boltffi::__private::Passable>::Out
+                }]
+            }
             InvokeReturnKind::Fallible(fallible) => fallible.success.ffi_parameters(),
             _ => Vec::new(),
         }
@@ -769,6 +796,9 @@ impl InvokeReturn {
 
     pub fn ffi_parameter_types(&self) -> Vec<TokenStream> {
         match &self.kind {
+            InvokeReturnKind::DirectPassableOut { rust_type } => vec![quote! {
+                *mut <#rust_type as ::boltffi::__private::Passable>::Out
+            }],
             InvokeReturnKind::Fallible(fallible) => fallible.success.ffi_parameter_types(),
             _ => Vec::new(),
         }
@@ -783,6 +813,24 @@ impl InvokeReturn {
             InvokeReturnKind::DirectPassable { rust_type } => quote! {
                 <#rust_type as ::boltffi::__private::Passable>::pack(#call)
             },
+            InvokeReturnKind::DirectPassableOut { rust_type } => {
+                let output = names::Locals::new(Span::call_site()).return_out();
+                quote! {
+                    {
+                        let __boltffi_result: #rust_type = #call;
+                        if !#output.is_null() {
+                            unsafe {
+                                ::core::ptr::write(
+                                    #output,
+                                    <#rust_type as ::boltffi::__private::Passable>::pack(
+                                        __boltffi_result
+                                    ),
+                                );
+                            }
+                        }
+                    }
+                }
+            }
             InvokeReturnKind::NativeEncoded { value } => quote! {
                 {
                     let __boltffi_result = #call;
@@ -812,6 +860,22 @@ impl InvokeReturn {
                     >::zeroed().assume_init()
                 };
             },
+            InvokeReturnKind::DirectPassableOut { rust_type } => {
+                let output = names::Locals::new(Span::call_site()).return_out();
+                quote! {
+                    if !#output.is_null() {
+                        unsafe {
+                            ::core::ptr::write(
+                                #output,
+                                ::core::mem::MaybeUninit::<
+                                    <#rust_type as ::boltffi::__private::Passable>::Out
+                                >::zeroed().assume_init(),
+                            );
+                        }
+                    }
+                    return;
+                }
+            }
             InvokeReturnKind::NativeEncoded { .. } => quote! {
                 return ::boltffi::__private::FfiBuf::default();
             },

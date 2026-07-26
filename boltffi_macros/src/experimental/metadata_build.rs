@@ -5,11 +5,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use boltffi_ast::PackageInfo;
 use boltffi_binding::{
-    BINDING_METADATA_BUILD_ENV, BINDING_METADATA_ROOT_ENV, BINDING_METADATA_SOURCE_ENV,
-    BINDING_METADATA_SURFACE_ENV, BindingMetadataSurface, LowerError, Native, SerializedBindings,
-    Wasm32, lower_with_declarations,
+    BINDING_METADATA_BUILD_ENV, BINDING_METADATA_FEATURES_ENV, BINDING_METADATA_ROOT_ENV,
+    BINDING_METADATA_SOURCE_ENV, BINDING_METADATA_SURFACE_ENV, BindingMetadataSurface, LowerError,
+    Native, SerializedBindings, Wasm32, lower_with_declarations,
 };
-use boltffi_scan::{ScanError, ScanInput};
+use boltffi_scan::{ActiveCfg, ScanError, ScanInput};
 use proc_macro2::{Span, TokenStream};
 use quote::quote_spanned;
 
@@ -66,7 +66,9 @@ impl Request {
 
     fn render(self) -> Result<TokenStream, BuildError> {
         let scan = boltffi_scan::scan_package(
-            &ScanInput::new(&self.source, self.package).with_manifest_dir(&self.root),
+            &ScanInput::new(&self.source, self.package)
+                .with_manifest_dir(&self.root)
+                .with_cfg(active_cfg()),
         )?;
         let source = scan.root_with_support();
         match requested_surface()? {
@@ -160,4 +162,18 @@ fn generated_root() -> Result<PathBuf, BuildError> {
 
 fn canonical(path: &Path) -> PathBuf {
     path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+}
+
+fn active_cfg() -> ActiveCfg {
+    let features = env::var(BINDING_METADATA_FEATURES_ENV)
+        .ok()
+        .into_iter()
+        .flat_map(|features| {
+            features
+                .split(',')
+                .filter(|feature| !feature.is_empty())
+                .map(str::to_owned)
+                .collect::<Vec<_>>()
+        });
+    ActiveCfg::from_cargo_env().with_features(features)
 }

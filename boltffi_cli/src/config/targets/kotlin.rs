@@ -16,6 +16,8 @@ pub struct KotlinConfig {
     #[serde(default)]
     pub desktop_loader: KotlinDesktopLoader,
     #[serde(default)]
+    pub desktop_pack: KotlinDesktopPackConfig,
+    #[serde(default)]
     pub api_style: KotlinApiStyle,
     #[serde(default)]
     pub error_style: ErrorStyle,
@@ -23,6 +25,12 @@ pub struct KotlinConfig {
     pub factory_style: KotlinFactoryStyle,
     #[serde(default)]
     pub type_mappings: HashMap<String, TypeMapping>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone, Default)]
+pub struct KotlinDesktopPackConfig {
+    #[serde(default)]
+    pub enabled: bool,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, Default)]

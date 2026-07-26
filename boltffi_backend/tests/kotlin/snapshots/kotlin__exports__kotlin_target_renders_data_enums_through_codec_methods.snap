@@ -8,10 +8,10 @@ expression: "rendered_source(SourceFixture::many([\"records/person\", \"enums/sh
 package com.boltffi.demo
 @Suppress("FunctionName")
 private object Native {
-    @JvmStatic external fun boltffi_function_demo_echo_bytes(bytes: ByteArray): ByteArray?
-    @JvmStatic external fun boltffi_function_demo_keep_person(person: ByteArray): ByteArray?
-    @JvmStatic external fun boltffi_function_demo_keep_shape(shape: ByteArray): ByteArray?
-    @JvmStatic external fun boltffi_function_demo_echo_message(message: ByteArray): ByteArray?
+    @JvmStatic external fun boltffi_function_demo_echo_bytes(bytes: java.nio.ByteBuffer, __boltffi_bytes_len: Int): ByteArray?
+    @JvmStatic external fun boltffi_function_demo_keep_person(person: java.nio.ByteBuffer, __boltffi_person_len: Int): ByteArray?
+    @JvmStatic external fun boltffi_function_demo_keep_shape(shape: java.nio.ByteBuffer, __boltffi_shape_len: Int): ByteArray?
+    @JvmStatic external fun boltffi_function_demo_echo_message(message: java.nio.ByteBuffer, __boltffi_message_len: Int): ByteArray?
 }
 
 
@@ -71,6 +71,7 @@ sealed class Shape {
         }
     }
 
+
     data class Label(
         val field0: String
     ) : Shape() {
@@ -116,6 +117,7 @@ sealed class Message {
             buffer.close()
         }
     }
+
 
     object Empty : Message() {
         internal override fun wireSize(): Int {
@@ -174,7 +176,7 @@ fun echoBytes(bytes: ByteArray): ByteArray {
     val __boltffi_bytes_writer = __boltffi_bytes_wire.writer
     __boltffi_bytes_writer.writeBytes(bytes)
     try {
-        val __boltffi_result = Native.boltffi_function_demo_echo_bytes(__boltffi_bytes_wire.bytes()) ?: throw IllegalStateException("null buffer returned")
+        val __boltffi_result = Native.boltffi_function_demo_echo_bytes(__boltffi_bytes_wire.directBuffer(), __boltffi_bytes_wire.size()) ?: throw IllegalStateException("null buffer returned")
         val __boltffi_reader = WireReader(__boltffi_result)
         return __boltffi_reader.readBytes()
     } finally {
@@ -187,7 +189,7 @@ fun keepPerson(person: Person): Person {
     val __boltffi_person_writer = __boltffi_person_wire.writer
     person.writeTo(__boltffi_person_writer)
     try {
-        val __boltffi_result = Native.boltffi_function_demo_keep_person(__boltffi_person_wire.bytes()) ?: throw IllegalStateException("null buffer returned")
+        val __boltffi_result = Native.boltffi_function_demo_keep_person(__boltffi_person_wire.directBuffer(), __boltffi_person_wire.size()) ?: throw IllegalStateException("null buffer returned")
         val __boltffi_reader = WireReader(__boltffi_result)
         return Person.fromReader(__boltffi_reader)
     } finally {
@@ -200,7 +202,7 @@ fun keepShape(shape: Shape): Shape {
     val __boltffi_shape_writer = __boltffi_shape_wire.writer
     shape.writeTo(__boltffi_shape_writer)
     try {
-        val __boltffi_result = Native.boltffi_function_demo_keep_shape(__boltffi_shape_wire.bytes()) ?: throw IllegalStateException("null buffer returned")
+        val __boltffi_result = Native.boltffi_function_demo_keep_shape(__boltffi_shape_wire.directBuffer(), __boltffi_shape_wire.size()) ?: throw IllegalStateException("null buffer returned")
         val __boltffi_reader = WireReader(__boltffi_result)
         return Shape.fromReader(__boltffi_reader)
     } finally {
@@ -213,7 +215,7 @@ fun echoMessage(message: Message): Message {
     val __boltffi_message_writer = __boltffi_message_wire.writer
     message.writeTo(__boltffi_message_writer)
     try {
-        val __boltffi_result = Native.boltffi_function_demo_echo_message(__boltffi_message_wire.bytes()) ?: throw IllegalStateException("null buffer returned")
+        val __boltffi_result = Native.boltffi_function_demo_echo_message(__boltffi_message_wire.directBuffer(), __boltffi_message_wire.size()) ?: throw IllegalStateException("null buffer returned")
         val __boltffi_reader = WireReader(__boltffi_result)
         return Message.fromReader(__boltffi_reader)
     } finally {

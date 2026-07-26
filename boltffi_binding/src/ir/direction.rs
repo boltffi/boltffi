@@ -11,11 +11,11 @@
 //! [`ReturnPlan`]: crate::ReturnPlan
 //! [`CallableDecl`]: crate::CallableDecl
 
-use std::fmt::Debug;
+use std::{collections::BTreeSet, fmt::Debug};
 
 use crate::{
-    BuiltinType, ClosureRegistrationIntrospect, CodecNode, ReadPlan, Receive, Surface, ValueRef,
-    WritePlan,
+    BuiltinType, ClosureRegistrationIntrospect, CodecNode, DeclarationId, ReadPlan, Receive,
+    Surface, ValueRef, WritePlan,
 };
 
 /// Marker for data flowing from foreign code into Rust.
@@ -126,6 +126,22 @@ pub trait Direction:
     /// Returns whether a direction-specific codec includes the given builtin value.
     fn codec_uses_builtin(codec: &Self::Codec, kind: BuiltinType) -> bool;
 
+    /// Appends declarations referenced by a direction-specific codec.
+    fn codec_append_referenced_declarations(
+        codec: &Self::Codec,
+        references: &mut BTreeSet<DeclarationId>,
+    );
+
+    /// Returns whether a direction-specific codec references a declaration.
+    fn codec_references_declaration(codec: &Self::Codec, declaration: DeclarationId) -> bool {
+        let mut references = BTreeSet::new();
+        Self::codec_append_referenced_declarations(codec, &mut references);
+        references.contains(&declaration)
+    }
+
+    /// Returns whether a direction-specific codec includes a tagged interned string.
+    fn codec_uses_interned_string(codec: &Self::Codec) -> bool;
+
     /// Projects a `Receive` value into the direction's receive type.
     ///
     /// [`IntoRust`] returns the value unchanged. [`OutOfRust`] discards
@@ -152,6 +168,17 @@ impl Direction for IntoRust {
         codec.uses_builtin(kind)
     }
 
+    fn codec_append_referenced_declarations(
+        codec: &WritePlan,
+        references: &mut BTreeSet<DeclarationId>,
+    ) {
+        codec.append_referenced_declarations(references);
+    }
+
+    fn codec_uses_interned_string(codec: &WritePlan) -> bool {
+        codec.uses_interned_string()
+    }
+
     fn receive_from(receive: Receive) -> Receive {
         receive
     }
@@ -174,6 +201,17 @@ impl Direction for OutOfRust {
 
     fn codec_uses_builtin(codec: &ReadPlan, kind: BuiltinType) -> bool {
         codec.uses_builtin(kind)
+    }
+
+    fn codec_append_referenced_declarations(
+        codec: &ReadPlan,
+        references: &mut BTreeSet<DeclarationId>,
+    ) {
+        codec.append_referenced_declarations(references);
+    }
+
+    fn codec_uses_interned_string(codec: &ReadPlan) -> bool {
+        codec.uses_interned_string()
     }
 
     fn receive_from(_receive: Receive) {}

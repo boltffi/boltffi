@@ -63,9 +63,6 @@ static FfiBuf_u8 ___StatusMapperVTable_map_status(uint64_t handle, int32_t *retu
 
     FfiBuf_u8 result = boltffi_jni_byte_array_to_buffer(env, __boltffi_return_array);
     (*env)->DeleteLocalRef(env, __boltffi_return_array);
-    if (boltffi_jni_clear_exception(env)) {
-        goto __boltffi_fail;
-    }
 
     boltffi_jni_exit(env, attached);
     return result;
@@ -84,25 +81,16 @@ static ___StatusMapperVTable g____StatusMapperVTable_vtable = {
 };
 
 static bool boltffi_jni_load____StatusMapperVTable_callbacks(JNIEnv *env) {
-    jclass local_class = (*env)->FindClass(env, "com/boltffi/demo/StatusMapperCallbacks");
-    if (local_class == NULL) {
+    if (!boltffi_jni_lookup_global_class_with_diagnostic(env, "com/boltffi/demo/StatusMapperCallbacks", "com/boltffi/demo/StatusMapperCallbacks", &g____StatusMapperVTable_class)) {
         return false;
     }
-    g____StatusMapperVTable_class = (*env)->NewGlobalRef(env, local_class);
-    (*env)->DeleteLocalRef(env, local_class);
-    if (g____StatusMapperVTable_class == NULL) {
-        return false;
-    }
-    g____StatusMapperVTable_free_method = (*env)->GetStaticMethodID(env, g____StatusMapperVTable_class, "free", "(J)V");
-    if (g____StatusMapperVTable_free_method == NULL) {
+    if (!boltffi_jni_lookup_static_method_with_diagnostic(env, g____StatusMapperVTable_class, "com/boltffi/demo/StatusMapperCallbacks", "free", "free", "(J)V", "(J)V", &g____StatusMapperVTable_free_method)) {
         goto fail;
     }
-    g____StatusMapperVTable_clone_method = (*env)->GetStaticMethodID(env, g____StatusMapperVTable_class, "clone", "(J)J");
-    if (g____StatusMapperVTable_clone_method == NULL) {
+    if (!boltffi_jni_lookup_static_method_with_diagnostic(env, g____StatusMapperVTable_class, "com/boltffi/demo/StatusMapperCallbacks", "clone", "clone", "(J)J", "(J)J", &g____StatusMapperVTable_clone_method)) {
         goto fail;
     }
-    g____StatusMapperVTable_map_status_method = (*env)->GetStaticMethodID(env, g____StatusMapperVTable_class, "map_status", "(JJI)[B");
-    if (g____StatusMapperVTable_map_status_method == NULL) {
+    if (!boltffi_jni_lookup_static_method_with_diagnostic(env, g____StatusMapperVTable_class, "com/boltffi/demo/StatusMapperCallbacks", "map_status", "map_status", "(JJI)[B", "(JJI)[B", &g____StatusMapperVTable_map_status_method)) {
         goto fail;
     }
     boltffi_register_callback_demo_status_mapper(&g____StatusMapperVTable_vtable);
@@ -135,16 +123,12 @@ JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1success_1i32(JNIEnv
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
     (void)reserved;
     JNIEnv *env = NULL;
-    if ((*vm)->GetEnv(vm, (void **)&env, JNI_VERSION_1_6) != JNI_OK) {
+    jint env_result = (*vm)->GetEnv(vm, (void **)&env, JNI_VERSION_1_6);
+    if (env_result != JNI_OK) {
+        fprintf(stderr, "BoltFFI JNI_OnLoad failed: GetEnv(JNI_VERSION_1_6) returned %d\n", (int)env_result);
         return JNI_ERR;
     }
-    jclass local_class = (*env)->FindClass(env, "com/boltffi/demo/Native");
-    if (local_class == NULL) {
-        return JNI_ERR;
-    }
-    boltffi_jni_native_class = (*env)->NewGlobalRef(env, local_class);
-    (*env)->DeleteLocalRef(env, local_class);
-    if (boltffi_jni_native_class == NULL) {
+    if (!boltffi_jni_lookup_global_class_with_diagnostic(env, "com/boltffi/demo/Native", "com/boltffi/demo/Native", &boltffi_jni_native_class)) {
         return JNI_ERR;
     }
     if (!boltffi_jni_load____StatusMapperVTable_callbacks(env)) {

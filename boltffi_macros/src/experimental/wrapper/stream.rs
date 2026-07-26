@@ -11,7 +11,7 @@ use crate::experimental::{
     error::Error,
     expansion::{DeclarationPair, Expansion},
     rust_api,
-    surface::RenderSurface,
+    surface::{RenderSurface, StreamPollCrossing},
     wrapper::{self, Render, names},
 };
 
@@ -123,6 +123,41 @@ impl<'expansion, 'lowered, S: RenderSurface> Renderer<'expansion, 'lowered, S> {
         let poll = symbols.poll();
         let unsubscribe = symbols.unsubscribe();
         let free = symbols.free();
+        let poll_export = match S::STREAM_POLL {
+            StreamPollCrossing::Callback => quote! {
+                #cfg
+                #[unsafe(no_mangle)]
+                pub unsafe extern "C" fn #poll(
+                    subscription_handle: #stream_handle_type,
+                    callback_data: u64,
+                    callback: ::boltffi::__private::StreamContinuationCallback,
+                ) {
+                    if subscription_handle == #stream_handle_zero {
+                        callback(callback_data, ::boltffi::__private::StreamPollResult::Closed);
+                        return;
+                    }
+                    let subscription = unsafe {
+                        &*(subscription_handle as usize as *const ::boltffi::__private::EventSubscription<#item_type>)
+                    };
+                    subscription.poll(callback_data, callback);
+                }
+            },
+            StreamPollCrossing::WakeImport => quote! {
+                #cfg
+                #[unsafe(no_mangle)]
+                pub unsafe extern "C" fn #poll(
+                    subscription_handle: #stream_handle_type,
+                ) {
+                    if subscription_handle == #stream_handle_zero {
+                        return;
+                    }
+                    let subscription = unsafe {
+                        &*(subscription_handle as usize as *const ::boltffi::__private::EventSubscription<#item_type>)
+                    };
+                    subscription.poll_wasm(subscription_handle);
+                }
+            },
+        };
 
         Ok(quote! {
             #cfg
@@ -148,22 +183,7 @@ impl<'expansion, 'lowered, S: RenderSurface> Renderer<'expansion, 'lowered, S> {
                 subscription.wait_for_events(timeout_milliseconds) as i32
             }
 
-            #cfg
-            #[unsafe(no_mangle)]
-            pub unsafe extern "C" fn #poll(
-                subscription_handle: #stream_handle_type,
-                callback_data: u64,
-                callback: ::boltffi::__private::StreamContinuationCallback,
-            ) {
-                if subscription_handle == #stream_handle_zero {
-                    callback(callback_data, ::boltffi::__private::StreamPollResult::Closed);
-                    return;
-                }
-                let subscription = unsafe {
-                    &*(subscription_handle as usize as *const ::boltffi::__private::EventSubscription<#item_type>)
-                };
-                subscription.poll(callback_data, callback);
-            }
+            #poll_export
 
             #cfg
             #[unsafe(no_mangle)]

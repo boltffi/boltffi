@@ -10,6 +10,10 @@ export async function run() {
   assert.deepEqual(demo.Shape.square(3), { tag: "Rectangle", width: 3, height: 3 });
   globalThis.demoCase("case:enums.data_enum.shape.try_circle.should_return_circle_for_positive_radius");
   assert.deepEqual(demo.Shape.tryCircle(2), { tag: "Circle", radius: 2 });
+  globalThis.demoCase("case:enums.data_enum.shape.maybe_circle.should_return_some_for_positive_radius");
+  assert.deepEqual(demo.Shape.maybeCircle(2), { tag: "Circle", radius: 2 });
+  globalThis.demoCase("case:enums.data_enum.shape.maybe_circle.should_return_none_for_non_positive_radius");
+  assert.equal(demo.Shape.maybeCircle(0), null);
 
   globalThis.demoCase("case:enums.data_enum.shape.should_reject_non_positive_circle_radius");
   assertThrowsWithMessage(() => demo.Shape.tryCircle(0), "radius must be positive");

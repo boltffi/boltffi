@@ -1,10 +1,10 @@
 use boltffi_ast::{FnSig, ReturnDef, TypeExpr};
 use boltffi_binding::{
-    ClosureForm, ClosureParameter, ClosureRegistration, ClosureReturn, DirectValueType, ErrorDecl,
-    HandlePresence, ImportedCallable, IntoRust, Native, OutgoingParam, ParamPlan, ReturnPlan,
-    Wasm32, WritePlan, native, wasm32,
+    ClosureForm, ClosureParameter, ClosureRegistration, ClosureReturn, DirectValueType,
+    DirectVectorElementType, ErrorDecl, HandlePresence, ImportedCallable, IntoRust, Native,
+    OutgoingParam, ParamPlan, ReturnPlan, Wasm32, WritePlan, native, wasm32,
 };
-use proc_macro2::TokenStream;
+use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use syn::{Ident, Type};
 
@@ -428,6 +428,54 @@ impl<'expansion, 'lowered, 'rust, S: RenderSurface>
                     call_arguments: vec![quote! { #pointer }, quote! { #length }],
                 })
             }
+            OutgoingParam::Value(ParamPlan::DirectVec { element, .. }) => {
+                let locals = names::ClosureArgument::new(self.index);
+                let pointer = locals.pointer();
+                let length = locals.length();
+                match element {
+                    DirectVectorElementType::Primitive(primitive) => {
+                        let element_type =
+                            wrapper::type_ref::Renderer.primitive(primitive.primitive())?;
+                        Ok(InvokeParameterTokens {
+                            rust_parameter: quote! { #argument: #rust_type },
+                            ffi_parameter_types: vec![
+                                quote! { *const #element_type },
+                                quote! { usize },
+                            ],
+                            setup: vec![quote! {
+                                let #pointer = #argument.as_ptr();
+                                let #length = #argument.len();
+                            }],
+                            call_arguments: vec![quote! { #pointer }, quote! { #length }],
+                        })
+                    }
+                    DirectVectorElementType::Record(_) => {
+                        let (TypeExpr::Vec(source_element) | TypeExpr::Slice(source_element)) =
+                            self.source
+                        else {
+                            return Err(Error::SourceSyntaxMismatch(
+                                "closure direct-vector argument is missing element type",
+                            ));
+                        };
+                        let rust_element =
+                            rust_api::TypeTokens::new(source_element.as_ref())?.into_type();
+                        let buffer = locals.wire();
+                        Ok(InvokeParameterTokens {
+                            rust_parameter: quote! { #argument: #rust_type },
+                            ffi_parameter_types: vec![quote! { *const u8 }, quote! { usize }],
+                            setup: vec![quote! {
+                                let #buffer = <#rust_element as ::boltffi::__private::VecTransport>::pack_vec(#argument);
+                                let #pointer = #buffer.as_ptr();
+                                let #length = #buffer.len();
+                            }],
+                            call_arguments: vec![quote! { #pointer }, quote! { #length }],
+                        })
+                    }
+                    _ => Err(Error::UnsupportedExpansion(
+                        "closure invoke direct-vector element",
+                    )),
+                }
+            }
             OutgoingParam::Value(_) => Err(Error::UnsupportedExpansion(
                 "closure invoke parameter shape",
             )),
@@ -537,6 +585,19 @@ impl<'expansion, 'lowered, S: RenderSurface> ForeignClosureReturn<'expansion, 'l
                     "closure invoke direct return requires source return type",
                 ))?;
                 Ok(Some(ForeignClosureReturnTokens::DirectPassable {
+                    rust_type: rust_type.clone(),
+                }))
+            }
+            ReturnPlan::DirectViaOutPointer { .. } => {
+                if !matches!(self.source, ReturnDef::Value(_)) {
+                    return Err(Error::SourceSyntaxMismatch(
+                        "source closure invoke return does not match binding return plan",
+                    ));
+                }
+                let rust_type = self.rust_type.as_ref().ok_or(Error::SourceSyntaxMismatch(
+                    "closure invoke direct return requires source return type",
+                ))?;
+                Ok(Some(ForeignClosureReturnTokens::DirectPassableOut {
                     rust_type: rust_type.clone(),
                 }))
             }
@@ -781,7 +842,12 @@ impl<'expansion, 'lowered> Render<Wasm32, ForeignClosureReturn<'expansion, 'lowe
                             quote! { __boltffi_result_value },
                         ),
                     )?;
-                Ok(ForeignClosureReturnTokens::WasmScalarOption { value })
+                let ffi_type = wrapper::scalar_option::WasmScalar::new(
+                    *primitive,
+                    Ident::new("__boltffi_result_value", Span::call_site()),
+                )
+                .carrier_type();
+                Ok(ForeignClosureReturnTokens::WasmScalarOption { value, ffi_type })
             }
             (ReturnPlan::DirectVecViaReturnSlot { .. }, ErrorDecl::None(_)) => {
                 let element = rust_api::Return::new(input.source).direct_vec_element_type()?;
@@ -918,6 +984,9 @@ enum ForeignClosureReturnTokens {
     DirectPassable {
         rust_type: Type,
     },
+    DirectPassableOut {
+        rust_type: Type,
+    },
     NativeEncoded {
         value: TokenStream,
     },
@@ -929,6 +998,7 @@ enum ForeignClosureReturnTokens {
     },
     WasmScalarOption {
         value: TokenStream,
+        ffi_type: TokenStream,
     },
     NativeDirectVec {
         value: TokenStream,
@@ -977,12 +1047,13 @@ impl ForeignClosureReturnTokens {
             Self::DirectPassable { rust_type } => {
                 quote! { -> <#rust_type as ::boltffi::__private::Passable>::In }
             }
+            Self::DirectPassableOut { .. } => TokenStream::new(),
             Self::NativeEncoded { .. } => quote! { -> ::boltffi::__private::FfiBuf },
             Self::WasmEncoded { .. } => quote! { -> u64 },
             Self::NativeScalarOption { .. } | Self::NativeDirectVec { .. } => {
                 quote! { -> ::boltffi::__private::FfiBuf }
             }
-            Self::WasmScalarOption { .. } => quote! { -> f64 },
+            Self::WasmScalarOption { ffi_type, .. } => quote! { -> #ffi_type },
             Self::WasmDirectVec { .. } => TokenStream::new(),
             Self::NativeFallibleVoid { .. }
             | Self::NativeFallibleDirectPrimitive { .. }
@@ -1001,6 +1072,9 @@ impl ForeignClosureReturnTokens {
             | Self::WasmFallibleDirectPrimitive { ffi_type, .. } => {
                 vec![quote! { *mut #ffi_type }]
             }
+            Self::DirectPassableOut { rust_type } => vec![quote! {
+                *mut <#rust_type as ::boltffi::__private::Passable>::In
+            }],
             Self::NativeFallibleDirectPassable { ok_type, .. }
             | Self::WasmFallibleDirectPassable { ok_type, .. } => {
                 vec![quote! { *mut <#ok_type as ::boltffi::__private::Passable>::In }]
@@ -1018,6 +1092,11 @@ impl ForeignClosureReturnTokens {
             Self::NativeFallibleDirectPrimitive { ffi_type, .. }
             | Self::WasmFallibleDirectPrimitive { ffi_type, .. } => vec![quote! {
                 let mut __boltffi_success = ::core::mem::MaybeUninit::<#ffi_type>::uninit();
+            }],
+            Self::DirectPassableOut { rust_type } => vec![quote! {
+                let mut __boltffi_return_out = ::core::mem::MaybeUninit::<
+                    <#rust_type as ::boltffi::__private::Passable>::In
+                >::uninit();
             }],
             Self::NativeFallibleDirectPassable { ok_type, .. }
             | Self::WasmFallibleDirectPassable { ok_type, .. } => vec![quote! {
@@ -1037,6 +1116,9 @@ impl ForeignClosureReturnTokens {
 
     fn call_arguments(&self) -> Vec<TokenStream> {
         match self {
+            Self::DirectPassableOut { .. } => {
+                vec![quote! { __boltffi_return_out.as_mut_ptr() }]
+            }
             Self::NativeFallibleDirectPrimitive { .. }
             | Self::NativeFallibleDirectPassable { .. }
             | Self::NativeFallibleEncoded { .. }
@@ -1062,6 +1144,20 @@ impl ForeignClosureReturnTokens {
                     <#rust_type as ::boltffi::__private::Passable>::unpack(#call)
                 }
             },
+            Self::DirectPassableOut { rust_type } => {
+                let setup = self.setup();
+                quote! {
+                    {
+                        #(#setup)*
+                        unsafe {
+                            #call;
+                            <#rust_type as ::boltffi::__private::Passable>::unpack(
+                                __boltffi_return_out.assume_init()
+                            )
+                        }
+                    }
+                }
+            }
             Self::NativeEncoded { value } => quote! {
                 {
                     let __boltffi_result_buf = unsafe { #call };
@@ -1083,7 +1179,7 @@ impl ForeignClosureReturnTokens {
                     #value
                 }
             },
-            Self::WasmScalarOption { value } | Self::WasmDirectVec { value } => quote! {
+            Self::WasmScalarOption { value, .. } | Self::WasmDirectVec { value } => quote! {
                 {
                     let __boltffi_result_value = unsafe { #call };
                     #value

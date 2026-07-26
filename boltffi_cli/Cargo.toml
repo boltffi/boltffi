@@ -21,6 +21,8 @@ boltffi_bindgen.workspace = true
 boltffi_backend.workspace = true
 boltffi_binding.workspace = true
 boltffi_verify.workspace = true
+cap-fs-ext = "=4.0.2"
+cap-std = "=4.0.2"
 clap = { version = "4.4", features = ["derive"] }
 serde.workspace = true
 toml = "1.0"
@@ -34,6 +36,9 @@ serde_json.workspace = true
 console = "0.16"
 indicatif = "0.18"
 object.workspace = true
+
+[dev-dependencies]
+tempfile = "3.23.0"
 
 [target.'cfg(windows)'.dependencies]
 dunce = "1.0"

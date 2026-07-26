@@ -10,6 +10,39 @@ pub(super) fn param_name(name: &CanonicalName) -> String {
     escape_keyword(&lower_camel_name(name))
 }
 
+pub(super) fn is_valid_identifier(name: &str) -> bool {
+    if let Some(inner) = name
+        .strip_prefix('`')
+        .and_then(|rest| rest.strip_suffix('`'))
+    {
+        return is_kotlin_keyword(inner)
+            && is_valid_unescaped_identifier(inner)
+            && !is_underscore_only_identifier(inner);
+    }
+
+    is_valid_unescaped_identifier(name)
+        && !is_underscore_only_identifier(name)
+        && !is_kotlin_keyword(name)
+}
+
+pub(super) fn is_valid_package_segment(segment: &str) -> bool {
+    is_valid_unescaped_identifier(segment) && !is_kotlin_hard_keyword(segment)
+}
+
+fn is_valid_unescaped_identifier(name: &str) -> bool {
+    let mut chars = name.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+
+    (first == '_' || first.is_ascii_alphabetic())
+        && chars.all(|char| char == '_' || char.is_ascii_alphanumeric())
+}
+
+fn is_underscore_only_identifier(name: &str) -> bool {
+    name.chars().all(|char| char == '_')
+}
+
 fn lower_camel_name(name: &CanonicalName) -> String {
     let mut words = name
         .parts()
@@ -47,6 +80,59 @@ fn escape_keyword(name: &str) -> String {
 }
 
 fn is_kotlin_keyword(name: &str) -> bool {
+    is_kotlin_hard_keyword(name)
+        || matches!(
+            name,
+            "by" | "catch"
+                | "constructor"
+                | "delegate"
+                | "dynamic"
+                | "field"
+                | "file"
+                | "finally"
+                | "get"
+                | "import"
+                | "init"
+                | "param"
+                | "property"
+                | "receiver"
+                | "set"
+                | "setparam"
+                | "value"
+                | "where"
+                | "actual"
+                | "abstract"
+                | "annotation"
+                | "companion"
+                | "const"
+                | "crossinline"
+                | "data"
+                | "enum"
+                | "expect"
+                | "external"
+                | "final"
+                | "infix"
+                | "inline"
+                | "inner"
+                | "internal"
+                | "lateinit"
+                | "noinline"
+                | "open"
+                | "operator"
+                | "out"
+                | "override"
+                | "private"
+                | "protected"
+                | "public"
+                | "reified"
+                | "sealed"
+                | "suspend"
+                | "tailrec"
+                | "vararg"
+        )
+}
+
+fn is_kotlin_hard_keyword(name: &str) -> bool {
     matches!(
         name,
         "as" | "break"
@@ -76,52 +162,5 @@ fn is_kotlin_keyword(name: &str) -> bool {
             | "var"
             | "when"
             | "while"
-            | "by"
-            | "catch"
-            | "constructor"
-            | "delegate"
-            | "dynamic"
-            | "field"
-            | "file"
-            | "finally"
-            | "get"
-            | "import"
-            | "init"
-            | "param"
-            | "property"
-            | "receiver"
-            | "set"
-            | "setparam"
-            | "value"
-            | "where"
-            | "actual"
-            | "abstract"
-            | "annotation"
-            | "companion"
-            | "const"
-            | "crossinline"
-            | "data"
-            | "enum"
-            | "expect"
-            | "external"
-            | "final"
-            | "infix"
-            | "inline"
-            | "inner"
-            | "internal"
-            | "lateinit"
-            | "noinline"
-            | "open"
-            | "operator"
-            | "out"
-            | "override"
-            | "private"
-            | "protected"
-            | "public"
-            | "reified"
-            | "sealed"
-            | "suspend"
-            | "tailrec"
-            | "vararg"
     )
 }

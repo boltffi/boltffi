@@ -63,5 +63,12 @@ final class DefaultValuesRecordsTests: DemoTestCase {
         XCTAssertEqual(ServiceConfig(fromBorrowedName: "borrowed").describe(), "borrowed:3:standard:none:https://default")
         demoCase("case:records.default_values.service_config.from_string_ref_name.should_return_config")
         XCTAssertEqual(ServiceConfig(fromStringRefName: "stringref").describe(), "stringref:3:standard:none:https://default")
+        demoCase("case:records.default_values.service_config.from_non_empty_name.should_return_config_for_non_empty_values")
+        let validatedConfig = ServiceConfig(fromNonEmptyName: "optional", region: "eu-west")
+        XCTAssertEqual(validatedConfig?.name, "optional")
+        XCTAssertEqual(validatedConfig?.region, "eu-west")
+        demoCase("case:records.default_values.service_config.from_non_empty_name.should_return_none_for_empty_values")
+        XCTAssertNil(ServiceConfig(fromNonEmptyName: "", region: "eu-west"))
+        XCTAssertNil(ServiceConfig(fromNonEmptyName: "optional", region: ""))
     }
 }

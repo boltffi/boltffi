@@ -1,3 +1,5 @@
+use boltffi_backend::{Error, target::kotlin::KotlinHost};
+
 use super::rendered_fixture;
 
 #[test]
@@ -63,7 +65,43 @@ fn kotlin_target_renders_callback_encoded_result_returns() {
 
 #[test]
 fn kotlin_target_renders_callback_handle_returns() {
-    insta::assert_snapshot!(rendered_fixture("callback/callback_handle_return"));
+    let rendered = rendered_fixture("callback/callback_handle_return");
+
+    assert!(rendered.contains("if (__boltffi_closed.compareAndSet(false, true)) {"));
+    assert!(rendered.contains("check(!__boltffi_closed.get()) { \"callback handle is closed\" }"));
+    assert!(!rendered.contains("private var closed"));
+
+    insta::assert_snapshot!(rendered);
+}
+
+#[test]
+fn kotlin_target_rejects_callback_methods_shadowing_handle_members() {
+    let error = KotlinHost::new("com.boltffi.demo", "Demo")
+        .expect("Kotlin host")
+        .into_target()
+        .expect("Kotlin target")
+        .render(&super::bindings(
+            r#"
+            #[export]
+            pub trait Listener {
+                fn raw_handle(&self) -> u32;
+            }
+
+            #[export]
+            pub fn make_listener() -> Box<dyn Listener> {
+                loop {}
+            }
+            "#,
+        ))
+        .expect_err("a callback method shadowing the generated handle members must not render");
+    assert!(
+        matches!(
+            &error,
+            Error::KotlinNameCollision { scope, name }
+                if scope == "ListenerHandle" && name == "rawHandle()"
+        ),
+        "{error:?}"
+    );
 }
 
 #[test]
@@ -73,7 +111,33 @@ fn kotlin_target_renders_nullable_callback_handle_returns() {
 
 #[test]
 fn kotlin_target_renders_async_callback_return_shapes() {
-    insta::assert_snapshot!(rendered_fixture("callback/async_callback_return_shapes"));
+    let rendered = rendered_fixture("callback/async_callback_return_shapes");
+
+    assert!(rendered.contains("\ninterface Listener {"));
+    assert!(!rendered.contains("fun interface"));
+
+    insta::assert_snapshot!(rendered);
+}
+
+#[test]
+fn kotlin_target_renders_async_callback_unit_results() {
+    let rendered = rendered_fixture("callback/async_callback_unit_result");
+
+    assert!(
+        rendered
+            .contains("impl.remove(key.toUInt()); Native.boltffi_async_callback_complete_Bytes(")
+    );
+
+    insta::assert_snapshot!(rendered);
+}
+
+#[test]
+fn kotlin_target_renders_single_method_callbacks_as_fun_interfaces() {
+    let rendered = rendered_fixture("callback/async_callback_string_return");
+
+    assert!(rendered.contains("fun interface Listener {"));
+
+    insta::assert_snapshot!(rendered);
 }
 
 #[test]

@@ -1,4 +1,4 @@
-use std::ffi::OsStr;
+use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -51,6 +51,11 @@ impl AndroidToolchain {
         cargo: &mut Command,
         target: &RustTarget,
     ) -> Result<()> {
+        cargo.envs(self.cargo_environment(target)?);
+        Ok(())
+    }
+
+    pub fn cargo_environment(&self, target: &RustTarget) -> Result<Vec<(OsString, OsString)>> {
         let abi = AndroidAbi::from_architecture(target.architecture()).ok_or_else(|| {
             CliError::CommandFailed {
                 command: format!("unsupported android target {}", target.triple()),
@@ -62,11 +67,6 @@ impl AndroidToolchain {
         let ar = self.ndk.llvm_ar();
         let triple_env_upper = cargo_env_triple_upper(target.triple());
         let triple_env_lower = cargo_env_triple_lower(target.triple());
-
-        cargo.env(format!("CARGO_TARGET_{}_LINKER", triple_env_upper), &linker);
-        cargo.env(format!("CARGO_TARGET_{}_AR", triple_env_upper), &ar);
-        cargo.env(format!("CC_{}", triple_env_lower), &linker);
-        cargo.env(format!("AR_{}", triple_env_lower), &ar);
 
         let sysroot = self.ndk.sysroot();
         let include_target = android_sysroot_target(target.triple());
@@ -88,9 +88,25 @@ impl AndroidToolchain {
             _ => bindgen_clang_args,
         };
 
-        cargo.env(bindgen_key, merged_args);
-
-        Ok(())
+        Ok(vec![
+            (
+                format!("CARGO_TARGET_{}_LINKER", triple_env_upper).into(),
+                linker.clone().into_os_string(),
+            ),
+            (
+                format!("CARGO_TARGET_{}_AR", triple_env_upper).into(),
+                ar.clone().into_os_string(),
+            ),
+            (
+                format!("CC_{}", triple_env_lower).into(),
+                linker.into_os_string(),
+            ),
+            (
+                format!("AR_{}", triple_env_lower).into(),
+                ar.into_os_string(),
+            ),
+            (bindgen_key.into(), merged_args.into()),
+        ])
     }
 
     pub fn clang_for_target(&self, target: &RustTarget) -> Result<PathBuf> {

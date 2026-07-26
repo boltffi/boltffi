@@ -1,0 +1,66 @@
+---
+source: boltffi_backend/tests/kotlin/constant.rs
+expression: "rendered_fixture(\"constant/data_enum\")"
+---
+===== com/boltffi/demo/Demo.kt =====
+@file:OptIn(kotlin.ExperimentalUnsignedTypes::class)
+
+package com.boltffi.demo
+
+sealed class State {
+    internal abstract fun wireSize(): Int
+
+    internal abstract fun writeTo(writer: WireWriter)
+
+    internal fun toByteArray(): ByteArray {
+        val buffer = WireWriterPool.acquire(wireSize())
+        val writer = buffer.writer
+        try {
+            writeTo(writer)
+            return buffer.bytes()
+        } finally {
+            buffer.close()
+        }
+    }
+
+
+    object Idle : State() {
+        internal override fun wireSize(): Int {
+            return 4
+        }
+
+        internal override fun writeTo(writer: WireWriter) {
+            writer.writeU32(0.toUInt())
+        }
+    }
+    data class Busy(
+        val jobs: UInt
+    ) : State() {
+        internal override fun wireSize(): Int {
+            return 4 + 4
+        }
+
+        internal override fun writeTo(writer: WireWriter) {
+            writer.writeU32(1.toUInt())
+            writer.writeU32(this.jobs)
+        }
+    }
+
+    companion object {
+        internal fun fromReader(reader: WireReader): State {
+            val tag = reader.readU32()
+            return when (tag) {
+                0.toUInt() -> Idle
+                1.toUInt() -> Busy(reader.readU32())
+                else -> throw IllegalArgumentException("unknown State tag: $tag")
+            }
+        }
+
+        internal fun fromByteArray(bytes: ByteArray): State {
+            val reader = WireReader(bytes)
+            return fromReader(reader)
+        }
+    }
+}
+
+val idle: State = State.Idle

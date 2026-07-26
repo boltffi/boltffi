@@ -363,7 +363,11 @@ pub fn to_snake_case(name: &str) -> String {
                     result.push('_');
                 }
             }
-            result.extend(character.to_lowercase());
+            if character == '-' {
+                result.push('_');
+            } else {
+                result.extend(character.to_lowercase());
+            }
             result
         })
 }

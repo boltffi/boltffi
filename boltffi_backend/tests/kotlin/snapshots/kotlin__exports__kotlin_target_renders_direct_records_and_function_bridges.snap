@@ -8,7 +8,7 @@ expression: "rendered_fixture(\"exports/direct_records_and_c_style_enums\")"
 package com.boltffi.demo
 @Suppress("FunctionName")
 private object Native {
-    @JvmStatic external fun boltffi_function_demo_echo_point(point: ByteArray): ByteArray?
+    @JvmStatic external fun boltffi_function_demo_echo_point(point: java.nio.ByteBuffer): ByteArray?
     @JvmStatic external fun boltffi_function_demo_echo_mode(mode: Byte): Byte
 }
 
@@ -23,6 +23,14 @@ data class Point(
             .order(java.nio.ByteOrder.nativeOrder())
         writeTo(buffer, 0)
         return buffer.array()
+    }
+
+    internal fun toDirectBuffer(): java.nio.ByteBuffer {
+        val buffer = java.nio.ByteBuffer
+            .allocateDirect(STRUCT_SIZE)
+            .order(java.nio.ByteOrder.nativeOrder())
+        writeTo(buffer, 0)
+        return buffer
     }
 
     internal fun writeTo(buffer: java.nio.ByteBuffer, offset: Int) {
@@ -62,7 +70,7 @@ enum class Mode(val value: Byte) {
 }
 
 fun echoPoint(point: Point): Point {
-    val __boltffi_result = Native.boltffi_function_demo_echo_point(point.toByteArray()) ?: throw IllegalStateException("null buffer returned")
+    val __boltffi_result = Native.boltffi_function_demo_echo_point(point.toDirectBuffer()) ?: throw IllegalStateException("null buffer returned")
     return Point.fromByteArray(__boltffi_result)
 }
 

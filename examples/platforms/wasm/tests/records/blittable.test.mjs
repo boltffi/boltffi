@@ -65,6 +65,10 @@ export async function run() {
   globalThis.demoCase("case:records.blittable.trades.should_generate_sample_vector");
   const trades = demo.generateTrades(3);
   assert.equal(trades.length, 3);
+  globalThis.demoCase("case:records.blittable.trades.should_sum_volumes");
+  assert.equal(demo.sumTradeVolumes(trades), 3_000n);
+  globalThis.demoCase("case:records.blittable.trades.should_aggregate_with_locations");
+  assert.equal(demo.aggregateLocationTradeStats(hostLocations, trades), 3_001n);
 
   globalThis.demoCase("case:records.blittable.particles.should_generate_sample_vector");
   const particles = demo.generateParticles(3);

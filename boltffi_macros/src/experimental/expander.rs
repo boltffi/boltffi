@@ -1,9 +1,12 @@
 use std::collections::HashMap;
 
-use boltffi_ast::{ClassDef, Path, PathRoot, SourceContract, StreamDef, TraitDef};
+use boltffi_ast::{
+    ClassDef, EnumDef, Path, PathRoot, RecordDef, SourceContract, StreamDef, TraitDef,
+};
 use boltffi_binding::{Native, SerializedBindings, Wasm32};
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
+use syn::Type;
 
 use crate::experimental::{
     error::Error,
@@ -284,19 +287,28 @@ where
         Ok(quote! { #prefix #(#segments)::* })
     }
 
+    fn path_type(path: &Path) -> Result<Type, Error> {
+        syn::parse2(Self::path_tokens(path)?)
+            .map_err(|_| Error::SourceSyntaxMismatch("visible path is not a Rust type"))
+    }
+
     fn records(&self) -> Result<Vec<TokenStream>, Error> {
-        self.source
+        let mut records = self
+            .source
             .records
             .iter()
             .map(|source| {
                 wrapper::record::Renderer::new(self.expansion.record(source)?, self.expansion)
                     .render()
             })
-            .collect()
+            .collect::<Result<Vec<_>, _>>()?;
+        records.extend(self.support_records()?);
+        Ok(records)
     }
 
     fn enumerations(&self) -> Result<Vec<TokenStream>, Error> {
-        self.source
+        let mut enumerations = self
+            .source
             .enums
             .iter()
             .map(|source| {
@@ -306,7 +318,63 @@ where
                 )
                 .render()
             })
+            .collect::<Result<Vec<_>, _>>()?;
+        enumerations.extend(self.support_enumerations()?);
+        Ok(enumerations)
+    }
+
+    fn support_records(&self) -> Result<Vec<TokenStream>, Error> {
+        self.support
+            .records
+            .iter()
+            .filter(|source| !source.methods.is_empty())
+            .filter(|source| !self.source_record(source))
+            .map(|source| {
+                let rust_type = self.support_type(source.id.as_str())?;
+                wrapper::record::Renderer::new(self.expansion.record(source)?, self.expansion)
+                    .render_exports(rust_type)
+            })
             .collect()
+    }
+
+    fn support_enumerations(&self) -> Result<Vec<TokenStream>, Error> {
+        self.support
+            .enums
+            .iter()
+            .filter(|source| !source.methods.is_empty())
+            .filter(|source| !self.source_enumeration(source))
+            .map(|source| {
+                let rust_type = self.support_type(source.id.as_str())?;
+                wrapper::enumeration::Renderer::new(
+                    self.expansion.enumeration(source)?,
+                    self.expansion,
+                )
+                .render_exports(rust_type)
+            })
+            .collect()
+    }
+
+    fn source_record(&self, record: &RecordDef) -> bool {
+        self.source
+            .records
+            .iter()
+            .any(|source| source.id == record.id)
+    }
+
+    fn source_enumeration(&self, enumeration: &EnumDef) -> bool {
+        self.source
+            .enums
+            .iter()
+            .any(|source| source.id == enumeration.id)
+    }
+
+    fn support_type(&self, id: &str) -> Result<Type, Error> {
+        self.visible_paths
+            .get(id)
+            .ok_or(Error::UnsupportedExpansion(
+                "dependency data impl target is not visible",
+            ))
+            .and_then(Self::path_type)
     }
 
     fn classes(&self) -> Result<Vec<TokenStream>, Error> {
@@ -396,9 +464,9 @@ mod tests {
 
     use boltffi_ast::{
         CanonicalName, ClassDef, ConstExpr, ConstantDef, ConstantId, EnumDef, EnumId, FieldDef,
-        FunctionDef, FunctionId, Literal, MethodDef, MethodId, PackageInfo, ParameterDef,
-        Primitive, Receiver, RecordDef, ReprAttr, ReprItem, ReturnDef, SourceContract, SourceName,
-        StreamDef, StreamId, TraitDef, TraitId, TypeExpr, VariantDef,
+        FunctionDef, FunctionId, Literal, MethodDef, MethodId, PackageInfo, ParameterDef, PathRoot,
+        PathSegment, Primitive, Receiver, RecordDef, ReprAttr, ReprItem, ReturnDef, SourceContract,
+        SourceName, StreamDef, StreamId, TraitDef, TraitId, TypeExpr, VariantDef,
     };
     use boltffi_bindgen::artifact::BindingMetadataReader;
     use boltffi_binding::{
@@ -483,6 +551,31 @@ mod tests {
         let rendered = tokens.to_string();
 
         assert!(rendered.contains("use crate :: Hidden ;"));
+    }
+
+    #[test]
+    fn native_expander_emits_visible_dependency_data_method_wrappers() {
+        let (root, support, visible_paths) = dependency_data_method_support();
+        let lowered = lower_with_declarations::<Native>(&support).expect("contract lowers");
+        let expansion = Expansion::new(&lowered);
+
+        let tokens = expander::Expander::with_support(&root, &support, visible_paths)
+            .native(&expansion)
+            .expect("contract expands");
+        let rendered = tokens.to_string();
+
+        assert!(rendered.contains("model :: ForeignPoint :: score"));
+        assert!(rendered.contains("model :: ForeignKind :: code"));
+        assert!(
+            !rendered.contains("unsafe impl :: boltffi :: __private :: Passable for ForeignPoint")
+        );
+        assert!(
+            !rendered.contains("unsafe impl :: boltffi :: __private :: Passable for ForeignKind")
+        );
+        assert_generated_crate_checks(
+            "expander_dependency_data_methods",
+            dependency_data_method_crate(tokens),
+        );
     }
 
     #[test]
@@ -625,6 +718,68 @@ mod tests {
         source
     }
 
+    fn dependency_data_method_support() -> (
+        SourceContract,
+        SourceContract,
+        Vec<(String, boltffi_ast::Path)>,
+    ) {
+        let root = SourceContract::new(PackageInfo::new("demo", None));
+        let mut support = root.clone();
+        let mut point = RecordDef::new(
+            "model::ForeignPoint".into(),
+            CanonicalName::single("ForeignPoint"),
+        );
+        point.repr = ReprAttr::new(vec![ReprItem::C]);
+        point.fields = vec![FieldDef::new(
+            CanonicalName::single("x"),
+            TypeExpr::Primitive(Primitive::F64),
+        )];
+        let mut score = MethodDef::new(
+            MethodId::new("model::ForeignPoint::score"),
+            CanonicalName::single("score"),
+            Receiver::None,
+        );
+        score.returns = ReturnDef::value(TypeExpr::Primitive(Primitive::U32));
+        point.methods.push(score);
+        support.records.push(point);
+
+        let mut kind = EnumDef::new(
+            EnumId::new("model::ForeignKind"),
+            CanonicalName::single("ForeignKind"),
+        );
+        kind.variants = vec![
+            VariantDef::unit(SourceName::new("Guest", CanonicalName::single("Guest"))),
+            VariantDef::unit(SourceName::new("Member", CanonicalName::single("Member"))),
+        ];
+        let mut code = MethodDef::new(
+            MethodId::new("model::ForeignKind::code"),
+            CanonicalName::single("code"),
+            Receiver::None,
+        );
+        code.returns = ReturnDef::value(TypeExpr::Primitive(Primitive::U32));
+        kind.methods.push(code);
+        support.enums.push(kind);
+
+        let visible_paths = vec![
+            (
+                "model::ForeignPoint".to_owned(),
+                boltffi_ast::Path::new(
+                    PathRoot::Relative,
+                    vec![PathSegment::new("model"), PathSegment::new("ForeignPoint")],
+                ),
+            ),
+            (
+                "model::ForeignKind".to_owned(),
+                boltffi_ast::Path::new(
+                    PathRoot::Relative,
+                    vec![PathSegment::new("model"), PathSegment::new("ForeignKind")],
+                ),
+            ),
+        ];
+
+        (root, support, visible_paths)
+    }
+
     fn listener_trait() -> TraitDef {
         let mut listener = TraitDef::new(
             TraitId::new("demo::Listener"),
@@ -759,6 +914,38 @@ mod tests {
 
             pub fn events() -> Arc<EventSubscription<u32>> {
                 StreamProducer::<u32>::new(16).subscribe()
+            }
+
+            #tokens
+        }
+    }
+
+    fn dependency_data_method_crate(tokens: TokenStream) -> TokenStream {
+        quote! {
+            #![allow(dead_code)]
+
+            mod model {
+                #[repr(C)]
+                pub struct ForeignPoint {
+                    pub x: f64,
+                }
+
+                impl ForeignPoint {
+                    pub fn score() -> u32 {
+                        7
+                    }
+                }
+
+                pub enum ForeignKind {
+                    Guest,
+                    Member,
+                }
+
+                impl ForeignKind {
+                    pub fn code() -> u32 {
+                        11
+                    }
+                }
             }
 
             #tokens

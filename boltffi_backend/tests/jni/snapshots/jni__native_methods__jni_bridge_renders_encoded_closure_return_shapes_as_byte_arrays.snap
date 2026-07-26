@@ -37,11 +37,6 @@ static FfiBuf_u8 boltffi_jni____closure__to_opt_i32_call(void *user_data) {
     }
     FfiBuf_u8 result = boltffi_jni_byte_array_to_buffer(env, __boltffi_return_array);
     (*env)->DeleteLocalRef(env, __boltffi_return_array);
-    if (boltffi_jni_clear_exception(env)) {
-
-        boltffi_jni_exit(env, attached);
-        return (FfiBuf_u8){0};
-    }
 
     boltffi_jni_exit(env, attached);
     return result;
@@ -59,21 +54,13 @@ static void boltffi_jni____closure__to_opt_i32_release(void *user_data) {
 }
 
 static bool boltffi_jni_load____closure__to_opt_i32(JNIEnv *env) {
-    jclass local_class = (*env)->FindClass(env, "com/boltffi/demo/ClosureToOptI32Callbacks");
-    if (local_class == NULL) {
+    if (!boltffi_jni_lookup_global_class_with_diagnostic(env, "com/boltffi/demo/ClosureToOptI32Callbacks", "com/boltffi/demo/ClosureToOptI32Callbacks", &g____closure__to_opt_i32_class)) {
         return false;
     }
-    g____closure__to_opt_i32_class = (*env)->NewGlobalRef(env, local_class);
-    (*env)->DeleteLocalRef(env, local_class);
-    if (g____closure__to_opt_i32_class == NULL) {
-        return false;
-    }
-    g____closure__to_opt_i32_call_method = (*env)->GetStaticMethodID(env, g____closure__to_opt_i32_class, "call", "(J)[B");
-    if (g____closure__to_opt_i32_call_method == NULL) {
+    if (!boltffi_jni_lookup_static_method_with_diagnostic(env, g____closure__to_opt_i32_class, "com/boltffi/demo/ClosureToOptI32Callbacks", "call", "call", "(J)[B", "(J)[B", &g____closure__to_opt_i32_call_method)) {
         goto fail;
     }
-    g____closure__to_opt_i32_free_method = (*env)->GetStaticMethodID(env, g____closure__to_opt_i32_class, "free", "(J)V");
-    if (g____closure__to_opt_i32_free_method == NULL) {
+    if (!boltffi_jni_lookup_static_method_with_diagnostic(env, g____closure__to_opt_i32_class, "com/boltffi/demo/ClosureToOptI32Callbacks", "free", "free", "(J)V", "(J)V", &g____closure__to_opt_i32_free_method)) {
         goto fail;
     }
     return true;
@@ -111,11 +98,6 @@ static FfiBuf_u8 boltffi_jni____closure__to_vec_u32_call(void *user_data) {
     }
     FfiBuf_u8 result = boltffi_jni_byte_array_to_buffer(env, __boltffi_return_array);
     (*env)->DeleteLocalRef(env, __boltffi_return_array);
-    if (boltffi_jni_clear_exception(env)) {
-
-        boltffi_jni_exit(env, attached);
-        return (FfiBuf_u8){0};
-    }
 
     boltffi_jni_exit(env, attached);
     return result;
@@ -133,21 +115,13 @@ static void boltffi_jni____closure__to_vec_u32_release(void *user_data) {
 }
 
 static bool boltffi_jni_load____closure__to_vec_u32(JNIEnv *env) {
-    jclass local_class = (*env)->FindClass(env, "com/boltffi/demo/ClosureToVecU32Callbacks");
-    if (local_class == NULL) {
+    if (!boltffi_jni_lookup_global_class_with_diagnostic(env, "com/boltffi/demo/ClosureToVecU32Callbacks", "com/boltffi/demo/ClosureToVecU32Callbacks", &g____closure__to_vec_u32_class)) {
         return false;
     }
-    g____closure__to_vec_u32_class = (*env)->NewGlobalRef(env, local_class);
-    (*env)->DeleteLocalRef(env, local_class);
-    if (g____closure__to_vec_u32_class == NULL) {
-        return false;
-    }
-    g____closure__to_vec_u32_call_method = (*env)->GetStaticMethodID(env, g____closure__to_vec_u32_class, "call", "(J)[B");
-    if (g____closure__to_vec_u32_call_method == NULL) {
+    if (!boltffi_jni_lookup_static_method_with_diagnostic(env, g____closure__to_vec_u32_class, "com/boltffi/demo/ClosureToVecU32Callbacks", "call", "call", "(J)[B", "(J)[B", &g____closure__to_vec_u32_call_method)) {
         goto fail;
     }
-    g____closure__to_vec_u32_free_method = (*env)->GetStaticMethodID(env, g____closure__to_vec_u32_class, "free", "(J)V");
-    if (g____closure__to_vec_u32_free_method == NULL) {
+    if (!boltffi_jni_lookup_static_method_with_diagnostic(env, g____closure__to_vec_u32_class, "com/boltffi/demo/ClosureToVecU32Callbacks", "free", "free", "(J)V", "(J)V", &g____closure__to_vec_u32_free_method)) {
         goto fail;
     }
     return true;
@@ -169,16 +143,12 @@ static void boltffi_jni_unload____closure__to_vec_u32(JNIEnv *env) {
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
     (void)reserved;
     JNIEnv *env = NULL;
-    if ((*vm)->GetEnv(vm, (void **)&env, JNI_VERSION_1_6) != JNI_OK) {
+    jint env_result = (*vm)->GetEnv(vm, (void **)&env, JNI_VERSION_1_6);
+    if (env_result != JNI_OK) {
+        fprintf(stderr, "BoltFFI JNI_OnLoad failed: GetEnv(JNI_VERSION_1_6) returned %d\n", (int)env_result);
         return JNI_ERR;
     }
-    jclass local_class = (*env)->FindClass(env, "com/boltffi/demo/Native");
-    if (local_class == NULL) {
-        return JNI_ERR;
-    }
-    boltffi_jni_native_class = (*env)->NewGlobalRef(env, local_class);
-    (*env)->DeleteLocalRef(env, local_class);
-    if (boltffi_jni_native_class == NULL) {
+    if (!boltffi_jni_lookup_global_class_with_diagnostic(env, "com/boltffi/demo/Native", "com/boltffi/demo/Native", &boltffi_jni_native_class)) {
         return JNI_ERR;
     }
     if (!boltffi_jni_load____closure__to_opt_i32(env)) {

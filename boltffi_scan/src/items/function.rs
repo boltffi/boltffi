@@ -33,7 +33,7 @@ fn build(
     function.source_span = function.source.span.clone();
     function.execution = signature::execution(&item.sig);
     function.parameters = parameters(&item.sig, &scanner)?;
-    function.returns = scanner.scan_return(&item.sig.output)?;
+    function.returns = scanner.scan_export_return(&item.sig.output)?;
     function.doc = attrs.doc();
     function.deprecated = attrs.deprecated()?;
     function.user_attrs = attrs.user_attrs();
@@ -131,6 +131,23 @@ mod tests {
         assert_eq!(
             function.returns,
             ReturnDef::value(TypeExpr::Primitive(Primitive::I32))
+        );
+    }
+
+    #[test]
+    fn scans_borrowed_string_return_as_string_slice() {
+        let function = scan("pub fn label() -> &'static str { \"up\" }").expect("scan");
+
+        assert_eq!(function.returns, ReturnDef::value(TypeExpr::Str));
+    }
+
+    #[test]
+    fn scans_borrowed_byte_slice_return_as_slice() {
+        let function = scan("pub fn bytes() -> &'static [u8] { b\"up\" }").expect("scan");
+
+        assert_eq!(
+            function.returns,
+            ReturnDef::value(TypeExpr::slice(TypeExpr::Primitive(Primitive::U8)))
         );
     }
 

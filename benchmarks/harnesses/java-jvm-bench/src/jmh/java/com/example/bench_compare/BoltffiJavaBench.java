@@ -92,6 +92,11 @@ public class BoltffiJavaBench {
     }
 
     @Benchmark
+    public void boltffi_java_echo_u32(Blackhole bh) {
+        bh.consume(BenchBoltFFI.echoU32(-1));
+    }
+
+    @Benchmark
     public void boltffi_java_echo_f64(Blackhole bh) {
         bh.consume(BenchBoltFFI.echoF64(3.14159));
     }

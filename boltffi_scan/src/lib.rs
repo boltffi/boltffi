@@ -1,4 +1,5 @@
 mod attributes;
+mod cfg;
 mod const_expr;
 mod declared_types;
 mod error;
@@ -18,6 +19,7 @@ pub(crate) mod type_expr;
 mod unsupported;
 mod visibility;
 
+pub use cfg::ActiveCfg;
 pub use error::ScanError;
 pub use input::ScanInput;
 pub use scan::{PackageScan, scan, scan_file, scan_package, scan_source};

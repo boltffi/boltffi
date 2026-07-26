@@ -1,8 +1,5 @@
-{%- for parameter in method.record_arrays %}
+{%- for parameter in method.record_buffers %}
 {%- if let Some(writeback) = parameter.writeback %}
-    (*env)->SetByteArrayRegion(env, {{ parameter.name }}, 0, (jsize)sizeof({{ writeback.c_type }}), (const jbyte *)&{{ writeback.local }});
-    if ((*env)->ExceptionCheck(env)) {
-        goto __boltffi_error;
-    }
+    memcpy({{ parameter.pointer }}, &{{ writeback.local }}, sizeof({{ writeback.c_type }}));
 {%- endif %}
 {%- endfor %}

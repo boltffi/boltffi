@@ -27,6 +27,13 @@ class DefaultValueRecordTests(DemoTestCase):
         self.assertEqual(demo.ServiceConfig.from_borrowed_name("borrowed").describe(), "borrowed:3:standard:none:https://default")
         self.demo_case("case:records.default_values.service_config.from_string_ref_name.should_return_config")
         self.assertEqual(demo.ServiceConfig.from_string_ref_name("stringref").describe(), "stringref:3:standard:none:https://default")
+        self.demo_case("case:records.default_values.service_config.from_non_empty_name.should_return_config_for_non_empty_values")
+        validated_config = demo.ServiceConfig.from_non_empty_name("optional", "eu-west")
+        self.assertEqual(validated_config.name, "optional")
+        self.assertEqual(validated_config.region, "eu-west")
+        self.demo_case("case:records.default_values.service_config.from_non_empty_name.should_return_none_for_empty_values")
+        self.assertIsNone(demo.ServiceConfig.from_non_empty_name("", "eu-west"))
+        self.assertIsNone(demo.ServiceConfig.from_non_empty_name("optional", ""))
 
     def test_result_and_optional_constructors(self) -> None:
         self.demo_case("case:records.default_values.service_config.try_with_retries.should_return_config")

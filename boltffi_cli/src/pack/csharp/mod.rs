@@ -4,7 +4,8 @@ use std::process::Command;
 use askama::Template;
 
 use crate::build::{
-    CargoBuildProfile, OutputCallback, resolve_build_profile, run_command_streaming,
+    BindingExpansion, CargoBuildProfile, OutputCallback, resolve_build_profile,
+    run_command_streaming,
 };
 use crate::cargo::Cargo;
 use crate::cli::{CliError, Result};
@@ -37,6 +38,14 @@ pub(crate) fn pack_csharp(
         &options.execution.cargo_args,
         options.execution.no_build,
     )?;
+    let binding_expansion = (!options.execution.no_build)
+        .then(|| {
+            BindingExpansion::resolve(
+                config,
+                &resolve_build_cargo_args(config, &options.execution.cargo_args),
+            )
+        })
+        .transpose()?;
     step.finish_success();
 
     sync_csharp_project(config, &plan)?;
@@ -49,6 +58,8 @@ pub(crate) fn pack_csharp(
             Some(plan.layout.source_directory.clone()),
             &plan.source_directory,
             &plan.artifact_name,
+            plan.generation_cargo_args.clone(),
+            plan.generation_toolchain_selector.clone(),
         )?;
         step.finish_success();
     }
@@ -66,7 +77,13 @@ pub(crate) fn pack_csharp(
         let native_library = if options.execution.no_build {
             existing_csharp_native_library(packaging_target)?
         } else {
-            build_csharp_native_library(packaging_target, &step)?
+            build_csharp_native_library(
+                packaging_target,
+                binding_expansion
+                    .as_ref()
+                    .expect("C# native builds require binding expansion"),
+                &step,
+            )?
         };
         copy_csharp_native_asset(&plan.layout, packaging_target, &native_library)?;
         step.finish_success_with(&format!("{}", native_library.display()));
@@ -116,6 +133,8 @@ struct CSharpPackagingPlan {
     target_framework: String,
     artifact_name: String,
     source_directory: PathBuf,
+    generation_cargo_args: Vec<String>,
+    generation_toolchain_selector: Option<String>,
     layout: CSharpPackageLayout,
     packaging_targets: Vec<CSharpPackagingTarget>,
 }
@@ -244,6 +263,8 @@ impl CSharpPackagingPlan {
             target_framework: config.csharp_target_framework(),
             artifact_name,
             source_directory,
+            generation_cargo_args: cargo_command_args,
+            generation_toolchain_selector: toolchain_selector,
             layout,
             packaging_targets,
         })
@@ -270,6 +291,7 @@ fn ensure_csharp_pack_cargo_args_supported(cargo: &Cargo) -> Result<()> {
 
 fn build_csharp_native_library(
     packaging_target: &CSharpPackagingTarget,
+    binding_expansion: &BindingExpansion,
     step: &Step,
 ) -> Result<PathBuf> {
     let cargo_context = &packaging_target.cargo_context;
@@ -292,7 +314,7 @@ fn build_csharp_native_library(
     }
 
     command
-        .arg("build")
+        .arg("rustc")
         .arg("--target")
         .arg(&cargo_context.rust_target_triple)
         .arg("--manifest-path")
@@ -313,6 +335,8 @@ fn build_csharp_native_library(
             status: None,
         })?
         .configure_cargo_build(&mut command);
+    command.arg("--lib");
+    binding_expansion.configure_rustc(&mut command)?;
 
     if step.is_verbose() {
         crate::pack::print_verbose_detail(&format!(
@@ -764,6 +788,10 @@ mod tests {
             );
             manifest.insert("lib".to_string(), toml::Value::Table(lib));
 
+            let mut features = toml::Table::new();
+            features.insert("ffi".to_string(), toml::Value::Array(Vec::new()));
+            manifest.insert("features".to_string(), toml::Value::Table(features));
+
             toml::to_string(&toml::Value::Table(manifest)).expect("temp Cargo manifest TOML")
         }
     }
@@ -841,6 +869,8 @@ mod tests {
             target_framework: "net10.0".to_string(),
             artifact_name: "demo".to_string(),
             source_directory: PathBuf::from("/tmp/demo"),
+            generation_cargo_args: Vec::new(),
+            generation_toolchain_selector: None,
             layout: CSharpPackageLayout {
                 source_directory: root_directory.join("src"),
                 package_output: root_directory.join("packages"),
@@ -975,6 +1005,7 @@ mod tests {
         let plan = csharp_packaging_plan(PathBuf::from("dist/csharp"));
 
         let project = render_csharp_project(&config, &plan).expect("C# project should render");
+        let normalized_project = project.replace('\\', "/");
 
         assert!(project.contains("<Title>Company MyLib</Title>"));
         assert!(project.contains("<Authors>Company Name;Runtime Team</Authors>"));
@@ -1003,11 +1034,11 @@ mod tests {
             )
         );
         assert!(
-            project
+            normalized_project
                 .contains(r#"<None Include="../../assets/icon.png" Pack="true" PackagePath="" />"#)
         );
         assert!(
-            project
+            normalized_project
                 .contains(r#"<None Include="../../docs/README.md" Pack="true" PackagePath="" />"#)
         );
         assert!(!project.contains("https://example.com/default"));
@@ -1058,6 +1089,23 @@ mod tests {
             packaging_target.cargo_context.rust_target_triple,
             expected_no_build_rust_target_triple(runtime_identifier)
         );
+
+        std::fs::remove_dir_all(project).expect("cleanup temp cdylib project");
+    }
+
+    #[test]
+    fn csharp_no_build_plan_preserves_cargo_args_for_regeneration() {
+        let project = temp_cdylib_project();
+        let manifest_path = project.join("Cargo.toml");
+        let mut cargo_args = cargo_args_for_manifest(&manifest_path);
+        cargo_args.extend(["--features".to_string(), "ffi".to_string()]);
+        let mut config = config();
+        config.targets.csharp.runtime_identifiers = Some(vec![CSharpRuntimeIdentifier::Current]);
+
+        let plan = CSharpPackagingPlan::from_config(&config, false, &cargo_args, true)
+            .expect("C# packaging should preserve generation Cargo arguments");
+
+        assert_eq!(plan.generation_cargo_args, ["--features", "ffi"]);
 
         std::fs::remove_dir_all(project).expect("cleanup temp cdylib project");
     }

@@ -1,8 +1,6 @@
-use std::ffi::OsString;
-
 use crate::build::{
-    BindingExpansion, BuildOptions, BuildResult, Builder, all_successful, count_successful,
-    failed_targets, resolve_build_profile,
+    BindingExpansion, BuildOptions, BuildResult, BuildSelection, Builder, all_successful,
+    count_successful, failed_targets, resolve_build_profile,
 };
 use crate::cli::Result;
 use crate::config::Config;
@@ -124,24 +122,21 @@ fn apple_builder(config: &Config, release: bool, cargo_args: Vec<String>) -> Res
     let expansion = BindingExpansion::resolve(config, &cargo_args)?;
     Ok(Builder::new(
         config,
-        build_options(release, cargo_args, expansion.env()?),
+        build_options(release, BuildSelection::Expanded(Box::new(expansion))),
     ))
 }
 
 fn plain_builder(config: &Config, release: bool, cargo_args: Vec<String>) -> Builder<'_> {
-    Builder::new(config, build_options(release, cargo_args, Vec::new()))
+    Builder::new(
+        config,
+        build_options(release, BuildSelection::Default { cargo_args }),
+    )
 }
 
-fn build_options(
-    release: bool,
-    cargo_args: Vec<String>,
-    env: Vec<(OsString, OsString)>,
-) -> BuildOptions {
+fn build_options(release: bool, selection: BuildSelection) -> BuildOptions {
     BuildOptions {
         release,
-        package: None,
-        cargo_args,
-        env,
+        selection,
         on_output: None,
     }
 }

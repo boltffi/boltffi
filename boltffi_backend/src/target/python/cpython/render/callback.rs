@@ -835,7 +835,7 @@ impl<'plan> ParamPlanRender<'plan, Native, OutOfRust> for MethodParamArity {
         })
     }
 
-    fn direct_vector(&mut self, _: &DirectVectorElementType) -> Self::Output {
+    fn direct_vector(&mut self, _: &DirectVectorElementType, _: ()) -> Self::Output {
         Ok(2)
     }
 }
@@ -900,7 +900,7 @@ impl<'plan, 'render> ParamPlanRender<'plan, Native, OutOfRust> for MethodParamVa
         })
     }
 
-    fn direct_vector(&mut self, element: &DirectVectorElementType) -> Self::Output {
+    fn direct_vector(&mut self, element: &DirectVectorElementType, _: ()) -> Self::Output {
         MethodParam::direct_vector_param(
             self.name.clone(),
             self.object.clone(),

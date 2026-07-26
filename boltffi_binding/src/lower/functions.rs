@@ -284,6 +284,36 @@ mod tests {
     }
 
     #[test]
+    fn nested_interned_string_param_lowers_to_tagged_codec_node() {
+        let type_expr = TypeExpr::option(TypeExpr::vec(TypeExpr::interned_string(
+            SourcePath::single("InternedString"),
+            "demo::pools::BrowserName",
+            SourcePath::single("BrowserName"),
+            vec!["Chrome".to_owned(), "Firefox".to_owned()],
+        )));
+        let bindings = TestContract::new()
+            .with_function(taking("demo::detect", "detect", "names", type_expr))
+            .lower_ok::<Native>();
+
+        let ParamPlan::Encoded { codec, .. } = first_param_lower(&bindings) else {
+            panic!("nested interned string must use an encoded parameter");
+        };
+        let CodecNode::Optional(inner) = codec.root() else {
+            panic!("expected optional codec root, got {:?}", codec.root());
+        };
+        let CodecNode::Sequence { element, .. } = inner.as_ref() else {
+            panic!("expected nested sequence codec, got {inner:?}");
+        };
+        assert_eq!(
+            element.as_ref(),
+            &CodecNode::InternedString {
+                static_values: vec!["Chrome".to_owned(), "Firefox".to_owned()]
+            }
+        );
+        assert!(codec.uses_interned_string());
+    }
+
+    #[test]
     fn wasm32_string_return_uses_packed_shape() {
         let mut greet = function("demo::greet", "greet");
         greet.returns = ReturnDef::value(TypeExpr::String);
@@ -299,7 +329,7 @@ mod tests {
                 codec,
                 shape: wasm32::BufferShape::Packed,
             } => {
-                assert_eq!(codec.root(), &CodecNode::String);
+                assert_eq!(codec.root(), &CodecNode::Utf8String);
             }
             other => panic!("expected wasm32 packed string return, got {other:?}"),
         }
@@ -351,6 +381,19 @@ mod tests {
         assert_eq!(
             function.symbol().name().as_str(),
             "boltffi_function_demo_nested_do_the_thing"
+        );
+    }
+
+    #[test]
+    fn function_symbol_replaces_hyphenated_package_segments() {
+        let bindings = TestContract::new()
+            .with_function(function("my-crate::add", "add"))
+            .lower_ok::<Native>();
+        let function = first_function(&bindings);
+
+        assert_eq!(
+            function.symbol().name().as_str(),
+            "boltffi_function_my_crate_add"
         );
     }
 
@@ -708,6 +751,44 @@ mod tests {
     }
 
     #[test]
+    fn wasm32_lossy_scalar_options_use_encoded_returns() {
+        [Primitive::I64, Primitive::U64, Primitive::F32]
+            .into_iter()
+            .for_each(|primitive| {
+                let bindings = TestContract::new()
+                    .with_function(returning(
+                        "demo::maybe_value",
+                        "maybe_value",
+                        TypeExpr::option(TypeExpr::Primitive(primitive)),
+                    ))
+                    .lower_ok::<Wasm32>();
+
+                assert!(matches!(
+                    first_function(&bindings).callable().returns().plan(),
+                    ReturnPlan::EncodedViaReturnSlot { .. }
+                ));
+            });
+    }
+
+    #[test]
+    fn wasm32_f64_option_return_uses_scalar_carrier() {
+        let bindings = TestContract::new()
+            .with_function(returning(
+                "demo::maybe_value",
+                "maybe_value",
+                TypeExpr::option(TypeExpr::Primitive(Primitive::F64)),
+            ))
+            .lower_ok::<Wasm32>();
+
+        assert_eq!(
+            first_function(&bindings).callable().returns().plan(),
+            &ReturnPlan::ScalarOptionViaReturnSlot {
+                primitive: BindingPrimitive::F64,
+            }
+        );
+    }
+
+    #[test]
     fn option_string_return_stays_encoded() {
         let bindings = TestContract::new()
             .with_function(returning(
@@ -909,6 +990,47 @@ mod tests {
     }
 
     #[test]
+    fn wasm32_lossy_scalar_options_use_encoded_parameters() {
+        [Primitive::I64, Primitive::U64, Primitive::F32]
+            .into_iter()
+            .for_each(|primitive| {
+                let bindings = TestContract::new()
+                    .with_function(taking(
+                        "demo::set_value",
+                        "set_value",
+                        "value",
+                        TypeExpr::option(TypeExpr::Primitive(primitive)),
+                    ))
+                    .lower_ok::<Wasm32>();
+
+                assert!(matches!(
+                    first_param_lower(&bindings),
+                    ParamPlan::Encoded { .. }
+                ));
+            });
+    }
+
+    #[test]
+    fn wasm32_f64_option_parameter_uses_scalar_carrier() {
+        let bindings = TestContract::new()
+            .with_function(taking(
+                "demo::set_value",
+                "set_value",
+                "value",
+                TypeExpr::option(TypeExpr::Primitive(Primitive::F64)),
+            ))
+            .lower_ok::<Wasm32>();
+
+        assert!(matches!(
+            first_param_lower(&bindings),
+            ParamPlan::ScalarOption {
+                primitive: BindingPrimitive::F64,
+                ..
+            }
+        ));
+    }
+
+    #[test]
     fn option_string_param_stays_encoded() {
         let bindings = TestContract::new()
             .with_function(taking(
@@ -941,6 +1063,7 @@ mod tests {
             &ParamPlan::DirectVec {
                 element: DirectVectorElementType::primitive(BindingPrimitive::U32)
                     .expect("u32 is a direct-vector primitive"),
+                receive: Receive::ByValue,
             }
         );
     }
@@ -961,6 +1084,7 @@ mod tests {
             &ParamPlan::DirectVec {
                 element: DirectVectorElementType::primitive(BindingPrimitive::U32)
                     .expect("u32 is a direct-vector primitive"),
+                receive: Receive::ByValue,
             }
         );
     }
@@ -980,6 +1104,7 @@ mod tests {
         match first_param_lower(&bindings) {
             ParamPlan::DirectVec {
                 element: DirectVectorElementType::Record(_),
+                ..
             } => {}
             other => panic!("expected DirectVec of direct record, got {other:?}"),
         }
@@ -1037,5 +1162,53 @@ mod tests {
             first_param_lower(&bindings),
             ParamPlan::Encoded { .. }
         ));
+    }
+
+    #[test]
+    fn ref_slice_primitive_param_lowers_to_borrowed_direct_vec() {
+        let mut decl = function("demo::peek", "peek");
+        decl.parameters = vec![ParameterDef {
+            name: name("values").into(),
+            type_expr: TypeExpr::Slice(Box::new(TypeExpr::Primitive(Primitive::U32))),
+            passing: boltffi_ast::ParameterPassing::Ref,
+            doc: None,
+            default: None,
+            user_attrs: Vec::new(),
+            source: boltffi_ast::Source::exported(),
+        }];
+        let bindings = TestContract::new().with_function(decl).lower_ok::<Native>();
+
+        assert_eq!(
+            first_param_lower(&bindings),
+            &ParamPlan::DirectVec {
+                element: DirectVectorElementType::primitive(BindingPrimitive::U32)
+                    .expect("u32 is a direct-vector primitive"),
+                receive: Receive::ByRef,
+            }
+        );
+    }
+
+    #[test]
+    fn mut_slice_primitive_param_lowers_to_mutable_direct_vec() {
+        let mut decl = function("demo::increment", "increment");
+        decl.parameters = vec![ParameterDef {
+            name: name("values").into(),
+            type_expr: TypeExpr::Slice(Box::new(TypeExpr::Primitive(Primitive::U64))),
+            passing: boltffi_ast::ParameterPassing::RefMut,
+            doc: None,
+            default: None,
+            user_attrs: Vec::new(),
+            source: boltffi_ast::Source::exported(),
+        }];
+        let bindings = TestContract::new().with_function(decl).lower_ok::<Native>();
+
+        assert_eq!(
+            first_param_lower(&bindings),
+            &ParamPlan::DirectVec {
+                element: DirectVectorElementType::primitive(BindingPrimitive::U64)
+                    .expect("u64 is a direct-vector primitive"),
+                receive: Receive::ByMutRef,
+            }
+        );
     }
 }
