@@ -14,6 +14,8 @@ BoltFFI exports two kinds of constants:
 
 Both forms produce immutable values in the generated API. BoltFFI emits simple literals directly in generated source and reads values that require Rust evaluation through a generated native accessor.
 
+Use a global constant for a value that belongs to the package as a whole. Use an associated constant when the value describes a particular record, enum, or class.
+
 ## Global constants
 
 Mark a standalone public constant with `#[export]`. Swift, Kotlin, TypeScript, and Python expose it at module scope. Java and C# place it on the generated module class because those languages do not have module-level values.
@@ -65,7 +67,7 @@ Associated constants are declared inside the same exported impl blocks used for 
 - Use `#[data(impl)]` for a struct or enum marked with `#[data]`.
 - Use `#[export]` for a class impl.
 
-Every public constant in the marked impl is generated on its owner type. The constant may use `Self` or any other supported constant type.
+Every public constant in the marked impl is generated on its owner type. The constant may use `Self` or any other supported constant type. The impl marker exports the member, so the individual constant does not need another `#[export]` attribute.
 
 <CodeComparison
   title=""
@@ -271,9 +273,68 @@ limit = Palette.MAX_COLORS`}
 
 `Color.BLACK` uses `Self`, `Color.CHANNEL_COUNT` uses a primitive, `Mode.DEFAULT` aliases an enum variant, and `Palette.MAX_COLORS` belongs to a Rust-backed class. In every target, the value remains attached to the type that owns it.
 
-## Supported types
+## Data constants
 
-A constant's declared type must be supported as a BoltFFI return type. Rust must also permit the value in a `const` declaration.
+Every record or enum marked with `#[data]` can be the value type of a global or associated constant. This includes primitive-only records, encoded records, C-style enums, and data enums. The selected target must already support that data type as a normal return value.
+
+The `Color` and `Mode` declarations above are examples of associated data constants. The same data types also work as global constants:
+
+<CodeComparison
+  title=""
+  rust={`#[export]
+pub const DEFAULT_COLOR: Color = Color {
+    r: 30,
+    g: 30,
+    b: 30,
+    a: 255,
+};
+
+#[export]
+pub const DEFAULT_MODE: Mode = Mode::Fast;`}
+  swift={`public var defaultColor: Color { get }
+public let defaultMode: Mode = Mode.fast
+
+let color = defaultColor
+let mode = defaultMode`}
+  kotlin={`val defaultColor: Color
+    get()
+
+val defaultMode: Mode = Mode.FAST
+
+val color = defaultColor
+val mode = defaultMode`}
+  java={`public final class Demo {
+    public static final Color DEFAULT_COLOR;
+    public static final Mode DEFAULT_MODE = Mode.FAST;
+}
+
+Color color = Demo.DEFAULT_COLOR;
+Mode mode = Demo.DEFAULT_MODE;`}
+  csharp={`public static class Demo
+{
+    public static Color DefaultColor { get; }
+    public const Mode DefaultMode = Mode.Fast;
+}
+
+Color color = Demo.DefaultColor;
+Mode mode = Demo.DefaultMode;`}
+  typescript={`export let defaultColor: Color
+export const defaultMode: Mode = Mode.Fast
+
+const color = defaultColor
+const mode = defaultMode`}
+  python={`default_color: Color
+default_mode: Mode = Mode.FAST
+
+color = default_color
+mode = default_mode`}
+/>
+
+Values such as `Color { ... }` are constructed in Rust and delivered through a generated accessor. The generated API still exposes an ordinary immutable value.
+
+## Supported values
+
+A constant's declared type follows the same support rules as a function return type. Rust must also permit the value in a `const` declaration.
 
 | Rust constant | Examples | Generated delivery |
 |---------------|----------|--------------------|
@@ -284,50 +345,31 @@ A constant's declared type must be supported as a BoltFFI return type. Rust must
 | C-style enum | `Mode::Fast`, `Self::Fast` | Inline |
 | Byte data | `&'static [u8]` | Native accessor |
 | Tuple | `(u32, u32)` | Native accessor |
-| Record or data enum | `Color`, `State` | Native accessor |
+| `#[data]` record | `Color`, `Point` | Native accessor |
+| `#[data]` enum | `Mode`, `State` | Inline for a C-style variant or native accessor for an encoded value |
 | Computed expression | `6 * 7`, `Self { ... }` | Native accessor when it cannot be represented inline |
 
 Inline and accessor-backed constants have the same public API. The distinction only controls how BoltFFI delivers the value.
 
-Borrowed constant types are limited to strings and byte slices. Other borrowed values are not exported.
+## Limits
 
-## Export rules
+Most constant restrictions come from Rust's const evaluator and the normal return-type support of each target.
 
-A global constant is exported only when the declaration has `#[export]`:
+### Global constants
 
-```rust
-#[export]
-pub const PUBLIC_LIMIT: u32 = 100;
+- Each global constant needs its own `#[export]` marker.
+- A global constant cannot use `Self` because it has no owner.
+- Java and C# expose global constants on the generated module class.
 
-pub const INTERNAL_LIMIT: u32 = 50;
-```
+### Associated constants
 
-An associated constant is exported only when it is public and belongs to an explicitly exported impl block:
+- The owner must be an exported record, enum, or class.
+- Record and enum constants belong in `#[data(impl)]`; class constants belong in `#[export]`.
+- Only public constants become part of the generated API. Private constants remain available to the Rust implementation, and `#[skip]` can omit a public constant.
+- A C-style enum associated constant must alias a variant of that same enum when C# is generated. C# enums cannot contain static fields or properties. A primitive or record constant intended for all targets can instead be placed on a record or class, or exported globally.
 
-```rust
-#[data(impl)]
-impl Color {
-    pub const WHITE: Self = Self {
-        r: 255,
-        g: 255,
-        b: 255,
-        a: 255,
-    };
+### Constant values
 
-    const COMPONENT_COUNT: u8 = 4;
-
-    #[skip]
-    pub const INTERNAL_FORMAT: u8 = 1;
-}
-
-impl Color {
-    pub const RUST_ONLY: Self = Self {
-        r: 1,
-        g: 2,
-        b: 3,
-        a: 4,
-    };
-}
-```
-
-`Color.WHITE` is exported. `COMPONENT_COUNT` is private, `INTERNAL_FORMAT` is skipped, and `RUST_ONLY` belongs to an unmarked impl block, so none of them appear in generated bindings.
+- The expression must be valid in a Rust `const` declaration.
+- The declared type must be supported as a return value by every selected target.
+- Borrowed constants are limited to `&str` and `&[u8]`. Records and enums are exported by value rather than by reference.

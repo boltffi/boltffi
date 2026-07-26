@@ -96,8 +96,9 @@ const sections: Section[] = [
     children: [
       { id: "global-constants", label: "Global Constants" },
       { id: "associated-constants", label: "Associated Constants" },
-      { id: "supported-types", label: "Supported Types" },
-      { id: "export-rules", label: "Export Rules" },
+      { id: "data-constants", label: "Data Constants" },
+      { id: "supported-values", label: "Supported Values" },
+      { id: "limits", label: "Limits" },
     ]
   },
   { 
