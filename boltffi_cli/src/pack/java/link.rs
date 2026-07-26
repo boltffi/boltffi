@@ -12,6 +12,7 @@ use crate::pack::PackError;
 use crate::pack::{format_command_for_log, print_cargo_line, print_verbose_detail};
 use crate::reporter::Step;
 use crate::target::JavaHostTarget;
+use crate::toolchain::MsvcStyleCompiler;
 
 use super::plan::{JvmCargoContext, JvmPackagingTarget};
 
@@ -459,21 +460,24 @@ pub(crate) fn compile_jni_library_with_layout(
     let mut debug_info_sidecars = Vec::new();
 
     let mut command = packaging_target.toolchain.linker_command();
-    let jni_linker_args = if packaging_target.toolchain.uses_msvc_compiler() {
-        clang_cl_jni_linker_args(&JniLinkerArgs {
-            host_target,
-            release: strip_symbols,
-            output_lib: &output_lib,
-            jni_glue: &jni_glue,
-            link_input: &link_input,
-            jni_dir,
-            jni_include_directories: &jni_include_directories,
-            rustflag_linker_args: packaging_target.toolchain.jni_rustflag_linker_args(),
-            native_link_search_paths: &build_artifacts.native_link_search_paths,
-            native_static_libraries: &build_artifacts.native_static_libraries,
-            rpath_flag: None,
-            emit_debug_info: layout.debug_symbols_enabled,
-        })?
+    let jni_linker_args = if let Some(compiler) = packaging_target.toolchain.msvc_style_compiler() {
+        msvc_style_jni_linker_args(
+            compiler,
+            &JniLinkerArgs {
+                host_target,
+                release: strip_symbols,
+                output_lib: &output_lib,
+                jni_glue: &jni_glue,
+                link_input: &link_input,
+                jni_dir,
+                jni_include_directories: &jni_include_directories,
+                rustflag_linker_args: packaging_target.toolchain.jni_rustflag_linker_args(),
+                native_link_search_paths: &build_artifacts.native_link_search_paths,
+                native_static_libraries: &build_artifacts.native_static_libraries,
+                rpath_flag: None,
+                emit_debug_info: layout.debug_symbols_enabled,
+            },
+        )?
     } else {
         clang_style_jni_linker_args(&JniLinkerArgs {
             host_target,
@@ -1105,12 +1109,12 @@ pub(crate) fn clang_release_optimization_flags(
     }
 }
 
-pub(crate) fn clang_cl_jni_linker_args(args: &JniLinkerArgs<'_>) -> Result<Vec<String>> {
-    let mut resolved_args = vec![
-        "/LD".to_string(),
-        "/std:c11".to_string(),
-        "/experimental:c11atomics".to_string(),
-    ];
+pub(crate) fn msvc_style_jni_linker_args(
+    compiler: MsvcStyleCompiler,
+    args: &JniLinkerArgs<'_>,
+) -> Result<Vec<String>> {
+    let mut resolved_args = vec!["/LD".to_string()];
+    resolved_args.extend(compiler.c11_atomics_flags().iter().map(ToString::to_string));
     if args.release {
         resolved_args.push("/O2".to_string());
     }
@@ -1634,13 +1638,13 @@ mod tests {
     use super::{
         DesktopJniStripMode, JniIncludeDirectories, JniLinkerArgs, JvmNativeLinkInput,
         JvmNativePackageLayout, apple_dsym_bundle_path, apply_jvm_cargo_package_selection,
-        bundled_jvm_shared_library_path, clang_cl_jni_linker_args,
-        clang_native_static_library_flags, clang_release_optimization_flags,
-        clang_style_jni_linker_args, clang_undefined_symbol_policy_flags,
-        compiler_tool_version_suffix, desktop_jni_strip_mode, existing_jvm_shared_library_path,
-        extract_library_filenames, extract_link_search_paths, extract_native_static_libraries,
-        handle_missing_linux_strip_program, link_search_path_flags, linux_strip_program_candidates,
-        msvc_link_search_path_flags, msvc_native_static_library_flags, msvc_rustflag_linker_args,
+        bundled_jvm_shared_library_path, clang_native_static_library_flags,
+        clang_release_optimization_flags, clang_style_jni_linker_args,
+        clang_undefined_symbol_policy_flags, compiler_tool_version_suffix, desktop_jni_strip_mode,
+        existing_jvm_shared_library_path, extract_library_filenames, extract_link_search_paths,
+        extract_native_static_libraries, handle_missing_linux_strip_program,
+        link_search_path_flags, linux_strip_program_candidates, msvc_link_search_path_flags,
+        msvc_native_static_library_flags, msvc_rustflag_linker_args, msvc_style_jni_linker_args,
         parse_native_static_libraries, resolve_jni_include_directories_with_overrides,
         resolve_jvm_native_link_input, resolve_linux_strip_program,
         select_windows_static_library_filename, should_generate_apple_dsym_sidecars,
@@ -1656,6 +1660,7 @@ mod tests {
     use crate::config::{CargoConfig, Config, PackageConfig, TargetsConfig};
     use crate::pack::java::plan::JvmCargoContext;
     use crate::target::JavaHostTarget;
+    use crate::toolchain::MsvcStyleCompiler;
 
     fn temporary_directory(prefix: &str) -> PathBuf {
         let unique = SystemTime::now()
@@ -1957,27 +1962,33 @@ mod tests {
     }
 
     #[test]
-    fn builds_clang_cl_jni_linker_args_with_msvc_flags() {
+    fn builds_cl_jni_linker_args_with_msvc_flags() {
         let include_directories = JniIncludeDirectories {
             shared: PathBuf::from("/tmp/jdk/include"),
             platform: PathBuf::from("/tmp/jdk/include/win32"),
         };
         let link_input = JvmNativeLinkInput::Staticlib(PathBuf::from("/tmp/target/demo.lib"));
 
-        let args = clang_cl_jni_linker_args(&JniLinkerArgs {
-            host_target: JavaHostTarget::WindowsX86_64,
-            release: true,
-            output_lib: Path::new("/tmp/out/demo_jni.dll"),
-            jni_glue: Path::new("/tmp/jni/jni_glue.c"),
-            link_input: &link_input,
-            jni_dir: Path::new("/tmp/jni"),
-            jni_include_directories: &include_directories,
-            rustflag_linker_args: &["-L/tmp/rustflag-native".to_string(), "-luser32".to_string()],
-            native_link_search_paths: &["native=/tmp/native".to_string()],
-            native_static_libraries: &["-lws2_32".to_string(), "userenv.lib".to_string()],
-            rpath_flag: None,
-            emit_debug_info: false,
-        })
+        let args = msvc_style_jni_linker_args(
+            MsvcStyleCompiler::Cl,
+            &JniLinkerArgs {
+                host_target: JavaHostTarget::WindowsX86_64,
+                release: true,
+                output_lib: Path::new("/tmp/out/demo_jni.dll"),
+                jni_glue: Path::new("/tmp/jni/jni_glue.c"),
+                link_input: &link_input,
+                jni_dir: Path::new("/tmp/jni"),
+                jni_include_directories: &include_directories,
+                rustflag_linker_args: &[
+                    "-L/tmp/rustflag-native".to_string(),
+                    "-luser32".to_string(),
+                ],
+                native_link_search_paths: &["native=/tmp/native".to_string()],
+                native_static_libraries: &["-lws2_32".to_string(), "userenv.lib".to_string()],
+                rpath_flag: None,
+                emit_debug_info: false,
+            },
+        )
         .expect("msvc jni args");
 
         assert_eq!(
@@ -2094,29 +2105,34 @@ mod tests {
     }
 
     #[test]
-    fn builds_clang_cl_jni_linker_args_with_debug_info_flags() {
+    fn builds_clang_cl_jni_linker_args_without_msvc_c11_atomics_flag() {
         let include_directories = JniIncludeDirectories {
             shared: PathBuf::from("/tmp/jdk/include"),
             platform: PathBuf::from("/tmp/jdk/include/win32"),
         };
         let link_input = JvmNativeLinkInput::Staticlib(PathBuf::from("/tmp/target/demo.lib"));
 
-        let args = clang_cl_jni_linker_args(&JniLinkerArgs {
-            host_target: JavaHostTarget::WindowsX86_64,
-            release: false,
-            output_lib: Path::new("/tmp/out/demo_jni.dll"),
-            jni_glue: Path::new("/tmp/jni/jni_glue.c"),
-            link_input: &link_input,
-            jni_dir: Path::new("/tmp/jni"),
-            jni_include_directories: &include_directories,
-            rustflag_linker_args: &[],
-            native_link_search_paths: &[],
-            native_static_libraries: &[],
-            rpath_flag: None,
-            emit_debug_info: true,
-        })
+        let args = msvc_style_jni_linker_args(
+            MsvcStyleCompiler::ClangCl,
+            &JniLinkerArgs {
+                host_target: JavaHostTarget::WindowsX86_64,
+                release: false,
+                output_lib: Path::new("/tmp/out/demo_jni.dll"),
+                jni_glue: Path::new("/tmp/jni/jni_glue.c"),
+                link_input: &link_input,
+                jni_dir: Path::new("/tmp/jni"),
+                jni_include_directories: &include_directories,
+                rustflag_linker_args: &[],
+                native_link_search_paths: &[],
+                native_static_libraries: &[],
+                rpath_flag: None,
+                emit_debug_info: true,
+            },
+        )
         .expect("msvc jni args with debug info");
 
+        assert!(args.contains(&"/std:c11".to_string()));
+        assert!(!args.contains(&"/experimental:c11atomics".to_string()));
         assert!(args.contains(&"/Z7".to_string()));
         assert!(args.contains(&"/DEBUG".to_string()));
     }

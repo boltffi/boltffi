@@ -84,6 +84,33 @@ pub struct NativeHostToolchain {
     jni_rustflag_linker_args: Vec<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum MsvcStyleCompiler {
+    Cl,
+    ClangCl,
+}
+
+impl MsvcStyleCompiler {
+    fn from_program(program: &Path) -> Option<Self> {
+        let program_name = linker_program_name(program)?;
+
+        if program_name.eq_ignore_ascii_case("cl") {
+            Some(Self::Cl)
+        } else if program_name.eq_ignore_ascii_case("clang-cl") {
+            Some(Self::ClangCl)
+        } else {
+            None
+        }
+    }
+
+    pub(crate) fn c11_atomics_flags(self) -> &'static [&'static str] {
+        match self {
+            Self::Cl => &["/std:c11", "/experimental:c11atomics"],
+            Self::ClangCl => &["/std:c11"],
+        }
+    }
+}
+
 impl NativeHostToolchain {
     pub fn discover_matrix(
         toolchain_selector: Option<&str>,
@@ -290,10 +317,8 @@ impl NativeHostToolchain {
         &self.jni_compiler_program
     }
 
-    pub fn uses_msvc_compiler(&self) -> bool {
-        linker_program_name(&self.jni_compiler_program).is_some_and(|name| {
-            name.eq_ignore_ascii_case("clang-cl") || name.eq_ignore_ascii_case("cl")
-        })
+    pub(crate) fn msvc_style_compiler(&self) -> Option<MsvcStyleCompiler> {
+        MsvcStyleCompiler::from_program(&self.jni_compiler_program)
     }
 
     pub fn jni_rustflag_linker_args(&self) -> &[String] {
@@ -1644,12 +1669,13 @@ fn trim_wrapping_quotes(value: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::{
-        CargoTargetCfg, ConfiguredValue, NativeHostToolchain, cargo_cfg_expression_matches,
-        cargo_config_base_dir, cargo_config_file_candidates_with_inputs,
-        cargo_config_file_linker_values_with_candidates, cargo_config_search_roots,
-        cargo_configured_build_target, cargo_inline_configured_linker_values, cargo_linker_env_key,
-        configured_linux_build_target, configured_linux_x86_64_cross_linker_values_with_sources,
-        configured_target_linker_values, configured_target_rustflag_linker_args,
+        CargoTargetCfg, ConfiguredValue, MsvcStyleCompiler, NativeHostToolchain,
+        cargo_cfg_expression_matches, cargo_config_base_dir,
+        cargo_config_file_candidates_with_inputs, cargo_config_file_linker_values_with_candidates,
+        cargo_config_search_roots, cargo_configured_build_target,
+        cargo_inline_configured_linker_values, cargo_linker_env_key, configured_linux_build_target,
+        configured_linux_x86_64_cross_linker_values_with_sources, configured_target_linker_values,
+        configured_target_rustflag_linker_args,
         configured_target_rustflag_linker_args_with_sources, configured_windows_build_target,
         default_windows_jni_compiler_candidates, ensure_supported_native_host_pair,
         extract_cargo_config_args, fallback_without_rustup, linux_cross_linker_args,
@@ -2890,7 +2916,11 @@ unix
         .expect("jni compiler should resolve");
 
         assert_eq!(cargo_linker, Some(linker_path));
-        assert_eq!(jni_compiler, Some(compiler_path));
+        assert_eq!(jni_compiler, Some(compiler_path.clone()));
+        assert_eq!(
+            MsvcStyleCompiler::from_program(&compiler_path),
+            Some(MsvcStyleCompiler::ClangCl)
+        );
 
         fs::remove_dir_all(&temp_root).expect("cleanup temp dir");
     }
@@ -2936,7 +2966,7 @@ unix
             jni_compiler_args: Vec::new(),
             jni_rustflag_linker_args: Vec::new(),
         };
-        assert!(toolchain.uses_msvc_compiler());
+        assert_eq!(toolchain.msvc_style_compiler(), Some(MsvcStyleCompiler::Cl));
 
         fs::remove_dir_all(&temp_root).expect("cleanup temp dir");
     }
