@@ -76,6 +76,8 @@ pub enum DemoMode {
     directions = "Read each associated constant through its generated owner type and assert both inline and accessor-backed values.",
     exercises = [
         "constants::DemoMode::PREFERRED",
+        "constants::DemoMode::FALLBACK",
+        "constants::DemoMode::VARIANT_COUNT",
         "constants::DemoState::INITIAL",
         "records::blittable::Point::ZERO",
         "classes::static_methods::MathUtils::DEFAULT_PRECISION"
@@ -84,6 +86,8 @@ pub enum DemoMode {
 #[data(impl)]
 impl DemoMode {
     pub const PREFERRED: Self = Self::Safe;
+    pub const FALLBACK: Self = Self::PREFERRED;
+    pub const VARIANT_COUNT: u8 = 2;
 }
 
 #[export]

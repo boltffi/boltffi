@@ -8,6 +8,8 @@ class DemoConstantsTest {
     fun associatedConstantsStayOnTheirOwnerTypes() {
         demoCase("case:constants.associated.should_expose_values_on_exported_types")
         assertEquals(DemoMode.SAFE, DemoMode.PREFERRED)
+        assertEquals(DemoMode.SAFE, DemoMode.FALLBACK)
+        assertEquals(2u, DemoMode.VARIANT_COUNT)
         assertEquals(DemoState.Idle, DemoState.INITIAL)
         assertEquals(Point(0.0, 0.0), Point.ZERO)
         assertEquals(2u, MathUtils.DEFAULT_PRECISION)

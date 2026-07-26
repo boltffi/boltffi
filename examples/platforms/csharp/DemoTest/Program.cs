@@ -3374,6 +3374,14 @@ public static class DemoTest
             global::Demo.DemoMode.Preferred == global::Demo.DemoMode.Safe,
             "DemoMode.Preferred"
         );
+        Require(
+            global::Demo.DemoModeConstants.Fallback == global::Demo.DemoMode.Safe,
+            "DemoModeConstants.Fallback"
+        );
+        Require(
+            global::Demo.DemoModeConstants.VariantCount == 2,
+            "DemoModeConstants.VariantCount"
+        );
         Require(DemoState.Initial is DemoState.Idle, "DemoState.Initial");
         Require(Point.Zero == new Point(0.0, 0.0), "Point.Zero");
         Require(MathUtils.DefaultPrecision == 2u, "MathUtils.DefaultPrecision");
