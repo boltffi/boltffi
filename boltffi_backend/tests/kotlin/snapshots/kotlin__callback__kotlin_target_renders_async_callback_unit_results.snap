@@ -1,0 +1,87 @@
+---
+source: boltffi_backend/tests/kotlin/callback.rs
+expression: rendered
+---
+===== com/boltffi/demo/Demo.kt =====
+@file:OptIn(kotlin.ExperimentalUnsignedTypes::class)
+
+package com.boltffi.demo
+
+import kotlinx.coroutines.launch
+@Suppress("FunctionName")
+private object Native {
+    @JvmStatic external fun boltffi_async_callback_complete_Bytes(callback: Long, context: Long, result: ByteArray): Unit
+    @JvmStatic external fun boltffi_async_callback_complete_Bytes_failure(callback: Long, context: Long): Unit
+    @JvmStatic external fun boltffi_async_callback_complete_Bytes_error(callback: Long, context: Long, result: ByteArray): Unit
+
+    @JvmStatic fun boltffiFutureContinuationCallback(handle: Long, pollResult: Byte) {
+        BoltFfiAsync.resume(handle, pollResult)
+    }
+}
+
+
+sealed class LoadError(val value: Int) : Exception() {
+    object Bad : LoadError(1)
+
+    companion object {
+        fun fromValue(value: Int): LoadError =
+            when (value) {
+                1 -> Bad
+                else -> throw IllegalArgumentException("unknown LoadError value: $value")
+            }
+    }
+}
+
+fun interface Listener {
+    suspend fun remove(key: UInt)
+}
+
+private object ListenerMap {
+    private val map = java.util.concurrent.ConcurrentHashMap<Long, Listener>()
+    private val counter = java.util.concurrent.atomic.AtomicLong(1L)
+
+    fun insert(value: Listener): Long {
+        val handle = counter.getAndAdd(2L)
+        map[handle] = value
+        return handle
+    }
+
+    fun get(handle: Long): Listener? = map[handle]
+
+    fun remove(handle: Long): Listener? = map.remove(handle)
+
+    fun clone(handle: Long): Long {
+        val value = map[handle] ?: return 0L
+        return insert(value)
+    }
+}
+
+object ListenerCallbacks {
+    @JvmStatic
+    fun free(handle: Long) {
+        ListenerMap.remove(handle)
+    }
+
+    @JvmStatic
+    fun clone(handle: Long): Long {
+        return ListenerMap.clone(handle)
+    }
+
+    @JvmStatic
+    fun remove(handle: Long, key: Int, callbackToken: Long, callbackContext: Long) {
+        val impl = ListenerMap.get(handle) ?: error("ListenerMap: invalid handle $handle")
+        boltffiLaunchCallback {
+            try {
+                try { run { impl.remove(key.toUInt()); Native.boltffi_async_callback_complete_Bytes(callbackToken, callbackContext, ByteArray(0)); Unit } } catch (__boltffi_remove_error: LoadError) { run { val __boltffi_remove_wire = WireWriterPool.acquire(4); val __boltffi_remove_writer = __boltffi_remove_wire.writer; __boltffi_remove_writer.writeI32(__boltffi_remove_error.value); val __boltffi_remove_error_bytes = __boltffi_remove_wire.bytes(); Native.boltffi_async_callback_complete_Bytes_error(callbackToken, callbackContext, __boltffi_remove_error_bytes); __boltffi_remove_wire.close(); Unit } }
+            } catch (throwable: Throwable) {
+                Native.boltffi_async_callback_complete_Bytes_failure(callbackToken, callbackContext)
+            }
+        }
+    }
+}
+
+object ListenerBridge {
+    fun create(value: Listener): Long {
+        return ListenerMap.insert(value)
+    }
+}

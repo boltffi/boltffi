@@ -160,7 +160,7 @@ fun Engine.names(): kotlinx.coroutines.flow.Flow<String> = kotlinx.coroutines.fl
             val count = reader.readU32().toInt()
             val items = List(count) { reader.readString() }
             items.forEach { item ->
-                trySend(item)
+                send(item)
             }
         },
         finish = { close() }

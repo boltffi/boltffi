@@ -115,7 +115,7 @@
             freeFn = Native::{{ stream.free }},
             processItems = { bytes ->
                 for (item in {{ stream.pop_batch_items_expr }}) {
-                    trySend(item)
+                    send(item)
                 }
             },
             finish = { close() }

@@ -4,23 +4,23 @@ members = ["boltffi", "boltffi_core", "boltffi_macros", "boltffi_bindgen", "bolt
 exclude = ["benchmarks/adapters/uniffi", "examples/demo"]
 
 [workspace.package]
-version = "0.27.5"
+version = "0.28.0"
 edition = "2024"
 authors = ["Ali A. Hilal <me@alihilal.com>"]
 license = "MIT"
 repository = "https://github.com/boltffi/boltffi"
 
 [workspace.dependencies]
-boltffi = { version = "0.27.5", path = "boltffi" }
-boltffi_core = { version = "0.27.5", path = "boltffi_core" }
-boltffi_macros = { version = "0.27.5", path = "boltffi_macros" }
-boltffi_bindgen = { version = "0.27.5", path = "boltffi_bindgen" }
-boltffi_ffi_rules = { version = "0.27.5", path = "boltffi_ffi_rules" }
-boltffi_ast = { version = "0.27.5", path = "boltffi_ast" }
-boltffi_binding = { version = "0.27.5", path = "boltffi_binding" }
-boltffi_backend = { version = "0.27.5", path = "boltffi_backend" }
-boltffi_scan = { version = "0.27.5", path = "boltffi_scan" }
-boltffi_verify = { version = "0.27.5", path = "boltffi_verify" }
+boltffi = { version = "0.28.0", path = "boltffi" }
+boltffi_core = { version = "0.28.0", path = "boltffi_core" }
+boltffi_macros = { version = "0.28.0", path = "boltffi_macros" }
+boltffi_bindgen = { version = "0.28.0", path = "boltffi_bindgen" }
+boltffi_ffi_rules = { version = "0.28.0", path = "boltffi_ffi_rules" }
+boltffi_ast = { version = "0.28.0", path = "boltffi_ast" }
+boltffi_binding = { version = "0.28.0", path = "boltffi_binding" }
+boltffi_backend = { version = "0.28.0", path = "boltffi_backend" }
+boltffi_scan = { version = "0.28.0", path = "boltffi_scan" }
+boltffi_verify = { version = "0.28.0", path = "boltffi_verify" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "2.0"

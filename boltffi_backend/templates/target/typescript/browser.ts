@@ -10,7 +10,7 @@ const _callbackImports: Record<string, WebAssembly.ImportValue> = {};
 {% endfor %}
 {{ closure_adapters }}
 
-export default async function init(source: BufferSource | Response): Promise<void> {
+export default async function init(source: BufferSource | Response | WebAssembly.Module): Promise<void> {
   _module = await instantiateBoltFFI(source, WASM_ABI_VERSION, { env: _callbackImports });
   _exports = _module.exports;
 {{ constant_initializers }}

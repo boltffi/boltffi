@@ -62,6 +62,7 @@ impl Class {
                 declaration.id(),
                 &name,
                 declaration.handle(),
+                Some(&namespace),
                 bridge,
                 context,
             ) {
@@ -89,6 +90,7 @@ impl Class {
                 declaration.id(),
                 &name,
                 declaration.handle(),
+                Some(&namespace),
                 bridge,
                 context,
             ) {

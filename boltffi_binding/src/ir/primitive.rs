@@ -54,6 +54,20 @@ impl Primitive {
             Self::ISize | Self::USize => S::POINTER_SIZE.get(),
         })
     }
+
+    /// Returns the wire byte width of this primitive.
+    ///
+    /// Wire scalars are surface-independent: platform-width integers
+    /// always occupy eight bytes on the wire regardless of the pointer
+    /// size of the surface that produced them.
+    pub const fn wire_size(self) -> ByteSize {
+        ByteSize::new(match self {
+            Self::Bool | Self::I8 | Self::U8 => 1,
+            Self::I16 | Self::U16 => 2,
+            Self::I32 | Self::U32 | Self::F32 => 4,
+            Self::I64 | Self::U64 | Self::F64 | Self::ISize | Self::USize => 8,
+        })
+    }
 }
 
 /// The integer-sized scalars allowed for enum tags and status codes.

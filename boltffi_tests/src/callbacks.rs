@@ -319,3 +319,15 @@ impl AsyncProcessor {
         fetcher.find(key).await.map(|v| v + self.offset as i64)
     }
 }
+
+#[export]
+#[allow(async_fn_in_trait)]
+pub trait AsyncCallbackFactory {
+    async fn make(&self) -> Box<dyn SyncValueCallback>;
+}
+
+#[export]
+pub async fn invoke_async_factory_impl(factory: impl AsyncCallbackFactory, input: i32) -> i32 {
+    let callback = factory.make().await;
+    callback.on_value(input)
+}

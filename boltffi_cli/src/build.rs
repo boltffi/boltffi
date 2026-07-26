@@ -220,6 +220,7 @@ impl<'a> Builder<'a> {
         cmd.arg("--target").arg(target.triple());
 
         self.apply_common_build_args(&mut cmd);
+        self.apply_env_for_target(&mut cmd, target);
         cmd.args(&command_args.command_args);
         self.apply_expansion(&mut cmd)?;
 
@@ -266,6 +267,20 @@ impl<'a> Builder<'a> {
                 expansion.configure_rustc(command)
             }
             BuildSelection::Default { .. } | BuildSelection::Package { .. } => Ok(()),
+        }
+    }
+
+    /// Keeps iOS-specific env vars scoped to iOS targets. `boltffi pack apple`
+    /// runs one cargo invocation per target from the same parent env, so
+    /// `IPHONEOS_DEPLOYMENT_TARGET` -- needed by cc-rs for iOS builds -- must
+    /// not carry over into the macOS or Android invocations.
+    fn apply_env_for_target(&self, command: &mut Command, target: &RustTarget) {
+        let is_ios = matches!(
+            target.platform(),
+            crate::target::Platform::Ios | crate::target::Platform::IosSimulator
+        );
+        if !is_ios {
+            command.env_remove("IPHONEOS_DEPLOYMENT_TARGET");
         }
     }
 
@@ -377,6 +392,8 @@ mod tests {
         CargoBuildProfile, resolve_build_profile, run_command_streaming,
     };
     use crate::config::Config;
+    use crate::target::RustTarget;
+    use std::ffi::OsStr;
     use std::process::Command;
     use std::sync::mpsc;
     use std::time::Duration;
@@ -482,6 +499,53 @@ name = "demo"
         assert_eq!(
             &arguments[arguments.len() - 4..],
             ["--lib", "--", "--cfg", "boltffi_binding_expansion"]
+        );
+    }
+
+    #[test]
+    fn strips_iphoneos_deployment_target_for_non_ios_targets() {
+        let config: Config = toml::from_str(
+            r#"
+[package]
+name = "demo"
+"#,
+        )
+        .unwrap();
+        let builder = Builder::new(&config, BuildOptions::default());
+
+        let mut command = Command::new("cargo");
+        builder.apply_env_for_target(&mut command, &RustTarget::MACOS_ARM64);
+
+        assert_eq!(
+            command
+                .get_envs()
+                .find(|(key, _)| *key == OsStr::new("IPHONEOS_DEPLOYMENT_TARGET")),
+            Some((OsStr::new("IPHONEOS_DEPLOYMENT_TARGET"), None)),
+            "non-iOS targets must explicitly remove IPHONEOS_DEPLOYMENT_TARGET, \
+             not just leave it inherited from the parent process env"
+        );
+    }
+
+    #[test]
+    fn preserves_iphoneos_deployment_target_for_ios_targets() {
+        let config: Config = toml::from_str(
+            r#"
+[package]
+name = "demo"
+"#,
+        )
+        .unwrap();
+        let builder = Builder::new(&config, BuildOptions::default());
+
+        let mut command = Command::new("cargo");
+        builder.apply_env_for_target(&mut command, &RustTarget::IOS_ARM64);
+
+        assert!(
+            command
+                .get_envs()
+                .find(|(key, _)| *key == OsStr::new("IPHONEOS_DEPLOYMENT_TARGET"))
+                .is_none(),
+            "iOS targets must not touch IPHONEOS_DEPLOYMENT_TARGET"
         );
     }
 

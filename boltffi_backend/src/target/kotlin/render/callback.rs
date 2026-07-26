@@ -1264,6 +1264,7 @@ impl ReturnValue {
                 if matches!(&self.conversion, ReturnConversion::Void) =>
             {
                 Ok(vec![
+                    Statement::expression(call),
                     completion.success_statement(Some(Self::empty_error_payload())),
                 ])
             }
@@ -1473,6 +1474,7 @@ impl ReturnValue {
                 if matches!(&self.conversion, ReturnConversion::Void) =>
             {
                 Ok(vec![
+                    Statement::expression(value),
                     completion.success_statement(Some(Self::empty_error_payload())),
                 ])
             }
@@ -1517,7 +1519,11 @@ impl ReturnValue {
         context: &RenderContext<Native>,
     ) -> Result<(Vec<Statement>, Expression, Vec<Statement>)> {
         match &self.conversion {
-            ReturnConversion::Void => Ok((Vec::new(), Self::empty_error_payload(), Vec::new())),
+            ReturnConversion::Void => Ok((
+                vec![Statement::expression(value)],
+                Self::empty_error_payload(),
+                Vec::new(),
+            )),
             ReturnConversion::Direct(DirectValueType::Primitive(primitive)) => {
                 Self::primitive_bytes(&fallible.source_name, *primitive, value)
             }

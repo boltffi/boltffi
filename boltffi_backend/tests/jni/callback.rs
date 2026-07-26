@@ -29,7 +29,21 @@ fn jni_bridge_indexes_callback_registrations_by_source_id() {
 
 #[test]
 fn jni_bridge_renders_callback_handle_parameters() {
-    insta::assert_snapshot!(rendered_fixture("callback/foreign_callback_parameter"));
+    let rendered = rendered_fixture("callback/foreign_callback_parameter");
+
+    assert!(rendered.contains("static BoltFFICallbackHandle boltffi_jni_callback_parameter"));
+
+    insta::assert_snapshot!(rendered);
+}
+
+#[test]
+fn jni_bridge_renders_constructor_callback_parameters() {
+    let rendered = rendered_fixture("callback/constructor_callback_parameter");
+
+    assert!(rendered.contains("boltffi_jni_callback_parameter((uint64_t)notifier"));
+    assert!(rendered.contains("static BoltFFICallbackHandle boltffi_jni_callback_parameter"));
+
+    insta::assert_snapshot!(rendered);
 }
 
 #[test]

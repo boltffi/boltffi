@@ -483,6 +483,15 @@ impl ReceiverCarrier {
 }
 
 impl ExportedCall {
+    pub(crate) fn requalify_types(mut self, requalify: &dyn Fn(TypeName) -> TypeName) -> Self {
+        self.returns = self.returns.take().map(requalify);
+        for parameter in &mut self.parameters {
+            let ty = requalify(parameter.signature.ty().clone());
+            parameter.signature = signature::Parameter::new(parameter.signature.name().clone(), ty);
+        }
+        self
+    }
+
     pub fn name(&self) -> &Identifier {
         &self.name
     }

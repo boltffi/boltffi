@@ -2,6 +2,7 @@
 #include <Python.h>
 #include <float.h>
 #include <limits.h>
+#include <math.h>
 #include <string.h>
 
 #include {{ c_header }}

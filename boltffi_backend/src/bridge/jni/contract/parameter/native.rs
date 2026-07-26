@@ -122,6 +122,11 @@ impl NativeParameter {
         }
     }
 
+    /// Returns whether this parameter supplies a callback handle.
+    pub fn is_callback(&self) -> bool {
+        matches!(self.kind, NativeParameterKind::Callback(_))
+    }
+
     /// Returns whether this parameter supplies a C poll continuation.
     pub fn is_continuation(&self) -> bool {
         matches!(self.kind, NativeParameterKind::Continuation(_))

@@ -7,7 +7,7 @@ use boltffi_binding::{
 use crate::{
     core::Result,
     target::python::{
-        codec::Expression as CodecExpression,
+        codec::{EncodedCrossing, Expression as CodecExpression},
         name_style::Name,
         syntax::{Expression, Identifier, Literal, TypeAnnotation},
     },
@@ -109,9 +109,20 @@ impl<'plan, 'package> ParamPlanRender<'plan, Native, IntoRust> for StubArgument<
         _: &TypeRef,
         codec: &WritePlan,
         _: native::BufferShape,
-        _: Receive,
+        receive: Receive,
     ) -> Self::Output {
-        CodecExpression::write_argument(codec, self.package).map(CodecExpression::into_expression)
+        match (
+            self.package.has_native_encoded_crossing(codec.root())?,
+            EncodedCrossing::of(codec.root()),
+            receive,
+        ) {
+            (true, _, Receive::ByValue | Receive::ByRef)
+            | (false, EncodedCrossing::Utf8Text, Receive::ByValue | Receive::ByRef) => {
+                Ok(Expression::identifier(self.name.clone()))
+            }
+            _ => CodecExpression::write_argument(codec, self.package)
+                .map(CodecExpression::into_expression),
+        }
     }
 
     fn handle(
@@ -163,10 +174,22 @@ impl<'plan, 'package> ParamPlanRender<'plan, Native, IntoRust> for WireHelperUse
         _: &TypeRef,
         codec: &WritePlan,
         shape: native::BufferShape,
-        _: Receive,
+        receive: Receive,
     ) -> Self::Output {
-        match shape {
-            native::BufferShape::Slice => {
+        match (
+            shape,
+            self.package.has_native_encoded_crossing(codec.root())?,
+            EncodedCrossing::of(codec.root()),
+            receive,
+        ) {
+            (
+                native::BufferShape::Slice,
+                false,
+                EncodedCrossing::Utf8Text,
+                Receive::ByValue | Receive::ByRef,
+            )
+            | (native::BufferShape::Slice, true, _, Receive::ByValue | Receive::ByRef) => Ok(false),
+            (native::BufferShape::Slice, _, _, _) => {
                 CodecExpression::write_argument(codec, self.package).map(|_| true)
             }
             _ => Ok(false),

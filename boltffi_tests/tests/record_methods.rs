@@ -20,20 +20,13 @@ fn encode_buf<T: WireEncode>(value: &T) -> FfiBuf {
     FfiBuf::wire_encode(value)
 }
 
-fn with_encoded<T: WireEncode, R>(value: &T, call: impl FnOnce(*const u8, usize) -> R) -> R {
-    let buf = encode_buf(value);
-    call(buf.as_ptr(), buf.len())
-}
-
 fn scale_point(point: FixturePoint, factor: f64) -> FixturePoint {
-    with_encoded(&point, |ptr, len| {
-        let mut out = FfiBuf::empty();
-        let status = unsafe {
-            boltffi_method_record_boltffi_tests_fixture_point_scale(ptr, len, &mut out, factor)
-        };
-        assert_eq!(status, FfiStatus::OK);
-        decode_buf(&out)
-    })
+    let mut scaled = FixturePoint::default();
+    let status = unsafe {
+        boltffi_method_record_boltffi_tests_fixture_point_scale(point, &mut scaled, factor)
+    };
+    assert_eq!(status, FfiStatus::OK);
+    scaled
 }
 
 mod constructors {
@@ -41,16 +34,13 @@ mod constructors {
 
     #[test]
     fn origin_returns_zero_point() {
-        let point: FixturePoint =
-            decode_buf(&boltffi_init_record_boltffi_tests_fixture_point_origin());
+        let point = boltffi_init_record_boltffi_tests_fixture_point_origin();
         assert_eq!(point, FixturePoint { x: 0.0, y: 0.0 });
     }
 
     #[test]
     fn new_at_returns_specified_coordinates() {
-        let point: FixturePoint = decode_buf(&unsafe {
-            boltffi_init_record_boltffi_tests_fixture_point_new_at(3.0, 4.0)
-        });
+        let point = unsafe { boltffi_init_record_boltffi_tests_fixture_point_new_at(3.0, 4.0) };
         assert_eq!(point, FixturePoint { x: 3.0, y: 4.0 });
     }
 
@@ -121,18 +111,16 @@ mod instance_methods {
     #[test]
     fn distance_to_origin_computes_correctly() {
         let point = FixturePoint { x: 3.0, y: 4.0 };
-        let distance = with_encoded(&point, |ptr, len| unsafe {
-            boltffi_method_record_boltffi_tests_fixture_point_distance_to_origin(ptr, len)
-        });
+        let distance =
+            unsafe { boltffi_method_record_boltffi_tests_fixture_point_distance_to_origin(point) };
         assert!((distance - 5.0).abs() < 1e-10);
     }
 
     #[test]
     fn distance_of_origin_is_zero() {
         let point = FixturePoint { x: 0.0, y: 0.0 };
-        let distance = with_encoded(&point, |ptr, len| unsafe {
-            boltffi_method_record_boltffi_tests_fixture_point_distance_to_origin(ptr, len)
-        });
+        let distance =
+            unsafe { boltffi_method_record_boltffi_tests_fixture_point_distance_to_origin(point) };
         assert!((distance - 0.0).abs() < 1e-10);
     }
 }
@@ -169,31 +157,14 @@ mod static_methods {
     fn midpoint_computes_correctly() {
         let a = FixturePoint { x: 0.0, y: 0.0 };
         let b = FixturePoint { x: 4.0, y: 6.0 };
-        let a_buf = encode_buf(&a);
-        let b_buf = encode_buf(&b);
-        let mid: FixturePoint = decode_buf(&unsafe {
-            boltffi_init_record_boltffi_tests_fixture_point_midpoint_to(
-                a_buf.as_ptr(),
-                a_buf.len(),
-                b_buf.as_ptr(),
-                b_buf.len(),
-            )
-        });
+        let mid = unsafe { boltffi_init_record_boltffi_tests_fixture_point_midpoint_to(a, b) };
         assert_eq!(mid, FixturePoint { x: 2.0, y: 3.0 });
     }
 
     #[test]
     fn midpoint_of_same_point_is_that_point() {
         let p = FixturePoint { x: 3.0, y: 7.0 };
-        let p_buf = encode_buf(&p);
-        let mid: FixturePoint = decode_buf(&unsafe {
-            boltffi_init_record_boltffi_tests_fixture_point_midpoint_to(
-                p_buf.as_ptr(),
-                p_buf.len(),
-                p_buf.as_ptr(),
-                p_buf.len(),
-            )
-        });
+        let mid = unsafe { boltffi_init_record_boltffi_tests_fixture_point_midpoint_to(p, p) };
         assert_eq!(mid, p);
     }
 }
@@ -203,24 +174,18 @@ mod roundtrip {
 
     #[test]
     fn constructor_then_method_roundtrip() {
-        let point: FixturePoint = decode_buf(&unsafe {
-            boltffi_init_record_boltffi_tests_fixture_point_new_at(6.0, 8.0)
-        });
-        let distance = with_encoded(&point, |ptr, len| unsafe {
-            boltffi_method_record_boltffi_tests_fixture_point_distance_to_origin(ptr, len)
-        });
+        let point = unsafe { boltffi_init_record_boltffi_tests_fixture_point_new_at(6.0, 8.0) };
+        let distance =
+            unsafe { boltffi_method_record_boltffi_tests_fixture_point_distance_to_origin(point) };
         assert!((distance - 10.0).abs() < 1e-10);
     }
 
     #[test]
     fn constructor_then_scale_roundtrip() {
-        let point: FixturePoint = decode_buf(&unsafe {
-            boltffi_init_record_boltffi_tests_fixture_point_new_at(1.0, 2.0)
-        });
+        let point = unsafe { boltffi_init_record_boltffi_tests_fixture_point_new_at(1.0, 2.0) };
         let scaled = scale_point(point, 3.0);
-        let distance = with_encoded(&scaled, |ptr, len| unsafe {
-            boltffi_method_record_boltffi_tests_fixture_point_distance_to_origin(ptr, len)
-        });
+        let distance =
+            unsafe { boltffi_method_record_boltffi_tests_fixture_point_distance_to_origin(scaled) };
         let expected = (9.0f64 + 36.0).sqrt();
         assert!((distance - expected).abs() < 1e-10);
     }

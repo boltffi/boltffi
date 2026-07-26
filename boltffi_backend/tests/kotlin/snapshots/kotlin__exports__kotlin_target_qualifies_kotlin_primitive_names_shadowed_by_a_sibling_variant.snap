@@ -1,0 +1,186 @@
+---
+source: boltffi_backend/tests/kotlin/exports.rs
+expression: "rendered_fixture(\"enums/primitive_shadow\")"
+---
+===== com/boltffi/demo/Demo.kt =====
+@file:OptIn(kotlin.ExperimentalUnsignedTypes::class)
+
+package com.boltffi.demo
+@Suppress("FunctionName")
+private object Native {
+    @JvmStatic external fun boltffi_init_enum_demo_primitive_value_new(value: Int): ByteArray?
+    @JvmStatic external fun boltffi_method_enum_demo_primitive_value_scaled(`receiver`: java.nio.ByteBuffer, __boltffi_receiver_len: Int, factor: Int): Int
+}
+
+
+sealed class PrimitiveValue {
+    internal abstract fun wireSize(): kotlin.Int
+
+    internal abstract fun writeTo(writer: WireWriter)
+
+    internal fun toByteArray(): ByteArray {
+        val buffer = WireWriterPool.acquire(wireSize())
+        val writer = buffer.writer
+        try {
+            writeTo(writer)
+            return buffer.bytes()
+        } finally {
+            buffer.close()
+        }
+    }
+
+
+    object Null : PrimitiveValue() {
+        internal override fun wireSize(): kotlin.Int {
+            return 4
+        }
+
+        internal override fun writeTo(writer: WireWriter) {
+            writer.writeU32(0.toUInt())
+        }
+    }
+    data class Bool(
+        val field0: Boolean
+    ) : PrimitiveValue() {
+        internal override fun wireSize(): kotlin.Int {
+            return 4 + 1
+        }
+
+        internal override fun writeTo(writer: WireWriter) {
+            writer.writeU32(1.toUInt())
+            writer.writeBool(this.field0)
+        }
+    }
+    data class Int(
+        val field0: Long
+    ) : PrimitiveValue() {
+        internal override fun wireSize(): kotlin.Int {
+            return 4 + 8
+        }
+
+        internal override fun writeTo(writer: WireWriter) {
+            writer.writeU32(2.toUInt())
+            writer.writeI64(this.field0)
+        }
+    }
+    data class Double(
+        val field0: kotlin.Double
+    ) : PrimitiveValue() {
+        internal override fun wireSize(): kotlin.Int {
+            return 4 + 8
+        }
+
+        internal override fun writeTo(writer: WireWriter) {
+            writer.writeU32(3.toUInt())
+            writer.writeF64(this.field0)
+        }
+    }
+    data class MaybeDouble(
+        val field0: kotlin.Double?
+    ) : PrimitiveValue() {
+        internal override fun wireSize(): kotlin.Int {
+            return 4 + 1 + (this.field0?.let { __boltffi_value_0 -> 8 } ?: 0)
+        }
+
+        internal override fun writeTo(writer: WireWriter) {
+            writer.writeU32(4.toUInt())
+            writer.writeOptionalValue(this.field0, { writer, __boltffi_value_0 -> writer.writeF64(__boltffi_value_0) })
+        }
+    }
+    data class Doubles(
+        val field0: DoubleArray
+    ) : PrimitiveValue() {
+        internal override fun wireSize(): kotlin.Int {
+            return 4 + 4 + this.field0.size * 8
+        }
+
+        internal override fun writeTo(writer: WireWriter) {
+            writer.writeU32(5.toUInt())
+            writer.writeDoubleArray(this.field0)
+        }
+    }
+
+    companion object {
+        internal fun fromReader(reader: WireReader): PrimitiveValue {
+            val tag = reader.readU32()
+            return when (tag) {
+                0.toUInt() -> Null
+                1.toUInt() -> Bool(reader.readBool())
+                2.toUInt() -> Int(reader.readI64())
+                3.toUInt() -> Double(reader.readF64())
+                4.toUInt() -> MaybeDouble(reader.readOptionalValue({ reader -> reader.readF64() }))
+                5.toUInt() -> Doubles(reader.readDoubleArray())
+                else -> throw IllegalArgumentException("unknown PrimitiveValue tag: $tag")
+            }
+        }
+
+        internal fun fromByteArray(bytes: ByteArray): PrimitiveValue {
+            val reader = WireReader(bytes)
+            return fromReader(reader)
+        }
+
+        fun new(value: kotlin.Int): com.boltffi.demo.PrimitiveValue {
+            val __boltffi_result = Native.boltffi_init_enum_demo_primitive_value_new(value) ?: throw IllegalStateException("null buffer returned")
+            val __boltffi_reader = WireReader(__boltffi_result)
+            return com.boltffi.demo.PrimitiveValue.fromReader(__boltffi_reader)
+        }
+    }
+
+    fun scaled(factor: kotlin.Int): kotlin.Int {
+        val __boltffi_primitiveValue_wire = WireWriterPool.acquire(this.wireSize())
+        val __boltffi_primitiveValue_writer = __boltffi_primitiveValue_wire.writer
+        this.writeTo(__boltffi_primitiveValue_writer)
+        try {
+            return Native.boltffi_method_enum_demo_primitive_value_scaled(__boltffi_primitiveValue_wire.directBuffer(), __boltffi_primitiveValue_wire.size(), factor)
+        } finally {
+            __boltffi_primitiveValue_wire.close()
+        }
+    }
+}
+
+
+sealed class Int {
+    internal abstract fun wireSize(): kotlin.Int
+
+    internal abstract fun writeTo(writer: WireWriter)
+
+    internal fun toByteArray(): ByteArray {
+        val buffer = WireWriterPool.acquire(wireSize())
+        val writer = buffer.writer
+        try {
+            writeTo(writer)
+            return buffer.bytes()
+        } finally {
+            buffer.close()
+        }
+    }
+
+
+    data class Value(
+        val field0: Long
+    ) : Int() {
+        internal override fun wireSize(): kotlin.Int {
+            return 4 + 8
+        }
+
+        internal override fun writeTo(writer: WireWriter) {
+            writer.writeU32(0.toUInt())
+            writer.writeI64(this.field0)
+        }
+    }
+
+    companion object {
+        internal fun fromReader(reader: WireReader): Int {
+            val tag = reader.readU32()
+            return when (tag) {
+                0.toUInt() -> Value(reader.readI64())
+                else -> throw IllegalArgumentException("unknown Int tag: $tag")
+            }
+        }
+
+        internal fun fromByteArray(bytes: ByteArray): Int {
+            val reader = WireReader(bytes)
+            return fromReader(reader)
+        }
+    }
+}

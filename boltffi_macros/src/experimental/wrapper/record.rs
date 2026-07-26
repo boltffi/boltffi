@@ -193,6 +193,20 @@ where
         )?;
         let size = layout.size();
         let alignment = layout.alignment();
+        let field_offsets = self
+            .source
+            .fields
+            .iter()
+            .zip(self.binding.layout().fields())
+            .map(|(source, field)| {
+                let ident = names::SourceSpelling::new(&source.name)
+                    .ident("source record field name is not a Rust identifier")?;
+                let offset = LayoutCheck::bytes(field.offset().get())?;
+                Ok(quote! {
+                    const _: [(); #offset] = [(); ::core::mem::offset_of!(#record, #ident)];
+                })
+            })
+            .collect::<Result<Vec<_>, Error>>()?;
         let exports = associated_fn::Renderer::new(
             RecordOwner {
                 source: self.source,
@@ -207,7 +221,8 @@ where
         .render()?;
         Ok(quote! {
             const _: [(); #size] = [(); ::core::mem::size_of::<#record>()];
-            const _: [(); #alignment] = [(); ::core::mem::align_of::<#record>()];
+            const _: [(); 0] = [(); #alignment % ::core::mem::align_of::<#record>()];
+            #(#field_offsets)*
 
             unsafe impl ::boltffi::__private::Passable for #record {
                 type In = #record;

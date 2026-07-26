@@ -164,6 +164,20 @@ fn jni_bridge_renders_closure_parameters_from_contract_group() {
 }
 
 #[test]
+fn jni_bridge_cleans_up_failed_direct_record_closure_arguments() {
+    let rendered = rendered_fixture("exports/closure_direct_record_parameter");
+
+    assert!(rendered.contains(
+        "__boltffi_arg0_array = boltffi_jni_record_to_byte_array(env, &arg0, (uintptr_t)sizeof(arg0));"
+    ));
+    assert!(!rendered.contains("goto __boltffi_fail;"));
+    assert!(rendered.contains(
+        "if (__boltffi_arg0_array == NULL) {\n        boltffi_jni_clear_exception(env);"
+    ));
+    assert!(rendered.contains("boltffi_jni_exit(env, attached);\n        return (___Point){0};"));
+}
+
+#[test]
 fn jni_bridge_preserves_multi_argument_closure_signature_names() {
     insta::assert_snapshot!(rendered_fixture("exports/multi_argument_closure_parameter"));
 }

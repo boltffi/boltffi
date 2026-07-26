@@ -19,7 +19,7 @@
 {%- endfor %}
             val items = {{ stream.items() }}
             items.forEach { item ->
-                trySend(item)
+                send(item)
             }
         },
         finish = { close() }

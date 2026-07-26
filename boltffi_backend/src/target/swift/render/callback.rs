@@ -1091,7 +1091,11 @@ impl Return {
             ReturnConversion::Void => Statement::new(
                 [
                     Statement::expression(call).to_string(),
-                    completion.success_statement(None).to_string(),
+                    completion
+                        .success_statement(
+                            completion.expects_buffer_payload().then(Self::empty_error),
+                        )
+                        .to_string(),
                 ]
                 .join("\n"),
             ),

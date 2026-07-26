@@ -7,7 +7,11 @@ use crate::{
     core::{Emitted, RenderContext, Result},
 };
 
-use super::super::{name_style::Name, syntax::Literal, type_name};
+use super::super::{
+    name_style::{Name, Namespace},
+    syntax::Literal,
+    type_name,
+};
 use super::{Documentation, Function};
 
 pub(in crate::target::csharp) enum Constant {
@@ -18,14 +22,15 @@ pub(in crate::target::csharp) enum Constant {
 impl Constant {
     pub(in crate::target::csharp) fn from_declaration(
         declaration: &ConstantDecl<Native>,
+        namespace: &Namespace,
         bridge: &CBridgeContract,
         context: &RenderContext<Native>,
     ) -> Result<Self> {
         match declaration.value() {
             ConstantValueDecl::Inline { ty, value, .. } => {
                 let name = Name::new(declaration.name()).pascal()?;
-                let ty = type_name::type_ref(ty, context)?;
-                let value = render_value(declaration.value(), value, context)?;
+                let ty = type_name::type_ref_qualified(ty, namespace, context)?;
+                let value = render_value(declaration.value(), value, namespace, context)?;
                 let modifier = if is_compile_time_constant(declaration.value(), context) {
                     "public const"
                 } else {
@@ -82,6 +87,7 @@ fn is_compile_time_constant(
 fn render_value(
     declaration: &ConstantValueDecl<Native>,
     value: &DefaultValue,
+    namespace: &Namespace,
     context: &RenderContext<Native>,
 ) -> Result<String> {
     let ConstantValueDecl::Inline { ty, .. } = declaration else {
@@ -93,7 +99,7 @@ fn render_value(
         DefaultValue::Float(value) => render_float(ty, *value),
         DefaultValue::String(value) => Ok(Literal::string(value).to_string()),
         DefaultValue::EnumVariant { variant_name, .. } => {
-            render_enum_variant(ty, variant_name, context)
+            render_enum_variant(ty, variant_name, namespace, context)
         }
         DefaultValue::Null => Ok("null".to_owned()),
         _ => super::super::unsupported("unknown constant literal"),
@@ -103,6 +109,7 @@ fn render_value(
 fn render_enum_variant(
     ty: &TypeRef,
     variant_name: &boltffi_binding::CanonicalName,
+    namespace: &Namespace,
     context: &RenderContext<Native>,
 ) -> Result<String> {
     let TypeRef::Enum(id) = ty else {
@@ -111,7 +118,7 @@ fn render_enum_variant(
     let Some(enumeration) = context.enumeration(*id) else {
         return super::super::unsupported("missing enum constant declaration");
     };
-    let ty = type_name::type_ref(ty, context)?;
+    let ty = type_name::type_ref_qualified(ty, namespace, context)?;
     let variant = Name::new(variant_name).pascal()?;
     match enumeration {
         EnumDecl::CStyle(_) => Ok(format!("{ty}.{variant}")),

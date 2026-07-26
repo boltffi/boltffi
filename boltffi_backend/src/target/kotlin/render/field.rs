@@ -100,6 +100,11 @@ impl EncodedField {
         &self.ty
     }
 
+    pub(crate) fn requalified(mut self, ty: TypeName) -> Self {
+        self.ty = ty;
+        self
+    }
+
     pub fn read(&self) -> &Expression {
         &self.read
     }

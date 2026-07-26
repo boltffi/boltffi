@@ -6,7 +6,13 @@ use boltffi_binding::{
 use crate::{
     bridge::{c::Identifier, python_cext::PythonCExtBridgeContract},
     core::{Error, RenderContext, Result},
-    target::python::cpython::render::{direct, direct_vector, primitive},
+    target::python::{
+        codec::EncodedCrossing,
+        cpython::{
+            codec as native_codec,
+            render::{direct, direct_vector, primitive},
+        },
+    },
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -37,8 +43,20 @@ impl Conversion {
     pub fn direct_vector_element(&self) -> Option<direct_vector::Element> {
         match &self.owned_buffer {
             Some(OwnedBuffer::DirectVector(element)) => Some((**element).clone()),
-            Some(OwnedBuffer::RawWire | OwnedBuffer::OptionalPrimitive(_)) | None => None,
+            Some(
+                OwnedBuffer::RawWire
+                | OwnedBuffer::Utf8Text
+                | OwnedBuffer::OptionalPrimitive(_)
+                | OwnedBuffer::Native(_),
+            )
+            | None => None,
         }
+    }
+
+    pub fn native_sequence(&self) -> Option<native_codec::NativeSequence> {
+        self.owned_buffer
+            .as_ref()
+            .and_then(OwnedBuffer::native_sequence)
     }
 
     pub fn is_void(&self) -> bool {
@@ -136,11 +154,19 @@ impl<'plan, 'render> ReturnPlanRender<'plan, Native, OutOfRust> for Renderer<'re
         &mut self,
         slot: ReturnValueSlot,
         _: &TypeRef,
-        _: &ReadPlan,
+        codec: &ReadPlan,
         shape: native::BufferShape,
     ) -> Self::Output {
         match shape {
-            native::BufferShape::Buffer => Conversion::from_owned_buffer(OwnedBuffer::RawWire),
+            native::BufferShape::Buffer => Conversion::from_owned_buffer(
+                match native_codec::NativeCodec::from_node(codec.root(), self.context)? {
+                    Some(native) => OwnedBuffer::Native(Box::new(native)),
+                    None => match EncodedCrossing::of(codec.root()) {
+                        EncodedCrossing::Utf8Text => OwnedBuffer::Utf8Text,
+                        EncodedCrossing::WireBytes => OwnedBuffer::RawWire,
+                    },
+                },
+            ),
             _ => Err(Error::UnsupportedTarget {
                 target: "python",
                 shape: slot.unsupported_encoded_shape(),
@@ -212,23 +238,36 @@ impl ReturnValueSlotMessage for ReturnValueSlot {
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum OwnedBuffer {
     RawWire,
+    Utf8Text,
     DirectVector(Box<direct_vector::Element>),
     OptionalPrimitive(primitive::Runtime),
+    Native(Box<native_codec::NativeCodec>),
 }
 
 impl OwnedBuffer {
     pub fn converter(&self) -> Result<Identifier> {
         match self {
             Self::RawWire => Identifier::parse("boltffi_python_decode_owned_raw_wire"),
+            Self::Utf8Text => Identifier::parse("boltffi_python_decode_owned_utf8"),
             Self::DirectVector(element) => Ok(element.vector_decoder().clone()),
             Self::OptionalPrimitive(primitive) => primitive.optional_owned_wire_decoder(),
+            Self::Native(codec) => Ok(codec.decoder().clone()),
         }
     }
 
     pub fn primitive(&self) -> Option<primitive::Runtime> {
         match self {
             Self::OptionalPrimitive(primitive) => Some(*primitive),
-            Self::RawWire | Self::DirectVector(_) => None,
+            Self::RawWire | Self::Utf8Text | Self::DirectVector(_) | Self::Native(_) => None,
+        }
+    }
+
+    pub fn native_sequence(&self) -> Option<native_codec::NativeSequence> {
+        match self {
+            Self::Native(codec) => codec.sequence().cloned(),
+            Self::RawWire | Self::Utf8Text | Self::DirectVector(_) | Self::OptionalPrimitive(_) => {
+                None
+            }
         }
     }
 }

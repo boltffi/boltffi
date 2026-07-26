@@ -3047,7 +3047,7 @@ public static class DemoTest
         Console.WriteLine("Testing streams (batch mode)...");
         using (var bus = new EventBus())
         {
-            using SubscribeValuesBatchSubscription subscription = bus.SubscribeValuesBatch();
+            using EventBusSubscribeValuesBatchSubscription subscription = bus.SubscribeValuesBatch();
 
             bus.EmitValue(100);
             bus.EmitValue(200);
@@ -3067,7 +3067,7 @@ public static class DemoTest
             List<int> received = new List<int>();
             var receivedAll = new global::System.Threading.Tasks.TaskCompletionSource<bool>(
                 global::System.Threading.Tasks.TaskCreationOptions.RunContinuationsAsynchronously);
-            using SubscribeValuesCallbackCancellable subscription = bus.SubscribeValuesCallback(value =>
+            using EventBusSubscribeValuesCallbackCancellable subscription = bus.SubscribeValuesCallback(value =>
             {
                 lock (received)
                 {
@@ -3212,7 +3212,7 @@ public static class DemoTest
     }
 
     private static List<int> CollectBatchStreamItems(
-        SubscribeValuesBatchSubscription stream,
+        EventBusSubscribeValuesBatchSubscription stream,
         int expectedCount,
         string label)
     {

@@ -105,6 +105,7 @@ impl SourceFeatures {
                 || !success_out_writers.is_empty()
                 || streams.returns_direct_batches
                 || methods.uses_exceptions
+                || methods.uses_callback_parameters
                 || uses_direct_buffers,
             uses_continuations: methods.uses_continuations,
             uses_lifecycle: methods.uses_continuations
@@ -114,7 +115,8 @@ impl SourceFeatures {
                 || callbacks.has_handle_methods
                 || callbacks.returns_callback_handles
                 || closures.returns_callback_handles
-                || methods.returns_callback_handles,
+                || methods.returns_callback_handles
+                || methods.uses_callback_parameters,
             uses_closure_handles,
         }
     }

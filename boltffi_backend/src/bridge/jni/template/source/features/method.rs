@@ -19,6 +19,7 @@ pub struct MethodFeatures {
     pub uses_record_arrays: bool,
     pub uses_direct_buffers: bool,
     pub uses_exceptions: bool,
+    pub uses_callback_parameters: bool,
     pub returns_callback_handles: bool,
 }
 
@@ -46,6 +47,7 @@ impl MethodFeatures {
                     || !method.direct_buffers.is_empty()
                     || !method.record_buffers.is_empty()
             }),
+            uses_callback_parameters: methods.iter().any(|method| method.uses_callback_parameters),
             returns_callback_handles: methods.iter().any(|method| method.returns_callback),
         }
     }

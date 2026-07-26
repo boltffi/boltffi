@@ -164,7 +164,7 @@ internal class BoltFFIStreamContext(
     private val poll: (SubscriptionHandle, Long) -> Unit,
     private val unsubscribe: (SubscriptionHandle) -> Unit,
     private val freeFn: (SubscriptionHandle) -> Unit,
-    private val processItems: (ByteArray) -> Unit,
+    private val processItems: suspend (ByteArray) -> Unit,
     private val finish: () -> Unit
 ) {
     // 0 = running, 1 = unsubscribe called, 2 = unsubscribed, 3 = freed
@@ -209,7 +209,7 @@ internal class BoltFFIStreamContext(
         }
     }
 
-    private fun handlePoll(pollResult: Byte) {
+    private suspend fun handlePoll(pollResult: Byte) {
         val isClosed = pollResult == BOLTFFI_STREAM_POLL_CLOSED
         if (!callbackTag.compareAndSet(0, 1)) {
             attemptFinalize()

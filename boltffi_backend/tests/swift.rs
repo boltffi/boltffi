@@ -368,6 +368,15 @@ fn swift_target_renders_async_callback_return_shapes() {
 }
 
 #[test]
+fn swift_target_renders_async_callback_unit_results() {
+    let rendered = rendered_fixture("callback/async_callback_unit_result");
+
+    assert!(rendered.contains("completion?(completionContext, FfiStatus(code: 0), FfiBuf_u8())"));
+
+    insta::assert_snapshot!(rendered);
+}
+
+#[test]
 fn swift_target_renders_async_callback_handle_returns() {
     insta::assert_snapshot!(rendered_fixture(
         "callback/async_callback_returning_callback_handle"
@@ -385,10 +394,33 @@ fn swift_target_renders_direct_records_and_c_style_enums() {
 }
 
 #[test]
+fn swift_target_passes_borrowed_direct_records_by_pointer() {
+    let rendered = rendered_fixture("exports/borrowed_direct_record");
+
+    assert!(rendered.contains("public func pointSum(point: Point) -> Double"));
+    assert!(rendered.contains("var boltffiPointStorage = point.cValue"));
+    assert!(rendered.contains("boltffi_function_demo_point_sum(&boltffiPointStorage)"));
+}
+
+#[test]
 fn swift_target_renders_documented_record_and_enum_methods() {
     insta::assert_snapshot!(rendered_fixture(
         "associated/direct_record_and_enum_callables"
     ));
+}
+
+#[test]
+fn swift_target_writes_mutable_direct_record_receivers_back() {
+    let rendered = rendered_fixture("associated/mutable_record_receiver");
+
+    assert!(rendered.contains("public mutating func moveBy(dx: Double)"));
+    assert!(rendered.contains("var boltffiPointOut: ___Point = self.cValue"));
+    assert!(
+        rendered.contains(
+            "boltffi_method_record_demo_point_move_by(self.cValue, &boltffiPointOut, dx)"
+        )
+    );
+    assert!(rendered.contains("self = Point(fromC: boltffiPointOut)"));
 }
 
 #[test]

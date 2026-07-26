@@ -1,6 +1,6 @@
 {
   "name": "@boltffi/runtime",
-  "version": "0.27.5",
+  "version": "0.28.0",
   "description": "WASM runtime for BoltFFI generated TypeScript bindings",
   "author": "Ali A. Hilal <me@alihilal.com>",
   "homepage": "https://boltffi.dev",

@@ -3654,20 +3654,6 @@ impl<'a> KotlinLowerer<'a> {
             ReturnDef::Result {
                 ok: TypeExpr::Void, ..
             } => "Unit".to_string(),
-            ReturnDef::Result {
-                ok: TypeExpr::Enum(id),
-                ..
-            } if self
-                .contract
-                .catalog
-                .resolve_enum(id)
-                .map(|e| matches!(e.repr, EnumRepr::CStyle { .. }))
-                .unwrap_or(false) =>
-            {
-                let raw_ok_expr = emit::emit_reader_read(ok_seq);
-                let enum_name = NamingConvention::class_name(id.as_str());
-                format!("{}.fromValue({})", enum_name, raw_ok_expr)
-            }
             _ => emit::emit_reader_read(ok_seq),
         };
         let err_expr = emit::emit_reader_read(err_seq);
@@ -4980,13 +4966,16 @@ impl JniParamMapping {
 mod tests {
     use super::*;
     use crate::ir::Lowerer as IrLowerer;
+    use crate::ir::codec::EnumLayout;
     use crate::ir::contract::{FfiContract, PackageInfo, TypeCatalog};
     use crate::ir::definitions::{
-        CallbackKind, CallbackMethodDef, CallbackTraitDef, ClassDef, FieldDef, FunctionDef,
-        MethodDef, ParamDef, ParamPassing, Receiver, RecordDef, ReturnDef, StreamDef, StreamMode,
+        CStyleVariant, CallbackKind, CallbackMethodDef, CallbackTraitDef, ClassDef, EnumDef,
+        EnumRepr, FieldDef, FunctionDef, MethodDef, ParamDef, ParamPassing, Receiver, RecordDef,
+        ReturnDef, StreamDef, StreamMode,
     };
     use crate::ir::ids::{
-        CallbackId, ClassId, FieldName, FunctionId, MethodId, ParamName, RecordId, StreamId,
+        CallbackId, ClassId, EnumId, FieldName, FunctionId, MethodId, ParamName, RecordId,
+        StreamId, VariantName,
     };
     use crate::ir::types::{PrimitiveType, TypeExpr};
     use boltffi_ffi_rules::callable::ExecutionKind;
@@ -5106,6 +5095,79 @@ mod tests {
         assert_eq!(
             lowerer.decode_result_expr(&returns, &decode_ops),
             "reader.readResult({ Unit }, { reader.readString() }).getOrThrow()"
+        );
+    }
+
+    #[test]
+    fn result_c_style_enum_decode_does_not_double_wrap() {
+        let mut catalog = TypeCatalog::default();
+        catalog.insert_enum(EnumDef {
+            id: EnumId::new("Direction"),
+            repr: EnumRepr::CStyle {
+                tag_type: PrimitiveType::I32,
+                variants: vec![CStyleVariant {
+                    name: VariantName::new("North"),
+                    discriminant: 0,
+                    doc: None,
+                }],
+            },
+            is_error: false,
+            constructors: vec![],
+            methods: vec![],
+            doc: None,
+            deprecated: None,
+        });
+        let contract = FfiContract {
+            package: PackageInfo {
+                name: "demo".to_string(),
+                version: None,
+            },
+            catalog,
+            functions: vec![],
+        };
+        let abi = IrLowerer::new(&contract).to_abi_contract();
+        let lowerer = KotlinLowerer::new(
+            &contract,
+            &abi,
+            "com.example.demo".to_string(),
+            "demo".to_string(),
+            KotlinOptions::default(),
+        );
+        let decode_ops = ReadSeq {
+            size: SizeExpr::Runtime,
+            ops: vec![ReadOp::Result {
+                tag_offset: OffsetExpr::Base,
+                ok: Box::new(ReadSeq {
+                    size: SizeExpr::Fixed(4),
+                    ops: vec![ReadOp::Enum {
+                        id: EnumId::new("Direction"),
+                        offset: OffsetExpr::Base,
+                        layout: EnumLayout::CStyle {
+                            tag_type: PrimitiveType::I32,
+                            tag_strategy: EnumTagStrategy::Discriminant,
+                            is_error: false,
+                        },
+                    }],
+                    shape: WireShape::Value,
+                }),
+                err: Box::new(ReadSeq {
+                    size: SizeExpr::Runtime,
+                    ops: vec![ReadOp::String {
+                        offset: OffsetExpr::Base,
+                    }],
+                    shape: WireShape::Value,
+                }),
+            }],
+            shape: WireShape::Value,
+        };
+        let returns = ReturnDef::Result {
+            ok: TypeExpr::Enum(EnumId::new("Direction")),
+            err: TypeExpr::String,
+        };
+
+        assert_eq!(
+            lowerer.decode_result_expr(&returns, &decode_ops),
+            "reader.readResult({ Direction.fromValue(reader.readI32()) }, { reader.readString() }).getOrThrow()"
         );
     }
 

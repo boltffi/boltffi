@@ -31,6 +31,8 @@
 {%- else %}
     return boltffi_jni_record_to_byte_array(env, &__boltffi_result, (uintptr_t)sizeof(__boltffi_result));
 {%- endif %}
+{%- else if method.checks_error_buffer && method.success_out.is_none() %}
+    return;
 {%- else %}
     return {{ method.return_value }};
 {%- endif %}

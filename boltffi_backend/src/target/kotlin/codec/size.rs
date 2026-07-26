@@ -161,8 +161,8 @@ impl CodecSize for Sizer<'_> {
         self.bytes_size(value)
     }
 
-    fn direct_record(&mut self, _id: RecordId, _value: &ValueRef) -> Self::Expr {
-        Self::unsupported("direct-record wire size")
+    fn direct_record(&mut self, _id: RecordId, value: &ValueRef) -> Self::Expr {
+        self.encoded_record_size(value)
     }
 
     fn encoded_record(&mut self, _id: RecordId, value: &ValueRef) -> Self::Expr {

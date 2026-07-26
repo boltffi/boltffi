@@ -2,17 +2,20 @@ use std::path::PathBuf;
 
 use askama::Template as AskamaTemplate;
 use boltffi_binding::{
-    Bindings, CanonicalName, ClassDecl, ClassId, ConstantDecl, CustomTypeDecl, CustomTypeId,
-    DeclarationRef, EnumDecl, EnumId, FunctionDecl, Native, RecordDecl, RecordId, StreamDecl,
-    TypeRef,
+    Bindings, CanonicalName, ClassDecl, ClassId, CodecNode, ConstantDecl, CustomTypeDecl,
+    CustomTypeId, DeclarationRef, EncodedRecordDecl, EnumDecl, EnumId, FunctionDecl, Native,
+    RecordDecl, RecordId, StreamDecl, TypeRef,
 };
 
 use crate::{
     bridge::python_cext::PythonCExtBridgeContract,
     core::{Error, FilePath, GeneratedFile, GeneratedOutput, RenderedDeclaration, Result},
     target::python::{
-        codec::{CodecAdapters, EnumCodec, ReadFunction, WriteFunction},
-        cpython::render::function,
+        codec::{CodecAdapters, EnumCodec, FixedStruct, ReadFunction, WriteFunction},
+        cpython::{
+            codec::{EncodedCodec, NativeCodec},
+            render::function,
+        },
         name_style::{Name, PackageModule},
         syntax::{Expression, Identifier, Literal},
     },
@@ -33,7 +36,7 @@ use self::{
     constant::ConstantStub,
     enumeration::EnumClass,
     name_scope::NameScope,
-    record::RecordClass,
+    record::{RecordClass, RecordWire},
     stream::ClassStream,
 };
 
@@ -159,8 +162,7 @@ impl<'bindings> Package<'bindings> {
             || enums.iter().any(EnumClass::uses_callable_annotations)
             || classes.iter().any(Class::uses_callable_annotations)
             || stubs.iter().any(FunctionStub::uses_callable_annotations);
-        let uses_wire_helpers = records.iter().any(RecordClass::has_wire)
-            || records.iter().any(RecordClass::uses_wire_helpers)
+        let uses_wire_helpers = !records.is_empty()
             || enums.iter().any(EnumClass::has_wire)
             || enums.iter().any(EnumClass::uses_wire_helpers)
             || classes.iter().any(Class::uses_wire_helpers)
@@ -297,6 +299,32 @@ impl<'bindings> Package<'bindings> {
             })
     }
 
+    pub fn direct_record_struct(&self, record_id: RecordId) -> Result<FixedStruct> {
+        self.declarations
+            .records
+            .iter()
+            .find_map(|record| match record {
+                RecordDecl::Direct(record) if record.id() == record_id => {
+                    Some(self.record_name(record_id).and_then(|name| {
+                        FixedStruct::from_layout(&name, record.fields(), record.layout())
+                    }))
+                }
+                _ => None,
+            })
+            .ok_or(Error::UnsupportedTarget {
+                target: "python",
+                shape: "encoded record reached direct record spelling",
+            })?
+    }
+
+    pub fn has_native_encoded_crossing(&self, node: &CodecNode) -> Result<bool> {
+        NativeCodec::supports_node(node, |record_id| {
+            self.encoded_record(record_id)
+                .and_then(EncodedCodec::from_record)
+                .map(|codec| codec.is_native())
+        })
+    }
+
     pub fn enum_name(&self, enum_id: EnumId) -> Result<Identifier> {
         self.declarations
             .enums
@@ -368,6 +396,21 @@ impl<'bindings> Package<'bindings> {
 
     pub fn literal(value: impl AsRef<str>) -> Literal {
         Literal::string(value.as_ref())
+    }
+
+    fn encoded_record(&self, record_id: RecordId) -> Result<&'bindings EncodedRecordDecl<Native>> {
+        self.declarations
+            .records
+            .iter()
+            .find_map(|record| match record {
+                RecordDecl::Encoded(record) if record.id() == record_id => Some(record.as_ref()),
+                RecordDecl::Direct(_) | RecordDecl::Encoded(_) => None,
+                _ => None,
+            })
+            .ok_or(Error::UnsupportedTarget {
+                target: "python",
+                shape: "record type hint without declaration",
+            })
     }
 }
 

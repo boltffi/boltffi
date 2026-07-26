@@ -8,6 +8,8 @@ typedef struct {
     int32_t x;
     int32_t y;
 } ___Point;
+typedef int32_t ___SaveError;
+#define SAVE_ERROR_FAILED ((___SaveError)0)
 RustFutureHandle boltffi_function_demo_refresh(void);
 void boltffi_async_function_demo_refresh_poll(RustFutureHandle handle, uint64_t callback_data, void (*callback)(uint64_t, int8_t));
 void boltffi_async_function_demo_refresh_complete(RustFutureHandle handle, FfiStatus *out_status);
@@ -26,6 +28,18 @@ ___Point boltffi_async_function_demo_load_point_complete(RustFutureHandle handle
 FfiBuf_u8 boltffi_async_function_demo_load_point_panic_message(RustFutureHandle handle);
 void boltffi_async_function_demo_load_point_cancel(RustFutureHandle handle);
 void boltffi_async_function_demo_load_point_free(RustFutureHandle handle);
+RustFutureHandle boltffi_function_demo_save(void);
+void boltffi_async_function_demo_save_poll(RustFutureHandle handle, uint64_t callback_data, void (*callback)(uint64_t, int8_t));
+FfiBuf_u8 boltffi_async_function_demo_save_complete(RustFutureHandle handle, FfiStatus *out_status);
+FfiBuf_u8 boltffi_async_function_demo_save_panic_message(RustFutureHandle handle);
+void boltffi_async_function_demo_save_cancel(RustFutureHandle handle);
+void boltffi_async_function_demo_save_free(RustFutureHandle handle);
+RustFutureHandle boltffi_function_demo_save_checked(int32_t value);
+void boltffi_async_function_demo_save_checked_poll(RustFutureHandle handle, uint64_t callback_data, void (*callback)(uint64_t, int8_t));
+FfiBuf_u8 boltffi_async_function_demo_save_checked_complete(RustFutureHandle handle, FfiStatus *out_status, int32_t *return_out);
+FfiBuf_u8 boltffi_async_function_demo_save_checked_panic_message(RustFutureHandle handle);
+void boltffi_async_function_demo_save_checked_cancel(RustFutureHandle handle);
+void boltffi_async_function_demo_save_checked_free(RustFutureHandle handle);
 
 ===== jni/jni_glue.c =====
 <jni source includes>
@@ -33,6 +47,7 @@ void boltffi_async_function_demo_load_point_free(RustFutureHandle handle);
 <jni continuation helper>
 <jni exception helpers>
 <jni status helper>
+<jni error-buffer helper>
 <jni byte-array helpers>
 <jni record helpers>
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
@@ -245,6 +260,135 @@ JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1async_1function_1de
 
     (void)env;
     boltffi_async_function_demo_load_point_free((RustFutureHandle)handle);
+
+    return;
+}
+
+JNIEXPORT jlong JNICALL Java_com_boltffi_demo_Native_boltffi_1function_1demo_1save(JNIEnv *env, jclass cls) {
+    (void)cls;
+
+    (void)env;
+    RustFutureHandle __boltffi_result = boltffi_function_demo_save();
+
+    return (jlong)__boltffi_result;
+}
+
+JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1async_1function_1demo_1save_1poll(JNIEnv *env, jclass cls, jlong handle, jlong callback_data) {
+    (void)cls;
+
+    (void)env;
+    boltffi_async_function_demo_save_poll((RustFutureHandle)handle, callback_data, boltffi_jni_continuation_callback);
+
+    return;
+}
+
+JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1async_1function_1demo_1save_1complete(JNIEnv *env, jclass cls, jlong handle) {
+    (void)cls;
+
+    FfiStatus __boltffi_status = (FfiStatus){0};
+
+    FfiBuf_u8 __boltffi_result = boltffi_async_function_demo_save_complete((RustFutureHandle)handle, &__boltffi_status);
+
+    if (__boltffi_result.ptr != NULL || __boltffi_result.len != 0) {
+        boltffi_jni_throw_error_buffer(env, __boltffi_result);
+        return;
+    }
+    if (__boltffi_status.code != 0) {
+        boltffi_jni_throw_status(env, __boltffi_status);
+        return;
+    }
+
+    return;
+}
+
+JNIEXPORT jbyteArray JNICALL Java_com_boltffi_demo_Native_boltffi_1async_1function_1demo_1save_1panic_1message(JNIEnv *env, jclass cls, jlong handle) {
+    (void)cls;
+
+    (void)env;
+    FfiBuf_u8 __boltffi_result = boltffi_async_function_demo_save_panic_message((RustFutureHandle)handle);
+
+    return boltffi_jni_buffer_to_byte_array(env, __boltffi_result);
+}
+
+JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1async_1function_1demo_1save_1cancel(JNIEnv *env, jclass cls, jlong handle) {
+    (void)cls;
+
+    (void)env;
+    boltffi_async_function_demo_save_cancel((RustFutureHandle)handle);
+
+    return;
+}
+
+JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1async_1function_1demo_1save_1free(JNIEnv *env, jclass cls, jlong handle) {
+    (void)cls;
+
+    (void)env;
+    boltffi_async_function_demo_save_free((RustFutureHandle)handle);
+
+    return;
+}
+
+JNIEXPORT jlong JNICALL Java_com_boltffi_demo_Native_boltffi_1function_1demo_1save_1checked(JNIEnv *env, jclass cls, jint value) {
+    (void)cls;
+
+    (void)env;
+    RustFutureHandle __boltffi_result = boltffi_function_demo_save_checked(value);
+
+    return (jlong)__boltffi_result;
+}
+
+JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1async_1function_1demo_1save_1checked_1poll(JNIEnv *env, jclass cls, jlong handle, jlong callback_data) {
+    (void)cls;
+
+    (void)env;
+    boltffi_async_function_demo_save_checked_poll((RustFutureHandle)handle, callback_data, boltffi_jni_continuation_callback);
+
+    return;
+}
+
+JNIEXPORT jint JNICALL Java_com_boltffi_demo_Native_boltffi_1async_1function_1demo_1save_1checked_1complete(JNIEnv *env, jclass cls, jlong handle) {
+    (void)cls;
+
+    int32_t __boltffi_return = (int32_t){0};
+    FfiStatus __boltffi_status = (FfiStatus){0};
+
+    FfiBuf_u8 __boltffi_result = boltffi_async_function_demo_save_checked_complete((RustFutureHandle)handle, &__boltffi_status, &__boltffi_return);
+
+    if (__boltffi_result.ptr != NULL || __boltffi_result.len != 0) {
+        boltffi_jni_throw_error_buffer(env, __boltffi_result);
+        return 0;
+    }
+    if (__boltffi_status.code != 0) {
+        boltffi_jni_throw_status(env, __boltffi_status);
+        return 0;
+    }
+
+    return (jint)__boltffi_return;
+}
+
+JNIEXPORT jbyteArray JNICALL Java_com_boltffi_demo_Native_boltffi_1async_1function_1demo_1save_1checked_1panic_1message(JNIEnv *env, jclass cls, jlong handle) {
+    (void)cls;
+
+    (void)env;
+    FfiBuf_u8 __boltffi_result = boltffi_async_function_demo_save_checked_panic_message((RustFutureHandle)handle);
+
+    return boltffi_jni_buffer_to_byte_array(env, __boltffi_result);
+}
+
+JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1async_1function_1demo_1save_1checked_1cancel(JNIEnv *env, jclass cls, jlong handle) {
+    (void)cls;
+
+    (void)env;
+    boltffi_async_function_demo_save_checked_cancel((RustFutureHandle)handle);
+
+    return;
+}
+
+JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1async_1function_1demo_1save_1checked_1free(JNIEnv *env, jclass cls, jlong handle) {
+    (void)cls;
+
+    (void)env;
+    boltffi_async_function_demo_save_checked_free((RustFutureHandle)handle);
 
     return;
 }

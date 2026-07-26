@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { AsyncFutureManager, BoltFFIModule } from "../src/module.js";
+import { AsyncFutureManager, BoltFFIModule, instantiateBoltFFI } from "../src/module.js";
 import { CallbackRegistry } from "../src/callback.js";
 import { StreamPollManager, StreamPollResult, StreamSession } from "../src/stream.js";
 import {
@@ -687,5 +687,41 @@ describe("CallbackRegistry", () => {
     expect(registry.get(handle)).toBe(callback);
     registry.release(handle);
     expect(() => registry.get(handle)).toThrow("Transform callback handle");
+  });
+});
+
+// Minimal module: 1-page memory, boltffi_wasm_abi_version() -> 7, boltffi_wasm_return_slot_addr() -> 0.
+const MINIMAL_BOLTFFI_WASM = new Uint8Array([
+  0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00, 0x01, 0x05, 0x01, 0x60, 0x00, 0x01, 0x7f, 0x03,
+  0x03, 0x02, 0x00, 0x00, 0x05, 0x03, 0x01, 0x00, 0x01, 0x07, 0x45, 0x03, 0x06, 0x6d, 0x65, 0x6d,
+  0x6f, 0x72, 0x79, 0x02, 0x00, 0x18, 0x62, 0x6f, 0x6c, 0x74, 0x66, 0x66, 0x69, 0x5f, 0x77, 0x61,
+  0x73, 0x6d, 0x5f, 0x61, 0x62, 0x69, 0x5f, 0x76, 0x65, 0x72, 0x73, 0x69, 0x6f, 0x6e, 0x00, 0x00,
+  0x1d, 0x62, 0x6f, 0x6c, 0x74, 0x66, 0x66, 0x69, 0x5f, 0x77, 0x61, 0x73, 0x6d, 0x5f, 0x72, 0x65,
+  0x74, 0x75, 0x72, 0x6e, 0x5f, 0x73, 0x6c, 0x6f, 0x74, 0x5f, 0x61, 0x64, 0x64, 0x72, 0x00, 0x01,
+  0x0a, 0x0b, 0x02, 0x04, 0x00, 0x41, 0x07, 0x0b, 0x04, 0x00, 0x41, 0x00, 0x0b,
+]);
+
+describe("instantiateBoltFFI", () => {
+  it("accepts an ArrayBuffer source", async () => {
+    const mod = await instantiateBoltFFI(MINIMAL_BOLTFFI_WASM.buffer, 7);
+    expect(mod.exports.boltffi_wasm_abi_version()).toBe(7);
+  });
+
+  it("accepts a Response source", async () => {
+    const response = new Response(MINIMAL_BOLTFFI_WASM);
+    const mod = await instantiateBoltFFI(response, 7);
+    expect(mod.exports.boltffi_wasm_abi_version()).toBe(7);
+  });
+
+  it("accepts an already-compiled WebAssembly.Module source", async () => {
+    const precompiled = await WebAssembly.compile(MINIMAL_BOLTFFI_WASM);
+    const mod = await instantiateBoltFFI(precompiled, 7);
+    expect(mod.exports.boltffi_wasm_abi_version()).toBe(7);
+  });
+
+  it("throws a clear ABI mismatch error rather than silently continuing", async () => {
+    await expect(instantiateBoltFFI(MINIMAL_BOLTFFI_WASM.buffer, 99)).rejects.toThrow(
+      "BoltFFI ABI version mismatch: expected 99, got 7"
+    );
   });
 });

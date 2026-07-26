@@ -31,6 +31,8 @@ private object Native {
         } else {
             System.loadLibrary(desktopFallbackLibrary)
         }
+{%- else %}
+        }
 {%- endif %}
     }
 {%- if native_libraries.bundled_desktop_loader() %}

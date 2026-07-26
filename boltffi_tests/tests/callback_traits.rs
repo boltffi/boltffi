@@ -687,3 +687,84 @@ mod struct_method_callbacks {
         assert_eq!(result, None);
     }
 }
+
+mod async_fetcher_foreign_failure {
+    use super::*;
+    use boltffi::__private::{BoxFromCallbackHandle, FfiStatus};
+    use std::ffi::c_void;
+
+    extern "C" fn free_handle(_handle: u64) {}
+
+    extern "C" fn clone_handle(handle: u64) -> u64 {
+        handle
+    }
+
+    extern "C" fn failing_fetch(
+        _handle: u64,
+        _key: u32,
+        completion: extern "C" fn(*mut c_void, FfiStatus, u64),
+        completion_data: *mut c_void,
+    ) {
+        completion(completion_data, FfiStatus::INTERNAL_ERROR, 0);
+    }
+
+    static FAILING_VTABLE: AsyncFetcherVTable = AsyncFetcherVTable {
+        free: free_handle,
+        clone: clone_handle,
+        fetch: failing_fetch,
+    };
+
+    #[tokio::test]
+    async fn completion_failure_resolves_instead_of_panicking() {
+        unsafe {
+            boltffi_register_callback_boltffi_tests_callbacks_async_fetcher(&FAILING_VTABLE);
+        }
+        let handle = boltffi_create_callback_boltffi_tests_callbacks_async_fetcher(7);
+        let fetcher = unsafe { ForeignAsyncFetcher::box_from_callback_handle(handle) };
+        let result = invoke_async_impl(*fetcher, 5).await;
+        assert_eq!(result, 0);
+    }
+}
+
+mod async_factory_foreign_failure {
+    use super::*;
+    use boltffi::__private::{BoxFromCallbackHandle, CallbackHandle, FfiStatus};
+    use std::ffi::c_void;
+
+    extern "C" fn free_handle(_handle: u64) {}
+
+    extern "C" fn clone_handle(handle: u64) -> u64 {
+        handle
+    }
+
+    extern "C" fn failing_make(
+        _handle: u64,
+        completion: extern "C" fn(*mut c_void, FfiStatus, CallbackHandle),
+        completion_data: *mut c_void,
+    ) {
+        completion(
+            completion_data,
+            FfiStatus::INTERNAL_ERROR,
+            CallbackHandle::NULL,
+        );
+    }
+
+    static FAILING_VTABLE: AsyncCallbackFactoryVTable = AsyncCallbackFactoryVTable {
+        free: free_handle,
+        clone: clone_handle,
+        make: failing_make,
+    };
+
+    #[tokio::test]
+    #[should_panic(expected = "required handle")]
+    async fn completion_failure_panics_for_a_required_handle_return() {
+        unsafe {
+            boltffi_register_callback_boltffi_tests_callbacks_async_callback_factory(
+                &FAILING_VTABLE,
+            );
+        }
+        let handle = boltffi_create_callback_boltffi_tests_callbacks_async_callback_factory(9);
+        let factory = unsafe { ForeignAsyncCallbackFactory::box_from_callback_handle(handle) };
+        let _ = invoke_async_factory_impl(*factory, 5).await;
+    }
+}
