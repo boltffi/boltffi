@@ -10,10 +10,10 @@ use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 
 use boltffi_ast::{
-    ClassDef, ClassId, ConstantDef, ConstantId, CustomTypeConverter, CustomTypeDef, CustomTypeId,
-    EnumDef, EnumId, FieldDef, FunctionDef, FunctionId, MethodDef, NamePart, PackageInfo, Path,
-    PathSegment, Primitive, RecordDef, RecordId, ReturnDef, SourceContract, StreamDef, StreamId,
-    TraitDef, TraitId, TypeExpr, VariantPayload,
+    ClassDef, ClassId, ConstantDef, ConstantId, ConstantOwner, CustomTypeConverter, CustomTypeDef,
+    CustomTypeId, EnumDef, EnumId, FieldDef, FunctionDef, FunctionId, MethodDef, NamePart,
+    PackageInfo, Path, PathSegment, Primitive, RecordDef, RecordId, ReturnDef, SourceContract,
+    StreamDef, StreamId, TraitDef, TraitId, TypeExpr, VariantPayload,
 };
 use serde::{Deserialize, Serialize};
 
@@ -60,6 +60,9 @@ pub enum SourceFragment {
         spelling: String,
         /// Methods to merge, with ids nested under the target's placeholder.
         methods: Vec<MethodDef>,
+        /// Associated constants, owned by the target once it resolves.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        constants: Vec<ConstantDef>,
     },
     /// An invocation the per-invocation capture cannot describe yet.
     ///
@@ -175,14 +178,17 @@ pub fn aggregate_records(
             SourceFragment::Constant(def) => contract.constants.push(def),
             SourceFragment::Custom(def) => contract.customs.push(def),
             SourceFragment::Methods {
-                target, methods, ..
-            } => method_blocks.push((target, methods)),
+                target,
+                methods,
+                constants,
+                ..
+            } => method_blocks.push((target, methods, constants)),
             SourceFragment::InternedStringPool { .. } | SourceFragment::Unsupported { .. } => {}
         }
     }
 
-    for (target, methods) in method_blocks {
-        merge_methods(&mut contract, target, methods)?;
+    for (target, methods, constants) in method_blocks {
+        merge_methods(&mut contract, target, methods, constants)?;
     }
 
     contract.records.sort_by(|a, b| a.id.cmp(&b.id));
@@ -200,10 +206,12 @@ fn merge_methods(
     contract: &mut SourceContract,
     target: TypeExpr,
     methods: Vec<MethodDef>,
+    constants: Vec<ConstantDef>,
 ) -> Result<(), SourceFragmentError> {
-    let (target_id, target_methods) = match &target {
+    let (target_id, owner, target_methods) = match &target {
         TypeExpr::Record { id, .. } => (
             id.as_str().to_owned(),
+            ConstantOwner::Record(id.clone()),
             contract
                 .records
                 .iter_mut()
@@ -212,6 +220,7 @@ fn merge_methods(
         ),
         TypeExpr::Enum { id, .. } => (
             id.as_str().to_owned(),
+            ConstantOwner::Enum(id.clone()),
             contract
                 .enums
                 .iter_mut()
@@ -234,6 +243,15 @@ fn merge_methods(
             method.id = boltffi_ast::MethodId::new(format!("{target_id}::{tail}"));
         }
         target_methods.push(method);
+    }
+    for mut constant in constants {
+        if let Some(rest) = constant.id.as_str().strip_prefix(SLOT_ID_PREFIX)
+            && let Some((_, tail)) = rest.split_once("::")
+        {
+            constant.id = ConstantId::new(format!("{target_id}::{tail}"));
+        }
+        constant.owner = Some(owner.clone());
+        contract.constants.push(constant);
     }
     Ok(())
 }
@@ -281,11 +299,15 @@ fn fragment_id(fragment: &SourceFragment, module: &str) -> String {
         SourceFragment::Custom(def) => def.id.as_str().to_owned(),
         SourceFragment::InternedStringPool { id, .. } => id.clone(),
         SourceFragment::Methods {
-            spelling, methods, ..
+            spelling,
+            methods,
+            constants,
+            ..
         } => {
             let names = methods
                 .iter()
                 .map(|method| method.name.spelling())
+                .chain(constants.iter().map(|constant| constant.name.spelling()))
                 .collect::<Vec<_>>()
                 .join(",");
             format!("{module}::impl {spelling}::{{{names}}}")
@@ -344,6 +366,11 @@ fn mint_self_ids(fragment: &mut SourceFragment, module: &str) {
         SourceFragment::Constant(def) => {
             if let Some(value) = minted(def.id.as_str(), module) {
                 def.id = ConstantId::new(value);
+            }
+            if let Some(ConstantOwner::Class(id)) = &mut def.owner
+                && let Some(value) = minted(id.as_str(), module)
+            {
+                *id = ClassId::new(value);
             }
         }
         SourceFragment::Custom(def) => {
@@ -422,10 +449,17 @@ fn resolve_fragment(
         SourceFragment::Custom(def) => resolve(&mut def.repr),
         SourceFragment::InternedStringPool { .. } => Ok(()),
         SourceFragment::Methods {
-            target, methods, ..
+            target,
+            methods,
+            constants,
+            ..
         } => {
             resolve(target)?;
-            resolve_methods(methods, &mut resolve)
+            resolve_methods(methods, &mut resolve)?;
+            for constant in constants {
+                resolve(&mut constant.type_expr)?;
+            }
+            Ok(())
         }
         SourceFragment::Unsupported { .. } => Ok(()),
     }
@@ -974,6 +1008,86 @@ mod tests {
                 TypeExpr::Record { id, .. } if id == &RecordId::new("demo::geometry::Point")
             ),
             "the item type resolves through its slot"
+        );
+    }
+
+    #[test]
+    fn merges_method_block_constants_into_their_resolved_owner() {
+        let mut constant = ConstantDef::new(
+            ConstantId::new(format!("{SLOT_ID_PREFIX}0::ORIGIN")),
+            name("ORIGIN"),
+            slot_leaf(0, "Point"),
+            boltffi_ast::ConstExpr::Raw("Point { x : 0.0 }".to_owned()),
+        );
+        constant.owner = Some(ConstantOwner::Record(RecordId::new(format!(
+            "{SLOT_ID_PREFIX}0"
+        ))));
+        let methods = raw(
+            "demo",
+            &[r#"{"id":"demo::geometry::Point"}"#],
+            serde_json::to_vec(&SourceFragment::Methods {
+                target: slot_leaf(0, "Point"),
+                spelling: "Point".to_owned(),
+                methods: Vec::new(),
+                constants: vec![constant],
+            })
+            .expect("fragment serializes"),
+        );
+
+        let contract =
+            aggregate_records(&[methods, point_record()], PackageInfo::new("demo", None))
+                .expect("records aggregate");
+
+        assert_eq!(contract.constants.len(), 1);
+        assert_eq!(
+            contract.constants[0].id,
+            ConstantId::new("demo::geometry::Point::ORIGIN"),
+            "the constant id rebases onto the resolved target"
+        );
+        assert_eq!(
+            contract.constants[0].owner,
+            Some(ConstantOwner::Record(RecordId::new(
+                "demo::geometry::Point"
+            ))),
+            "the provisional owner takes the resolved target's kind and id"
+        );
+        assert!(
+            matches!(
+                &contract.constants[0].type_expr,
+                TypeExpr::Record { id, .. } if id == &RecordId::new("demo::geometry::Point")
+            ),
+            "the declared type resolves through its slot"
+        );
+    }
+
+    #[test]
+    fn mints_class_constant_owners_from_the_module_path() {
+        let mut constant = ConstantDef::new(
+            ConstantId::new(format!("{SELF_ID}::Counter::MAX")),
+            name("MAX"),
+            TypeExpr::Primitive(Primitive::I32),
+            boltffi_ast::ConstExpr::Raw("9".to_owned()),
+        );
+        constant.owner = Some(ConstantOwner::Class(ClassId::new(format!(
+            "{SELF_ID}::Counter"
+        ))));
+        let record = raw(
+            "demo::api",
+            &[],
+            serde_json::to_vec(&SourceFragment::Constant(constant)).expect("fragment serializes"),
+        );
+
+        let contract = aggregate_records(&[record], PackageInfo::new("demo", None))
+            .expect("records aggregate");
+
+        assert_eq!(
+            contract.constants[0].id,
+            ConstantId::new("demo::api::Counter::MAX")
+        );
+        assert_eq!(
+            contract.constants[0].owner,
+            Some(ConstantOwner::Class(ClassId::new("demo::api::Counter"))),
+            "the class owner mints against the record's module path"
         );
     }
 

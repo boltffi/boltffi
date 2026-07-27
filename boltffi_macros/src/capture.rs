@@ -5,8 +5,9 @@
 
 use boltffi_binding::SourceFragment;
 use boltffi_scan::{
-    capture_class, capture_constant, capture_enum, capture_error_enum, capture_error_struct,
-    capture_function, capture_methods, capture_streams, capture_struct, capture_trait,
+    capture_class, capture_class_constants, capture_constant, capture_enum, capture_error_enum,
+    capture_error_struct, capture_function, capture_methods, capture_streams, capture_struct,
+    capture_trait,
 };
 use proc_macro2::{Literal, TokenStream};
 use quote::{format_ident, quote};
@@ -89,10 +90,21 @@ pub(crate) fn item_tokens(item: proc_macro::TokenStream, impl_capture: ImplCaptu
                             .collect::<TokenStream>(),
                         Err(error) => unsupported_tokens(&name, &error.to_string()),
                     };
+                    let constants = match capture_class_constants(item) {
+                        Ok(captured) => captured
+                            .def
+                            .into_iter()
+                            .map(|constant| {
+                                record_tokens(&SourceFragment::Constant(constant), &captured.slots)
+                            })
+                            .collect::<TokenStream>(),
+                        Err(error) => unsupported_tokens(&name, &error.to_string()),
+                    };
                     quote! {
                         #identity
                         #record
                         #streams
+                        #constants
                     }
                 }
                 ImplCapture::Methods => match capture_methods(item) {
@@ -101,6 +113,7 @@ pub(crate) fn item_tokens(item: proc_macro::TokenStream, impl_capture: ImplCaptu
                             target: captured.target,
                             spelling: captured.spelling,
                             methods: captured.methods,
+                            constants: captured.constants,
                         };
                         record_tokens(&fragment, &captured.slots)
                     }

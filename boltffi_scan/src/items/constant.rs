@@ -135,6 +135,23 @@ where
         })
 }
 
+pub(crate) fn scan_associated_in_impl(
+    item: &syn::ItemImpl,
+    owner: &ConstantOwner,
+    scope: &ModuleScope,
+    declared_types: &DeclaredTypes,
+) -> Result<Vec<ConstantDef>, ScanError> {
+    item.items
+        .iter()
+        .filter_map(|item| match item {
+            syn::ImplItem::Const(constant) => {
+                scan_associated_constant(constant, owner.clone(), scope, declared_types).transpose()
+            }
+            _ => None,
+        })
+        .collect()
+}
+
 fn scan_associated_constant(
     constant: &syn::ImplItemConst,
     owner: ConstantOwner,

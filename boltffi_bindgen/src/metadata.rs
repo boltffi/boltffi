@@ -1149,9 +1149,18 @@ mod tests {
                 .iter()
                 .any(|function| function.id.as_str() == "metadata_fixture::api::origin")
         );
-        assert_eq!(contract.enums.len(), 1, "the error enum is captured");
+        assert_eq!(
+            contract.enums.len(),
+            2,
+            "the error and data enums are captured"
+        );
+        let shift_error = contract
+            .enums
+            .iter()
+            .find(|declared| declared.id.as_str() == "metadata_fixture::api::ShiftError")
+            .expect("the error enum is captured");
         assert!(
-            contract.enums[0].user_attrs.iter().any(|attr| {
+            shift_error.user_attrs.iter().any(|attr| {
                 attr.path
                     .last()
                     .is_some_and(|segment| segment.name.as_str() == "error")
@@ -1209,7 +1218,32 @@ mod tests {
             ),
             "the stream item resolves cross-module through the compiler"
         );
-        assert_eq!(contract.constants.len(), 1, "the constant is captured");
+        assert_eq!(
+            contract.constants.len(),
+            5,
+            "the free constant and the associated constants are captured"
+        );
+        let origin_const = contract
+            .constants
+            .iter()
+            .find(|constant| constant.id.as_str() == "metadata_fixture::domain::Point::ORIGIN")
+            .expect("the record's associated constant is captured");
+        assert!(
+            matches!(
+                &origin_const.owner,
+                Some(boltffi_ast::ConstantOwner::Record(id))
+                    if id.as_str() == "metadata_fixture::domain::Point"
+            ),
+            "the associated constant's owner resolves through the target"
+        );
+        assert!(
+            contract
+                .constants
+                .iter()
+                .any(|constant| constant.id.as_str()
+                    == "metadata_fixture::api::Session::MAX_SHIFT"),
+            "the class's associated constant is captured"
+        );
         assert_eq!(
             contract.customs.len(),
             3,
@@ -1747,9 +1781,27 @@ pub mod domain {
 
     #[boltffi::data(impl)]
     impl Point {
+        pub const ORIGIN: Point = Point { x: 0.0 };
+        pub const UNIT: Self = Point { x: 1.0 };
+        const PRIVATE: f64 = 0.5;
+        #[boltffi::skip]
+        pub const HIDDEN: f64 = 0.25;
+
         pub fn doubled(&self) -> Point {
             Point { x: self.x * 2.0 }
         }
+    }
+
+    #[data]
+    #[derive(Clone, Copy)]
+    pub enum Mode {
+        Fast,
+        Slow,
+    }
+
+    #[boltffi::data(impl)]
+    impl Mode {
+        pub const DEFAULT: Self = Mode::Fast;
     }
 }
 
@@ -1888,6 +1940,8 @@ pub mod api {
 
     #[export(single_threaded)]
     impl Session {
+        pub const MAX_SHIFT: f64 = 9.0;
+
         pub fn new() -> Self {
             Self { origin: Point { x: 0.0 } }
         }

@@ -5,8 +5,8 @@
 //! to project through the compiler at the invocation site.
 
 use boltffi_ast::{
-    ClassDef, ConstantDef, CustomTypeDef, EnumDef, FunctionDef, MethodDef, RecordDef, StreamDef,
-    TraitDef, TypeExpr,
+    ClassDef, ClassId, ConstantDef, ConstantOwner, CustomTypeDef, EnumDef, FunctionDef, MethodDef,
+    RecordDef, RecordId, StreamDef, TraitDef, TypeExpr,
 };
 
 use crate::declared_types::DeclaredTypes;
@@ -82,6 +82,19 @@ pub fn capture_class(
     })
 }
 
+/// Captures the associated constants of an `#[export] impl` block as constant definitions.
+pub fn capture_class_constants(
+    item: &syn::ItemImpl,
+) -> Result<CapturedItem<Vec<ConstantDef>>, ScanError> {
+    captured(|scope, declared_types| {
+        let target = crate::impl_target::Target::class(item)?;
+        let spelling = target.spelling();
+        let leaf = spelling.rsplit("::").next().unwrap_or(spelling);
+        let owner = ConstantOwner::Class(ClassId::new(scope.path().qualified(leaf)));
+        items::constant::scan_associated_in_impl(item, &owner, scope, declared_types)
+    })
+}
+
 /// Captures the `#[ffi_stream]` methods of an `#[export] impl` block as stream definitions.
 pub fn capture_streams(item: &syn::ItemImpl) -> Result<CapturedItem<Vec<StreamDef>>, ScanError> {
     captured(|scope, declared_types| items::stream::scan_item(item, scope, declared_types))
@@ -140,6 +153,9 @@ pub struct CapturedMethods {
     pub spelling: String,
     /// The block's methods, with ids nested under the target's slot placeholder.
     pub methods: Vec<MethodDef>,
+    /// The block's associated constants, with ids nested under the target's slot
+    /// placeholder and a provisional owner replaced when the target resolves.
+    pub constants: Vec<ConstantDef>,
     /// Written references, in slot-index order.
     pub slots: Vec<SlotSource>,
 }
@@ -155,6 +171,9 @@ pub fn capture_methods(item: &syn::ItemImpl) -> Result<CapturedMethods, ScanErro
         _ => return Err(ScanError::unsupported_type(&item.self_ty)),
     };
     let methods = items::impl_methods::scan_value_methods(item, &parent, &scope, &declared_types)?;
+    let owner = ConstantOwner::Record(RecordId::new(parent));
+    let constants =
+        items::constant::scan_associated_in_impl(item, &owner, &scope, &declared_types)?;
     let spelling = crate::spelling::path(&match &*item.self_ty {
         syn::Type::Path(path) => path.path.clone(),
         _ => return Err(ScanError::unsupported_type(&item.self_ty)),
@@ -163,6 +182,7 @@ pub fn capture_methods(item: &syn::ItemImpl) -> Result<CapturedMethods, ScanErro
         target,
         spelling,
         methods,
+        constants,
         slots: declared_types.take_slots(),
     })
 }
@@ -501,6 +521,68 @@ mod tests {
 
         assert_eq!(captured.def.id.as_str(), "$self::Listener");
         assert_eq!(captured.def.methods.len(), 1);
+    }
+
+    #[test]
+    fn captures_associated_constants_under_the_target_placeholder() {
+        let item: syn::ItemImpl = syn::parse_quote! {
+            impl Point {
+                pub const ORIGIN: Point = Point { x: 0.0 };
+                pub const UNIT: Self = Point { x: 1.0 };
+                const PRIVATE: f64 = 0.5;
+                #[skip]
+                pub const HIDDEN: f64 = 0.25;
+
+                pub fn doubled(&self) -> Point {
+                    unimplemented!()
+                }
+            }
+        };
+
+        let captured = capture_methods(&item).expect("methods block captures");
+
+        assert_eq!(
+            captured.constants.len(),
+            2,
+            "private and skipped constants stay out"
+        );
+        assert_eq!(captured.constants[0].id.as_str(), "$slot:0::ORIGIN");
+        assert!(
+            matches!(
+                &captured.constants[0].type_expr,
+                TypeExpr::Record { id, .. } if id.as_str() == "$slot:0"
+            ),
+            "the declared type defers to the target's slot"
+        );
+        assert!(
+            matches!(&captured.constants[1].type_expr, TypeExpr::SelfType),
+            "Self stays a self type"
+        );
+    }
+
+    #[test]
+    fn captures_class_constants_with_the_class_owner() {
+        let item: syn::ItemImpl = syn::parse_quote! {
+            impl Counter {
+                pub const MAX: i32 = 9;
+
+                pub fn new() -> Self {
+                    unimplemented!()
+                }
+            }
+        };
+
+        let captured = capture_class_constants(&item).expect("class constants capture");
+
+        assert_eq!(captured.def.len(), 1);
+        assert_eq!(captured.def[0].id.as_str(), "$self::Counter::MAX");
+        assert!(
+            matches!(
+                &captured.def[0].owner,
+                Some(ConstantOwner::Class(id)) if id.as_str() == "$self::Counter"
+            ),
+            "the owner carries the class placeholder for minting"
+        );
     }
 
     #[test]
