@@ -102,14 +102,14 @@ pub fn aggregate_records(
     }
 
     let mut kinds = HashMap::new();
-    let mut unique = HashMap::new();
-    for (fragment, _) in &fragments {
+    let mut unique: HashMap<String, (&SourceFragment, &[TypeNode])> = HashMap::new();
+    for (fragment, slots) in &fragments {
         let id = fragment_id(fragment).to_owned();
         match unique.entry(id.clone()) {
             Entry::Vacant(entry) => {
-                entry.insert(fragment.clone());
+                entry.insert((fragment, slots));
             }
-            Entry::Occupied(entry) if entry.get() == fragment => {}
+            Entry::Occupied(entry) if *entry.get() == (fragment, slots.as_slice()) => {}
             Entry::Occupied(_) => {
                 return Err(SourceFragmentError::DuplicateDeclaration { id });
             }
@@ -763,6 +763,19 @@ mod tests {
             .expect_err("conflicting duplicates fail");
         assert!(
             matches!(error, SourceFragmentError::DuplicateDeclaration { id } if id == "demo::geometry::Point")
+        );
+    }
+
+    #[test]
+    fn rejects_duplicate_declarations_whose_slots_differ() {
+        let json = record_fragment(vec![FieldDef::new(name("start"), slot_leaf(0, "Alias"))]);
+        let first = raw("demo", &[r#"{"prim":"f32"}"#], json.clone());
+        let second = raw("demo", &[r#"{"prim":"f64"}"#], json);
+
+        let error = aggregate_records(&[first, second], PackageInfo::new("demo", None))
+            .expect_err("identical fragments with differing slots fail");
+        assert!(
+            matches!(error, SourceFragmentError::DuplicateDeclaration { id } if id == "demo::Route")
         );
     }
 
