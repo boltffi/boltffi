@@ -64,12 +64,12 @@ impl DescBuf {
     }
 
     /// Builds the node for a one-argument container shape.
-    pub const fn shape1(name: &str, arg: Self) -> Self {
+    pub const fn shape_with_one_arg(name: &str, arg: Self) -> Self {
         Self::shape_open(name).concat(arg).push(b"]}")
     }
 
     /// Builds the node for a two-argument container shape.
-    pub const fn shape2(name: &str, first: Self, second: Self) -> Self {
+    pub const fn shape_with_two_args(name: &str, first: Self, second: Self) -> Self {
         Self::shape_open(name)
             .concat(first)
             .push(b",")
@@ -146,36 +146,37 @@ impl<Tag> TypeDesc<Tag> for String {
 }
 
 impl<Tag, T: TypeDesc<Tag>> TypeDesc<Tag> for Vec<T> {
-    const DESC: DescBuf = DescBuf::shape1("Vec", T::DESC);
+    const DESC: DescBuf = DescBuf::shape_with_one_arg("Vec", T::DESC);
 }
 
 impl<Tag, T: TypeDesc<Tag>> TypeDesc<Tag> for Option<T> {
-    const DESC: DescBuf = DescBuf::shape1("Option", T::DESC);
+    const DESC: DescBuf = DescBuf::shape_with_one_arg("Option", T::DESC);
 }
 
 impl<Tag, T: TypeDesc<Tag>> TypeDesc<Tag> for Box<T> {
-    const DESC: DescBuf = DescBuf::shape1("Box", T::DESC);
+    const DESC: DescBuf = DescBuf::shape_with_one_arg("Box", T::DESC);
 }
 
 impl<Tag, T: TypeDesc<Tag>> TypeDesc<Tag> for std::sync::Arc<T> {
-    const DESC: DescBuf = DescBuf::shape1("Arc", T::DESC);
+    const DESC: DescBuf = DescBuf::shape_with_one_arg("Arc", T::DESC);
 }
 
 impl<Tag, K: TypeDesc<Tag>, V: TypeDesc<Tag>> TypeDesc<Tag> for std::collections::HashMap<K, V> {
-    const DESC: DescBuf = DescBuf::shape2("HashMap", K::DESC, V::DESC);
+    const DESC: DescBuf = DescBuf::shape_with_two_args("HashMap", K::DESC, V::DESC);
 }
 
 impl<Tag, K: TypeDesc<Tag>, V: TypeDesc<Tag>> TypeDesc<Tag> for std::collections::BTreeMap<K, V> {
-    const DESC: DescBuf = DescBuf::shape2("BTreeMap", K::DESC, V::DESC);
+    const DESC: DescBuf = DescBuf::shape_with_two_args("BTreeMap", K::DESC, V::DESC);
 }
 
 impl<Tag, T: TypeDesc<Tag>, E: TypeDesc<Tag>> TypeDesc<Tag> for Result<T, E> {
-    const DESC: DescBuf = DescBuf::shape2("Result", T::DESC, E::DESC);
+    const DESC: DescBuf = DescBuf::shape_with_two_args("Result", T::DESC, E::DESC);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::capture::{record, record_len};
 
     struct ProbeTag;
 
@@ -234,8 +235,8 @@ mod tests {
         const DESC: &DescBuf = &<Points as TypeDesc<ProbeTag>>::DESC;
         const SLOT: &str = DESC.as_str();
         const SLOTS: &[&str] = &[SLOT];
-        const LEN: usize = crate::capture::record_len("p", "", "m", SLOTS, b"{}");
-        static RECORD: [u8; LEN] = crate::capture::record("p", "", "m", SLOTS, b"{}");
+        const LEN: usize = record_len("p", "", "m", SLOTS, b"{}");
+        static RECORD: [u8; LEN] = record("p", "", "m", SLOTS, b"{}");
         assert!(
             RECORD.len() > SLOT.len(),
             "a record embeds the promoted descriptor"
