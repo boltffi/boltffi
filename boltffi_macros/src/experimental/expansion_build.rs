@@ -28,8 +28,12 @@ pub enum Item {
 
 static EMITTED: AtomicBool = AtomicBool::new(false);
 
+pub fn active() -> bool {
+    env::var_os(BINDING_EXPANSION_BUILD_ENV).is_some()
+}
+
 pub fn item() -> Item {
-    if env::var_os(BINDING_EXPANSION_BUILD_ENV).is_none() {
+    if !active() {
         return Item::Inactive;
     }
 

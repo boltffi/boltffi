@@ -3,7 +3,10 @@ use boltffi_macros::data;
 
 extern crate self as boltffi;
 
+boltffi_macros::scaffolding!();
+
 pub mod __private {
+    pub use boltffi_core::capture;
     pub use boltffi_core::{
         EventSubscription, FfiBuf, FfiSpan, FfiStatus, Passable, RustFutureContinuationCallback,
         RustFutureHandle, StreamContinuationCallback, StreamPollResult, SubscriptionHandle,

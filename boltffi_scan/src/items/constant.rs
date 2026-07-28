@@ -26,6 +26,14 @@ pub fn scan(
     build_item(marked.item(), marked.scope(), declared_types)
 }
 
+pub(crate) fn scan_item(
+    item: &syn::ItemConst,
+    scope: &ModuleScope,
+    declared_types: &DeclaredTypes,
+) -> Result<ConstantDef, ScanError> {
+    build_item(item, scope, declared_types)
+}
+
 fn build_item(
     item: &syn::ItemConst,
     scope: &ModuleScope,
@@ -125,6 +133,23 @@ where
             constants.extend(associated);
             Ok(constants)
         })
+}
+
+pub(crate) fn scan_associated_in_impl(
+    item: &syn::ItemImpl,
+    owner: &ConstantOwner,
+    scope: &ModuleScope,
+    declared_types: &DeclaredTypes,
+) -> Result<Vec<ConstantDef>, ScanError> {
+    item.items
+        .iter()
+        .filter_map(|item| match item {
+            syn::ImplItem::Const(constant) => {
+                scan_associated_constant(constant, owner.clone(), scope, declared_types).transpose()
+            }
+            _ => None,
+        })
+        .collect()
 }
 
 fn scan_associated_constant(

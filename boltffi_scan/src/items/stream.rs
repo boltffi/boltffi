@@ -125,16 +125,20 @@ fn block_streams(
     marked: &Marked<'_, syn::ItemImpl>,
     declared_types: &DeclaredTypes,
 ) -> Result<Vec<StreamDef>, ScanError> {
-    let owner = class::resolve_id(marked.item(), marked.scope(), declared_types)?;
-    let scanner = Scanner::new(declared_types, marked.scope());
-    marked
-        .item()
-        .items
+    scan_item(marked.item(), marked.scope(), declared_types)
+}
+
+pub(crate) fn scan_item(
+    item: &syn::ItemImpl,
+    scope: &ModuleScope,
+    declared_types: &DeclaredTypes,
+) -> Result<Vec<StreamDef>, ScanError> {
+    let owner = class::resolve_id(item, scope, declared_types)?;
+    let scanner = Scanner::new(declared_types, scope);
+    item.items
         .iter()
         .filter_map(|item| match item {
-            syn::ImplItem::Fn(method) => {
-                method_stream(method, &owner, marked.scope(), &scanner).transpose()
-            }
+            syn::ImplItem::Fn(method) => method_stream(method, &owner, scope, &scanner).transpose(),
             _ => None,
         })
         .collect()
@@ -189,7 +193,7 @@ fn validate(
             "`{item}` must be a public `&self` method with no parameters"
         )));
     }
-    let returned = subscription_item(&method.sig.output, scope, &item)?;
+    let returned = subscription_item(&method.sig.output, scope, &item, scanner.is_deferred())?;
     let declared_item = StreamItem::from_boundary(scanner.scan(attribute.item())?);
     let returned_item = scanner.scan(returned)?;
     if declared_item.storage() != &returned_item {
@@ -250,6 +254,7 @@ fn subscription_item<'source>(
     output: &'source syn::ReturnType,
     scope: &ModuleScope,
     item: &str,
+    deferred: bool,
 ) -> Result<&'source syn::Type, ScanError> {
     let syn::ReturnType::Type(_, ty) = output else {
         return Err(Attribute::invalid(format!(
@@ -259,7 +264,12 @@ fn subscription_item<'source>(
     let outer = path_type(ty).ok_or_else(|| {
         Attribute::invalid(format!("`{item}` must return Arc<EventSubscription<T>>"))
     })?;
-    if !matches_path(scope, &outer.path, &["std::sync::Arc", "alloc::sync::Arc"]) {
+    if !matches_path(
+        scope,
+        &outer.path,
+        &["std::sync::Arc", "alloc::sync::Arc"],
+        deferred,
+    ) {
         return Err(Attribute::invalid(format!(
             "`{item}` must return Arc<EventSubscription<T>>"
         )));
@@ -276,6 +286,7 @@ fn subscription_item<'source>(
             "boltffi::EventSubscription",
             "boltffi_core::EventSubscription",
         ],
+        deferred,
     ) {
         return Err(Attribute::invalid(format!(
             "`{item}` must return Arc<EventSubscription<T>>"
@@ -306,7 +317,10 @@ fn generic_type_argument(path: &syn::TypePath) -> Option<&syn::Type> {
     }
 }
 
-fn matches_path(scope: &ModuleScope, path: &syn::Path, qualified: &[&str]) -> bool {
+fn matches_path(scope: &ModuleScope, path: &syn::Path, qualified: &[&str], deferred: bool) -> bool {
+    if deferred {
+        return suffix_matches(path, qualified);
+    }
     match scope.expand(path) {
         PathExpansion::Imported { path, .. } | PathExpansion::Qualified(path) => {
             qualified.iter().any(|candidate| path == *candidate)
@@ -320,6 +334,23 @@ fn matches_path(scope: &ModuleScope, path: &syn::Path, qualified: &[&str]) -> bo
         }),
         PathExpansion::Ambiguous | PathExpansion::Unsupported => false,
     }
+}
+
+fn suffix_matches(path: &syn::Path, qualified: &[&str]) -> bool {
+    let written = path
+        .segments
+        .iter()
+        .map(|segment| segment.ident.to_string())
+        .collect::<Vec<_>>();
+    qualified.iter().any(|candidate| {
+        let segments = candidate.split("::").collect::<Vec<_>>();
+        written.len() <= segments.len()
+            && written
+                .iter()
+                .rev()
+                .zip(segments.iter().rev())
+                .all(|(written, segment)| written == segment)
+    })
 }
 
 fn raw_path(path: &syn::Path) -> Option<String> {

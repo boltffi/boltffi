@@ -2,8 +2,8 @@ use std::num::NonZeroUsize;
 
 use boltffi_ast::{
     AdditionalBound, BaseTrait, BuiltinType, ConstExpr, CustomTypeId, FnSig, FnTrait, FnTraitKind,
-    GenericArgument, MapKind, NamePart, Path, PathRoot, PathSegment, Primitive, ReturnDef,
-    TraitBounds, TypeExpr,
+    GenericArgument, MapKind, NamePart, Path, PathRoot, PathSegment, Primitive, RecordId,
+    ReturnDef, TraitBounds, TraitId, TypeExpr,
 };
 use quote::ToTokens;
 
@@ -26,6 +26,10 @@ impl<'a> Scanner<'a> {
 
     pub fn scope(&self) -> &'a ModuleScope {
         self.scope
+    }
+
+    pub(crate) fn is_deferred(&self) -> bool {
+        self.declared_types.is_deferred()
     }
 
     pub fn scan(&self, ty: &syn::Type) -> Result<TypeExpr, ScanError> {
@@ -163,6 +167,11 @@ impl<'a> Scanner<'a> {
         let Some(standard_type) = StandardType::from_leaf(&segment.ident.to_string()) else {
             return Ok(None);
         };
+        if self.declared_types.is_deferred() {
+            return Ok(standard_type
+                .accepts_path(&path_without_arguments(&type_path.path))
+                .then_some(standard_type));
+        }
         match self
             .declared_types
             .resolve_type_in_scope(self.scope, &type_path.path)?
@@ -193,6 +202,12 @@ impl<'a> Scanner<'a> {
             .iter()
             .any(|segment| !matches!(segment.arguments, syn::PathArguments::None))
         {
+            if let Some(index) = self.declared_types.defer_slot(&type_path.path) {
+                return Ok(TypeExpr::record(
+                    RecordId::new(format!("$slot:{index}")),
+                    ast_path_without_arguments(&type_path.path),
+                ));
+            }
             return Err(ScanError::unsupported_type(source));
         }
         let Some(segment) = type_path.path.segments.last() else {
@@ -209,6 +224,12 @@ impl<'a> Scanner<'a> {
             return Ok(TypeExpr::Primitive(primitive));
         }
         let path = ast_path(&type_path.path, self)?;
+        if let Some(index) = self.declared_types.defer_slot(&type_path.path) {
+            return Ok(TypeExpr::record(
+                RecordId::new(format!("$slot:{index}")),
+                path,
+            ));
+        }
         match self
             .declared_types
             .resolve_type_in_scope(self.scope, &type_path.path)?
@@ -347,6 +368,18 @@ impl<'a> Scanner<'a> {
             return Ok(None);
         }
         let path = ast_path(&bound.path, self)?;
+        if self.declared_types.is_deferred() {
+            if is_auto_trait_path(&bound.path) {
+                return Ok(None);
+            }
+            let Some(index) = self.declared_types.defer_trait_slot(&bound.path) else {
+                return Ok(None);
+            };
+            return Ok(Some(BaseTrait::Named {
+                id: TraitId::new(format!("$slot:{index}")),
+                path,
+            }));
+        }
         match self
             .declared_types
             .resolve_type_in_scope(self.scope, &bound.path)?
@@ -441,6 +474,14 @@ impl<'a> Scanner<'a> {
         {
             return Err(ScanError::unsupported_type(source));
         }
+        if let Some(index) = self.declared_types.defer_slot(&pool_path.path) {
+            return Ok(TypeExpr::interned_string(
+                interned_string_base_path(&type_path.path),
+                format!("$slot:{index}"),
+                ast_path_without_arguments(&pool_path.path),
+                Vec::new(),
+            ));
+        }
         let (pool_canonical_path, static_values) = self
             .declared_types
             .resolve_interned_string_pool_entry(self.scope, &pool_path.path)?
@@ -500,6 +541,9 @@ impl<'a> Scanner<'a> {
     }
 
     fn custom_remote(&self, ty: &syn::Type) -> Result<Option<&CustomTypeId>, ScanError> {
+        if self.declared_types.is_deferred() {
+            return Ok(None);
+        }
         if self.can_resolve_custom_remote(ty)? {
             self.declared_types.resolve_custom_remote(self.scope, ty)
         } else {
@@ -518,6 +562,17 @@ pub fn unwrapped(ty: &syn::Type) -> &syn::Type {
 
 fn is_unit(ty: &syn::Type) -> bool {
     matches!(unwrapped(ty), syn::Type::Tuple(tuple) if tuple.elems.is_empty())
+}
+
+/// Whether a bound path names a well-known auto trait, which stays an
+/// additional bound instead of becoming a deferred base-trait slot.
+fn is_auto_trait_path(path: &syn::Path) -> bool {
+    path.segments.last().is_some_and(|segment| {
+        matches!(
+            segment.ident.to_string().as_str(),
+            "Send" | "Sync" | "Unpin"
+        )
+    })
 }
 
 fn ast_path(path: &syn::Path, scanner: &Scanner<'_>) -> Result<Path, ScanError> {

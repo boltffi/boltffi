@@ -3,6 +3,7 @@ use quote::quote;
 use syn::{DeriveInput, ItemFn, parse_macro_input};
 
 mod callbacks;
+mod capture;
 mod custom;
 mod data;
 mod experimental;
@@ -34,6 +35,37 @@ pub fn derive_ffi_type(input: TokenStream) -> TokenStream {
 }
 
 fn expand_or_experimental(
+    item: TokenStream,
+    legacy: impl FnOnce(TokenStream) -> TokenStream,
+    dependency: DependencyExpansion,
+) -> TokenStream {
+    expand_with_capture(
+        item,
+        legacy,
+        dependency,
+        capture::ImplCapture::Class(proc_macro2::TokenStream::new()),
+    )
+}
+
+fn expand_with_capture(
+    item: TokenStream,
+    legacy: impl FnOnce(TokenStream) -> TokenStream,
+    dependency: DependencyExpansion,
+    impl_capture: capture::ImplCapture,
+) -> TokenStream {
+    let captured = if experimental_build_active() {
+        proc_macro2::TokenStream::new()
+    } else {
+        capture::item_tokens(item.clone(), impl_capture)
+    };
+    let expanded = proc_macro2::TokenStream::from(expand_without_capture(item, legacy, dependency));
+    TokenStream::from(quote! {
+        #expanded
+        #captured
+    })
+}
+
+fn expand_without_capture(
     item: TokenStream,
     legacy: impl FnOnce(TokenStream) -> TokenStream,
     dependency: DependencyExpansion,
@@ -73,6 +105,10 @@ fn expand_or_experimental(
         }
         experimental::metadata_build::Item::Error(tokens) => TokenStream::from(tokens),
     }
+}
+
+fn experimental_build_active() -> bool {
+    experimental::expansion_build::active() || experimental::metadata_build::active()
 }
 
 enum DependencyExpansion {
@@ -217,27 +253,68 @@ pub fn ffi_trait(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
 #[proc_macro_attribute]
 pub fn custom_ffi(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    custom::ffi::custom_ffi_impl(item)
+    let captured = if experimental_build_active() {
+        proc_macro2::TokenStream::new()
+    } else {
+        capture::custom_ffi_tokens(item.clone())
+    };
+    let expanded = proc_macro2::TokenStream::from(custom::ffi::custom_ffi_impl(item));
+    TokenStream::from(quote! {
+        #expanded
+        #captured
+    })
 }
 
 #[proc_macro]
 pub fn custom_type(item: TokenStream) -> TokenStream {
-    custom::r#type::custom_type_impl(item)
+    let captured = if experimental_build_active() {
+        proc_macro2::TokenStream::new()
+    } else {
+        capture::custom_type_tokens(item.clone())
+    };
+    let expanded = proc_macro2::TokenStream::from(custom::r#type::custom_type_impl(item));
+    TokenStream::from(quote! {
+        #expanded
+        #captured
+    })
+}
+
+#[proc_macro]
+pub fn scaffolding(item: TokenStream) -> TokenStream {
+    if !item.is_empty() {
+        return syn::Error::new(
+            proc_macro2::Span::call_site(),
+            "boltffi::scaffolding! takes no arguments",
+        )
+        .to_compile_error()
+        .into();
+    }
+    TokenStream::from(capture::scaffolding_tokens())
 }
 
 #[proc_macro]
 pub fn interned_string_pool(item: TokenStream) -> TokenStream {
-    interned_string::interned_string_pool_impl(item)
+    let captured = if experimental_build_active() {
+        proc_macro2::TokenStream::new()
+    } else {
+        capture::interned_string_pool_tokens(item.clone())
+    };
+    let expanded = proc_macro2::TokenStream::from(interned_string::interned_string_pool_impl(item));
+    TokenStream::from(quote! {
+        #expanded
+        #captured
+    })
 }
 
 #[proc_macro_attribute]
 pub fn data(attr: TokenStream, item: TokenStream) -> TokenStream {
     let attr_str = attr.to_string();
     if attr_str.trim() == "impl" {
-        return expand_or_experimental(
+        return expand_with_capture(
             item,
             data::expansion::data_impl_block,
             DependencyExpansion::Legacy,
+            capture::ImplCapture::Methods,
         );
     }
     expand_or_experimental(
@@ -249,16 +326,37 @@ pub fn data(attr: TokenStream, item: TokenStream) -> TokenStream {
 
 #[proc_macro_attribute]
 pub fn error(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    expand_or_experimental(
+    let captured = if experimental_build_active() {
+        proc_macro2::TokenStream::new()
+    } else {
+        capture::error_item_tokens(item.clone())
+    };
+    let expanded = proc_macro2::TokenStream::from(expand_without_capture(
         data::repr::materialize(item),
         data::expansion::data_impl,
         DependencyExpansion::Legacy,
-    )
+    ));
+    TokenStream::from(quote! {
+        #expanded
+        #captured
+    })
 }
 
 #[proc_macro_derive(Data)]
 pub fn derive_data(input: TokenStream) -> TokenStream {
-    data::expansion::derive_data_impl(input)
+    let expanded = proc_macro2::TokenStream::from(data::expansion::derive_data_impl(input));
+    let captured = if experimental_build_active() {
+        proc_macro2::TokenStream::new()
+    } else {
+        capture::unsupported_tokens(
+            "derive(Data)",
+            "derived data is not captured per-invocation yet",
+        )
+    };
+    TokenStream::from(quote! {
+        #expanded
+        #captured
+    })
 }
 
 #[proc_macro_attribute]
@@ -282,10 +380,12 @@ pub fn export(attr: TokenStream, item: TokenStream) -> TokenStream {
     }
 
     if let Ok(item_impl) = syn::parse::<syn::ItemImpl>(item_clone.clone()) {
-        return expand_or_experimental(
+        let marker_args = proc_macro2::TokenStream::from(attr.clone());
+        return expand_with_capture(
             TokenStream::from(quote!(#item_impl)),
             |item| exports::methods::export_impl(attr, item),
             DependencyExpansion::Preserve,
+            capture::ImplCapture::Class(marker_args),
         );
     }
 

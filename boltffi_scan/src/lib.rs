@@ -1,4 +1,5 @@
 mod attributes;
+mod capture;
 mod cfg;
 mod const_expr;
 mod declared_types;
@@ -19,6 +20,12 @@ pub(crate) mod type_expr;
 mod unsupported;
 mod visibility;
 
+pub use capture::{
+    CapturedItem, CapturedMethods, CapturedPool, SlotSource, capture_class,
+    capture_class_constants, capture_constant, capture_custom, capture_custom_ffi, capture_enum,
+    capture_error_enum, capture_error_struct, capture_function, capture_interned_string_pool,
+    capture_methods, capture_streams, capture_struct, capture_trait,
+};
 pub use cfg::ActiveCfg;
 pub use error::ScanError;
 pub use input::ScanInput;

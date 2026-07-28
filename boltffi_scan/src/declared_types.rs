@@ -1,7 +1,9 @@
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
 use boltffi_ast::{ClassId, CustomRemoteType, CustomTypeId, EnumId, RecordId, TraitId};
 
+use crate::capture::SlotSource;
 use crate::impl_target;
 use crate::items;
 use crate::marked::MarkedItems;
@@ -34,9 +36,70 @@ pub(super) struct DeclaredTypes {
     custom_by_remote_shape: HashMap<String, CustomRemoteShapeMatch>,
     interned_string_pools: HashMap<String, Vec<String>>,
     source_types: TypeNamespace,
+    deferred_slots: Option<RefCell<SlotTable>>,
+}
+
+/// Named type references collected while scanning in deferred-resolution mode.
+#[derive(Default)]
+struct SlotTable {
+    sources: Vec<SlotSource>,
+    by_spelling: HashMap<String, usize>,
 }
 
 impl DeclaredTypes {
+    /// Creates an empty registry that defers every named reference to a slot,
+    /// for scanning one macro invocation without whole-crate knowledge.
+    pub(super) fn deferred() -> Self {
+        Self {
+            deferred_slots: Some(RefCell::default()),
+            ..Self::default()
+        }
+    }
+
+    pub(super) fn is_deferred(&self) -> bool {
+        self.deferred_slots.is_some()
+    }
+
+    pub(super) fn defer_slot(&self, path: &syn::Path) -> Option<usize> {
+        self.defer_slot_keyed(spelling::path(path), || {
+            SlotSource::Type(Box::new(syn::Type::Path(syn::TypePath {
+                qself: None,
+                path: path.clone(),
+            })))
+        })
+    }
+
+    /// Defers a trait bound's path as a value-namespace slot, so the descriptor
+    /// resolves through the const the trait's definition site emits.
+    pub(super) fn defer_trait_slot(&self, path: &syn::Path) -> Option<usize> {
+        self.defer_slot_keyed(format!("trait {}", spelling::path(path)), || {
+            SlotSource::TraitValue(path.clone())
+        })
+    }
+
+    fn defer_slot_keyed(
+        &self,
+        spelling: String,
+        source: impl FnOnce() -> SlotSource,
+    ) -> Option<usize> {
+        let slots = self.deferred_slots.as_ref()?;
+        let mut slots = slots.borrow_mut();
+        if let Some(index) = slots.by_spelling.get(&spelling) {
+            return Some(*index);
+        }
+        let index = slots.sources.len();
+        slots.sources.push(source());
+        slots.by_spelling.insert(spelling, index);
+        Some(index)
+    }
+
+    pub(super) fn take_slots(&mut self) -> Vec<SlotSource> {
+        self.deferred_slots
+            .take()
+            .map(|slots| slots.into_inner().sources)
+            .unwrap_or_default()
+    }
+
     #[cfg(test)]
     pub(super) fn new() -> Self {
         Self::default()

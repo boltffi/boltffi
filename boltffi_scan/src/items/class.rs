@@ -41,6 +41,15 @@ pub fn scan(
         })
 }
 
+pub(crate) fn scan_item(
+    item: &syn::ItemImpl,
+    scope: &ModuleScope,
+    declared_types: &DeclaredTypes,
+    thread_safety: ClassThreadSafety,
+) -> Result<ClassDef, ScanError> {
+    build(item, scope, declared_types, thread_safety)
+}
+
 fn build(
     item: &syn::ItemImpl,
     scope: &ModuleScope,
@@ -64,7 +73,7 @@ fn build(
     Ok(class)
 }
 
-pub(super) fn resolve_id(
+pub(crate) fn resolve_id(
     item: &syn::ItemImpl,
     scope: &ModuleScope,
     declared_types: &DeclaredTypes,
@@ -78,6 +87,18 @@ fn resolve_target_id(
     scope: &ModuleScope,
     declared_types: &DeclaredTypes,
 ) -> Result<ClassId, ScanError> {
+    if declared_types.is_deferred() {
+        let bare = target
+            .path()
+            .filter(|path| path.leading_colon.is_none() && path.segments.len() == 1);
+        let Some(path) = bare else {
+            return Err(ScanError::UnsupportedCapturedClassImpl {
+                target: target.spelling().to_owned(),
+            });
+        };
+        let leaf = path.segments[0].ident.to_string();
+        return Ok(ClassId::new(scope.path().qualified(&leaf)));
+    }
     let path = declared_types
         .resolve_impl_target(scope, target)?
         .ok_or_else(|| ScanError::UnsupportedClassImpl {

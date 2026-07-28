@@ -5,7 +5,7 @@ pub use boltffi_core::{
     CustomFfiConvertible, CustomTypeConversionError, Data, EventSubscription, FfiType,
     InternedString, InternedStringPool, InternedStringRepr, StreamProducer,
     UnexpectedFfiCallbackError, custom_ffi, custom_type, data, default, error, export, ffi_stream,
-    name, skip,
+    name, scaffolding, skip,
 };
 
 /// Defines a static interned-string pool.

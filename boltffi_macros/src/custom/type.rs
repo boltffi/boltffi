@@ -3,9 +3,9 @@ use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use syn::parse::Parse;
 
-struct CustomTypeSpec {
-    name: syn::Ident,
-    remote: syn::Type,
+pub(crate) struct CustomTypeSpec {
+    pub(crate) name: syn::Ident,
+    pub(crate) remote: syn::Type,
     repr: syn::Type,
     error: syn::Type,
     into_ffi: syn::Expr,
@@ -14,6 +14,10 @@ struct CustomTypeSpec {
 
 struct CustomTypeExpansion {
     spec: CustomTypeSpec,
+}
+
+pub(crate) fn parse_spec(item: TokenStream) -> syn::Result<CustomTypeSpec> {
+    syn::parse(item)
 }
 
 impl Parse for CustomTypeSpec {

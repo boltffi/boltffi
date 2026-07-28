@@ -174,6 +174,19 @@ fn marker_name(attr: &syn::Attribute) -> Option<String> {
     }
 }
 
+pub(crate) fn export_marker_from_args(
+    tokens: proc_macro2::TokenStream,
+) -> Result<ExportMarker, ScanError> {
+    if tokens.is_empty() {
+        return Ok(ExportMarker::default());
+    }
+    syn::parse::Parser::parse2(parse_export_args, tokens.clone()).map_err(|_| {
+        ScanError::InvalidMarker {
+            attribute: format!("export({tokens})"),
+        }
+    })
+}
+
 fn invalid(attr: &syn::Attribute) -> ScanError {
     ScanError::InvalidMarker {
         attribute: crate::spelling::attr(attr),

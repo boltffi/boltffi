@@ -19,6 +19,14 @@ pub fn scan(
     Ok(enumeration)
 }
 
+pub(crate) fn scan_item(
+    item: &syn::ItemEnum,
+    scope: &ModuleScope,
+    declared_types: &DeclaredTypes,
+) -> Result<EnumDef, ScanError> {
+    build(item, scope, declared_types)
+}
+
 fn build(
     item: &syn::ItemEnum,
     scope: &ModuleScope,

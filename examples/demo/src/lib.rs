@@ -1,6 +1,8 @@
 #[cfg(feature = "uniffi")]
 uniffi::setup_scaffolding!();
 
+boltffi::scaffolding!();
+
 pub mod async_fns;
 pub mod builtins;
 pub mod bytes;
