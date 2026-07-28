@@ -394,7 +394,7 @@ where
     }
 
     fn streams(&self) -> Result<Vec<TokenStream>, Error> {
-        self.source
+        self.support
             .streams
             .iter()
             .map(|source| {
@@ -414,7 +414,7 @@ where
     }
 
     fn constants(&self) -> Result<Vec<TokenStream>, Error> {
-        self.source
+        self.support
             .constants
             .iter()
             .map(|source| {

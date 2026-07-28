@@ -67,6 +67,8 @@ impl PackageScan {
         source.classes = self.complete.classes.clone();
         source.traits = self.complete.traits.clone();
         source.customs = self.complete.customs.clone();
+        source.streams = self.complete.streams.clone();
+        source.constants = self.complete.constants.clone();
         source.functions = self
             .complete
             .functions
@@ -1234,14 +1236,19 @@ mod tests {
     }
 
     #[test]
-    fn root_with_support_keeps_dependency_classes() {
+    fn root_with_support_keeps_dependency_class_declarations() {
         let root = source_tree("demo", "");
         let model = source_tree(
             "model",
-            "pub struct ForeignCounter { value: i32 } \
+            "use std::sync::Arc; \
+             use boltffi::EventSubscription; \
+             pub struct ForeignCounter { value: i32 } \
              #[export] impl ForeignCounter { \
                  pub fn new(initial: i32) -> Self { Self { value: initial } } \
                  pub fn add(&self, amount: i32) -> i32 { self.value + amount } \
+                 #[ffi_stream(item = i32)] \
+                 pub fn ticks(&self) -> Arc<EventSubscription<i32>> { todo!() } \
+                 pub const VERSION: u32 = 1; \
              }",
         );
         let complete = SourceTree::combine([model, root.clone()]);
@@ -1258,6 +1265,22 @@ mod tests {
             .expect("dependency class stays in root support contract");
 
         assert_eq!(counter.methods.len(), 2);
+
+        let ticks = source
+            .streams
+            .iter()
+            .find(|stream| stream.id == StreamId::new("model::ForeignCounter::ticks"))
+            .expect("dependency stream stays in root support contract");
+        assert_eq!(ticks.owner, Some(ClassId::new("model::ForeignCounter")));
+
+        let version = source
+            .constants
+            .iter()
+            .find(|constant| {
+                constant.owner == Some(ConstantOwner::Class(ClassId::new("model::ForeignCounter")))
+            })
+            .expect("dependency class constant stays in root support contract");
+        assert_eq!(version.id, ConstantId::new("model::ForeignCounter::VERSION"));
     }
 
     #[test]
