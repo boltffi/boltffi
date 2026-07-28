@@ -113,8 +113,9 @@ impl BindingMetadataBuild {
             .map_err(BindingMetadataBuildError::Metadata)
     }
 
-    /// Runs a plain Cargo build (no metadata env gates) and reads per-invocation source
-    /// records from every reported artifact, dependency crates included.
+    /// Runs a Cargo build with the metadata cfgs but none of the env gates, and reads
+    /// per-invocation source records from every reported artifact, dependency crates
+    /// included.
     pub fn read_source(&self) -> Result<SourceMetadata, BindingMetadataBuildError> {
         let cargo_args = self
             .cargo_args
@@ -455,7 +456,23 @@ impl<'build> CargoBuild<'build> {
     }
 
     fn plain_command(self) -> Command {
-        self.base_command()
+        let mut command = self.base_command();
+        self.metadata_cfgs(&mut command);
+        command
+    }
+
+    /// Both builds compile the root crate with the metadata cfgs, so cfg-gated
+    /// exports surface identically; only the env gates separate them.
+    fn metadata_cfgs(&self, command: &mut Command) {
+        let surface = self.build.surface.unwrap_or_else(|| {
+            BindingMetadataSurface::from_target_triple(self.build.target.as_deref())
+        });
+        command
+            .arg("--")
+            .arg("--cfg")
+            .arg("boltffi_metadata")
+            .arg("--cfg")
+            .arg(format!("boltffi_binding_surface_{}", surface.as_str()));
     }
 
     fn base_command(&self) -> Command {
@@ -500,6 +517,7 @@ impl<'build> CargoBuild<'build> {
             BindingMetadataSurface::from_target_triple(self.build.target.as_deref())
         });
         let mut command = self.base_command();
+        self.metadata_cfgs(&mut command);
         command.env(BINDING_METADATA_BUILD_ENV, "1");
         command.env(BINDING_METADATA_SOURCE_ENV, self.source_root.path());
         command.env(BINDING_METADATA_SURFACE_ENV, surface.as_str());
@@ -510,12 +528,6 @@ impl<'build> CargoBuild<'build> {
         if let Some(root) = self.manifest.path().parent() {
             command.env(BINDING_METADATA_ROOT_ENV, root);
         }
-        command
-            .arg("--")
-            .arg("--cfg")
-            .arg("boltffi_metadata")
-            .arg("--cfg")
-            .arg(format!("boltffi_binding_surface_{}", surface.as_str()));
         command
     }
 }
@@ -1105,6 +1117,30 @@ mod tests {
     }
 
     #[test]
+    fn cargo_build_refuses_a_shadowed_builtin_so_bindgen_falls_back() {
+        if cfg!(miri) {
+            return;
+        }
+
+        let fixture = FixtureCrate::with_shadowed_builtin();
+
+        let source = BindingMetadataBuild::new(fixture.manifest())
+            .read_source()
+            .expect("cargo source metadata read");
+
+        let error =
+            boltffi_binding::aggregate_records(&source.source_records, source.package.clone())
+                .expect_err("a declared Duration makes the builtin spelling ambiguous");
+        assert!(
+            matches!(
+                error,
+                boltffi_binding::SourceFragmentError::ShadowedBuiltin { ref name } if name == "Duration"
+            ),
+            "aggregation refuses the set instead of guessing, got: {error}"
+        );
+    }
+
+    #[test]
     fn cargo_build_aggregates_macro_emitted_source_records() {
         if cfg!(miri) {
             return;
@@ -1630,6 +1666,10 @@ mod tests {
             Self::write(Source::with_boltffi_macros(), Dependency::Boltffi)
         }
 
+        fn with_shadowed_builtin() -> Self {
+            Self::write(Source::with_shadowed_builtin(), Dependency::Boltffi)
+        }
+
         fn with_feature_gated_boltffi_macros() -> Self {
             let root = temp_root("boltffi-bindgen-cargo-metadata");
             let source_dir = root.join("src");
@@ -1763,6 +1803,32 @@ pub fn view() -> CoreFfi {
     impl Source {
         fn with_metadata(envelope: &BindingMetadataEnvelope) -> Self {
             Self::with_metadata_and_body(envelope, "pub fn exported() -> u32 { 1 }\n")
+        }
+
+        fn with_shadowed_builtin() -> Self {
+            Self {
+                code: r#"
+boltffi::scaffolding!();
+
+pub mod timing {
+    use boltffi::data;
+
+    #[data]
+    #[derive(Clone, Copy)]
+    pub struct Duration {
+        pub millis: u64,
+    }
+
+    #[data]
+    #[derive(Clone, Copy)]
+    pub struct Sample {
+        pub own: Duration,
+        pub wall: std::time::Duration,
+    }
+}
+"#
+                .to_owned(),
+            }
         }
 
         fn with_boltffi_macros() -> Self {

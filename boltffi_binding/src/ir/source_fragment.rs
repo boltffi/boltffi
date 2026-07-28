@@ -6,14 +6,15 @@
 //! whose id is `$slot:N`, replaced here by the type node the referenced type's own
 //! definition site resolved through rustc.
 
-use std::collections::HashMap;
 use std::collections::hash_map::Entry;
+use std::collections::{HashMap, HashSet};
 
 use boltffi_ast::{
-    ClassDef, ClassId, ConstantDef, ConstantId, ConstantOwner, CustomTypeConverter, CustomTypeDef,
-    CustomTypeId, EnumDef, EnumId, FieldDef, FunctionDef, FunctionId, MethodDef, NamePart,
-    PackageInfo, Path, PathSegment, Primitive, RecordDef, RecordId, ReturnDef, SourceContract,
-    StreamDef, StreamId, TraitDef, TraitId, TypeExpr, VariantPayload,
+    BuiltinType, ClassDef, ClassId, ConstantDef, ConstantId, ConstantOwner, CustomRemoteType,
+    CustomTypeConverter, CustomTypeDef, CustomTypeId, EnumDef, EnumId, FieldDef, FunctionDef,
+    FunctionId, MethodDef, NamePart, PackageInfo, Path, PathSegment, Primitive, RecordDef,
+    RecordId, ReturnDef, SourceContract, StreamDef, StreamId, TraitDef, TraitId, TypeExpr,
+    VariantPayload,
 };
 use serde::{Deserialize, Serialize};
 
@@ -151,6 +152,9 @@ pub fn aggregate_records(
                 return Err(SourceFragmentError::DuplicateDeclaration { id });
             }
         }
+        if let Some(name) = shadowed_builtin(fragment, &id) {
+            declared.shadowed.insert(name);
+        }
         if let Some(kind) = declared_kind(fragment) {
             declared.kinds.insert(id, kind);
         }
@@ -270,6 +274,23 @@ enum DeclaredKind {
 struct Declared {
     kinds: HashMap<String, DeclaredKind>,
     pools: HashMap<String, Vec<String>>,
+    shadowed: HashSet<String>,
+}
+
+/// A declaration or custom remote whose unqualified name matches a builtin makes
+/// that builtin's spelling ambiguous at every use site.
+fn shadowed_builtin(fragment: &SourceFragment, id: &str) -> Option<String> {
+    let name = match fragment {
+        SourceFragment::Record(_) | SourceFragment::Enum(_) | SourceFragment::Class(_) => {
+            id.rsplit("::").next().unwrap_or(id)
+        }
+        SourceFragment::Custom(def) => match &def.remote {
+            CustomRemoteType::Path(path) => path.segments.last()?.name.as_str(),
+            CustomRemoteType::Tuple(_) => return None,
+        },
+        _ => return None,
+    };
+    builtin_leaf(name).map(|_| name.to_owned())
 }
 
 fn declared_kind(fragment: &SourceFragment) -> Option<DeclaredKind> {
@@ -554,6 +575,15 @@ fn resolve_expr(
             Ok(())
         }
         TypeExpr::FnPtr(signature) => resolve_fn_sig(signature, slots, declared),
+        TypeExpr::Builtin(builtin) => {
+            let name = builtin.type_id();
+            if declared.shadowed.contains(name) {
+                return Err(SourceFragmentError::ShadowedBuiltin {
+                    name: name.to_owned(),
+                });
+            }
+            Ok(())
+        }
         TypeExpr::Dyn(bounds) | TypeExpr::ImplTrait(bounds) => {
             match &mut bounds.base {
                 boltffi_ast::BaseTrait::Function(function_trait) => {
@@ -672,15 +702,23 @@ fn leaf_expr(name: &str) -> Result<TypeExpr, SourceFragmentError> {
     if let Some(primitive) = primitive {
         return Ok(TypeExpr::Primitive(primitive));
     }
-    match name {
-        "String" => Ok(TypeExpr::String),
-        "Duration" => Ok(TypeExpr::builtin(boltffi_ast::BuiltinType::Duration)),
-        "SystemTime" => Ok(TypeExpr::builtin(boltffi_ast::BuiltinType::SystemTime)),
-        "Uuid" => Ok(TypeExpr::builtin(boltffi_ast::BuiltinType::Uuid)),
-        "Url" => Ok(TypeExpr::builtin(boltffi_ast::BuiltinType::Url)),
-        _ => Err(SourceFragmentError::UnknownLeaf {
+    if name == "String" {
+        return Ok(TypeExpr::String);
+    }
+    builtin_leaf(name)
+        .map(TypeExpr::builtin)
+        .ok_or_else(|| SourceFragmentError::UnknownLeaf {
             name: name.to_owned(),
-        }),
+        })
+}
+
+fn builtin_leaf(name: &str) -> Option<BuiltinType> {
+    match name {
+        "Duration" => Some(BuiltinType::Duration),
+        "SystemTime" => Some(BuiltinType::SystemTime),
+        "Uuid" => Some(BuiltinType::Uuid),
+        "Url" => Some(BuiltinType::Url),
+        _ => None,
     }
 }
 
@@ -784,6 +822,14 @@ pub enum SourceFragmentError {
         /// The conflicting canonical id.
         id: String,
     },
+    /// A builtin-named leaf collides with a same-named declaration or custom remote.
+    ///
+    /// Spelling cannot tell the two apart at a use site; the whole-crate scan can,
+    /// so consumers fall back to the legacy path.
+    ShadowedBuiltin {
+        /// The contested builtin name.
+        name: String,
+    },
     /// A record marks an invocation the capture cannot describe yet.
     UnsupportedCapture {
         /// Module path of the emitting invocation.
@@ -840,6 +886,10 @@ impl std::fmt::Display for SourceFragmentError {
             Self::DuplicateDeclaration { id } => write!(
                 formatter,
                 "two records declare `{id}` with different content"
+            ),
+            Self::ShadowedBuiltin { name } => write!(
+                formatter,
+                "builtin `{name}` is shadowed by a declaration of the same name"
             ),
             Self::UnsupportedCapture {
                 module,
@@ -898,6 +948,93 @@ mod tests {
             &[],
             serde_json::to_vec(&SourceFragment::Record(def)).expect("fragment serializes"),
         )
+    }
+
+    fn duration_field_record() -> RawSourceRecord {
+        raw(
+            "demo",
+            &[],
+            record_fragment(vec![FieldDef::new(
+                name("wall"),
+                TypeExpr::builtin(BuiltinType::Duration),
+            )]),
+        )
+    }
+
+    #[test]
+    fn an_unshadowed_builtin_leaf_aggregates() {
+        let contract =
+            aggregate_records(&[duration_field_record()], PackageInfo::new("demo", None))
+                .expect("records aggregate");
+
+        assert!(matches!(
+            contract.records[0].fields[0].type_expr,
+            TypeExpr::Builtin(BuiltinType::Duration)
+        ));
+    }
+
+    #[test]
+    fn a_declared_type_shadowing_a_builtin_refuses_aggregation() {
+        let mut shadow = RecordDef::new(
+            RecordId::new(format!("{SELF_ID}::Duration")),
+            name("Duration"),
+        );
+        shadow.fields = vec![FieldDef::new(
+            name("millis"),
+            TypeExpr::Primitive(Primitive::U64),
+        )];
+        let shadow = raw(
+            "demo::timing",
+            &[],
+            serde_json::to_vec(&SourceFragment::Record(shadow)).expect("fragment serializes"),
+        );
+
+        let error = aggregate_records(
+            &[shadow, duration_field_record()],
+            PackageInfo::new("demo", None),
+        )
+        .expect_err("the builtin spelling is ambiguous");
+
+        assert!(matches!(
+            error,
+            SourceFragmentError::ShadowedBuiltin { name } if name == "Duration"
+        ));
+    }
+
+    #[test]
+    fn a_custom_remote_shadowing_a_builtin_refuses_aggregation() {
+        let converter = || CustomTypeConverter::path(boltffi_ast::Path::single("instant_into_ffi"));
+        let custom = CustomTypeDef::new(
+            CustomTypeId::new(format!("{SELF_ID}::FixtureInstant")),
+            name("FixtureInstant"),
+            CustomRemoteType::path(boltffi_ast::CustomRemotePath::new(
+                boltffi_ast::PathRoot::Relative,
+                vec![
+                    boltffi_ast::CustomRemotePathSegment::new("std"),
+                    boltffi_ast::CustomRemotePathSegment::new("time"),
+                    boltffi_ast::CustomRemotePathSegment::new("Duration"),
+                ],
+            )),
+            TypeExpr::Primitive(Primitive::I64),
+            None,
+            boltffi_ast::CustomTypeConverters::new(converter(), converter()),
+        );
+        let custom = raw(
+            "demo::customs",
+            &[],
+            serde_json::to_vec(&SourceFragment::Custom(custom)).expect("fragment serializes"),
+        );
+
+        let error = aggregate_records(
+            &[custom, duration_field_record()],
+            PackageInfo::new("demo", None),
+        )
+        .expect_err("the remote's builtin spelling is ambiguous");
+
+        assert!(matches!(
+            error,
+            SourceFragmentError::ShadowedBuiltin { name } if name == "Duration"
+        ));
     }
 
     #[test]
