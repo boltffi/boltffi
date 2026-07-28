@@ -15,7 +15,10 @@ use boltffi_backend::target::{
     typescript::TypeScriptHost,
 };
 use boltffi_backend::{CustomTypeMapping, GeneratedOutput, Target as BackendTarget};
-use boltffi_binding::{BindingMetadataSurface, Bindings, Native, Surface, Wasm32};
+use boltffi_binding::{
+    BindingMetadataSurface, Bindings, LowerError, Native, SourceFragmentError, Surface,
+    SurfaceLower, Wasm32, aggregate_records, lower,
+};
 use thiserror::Error;
 
 use crate::metadata::{BindingMetadataBuild, BindingMetadataBuildError};
@@ -723,7 +726,15 @@ impl Generation {
             .collect()
     }
 
-    fn bindings<S: Surface>(&self) -> Result<Bindings<S>, GenerationError> {
+    fn bindings<S: Surface + SurfaceLower>(&self) -> Result<Bindings<S>, GenerationError> {
+        let source = self.metadata_build().read_source()?;
+        if records_cover_the_root(&source.source_records, &source.package) {
+            match aggregate_records(&source.source_records, source.package) {
+                Ok(contract) => return lower::<S>(&contract).map_err(GenerationError::Lower),
+                Err(error) if falls_back_to_envelope(&error) => {}
+                Err(error) => return Err(GenerationError::SourceAggregation(error)),
+            }
+        }
         let surface = self
             .binding_surface
             .unwrap_or_else(|| BindingMetadataSurface::from_target_triple(self.triple.as_deref()));
@@ -767,6 +778,12 @@ pub enum GenerationError {
         /// Surface selected from the target triple.
         surface: BindingMetadataSurface,
     },
+    /// Per-invocation source records did not aggregate into one contract.
+    #[error("aggregate per-invocation source records: {0}")]
+    SourceAggregation(SourceFragmentError),
+    /// The aggregated source contract failed to lower.
+    #[error("lower aggregated source contract: {0}")]
+    Lower(LowerError),
     /// The target backend failed to render the bindings.
     #[error("render bindings: {0}")]
     Render(boltffi_backend::Error),
@@ -790,6 +807,26 @@ pub enum GenerationError {
         /// Filesystem error.
         source: std::io::Error,
     },
+}
+
+/// The records path covers only surfaces the root package emitted itself;
+/// dependency records mean a multi-crate surface the legacy scan still owns.
+fn records_cover_the_root(
+    records: &[boltffi_binding::RawSourceRecord],
+    package: &boltffi_ast::PackageInfo,
+) -> bool {
+    !records.is_empty() && records.iter().all(|record| record.package == *package)
+}
+
+/// Unsupported captures, unresolved references, and shadowed builtins mean
+/// capture could not see the whole surface; the legacy whole-crate scan still can.
+fn falls_back_to_envelope(error: &SourceFragmentError) -> bool {
+    matches!(
+        error,
+        SourceFragmentError::UnsupportedCapture { .. }
+            | SourceFragmentError::UnresolvedReference { .. }
+            | SourceFragmentError::ShadowedBuiltin { .. }
+    )
 }
 
 fn write_file(path: &Path, contents: &str) -> Result<(), GenerationError> {
@@ -1372,5 +1409,61 @@ mod tests {
         );
         assert!(jni.contains("_result = boltffi_function_demo_signed_read(value);"));
         assert!(jni.contains("_result = boltffi_function_demo_wide_read(value);"));
+    }
+
+    #[test]
+    fn capture_gaps_fall_back_to_the_envelope_path() {
+        assert!(falls_back_to_envelope(
+            &SourceFragmentError::UnsupportedCapture {
+                module: "demo".to_owned(),
+                name: "Engine".to_owned(),
+                reason: "trait impls are not captured".to_owned(),
+            }
+        ));
+        assert!(falls_back_to_envelope(
+            &SourceFragmentError::UnresolvedReference {
+                id: "demo::Missing".to_owned(),
+            }
+        ));
+        assert!(falls_back_to_envelope(
+            &SourceFragmentError::ShadowedBuiltin {
+                name: "Duration".to_owned(),
+            }
+        ));
+        assert!(!falls_back_to_envelope(
+            &SourceFragmentError::DuplicateDeclaration {
+                id: "demo::Route".to_owned(),
+            }
+        ));
+        assert!(!falls_back_to_envelope(
+            &SourceFragmentError::MethodsTargetNotData {
+                spelling: "Engine".to_owned(),
+            }
+        ));
+    }
+
+    #[test]
+    fn only_root_owned_record_sets_take_the_records_path() {
+        let root = boltffi_ast::PackageInfo::new("demo", None);
+        let record = |package: &str| boltffi_binding::RawSourceRecord {
+            package: boltffi_ast::PackageInfo::new(package, None),
+            module: package.to_owned(),
+            slots: Vec::new(),
+            json: Vec::new(),
+        };
+
+        assert!(records_cover_the_root(&[record("demo")], &root));
+        assert!(
+            !records_cover_the_root(&[], &root),
+            "an envelope-only root has no records to prefer"
+        );
+        assert!(
+            !records_cover_the_root(&[record("helper")], &root),
+            "dependency records without the root mean the root did not emit"
+        );
+        assert!(
+            !records_cover_the_root(&[record("demo"), record("helper")], &root),
+            "a dependency surface is still the legacy scan's to scope"
+        );
     }
 }
