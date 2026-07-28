@@ -345,10 +345,14 @@ pub fn error(_attr: TokenStream, item: TokenStream) -> TokenStream {
 #[proc_macro_derive(Data)]
 pub fn derive_data(input: TokenStream) -> TokenStream {
     let expanded = proc_macro2::TokenStream::from(data::expansion::derive_data_impl(input));
-    let captured = capture::unsupported_tokens(
-        "derive(Data)",
-        "derived data is not captured per-invocation yet",
-    );
+    let captured = if experimental_build_active() {
+        proc_macro2::TokenStream::new()
+    } else {
+        capture::unsupported_tokens(
+            "derive(Data)",
+            "derived data is not captured per-invocation yet",
+        )
+    };
     TokenStream::from(quote! {
         #expanded
         #captured
