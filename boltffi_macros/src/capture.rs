@@ -273,11 +273,11 @@ fn record_tokens(fragment: &SourceFragment, slots: &[boltffi_scan::SlotSource]) 
                 JSON,
             );
             #[cfg_attr(
-                any(target_os = "macos", target_os = "ios"),
+                target_vendor = "apple",
                 unsafe(link_section = "__DATA,__boltffisrc")
             )]
             #[cfg_attr(
-                not(any(target_os = "macos", target_os = "ios")),
+                not(target_vendor = "apple"),
                 unsafe(link_section = ".boltffisrc")
             )]
             #[used]
