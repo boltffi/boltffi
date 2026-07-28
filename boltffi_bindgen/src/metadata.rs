@@ -7,9 +7,10 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus};
 
 use boltffi_binding::{
-    BINDING_METADATA_BUILD_ENV, BINDING_METADATA_FEATURES_ENV, BINDING_METADATA_ROOT_ENV,
-    BINDING_METADATA_SOURCE_ENV, BINDING_METADATA_SURFACE_ENV, BindingMetadataEnvelope,
-    BindingMetadataSurface,
+    BINDING_EXPANSION_BUILD_ENV, BINDING_EXPANSION_ROOT_ENV, BINDING_EXPANSION_SOURCE_ENV,
+    BINDING_EXPANSION_SURFACE_ENV, BINDING_METADATA_BUILD_ENV, BINDING_METADATA_FEATURES_ENV,
+    BINDING_METADATA_ROOT_ENV, BINDING_METADATA_SOURCE_ENV, BINDING_METADATA_SURFACE_ENV,
+    BindingMetadataEnvelope, BindingMetadataSurface, RawSourceRecord,
 };
 use serde::Deserialize;
 use thiserror::Error;
@@ -111,6 +112,48 @@ impl BindingMetadataBuild {
             .read_required()
             .map_err(BindingMetadataBuildError::Metadata)
     }
+
+    /// Runs a plain Cargo build (no metadata env gates) and reads per-invocation source
+    /// records from every reported artifact, dependency crates included.
+    pub fn read_source(&self) -> Result<SourceMetadata, BindingMetadataBuildError> {
+        let cargo_args = self
+            .cargo_args
+            .as_ref()
+            .map_err(|source| BindingMetadataBuildError::CargoArguments(source.clone()))?;
+        let manifest = CargoManifest::new(&self.manifest_path)?;
+        let metadata = CargoMetadata::load(
+            &manifest,
+            self.toolchain_selector.as_deref(),
+            &self.cargo_environment,
+        )?;
+        let source_root = SourceRoot::resolve(&metadata, &manifest)?;
+        let features = metadata.active_features(&manifest, cargo_args)?;
+        let output =
+            CargoBuild::new(self, &manifest, &source_root, cargo_args, features).plain_output()?;
+        let package = metadata.package_info(&manifest)?;
+
+        let artifacts = output.all_artifacts(&manifest)?.into_paths();
+        let source_records = BindingMetadataReader::new(artifacts.clone())
+            .read_source_records()
+            .map_err(BindingMetadataBuildError::Metadata)?;
+
+        Ok(SourceMetadata {
+            source_records,
+            package,
+            artifacts,
+        })
+    }
+}
+
+/// Per-invocation source records read from one plain Cargo build.
+#[derive(Debug)]
+pub struct SourceMetadata {
+    /// Source records from every artifact, dependencies included.
+    pub source_records: Vec<RawSourceRecord>,
+    /// Root package identity from `cargo metadata`.
+    pub package: boltffi_ast::PackageInfo,
+    /// Compiled artifact paths the records were read from.
+    pub artifacts: Vec<PathBuf>,
 }
 
 /// Failure while building a crate for embedded binding metadata.
@@ -309,10 +352,28 @@ impl CargoMetadata {
         self.package(manifest)
             .map(|package| MetadataFeatures::resolve(package.features(), args))
     }
+
+    fn package_info(
+        &self,
+        manifest: &CargoManifest,
+    ) -> Result<boltffi_ast::PackageInfo, BindingMetadataBuildError> {
+        self.package(manifest).map(|package| {
+            boltffi_ast::PackageInfo::new(
+                package.name.clone(),
+                package
+                    .version
+                    .clone()
+                    .filter(|version| !version.is_empty()),
+            )
+        })
+    }
 }
 
 #[derive(Clone, Debug, Deserialize)]
 struct MetadataPackage {
+    name: String,
+    #[serde(default)]
+    version: Option<String>,
     manifest_path: PathBuf,
     targets: Vec<MetadataTarget>,
     #[serde(default)]
@@ -386,11 +447,32 @@ impl<'build> CargoBuild<'build> {
             .and_then(CargoOutput::from_output)
     }
 
-    fn command(self) -> Command {
-        let surface = self.build.surface.unwrap_or_else(|| {
-            BindingMetadataSurface::from_target_triple(self.build.target.as_deref())
-        });
+    fn plain_output(self) -> Result<CargoOutput, BindingMetadataBuildError> {
+        self.plain_command()
+            .output()
+            .map_err(|source| BindingMetadataBuildError::CargoSpawn { source })
+            .and_then(CargoOutput::from_output)
+    }
+
+    fn plain_command(self) -> Command {
+        self.base_command()
+    }
+
+    fn base_command(&self) -> Command {
         let mut command = Command::new(CargoProgram::from_env().into_os_string());
+        for ambient_gate in [
+            BINDING_METADATA_BUILD_ENV,
+            BINDING_METADATA_SOURCE_ENV,
+            BINDING_METADATA_SURFACE_ENV,
+            BINDING_METADATA_FEATURES_ENV,
+            BINDING_METADATA_ROOT_ENV,
+            BINDING_EXPANSION_BUILD_ENV,
+            BINDING_EXPANSION_SOURCE_ENV,
+            BINDING_EXPANSION_SURFACE_ENV,
+            BINDING_EXPANSION_ROOT_ENV,
+        ] {
+            command.env_remove(ambient_gate);
+        }
         command.envs(
             self.build
                 .cargo_environment
@@ -410,6 +492,14 @@ impl<'build> CargoBuild<'build> {
             command.arg("--target").arg(target);
         }
         command.args(self.cargo_args.iter());
+        command
+    }
+
+    fn command(self) -> Command {
+        let surface = self.build.surface.unwrap_or_else(|| {
+            BindingMetadataSurface::from_target_triple(self.build.target.as_deref())
+        });
+        let mut command = self.base_command();
         command.env(BINDING_METADATA_BUILD_ENV, "1");
         command.env(BINDING_METADATA_SOURCE_ENV, self.source_root.path());
         command.env(BINDING_METADATA_SURFACE_ENV, surface.as_str());
@@ -643,17 +733,35 @@ impl CargoOutput {
         manifest: &CargoManifest,
     ) -> Result<MetadataArtifacts, BindingMetadataBuildError> {
         let artifacts = self
-            .stdout
-            .lines()
-            .filter(|line| !line.trim().is_empty())
-            .map(CargoMessage::parse)
-            .collect::<Result<Vec<_>, _>>()?
+            .messages()?
             .into_iter()
             .flat_map(|message| message.filenames(manifest))
             .filter_map(MetadataArtifact::from_cargo_filename)
             .collect::<Vec<_>>();
 
         MetadataArtifacts::new(manifest.path(), artifacts)
+    }
+
+    fn all_artifacts(
+        &self,
+        manifest: &CargoManifest,
+    ) -> Result<MetadataArtifacts, BindingMetadataBuildError> {
+        let artifacts = self
+            .messages()?
+            .into_iter()
+            .flat_map(CargoMessage::into_filenames)
+            .filter_map(MetadataArtifact::from_cargo_filename)
+            .collect::<Vec<_>>();
+
+        MetadataArtifacts::new(manifest.path(), artifacts)
+    }
+
+    fn messages(&self) -> Result<Vec<CargoMessage>, BindingMetadataBuildError> {
+        self.stdout
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(CargoMessage::parse)
+            .collect()
     }
 }
 
@@ -736,6 +844,13 @@ impl CargoMessage {
             } if manifest.matches(&manifest_path) => filenames,
             Self::Other => Vec::new(),
             Self::CompilerArtifact { .. } => Vec::new(),
+        }
+    }
+
+    fn into_filenames(self) -> Vec<PathBuf> {
+        match self {
+            Self::CompilerArtifact { filenames, .. } => filenames,
+            Self::Other => Vec::new(),
         }
     }
 }
@@ -926,6 +1041,117 @@ mod tests {
             .expect("cargo metadata build reads");
 
         assert_eq!(envelopes, vec![expected]);
+    }
+
+    #[test]
+    fn cargo_build_combines_source_records_across_dependency_artifacts() {
+        if cfg!(miri) {
+            return;
+        }
+
+        let fixture = FixtureCrate::with_source_record_dependency();
+
+        let source = BindingMetadataBuild::new(fixture.manifest())
+            .read_source()
+            .expect("cargo source metadata read");
+
+        assert_eq!(
+            source.source_records.len(),
+            2,
+            "root and dependency records both surface"
+        );
+        assert_eq!(
+            source.package,
+            PackageInfo::new("metadata_fixture", Some("0.0.0".to_owned()))
+        );
+
+        let contract =
+            boltffi_binding::aggregate_records(&source.source_records, source.package.clone())
+                .expect("source records aggregate");
+        assert_eq!(
+            contract.records.len(),
+            1,
+            "dependency record joins the contract"
+        );
+        assert_eq!(
+            contract.records[0].id.as_str(),
+            "metadata_dependency::Point",
+            "dependency identity comes from its own module path"
+        );
+        assert_eq!(
+            contract.functions.len(),
+            1,
+            "root function joins the contract"
+        );
+
+        let bindings =
+            boltffi_binding::lower::<Native>(&contract).expect("aggregated contract lowers");
+        assert_eq!(
+            bindings
+                .decls()
+                .iter()
+                .filter(|decl| matches!(decl, Decl::Record(_)))
+                .count(),
+            1
+        );
+        assert_eq!(
+            bindings
+                .decls()
+                .iter()
+                .filter(|decl| matches!(decl, Decl::Function(_)))
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn cargo_build_aggregates_macro_emitted_source_records() {
+        if cfg!(miri) {
+            return;
+        }
+
+        let fixture = FixtureCrate::with_boltffi_macros();
+
+        let source = BindingMetadataBuild::new(fixture.manifest())
+            .read_source()
+            .expect("cargo source metadata read");
+
+        let contract =
+            boltffi_binding::aggregate_records(&source.source_records, source.package.clone())
+                .expect("macro-emitted records aggregate");
+        assert_eq!(contract.records.len(), 1);
+        assert_eq!(
+            contract.records[0].id.as_str(),
+            "metadata_fixture::domain::Point",
+            "the record's identity comes from its defining module"
+        );
+        assert_eq!(contract.functions.len(), 1);
+        assert_eq!(
+            contract.functions[0].id.as_str(),
+            "metadata_fixture::api::origin"
+        );
+        let boltffi_ast::ReturnDef::Value(returned) = &contract.functions[0].returns else {
+            panic!("origin returns a value");
+        };
+        assert!(
+            matches!(
+                returned,
+                boltffi_ast::TypeExpr::Record { id, .. }
+                    if id.as_str() == "metadata_fixture::domain::Point"
+            ),
+            "the cross-module reference resolves through the compiler: {returned:?}"
+        );
+
+        let bindings =
+            boltffi_binding::lower::<Native>(&contract).expect("aggregated contract lowers");
+        assert_eq!(
+            bindings
+                .decls()
+                .iter()
+                .filter(|decl| matches!(decl, Decl::Record(_) | Decl::Function(_)))
+                .count(),
+            2
+        );
     }
 
     #[test]
@@ -1159,6 +1385,10 @@ pub fn view() -> CoreFfi {
             Self::write(Source::without_metadata(), Dependency::None)
         }
 
+        fn with_source_record_dependency() -> Self {
+            Self::write(Source::with_root_source_record(), Dependency::SourceRecord)
+        }
+
         fn write(source: Source, dependency: Dependency<'_>) -> Self {
             let root = temp_root("boltffi-bindgen-cargo-metadata");
             let source_dir = root.join("src");
@@ -1186,6 +1416,7 @@ pub fn view() -> CoreFfi {
     enum Dependency<'envelope> {
         Boltffi,
         Metadata(&'envelope BindingMetadataEnvelope),
+        SourceRecord,
         None,
     }
 
@@ -1196,7 +1427,7 @@ pub fn view() -> CoreFfi {
                     "\n[dependencies]\nboltffi = {{ path = \"{}\" }}\n",
                     workspace_crate("boltffi").display()
                 ),
-                Self::Metadata(_) => {
+                Self::Metadata(_) | Self::SourceRecord => {
                     "\n[dependencies]\nmetadata_dependency = { path = \"metadata_dependency\" }\n"
                         .to_owned()
                 }
@@ -1208,22 +1439,23 @@ pub fn view() -> CoreFfi {
         }
 
         fn write(self, root: &Path) {
-            if let Self::Metadata(envelope) = self {
-                let package = root.join("metadata_dependency");
-                let source = package.join("src");
-                fs::create_dir_all(&source).expect("create metadata dependency source dir");
-                fs::write(
-                    package.join("Cargo.toml"),
-                    "[package]\nname = \"metadata_dependency\"\nversion = \"0.0.0\"\nedition = \"2024\"\n\n[lib]\npath = \"src/lib.rs\"\n",
-                )
-                .expect("write metadata dependency manifest");
-                fs::write(
-                    source.join("lib.rs"),
+            let body = match self {
+                Self::Metadata(envelope) => {
                     Source::with_metadata_and_body(envelope, "pub fn value() -> u32 { 7 }\n")
-                        .into_string(),
-                )
-                .expect("write metadata dependency lib");
-            }
+                        .into_string()
+                }
+                Self::SourceRecord => Source::with_dependency_source_record().into_string(),
+                Self::Boltffi | Self::None => return,
+            };
+            let package = root.join("metadata_dependency");
+            let source = package.join("src");
+            fs::create_dir_all(&source).expect("create metadata dependency source dir");
+            fs::write(
+                package.join("Cargo.toml"),
+                "[package]\nname = \"metadata_dependency\"\nversion = \"0.0.0\"\nedition = \"2024\"\n\n[lib]\npath = \"src/lib.rs\"\n",
+            )
+            .expect("write metadata dependency manifest");
+            fs::write(source.join("lib.rs"), body).expect("write metadata dependency lib");
         }
     }
 
@@ -1245,6 +1477,7 @@ pub mod domain {
     use boltffi::data;
 
     #[data]
+    #[derive(Clone, Copy)]
     pub struct Point {
         pub x: f64,
     }
@@ -1295,9 +1528,100 @@ pub mod api {
             }
         }
 
+        fn with_root_source_record() -> Self {
+            let mut function = boltffi_ast::FunctionDef::new(
+                boltffi_ast::FunctionId::new("$self::origin"),
+                source_name("origin"),
+            );
+            function.returns = boltffi_ast::ReturnDef::value(boltffi_ast::TypeExpr::record(
+                boltffi_ast::RecordId::new("$slot:0"),
+                boltffi_ast::Path::single("Point"),
+            ));
+            let json = serde_json::to_vec(&boltffi_binding::SourceFragment::Function(function))
+                .expect("function fragment serializes");
+            Self::with_source_record_static(
+                "metadata_fixture",
+                &[r#"{"id":"metadata_dependency::Point"}"#],
+                &json,
+                "pub fn exported() -> u32 { metadata_dependency::value() }\n",
+            )
+        }
+
+        fn with_dependency_source_record() -> Self {
+            let mut record = boltffi_ast::RecordDef::new(
+                boltffi_ast::RecordId::new("$self::Point"),
+                source_name("Point"),
+            );
+            record.fields = vec![boltffi_ast::FieldDef::new(
+                source_name("x"),
+                boltffi_ast::TypeExpr::Primitive(boltffi_ast::Primitive::F64),
+            )];
+            let json = serde_json::to_vec(&boltffi_binding::SourceFragment::Record(record))
+                .expect("record fragment serializes");
+            Self::with_source_record_static(
+                "metadata_dependency",
+                &[],
+                &json,
+                "pub fn value() -> u32 { 7 }\n",
+            )
+        }
+
+        fn with_source_record_static(
+            module: &str,
+            slots: &[&str],
+            json: &[u8],
+            body: &str,
+        ) -> Self {
+            let record_bytes = source_record_bytes(module, "0.0.0", module, slots, json);
+            let length = record_bytes.len();
+            let bytes = record_bytes
+                .iter()
+                .map(u8::to_string)
+                .collect::<Vec<_>>()
+                .join(", ");
+            Self {
+                code: format!(
+                    "#[cfg_attr(target_vendor = \"apple\", unsafe(link_section = \"__DATA,__boltffisrc\"))]\n#[cfg_attr(not(target_vendor = \"apple\"), unsafe(link_section = \".boltffisrc\"))]\n#[used]\nstatic BOLTFFI_SOURCE: [u8; {length}] = [{bytes}];\n{body}"
+                ),
+            }
+        }
+
         fn into_string(self) -> String {
             self.code
         }
+    }
+
+    fn source_name(spelling: &str) -> boltffi_ast::SourceName {
+        boltffi_ast::SourceName::new(
+            spelling,
+            boltffi_ast::CanonicalName::single(spelling.to_lowercase()),
+        )
+    }
+
+    fn source_record_bytes(
+        package: &str,
+        version: &str,
+        module: &str,
+        slots: &[&str],
+        json: &[u8],
+    ) -> Vec<u8> {
+        let mut payload = Vec::new();
+        for field in [package, version, module] {
+            payload.extend_from_slice(&(field.len() as u16).to_le_bytes());
+            payload.extend_from_slice(field.as_bytes());
+        }
+        payload.extend_from_slice(&(slots.len() as u16).to_le_bytes());
+        for slot in slots {
+            payload.extend_from_slice(&(slot.len() as u16).to_le_bytes());
+            payload.extend_from_slice(slot.as_bytes());
+        }
+        payload.extend_from_slice(&(json.len() as u32).to_le_bytes());
+        payload.extend_from_slice(json);
+
+        let mut bytes = b"BFFISRC1".to_vec();
+        bytes.extend_from_slice(&(payload.len() as u64).to_le_bytes());
+        bytes.extend_from_slice(&payload);
+        bytes
     }
 
     fn metadata_envelope(package: &str) -> BindingMetadataEnvelope {

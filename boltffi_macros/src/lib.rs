@@ -48,7 +48,11 @@ fn expand_with_capture(
     dependency: DependencyExpansion,
     impl_capture: capture::ImplCapture,
 ) -> TokenStream {
-    let captured = capture::item_tokens(item.clone(), impl_capture);
+    let captured = if experimental_build_active() {
+        proc_macro2::TokenStream::new()
+    } else {
+        capture::item_tokens(item.clone(), impl_capture)
+    };
     let expanded = proc_macro2::TokenStream::from(expand_without_capture(item, legacy, dependency));
     TokenStream::from(quote! {
         #expanded
@@ -96,6 +100,10 @@ fn expand_without_capture(
         }
         experimental::metadata_build::Item::Error(tokens) => TokenStream::from(tokens),
     }
+}
+
+fn experimental_build_active() -> bool {
+    experimental::expansion_build::active() || experimental::metadata_build::active()
 }
 
 enum DependencyExpansion {
@@ -240,7 +248,11 @@ pub fn ffi_trait(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
 #[proc_macro_attribute]
 pub fn custom_ffi(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    let captured = capture::custom_ffi_tokens(item.clone());
+    let captured = if experimental_build_active() {
+        proc_macro2::TokenStream::new()
+    } else {
+        capture::custom_ffi_tokens(item.clone())
+    };
     let expanded = proc_macro2::TokenStream::from(custom::ffi::custom_ffi_impl(item));
     TokenStream::from(quote! {
         #expanded
@@ -250,7 +262,11 @@ pub fn custom_ffi(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
 #[proc_macro]
 pub fn custom_type(item: TokenStream) -> TokenStream {
-    let captured = capture::custom_type_tokens(item.clone());
+    let captured = if experimental_build_active() {
+        proc_macro2::TokenStream::new()
+    } else {
+        capture::custom_type_tokens(item.clone())
+    };
     let expanded = proc_macro2::TokenStream::from(custom::r#type::custom_type_impl(item));
     TokenStream::from(quote! {
         #expanded
