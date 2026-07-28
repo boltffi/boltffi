@@ -178,8 +178,9 @@
 {%- else %}
                     {{ async_call.create() }}
 {%- endif %}
-                } finally {
+                } catch (__boltffi_failure: Throwable) {
                     boltffiRelease()
+                    throw __boltffi_failure
                 }
             },
             poll = { future, contHandle -> Native.{{ async_call.poll() }}(future, contHandle) },
@@ -188,7 +189,10 @@
                 {{ statement }}
 {%- endfor %}
             },
-            free = { future -> Native.{{ async_call.free() }}(future) },
+            free = { future ->
+                Native.{{ async_call.free() }}(future)
+                boltffiRelease()
+            },
             cancel = { future -> Native.{{ async_call.cancel() }}(future) },
         )
 {%- else %}

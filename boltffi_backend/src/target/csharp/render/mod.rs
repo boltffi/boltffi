@@ -1793,18 +1793,24 @@ fn render_async_body(
     };
     let create = match guard {
         Some(guard) => format!(
-            "() =>\n    {{\n        {}\n        try\n        {{\n            return {start};\n        }}\n        finally\n        {{\n            {}\n        }}\n    }}",
+            "() =>\n    {{\n        {}\n        try\n        {{\n            return {start};\n        }}\n        catch\n        {{\n            {}\n            throw;\n        }}\n    }}",
             guard.retain, guard.release,
         ),
         None => format!("() => {start}"),
     };
+    let free = match guard {
+        Some(guard) => format!(
+            "{future} =>\n    {{\n        NativeMethods.{}({future});\n        {}\n    }}",
+            asynchronous.free_name, guard.release,
+        ),
+        None => format!("NativeMethods.{}", asynchronous.free_name),
+    };
     let mut lines = setup.iter().map(ToString::to_string).collect::<Vec<_>>();
     lines.push(format!(
-        "return BoltFFIAsync.{call}(\n    {create},\n    NativeMethods.{},\n    {future} =>\n    {{\n{}\n    }},\n    NativeMethods.{},\n    NativeMethods.{},\n    cancellationToken);",
+        "return BoltFFIAsync.{call}(\n    {create},\n    NativeMethods.{},\n    {future} =>\n    {{\n{}\n    }},\n    NativeMethods.{},\n    {free},\n    cancellationToken);",
         asynchronous.poll_name,
         indent(&completion.join("\n"), 8),
         asynchronous.cancel_name,
-        asynchronous.free_name,
     ));
     Ok(Statement::new(indent(&lines.join("\n"), 12)))
 }

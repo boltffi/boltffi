@@ -2004,8 +2004,12 @@ fn java_target_renders_async_functions_and_methods_from_poll_handle_protocols() 
     assert!(
         worker.contains("public java.util.concurrent.CompletableFuture<Integer> run(int value)")
     );
-    assert!(worker.contains("long __boltffi_receiver = this.boltffiRetain();"));
-    assert!(worker.contains("this.boltffiRelease();"));
+    assert!(worker.contains(
+        "long __boltffi_receiver = this.boltffiRetain();\n                try {\n    return Native.boltffi_method_class_demo_worker_run(__boltffi_receiver, value);\n} catch (Throwable __boltffi_failure) {\n    this.boltffiRelease();\n    throw __boltffi_failure;\n}"
+    ));
+    assert!(worker.contains(
+        "(future) -> {\n                Native.boltffi_async_method_class_demo_worker_run_free(future);\n                this.boltffiRelease();\n            }"
+    ));
     assert!(output.coverage().unsupported().is_empty());
 }
 

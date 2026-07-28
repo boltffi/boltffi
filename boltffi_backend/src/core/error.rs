@@ -204,6 +204,14 @@ pub enum BackendError {
         /// Generated Java name used more than once.
         name: String,
     },
+    /// Two generated C# declarations require the same name in one scope.
+    #[error("csharp name collision in {scope}: `{name}` is already used")]
+    CSharpNameCollision {
+        /// C# scope where the collision was found.
+        scope: String,
+        /// Generated C# name used more than once.
+        name: String,
+    },
     /// A backend template failed to render.
     #[error("template rendering failed: {message}")]
     Template {
