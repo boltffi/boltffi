@@ -825,6 +825,65 @@ fn guarded_body(
     parameters: &[BoundParameter],
     success: Vec<Statement>,
 ) -> Vec<Statement> {
+    let guarded = parameter_guarded(receiver, parameters, success);
+    let cleanup = receiver
+        .iter()
+        .flat_map(|receiver| receiver.native.cleanup.iter().cloned())
+        .collect::<Vec<_>>();
+    let guarded = match cleanup.is_empty() {
+        true => guarded,
+        false => vec![Statement::try_finally(guarded, cleanup)],
+    };
+    receiver
+        .iter()
+        .flat_map(|receiver| receiver.native.acquire.iter().cloned())
+        .chain(guarded)
+        .collect()
+}
+
+/// Guards async future creation: the receiver's retain is released only when
+/// creation throws, since on success the future's free hook releases it.
+fn guarded_create_body(
+    receiver: Option<&Receiver>,
+    parameters: &[BoundParameter],
+    success: Vec<Statement>,
+    version: JavaVersion,
+) -> Vec<Statement> {
+    let guarded = parameter_guarded(receiver, parameters, success);
+    let cleanup = receiver
+        .iter()
+        .flat_map(|receiver| receiver.native.cleanup.iter().cloned())
+        .collect::<Vec<_>>();
+    let guarded = match cleanup.is_empty() {
+        true => guarded,
+        false => {
+            let failure = Identifier::known("__boltffi_failure");
+            let recovery = cleanup
+                .into_iter()
+                .chain([Statement::throw_value(Expression::identifier(
+                    failure.clone(),
+                ))])
+                .collect();
+            vec![Statement::try_catch(
+                guarded,
+                TypeName::named(TypeIdentifier::known("Throwable", version)),
+                failure,
+                recovery,
+            )]
+        }
+    };
+    receiver
+        .iter()
+        .flat_map(|receiver| receiver.native.acquire.iter().cloned())
+        .chain(guarded)
+        .collect()
+}
+
+fn parameter_guarded(
+    receiver: Option<&Receiver>,
+    parameters: &[BoundParameter],
+    success: Vec<Statement>,
+) -> Vec<Statement> {
     let protected = receiver
         .iter()
         .flat_map(|receiver| receiver.native.prepare.iter().cloned())
@@ -843,23 +902,10 @@ fn guarded_body(
         true => protected,
         false => vec![Statement::try_finally(protected, cleanup)],
     };
-    let guarded = parameters
+    parameters
         .iter()
         .flat_map(|parameter| parameter.native.acquire.iter().cloned())
         .chain(protected)
-        .collect::<Vec<_>>();
-    let cleanup = receiver
-        .iter()
-        .flat_map(|receiver| receiver.native.cleanup.iter().cloned())
-        .collect::<Vec<_>>();
-    let guarded = match cleanup.is_empty() {
-        true => guarded,
-        false => vec![Statement::try_finally(guarded, cleanup)],
-    };
-    receiver
-        .iter()
-        .flat_map(|receiver| receiver.native.acquire.iter().cloned())
-        .chain(guarded)
         .collect()
 }
 

@@ -68,15 +68,19 @@ class Engine internal constructor(internal val handle: Long) : AutoCloseable {
                 val __boltffi_receiver = boltffiRetain()
                 try {
                     Native.boltffi_method_class_demo_engine_compute(__boltffi_receiver, value.toInt())
-                } finally {
+                } catch (__boltffi_failure: Throwable) {
                     boltffiRelease()
+                    throw __boltffi_failure
                 }
             },
             poll = { future, contHandle -> Native.boltffi_async_method_class_demo_engine_compute_poll(future, contHandle) },
             complete = { future ->
                 Native.boltffi_async_method_class_demo_engine_compute_complete(future).toUInt()
             },
-            free = { future -> Native.boltffi_async_method_class_demo_engine_compute_free(future) },
+            free = { future ->
+                Native.boltffi_async_method_class_demo_engine_compute_free(future)
+                boltffiRelease()
+            },
             cancel = { future -> Native.boltffi_async_method_class_demo_engine_compute_cancel(future) },
         )
     }

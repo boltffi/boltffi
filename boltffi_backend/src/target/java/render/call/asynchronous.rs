@@ -6,7 +6,7 @@ pub struct AsyncCall {
     poll: Expression,
     complete: Vec<Statement>,
     cancel: Expression,
-    free: Expression,
+    free_body: Vec<Statement>,
     native_methods: Vec<Method>,
 }
 
@@ -97,16 +97,27 @@ impl AsyncCall {
             failure,
             vec![Statement::throw_value(failure_call)],
         )];
+        let free_body = std::iter::once(Statement::expression(
+            free.call(scope.native_owner, [future.clone()])?,
+        ))
+        .chain(
+            arguments
+                .receiver
+                .iter()
+                .flat_map(|receiver| receiver.native.cleanup.iter().cloned()),
+        )
+        .collect();
         Ok(Self {
-            create_body: guarded_body(
+            create_body: guarded_create_body(
                 arguments.receiver,
                 arguments.parameters,
                 vec![Statement::return_value(create)],
+                scope.version,
             ),
             poll: poll.call(scope.native_owner, [future.clone(), continuation])?,
             complete: complete_body,
-            cancel: cancel.call(scope.native_owner, [future.clone()])?,
-            free: free.call(scope.native_owner, [future])?,
+            cancel: cancel.call(scope.native_owner, [future])?,
+            free_body,
             native_methods: vec![start, poll, complete, cancel, free, panic_message],
         })
     }
@@ -127,8 +138,8 @@ impl AsyncCall {
         &self.cancel
     }
 
-    pub fn free(&self) -> &Expression {
-        &self.free
+    pub fn free_body(&self) -> &[Statement] {
+        &self.free_body
     }
 
     pub fn native_methods(&self) -> &[Method] {

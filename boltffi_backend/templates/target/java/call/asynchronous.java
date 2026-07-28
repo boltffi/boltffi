@@ -7,6 +7,8 @@
 {% for statement in asynchronous.complete() %}                {{ statement }}
 {% endfor %}            },
             (future) -> {{ asynchronous.cancel() }},
-            (future) -> {{ asynchronous.free() }}
+            (future) -> {
+{% for statement in asynchronous.free_body() %}                {{ statement }}
+{% endfor %}            }
         );
 {% endif %}

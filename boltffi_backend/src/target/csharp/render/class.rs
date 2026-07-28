@@ -100,6 +100,7 @@ impl Class {
                 Err(error) => collect_diagnostic(&mut diagnostics, "method", method.name(), error)?,
             }
         }
+        validate_reserved_members(&name, &methods)?;
         let constants = AssociatedConstants::from_owner(
             ConstantOwner::Class(declaration.id()),
             &namespace,
@@ -145,6 +146,25 @@ impl Class {
             .try_fold(emitted, |emitted, function| function.add_support(emitted))?;
         self.constants.add_support(emitted)
     }
+}
+
+/// Rejects methods that would duplicate a generated helper. The retain and
+/// release helpers only collide at zero parameters; `RawHandle` is a property,
+/// which C# rejects alongside a method of any arity.
+fn validate_reserved_members(scope: &Identifier, methods: &[Function]) -> Result<()> {
+    methods
+        .iter()
+        .find(|method| {
+            method.name.as_str() == "RawHandle"
+                || (method.parameters.is_empty()
+                    && ["BoltffiRetain", "BoltffiRelease"].contains(&method.name.as_str()))
+        })
+        .map_or(Ok(()), |method| {
+            Err(Error::CSharpNameCollision {
+                scope: scope.to_string(),
+                name: method.name.to_string(),
+            })
+        })
 }
 
 fn collect_diagnostic(
