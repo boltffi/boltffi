@@ -15,7 +15,10 @@ use boltffi_backend::target::{
     typescript::TypeScriptHost,
 };
 use boltffi_backend::{CustomTypeMapping, GeneratedOutput, Target as BackendTarget};
-use boltffi_binding::{BindingMetadataSurface, Bindings, Native, Surface, Wasm32};
+use boltffi_binding::{
+    BindingMetadataSurface, Bindings, LowerError, Native, SourceFragmentError, Surface,
+    SurfaceLower, Wasm32, aggregate_records, lower,
+};
 use thiserror::Error;
 
 use crate::metadata::{BindingMetadataBuild, BindingMetadataBuildError};
@@ -723,10 +726,18 @@ impl Generation {
             .collect()
     }
 
-    fn bindings<S: Surface>(&self) -> Result<Bindings<S>, GenerationError> {
+    fn bindings<S: Surface + SurfaceLower>(&self) -> Result<Bindings<S>, GenerationError> {
         let surface = self
             .binding_surface
             .unwrap_or_else(|| BindingMetadataSurface::from_target_triple(self.triple.as_deref()));
+        let source = self.metadata_build().read_source()?;
+        if !source.source_records.is_empty() {
+            match aggregate_records(&source.source_records, source.package) {
+                Ok(contract) => return lower::<S>(&contract).map_err(GenerationError::Lower),
+                Err(error) if falls_back_to_envelope(&error) => {}
+                Err(error) => return Err(GenerationError::SourceAggregation(error)),
+            }
+        }
         self.metadata_build()
             .read()?
             .into_iter()
@@ -767,6 +778,12 @@ pub enum GenerationError {
         /// Surface selected from the target triple.
         surface: BindingMetadataSurface,
     },
+    /// Per-invocation source records did not aggregate into one contract.
+    #[error("aggregate per-invocation source records: {0}")]
+    SourceAggregation(SourceFragmentError),
+    /// The aggregated source contract failed to lower.
+    #[error("lower aggregated source contract: {0}")]
+    Lower(LowerError),
     /// The target backend failed to render the bindings.
     #[error("render bindings: {0}")]
     Render(boltffi_backend::Error),
@@ -790,6 +807,16 @@ pub enum GenerationError {
         /// Filesystem error.
         source: std::io::Error,
     },
+}
+
+/// Unsupported captures and unresolved references mean capture could not see
+/// the whole surface; the legacy whole-crate scan still can.
+fn falls_back_to_envelope(error: &SourceFragmentError) -> bool {
+    matches!(
+        error,
+        SourceFragmentError::UnsupportedCapture { .. }
+            | SourceFragmentError::UnresolvedReference { .. }
+    )
 }
 
 fn write_file(path: &Path, contents: &str) -> Result<(), GenerationError> {
@@ -1372,5 +1399,31 @@ mod tests {
         );
         assert!(jni.contains("_result = boltffi_function_demo_signed_read(value);"));
         assert!(jni.contains("_result = boltffi_function_demo_wide_read(value);"));
+    }
+
+    #[test]
+    fn capture_gaps_fall_back_to_the_envelope_path() {
+        assert!(falls_back_to_envelope(
+            &SourceFragmentError::UnsupportedCapture {
+                module: "demo".to_owned(),
+                name: "Engine".to_owned(),
+                reason: "trait impls are not captured".to_owned(),
+            }
+        ));
+        assert!(falls_back_to_envelope(
+            &SourceFragmentError::UnresolvedReference {
+                id: "demo::Missing".to_owned(),
+            }
+        ));
+        assert!(!falls_back_to_envelope(
+            &SourceFragmentError::DuplicateDeclaration {
+                id: "demo::Route".to_owned(),
+            }
+        ));
+        assert!(!falls_back_to_envelope(
+            &SourceFragmentError::MethodsTargetNotData {
+                spelling: "Engine".to_owned(),
+            }
+        ));
     }
 }
