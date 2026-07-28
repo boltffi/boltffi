@@ -11,7 +11,8 @@ use std::path::{Path, PathBuf};
 
 use boltffi_binding::{
     BindingMetadataEnvelope, BindingMetadataError, BindingMetadataHash, BindingMetadataSection,
-    BindingMetadataSectionBytes,
+    BindingMetadataSectionBytes, RawSourceRecord, SourceRecordError, SourceRecordSectionBytes,
+    is_source_record_section,
 };
 use object::read::archive::{ArchiveFile, ArchiveMember};
 use object::read::macho::{FatArch, MachOFatFile};
@@ -38,14 +39,22 @@ impl BindingMetadataReader {
 
     /// Reads validated metadata envelopes from every artifact.
     pub fn read(&self) -> Result<Vec<BindingMetadataEnvelope>, BindingMetadataReadError> {
+        self.payloads::<BindingMetadataEnvelope>()
+            .map(|envelopes| DeduplicatedEnvelopes::from_envelopes(envelopes).into_vec())
+    }
+
+    /// Reads per-invocation source records from every artifact.
+    pub fn read_source_records(&self) -> Result<Vec<RawSourceRecord>, BindingMetadataReadError> {
+        self.payloads::<RawSourceRecord>()
+    }
+
+    fn payloads<P: SectionPayload>(&self) -> Result<Vec<P>, BindingMetadataReadError> {
         self.artifacts
             .iter()
             .map(|artifact| ArtifactBytes::read(artifact))
-            .map(|artifact| artifact.and_then(|artifact| artifact.envelopes()))
+            .map(|artifact| artifact.and_then(|artifact| artifact.payloads()))
             .collect::<Result<Vec<_>, _>>()
-            .map(|artifacts| {
-                DeduplicatedEnvelopes::from_envelopes(artifacts.into_iter().flatten()).into_vec()
-            })
+            .map(|artifacts| artifacts.into_iter().flatten().collect())
     }
 
     /// Reads validated metadata envelopes and rejects empty results.
@@ -88,6 +97,14 @@ pub enum BindingMetadataReadError {
         /// Metadata validation error.
         source: BindingMetadataError,
     },
+    /// A source-record section failed to decode.
+    #[error("decode source records from `{path}`: {source}")]
+    SourceRecord {
+        /// Artifact path.
+        path: PathBuf,
+        /// Source record decoding error.
+        source: SourceRecordError,
+    },
     /// No binding metadata records were found in the artifact set.
     #[error("no BoltFFI binding metadata found in compiled artifacts: {artifacts:?}")]
     NoMetadata {
@@ -114,8 +131,49 @@ impl ArtifactBytes {
             })
     }
 
-    fn envelopes(&self) -> Result<Vec<BindingMetadataEnvelope>, BindingMetadataReadError> {
-        ArtifactImage::new(&self.path, &self.bytes).envelopes()
+    fn payloads<P: SectionPayload>(&self) -> Result<Vec<P>, BindingMetadataReadError> {
+        ArtifactImage::new(&self.path, &self.bytes).payloads()
+    }
+}
+
+/// One decodable payload kind stored in a dedicated artifact section.
+trait SectionPayload: Sized {
+    fn matches_section(name: &str, segment: Option<&str>) -> bool;
+    fn decode_section(path: &Path, bytes: &[u8]) -> Result<Vec<Self>, BindingMetadataReadError>;
+}
+
+impl SectionPayload for BindingMetadataEnvelope {
+    fn matches_section(name: &str, segment: Option<&str>) -> bool {
+        [
+            BindingMetadataSection::MachO,
+            BindingMetadataSection::Object,
+        ]
+        .into_iter()
+        .any(|section| section.matches(name, segment))
+    }
+
+    fn decode_section(path: &Path, bytes: &[u8]) -> Result<Vec<Self>, BindingMetadataReadError> {
+        BindingMetadataSectionBytes::new(bytes)
+            .envelopes()
+            .map_err(|source| BindingMetadataReadError::Metadata {
+                path: path.to_path_buf(),
+                source,
+            })
+    }
+}
+
+impl SectionPayload for RawSourceRecord {
+    fn matches_section(name: &str, _segment: Option<&str>) -> bool {
+        is_source_record_section(name)
+    }
+
+    fn decode_section(path: &Path, bytes: &[u8]) -> Result<Vec<Self>, BindingMetadataReadError> {
+        SourceRecordSectionBytes::new(bytes)
+            .records()
+            .map_err(|source| BindingMetadataReadError::SourceRecord {
+                path: path.to_path_buf(),
+                source,
+            })
     }
 }
 
@@ -130,90 +188,75 @@ impl<'artifact> ArtifactImage<'artifact> {
         Self { path, bytes }
     }
 
-    fn envelopes(self) -> Result<Vec<BindingMetadataEnvelope>, BindingMetadataReadError> {
+    fn payloads<P: SectionPayload>(self) -> Result<Vec<P>, BindingMetadataReadError> {
         match FileKind::parse(self.bytes).map_err(|source| self.parse_error(source))? {
-            FileKind::Archive => self.archive_envelopes(),
-            FileKind::MachOFat32 => self.macho_fat32_envelopes(),
-            FileKind::MachOFat64 => self.macho_fat64_envelopes(),
-            _ => self.object_envelopes(self.bytes),
+            FileKind::Archive => self.archive_payloads(),
+            FileKind::MachOFat32 => self.macho_fat_payloads::<object::macho::FatArch32, P>(),
+            FileKind::MachOFat64 => self.macho_fat_payloads::<object::macho::FatArch64, P>(),
+            _ => self.object_payloads(self.bytes),
         }
     }
 
-    fn archive_envelopes(self) -> Result<Vec<BindingMetadataEnvelope>, BindingMetadataReadError> {
+    fn archive_payloads<P: SectionPayload>(self) -> Result<Vec<P>, BindingMetadataReadError> {
         ArchiveFile::parse(self.bytes)
             .map_err(|source| self.parse_error(source))?
             .members()
             .map(|member| {
                 member
                     .map_err(|source| self.parse_error(source))
-                    .and_then(|member| self.archive_member_envelopes(member))
+                    .and_then(|member| self.archive_member_payloads(member))
             })
             .collect::<Result<Vec<_>, _>>()
             .map(|members| members.into_iter().flatten().collect())
     }
 
-    fn archive_member_envelopes(
+    fn archive_member_payloads<P: SectionPayload>(
         self,
         member: ArchiveMember<'artifact>,
-    ) -> Result<Vec<BindingMetadataEnvelope>, BindingMetadataReadError> {
+    ) -> Result<Vec<P>, BindingMetadataReadError> {
         if member.is_thin() {
-            return self.thin_archive_member_envelopes(member.name());
+            return self.thin_archive_member_payloads(member.name());
         }
         let bytes = member
             .data(self.bytes)
             .map_err(|source| self.parse_error(source))?;
-        self.nested_envelopes(bytes)
+        self.nested_payloads(bytes)
     }
 
-    fn thin_archive_member_envelopes(
+    fn thin_archive_member_payloads<P: SectionPayload>(
         self,
         name: &[u8],
-    ) -> Result<Vec<BindingMetadataEnvelope>, BindingMetadataReadError> {
+    ) -> Result<Vec<P>, BindingMetadataReadError> {
         let path = ThinArchiveMember::new(self.path, name)?.path();
         fs::read(&path)
             .map_err(|source| BindingMetadataReadError::Read {
                 path: path.clone(),
                 source,
             })
-            .and_then(|bytes| ArtifactImage::new(&path, &bytes).envelopes())
+            .and_then(|bytes| ArtifactImage::new(&path, &bytes).payloads())
     }
 
-    fn nested_envelopes(
+    fn nested_payloads<P: SectionPayload>(
         self,
         bytes: &'artifact [u8],
-    ) -> Result<Vec<BindingMetadataEnvelope>, BindingMetadataReadError> {
+    ) -> Result<Vec<P>, BindingMetadataReadError> {
         match FileKind::parse(bytes) {
-            Ok(FileKind::Archive) => ArtifactImage::new(self.path, bytes).archive_envelopes(),
-            Ok(FileKind::MachOFat32) => {
-                ArtifactImage::new(self.path, bytes).macho_fat32_envelopes()
-            }
-            Ok(FileKind::MachOFat64) => {
-                ArtifactImage::new(self.path, bytes).macho_fat64_envelopes()
-            }
+            Ok(FileKind::Archive) => ArtifactImage::new(self.path, bytes).archive_payloads(),
+            Ok(FileKind::MachOFat32) => ArtifactImage::new(self.path, bytes)
+                .macho_fat_payloads::<object::macho::FatArch32, P>(),
+            Ok(FileKind::MachOFat64) => ArtifactImage::new(self.path, bytes)
+                .macho_fat_payloads::<object::macho::FatArch64, P>(),
             Ok(file_kind) if ArchiveMemberKind::from(file_kind).is_object() => {
-                self.object_envelopes(bytes)
+                self.object_payloads(bytes)
             }
             Ok(_) | Err(_) => Ok(Vec::new()),
         }
     }
 
-    fn macho_fat32_envelopes(
-        self,
-    ) -> Result<Vec<BindingMetadataEnvelope>, BindingMetadataReadError> {
-        self.macho_fat_envelopes::<object::macho::FatArch32>()
-    }
-
-    fn macho_fat64_envelopes(
-        self,
-    ) -> Result<Vec<BindingMetadataEnvelope>, BindingMetadataReadError> {
-        self.macho_fat_envelopes::<object::macho::FatArch64>()
-    }
-
-    fn macho_fat_envelopes<Fat>(
-        self,
-    ) -> Result<Vec<BindingMetadataEnvelope>, BindingMetadataReadError>
+    fn macho_fat_payloads<Fat, P>(self) -> Result<Vec<P>, BindingMetadataReadError>
     where
         Fat: FatArch,
+        P: SectionPayload,
     {
         MachOFatFile::<Fat>::parse(self.bytes)
             .map_err(|source| self.parse_error(source))?
@@ -222,74 +265,42 @@ impl<'artifact> ArtifactImage<'artifact> {
             .map(|arch| {
                 arch.data(self.bytes)
                     .map_err(|source| self.parse_error(source))
-                    .and_then(|bytes| ArtifactImage::new(self.path, bytes).envelopes())
+                    .and_then(|bytes| ArtifactImage::new(self.path, bytes).payloads())
             })
             .collect::<Result<Vec<_>, _>>()
             .map(|arches| arches.into_iter().flatten().collect())
     }
 
-    fn object_envelopes(
+    fn object_payloads<P: SectionPayload>(
         self,
         bytes: &'artifact [u8],
-    ) -> Result<Vec<BindingMetadataEnvelope>, BindingMetadataReadError> {
+    ) -> Result<Vec<P>, BindingMetadataReadError> {
         let file = File::parse(bytes).map_err(|source| self.parse_error(source))?;
-        self.file_envelopes(file)
-    }
-
-    fn file_envelopes(
-        self,
-        file: File<'artifact>,
-    ) -> Result<Vec<BindingMetadataEnvelope>, BindingMetadataReadError> {
         file.sections()
-            .map(|section| self.section_envelopes(section))
+            .map(|section| self.section_payloads(section))
             .collect::<Result<Vec<_>, _>>()
             .map(|sections| sections.into_iter().flatten().collect())
     }
 
-    fn section_envelopes(
+    fn section_payloads<P: SectionPayload>(
         self,
         section: impl ObjectSection<'artifact>,
-    ) -> Result<Vec<BindingMetadataEnvelope>, BindingMetadataReadError> {
+    ) -> Result<Vec<P>, BindingMetadataReadError> {
         let name = section.name().map_err(|source| self.parse_error(source))?;
         let segment = section
             .segment_name()
             .map_err(|source| self.parse_error(source))?;
-        if !self.is_metadata_section(name, segment) {
+        if !P::matches_section(name, segment) {
             return Ok(Vec::new());
         }
         section
             .uncompressed_data()
             .map_err(|source| self.parse_error(source))
-            .and_then(|bytes| self.decode_section(bytes))
-    }
-
-    fn is_metadata_section(self, name: &str, segment: Option<&str>) -> bool {
-        [
-            BindingMetadataSection::MachO,
-            BindingMetadataSection::Object,
-        ]
-        .into_iter()
-        .any(|section| section.matches(name, segment))
-    }
-
-    fn decode_section(
-        self,
-        bytes: Cow<'artifact, [u8]>,
-    ) -> Result<Vec<BindingMetadataEnvelope>, BindingMetadataReadError> {
-        BindingMetadataSectionBytes::new(bytes.as_ref())
-            .envelopes()
-            .map_err(|source| self.metadata_error(source))
+            .and_then(|bytes: Cow<'artifact, [u8]>| P::decode_section(self.path, bytes.as_ref()))
     }
 
     fn parse_error(self, source: object::Error) -> BindingMetadataReadError {
         BindingMetadataReadError::Parse {
-            path: self.path.to_path_buf(),
-            source,
-        }
-    }
-
-    fn metadata_error(self, source: BindingMetadataError) -> BindingMetadataReadError {
-        BindingMetadataReadError::Metadata {
             path: self.path.to_path_buf(),
             source,
         }
@@ -413,6 +424,21 @@ mod tests {
     }
 
     #[test]
+    fn reads_source_records_from_compiled_static_library() {
+        let artifact = MetadataArtifact::compile_with_source_records();
+
+        let records = BindingMetadataReader::new([artifact.path()])
+            .read_source_records()
+            .expect("artifact source records read");
+
+        assert_eq!(records.len(), 2, "each invocation's record survives");
+        assert_eq!(records[0].package.name, "demo");
+        assert_eq!(records[0].module, "demo::geometry");
+        assert_eq!(records[0].slots, vec![r#"{"prim":"f64"}"#.to_owned()]);
+        assert_eq!(records[1].module, "demo");
+    }
+
+    #[test]
     fn required_read_rejects_artifact_without_metadata() {
         let artifact = MetadataArtifact::compile_without_metadata();
 
@@ -495,16 +521,43 @@ mod tests {
             Self::compile_with_records_and_kind(1, ArtifactKind::Object)
         }
 
+        fn compile_with_source_records() -> Self {
+            let statics = [
+                source_record_bytes("demo", "1.0.0", "demo::geometry", &[r#"{"prim":"f64"}"#], b"{}"),
+                source_record_bytes("demo", "1.0.0", "demo", &[], b"{}"),
+            ]
+            .iter()
+            .enumerate()
+            .map(|(index, record)| {
+                let length = record.len();
+                let bytes = record
+                    .iter()
+                    .map(u8::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!(
+                    "#[cfg_attr(target_vendor = \"apple\", unsafe(link_section = \"__DATA,__boltffisrc\"))]\n#[cfg_attr(not(target_vendor = \"apple\"), unsafe(link_section = \".boltffisrc\"))]\n#[used]\nstatic BOLTFFI_SOURCE_{index}: [u8; {length}] = [{bytes}];"
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+            Self::compile_source(&statics, ArtifactKind::StaticLibrary)
+        }
+
         fn compile_with_records(records: usize) -> Self {
             Self::compile_with_records_and_kind(records, ArtifactKind::StaticLibrary)
         }
 
         fn compile_with_records_and_kind(records: usize, kind: ArtifactKind) -> Self {
+            Self::compile_source(&Self::source(records), kind)
+        }
+
+        fn compile_source(source_text: &str, kind: ArtifactKind) -> Self {
             let root = temp_root("boltffi-bindgen-metadata");
             fs::create_dir_all(&root).expect("create metadata fixture root");
             let source = root.join("lib.rs");
             let artifact = root.join(kind.file_name());
-            fs::write(&source, Self::source(records)).expect("write metadata fixture source");
+            fs::write(&source, source_text).expect("write metadata fixture source");
 
             let output = Command::new(rustc())
                 .arg("--crate-name")
@@ -642,6 +695,32 @@ mod tests {
             .expect("metadata envelope")
             .to_section_bytes()
             .expect("metadata section bytes")
+    }
+
+    fn source_record_bytes(
+        package: &str,
+        version: &str,
+        module: &str,
+        slots: &[&str],
+        json: &[u8],
+    ) -> Vec<u8> {
+        let mut payload = Vec::new();
+        for field in [package, version, module] {
+            payload.extend_from_slice(&(field.len() as u16).to_le_bytes());
+            payload.extend_from_slice(field.as_bytes());
+        }
+        payload.extend_from_slice(&(slots.len() as u16).to_le_bytes());
+        for slot in slots {
+            payload.extend_from_slice(&(slot.len() as u16).to_le_bytes());
+            payload.extend_from_slice(slot.as_bytes());
+        }
+        payload.extend_from_slice(&(json.len() as u32).to_le_bytes());
+        payload.extend_from_slice(json);
+
+        let mut bytes = b"BFFISRC1".to_vec();
+        bytes.extend_from_slice(&(payload.len() as u64).to_le_bytes());
+        bytes.extend_from_slice(&payload);
+        bytes
     }
 
     fn malformed_archive_member() -> Vec<u8> {
