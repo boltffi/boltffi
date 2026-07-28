@@ -4332,6 +4332,34 @@ mod tests {
     }
 
     #[test]
+    fn native_detached_future_function_hands_future_directly_to_runtime() {
+        let mut function = FunctionDef::new(
+            FunctionId::new("demo::answer"),
+            CanonicalName::single("answer"),
+        );
+        function.execution = ExecutionKind::DetachedFuture;
+        function.returns = ReturnDef::value(TypeExpr::Primitive(Primitive::U32));
+        let mut source = SourceContract::new(PackageInfo::new("demo", None));
+        source.functions.push(function);
+        let lowered = lower_with_declarations::<Native>(&source).expect("lowered bindings");
+        let expansion = Expansion::new(&lowered);
+        let syntax = syn::parse_quote! {
+            pub fn answer() -> impl ::core::future::Future<Output = u32> + Send + 'static {
+                async { 42 }
+            }
+        };
+
+        let tokens = expand_function(&expansion, &source.functions[0], syntax)
+            .expect("expanded detached future function");
+
+        assert_generated_crate_checks("native_detached_future_function", tokens.clone());
+        let rendered = tokens.to_string();
+        assert!(rendered.contains("let __boltffi_future = { answer () }"));
+        assert!(rendered.contains("rust_future_new (__boltffi_future)"));
+        assert!(!rendered.contains("rust_future_new (async move"));
+    }
+
+    #[test]
     fn native_async_encoded_return_expansion_completes_with_encoded_value() {
         let source = async_greet_contract();
         let lowered = lower_with_declarations::<Native>(&source).expect("lowered bindings");
@@ -6371,6 +6399,89 @@ mod tests {
             )
         );
         assert!(rendered.contains("__boltffi_receiver . compute ()"));
+    }
+
+    #[test]
+    fn native_single_threaded_class_detached_future_releases_receiver_before_handoff() {
+        let mut method = record_method(
+            "compute",
+            Receiver::Shared,
+            Vec::new(),
+            ReturnDef::value(TypeExpr::Primitive(Primitive::U32)),
+        );
+        method.execution = ExecutionKind::DetachedFuture;
+        let mut class = engine_class_with_method(method);
+        class.thread_safety = ClassThreadSafety::UnsafeSingleThreaded;
+        let mut source = SourceContract::new(PackageInfo::new("demo", None));
+        source.classes.push(class);
+        let lowered = lower_with_declarations::<Native>(&source).expect("lowered bindings");
+        let expansion = Expansion::new(&lowered);
+
+        let tokens = expand_class(&expansion, &source.classes[0]).expect("expanded class");
+
+        let generated = quote! {
+            use ::std::future::Future;
+            use ::std::rc::Rc;
+
+            pub struct Engine(Rc<()>);
+
+            impl Engine {
+                pub fn compute(&self) -> impl Future<Output = u32> + Send + 'static {
+                    async { 7 }
+                }
+            }
+
+            #tokens
+        };
+        syn::parse2::<syn::File>(generated.clone())
+            .expect("class detached future expansion parses");
+        assert_generated_crate_checks("native_class_detached_future", generated);
+        let rendered = tokens.to_string();
+        let retain = rendered
+            .find("__BoltffiEngineHandle :: retain")
+            .expect("receiver is retained while constructing the future");
+        let handoff = rendered
+            .find("rust_future_new (__boltffi_future)")
+            .expect("detached future is handed to the runtime");
+        assert!(retain < handoff);
+        assert!(rendered.contains("let __boltffi_future = {"));
+        assert!(rendered.contains("__boltffi_receiver . compute ()"));
+        assert!(!rendered.contains("rust_future_new (async move"));
+        assert!(!rendered.contains("unsafe impl Send for __BoltffiEngineRetainedHandle"));
+    }
+
+    #[test]
+    fn native_static_method_can_return_detached_future() {
+        let mut method = record_method(
+            "preload",
+            Receiver::None,
+            Vec::new(),
+            ReturnDef::value(TypeExpr::Primitive(Primitive::U32)),
+        );
+        method.execution = ExecutionKind::DetachedFuture;
+        let mut source = SourceContract::new(PackageInfo::new("demo", None));
+        source.classes.push(engine_class_with_method(method));
+        let lowered = lower_with_declarations::<Native>(&source).expect("lowered bindings");
+        let expansion = Expansion::new(&lowered);
+
+        let tokens = expand_class(&expansion, &source.classes[0]).expect("expanded class");
+        let generated = quote! {
+            pub struct Engine;
+
+            impl Engine {
+                pub fn preload() -> impl ::core::future::Future<Output = u32> + Send + 'static {
+                    async { 7 }
+                }
+            }
+
+            #tokens
+        };
+
+        assert_generated_crate_checks("native_static_detached_future", generated);
+        let rendered = tokens.to_string();
+        assert!(rendered.contains("let __boltffi_future = { Engine :: preload () }"));
+        assert!(rendered.contains("rust_future_new (__boltffi_future)"));
+        assert!(!rendered.contains("rust_future_new (async move"));
     }
 
     #[test]

@@ -259,6 +259,7 @@ impl<'lowered, S: RenderSurface> Export<'lowered, S> {
                     self.symbol,
                     self.callable,
                     source_callable,
+                    self.source_method.execution,
                     rust_call,
                     receiver,
                     visibility,

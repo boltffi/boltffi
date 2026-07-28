@@ -33,6 +33,15 @@ fn rendered_source(fixture: SourceFixture) -> String {
     rendered_source_with_host(fixture, host)
 }
 
+fn rendered_inline_source(source: &str) -> String {
+    let host = SwiftHost::new("DemoFFI").expect("Swift host");
+    let target = host.into_target().expect("Swift target");
+    let output = target
+        .render(&bindings(source))
+        .expect("Swift target renders");
+    rendered_swift_file(&output)
+}
+
 fn rendered_source_with_host(fixture: SourceFixture, host: SwiftHost) -> String {
     rendered_swift_file(&rendered_output_with_host(fixture, host))
 }
@@ -214,6 +223,28 @@ fn swift_target_renders_async_complete_return_shapes() {
 #[test]
 fn swift_target_renders_async_class_methods() {
     insta::assert_snapshot!(rendered_fixture("exports/async_class_methods"));
+}
+
+#[test]
+fn swift_target_renders_detached_future_method_as_async_throws() {
+    let rendered = rendered_inline_source(
+        r#"
+        pub struct Engine;
+
+        #[export(single_threaded)]
+        impl Engine {
+            pub fn new() -> Self {
+                Self
+            }
+
+            pub fn load(&self, value: u32) -> impl Future<Output = Result<u32, String>> + Send + 'static {
+                async move { Ok(value) }
+            }
+        }
+        "#,
+    );
+
+    assert!(rendered.contains("public func load(value: UInt32) async throws -> UInt32"));
 }
 
 #[test]

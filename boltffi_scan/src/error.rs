@@ -71,6 +71,14 @@ pub enum ScanError {
     UnsupportedExternAbi {
         item: String,
     },
+    InvalidDetachedFuture {
+        item: String,
+        reason: String,
+    },
+    BorrowedAsyncSingleThreadedMethod {
+        class: String,
+        method: String,
+    },
     UnsupportedSupertraits {
         item: String,
     },
@@ -201,6 +209,18 @@ impl fmt::Display for ScanError {
             }
             Self::UnsupportedExternAbi { item } => {
                 write!(formatter, "`{item}` cannot declare an extern ABI")
+            }
+            Self::InvalidDetachedFuture { item, reason } => {
+                write!(
+                    formatter,
+                    "`{item}` has an invalid detached future return: {reason}; expected `impl Future<Output = T> + Send + 'static`"
+                )
+            }
+            Self::BorrowedAsyncSingleThreadedMethod { class, method } => {
+                write!(
+                    formatter,
+                    "async instance method `{class}::{method}` cannot be exported from a single-threaded class; use a non-async method returning `impl Future<Output = T> + Send + 'static` so the future does not borrow the receiver"
+                )
             }
             Self::UnsupportedSupertraits { item } => {
                 write!(formatter, "`{item}` cannot use supertraits")

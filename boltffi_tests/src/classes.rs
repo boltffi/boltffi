@@ -1,4 +1,4 @@
-use std::sync::Mutex;
+use std::{future::Future, marker::PhantomData, rc::Rc, sync::Mutex};
 
 use boltffi::*;
 
@@ -6,12 +6,16 @@ use crate::{FixtureMarkerOptions, FixtureMessageRecord, FixturePoint, FixtureSta
 
 pub struct TestCounter {
     value: i32,
+    _single_threaded_marker: PhantomData<Rc<()>>,
 }
 
 #[export(single_threaded)]
 impl TestCounter {
     pub fn new(initial: i32) -> Self {
-        Self { value: initial }
+        Self {
+            value: initial,
+            _single_threaded_marker: PhantomData,
+        }
     }
 
     pub fn get(&self) -> i32 {
@@ -27,13 +31,15 @@ impl TestCounter {
         self.value
     }
 
-    pub async fn async_get(&self) -> i32 {
-        self.value
+    pub fn async_get(&self) -> impl Future<Output = i32> + Send + 'static {
+        let value = self.value;
+        async move { value }
     }
 
-    pub async fn async_add(&mut self, amount: i32) -> i32 {
+    pub fn async_add(&mut self, amount: i32) -> impl Future<Output = i32> + Send + 'static {
         self.value += amount;
-        self.value
+        let value = self.value;
+        async move { value }
     }
 }
 
@@ -297,51 +303,63 @@ impl ClassTestFixture {
         if flag { Some(42) } else { None }
     }
 
-    pub async fn async_get_id(&self) -> i32 {
-        self.id
+    pub fn async_get_id(&self) -> impl Future<Output = i32> + Send + 'static {
+        let id = self.id;
+        async move { id }
     }
 
-    pub async fn async_get_name(&self) -> String {
-        self.name.clone()
+    pub fn async_get_name(&self) -> impl Future<Output = String> + Send + 'static {
+        let name = self.name.clone();
+        async move { name }
     }
 
-    pub async fn async_echo_message_record(
+    pub fn async_echo_message_record(
         &self,
         record: FixtureMessageRecord,
-    ) -> FixtureMessageRecord {
-        record
+    ) -> impl Future<Output = FixtureMessageRecord> + Send + 'static {
+        async move { record }
     }
 
-    pub async fn async_set_id(&mut self, id: i32) {
+    pub fn async_set_id(&mut self, id: i32) -> impl Future<Output = ()> + Send + 'static {
         self.id = id;
+        async {}
     }
 
-    pub async fn async_set_name(&mut self, name: String) {
+    pub fn async_set_name(&mut self, name: String) -> impl Future<Output = ()> + Send + 'static {
         self.name = name;
+        async {}
     }
 
-    pub async fn async_add_value(&mut self, value: i32) -> i32 {
+    pub fn async_add_value(&mut self, value: i32) -> impl Future<Output = i32> + Send + 'static {
         self.values.push(value);
-        self.values.len() as i32
+        let count = self.values.len() as i32;
+        async move { count }
     }
 
-    pub async fn async_compute_sum(&self) -> i32 {
-        self.values.iter().sum()
+    pub fn async_compute_sum(&self) -> impl Future<Output = i32> + Send + 'static {
+        let sum = self.values.iter().sum();
+        async move { sum }
     }
 
-    pub async fn async_try_get(&self, index: i32) -> Result<i32, String> {
-        if index < 0 || index as usize >= self.values.len() {
+    pub fn async_try_get(
+        &self,
+        index: i32,
+    ) -> impl Future<Output = Result<i32, String>> + Send + 'static {
+        let result = if index < 0 || index as usize >= self.values.len() {
             Err(format!("index {} out of bounds", index))
         } else {
             Ok(self.values[index as usize])
-        }
+        };
+        async move { result }
     }
 
-    pub async fn async_find(&self, target: i32) -> Option<i32> {
-        self.values
+    pub fn async_find(&self, target: i32) -> impl Future<Output = Option<i32>> + Send + 'static {
+        let index = self
+            .values
             .iter()
             .position(|&v| v == target)
-            .map(|i| i as i32)
+            .map(|index| index as i32);
+        async move { index }
     }
 
     pub fn with_primitives(

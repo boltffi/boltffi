@@ -386,6 +386,24 @@ mod async_ref_self_methods {
         };
         unsafe { boltffi_release_class_boltffi_tests_classes_test_counter(handle) };
     }
+
+    #[test]
+    fn detached_future_completes_after_single_threaded_receiver_is_released() {
+        let handle = unsafe { boltffi_init_class_boltffi_tests_classes_test_counter_new(42) };
+        let future =
+            unsafe { boltffi_method_class_boltffi_tests_classes_test_counter_async_get(handle) };
+        unsafe { boltffi_release_class_boltffi_tests_classes_test_counter(handle) };
+
+        extern "C" fn noop(_: u64, _: RustFuturePoll) {}
+        unsafe { rustfuture::rust_future_poll::<i32>(future, noop, 0) };
+
+        let result = unsafe { rustfuture::rust_future_complete(future) };
+        assert_eq!(result, Ok(42));
+
+        unsafe {
+            boltffi_async_method_class_boltffi_tests_classes_test_counter_async_get_free(future)
+        };
+    }
 }
 
 mod async_ref_mut_self_methods {

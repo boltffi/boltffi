@@ -31,9 +31,10 @@ fn build(
     let attrs = Attributes::new(&item.attrs, &scanner);
     function.source = attributes::source(&item.vis, scope, item.span());
     function.source_span = function.source.span.clone();
-    function.execution = signature::execution(&item.sig);
+    let (execution, returns) = signature::export_execution_and_return(&item.sig, &scanner)?;
+    function.execution = execution;
     function.parameters = parameters(&item.sig, &scanner)?;
-    function.returns = scanner.scan_export_return(&item.sig.output)?;
+    function.returns = returns;
     function.doc = attrs.doc();
     function.deprecated = attrs.deprecated()?;
     function.user_attrs = attrs.user_attrs();
@@ -159,6 +160,37 @@ mod tests {
         assert_eq!(function.form, CallableForm::Function);
         assert!(function.parameters.is_empty());
         assert_eq!(function.returns, ReturnDef::Void);
+    }
+
+    #[test]
+    fn detached_future_records_async_output_contract() {
+        let function = scan(
+            "pub fn load() -> impl Future<Output = Result<u32, String>> + Send + 'static { todo!() }",
+        )
+        .expect("scan");
+
+        assert_eq!(function.execution, ExecutionKind::DetachedFuture);
+        assert_eq!(
+            function.returns,
+            ReturnDef::value(TypeExpr::result(
+                TypeExpr::Primitive(Primitive::U32),
+                TypeExpr::String,
+            ))
+        );
+    }
+
+    #[test]
+    fn detached_future_requires_send_and_static() {
+        let error = scan("pub fn load() -> impl Future<Output = u32> + 'static { todo!() }")
+            .expect_err("missing Send must be rejected");
+
+        assert_eq!(
+            error,
+            ScanError::InvalidDetachedFuture {
+                item: "load".to_owned(),
+                reason: "the `Send` bound is required".to_owned(),
+            }
+        );
     }
 
     #[test]

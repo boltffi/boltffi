@@ -77,6 +77,7 @@ where
                 wrapper::async_call::Input::new(
                     function,
                     source_signature,
+                    source.execution,
                     rust_call,
                     visibility,
                     self.expansion,

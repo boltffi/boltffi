@@ -600,7 +600,7 @@ fn lower_execution<S: SurfaceLower>(
 ) -> Result<ExecutionDecl<S>, LowerError> {
     match execution {
         ExecutionKind::Sync => Ok(ExecutionDecl::synchronous()),
-        ExecutionKind::Async => {
+        ExecutionKind::Async | ExecutionKind::DetachedFuture => {
             let protocol = S::build_protocol(allocator, start_symbol_name)?;
             Ok(ExecutionDecl::asynchronous(protocol))
         }

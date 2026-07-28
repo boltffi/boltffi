@@ -3,7 +3,7 @@ use boltffi_ffi_rules::naming;
 use boltffi_ffi_rules::transport::{EncodedReturnStrategy, ValueReturnStrategy};
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::ItemFn;
+use syn::{ItemFn, ReturnType};
 
 use crate::exports::async_export::{
     AsyncExportNames, AsyncRuntimeExports, AsyncWasmCompleteExport,
@@ -197,6 +197,17 @@ fn build_void_wasm_return_exports(
 }
 
 fn ffi_export_item_impl(input: ItemFn) -> proc_macro2::TokenStream {
+    if input.sig.asyncness.is_none()
+        && let Err(error) = boltffi_ffi_rules::detached_future::output(&input.sig.output)
+    {
+        return syn::Error::new_spanned(
+            &input.sig.output,
+            format!(
+                "BoltFFI: invalid detached future return: {error}; expected `impl Future<Output = T> + Send + 'static`"
+            ),
+        )
+        .to_compile_error();
+    }
     let violations = safety::scan_function(&input);
     if !violations.is_empty() {
         return safety::violations_to_compile_errors(&violations);
@@ -640,7 +651,20 @@ fn generate_async_export(
     let input = callable.item();
     let fn_name = &input.sig.ident;
     let fn_inputs = &input.sig.inputs;
-    let fn_output = &input.sig.output;
+    let source_output = &input.sig.output;
+    let detached_output = match input.sig.asyncness {
+        Some(_) => None,
+        None => boltffi_ffi_rules::detached_future::output(source_output)
+            .expect("detached future syntax was validated before export generation"),
+    };
+    let detached_return;
+    let fn_output = match detached_output {
+        Some(output) => {
+            detached_return = ReturnType::Type(Default::default(), Box::new(output.clone()));
+            &detached_return
+        }
+        None => source_output,
+    };
     let fn_vis = &input.vis;
 
     let base_name = format!("{}_{}", naming::ffi_prefix(), fn_name);
@@ -674,17 +698,22 @@ fn generate_async_export(
     let call_args = &params.call_args;
     let move_vars = &params.move_vars;
 
-    let future_body = quote! {
-        #(#thread_setup)*
-        #fn_name(#(#call_args),*).await
-    };
-
-    let entry_body = quote! {
-        #(#pre_spawn)*
-        #(let _ = &#move_vars;)*
-        ::boltffi::__private::rustfuture::rust_future_new(async move {
-            #future_body
-        })
+    let entry_body = match detached_output {
+        Some(_) => quote! {
+            #(#pre_spawn)*
+            #(#thread_setup)*
+            #(let _ = &#move_vars;)*
+            let future = #fn_name(#(#call_args),*);
+            ::boltffi::__private::rustfuture::rust_future_new(future)
+        },
+        None => quote! {
+            #(#pre_spawn)*
+            #(let _ = &#move_vars;)*
+            ::boltffi::__private::rustfuture::rust_future_new(async move {
+                #(#thread_setup)*
+                #fn_name(#(#call_args),*).await
+            })
+        },
     };
     let entry_fn = ExternExport::async_entry(fn_vis, export_names.entry(), ffi_params, entry_body)
         .render(ExportCondition::Always);

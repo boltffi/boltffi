@@ -1,4 +1,4 @@
-use boltffi_ast::{ClassDef, MethodDef};
+use boltffi_ast::{ClassDef, ExecutionKind, MethodDef, Receiver};
 use boltffi_binding::{
     ClassDecl, ClassId, ClassThreadSafety, Decl, ExecutionDecl, ExportedCallable, HandleTarget,
     IncomingParam, IntoRust, NativeSymbol, OutOfRust, ParamPlan, Receive, ReturnPlan,
@@ -36,6 +36,7 @@ struct ClassHandleOperations {
     mutable: bool,
     retained_shared: bool,
     retained_mutable: bool,
+    retained_send: bool,
 }
 
 impl<'expansion, 'lowered, S: RenderSurface> Renderer<'expansion, 'lowered, S> {
@@ -84,7 +85,7 @@ impl<'expansion, 'lowered, S: RenderSurface> Renderer<'expansion, 'lowered, S> {
         let class_names = names::Class::new(&class);
         let handle_type = class_names.handle();
         let retained_handle_type = class_names.retained_handle();
-        let operations = ClassHandleOperations::new(binding, self.expansion);
+        let operations = ClassHandleOperations::new(binding, source, self.expansion);
         let handle = self.handle(&class_type, &handle_type, &retained_handle_type, operations);
         let thread_safety = self.thread_safety(binding, &class, &class_type);
         let release = self.release(binding.release(), binding.handle(), &handle_type)?;
@@ -214,13 +215,18 @@ impl<'expansion, 'lowered, S: RenderSurface> Renderer<'expansion, 'lowered, S> {
                 }
             }
         });
+        let retained_send = operations.retained_send.then(|| {
+            quote! {
+                unsafe impl Send for #retained_handle_type {}
+            }
+        });
         let retained_handle = operations.retained().then(|| {
             quote! {
                 struct #retained_handle_type {
                     handle: ::core::ptr::NonNull<#handle_type>,
                 }
 
-                unsafe impl Send for #retained_handle_type {}
+                #retained_send
 
                 impl #retained_handle_type {
                     #retained_shared
@@ -392,6 +398,7 @@ where
 impl ClassHandleOperations {
     fn new<'lowered, S: RenderSurface>(
         class: &ClassDecl<S>,
+        source: &ClassDef,
         expansion: &Expansion<'lowered, S>,
     ) -> Self {
         expansion
@@ -403,6 +410,7 @@ impl ClassHandleOperations {
                 operations.with_callable(class.id(), callable)
             })
             .with_class_receivers(class)
+            .with_attached_async_receivers(source)
             .with_class_streams(class, expansion)
     }
 
@@ -436,6 +444,14 @@ impl ClassHandleOperations {
         class.methods().iter().fold(self, |operations, method| {
             operations.with_receiver(method.callable())
         })
+    }
+
+    fn with_attached_async_receivers(mut self, class: &ClassDef) -> Self {
+        self.retained_send = class.methods.iter().any(|method| {
+            method.execution == ExecutionKind::Async
+                && matches!(method.receiver, Receiver::Shared | Receiver::Mutable)
+        });
+        self
     }
 
     fn with_class_streams<'lowered, S: RenderSurface>(

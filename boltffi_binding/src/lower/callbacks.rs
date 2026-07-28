@@ -513,7 +513,7 @@ fn wasm_import(module: &ImportModule, name: String) -> Result<ImportSymbol, Lowe
 fn native_callback_execution(method: &MethodDef) -> ExecutionDecl<Native> {
     match method.execution {
         ExecutionKind::Sync => ExecutionDecl::synchronous(),
-        ExecutionKind::Async => {
+        ExecutionKind::Async | ExecutionKind::DetachedFuture => {
             ExecutionDecl::asynchronous(native::AsyncProtocol::CallbackCompletion)
         }
     }
@@ -531,7 +531,7 @@ fn wasm_callback_method_surface(
             wasm_import(module, slot.wasm_import_method_name(callback_id))?,
             ExecutionDecl::synchronous(),
         )),
-        ExecutionKind::Async => {
+        ExecutionKind::Async | ExecutionKind::DetachedFuture => {
             let target = wasm_import(module, slot.wasm_import_start_name(callback_id))?;
             let complete = allocator.mint_callback_complete(callback_id, slot)?;
             Ok(methods::CallbackMethodSurface::new(

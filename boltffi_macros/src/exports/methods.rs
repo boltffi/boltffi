@@ -71,6 +71,13 @@ impl ClassExportConfig {
     }
 
     fn validate(&self, item_impl: &syn::ItemImpl) -> syn::Result<()> {
+        item_impl
+            .items
+            .iter()
+            .filter_map(ExportableMethod::from_item)
+            .filter(ExportableMethod::is_exported)
+            .try_for_each(|method| self.validate_method(method.method))?;
+
         if self.single_threaded || !Self::has_mut_self_methods(item_impl) {
             return Ok(());
         }
@@ -84,6 +91,30 @@ impl ClassExportConfig {
              2. Add #[export(single_threaded)] ONLY if you enforce thread safety in the target \
                 language and want to avoid synchronization overhead you don't need",
         ))
+    }
+
+    fn validate_method(&self, method: &syn::ImplItemFn) -> syn::Result<()> {
+        if method.sig.asyncness.is_none()
+            && let Err(error) = boltffi_ffi_rules::detached_future::output(&method.sig.output)
+        {
+            return Err(syn::Error::new_spanned(
+                &method.sig.output,
+                format!(
+                    "BoltFFI: invalid detached future return: {error}; expected `impl Future<Output = T> + Send + 'static`"
+                ),
+            ));
+        }
+        let borrows_receiver = matches!(
+            method.sig.inputs.first(),
+            Some(FnArg::Receiver(receiver)) if receiver.reference.is_some()
+        );
+        if self.single_threaded && method.sig.asyncness.is_some() && borrows_receiver {
+            return Err(syn::Error::new_spanned(
+                &method.sig,
+                "BoltFFI: an async instance method cannot borrow a single-threaded class; use a non-async method returning `impl Future<Output = T> + Send + 'static` so the future does not borrow the receiver",
+            ));
+        }
+        Ok(())
     }
 
     fn thread_safety_assertion(&self, type_name: &syn::Ident) -> proc_macro2::TokenStream {
@@ -507,7 +538,8 @@ pub fn export_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
                     &return_lowering,
                     &callback_registry,
                 ),
-                (CallableForm::InstanceMethod, ExecutionKind::Async) => {
+                (CallableForm::InstanceMethod, ExecutionKind::Async)
+                | (CallableForm::StaticMethod, ExecutionKind::Async) => {
                     generate_async_method_export(
                         callable,
                         &type_name,
@@ -516,7 +548,6 @@ pub fn export_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
                         &callback_registry,
                     )
                 }
-                (CallableForm::StaticMethod, ExecutionKind::Async) => None,
                 (CallableForm::Function, _) => None,
             }
         })
@@ -1257,19 +1288,36 @@ fn generate_async_method_export(
     let method = callable.method();
     let method_name = &method.sig.ident;
     let method_name_str = method_name.to_string();
-    let receiver = match method.sig.inputs.first() {
-        Some(FnArg::Receiver(receiver)) => receiver,
-        _ => return None,
-    };
-    let needs_mut = receiver.mutability.is_some();
+    let is_instance_method = callable.form() == CallableForm::InstanceMethod;
+    let needs_mut = method.sig.inputs.first().is_some_and(
+        |argument| matches!(argument, FnArg::Receiver(receiver) if receiver.mutability.is_some()),
+    );
 
     let base_name = naming::method_ffi_name(class_name, &method_name_str);
     let export_names = AsyncExportNames::new(base_name.as_str(), method_name.span());
     let visibility: syn::Visibility = syn::parse_quote! { pub };
-    let fn_output = &method.sig.output;
+    let source_output = &method.sig.output;
+    let detached_output = match method.sig.asyncness {
+        Some(_) => None,
+        None => boltffi_ffi_rules::detached_future::output(source_output)
+            .expect("detached future syntax was validated before export generation"),
+    };
+    let detached_return;
+    let fn_output = match detached_output {
+        Some(output) => {
+            detached_return = ReturnType::Type(Default::default(), Box::new(output.clone()));
+            &detached_return
+        }
+        None => source_output,
+    };
     let return_abi = return_lowering.lower_output(fn_output);
 
-    let other_inputs = method.sig.inputs.iter().skip(1).cloned();
+    let other_inputs = method
+        .sig
+        .inputs
+        .iter()
+        .skip(usize::from(is_instance_method))
+        .cloned();
     let on_wire_record_error = return_abi.async_invalid_arg_early_return_statement();
     let params = match transform_method_params_async(
         other_inputs,
@@ -1292,28 +1340,44 @@ fn generate_async_method_export(
     let call_args = &params.call_args;
     let move_vars = &params.move_vars;
 
-    let future_body = quote! {
-        #(#thread_setup)*
-        instance.#method_name(#(#call_args),*).await
+    let invocation = match is_instance_method {
+        true => quote! { instance.#method_name(#(#call_args),*) },
+        false => quote! { #type_name::#method_name(#(#call_args),*) },
     };
 
-    let instance_binding = if needs_mut {
-        quote! { let instance = &mut *handle; }
-    } else {
-        quote! { let instance = &*handle; }
+    let instance_binding = match (is_instance_method, needs_mut) {
+        (true, true) => quote! { let instance = &mut *handle; },
+        (true, false) => quote! { let instance = &*handle; },
+        (false, _) => proc_macro2::TokenStream::new(),
     };
 
-    let entry_body = quote! {
-        #instance_binding
-        #(#pre_spawn)*
-        #(let _ = &#move_vars;)*
-        ::boltffi::__private::rustfuture::rust_future_new(async move {
-            #future_body
-        })
+    let entry_body = match detached_output {
+        Some(_) => quote! {
+            #instance_binding
+            #(#pre_spawn)*
+            #(#thread_setup)*
+            #(let _ = &#move_vars;)*
+            let future = #invocation;
+            ::boltffi::__private::rustfuture::rust_future_new(future)
+        },
+        None => quote! {
+            #instance_binding
+            #(#pre_spawn)*
+            #(let _ = &#move_vars;)*
+            ::boltffi::__private::rustfuture::rust_future_new(async move {
+                #(#thread_setup)*
+                #invocation.await
+            })
+        },
     };
-    let entry_fn =
-        InstanceMethodExport::new(&visibility, export_names.entry(), type_name, ffi_params)
-            .render_async_entry(entry_body);
+    let entry_fn = match is_instance_method {
+        true => InstanceMethodExport::new(&visibility, export_names.entry(), type_name, ffi_params)
+            .render_async_entry(entry_body),
+        false => {
+            ExternExport::async_entry(&visibility, export_names.entry(), ffi_params, entry_body)
+                .render(ExportCondition::Always)
+        }
+    };
 
     let wasm_complete =
         AsyncWasmCompleteExport::from_resolved_return(&return_abi, &rust_return_type);
@@ -1690,6 +1754,27 @@ mod tests {
 
         assert!(method.sig.asyncness.is_some());
         assert_eq!(extract_receiver_mutability(method), Some(true));
+    }
+
+    #[test]
+    fn single_threaded_class_rejects_borrowed_async_and_suggests_detached_future() {
+        let impl_block = parse_impl(
+            r#"
+            impl Counter {
+                pub async fn load(&self) -> i32 { 1 }
+            }
+            "#,
+        );
+
+        let error = ClassExportConfig {
+            single_threaded: true,
+        }
+        .validate(&impl_block)
+        .expect_err("borrowed async receiver must be rejected");
+        let diagnostic = error.to_string();
+
+        assert!(diagnostic.contains("async instance method cannot borrow a single-threaded class"));
+        assert!(diagnostic.contains("impl Future<Output = T> + Send + 'static"));
     }
 
     #[test]

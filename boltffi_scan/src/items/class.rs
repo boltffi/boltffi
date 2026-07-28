@@ -1,4 +1,4 @@
-use boltffi_ast::{ClassDef, ClassId, ClassThreadSafety};
+use boltffi_ast::{ClassDef, ClassId, ClassThreadSafety, ExecutionKind, Receiver};
 use syn::spanned::Spanned;
 
 use crate::attributes::Attributes;
@@ -14,7 +14,7 @@ pub fn scan(
     marked: &[Marked<'_, syn::ItemImpl>],
     declared_types: &DeclaredTypes,
 ) -> Result<Vec<ClassDef>, ScanError> {
-    marked
+    let classes = marked
         .iter()
         .try_fold(Vec::<ClassDef>::new(), |mut classes, marked| {
             let class = build(
@@ -38,7 +38,26 @@ pub fn scan(
                 None => classes.push(class),
             }
             Ok(classes)
-        })
+        })?;
+    classes.iter().try_for_each(validate_execution)?;
+    Ok(classes)
+}
+
+fn validate_execution(class: &ClassDef) -> Result<(), ScanError> {
+    if class.thread_safety != ClassThreadSafety::UnsafeSingleThreaded {
+        return Ok(());
+    }
+
+    class.methods.iter().try_for_each(|method| {
+        let borrows_receiver = matches!(method.receiver, Receiver::Shared | Receiver::Mutable);
+        if method.execution == ExecutionKind::Async && borrows_receiver {
+            return Err(ScanError::BorrowedAsyncSingleThreadedMethod {
+                class: class.name.spelling().to_owned(),
+                method: method.name.spelling().to_owned(),
+            });
+        }
+        Ok(())
+    })
 }
 
 fn build(
@@ -173,6 +192,59 @@ mod tests {
             .expect("scan");
 
         assert_eq!(class.thread_safety, ClassThreadSafety::UnsafeSingleThreaded);
+    }
+
+    #[test]
+    fn rejects_borrowed_async_method_and_suggests_detached_future() {
+        let source_tree = crate::source_tree::SourceTree::in_memory(
+            "demo",
+            syn::parse_str::<syn::File>(
+                "pub struct Engine; \
+                 #[export(single_threaded)] \
+                 impl Engine { pub async fn load(&self) -> u32 { 1 } }",
+            )
+            .expect("valid source")
+            .items,
+        )
+        .expect("source tree");
+        let marked = crate::marked::MarkedItems::collect(&source_tree).expect("marked");
+        let declared_types =
+            DeclaredTypes::index(&source_tree, &marked).expect("declared type index");
+
+        let error = super::scan(marked.classes(), &declared_types)
+            .expect_err("borrowed async receiver must be rejected");
+
+        assert_eq!(
+            error,
+            ScanError::BorrowedAsyncSingleThreadedMethod {
+                class: "Engine".to_owned(),
+                method: "load".to_owned(),
+            }
+        );
+        assert!(
+            error
+                .to_string()
+                .contains("impl Future<Output = T> + Send + 'static")
+        );
+    }
+
+    #[test]
+    fn accepts_detached_future_method_on_single_threaded_class() {
+        let class = scan(
+            "#[export(single_threaded)] impl Engine { \
+                pub fn load(&self) -> impl Future<Output = u32> + Send + 'static { todo!() } \
+                pub fn preload() -> impl Future<Output = u32> + Send + 'static { todo!() } \
+            }",
+        )
+        .expect("scan");
+
+        assert_eq!(class.methods[0].execution, ExecutionKind::DetachedFuture);
+        assert_eq!(
+            class.methods[0].returns,
+            ReturnDef::value(TypeExpr::Primitive(Primitive::U32))
+        );
+        assert_eq!(class.methods[1].receiver, Receiver::None);
+        assert_eq!(class.methods[1].execution, ExecutionKind::DetachedFuture);
     }
 
     #[test]

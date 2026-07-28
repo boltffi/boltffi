@@ -1,3 +1,4 @@
+use boltffi_ast::ExecutionKind;
 use boltffi_binding::{
     DirectValueType, ErrorDecl, ExecutionDecl, ExportedCallable, FunctionDecl, HandleTarget,
     IncomingParam, IntoRust, Native, NativeSymbol, ParamDecl, ParamPlan, Receive, ReturnPlan,
@@ -24,6 +25,7 @@ pub struct Input<'expansion, 'lowered, S: RenderSurface> {
     symbol: &'lowered NativeSymbol,
     callable: &'lowered ExportedCallable<S>,
     source: rust_api::Callable<'lowered>,
+    execution: ExecutionKind,
     rust_call: export::RustCall,
     receiver: export::ReceiverTokens,
     visibility: TokenStream,
@@ -34,6 +36,7 @@ impl<'expansion, 'lowered, S: RenderSurface> Input<'expansion, 'lowered, S> {
     pub fn new(
         function: &'lowered FunctionDecl<S>,
         source: rust_api::Callable<'lowered>,
+        execution: ExecutionKind,
         rust_call: export::RustCall,
         visibility: TokenStream,
         expansion: &'expansion Expansion<'lowered, S>,
@@ -42,6 +45,7 @@ impl<'expansion, 'lowered, S: RenderSurface> Input<'expansion, 'lowered, S> {
             function.symbol(),
             function.callable(),
             source,
+            execution,
             rust_call,
             export::ReceiverTokens::none(),
             visibility,
@@ -53,6 +57,7 @@ impl<'expansion, 'lowered, S: RenderSurface> Input<'expansion, 'lowered, S> {
         symbol: &'lowered NativeSymbol,
         callable: &'lowered ExportedCallable<S>,
         source: rust_api::Callable<'lowered>,
+        execution: ExecutionKind,
         rust_call: export::RustCall,
         receiver: export::ReceiverTokens,
         visibility: TokenStream,
@@ -62,6 +67,7 @@ impl<'expansion, 'lowered, S: RenderSurface> Input<'expansion, 'lowered, S> {
             symbol,
             callable,
             source,
+            execution,
             rust_call,
             receiver,
             visibility,
@@ -104,6 +110,7 @@ impl<'expansion, 'lowered> Input<'expansion, 'lowered, Native> {
             self.symbol,
             self.callable,
             self.source,
+            self.execution,
             self.rust_call,
             self.receiver,
             self.visibility,
@@ -137,6 +144,7 @@ impl<'expansion, 'lowered> Input<'expansion, 'lowered, Wasm32> {
             self.symbol,
             self.callable,
             self.source,
+            self.execution,
             self.rust_call,
             self.receiver,
             self.visibility,
@@ -156,6 +164,7 @@ struct AsyncExports<'expansion, 'lowered, S: RenderSurface> {
     symbol: &'lowered NativeSymbol,
     callable: &'lowered ExportedCallable<S>,
     source: rust_api::Callable<'lowered>,
+    execution: ExecutionKind,
     rust_call: export::RustCall,
     receiver: export::ReceiverTokens,
     visibility: TokenStream,
@@ -193,6 +202,7 @@ where
         symbol: &'lowered NativeSymbol,
         callable: &'lowered ExportedCallable<S>,
         source: rust_api::Callable<'lowered>,
+        execution: ExecutionKind,
         rust_call: export::RustCall,
         receiver: export::ReceiverTokens,
         visibility: TokenStream,
@@ -213,6 +223,7 @@ where
             symbol,
             callable,
             source,
+            execution,
             rust_call,
             receiver,
             visibility,
@@ -258,16 +269,38 @@ where
             .iter()
             .chain(params.conversions())
             .collect::<Vec<_>>();
-        let rust_call = self.rust_call.awaited_expression(params.rust_arguments());
         let safety = (!ffi_parameters.is_empty()).then(|| quote! { unsafe });
+        let body = match self.execution {
+            ExecutionKind::Async => {
+                let rust_call = self.rust_call.awaited_expression(params.rust_arguments());
+                quote! {
+                    #(#conversions)*
+                    ::boltffi::__private::rustfuture::rust_future_new(async move {
+                        #rust_call
+                    })
+                }
+            }
+            ExecutionKind::DetachedFuture => {
+                let rust_call = self.rust_call.expression(params.rust_arguments());
+                quote! {
+                    let __boltffi_future = {
+                        #(#conversions)*
+                        #rust_call
+                    };
+                    ::boltffi::__private::rustfuture::rust_future_new(__boltffi_future)
+                }
+            }
+            ExecutionKind::Sync => {
+                return Err(Error::SourceSyntaxMismatch(
+                    "synchronous source callable has an asynchronous binding",
+                ));
+            }
+        };
         let start = quote! {
             #cfg
             #[unsafe(no_mangle)]
             #visibility #safety extern "C" fn #start_ident(#(#ffi_parameters),*) -> ::boltffi::__private::RustFutureHandle {
-                #(#conversions)*
-                ::boltffi::__private::rustfuture::rust_future_new(async move {
-                    #rust_call
-                })
+                #body
             }
         };
         let poll = protocol.poll::<S>(visibility, rust_return_type);
