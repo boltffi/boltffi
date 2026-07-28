@@ -20,6 +20,7 @@ pub struct Renderer<'expansion, 'lowered, S: RenderSurface> {
     stream: DeclarationPair<'lowered, StreamDef, StreamDecl<S>>,
     subscription: Subscription<'lowered, S>,
     expansion: &'expansion Expansion<'lowered, S>,
+    owner_rust_type: Option<TokenStream>,
 }
 
 struct StreamSymbols {
@@ -58,7 +59,15 @@ impl<'expansion, 'lowered, S: RenderSurface> Renderer<'expansion, 'lowered, S> {
             stream,
             subscription: Subscription::Method(owner),
             expansion,
+            owner_rust_type: None,
         }
+    }
+
+    /// Overrides the spelling of the owning class type when it is re-exported
+    /// under a path that differs from its source leaf name.
+    pub fn with_owner_rust_type(mut self, rust_type: TokenStream) -> Self {
+        self.owner_rust_type = Some(rust_type);
+        self
     }
 
     /// Creates a renderer for a top-level stream function.
@@ -70,6 +79,7 @@ impl<'expansion, 'lowered, S: RenderSurface> Renderer<'expansion, 'lowered, S> {
             stream,
             subscription: Subscription::Function,
             expansion,
+            owner_rust_type: None,
         }
     }
 
@@ -267,6 +277,10 @@ impl<'expansion, 'lowered, S: RenderSurface> Renderer<'expansion, 'lowered, S> {
             Subscription::Method(owner) => {
                 let class = names::SourceSpelling::new(&owner.source().name)
                     .ident("source class name is not a Rust identifier")?;
+                let class_type = self
+                    .owner_rust_type
+                    .clone()
+                    .unwrap_or_else(|| quote! { #class });
                 let handle_type = names::Class::new(&class).handle();
                 let receiver_handle = names::Parameter::new(&receiver).handle();
                 let carrier = <wrapper::handle::Carrier as Render<S, _>>::render(
@@ -283,7 +297,7 @@ impl<'expansion, 'lowered, S: RenderSurface> Renderer<'expansion, 'lowered, S> {
                             return #stream_handle_zero;
                         }
                         let #receiver_handle = #receiver as usize as *mut #handle_type;
-                        let #receiver: &#class = unsafe {
+                        let #receiver: &#class_type = unsafe {
                             #handle_type::shared(#receiver_handle)
                         };
                         let subscription = #receiver.#method();

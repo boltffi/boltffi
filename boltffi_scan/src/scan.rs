@@ -68,7 +68,19 @@ impl PackageScan {
         source.traits = self.complete.traits.clone();
         source.customs = self.complete.customs.clone();
         source.streams = self.complete.streams.clone();
-        source.constants = self.complete.constants.clone();
+        source.constants = self
+            .complete
+            .constants
+            .iter()
+            .filter(|constant| match constant.owner.as_ref() {
+                Some(_) => true,
+                None => {
+                    root.owns(constant.id.as_str())
+                        || self.root_visible_paths.contains_key(constant.id.as_str())
+                }
+            })
+            .cloned()
+            .collect();
         source.functions = self
             .complete
             .functions
@@ -1242,6 +1254,7 @@ mod tests {
             "model",
             "use std::sync::Arc; \
              use boltffi::EventSubscription; \
+             #[export] pub const BANNER: &str = \"model\"; \
              pub struct ForeignCounter { value: i32 } \
              #[export] impl ForeignCounter { \
                  pub fn new(initial: i32) -> Self { Self { value: initial } } \
@@ -1280,7 +1293,25 @@ mod tests {
                 constant.owner == Some(ConstantOwner::Class(ClassId::new("model::ForeignCounter")))
             })
             .expect("dependency class constant stays in root support contract");
-        assert_eq!(version.id, ConstantId::new("model::ForeignCounter::VERSION"));
+        assert_eq!(
+            version.id,
+            ConstantId::new("model::ForeignCounter::VERSION")
+        );
+
+        assert!(
+            scan.complete
+                .constants
+                .iter()
+                .any(|constant| constant.id == ConstantId::new("model::BANNER")),
+            "ownerless dependency constant is scanned into the complete contract"
+        );
+        assert!(
+            !source
+                .constants
+                .iter()
+                .any(|constant| constant.id == ConstantId::new("model::BANNER")),
+            "ownerless dependency constant without a visible re-export is filtered out"
+        );
     }
 
     #[test]

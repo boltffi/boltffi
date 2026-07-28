@@ -401,12 +401,19 @@ where
                 let owner = self.stream_owner(source)?;
                 let stream = self.expansion.stream(source)?;
                 match owner {
-                    Some(owner) => wrapper::stream::Renderer::new(
-                        stream,
-                        self.expansion.class(owner)?,
-                        self.expansion,
-                    )
-                    .render(),
+                    Some(owner) => {
+                        let renderer = wrapper::stream::Renderer::new(
+                            stream,
+                            self.expansion.class(owner)?,
+                            self.expansion,
+                        );
+                        match self.visible_paths.get(owner.id.as_str()) {
+                            Some(path) => {
+                                renderer.with_owner_rust_type(Self::path_tokens(path)?).render()
+                            }
+                            None => renderer.render(),
+                        }
+                    }
                     None => wrapper::stream::Renderer::function(stream, self.expansion).render(),
                 }
             })
