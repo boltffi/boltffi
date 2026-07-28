@@ -179,16 +179,16 @@ pub fn aggregate_records(
             SourceFragment::Custom(def) => contract.customs.push(def),
             SourceFragment::Methods {
                 target,
+                spelling,
                 methods,
                 constants,
-                ..
-            } => method_blocks.push((target, methods, constants)),
+            } => method_blocks.push((target, spelling, methods, constants)),
             SourceFragment::InternedStringPool { .. } | SourceFragment::Unsupported { .. } => {}
         }
     }
 
-    for (target, methods, constants) in method_blocks {
-        merge_methods(&mut contract, target, methods, constants)?;
+    for (target, spelling, methods, constants) in method_blocks {
+        merge_methods(&mut contract, target, &spelling, methods, constants)?;
     }
 
     contract.records.sort_by(|a, b| a.id.cmp(&b.id));
@@ -205,6 +205,7 @@ pub fn aggregate_records(
 fn merge_methods(
     contract: &mut SourceContract,
     target: TypeExpr,
+    spelling: &str,
     methods: Vec<MethodDef>,
     constants: Vec<ConstantDef>,
 ) -> Result<(), SourceFragmentError> {
@@ -228,8 +229,8 @@ fn merge_methods(
                 .map(|declared| &mut declared.methods),
         ),
         _ => {
-            return Err(SourceFragmentError::UnresolvedReference {
-                id: "a methods block targets a non-data declaration".to_owned(),
+            return Err(SourceFragmentError::MethodsTargetNotData {
+                spelling: spelling.to_owned(),
             });
         }
     };
@@ -773,6 +774,11 @@ pub enum SourceFragmentError {
         /// Actual argument count.
         actual: usize,
     },
+    /// A methods block targets a declaration that is not a record or enum.
+    MethodsTargetNotData {
+        /// The impl target's written spelling.
+        spelling: String,
+    },
     /// Two records declare the same id with different content.
     DuplicateDeclaration {
         /// The conflicting canonical id.
@@ -826,6 +832,10 @@ impl std::fmt::Display for SourceFragmentError {
             } => write!(
                 formatter,
                 "slot shape `{shape}` expects {expected} arguments, found {actual}"
+            ),
+            Self::MethodsTargetNotData { spelling } => write!(
+                formatter,
+                "a methods block targets `{spelling}`, which is not a data record or enum"
             ),
             Self::DuplicateDeclaration { id } => write!(
                 formatter,
