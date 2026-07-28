@@ -5,7 +5,7 @@
 //! to project through the compiler at the invocation site.
 
 use boltffi_ast::{
-    ClassDef, ClassId, ConstantDef, ConstantOwner, CustomTypeDef, EnumDef, FunctionDef, MethodDef,
+    ClassDef, ConstantDef, ConstantOwner, CustomTypeDef, EnumDef, FunctionDef, MethodDef,
     RecordDef, RecordId, StreamDef, TraitDef, TypeExpr,
 };
 
@@ -87,10 +87,7 @@ pub fn capture_class_constants(
     item: &syn::ItemImpl,
 ) -> Result<CapturedItem<Vec<ConstantDef>>, ScanError> {
     captured(|scope, declared_types| {
-        let target = crate::impl_target::Target::class(item)?;
-        let spelling = target.spelling();
-        let leaf = spelling.rsplit("::").next().unwrap_or(spelling);
-        let owner = ConstantOwner::Class(ClassId::new(scope.path().qualified(leaf)));
+        let owner = ConstantOwner::Class(items::class::resolve_id(item, scope, declared_types)?);
         items::constant::scan_associated_in_impl(item, &owner, scope, declared_types)
     })
 }
@@ -648,6 +645,26 @@ mod tests {
         assert!(
             capture_struct(&item).is_err(),
             "generic items stay unsupported"
+        );
+    }
+
+    #[test]
+    fn rejects_qualified_class_impl_targets_loudly() {
+        let item: syn::ItemImpl = syn::parse_quote! {
+            impl crate::runtime::Engine {
+                pub const LIMIT: u32 = 4;
+
+                pub fn start(&self) {}
+            }
+        };
+
+        let Err(error) = capture_class(&item, proc_macro2::TokenStream::new()) else {
+            panic!("the invocation module cannot mint another module's class id");
+        };
+        assert!(error.to_string().contains("crate::runtime::Engine"));
+        assert!(
+            capture_class_constants(&item).is_err(),
+            "constants refuse the same target"
         );
     }
 }
