@@ -28,8 +28,7 @@
 {%- endfor %}
 {%- for method in class.instance_methods() %}
 
-{{ method.documentation() }}{% if method.inherits_caller_executor() %}    @_unsafeInheritExecutor
-{% endif %}    public func {{ method.name() }}({{ method.parameter_list() }}){{ method.async_keyword() }}{{ method.returns().signature() }} {
+{{ method.documentation() }}    public func {{ method.name() }}({{ method.parameter_list() }}){{ method.async_keyword() }}{{ method.returns().signature() }} {
 {{ method.body() }}
     }
 {%- endfor %}

@@ -1,5 +1,7 @@
 use std::{error::Error, fmt};
 
+use boltffi_ast::SingleThreadedAsyncMethod;
+
 use crate::BindingError;
 
 /// An error returned while lowering source into a binding contract.
@@ -59,6 +61,10 @@ impl LowerError {
 
     pub(crate) fn invalid_constant_value(id: impl fmt::Display) -> Self {
         Self::new(LowerErrorKind::InvalidConstantValue(id.to_string()))
+    }
+
+    pub(crate) fn async_single_threaded_method(method: SingleThreadedAsyncMethod) -> Self {
+        Self::new(LowerErrorKind::AsyncSingleThreadedMethod(method))
     }
 
     pub(crate) fn unknown_stream(id: impl fmt::Display) -> Self {
@@ -134,6 +140,7 @@ impl fmt::Display for LowerError {
                     "constant `{constant}` value does not match its declared type"
                 )
             }
+            LowerErrorKind::AsyncSingleThreadedMethod(method) => method.fmt(formatter),
             LowerErrorKind::UnknownStream(stream) => {
                 write!(formatter, "unknown stream id `{stream}`")
             }
@@ -197,6 +204,8 @@ pub enum LowerErrorKind {
     UnknownConstant(String),
     /// A constant literal cannot inhabit its declared type.
     InvalidConstantValue(String),
+    /// A single-threaded class declared an async method with a receiver.
+    AsyncSingleThreadedMethod(SingleThreadedAsyncMethod),
     /// A stream reference could not be resolved inside the source contract.
     UnknownStream(String),
     /// A free function reference could not be resolved inside the source contract.

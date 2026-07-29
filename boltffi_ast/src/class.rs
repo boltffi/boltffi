@@ -1,7 +1,10 @@
+use std::fmt;
+
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ClassId, DeprecationInfo, DocComment, MethodDef, Source, SourceName, SourceSpan, UserAttr,
+    ClassId, DeprecationInfo, DocComment, ExecutionKind, MethodDef, Receiver, Source, SourceName,
+    SourceSpan, UserAttr,
 };
 
 /// A class-style Rust object exported through BoltFFI.
@@ -46,6 +49,43 @@ pub enum ClassThreadSafety {
     UnsafeSingleThreaded,
 }
 
+/// An async instance method rejected by a single-threaded class contract.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct SingleThreadedAsyncMethod {
+    class: String,
+    method: String,
+}
+
+impl SingleThreadedAsyncMethod {
+    /// Creates a violation for the named class and method.
+    pub fn new(class: impl Into<String>, method: impl Into<String>) -> Self {
+        Self {
+            class: class.into(),
+            method: method.into(),
+        }
+    }
+
+    /// Returns the class name.
+    pub fn class(&self) -> &str {
+        self.class.as_str()
+    }
+
+    /// Returns the method name.
+    pub fn method(&self) -> &str {
+        self.method.as_str()
+    }
+}
+
+impl fmt::Display for SingleThreadedAsyncMethod {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "async instance method `{}::{}` cannot be exported from `#[export(single_threaded)]`: its receiver would remain inside a future that foreign runtimes may resume on another thread; single-threaded classes support synchronous instance methods only",
+            self.class, self.method
+        )
+    }
+}
+
 impl ClassThreadSafety {
     /// Merges policies collected from multiple impl blocks.
     pub const fn merge(self, other: Self) -> Self {
@@ -76,6 +116,22 @@ impl ClassDef {
             source_span: None,
         }
     }
+
+    /// Returns the invalid async instance method in a single-threaded export.
+    pub fn single_threaded_async_method(&self) -> Option<SingleThreadedAsyncMethod> {
+        if self.thread_safety != ClassThreadSafety::UnsafeSingleThreaded {
+            return None;
+        }
+
+        self.methods
+            .iter()
+            .find(|method| {
+                method.execution == ExecutionKind::Async && method.receiver != Receiver::None
+            })
+            .map(|method| {
+                SingleThreadedAsyncMethod::new(self.name.spelling(), method.name.spelling())
+            })
+    }
 }
 
 #[cfg(test)]
@@ -100,5 +156,55 @@ mod tests {
         let class = serde_json::from_value::<ClassDef>(value).expect("class deserializes");
 
         assert_eq!(class.thread_safety, ClassThreadSafety::RequireSendSync);
+    }
+
+    #[test]
+    fn single_threaded_async_method_finds_every_instance_receiver() {
+        [Receiver::Shared, Receiver::Mutable, Receiver::Owned]
+            .into_iter()
+            .for_each(|receiver| {
+                let mut method = MethodDef::new(
+                    crate::MethodId::new("load"),
+                    CanonicalName::single("load"),
+                    receiver,
+                );
+                method.execution = ExecutionKind::Async;
+                let mut class = ClassDef::new(
+                    ClassId::new("demo::Engine"),
+                    CanonicalName::single("Engine"),
+                );
+                class.thread_safety = ClassThreadSafety::UnsafeSingleThreaded;
+                class.methods.push(method);
+
+                assert_eq!(
+                    class
+                        .single_threaded_async_method()
+                        .map(|violation| violation.method().to_owned()),
+                    Some("load".to_owned())
+                );
+            });
+    }
+
+    #[test]
+    fn single_threaded_async_method_allows_static_async_and_synchronous_instance_methods() {
+        let mut static_async = MethodDef::new(
+            crate::MethodId::new("load"),
+            CanonicalName::single("load"),
+            Receiver::None,
+        );
+        static_async.execution = ExecutionKind::Async;
+        let synchronous = MethodDef::new(
+            crate::MethodId::new("get"),
+            CanonicalName::single("get"),
+            Receiver::Shared,
+        );
+        let mut class = ClassDef::new(
+            ClassId::new("demo::Engine"),
+            CanonicalName::single("Engine"),
+        );
+        class.thread_safety = ClassThreadSafety::UnsafeSingleThreaded;
+        class.methods = vec![static_async, synchronous];
+
+        assert!(class.single_threaded_async_method().is_none());
     }
 }

@@ -1,4 +1,4 @@
-use boltffi_binding::{FutureMobility, Native, NativeSymbol, Surface, Wasm32, native, wasm32};
+use boltffi_binding::{Native, NativeSymbol, Surface, Wasm32, native, wasm32};
 
 use crate::experimental::error::Error;
 
@@ -13,7 +13,6 @@ pub enum PollStyle {
 
 /// Lifecycle symbols of a poll-handle async protocol.
 pub struct PollHandleSymbols {
-    mobility: FutureMobility,
     poll: NativeSymbol,
     complete: NativeSymbol,
     cancel: NativeSymbol,
@@ -23,11 +22,6 @@ pub struct PollHandleSymbols {
 }
 
 impl PollHandleSymbols {
-    #[allow(missing_docs)]
-    pub fn mobility(&self) -> FutureMobility {
-        self.mobility
-    }
-
     /// Returns the symbol that advances the operation.
     pub fn poll(&self) -> &NativeSymbol {
         &self.poll
@@ -70,7 +64,6 @@ impl AsyncLifecycle for Native {
     fn poll_handle(protocol: &native::AsyncProtocol) -> Result<PollHandleSymbols, Error> {
         match protocol {
             native::AsyncProtocol::PollHandle {
-                mobility,
                 poll,
                 complete,
                 cancel,
@@ -78,7 +71,6 @@ impl AsyncLifecycle for Native {
                 panic_message,
                 ..
             } => Ok(PollHandleSymbols {
-                mobility: *mobility,
                 poll: poll.clone(),
                 complete: complete.clone(),
                 cancel: cancel.clone(),
@@ -95,7 +87,6 @@ impl AsyncLifecycle for Wasm32 {
     fn poll_handle(protocol: &wasm32::AsyncProtocol) -> Result<PollHandleSymbols, Error> {
         match protocol {
             wasm32::AsyncProtocol::PollHandle {
-                mobility,
                 poll_sync,
                 complete,
                 cancel,
@@ -103,7 +94,6 @@ impl AsyncLifecycle for Wasm32 {
                 panic_message,
                 ..
             } => Ok(PollHandleSymbols {
-                mobility: *mobility,
                 poll: poll_sync.clone(),
                 complete: complete.clone(),
                 cancel: cancel.clone(),

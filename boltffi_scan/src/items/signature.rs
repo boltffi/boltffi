@@ -22,24 +22,6 @@ pub(super) fn execution(signature: &syn::Signature) -> ExecutionKind {
     }
 }
 
-pub(super) fn export_execution_and_return(
-    signature: &syn::Signature,
-    scanner: &Scanner<'_>,
-) -> Result<(ExecutionKind, ReturnDef), ScanError> {
-    if signature.asyncness.is_some() {
-        return scanner
-            .scan_export_return(&signature.output)
-            .map(|returns| (ExecutionKind::Async, returns));
-    }
-
-    match scanner.scan_detached_future_return(&signature.output, &signature.ident.to_string())? {
-        Some(returns) => Ok((ExecutionKind::DetachedFuture, returns)),
-        None => scanner
-            .scan_export_return(&signature.output)
-            .map(|returns| (ExecutionKind::Sync, returns)),
-    }
-}
-
 pub(super) fn method(
     signature: &syn::Signature,
     attrs: &[syn::Attribute],
@@ -56,16 +38,9 @@ pub(super) fn method(
         receiver(signature),
     );
     let metadata = Attributes::new(attrs, scanner);
-    let (execution, return_def) = match returns {
-        MethodReturns::Export => export_execution_and_return(signature, scanner)?,
-        MethodReturns::Trait => (
-            execution(signature),
-            returns.scan(scanner, &signature.output)?,
-        ),
-    };
-    method.execution = execution;
+    method.execution = execution(signature);
     method.parameters = parameters(signature, scanner)?;
-    method.returns = return_def;
+    method.returns = returns.scan(scanner, &signature.output)?;
     method.source = source;
     method.source_span = method.source.span.clone();
     method.doc = metadata.doc();

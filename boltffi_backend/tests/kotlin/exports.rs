@@ -288,34 +288,7 @@ fn kotlin_target_renders_async_complete_return_shapes() {
 
 #[test]
 fn kotlin_target_renders_async_class_methods() {
-    let rendered = rendered_fixture("exports/async_class_methods");
-
-    assert!(rendered.contains("suspend fun compute(value: UInt): UInt"));
-    assert!(rendered.contains("boltffiCallAsync"));
-    assert!(!rendered.contains("Dispatchers.Main"));
-    insta::assert_snapshot!(rendered);
-}
-
-#[test]
-fn kotlin_target_renders_detached_future_method_as_suspend() {
-    let rendered = rendered_files(&super::files(
-        r#"
-        pub struct Engine;
-
-        #[export(single_threaded)]
-        impl Engine {
-            pub fn new() -> Self {
-                Self
-            }
-
-            pub fn load(&self, value: u32) -> impl Future<Output = Result<u32, String>> + Send + 'static {
-                async move { Ok(value) }
-            }
-        }
-        "#,
-    ));
-
-    assert!(rendered.contains("suspend fun load(value: UInt): UInt"));
+    insta::assert_snapshot!(rendered_fixture("exports/async_class_methods"));
 }
 
 #[test]

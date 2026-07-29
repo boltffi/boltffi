@@ -83,12 +83,8 @@ impl Class {
             true => emitted.with_aux(AssociatedFunction::wire_helper()?),
             false => emitted,
         };
-        let emitted = match self.requires_cross_thread_async_runtime() {
+        let emitted = match self.requires_async_runtime() {
             true => emitted.with_aux(AssociatedFunction::async_helper()?),
-            false => emitted,
-        };
-        let emitted = match self.requires_thread_bound_async_runtime() {
-            true => emitted.with_aux(AssociatedFunction::thread_bound_async_helper()?),
             false => emitted,
         };
         Ok(emitted)
@@ -135,18 +131,11 @@ impl Class {
                 .any(AssociatedFunction::requires_wire_runtime)
     }
 
-    fn requires_cross_thread_async_runtime(&self) -> bool {
+    fn requires_async_runtime(&self) -> bool {
         self.static_methods
             .iter()
             .chain(self.instance_methods.iter())
-            .any(AssociatedFunction::requires_cross_thread_async_runtime)
-    }
-
-    fn requires_thread_bound_async_runtime(&self) -> bool {
-        self.static_methods
-            .iter()
-            .chain(self.instance_methods.iter())
-            .any(AssociatedFunction::requires_thread_bound_async_runtime)
+            .any(AssociatedFunction::requires_async_runtime)
     }
 
     fn methods(

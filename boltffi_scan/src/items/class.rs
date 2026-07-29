@@ -27,6 +27,9 @@ pub fn scan(
                     .expect("class scanner only receives export markers")
                     .class_thread_safety(),
             )?;
+            if let Some(method) = class.single_threaded_async_method() {
+                return Err(ScanError::AsyncSingleThreadedMethod(method));
+            }
             match classes
                 .iter_mut()
                 .find(|candidate| candidate.id == class.id)
@@ -92,8 +95,7 @@ mod tests {
     use crate::declared_types::DeclaredTypes;
     use crate::marker::Marker;
     use boltffi_ast::{
-        CanonicalName, ClassId, ExecutionKind, MethodId, NamePart, Primitive, Receiver, ReturnDef,
-        TypeExpr,
+        CanonicalName, ClassId, MethodId, NamePart, Primitive, Receiver, ReturnDef, TypeExpr,
     };
 
     fn parse(source: &str) -> syn::ItemImpl {
@@ -177,7 +179,7 @@ mod tests {
     }
 
     #[test]
-    fn accepts_borrowed_async_method_on_single_threaded_class() {
+    fn rejects_async_instance_method_on_single_threaded_class() {
         let source_tree = crate::source_tree::SourceTree::in_memory(
             "demo",
             syn::parse_str::<syn::File>(
@@ -193,34 +195,20 @@ mod tests {
         let declared_types =
             DeclaredTypes::index(&source_tree, &marked).expect("declared type index");
 
-        let classes =
-            super::scan(marked.classes(), &declared_types).expect("borrowed async receiver scans");
+        let error = super::scan(marked.classes(), &declared_types)
+            .expect_err("async instance method must be rejected");
 
-        assert_eq!(classes.len(), 1);
-        assert_eq!(classes[0].methods.len(), 1);
         assert_eq!(
-            classes[0].methods[0].execution,
-            boltffi_ast::ExecutionKind::Async
+            error,
+            ScanError::AsyncSingleThreadedMethod(boltffi_ast::SingleThreadedAsyncMethod::new(
+                "Engine", "load",
+            ))
         );
-    }
-
-    #[test]
-    fn accepts_detached_future_method_on_single_threaded_class() {
-        let class = scan(
-            "#[export(single_threaded)] impl Engine { \
-                pub fn load(&self) -> impl Future<Output = u32> + Send + 'static { todo!() } \
-                pub fn preload() -> impl Future<Output = u32> + Send + 'static { todo!() } \
-            }",
-        )
-        .expect("scan");
-
-        assert_eq!(class.methods[0].execution, ExecutionKind::DetachedFuture);
-        assert_eq!(
-            class.methods[0].returns,
-            ReturnDef::value(TypeExpr::Primitive(Primitive::U32))
+        assert!(
+            error
+                .to_string()
+                .contains("single-threaded classes support synchronous instance methods only")
         );
-        assert_eq!(class.methods[1].receiver, Receiver::None);
-        assert_eq!(class.methods[1].execution, ExecutionKind::DetachedFuture);
     }
 
     #[test]

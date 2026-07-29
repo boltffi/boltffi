@@ -2093,11 +2093,6 @@ public final class DemoTest {
                 .equals("b") : "StateHolder.removeLast";
             assert holder.transformValue(value -> value / 2) == 3 : "StateHolder.transformValue";
             assert holder.applyValueCallback(doubler) == 6 : "StateHolder.applyValueCallback";
-            assert holder.asyncGetValue().get() == 6 : "StateHolder.asyncGetValue";
-            holder.asyncSetValue(9).get();
-            assert holder.getValue() == 9 : "StateHolder.asyncSetValue";
-            assert holder.asyncAddItem("z").get() == 2 : "StateHolder.asyncAddItem";
-            assert holder.getItems().equals(Arrays.asList("a", "z")) : "StateHolder.itemsAfterAsyncAdd";
             holder.clear();
             assert holder.getValue() == 0 : "StateHolder.clear value";
             assert holder.getItems().equals(Collections.emptyList()) : "StateHolder.clear items";

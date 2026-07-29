@@ -1,50 +1,41 @@
-use std::{
-    future::{Future, ready},
-    marker::PhantomData,
-    rc::Rc,
-    sync::Mutex,
-};
+use std::sync::Mutex;
 
 use boltffi::*;
 
 use crate::{FixtureMarkerOptions, FixtureMessageRecord, FixturePoint, FixtureStatus};
 
 pub struct TestCounter {
-    value: i32,
-    _single_threaded_marker: PhantomData<Rc<()>>,
+    value: Mutex<i32>,
 }
 
-#[export(single_threaded)]
+#[export]
 impl TestCounter {
     pub fn new(initial: i32) -> Self {
         Self {
-            value: initial,
-            _single_threaded_marker: PhantomData,
+            value: Mutex::new(initial),
         }
     }
 
     pub fn get(&self) -> i32 {
-        self.value
+        *self.value.lock().unwrap()
     }
 
-    pub fn set(&mut self, value: i32) {
-        self.value = value;
+    pub fn set(&self, value: i32) {
+        *self.value.lock().unwrap() = value;
     }
 
-    pub fn add(&mut self, amount: i32) -> i32 {
-        self.value += amount;
-        self.value
+    pub fn add(&self, amount: i32) -> i32 {
+        let mut value = self.value.lock().unwrap();
+        *value += amount;
+        *value
     }
 
-    pub fn async_get(&self) -> impl Future<Output = i32> + Send + 'static {
-        let value = self.value;
-        ready(value)
+    pub async fn async_get(&self) -> i32 {
+        self.get()
     }
 
-    pub fn async_add(&mut self, amount: i32) -> impl Future<Output = i32> + Send + 'static {
-        self.value += amount;
-        let value = self.value;
-        ready(value)
+    pub async fn async_add(&self, amount: i32) -> i32 {
+        self.add(amount)
     }
 }
 
@@ -121,6 +112,10 @@ impl FixtureMap {
 }
 
 pub struct ClassTestFixture {
+    state: Mutex<ClassTestFixtureState>,
+}
+
+struct ClassTestFixtureState {
     id: i32,
     name: String,
     point: FixturePoint,
@@ -129,71 +124,67 @@ pub struct ClassTestFixture {
     optional: Option<i32>,
 }
 
-#[export(single_threaded)]
+#[export]
 impl ClassTestFixture {
-    pub fn new_default() -> Self {
-        Self {
-            id: 0,
-            name: String::new(),
-            point: FixturePoint::default(),
-            status: FixtureStatus::Pending,
+    fn new_state(
+        id: i32,
+        name: String,
+        point: FixturePoint,
+        status: FixtureStatus,
+    ) -> Mutex<ClassTestFixtureState> {
+        Mutex::new(ClassTestFixtureState {
+            id,
+            name,
+            point,
+            status,
             values: Vec::new(),
             optional: None,
+        })
+    }
+
+    pub fn new_default() -> Self {
+        Self {
+            state: Self::new_state(
+                0,
+                String::new(),
+                FixturePoint::default(),
+                FixtureStatus::Pending,
+            ),
         }
     }
 
     pub fn new_with_id(id: i32) -> Self {
         Self {
-            id,
-            name: String::new(),
-            point: FixturePoint::default(),
-            status: FixtureStatus::Pending,
-            values: Vec::new(),
-            optional: None,
+            state: Self::new_state(
+                id,
+                String::new(),
+                FixturePoint::default(),
+                FixtureStatus::Pending,
+            ),
         }
     }
 
     pub fn new_with_name(name: String) -> Self {
         Self {
-            id: 0,
-            name,
-            point: FixturePoint::default(),
-            status: FixtureStatus::Pending,
-            values: Vec::new(),
-            optional: None,
+            state: Self::new_state(0, name, FixturePoint::default(), FixtureStatus::Pending),
         }
     }
 
     pub fn new_with_point(point: FixturePoint) -> Self {
         Self {
-            id: 0,
-            name: String::new(),
-            point,
-            status: FixtureStatus::Pending,
-            values: Vec::new(),
-            optional: None,
+            state: Self::new_state(0, String::new(), point, FixtureStatus::Pending),
         }
     }
 
     pub fn new_with_status(status: FixtureStatus) -> Self {
         Self {
-            id: 0,
-            name: String::new(),
-            point: FixturePoint::default(),
-            status,
-            values: Vec::new(),
-            optional: None,
+            state: Self::new_state(0, String::new(), FixturePoint::default(), status),
         }
     }
 
     pub fn new_full(id: i32, name: String, point: FixturePoint, status: FixtureStatus) -> Self {
         Self {
-            id,
-            name,
-            point,
-            status,
-            values: Vec::new(),
-            optional: None,
+            state: Self::new_state(id, name, point, status),
         }
     }
 
@@ -206,79 +197,83 @@ impl ClassTestFixture {
     }
 
     pub fn get_id(&self) -> i32 {
-        self.id
+        self.state.lock().unwrap().id
     }
 
     pub fn get_name(&self) -> String {
-        self.name.clone()
+        self.state.lock().unwrap().name.clone()
     }
 
     pub fn get_point(&self) -> FixturePoint {
-        self.point
+        self.state.lock().unwrap().point
     }
 
     pub fn get_status(&self) -> FixtureStatus {
-        self.status
+        self.state.lock().unwrap().status
     }
 
     pub fn get_values(&self) -> Vec<i32> {
-        self.values.clone()
+        self.state.lock().unwrap().values.clone()
     }
 
     pub fn get_optional(&self) -> Option<i32> {
-        self.optional
+        self.state.lock().unwrap().optional
     }
 
-    pub fn set_id(&mut self, id: i32) {
-        self.id = id;
+    pub fn set_id(&self, id: i32) {
+        self.state.lock().unwrap().id = id;
     }
 
-    pub fn set_name(&mut self, name: String) {
-        self.name = name;
+    pub fn set_name(&self, name: String) {
+        self.state.lock().unwrap().name = name;
     }
 
-    pub fn set_point(&mut self, point: FixturePoint) {
-        self.point = point;
+    pub fn set_point(&self, point: FixturePoint) {
+        self.state.lock().unwrap().point = point;
     }
 
-    pub fn set_status(&mut self, status: FixtureStatus) {
-        self.status = status;
+    pub fn set_status(&self, status: FixtureStatus) {
+        self.state.lock().unwrap().status = status;
     }
 
-    pub fn set_values(&mut self, values: Vec<i32>) {
-        self.values = values;
+    pub fn set_values(&self, values: Vec<i32>) {
+        self.state.lock().unwrap().values = values;
     }
 
-    pub fn set_optional(&mut self, optional: Option<i32>) {
-        self.optional = optional;
+    pub fn set_optional(&self, optional: Option<i32>) {
+        self.state.lock().unwrap().optional = optional;
     }
 
-    pub fn add_value(&mut self, value: i32) {
-        self.values.push(value);
+    pub fn add_value(&self, value: i32) {
+        self.state.lock().unwrap().values.push(value);
     }
 
-    pub fn clear_values(&mut self) {
-        self.values.clear();
+    pub fn clear_values(&self) {
+        self.state.lock().unwrap().values.clear();
     }
 
     pub fn values_count(&self) -> i32 {
-        self.values.len() as i32
+        self.state.lock().unwrap().values.len() as i32
     }
 
     pub fn compute_sum(&self) -> i32 {
-        self.values.iter().sum()
+        self.state.lock().unwrap().values.iter().sum()
     }
 
     pub fn try_get_value(&self, index: i32) -> Result<i32, String> {
-        if index < 0 || index as usize >= self.values.len() {
+        let state = self.state.lock().unwrap();
+        if index < 0 || index as usize >= state.values.len() {
             Err(format!("index {} out of bounds", index))
         } else {
-            Ok(self.values[index as usize])
+            Ok(state.values[index as usize])
         }
     }
 
     pub fn find_value(&self, target: i32) -> Option<i32> {
-        self.values
+        self.state
+            .lock()
+            .unwrap()
+            .values
             .iter()
             .position(|&v| v == target)
             .map(|i| i as i32)
@@ -308,63 +303,44 @@ impl ClassTestFixture {
         if flag { Some(42) } else { None }
     }
 
-    pub fn async_get_id(&self) -> impl Future<Output = i32> + Send + 'static {
-        let id = self.id;
-        ready(id)
+    pub async fn async_get_id(&self) -> i32 {
+        self.get_id()
     }
 
-    pub fn async_get_name(&self) -> impl Future<Output = String> + Send + 'static {
-        let name = self.name.clone();
-        ready(name)
+    pub async fn async_get_name(&self) -> String {
+        self.get_name()
     }
 
-    pub fn async_echo_message_record(
+    pub async fn async_echo_message_record(
         &self,
         record: FixtureMessageRecord,
-    ) -> impl Future<Output = FixtureMessageRecord> + Send + 'static {
-        ready(record)
+    ) -> FixtureMessageRecord {
+        record
     }
 
-    pub fn async_set_id(&mut self, id: i32) -> impl Future<Output = ()> + Send + 'static {
-        self.id = id;
-        ready(())
+    pub async fn async_set_id(&self, id: i32) {
+        self.set_id(id);
     }
 
-    pub fn async_set_name(&mut self, name: String) -> impl Future<Output = ()> + Send + 'static {
-        self.name = name;
-        ready(())
+    pub async fn async_set_name(&self, name: String) {
+        self.set_name(name);
     }
 
-    pub fn async_add_value(&mut self, value: i32) -> impl Future<Output = i32> + Send + 'static {
-        self.values.push(value);
-        let count = self.values.len() as i32;
-        ready(count)
+    pub async fn async_add_value(&self, value: i32) -> i32 {
+        self.add_value(value);
+        self.values_count()
     }
 
-    pub fn async_compute_sum(&self) -> impl Future<Output = i32> + Send + 'static {
-        let sum = self.values.iter().sum();
-        ready(sum)
+    pub async fn async_compute_sum(&self) -> i32 {
+        self.compute_sum()
     }
 
-    pub fn async_try_get(
-        &self,
-        index: i32,
-    ) -> impl Future<Output = Result<i32, String>> + Send + 'static {
-        let result = if index < 0 || index as usize >= self.values.len() {
-            Err(format!("index {} out of bounds", index))
-        } else {
-            Ok(self.values[index as usize])
-        };
-        ready(result)
+    pub async fn async_try_get(&self, index: i32) -> Result<i32, String> {
+        self.try_get_value(index)
     }
 
-    pub fn async_find(&self, target: i32) -> impl Future<Output = Option<i32>> + Send + 'static {
-        let index = self
-            .values
-            .iter()
-            .position(|&v| v == target)
-            .map(|index| index as i32);
-        ready(index)
+    pub async fn async_find(&self, target: i32) -> Option<i32> {
+        self.find_value(target)
     }
 
     pub fn with_primitives(
@@ -396,7 +372,10 @@ impl ClassTestFixture {
 
     pub fn values_near_point(&self, target: FixturePoint) -> Vec<i32> {
         let threshold = (target.x.abs() + target.y.abs()) as i32;
-        self.values
+        self.state
+            .lock()
+            .unwrap()
+            .values
             .iter()
             .copied()
             .filter(|&v| v.abs() <= threshold)

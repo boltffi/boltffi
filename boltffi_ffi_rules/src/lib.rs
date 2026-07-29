@@ -4,7 +4,6 @@
 
 pub mod callable;
 pub mod cargo_graph;
-pub mod detached_future;
 pub mod primitive;
 
 pub const FFI_PREFIX: &str = "boltffi";

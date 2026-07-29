@@ -21,15 +21,16 @@ pub enum CallableForm {
     AssociatedFunction,
 }
 
-/// How a Rust callable produces its result.
+/// Whether a callable was written as synchronous or asynchronous Rust.
+///
+/// The value comes directly from the Rust signature. A function written with
+/// `async fn` is `Async`; every other callable is `Sync`.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 pub enum ExecutionKind {
-    /// A synchronous callable.
+    /// A callable without `async`.
     Sync,
     /// A callable written with `async`.
     Async,
-    /// A synchronous callable returning a detached `Send + 'static` future.
-    DetachedFuture,
 }
 
 /// A parameter in a function, method, or callback method.
@@ -168,11 +169,11 @@ pub struct FunctionDef {
     pub name: SourceName,
     /// Source callable form. For free functions this is always `Function`.
     pub form: CallableForm,
-    /// How the Rust callable produces its result.
+    /// Whether the Rust source used `async`.
     pub execution: ExecutionKind,
     /// Parameters written by the Rust function.
     pub parameters: Vec<ParameterDef>,
-    /// Value delivered when the function completes.
+    /// Return type written by the Rust function.
     pub returns: ReturnDef,
     /// Documentation attached to the function.
     pub doc: Option<DocComment>,
@@ -224,11 +225,11 @@ pub struct MethodDef {
     pub name: SourceName,
     /// Receiver written on the Rust method.
     pub receiver: Receiver,
-    /// How the Rust callable produces its result.
+    /// Whether the Rust source used `async`.
     pub execution: ExecutionKind,
     /// Parameters after the receiver.
     pub parameters: Vec<ParameterDef>,
-    /// Value delivered when the method completes.
+    /// Return type written by the Rust method.
     pub returns: ReturnDef,
     /// Documentation attached to the method.
     pub doc: Option<DocComment>,

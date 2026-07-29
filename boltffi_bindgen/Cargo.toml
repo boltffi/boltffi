@@ -10,6 +10,7 @@ keywords = ["ffi", "codegen", "swift", "kotlin", "typescript"]
 categories = ["development-tools::ffi", "development-tools::build-utils"]
 
 [dependencies]
+boltffi_ast.workspace = true
 boltffi_binding.workspace = true
 boltffi_backend.workspace = true
 boltffi_ffi_rules = { workspace = true, features = ["serde"] }
@@ -26,7 +27,6 @@ indexmap = "2.7"
 object.workspace = true
 
 [dev-dependencies]
-boltffi_ast.workspace = true
 insta.workspace = true
 rstest.workspace = true
 

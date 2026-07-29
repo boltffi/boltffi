@@ -63,30 +63,6 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    pub fn scan_detached_future_return(
-        &self,
-        output: &syn::ReturnType,
-        item: &str,
-    ) -> Result<Option<ReturnDef>, ScanError> {
-        let Some(output_type) =
-            boltffi_ffi_rules::detached_future::output(output).map_err(|error| {
-                ScanError::InvalidDetachedFuture {
-                    item: item.to_owned(),
-                    reason: error.to_string(),
-                }
-            })?
-        else {
-            return Ok(None);
-        };
-        match is_unit(output_type) {
-            true => Ok(Some(ReturnDef::Void)),
-            false => self
-                .scan_export_return_type(output_type)
-                .map(ReturnDef::Value)
-                .map(Some),
-        }
-    }
-
     fn scan_export_return_type(&self, ty: &syn::Type) -> Result<TypeExpr, ScanError> {
         match unwrapped(ty) {
             syn::Type::Reference(reference) if reference.mutability.is_none() => {

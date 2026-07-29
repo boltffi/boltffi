@@ -35,10 +35,7 @@ impl<'a> FunctionCallable<'a> {
     }
 
     fn execution_kind_for(item: &ItemFn) -> ExecutionKind {
-        if item.sig.asyncness.is_some()
-            || boltffi_ffi_rules::detached_future::output(&item.sig.output)
-                .is_ok_and(|output| output.is_some())
-        {
+        if item.sig.asyncness.is_some() {
             ExecutionKind::Async
         } else {
             ExecutionKind::Sync
@@ -81,10 +78,7 @@ impl<'a> MethodCallable<'a> {
     }
 
     fn execution_kind_for(method: &ImplItemFn) -> ExecutionKind {
-        if method.sig.asyncness.is_some()
-            || boltffi_ffi_rules::detached_future::output(&method.sig.output)
-                .is_ok_and(|output| output.is_some())
-        {
+        if method.sig.asyncness.is_some() {
             ExecutionKind::Async
         } else {
             ExecutionKind::Sync

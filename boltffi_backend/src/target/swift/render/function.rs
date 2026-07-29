@@ -3,9 +3,9 @@ use askama::Template;
 use boltffi_binding::{
     CanonicalName, ClassId, ClosureReturn, DirectValueType, DirectVectorElementType, Direction,
     EnumId, ErrorChannel, ErrorPlacement, ExecutionDecl, ExportedCallable, ExportedMethodDecl,
-    FunctionDecl, FutureMobility, HandlePresence, HandleTarget, IncomingParam, InitializerDecl,
-    IntoRust, Native, NativeSymbol, OutOfRust, ParamDecl, ParamPlanRender, Primitive, ReadPlan,
-    Receive, RecordId, ReturnPlanRender, ReturnValueSlot, Surface, TypeRef, WritePlan, native,
+    FunctionDecl, HandlePresence, HandleTarget, IncomingParam, InitializerDecl, IntoRust, Native,
+    NativeSymbol, OutOfRust, ParamDecl, ParamPlanRender, Primitive, ReadPlan, Receive, RecordId,
+    ReturnPlanRender, ReturnValueSlot, Surface, TypeRef, WritePlan, native,
 };
 
 use crate::{
@@ -58,7 +58,6 @@ pub struct AssociatedFunction {
     body: String,
     returns: ReturnSignature,
     asynchronous: bool,
-    inherits_caller_executor: bool,
     requires_wire_runtime: bool,
 }
 
@@ -342,13 +341,8 @@ struct WireTemplate;
 #[template(path = "target/swift/async.swift", escape = "none")]
 struct AsyncTemplate;
 
-#[derive(Template)]
-#[template(path = "target/swift/thread_bound_async.swift", escape = "none")]
-struct ThreadBoundAsyncTemplate;
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct AsyncCall {
-    mobility: FutureMobility,
     poll: Identifier,
     complete: Identifier,
     cancel: Identifier,
@@ -433,15 +427,6 @@ impl Function {
         text.push_str("\n\n");
         Ok(AuxChunk::Helper {
             id: HelperId::new(CanonicalName::single("swift_async")),
-            text: TextChunk::new(text),
-        })
-    }
-
-    fn thread_bound_async_helper() -> Result<AuxChunk> {
-        let mut text = ThreadBoundAsyncTemplate.render()?;
-        text.push_str("\n\n");
-        Ok(AuxChunk::Helper {
-            id: HelperId::new(CanonicalName::single("swift_thread_bound_async")),
             text: TextChunk::new(text),
         })
     }
@@ -567,10 +552,6 @@ impl AssociatedFunction {
         }
     }
 
-    pub fn inherits_caller_executor(&self) -> bool {
-        self.inherits_caller_executor
-    }
-
     pub fn requires_wire_runtime(&self) -> bool {
         self.requires_wire_runtime
     }
@@ -579,24 +560,12 @@ impl AssociatedFunction {
         self.asynchronous
     }
 
-    pub fn requires_cross_thread_async_runtime(&self) -> bool {
-        self.asynchronous && !self.inherits_caller_executor
-    }
-
-    pub fn requires_thread_bound_async_runtime(&self) -> bool {
-        self.inherits_caller_executor
-    }
-
     pub fn wire_helper() -> Result<AuxChunk> {
         Function::wire_helper()
     }
 
     pub fn async_helper() -> Result<AuxChunk> {
         Function::async_helper()
-    }
-
-    pub fn thread_bound_async_helper() -> Result<AuxChunk> {
-        Function::thread_bound_async_helper()
     }
 
     fn from_parts(
@@ -608,7 +577,6 @@ impl AssociatedFunction {
     ) -> Result<Self> {
         let requires_wire_runtime = invocation.requires_wire_runtime();
         let asynchronous = invocation.asynchronous();
-        let inherits_caller_executor = invocation.thread_bound();
         let (parameters, body, returns) = invocation.into_rendered("        ")?;
         Ok(Self {
             documentation,
@@ -619,7 +587,6 @@ impl AssociatedFunction {
             body,
             returns,
             asynchronous,
-            inherits_caller_executor,
             requires_wire_runtime,
         })
     }
@@ -1175,7 +1142,6 @@ impl Invocation {
         let (return_function, asynchronous) = match callable.execution() {
             ExecutionDecl::Synchronous(_) => (c_function, None),
             ExecutionDecl::Asynchronous(native::AsyncProtocol::PollHandle {
-                mobility,
                 poll,
                 complete,
                 cancel,
@@ -1183,7 +1149,7 @@ impl Invocation {
                 ..
             }) => (
                 Self::c_function(complete, bridge)?,
-                Some(AsyncCall::new(*mobility, poll, complete, cancel, free)?),
+                Some(AsyncCall::new(poll, complete, cancel, free)?),
             ),
             ExecutionDecl::Asynchronous(_) => {
                 return Err(SwiftHost::unsupported("async function protocol"));
@@ -1886,12 +1852,6 @@ impl Invocation {
             .join("\n"))
     }
 
-    fn thread_bound(&self) -> bool {
-        self.asynchronous
-            .as_ref()
-            .is_some_and(|call| call.mobility == FutureMobility::ThreadBound)
-    }
-
     fn render_scoped_async_start(
         arguments: &[Argument],
         start_call: Expression,
@@ -2301,14 +2261,12 @@ impl BodyExit {
 
 impl AsyncCall {
     fn new(
-        mobility: FutureMobility,
         poll: &NativeSymbol,
         complete: &NativeSymbol,
         cancel: &NativeSymbol,
         free: &NativeSymbol,
     ) -> Result<Self> {
         Ok(Self {
-            mobility,
             poll: Identifier::parse(poll.name().as_str())?,
             complete: Identifier::parse(complete.name().as_str())?,
             cancel: Identifier::parse(cancel.name().as_str())?,
@@ -2327,20 +2285,16 @@ impl AsyncCall {
         let complete_call = self.complete_call(future, &status, returns);
         let complete_body =
             returns.async_body(complete_call, error, &status, &format!("{indent}    "))?;
-        let mut arguments = Vec::with_capacity(5);
-        let helper = match self.mobility {
-            FutureMobility::CrossThread => "boltffiAsyncCall",
-            FutureMobility::ThreadBound => "boltffiThreadBoundAsyncCall",
-        };
-        arguments.extend([
-            Expression::labeled("futureHandle", future),
-            Expression::labeled("poll", &self.poll),
-            Expression::labeled("cancel", &self.cancel),
-            Expression::labeled("free", &self.free),
-        ]);
         Ok(Statement::try_await_returning_trailing_closure(
-            helper,
-            arguments.into_iter().collect::<ArgumentList>(),
+            "boltffiAsyncCall",
+            [
+                Expression::labeled("futureHandle", future),
+                Expression::labeled("poll", &self.poll),
+                Expression::labeled("cancel", &self.cancel),
+                Expression::labeled("free", &self.free),
+            ]
+            .into_iter()
+            .collect::<ArgumentList>(),
             [future.clone(), status],
             complete_body,
             indent,

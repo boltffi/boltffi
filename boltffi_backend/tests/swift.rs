@@ -33,15 +33,6 @@ fn rendered_source(fixture: SourceFixture) -> String {
     rendered_source_with_host(fixture, host)
 }
 
-fn rendered_inline_source(source: &str) -> String {
-    let host = SwiftHost::new("DemoFFI").expect("Swift host");
-    let target = host.into_target().expect("Swift target");
-    let output = target
-        .render(&bindings(source))
-        .expect("Swift target renders");
-    rendered_swift_file(&output)
-}
-
 fn rendered_source_with_host(fixture: SourceFixture, host: SwiftHost) -> String {
     rendered_swift_file(&rendered_output_with_host(fixture, host))
 }
@@ -140,7 +131,6 @@ fn runtime_source(contents: &str) -> Option<&str> {
 fn runtime_start(contents: &str) -> Option<usize> {
     [
         "private final class BoltFFIFutureState",
-        "private final class BoltFFIThreadBoundPollContinuation",
         "private func boltffiReadDirectStreamBatch",
         "@usableFromInline struct WireReader",
     ]
@@ -223,47 +213,7 @@ fn swift_target_renders_async_complete_return_shapes() {
 
 #[test]
 fn swift_target_renders_async_class_methods() {
-    let rendered = rendered_fixture("exports/async_class_methods");
-
-    assert!(rendered.contains("@_unsafeInheritExecutor"));
-    assert!(rendered.contains("public func compute(value: UInt32) async throws -> UInt32"));
-    assert!(rendered.contains("boltffiThreadBoundAsyncCall"));
-    assert!(!rendered.contains("@MainActor"));
-    insta::assert_snapshot!(rendered);
-}
-
-#[test]
-fn swift_target_emits_only_the_thread_bound_async_runtime_when_needed() {
-    let output = rendered_output(SourceFixture::one("exports/async_class_methods"));
-    let contents = swift_file(&output).contents();
-
-    assert!(contents.contains("private func boltffiThreadBoundAsyncCall"));
-    assert!(!contents.contains("private final class BoltFFIFutureState"));
-    assert!(!contents.contains("@MainActor"));
-}
-
-#[test]
-fn swift_target_renders_detached_future_method_as_async_throws() {
-    let rendered = rendered_inline_source(
-        r#"
-        pub struct Engine;
-
-        #[export(single_threaded)]
-        impl Engine {
-            pub fn new() -> Self {
-                Self
-            }
-
-            pub fn load(&self, value: u32) -> impl Future<Output = Result<u32, String>> + Send + 'static {
-                async move { Ok(value) }
-            }
-        }
-        "#,
-    );
-
-    assert!(rendered.contains("public func load(value: UInt32) async throws -> UInt32"));
-    assert!(rendered.contains("boltffiAsyncCall"));
-    assert!(!rendered.contains("boltffiThreadBoundAsyncCall"));
+    insta::assert_snapshot!(rendered_fixture("exports/async_class_methods"));
 }
 
 #[test]

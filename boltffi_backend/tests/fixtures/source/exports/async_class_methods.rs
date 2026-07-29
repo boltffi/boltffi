@@ -1,6 +1,6 @@
 pub struct Engine;
 
-#[export(single_threaded)]
+#[export]
 impl Engine {
     pub fn new() -> Self {
         Self

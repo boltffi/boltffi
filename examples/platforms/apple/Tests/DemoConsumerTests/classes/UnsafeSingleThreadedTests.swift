@@ -11,7 +11,7 @@ final class UnsafeSingleThreadedTests: DemoTestCase {
         XCTAssertEqual(mapView.markerCount(), 1)
     }
 
-    func testStateHolderSyncAndAsyncMethods() async throws {
+    func testStateHolderSyncMethods() throws {
         let stateHolder = StateHolder(label: "local")
         let incrementer = makeIncrementingCallback(delta: 3)
         XCTAssertEqual(stateHolder.getLabel(), "local")
@@ -26,13 +26,6 @@ final class UnsafeSingleThreadedTests: DemoTestCase {
         XCTAssertEqual(stateHolder.removeLast(), "b")
         XCTAssertEqual(stateHolder.transformValue(f: { $0 / 2 }), 3)
         XCTAssertEqual(stateHolder.applyValueCallback(callback: incrementer), 6)
-        let asyncValue = try await stateHolder.asyncGetValue()
-        XCTAssertEqual(asyncValue, 6)
-        try await stateHolder.asyncSetValue(value: 9)
-        XCTAssertEqual(stateHolder.getValue(), 9)
-        let asyncItemCount = try await stateHolder.asyncAddItem(item: "z")
-        XCTAssertEqual(asyncItemCount, 2)
-        XCTAssertEqual(stateHolder.getItems(), ["a", "z"])
         stateHolder.clear()
         XCTAssertEqual(stateHolder.getValue(), 0)
         XCTAssertEqual(stateHolder.getItems(), [])

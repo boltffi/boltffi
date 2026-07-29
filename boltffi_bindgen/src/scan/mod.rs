@@ -1125,7 +1125,7 @@ impl SourceScanner {
             }
             Item::Impl(item_impl) => {
                 if has_data_impl_attribute(&item_impl.attrs) {
-                    self.process_value_type_impl(item_impl)?;
+                    self.process_value_type_impl(item_impl);
                 } else if has_attribute(&item_impl.attrs, "export") {
                     self.process_class(item_impl)?;
                 }
@@ -1140,7 +1140,7 @@ impl SourceScanner {
                 if has_attribute(&item_fn.attrs, "ffi_export")
                     || has_attribute(&item_fn.attrs, "export") =>
             {
-                self.process_function(item_fn)?;
+                self.process_function(item_fn);
             }
             Item::Enum(item_enum) => {
                 let is_error = has_attribute(&item_enum.attrs, "error");
@@ -1359,28 +1359,14 @@ impl SourceScanner {
         Ok(())
     }
 
-    fn process_function(&mut self, item_fn: &syn::ItemFn) -> Result<(), String> {
+    fn process_function(&mut self, item_fn: &syn::ItemFn) {
         let sig = &item_fn.sig;
         let Some(params) = self.resolve_typed_params(&sig.inputs, None) else {
-            return Ok(());
+            return;
         };
-        let detached_output = match sig.asyncness {
-            Some(_) => None,
-            None => boltffi_ffi_rules::detached_future::output(&sig.output)
-                .map_err(|error| detached_future_error(&sig.ident, error))?,
-        };
-        let detached_return;
-        let source_output = match detached_output {
-            Some(output) => {
-                detached_return =
-                    syn::ReturnType::Type(Default::default(), Box::new(output.clone()));
-                &detached_return
-            }
-            None => &sig.output,
-        };
-        let output = self.resolve_output(source_output, None);
-        if matches!(source_output, syn::ReturnType::Type(..)) && output.is_none() {
-            return Ok(());
+        let output = self.resolve_output(&sig.output, None);
+        if matches!(sig.output, syn::ReturnType::Type(..)) && output.is_none() {
+            return;
         }
 
         let function = params
@@ -1390,10 +1376,9 @@ impl SourceScanner {
             })
             .maybe_doc(extract_doc_string(&item_fn.attrs))
             .maybe_return(output.map(ReturnType::from_output))
-            .maybe_async(sig.asyncness.is_some() || detached_output.is_some());
+            .maybe_async(sig.asyncness.is_some());
 
         self.functions.push(function);
-        Ok(())
     }
 
     fn process_callback_trait(&mut self, item_trait: &ItemTrait) {
@@ -1434,6 +1419,8 @@ impl SourceScanner {
         let Some(class_name) = impl_self_type_ident(item_impl) else {
             return Ok(());
         };
+        let single_threaded = has_single_threaded_export(&item_impl.attrs);
+
         let mut constructors = Vec::new();
         let mut methods = Vec::new();
         let mut streams = Vec::new();
@@ -1448,6 +1435,16 @@ impl SourceScanner {
             .filter(|method| matches!(method.vis, syn::Visibility::Public(_)))
             .filter(|method| !has_attribute(&method.attrs, "skip"))
             .try_for_each(|method| -> Result<(), String> {
+                if single_threaded
+                    && method.sig.asyncness.is_some()
+                    && method.sig.receiver().is_some()
+                {
+                    return Err(boltffi_ast::SingleThreadedAsyncMethod::new(
+                        &class_name,
+                        method.sig.ident.to_string(),
+                    )
+                    .to_string());
+                }
                 if has_attribute(&method.attrs, "ffi_stream") {
                     if let Some(stream) = self.build_stream(method) {
                         streams.push(stream);
@@ -1462,7 +1459,7 @@ impl SourceScanner {
                     return Ok(());
                 }
 
-                if let Some(built_method) = self.build_method(method, &class_name)? {
+                if let Some(built_method) = self.build_method(method, &class_name) {
                     methods.push(built_method);
                 }
                 Ok(())
@@ -1479,16 +1476,16 @@ impl SourceScanner {
         Ok(())
     }
 
-    fn process_value_type_impl(&mut self, item_impl: &ItemImpl) -> Result<(), String> {
+    fn process_value_type_impl(&mut self, item_impl: &ItemImpl) {
         let Some(type_name) = impl_self_type_ident(item_impl) else {
-            return Ok(());
+            return;
         };
 
         let is_record = self.type_registry.is_record(&type_name);
         let is_enum = self.type_registry.is_enum(&type_name);
 
         if !is_record && !is_enum {
-            return Ok(());
+            return;
         }
 
         let mut constructors = Vec::new();
@@ -1503,19 +1500,18 @@ impl SourceScanner {
             })
             .filter(|method| matches!(method.vis, syn::Visibility::Public(_)))
             .filter(|method| !has_attribute(&method.attrs, "skip"))
-            .try_for_each(|method| -> Result<(), String> {
+            .for_each(|method| {
                 if self.is_constructor(method, &type_name) {
                     if let Some(ctor) = self.build_constructor(method, &type_name) {
                         constructors.push(ctor);
                     }
-                    return Ok(());
+                    return;
                 }
 
-                if let Some(built_method) = self.build_method(method, &type_name)? {
+                if let Some(built_method) = self.build_method(method, &type_name) {
                     methods.push(built_method);
                 }
-                Ok(())
-            })?;
+            });
 
         if is_record {
             self.type_registry
@@ -1524,39 +1520,15 @@ impl SourceScanner {
             self.type_registry
                 .merge_enum_impl(&type_name, constructors, methods);
         }
-        Ok(())
     }
 
-    fn build_method(
-        &self,
-        method: &syn::ImplItemFn,
-        self_type_name: &str,
-    ) -> Result<Option<Method>, String> {
+    fn build_method(&self, method: &syn::ImplItemFn, self_type_name: &str) -> Option<Method> {
         let sig = &method.sig;
         let receiver = Self::extract_receiver(sig);
-        let Some(params) = self.resolve_typed_params(&sig.inputs, Some(self_type_name)) else {
-            return Ok(None);
-        };
-        let detached_output = match sig.asyncness {
-            Some(_) => None,
-            None => boltffi_ffi_rules::detached_future::output(&sig.output)
-                .map_err(|error| detached_future_error(&sig.ident, error))?,
-        };
-        let detached_return;
-        let source_output = match detached_output {
-            Some(output) => {
-                detached_return =
-                    syn::ReturnType::Type(Default::default(), Box::new(output.clone()));
-                &detached_return
-            }
-            None => &sig.output,
-        };
-        let output = self.resolve_output(source_output, Some(self_type_name));
-        if matches!(source_output, syn::ReturnType::Type(..)) && output.is_none() {
-            return Ok(None);
-        }
+        let params = self.resolve_typed_params(&sig.inputs, Some(self_type_name))?;
+        let output = self.resolve_output(&sig.output, Some(self_type_name));
 
-        Ok(Some(
+        Some(
             params
                 .into_iter()
                 .fold(
@@ -1565,8 +1537,8 @@ impl SourceScanner {
                 )
                 .maybe_doc(extract_doc_string(&method.attrs))
                 .maybe_return(output.map(ReturnType::from_output))
-                .maybe_async(sig.asyncness.is_some() || detached_output.is_some()),
-        ))
+                .maybe_async(sig.asyncness.is_some()),
+        )
     }
 
     fn build_stream(&self, method: &syn::ImplItemFn) -> Option<StreamMethod> {
@@ -1835,13 +1807,25 @@ fn has_attribute(attrs: &[Attribute], name: &str) -> bool {
     })
 }
 
-fn detached_future_error(
-    callable: &syn::Ident,
-    error: boltffi_ffi_rules::detached_future::Error,
-) -> String {
-    format!(
-        "`{callable}` has an invalid detached future return: {error}; expected `impl Future<Output = T> + Send + 'static`"
-    )
+fn has_single_threaded_export(attrs: &[Attribute]) -> bool {
+    attrs.iter().any(|attribute| {
+        let is_export = attribute.path().is_ident("export")
+            || attribute
+                .path()
+                .segments
+                .last()
+                .is_some_and(|segment| segment.ident == "export");
+        is_export
+            && attribute
+                .parse_args_with(
+                    syn::punctuated::Punctuated::<syn::Ident, syn::Token![,]>::parse_terminated,
+                )
+                .is_ok_and(|arguments| {
+                    arguments.iter().any(|argument| {
+                        argument == "single_threaded" || argument == "thread_unsafe"
+                    })
+                })
+    })
 }
 
 fn has_data_impl_attribute(attrs: &[Attribute]) -> bool {
@@ -3008,7 +2992,6 @@ fn scan_single_crate_with_pointer_width(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use boltffi_ffi_rules::callable::ExecutionKind;
     use std::path::PathBuf;
     use std::process;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -3060,30 +3043,7 @@ mod tests {
     }
 
     #[test]
-    fn legacy_scanner_exports_detached_future_as_async_output() {
-        let item: Item = syn::parse_quote! {
-            #[export]
-            pub fn load() -> impl Future<Output = Result<u32, String>> + Send + 'static {
-                todo!()
-            }
-        };
-        let mut scanner = SourceScanner::new("Demo");
-
-        scanner
-            .process_item(&item, &[])
-            .expect("detached future scans");
-        let module = scanner.into_module();
-        let function = &module.functions[0];
-
-        assert_eq!(function.execution_kind, ExecutionKind::Async);
-        assert!(matches!(
-            function.returns,
-            crate::model::ReturnType::Fallible { .. }
-        ));
-    }
-
-    #[test]
-    fn legacy_scanner_accepts_borrowed_async_on_single_threaded_class() {
+    fn legacy_scanner_rejects_async_instance_method_on_single_threaded_class() {
         let item: Item = syn::parse_quote! {
             #[export(single_threaded)]
             impl Engine {
@@ -3097,14 +3057,13 @@ mod tests {
             .type_registry
             .register("Engine".to_owned(), pending(PendingKind::Class));
 
-        scanner
+        let error = scanner
             .process_item(&item, &[])
-            .expect("borrowed async receiver scans");
-        let module = scanner.into_module();
+            .expect_err("async instance method must be rejected");
 
-        assert_eq!(
-            module.classes[0].methods[0].execution_kind,
-            ExecutionKind::Async
+        assert!(error.contains("async instance method `Engine::load`"));
+        assert!(
+            error.contains("single-threaded classes support synchronous instance methods only")
         );
     }
 

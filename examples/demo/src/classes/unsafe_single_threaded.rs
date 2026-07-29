@@ -127,18 +127,6 @@ impl StateHolder {
         self.value
     }
 
-    pub async fn async_get_value(&self) -> i32 {
-        self.value
-    }
-
-    pub async fn async_set_value(&mut self, value: i32) {
-        self.value = value;
-    }
-
-    pub async fn async_add_item(&mut self, item: String) -> u32 {
-        self.items.push(item);
-        self.items.len() as u32
-    }
 }
 
 #[derive(Default)]

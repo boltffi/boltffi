@@ -927,7 +927,7 @@ mod tests {
                 r#"
                 pub struct Engine;
 
-                #[export(single_threaded)]
+                #[export]
                 impl Engine {
                     pub async fn load(&self) -> i32 {
                         1

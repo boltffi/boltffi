@@ -33,6 +33,10 @@ fn lower_one<S: SurfaceLower>(
     allocator: &mut SymbolAllocator,
     class: &SourceClass,
 ) -> Result<ClassDecl<S>, LowerError> {
+    if let Some(method) = class.single_threaded_async_method() {
+        return Err(LowerError::async_single_threaded_method(method));
+    }
+
     let class_id = ids.class(&class.id)?;
     let canonical = CanonicalName::from(&class.name);
     let release = allocator.mint_class_release(class.id.as_str())?;
@@ -84,10 +88,10 @@ mod tests {
     use crate::lower::lower;
     use crate::{
         BindingErrorKind, Bindings, CanonicalName, ClassDecl, ClassId, ClassThreadSafety,
-        CodecNode, Decl, DirectValueType, EnumId, ErrorDecl, ExecutionDecl, FutureMobility,
-        HandlePresence, HandleTarget, InitializerId, LowerError, LowerErrorKind, MethodId, Native,
-        NativeSymbol, ParamPlan, Primitive as BindingPrimitive, Receive, RecordId, ReturnPlan,
-        ReturnTypeRef, Surface, SurfaceLower, TypeRef, UnsupportedType, Wasm32, native, wasm32,
+        CodecNode, Decl, DirectValueType, EnumId, ErrorDecl, ExecutionDecl, HandlePresence,
+        HandleTarget, InitializerId, LowerError, LowerErrorKind, MethodId, Native, NativeSymbol,
+        ParamPlan, Primitive as BindingPrimitive, Receive, RecordId, ReturnPlan, ReturnTypeRef,
+        Surface, SurfaceLower, TypeRef, UnsupportedType, Wasm32, native, wasm32,
     };
     use serde_json::{Value, json};
 
@@ -576,6 +580,31 @@ mod tests {
     }
 
     #[test]
+    fn rejects_async_instance_method_on_unsafe_single_threaded_class() {
+        let mut load = method("load", Receiver::Shared, ReturnDef::Void);
+        load.execution = ExecutionKind::Async;
+        let error = lower_contract::<Native>({
+            let mut contract = package();
+            let mut class = class("demo::Engine", "Engine", vec![load]);
+            class.thread_safety = SourceClassThreadSafety::UnsafeSingleThreaded;
+            contract.classes.push(class);
+            contract
+        })
+        .expect_err("async instance method must be rejected during lowering");
+
+        assert!(matches!(
+            error.kind(),
+            LowerErrorKind::AsyncSingleThreadedMethod(method)
+                if method.class() == "Engine" && method.method() == "load"
+        ));
+        assert!(
+            error
+                .to_string()
+                .contains("single-threaded classes support synchronous instance methods only")
+        );
+    }
+
+    #[test]
     fn deserialized_bindings_reject_mutable_class_receiver_without_unsafe_single_threaded_export() {
         let bindings = lower_class::<Native>({
             let mut class = class(
@@ -923,7 +952,6 @@ mod tests {
                 cancel,
                 free,
                 panic_message,
-                ..
             }) => {
                 assert_eq!(handle, &native::HandleCarrier::U64);
                 assert_eq!(
@@ -952,33 +980,6 @@ mod tests {
     }
 
     #[test]
-    fn single_threaded_borrowed_async_is_thread_bound_but_detached_future_is_not() {
-        let mut borrowed = method("borrowed", Receiver::Shared, ReturnDef::Void);
-        borrowed.execution = ExecutionKind::Async;
-        let mut detached = method("detached", Receiver::Shared, ReturnDef::Void);
-        detached.execution = ExecutionKind::DetachedFuture;
-        let mut source = class("demo::Engine", "Engine", vec![borrowed, detached]);
-        source.thread_safety = SourceClassThreadSafety::UnsafeSingleThreaded;
-
-        let bindings = lower_class::<Native>(source);
-        let methods = class_by_id(&bindings, ClassId::from_raw(0)).methods();
-        let mobilities = methods
-            .iter()
-            .map(|method| match method.callable().execution() {
-                ExecutionDecl::Asynchronous(native::AsyncProtocol::PollHandle {
-                    mobility, ..
-                }) => *mobility,
-                execution => panic!("expected poll-handle execution, got {execution:?}"),
-            })
-            .collect::<Vec<_>>();
-
-        assert_eq!(
-            mobilities,
-            vec![FutureMobility::ThreadBound, FutureMobility::CrossThread]
-        );
-    }
-
-    #[test]
     fn async_class_initializer_lowers_to_poll_handle_protocol_on_wasm32() {
         let mut new_engine = method(
             "new",
@@ -1001,7 +1002,6 @@ mod tests {
                 cancel,
                 free,
                 panic_message,
-                ..
             }) => {
                 assert_eq!(handle, &wasm32::HandleCarrier::U32);
                 assert_eq!(

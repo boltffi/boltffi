@@ -639,7 +639,6 @@ mod tests {
                 cancel,
                 free,
                 panic_message,
-                ..
             }) => {
                 assert_eq!(handle, &native::HandleCarrier::U64);
                 assert_eq!(
@@ -684,7 +683,6 @@ mod tests {
                 cancel,
                 free,
                 panic_message,
-                ..
             }) => {
                 assert_eq!(handle, &wasm32::HandleCarrier::U32);
                 assert_eq!(

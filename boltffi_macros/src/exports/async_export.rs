@@ -1,7 +1,5 @@
-use boltffi_binding::FutureMobility;
 use quote::quote;
 
-use crate::future_runtime;
 use crate::index::custom_types;
 use crate::lowering::returns::lower::encoded_return_buffer_expression;
 use crate::lowering::returns::model::{EncodedReturnStrategy, ResolvedReturn, ValueReturnStrategy};
@@ -23,7 +21,6 @@ pub(crate) struct AsyncRuntimeExports<'a> {
     pub(crate) ffi_return_type: proc_macro2::TokenStream,
     pub(crate) complete_conversion: proc_macro2::TokenStream,
     pub(crate) default_value: proc_macro2::TokenStream,
-    pub(crate) mobility: FutureMobility,
 }
 
 pub(crate) struct AsyncWasmCompleteExport {
@@ -36,9 +33,7 @@ impl AsyncWasmCompleteExport {
     pub(crate) fn from_resolved_return(
         resolved_return: &ResolvedReturn,
         rust_return_type: &proc_macro2::TokenStream,
-        mobility: FutureMobility,
     ) -> Self {
-        let complete = future_runtime::complete(mobility, rust_return_type);
         if resolved_return.is_primitive_scalar() {
             let rust_type = resolved_return.rust_type();
             return Self {
@@ -48,7 +43,7 @@ impl AsyncWasmCompleteExport {
                 },
                 return_type: quote! { -> #rust_type },
                 body: quote! {
-                    match #complete {
+                    match ::boltffi::__private::rustfuture::rust_future_complete::<#rust_return_type>(handle) {
                         Ok(result) => {
                             if !out_status.is_null() { *out_status = ::boltffi::__private::FfiStatus::OK; }
                             result
@@ -70,7 +65,7 @@ impl AsyncWasmCompleteExport {
                 },
                 return_type: quote! {},
                 body: quote! {
-                    match #complete {
+                    match ::boltffi::__private::rustfuture::rust_future_complete::<#rust_return_type>(handle) {
                         Ok(_) => {
                             if !out_status.is_null() { *out_status = ::boltffi::__private::FfiStatus::OK; }
                         }
@@ -97,7 +92,7 @@ impl AsyncWasmCompleteExport {
                     if out.is_null() {
                         return;
                     }
-                    let buf = match #complete {
+                    let buf = match ::boltffi::__private::rustfuture::rust_future_complete::<#rust_return_type>(handle) {
                         Ok(result) => {
                             if !out_status.is_null() { *out_status = ::boltffi::__private::FfiStatus::OK; }
                             ::boltffi::__private::FfiBuf::from_vec(vec![result])
@@ -125,7 +120,7 @@ impl AsyncWasmCompleteExport {
                 },
                 return_type,
                 body: quote! {
-                    match #complete {
+                    match ::boltffi::__private::rustfuture::rust_future_complete::<#rust_return_type>(handle) {
                         Ok(result) => {
                             if !out_status.is_null() { *out_status = ::boltffi::__private::FfiStatus::OK; }
                             #pointer_expression
@@ -164,7 +159,7 @@ impl AsyncWasmCompleteExport {
                     if out.is_null() {
                         return;
                     }
-                    let buf = match #complete {
+                    let buf = match ::boltffi::__private::rustfuture::rust_future_complete::<#rust_return_type>(handle) {
                         Ok(#result_ident) => {
                             if !out_status.is_null() { *out_status = ::boltffi::__private::FfiStatus::OK; }
                             #encode_expression
@@ -188,7 +183,7 @@ impl AsyncWasmCompleteExport {
                 },
                 return_type: quote! { -> <#rust_type as ::boltffi::__private::Passable>::Out },
                 body: quote! {
-                    match #complete {
+                    match ::boltffi::__private::rustfuture::rust_future_complete::<#rust_return_type>(handle) {
                         Ok(result) => {
                             if !out_status.is_null() { *out_status = ::boltffi::__private::FfiStatus::OK; }
                             ::boltffi::__private::Passable::pack(result)
@@ -258,7 +253,6 @@ impl<'a> AsyncRuntimeExports<'a> {
         let ffi_return_type = &self.ffi_return_type;
         let complete_conversion = &self.complete_conversion;
         let default_value = &self.default_value;
-        let complete = future_runtime::complete(self.mobility, rust_return_type);
 
         quote! {
             #[cfg(not(target_arch = "wasm32"))]
@@ -267,7 +261,7 @@ impl<'a> AsyncRuntimeExports<'a> {
                 handle: ::boltffi::__private::RustFutureHandle,
                 out_status: *mut ::boltffi::__private::FfiStatus,
             ) -> #ffi_return_type {
-                match #complete {
+                match ::boltffi::__private::rustfuture::rust_future_complete::<#rust_return_type>(handle) {
                     Ok(result) => {
                         #complete_conversion
                     }
@@ -302,7 +296,6 @@ impl<'a> AsyncRuntimeExports<'a> {
         let visibility = self.visibility;
         let poll_ident = &self.names.poll;
         let rust_return_type = &self.rust_return_type;
-        let poll = future_runtime::poll(self.mobility, rust_return_type);
 
         quote! {
             #[cfg(not(target_arch = "wasm32"))]
@@ -312,7 +305,7 @@ impl<'a> AsyncRuntimeExports<'a> {
                 callback_data: u64,
                 callback: ::boltffi::__private::RustFutureContinuationCallback,
             ) {
-                #poll
+                ::boltffi::__private::rustfuture::rust_future_poll::<#rust_return_type>(handle, callback, callback_data)
             }
         }
     }
@@ -321,7 +314,6 @@ impl<'a> AsyncRuntimeExports<'a> {
         let visibility = self.visibility;
         let poll_sync_ident = &self.names.poll_sync;
         let rust_return_type = &self.rust_return_type;
-        let poll_sync = future_runtime::poll_sync(self.mobility, rust_return_type);
 
         quote! {
             #[cfg(target_arch = "wasm32")]
@@ -329,7 +321,7 @@ impl<'a> AsyncRuntimeExports<'a> {
             #visibility unsafe extern "C" fn #poll_sync_ident(
                 handle: ::boltffi::__private::RustFutureHandle,
             ) -> i32 {
-                #poll_sync
+                ::boltffi::__private::rust_future_poll_sync::<#rust_return_type>(handle)
             }
         }
     }
@@ -338,7 +330,6 @@ impl<'a> AsyncRuntimeExports<'a> {
         let visibility = self.visibility;
         let panic_message_ident = &self.names.panic_message;
         let rust_return_type = &self.rust_return_type;
-        let panic_message = future_runtime::panic_message(self.mobility, rust_return_type);
 
         quote! {
             #[cfg(target_arch = "wasm32")]
@@ -346,7 +337,7 @@ impl<'a> AsyncRuntimeExports<'a> {
             #visibility unsafe extern "C" fn #panic_message_ident(
                 handle: ::boltffi::__private::RustFutureHandle,
             ) -> ::boltffi::__private::FfiBuf {
-                match #panic_message {
+                match ::boltffi::__private::rust_future_panic_message::<#rust_return_type>(handle) {
                     Some(message) => ::boltffi::__private::FfiBuf::wire_encode(&message),
                     None => ::boltffi::__private::FfiBuf::empty(),
                 }
@@ -358,12 +349,11 @@ impl<'a> AsyncRuntimeExports<'a> {
         let visibility = self.visibility;
         let cancel_ident = &self.names.cancel;
         let rust_return_type = &self.rust_return_type;
-        let cancel = future_runtime::cancel(self.mobility, rust_return_type);
 
         quote! {
             #[unsafe(no_mangle)]
             #visibility unsafe extern "C" fn #cancel_ident(handle: ::boltffi::__private::RustFutureHandle) {
-                #cancel
+                ::boltffi::__private::rustfuture::rust_future_cancel::<#rust_return_type>(handle)
             }
         }
     }
@@ -372,12 +362,11 @@ impl<'a> AsyncRuntimeExports<'a> {
         let visibility = self.visibility;
         let free_ident = &self.names.free;
         let rust_return_type = &self.rust_return_type;
-        let free = future_runtime::free(self.mobility, rust_return_type);
 
         quote! {
             #[unsafe(no_mangle)]
             #visibility unsafe extern "C" fn #free_ident(handle: ::boltffi::__private::RustFutureHandle) {
-                #free
+                ::boltffi::__private::rustfuture::rust_future_free::<#rust_return_type>(handle)
             }
         }
     }
