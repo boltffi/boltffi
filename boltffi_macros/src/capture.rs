@@ -297,6 +297,17 @@ fn wrapper_tokens(
         }
     };
 
+    for parameter in &def.parameters {
+        if !wrapper_crossable(&parameter.type_expr) {
+            return Err("a parameter type has no FfiCross crossing yet");
+        }
+    }
+    if let boltffi_ast::ReturnDef::Value(returns) = &def.returns
+        && !wrapper_crossable(returns)
+    {
+        return Err("the return type has no FfiCross crossing yet");
+    }
+
     let ident = &item.sig.ident;
     let symbol = invocation_symbol(&ident.to_string());
     def.native_symbol = Some(symbol.clone());
@@ -314,13 +325,24 @@ fn wrapper_tokens(
             if !__boltffi_status.is_null() {
                 unsafe { *__boltffi_status = #facade::__private::FfiStatus::OK };
             }
-            match ::std::panic::catch_unwind(::std::panic::AssertUnwindSafe(move || {
-                let __boltffi_ret = #ident(
-                    #(<#types as #facade::__private::capture::FfiCross<crate::__BoltffiTag>>::lift(#names)),*
-                );
-                <#return_type as #facade::__private::capture::FfiCross<crate::__BoltffiTag>>::lower(__boltffi_ret)
-            })) {
-                Ok(value) => value,
+            match ::std::panic::catch_unwind(::std::panic::AssertUnwindSafe(
+                move || -> ::core::result::Result<
+                    <#return_type as #facade::__private::capture::FfiCross<crate::__BoltffiTag>>::Ffi,
+                    #facade::__private::wire::DecodeError,
+                > {
+                    let __boltffi_ret = #ident(
+                        #(<#types as #facade::__private::capture::FfiCross<crate::__BoltffiTag>>::lift(#names)?),*
+                    );
+                    ::core::result::Result::Ok(
+                        <#return_type as #facade::__private::capture::FfiCross<crate::__BoltffiTag>>::lower(__boltffi_ret)
+                    )
+                }
+            )) {
+                Ok(::core::result::Result::Ok(value)) => value,
+                Ok(::core::result::Result::Err(error)) => {
+                    unsafe { #facade::__private::capture::note_invalid_arg(__boltffi_status, error) };
+                    <#return_type as #facade::__private::capture::FfiCross<crate::__BoltffiTag>>::poisoned()
+                }
                 Err(panic) => {
                     unsafe { #facade::__private::capture::note_panic(__boltffi_status, panic) };
                     <#return_type as #facade::__private::capture::FfiCross<crate::__BoltffiTag>>::poisoned()
@@ -335,6 +357,30 @@ fn crossing_unsupported(ty: &syn::Type) -> bool {
         ty,
         syn::Type::Reference(_) | syn::Type::ImplTrait(_) | syn::Type::Ptr(_)
     )
+}
+
+/// Whether every type reached by this expression has an `FfiCross` impl the wrapper can
+/// name: core's primitives, builtins, and containers, plus the impls `#[data]` sites
+/// emit. Everything else refuses so the crate falls back instead of failing to compile —
+/// including all custom types, since the function site cannot tell a `custom_ffi` local
+/// (which has an impl) from a `custom_type!` remote (which the orphan rule keeps bare).
+fn wrapper_crossable(type_expr: &boltffi_ast::TypeExpr) -> bool {
+    use boltffi_ast::TypeExpr;
+    match type_expr {
+        TypeExpr::Primitive(_)
+        | TypeExpr::Unit
+        | TypeExpr::String
+        | TypeExpr::Builtin(_)
+        | TypeExpr::Record { .. }
+        | TypeExpr::Enum { .. } => true,
+        TypeExpr::Boxed(inner) | TypeExpr::Vec(inner) | TypeExpr::Option(inner) => {
+            wrapper_crossable(inner)
+        }
+        TypeExpr::Result { ok, err } => wrapper_crossable(ok) && wrapper_crossable(err),
+        TypeExpr::Map { key, value, .. } => wrapper_crossable(key) && wrapper_crossable(value),
+        TypeExpr::Tuple(items) => items.iter().all(wrapper_crossable),
+        _ => false,
+    }
 }
 
 fn invocation_symbol(item: &str) -> String {
@@ -523,9 +569,10 @@ fn wire_cross_tokens<T: quote::ToTokens>(self_ty: &T) -> TokenStream {
                 #facade::__private::FfiBuf::wire_encode(&self)
             }
 
-            fn lift(ffi: #facade::__private::FfiBuf) -> Self {
+            fn lift(
+                ffi: #facade::__private::FfiBuf,
+            ) -> ::core::result::Result<Self, #facade::__private::wire::DecodeError> {
                 #facade::__private::wire::decode(unsafe { ffi.as_byte_slice() })
-                    .expect("wire decode failed at the FFI boundary")
             }
 
             fn poisoned() -> #facade::__private::FfiBuf {
@@ -543,5 +590,29 @@ fn type_leaf_name(ty: &syn::Type) -> Option<String> {
             .last()
             .map(|segment| segment.ident.to_string()),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use boltffi_ast::{BuiltinType, TypeExpr};
+
+    use super::wrapper_crossable;
+
+    #[test]
+    fn wrapper_crossability_follows_ffi_cross_coverage() {
+        assert!(
+            wrapper_crossable(&TypeExpr::Builtin(BuiltinType::Duration)),
+            "builtins have core crossings"
+        );
+        assert!(
+            wrapper_crossable(&TypeExpr::Vec(Box::new(TypeExpr::String))),
+            "containers cross when their elements do"
+        );
+        assert!(!wrapper_crossable(&TypeExpr::Str), "borrowed types refuse");
+        assert!(
+            !wrapper_crossable(&TypeExpr::Vec(Box::new(TypeExpr::Str))),
+            "containers refuse when their elements do"
+        );
     }
 }

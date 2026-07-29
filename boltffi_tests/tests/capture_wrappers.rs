@@ -7,7 +7,7 @@
 use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use boltffi_bindgen::metadata::BindingMetadataBuild;
 use boltffi_core::FfiStatus;
@@ -42,6 +42,11 @@ pub fn shift(point: Point, by: f64) -> Point {
 #[export]
 pub fn shout(value: String) -> String {
     value.to_uppercase()
+}
+
+#[export]
+pub fn until(deadline: std::time::Duration) -> u64 {
+    deadline.as_millis() as u64
 }
 
 #[export]
@@ -175,6 +180,30 @@ fn wrappers_are_called_through_their_record_carried_symbols() {
     let shouted = unsafe { shout(wire_string("hey"), &mut status) };
     assert_eq!(status, FfiStatus::OK);
     assert_eq!(unwire_string(shouted), "HEY", "strings round-trip");
+
+    let mut status = FfiStatus::OK;
+    let refused = unsafe { shout(FfiBuf::from_vec(vec![0xFF, 0xFF, 0xFF]), &mut status) };
+    assert_eq!(
+        status,
+        FfiStatus::INVALID_ARG,
+        "malformed bytes report the invalid-argument status"
+    );
+    assert!(
+        unsafe { refused.as_byte_slice() }.is_empty(),
+        "the refused return is the empty buffer"
+    );
+
+    let until: libloading::Symbol<'_, unsafe extern "C" fn(FfiBuf, *mut FfiStatus) -> u64> =
+        unsafe { library.get(symbol("until").as_bytes()) }.expect("until symbol resolves");
+    let mut status = FfiStatus::OK;
+    let millis = unsafe {
+        until(
+            FfiBuf::wire_encode(&Duration::from_millis(1500)),
+            &mut status,
+        )
+    };
+    assert_eq!(status, FfiStatus::OK);
+    assert_eq!(millis, 1500, "builtins cross as encoded buffers");
 
     let boom: libloading::Symbol<'_, unsafe extern "C" fn(bool, *mut FfiStatus) -> f64> =
         unsafe { library.get(symbol("boom").as_bytes()) }.expect("boom symbol resolves");

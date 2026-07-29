@@ -5,7 +5,7 @@ mod cross;
 mod record;
 mod type_info;
 
-pub use cross::{FfiCross, note_panic};
+pub use cross::{FfiCross, note_invalid_arg, note_panic};
 pub use record::{
     SOURCE_RECORD_MAGIC, SOURCE_SECTION_MACH_O, SOURCE_SECTION_MACH_O_NAME, SOURCE_SECTION_OBJECT,
     record, record_len,
