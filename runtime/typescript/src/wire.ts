@@ -24,6 +24,7 @@ export class WireReader {
    */
   private borrowed: boolean;
   private bytes: Uint8Array | null = null;
+  /** The reader's buffer, held directly to keep `view.buffer` off hot paths. */
   private bufferRef: ArrayBuffer;
 
   /**
@@ -56,6 +57,8 @@ export class WireReader {
     if (this.bufferRef !== buffer) {
       this.view = new DataView(buffer);
       this.bufferRef = buffer;
+      // `asBytes` only notices detachment, not a swap between two live
+      // buffers, so the cache has to be dropped here.
       this.bytes = null;
     }
     this.offset = offset;
