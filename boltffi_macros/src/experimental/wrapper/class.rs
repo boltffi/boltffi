@@ -447,10 +447,12 @@ impl ClassHandleOperations {
     }
 
     fn with_attached_async_receivers(mut self, class: &ClassDef) -> Self {
-        self.retained_send = class.methods.iter().any(|method| {
-            method.execution == ExecutionKind::Async
-                && matches!(method.receiver, Receiver::Shared | Receiver::Mutable)
-        });
+        self.retained_send = class.thread_safety
+            != boltffi_ast::ClassThreadSafety::UnsafeSingleThreaded
+            && class.methods.iter().any(|method| {
+                method.execution == ExecutionKind::Async
+                    && matches!(method.receiver, Receiver::Shared | Receiver::Mutable)
+            });
         self
     }
 

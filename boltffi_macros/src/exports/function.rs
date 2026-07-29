@@ -1,3 +1,4 @@
+use boltffi_binding::FutureMobility;
 use boltffi_ffi_rules::callable::{CallableForm, ExecutionKind};
 use boltffi_ffi_rules::naming;
 use boltffi_ffi_rules::transport::{EncodedReturnStrategy, ValueReturnStrategy};
@@ -699,27 +700,42 @@ fn generate_async_export(
     let move_vars = &params.move_vars;
 
     let entry_body = match detached_output {
-        Some(_) => quote! {
-            #(#pre_spawn)*
-            #(#thread_setup)*
-            #(let _ = &#move_vars;)*
-            let future = #fn_name(#(#call_args),*);
-            ::boltffi::__private::rustfuture::rust_future_new(future)
-        },
-        None => quote! {
-            #(#pre_spawn)*
-            #(let _ = &#move_vars;)*
-            ::boltffi::__private::rustfuture::rust_future_new(async move {
+        Some(_) => {
+            let start =
+                crate::future_runtime::start(FutureMobility::CrossThread, quote! { future });
+            quote! {
+                #(#pre_spawn)*
                 #(#thread_setup)*
-                #fn_name(#(#call_args),*).await
-            })
-        },
+                #(let _ = &#move_vars;)*
+                let future = #fn_name(#(#call_args),*);
+                #start
+            }
+        }
+        None => {
+            let start = crate::future_runtime::start(
+                FutureMobility::CrossThread,
+                quote! {
+                    async move {
+                        #(#thread_setup)*
+                        #fn_name(#(#call_args),*).await
+                    }
+                },
+            );
+            quote! {
+                #(#pre_spawn)*
+                #(let _ = &#move_vars;)*
+                #start
+            }
+        }
     };
     let entry_fn = ExternExport::async_entry(fn_vis, export_names.entry(), ffi_params, entry_body)
         .render(ExportCondition::Always);
 
-    let wasm_complete =
-        AsyncWasmCompleteExport::from_resolved_return(&return_abi, &rust_return_type);
+    let wasm_complete = AsyncWasmCompleteExport::from_resolved_return(
+        &return_abi,
+        &rust_return_type,
+        FutureMobility::CrossThread,
+    );
     let runtime_exports = AsyncRuntimeExports {
         visibility: fn_vis,
         names: &export_names,
@@ -727,6 +743,7 @@ fn generate_async_export(
         ffi_return_type: quote! { #ffi_return_type },
         complete_conversion,
         default_value,
+        mobility: FutureMobility::CrossThread,
     }
     .render(wasm_complete);
 

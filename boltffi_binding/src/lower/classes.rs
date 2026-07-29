@@ -76,18 +76,18 @@ mod tests {
     use boltffi_ast::{
         CanonicalName as SourceName, ClassDef, ClassThreadSafety as SourceClassThreadSafety,
         DeprecationInfo as SourceDeprecationInfo, DocComment as SourceDocComment, EnumDef,
-        FieldDef, MethodDef, MethodId as SourceMethodId, PackageInfo as SourcePackage,
-        ParameterDef, Path as SourcePath, Primitive, Receiver, RecordDef, ReprAttr, ReprItem,
-        ReturnDef, SourceContract, TypeExpr, VariantDef,
+        ExecutionKind, FieldDef, MethodDef, MethodId as SourceMethodId,
+        PackageInfo as SourcePackage, ParameterDef, Path as SourcePath, Primitive, Receiver,
+        RecordDef, ReprAttr, ReprItem, ReturnDef, SourceContract, TypeExpr, VariantDef,
     };
 
     use crate::lower::lower;
     use crate::{
         BindingErrorKind, Bindings, CanonicalName, ClassDecl, ClassId, ClassThreadSafety,
-        CodecNode, Decl, DirectValueType, EnumId, ErrorDecl, ExecutionDecl, HandlePresence,
-        HandleTarget, InitializerId, LowerError, LowerErrorKind, MethodId, Native, NativeSymbol,
-        ParamPlan, Primitive as BindingPrimitive, Receive, RecordId, ReturnPlan, ReturnTypeRef,
-        Surface, SurfaceLower, TypeRef, UnsupportedType, Wasm32, native, wasm32,
+        CodecNode, Decl, DirectValueType, EnumId, ErrorDecl, ExecutionDecl, FutureMobility,
+        HandlePresence, HandleTarget, InitializerId, LowerError, LowerErrorKind, MethodId, Native,
+        NativeSymbol, ParamPlan, Primitive as BindingPrimitive, Receive, RecordId, ReturnPlan,
+        ReturnTypeRef, Surface, SurfaceLower, TypeRef, UnsupportedType, Wasm32, native, wasm32,
     };
     use serde_json::{Value, json};
 
@@ -923,6 +923,7 @@ mod tests {
                 cancel,
                 free,
                 panic_message,
+                ..
             }) => {
                 assert_eq!(handle, &native::HandleCarrier::U64);
                 assert_eq!(
@@ -951,6 +952,33 @@ mod tests {
     }
 
     #[test]
+    fn single_threaded_borrowed_async_is_thread_bound_but_detached_future_is_not() {
+        let mut borrowed = method("borrowed", Receiver::Shared, ReturnDef::Void);
+        borrowed.execution = ExecutionKind::Async;
+        let mut detached = method("detached", Receiver::Shared, ReturnDef::Void);
+        detached.execution = ExecutionKind::DetachedFuture;
+        let mut source = class("demo::Engine", "Engine", vec![borrowed, detached]);
+        source.thread_safety = SourceClassThreadSafety::UnsafeSingleThreaded;
+
+        let bindings = lower_class::<Native>(source);
+        let methods = class_by_id(&bindings, ClassId::from_raw(0)).methods();
+        let mobilities = methods
+            .iter()
+            .map(|method| match method.callable().execution() {
+                ExecutionDecl::Asynchronous(native::AsyncProtocol::PollHandle {
+                    mobility, ..
+                }) => *mobility,
+                execution => panic!("expected poll-handle execution, got {execution:?}"),
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            mobilities,
+            vec![FutureMobility::ThreadBound, FutureMobility::CrossThread]
+        );
+    }
+
+    #[test]
     fn async_class_initializer_lowers_to_poll_handle_protocol_on_wasm32() {
         let mut new_engine = method(
             "new",
@@ -973,6 +1001,7 @@ mod tests {
                 cancel,
                 free,
                 panic_message,
+                ..
             }) => {
                 assert_eq!(handle, &wasm32::HandleCarrier::U32);
                 assert_eq!(

@@ -23,7 +23,7 @@
 //! [`native::AsyncProtocol::NativeFuture`]: crate::native::AsyncProtocol::NativeFuture
 //! [`native::AsyncProtocol::Continuation`]: crate::native::AsyncProtocol::Continuation
 
-use crate::{Native, NativeSymbol, Surface, Wasm32, native, wasm32};
+use crate::{FutureMobility, Native, NativeSymbol, Surface, Wasm32, native, wasm32};
 
 use super::LowerError;
 use super::symbol::{AsyncLifecycle, SymbolAllocator};
@@ -43,6 +43,7 @@ pub trait AsyncProtocolBuilder: Surface {
     fn build_protocol(
         allocator: &mut SymbolAllocator,
         start_symbol_name: &str,
+        mobility: FutureMobility,
     ) -> Result<Self::AsyncProtocol, LowerError>;
 }
 
@@ -50,6 +51,7 @@ impl AsyncProtocolBuilder for Native {
     fn build_protocol(
         allocator: &mut SymbolAllocator,
         start_symbol_name: &str,
+        mobility: FutureMobility,
     ) -> Result<Self::AsyncProtocol, LowerError> {
         let poll = mint_lifecycle(allocator, start_symbol_name, AsyncLifecycle::Poll)?;
         let complete = mint_lifecycle(allocator, start_symbol_name, AsyncLifecycle::Complete)?;
@@ -58,6 +60,7 @@ impl AsyncProtocolBuilder for Native {
         let panic_message = mint_lifecycle(allocator, start_symbol_name, AsyncLifecycle::Panic)?;
         Ok(native::AsyncProtocol::PollHandle {
             handle: native::HandleCarrier::U64,
+            mobility,
             poll,
             complete,
             cancel,
@@ -71,6 +74,7 @@ impl AsyncProtocolBuilder for Wasm32 {
     fn build_protocol(
         allocator: &mut SymbolAllocator,
         start_symbol_name: &str,
+        mobility: FutureMobility,
     ) -> Result<Self::AsyncProtocol, LowerError> {
         let poll_sync = mint_lifecycle(allocator, start_symbol_name, AsyncLifecycle::PollSync)?;
         let complete = mint_lifecycle(allocator, start_symbol_name, AsyncLifecycle::Complete)?;
@@ -79,6 +83,7 @@ impl AsyncProtocolBuilder for Wasm32 {
         let panic_message = mint_lifecycle(allocator, start_symbol_name, AsyncLifecycle::Panic)?;
         Ok(wasm32::AsyncProtocol::PollHandle {
             handle: wasm32::HandleCarrier::U32,
+            mobility,
             poll_sync,
             complete,
             cancel,

@@ -12,6 +12,7 @@ impl FfiStatus {
     pub const BUFFER_TOO_SMALL: Self = Self { code: 2 };
     pub const INVALID_ARG: Self = Self { code: 3 };
     pub const CANCELLED: Self = Self { code: 4 };
+    pub const WRONG_THREAD: Self = Self { code: 5 };
     pub const INTERNAL_ERROR: Self = Self { code: 100 };
 
     pub const fn new(code: i32) -> Self {

@@ -403,6 +403,9 @@ pub mod native {
         PollHandle {
             /// Carrier used for the async state handle.
             handle: HandleCarrier,
+            #[allow(missing_docs)]
+            #[serde(default)]
+            mobility: crate::FutureMobility,
             /// Symbol that advances the operation without blocking.
             poll: NativeSymbol,
             /// Symbol that extracts the resolved value once ready.
@@ -623,6 +626,9 @@ pub mod wasm32 {
         PollHandle {
             /// Carrier used for the async state handle.
             handle: HandleCarrier,
+            #[allow(missing_docs)]
+            #[serde(default)]
+            mobility: crate::FutureMobility,
             /// Symbol that advances the operation while the foreign
             /// side blocks waiting for completion.
             poll_sync: NativeSymbol,

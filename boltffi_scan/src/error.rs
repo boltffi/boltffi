@@ -75,10 +75,6 @@ pub enum ScanError {
         item: String,
         reason: String,
     },
-    BorrowedAsyncSingleThreadedMethod {
-        class: String,
-        method: String,
-    },
     UnsupportedSupertraits {
         item: String,
     },
@@ -214,12 +210,6 @@ impl fmt::Display for ScanError {
                 write!(
                     formatter,
                     "`{item}` has an invalid detached future return: {reason}; expected `impl Future<Output = T> + Send + 'static`"
-                )
-            }
-            Self::BorrowedAsyncSingleThreadedMethod { class, method } => {
-                write!(
-                    formatter,
-                    "async instance method `{class}::{method}` cannot be exported from a single-threaded class; use a non-async method returning `impl Future<Output = T> + Send + 'static` so the future does not borrow the receiver"
                 )
             }
             Self::UnsupportedSupertraits { item } => {

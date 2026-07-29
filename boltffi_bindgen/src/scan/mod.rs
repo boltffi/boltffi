@@ -1434,8 +1434,6 @@ impl SourceScanner {
         let Some(class_name) = impl_self_type_ident(item_impl) else {
             return Ok(());
         };
-        let single_threaded = has_single_threaded_export(&item_impl.attrs);
-
         let mut constructors = Vec::new();
         let mut methods = Vec::new();
         let mut streams = Vec::new();
@@ -1450,18 +1448,6 @@ impl SourceScanner {
             .filter(|method| matches!(method.vis, syn::Visibility::Public(_)))
             .filter(|method| !has_attribute(&method.attrs, "skip"))
             .try_for_each(|method| -> Result<(), String> {
-                if single_threaded
-                    && method.sig.asyncness.is_some()
-                    && matches!(
-                        method.sig.inputs.first(),
-                        Some(FnArg::Receiver(receiver)) if receiver.reference.is_some()
-                    )
-                {
-                    return Err(format!(
-                        "async instance method `{class_name}::{}` cannot be exported from a single-threaded class; use a non-async method returning `impl Future<Output = T> + Send + 'static` so the future does not borrow the receiver",
-                        method.sig.ident
-                    ));
-                }
                 if has_attribute(&method.attrs, "ffi_stream") {
                     if let Some(stream) = self.build_stream(method) {
                         streams.push(stream);
@@ -1846,27 +1832,6 @@ fn has_attribute(attrs: &[Attribute], name: &str) -> bool {
                 .segments
                 .last()
                 .is_some_and(|segment| segment.ident == name)
-    })
-}
-
-fn has_single_threaded_export(attrs: &[Attribute]) -> bool {
-    attrs.iter().any(|attribute| {
-        let is_export = attribute.path().is_ident("export")
-            || attribute
-                .path()
-                .segments
-                .last()
-                .is_some_and(|segment| segment.ident == "export");
-        is_export
-            && attribute
-                .parse_args_with(
-                    syn::punctuated::Punctuated::<syn::Ident, syn::Token![,]>::parse_terminated,
-                )
-                .is_ok_and(|arguments| {
-                    arguments.iter().any(|argument| {
-                        argument == "single_threaded" || argument == "thread_unsafe"
-                    })
-                })
     })
 }
 
@@ -3118,7 +3083,7 @@ mod tests {
     }
 
     #[test]
-    fn legacy_scanner_rejects_borrowed_async_and_suggests_detached_future() {
+    fn legacy_scanner_accepts_borrowed_async_on_single_threaded_class() {
         let item: Item = syn::parse_quote! {
             #[export(single_threaded)]
             impl Engine {
@@ -3132,12 +3097,15 @@ mod tests {
             .type_registry
             .register("Engine".to_owned(), pending(PendingKind::Class));
 
-        let error = scanner
+        scanner
             .process_item(&item, &[])
-            .expect_err("borrowed async receiver must be rejected");
+            .expect("borrowed async receiver scans");
+        let module = scanner.into_module();
 
-        assert!(error.contains("async instance method `Engine::load`"));
-        assert!(error.contains("impl Future<Output = T> + Send + 'static"));
+        assert_eq!(
+            module.classes[0].methods[0].execution_kind,
+            ExecutionKind::Async
+        );
     }
 
     #[test]

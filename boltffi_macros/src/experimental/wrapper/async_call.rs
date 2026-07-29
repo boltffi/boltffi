@@ -1,22 +1,25 @@
 use boltffi_ast::ExecutionKind;
 use boltffi_binding::{
-    DirectValueType, ErrorDecl, ExecutionDecl, ExportedCallable, FunctionDecl, HandleTarget,
-    IncomingParam, IntoRust, Native, NativeSymbol, ParamDecl, ParamPlan, Receive, ReturnPlan,
-    Wasm32, native, wasm32,
+    DirectValueType, ErrorDecl, ExecutionDecl, ExportedCallable, FunctionDecl, FutureMobility,
+    HandleTarget, IncomingParam, IntoRust, Native, NativeSymbol, ParamDecl, ParamPlan, Receive,
+    ReturnPlan, Wasm32, native, wasm32,
 };
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{Type, parse_quote};
 
-use crate::experimental::{
-    error::Error,
-    expansion::Expansion,
-    rust_api,
-    surface::RenderSurface,
-    wrapper::{
-        self, Render, export, names,
-        returns::{closure, direct_vec, encoded, fallible, handle, scalar_option},
+use crate::{
+    experimental::{
+        error::Error,
+        expansion::Expansion,
+        rust_api,
+        surface::RenderSurface,
+        wrapper::{
+            self, Render, export, names,
+            returns::{closure, direct_vec, encoded, fallible, handle, scalar_option},
+        },
     },
+    future_runtime,
 };
 
 pub struct Renderer;
@@ -95,6 +98,7 @@ impl<'expansion, 'lowered> Render<Wasm32, Input<'expansion, 'lowered, Wasm32>> f
 impl<'expansion, 'lowered> Input<'expansion, 'lowered, Native> {
     fn render_native(self) -> Result<TokenStream, Error> {
         let ExecutionDecl::Asynchronous(native::AsyncProtocol::PollHandle {
+            mobility,
             poll,
             complete,
             cancel,
@@ -111,6 +115,7 @@ impl<'expansion, 'lowered> Input<'expansion, 'lowered, Native> {
             self.callable,
             self.source,
             self.execution,
+            *mobility,
             self.rust_call,
             self.receiver,
             self.visibility,
@@ -122,6 +127,7 @@ impl<'expansion, 'lowered> Input<'expansion, 'lowered, Native> {
             cancel: cancel.clone(),
             free: free.clone(),
             panic_message: panic_message.clone(),
+            mobility: *mobility,
         })
     }
 }
@@ -129,6 +135,7 @@ impl<'expansion, 'lowered> Input<'expansion, 'lowered, Native> {
 impl<'expansion, 'lowered> Input<'expansion, 'lowered, Wasm32> {
     fn render_wasm32(self) -> Result<TokenStream, Error> {
         let ExecutionDecl::Asynchronous(wasm32::AsyncProtocol::PollHandle {
+            mobility,
             poll_sync,
             complete,
             cancel,
@@ -145,6 +152,7 @@ impl<'expansion, 'lowered> Input<'expansion, 'lowered, Wasm32> {
             self.callable,
             self.source,
             self.execution,
+            *mobility,
             self.rust_call,
             self.receiver,
             self.visibility,
@@ -156,6 +164,7 @@ impl<'expansion, 'lowered> Input<'expansion, 'lowered, Wasm32> {
             cancel: cancel.clone(),
             free: free.clone(),
             panic_message: panic_message.clone(),
+            mobility: *mobility,
         })
     }
 }
@@ -165,6 +174,7 @@ struct AsyncExports<'expansion, 'lowered, S: RenderSurface> {
     callable: &'lowered ExportedCallable<S>,
     source: rust_api::Callable<'lowered>,
     execution: ExecutionKind,
+    mobility: FutureMobility,
     rust_call: export::RustCall,
     receiver: export::ReceiverTokens,
     visibility: TokenStream,
@@ -203,6 +213,7 @@ where
         callable: &'lowered ExportedCallable<S>,
         source: rust_api::Callable<'lowered>,
         execution: ExecutionKind,
+        mobility: FutureMobility,
         rust_call: export::RustCall,
         receiver: export::ReceiverTokens,
         visibility: TokenStream,
@@ -217,6 +228,7 @@ where
             callable,
             source.returns(),
             &rust_return_type,
+            mobility,
             expansion,
         )?;
         Ok(Self {
@@ -224,6 +236,7 @@ where
             callable,
             source,
             execution,
+            mobility,
             rust_call,
             receiver,
             visibility,
@@ -250,9 +263,8 @@ where
         if !self.receiver.writebacks().is_empty() {
             return Err(Error::UnsupportedExpansion("async receiver writeback"));
         }
-        let failure = quote! {
-            return ::boltffi::__private::rustfuture::rust_future_invalid_arg::<#rust_return_type>();
-        };
+        let invalid = future_runtime::invalid(self.mobility, rust_return_type);
+        let failure = quote! { return #invalid; };
         let params = <wrapper::arguments::AsyncRenderer as Render<S, _>>::render(
             wrapper::arguments::AsyncRenderer,
             wrapper::arguments::Input::new(self.callable, self.source, failure, self.expansion),
@@ -273,21 +285,33 @@ where
         let body = match self.execution {
             ExecutionKind::Async => {
                 let rust_call = self.rust_call.awaited_expression(params.rust_arguments());
+                let start = future_runtime::start(
+                    self.mobility,
+                    quote! {
+                        async move {
+                            #rust_call
+                        }
+                    },
+                );
                 quote! {
                     #(#conversions)*
-                    ::boltffi::__private::rustfuture::rust_future_new(async move {
-                        #rust_call
-                    })
+                    #start
                 }
             }
             ExecutionKind::DetachedFuture => {
+                if self.mobility == FutureMobility::ThreadBound {
+                    return Err(Error::SourceSyntaxMismatch(
+                        "detached future unexpectedly uses thread-bound execution",
+                    ));
+                }
                 let rust_call = self.rust_call.expression(params.rust_arguments());
+                let start = future_runtime::start(self.mobility, quote! { __boltffi_future });
                 quote! {
                     let __boltffi_future = {
                         #(#conversions)*
                         #rust_call
                     };
-                    ::boltffi::__private::rustfuture::rust_future_new(__boltffi_future)
+                    #start
                 }
             }
             ExecutionKind::Sync => {
@@ -409,6 +433,7 @@ struct NativeProtocol {
     cancel: NativeSymbol,
     free: NativeSymbol,
     panic_message: NativeSymbol,
+    mobility: FutureMobility,
 }
 
 impl AsyncProtocol for NativeProtocol {
@@ -419,6 +444,7 @@ impl AsyncProtocol for NativeProtocol {
     ) -> TokenStream {
         let cfg = S::cfg_attr();
         let ident = names::Symbol::new(&self.poll).ident();
+        let poll = future_runtime::poll(self.mobility, rust_return_type);
         quote! {
             #cfg
             #[unsafe(no_mangle)]
@@ -428,11 +454,7 @@ impl AsyncProtocol for NativeProtocol {
                 callback: ::boltffi::__private::RustFutureContinuationCallback,
             ) {
                 unsafe {
-                    ::boltffi::__private::rustfuture::rust_future_poll::<#rust_return_type>(
-                        handle,
-                        callback,
-                        callback_data
-                    )
+                    #poll
                 }
             }
         }
@@ -448,6 +470,7 @@ impl AsyncProtocol for NativeProtocol {
             visibility,
             names::Symbol::new(&self.complete).ident(),
             rust_return_type,
+            self.mobility,
         )
     }
 
@@ -456,7 +479,7 @@ impl AsyncProtocol for NativeProtocol {
         visibility: &TokenStream,
         rust_return_type: &Type,
     ) -> TokenStream {
-        FutureSupport::new(visibility, rust_return_type)
+        FutureSupport::new(visibility, rust_return_type, self.mobility)
             .panic_message::<S>(names::Symbol::new(&self.panic_message).ident())
     }
 
@@ -465,7 +488,7 @@ impl AsyncProtocol for NativeProtocol {
         visibility: &TokenStream,
         rust_return_type: &Type,
     ) -> TokenStream {
-        FutureSupport::new(visibility, rust_return_type)
+        FutureSupport::new(visibility, rust_return_type, self.mobility)
             .cancel::<S>(names::Symbol::new(&self.cancel).ident())
     }
 
@@ -474,7 +497,7 @@ impl AsyncProtocol for NativeProtocol {
         visibility: &TokenStream,
         rust_return_type: &Type,
     ) -> TokenStream {
-        FutureSupport::new(visibility, rust_return_type)
+        FutureSupport::new(visibility, rust_return_type, self.mobility)
             .free::<S>(names::Symbol::new(&self.free).ident())
     }
 }
@@ -485,6 +508,7 @@ struct WasmProtocol {
     cancel: NativeSymbol,
     free: NativeSymbol,
     panic_message: NativeSymbol,
+    mobility: FutureMobility,
 }
 
 impl AsyncProtocol for WasmProtocol {
@@ -495,6 +519,7 @@ impl AsyncProtocol for WasmProtocol {
     ) -> TokenStream {
         let cfg = S::cfg_attr();
         let ident = names::Symbol::new(&self.poll_sync).ident();
+        let poll_sync = future_runtime::poll_sync(self.mobility, rust_return_type);
         quote! {
             #cfg
             #[unsafe(no_mangle)]
@@ -502,7 +527,7 @@ impl AsyncProtocol for WasmProtocol {
                 handle: ::boltffi::__private::RustFutureHandle,
             ) -> i32 {
                 unsafe {
-                    ::boltffi::__private::rust_future_poll_sync::<#rust_return_type>(handle)
+                    #poll_sync
                 }
             }
         }
@@ -518,6 +543,7 @@ impl AsyncProtocol for WasmProtocol {
             visibility,
             names::Symbol::new(&self.complete).ident(),
             rust_return_type,
+            self.mobility,
         )
     }
 
@@ -526,7 +552,7 @@ impl AsyncProtocol for WasmProtocol {
         visibility: &TokenStream,
         rust_return_type: &Type,
     ) -> TokenStream {
-        FutureSupport::new(visibility, rust_return_type)
+        FutureSupport::new(visibility, rust_return_type, self.mobility)
             .panic_message::<S>(names::Symbol::new(&self.panic_message).ident())
     }
 
@@ -535,7 +561,7 @@ impl AsyncProtocol for WasmProtocol {
         visibility: &TokenStream,
         rust_return_type: &Type,
     ) -> TokenStream {
-        FutureSupport::new(visibility, rust_return_type)
+        FutureSupport::new(visibility, rust_return_type, self.mobility)
             .cancel::<S>(names::Symbol::new(&self.cancel).ident())
     }
 
@@ -544,7 +570,7 @@ impl AsyncProtocol for WasmProtocol {
         visibility: &TokenStream,
         rust_return_type: &Type,
     ) -> TokenStream {
-        FutureSupport::new(visibility, rust_return_type)
+        FutureSupport::new(visibility, rust_return_type, self.mobility)
             .free::<S>(names::Symbol::new(&self.free).ident())
     }
 }
@@ -569,6 +595,7 @@ impl Complete {
         callable: &'plan ExportedCallable<S>,
         source: rust_api::Return<'plan>,
         rust_return_type: &Type,
+        mobility: FutureMobility,
         expansion: &'expansion Expansion<'plan, S>,
     ) -> Result<Self, Error>
     where
@@ -603,6 +630,7 @@ impl Complete {
                 callable,
                 source.fallible()?,
                 rust_return_type,
+                mobility,
                 expansion,
             )
             .map(Self::Fallible);
@@ -615,9 +643,12 @@ impl Complete {
         visibility: &TokenStream,
         ident: syn::Ident,
         rust_return_type: &Type,
+        mobility: FutureMobility,
     ) -> TokenStream {
         match self {
-            Self::Plain(complete) => complete.tokens::<S>(visibility, ident, rust_return_type),
+            Self::Plain(complete) => {
+                complete.tokens::<S>(visibility, ident, rust_return_type, mobility)
+            }
             Self::Fallible(complete) => complete.tokens::<S>(visibility, ident),
         }
     }
@@ -830,6 +861,7 @@ impl PlainComplete {
         visibility: &TokenStream,
         ident: syn::Ident,
         rust_return_type: &Type,
+        mobility: FutureMobility,
     ) -> TokenStream {
         let cfg = S::cfg_attr();
         let Self {
@@ -840,6 +872,7 @@ impl PlainComplete {
             ok_body,
             err_body,
         } = self;
+        let complete = future_runtime::complete(mobility, rust_return_type);
         quote! {
             #(#items)*
 
@@ -850,7 +883,7 @@ impl PlainComplete {
                 out_status: *mut ::boltffi::__private::FfiStatus
                 #(, #ffi_parameters)*,
             ) #return_type {
-                match unsafe { ::boltffi::__private::rustfuture::rust_future_complete::<#rust_return_type>(handle) } {
+                match unsafe { #complete } {
                     Ok(#ok_pattern) => {
                         if !out_status.is_null() {
                             unsafe {
@@ -885,6 +918,7 @@ impl FallibleComplete {
         callable: &'plan ExportedCallable<S>,
         source: rust_api::Fallible<'plan>,
         rust_return_type: &Type,
+        mobility: FutureMobility,
         expansion: &'expansion Expansion<'plan, S>,
     ) -> Result<Self, Error>
     where
@@ -924,12 +958,13 @@ impl FallibleComplete {
         let return_type = encoded_error.return_type().clone();
         let error_value = encoded_error.value();
         let empty_error_value = empty_error.value();
+        let complete = future_runtime::complete(mobility, rust_return_type);
 
         Ok(Self {
             ffi_parameters,
             return_type,
             body: quote! {
-                match unsafe { ::boltffi::__private::rustfuture::rust_future_complete::<#rust_return_type>(handle) } {
+                match unsafe { #complete } {
                     Ok(Ok(#success_pattern)) => {
                         if !out_status.is_null() {
                             unsafe {
@@ -984,13 +1019,19 @@ impl FallibleComplete {
 struct FutureSupport<'render> {
     visibility: &'render TokenStream,
     rust_return_type: &'render Type,
+    mobility: FutureMobility,
 }
 
 impl<'render> FutureSupport<'render> {
-    fn new(visibility: &'render TokenStream, rust_return_type: &'render Type) -> Self {
+    fn new(
+        visibility: &'render TokenStream,
+        rust_return_type: &'render Type,
+        mobility: FutureMobility,
+    ) -> Self {
         Self {
             visibility,
             rust_return_type,
+            mobility,
         }
     }
 
@@ -998,13 +1039,14 @@ impl<'render> FutureSupport<'render> {
         let cfg = S::cfg_attr();
         let visibility = self.visibility;
         let rust_return_type = self.rust_return_type;
+        let panic_message = future_runtime::panic_message(self.mobility, rust_return_type);
         quote! {
             #cfg
             #[unsafe(no_mangle)]
             #visibility unsafe extern "C" fn #ident(
                 handle: ::boltffi::__private::RustFutureHandle,
             ) -> ::boltffi::__private::FfiBuf {
-                match unsafe { ::boltffi::__private::rustfuture::rust_future_panic_message::<#rust_return_type>(handle) } {
+                match unsafe { #panic_message } {
                     Some(message) => ::boltffi::__private::FfiBuf::wire_encode(&message),
                     None => ::boltffi::__private::FfiBuf::empty(),
                 }
@@ -1016,12 +1058,13 @@ impl<'render> FutureSupport<'render> {
         let cfg = S::cfg_attr();
         let visibility = self.visibility;
         let rust_return_type = self.rust_return_type;
+        let cancel = future_runtime::cancel(self.mobility, rust_return_type);
         quote! {
             #cfg
             #[unsafe(no_mangle)]
             #visibility unsafe extern "C" fn #ident(handle: ::boltffi::__private::RustFutureHandle) {
                 unsafe {
-                    ::boltffi::__private::rustfuture::rust_future_cancel::<#rust_return_type>(handle)
+                    #cancel
                 }
             }
         }
@@ -1031,12 +1074,13 @@ impl<'render> FutureSupport<'render> {
         let cfg = S::cfg_attr();
         let visibility = self.visibility;
         let rust_return_type = self.rust_return_type;
+        let free = future_runtime::free(self.mobility, rust_return_type);
         quote! {
             #cfg
             #[unsafe(no_mangle)]
             #visibility unsafe extern "C" fn #ident(handle: ::boltffi::__private::RustFutureHandle) {
                 unsafe {
-                    ::boltffi::__private::rustfuture::rust_future_free::<#rust_return_type>(handle)
+                    #free
                 }
             }
         }

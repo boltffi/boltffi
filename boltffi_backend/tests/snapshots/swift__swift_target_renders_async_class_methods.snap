@@ -33,9 +33,10 @@ public final class Engine {
         self.handle = boltffi_init_class_demo_engine_new()
     }
 
+    @_unsafeInheritExecutor
     public func compute(value: UInt32) async throws -> UInt32 {
         let boltffiFuture = boltffi_method_class_demo_engine_compute(self.handle, value)
-        return try await boltffiAsyncCall(
+        return try await boltffiThreadBoundAsyncCall(
             futureHandle: boltffiFuture,
             poll: boltffi_async_method_class_demo_engine_compute_poll,
             cancel: boltffi_async_method_class_demo_engine_compute_cancel,

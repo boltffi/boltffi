@@ -1729,6 +1729,14 @@ pub enum ExecutionDecl<S: Surface> {
     Asynchronous(S::AsyncProtocol),
 }
 
+#[allow(missing_docs)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq, Serialize, Deserialize)]
+pub enum FutureMobility {
+    #[default]
+    CrossThread,
+    ThreadBound,
+}
+
 impl<S: Surface> ExecutionDecl<S> {
     /// Returns the synchronous variant.
     pub fn synchronous() -> Self {

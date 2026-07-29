@@ -6402,6 +6402,50 @@ mod tests {
     }
 
     #[test]
+    fn native_single_threaded_borrowed_async_uses_thread_bound_future() {
+        let mut method = record_method(
+            "compute",
+            Receiver::Shared,
+            Vec::new(),
+            ReturnDef::value(TypeExpr::Primitive(Primitive::U32)),
+        );
+        method.execution = ExecutionKind::Async;
+        let mut class = engine_class_with_method(method);
+        class.thread_safety = ClassThreadSafety::UnsafeSingleThreaded;
+        let mut source = SourceContract::new(PackageInfo::new("demo", None));
+        source.classes.push(class);
+        let lowered = lower_with_declarations::<Native>(&source).expect("lowered bindings");
+        let expansion = Expansion::new(&lowered);
+
+        let tokens = expand_class(&expansion, &source.classes[0]).expect("expanded class");
+        let generated = quote! {
+            use ::std::cell::Cell;
+            use ::std::rc::Rc;
+
+            pub struct Engine(Rc<Cell<u32>>);
+
+            impl Engine {
+                pub async fn compute(&self) -> u32 {
+                    self.0.set(7);
+                    self.0.get()
+                }
+            }
+
+            #tokens
+        };
+
+        syn::parse2::<syn::File>(generated.clone())
+            .expect("single-threaded async class expansion parses");
+        assert_generated_crate_checks("native_single_threaded_borrowed_async", generated);
+        let rendered = tokens.to_string();
+        assert!(rendered.contains("rust_thread_bound_future_new (async move"));
+        assert!(rendered.contains("rust_thread_bound_future_poll :: < u32 >"));
+        assert!(rendered.contains("rust_thread_bound_future_complete :: < u32 >"));
+        assert!(rendered.contains("rust_thread_bound_future_free :: < u32 >"));
+        assert!(!rendered.contains("unsafe impl Send for __BoltffiEngineRetainedHandle"));
+    }
+
+    #[test]
     fn native_single_threaded_class_detached_future_releases_receiver_before_handoff() {
         let mut method = record_method(
             "compute",

@@ -288,7 +288,12 @@ fn kotlin_target_renders_async_complete_return_shapes() {
 
 #[test]
 fn kotlin_target_renders_async_class_methods() {
-    insta::assert_snapshot!(rendered_fixture("exports/async_class_methods"));
+    let rendered = rendered_fixture("exports/async_class_methods");
+
+    assert!(rendered.contains("suspend fun compute(value: UInt): UInt"));
+    assert!(rendered.contains("boltffiCallAsync"));
+    assert!(!rendered.contains("Dispatchers.Main"));
+    insta::assert_snapshot!(rendered);
 }
 
 #[test]

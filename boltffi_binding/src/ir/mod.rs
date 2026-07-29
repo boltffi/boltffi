@@ -96,9 +96,9 @@ mod types;
 pub use boltffi_ast::{BuiltinType, MapKind};
 pub use callable::{
     CallableDecl, ClosureForm, ClosureParameter, ClosureRegistration, ClosureReturn, ErrorChannel,
-    ErrorDecl, ErrorPlacement, ExecutionDecl, ExportedCallable, ImportedCallable, IncomingParam,
-    OutgoingParam, ParamDecl, ParamDirection, ParamPlan, ParamPlanRender, Receive, ReturnDecl,
-    ReturnPlan, ReturnPlanRender, ReturnValueSlot,
+    ErrorDecl, ErrorPlacement, ExecutionDecl, ExportedCallable, FutureMobility, ImportedCallable,
+    IncomingParam, OutgoingParam, ParamDecl, ParamDirection, ParamPlan, ParamPlanRender, Receive,
+    ReturnDecl, ReturnPlan, ReturnPlanRender, ReturnValueSlot,
 };
 pub use closure::ClosureSignature;
 pub use codec::{

@@ -1,4 +1,4 @@
-use boltffi_ast::{ClassDef, ClassId, ClassThreadSafety, ExecutionKind, Receiver};
+use boltffi_ast::{ClassDef, ClassId, ClassThreadSafety};
 use syn::spanned::Spanned;
 
 use crate::attributes::Attributes;
@@ -14,7 +14,7 @@ pub fn scan(
     marked: &[Marked<'_, syn::ItemImpl>],
     declared_types: &DeclaredTypes,
 ) -> Result<Vec<ClassDef>, ScanError> {
-    let classes = marked
+    marked
         .iter()
         .try_fold(Vec::<ClassDef>::new(), |mut classes, marked| {
             let class = build(
@@ -38,26 +38,7 @@ pub fn scan(
                 None => classes.push(class),
             }
             Ok(classes)
-        })?;
-    classes.iter().try_for_each(validate_execution)?;
-    Ok(classes)
-}
-
-fn validate_execution(class: &ClassDef) -> Result<(), ScanError> {
-    if class.thread_safety != ClassThreadSafety::UnsafeSingleThreaded {
-        return Ok(());
-    }
-
-    class.methods.iter().try_for_each(|method| {
-        let borrows_receiver = matches!(method.receiver, Receiver::Shared | Receiver::Mutable);
-        if method.execution == ExecutionKind::Async && borrows_receiver {
-            return Err(ScanError::BorrowedAsyncSingleThreadedMethod {
-                class: class.name.spelling().to_owned(),
-                method: method.name.spelling().to_owned(),
-            });
-        }
-        Ok(())
-    })
+        })
 }
 
 fn build(
@@ -111,7 +92,8 @@ mod tests {
     use crate::declared_types::DeclaredTypes;
     use crate::marker::Marker;
     use boltffi_ast::{
-        CanonicalName, ClassId, MethodId, NamePart, Primitive, Receiver, ReturnDef, TypeExpr,
+        CanonicalName, ClassId, ExecutionKind, MethodId, NamePart, Primitive, Receiver, ReturnDef,
+        TypeExpr,
     };
 
     fn parse(source: &str) -> syn::ItemImpl {
@@ -195,7 +177,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_borrowed_async_method_and_suggests_detached_future() {
+    fn accepts_borrowed_async_method_on_single_threaded_class() {
         let source_tree = crate::source_tree::SourceTree::in_memory(
             "demo",
             syn::parse_str::<syn::File>(
@@ -211,20 +193,14 @@ mod tests {
         let declared_types =
             DeclaredTypes::index(&source_tree, &marked).expect("declared type index");
 
-        let error = super::scan(marked.classes(), &declared_types)
-            .expect_err("borrowed async receiver must be rejected");
+        let classes =
+            super::scan(marked.classes(), &declared_types).expect("borrowed async receiver scans");
 
+        assert_eq!(classes.len(), 1);
+        assert_eq!(classes[0].methods.len(), 1);
         assert_eq!(
-            error,
-            ScanError::BorrowedAsyncSingleThreadedMethod {
-                class: "Engine".to_owned(),
-                method: "load".to_owned(),
-            }
-        );
-        assert!(
-            error
-                .to_string()
-                .contains("impl Future<Output = T> + Send + 'static")
+            classes[0].methods[0].execution,
+            boltffi_ast::ExecutionKind::Async
         );
     }
 

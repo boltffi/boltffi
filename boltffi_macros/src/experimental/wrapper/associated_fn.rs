@@ -5,12 +5,15 @@ use boltffi_binding::{
 use proc_macro2::TokenStream;
 use syn::{Ident, parse_quote};
 
-use crate::experimental::{
-    error::Error,
-    expansion::Expansion,
-    rust_api,
-    surface::RenderSurface,
-    wrapper::{self, Render, export, names},
+use crate::{
+    experimental::{
+        error::Error,
+        expansion::Expansion,
+        rust_api,
+        surface::RenderSurface,
+        wrapper::{self, Render, export, names},
+    },
+    future_runtime,
 };
 
 pub trait Owner<'expansion, 'lowered, S: RenderSurface> {
@@ -179,9 +182,13 @@ impl<'expansion, 'lowered, S: RenderSurface> ReceiverFailure<'expansion, 'lowere
                     .returns()
                     .written_type()?
                     .unwrap_or_else(|| parse_quote! { () });
-                Ok(quote::quote! {
-                    return ::boltffi::__private::rustfuture::rust_future_invalid_arg::<#rust_return_type>();
-                })
+                let protocol = match self.callable.execution() {
+                    ExecutionDecl::Asynchronous(protocol) => protocol,
+                    _ => unreachable!(),
+                };
+                let symbols = S::poll_handle(protocol)?;
+                let invalid = future_runtime::invalid(symbols.mobility(), rust_return_type);
+                Ok(quote::quote! { return #invalid; })
             }
             _ => Err(Error::UnsupportedExpansion("unknown execution mode")),
         }

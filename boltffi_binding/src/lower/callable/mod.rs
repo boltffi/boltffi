@@ -63,7 +63,8 @@ use boltffi_ast::{
 use crate::{
     ClosureForm, ClosureParameter, ClosureRegistration, ClosureReturn, ClosureSignature,
     DirectVectorElementType, Direction, ExecutionDecl, ExportedCallable, ForeignBody,
-    HandlePresence, ImportedCallable, IntoRust, OutOfRust, Primitive, Receive, RustBody,
+    FutureMobility, HandlePresence, ImportedCallable, IntoRust, OutOfRust, Primitive, Receive,
+    RustBody,
 };
 
 use super::{
@@ -233,7 +234,12 @@ pub fn lower_exported_method<S: SurfaceLower>(
         codecs::RootEncoding::Surface,
         &method.returns,
     )?;
-    let execution = lower_execution::<S>(allocator, method.execution, start_symbol_name)?;
+    let execution = lower_execution::<S>(
+        allocator,
+        method.execution,
+        start_symbol_name,
+        FutureMobility::for_method(owner, method),
+    )?;
 
     Ok(ExportedCallable::<S>::new(
         receiver, parameters, returns, error, execution,
@@ -551,7 +557,12 @@ pub fn lower_function<S: SurfaceLower>(
         codecs::RootEncoding::Surface,
         &function.returns,
     )?;
-    let execution = lower_execution::<S>(allocator, function.execution, start_symbol_name)?;
+    let execution = lower_execution::<S>(
+        allocator,
+        function.execution,
+        start_symbol_name,
+        FutureMobility::CrossThread,
+    )?;
 
     Ok(ExportedCallable::<S>::new(
         None, parameters, returns, error, execution,
@@ -597,12 +608,31 @@ fn lower_execution<S: SurfaceLower>(
     allocator: &mut SymbolAllocator,
     execution: ExecutionKind,
     start_symbol_name: &str,
+    mobility: FutureMobility,
 ) -> Result<ExecutionDecl<S>, LowerError> {
     match execution {
         ExecutionKind::Sync => Ok(ExecutionDecl::synchronous()),
         ExecutionKind::Async | ExecutionKind::DetachedFuture => {
-            let protocol = S::build_protocol(allocator, start_symbol_name)?;
+            let protocol = S::build_protocol(allocator, start_symbol_name, mobility)?;
             Ok(ExecutionDecl::asynchronous(protocol))
+        }
+    }
+}
+
+impl FutureMobility {
+    fn for_method(owner: CallableOwner<'_>, method: &MethodDef) -> Self {
+        match owner {
+            CallableOwner::Class(class)
+                if class.thread_safety == boltffi_ast::ClassThreadSafety::UnsafeSingleThreaded
+                    && method.execution == ExecutionKind::Async
+                    && matches!(
+                        method.receiver,
+                        boltffi_ast::Receiver::Shared | boltffi_ast::Receiver::Mutable
+                    ) =>
+            {
+                Self::ThreadBound
+            }
+            _ => Self::CrossThread,
         }
     }
 }
