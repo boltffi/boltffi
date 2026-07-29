@@ -267,9 +267,7 @@ impl<'lowered, S: RenderSurface> Export<'lowered, S> {
                     self.callable,
                     source_callable,
                     self.source_method.execution,
-                    rust_call,
-                    receiver,
-                    visibility,
+                    wrapper::async_call::ExportCall::new(rust_call, receiver, visibility),
                     expansion,
                 ),
             );

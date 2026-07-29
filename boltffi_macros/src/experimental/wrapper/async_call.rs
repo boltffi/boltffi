@@ -24,15 +24,33 @@ use crate::{
 
 pub struct Renderer;
 
+pub struct ExportCall {
+    rust_call: export::RustCall,
+    receiver: export::ReceiverTokens,
+    visibility: TokenStream,
+}
+
 pub struct Input<'expansion, 'lowered, S: RenderSurface> {
     symbol: &'lowered NativeSymbol,
     callable: &'lowered ExportedCallable<S>,
     source: rust_api::Callable<'lowered>,
     execution: ExecutionKind,
-    rust_call: export::RustCall,
-    receiver: export::ReceiverTokens,
-    visibility: TokenStream,
+    export_call: ExportCall,
     expansion: &'expansion Expansion<'lowered, S>,
+}
+
+impl ExportCall {
+    pub fn new(
+        rust_call: export::RustCall,
+        receiver: export::ReceiverTokens,
+        visibility: TokenStream,
+    ) -> Self {
+        Self {
+            rust_call,
+            receiver,
+            visibility,
+        }
+    }
 }
 
 impl<'expansion, 'lowered, S: RenderSurface> Input<'expansion, 'lowered, S> {
@@ -49,9 +67,7 @@ impl<'expansion, 'lowered, S: RenderSurface> Input<'expansion, 'lowered, S> {
             function.callable(),
             source,
             execution,
-            rust_call,
-            export::ReceiverTokens::none(),
-            visibility,
+            ExportCall::new(rust_call, export::ReceiverTokens::none(), visibility),
             expansion,
         )
     }
@@ -61,9 +77,7 @@ impl<'expansion, 'lowered, S: RenderSurface> Input<'expansion, 'lowered, S> {
         callable: &'lowered ExportedCallable<S>,
         source: rust_api::Callable<'lowered>,
         execution: ExecutionKind,
-        rust_call: export::RustCall,
-        receiver: export::ReceiverTokens,
-        visibility: TokenStream,
+        export_call: ExportCall,
         expansion: &'expansion Expansion<'lowered, S>,
     ) -> Self {
         Self {
@@ -71,9 +85,7 @@ impl<'expansion, 'lowered, S: RenderSurface> Input<'expansion, 'lowered, S> {
             callable,
             source,
             execution,
-            rust_call,
-            receiver,
-            visibility,
+            export_call,
             expansion,
         }
     }
@@ -116,9 +128,7 @@ impl<'expansion, 'lowered> Input<'expansion, 'lowered, Native> {
             self.source,
             self.execution,
             *mobility,
-            self.rust_call,
-            self.receiver,
-            self.visibility,
+            self.export_call,
             self.expansion,
         )?
         .tokens(NativeProtocol {
@@ -153,9 +163,7 @@ impl<'expansion, 'lowered> Input<'expansion, 'lowered, Wasm32> {
             self.source,
             self.execution,
             *mobility,
-            self.rust_call,
-            self.receiver,
-            self.visibility,
+            self.export_call,
             self.expansion,
         )?
         .tokens(WasmProtocol {
@@ -175,9 +183,7 @@ struct AsyncExports<'expansion, 'lowered, S: RenderSurface> {
     source: rust_api::Callable<'lowered>,
     execution: ExecutionKind,
     mobility: FutureMobility,
-    rust_call: export::RustCall,
-    receiver: export::ReceiverTokens,
-    visibility: TokenStream,
+    export_call: ExportCall,
     rust_return_type: Type,
     complete: Complete,
     expansion: &'expansion Expansion<'lowered, S>,
@@ -214,9 +220,7 @@ where
         source: rust_api::Callable<'lowered>,
         execution: ExecutionKind,
         mobility: FutureMobility,
-        rust_call: export::RustCall,
-        receiver: export::ReceiverTokens,
-        visibility: TokenStream,
+        export_call: ExportCall,
         expansion: &'expansion Expansion<'lowered, S>,
     ) -> Result<Self, Error> {
         let rust_return_type = source
@@ -224,7 +228,7 @@ where
             .written_type()?
             .unwrap_or_else(|| parse_quote! { () });
         let complete = Complete::new(
-            rust_call.owner().clone(),
+            export_call.rust_call.owner().clone(),
             callable,
             source.returns(),
             &rust_return_type,
@@ -237,9 +241,7 @@ where
             source,
             execution,
             mobility,
-            rust_call,
-            receiver,
-            visibility,
+            export_call,
             rust_return_type,
             complete,
             expansion,
@@ -256,11 +258,11 @@ where
             >,
     {
         let cfg = S::cfg_attr();
-        let visibility = &self.visibility;
+        let visibility = &self.export_call.visibility;
         let start_ident = names::Symbol::new(self.symbol).ident();
         let rust_return_type = &self.rust_return_type;
         CapturedParameters::new(self.callable.params()).validate()?;
-        if !self.receiver.writebacks().is_empty() {
+        if !self.export_call.receiver.writebacks().is_empty() {
             return Err(Error::UnsupportedExpansion("async receiver writeback"));
         }
         let invalid = future_runtime::invalid(self.mobility, rust_return_type);
@@ -270,12 +272,14 @@ where
             wrapper::arguments::Input::new(self.callable, self.source, failure, self.expansion),
         )?;
         let ffi_parameters = self
+            .export_call
             .receiver
             .ffi_parameters()
             .iter()
             .chain(params.ffi_parameters())
             .collect::<Vec<_>>();
         let conversions = self
+            .export_call
             .receiver
             .conversions()
             .iter()
@@ -284,7 +288,10 @@ where
         let safety = (!ffi_parameters.is_empty()).then(|| quote! { unsafe });
         let body = match self.execution {
             ExecutionKind::Async => {
-                let rust_call = self.rust_call.awaited_expression(params.rust_arguments());
+                let rust_call = self
+                    .export_call
+                    .rust_call
+                    .awaited_expression(params.rust_arguments());
                 let start = future_runtime::start(
                     self.mobility,
                     quote! {
@@ -304,7 +311,10 @@ where
                         "detached future unexpectedly uses thread-bound execution",
                     ));
                 }
-                let rust_call = self.rust_call.expression(params.rust_arguments());
+                let rust_call = self
+                    .export_call
+                    .rust_call
+                    .expression(params.rust_arguments());
                 let start = future_runtime::start(self.mobility, quote! { __boltffi_future });
                 quote! {
                     let __boltffi_future = {

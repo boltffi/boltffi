@@ -1,4 +1,9 @@
-use std::{future::Future, marker::PhantomData, rc::Rc, sync::Mutex};
+use std::{
+    future::{Future, ready},
+    marker::PhantomData,
+    rc::Rc,
+    sync::Mutex,
+};
 
 use boltffi::*;
 
@@ -33,13 +38,13 @@ impl TestCounter {
 
     pub fn async_get(&self) -> impl Future<Output = i32> + Send + 'static {
         let value = self.value;
-        async move { value }
+        ready(value)
     }
 
     pub fn async_add(&mut self, amount: i32) -> impl Future<Output = i32> + Send + 'static {
         self.value += amount;
         let value = self.value;
-        async move { value }
+        ready(value)
     }
 }
 
@@ -305,40 +310,40 @@ impl ClassTestFixture {
 
     pub fn async_get_id(&self) -> impl Future<Output = i32> + Send + 'static {
         let id = self.id;
-        async move { id }
+        ready(id)
     }
 
     pub fn async_get_name(&self) -> impl Future<Output = String> + Send + 'static {
         let name = self.name.clone();
-        async move { name }
+        ready(name)
     }
 
     pub fn async_echo_message_record(
         &self,
         record: FixtureMessageRecord,
     ) -> impl Future<Output = FixtureMessageRecord> + Send + 'static {
-        async move { record }
+        ready(record)
     }
 
     pub fn async_set_id(&mut self, id: i32) -> impl Future<Output = ()> + Send + 'static {
         self.id = id;
-        async {}
+        ready(())
     }
 
     pub fn async_set_name(&mut self, name: String) -> impl Future<Output = ()> + Send + 'static {
         self.name = name;
-        async {}
+        ready(())
     }
 
     pub fn async_add_value(&mut self, value: i32) -> impl Future<Output = i32> + Send + 'static {
         self.values.push(value);
         let count = self.values.len() as i32;
-        async move { count }
+        ready(count)
     }
 
     pub fn async_compute_sum(&self) -> impl Future<Output = i32> + Send + 'static {
         let sum = self.values.iter().sum();
-        async move { sum }
+        ready(sum)
     }
 
     pub fn async_try_get(
@@ -350,7 +355,7 @@ impl ClassTestFixture {
         } else {
             Ok(self.values[index as usize])
         };
-        async move { result }
+        ready(result)
     }
 
     pub fn async_find(&self, target: i32) -> impl Future<Output = Option<i32>> + Send + 'static {
@@ -359,7 +364,7 @@ impl ClassTestFixture {
             .iter()
             .position(|&v| v == target)
             .map(|index| index as i32);
-        async move { index }
+        ready(index)
     }
 
     pub fn with_primitives(

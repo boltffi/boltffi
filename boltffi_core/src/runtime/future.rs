@@ -534,7 +534,7 @@ struct ThreadBoundFuture<T> {
 }
 
 impl<T: 'static> ThreadBoundFuture<T> {
-    fn new<F>(future: F) -> RustFutureHandle
+    fn new<F>(future: F) -> Self
     where
         F: Future<Output = T> + 'static,
     {
@@ -542,15 +542,19 @@ impl<T: 'static> ThreadBoundFuture<T> {
         Self::from_state(FutureExecutionState::Running(future))
     }
 
-    fn from_status(status: FfiStatus) -> RustFutureHandle {
+    fn from_status(status: FfiStatus) -> Self {
         Self::from_state(FutureExecutionState::Failed(status))
     }
 
-    fn from_state(state: FutureExecutionState<T, ThreadBoundFutureTask<T>>) -> RustFutureHandle {
-        let future = Box::new(Self {
+    fn from_state(state: FutureExecutionState<T, ThreadBoundFutureTask<T>>) -> Self {
+        Self {
             control: ThreadBoundFutureControl::new(),
             state: UnsafeCell::new(state),
-        });
+        }
+    }
+
+    fn into_handle(self) -> RustFutureHandle {
+        let future = Box::new(self);
         #[cfg(target_arch = "wasm32")]
         future
             .control
@@ -655,11 +659,11 @@ where
     F: Future<Output = T> + 'static,
     T: 'static,
 {
-    ThreadBoundFuture::<T>::new(future)
+    ThreadBoundFuture::<T>::new(future).into_handle()
 }
 
 pub fn rust_thread_bound_future_invalid_arg<T: 'static>() -> RustFutureHandle {
-    ThreadBoundFuture::<T>::from_status(FfiStatus::INVALID_ARG)
+    ThreadBoundFuture::<T>::from_status(FfiStatus::INVALID_ARG).into_handle()
 }
 
 pub unsafe fn rust_thread_bound_future_poll<T: 'static>(

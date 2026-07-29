@@ -64,6 +64,7 @@ name = "boltffi_scan"
 version = "0.28.0"
 dependencies = [
  "boltffi_ast",
+ "boltffi_ffi_rules",
  "proc-macro2",
  "quote",
  "serde",
