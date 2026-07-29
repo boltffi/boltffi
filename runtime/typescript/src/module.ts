@@ -1146,13 +1146,13 @@ export class BoltFFIModule {
       throw new Error("Invalid packed wire string");
     }
     try {
+      const bytes = this.getBytes();
       const payloadLength = this.getView().getUint32(pointer, true);
-      if (payloadLength !== length - 4) {
+      if (payloadLength !== length - 4 || pointer + length > bytes.length) {
         throw new Error("Invalid packed wire string length");
       }
-      return this._decoder.decode(
-        new Uint8Array(this._memory.buffer, pointer + 4, payloadLength)
-      );
+      const start = pointer + 4;
+      return this._decoder.decode(bytes.subarray(start, start + payloadLength));
     } finally {
       this.freePacked(pointer, length);
     }
@@ -1164,11 +1164,14 @@ export class BoltFFIModule {
       throw new Error("Invalid packed wire bytes");
     }
     try {
+      const bytes = this.getBytes();
       const payloadLength = this.getView().getUint32(pointer, true);
-      if (payloadLength !== length - 4) {
+      if (payloadLength !== length - 4 || pointer + length > bytes.length) {
         throw new Error("Invalid packed wire bytes length");
       }
-      return new Uint8Array(this._memory.buffer, pointer + 4, payloadLength).slice();
+      const start = pointer + 4;
+      // One allocation: building a view and then copying it made two.
+      return bytes.slice(start, start + payloadLength);
     } finally {
       this.freePacked(pointer, length);
     }
@@ -1206,6 +1209,7 @@ export class BoltFFIModule {
       try {
         return read(reader);
       } finally {
+        reader.invalidate();
         if (!empty) this.freePacked(pointer, length);
       }
     }

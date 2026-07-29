@@ -1,5 +1,9 @@
 const UTF8_DECODER = new TextDecoder("utf-8");
 const UTF8_ENCODER = new TextEncoder();
+// 16 is where the two curves cross: below it building the string wins on time,
+// above it TextDecoder does. Allocation favours the fast path at every length.
+const ASCII_FAST_PATH_LIMIT = 16;
+const ASCII_SCRATCH: number[] = [];
 
 type TypedArrayConstructor<T extends ArrayBufferView> = {
   new (buffer: ArrayBufferLike, byteOffset: number, length: number): T;
@@ -19,6 +23,8 @@ export class WireReader {
    * else — scalars, strings, `readBytes` — already produces owned values.
    */
   private borrowed: boolean;
+  private bytes: Uint8Array | null = null;
+  private bufferRef: ArrayBuffer;
 
   /**
    * The view spans exactly the payload, so `offset` is relative to it and any
@@ -43,6 +49,7 @@ export class WireReader {
     this.offset = offset;
     this.limit = length === undefined ? buffer.byteLength : offset + length;
     this.borrowed = borrowed;
+    this.bufferRef = buffer;
   }
 
   /** Points an existing reader at another payload, reusing the instance. */
@@ -60,6 +67,10 @@ export class WireReader {
     this.offset = offset;
     this.limit = offset + length;
     this.borrowed = borrowed;
+    if (this.bufferRef !== buffer) {
+      this.bufferRef = buffer;
+      this.bytes = null;
+    }
     return this;
   }
 
@@ -159,8 +170,36 @@ export class WireReader {
 
   readString(): string {
     const len = this.readU32();
-    const bytes = new Uint8Array(this.view.buffer, this.take(len), len);
-    return UTF8_DECODER.decode(bytes);
+    const start = this.take(len);
+    // Short ASCII strings are cheaper to build from their char codes than to
+    // decode, on both time and allocation. Every code has to be passed at
+    // once: appending one at a time builds a cons-string chain that allocates
+    // more than TextDecoder does.
+    if (len <= ASCII_FAST_PATH_LIMIT) {
+      const bytes = this.asBytes();
+      const scratch = ASCII_SCRATCH;
+      let i = 0;
+      for (; i < len; i++) {
+        const byte = bytes[start + i]!;
+        if (byte > 0x7f) break;
+        scratch[i] = byte;
+      }
+      if (i === len) {
+        scratch.length = len;
+        return String.fromCharCode.apply(null, scratch);
+      }
+    }
+    return UTF8_DECODER.decode(new Uint8Array(this.view.buffer, start, len));
+  }
+
+  /** Whole-buffer view of the reader's memory, for the fast path above. */
+  private asBytes(): Uint8Array {
+    let bytes = this.bytes;
+    if (bytes === null || bytes.byteLength === 0) {
+      bytes = new Uint8Array(this.bufferRef);
+      this.bytes = bytes;
+    }
+    return bytes;
   }
 
   readBytes(): Uint8Array {
