@@ -14,4 +14,12 @@ export async function run() {
   assert.deepEqual(demo.demoPair, [3, 5]);
   assert.deepEqual(demo.demoBusy, { tag: "Busy", jobs: 3 });
   globalThis.demoCase("case:constants.values.should_expose_inline_and_accessor_values");
+
+  assert.equal(demo.DemoMode.PREFERRED, demo.DemoMode.Safe);
+  assert.equal(demo.DemoMode.FALLBACK, demo.DemoMode.Safe);
+  assert.equal(demo.DemoMode.VARIANT_COUNT, 2);
+  assert.deepEqual(demo.DemoState.INITIAL, { tag: "Idle" });
+  assert.deepEqual(demo.Point.ZERO, { x: 0.0, y: 0.0 });
+  assert.equal(demo.MathUtils.DEFAULT_PRECISION, 2);
+  globalThis.demoCase("case:constants.associated.should_expose_values_on_exported_types");
 }

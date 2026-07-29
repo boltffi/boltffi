@@ -1,5 +1,6 @@
 use boltffi_binding::{
-    ConstantDecl, ConstantValueDecl, DefaultValue, EnumDecl, FloatValue, Native, Primitive, TypeRef,
+    ConstantDecl, ConstantOwner, ConstantValueDecl, DefaultValue, EnumDecl, FloatValue, Native,
+    Primitive, TypeRef,
 };
 
 use crate::{
@@ -14,10 +15,14 @@ use super::super::{
 };
 use super::{Documentation, Function};
 
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::target::csharp) enum Constant {
     Inline(String),
     Accessor(Box<Function>),
 }
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(in crate::target::csharp) struct AssociatedConstants(Vec<Constant>);
 
 impl Constant {
     pub(in crate::target::csharp) fn from_declaration(
@@ -60,6 +65,41 @@ impl Constant {
             Self::Inline(source) => Ok(Emitted::primary(source.clone())),
             Self::Accessor(function) => function.render(),
         }
+    }
+
+    fn render_member(&self) -> Result<String> {
+        match self {
+            Self::Inline(source) => Ok(source.clone()),
+            Self::Accessor(function) => function.render_source(),
+        }
+    }
+}
+
+impl AssociatedConstants {
+    pub fn from_owner(
+        owner: ConstantOwner,
+        namespace: &Namespace,
+        bridge: &CBridgeContract,
+        context: &RenderContext<Native>,
+    ) -> Result<Self> {
+        context
+            .associated_constants(owner)
+            .map(|constant| Constant::from_declaration(constant, namespace, bridge, context))
+            .collect::<Result<Vec<_>>>()
+            .map(Self)
+    }
+
+    pub fn members(&self) -> Result<Vec<String>> {
+        self.0.iter().map(Constant::render_member).collect()
+    }
+
+    pub fn add_support(&self, emitted: Emitted) -> Result<Emitted> {
+        self.0
+            .iter()
+            .try_fold(emitted, |emitted, constant| match constant {
+                Constant::Inline(_) => Ok(emitted),
+                Constant::Accessor(function) => function.add_support(emitted),
+            })
     }
 }
 

@@ -1,4 +1,4 @@
-{% match inline %}{% when Some with (inline) %}export const {{ inline.name }}: {{ inline.ty }} = {{ inline.value }};
-{% when None %}{% endmatch %}{% match accessor %}{% when Some with (accessor) %}export let {{ accessor.name }}: {{ accessor.ty }};
+{% match self.body() %}{% when Body::Inline with (inline) %}export const {{ self.name }}: {{ inline.ty }} = {{ inline.value }};
+{% when Body::Accessor with (accessor) %}export let {{ self.name }}: {{ accessor.ty }};
 {{ accessor.function }}
-{% when None %}{% endmatch %}
+{% endmatch %}

@@ -57,12 +57,7 @@ impl Render<Native, Input> for Renderer {
                     }) {
                         Ok(value) => value,
                         Err(error) => {
-                            ::boltffi::__private::set_last_error(format!(
-                                "{}: invalid optional scalar payload: {} (buf_len={})",
-                                stringify!(#ident),
-                                error,
-                                #length
-                            ));
+                            ::boltffi::__private::set_last_error_display(stringify!(#ident), "invalid optional scalar payload", &error, #length as usize);
                             #failure
                         }
                     }

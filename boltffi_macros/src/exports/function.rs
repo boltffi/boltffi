@@ -446,8 +446,9 @@ fn ffi_export_item_impl(input: ItemFn) -> proc_macro2::TokenStream {
 
         if matches!(strategy, EncodedReturnStrategy::OptionScalar) {
             let option_value_ident = syn::Ident::new("value", fn_name.span());
-            let option_scalar_encoding = WasmOptionScalarEncoding::from_option_rust_type(inner_ty)
-                .expect("OptionScalar return must have a primitive Option inner type");
+            let option_scalar_encoding =
+                WasmOptionScalarEncoding::from_option_rust_type(inner_ty, &return_lowering)
+                    .expect("OptionScalar return must carry a scalar-capable Option inner type");
             let some_expression = option_scalar_encoding.some_expression(&option_value_ident);
 
             let native_on_error = return_abi.native_invalid_arg_early_return_statement();

@@ -19,7 +19,9 @@ path = "src/bin/demo_tests.rs"
 [dependencies]
 boltffi = { path = "../../boltffi", features = ["chrono"] }
 boltffi_core = { path = "../../boltffi_core", features = ["chrono"] }
-chrono = "0.4"
+# default features pull chrono's `wasmbind`, and with it js-sys/wasm-bindgen.
+# The demo only uses DateTime<Utc>, so the wasm build does not need them.
+chrono = { version = "0.4", default-features = false, features = ["std"] }
 demo_bench_macros = { path = "bench_macros" }
 demo_multicrate_session = { path = "multicrate_session" }
 syn = { version = "2.0", features = ["full", "parsing"] }

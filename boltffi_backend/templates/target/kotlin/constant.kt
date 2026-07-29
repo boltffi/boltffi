@@ -1,7 +1,13 @@
-{%- if let Some(inline) = constant.inline() %}
-val {{ inline.name() }}: {{ inline.ty() }} = {{ inline.value() }}
-{%- endif %}
-{%- if let Some(accessor) = constant.accessor() %}
+{%- match constant.body() %}
+{%- when Body::Inline with (inline) %}
+{%- match inline %}
+{%- when Inline::Stored with (value) %}
+val {{ value.name() }}: {{ value.ty() }} = {{ value.value() }}
+{%- when Inline::Computed with (value) %}
+val {{ value.name() }}: {{ value.ty() }}
+    get() = {{ value.value() }}
+{%- endmatch %}
+{%- when Body::Accessor with (accessor) %}
 val {{ accessor.name() }}{% if let Some(return_type) = accessor.returns() %}: {{ return_type }}{% endif %}
     get() {
 {%- for statement in accessor.setup() %}
@@ -23,4 +29,4 @@ val {{ accessor.name() }}{% if let Some(return_type) = accessor.returns() %}: {{
 {%- endfor %}
 {%- endif %}
     }
-{%- endif %}
+{%- endmatch %}

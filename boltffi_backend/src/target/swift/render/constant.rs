@@ -1,5 +1,8 @@
 use askama::Template;
-use boltffi_binding::{ConstantDecl, ConstantValueDecl, ExportedCallable, Native, NativeSymbol};
+use boltffi_binding::{
+    CanonicalName, ConstantDecl, ConstantOwner, ConstantValueDecl, EnumId, ExportedCallable,
+    Native, NativeSymbol,
+};
 
 use crate::{
     bridge::c::CBridgeContract,
@@ -22,12 +25,21 @@ struct ConstantTemplate<'a> {
     constant: &'a Constant,
 }
 
+#[derive(Template)]
+#[template(path = "target/swift/associated_constant.swift", escape = "none")]
+struct AssociatedConstantTemplate<'a> {
+    constant: &'a Constant,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Constant {
     documentation: Documentation,
     name: Identifier,
     body: Body,
 }
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct AssociatedConstants(Vec<Constant>);
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum Body {
@@ -42,11 +54,88 @@ enum Body {
     },
 }
 
+impl AssociatedConstants {
+    pub(super) fn from_owner(
+        owner: ConstantOwner,
+        bridge: &CBridgeContract,
+        context: &RenderContext<Native>,
+    ) -> Result<Self> {
+        context
+            .associated_constants(owner)
+            .map(|constant| Constant::from_associated(constant, bridge, context))
+            .collect::<Result<Vec<_>>>()
+            .map(Self)
+    }
+
+    pub(super) fn from_enum<'variant>(
+        enumeration: EnumId,
+        variants: impl IntoIterator<Item = &'variant CanonicalName>,
+        bridge: &CBridgeContract,
+        context: &RenderContext<Native>,
+    ) -> Result<Self> {
+        let variants = variants
+            .into_iter()
+            .map(|variant| Ok((variant, Name::new(variant).variant()?)))
+            .collect::<Result<Vec<_>>>()?;
+        context
+            .associated_constants(ConstantOwner::Enum(enumeration))
+            .map(|declaration| {
+                let constant = Constant::from_associated(declaration, bridge, context)?;
+                let colliding_variant = variants
+                    .iter()
+                    .find(|(_, variant_name)| variant_name == &constant.name);
+                match colliding_variant {
+                    None => Ok(Some(constant)),
+                    Some((variant, _))
+                        if matches!(
+                            declaration.owned_enum_variant_alias(),
+                            Some((owner, aliased_variant))
+                                if owner == enumeration && aliased_variant == *variant
+                        ) =>
+                    {
+                        Ok(None)
+                    }
+                    Some(_) => Err(SwiftHost::unsupported(
+                        "enum associated constant name collision",
+                    )),
+                }
+            })
+            .collect::<Result<Vec<_>>>()
+            .map(|constants| Self(constants.into_iter().flatten().collect()))
+    }
+
+    pub(super) fn render(&self) -> Result<Vec<String>> {
+        self.0.iter().map(Constant::render_associated).collect()
+    }
+
+    pub(super) fn requires_wire_runtime(&self) -> bool {
+        self.0.iter().any(Constant::requires_wire_runtime)
+    }
+}
+
 impl Constant {
     pub fn from_declaration(
         declaration: &ConstantDecl<Native>,
         bridge: &CBridgeContract,
         context: &RenderContext<Native>,
+    ) -> Result<Self> {
+        Self::build(declaration, bridge, context, "", "    ")
+    }
+
+    fn from_associated(
+        declaration: &ConstantDecl<Native>,
+        bridge: &CBridgeContract,
+        context: &RenderContext<Native>,
+    ) -> Result<Self> {
+        Self::build(declaration, bridge, context, "    ", "        ")
+    }
+
+    fn build(
+        declaration: &ConstantDecl<Native>,
+        bridge: &CBridgeContract,
+        context: &RenderContext<Native>,
+        documentation_prefix: &'static str,
+        body_prefix: &str,
     ) -> Result<Self> {
         let name = Name::new(declaration.name()).function()?;
         let body = match declaration.value() {
@@ -55,12 +144,12 @@ impl Constant {
                 value: DefaultExpression::render(ty, value)?,
             },
             ConstantValueDecl::Accessor { symbol, callable } => {
-                Self::accessor_body(symbol, callable, bridge, context)?
+                Self::accessor_body(symbol, callable, bridge, context, body_prefix)?
             }
             _ => return Err(SwiftHost::unsupported("unknown constant value")),
         };
         Ok(Self {
-            documentation: Documentation::new(declaration.meta().doc(), ""),
+            documentation: Documentation::new(declaration.meta().doc(), documentation_prefix),
             name,
             body,
         })
@@ -77,6 +166,13 @@ impl Constant {
             true => Ok(emitted.with_aux(Self::wire_helper()?)),
             false => Ok(emitted),
         }
+    }
+
+    fn render_associated(&self) -> Result<String> {
+        AssociatedConstantTemplate { constant: self }
+            .render()
+            .map(|source| source.trim_end().to_owned())
+            .map_err(Into::into)
     }
 
     fn documentation(&self) -> &Documentation {
@@ -128,10 +224,11 @@ impl Constant {
         callable: &ExportedCallable<Native>,
         bridge: &CBridgeContract,
         context: &RenderContext<Native>,
+        body_prefix: &str,
     ) -> Result<Body> {
         let invocation = Invocation::from_callable(symbol, callable, None, bridge, context)?;
         let wire = invocation.requires_wire_runtime();
-        let (parameters, body, returns) = invocation.into_rendered("    ")?;
+        let (parameters, body, returns) = invocation.into_rendered(body_prefix)?;
         if !parameters.is_empty() {
             return Err(SwiftHost::unsupported("constant accessor parameters"));
         }

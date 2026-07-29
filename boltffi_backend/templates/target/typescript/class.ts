@@ -5,13 +5,20 @@ const {{ finalizer }}: FinalizationRegistry<number> | null =
         (_exports.{{ release }} as Function)(handle);
       });
 
-export class {{ name }} {
-  private _handle: number;
-  private _disposed = false;
+export class {{ name }} extends BoltFFIHandle {
+  protected static override _typeName = "{{ name }}";
 
   private constructor(handle: number) {
-    this._handle = handle;
+    super(handle);
     {{ finalizer }}?.register(this, handle, this);
+  }
+
+  protected override _release(handle: number): void {
+    (_exports.{{ release }} as Function)(handle);
+  }
+
+  protected override _unregister(): void {
+    {{ finalizer }}?.unregister(this);
   }
 
   static _fromHandle(handle: number): {{ name }} {
@@ -20,31 +27,12 @@ export class {{ name }} {
     }
     return new {{ name }}(handle);
   }
-
-  static _toHandle(value: {{ name }} | null): number {
-    return value === null ? 0 : value._borrowHandle();
-  }
-
-  dispose(): void {
-    if (this._disposed) {
-      return;
-    }
-    this._disposed = true;
-    {{ finalizer }}?.unregister(this);
-    (_exports.{{ release }} as Function)(this._handle);
-    this._handle = 0;
-  }
-
-  private _borrowHandle(): number {
-    this._assertNotDisposed();
-    return this._handle;
-  }
-
-  private _assertNotDisposed(): void {
-    if (this._disposed) {
-      throw new Error("{{ name }} has been disposed");
-    }
-  }
+{% for constant in constants.members %}
+  {{ constant }}
+{% endfor %}
 {% for method in methods %}
   {{ method }}
 {% endfor %}}
+{% for function in constants.functions %}
+{{ function }}
+{% endfor %}

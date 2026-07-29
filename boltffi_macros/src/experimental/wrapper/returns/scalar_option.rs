@@ -21,6 +21,8 @@ pub struct Incoming;
 pub struct Input {
     primitive: Primitive,
     value: syn::Ident,
+    /// Payload is a C-style enum crossing as its discriminant.
+    enum_payload: bool,
 }
 
 pub struct IncomingInput {
@@ -31,7 +33,19 @@ pub struct IncomingInput {
 
 impl Input {
     pub fn new(primitive: Primitive, value: syn::Ident) -> Self {
-        Self { primitive, value }
+        Self {
+            primitive,
+            value,
+            enum_payload: false,
+        }
+    }
+
+    pub fn enum_payload(primitive: Primitive, value: syn::Ident) -> Self {
+        Self {
+            primitive,
+            value,
+            enum_payload: true,
+        }
     }
 }
 
@@ -104,6 +118,18 @@ impl Render<Wasm32, Input> for Renderer {
         let return_type = scalar.carrier_type();
         let none = scalar.none();
         let some = scalar.outgoing()?;
+        // A C-style enum has to become its discriminant before it can enter the
+        // scalar carrier; primitives keep the original shape.
+        let some = if input.enum_payload {
+            quote! {
+                {
+                    let #present = ::boltffi::__private::Passable::pack(#present);
+                    #some
+                }
+            }
+        } else {
+            some
+        };
         Ok(Tokens {
             items: Vec::new(),
             ffi_parameters: Vec::new(),

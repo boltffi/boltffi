@@ -1,7 +1,7 @@
 use askama::Template as AskamaTemplate;
 use boltffi_binding::{
-    DirectFieldDecl, DirectRecordDecl, EncodedFieldDecl, EncodedRecordDecl, Native, RecordDecl,
-    RecordId,
+    ConstantOwner, DirectFieldDecl, DirectRecordDecl, EncodedFieldDecl, EncodedRecordDecl, Native,
+    RecordDecl, RecordId,
 };
 
 use crate::{
@@ -14,7 +14,7 @@ use crate::{
         name_style::Name,
         primitive::Primitive,
         render::{
-            ValueIdentity,
+            AssociatedConstants, Constant, ValueIdentity,
             call::{AssociatedCallContext, Call, ValueCalls, ValueReceiver},
             default_value::DefaultExpression,
             signature::Parameter,
@@ -58,6 +58,7 @@ pub struct Record {
     body: Body,
     error: bool,
     fields: Vec<Field>,
+    constants: AssociatedConstants,
     default_constructors: Vec<DefaultConstructor>,
     initializers: Vec<Call>,
     static_methods: Vec<Call>,
@@ -145,16 +146,18 @@ impl Record {
             true => emitted.with_aux(Runtime::async_helper()?),
             false => emitted,
         };
-        self.initializers
+        let emitted = self
+            .initializers
             .iter()
             .chain(&self.static_methods)
             .chain(&self.instance_methods)
-            .try_fold(emitted, |emitted, call| {
+            .try_fold(emitted, |emitted, call| -> Result<_> {
                 Ok(call
                     .native_forwards()?
                     .into_iter()
                     .fold(emitted, Emitted::with_aux))
-            })
+            })?;
+        self.constants.extend(emitted)
     }
 
     pub fn file_for(declaration: &RecordDecl<Native>, version: JavaVersion) -> Result<JavaFile> {
@@ -194,6 +197,10 @@ impl Record {
 
     pub fn fields(&self) -> &[Field] {
         &self.fields
+    }
+
+    pub fn constants(&self) -> &[Constant] {
+        self.constants.as_slice()
     }
 
     pub fn initializers(&self) -> &[Call] {
@@ -293,6 +300,13 @@ impl Record {
             wire_size: Self::sum_sizes(&fields),
             error_message: error.then(|| Self::error_message_field(&fields)).flatten(),
             fields,
+            constants: AssociatedConstants::from_owner(
+                ConstantOwner::Record(record.id()),
+                bridge,
+                native_owner,
+                version,
+                context,
+            )?,
             default_constructors,
             initializers,
             static_methods,
@@ -340,6 +354,13 @@ impl Record {
             wire_size: Self::sum_sizes(&fields),
             error_message: error.then(|| Self::error_message_field(&fields)).flatten(),
             fields,
+            constants: AssociatedConstants::from_owner(
+                ConstantOwner::Record(record.id()),
+                bridge,
+                native_owner,
+                version,
+                context,
+            )?,
             default_constructors,
             initializers,
             static_methods,

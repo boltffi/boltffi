@@ -1,7 +1,7 @@
 use askama::Template as AskamaTemplate;
 use boltffi_binding::{
-    CStyleEnumDecl, DataEnumDecl, DataVariantDecl, DataVariantPayload, EncodedFieldDecl, EnumDecl,
-    IntegerRepr, Wasm32,
+    CStyleEnumDecl, ConstantOwner, DataEnumDecl, DataVariantDecl, DataVariantPayload,
+    EncodedFieldDecl, EnumDecl, IntegerRepr, Wasm32,
 };
 
 use crate::core::{Diagnostic, Emitted, Error, RenderContext, Result};
@@ -15,7 +15,7 @@ use super::super::{
         StringLiteral, TypeName,
     },
 };
-use super::{Function, Type};
+use super::{AssociatedConstants, Function, Type};
 
 pub enum Enumeration {
     CStyle(CStyle),
@@ -32,6 +32,7 @@ pub struct CStyle {
     write: Identifier,
     read: Identifier,
     methods: Vec<MethodDeclaration>,
+    constants: AssociatedConstants,
     diagnostics: Vec<Diagnostic>,
     error: bool,
 }
@@ -43,6 +44,7 @@ pub struct Data {
     codec: Identifier,
     variants: Vec<DataVariant>,
     methods: Vec<MethodDeclaration>,
+    constants: AssociatedConstants,
     diagnostics: Vec<Diagnostic>,
     error: bool,
 }
@@ -129,6 +131,7 @@ impl CStyle {
             write: scalar.write_method(),
             read: scalar.read_method(),
             methods,
+            constants: AssociatedConstants::object(ConstantOwner::Enum(enumeration.id()), context)?,
             diagnostics,
             error: enumeration.is_error_payload(),
         })
@@ -157,6 +160,7 @@ impl Data {
                 .map(|variant| DataVariant::new(variant, context))
                 .collect::<Result<Vec<_>>>()?,
             methods,
+            constants: AssociatedConstants::object(ConstantOwner::Enum(enumeration.id()), context)?,
             diagnostics,
             error: enumeration.is_error_payload(),
         })

@@ -8,6 +8,10 @@
     deinit {
         {{ class.release() }}(handle)
     }
+{%- for constant in constants %}
+
+{{ constant }}
+{%- endfor %}
 {%- for initializer in class.initializers() %}
 
 {{ initializer.documentation() }}{% if initializer.factory() %}    public static func {{ initializer.name() }}({{ initializer.parameter_list() }}){{ initializer.throwing_keyword() }} -> {{ initializer.factory_return() }} {

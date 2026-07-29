@@ -36,7 +36,7 @@ pub use callable::{
     ReturnDef,
 };
 pub use class::{ClassDef, ClassThreadSafety};
-pub use constant::ConstantDef;
+pub use constant::{ConstantDef, ConstantOwner};
 pub use contract::{PackageInfo, SourceContract};
 pub use custom::{
     CustomConverterExpr, CustomRemoteGenericArgument, CustomRemotePath, CustomRemotePathSegment,

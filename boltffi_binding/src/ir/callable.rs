@@ -1251,6 +1251,9 @@ where
     ScalarOptionViaReturnSlot {
         /// Inner primitive.
         primitive: Primitive,
+        /// Set when the payload is a C-style enum crossing as `primitive`,
+        /// so renderers can restore the declared enum type.
+        enum_target: Option<TypeRef>,
     },
     /// Direct-vector in the return slot.
     DirectVecViaReturnSlot {
@@ -1347,6 +1350,17 @@ where
     /// Renders a scalar-option return.
     fn scalar_option(&mut self, primitive: Primitive) -> Self::Output;
 
+    /// Renders a scalar-option return whose payload is a C-style enum carried
+    /// as `primitive`. Defaults to the plain scalar-option rendering, which is
+    /// correct for surfaces that do not narrow the type back to the enum.
+    fn scalar_option_enum(
+        &mut self,
+        primitive: Primitive,
+        _target: &'plan TypeRef,
+    ) -> Self::Output {
+        self.scalar_option(primitive)
+    }
+
     /// Renders a direct-vector return.
     fn direct_vector(&mut self, element: &'plan DirectVectorElementType) -> Self::Output;
 
@@ -1374,7 +1388,13 @@ where
                 carrier,
                 presence,
             } => renderer.handle(ReturnValueSlot::ReturnSlot, target, *carrier, *presence),
-            Self::ScalarOptionViaReturnSlot { primitive } => renderer.scalar_option(*primitive),
+            Self::ScalarOptionViaReturnSlot {
+                primitive,
+                enum_target,
+            } => match enum_target {
+                Some(target) => renderer.scalar_option_enum(*primitive, target),
+                None => renderer.scalar_option(*primitive),
+            },
             Self::DirectVecViaReturnSlot { element } => renderer.direct_vector(element),
             Self::DirectViaOutPointer { ty } => renderer.direct(ReturnValueSlot::OutPointer, ty),
             Self::EncodedViaOutPointer { ty, codec, shape } => {

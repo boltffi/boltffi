@@ -8,7 +8,7 @@ mod tests {
     use super::model::{ResolvedReturn, WasmOptionScalarEncoding};
     use crate::index::class_types::ClassTypeRegistry;
     use crate::index::custom_types::CustomTypeRegistry;
-    use crate::index::data_types::DataTypeRegistry;
+    use crate::index::data_types::{DataTypeCategory, DataTypeRegistry, ScalarEnumRepr};
     use crate::lowering::returns::model::ReturnLoweringContext;
     use boltffi_ffi_rules::transport::{
         EncodedReturnStrategy, ReturnContract, ReturnInvocationContext, ReturnPlatform,
@@ -26,9 +26,13 @@ mod tests {
 
     #[test]
     fn wasm_option_bool_uses_numeric_bool_encoding() {
+        let class_types = ClassTypeRegistry::default();
+        let custom_types = CustomTypeRegistry::default();
+        let data_types = DataTypeRegistry::default();
+        let context = empty_return_lowering_context(&class_types, &custom_types, &data_types);
         let value_ident = syn::Ident::new("value", proc_macro2::Span::call_site());
         let expression =
-            WasmOptionScalarEncoding::from_option_rust_type(&parse_quote!(Option<bool>))
+            WasmOptionScalarEncoding::from_option_rust_type(&parse_quote!(Option<bool>), &context)
                 .expect("expected bool option encoding")
                 .some_expression(&value_ident)
                 .to_string();
@@ -52,11 +56,92 @@ mod tests {
 
     #[test]
     fn wasm_option_i64_is_not_nan_boxed() {
+        let class_types = ClassTypeRegistry::default();
+        let custom_types = CustomTypeRegistry::default();
+        let data_types = DataTypeRegistry::default();
+        let context = empty_return_lowering_context(&class_types, &custom_types, &data_types);
         assert!(
-            WasmOptionScalarEncoding::from_option_rust_type(&parse_quote!(Option<i64>)).is_none()
+            WasmOptionScalarEncoding::from_option_rust_type(&parse_quote!(Option<i64>), &context)
+                .is_none()
         );
         assert!(
-            WasmOptionScalarEncoding::from_option_rust_type(&parse_quote!(Option<u64>)).is_none()
+            WasmOptionScalarEncoding::from_option_rust_type(&parse_quote!(Option<u64>), &context)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn option_c_style_enum_return_uses_scalar_encoding() {
+        let custom_types = CustomTypeRegistry::default();
+        let data_types = DataTypeRegistry::with_entries(&[(
+            "crate::enums::Direction",
+            DataTypeCategory::Scalar(ScalarEnumRepr::I32),
+        )]);
+        let class_types = ClassTypeRegistry::default();
+        let context = empty_return_lowering_context(&class_types, &custom_types, &data_types);
+
+        assert_eq!(
+            classify_value_return_strategy(&parse_quote!(Option<Direction>), &context),
+            ValueReturnStrategy::Buffer(EncodedReturnStrategy::OptionScalar)
+        );
+    }
+
+    #[test]
+    fn option_c_style_enum_packs_discriminant_into_the_f64_slot() {
+        let custom_types = CustomTypeRegistry::default();
+        let data_types = DataTypeRegistry::with_entries(&[(
+            "crate::enums::Direction",
+            DataTypeCategory::Scalar(ScalarEnumRepr::I32),
+        )]);
+        let class_types = ClassTypeRegistry::default();
+        let context = empty_return_lowering_context(&class_types, &custom_types, &data_types);
+        let value_ident = syn::Ident::new("value", proc_macro2::Span::call_site());
+
+        let expression = WasmOptionScalarEncoding::from_option_rust_type(
+            &parse_quote!(Option<Direction>),
+            &context,
+        )
+        .expect("expected scalar enum option encoding")
+        .some_expression(&value_ident)
+        .to_string();
+
+        assert!(
+            expression.contains("Passable :: pack (value) as f64"),
+            "unexpected expression: {expression}"
+        );
+    }
+
+    #[test]
+    fn option_enum_with_64_bit_repr_stays_wire_encoded() {
+        // Discriminants wider than f64's exact integer range must not ride the
+        // scalar slot, or large variants would come back rounded.
+        let custom_types = CustomTypeRegistry::default();
+        let data_types = DataTypeRegistry::with_entries(&[(
+            "crate::enums::Wide",
+            DataTypeCategory::Scalar(ScalarEnumRepr::I64),
+        )]);
+        let class_types = ClassTypeRegistry::default();
+        let context = empty_return_lowering_context(&class_types, &custom_types, &data_types);
+
+        assert_eq!(
+            classify_value_return_strategy(&parse_quote!(Option<Wide>), &context),
+            ValueReturnStrategy::Buffer(EncodedReturnStrategy::WireEncoded)
+        );
+    }
+
+    #[test]
+    fn option_blittable_record_stays_wire_encoded() {
+        let custom_types = CustomTypeRegistry::default();
+        let data_types = DataTypeRegistry::with_entries(&[(
+            "crate::records::Point",
+            DataTypeCategory::Blittable,
+        )]);
+        let class_types = ClassTypeRegistry::default();
+        let context = empty_return_lowering_context(&class_types, &custom_types, &data_types);
+
+        assert_eq!(
+            classify_value_return_strategy(&parse_quote!(Option<Point>), &context),
+            ValueReturnStrategy::Buffer(EncodedReturnStrategy::WireEncoded)
         );
     }
 

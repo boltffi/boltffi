@@ -580,10 +580,7 @@ impl<'lowered, C: Copy> ClassOwner<'lowered, C> {
                 let #receiver_handle = match unsafe { #handle_type::retain(#receiver_handle) } {
                     Some(handle) => handle,
                     None => {
-                        ::boltffi::__private::set_last_error(format!(
-                            "{}: released class handle",
-                            stringify!(#receiver)
-                        ));
+                        ::boltffi::__private::set_last_error(concat!(stringify!(#receiver), ": released class handle"));
                         #failure
                     }
                 };
@@ -595,10 +592,7 @@ impl<'lowered, C: Copy> ClassOwner<'lowered, C> {
 
         quote! {
             if #receiver == #zero {
-                ::boltffi::__private::set_last_error(format!(
-                    "{}: null class handle",
-                    stringify!(#receiver)
-                ));
+                ::boltffi::__private::set_last_error(concat!(stringify!(#receiver), ": null class handle"));
                 #failure
             }
             let #receiver_handle = #receiver as usize as *mut #handle_type;

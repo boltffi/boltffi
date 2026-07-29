@@ -15,7 +15,9 @@ namespace {{ class.namespace }}
         {
             if (handle == 0) throw new global::System.ArgumentException("handle must not be zero", nameof(handle));
             this.handle = unchecked((long)(ulong)handle);
-        }
+        }{% for constant in constants %}
+{{ constant }}
+{% endfor %}
 {% for initializer in class.initializers %}{% if initializer.primary %}
 {{ initializer.documentation }}        public {{ class.name }}({% for parameter in initializer.function.parameters %}{{ parameter.ty }} {{ parameter.name }}{% if !loop.last %}, {% endif %}{% endfor %})
             : this({{ initializer.function.name }}({% for parameter in initializer.function.parameters %}{{ parameter.name }}{% if !loop.last %}, {% endif %}{% endfor %}).TakeHandle()) { }

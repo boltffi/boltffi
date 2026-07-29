@@ -1986,7 +1986,7 @@ where
                 carrier: *carrier,
                 presence: *presence,
             }),
-            ReturnPlan::ScalarOptionViaReturnSlot { primitive } => Ok(Self::ScalarOption {
+            ReturnPlan::ScalarOptionViaReturnSlot { primitive, .. } => Ok(Self::ScalarOption {
                 primitive: *primitive,
             }),
             ReturnPlan::DirectVecViaReturnSlot { .. } => Ok(Self::DirectVec),

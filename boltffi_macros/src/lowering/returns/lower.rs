@@ -21,13 +21,9 @@ impl ResolvedReturn {
             ValueReturnStrategy::Scalar(_) => quote! {
                 return ::core::default::Default::default();
             },
-            ValueReturnStrategy::Buffer(EncodedReturnStrategy::OptionScalar) => {
-                let _ = WasmOptionScalarEncoding::from_option_rust_type(self.rust_type())
-                    .expect("OptionScalar return must have a primitive Option inner type");
-                quote! {
-                    return f64::NAN;
-                }
-            }
+            ValueReturnStrategy::Buffer(EncodedReturnStrategy::OptionScalar) => quote! {
+                return f64::NAN;
+            },
             ValueReturnStrategy::Buffer(EncodedReturnStrategy::DirectVec) => {
                 quote! {
                     #[cfg(target_arch = "wasm32")]
@@ -87,13 +83,9 @@ impl ResolvedReturn {
             ValueReturnStrategy::Buffer(EncodedReturnStrategy::DirectVec) => quote! {
                 return;
             },
-            ValueReturnStrategy::Buffer(EncodedReturnStrategy::OptionScalar) => {
-                let _ = WasmOptionScalarEncoding::from_option_rust_type(self.rust_type())
-                    .expect("OptionScalar return must have a primitive Option inner type");
-                quote! {
-                    return f64::NAN;
-                }
-            }
+            ValueReturnStrategy::Buffer(EncodedReturnStrategy::OptionScalar) => quote! {
+                return f64::NAN;
+            },
             ValueReturnStrategy::Buffer(_) => match self.direct_buffer_return_method(
                 ReturnInvocationContext::SyncExport,
                 ReturnPlatform::Wasm,
@@ -261,15 +253,37 @@ impl ObjectHandleReturn {
 }
 
 impl WasmOptionScalarEncoding {
-    pub fn from_option_rust_type(rust_type: &Type) -> Option<Self> {
-        ReturnTypeDescriptor::parse(rust_type)
+    pub fn from_option_rust_type(
+        rust_type: &Type,
+        return_lowering: &super::model::ReturnLoweringContext<'_>,
+    ) -> Option<Self> {
+        let descriptor = ReturnTypeDescriptor::parse(rust_type);
+        if let Some(primitive) = descriptor
             .option_primitive()
             .filter(|primitive| option_primitive_uses_scalar_encoding(*primitive))
-            .map(|primitive| Self { primitive })
+        {
+            return Some(Self::Primitive(primitive));
+        }
+        descriptor
+            .option_inner_type()
+            .filter(|inner| {
+                super::classify::option_scalar_enum_uses_scalar_encoding(inner, return_lowering)
+            })
+            .map(|_| Self::ScalarEnum)
     }
 
     pub fn some_expression(self, value_ident: &syn::Ident) -> proc_macro2::TokenStream {
-        match self.primitive {
+        let primitive = match self {
+            // The discriminant is an integer that fits the f64 slot exactly;
+            // `fits_in_f64` on the repr is what guarantees the cast is lossless.
+            Self::ScalarEnum => {
+                return quote! {
+                    ::boltffi::__private::Passable::pack(#value_ident) as f64
+                };
+            }
+            Self::Primitive(primitive) => primitive,
+        };
+        match primitive {
             Primitive::Bool => quote! {
                 if #value_ident { 1.0 } else { 0.0 }
             },

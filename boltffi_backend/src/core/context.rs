@@ -1,7 +1,8 @@
 use boltffi_binding::{
-    Bindings, CallbackDecl, CallbackId, ClassDecl, ClassId, ConstantDecl, ConstantId,
-    CustomTypeDecl, CustomTypeId, DeclarationId, DeclarationRef, EnumDecl, EnumId, FunctionDecl,
-    FunctionId, RecordDecl, RecordId, StreamDecl, StreamId, Surface,
+    Bindings, CallbackDecl, CallbackId, CanonicalName, ClassDecl, ClassId, ConstantDecl,
+    ConstantId, ConstantOwner, CustomTypeDecl, CustomTypeId, DeclarationId, DeclarationRef,
+    EnumDecl, EnumId, FunctionDecl, FunctionId, RecordDecl, RecordId, StreamDecl, StreamId,
+    Surface,
 };
 
 use crate::core::capabilities::BindingCapabilityAnalysis;
@@ -101,6 +102,30 @@ impl<'bindings, S: Surface> RenderContext<'bindings, S> {
     /// Returns the constant declaration with the given id.
     pub fn constant(&self, id: ConstantId) -> Option<&'bindings ConstantDecl<S>> {
         self.find(DeclarationId::Constant(id), DeclarationRef::constant)
+    }
+
+    /// Iterates over constants associated with the given exported type.
+    pub fn associated_constants(
+        &self,
+        owner: ConstantOwner,
+    ) -> impl Iterator<Item = &'bindings ConstantDecl<S>> + '_ {
+        self.bindings.decls().iter().filter_map(move |declaration| {
+            match DeclarationRef::from(declaration) {
+                DeclarationRef::Constant(constant) if constant.owner() == Some(owner) => {
+                    Some(constant)
+                }
+                _ => None,
+            }
+        })
+    }
+
+    /// Returns the source name of an associated constant owner.
+    pub fn constant_owner_name(&self, owner: ConstantOwner) -> Option<&'bindings CanonicalName> {
+        match owner {
+            ConstantOwner::Record(id) => self.record(id).map(RecordDecl::name),
+            ConstantOwner::Enum(id) => self.enumeration(id).map(EnumDecl::name),
+            ConstantOwner::Class(id) => self.class(id).map(ClassDecl::name),
+        }
     }
 
     /// Returns the function declaration with the given id.

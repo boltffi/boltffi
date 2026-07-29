@@ -792,11 +792,19 @@ impl PlainComplete {
                     err_body: carrier.zero().clone(),
                 })
             }
-            ReturnPlan::ScalarOptionViaReturnSlot { primitive } => {
+            ReturnPlan::ScalarOptionViaReturnSlot {
+                primitive,
+                enum_target,
+            } => {
                 source.scalar_option(*primitive)?;
                 let optional = <scalar_option::Renderer as Render<S, _>>::render(
                     scalar_option::Renderer,
-                    scalar_option::Input::new(*primitive, result.clone()),
+                    match enum_target {
+                        // A C-style enum has to be packed to its discriminant
+                        // before it can enter the scalar carrier.
+                        Some(_) => scalar_option::Input::enum_payload(*primitive, result.clone()),
+                        None => scalar_option::Input::new(*primitive, result.clone()),
+                    },
                 )?;
                 let empty = <scalar_option::Renderer as Render<S, _>>::render(
                     scalar_option::Renderer,

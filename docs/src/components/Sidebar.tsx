@@ -9,6 +9,7 @@ import {
   Radio,
   AlertCircle,
   FileCode,
+  Hash,
   Workflow,
   GraduationCap,
   Database,
@@ -86,6 +87,17 @@ const sections: Section[] = [
       { id: "parameters", label: "Parameters" },
       { id: "return-types", label: "Return Types" },
       { id: "async-functions", label: "Async Functions" },
+    ]
+  },
+  {
+    id: "constants",
+    label: "Constants",
+    icon: Hash,
+    children: [
+      { id: "global-constants", label: "Global Constants" },
+      { id: "associated-constants", label: "Associated Constants" },
+      { id: "data-constants", label: "Data Constants" },
+      { id: "supported-values", label: "Supported Values" },
     ]
   },
   { 

@@ -184,11 +184,7 @@ impl Input {
         Ok(quote! {
             let #mutability #binding: #rust_type = {
                 if #pointer.is_null() && #length > 0 {
-                    ::boltffi::__private::set_last_error(format!(
-                        "{}: null pointer with non-zero length (buf_len={})",
-                        stringify!(#binding),
-                        #length
-                    ));
+                    ::boltffi::__private::set_last_error_len(stringify!(#binding), "null pointer with non-zero length", #length as usize);
                     #failure
                 }
                 let __boltffi_packed =
@@ -238,11 +234,7 @@ impl Input {
             return Ok(quote! {
                 let #mutability #binding: #rust_type = {
                     if #pointer.is_null() && #length > 0 {
-                        ::boltffi::__private::set_last_error(format!(
-                            "{}: null pointer with non-zero length (buf_len={})",
-                            stringify!(#binding),
-                            #length
-                        ));
+                        ::boltffi::__private::set_last_error_len(stringify!(#binding), "null pointer with non-zero length", #length as usize);
                         #failure
                     }
                     let __boltffi_bytes: &[u8] = if #length == 0 {
@@ -253,12 +245,7 @@ impl Input {
                     match ::boltffi::__private::wire::decode::<#rust_type>(__boltffi_bytes) {
                         Ok(value) => value,
                         Err(error) => {
-                            ::boltffi::__private::set_last_error(format!(
-                                "{}: wire decode failed: {} (buf_len={})",
-                                stringify!(#binding),
-                                error,
-                                #length
-                            ));
+                            ::boltffi::__private::set_last_error_display(stringify!(#binding), "wire decode failed", &error, #length as usize);
                             #failure
                         }
                     }
@@ -271,12 +258,7 @@ impl Input {
                 match #converted_value {
                     Ok(value) => value,
                     Err(error) => {
-                        ::boltffi::__private::set_last_error(format!(
-                            "{}: custom conversion failed: {:?} (buf_len={})",
-                            stringify!(#binding),
-                            error,
-                            #length
-                        ));
+                        ::boltffi::__private::set_last_error_debug(stringify!(#binding), "custom conversion failed", &error, #length as usize);
                         #failure
                     }
                 }
@@ -292,11 +274,7 @@ impl Input {
         Ok(quote! {
             let #mutability #binding #type_annotation = {
                 if #pointer.is_null() && #length > 0 {
-                    ::boltffi::__private::set_last_error(format!(
-                        "{}: null pointer with non-zero length (buf_len={})",
-                        stringify!(#binding),
-                        #length
-                    ));
+                    ::boltffi::__private::set_last_error_len(stringify!(#binding), "null pointer with non-zero length", #length as usize);
                     #failure
                 }
                 let __boltffi_bytes: &[u8] = if #length == 0 {
@@ -307,12 +285,7 @@ impl Input {
                 let __boltffi_decoded = match ::boltffi::__private::wire::decode::<#decode_type>(__boltffi_bytes) {
                     Ok(value) => value,
                     Err(error) => {
-                        ::boltffi::__private::set_last_error(format!(
-                            "{}: wire decode failed: {} (buf_len={})",
-                            stringify!(#binding),
-                            error,
-                            #length
-                        ));
+                        ::boltffi::__private::set_last_error_display(stringify!(#binding), "wire decode failed", &error, #length as usize);
                         #failure
                     }
                 };

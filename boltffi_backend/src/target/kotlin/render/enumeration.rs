@@ -1,8 +1,8 @@
 use askama::Template as AskamaTemplate;
 use boltffi_binding::{
-    CStyleEnumDecl, CStyleVariantDecl, DataEnumDecl, DataVariantDecl, DataVariantPayload, EnumDecl,
-    EnumId, ExportedMethodDecl, InitializerDecl, Native, NativeSymbol, Primitive, Receive,
-    VariantTag,
+    CStyleEnumDecl, CStyleVariantDecl, ConstantOwner, DataEnumDecl, DataVariantDecl,
+    DataVariantPayload, EnumDecl, EnumId, ExportedMethodDecl, InitializerDecl, Native,
+    NativeSymbol, Primitive, Receive, VariantTag,
 };
 
 use crate::{
@@ -15,6 +15,7 @@ use crate::{
         name_style::Name,
         primitive::KotlinPrimitive,
         render::{
+            AssociatedConstants,
             field::EncodedField,
             function::{ExportedCall, ExportedCallRenderer, ReceiverCarrier, ReceiverMutation},
         },
@@ -26,6 +27,7 @@ use crate::{
 #[template(path = "target/kotlin/enumeration.kt", escape = "none")]
 struct EnumerationTemplate {
     enumeration: Enumeration,
+    constants: Vec<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -33,6 +35,7 @@ pub struct Enumeration {
     name: TypeName,
     error: bool,
     body: Body,
+    constants: AssociatedConstants,
     initializers: Vec<ExportedCall>,
     static_methods: Vec<ExportedCall>,
     instance_methods: Vec<ExportedCall>,
@@ -171,8 +174,13 @@ impl Enumeration {
     }
 
     pub fn render(self) -> Result<Emitted> {
+        let constants = self.constants.render("        ")?;
         Ok(Emitted::primary(
-            EnumerationTemplate { enumeration: self }.render()?,
+            EnumerationTemplate {
+                enumeration: self,
+                constants,
+            }
+            .render()?,
         ))
     }
 
@@ -325,6 +333,7 @@ impl Enumeration {
         Ok(Self {
             name,
             error,
+            constants: AssociatedConstants::from_c_style_enum(enumeration, host, bridge, context)?,
             body: Body::CStyle {
                 value_type: KotlinPrimitive::new(primitive).native_type()?,
                 repr: primitive,
@@ -416,6 +425,12 @@ impl Enumeration {
                     .collect::<Result<Vec<_>>>()?,
                 wire_size_type,
             },
+            constants: AssociatedConstants::from_owner(
+                ConstantOwner::Enum(enumeration.id()),
+                host,
+                bridge,
+                context,
+            )?,
             initializers: requalify(Self::initializer_calls(
                 enumeration.initializers(),
                 bridge,

@@ -450,11 +450,20 @@ fn collect_item_cases(
                 collect_attribute_cases(&item_impl.attrs, impl_inferred, path, cases)?;
 
                 for impl_item in &item_impl.items {
-                    if let syn::ImplItem::Fn(method) = impl_item {
-                        let inferred = owner.as_ref().map(|owner| {
-                            make_export_id(module, &method.sig.ident.to_string(), Some(owner))
-                        });
-                        collect_attribute_cases(&method.attrs, inferred, path, cases)?;
+                    match impl_item {
+                        syn::ImplItem::Fn(method) => {
+                            let inferred = owner.as_ref().map(|owner| {
+                                make_export_id(module, &method.sig.ident.to_string(), Some(owner))
+                            });
+                            collect_attribute_cases(&method.attrs, inferred, path, cases)?;
+                        }
+                        syn::ImplItem::Const(constant) => {
+                            let inferred = owner.as_ref().map(|owner| {
+                                make_export_id(module, &constant.ident.to_string(), Some(owner))
+                            });
+                            collect_attribute_cases(&constant.attrs, inferred, path, cases)?;
+                        }
+                        _ => {}
                     }
                 }
             }
@@ -604,21 +613,31 @@ fn collect_item_exports(items: &[Item], module: &str, exports: &mut BTreeSet<Str
             Item::Fn(item_fn) if is_public(&item_fn.vis) && has_export_attr(&item_fn.attrs) => {
                 exports.insert(make_export_id(module, &item_fn.sig.ident.to_string(), None));
             }
-            Item::Impl(item_impl)
-                if has_export_attr(&item_impl.attrs) || has_data_impl_attr(&item_impl.attrs) =>
-            {
-                if let Some(owner) = type_owner(&item_impl.self_ty) {
-                    for impl_item in &item_impl.items {
-                        if let syn::ImplItem::Fn(method) = impl_item {
-                            if is_public(&method.vis) {
-                                exports.insert(make_export_id(
-                                    module,
-                                    &method.sig.ident.to_string(),
-                                    Some(&owner),
-                                ));
+            Item::Impl(item_impl) => {
+                let is_exported_impl =
+                    has_export_attr(&item_impl.attrs) || has_data_impl_attr(&item_impl.attrs);
+                if is_exported_impl
+                    && let Some(owner) = type_owner(&item_impl.self_ty)
+                {
+                    item_impl
+                        .items
+                        .iter()
+                        .filter_map(|item| match item {
+                            syn::ImplItem::Fn(method) if is_public(&method.vis) => {
+                                Some(&method.sig.ident)
                             }
-                        }
-                    }
+                            syn::ImplItem::Const(constant) if is_public(&constant.vis) => {
+                                Some(&constant.ident)
+                            }
+                            _ => None,
+                        })
+                        .for_each(|member| {
+                            exports.insert(make_export_id(
+                                module,
+                                &member.to_string(),
+                                Some(&owner),
+                            ));
+                        });
                 }
             }
             Item::Struct(item_struct)

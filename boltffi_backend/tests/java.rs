@@ -92,6 +92,17 @@ const DIRECT_RECORD_CALLS: &str = r#"
     }
 "#;
 
+const ASSOCIATED_CONSTANTS: &str = include_str!("fixtures/source/constant/associated.rs");
+
+const ENUM_ALIAS_COLLISION: &str = include_str!("fixtures/source/constant/enum_alias_collision.rs");
+
+const TOP_LEVEL_CONSTANTS: &str =
+    include_str!("fixtures/source/constant/literals_and_accessors.rs");
+
+const DATA_ENUM_CONSTANT: &str = include_str!("fixtures/source/constant/data_enum.rs");
+const DATA_ENUM_ACCESSOR_CONSTANT: &str =
+    include_str!("fixtures/source/constant/data_enum_accessor.rs");
+
 const ENCODED_RECORD: &str = r#"
     #[data]
     pub struct Profile {
@@ -753,6 +764,7 @@ const STREAM_FLOW_RUNTIME_PROBE: &str = r#"
             AtomicInteger unsubscribed = new AtomicInteger();
             AtomicInteger freed = new AtomicInteger();
             CountDownLatch completed = new CountDownLatch(1);
+            CountDownLatch released = new CountDownLatch(1);
             java.util.concurrent.CopyOnWriteArrayList<Integer> received =
                 new java.util.concurrent.CopyOnWriteArrayList<>();
             StreamSubscription<Integer> stream = StreamSubscription.batch(
@@ -762,7 +774,10 @@ const STREAM_FLOW_RUNTIME_PROBE: &str = r#"
                     : Collections.emptyList(),
                 (handle, timeout) -> -1,
                 handle -> unsubscribed.incrementAndGet(),
-                handle -> freed.incrementAndGet()
+                handle -> {
+                    freed.incrementAndGet();
+                    released.countDown();
+                }
             );
             stream.toPublisher().subscribe(new Flow.Subscriber<Integer>() {
                 public void onSubscribe(Flow.Subscription subscription) {
@@ -782,6 +797,7 @@ const STREAM_FLOW_RUNTIME_PROBE: &str = r#"
                 }
             });
             require(completed.await(5, TimeUnit.SECONDS), "publisher completion");
+            require(released.await(5, TimeUnit.SECONDS), "publisher release");
             require(received.equals(Arrays.asList(17, 19)), "publisher values");
             require(unsubscribed.get() == 1, "publisher unsubscribe");
             require(freed.get() == 1, "publisher free");
@@ -1349,6 +1365,75 @@ fn java_target_uses_class_semantics_for_primitive_array_fields() {
     assert!(!profile.contains("public record Profile"));
     assert!(profile.contains("java.util.Arrays.equals(this.samples, other.samples)"));
     assert!(profile.contains("java.util.Arrays.hashCode(this.samples)"));
+}
+
+#[test]
+fn java_target_renders_associated_constants_on_the_owner() {
+    let output = render(ASSOCIATED_CONSTANTS, CoverageMode::Complete);
+    let color = java_source(&output, "com.boltffi.demo", "Color");
+    let mode = java_source(&output, "com.boltffi.demo", "Mode");
+    let state = java_source(&output, "com.boltffi.demo", "State");
+    let palette = java_source(&output, "com.boltffi.demo", "Palette");
+
+    assert!(color.contains("public static Color BLACK() {"));
+    assert!(color.contains("return __boltffiReadConstant"));
+    assert!(color.contains("public static final byte CHANNEL_COUNT = (byte) (4);"));
+    assert!(color.contains("private static Color __boltffiReadConstant"));
+    assert!(mode.contains("public static final Mode DEFAULT = Mode.FAST;"));
+    assert!(mode.contains("public static Mode FALLBACK() {"));
+    assert!(mode.contains("public static final byte VARIANT_COUNT = (byte) (2);"));
+    assert!(state.contains("public static final State INITIAL = new State.Idle();"));
+    assert!(palette.contains("public static final byte MAX_COLORS = (byte) (16);"));
+    assert!(!palette.contains("UNEXPORTED_ASSOCIATED"));
+    assert!(!java_source(&output, "com.boltffi.demo", "Demo").contains(" BLACK "));
+}
+
+#[test]
+fn java_target_omits_redundant_enum_aliases_after_name_normalization() {
+    let output = render(ENUM_ALIAS_COLLISION, CoverageMode::Complete);
+    let mode = java_source(&output, "com.boltffi.demo", "Mode");
+
+    assert!(mode.contains("DEFAULT((byte) (1))"));
+    assert!(!mode.contains("public static final Mode DEFAULT"));
+}
+
+#[test]
+fn java_target_renders_top_level_constants_in_the_module() {
+    let output = render(TOP_LEVEL_CONSTANTS, CoverageMode::Complete);
+    let module = java_source(&output, "com.boltffi.demo", "Demo");
+
+    assert!(module.contains("public static final boolean ENABLED = true;"));
+    assert!(module.contains("public static final int LIMIT = 1024;"));
+    assert!(module.contains("public static final double HALF = 0.5;"));
+    assert!(module.contains("public static final String GREETING = \"hello\";"));
+    assert!(module.contains("public static final Mode DEFAULT_MODE = Mode.FAST;"));
+    assert!(module.contains("public static byte[] MAGIC() {"));
+    assert!(module.contains("return __boltffiReadConstant"));
+}
+
+#[test]
+fn java_target_renders_data_enum_constants_for_the_selected_enum_form() {
+    let output = render(DATA_ENUM_CONSTANT, CoverageMode::Complete);
+    let module = java_source(&output, "com.boltffi.demo", "Demo");
+
+    assert!(module.contains("public static final State IDLE = State.Idle.INSTANCE;"));
+}
+
+#[test]
+fn java_target_renders_accessor_constants_inside_sealed_interfaces() {
+    let output = render_with_host(
+        DATA_ENUM_ACCESSOR_CONSTANT,
+        CoverageMode::Complete,
+        JavaHost::for_version("com.boltffi.demo", "Demo", JavaVersion::JAVA_17)
+            .expect("Java 17 host")
+            .desktop_loader(JavaDesktopLoader::None),
+    );
+    let state = java_source(&output, "com.boltffi.demo", "State");
+
+    assert!(state.contains("public sealed interface State"));
+    assert!(state.contains("public static State INITIAL_BUSY() {"));
+    assert!(state.contains("private static State __boltffiReadConstant"));
+    assert!(!state.contains("class __BoltffiConstantHolder"));
 }
 
 #[test]
@@ -2556,6 +2641,65 @@ fn generated_primitive_java_compiles_for_java_eight_when_available() {
         JavaHost::new("com.boltffi.demo", "Demo").expect("Java host"),
     );
     compile_generated_java(&compiler, &output, "boltffi-java-primitives");
+}
+
+#[test]
+fn generated_associated_constants_compile_for_java_eight_when_available() {
+    let Some(compiler) = JavaCompiler::discover() else {
+        return;
+    };
+
+    let output = render_with_host(
+        ASSOCIATED_CONSTANTS,
+        CoverageMode::Complete,
+        JavaHost::new("com.boltffi.demo", "Demo").expect("Java host"),
+    );
+    compile_generated_java(&compiler, &output, "boltffi-java-associated-constants");
+
+    let collision = render_with_host(
+        ENUM_ALIAS_COLLISION,
+        CoverageMode::Complete,
+        JavaHost::new("com.boltffi.demo", "Demo").expect("Java host"),
+    );
+    compile_generated_java(&compiler, &collision, "boltffi-java-enum-alias-collision");
+}
+
+#[test]
+fn generated_top_level_constants_compile_for_java_eight_when_available() {
+    let Some(compiler) = JavaCompiler::discover() else {
+        return;
+    };
+
+    [TOP_LEVEL_CONSTANTS, DATA_ENUM_CONSTANT]
+        .into_iter()
+        .enumerate()
+        .for_each(|(index, source)| {
+            let output = render_with_host(
+                source,
+                CoverageMode::Complete,
+                JavaHost::new("com.boltffi.demo", "Demo").expect("Java host"),
+            );
+            compile_generated_java(
+                &compiler,
+                &output,
+                &format!("boltffi-java-top-level-constants-{index}"),
+            );
+        });
+}
+
+#[test]
+fn generated_sealed_interface_accessor_constants_compile_for_java_seventeen_when_available() {
+    let Some(compiler) = JavaCompiler::discover() else {
+        return;
+    };
+
+    let output = render_with_host(
+        DATA_ENUM_ACCESSOR_CONSTANT,
+        CoverageMode::Complete,
+        JavaHost::for_version("com.boltffi.demo", "Demo", JavaVersion::JAVA_17)
+            .expect("Java 17 host"),
+    );
+    compile_generated_java_for_release(&compiler, &output, "boltffi-java-sealed-constants", 17);
 }
 
 #[test]

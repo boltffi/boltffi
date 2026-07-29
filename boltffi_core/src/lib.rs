@@ -67,7 +67,10 @@ pub use runtime::subscription::{
     SubscriptionHandle, WaitResult,
 };
 pub use safety::catch_ffi_panic;
-pub use status::{FfiStatus, clear_last_error, set_last_error, take_last_error};
+pub use status::{
+    FfiStatus, clear_last_error, set_last_error, set_last_error_debug, set_last_error_display,
+    set_last_error_len, take_last_error,
+};
 
 pub use types::{FfiBuf, FfiError, FfiOption, FfiSlice, FfiSpan, FfiString};
 pub use wasm::WASM_ABI_VERSION;

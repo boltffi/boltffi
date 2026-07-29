@@ -164,7 +164,6 @@ impl<'host, 'bridge, 'decl> Module<'host, 'bridge, 'decl> {
         let functions = self
             .declarations
             .iter()
-            .filter(|declaration| !declaration.emitted().primary_chunk().is_empty())
             .map(|declaration| match declaration.declaration() {
                 DeclarationRef::Function(function) => methods.function(function),
                 DeclarationRef::Record(record) => methods.record(record),

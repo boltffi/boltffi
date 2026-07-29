@@ -207,6 +207,9 @@ impl host::HostBackend for CSharpHost {
         bridge: &Self::Bridge,
         context: &RenderContext<Self::Surface>,
     ) -> Result<Emitted> {
+        if decl.owner().is_some() {
+            return Ok(Emitted::primary(""));
+        }
         render::Constant::from_declaration(
             decl,
             &self.namespace_for(context.bindings())?,
@@ -997,6 +1000,108 @@ mod tests {
         assert!(source.contains("get"));
         assert!(source.contains("NativeMethods.NativeMagic"));
         assert!(output.diagnostics().is_empty());
+    }
+
+    #[test]
+    fn csharp_target_renders_associated_constants_on_the_owner() {
+        let bindings = bindings(
+            r#"
+            #[repr(C)]
+            #[data]
+            pub struct Color {
+                pub r: u8,
+                pub g: u8,
+                pub b: u8,
+                pub a: u8,
+            }
+
+            #[data(impl)]
+            impl Color {
+                pub const BLACK: Self = Self::rgba(0, 0, 0, 255);
+                pub const CHANNEL_COUNT: u8 = 4;
+
+                const fn rgba(r: u8, g: u8, b: u8, a: u8) -> Self {
+                    Self { r, g, b, a }
+                }
+            }
+
+            #[repr(u8)]
+            #[data]
+            pub enum Mode {
+                Fast = 1,
+                Slow = 2,
+            }
+
+            #[data(impl)]
+            impl Mode {
+                pub const DEFAULT: Self = Self::Fast;
+                pub const FALLBACK: Self = Self::DEFAULT;
+                pub const VARIANT_COUNT: u8 = 2;
+            }
+
+            pub struct Palette;
+
+            #[export]
+            impl Palette {
+                pub const MAX_COLORS: u8 = 16;
+
+                pub fn new() -> Self {
+                    Self
+                }
+            }
+
+            impl Palette {
+                pub const UNEXPORTED_ASSOCIATED: u8 = 99;
+            }
+            "#,
+        );
+        let output = target(CSharpHost::new())
+            .render(&bindings)
+            .expect("associated constants should render");
+        let source = file(&output, "Color.cs");
+        let mode = file(&output, "Mode.cs");
+        let palette = file(&output, "Palette.cs");
+
+        assert!(source.contains("public static Color Black"));
+        assert!(source.contains("public const byte ChannelCount = 4;"));
+        assert!(!mode.contains("Default = Fast"));
+        assert!(mode.contains("public static class ModeConstants"));
+        assert!(mode.contains("public const global::Demo.Mode Default = global::Demo.Mode.Fast;"));
+        assert!(mode.contains("public static Mode Fallback"));
+        assert!(mode.contains("public const byte VariantCount = 2;"));
+        assert!(palette.contains("public const byte MaxColors = 16;"));
+        assert!(!palette.contains("UnexportedAssociated"));
+        assert!(output.diagnostics().is_empty());
+    }
+
+    #[test]
+    fn csharp_target_routes_variant_alias_constants_through_companion_class() {
+        let bindings = bindings(
+            r#"
+            #[repr(u8)]
+            #[data]
+            pub enum Mode {
+                Default = 1,
+                Fast = 2,
+            }
+
+            #[data(impl)]
+            impl Mode {
+                pub const DEFAULT: Self = Self::Default;
+            }
+            "#,
+        );
+        let output = target(CSharpHost::new())
+            .render(&bindings)
+            .expect("redundant alias should render");
+        let mode = file(&output, "Mode.cs");
+
+        assert!(mode.contains("Default = 1"));
+        assert!(!mode.contains("Default = Default"));
+        assert!(mode.contains("public static class ModeConstants"));
+        assert!(
+            mode.contains("public const global::Demo.Mode Default = global::Demo.Mode.Default;")
+        );
     }
 
     #[test]

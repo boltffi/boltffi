@@ -200,7 +200,7 @@ function parseGeneratedSurface(source) {
   );
 
   const classes = Object.fromEntries(
-    [...source.matchAll(/^export declare class (\w+) \{([\s\S]*?)^\}/gm)].map((match) => [
+    [...source.matchAll(/^export declare class (\w+)(?: extends \w+)? \{([\s\S]*?)^\}/gm)].map((match) => [
       match[1],
       new Set(
         [...match[2].matchAll(/^\s+(?:static\s+)?(\w+)\(/gm)]

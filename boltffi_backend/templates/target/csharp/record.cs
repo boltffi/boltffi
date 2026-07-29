@@ -28,7 +28,9 @@ namespace {{ record.namespace }}
 {% for statement in field.write %}{{ statement.indented(16) }}
 {% endfor %}            }
 {% endfor %}        }
-{% endif %}
+{% endif %}{% for constant in constants %}
+{{ constant }}
+{% endfor %}
 {% for function in record.methods %}
 {% include "target/csharp/function.cs" %}
 {% endfor %}    }

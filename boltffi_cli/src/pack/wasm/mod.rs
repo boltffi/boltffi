@@ -1,4 +1,5 @@
 mod npm;
+mod sections;
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -21,6 +22,7 @@ use super::{print_cargo_line, resolve_build_cargo_args};
 use self::npm::{
     generate_wasm_loader_entrypoints, generate_wasm_package_json, generate_wasm_readme,
 };
+use self::sections::strip_wasm_sections;
 
 pub(crate) fn pack_wasm(
     config: &Config,
@@ -80,6 +82,15 @@ pub(crate) fn pack_wasm(
     let wasm_artifact_path = WasmArtifactPath::resolve(config, wasm_artifact_profile)?.into_path();
     if !wasm_artifact_path.exists() {
         return Err(CliError::FileNotFound(wasm_artifact_path));
+    }
+
+    let strip_debug = should_strip_debug(config, wasm_artifact_profile);
+    let step = reporter.step("Stripping WASM sections");
+    let stripped_bytes = strip_wasm_sections(&wasm_artifact_path, strip_debug)?;
+    if stripped_bytes == 0 {
+        step.finish_success();
+    } else {
+        step.finish_success_with(&format!("removed {} KiB", stripped_bytes / 1024));
     }
 
     if config.wasm_optimize_enabled(wasm_artifact_profile) {
@@ -159,6 +170,16 @@ pub(crate) fn pack_wasm(
     }
 
     Ok(())
+}
+
+/// Whether the pack should drop debug sections.
+///
+/// Debug info only goes when optimization applies — release by default — so a
+/// debug-profile pack keeps DWARF as it did before this step existed.
+/// Descriptor tables are dead weight in every profile and are handled
+/// separately by the strip itself.
+fn should_strip_debug(config: &Config, profile: WasmProfile) -> bool {
+    config.wasm_optimize_enabled(profile) && config.wasm_optimize_strip_debug()
 }
 
 fn build_wasm_target(
@@ -266,6 +287,7 @@ fn optimize_wasm_binary(config: &Config, wasm_path: &Path) -> Result<()> {
         .arg(&optimized_path);
 
     if !config.wasm_optimize_strip_debug() {
+        // Keeps the name section, and any debug sections the strip pass left.
         command.arg("-g");
     }
 
@@ -344,11 +366,78 @@ fn transpile_typescript_bundle(
 mod tests {
     use std::path::PathBuf;
 
-    use super::WasmArtifactPath;
+    use super::{WasmArtifactPath, should_strip_debug};
     use crate::config::{Config, WasmProfile};
 
     fn parse_config(input: &str) -> Config {
         toml::from_str(input).expect("toml parse failed")
+    }
+
+    const BARE_CONFIG: &str = r#"
+        [package]
+        name = "demo"
+        "#;
+
+    #[test]
+    fn release_strips_debug_by_default() {
+        assert!(should_strip_debug(
+            &parse_config(BARE_CONFIG),
+            WasmProfile::Release
+        ));
+    }
+
+    #[test]
+    fn debug_profile_keeps_debug_sections_by_default() {
+        // Optimization is release-only by default, and debug info rides with it.
+        assert!(!should_strip_debug(
+            &parse_config(BARE_CONFIG),
+            WasmProfile::Debug
+        ));
+    }
+
+    #[test]
+    fn opting_out_keeps_debug_sections_in_release() {
+        let config = parse_config(
+            r#"
+            [package]
+            name = "demo"
+
+            [targets.wasm.optimize]
+            strip_debug = false
+            "#,
+        );
+
+        assert!(!should_strip_debug(&config, WasmProfile::Release));
+    }
+
+    #[test]
+    fn enabling_optimization_strips_debug_on_a_debug_profile() {
+        let config = parse_config(
+            r#"
+            [package]
+            name = "demo"
+
+            [targets.wasm.optimize]
+            enabled = true
+            "#,
+        );
+
+        assert!(should_strip_debug(&config, WasmProfile::Debug));
+    }
+
+    #[test]
+    fn disabling_optimization_keeps_debug_sections_in_release() {
+        let config = parse_config(
+            r#"
+            [package]
+            name = "demo"
+
+            [targets.wasm.optimize]
+            enabled = false
+            "#,
+        );
+
+        assert!(!should_strip_debug(&config, WasmProfile::Release));
     }
 
     #[test]

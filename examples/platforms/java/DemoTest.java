@@ -39,6 +39,7 @@ public final class DemoTest {
             testPersonRecords();
             testUserProfileVecs();
             testRecordDefaultValues();
+            testAssociatedConstants();
             testCStyleEnums();
             testDataEnums();
             testCStyleEnumVecs();
@@ -72,6 +73,16 @@ public final class DemoTest {
 
     private static void demoCase(String caseId) {
         currentDemoCase = caseId;
+    }
+
+    private static void testAssociatedConstants() {
+        demoCase("case:constants.associated.should_expose_values_on_exported_types");
+        assert DemoMode.PREFERRED == DemoMode.SAFE;
+        assert DemoMode.FALLBACK() == DemoMode.SAFE;
+        assert DemoMode.VARIANT_COUNT == 2;
+        assert DemoState.INITIAL instanceof DemoState.Idle;
+        assert Point.ZERO().equals(new Point(0.0, 0.0));
+        assert MathUtils.DEFAULT_PRECISION == 2;
     }
 
     private static AssertionError withDemoCase(Throwable error) {

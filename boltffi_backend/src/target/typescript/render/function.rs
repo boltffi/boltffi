@@ -15,8 +15,7 @@ use super::super::{
     primitive::Scalar,
     render::{Type, direct_vector::DirectVector, scalar_option::ScalarOption},
     syntax::{
-        ArgumentList, Expression, Identifier, MemberName, MethodDeclaration, Statement,
-        StringLiteral, TypeName,
+        ArgumentList, Expression, Identifier, MemberName, MethodDeclaration, Statement, TypeName,
     },
 };
 use super::closure::ClosureAdapter;
@@ -71,6 +70,10 @@ enum ReturnConversion {
     },
     ScalarOption {
         unpack: Identifier,
+    },
+    ScalarOptionEnum {
+        unpack: Identifier,
+        enum_type: TypeName,
     },
     DirectRecord {
         writer: Identifier,
@@ -604,18 +607,17 @@ impl CallReceiver {
         })
     }
 
-    fn class(class: &TypeName) -> Self {
-        let disposed = Expression::property(Expression::this(), Identifier::known("_disposed"));
-        let message = format!("{class} has been disposed");
-        let error = Expression::construct(
-            "Error",
-            [Expression::string(StringLiteral::new(&message))]
-                .into_iter()
-                .collect::<ArgumentList>(),
+    fn class(_class: &TypeName) -> Self {
+        // Calls the inherited guard rather than inlining the check and its
+        // message into every method body.
+        let assert = Expression::call(
+            Expression::this(),
+            Identifier::known("_assertNotDisposed"),
+            ArgumentList::default(),
         );
         Self {
             parameter: None,
-            setup: vec![Statement::throw_when(disposed, error)],
+            setup: vec![Statement::expression(assert)],
             arguments: vec![Expression::property(
                 Expression::this(),
                 Identifier::known("_handle"),
@@ -1554,19 +1556,21 @@ impl Return {
                     .into_iter()
                     .collect::<ArgumentList>(),
             ))],
-            ReturnConversion::Encoded { reader, decode } => vec![
-                Statement::constant(
-                    reader.clone(),
-                    Expression::call(
-                        Expression::identifier(Identifier::known("_module")),
-                        Identifier::known("takePackedBuffer"),
-                        [call.cast(TypeName::bigint())]
-                            .into_iter()
-                            .collect::<ArgumentList>(),
-                    ),
-                ),
-                Statement::return_value(decode.clone()),
-            ],
+            // Decoded in place rather than copied out: `readPackedBuffer` lends
+            // the reader wasm memory and frees the payload once the codec
+            // returns, which avoids an ArrayBuffer and a DataView per call.
+            ReturnConversion::Encoded { reader, decode } => {
+                vec![Statement::return_value(Expression::call(
+                    Expression::identifier(Identifier::known("_module")),
+                    Identifier::known("readPackedBuffer"),
+                    [
+                        call.cast(TypeName::bigint()),
+                        Expression::parameter_lambda(reader.clone(), decode.clone()),
+                    ]
+                    .into_iter()
+                    .collect::<ArgumentList>(),
+                ))]
+            }
             ReturnConversion::PackedOptional { take } => {
                 vec![Statement::return_value(Expression::call(
                     Expression::identifier(Identifier::known("_module")),
@@ -1585,6 +1589,16 @@ impl Return {
                     Expression::identifier(Identifier::known("_module")),
                     unpack.clone(),
                     [call].into_iter().collect::<ArgumentList>(),
+                ))]
+            }
+            ReturnConversion::ScalarOptionEnum { unpack, enum_type } => {
+                vec![Statement::return_value(Expression::type_assertion(
+                    Expression::call(
+                        Expression::identifier(Identifier::known("_module")),
+                        unpack.clone(),
+                        [call].into_iter().collect::<ArgumentList>(),
+                    ),
+                    enum_type.clone().nullable(),
                 ))]
             }
             ReturnConversion::DirectRecord { writer, codec } => vec![
@@ -2020,6 +2034,27 @@ impl<'plan> ReturnPlanRender<'plan, Wasm32, boltffi_binding::OutOfRust> for Retu
             option.ty()?,
             ReturnConversion::ScalarOption {
                 unpack: option.return_unpack_method(),
+            },
+        ))
+    }
+
+    fn scalar_option_enum(&mut self, primitive: Primitive, target: &'plan TypeRef) -> Self::Output {
+        let option = ScalarOption::new(primitive)?;
+        // Falling back to the plain scalar rendering here would silently widen
+        // the declared type from the enum to `number`.
+        let TypeRef::Enum(id) = target else {
+            return Err(Function::unsupported("scalar option target is not an enum"));
+        };
+        let enum_type = self
+            .context
+            .enumeration(*id)
+            .map(|enumeration| TypeName::named(Name::new(enumeration.name()).type_name()))
+            .ok_or_else(|| Function::unsupported("scalar option enum without declaration"))?;
+        Ok(Return::new(
+            enum_type.clone().nullable(),
+            ReturnConversion::ScalarOptionEnum {
+                unpack: option.return_unpack_method(),
+                enum_type,
             },
         ))
     }

@@ -392,7 +392,7 @@ mod tests {
     use crate::index::callback_traits::CallbackTraitRegistry;
     use crate::index::class_types::ClassTypeRegistry;
     use crate::index::custom_types::CustomTypeRegistry;
-    use crate::index::data_types::{DataTypeCategory, DataTypeRegistry};
+    use crate::index::data_types::{DataTypeCategory, DataTypeRegistry, ScalarEnumRepr};
     use crate::lowering::returns::model::ReturnLoweringContext;
     use quote::quote;
     use syn::parse_quote;
@@ -434,7 +434,10 @@ mod tests {
             }
         };
         let data_types = DataTypeRegistry::with_entries_and_use_aliases(
-            &[("core::parser::RouteProvider", DataTypeCategory::Scalar)],
+            &[(
+                "core::parser::RouteProvider",
+                DataTypeCategory::Scalar(ScalarEnumRepr::I32),
+            )],
             &[("parser", "crate::core::parser")],
         );
         let params = transform_params(
@@ -467,7 +470,10 @@ mod tests {
             }
         };
         let data_types = DataTypeRegistry::with_entries_and_use_aliases(
-            &[("core::parser::RouteProvider", DataTypeCategory::Scalar)],
+            &[(
+                "core::parser::RouteProvider",
+                DataTypeCategory::Scalar(ScalarEnumRepr::I32),
+            )],
             &[("parser", "crate::core::parser")],
         );
         let params = transform_params(
@@ -505,7 +511,10 @@ mod tests {
             }
         };
         let data_types = DataTypeRegistry::with_entries_and_use_aliases(
-            &[("core::parser::RouteProvider", DataTypeCategory::Scalar)],
+            &[(
+                "core::parser::RouteProvider",
+                DataTypeCategory::Scalar(ScalarEnumRepr::I32),
+            )],
             &[("parser", "crate::core::parser")],
         );
         let params = transform_params_async(
@@ -547,7 +556,10 @@ mod tests {
             }
         };
         let data_types = DataTypeRegistry::with_entries_and_use_aliases(
-            &[("core::parser::RouteProvider", DataTypeCategory::Scalar)],
+            &[(
+                "core::parser::RouteProvider",
+                DataTypeCategory::Scalar(ScalarEnumRepr::I32),
+            )],
             &[("parser", "crate::core::parser")],
         );
         let return_lowering = return_lowering(data_types);

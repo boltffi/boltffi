@@ -47,6 +47,10 @@
         }
     }
 {%- endif %}
+{%- for constant in constants %}
+
+{{ constant }}
+{%- endfor %}
 {%- for initializer in enumeration.initializers() %}
 
 {{ initializer.documentation() }}{% if initializer.factory() %}    public static func {{ initializer.name() }}({{ initializer.parameter_list() }}){{ initializer.throwing_keyword() }} -> {{ initializer.factory_return() }} {

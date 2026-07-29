@@ -835,6 +835,11 @@ class {{ stream.subscription_class }}:
 
 {% endfor %}
 {% endfor %}
+{% for constant in associated_constants %}
+{% if let Some(owner) = constant.owner %}
+{{ owner }}.{{ constant.python_name }} = {{ constant.expression }}
+{% endif %}
+{% endfor %}
 {% for constant in constants %}
 {{ constant.python_name }}: {{ constant.annotation }} = {{ constant.expression }}
 {% endfor %}

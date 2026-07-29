@@ -541,7 +541,7 @@ fn render_entry_body(
             body.extend(writes.into_iter().map(|statement| statement.to_string()));
             body.push(format!("return FfiBuf.FromBytes({writer}.ToArray());"));
         }
-        ReturnPlan::ScalarOptionViaReturnSlot { primitive } => {
+        ReturnPlan::ScalarOptionViaReturnSlot { primitive, .. } => {
             body.push(format!("var boltffiValue = {call};"));
             body.push("WireWriter boltffiReturnWriter = new WireWriter();".to_owned());
             body.push(format!(
@@ -704,7 +704,7 @@ fn render_proxy_body(
                 "FfiBuf boltffiBuffer = {call};\ntry\n{{\n    WireReader {reader} = new WireReader(boltffiBuffer);\n    return {decode};\n}}\nfinally\n{{\n    NativeMethods.FreeBuf(boltffiBuffer);\n}}"
             )
         }
-        ReturnPlan::ScalarOptionViaReturnSlot { primitive } => format!(
+        ReturnPlan::ScalarOptionViaReturnSlot { primitive, .. } => format!(
             "FfiBuf boltffiBuffer = {call};\ntry\n{{\n    WireReader boltffiReturnReader = new WireReader(boltffiBuffer);\n    return boltffiReturnReader.ReadU8() == 0 ? default({}?) : boltffiReturnReader.{}();\n}}\nfinally\n{{\n    NativeMethods.FreeBuf(boltffiBuffer);\n}}",
             primitive_type(*primitive),
             primitive_read_method(*primitive)
@@ -960,7 +960,7 @@ fn public_return_type(
                 _ => return super::unsupported("callback handle presence"),
             })
         }
-        ReturnPlan::ScalarOptionViaReturnSlot { primitive } => Ok(TypeFragment::new(format!(
+        ReturnPlan::ScalarOptionViaReturnSlot { primitive, .. } => Ok(TypeFragment::new(format!(
             "{}?",
             primitive_type(*primitive)
         ))),
@@ -1162,7 +1162,7 @@ fn render_async_entry_body(
                 "boltffiComplete(0, FfiBuf.FromBytes(boltffiSuccessWriter.ToArray()));".to_owned(),
             );
         }
-        ReturnPlan::ScalarOptionViaReturnSlot { primitive } => {
+        ReturnPlan::ScalarOptionViaReturnSlot { primitive, .. } => {
             success.push(format!("var boltffiValue = {call};"));
             success.push("WireWriter boltffiSuccessWriter = new WireWriter();".to_owned());
             success.push(format!(
@@ -1336,7 +1336,7 @@ fn render_async_proxy_body(
             ));
             success.push(format!("boltffiCompletionSource.TrySetResult({decode});"));
         }
-        ReturnPlan::ScalarOptionViaReturnSlot { primitive } => {
+        ReturnPlan::ScalarOptionViaReturnSlot { primitive, .. } => {
             success.push(
                 "WireReader boltffiSuccessReader = new WireReader(boltffiPayload);".to_owned(),
             );

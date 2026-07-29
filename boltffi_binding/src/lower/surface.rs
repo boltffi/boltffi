@@ -19,7 +19,7 @@
 
 use boltffi_ast::FnSig;
 
-use crate::{Native, Primitive, ReturnValueSlot, Surface, Wasm32, native, wasm32};
+use crate::{IntegerRepr, Native, Primitive, ReturnValueSlot, Surface, Wasm32, native, wasm32};
 
 use super::async_protocol::AsyncProtocolBuilder;
 use super::callbacks::CallbackProtocolBuilder;
@@ -69,6 +69,13 @@ pub trait SurfaceLower:
 
     #[doc(hidden)]
     fn scalar_option(primitive: Primitive) -> Option<Primitive>;
+
+    /// Primitive a C-style enum's discriminant crosses as when it rides the
+    /// scalar-option slot, or `None` to keep the enum wire-encoded.
+    #[doc(hidden)]
+    fn scalar_option_enum(_repr: IntegerRepr) -> Option<Primitive> {
+        None
+    }
 
     #[doc(hidden)]
     fn root_string_codec() -> crate::CodecNode;
@@ -183,6 +190,22 @@ impl SurfaceLower for Wasm32 {
                 | Primitive::F64
         )
         .then_some(primitive)
+    }
+
+    fn scalar_option_enum(repr: IntegerRepr) -> Option<Primitive> {
+        // i64/u64 discriminants would round-trip through f64 lossily, and
+        // isize/usize are target-dependent. This set must stay in sync with
+        // `ScalarEnumRepr::fits_in_f64` in `boltffi_macros`, which decides the
+        // same thing for the generated Rust side.
+        match repr {
+            IntegerRepr::I8 => Some(Primitive::I8),
+            IntegerRepr::U8 => Some(Primitive::U8),
+            IntegerRepr::I16 => Some(Primitive::I16),
+            IntegerRepr::U16 => Some(Primitive::U16),
+            IntegerRepr::I32 => Some(Primitive::I32),
+            IntegerRepr::U32 => Some(Primitive::U32),
+            _ => None,
+        }
     }
 
     fn root_string_codec() -> crate::CodecNode {

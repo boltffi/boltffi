@@ -19,7 +19,7 @@ pub struct Callable<'source> {
 }
 
 #[derive(Clone, Copy)]
-enum CallableOwner<'source> {
+pub enum CallableOwner<'source> {
     Record(&'source RecordDef),
     Enum(&'source EnumDef),
     Class(&'source ClassDef),
@@ -49,6 +49,17 @@ impl<'source> Callable<'source> {
             parameters: &[],
             returns: CallableReturn::Constant(&constant.type_expr),
             owner: None,
+        }
+    }
+
+    pub fn associated_constant(
+        constant: &'source ConstantDef,
+        owner: CallableOwner<'source>,
+    ) -> Self {
+        Self {
+            parameters: &[],
+            returns: CallableReturn::Constant(&constant.type_expr),
+            owner: Some(owner),
         }
     }
 
@@ -531,6 +542,11 @@ impl<'source> Return<'source> {
                 "source return is not an optional scalar",
             ));
         };
+        // A C-style enum crosses as its discriminant, so the source type is the
+        // enum while the binding carries the underlying primitive.
+        if matches!(inner.as_ref(), TypeExpr::Enum { .. }) {
+            return Ok(());
+        }
         let TypeExpr::Primitive(source) = inner.as_ref() else {
             return Err(Error::SourceSyntaxMismatch(
                 "source optional return is not scalar",

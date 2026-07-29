@@ -18,9 +18,12 @@
 //!   consumer the result is still a named immutable value; inline versus
 //!   accessor is only how the bytes are delivered.
 //!
-//! A value that cannot inhabit its declared type (a bool literal on a
-//! string constant, a path to an unknown enum variant) is rejected with
-//! [`LowerErrorKind::InvalidConstantValue`].
+//! A literal that cannot inhabit its declared type (a bool literal on a
+//! string constant) is rejected with
+//! [`LowerErrorKind::InvalidConstantValue`]. A path that does not name a
+//! unit variant of the constant's enum type (an alias of another
+//! constant, a re-exported value) falls back to accessor delivery, where
+//! rustc is the authority on whether the value exists.
 //!
 //! [`ConstantDef`]: boltffi_ast::ConstantDef
 //! [`ConstantDecl<S>`]: crate::ConstantDecl
@@ -30,8 +33,9 @@
 //! [`LowerErrorKind::InvalidConstantValue`]: super::error::LowerErrorKind::InvalidConstantValue
 
 use boltffi_ast::{
-    ConstExpr, ConstantDef as SourceConstant, EnumDef as SourceEnum, Literal, Path as SourcePath,
-    Primitive as SourcePrimitive, SourceName, TypeExpr, VariantPayload,
+    ConstExpr, ConstantDef as SourceConstant, ConstantOwner as SourceConstantOwner,
+    EnumDef as SourceEnum, Literal, Path as SourcePath, Primitive as SourcePrimitive, SourceName,
+    TypeExpr, VariantPayload,
 };
 
 use crate::{CanonicalName, ConstantDecl, ConstantValueDecl, DefaultValue, IntegerValue};
@@ -65,20 +69,28 @@ fn lower_one<S: SurfaceLower>(
     constant: &SourceConstant,
 ) -> Result<ConstantDecl<S>, LowerError> {
     let constant_id = ids.constant(&constant.id)?;
-    let value = lower_value_decl::<S>(index, ids, allocator, constant)?;
-    Ok(ConstantDecl::new(
+    let owner = callable::CallableOwner::from_constant(index, constant.owner.as_ref())?;
+    let type_expr = callable::substitute_self_type(owner, &constant.type_expr)?;
+    let value = lower_value_decl::<S>(index, ids, allocator, owner, constant, &type_expr)?;
+    let declaration = ConstantDecl::new(
         constant_id,
         CanonicalName::from(&constant.name),
         metadata::decl_meta(constant.doc.as_ref(), constant.deprecated.as_ref()),
         value,
-    ))
+    );
+    match constant.owner.as_ref() {
+        Some(owner) => Ok(declaration.with_owner(ids.constant_owner(owner)?)),
+        None => Ok(declaration),
+    }
 }
 
 fn lower_value_decl<S: SurfaceLower>(
     index: &Index,
     ids: &DeclarationIds,
     allocator: &mut SymbolAllocator,
+    owner: callable::CallableOwner<'_>,
     constant: &SourceConstant,
+    type_expr: &TypeExpr,
 ) -> Result<ConstantValueDecl<S>, LowerError> {
     // Chooses inline versus accessor delivery for one constant.
     //
@@ -87,15 +99,15 @@ fn lower_value_decl<S: SurfaceLower>(
     // delivered through a Rust-side getter the foreign side calls once:
     // byte-string, array, tuple, and raw (unevaluated) expressions, plus
     // any constant whose declared type is not an inline scalar type.
-    match inline_default::<S>(index, constant)? {
+    match inline_default::<S>(index, constant, type_expr)? {
         Some(value) => {
-            let ty = types::lower(ids, &constant.type_expr)?;
+            let ty = types::lower(ids, type_expr)?;
             Ok(ConstantValueDecl::inline(ty, value))
         }
         None => {
             let symbol = allocator.mint_constant_accessor(constant.id.as_str())?;
             let callable =
-                callable::lower_constant_accessor::<S>(index, ids, allocator, &constant.type_expr)?;
+                callable::lower_constant_accessor::<S>(index, ids, allocator, owner, type_expr)?;
             Ok(ConstantValueDecl::accessor(symbol, Box::new(callable)))
         }
     }
@@ -104,11 +116,12 @@ fn lower_value_decl<S: SurfaceLower>(
 fn inline_default<S: SurfaceLower>(
     index: &Index,
     constant: &SourceConstant,
+    type_expr: &TypeExpr,
 ) -> Result<Option<DefaultValue>, LowerError> {
     // Returns the inline literal for a constant, `None` when the value
     // must be delivered through an accessor, or an error when the value
     // cannot inhabit its declared type.
-    let Some(expected) = InlineConstantType::from_type_expr::<S>(index, &constant.type_expr) else {
+    let Some(expected) = InlineConstantType::from_type_expr::<S>(index, type_expr) else {
         return Ok(None);
     };
     expected.lower_value(constant)
@@ -157,7 +170,7 @@ impl<'src> InlineConstantType<'src> {
                 Ok(Some(DefaultValue::String(value.clone())))
             }
             (Self::Enum(enumeration), ConstExpr::Path(path)) => {
-                enum_variant_from_path(enumeration, path, &constant.id)
+                Ok(enum_variant_from_path(enumeration, path, constant))
             }
             (_, ConstExpr::Path(_)) => Ok(None),
             (_, ConstExpr::Literal(Literal::Bytes(_)))
@@ -172,25 +185,32 @@ impl<'src> InlineConstantType<'src> {
 fn enum_variant_from_path(
     enumeration: &SourceEnum,
     path: &SourcePath,
-    constant_id: &boltffi_ast::ConstantId,
-) -> Result<Option<DefaultValue>, LowerError> {
-    let Some((variant_segment, qualifier)) = path.segments.split_last() else {
-        return Ok(None);
-    };
-    if !enum_qualifier_matches(enumeration, qualifier) {
-        return Ok(None);
+    constant: &SourceConstant,
+) -> Option<DefaultValue> {
+    // Returns the inline variant the path names, or `None` for any path
+    // this pass cannot prove is a unit variant of the constant's enum
+    // type (an alias of another constant, a differently-qualified value):
+    // those deliver through an accessor and rustc decides whether the
+    // spelling is valid.
+    let (variant_segment, qualifier) = path.segments.split_last()?;
+    let associated_self = matches!(
+        (constant.owner.as_ref(), qualifier),
+        (
+            Some(SourceConstantOwner::Enum(owner)),
+            [segment]
+        ) if owner == &enumeration.id && segment.name.as_str() == "Self"
+    );
+    if !enum_qualifier_matches(enumeration, qualifier) && !associated_self {
+        return None;
     }
     let variant = enumeration.variants.iter().find(|variant| {
         matches!(variant.payload, VariantPayload::Unit)
             && canonical_name_matches_segment(&variant.name, variant_segment.name.as_str())
-    });
-    let Some(variant) = variant else {
-        return Err(LowerError::invalid_constant_value(constant_id));
-    };
-    Ok(Some(DefaultValue::EnumVariant {
+    })?;
+    Some(DefaultValue::EnumVariant {
         enum_name: CanonicalName::from(&enumeration.name),
         variant_name: CanonicalName::from(&variant.name),
-    }))
+    })
 }
 
 fn enum_qualifier_matches(
@@ -296,15 +316,17 @@ impl IntegerBounds {
 mod tests {
     use boltffi_ast::{
         CanonicalName as SourceName, ConstExpr, ConstantDef, ConstantId as SourceConstantId,
-        DeprecationInfo as SourceDeprecationInfo, DocComment as SourceDocComment, FloatLiteral,
-        IntegerLiteral, Literal, PackageInfo as SourcePackage, Path as SourcePath, Primitive,
-        SourceContract, TypeExpr,
+        ConstantOwner as SourceConstantOwner, DeprecationInfo as SourceDeprecationInfo,
+        DocComment as SourceDocComment, FloatLiteral, IntegerLiteral, Literal,
+        PackageInfo as SourcePackage, Path as SourcePath, Primitive, RecordDef,
+        RecordId as SourceRecordId, SourceContract, TypeExpr,
     };
 
     use crate::lower::{LowerError, LowerErrorKind, lower};
     use crate::{
-        Bindings, CanonicalName, ConstantDecl, ConstantId, ConstantValueDecl, Decl, DefaultValue,
-        IntegerValue, Native, Primitive as BindingPrimitive, SurfaceLower, TypeRef, Wasm32,
+        Bindings, CanonicalName, ConstantDecl, ConstantId, ConstantOwner, ConstantValueDecl, Decl,
+        DefaultValue, DirectValueType, IntegerValue, Native, Primitive as BindingPrimitive,
+        ReturnPlan, SurfaceLower, TypeRef, Wasm32,
     };
 
     fn package() -> SourceContract {
@@ -584,6 +606,127 @@ mod tests {
     }
 
     #[test]
+    fn associated_self_constant_keeps_typed_owner_and_concrete_return_type() {
+        let mut contract = package();
+        let record_id = SourceRecordId::new("demo::Color");
+        contract
+            .records
+            .push(RecordDef::new(record_id.clone(), name("Color")));
+        let mut black = constant(
+            "demo::Color::BLACK",
+            "BLACK",
+            TypeExpr::SelfType,
+            ConstExpr::Raw("Self::rgba(0, 0, 0, 255)".to_owned()),
+        );
+        black.owner = Some(SourceConstantOwner::Record(record_id));
+        contract.constants.push(black);
+
+        let bindings = lower::<Native>(&contract).expect("associated constant should lower");
+        let color = bindings
+            .decls()
+            .iter()
+            .find_map(|declaration| match declaration {
+                Decl::Record(record) => Some(record.id()),
+                _ => None,
+            })
+            .expect("record declaration");
+        let constant = only_constant(&bindings);
+
+        assert_eq!(constant.owner(), Some(ConstantOwner::Record(color)));
+        match constant.value() {
+            ConstantValueDecl::Accessor { callable, .. } => {
+                assert!(callable.params().is_empty());
+                assert!(callable.receiver().is_none());
+                assert!(matches!(
+                    callable.returns().plan(),
+                    ReturnPlan::DirectViaReturnSlot {
+                        ty: DirectValueType::Record(id)
+                    }
+                        | ReturnPlan::DirectViaOutPointer {
+                            ty: DirectValueType::Record(id)
+                        }
+                        | ReturnPlan::EncodedViaReturnSlot {
+                            ty: TypeRef::Record(id),
+                            ..
+                        }
+                        | ReturnPlan::EncodedViaOutPointer {
+                            ty: TypeRef::Record(id),
+                            ..
+                        } if *id == color
+                ));
+            }
+            other => panic!("expected associated accessor constant, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn associated_enum_constant_alias_lowers_via_accessor() {
+        use boltffi_ast::{EnumDef, EnumId as SourceEnumId, PathSegment, VariantDef};
+
+        let mut contract = package();
+        let enum_id = SourceEnumId::new("demo::Mode");
+        let mut mode = EnumDef::new(enum_id.clone(), name("Mode"));
+        mode.variants.push(VariantDef::unit(name("Fast")));
+        contract.enums.push(mode);
+
+        let mut default = constant(
+            "demo::Mode::DEFAULT",
+            "DEFAULT",
+            TypeExpr::SelfType,
+            ConstExpr::Path(SourcePath::new(
+                boltffi_ast::PathRoot::Relative,
+                vec![PathSegment::new("Self"), PathSegment::new("Fast")],
+            )),
+        );
+        default.owner = Some(SourceConstantOwner::Enum(enum_id.clone()));
+        contract.constants.push(default);
+
+        let mut fallback = constant(
+            "demo::Mode::FALLBACK",
+            "FALLBACK",
+            TypeExpr::SelfType,
+            ConstExpr::Path(SourcePath::new(
+                boltffi_ast::PathRoot::Relative,
+                vec![PathSegment::new("Self"), PathSegment::new("DEFAULT")],
+            )),
+        );
+        fallback.owner = Some(SourceConstantOwner::Enum(enum_id));
+        contract.constants.push(fallback);
+
+        let bindings = lower::<Native>(&contract).expect("associated enum alias should lower");
+        let fallback = constant_decls(&bindings)
+            .into_iter()
+            .find(|constant| constant.name() == &CanonicalName::single("FALLBACK"))
+            .expect("fallback constant");
+
+        assert!(matches!(
+            fallback.value(),
+            ConstantValueDecl::Accessor { .. }
+        ));
+    }
+
+    #[test]
+    fn missing_owner_deserializes_as_top_level_constant() {
+        let bindings = lower_constants_ok::<Native>(vec![constant(
+            "demo::ANSWER",
+            "ANSWER",
+            TypeExpr::Primitive(Primitive::U32),
+            ConstExpr::Literal(Literal::Integer(IntegerLiteral::new(42, "42"))),
+        )]);
+        let mut serialized =
+            serde_json::to_value(only_constant(&bindings)).expect("constant serializes");
+        let serde_json::Value::Object(fields) = &mut serialized else {
+            panic!("constant serialization should be an object");
+        };
+        fields.remove("owner");
+
+        let decoded: ConstantDecl<Native> =
+            serde_json::from_value(serialized).expect("legacy constant deserializes");
+
+        assert_eq!(decoded.owner(), None);
+    }
+
+    #[test]
     fn path_constant_on_non_enum_type_lowers_via_accessor() {
         let bindings = lower_constants_ok::<Native>(vec![constant(
             "demo::ALIAS",
@@ -786,7 +929,7 @@ mod tests {
     }
 
     #[test]
-    fn enum_constant_rejects_unknown_variant_path() {
+    fn enum_constant_path_to_non_variant_lowers_via_accessor() {
         use boltffi_ast::{EnumDef, EnumId as SourceEnumId, PathSegment, VariantDef};
 
         let mut contract = package();
@@ -799,20 +942,54 @@ mod tests {
             enum_type("demo::Mode", "Mode"),
             ConstExpr::Path(SourcePath::new(
                 boltffi_ast::PathRoot::Relative,
-                vec![PathSegment::new("Mode"), PathSegment::new("Slow")],
+                vec![PathSegment::new("Mode"), PathSegment::new("DEFAULT")],
             )),
         ));
 
-        let error = lower::<Native>(&contract).expect_err("unknown enum variant must reject");
+        let bindings = lower::<Native>(&contract).expect("non-variant enum path should lower");
+
+        match only_constant(&bindings).value() {
+            ConstantValueDecl::Accessor { symbol, callable } => {
+                assert_eq!(symbol.name().as_str(), "boltffi_const_demo_default_mode");
+                assert!(callable.params().is_empty());
+            }
+            other => panic!("expected accessor constant value, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn associated_enum_alias_with_enum_qualifier_lowers_via_accessor() {
+        use boltffi_ast::{EnumDef, EnumId as SourceEnumId, PathSegment, VariantDef};
+
+        let mut contract = package();
+        let enum_id = SourceEnumId::new("demo::Mode");
+        let mut mode = EnumDef::new(enum_id.clone(), name("Mode"));
+        mode.variants.push(VariantDef::unit(name("Fast")));
+        contract.enums.push(mode);
+
+        let mut fallback = constant(
+            "demo::Mode::FALLBACK",
+            "FALLBACK",
+            TypeExpr::SelfType,
+            ConstExpr::Path(SourcePath::new(
+                boltffi_ast::PathRoot::Relative,
+                vec![PathSegment::new("Mode"), PathSegment::new("DEFAULT")],
+            )),
+        );
+        fallback.owner = Some(SourceConstantOwner::Enum(enum_id));
+        contract.constants.push(fallback);
+
+        let bindings =
+            lower::<Native>(&contract).expect("enum-qualified associated alias should lower");
 
         assert!(matches!(
-            error.kind(),
-            LowerErrorKind::InvalidConstantValue(constant) if constant == "demo::DEFAULT_MODE"
+            only_constant(&bindings).value(),
+            ConstantValueDecl::Accessor { .. }
         ));
     }
 
     #[test]
-    fn enum_constant_rejects_payload_variant_path() {
+    fn enum_constant_payload_variant_path_lowers_via_accessor() {
         use boltffi_ast::{
             EnumDef, EnumId as SourceEnumId, FieldDef, PathSegment, VariantDef, VariantPayload,
         };
@@ -851,11 +1028,11 @@ mod tests {
             )),
         ));
 
-        let error = lower::<Native>(&contract).expect_err("payload enum variant must reject");
+        let bindings = lower::<Native>(&contract).expect("payload variant path should lower");
 
         assert!(matches!(
-            error.kind(),
-            LowerErrorKind::InvalidConstantValue(constant) if constant == "demo::DEFAULT_MODE"
+            only_constant(&bindings).value(),
+            ConstantValueDecl::Accessor { .. }
         ));
     }
 

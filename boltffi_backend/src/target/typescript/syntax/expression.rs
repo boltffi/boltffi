@@ -52,6 +52,14 @@ impl Expression {
         Self(format!("(_exports.{symbol} as Function)({arguments})"))
     }
 
+    /// `expression as TypeName`, to narrow a carrier back to its declared type.
+    ///
+    /// Like the other constructors here, `value` is emitted verbatim, so it
+    /// must bind tighter than `as`.
+    pub fn type_assertion(value: Self, type_name: super::TypeName) -> Self {
+        Self(format!("{value} as {type_name}"))
+    }
+
     pub fn call(receiver: Self, method: Identifier, arguments: ArgumentList) -> Self {
         Self(format!("{receiver}.{method}({arguments})"))
     }

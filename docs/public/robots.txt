@@ -2,28 +2,17 @@ User-agent: *
 Allow: /
 Disallow: /_astro/
 
-User-agent: GPTBot
-Allow: /
-
+User-agent: OAI-SearchBot
 User-agent: ChatGPT-User
-Allow: /
-
+User-agent: GPTBot
+User-agent: Claude-SearchBot
+User-agent: Claude-User
+User-agent: ClaudeBot
 User-agent: Google-Extended
-Allow: /
-
 User-agent: CCBot
-Allow: /
-
-User-agent: anthropic-ai
-Allow: /
-
-User-agent: Claude-Web
-Allow: /
-
 User-agent: Amazonbot
-Allow: /
-
 User-agent: cohere-ai
 Allow: /
+Disallow: /_astro/
 
 Sitemap: https://boltffi.dev/sitemap-index.xml

@@ -8,7 +8,9 @@ package {{ package }};
 
     {{ enumeration.name() }}({{ enumeration.value_type() }} value) {
         this.value = value;
-    }
+    }{% for constant in enumeration.constants() %}
+{% include "target/java/constant.java" %}
+{% endfor %}
 
     public static {{ enumeration.name() }} fromValue({{ enumeration.value_type() }} value) {
 {% if enumeration.long_value() %}{% for variant in enumeration.variants() %}        if (value == {{ variant.value() }}) return {{ variant.name() }};

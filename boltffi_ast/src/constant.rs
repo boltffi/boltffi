@@ -1,9 +1,31 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ConstExpr, ConstantId, DeprecationInfo, DocComment, Source, SourceName, SourceSpan, TypeExpr,
-    UserAttr,
+    ClassId, ConstExpr, ConstantId, DeprecationInfo, DocComment, EnumId, RecordId, Source,
+    SourceName, SourceSpan, TypeExpr, UserAttr,
 };
+
+/// An exported type that owns an associated constant.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+pub enum ConstantOwner<Record = RecordId, Enumeration = EnumId, Class = ClassId> {
+    /// Constant declared on an exported record.
+    Record(Record),
+    /// Constant declared on an exported enum.
+    Enum(Enumeration),
+    /// Constant declared on an exported class.
+    Class(Class),
+}
+
+impl ConstantOwner<RecordId, EnumId, ClassId> {
+    /// Returns the stable source identity of the owning type.
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Record(id) => id.as_str(),
+            Self::Enum(id) => id.as_str(),
+            Self::Class(id) => id.as_str(),
+        }
+    }
+}
 
 /// A constant exported in the source contract.
 ///
@@ -16,6 +38,9 @@ pub struct ConstantDef {
     pub id: ConstantId,
     /// Source constant name.
     pub name: SourceName,
+    /// Exported type that owns this constant, or `None` for a top-level constant.
+    #[serde(default)]
+    pub owner: Option<ConstantOwner>,
     /// Declared Rust source type.
     pub type_expr: TypeExpr,
     /// Source expression used as the constant value.
@@ -50,6 +75,7 @@ impl ConstantDef {
         Self {
             id,
             name: name.into(),
+            owner: None,
             type_expr,
             value,
             user_attrs: Vec::new(),
@@ -58,5 +84,33 @@ impl ConstantDef {
             source: Source::exported(),
             source_span: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::Value;
+
+    use super::{ConstExpr, ConstantDef, ConstantId, TypeExpr};
+    use crate::{CanonicalName, IntegerLiteral, Literal, Primitive};
+
+    #[test]
+    fn missing_owner_deserializes_as_top_level_constant() {
+        let constant = ConstantDef::new(
+            ConstantId::new("demo::ANSWER"),
+            CanonicalName::single("ANSWER"),
+            TypeExpr::Primitive(Primitive::U32),
+            ConstExpr::Literal(Literal::Integer(IntegerLiteral::new(42, "42"))),
+        );
+        let mut serialized = serde_json::to_value(constant).expect("constant serializes");
+        let Value::Object(fields) = &mut serialized else {
+            panic!("constant serialization should be an object");
+        };
+        fields.remove("owner");
+
+        let decoded: ConstantDef =
+            serde_json::from_value(serialized).expect("legacy constant deserializes");
+
+        assert_eq!(decoded.owner, None);
     }
 }

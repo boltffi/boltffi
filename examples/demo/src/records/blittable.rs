@@ -14,6 +14,8 @@ pub struct Point {
 
 #[data(impl)]
 impl Point {
+    pub const ZERO: Self = Self { x: 0.0, y: 0.0 };
+
     #[demo_bench_macros::demo_case(
         "records.blittable.point.should_construct_with_static_new",
         justification = "Ensure Point::new returns a blittable Point containing the provided coordinates.",

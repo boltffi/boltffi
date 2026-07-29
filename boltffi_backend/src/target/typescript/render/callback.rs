@@ -419,7 +419,7 @@ impl Method {
                     .collect(),
                 ))
             }
-            ReturnPlan::ScalarOptionViaReturnSlot { primitive } => {
+            ReturnPlan::ScalarOptionViaReturnSlot { primitive, .. } => {
                 let option = super::scalar_option::ScalarOption::new(*primitive)?;
                 Ok(ReturnShape::scalar_option(
                     Scalar::new(*primitive)?.ty().nullable(),

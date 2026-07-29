@@ -90,13 +90,7 @@ fn scan_item(
             Ok(MethodKind::Stream) => None,
             Err(error) => Some(Err(error)),
         },
-        syn::ImplItem::Const(item) => non_method(
-            &item.attrs,
-            Some(&item.vis),
-            parent,
-            item.ident.to_string(),
-            "associated const",
-        ),
+        syn::ImplItem::Const(_) => None,
         syn::ImplItem::Type(item) => non_method(
             &item.attrs,
             Some(&item.vis),
@@ -339,21 +333,14 @@ mod tests {
     }
 
     #[test]
-    fn rejects_stream_marker_on_non_method_items() {
-        let error = scan_class(
+    fn leaves_marked_associated_constants_to_the_constant_scanner() {
+        let methods = scan_class(
             "impl Engine { #[ffi_stream(item = i32)] pub const VALUES: u32 = 0; }",
             "demo::Engine",
             &DeclaredTypes::new(),
         )
-        .expect_err("stream marker belongs to methods");
-
-        assert_eq!(
-            error,
-            ScanError::InvalidMarkerPlacement {
-                marker: "ffi_stream".to_owned(),
-                item: "associated const".to_owned()
-            }
-        );
+        .expect("associated const is scanned separately");
+        assert!(methods.is_empty());
     }
 
     #[test]
@@ -392,13 +379,18 @@ mod tests {
     }
 
     #[test]
-    fn rejects_public_non_method_items_before_dropping_them() {
-        let associated_const = scan(
+    fn leaves_associated_constants_to_the_constant_scanner() {
+        let methods = scan(
             "impl Point { pub const VERSION: u32 = 1; }",
             "demo::Point",
             &DeclaredTypes::new(),
         )
-        .expect_err("associated const rejected");
+        .expect("associated const is scanned separately");
+        assert!(methods.is_empty());
+    }
+
+    #[test]
+    fn rejects_public_associated_types_before_dropping_them() {
         let associated_type = scan(
             "impl Point { pub type Value = u32; }",
             "demo::Point",
@@ -406,12 +398,6 @@ mod tests {
         )
         .expect_err("associated type rejected");
 
-        assert_eq!(
-            associated_const,
-            ScanError::UnsupportedImplItem {
-                item: "demo::Point::VERSION".to_owned(),
-            }
-        );
         assert_eq!(
             associated_type,
             ScanError::UnsupportedImplItem {

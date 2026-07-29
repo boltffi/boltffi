@@ -750,6 +750,23 @@ mod tests {
         source
     }
 
+    fn async_option_status_return_contract() -> SourceContract {
+        let mut function = FunctionDef::new(
+            FunctionId::new("demo::maybe_status"),
+            CanonicalName::single("maybe_status"),
+        );
+        function.execution = ExecutionKind::Async;
+        function.returns = ReturnDef::value(TypeExpr::option(TypeExpr::enumeration(
+            EnumId::new("demo::Status"),
+            Path::single("Status"),
+        )));
+
+        let mut source = SourceContract::new(PackageInfo::new("demo", None));
+        source.enums.push(status_enum());
+        source.functions.push(function);
+        source
+    }
+
     fn async_ping_contract() -> SourceContract {
         let mut function =
             FunctionDef::new(FunctionId::new("demo::ping"), CanonicalName::single("ping"));
@@ -2539,11 +2556,7 @@ mod tests {
                 ) -> u32 {
                     let when = {
                         if __boltffi_when_ptr.is_null() && __boltffi_when_len > 0 {
-                            ::boltffi::__private::set_last_error(format!(
-                                "{}: null pointer with non-zero length (buf_len={})",
-                                stringify!(when),
-                                __boltffi_when_len
-                            ));
+                            ::boltffi::__private::set_last_error_len(stringify!(when), "null pointer with non-zero length", __boltffi_when_len as usize);
                             return <u32 as ::core::default::Default>::default();
                         }
                         let __boltffi_bytes: &[u8] = if __boltffi_when_len == 0 {
@@ -2559,12 +2572,7 @@ mod tests {
                         let __boltffi_decoded = match ::boltffi::__private::wire::decode::<i64>(__boltffi_bytes) {
                             Ok(value) => value,
                             Err(error) => {
-                                ::boltffi::__private::set_last_error(format!(
-                                    "{}: wire decode failed: {} (buf_len={})",
-                                    stringify!(when),
-                                    error,
-                                    __boltffi_when_len
-                                ));
+                                ::boltffi::__private::set_last_error_display(stringify!(when), "wire decode failed", &error, __boltffi_when_len as usize);
                                 return <u32 as ::core::default::Default>::default();
                             }
                         };
@@ -2573,12 +2581,7 @@ mod tests {
                         ) {
                             Ok(value) => value,
                             Err(error) => {
-                                ::boltffi::__private::set_last_error(format!(
-                                    "{}: custom conversion failed: {:?} (buf_len={})",
-                                    stringify!(when),
-                                    error,
-                                    __boltffi_when_len
-                                ));
+                                ::boltffi::__private::set_last_error_debug(stringify!(when), "custom conversion failed", &error, __boltffi_when_len as usize);
                                 return <u32 as ::core::default::Default>::default();
                             }
                         }
@@ -4693,11 +4696,7 @@ mod tests {
                 ) -> ::boltffi::__private::RustFutureHandle {
                     let name: String = {
                         if __boltffi_name_ptr.is_null() && __boltffi_name_len > 0 {
-                            ::boltffi::__private::set_last_error(format!(
-                                "{}: null pointer with non-zero length (buf_len={})",
-                                stringify!(name),
-                                __boltffi_name_len
-                            ));
+                            ::boltffi::__private::set_last_error_len(stringify!(name), "null pointer with non-zero length", __boltffi_name_len as usize);
                             return ::boltffi::__private::rustfuture::rust_future_invalid_arg::<u32>();
                         }
                         let __boltffi_bytes: &[u8] = if __boltffi_name_len == 0 {
@@ -4713,12 +4712,7 @@ mod tests {
                         match ::boltffi::__private::wire::decode::<String>(__boltffi_bytes) {
                             Ok(value) => value,
                             Err(error) => {
-                                ::boltffi::__private::set_last_error(format!(
-                                    "{}: wire decode failed: {} (buf_len={})",
-                                    stringify!(name),
-                                    error,
-                                    __boltffi_name_len
-                                ));
+                                ::boltffi::__private::set_last_error_display(stringify!(name), "wire decode failed", &error, __boltffi_name_len as usize);
                                 return ::boltffi::__private::rustfuture::rust_future_invalid_arg::<u32>();
                             }
                         }
@@ -4907,10 +4901,7 @@ mod tests {
                     point: *const u8
                 ) -> f64 {
                     if point.is_null() {
-                        ::boltffi::__private::set_last_error(format!(
-                            "{}: null direct record pointer",
-                            stringify!(point)
-                        ));
+                        ::boltffi::__private::set_last_error(concat!(stringify!(point), ": null direct record pointer"));
                         return <f64 as ::core::default::Default>::default();
                     }
                     let point: Point = unsafe {
@@ -4955,10 +4946,7 @@ mod tests {
                     point: *mut <Point as ::boltffi::__private::Passable>::In
                 ) -> f64 {
                     if point.is_null() {
-                        ::boltffi::__private::set_last_error(format!(
-                            "{}: null direct record pointer",
-                            stringify!(point)
-                        ));
+                        ::boltffi::__private::set_last_error(concat!(stringify!(point), ": null direct record pointer"));
                         return <f64 as ::core::default::Default>::default();
                     }
                     let point: &mut Point = unsafe { &mut *(point as *mut Point) };
@@ -4998,10 +4986,7 @@ mod tests {
                 ) -> f64 {
                     let __boltffi_point_out = point;
                     if __boltffi_point_out.is_null() {
-                        ::boltffi::__private::set_last_error(format!(
-                            "{}: null direct record pointer",
-                            stringify!(point)
-                        ));
+                        ::boltffi::__private::set_last_error(concat!(stringify!(point), ": null direct record pointer"));
                         return <f64 as ::core::default::Default>::default();
                     }
                     let mut point: Point = unsafe {
@@ -5087,11 +5072,7 @@ mod tests {
                 ) -> u32 {
                     let name: String = {
                         if __boltffi_name_ptr.is_null() && __boltffi_name_len > 0 {
-                            ::boltffi::__private::set_last_error(format!(
-                                "{}: null pointer with non-zero length (buf_len={})",
-                                stringify!(name),
-                                __boltffi_name_len
-                            ));
+                            ::boltffi::__private::set_last_error_len(stringify!(name), "null pointer with non-zero length", __boltffi_name_len as usize);
                             return <u32 as ::core::default::Default>::default();
                         }
                         let __boltffi_bytes: &[u8] = if __boltffi_name_len == 0 {
@@ -5107,12 +5088,7 @@ mod tests {
                         match ::boltffi::__private::wire::decode::<String>(__boltffi_bytes) {
                             Ok(value) => value,
                             Err(error) => {
-                                ::boltffi::__private::set_last_error(format!(
-                                    "{}: wire decode failed: {} (buf_len={})",
-                                    stringify!(name),
-                                    error,
-                                    __boltffi_name_len
-                                ));
+                                ::boltffi::__private::set_last_error_display(stringify!(name), "wire decode failed", &error, __boltffi_name_len as usize);
                                 return <u32 as ::core::default::Default>::default();
                             }
                         }
@@ -5152,11 +5128,7 @@ mod tests {
                 ) -> u32 {
                     let __boltffi_name_storage: String = {
                         if __boltffi_name_ptr.is_null() && __boltffi_name_len > 0 {
-                            ::boltffi::__private::set_last_error(format!(
-                                "{}: null pointer with non-zero length (buf_len={})",
-                                stringify!(__boltffi_name_storage),
-                                __boltffi_name_len
-                            ));
+                            ::boltffi::__private::set_last_error_len(stringify!(__boltffi_name_storage), "null pointer with non-zero length", __boltffi_name_len as usize);
                             return <u32 as ::core::default::Default>::default();
                         }
                         let __boltffi_bytes: &[u8] = if __boltffi_name_len == 0 {
@@ -5172,12 +5144,7 @@ mod tests {
                         match ::boltffi::__private::wire::decode::<String>(__boltffi_bytes) {
                             Ok(value) => value,
                             Err(error) => {
-                                ::boltffi::__private::set_last_error(format!(
-                                    "{}: wire decode failed: {} (buf_len={})",
-                                    stringify!(__boltffi_name_storage),
-                                    error,
-                                    __boltffi_name_len
-                                ));
+                                ::boltffi::__private::set_last_error_display(stringify!(__boltffi_name_storage), "wire decode failed", &error, __boltffi_name_len as usize);
                                 return <u32 as ::core::default::Default>::default();
                             }
                         }
@@ -5219,11 +5186,7 @@ mod tests {
                 ) -> u32 {
                     let mut __boltffi_name_storage: String = {
                         if __boltffi_name_ptr.is_null() && __boltffi_name_len > 0 {
-                            ::boltffi::__private::set_last_error(format!(
-                                "{}: null pointer with non-zero length (buf_len={})",
-                                stringify!(__boltffi_name_storage),
-                                __boltffi_name_len
-                            ));
+                            ::boltffi::__private::set_last_error_len(stringify!(__boltffi_name_storage), "null pointer with non-zero length", __boltffi_name_len as usize);
                             return <u32 as ::core::default::Default>::default();
                         }
                         let __boltffi_bytes: &[u8] = if __boltffi_name_len == 0 {
@@ -5239,22 +5202,14 @@ mod tests {
                         match ::boltffi::__private::wire::decode::<String>(__boltffi_bytes) {
                             Ok(value) => value,
                             Err(error) => {
-                                ::boltffi::__private::set_last_error(format!(
-                                    "{}: wire decode failed: {} (buf_len={})",
-                                    stringify!(__boltffi_name_storage),
-                                    error,
-                                    __boltffi_name_len
-                                ));
+                                ::boltffi::__private::set_last_error_display(stringify!(__boltffi_name_storage), "wire decode failed", &error, __boltffi_name_len as usize);
                                 return <u32 as ::core::default::Default>::default();
                             }
                         }
                     };
                     let name = __boltffi_name_storage.as_mut_str();
                     if __boltffi_name_out.is_null() {
-                        ::boltffi::__private::set_last_error(format!(
-                            "{}: writeback pointer is null",
-                            stringify!(__boltffi_name_out)
-                        ));
+                        ::boltffi::__private::set_last_error(concat!(stringify!(__boltffi_name_out), ": writeback pointer is null"));
                         return <u32 as ::core::default::Default>::default();
                     }
                     let __boltffi_result = rewrite(name);
@@ -5301,11 +5256,7 @@ mod tests {
                 ) -> u32 {
                     let bytes: Vec<u8> = {
                         if __boltffi_bytes_ptr.is_null() && __boltffi_bytes_len > 0 {
-                            ::boltffi::__private::set_last_error(format!(
-                                "{}: null pointer with non-zero length (buf_len={})",
-                                stringify!(bytes),
-                                __boltffi_bytes_len
-                            ));
+                            ::boltffi::__private::set_last_error_len(stringify!(bytes), "null pointer with non-zero length", __boltffi_bytes_len as usize);
                             return <u32 as ::core::default::Default>::default();
                         }
                         let __boltffi_bytes: &[u8] = if __boltffi_bytes_len == 0 {
@@ -5321,12 +5272,7 @@ mod tests {
                         match ::boltffi::__private::wire::decode::<Vec<u8> >(__boltffi_bytes) {
                             Ok(value) => value,
                             Err(error) => {
-                                ::boltffi::__private::set_last_error(format!(
-                                    "{}: wire decode failed: {} (buf_len={})",
-                                    stringify!(bytes),
-                                    error,
-                                    __boltffi_bytes_len
-                                ));
+                                ::boltffi::__private::set_last_error_display(stringify!(bytes), "wire decode failed", &error, __boltffi_bytes_len as usize);
                                 return <u32 as ::core::default::Default>::default();
                             }
                         }
@@ -5366,11 +5312,7 @@ mod tests {
                 ) -> u32 {
                     let mut __boltffi_bytes_storage: Vec<u8> = {
                         if __boltffi_bytes_ptr.is_null() && __boltffi_bytes_len > 0 {
-                            ::boltffi::__private::set_last_error(format!(
-                                "{}: null pointer with non-zero length (buf_len={})",
-                                stringify!(__boltffi_bytes_storage),
-                                __boltffi_bytes_len
-                            ));
+                            ::boltffi::__private::set_last_error_len(stringify!(__boltffi_bytes_storage), "null pointer with non-zero length", __boltffi_bytes_len as usize);
                             return <u32 as ::core::default::Default>::default();
                         }
                         let __boltffi_bytes: &[u8] = if __boltffi_bytes_len == 0 {
@@ -5386,12 +5328,7 @@ mod tests {
                         match ::boltffi::__private::wire::decode::<Vec<u8> >(__boltffi_bytes) {
                             Ok(value) => value,
                             Err(error) => {
-                                ::boltffi::__private::set_last_error(format!(
-                                    "{}: wire decode failed: {} (buf_len={})",
-                                    stringify!(__boltffi_bytes_storage),
-                                    error,
-                                    __boltffi_bytes_len
-                                ));
+                                ::boltffi::__private::set_last_error_display(stringify!(__boltffi_bytes_storage), "wire decode failed", &error, __boltffi_bytes_len as usize);
                                 return <u32 as ::core::default::Default>::default();
                             }
                         }
@@ -5437,12 +5374,7 @@ mod tests {
                         }) {
                             Ok(value) => value,
                             Err(error) => {
-                                ::boltffi::__private::set_last_error(format!(
-                                    "{}: invalid optional scalar payload: {} (buf_len={})",
-                                    stringify!(count),
-                                    error,
-                                    __boltffi_count_len
-                                ));
+                                ::boltffi::__private::set_last_error_display(stringify!(count), "invalid optional scalar payload", &error, __boltffi_count_len as usize);
                                 return ::boltffi::__private::FfiStatus::INVALID_ARG;
                             }
                         }
@@ -5483,11 +5415,7 @@ mod tests {
                 ) -> u32 {
                     let profile: Profile = {
                         if __boltffi_profile_ptr.is_null() && __boltffi_profile_len > 0 {
-                            ::boltffi::__private::set_last_error(format!(
-                                "{}: null pointer with non-zero length (buf_len={})",
-                                stringify!(profile),
-                                __boltffi_profile_len
-                            ));
+                            ::boltffi::__private::set_last_error_len(stringify!(profile), "null pointer with non-zero length", __boltffi_profile_len as usize);
                             return <u32 as ::core::default::Default>::default();
                         }
                         let __boltffi_bytes: &[u8] = if __boltffi_profile_len == 0 {
@@ -5503,12 +5431,7 @@ mod tests {
                         match ::boltffi::__private::wire::decode::<Profile>(__boltffi_bytes) {
                             Ok(value) => value,
                             Err(error) => {
-                                ::boltffi::__private::set_last_error(format!(
-                                    "{}: wire decode failed: {} (buf_len={})",
-                                    stringify!(profile),
-                                    error,
-                                    __boltffi_profile_len
-                                ));
+                                ::boltffi::__private::set_last_error_display(stringify!(profile), "wire decode failed", &error, __boltffi_profile_len as usize);
                                 return <u32 as ::core::default::Default>::default();
                             }
                         }
@@ -5549,11 +5472,7 @@ mod tests {
                 ) -> u32 {
                     let mut __boltffi_profile_storage: Profile = {
                         if __boltffi_profile_ptr.is_null() && __boltffi_profile_len > 0 {
-                            ::boltffi::__private::set_last_error(format!(
-                                "{}: null pointer with non-zero length (buf_len={})",
-                                stringify!(__boltffi_profile_storage),
-                                __boltffi_profile_len
-                            ));
+                            ::boltffi::__private::set_last_error_len(stringify!(__boltffi_profile_storage), "null pointer with non-zero length", __boltffi_profile_len as usize);
                             return <u32 as ::core::default::Default>::default();
                         }
                         let __boltffi_bytes: &[u8] = if __boltffi_profile_len == 0 {
@@ -5569,22 +5488,14 @@ mod tests {
                         match ::boltffi::__private::wire::decode::<Profile>(__boltffi_bytes) {
                             Ok(value) => value,
                             Err(error) => {
-                                ::boltffi::__private::set_last_error(format!(
-                                    "{}: wire decode failed: {} (buf_len={})",
-                                    stringify!(__boltffi_profile_storage),
-                                    error,
-                                    __boltffi_profile_len
-                                ));
+                                ::boltffi::__private::set_last_error_display(stringify!(__boltffi_profile_storage), "wire decode failed", &error, __boltffi_profile_len as usize);
                                 return <u32 as ::core::default::Default>::default();
                             }
                         }
                     };
                     let profile = &mut __boltffi_profile_storage;
                     if __boltffi_profile_out.is_null() {
-                        ::boltffi::__private::set_last_error(format!(
-                            "{}: writeback pointer is null",
-                            stringify!(__boltffi_profile_out)
-                        ));
+                        ::boltffi::__private::set_last_error(concat!(stringify!(__boltffi_profile_out), ": writeback pointer is null"));
                         return <u32 as ::core::default::Default>::default();
                     }
                     let __boltffi_result = rename(profile);
@@ -5629,10 +5540,7 @@ mod tests {
                     engine: u64
                 ) -> u64 {
                     if engine == 0 {
-                        ::boltffi::__private::set_last_error(format!(
-                            "{}: null class handle",
-                            stringify!(engine)
-                        ));
+                        ::boltffi::__private::set_last_error(concat!(stringify!(engine), ": null class handle"));
                         return 0;
                     }
                     let engine: Engine = match unsafe {
@@ -5640,10 +5548,7 @@ mod tests {
                     } {
                         Some(value) => value,
                         None => {
-                            ::boltffi::__private::set_last_error(format!(
-                                "{}: released class handle",
-                                stringify!(engine)
-                            ));
+                            ::boltffi::__private::set_last_error(concat!(stringify!(engine), ": released class handle"));
                             return 0;
                         }
                     };
@@ -6925,10 +6830,7 @@ mod tests {
                 ) -> ::boltffi::__private::FfiStatus {
                     let __boltffi_listener_handle = listener;
                     if __boltffi_listener_handle.is_null() {
-                        ::boltffi::__private::set_last_error(format!(
-                            "{}: null callback handle",
-                            stringify!(listener)
-                        ));
+                        ::boltffi::__private::set_last_error(concat!(stringify!(listener), ": null callback handle"));
                         return ::boltffi::__private::FfiStatus::INVALID_ARG;
                     }
                     let listener: Box<dyn Listener> = unsafe {
@@ -7975,10 +7877,7 @@ mod tests {
                         fn __boltffi_callback_closure____closure__u32_to_u32_free(handle: u32);
                     }
                     if callback == 0 {
-                        ::boltffi::__private::set_last_error(format!(
-                            "{}: null closure handle",
-                            stringify!(callback)
-                        ));
+                        ::boltffi::__private::set_last_error(concat!(stringify!(callback), ": null closure handle"));
                         return <u32 as ::core::default::Default>::default();
                     }
                     let __boltffi_callback_owner =
@@ -8826,10 +8725,7 @@ mod tests {
                     engine: u32
                 ) -> u32 {
                     if engine == 0 {
-                        ::boltffi::__private::set_last_error(format!(
-                            "{}: null class handle",
-                            stringify!(engine)
-                        ));
+                        ::boltffi::__private::set_last_error(concat!(stringify!(engine), ": null class handle"));
                         return <u32 as ::core::default::Default>::default();
                     }
                     let engine: &Engine = unsafe {
@@ -9253,6 +9149,29 @@ mod tests {
                 }
             }
             .to_string()
+        );
+    }
+
+    #[test]
+    fn wasm_async_option_c_style_enum_return_packs_the_discriminant() {
+        // An enum cannot be cast straight to f64 (E0606); it has to go through
+        // its discriminant first, the same as the synchronous path does.
+        let source = async_option_status_return_contract();
+        let lowered = lower_with_declarations::<Wasm32>(&source).expect("lowered bindings");
+        let expansion = Expansion::new(&lowered);
+        let syntax = syn::parse_quote! {
+            pub async fn maybe_status() -> Option<Status> {
+                Some(Status::Ready)
+            }
+        };
+
+        let tokens =
+            expand_function(&expansion, &source.functions[0], syntax).expect("expanded function");
+        let rendered = tokens.to_string();
+
+        assert!(
+            rendered.contains("Passable :: pack"),
+            "async optional enum return must pack the discriminant: {rendered}"
         );
     }
 

@@ -12,7 +12,7 @@ use crate::{
         codec::{ReadExpression, Reader, ValueScope, WriteStatement, Writer},
         name_style::Name,
         render::{
-            Documentation, SwiftType,
+            AssociatedConstants, Documentation, SwiftType,
             function::{
                 AssociatedFunction, AssociatedFunctions, Initializer, Receiver, ValueFunctions,
                 ValueType,
@@ -26,6 +26,7 @@ use crate::{
 #[template(path = "target/swift/enumeration.swift", escape = "none")]
 struct EnumerationTemplate<'a> {
     enumeration: &'a Enumeration,
+    constants: Vec<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -34,6 +35,7 @@ pub struct Enumeration {
     name: TypeName,
     conforms_to_error: bool,
     body: Body,
+    constants: AssociatedConstants,
     initializers: Vec<Initializer>,
     static_methods: Vec<AssociatedFunction>,
     instance_methods: Vec<AssociatedFunction>,
@@ -95,7 +97,11 @@ impl Enumeration {
     }
 
     pub fn render(&self) -> Result<Emitted> {
-        let mut source = EnumerationTemplate { enumeration: self }.render()?;
+        let mut source = EnumerationTemplate {
+            enumeration: self,
+            constants: self.constants.render()?,
+        }
+        .render()?;
         source.push_str("\n\n");
         let emitted = Emitted::primary(source).with_diagnostics(self.diagnostics.clone());
         let emitted = match self.requires_wire_runtime() {
@@ -167,6 +173,7 @@ impl Enumeration {
 
     fn requires_wire_runtime(&self) -> bool {
         self.body.requires_wire_runtime()
+            || self.constants.requires_wire_runtime()
             || self
                 .initializers
                 .iter()
@@ -222,6 +229,12 @@ impl Enumeration {
                     .map(CStyleVariant::from_declaration)
                     .collect::<Result<Vec<_>>>()?,
             },
+            constants: AssociatedConstants::from_enum(
+                enumeration.id(),
+                enumeration.variants().iter().map(CStyleVariantDecl::name),
+                bridge,
+                context,
+            )?,
             initializers,
             static_methods,
             instance_methods,
@@ -271,6 +284,12 @@ impl Enumeration {
                     .map(|variant| DataVariant::from_declaration(variant, context))
                     .collect::<Result<Vec<_>>>()?,
             },
+            constants: AssociatedConstants::from_enum(
+                enumeration.id(),
+                enumeration.variants().iter().map(DataVariantDecl::name),
+                bridge,
+                context,
+            )?,
             initializers,
             static_methods,
             instance_methods,

@@ -54,7 +54,9 @@ package {{ package }};
 {% for field in record.fields() %}            "{% if !loop.first %}, {% endif %}{{ field.name() }}=" + {{ field.name() }}{% if !loop.last %} +{% endif %}
 {% endfor %}            + '}';
 {% endif %}    }
-{% endif %}
+{% endif %}{% for constant in record.constants() %}
+{% include "target/java/constant.java" %}
+{% endfor %}
 {% for call in record.initializers() %}
 {% include "target/java/call/initializer.java" %}
 {% endfor %}{% for call in record.static_methods() %}

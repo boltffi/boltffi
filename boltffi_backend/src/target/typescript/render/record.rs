@@ -1,5 +1,7 @@
 use askama::Template as AskamaTemplate;
-use boltffi_binding::{DirectRecordDecl, EncodedFieldDecl, EncodedRecordDecl, RecordDecl, Wasm32};
+use boltffi_binding::{
+    ConstantOwner, DirectRecordDecl, EncodedFieldDecl, EncodedRecordDecl, RecordDecl, Wasm32,
+};
 
 use crate::core::{Diagnostic, Emitted, Error, RenderContext, Result};
 
@@ -11,7 +13,7 @@ use super::super::{
         ArgumentList, Expression, Identifier, MethodDeclaration, PropertyKey, Statement, TypeName,
     },
 };
-use super::{Function, Type};
+use super::{AssociatedConstants, Function, Type};
 
 #[derive(AskamaTemplate)]
 #[template(path = "target/typescript/record.ts", escape = "none")]
@@ -23,6 +25,7 @@ pub struct Record {
     writes: Vec<Statement>,
     reads: Vec<Statement>,
     methods: Vec<MethodDeclaration>,
+    constants: AssociatedConstants,
     diagnostics: Vec<Diagnostic>,
     error: bool,
 }
@@ -130,6 +133,7 @@ impl Record {
             writes: parts.writes,
             reads: parts.reads,
             methods,
+            constants: AssociatedConstants::object(ConstantOwner::Record(record.id()), context)?,
             diagnostics,
             error: record.is_error_payload(),
         })
@@ -197,6 +201,7 @@ impl Record {
             writes,
             reads,
             methods,
+            constants: AssociatedConstants::object(ConstantOwner::Record(record.id()), context)?,
             diagnostics,
             error: record.is_error_payload(),
         })

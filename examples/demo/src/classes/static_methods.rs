@@ -8,6 +8,8 @@ pub struct MathUtils {
 
 #[export]
 impl MathUtils {
+    pub const DEFAULT_PRECISION: u32 = 2;
+
     pub fn new(precision: u32) -> Self {
         Self { precision }
     }

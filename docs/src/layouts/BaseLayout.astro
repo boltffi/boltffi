@@ -7,6 +7,7 @@ interface Props {
   title: string;
   description?: string;
   canonicalUrl?: string;
+  markdownUrl?: string;
   robots?: string;
   openGraphType?: 'article' | 'website';
   openGraphImagePath?: string;
@@ -17,6 +18,7 @@ const {
   title,
   description = 'BoltFFI - Fast, safe Rust FFI binding generator for Swift, Kotlin, Java, Ruby, WASM, Python, and C#',
   canonicalUrl,
+  markdownUrl,
   robots = 'index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1',
   openGraphType = 'website',
   openGraphImagePath = '/logo.png',
@@ -45,6 +47,9 @@ const structuredDataDocuments = Array.isArray(structuredData)
     <meta name="robots" content={robots} />
     <meta name="googlebot" content={robots} />
     <link rel="canonical" href={resolvedCanonicalUrl} />
+    {markdownUrl && (
+      <link rel="alternate" type="text/markdown" href={markdownUrl} title={`${title} as Markdown`} />
+    )}
     <meta property="og:site_name" content="BoltFFI" />
     <meta property="og:type" content={openGraphType} />
     <meta property="og:title" content={pageTitle} />

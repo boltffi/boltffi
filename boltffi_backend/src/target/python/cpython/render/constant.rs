@@ -25,8 +25,20 @@ impl Constant {
         let function = match declaration.value() {
             ConstantValueDecl::Inline { .. } => None,
             ConstantValueDecl::Accessor { symbol, callable } => {
+                let name = match declaration.owner() {
+                    Some(owner) => Name::associated_constant(
+                        context
+                            .constant_owner_name(owner)
+                            .ok_or(Error::UnsupportedTarget {
+                                target: "python",
+                                shape: "missing associated constant owner",
+                            })?,
+                        declaration.name(),
+                    )?,
+                    None => Name::new(declaration.name()).function()?,
+                };
                 Some(function::Function::from_export(
-                    Name::new(declaration.name()).function()?,
+                    name,
                     symbol,
                     callable,
                     Vec::new(),

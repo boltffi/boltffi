@@ -1,5 +1,5 @@
 use askama::Template;
-use boltffi_binding::{CanonicalName, ClassDecl, Native};
+use boltffi_binding::{CanonicalName, ClassDecl, ConstantOwner, Native};
 
 use crate::{
     bridge::c::CBridgeContract,
@@ -10,12 +10,13 @@ use super::super::{
     name_style::{Name, Namespace},
     syntax::{Identifier, Literal, TypeFragment},
 };
-use super::{Documentation, Function, handle_carrier_type};
+use super::{AssociatedConstants, Documentation, Function, handle_carrier_type};
 
 #[derive(Template)]
 #[template(path = "target/csharp/class.cs", escape = "none")]
 struct ClassTemplate<'class> {
     class: &'class Class,
+    constants: &'class [String],
 }
 
 #[derive(Template)]
@@ -33,6 +34,7 @@ pub(in crate::target::csharp) struct Class {
     release_name: Identifier,
     release_entry: Literal,
     release_helper_id: HelperId,
+    constants: AssociatedConstants,
     initializers: Vec<ClassInitializer>,
     methods: Vec<Function>,
     diagnostics: Vec<Diagnostic>,
@@ -98,6 +100,12 @@ impl Class {
                 Err(error) => collect_diagnostic(&mut diagnostics, "method", method.name(), error)?,
             }
         }
+        let constants = AssociatedConstants::from_owner(
+            ConstantOwner::Class(declaration.id()),
+            &namespace,
+            bridge,
+            context,
+        )?;
         Ok(Self {
             documentation: Documentation::summary(declaration.meta().doc(), "    "),
             namespace,
@@ -108,6 +116,7 @@ impl Class {
             release_helper_id: HelperId::new(CanonicalName::single(
                 declaration.release().name().as_str(),
             )),
+            constants,
             initializers,
             methods,
             diagnostics,
@@ -115,25 +124,26 @@ impl Class {
     }
 
     pub(in crate::target::csharp) fn render(&self) -> Result<Emitted> {
-        let mut emitted = Emitted::primary(ClassTemplate { class: self }.render()?)
-            .with_diagnostics(self.diagnostics.iter().cloned())
-            .with_aux(AuxChunk::Helper {
-                id: self.release_helper_id.clone(),
-                text: ClassReleaseTemplate { class: self }.render()?.into(),
-            });
-        for function in self
+        let constants = self.constants.members()?;
+        let emitted = Emitted::primary(
+            ClassTemplate {
+                class: self,
+                constants: &constants,
+            }
+            .render()?,
+        )
+        .with_diagnostics(self.diagnostics.iter().cloned())
+        .with_aux(AuxChunk::Helper {
+            id: self.release_helper_id.clone(),
+            text: ClassReleaseTemplate { class: self }.render()?.into(),
+        });
+        let emitted = self
             .initializers
             .iter()
             .map(|initializer| &initializer.function)
             .chain(self.methods.iter())
-        {
-            let (_, aux, diagnostics) = function.render()?.into_parts();
-            for chunk in aux {
-                emitted = emitted.with_aux(chunk);
-            }
-            emitted = emitted.with_diagnostics(diagnostics);
-        }
-        Ok(emitted)
+            .try_fold(emitted, |emitted, function| function.add_support(emitted))?;
+        self.constants.add_support(emitted)
     }
 }
 

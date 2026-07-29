@@ -41,7 +41,8 @@ pub mod __private {
         FfiSpan, FfiStatus, ForeignCall, InternedString, InternedStringPool, InternedStringRepr,
         NativeCallbackOwner, Passable, RustFutureContinuationCallback, RustFutureHandle,
         StreamContinuationCallback, StreamPollResult, SubscriptionHandle, VecTransport, WaitResult,
-        WirePassable, rustfuture, set_last_error, take_last_error, wire,
+        WirePassable, rustfuture, set_last_error, set_last_error_debug, set_last_error_display,
+        set_last_error_len, take_last_error, wire,
     };
     #[cfg(target_arch = "wasm32")]
     pub use boltffi_core::{

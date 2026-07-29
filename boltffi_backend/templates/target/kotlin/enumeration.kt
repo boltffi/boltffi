@@ -25,6 +25,10 @@ enum class {{ enumeration.name() }}(val value: {{ value_type }}) {
 {%- else %}
             entries.first { it.value == value }
 {%- endif %}
+{%- for constant in constants %}
+
+{{ constant }}
+{%- endfor %}
 {%- for initializer in enumeration.initializers() %}
 
         fun {{ initializer.name() }}({% for parameter in initializer.parameters() %}{{ parameter.name() }}: {{ parameter.ty() }}{% if !loop.last %}, {% endif %}{% endfor %}){% if let Some(return_type) = initializer.returns() %}: {{ return_type }}{% endif %} {
@@ -226,6 +230,10 @@ sealed class {{ enumeration.name() }}{% if enumeration.error() %} : Exception(){
             val reader = WireReader(bytes)
             return fromReader(reader)
         }
+{%- for constant in constants %}
+
+{{ constant }}
+{%- endfor %}
 {%- for initializer in enumeration.initializers() %}
 
         fun {{ initializer.name() }}({% for parameter in initializer.parameters() %}{{ parameter.name() }}: {{ parameter.ty() }}{% if !loop.last %}, {% endif %}{% endfor %}){% if let Some(return_type) = initializer.returns() %}: {{ return_type }}{% endif %} {

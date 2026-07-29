@@ -2,18 +2,8 @@ import Benchmark from 'benchmark';
 import { writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 
-const boltffiOverlay = await import('./build/generated/boltffi/node.js');
-await boltffiOverlay.initialized;
-const boltffiDemo = await import('./build/generated/boltffi-demo/node.js');
-await boltffiDemo.initialized;
-const boltffi = new Proxy(boltffiOverlay, {
-  get(target, property, receiver) {
-    if (Reflect.has(target, property)) {
-      return Reflect.get(target, property, receiver);
-    }
-    return Reflect.get(boltffiDemo, property, receiver);
-  },
-});
+const boltffi = await import('./build/generated/boltffi/node.js');
+await boltffi.initialized;
 
 const require = createRequire(import.meta.url);
 const wasmbindgen = require('./build/generated/wasmbindgen/demo.js');

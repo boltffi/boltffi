@@ -9,7 +9,8 @@ use crate::index::{CrateIndex, IndexedCrateSource, PathResolver, SourceModule};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DataTypeCategory {
-    Scalar,
+    /// C-style enum, carrying the integer repr its discriminants cross as.
+    Scalar(ScalarEnumRepr),
     Blittable,
     WireEncoded,
 }
@@ -17,6 +18,55 @@ pub enum DataTypeCategory {
 impl DataTypeCategory {
     pub fn supports_direct_vec(self) -> bool {
         matches!(self, Self::Blittable)
+    }
+}
+
+/// Integer repr backing a C-style enum.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ScalarEnumRepr {
+    I8,
+    U8,
+    I16,
+    U16,
+    I32,
+    U32,
+    I64,
+    U64,
+    ISize,
+    USize,
+    /// A repr outside the set above, including targets added to Rust later.
+    Other,
+}
+
+impl ScalarEnumRepr {
+    fn from_ident(ident: &syn::Ident) -> Self {
+        match ident.to_string().as_str() {
+            "i8" => Self::I8,
+            "u8" => Self::U8,
+            "i16" => Self::I16,
+            "u16" => Self::U16,
+            "i32" => Self::I32,
+            "u32" => Self::U32,
+            "i64" => Self::I64,
+            "u64" => Self::U64,
+            "isize" => Self::ISize,
+            "usize" => Self::USize,
+            // Anything unrecognised must not be assumed narrow.
+            _ => Self::Other,
+        }
+    }
+
+    /// Whether every discriminant of this repr survives a round-trip through
+    /// `f64`, which is how wasm carries an optional scalar.
+    ///
+    /// `isize`/`usize` are excluded because their width is target-dependent.
+    /// This set must stay in sync with `Wasm32::scalar_option_enum` in
+    /// `boltffi_binding`, which decides the same thing for the bindings side.
+    pub fn fits_in_f64(self) -> bool {
+        matches!(
+            self,
+            Self::I8 | Self::U8 | Self::I16 | Self::U16 | Self::I32 | Self::U32
+        )
     }
 }
 
@@ -317,8 +367,11 @@ fn classify_struct_category(item_struct: &ItemStruct) -> DataTypeCategory {
 }
 
 fn classify_enum_category(item_enum: &ItemEnum) -> DataTypeCategory {
-    match EnumDataShape::new(item_enum).passable_category() {
-        PassableCategory::Scalar => DataTypeCategory::Scalar,
+    let enum_shape = EnumDataShape::new(item_enum);
+    match enum_shape.passable_category() {
+        PassableCategory::Scalar => DataTypeCategory::Scalar(ScalarEnumRepr::from_ident(
+            &enum_shape.effective_integer_repr(),
+        )),
         PassableCategory::Blittable | PassableCategory::WireEncoded => {
             DataTypeCategory::WireEncoded
         }
@@ -329,7 +382,7 @@ fn classify_enum_category(item_enum: &ItemEnum) -> DataTypeCategory {
 mod tests {
     use syn::parse_quote;
 
-    use super::{DataTypeCategory, DataTypeRegistry};
+    use super::{DataTypeCategory, DataTypeRegistry, ScalarEnumRepr};
 
     #[test]
     fn single_segment_unique_name_wins_over_unrelated_alias() {
@@ -350,13 +403,16 @@ mod tests {
     #[test]
     fn short_module_path_still_resolves_through_alias() {
         let registry = DataTypeRegistry::with_entries_and_use_aliases(
-            &[("core::parser::RouteProvider", DataTypeCategory::Scalar)],
+            &[(
+                "core::parser::RouteProvider",
+                DataTypeCategory::Scalar(ScalarEnumRepr::I32),
+            )],
             &[("parser", "crate::core::parser")],
         );
 
         assert_eq!(
             registry.category_for(&parse_quote!(parser::RouteProvider)),
-            Some(DataTypeCategory::Scalar)
+            Some(DataTypeCategory::Scalar(ScalarEnumRepr::I32))
         );
     }
 }

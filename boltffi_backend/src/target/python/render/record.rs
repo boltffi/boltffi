@@ -1,6 +1,6 @@
 use boltffi_binding::{
-    DirectFieldDecl, DirectRecordDecl, EncodedFieldDecl, EncodedRecordDecl, ExportedMethodDecl,
-    FieldKey, InitializerDecl, Native, NativeSymbol, Receive,
+    ConstantOwner, DirectFieldDecl, DirectRecordDecl, EncodedFieldDecl, EncodedRecordDecl,
+    ExportedMethodDecl, FieldKey, InitializerDecl, Native, NativeSymbol, Receive,
 };
 
 use crate::{
@@ -14,7 +14,9 @@ use crate::{
     },
 };
 
-use super::{AssociatedCallable, NameScope, constant::DefaultExpression, type_hint::TypeHint};
+use super::{
+    AssociatedCallable, ConstantStub, NameScope, constant::DefaultExpression, type_hint::TypeHint,
+};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RecordClass {
@@ -22,6 +24,7 @@ pub struct RecordClass {
     pub exception_name: Option<Identifier>,
     pub register_method: Identifier,
     pub fields: Vec<RecordField>,
+    pub constants: Vec<ConstantStub>,
     pub wire: RecordWire,
     pub constructors: Vec<AssociatedCallable>,
     pub static_methods: Vec<AssociatedCallable>,
@@ -51,6 +54,7 @@ impl RecordClass {
                 .iter()
                 .map(|field| RecordField::from_direct(field, package))
                 .collect::<Result<Vec<_>>>()?,
+            constants: package.constants_for_owner(ConstantOwner::Record(record.id()))?,
             wire: RecordWire::Fixed(FixedStruct::from_layout(
                 symbols.class_name(),
                 record.fields(),
@@ -82,6 +86,7 @@ impl RecordClass {
                 .transpose()?,
             register_method: symbols.register_method().clone(),
             fields,
+            constants: package.constants_for_owner(ConstantOwner::Record(record.id()))?,
             wire: RecordWire::Fields(wire_fields),
             constructors: Self::constructors(record.initializers(), &symbols, package)?,
             static_methods: Self::static_methods(record.methods(), &symbols, package)?,
@@ -106,6 +111,9 @@ impl RecordClass {
     pub fn validate_names(&self) -> Result<()> {
         NameScope::new(format!("record `{}`", self.class_name))
             .insert_all(self.fields.iter().map(RecordField::field_name))
+            .and_then(|scope| {
+                scope.insert_all(self.constants.iter().map(ConstantStub::member_name))
+            })
             .and_then(|scope| {
                 scope.insert_all(self.callables().map(AssociatedCallable::member_name))
             })

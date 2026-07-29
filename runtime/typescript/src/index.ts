@@ -12,6 +12,7 @@ export {
   wireStringSize,
 } from "./wire.js";
 export type { Duration, WireOk, WireErr, WireResult, WasmWireWriterAllocator, WireCodec } from "./wire.js";
+export { BoltFFIHandle } from "./handle.js";
 export { CallbackRegistry } from "./callback.js";
 export { StreamCancellable, StreamPollManager, StreamPollResult, StreamSession } from "./stream.js";
 export type { StreamBatch, StreamLifecycle, StreamPoll } from "./stream.js";

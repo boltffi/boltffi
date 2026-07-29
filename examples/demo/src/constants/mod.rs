@@ -70,6 +70,26 @@ pub enum DemoMode {
     Safe = 2,
 }
 
+#[demo_bench_macros::demo_case(
+    "constants.associated.should_expose_values_on_exported_types",
+    justification = "Ensure associated constants remain attached to exported records, enums, data enums, and classes in every generated binding.",
+    directions = "Read each associated constant through its generated owner type and assert both inline and accessor-backed values.",
+    exercises = [
+        "constants::DemoMode::PREFERRED",
+        "constants::DemoMode::FALLBACK",
+        "constants::DemoMode::VARIANT_COUNT",
+        "constants::DemoState::INITIAL",
+        "records::blittable::Point::ZERO",
+        "classes::static_methods::MathUtils::DEFAULT_PRECISION"
+    ]
+)]
+#[data(impl)]
+impl DemoMode {
+    pub const PREFERRED: Self = Self::Safe;
+    pub const FALLBACK: Self = DemoMode::PREFERRED;
+    pub const VARIANT_COUNT: u8 = 2;
+}
+
 #[export]
 pub const DEMO_MODE: DemoMode = DemoMode::Fast;
 
@@ -78,6 +98,11 @@ pub const DEMO_MODE: DemoMode = DemoMode::Fast;
 pub enum DemoState {
     Idle,
     Busy { jobs: u32 },
+}
+
+#[data(impl)]
+impl DemoState {
+    pub const INITIAL: Self = Self::Idle;
 }
 
 #[export]

@@ -810,8 +810,9 @@ fn generate_sync_method_export(
 
         if matches!(strategy, EncodedReturnStrategy::OptionScalar) {
             let option_value_ident = syn::Ident::new("value", method_name.span());
-            let option_scalar_encoding = WasmOptionScalarEncoding::from_option_rust_type(inner_ty)
-                .expect("OptionScalar return must have a primitive Option inner type");
+            let option_scalar_encoding =
+                WasmOptionScalarEncoding::from_option_rust_type(inner_ty, return_lowering)
+                    .expect("OptionScalar return must carry a scalar-capable Option inner type");
             let some_expression = option_scalar_encoding.some_expression(&option_value_ident);
             let call_and_bind = if has_conversions {
                 quote! {
@@ -1104,8 +1105,9 @@ fn generate_static_method_export(
 
         if matches!(strategy, EncodedReturnStrategy::OptionScalar) {
             let option_value_ident = syn::Ident::new("value", method_name.span());
-            let option_scalar_encoding = WasmOptionScalarEncoding::from_option_rust_type(inner_ty)
-                .expect("OptionScalar return must have a primitive Option inner type");
+            let option_scalar_encoding =
+                WasmOptionScalarEncoding::from_option_rust_type(inner_ty, return_lowering)
+                    .expect("OptionScalar return must carry a scalar-capable Option inner type");
             let some_expression = option_scalar_encoding.some_expression(&option_value_ident);
             let call_and_bind = if has_conversions {
                 quote! {

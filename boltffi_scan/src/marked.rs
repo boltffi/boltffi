@@ -81,6 +81,10 @@ impl<'source> MarkedItems<'source> {
         &self.impls
     }
 
+    pub(super) fn exported_impls(&self) -> impl Iterator<Item = &Marked<'source, syn::ItemImpl>> {
+        self.impls.iter().chain(self.classes.iter())
+    }
+
     fn push(
         &mut self,
         scope: &'source ModuleScope,

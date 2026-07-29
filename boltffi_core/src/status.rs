@@ -50,10 +50,58 @@ thread_local! {
     static LAST_ERROR: RefCell<Option<String>> = const { RefCell::new(None) };
 }
 
+/// Records the message the next `boltffi_last_error` call will return.
+///
+/// Cold and never inlined on purpose. Without that, LLVM pulls the whole body
+/// (thread-local access, the `RefCell` borrow guard, and a `String`
+/// allocation) into every generated export shim, which on the demo crate cost
+/// ~71 KiB of wasm across ~300 shims.
+#[cold]
+#[inline(never)]
 pub fn set_last_error(message: impl Into<String>) {
     LAST_ERROR.with(|cell| {
         *cell.borrow_mut() = Some(message.into());
     });
+}
+
+/// Records a parameter-decoding failure that carries no error value.
+///
+/// These helpers exist so the generated shims call one outlined function
+/// instead of inlining a `format!` per failure site. Keeping them `#[cold]`
+/// and taking `&dyn` receivers also collapses what used to be one
+/// monomorphisation per error type down to a single instantiation.
+#[cold]
+#[inline(never)]
+pub fn set_last_error_len(parameter: &str, problem: &str, buf_len: usize) {
+    set_last_error(format!("{parameter}: {problem} (buf_len={buf_len})"));
+}
+
+/// Records a parameter-decoding failure whose cause implements [`Display`].
+#[cold]
+#[inline(never)]
+pub fn set_last_error_display(
+    parameter: &str,
+    problem: &str,
+    error: &dyn core::fmt::Display,
+    buf_len: usize,
+) {
+    set_last_error(format!(
+        "{parameter}: {problem}: {error} (buf_len={buf_len})"
+    ));
+}
+
+/// Records a parameter-decoding failure whose cause only implements [`Debug`].
+#[cold]
+#[inline(never)]
+pub fn set_last_error_debug(
+    parameter: &str,
+    problem: &str,
+    error: &dyn core::fmt::Debug,
+    buf_len: usize,
+) {
+    set_last_error(format!(
+        "{parameter}: {problem}: {error:?} (buf_len={buf_len})"
+    ));
 }
 
 pub fn take_last_error() -> Option<String> {

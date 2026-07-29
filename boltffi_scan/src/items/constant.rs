@@ -1,45 +1,171 @@
-use boltffi_ast::{ConstantDef, ConstantId, Primitive, TypeExpr};
+use boltffi_ast::{ConstantDef, ConstantId, ConstantOwner, Primitive, TypeExpr};
 use syn::spanned::Spanned;
 
 use crate::attributes::Attributes;
 use crate::const_expr;
-use crate::declared_types::DeclaredTypes;
+use crate::declared_types::{DeclaredType, DeclaredTypes};
+use crate::impl_target;
 use crate::marked::Marked;
+use crate::marker::{self, Disposition};
 use crate::type_expr;
 use crate::{ModuleScope, ScanError, attributes, name};
+
+struct DeclarationSyntax<'syntax> {
+    attrs: &'syntax [syn::Attribute],
+    visibility: &'syntax syn::Visibility,
+    ident: &'syntax syn::Ident,
+    ty: &'syntax syn::Type,
+    expr: &'syntax syn::Expr,
+    span: proc_macro2::Span,
+}
 
 pub fn scan(
     marked: &Marked<'_, syn::ItemConst>,
     declared_types: &DeclaredTypes,
 ) -> Result<ConstantDef, ScanError> {
-    build(marked.item(), marked.scope(), declared_types)
+    build_item(marked.item(), marked.scope(), declared_types)
 }
 
-fn build(
+fn build_item(
     item: &syn::ItemConst,
     scope: &ModuleScope,
     declared_types: &DeclaredTypes,
 ) -> Result<ConstantDef, ScanError> {
-    let ident = &item.ident;
-    if ident == "_" {
-        return Err(ScanError::AnonymousConstant);
+    DeclarationSyntax::from(item).scan(scope, declared_types, None)
+}
+
+impl<'syntax> DeclarationSyntax<'syntax> {
+    fn scan(
+        self,
+        scope: &ModuleScope,
+        declared_types: &DeclaredTypes,
+        owner: Option<ConstantOwner>,
+    ) -> Result<ConstantDef, ScanError> {
+        if self.ident == "_" {
+            return Err(ScanError::AnonymousConstant);
+        }
+        let types = type_expr::Scanner::new(declared_types, scope);
+        let type_expr = constant_type(&types, self.ty)?;
+        let value = const_expr::Scanner::new(&types).scan(self.expr);
+        let id = owner.as_ref().map_or_else(
+            || scope.path().qualified(&self.ident.to_string()),
+            |owner| format!("{}::{}", owner.as_str(), self.ident),
+        );
+        let mut constant = ConstantDef::new(
+            ConstantId::new(id),
+            name::source(self.ident),
+            type_expr,
+            value,
+        );
+        let scanned_attrs = Attributes::new(self.attrs, &types);
+        constant.owner = owner;
+        constant.source = attributes::source(self.visibility, scope, self.span);
+        constant.source_span = constant.source.span.clone();
+        constant.doc = scanned_attrs.doc();
+        constant.deprecated = scanned_attrs.deprecated()?;
+        constant.user_attrs = scanned_attrs.user_attrs();
+        Ok(constant)
     }
-    let types = type_expr::Scanner::new(declared_types, scope);
-    let rust_type = constant_type(&types, &item.ty)?;
-    let value = const_expr::Scanner::new(&types).scan(&item.expr);
-    let mut constant = ConstantDef::new(
-        ConstantId::new(scope.path().qualified(&ident.to_string())),
-        name::source(ident),
-        rust_type,
-        value,
-    );
-    let attrs = Attributes::new(&item.attrs, &types);
-    constant.source = attributes::source(&item.vis, scope, item.span());
-    constant.source_span = constant.source.span.clone();
-    constant.doc = attrs.doc();
-    constant.deprecated = attrs.deprecated()?;
-    constant.user_attrs = attrs.user_attrs();
-    Ok(constant)
+}
+
+impl<'syntax> From<&'syntax syn::ItemConst> for DeclarationSyntax<'syntax> {
+    fn from(item: &'syntax syn::ItemConst) -> Self {
+        Self {
+            attrs: &item.attrs,
+            visibility: &item.vis,
+            ident: &item.ident,
+            ty: &item.ty,
+            expr: &item.expr,
+            span: item.span(),
+        }
+    }
+}
+
+impl<'syntax> From<&'syntax syn::ImplItemConst> for DeclarationSyntax<'syntax> {
+    fn from(item: &'syntax syn::ImplItemConst) -> Self {
+        Self {
+            attrs: &item.attrs,
+            visibility: &item.vis,
+            ident: &item.ident,
+            ty: &item.ty,
+            expr: &item.expr,
+            span: item.span(),
+        }
+    }
+}
+
+pub fn scan_associated<'marked, 'source>(
+    impls: impl IntoIterator<Item = &'marked Marked<'source, syn::ItemImpl>>,
+    declared_types: &DeclaredTypes,
+) -> Result<Vec<ConstantDef>, ScanError>
+where
+    'source: 'marked,
+{
+    impls
+        .into_iter()
+        .try_fold(Vec::new(), |mut constants, marked| {
+            let Some(owner) = resolve_owner(marked.item(), marked.scope(), declared_types)? else {
+                return Ok(constants);
+            };
+            let associated = marked
+                .item()
+                .items
+                .iter()
+                .filter_map(|item| match item {
+                    syn::ImplItem::Const(constant) => scan_associated_constant(
+                        constant,
+                        owner.clone(),
+                        marked.scope(),
+                        declared_types,
+                    )
+                    .transpose(),
+                    _ => None,
+                })
+                .collect::<Result<Vec<_>, ScanError>>()?;
+            constants.extend(associated);
+            Ok(constants)
+        })
+}
+
+fn scan_associated_constant(
+    constant: &syn::ImplItemConst,
+    owner: ConstantOwner,
+    scope: &ModuleScope,
+    declared_types: &DeclaredTypes,
+) -> Result<Option<ConstantDef>, ScanError> {
+    match marker::disposition(&constant.attrs)? {
+        Disposition::Skip => return Ok(None),
+        Disposition::Reject(marker) => {
+            return Err(marker.invalid_placement("associated const"));
+        }
+        Disposition::Unmarked if !matches!(constant.vis, syn::Visibility::Public(_)) => {
+            return Ok(None);
+        }
+        Disposition::Unmarked => {}
+    }
+    if let Some(error) = super::misplaced_stream_marker(&constant.attrs, "associated const")? {
+        return Err(error);
+    }
+    DeclarationSyntax::from(constant)
+        .scan(scope, declared_types, Some(owner))
+        .map(Some)
+}
+
+fn resolve_owner(
+    item: &syn::ItemImpl,
+    scope: &ModuleScope,
+    declared_types: &DeclaredTypes,
+) -> Result<Option<ConstantOwner>, ScanError> {
+    let target = impl_target::Target::scan(item);
+    let Some(path) = declared_types.resolve_impl_target(scope, &target)? else {
+        return Ok(None);
+    };
+    Ok(match declared_types.resolve(&path) {
+        Some(DeclaredType::Record(id)) => Some(ConstantOwner::Record(id.clone())),
+        Some(DeclaredType::Enum(id)) => Some(ConstantOwner::Enum(id.clone())),
+        Some(DeclaredType::Class(id)) => Some(ConstantOwner::Class(id.clone())),
+        _ => None,
+    })
 }
 
 fn constant_type(types: &type_expr::Scanner<'_>, ty: &syn::Type) -> Result<TypeExpr, ScanError> {
@@ -78,7 +204,7 @@ mod tests {
     }
 
     fn scan(source: &str) -> Result<ConstantDef, ScanError> {
-        super::build(
+        super::build_item(
             &parse(source),
             &ModuleScope::root("demo"),
             &DeclaredTypes::new(),
@@ -164,7 +290,7 @@ mod tests {
     fn scans_enum_path_constant_against_declared_type() {
         let mut declared_types = DeclaredTypes::new();
         declared_types.register_enum(EnumId::new("demo::Mode"));
-        let constant = super::build(
+        let constant = super::build_item(
             &parse("pub const DEFAULT_MODE: Mode = Mode::Fast;"),
             &ModuleScope::root("demo"),
             &declared_types,
@@ -188,7 +314,7 @@ mod tests {
     fn scans_accessor_backed_enum_constant_expressions() {
         let mut declared_types = DeclaredTypes::new();
         declared_types.register_enum(EnumId::new("demo::Shape"));
-        let accessor = super::build(
+        let accessor = super::build_item(
             &parse("pub const DEFAULT: Shape = make_default_shape();"),
             &ModuleScope::root("demo"),
             &declared_types,
@@ -204,7 +330,7 @@ mod tests {
             ConstExpr::Raw("make_default_shape ()".to_owned())
         );
 
-        let payload_literal = super::build(
+        let payload_literal = super::build_item(
             &parse("pub const CIRCLE: Shape = Shape::Circle { radius: 1.0 };"),
             &ModuleScope::root("demo"),
             &declared_types,
@@ -243,7 +369,7 @@ mod tests {
     fn rejects_non_string_and_non_byte_reference_constants() {
         let mut declared_types = DeclaredTypes::new();
         declared_types.register_record(RecordId::new("demo::Point"));
-        let error = super::build(
+        let error = super::build_item(
             &parse("pub const ORIGIN: &Point = &Point::ORIGIN;"),
             &ModuleScope::root("demo"),
             &declared_types,

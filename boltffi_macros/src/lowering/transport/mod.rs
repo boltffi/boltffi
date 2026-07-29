@@ -36,7 +36,7 @@ impl<'a> NamedTypeTransportClassifier<'a> {
         }
 
         match self.data_types.category_for(ty) {
-            Some(DataTypeCategory::Scalar | DataTypeCategory::Blittable) => {
+            Some(DataTypeCategory::Scalar(_) | DataTypeCategory::Blittable) => {
                 NamedTypeTransport::Passable
             }
             Some(DataTypeCategory::WireEncoded) | None => NamedTypeTransport::WireEncoded,

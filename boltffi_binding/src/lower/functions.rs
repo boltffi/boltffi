@@ -56,10 +56,10 @@ fn lower_one<S: SurfaceLower>(
 mod tests {
     use boltffi_ast::{
         CallableForm, CanonicalName as SourceName, DeprecationInfo as SourceDeprecationInfo,
-        DocComment as SourceDocComment, ExecutionKind, FieldDef, FunctionDef,
-        FunctionId as SourceFunctionId, MethodDef, MethodId as SourceMethodId,
+        DocComment as SourceDocComment, EnumDef, EnumId as SourceEnumId, ExecutionKind, FieldDef,
+        FunctionDef, FunctionId as SourceFunctionId, MethodDef, MethodId as SourceMethodId,
         PackageInfo as SourcePackage, ParameterDef, Path as SourcePath, Primitive, Receiver,
-        RecordDef, ReprAttr, ReprItem, ReturnDef, SourceContract, TypeExpr,
+        RecordDef, ReprAttr, ReprItem, ReturnDef, SourceContract, TypeExpr, VariantDef,
     };
 
     use crate::lower::{LowerError, LowerErrorKind, UnsupportedType, lower};
@@ -88,6 +88,11 @@ mod tests {
 
         fn with_record(mut self, record: RecordDef) -> Self {
             self.source.records.push(record);
+            self
+        }
+
+        fn with_enum(mut self, enumeration: EnumDef) -> Self {
+            self.source.enums.push(enumeration);
             self
         }
 
@@ -539,6 +544,7 @@ mod tests {
             callable.returns().plan(),
             &ReturnPlan::ScalarOptionViaReturnSlot {
                 primitive: BindingPrimitive::I32,
+                enum_target: None,
             }
         );
         assert!(matches!(callable.error(), ErrorDecl::None(_)));
@@ -730,6 +736,7 @@ mod tests {
             first_function(&bindings).callable().returns().plan(),
             &ReturnPlan::ScalarOptionViaReturnSlot {
                 primitive: BindingPrimitive::I32,
+                enum_target: None,
             }
         );
     }
@@ -748,6 +755,7 @@ mod tests {
             first_function(&bindings).callable().returns().plan(),
             &ReturnPlan::ScalarOptionViaReturnSlot {
                 primitive: BindingPrimitive::I32,
+                enum_target: None,
             }
         );
     }
@@ -786,8 +794,80 @@ mod tests {
             first_function(&bindings).callable().returns().plan(),
             &ReturnPlan::ScalarOptionViaReturnSlot {
                 primitive: BindingPrimitive::F64,
+                enum_target: None,
             }
         );
+    }
+
+    fn enum_type(id: &str, enum_name: &str) -> TypeExpr {
+        TypeExpr::enumeration(SourceEnumId::new(id), SourcePath::single(enum_name))
+    }
+
+    fn c_style_enum(id: &str, enum_name: &str, repr: Primitive) -> EnumDef {
+        let mut enumeration = EnumDef::new(SourceEnumId::new(id), name(enum_name));
+        enumeration.variants = vec![
+            VariantDef::unit(name("North")),
+            VariantDef::unit(name("South")),
+        ];
+        enumeration.repr = ReprAttr::new(vec![ReprItem::Primitive(repr)]);
+        enumeration
+    }
+
+    #[test]
+    fn wasm_option_c_style_enum_return_uses_the_scalar_slot() {
+        let bindings = TestContract::new()
+            .with_enum(c_style_enum("demo::Direction", "Direction", Primitive::I32))
+            .with_function(returning(
+                "demo::find_direction",
+                "find_direction",
+                TypeExpr::option(enum_type("demo::Direction", "Direction")),
+            ))
+            .lower_ok::<Wasm32>();
+
+        assert!(matches!(
+            first_function(&bindings).callable().returns().plan(),
+            ReturnPlan::ScalarOptionViaReturnSlot {
+                primitive: BindingPrimitive::I32,
+                enum_target: Some(TypeRef::Enum(_)),
+            }
+        ));
+    }
+
+    #[test]
+    fn native_option_c_style_enum_return_stays_encoded() {
+        // Only wasm folds the discriminant into a scalar slot; native surfaces
+        // keep the buffer so their ABI is untouched.
+        let bindings = TestContract::new()
+            .with_enum(c_style_enum("demo::Direction", "Direction", Primitive::I32))
+            .with_function(returning(
+                "demo::find_direction",
+                "find_direction",
+                TypeExpr::option(enum_type("demo::Direction", "Direction")),
+            ))
+            .lower_ok::<Native>();
+
+        assert!(matches!(
+            first_function(&bindings).callable().returns().plan(),
+            ReturnPlan::EncodedViaReturnSlot { .. }
+        ));
+    }
+
+    #[test]
+    fn wasm_option_enum_with_64_bit_repr_stays_encoded() {
+        // An i64 discriminant would not survive the f64 carrier intact.
+        let bindings = TestContract::new()
+            .with_enum(c_style_enum("demo::Wide", "Wide", Primitive::I64))
+            .with_function(returning(
+                "demo::find_wide",
+                "find_wide",
+                TypeExpr::option(enum_type("demo::Wide", "Wide")),
+            ))
+            .lower_ok::<Wasm32>();
+
+        assert!(matches!(
+            first_function(&bindings).callable().returns().plan(),
+            ReturnPlan::EncodedViaReturnSlot { .. }
+        ));
     }
 
     #[test]

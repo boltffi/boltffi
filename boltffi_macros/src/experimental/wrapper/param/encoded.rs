@@ -187,11 +187,7 @@ impl<'expansion, 'lowered, S: RenderSurface> Slice<'expansion, 'lowered, S> {
         let failure = &self.failure;
         let conversion = quote! {
             let #ident: &mut [u8] = if #pointer.is_null() && #length > 0 {
-                ::boltffi::__private::set_last_error(format!(
-                    "{}: null pointer with non-zero length (buf_len={})",
-                    stringify!(#ident),
-                    #length
-                ));
+                ::boltffi::__private::set_last_error_len(stringify!(#ident), "null pointer with non-zero length", #length as usize);
                 #failure
             } else if #length == 0 {
                 &mut []
@@ -237,10 +233,7 @@ impl<'expansion, 'lowered, S: RenderSurface> Slice<'expansion, 'lowered, S> {
             ffi_parameter_types: vec![quote! { *mut ::boltffi::__private::FfiBuf }],
             conversions: vec![quote! {
                 if #out.is_null() {
-                    ::boltffi::__private::set_last_error(format!(
-                        "{}: writeback pointer is null",
-                        stringify!(#out)
-                    ));
+                    ::boltffi::__private::set_last_error(concat!(stringify!(#out), ": writeback pointer is null"));
                     #failure
                 }
             }],

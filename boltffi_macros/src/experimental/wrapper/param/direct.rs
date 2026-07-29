@@ -267,20 +267,14 @@ impl NativeRecordParam {
         match self.receive {
             Receive::ByRef => Ok(quote! {
                 if #ident.is_null() {
-                    ::boltffi::__private::set_last_error(format!(
-                        "{}: null direct record pointer",
-                        stringify!(#ident)
-                    ));
+                    ::boltffi::__private::set_last_error(concat!(stringify!(#ident), ": null direct record pointer"));
                     #failure
                 }
                 let #ident: &#rust_type = unsafe { &*(#ident as *const #rust_type) };
             }),
             Receive::ByMutRef => Ok(quote! {
                 if #ident.is_null() {
-                    ::boltffi::__private::set_last_error(format!(
-                        "{}: null direct record pointer",
-                        stringify!(#ident)
-                    ));
+                    ::boltffi::__private::set_last_error(concat!(stringify!(#ident), ": null direct record pointer"));
                     #failure
                 }
                 let #ident: &mut #rust_type = unsafe { &mut *(#ident as *mut #rust_type) };
@@ -341,10 +335,7 @@ impl WasmRecordParam {
             Receive::ByMutRef => Ok(quote! {
                 let #out = #ident;
                 if #out.is_null() {
-                    ::boltffi::__private::set_last_error(format!(
-                        "{}: null direct record pointer",
-                        stringify!(#ident)
-                    ));
+                    ::boltffi::__private::set_last_error(concat!(stringify!(#ident), ": null direct record pointer"));
                     #failure
                 }
                 let mut #ident: #rust_type = unsafe {
@@ -355,10 +346,7 @@ impl WasmRecordParam {
             }),
             Receive::ByValue | Receive::ByRef => Ok(quote! {
                 if #ident.is_null() {
-                    ::boltffi::__private::set_last_error(format!(
-                        "{}: null direct record pointer",
-                        stringify!(#ident)
-                    ));
+                    ::boltffi::__private::set_last_error(concat!(stringify!(#ident), ": null direct record pointer"));
                     #failure
                 }
                 let #ident: #rust_type = unsafe {

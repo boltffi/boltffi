@@ -1,7 +1,7 @@
 use askama::Template;
 use boltffi_binding::{
-    CStyleEnumDecl, CanonicalName, DataEnumDecl, DataVariantPayload, DirectValueType, EnumDecl,
-    FieldKey, Native, Primitive,
+    CStyleEnumDecl, CanonicalName, ConstantOwner, DataEnumDecl, DataVariantPayload,
+    DirectValueType, EnumDecl, FieldKey, Native, Primitive,
 };
 
 use crate::{
@@ -15,12 +15,13 @@ use super::super::{
     syntax::{Expression, Identifier, Statement, TypeFragment},
     type_name,
 };
-use super::{Documentation, Function, WireTemplate, primitive_type};
+use super::{AssociatedConstants, Documentation, Function, WireTemplate, primitive_type};
 
 #[derive(Template)]
 #[template(path = "target/csharp/enumeration.cs", escape = "none")]
 struct EnumerationTemplate<'enumeration> {
     enumeration: &'enumeration Enumeration,
+    constants: &'enumeration [String],
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -33,6 +34,7 @@ pub(in crate::target::csharp) struct Enumeration {
     underlying_type: TypeFragment,
     variants: Vec<Variant>,
     data_variants: Vec<DataVariant>,
+    constants: AssociatedConstants,
     methods: Vec<Function>,
     diagnostics: Vec<Diagnostic>,
 }
@@ -165,6 +167,12 @@ impl Enumeration {
                 ),
             )?;
         }
+        let constants = AssociatedConstants::from_owner(
+            ConstantOwner::Enum(declaration.id()),
+            &namespace,
+            bridge,
+            context,
+        )?;
         Ok(Self {
             documentation: Documentation::summary(declaration.meta().doc(), "    "),
             namespace,
@@ -174,6 +182,7 @@ impl Enumeration {
             underlying_type: primitive_type(primitive),
             variants,
             data_variants: Vec::new(),
+            constants,
             methods,
             diagnostics,
         })
@@ -297,6 +306,12 @@ impl Enumeration {
                 ),
             )?;
         }
+        let constants = AssociatedConstants::from_owner(
+            ConstantOwner::Enum(declaration.id()),
+            &namespace,
+            bridge,
+            context,
+        )?;
         Ok(Self {
             documentation: Documentation::summary(declaration.meta().doc(), "    "),
             namespace,
@@ -306,21 +321,27 @@ impl Enumeration {
             underlying_type: TypeFragment::void(),
             variants: Vec::new(),
             data_variants,
+            constants,
             methods,
             diagnostics,
         })
     }
 
     pub(in crate::target::csharp) fn render(&self) -> Result<Emitted> {
-        let mut emitted = Emitted::primary(EnumerationTemplate { enumeration: self }.render()?)
-            .with_diagnostics(self.diagnostics.iter().cloned());
-        for method in &self.methods {
-            let (_, aux, diagnostics) = method.render()?.into_parts();
-            for chunk in aux {
-                emitted = emitted.with_aux(chunk);
+        let constants = self.constants.members()?;
+        let emitted = Emitted::primary(
+            EnumerationTemplate {
+                enumeration: self,
+                constants: &constants,
             }
-            emitted = emitted.with_diagnostics(diagnostics);
-        }
+            .render()?,
+        )
+        .with_diagnostics(self.diagnostics.iter().cloned());
+        let emitted = self
+            .methods
+            .iter()
+            .try_fold(emitted, |emitted, method| method.add_support(emitted))?;
+        let mut emitted = self.constants.add_support(emitted)?;
         if !self.c_style {
             emitted = emitted.with_aux(AuxChunk::ForwardDecl(WireTemplate.render()?.into()));
         }

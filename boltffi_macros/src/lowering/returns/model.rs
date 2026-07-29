@@ -269,7 +269,10 @@ impl<'a> ReturnLoweringContext<'a> {
     }
 }
 
+/// How the payload of an optional scalar return is folded into the wasm `f64`
+/// slot. C-style enums ride the same slot as primitives, via their discriminant.
 #[derive(Clone, Copy)]
-pub struct WasmOptionScalarEncoding {
-    pub(super) primitive: boltffi_ffi_rules::primitive::Primitive,
+pub enum WasmOptionScalarEncoding {
+    Primitive(boltffi_ffi_rules::primitive::Primitive),
+    ScalarEnum,
 }

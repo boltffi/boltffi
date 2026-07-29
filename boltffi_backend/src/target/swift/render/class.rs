@@ -1,5 +1,5 @@
 use askama::Template;
-use boltffi_binding::{ClassDecl, ExportedMethodDecl, Native, NativeSymbol};
+use boltffi_binding::{ClassDecl, ConstantOwner, ExportedMethodDecl, Native, NativeSymbol};
 
 use crate::{
     bridge::c::CBridgeContract,
@@ -7,7 +7,7 @@ use crate::{
     target::swift::{
         name_style::Name,
         render::{
-            Documentation, SwiftType,
+            AssociatedConstants, Documentation, SwiftType,
             function::{AssociatedFunction, AssociatedFunctions, Initializer, Receiver},
         },
         syntax::{Identifier, TypeName},
@@ -18,6 +18,7 @@ use crate::{
 #[template(path = "target/swift/class.swift", escape = "none")]
 struct ClassTemplate<'a> {
     class: &'a Class,
+    constants: Vec<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -26,6 +27,7 @@ pub struct Class {
     name: TypeName,
     handle_type: TypeName,
     release: Identifier,
+    constants: AssociatedConstants,
     initializers: Vec<Initializer>,
     static_methods: Vec<AssociatedFunction>,
     instance_methods: Vec<AssociatedFunction>,
@@ -57,6 +59,11 @@ impl Class {
             name: Name::new(declaration.name()).type_name(),
             handle_type: SwiftType::handle_carrier(declaration.handle())?,
             release: Identifier::parse(declaration.release().name().as_str())?,
+            constants: AssociatedConstants::from_owner(
+                ConstantOwner::Class(declaration.id()),
+                bridge,
+                context,
+            )?,
             initializers,
             static_methods,
             instance_methods,
@@ -65,7 +72,11 @@ impl Class {
     }
 
     pub fn render(&self) -> Result<Emitted> {
-        let mut source = ClassTemplate { class: self }.render()?;
+        let mut source = ClassTemplate {
+            class: self,
+            constants: self.constants.render()?,
+        }
+        .render()?;
         source.push_str("\n\n");
         let emitted = Emitted::primary(source).with_diagnostics(self.diagnostics.clone());
         let emitted = match self.requires_wire_runtime() {
@@ -112,9 +123,11 @@ impl Class {
     }
 
     fn requires_wire_runtime(&self) -> bool {
-        self.initializers
-            .iter()
-            .any(Initializer::requires_wire_runtime)
+        self.constants.requires_wire_runtime()
+            || self
+                .initializers
+                .iter()
+                .any(Initializer::requires_wire_runtime)
             || self
                 .static_methods
                 .iter()

@@ -26,6 +26,10 @@ impl Expression {
         Self(format!("{ty}.{method}({arguments})"))
     }
 
+    pub fn static_member(ty: TypeName, member: Identifier) -> Self {
+        Self(format!("{ty}.{member}"))
+    }
+
     pub fn call(self, method: Identifier, arguments: ArgumentList) -> Self {
         Self(format!("{self}.{method}({arguments})"))
     }

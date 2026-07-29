@@ -194,10 +194,7 @@ impl<'lowered, C> Input<'lowered, C> {
         let null_check = matches!(self.plan.presence, HandlePresence::Required).then(|| {
             quote! {
                 if #ident == #zero {
-                    ::boltffi::__private::set_last_error(format!(
-                        "{}: null class handle",
-                        stringify!(#ident)
-                    ));
+                    ::boltffi::__private::set_last_error(concat!(stringify!(#ident), ": null class handle"));
                     #failure
                 }
             }
@@ -209,10 +206,7 @@ impl<'lowered, C> Input<'lowered, C> {
                 let #ident: #ty = match unsafe { #handle_type::take(#handle_pointer) } {
                     Some(value) => value,
                     None => {
-                        ::boltffi::__private::set_last_error(format!(
-                            "{}: released class handle",
-                            stringify!(#ident)
-                        ));
+                        ::boltffi::__private::set_last_error(concat!(stringify!(#ident), ": released class handle"));
                         #failure
                     }
                 };
@@ -224,10 +218,7 @@ impl<'lowered, C> Input<'lowered, C> {
                     Some(match unsafe { #handle_type::take(#handle_pointer) } {
                         Some(value) => value,
                         None => {
-                            ::boltffi::__private::set_last_error(format!(
-                                "{}: released class handle",
-                                stringify!(#ident)
-                            ));
+                            ::boltffi::__private::set_last_error(concat!(stringify!(#ident), ": released class handle"));
                             #failure
                         }
                     })
@@ -276,10 +267,7 @@ impl rust_api::CallbackObject {
             HandlePresence::Required => Ok(quote! {
                 let #handle = #handle_binding;
                 if #handle.is_null() {
-                    ::boltffi::__private::set_last_error(format!(
-                        "{}: null callback handle",
-                        stringify!(#ident)
-                    ));
+                    ::boltffi::__private::set_last_error(concat!(stringify!(#ident), ": null callback handle"));
                     #failure
                 }
                 let #ident: #ty = unsafe {

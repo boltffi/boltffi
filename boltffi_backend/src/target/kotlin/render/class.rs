@@ -2,8 +2,8 @@ use std::{collections::BTreeSet, fmt};
 
 use askama::Template as AskamaTemplate;
 use boltffi_binding::{
-    CanonicalName, ClassDecl, ClassId, ExportedMethodDecl, HandlePresence, InitializerDecl, Native,
-    NativeSymbol, Receive,
+    CanonicalName, ClassDecl, ClassId, ConstantOwner, ExportedMethodDecl, HandlePresence,
+    InitializerDecl, Native, NativeSymbol, Receive,
 };
 
 use crate::{
@@ -13,6 +13,7 @@ use crate::{
         KotlinFactoryStyle, KotlinHost,
         name_style::Name,
         render::{
+            AssociatedConstants,
             function::{ExportedCall, ExportedCallRenderer, ReceiverCarrier},
             signature::validate_reserved_members,
         },
@@ -24,12 +25,14 @@ use crate::{
 #[template(path = "target/kotlin/class.kt", escape = "none")]
 struct ClassTemplate {
     class: Class,
+    constants: Vec<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Class {
     name: TypeName,
     release: Identifier,
+    constants: AssociatedConstants,
     initializers: Vec<Initializer>,
     static_methods: Vec<ExportedCall>,
     instance_methods: Vec<ExportedCall>,
@@ -95,6 +98,12 @@ impl Class {
         )?;
         Ok(Self {
             release: Identifier::escape(decl.release().name().as_str())?,
+            constants: AssociatedConstants::from_owner(
+                ConstantOwner::Class(decl.id()),
+                host,
+                Some(bridge),
+                context,
+            )?,
             initializers: Initializer::apply_factory_style(initializers, factory_style),
             static_methods: Self::methods(decl.methods(), None, host, bridge, context)?,
             instance_methods,
@@ -103,7 +112,14 @@ impl Class {
     }
 
     pub fn render(self) -> Result<Emitted> {
-        Ok(Emitted::primary(ClassTemplate { class: self }.render()?))
+        let constants = self.constants.render("        ")?;
+        Ok(Emitted::primary(
+            ClassTemplate {
+                class: self,
+                constants,
+            }
+            .render()?,
+        ))
     }
 
     pub fn type_name_from_id(id: ClassId, context: &RenderContext<Native>) -> Result<TypeName> {

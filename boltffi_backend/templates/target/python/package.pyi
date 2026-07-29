@@ -14,12 +14,19 @@ from enum import IntEnum
 from collections.abc import {% if uses_callable_annotations %}Callable{% if uses_sequence_annotations %}, {% endif %}{% endif %}{% if uses_sequence_annotations %}Sequence{% endif %}
 
 {% endif %}
+{% if has_associated_constants %}
+from typing import ClassVar
+
+{% endif %}
 MODULE_NAME: str
 PACKAGE_NAME: str
 PACKAGE_VERSION: str | None
 {% for record in records %}
 @dataclass(frozen=True, slots=True)
 class {{ record.class_name }}:
+{%- for constant in record.constants %}
+    {{ constant.python_name }}: ClassVar[{{ constant.annotation }}]
+{%- endfor %}
 {%- for field in record.fields %}
     {{ field.name }}: {{ field.annotation }}{% if let Some(default) = field.default %} = {{ default }}{% endif %}
 {%- endfor %}
@@ -45,9 +52,12 @@ class {{ exception_name }}(RuntimeError):
 {% for enumeration in enums %}
 {%- if let Some(wire) = enumeration.wire %}
 class {{ enumeration.class_name }}:
-{%- if enumeration.constructors.is_empty() && enumeration.static_methods.is_empty() && enumeration.instance_methods.is_empty() %}
+{%- if enumeration.constructors.is_empty() && enumeration.static_methods.is_empty() && enumeration.instance_methods.is_empty() && enumeration.constants.is_empty() %}
     pass
 {%- endif %}
+{%- for constant in enumeration.constants %}
+    {{ constant.python_name }}: ClassVar[{{ constant.annotation }}]
+{%- endfor %}
 {%- for constructor in enumeration.constructors %}
     @classmethod
     {% if constructor.asynchronous %}async {% endif %}def {{ constructor.python_name }}(cls{% for parameter in constructor.parameters %}, {{ parameter.name }}: {{ parameter.annotation }}{% endfor %}) -> "{{ enumeration.class_name }}": ...
@@ -77,6 +87,9 @@ class {{ enumeration.class_name }}(IntEnum):
 {%- for variant in enumeration.variants %}
     {{ variant.name }} = {{ variant.value }}
 {%- endfor %}
+{%- for constant in enumeration.constants %}
+    {{ constant.python_name }}: ClassVar[{{ constant.annotation }}]
+{%- endfor %}
 {%- for constructor in enumeration.constructors %}
     @classmethod
     {% if constructor.asynchronous %}async {% endif %}def {{ constructor.python_name }}(cls{% for parameter in constructor.parameters %}, {{ parameter.name }}: {{ parameter.annotation }}{% endfor %}) -> "{{ enumeration.class_name }}": ...
@@ -100,6 +113,9 @@ class {{ exception_name }}(RuntimeError):
 {% for class in classes %}
 class {{ class.class_name }}:
     _handle: int
+{%- for constant in class.constants %}
+    {{ constant.python_name }}: ClassVar[{{ constant.annotation }}]
+{%- endfor %}
 {% if !class.init.is_empty() %}
 {% for init in class.init %}
     def __init__(self{% for parameter in init.parameters %}, {{ parameter.name }}: {{ parameter.annotation }}{% endfor %}) -> None: ...

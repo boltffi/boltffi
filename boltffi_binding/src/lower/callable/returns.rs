@@ -104,10 +104,13 @@ fn specialize_return<S: SurfaceLower, D: Direction>(
 where
     D::Opposite: ParamDirection<S>,
 {
-    let specialization = ValueSpecialization::from_type_expr::<S>(index, ids, type_expr)?;
+    let specialization = ValueSpecialization::from_return::<S, D>(index, ids, type_expr)?;
     Ok(match specialization {
-        Some(ValueSpecialization::ScalarOption(primitive)) => {
-            Some(ReturnPlan::ScalarOptionViaReturnSlot { primitive })
+        Some(ValueSpecialization::ScalarOption(primitive, enum_target)) => {
+            Some(ReturnPlan::ScalarOptionViaReturnSlot {
+                primitive,
+                enum_target,
+            })
         }
         Some(ValueSpecialization::DirectVector(element)) => {
             Some(ReturnPlan::DirectVecViaReturnSlot { element })

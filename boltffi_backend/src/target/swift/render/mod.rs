@@ -13,6 +13,7 @@ mod type_name;
 
 pub use callback::Callback;
 pub use class::Class;
+use constant::AssociatedConstants;
 pub use constant::Constant;
 pub use custom_type::CustomType;
 pub use documentation::Documentation;

@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use askama::Template as AskamaTemplate;
-use boltffi_binding::{ClassDecl, ClassId, HandlePresence, Native, native};
+use boltffi_binding::{ClassDecl, ClassId, ConstantOwner, HandlePresence, Native, native};
 
 use crate::{
     bridge::jni::JniBridgeContract,
@@ -12,7 +12,7 @@ use crate::{
         name_style::Name,
         primitive::Primitive,
         render::{
-            Stream,
+            AssociatedConstants, Constant, Stream,
             call::{AssociatedCallContext, Call, Receiver},
             native::Method,
             signature::{ErasedSignature, ReturnType, ValueType},
@@ -37,6 +37,7 @@ pub struct Class {
     handle: Primitive,
     release: Statement,
     release_native: Method,
+    constants: AssociatedConstants,
     constructors: Vec<Constructor>,
     factories: Vec<Call>,
     static_methods: Vec<Call>,
@@ -143,6 +144,13 @@ impl Class {
             handle,
             release,
             release_native,
+            constants: AssociatedConstants::from_owner(
+                ConstantOwner::Class(declaration.id()),
+                bridge,
+                native_owner,
+                version,
+                context,
+            )?,
             constructors,
             factories,
             static_methods,
@@ -181,16 +189,20 @@ impl Class {
                     .into_iter()
                     .fold(emitted, Emitted::with_aux))
             })?;
-        self.streams.iter().try_fold(emitted, |emitted, stream| {
-            let emitted = stream
-                .runtime_helpers(self.version)?
-                .into_iter()
-                .fold(emitted, Emitted::with_aux);
-            Ok(stream
-                .native_forwards()?
-                .into_iter()
-                .fold(emitted, Emitted::with_aux))
-        })
+        let emitted = self
+            .streams
+            .iter()
+            .try_fold(emitted, |emitted, stream| -> Result<_> {
+                let emitted = stream
+                    .runtime_helpers(self.version)?
+                    .into_iter()
+                    .fold(emitted, Emitted::with_aux);
+                Ok(stream
+                    .native_forwards()?
+                    .into_iter()
+                    .fold(emitted, Emitted::with_aux))
+            })?;
+        self.constants.extend(emitted)
     }
 
     pub fn file_for(declaration: &ClassDecl<Native>, version: JavaVersion) -> Result<JavaFile> {
@@ -218,6 +230,10 @@ impl Class {
 
     pub const fn handle(&self) -> Primitive {
         self.handle
+    }
+
+    pub fn constants(&self) -> &[Constant] {
+        self.constants.as_slice()
     }
 
     pub fn release(&self) -> &Statement {

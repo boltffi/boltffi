@@ -56,19 +56,22 @@ mod params;
 mod returns;
 
 use boltffi_ast::{
-    BaseTrait, CanonicalName as SourceName, ClassId, ExecutionKind, FnSig, FnTrait, FunctionDef,
-    MethodDef, ParameterDef, Receiver, ReturnDef, TraitBounds, TraitId, TypeExpr,
+    BaseTrait, CanonicalName as SourceName, ClassId, ConstantOwner as SourceConstantOwner,
+    ExecutionKind, FnSig, FnTrait, FunctionDef, MethodDef, ParameterDef, Receiver, ReturnDef,
+    TraitBounds, TraitId, TypeExpr,
 };
+
+use std::any::TypeId;
 
 use crate::{
     ClosureForm, ClosureParameter, ClosureRegistration, ClosureReturn, ClosureSignature,
     DirectVectorElementType, Direction, ExecutionDecl, ExportedCallable, ForeignBody,
     FutureMobility, HandlePresence, ImportedCallable, IntoRust, OutOfRust, Primitive, Receive,
-    RustBody,
+    RustBody, TypeRef,
 };
 
 use super::{
-    LowerError, codecs, error::UnsupportedType, ids::DeclarationIds, index::Index, records,
+    LowerError, codecs, enums, error::UnsupportedType, ids::DeclarationIds, index::Index, records,
     surface::SurfaceLower, symbol::SymbolAllocator,
 };
 
@@ -94,6 +97,27 @@ pub enum CallableOwner<'src> {
 }
 
 impl<'src> CallableOwner<'src> {
+    pub fn from_constant(
+        index: &'src Index<'src>,
+        owner: Option<&SourceConstantOwner>,
+    ) -> Result<Self, LowerError> {
+        match owner {
+            Some(SourceConstantOwner::Record(id)) => index
+                .record(id)
+                .map(Self::Record)
+                .ok_or_else(|| LowerError::unknown_record(id)),
+            Some(SourceConstantOwner::Enum(id)) => index
+                .enumeration(id)
+                .map(Self::Enum)
+                .ok_or_else(|| LowerError::unknown_enum(id)),
+            Some(SourceConstantOwner::Class(id)) => index
+                .class(id)
+                .map(Self::Class)
+                .ok_or_else(|| LowerError::unknown_class(id)),
+            None => Ok(Self::Function),
+        }
+    }
+
     fn self_type_expr(self) -> Result<boltffi_ast::TypeExpr, LowerError> {
         match self {
             Self::Record(record) => Ok(boltffi_ast::TypeExpr::record(
@@ -137,17 +161,32 @@ impl<'src> CallableOwner<'src> {
 }
 
 enum ValueSpecialization {
-    ScalarOption(Primitive),
+    ScalarOption(Primitive, Option<TypeRef>),
     DirectVector(DirectVectorElementType),
 }
 
 impl ValueSpecialization {
-    fn from_type_expr<S: SurfaceLower>(
+    fn from_return<S: SurfaceLower, D: Direction>(
         index: &Index,
         ids: &DeclarationIds,
         type_expr: &TypeExpr,
     ) -> Result<Option<Self>, LowerError> {
-        Self::from_parameter::<S>(index, ids, type_expr, Receive::ByValue)
+        if let Some(specialized) =
+            Self::from_parameter::<S>(index, ids, type_expr, Receive::ByValue)?
+        {
+            return Ok(Some(specialized));
+        }
+        // Returns produced by Rust additionally fold an optional C-style enum
+        // into the scalar slot. Params keep the wire encoding, and so do
+        // callback returns, whose Rust side still decodes a buffer.
+        let TypeExpr::Option(inner) = type_expr else {
+            return Ok(None);
+        };
+        if TypeId::of::<D>() != TypeId::of::<OutOfRust>() {
+            return Ok(None);
+        }
+        Ok(Self::scalar_option_enum::<S>(index, ids, inner)?
+            .map(|(primitive, target)| Self::ScalarOption(primitive, Some(target))))
     }
 
     fn from_parameter<S: SurfaceLower>(
@@ -159,7 +198,7 @@ impl ValueSpecialization {
         match (type_expr, receive) {
             (TypeExpr::Option(inner), Receive::ByValue) => Ok(Self::primitive(inner)
                 .and_then(S::scalar_option)
-                .map(Self::ScalarOption)),
+                .map(|primitive| Self::ScalarOption(primitive, None))),
             (TypeExpr::Vec(inner), Receive::ByValue) => {
                 Self::direct_vector_element(index, ids, inner)
                     .map(|element| element.map(Self::DirectVector))
@@ -171,6 +210,25 @@ impl ValueSpecialization {
             }
             _ => Ok(None),
         }
+    }
+
+    /// A C-style enum crosses as its discriminant, so an `Option` of one can
+    /// ride the scalar slot instead of being wire-encoded.
+    fn scalar_option_enum<S: SurfaceLower>(
+        index: &Index,
+        ids: &DeclarationIds,
+        type_expr: &TypeExpr,
+    ) -> Result<Option<(Primitive, TypeRef)>, LowerError> {
+        let TypeExpr::Enum { id, .. } = type_expr else {
+            return Ok(None);
+        };
+        let Some(repr) = index.enumeration(id).and_then(enums::c_style_repr) else {
+            return Ok(None);
+        };
+        let Some(primitive) = S::scalar_option_enum(repr) else {
+            return Ok(None);
+        };
+        Ok(Some((primitive, TypeRef::Enum(ids.enumeration(id)?))))
     }
 
     fn primitive(type_expr: &TypeExpr) -> Option<Primitive> {
@@ -582,9 +640,9 @@ pub fn lower_constant_accessor<S: SurfaceLower>(
     index: &Index,
     ids: &DeclarationIds,
     allocator: &mut SymbolAllocator,
+    owner: CallableOwner<'_>,
     type_expr: &boltffi_ast::TypeExpr,
 ) -> Result<ExportedCallable<S>, LowerError> {
-    let owner = CallableOwner::Function;
     let return_def = boltffi_ast::ReturnDef::value(type_expr.clone());
     let (returns, error) = returns::lower::<S, _>(
         index,

@@ -342,7 +342,10 @@ where
                     },
                 })
             }
-            ReturnPlan::ScalarOptionViaReturnSlot { primitive } => {
+            ReturnPlan::ScalarOptionViaReturnSlot {
+                primitive,
+                enum_target,
+            } => {
                 input.source.scalar_option(*primitive)?;
                 let rust_type = input.rust_type.as_ref().ok_or(Error::SourceSyntaxMismatch(
                     "binding scalar option return requires a source return type",
@@ -350,7 +353,10 @@ where
                 let result = locals.result();
                 let optional = <scalar_option::Renderer as Render<S, _>>::render(
                     scalar_option::Renderer,
-                    scalar_option::Input::new(*primitive, result.clone()),
+                    match enum_target {
+                        Some(_) => scalar_option::Input::enum_payload(*primitive, result.clone()),
+                        None => scalar_option::Input::new(*primitive, result.clone()),
+                    },
                 )?;
                 let return_type = optional.return_type;
                 let body = optional.body;
@@ -480,7 +486,7 @@ where
                     return #value;
                 })
             }
-            ReturnPlan::ScalarOptionViaReturnSlot { primitive } => {
+            ReturnPlan::ScalarOptionViaReturnSlot { primitive, .. } => {
                 <scalar_option::Failure as Render<S, _>>::render(
                     scalar_option::Failure,
                     scalar_option::FailureInput::new(*primitive),

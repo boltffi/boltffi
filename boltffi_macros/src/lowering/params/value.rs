@@ -49,12 +49,7 @@ impl<'a> ValueParamDecoder<'a> {
             match ::core::str::from_utf8(#bytes_expr) {
                 Ok(value) => value,
                 Err(error) => {
-                    ::boltffi::__private::set_last_error(format!(
-                        "{}: invalid UTF-8: {} (buf_len={})",
-                        stringify!(#name),
-                        error,
-                        #len_name
-                    ));
+                    ::boltffi::__private::set_last_error_display(stringify!(#name), "invalid UTF-8", &error, #len_name as usize);
                     ""
                 }
             }
@@ -73,12 +68,7 @@ impl<'a> ValueParamDecoder<'a> {
             match ::core::str::from_utf8(#bytes_expr) {
                 Ok(value) => value.to_string(),
                 Err(error) => {
-                    ::boltffi::__private::set_last_error(format!(
-                        "{}: invalid UTF-8: {} (buf_len={})",
-                        stringify!(#name),
-                        error,
-                        #len_name
-                    ));
+                    ::boltffi::__private::set_last_error_display(stringify!(#name), "invalid UTF-8", &error, #len_name as usize);
                     String::new()
                 }
             }
@@ -114,11 +104,7 @@ impl<'a> ValueParamDecoder<'a> {
                 return quote! {
                     let #name: #rust_type = {
                         if #ptr_name.is_null() && #len_name > 0 {
-                            ::boltffi::__private::set_last_error(format!(
-                                "{}: null pointer with non-zero length (buf_len={})",
-                                stringify!(#name),
-                                #len_name
-                            ));
+                            ::boltffi::__private::set_last_error_len(stringify!(#name), "null pointer with non-zero length", #len_name as usize);
                             #on_wire_record_error
                         }
                         let __bytes: &[u8] = if #len_name == 0 {
@@ -129,12 +115,7 @@ impl<'a> ValueParamDecoder<'a> {
                         let #wire_value_ident: #wire_type = match ::boltffi::__private::wire::decode(__bytes) {
                             Ok(value) => value,
                             Err(error) => {
-                                ::boltffi::__private::set_last_error(format!(
-                                    "{}: wire decode failed: {} (buf_len={})",
-                                    stringify!(#name),
-                                    error,
-                                    #len_name
-                                ));
+                                ::boltffi::__private::set_last_error_display(stringify!(#name), "wire decode failed", &error, #len_name as usize);
                                 #on_wire_record_error
                             }
                         };
@@ -152,12 +133,7 @@ impl<'a> ValueParamDecoder<'a> {
                     match ::boltffi::__private::wire::decode::<#wire_type>(__bytes) {
                         Ok(#wire_value_ident) => { #from_wire },
                         Err(error) => {
-                            ::boltffi::__private::set_last_error(format!(
-                                "{}: wire decode failed: {} (buf_len={})",
-                                stringify!(#name),
-                                error,
-                                #len_name
-                            ));
+                            ::boltffi::__private::set_last_error_display(stringify!(#name), "wire decode failed", &error, #len_name as usize);
                             #empty_value
                         }
                     }
@@ -169,11 +145,7 @@ impl<'a> ValueParamDecoder<'a> {
             return quote! {
                 let #name: #rust_type = {
                     if #ptr_name.is_null() && #len_name > 0 {
-                        ::boltffi::__private::set_last_error(format!(
-                            "{}: null pointer with non-zero length (buf_len={})",
-                            stringify!(#name),
-                            #len_name
-                        ));
+                        ::boltffi::__private::set_last_error_len(stringify!(#name), "null pointer with non-zero length", #len_name as usize);
                         #on_wire_record_error
                     }
                     let __bytes: &[u8] = if #len_name == 0 {
@@ -184,12 +156,7 @@ impl<'a> ValueParamDecoder<'a> {
                     match ::boltffi::__private::wire::decode(__bytes) {
                         Ok(value) => value,
                         Err(error) => {
-                            ::boltffi::__private::set_last_error(format!(
-                                "{}: wire decode failed: {} (buf_len={})",
-                                stringify!(#name),
-                                error,
-                                #len_name
-                            ));
+                            ::boltffi::__private::set_last_error_display(stringify!(#name), "wire decode failed", &error, #len_name as usize);
                             #on_wire_record_error
                         }
                     }
@@ -206,12 +173,7 @@ impl<'a> ValueParamDecoder<'a> {
                 match ::boltffi::__private::wire::decode::<#rust_type>(__bytes) {
                     Ok(value) => value,
                     Err(error) => {
-                        ::boltffi::__private::set_last_error(format!(
-                            "{}: wire decode failed: {} (buf_len={})",
-                            stringify!(#name),
-                            error,
-                            #len_name
-                        ));
+                        ::boltffi::__private::set_last_error_display(stringify!(#name), "wire decode failed", &error, #len_name as usize);
                         #empty_value
                     }
                 }
@@ -895,10 +857,7 @@ fn class_handle_binding(
     match (class_param.kind, class_param.nullable) {
         (ClassHandleParamKind::SharedRef, false) => quote! {
             let #name: &#rust_type = if #name.is_null() {
-                ::boltffi::__private::set_last_error(format!(
-                    "{}: null class handle",
-                    stringify!(#name)
-                ));
+                ::boltffi::__private::set_last_error(concat!(stringify!(#name), ": null class handle"));
                 #on_null
             } else {
                 unsafe { #name.as_ref().expect("checked non-null class handle") }
@@ -906,10 +865,7 @@ fn class_handle_binding(
         },
         (ClassHandleParamKind::MutableRef, false) => quote! {
             let #name: &mut #rust_type = if #name.is_null() {
-                ::boltffi::__private::set_last_error(format!(
-                    "{}: null class handle",
-                    stringify!(#name)
-                ));
+                ::boltffi::__private::set_last_error(concat!(stringify!(#name), ": null class handle"));
                 #on_null
             } else {
                 unsafe { #name.as_mut().expect("checked non-null class handle") }

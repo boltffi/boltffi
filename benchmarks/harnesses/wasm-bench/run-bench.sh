@@ -4,7 +4,6 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$SCRIPT_DIR/../../.."
 DEMO_DIR="$ROOT_DIR/examples/demo"
-DEMO_WASM_PKG_DIR="$ROOT_DIR/examples/platforms/wasm/dist"
 RUNTIME_DIR="$ROOT_DIR/runtime/typescript"
 BENCH_OVERLAY="$DEMO_DIR/boltffi.benchmark.toml"
 RESULTS_DIR="$SCRIPT_DIR/build/results/benchmarkjs"
@@ -68,16 +67,11 @@ export CARGO_TARGET_DIR="$ROOT_DIR/benchmarks/generated/boltffi/target"
 (
     cd "$DEMO_DIR"
     cargo run -p boltffi_cli --manifest-path "$ROOT_DIR/Cargo.toml" -- -v --overlay "$BENCH_OVERLAY" pack wasm --release --regenerate
-    cargo run -p boltffi_cli --manifest-path "$ROOT_DIR/Cargo.toml" -- -v pack wasm --release --regenerate
 )
 
 rm -rf "$GENERATED_DIR/boltffi"
 mkdir -p "$GENERATED_DIR/boltffi"
 cp -R "$ROOT_DIR/benchmarks/generated/boltffi/dist/wasm/pkg/." "$GENERATED_DIR/boltffi/"
-
-rm -rf "$GENERATED_DIR/boltffi-demo"
-mkdir -p "$GENERATED_DIR/boltffi-demo"
-cp -R "$DEMO_WASM_PKG_DIR/." "$GENERATED_DIR/boltffi-demo/"
 
 export CARGO_TARGET_DIR="$ROOT_DIR/benchmarks/generated/wasm-bindgen/target"
 cargo build --manifest-path "$DEMO_DIR/Cargo.toml" --release --target "$WASM_RUST_TARGET" --features wasm-bench

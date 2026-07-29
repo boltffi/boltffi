@@ -34,6 +34,10 @@ pub struct ReceiverTokens {
 
 enum RustCallTarget {
     Constant(syn::Ident),
+    AssociatedConstant {
+        owner: TokenStream,
+        constant: syn::Ident,
+    },
     Function(syn::Ident),
     FunctionPath(TokenStream),
     Associated {
@@ -195,6 +199,13 @@ impl RustCall {
         }
     }
 
+    pub fn associated_constant(owner: TokenStream, constant: syn::Ident) -> Self {
+        Self {
+            owner: constant.clone(),
+            target: RustCallTarget::AssociatedConstant { owner, constant },
+        }
+    }
+
     pub fn function(function: syn::Ident) -> Self {
         Self {
             owner: function.clone(),
@@ -251,6 +262,10 @@ impl RustCall {
             RustCallTarget::Constant(constant) => {
                 debug_assert!(arguments.is_empty());
                 quote! { #constant }
+            }
+            RustCallTarget::AssociatedConstant { owner, constant } => {
+                debug_assert!(arguments.is_empty());
+                quote! { #owner::#constant }
             }
             RustCallTarget::Function(function) => quote! { #function(#(#arguments),*) },
             RustCallTarget::FunctionPath(path) => quote! { #path(#(#arguments),*) },

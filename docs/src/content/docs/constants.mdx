@@ -1,0 +1,337 @@
+---
+title: "Constants"
+description: "Export Rust constants as module-level values or associate them with records, enums, and classes across Swift, Kotlin, Java, C#, TypeScript, and Python."
+---
+
+import CodeComparison from "../../components/CodeComparisonWrapper.astro";
+
+# Constants
+
+BoltFFI exports two kinds of constants:
+
+- A global constant is a standalone Rust `const` marked with `#[export]`.
+- An associated constant belongs to an exported record, enum, or class.
+
+Both forms produce immutable values in the generated API. BoltFFI emits simple literals directly in generated source and reads values that require Rust evaluation through a generated native accessor.
+
+Use a global constant for a value that belongs to the package as a whole. Use an associated constant when the value describes a particular record, enum, or class.
+
+## Global constants
+
+Mark a standalone public constant with `#[export]`. Swift, Kotlin, TypeScript, and Python expose it at module scope. Java and C# place it on the generated module class because those languages do not have module-level values.
+
+<CodeComparison
+  title=""
+  rust={`#[export]
+pub const API_VERSION: u32 = 3;
+
+#[export]
+pub const SERVICE_NAME: &'static str = "BoltFFI";`}
+  swift={`public let apiVersion: UInt32 = 3
+public let serviceName: String = "BoltFFI"
+
+let version = apiVersion`}
+  kotlin={`val apiVersion: UInt = 3.toUInt()
+val serviceName: String = "BoltFFI"
+
+val version = apiVersion`}
+  java={`public final class Demo {
+    public static final int API_VERSION = 3;
+    public static final String SERVICE_NAME = "BoltFFI";
+}
+
+int version = Demo.API_VERSION;`}
+  csharp={`public static class Demo
+{
+    public const uint ApiVersion = 3U;
+    public const string ServiceName = "BoltFFI";
+}
+
+uint version = Demo.ApiVersion;`}
+  typescript={`export const apiVersion: number = 3
+export const serviceName: string = "BoltFFI"
+
+const version = apiVersion`}
+  python={`api_version: int = 3
+service_name: str = "BoltFFI"
+
+version = api_version`}
+/>
+
+The Rust name is converted to the naming convention of each target. `API_VERSION` becomes `apiVersion` in Swift, Kotlin, and TypeScript, `API_VERSION` in Java, `ApiVersion` in C#, and `api_version` in Python.
+
+## Associated constants
+
+Associated constants are declared inside the same exported impl blocks used for methods and constructors:
+
+- Use `#[data(impl)]` for a struct or enum marked with `#[data]`.
+- Use `#[export]` for a class impl.
+
+Every public constant in the marked impl is generated on its owner type. The constant may use `Self` or any other supported constant type. The impl marker exports the member, so the individual constant does not need another `#[export]` attribute.
+
+<CodeComparison
+  title=""
+  rust={`#[data]
+pub struct Color {
+    pub r: u8,
+    pub g: u8,
+    pub b: u8,
+    pub a: u8,
+}
+
+#[data(impl)]
+impl Color {
+    pub const BLACK: Self = Self {
+        r: 0,
+        g: 0,
+        b: 0,
+        a: 255,
+    };
+
+    pub const CHANNEL_COUNT: u8 = 4;
+}
+
+#[repr(u8)]
+#[data]
+pub enum Mode {
+    Fast = 1,
+    Slow = 2,
+}
+
+#[data(impl)]
+impl Mode {
+    pub const DEFAULT: Self = Self::Fast;
+}
+
+pub struct Palette;
+
+#[export]
+impl Palette {
+    pub const MAX_COLORS: u8 = 16;
+
+    pub fn new() -> Self {
+        Self
+    }
+}`}
+  swift={`public struct Color {
+    public var r: UInt8
+    public var g: UInt8
+    public var b: UInt8
+    public var a: UInt8
+
+    public static var black: Color { get }
+    public static let channelCount: UInt8
+}
+
+public enum Mode: UInt8 {
+    case fast = 1
+    case slow = 2
+
+    public static let \`default\`: Mode
+}
+
+public final class Palette {
+    public static let maxColors: UInt8
+}
+
+let color = Color.black
+let mode = Mode.default
+let limit = Palette.maxColors`}
+  kotlin={`data class Color(
+    val r: UByte,
+    val g: UByte,
+    val b: UByte,
+    val a: UByte,
+) {
+    companion object {
+        val BLACK: Color
+        val CHANNEL_COUNT: UByte
+    }
+}
+
+enum class Mode(val value: Byte) {
+    FAST(1.toByte()),
+    SLOW(2.toByte());
+
+    companion object {
+        val DEFAULT: Mode
+    }
+}
+
+class Palette {
+    companion object {
+        val MAX_COLORS: UByte
+    }
+}
+
+val color = Color.BLACK
+val mode = Mode.DEFAULT
+val limit = Palette.MAX_COLORS`}
+  java={`public final class Color {
+    public final byte r;
+    public final byte g;
+    public final byte b;
+    public final byte a;
+
+    public static final Color BLACK;
+    public static final byte CHANNEL_COUNT = (byte) 4;
+}
+
+public enum Mode {
+    FAST((byte) 1),
+    SLOW((byte) 2);
+
+    public static final Mode DEFAULT = Mode.FAST;
+}
+
+public final class Palette implements AutoCloseable {
+    public static final byte MAX_COLORS = (byte) 16;
+}
+
+Color color = Color.BLACK;
+Mode mode = Mode.DEFAULT;
+byte limit = Palette.MAX_COLORS;`}
+  csharp={`public readonly record struct Color(
+    byte R,
+    byte G,
+    byte B,
+    byte A)
+{
+    public static Color Black { get; }
+    public const byte ChannelCount = 4;
+}
+
+public enum Mode : byte
+{
+    Fast = 1,
+    Slow = 2,
+    Default = Fast,
+}
+
+public sealed class Palette : IDisposable
+{
+    public const byte MaxColors = 16;
+}
+
+Color color = Color.Black;
+Mode mode = Mode.Default;
+byte limit = Palette.MaxColors;`}
+  typescript={`export interface Color {
+  readonly r: number
+  readonly g: number
+  readonly b: number
+  readonly a: number
+}
+
+export const Color: {
+  readonly BLACK: Color
+  readonly CHANNEL_COUNT: number
+}
+
+export type Mode = 1 | 2
+
+export const Mode: {
+  readonly Fast: 1
+  readonly Slow: 2
+  readonly DEFAULT: 1
+}
+
+export class Palette {
+  static readonly MAX_COLORS: number
+}
+
+const color = Color.BLACK
+const mode: Mode = Mode.DEFAULT
+const limit = Palette.MAX_COLORS`}
+  python={`from dataclasses import dataclass
+from enum import IntEnum
+from typing import ClassVar
+
+@dataclass(frozen=True)
+class Color:
+    BLACK: ClassVar["Color"]
+    CHANNEL_COUNT: ClassVar[int]
+
+    r: int
+    g: int
+    b: int
+    a: int
+
+class Mode(IntEnum):
+    FAST = 1
+    SLOW = 2
+
+    DEFAULT: ClassVar["Mode"]
+
+class Palette:
+    MAX_COLORS: ClassVar[int]
+
+color = Color.BLACK
+mode = Mode.DEFAULT
+limit = Palette.MAX_COLORS`}
+/>
+
+`Color.BLACK` uses `Self`, `Color.CHANNEL_COUNT` uses a primitive, `Mode.DEFAULT` aliases an enum variant, and `Palette.MAX_COLORS` belongs to a Rust-backed class. In every target, the value remains attached to the type that owns it.
+
+## Data constants
+
+Every record or enum marked with `#[data]` can be the value type of a global or associated constant. This includes primitive-only records, encoded records, C-style enums, and data enums. The selected target must already support that data type as a normal return value.
+
+The `Color` and `Mode` declarations above are examples of associated data constants. The same data types also work as global constants:
+
+<CodeComparison
+  title=""
+  rust={`#[export]
+pub const DEFAULT_COLOR: Color = Color {
+    r: 30,
+    g: 30,
+    b: 30,
+    a: 255,
+};
+
+#[export]
+pub const DEFAULT_MODE: Mode = Mode::Fast;`}
+  swift={`public var defaultColor: Color { get }
+public let defaultMode: Mode = Mode.fast
+
+let color = defaultColor
+let mode = defaultMode`}
+  kotlin={`val defaultColor: Color
+    get()
+
+val defaultMode: Mode = Mode.FAST
+
+val color = defaultColor
+val mode = defaultMode`}
+  java={`public final class Demo {
+    public static final Color DEFAULT_COLOR;
+    public static final Mode DEFAULT_MODE = Mode.FAST;
+}
+
+Color color = Demo.DEFAULT_COLOR;
+Mode mode = Demo.DEFAULT_MODE;`}
+  csharp={`public static class Demo
+{
+    public static Color DefaultColor { get; }
+    public const Mode DefaultMode = Mode.Fast;
+}
+
+Color color = Demo.DefaultColor;
+Mode mode = Demo.DefaultMode;`}
+  typescript={`export let defaultColor: Color
+export const defaultMode: Mode = Mode.Fast
+
+const color = defaultColor
+const mode = defaultMode`}
+  python={`default_color: Color
+default_mode: Mode = Mode.FAST
+
+color = default_color
+mode = default_mode`}
+/>
+
+Values such as `Color { ... }` are constructed in Rust and delivered through a generated accessor. The generated API still exposes an ordinary immutable value.
+
+## Supported values
+
+Constants can use the same types as exported function results, including primitives, strings, byte slices, tuples, and types marked with `#[data]`. Associated constants can use `Self` for values of their owner type.

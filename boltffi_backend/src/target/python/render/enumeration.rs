@@ -1,6 +1,7 @@
 use boltffi_binding::{
-    CStyleEnumDecl, CanonicalName, DataEnumDecl, DataVariantDecl, DataVariantPayload,
-    EncodedFieldDecl, ExportedMethodDecl, InitializerDecl, Native, NativeSymbol, Receive,
+    CStyleEnumDecl, CanonicalName, ConstantOwner, DataEnumDecl, DataVariantDecl,
+    DataVariantPayload, EncodedFieldDecl, ExportedMethodDecl, InitializerDecl, Native,
+    NativeSymbol, Receive,
 };
 
 use crate::{
@@ -13,7 +14,8 @@ use crate::{
 };
 
 use super::{
-    AssociatedCallable, NameScope, Package, record::EncodedRecordField, record::RecordField,
+    AssociatedCallable, ConstantStub, NameScope, Package, record::EncodedRecordField,
+    record::RecordField,
 };
 
 pub enum VariantStyle {
@@ -49,6 +51,7 @@ pub struct EnumClass {
     pub exception_name: Option<Identifier>,
     pub register_method: Identifier,
     pub variants: Vec<EnumVariant>,
+    pub constants: Vec<ConstantStub>,
     pub wire: Option<DataEnumWire>,
     pub constructors: Vec<AssociatedCallable>,
     pub static_methods: Vec<AssociatedCallable>,
@@ -77,6 +80,7 @@ impl EnumClass {
                 .iter()
                 .map(EnumVariant::from_variant)
                 .collect::<Result<Vec<_>>>()?,
+            constants: package.constants_for_c_style_enum(enumeration)?,
             wire: None,
             constructors: Self::constructors(enumeration.initializers(), &symbols, package)?,
             static_methods: Self::static_methods(enumeration.methods(), &symbols, package)?,
@@ -95,6 +99,7 @@ impl EnumClass {
                 .transpose()?,
             register_method: symbols.register_method().clone(),
             variants: Vec::new(),
+            constants: package.constants_for_owner(ConstantOwner::Enum(enumeration.id()))?,
             wire: Some(DataEnumWire {
                 variants: enumeration
                     .variants()
@@ -141,6 +146,9 @@ impl EnumClass {
         };
         scope
             .insert_all(self.variants.iter().map(EnumVariant::member_name))
+            .and_then(|scope| {
+                scope.insert_all(self.constants.iter().map(ConstantStub::member_name))
+            })
             .and_then(|scope| {
                 scope.insert_all(self.callables().map(AssociatedCallable::member_name))
             })

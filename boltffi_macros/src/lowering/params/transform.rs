@@ -436,7 +436,7 @@ impl<'a> ParamTransformClassifier<'a> {
                 .named_type_category(&type_ref.elem)
         {
             return match category {
-                DataTypeCategory::Scalar | DataTypeCategory::Blittable => {
+                DataTypeCategory::Scalar(_) | DataTypeCategory::Blittable => {
                     ClassifiedParamTransform {
                         contract: ParamContract::new(
                             self.named_value_strategy(&type_ref.elem),
@@ -539,7 +539,7 @@ impl<'a> ParamTransformClassifier<'a> {
 
     fn named_value_strategy(&self, ty: &Type) -> ParamValueStrategy {
         match self.named_type_transport_classifier.named_type_category(ty) {
-            Some(DataTypeCategory::Scalar) => {
+            Some(DataTypeCategory::Scalar(_)) => {
                 ParamValueStrategy::Scalar(ScalarParamStrategy::CStyleEnumTag)
             }
             Some(DataTypeCategory::Blittable) => ParamValueStrategy::CompositeValue,

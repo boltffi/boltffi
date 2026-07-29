@@ -37,6 +37,7 @@ public static class DemoTest
             TestRecordsWithStrings();
             TestRecordsWithDefaults();
             TestNestedRecords();
+            TestAssociatedConstants();
             TestCStyleEnums();
             TestDataEnums();
             TestRecordsWithEnumFields();
@@ -3364,6 +3365,26 @@ public static class DemoTest
     private static void DemoCase(string caseId)
     {
         currentDemoCase = caseId;
+    }
+
+    private static void TestAssociatedConstants()
+    {
+        DemoCase("case:constants.associated.should_expose_values_on_exported_types");
+        Require(
+            global::Demo.DemoModeConstants.Preferred == global::Demo.DemoMode.Safe,
+            "DemoModeConstants.Preferred"
+        );
+        Require(
+            global::Demo.DemoModeConstants.Fallback == global::Demo.DemoMode.Safe,
+            "DemoModeConstants.Fallback"
+        );
+        Require(
+            global::Demo.DemoModeConstants.VariantCount == 2,
+            "DemoModeConstants.VariantCount"
+        );
+        Require(DemoState.Initial is DemoState.Idle, "DemoState.Initial");
+        Require(Point.Zero == new Point(0.0, 0.0), "Point.Zero");
+        Require(MathUtils.DefaultPrecision == 2u, "MathUtils.DefaultPrecision");
     }
 
     private static string DescribeFailure(Exception ex)

@@ -196,6 +196,27 @@ impl Call {
         )
     }
 
+    pub fn from_constant_accessor(
+        name: Identifier,
+        symbol: &NativeSymbol,
+        callable: &ExportedCallable<Native>,
+        bridge: &JniBridgeContract,
+        native_owner: &TypeIdentifier,
+        version: JavaVersion,
+        context: &RenderContext<Native>,
+    ) -> Result<Self> {
+        FunctionShape::classify_callable(callable, ReceiverSupport::Forbidden)
+            .require_supported()?;
+        Self::build(
+            name,
+            symbol,
+            callable,
+            None,
+            None,
+            CallScope::api(bridge, native_owner, version, context, None),
+        )
+    }
+
     pub fn from_initializer(
         declaration: &InitializerDecl<Native>,
         bridge: &JniBridgeContract,
