@@ -53,11 +53,11 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.14'
 
@@ -65,7 +65,7 @@ jobs:
         with:
           token: ${{ github.token }}
 
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.0.x'
 

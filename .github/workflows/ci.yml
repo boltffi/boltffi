@@ -187,7 +187,7 @@ jobs:
         with:
           # caching handled by Swatinem/rust-cache below
           cache: false
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
       - uses: Swatinem/rust-cache@v2
@@ -197,7 +197,7 @@ jobs:
           prefix-key: v1-rust
           key: demo-platforms-${{ matrix.os }}-${{ matrix.python-version }}
       - if: matrix.python-version == '3.13'
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: '24'
       - if: matrix.python-version == '3.13'
@@ -206,7 +206,7 @@ jobs:
         uses: Aandreba/setup-binaryen@v1.0.0
         with:
           token: ${{ github.token }}
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.0.x'
       - run: python -m pip install --upgrade pip setuptools wheel
