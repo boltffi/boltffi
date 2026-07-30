@@ -304,6 +304,8 @@ pub enum UnsupportedType {
     NativeOpaqueRecordAsync,
     /// A native opaque record appeared inside a callback/closure return position.
     NativeOpaqueRecordInCallback,
+    /// A native opaque record is defined by a dependency crate rather than the root crate.
+    NativeOpaqueRecordDependency,
     /// A native opaque record appeared as a constant value.
     NativeOpaqueRecordConstant,
     /// A native opaque record appeared as a stream item.
@@ -354,6 +356,9 @@ impl fmt::Display for UnsupportedType {
             Self::NativeOpaqueRecordField => "unsupported native opaque record field",
             Self::NativeOpaqueRecordMethod => {
                 "native opaque record return in method, initializer, or non-free-function"
+            }
+            Self::NativeOpaqueRecordDependency => {
+                "native opaque record defined outside the root crate"
             }
             Self::NativeOpaqueRecordAsync => "native opaque record return in async export",
             Self::NativeOpaqueRecordInCallback => {

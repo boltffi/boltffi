@@ -32,6 +32,21 @@ pub fn lower<S: SurfaceLower>(
         .collect()
 }
 
+/// Reports whether a source record is defined by the crate being generated.
+///
+/// Record ids are `<crate>::<path>::<Type>`, so the leading segment identifies the
+/// owning crate. Cargo package names may use dashes where the module path uses
+/// underscores, so both spellings are treated as equal.
+fn is_root_crate_record(index: &Index, record: &SourceRecord) -> bool {
+    let root = index.source().package.name.replace('-', "_");
+    record
+        .id
+        .as_str()
+        .split("::")
+        .next()
+        .is_some_and(|owner| owner.replace('-', "_") == root)
+}
+
 /// Reports whether a source record crosses by direct memory.
 ///
 /// Exposed to the codec lane so a nested `TypeExpr::Record(id)` can
@@ -64,6 +79,17 @@ fn lower_one<S: SurfaceLower>(
     if record.encoding == RecordEncoding::NativeOpaque && !record.methods.is_empty() {
         return Err(LowerError::unsupported_type(
             UnsupportedType::NativeOpaqueRecordMethod,
+        ));
+    }
+    // Opaque records need generated Rust helper exports (`drop`, `dsize`, and the
+    // per-field accessors). The macro expander only renders wrappers for root-crate
+    // records plus support records that carry methods, so an opaque record owned by
+    // a dependency would have its exports lowered here while no Rust definition is
+    // ever emitted, leaving the host bindings referencing missing symbols. Reject it
+    // during lowering instead of shipping an unlinkable artifact.
+    if record.encoding == RecordEncoding::NativeOpaque && !is_root_crate_record(index, record) {
+        return Err(LowerError::unsupported_type(
+            UnsupportedType::NativeOpaqueRecordDependency,
         ));
     }
     if record.encoding != RecordEncoding::NativeOpaque
@@ -2739,6 +2765,40 @@ mod tests {
             boltffi_ast::RecordId::new("demo::Snapshot"),
             boltffi_ast::Path::single("Snapshot"),
         )
+    }
+
+    #[test]
+    fn native_opaque_record_owned_by_a_dependency_crate_is_rejected() {
+        // The macro expander renders record wrappers for root-crate records plus
+        // support records that carry methods. A dependency-owned opaque record with
+        // only fields matches neither, so its `drop`/`dsize`/accessor exports would
+        // be lowered without any Rust definition backing them. Lowering must reject
+        // it rather than emit bindings that reference missing symbols.
+        let mut foreign = RecordDef::new("model::ForeignSnapshot".into(), name("ForeignSnapshot"));
+        foreign.encoding = RecordEncoding::NativeOpaque;
+        foreign.fields = vec![field("value", TypeExpr::Primitive(Primitive::U32))];
+
+        let error = lower_records_result::<Native>(vec![foreign])
+            .expect_err("dependency-owned native opaque record must be rejected");
+        assert!(
+            matches!(
+                error.kind(),
+                LowerErrorKind::UnsupportedType(UnsupportedType::NativeOpaqueRecordDependency)
+            ),
+            "expected NativeOpaqueRecordDependency, got {error:?}"
+        );
+    }
+
+    #[test]
+    fn native_opaque_record_owned_by_the_root_crate_is_accepted() {
+        // Guards the dependency check against over-rejecting: the same shape owned by
+        // the root crate must still lower.
+        let mut rooted = RecordDef::new("demo::Snapshot".into(), name("Snapshot"));
+        rooted.encoding = RecordEncoding::NativeOpaque;
+        rooted.fields = vec![field("value", TypeExpr::Primitive(Primitive::U32))];
+
+        lower_records_result::<Native>(vec![rooted])
+            .expect("root-crate native opaque record must lower");
     }
 
     #[test]
