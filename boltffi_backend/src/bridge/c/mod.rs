@@ -91,19 +91,22 @@ mod tests {
             "#,
         );
 
-        assert!(header.contains("void boltffi_record_native_snapshot_drop(void *handle);"));
+        assert!(header.contains("void boltffi_record_native_demo_snapshot_drop(void *handle);"));
         assert!(
-            header.contains("uintptr_t boltffi_record_native_snapshot_dsize(const void *handle);")
-        );
-        assert!(
-            header
-                .contains("uint32_t boltffi_record_native_snapshot_get_count(const void *handle);")
-        );
-        assert!(
-            header.contains("int32_t boltffi_record_native_snapshot_has_name(const void *handle);")
+            header.contains(
+                "uintptr_t boltffi_record_native_demo_snapshot_dsize(const void *handle);"
+            )
         );
         assert!(header.contains(
-            "int32_t boltffi_record_native_snapshot_borrow_name(const void *handle, const uint8_t * *ptr_out, uintptr_t *len_out);"
+            "uint32_t boltffi_record_native_demo_snapshot_get_count(const void *handle);"
+        ));
+        assert!(
+            header.contains(
+                "int32_t boltffi_record_native_demo_snapshot_has_name(const void *handle);"
+            )
+        );
+        assert!(header.contains(
+            "int32_t boltffi_record_native_demo_snapshot_borrow_name(const void *handle, const uint8_t * *ptr_out, uintptr_t *len_out);"
         ));
         assert!(header.contains("void * boltffi_function_demo_snapshot(void);"));
     }

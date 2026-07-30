@@ -2338,20 +2338,20 @@ mod tests {
         // Rust symbol.  Verify that the raw symbol appears only via its storage pointer
         // (i.e. never as a bare direct function call before the "boltffi_python_" prefix).
         let borrow_storage_name =
-            "boltffi_python_boltffi_record_native_snapshot_borrow_display_name";
+            "boltffi_python_boltffi_record_native_demo_snapshot_borrow_display_name";
         assert!(
             extension.contains(borrow_storage_name),
             "borrow field uses loaded storage pointer (boltffi_python_ prefixed)"
         );
-        let drop_storage_name = "boltffi_python_boltffi_record_native_snapshot_drop";
+        let drop_storage_name = "boltffi_python_boltffi_record_native_demo_snapshot_drop";
         assert!(
             extension.contains(drop_storage_name),
             "drop field uses loaded storage pointer"
         );
         // The raw symbol never appears as a direct call ("sym_name(") without the prefix.
-        // A direct call would be "boltffi_record_native_snapshot_drop(" without the boltffi_python_ prefix.
+        // A direct call would be "boltffi_record_native_demo_snapshot_drop(" without the boltffi_python_ prefix.
         assert!(
-            !extension.contains(") boltffi_record_native_snapshot_drop("),
+            !extension.contains(") boltffi_record_native_demo_snapshot_drop("),
             "C extension must not call raw Rust drop symbol as a direct function call"
         );
 
@@ -2409,7 +2409,7 @@ mod tests {
             "close() calls the registered C drop wrapper"
         );
         assert!(
-            !init.contains("boltffi_record_native_snapshot_drop"),
+            !init.contains("boltffi_record_native_demo_snapshot_drop"),
             "package.py must not call raw Rust drop symbol"
         );
         assert!(init.contains("def close("), "close() method present");
@@ -2454,7 +2454,7 @@ mod tests {
             "display_name property calls registered borrow wrapper"
         );
         assert!(
-            !init.contains("boltffi_record_native_snapshot_borrow_display_name"),
+            !init.contains("boltffi_record_native_demo_snapshot_borrow_display_name"),
             "package.py must not call raw Rust borrow symbol"
         );
         // String properties decode bytes to str; bytes properties return raw.
@@ -2468,7 +2468,7 @@ mod tests {
             "optional field calls registered has wrapper"
         );
         assert!(
-            !init.contains("boltffi_record_native_snapshot_has_score"),
+            !init.contains("boltffi_record_native_demo_snapshot_has_score"),
             "package.py must not call raw has symbol"
         );
         assert!(

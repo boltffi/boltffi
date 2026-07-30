@@ -3111,13 +3111,13 @@ mod tests {
         assert!(!rendered.contains("WireDecode for Snapshot"));
         assert!(!rendered.contains("WirePassable for Snapshot"));
         // Generates drop and dsize exports
-        assert!(rendered.contains("boltffi_record_native_snapshot_drop"));
-        assert!(rendered.contains("boltffi_record_native_snapshot_dsize"));
+        assert!(rendered.contains("boltffi_record_native_demo_snapshot_drop"));
+        assert!(rendered.contains("boltffi_record_native_demo_snapshot_dsize"));
         // Generates primitive getter
-        assert!(rendered.contains("boltffi_record_native_snapshot_get_major"));
+        assert!(rendered.contains("boltffi_record_native_demo_snapshot_get_major"));
         // Generates optional string has + borrow
-        assert!(rendered.contains("boltffi_record_native_snapshot_has_name"));
-        assert!(rendered.contains("boltffi_record_native_snapshot_borrow_name"));
+        assert!(rendered.contains("boltffi_record_native_demo_snapshot_has_name"));
+        assert!(rendered.contains("boltffi_record_native_demo_snapshot_borrow_name"));
         // Box::into_raw should not appear in record expansion (appears in function wrapper)
         assert!(!rendered.contains("Box :: into_raw"));
     }
@@ -3153,12 +3153,12 @@ mod tests {
         let rendered = tokens.to_string();
 
         for helper in [
-            "boltffi_record_native_snapshot_interned_browser_tag",
-            "boltffi_record_native_snapshot_interned_browser_id",
-            "boltffi_record_native_snapshot_interned_browser_borrow_dynamic",
-            "boltffi_record_native_snapshot_interned_maybe_browser_tag",
-            "boltffi_record_native_snapshot_interned_maybe_browser_id",
-            "boltffi_record_native_snapshot_interned_maybe_browser_borrow_dynamic",
+            "boltffi_record_native_demo_snapshot_interned_browser_tag",
+            "boltffi_record_native_demo_snapshot_interned_browser_id",
+            "boltffi_record_native_demo_snapshot_interned_browser_borrow_dynamic",
+            "boltffi_record_native_demo_snapshot_interned_maybe_browser_tag",
+            "boltffi_record_native_demo_snapshot_interned_maybe_browser_id",
+            "boltffi_record_native_demo_snapshot_interned_maybe_browser_borrow_dynamic",
         ] {
             assert!(
                 rendered.contains(helper),
@@ -3198,13 +3198,13 @@ mod tests {
                         })) as *mut std::ffi::c_void;
 
                         unsafe {
-                            assert_eq!(boltffi_record_native_snapshot_interned_browser_tag(handle), 0);
-                            assert_eq!(boltffi_record_native_snapshot_interned_browser_id(handle), 0);
+                            assert_eq!(boltffi_record_native_demo_snapshot_interned_browser_tag(handle), 0);
+                            assert_eq!(boltffi_record_native_demo_snapshot_interned_browser_id(handle), 0);
 
                             let mut ptr = std::ptr::null();
                             let mut len = 0usize;
                             assert_eq!(
-                                boltffi_record_native_snapshot_interned_browser_borrow_dynamic(
+                                boltffi_record_native_demo_snapshot_interned_browser_borrow_dynamic(
                                     handle,
                                     &mut ptr,
                                     &mut len,
@@ -3212,15 +3212,15 @@ mod tests {
                                 0,
                             );
                             assert_eq!(
-                                boltffi_record_native_snapshot_interned_maybe_browser_tag(handle),
+                                boltffi_record_native_demo_snapshot_interned_maybe_browser_tag(handle),
                                 1,
                             );
                             assert_eq!(
-                                boltffi_record_native_snapshot_interned_maybe_browser_id(handle),
+                                boltffi_record_native_demo_snapshot_interned_maybe_browser_id(handle),
                                 0,
                             );
                             assert_eq!(
-                                boltffi_record_native_snapshot_interned_maybe_browser_borrow_dynamic(
+                                boltffi_record_native_demo_snapshot_interned_maybe_browser_borrow_dynamic(
                                     handle,
                                     &mut ptr,
                                     &mut len,
@@ -3228,7 +3228,7 @@ mod tests {
                                 1,
                             );
                             assert_eq!(std::slice::from_raw_parts(ptr, len), b"Firefox");
-                            boltffi_record_native_snapshot_drop(handle);
+                            boltffi_record_native_demo_snapshot_drop(handle);
                         }
 
                         let absent = Box::into_raw(Box::new(Snapshot {
@@ -3237,24 +3237,24 @@ mod tests {
                         })) as *mut std::ffi::c_void;
                         unsafe {
                             assert_eq!(
-                                boltffi_record_native_snapshot_interned_maybe_browser_tag(absent),
+                                boltffi_record_native_demo_snapshot_interned_maybe_browser_tag(absent),
                                 0xff,
                             );
                             assert_eq!(
-                                boltffi_record_native_snapshot_interned_maybe_browser_id(absent),
+                                boltffi_record_native_demo_snapshot_interned_maybe_browser_id(absent),
                                 0,
                             );
                             let mut ptr = std::ptr::null();
                             let mut len = 0usize;
                             assert_eq!(
-                                boltffi_record_native_snapshot_interned_maybe_browser_borrow_dynamic(
+                                boltffi_record_native_demo_snapshot_interned_maybe_browser_borrow_dynamic(
                                     absent,
                                     &mut ptr,
                                     &mut len,
                                 ),
                                 0,
                             );
-                            boltffi_record_native_snapshot_drop(absent);
+                            boltffi_record_native_demo_snapshot_drop(absent);
                         }
                     }
                 }
@@ -3377,14 +3377,14 @@ mod tests {
                         })) as *mut std::ffi::c_void;
 
                         unsafe {
-                            assert_eq!(boltffi_record_native_snapshot_get_major(handle), 7);
-                            assert_eq!(boltffi_record_native_snapshot_has_name(handle), 1);
-                            assert_eq!(boltffi_record_native_snapshot_dsize(handle), expected_size);
+                            assert_eq!(boltffi_record_native_demo_snapshot_get_major(handle), 7);
+                            assert_eq!(boltffi_record_native_demo_snapshot_has_name(handle), 1);
+                            assert_eq!(boltffi_record_native_demo_snapshot_dsize(handle), expected_size);
 
                             let mut ptr = std::ptr::null();
                             let mut len = 0usize;
                             assert_eq!(
-                                boltffi_record_native_snapshot_borrow_name(
+                                boltffi_record_native_demo_snapshot_borrow_name(
                                     handle,
                                     &mut ptr,
                                     &mut len,
@@ -3393,14 +3393,14 @@ mod tests {
                             );
                             assert_eq!(std::slice::from_raw_parts(ptr, len), b"Ada");
                             assert_eq!(
-                                boltffi_record_native_snapshot_borrow_name(
+                                boltffi_record_native_demo_snapshot_borrow_name(
                                     handle,
                                     std::ptr::null_mut(),
                                     &mut len,
                                 ),
                                 0,
                             );
-                            boltffi_record_native_snapshot_drop(handle);
+                            boltffi_record_native_demo_snapshot_drop(handle);
                         }
 
                         assert_eq!(DROP_COUNT.load(Ordering::SeqCst), 1);

@@ -201,8 +201,9 @@ fn lower_native_opaque_exports(
         ));
     }
 
-    let drop = allocator.mint_native_opaque_record_export(&record.name, "drop")?;
-    let dsize = allocator.mint_native_opaque_record_export(&record.name, "dsize")?;
+    let source_id = record.id.as_str();
+    let drop = allocator.mint_native_opaque_record_export(source_id, "drop")?;
+    let dsize = allocator.mint_native_opaque_record_export(source_id, "dsize")?;
     let fields = record
         .fields
         .iter()
@@ -215,24 +216,20 @@ fn lower_native_opaque_exports(
             };
             let has = optional
                 .then(|| {
-                    allocator.mint_native_opaque_record_export(
-                        &record.name,
-                        &format!("has_{field_suffix}"),
-                    )
+                    allocator
+                        .mint_native_opaque_record_export(source_id, &format!("has_{field_suffix}"))
                 })
                 .transpose()?;
             let get = matches!(ty, TypeRef::Primitive(_))
                 .then(|| {
-                    allocator.mint_native_opaque_record_export(
-                        &record.name,
-                        &format!("get_{field_suffix}"),
-                    )
+                    allocator
+                        .mint_native_opaque_record_export(source_id, &format!("get_{field_suffix}"))
                 })
                 .transpose()?;
             let borrow = matches!(ty, TypeRef::String | TypeRef::Bytes)
                 .then(|| {
                     allocator.mint_native_opaque_record_export(
-                        &record.name,
+                        source_id,
                         &format!("borrow_{field_suffix}"),
                     )
                 })
@@ -240,7 +237,7 @@ fn lower_native_opaque_exports(
             let interned_tag = matches!(ty, TypeRef::InternedString { .. })
                 .then(|| {
                     allocator.mint_native_opaque_record_export(
-                        &record.name,
+                        source_id,
                         &format!("interned_{field_suffix}_tag"),
                     )
                 })
@@ -248,7 +245,7 @@ fn lower_native_opaque_exports(
             let interned_id = matches!(ty, TypeRef::InternedString { .. })
                 .then(|| {
                     allocator.mint_native_opaque_record_export(
-                        &record.name,
+                        source_id,
                         &format!("interned_{field_suffix}_id"),
                     )
                 })
@@ -256,7 +253,7 @@ fn lower_native_opaque_exports(
             let interned_borrow_dynamic = matches!(ty, TypeRef::InternedString { .. })
                 .then(|| {
                     allocator.mint_native_opaque_record_export(
-                        &record.name,
+                        source_id,
                         &format!("interned_{field_suffix}_borrow_dynamic"),
                     )
                 })
@@ -547,11 +544,11 @@ mod tests {
         assert_eq!(record.storage(), EncodedRecordStorage::NativeOpaque);
         assert_eq!(
             exports.drop().name().as_str(),
-            "boltffi_record_native_snapshot_drop"
+            "boltffi_record_native_demo_snapshot_drop"
         );
         assert_eq!(
             exports.dsize().name().as_str(),
-            "boltffi_record_native_snapshot_dsize"
+            "boltffi_record_native_demo_snapshot_dsize"
         );
         assert_eq!(exports.fields().len(), 2);
         assert_eq!(
@@ -560,7 +557,7 @@ mod tests {
                 .expect("primitive getter")
                 .name()
                 .as_str(),
-            "boltffi_record_native_snapshot_get_count"
+            "boltffi_record_native_demo_snapshot_get_count"
         );
         let name_exports = &exports.fields()[1];
         assert_eq!(
@@ -569,7 +566,7 @@ mod tests {
                 .expect("optional string presence")
                 .name()
                 .as_str(),
-            "boltffi_record_native_snapshot_has_name"
+            "boltffi_record_native_demo_snapshot_has_name"
         );
         assert_eq!(
             name_exports
@@ -577,14 +574,14 @@ mod tests {
                 .expect("string borrow")
                 .name()
                 .as_str(),
-            "boltffi_record_native_snapshot_borrow_name"
+            "boltffi_record_native_demo_snapshot_borrow_name"
         );
         assert!(
             bindings
                 .symbols()
                 .symbols()
                 .iter()
-                .any(|symbol| symbol.name().as_str() == "boltffi_record_native_snapshot_drop")
+                .any(|symbol| symbol.name().as_str() == "boltffi_record_native_demo_snapshot_drop")
         );
 
         let serialized = serde_json::to_vec(&bindings).expect("serialize opaque bindings");
@@ -663,6 +660,53 @@ mod tests {
 
         let bindings = lower_record::<Native>(source);
         assert!(encoded_record(&bindings).is_native_opaque());
+    }
+
+    #[test]
+    fn native_opaque_records_with_same_name_in_different_modules_mint_distinct_symbols() {
+        let mut alpha = record(
+            "demo::alpha::Config",
+            "Config",
+            vec![field("value", TypeExpr::Primitive(Primitive::U32))],
+        );
+        alpha.encoding = RecordEncoding::NativeOpaque;
+
+        let mut beta = record(
+            "demo::beta::Config",
+            "Config",
+            vec![field("label", TypeExpr::String)],
+        );
+        beta.encoding = RecordEncoding::NativeOpaque;
+
+        let bindings = lower_records::<Native>(vec![alpha, beta]);
+
+        // Both records lower without a duplicate-symbol error.
+        let names: Vec<&str> = bindings
+            .symbols()
+            .symbols()
+            .iter()
+            .map(|symbol| symbol.name().as_str())
+            .collect();
+        assert!(
+            names.contains(&"boltffi_record_native_demo_alpha_config_drop"),
+            "alpha Config drop symbol: {names:?}"
+        );
+        assert!(
+            names.contains(&"boltffi_record_native_demo_beta_config_drop"),
+            "beta Config drop symbol: {names:?}"
+        );
+        // The field accessor symbols are also distinct.
+        assert!(names.contains(&"boltffi_record_native_demo_alpha_config_get_value"));
+        assert!(names.contains(&"boltffi_record_native_demo_beta_config_borrow_label"));
+        // No two symbols share the same name.
+        let mut sorted = names.clone();
+        sorted.sort();
+        sorted.dedup();
+        assert_eq!(
+            sorted.len(),
+            names.len(),
+            "duplicate symbols minted: {names:?}"
+        );
     }
 
     #[test]

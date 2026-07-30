@@ -484,7 +484,9 @@ mod tests {
         let mut sniff = function("demo::sniff", "sniff");
         sniff.parameters = vec![user_agent];
 
-        let bindings = TestContract::new().with_function(sniff).lower_ok::<Native>();
+        let bindings = TestContract::new()
+            .with_function(sniff)
+            .lower_ok::<Native>();
 
         assert!(matches!(
             first_param_lower(&bindings),
@@ -505,7 +507,9 @@ mod tests {
                 TypeExpr::Slice(Box::new(TypeExpr::Primitive(Primitive::U8))),
             );
             user_agent.passing = boltffi_ast::ParameterPassing::Ref;
-            user_agent.user_attrs.push(UserAttr::new(path, AttributeInput::Empty));
+            user_agent
+                .user_attrs
+                .push(UserAttr::new(path, AttributeInput::Empty));
             let mut sniff = function("demo::sniff", "sniff");
             sniff.parameters = vec![user_agent];
             sniff
@@ -520,7 +524,9 @@ mod tests {
                 boltffi_ast::PathSegment::new("borrowed"),
             ],
         ));
-        let bindings = TestContract::new().with_function(other).lower_ok::<Native>();
+        let bindings = TestContract::new()
+            .with_function(other)
+            .lower_ok::<Native>();
         assert!(
             matches!(
                 first_param_lower(&bindings),

@@ -118,13 +118,13 @@ impl SymbolAllocator {
 
     pub fn mint_native_opaque_record_export(
         &mut self,
-        record: &SourceName,
+        source_id: &str,
         suffix: &str,
     ) -> Result<NativeSymbol, LowerError> {
         self.mint(format!(
             "{}_record_native_{}_{}",
             FFI_PREFIX,
-            source_member_name(record),
+            symbol_path(source_id),
             suffix
         ))
     }

@@ -8,15 +8,15 @@ expression: rendered
 package com.boltffi.demo
 @Suppress("FunctionName")
 private object Native {
-    @JvmStatic external fun boltffi_record_native_snapshot_drop(handle: Long): Unit
-    @JvmStatic external fun boltffi_record_native_snapshot_dsize(handle: Long): Long
-    @JvmStatic external fun boltffi_record_native_snapshot_get_count(handle: Long): Int
-    @JvmStatic external fun boltffi_record_native_snapshot_has_score(handle: Long): Int
-    @JvmStatic external fun boltffi_record_native_snapshot_get_score(handle: Long): Double
-    @JvmStatic external fun boltffi_record_native_snapshot_has_label(handle: Long): Int
-    @JvmStatic external fun boltffi_record_native_snapshot_borrow_title(handle: Long): ByteArray?
-    @JvmStatic external fun boltffi_record_native_snapshot_borrow_payload(handle: Long): ByteArray?
-    @JvmStatic external fun boltffi_record_native_snapshot_borrow_label(handle: Long): ByteArray?
+    @JvmStatic external fun boltffi_record_native_demo_snapshot_drop(handle: Long): Unit
+    @JvmStatic external fun boltffi_record_native_demo_snapshot_dsize(handle: Long): Long
+    @JvmStatic external fun boltffi_record_native_demo_snapshot_get_count(handle: Long): Int
+    @JvmStatic external fun boltffi_record_native_demo_snapshot_has_score(handle: Long): Int
+    @JvmStatic external fun boltffi_record_native_demo_snapshot_get_score(handle: Long): Double
+    @JvmStatic external fun boltffi_record_native_demo_snapshot_has_label(handle: Long): Int
+    @JvmStatic external fun boltffi_record_native_demo_snapshot_borrow_title(handle: Long): ByteArray?
+    @JvmStatic external fun boltffi_record_native_demo_snapshot_borrow_payload(handle: Long): ByteArray?
+    @JvmStatic external fun boltffi_record_native_demo_snapshot_borrow_label(handle: Long): ByteArray?
     @JvmStatic external fun boltffi_function_demo_make_snapshot(input: java.nio.ByteBuffer, __boltffi_input_len: Int, count: Int): Long
 }
 
@@ -32,7 +32,7 @@ class Snapshot internal constructor(handle: Long) : AutoCloseable {
             val handle = nativeHandle
             if (handle != 0L) {
                 nativeHandle = 0L
-                Native.boltffi_record_native_snapshot_drop(handle)
+                Native.boltffi_record_native_demo_snapshot_drop(handle)
             }
         } finally {
             lifecycle.writeLock().unlock()
@@ -52,36 +52,36 @@ class Snapshot internal constructor(handle: Long) : AutoCloseable {
 
     val count: UInt
         get() = withHandle { handle ->
-        Native.boltffi_record_native_snapshot_get_count(handle).toUInt()
+        Native.boltffi_record_native_demo_snapshot_get_count(handle).toUInt()
         }
 
     val title: String
         get() = withHandle { handle ->
-        val bytes = Native.boltffi_record_native_snapshot_borrow_title(handle) ?: error("borrow failed for title")
+        val bytes = Native.boltffi_record_native_demo_snapshot_borrow_title(handle) ?: error("borrow failed for title")
         bytes.toString(Charsets.UTF_8)
         }
 
     val payload: ByteArray
         get() = withHandle { handle ->
-        val bytes = Native.boltffi_record_native_snapshot_borrow_payload(handle) ?: error("borrow failed for payload")
+        val bytes = Native.boltffi_record_native_demo_snapshot_borrow_payload(handle) ?: error("borrow failed for payload")
         bytes
         }
 
     val score: Double?
         get() = withHandle { handle ->
-        if (Native.boltffi_record_native_snapshot_has_score(handle) == 0) {
+        if (Native.boltffi_record_native_demo_snapshot_has_score(handle) == 0) {
             null
         } else {
-            Native.boltffi_record_native_snapshot_get_score(handle)
+            Native.boltffi_record_native_demo_snapshot_get_score(handle)
         }
         }
 
     val label: String?
         get() = withHandle { handle ->
-        if (Native.boltffi_record_native_snapshot_has_label(handle) == 0) {
+        if (Native.boltffi_record_native_demo_snapshot_has_label(handle) == 0) {
             null
         } else {
-            val bytes = Native.boltffi_record_native_snapshot_borrow_label(handle) ?: error("borrow failed for label")
+            val bytes = Native.boltffi_record_native_demo_snapshot_borrow_label(handle) ?: error("borrow failed for label")
             bytes.toString(Charsets.UTF_8)
         }
         }

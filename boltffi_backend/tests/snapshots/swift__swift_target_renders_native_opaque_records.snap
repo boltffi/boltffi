@@ -23,7 +23,7 @@ public struct Snapshot: Sendable {
     private final class NativeStorage: @unchecked Sendable {
         let handle: UnsafeMutableRawPointer
         init(handle: UnsafeMutableRawPointer) { self.handle = handle }
-        deinit { boltffi_record_native_snapshot_drop(handle) }
+        deinit { boltffi_record_native_demo_snapshot_drop(handle) }
     }
     private let storage: NativeStorage
     @usableFromInline init(nativeHandle: UnsafeMutableRawPointer) {
@@ -31,14 +31,14 @@ public struct Snapshot: Sendable {
     }
     public var count: UInt32 {
         return withExtendedLifetime(storage) { storage in
-        return boltffi_record_native_snapshot_get_count(UnsafeRawPointer(storage.handle))
+        return boltffi_record_native_demo_snapshot_get_count(UnsafeRawPointer(storage.handle))
         }
     }
     public var title: String {
         return withExtendedLifetime(storage) { storage in
         var ptr: UnsafePointer<UInt8>? = nil
         var len: UInt = 0
-        guard boltffi_record_native_snapshot_borrow_title(UnsafeRawPointer(storage.handle), &ptr, &len) != 0 else {
+        guard boltffi_record_native_demo_snapshot_borrow_title(UnsafeRawPointer(storage.handle), &ptr, &len) != 0 else {
             preconditionFailure("native opaque borrow failed for title")
         }
         if len == 0 { return "" }
@@ -58,7 +58,7 @@ public struct Snapshot: Sendable {
         return withExtendedLifetime(storage) { storage in
         var ptr: UnsafePointer<UInt8>? = nil
         var len: UInt = 0
-        guard boltffi_record_native_snapshot_borrow_payload(UnsafeRawPointer(storage.handle), &ptr, &len) != 0 else {
+        guard boltffi_record_native_demo_snapshot_borrow_payload(UnsafeRawPointer(storage.handle), &ptr, &len) != 0 else {
             preconditionFailure("native opaque borrow failed for payload")
         }
         if len == 0 { return Data() }
@@ -73,16 +73,16 @@ public struct Snapshot: Sendable {
     }
     public var score: Double? {
         return withExtendedLifetime(storage) { storage in
-        guard boltffi_record_native_snapshot_has_score(UnsafeRawPointer(storage.handle)) != 0 else { return nil }
-        return boltffi_record_native_snapshot_get_score(UnsafeRawPointer(storage.handle))
+        guard boltffi_record_native_demo_snapshot_has_score(UnsafeRawPointer(storage.handle)) != 0 else { return nil }
+        return boltffi_record_native_demo_snapshot_get_score(UnsafeRawPointer(storage.handle))
         }
     }
     public var label: String? {
         return withExtendedLifetime(storage) { storage in
-        guard boltffi_record_native_snapshot_has_label(UnsafeRawPointer(storage.handle)) != 0 else { return nil }
+        guard boltffi_record_native_demo_snapshot_has_label(UnsafeRawPointer(storage.handle)) != 0 else { return nil }
         var ptr: UnsafePointer<UInt8>? = nil
         var len: UInt = 0
-        guard boltffi_record_native_snapshot_borrow_label(UnsafeRawPointer(storage.handle), &ptr, &len) != 0 else {
+        guard boltffi_record_native_demo_snapshot_borrow_label(UnsafeRawPointer(storage.handle), &ptr, &len) != 0 else {
             preconditionFailure("native opaque borrow failed for label")
         }
         if len == 0 { return "" }

@@ -4,15 +4,15 @@ expression: "rendered_source(SourceFixture::many([\"records/native_opaque_snapsh
 ---
 ===== jni/demo.h =====
 <c abi support declarations>
-void boltffi_record_native_snapshot_drop(void *handle);
-uintptr_t boltffi_record_native_snapshot_dsize(const void *handle);
-uint32_t boltffi_record_native_snapshot_get_count(const void *handle);
-int32_t boltffi_record_native_snapshot_borrow_title(const void *handle, const uint8_t * *ptr_out, uintptr_t *len_out);
-int32_t boltffi_record_native_snapshot_borrow_payload(const void *handle, const uint8_t * *ptr_out, uintptr_t *len_out);
-int32_t boltffi_record_native_snapshot_has_score(const void *handle);
-double boltffi_record_native_snapshot_get_score(const void *handle);
-int32_t boltffi_record_native_snapshot_has_label(const void *handle);
-int32_t boltffi_record_native_snapshot_borrow_label(const void *handle, const uint8_t * *ptr_out, uintptr_t *len_out);
+void boltffi_record_native_demo_snapshot_drop(void *handle);
+uintptr_t boltffi_record_native_demo_snapshot_dsize(const void *handle);
+uint32_t boltffi_record_native_demo_snapshot_get_count(const void *handle);
+int32_t boltffi_record_native_demo_snapshot_borrow_title(const void *handle, const uint8_t * *ptr_out, uintptr_t *len_out);
+int32_t boltffi_record_native_demo_snapshot_borrow_payload(const void *handle, const uint8_t * *ptr_out, uintptr_t *len_out);
+int32_t boltffi_record_native_demo_snapshot_has_score(const void *handle);
+double boltffi_record_native_demo_snapshot_get_score(const void *handle);
+int32_t boltffi_record_native_demo_snapshot_has_label(const void *handle);
+int32_t boltffi_record_native_demo_snapshot_borrow_label(const void *handle, const uint8_t * *ptr_out, uintptr_t *len_out);
 void * boltffi_function_demo_make_snapshot(const uint8_t *input_ptr, uintptr_t input_len, uint32_t count);
 
 ===== jni/jni_glue.c =====
@@ -44,11 +44,11 @@ static bool boltffi_jni_direct_buffer_address(JNIEnv *env, jobject buffer, jlong
     return true;
 }
 
-JNIEXPORT jbyteArray JNICALL Java_com_boltffi_demo_Native_boltffi_1record_1native_1snapshot_1borrow_1title(JNIEnv *env, jclass cls, jlong handle) {
+JNIEXPORT jbyteArray JNICALL Java_com_boltffi_demo_Native_boltffi_1record_1native_1demo_1snapshot_1borrow_1title(JNIEnv *env, jclass cls, jlong handle) {
     (void)cls;
     const uint8_t *ptr = NULL;
     uintptr_t len = 0;
-    int32_t ok = boltffi_record_native_snapshot_borrow_title((const void *)(uintptr_t)handle, &ptr, &len);
+    int32_t ok = boltffi_record_native_demo_snapshot_borrow_title((const void *)(uintptr_t)handle, &ptr, &len);
     if (!ok) {
         boltffi_jni_throw_runtime(env, "native opaque borrow failed");
         return NULL;
@@ -74,11 +74,11 @@ JNIEXPORT jbyteArray JNICALL Java_com_boltffi_demo_Native_boltffi_1record_1nativ
     return result;
 }
 
-JNIEXPORT jbyteArray JNICALL Java_com_boltffi_demo_Native_boltffi_1record_1native_1snapshot_1borrow_1payload(JNIEnv *env, jclass cls, jlong handle) {
+JNIEXPORT jbyteArray JNICALL Java_com_boltffi_demo_Native_boltffi_1record_1native_1demo_1snapshot_1borrow_1payload(JNIEnv *env, jclass cls, jlong handle) {
     (void)cls;
     const uint8_t *ptr = NULL;
     uintptr_t len = 0;
-    int32_t ok = boltffi_record_native_snapshot_borrow_payload((const void *)(uintptr_t)handle, &ptr, &len);
+    int32_t ok = boltffi_record_native_demo_snapshot_borrow_payload((const void *)(uintptr_t)handle, &ptr, &len);
     if (!ok) {
         boltffi_jni_throw_runtime(env, "native opaque borrow failed");
         return NULL;
@@ -104,11 +104,11 @@ JNIEXPORT jbyteArray JNICALL Java_com_boltffi_demo_Native_boltffi_1record_1nativ
     return result;
 }
 
-JNIEXPORT jbyteArray JNICALL Java_com_boltffi_demo_Native_boltffi_1record_1native_1snapshot_1borrow_1label(JNIEnv *env, jclass cls, jlong handle) {
+JNIEXPORT jbyteArray JNICALL Java_com_boltffi_demo_Native_boltffi_1record_1native_1demo_1snapshot_1borrow_1label(JNIEnv *env, jclass cls, jlong handle) {
     (void)cls;
     const uint8_t *ptr = NULL;
     uintptr_t len = 0;
-    int32_t ok = boltffi_record_native_snapshot_borrow_label((const void *)(uintptr_t)handle, &ptr, &len);
+    int32_t ok = boltffi_record_native_demo_snapshot_borrow_label((const void *)(uintptr_t)handle, &ptr, &len);
     if (!ok) {
         boltffi_jni_throw_runtime(env, "native opaque borrow failed");
         return NULL;
@@ -134,56 +134,56 @@ JNIEXPORT jbyteArray JNICALL Java_com_boltffi_demo_Native_boltffi_1record_1nativ
     return result;
 }
 
-JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1record_1native_1snapshot_1drop(JNIEnv *env, jclass cls, jlong handle) {
+JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1record_1native_1demo_1snapshot_1drop(JNIEnv *env, jclass cls, jlong handle) {
     (void)cls;
 
     (void)env;
-    boltffi_record_native_snapshot_drop((void *)handle);
+    boltffi_record_native_demo_snapshot_drop((void *)handle);
 
     return;
 }
 
-JNIEXPORT jlong JNICALL Java_com_boltffi_demo_Native_boltffi_1record_1native_1snapshot_1dsize(JNIEnv *env, jclass cls, jlong handle) {
+JNIEXPORT jlong JNICALL Java_com_boltffi_demo_Native_boltffi_1record_1native_1demo_1snapshot_1dsize(JNIEnv *env, jclass cls, jlong handle) {
     (void)cls;
 
     (void)env;
-    uintptr_t __boltffi_result = boltffi_record_native_snapshot_dsize((const void *)handle);
+    uintptr_t __boltffi_result = boltffi_record_native_demo_snapshot_dsize((const void *)handle);
 
     return (jlong)__boltffi_result;
 }
 
-JNIEXPORT jint JNICALL Java_com_boltffi_demo_Native_boltffi_1record_1native_1snapshot_1get_1count(JNIEnv *env, jclass cls, jlong handle) {
+JNIEXPORT jint JNICALL Java_com_boltffi_demo_Native_boltffi_1record_1native_1demo_1snapshot_1get_1count(JNIEnv *env, jclass cls, jlong handle) {
     (void)cls;
 
     (void)env;
-    uint32_t __boltffi_result = boltffi_record_native_snapshot_get_count((const void *)handle);
+    uint32_t __boltffi_result = boltffi_record_native_demo_snapshot_get_count((const void *)handle);
 
     return (jint)__boltffi_result;
 }
 
-JNIEXPORT jint JNICALL Java_com_boltffi_demo_Native_boltffi_1record_1native_1snapshot_1has_1score(JNIEnv *env, jclass cls, jlong handle) {
+JNIEXPORT jint JNICALL Java_com_boltffi_demo_Native_boltffi_1record_1native_1demo_1snapshot_1has_1score(JNIEnv *env, jclass cls, jlong handle) {
     (void)cls;
 
     (void)env;
-    int32_t __boltffi_result = boltffi_record_native_snapshot_has_score((const void *)handle);
+    int32_t __boltffi_result = boltffi_record_native_demo_snapshot_has_score((const void *)handle);
 
     return (jint)__boltffi_result;
 }
 
-JNIEXPORT jdouble JNICALL Java_com_boltffi_demo_Native_boltffi_1record_1native_1snapshot_1get_1score(JNIEnv *env, jclass cls, jlong handle) {
+JNIEXPORT jdouble JNICALL Java_com_boltffi_demo_Native_boltffi_1record_1native_1demo_1snapshot_1get_1score(JNIEnv *env, jclass cls, jlong handle) {
     (void)cls;
 
     (void)env;
-    double __boltffi_result = boltffi_record_native_snapshot_get_score((const void *)handle);
+    double __boltffi_result = boltffi_record_native_demo_snapshot_get_score((const void *)handle);
 
     return (jdouble)__boltffi_result;
 }
 
-JNIEXPORT jint JNICALL Java_com_boltffi_demo_Native_boltffi_1record_1native_1snapshot_1has_1label(JNIEnv *env, jclass cls, jlong handle) {
+JNIEXPORT jint JNICALL Java_com_boltffi_demo_Native_boltffi_1record_1native_1demo_1snapshot_1has_1label(JNIEnv *env, jclass cls, jlong handle) {
     (void)cls;
 
     (void)env;
-    int32_t __boltffi_result = boltffi_record_native_snapshot_has_label((const void *)handle);
+    int32_t __boltffi_result = boltffi_record_native_demo_snapshot_has_label((const void *)handle);
 
     return (jint)__boltffi_result;
 }
