@@ -54,7 +54,24 @@ pub(crate) fn item_tokens(item: proc_macro::TokenStream, impl_capture: ImplCaptu
             Err(error) => data_unsupported_tokens(&item.ident, &error.to_string()),
         },
         syn::Item::Fn(item) => match capture_function(item) {
-            Ok(captured) => record_tokens(&SourceFragment::Function(captured.def), &captured.slots),
+            Ok(mut captured) => {
+                let wrapper = if wrappers_enabled() {
+                    match wrapper_tokens(item, &mut captured.def) {
+                        Ok(wrapper) => wrapper,
+                        Err(reason) => {
+                            return unsupported_tokens(&item.sig.ident.to_string(), reason);
+                        }
+                    }
+                } else {
+                    TokenStream::new()
+                };
+                let record =
+                    record_tokens(&SourceFragment::Function(captured.def), &captured.slots);
+                quote! {
+                    #wrapper
+                    #record
+                }
+            }
             Err(error) => unsupported_tokens(&item.sig.ident.to_string(), &error.to_string()),
         },
         syn::Item::Trait(item) => match capture_trait(item) {
@@ -73,7 +90,7 @@ pub(crate) fn item_tokens(item: proc_macro::TokenStream, impl_capture: ImplCaptu
             let name = type_leaf_name(self_ty).unwrap_or_else(|| "impl".to_owned());
             match impl_capture {
                 ImplCapture::Class(marker_args) => {
-                    let identity = local_identity_tokens(self_ty, &name);
+                    let identity = local_identity_tokens(self_ty, &name, LocalCrossing::None);
                     let record = match capture_class(item, marker_args) {
                         Ok(captured) => {
                             record_tokens(&SourceFragment::Class(captured.def), &captured.slots)
@@ -136,7 +153,7 @@ pub(crate) fn interned_string_pool_tokens(item: proc_macro::TokenStream) -> Toke
     match boltffi_scan::capture_interned_string_pool(proc_macro2::TokenStream::from(item)) {
         Ok(pool) => {
             let ident = format_ident!("{}", pool.name);
-            let identity = local_identity_tokens(&ident, &pool.name);
+            let identity = local_identity_tokens(&ident, &pool.name, LocalCrossing::None);
             let record = record_tokens(
                 &SourceFragment::InternedStringPool {
                     id: format!("$self::{}", pool.name),
@@ -179,7 +196,7 @@ pub(crate) fn error_item_tokens(item: proc_macro::TokenStream) -> TokenStream {
 }
 
 fn data_unsupported_tokens(ident: &syn::Ident, reason: &str) -> TokenStream {
-    let identity = local_identity_tokens(ident, &ident.to_string());
+    let identity = local_identity_tokens(ident, &ident.to_string(), LocalCrossing::Wire);
     let unsupported = unsupported_tokens(&ident.to_string(), reason);
     quote! {
         #identity
@@ -211,6 +228,7 @@ fn data_tokens(
 ) -> TokenStream {
     let name = ident.to_string();
     let record = record_tokens(&fragment, slots);
+    let cross = wire_cross_tokens(ident);
     let facade = facade();
     quote! {
         const _: () = {
@@ -226,9 +244,159 @@ fn data_tokens(
                         <#ident as #facade::__private::capture::TypeInfo<Tag>>::NAME,
                     );
             }
+
+            #cross
         };
         #record
     }
+}
+
+/// Read at expansion time; cargo does not fingerprint the variable, so toggling it
+/// only takes effect on a fresh build of the affected crates.
+fn wrappers_enabled() -> bool {
+    std::env::var_os("BOLTFFI_CAPTURE_WRAPPERS").is_some()
+}
+
+fn wrapper_tokens(
+    item: &syn::ItemFn,
+    def: &mut boltffi_ast::FunctionDef,
+) -> Result<TokenStream, &'static str> {
+    if !item.sig.generics.params.is_empty() {
+        return Err("generic functions have no per-invocation wrapper");
+    }
+    if item.sig.asyncness.is_some() {
+        return Err("async functions have no per-invocation wrapper yet");
+    }
+    if item.sig.variadic.is_some() || item.sig.abi.is_some() {
+        return Err("extern or variadic functions have no per-invocation wrapper");
+    }
+
+    let mut names = Vec::new();
+    let mut types = Vec::new();
+    for input in &item.sig.inputs {
+        let syn::FnArg::Typed(typed) = input else {
+            return Err("methods have no per-invocation wrapper yet");
+        };
+        let syn::Pat::Ident(pat) = &*typed.pat else {
+            return Err("pattern parameters have no per-invocation wrapper");
+        };
+        if crossing_unsupported(&typed.ty) {
+            return Err("borrowed or impl-trait parameters have no per-invocation wrapper yet");
+        }
+        names.push(pat.ident.clone());
+        types.push((*typed.ty).clone());
+    }
+
+    let return_type = match &item.sig.output {
+        syn::ReturnType::Default => syn::parse_quote!(()),
+        syn::ReturnType::Type(_, ty) => {
+            if crossing_unsupported(ty) {
+                return Err("borrowed returns have no per-invocation wrapper yet");
+            }
+            (**ty).clone()
+        }
+    };
+
+    for parameter in &def.parameters {
+        if !wrapper_crossable(&parameter.type_expr) {
+            return Err("a parameter type has no FfiCross crossing yet");
+        }
+    }
+    if let boltffi_ast::ReturnDef::Value(returns) = &def.returns
+        && !wrapper_crossable(returns)
+    {
+        return Err("the return type has no FfiCross crossing yet");
+    }
+
+    let ident = &item.sig.ident;
+    let symbol = invocation_symbol(&ident.to_string());
+    def.native_symbol = Some(symbol.clone());
+    let symbol_ident = quote::format_ident!("{symbol}");
+    let facade = facade();
+
+    Ok(quote! {
+        #[doc(hidden)]
+        #[unsafe(no_mangle)]
+        #[allow(clippy::missing_safety_doc)]
+        pub unsafe extern "C" fn #symbol_ident(
+            #(#names: <#types as #facade::__private::capture::FfiCross<crate::__BoltffiTag>>::Ffi,)*
+            __boltffi_status: *mut #facade::__private::FfiStatus,
+        ) -> <#return_type as #facade::__private::capture::FfiCross<crate::__BoltffiTag>>::Ffi {
+            if !__boltffi_status.is_null() {
+                unsafe { *__boltffi_status = #facade::__private::FfiStatus::OK };
+            }
+            match ::std::panic::catch_unwind(::std::panic::AssertUnwindSafe(
+                move || -> ::core::result::Result<
+                    <#return_type as #facade::__private::capture::FfiCross<crate::__BoltffiTag>>::Ffi,
+                    #facade::__private::wire::DecodeError,
+                > {
+                    let __boltffi_ret = #ident(
+                        #(<#types as #facade::__private::capture::FfiCross<crate::__BoltffiTag>>::lift(#names)?),*
+                    );
+                    ::core::result::Result::Ok(
+                        <#return_type as #facade::__private::capture::FfiCross<crate::__BoltffiTag>>::lower(__boltffi_ret)
+                    )
+                }
+            )) {
+                Ok(::core::result::Result::Ok(value)) => value,
+                Ok(::core::result::Result::Err(error)) => {
+                    unsafe { #facade::__private::capture::note_invalid_arg(__boltffi_status, error) };
+                    <#return_type as #facade::__private::capture::FfiCross<crate::__BoltffiTag>>::poisoned()
+                }
+                Err(panic) => {
+                    unsafe { #facade::__private::capture::note_panic(__boltffi_status, panic) };
+                    <#return_type as #facade::__private::capture::FfiCross<crate::__BoltffiTag>>::poisoned()
+                }
+            }
+        }
+    })
+}
+
+fn crossing_unsupported(ty: &syn::Type) -> bool {
+    matches!(
+        ty,
+        syn::Type::Reference(_) | syn::Type::ImplTrait(_) | syn::Type::Ptr(_)
+    )
+}
+
+/// Whether every type reached by this expression has an `FfiCross` impl the wrapper can
+/// name: core's primitives, builtins, and containers, plus the impls `#[data]` sites
+/// emit. Everything else refuses so the crate falls back instead of failing to compile —
+/// including all custom types, since the function site cannot tell a `custom_ffi` local
+/// (which has an impl) from a `custom_type!` remote (which the orphan rule keeps bare).
+fn wrapper_crossable(type_expr: &boltffi_ast::TypeExpr) -> bool {
+    use boltffi_ast::TypeExpr;
+    match type_expr {
+        TypeExpr::Primitive(_)
+        | TypeExpr::Unit
+        | TypeExpr::String
+        | TypeExpr::Builtin(_)
+        | TypeExpr::Record { .. }
+        | TypeExpr::Enum { .. } => true,
+        TypeExpr::Boxed(inner) | TypeExpr::Vec(inner) | TypeExpr::Option(inner) => {
+            wrapper_crossable(inner)
+        }
+        TypeExpr::Result { ok, err } => wrapper_crossable(ok) && wrapper_crossable(err),
+        TypeExpr::Map { key, value, .. } => wrapper_crossable(key) && wrapper_crossable(value),
+        TypeExpr::Tuple(items) => items.iter().all(wrapper_crossable),
+        _ => false,
+    }
+}
+
+fn invocation_symbol(item: &str) -> String {
+    let span = proc_macro::Span::call_site();
+    let crate_name = std::env::var("CARGO_CRATE_NAME").unwrap_or_else(|_| "unknown".to_owned());
+    let position = format!("{}:{}:{}", span.file(), span.line(), span.column());
+    format!("boltffi_inv_{crate_name}_{item}_{:08x}", fnv1a(&position))
+}
+
+fn fnv1a(input: &str) -> u32 {
+    let mut hash: u32 = 0x811c9dc5;
+    for byte in input.bytes() {
+        hash ^= u32::from(byte);
+        hash = hash.wrapping_mul(0x01000193);
+    }
+    hash
 }
 
 fn record_tokens(fragment: &SourceFragment, slots: &[boltffi_scan::SlotSource]) -> TokenStream {
@@ -298,7 +466,7 @@ pub(crate) fn custom_ffi_tokens(item: proc_macro::TokenStream) -> TokenStream {
     };
     let self_ty = &*item.self_ty;
     let name = type_leaf_name(self_ty).unwrap_or_else(|| "custom_ffi".to_owned());
-    let identity = local_identity_tokens(self_ty, &name);
+    let identity = local_identity_tokens(self_ty, &name, LocalCrossing::Wire);
     let record = match boltffi_scan::capture_custom_ffi(&item) {
         Ok(captured) => record_tokens(&SourceFragment::Custom(captured.def), &captured.slots),
         Err(error) => unsupported_tokens(&name, &error.to_string()),
@@ -355,7 +523,21 @@ fn trait_identity_tokens(item: &syn::ItemTrait) -> TokenStream {
     }
 }
 
-fn local_identity_tokens<T: quote::ToTokens>(self_ty: &T, name: &str) -> TokenStream {
+/// Whether an identity site also gets a wire-encoded [`FfiCross`] impl.
+enum LocalCrossing {
+    Wire,
+    None,
+}
+
+fn local_identity_tokens<T: quote::ToTokens>(
+    self_ty: &T,
+    name: &str,
+    crossing: LocalCrossing,
+) -> TokenStream {
+    let cross = match crossing {
+        LocalCrossing::Wire => wire_cross_tokens(self_ty),
+        LocalCrossing::None => TokenStream::new(),
+    };
     let facade = facade();
     quote! {
         const _: () = {
@@ -371,7 +553,32 @@ fn local_identity_tokens<T: quote::ToTokens>(self_ty: &T, name: &str) -> TokenSt
                         <#self_ty as #facade::__private::capture::TypeInfo<Tag>>::NAME,
                     );
             }
+
+            #cross
         };
+    }
+}
+
+fn wire_cross_tokens<T: quote::ToTokens>(self_ty: &T) -> TokenStream {
+    let facade = facade();
+    quote! {
+        impl<Tag> #facade::__private::capture::FfiCross<Tag> for #self_ty {
+            type Ffi = #facade::__private::FfiBuf;
+
+            fn lower(self) -> #facade::__private::FfiBuf {
+                #facade::__private::FfiBuf::wire_encode(&self)
+            }
+
+            fn lift(
+                ffi: #facade::__private::FfiBuf,
+            ) -> ::core::result::Result<Self, #facade::__private::wire::DecodeError> {
+                #facade::__private::wire::decode(unsafe { ffi.as_byte_slice() })
+            }
+
+            fn poisoned() -> #facade::__private::FfiBuf {
+                #facade::__private::FfiBuf::empty()
+            }
+        }
     }
 }
 
@@ -383,5 +590,29 @@ fn type_leaf_name(ty: &syn::Type) -> Option<String> {
             .last()
             .map(|segment| segment.ident.to_string()),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use boltffi_ast::{BuiltinType, TypeExpr};
+
+    use super::wrapper_crossable;
+
+    #[test]
+    fn wrapper_crossability_follows_ffi_cross_coverage() {
+        assert!(
+            wrapper_crossable(&TypeExpr::Builtin(BuiltinType::Duration)),
+            "builtins have core crossings"
+        );
+        assert!(
+            wrapper_crossable(&TypeExpr::Vec(Box::new(TypeExpr::String))),
+            "containers cross when their elements do"
+        );
+        assert!(!wrapper_crossable(&TypeExpr::Str), "borrowed types refuse");
+        assert!(
+            !wrapper_crossable(&TypeExpr::Vec(Box::new(TypeExpr::Str))),
+            "containers refuse when their elements do"
+        );
     }
 }
