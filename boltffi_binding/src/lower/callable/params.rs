@@ -75,12 +75,7 @@ where
     }
     let value = ValueRef::named(canonical_name.clone());
     let mut plan = lower_plain_plan::<S, D>(index, ids, root_encoding, &type_expr, value, receive)?;
-    if parameter.user_attrs.iter().any(|attribute| {
-        attribute
-            .path
-            .last()
-            .is_some_and(|segment| segment.name.as_str() == "borrowed")
-    }) {
+    if parameter.user_attrs.iter().any(is_boltffi_borrowed_attr) {
         if !matches!(owner, CallableOwner::Function) {
             return Err(LowerError::unsupported_type(
                 UnsupportedType::BorrowedSliceParameter,
@@ -109,6 +104,24 @@ where
         }
     }
     Ok(ParamDecl::value(canonical_name, meta, plan))
+}
+
+/// Reports whether an attribute is the BoltFFI `borrowed` marker.
+///
+/// Matches the two accepted spellings — `#[borrowed]` and
+/// `#[boltffi::borrowed]` — mirroring the convention in
+/// `boltffi_scan::marker::is_boltffi_marker_path`. Paths whose final
+/// segment is `borrowed` but that carry a different prefix (e.g.
+/// `#[other::borrowed]`) are left alone so foreign attributes cannot
+/// silently change the parameter ABI.
+fn is_boltffi_borrowed_attr(attribute: &boltffi_ast::UserAttr) -> bool {
+    match attribute.path.segments.as_slice() {
+        [marker] => marker.name.as_str() == "borrowed",
+        [namespace, marker] => {
+            namespace.name.as_str() == "boltffi" && marker.name.as_str() == "borrowed"
+        }
+        _ => false,
+    }
 }
 
 fn lower_plain_plan<S: SurfaceLower, D: Direction>(

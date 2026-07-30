@@ -465,6 +465,99 @@ mod tests {
     }
 
     #[test]
+    fn boltffi_qualified_borrowed_marker_enables_borrowed_slice_transport() {
+        let mut user_agent = value_param(
+            "user_agent",
+            TypeExpr::Slice(Box::new(TypeExpr::Primitive(Primitive::U8))),
+        );
+        user_agent.passing = boltffi_ast::ParameterPassing::Ref;
+        user_agent.user_attrs.push(UserAttr::new(
+            SourcePath::new(
+                boltffi_ast::PathRoot::Relative,
+                vec![
+                    boltffi_ast::PathSegment::new("boltffi"),
+                    boltffi_ast::PathSegment::new("borrowed"),
+                ],
+            ),
+            AttributeInput::Empty,
+        ));
+        let mut sniff = function("demo::sniff", "sniff");
+        sniff.parameters = vec![user_agent];
+
+        let bindings = TestContract::new().with_function(sniff).lower_ok::<Native>();
+
+        assert!(matches!(
+            first_param_lower(&bindings),
+            ParamPlan::Encoded {
+                ty: TypeRef::Bytes,
+                transport: EncodedParamTransport::BorrowedSlice,
+                receive: Receive::ByRef,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn foreign_borrowed_marker_does_not_change_transport() {
+        let make = |path: SourcePath| {
+            let mut user_agent = value_param(
+                "user_agent",
+                TypeExpr::Slice(Box::new(TypeExpr::Primitive(Primitive::U8))),
+            );
+            user_agent.passing = boltffi_ast::ParameterPassing::Ref;
+            user_agent.user_attrs.push(UserAttr::new(path, AttributeInput::Empty));
+            let mut sniff = function("demo::sniff", "sniff");
+            sniff.parameters = vec![user_agent];
+            sniff
+        };
+
+        // `#[other::borrowed]` — last segment is `borrowed` but the prefix is
+        // not `boltffi`, so the ABI must stay on wire transport.
+        let other = make(SourcePath::new(
+            boltffi_ast::PathRoot::Relative,
+            vec![
+                boltffi_ast::PathSegment::new("other"),
+                boltffi_ast::PathSegment::new("borrowed"),
+            ],
+        ));
+        let bindings = TestContract::new().with_function(other).lower_ok::<Native>();
+        assert!(
+            matches!(
+                first_param_lower(&bindings),
+                ParamPlan::Encoded {
+                    transport: EncodedParamTransport::Wire,
+                    ..
+                }
+            ),
+            "#[other::borrowed] must not switch to BorrowedSlice"
+        );
+
+        // `#[vendor::boltffi::borrowed]` — three segments; only exactly one or
+        // two (`[borrowed]` / `[boltffi::borrowed]`) qualify.
+        let vendored = make(SourcePath::new(
+            boltffi_ast::PathRoot::Relative,
+            vec![
+                boltffi_ast::PathSegment::new("vendor"),
+                boltffi_ast::PathSegment::new("boltffi"),
+                boltffi_ast::PathSegment::new("borrowed"),
+            ],
+        ));
+        let bindings = TestContract::new()
+            .with_function(vendored)
+            .lower_ok::<Native>();
+        assert!(
+            matches!(
+                first_param_lower(&bindings),
+                ParamPlan::Encoded {
+                    transport: EncodedParamTransport::Wire,
+                    ..
+                }
+            ),
+            "#[vendor::boltffi::borrowed] must not switch to BorrowedSlice"
+        );
+    }
+
+    #[test]
     fn wasm32_string_return_uses_packed_shape() {
         let mut greet = function("demo::greet", "greet");
         greet.returns = ReturnDef::value(TypeExpr::String);
