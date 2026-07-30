@@ -2739,4 +2739,43 @@ assert _native.drop_calls == 2
         assert!(has_guard, "has wrapper has zero-handle guard");
         assert!(borrow_guard, "borrow wrapper has zero-handle guard");
     }
+
+    #[test]
+    fn python_target_native_opaque_record_preserves_associated_constants() {
+        let output = target()
+            .render(&bindings(
+                r#"
+                #[data(opaque)]
+                pub struct Counter {
+                    pub value: u32,
+                }
+
+                #[data(impl)]
+                impl Counter {
+                    pub const MAX: u32 = 1000;
+                }
+
+                #[export]
+                pub fn make_counter() -> Counter {
+                    unimplemented!()
+                }
+                "#,
+            ))
+            .expect("Python target should render opaque record with associated constant");
+        let init = file(&output, "demo/__init__.py");
+        let stub = file(&output, "demo/__init__.pyi");
+
+        // The associated constant must appear on the record class in the
+        // package, not only at top level (top-level constants filter out
+        // owned declarations).
+        assert!(
+            init.contains("Counter.MAX = 1000"),
+            "associated constant MAX must be assigned on the Counter class"
+        );
+        // The constant must also appear in the stub as a ClassVar on Counter.
+        assert!(
+            stub.contains("MAX: ClassVar[int]"),
+            "associated constant MAX must appear in the stub as a ClassVar"
+        );
+    }
 }

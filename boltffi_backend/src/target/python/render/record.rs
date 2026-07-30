@@ -121,7 +121,7 @@ impl RecordClass {
             exception_name: None,
             register_method: symbols.register_method().clone(),
             fields: Vec::new(),
-            constants: Vec::new(),
+            constants: package.constants_for_owner(ConstantOwner::Record(record.id()))?,
             wire: RecordWire::Fields(Vec::new()),
             native_opaque: Some(NativeOpaqueRecordInfo { drop_fn, props }),
             constructors: Vec::new(),

@@ -30,6 +30,9 @@ PACKAGE_VERSION: str | None
 class {{ record.class_name }}:
     def __init__(self, _: NoReturn, /) -> None: ...
     def close(self) -> None: ...
+{%- for constant in record.constants %}
+    {{ constant.python_name }}: ClassVar[{{ constant.annotation }}]
+{%- endfor %}
 {%- for prop in native_opaque.props() %}
 
     @property
