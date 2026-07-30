@@ -4581,7 +4581,7 @@ mod tests {
                     handle: ::boltffi::__private::RustFutureHandle,
                 ) -> i32 {
                     unsafe {
-                        ::boltffi::__private::rustfuture::rust_future_poll_sync::<()>(handle)
+                        ::boltffi::__private::rust_future_poll_sync::<()>(handle)
                     }
                 }
                 #[cfg(target_arch = "wasm32")]

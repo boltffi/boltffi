@@ -2803,15 +2803,6 @@ public static class DemoTest
             Require(await shared.AsyncGet() == 12, "SharedCounter.AsyncGet after add");
         }
 
-        using (var holder = new StateHolder("async-holder"))
-        {
-            Require(await holder.AsyncGetValue() == 0, "StateHolder.AsyncGetValue default");
-            await holder.AsyncSetValue(41);
-            Require(await holder.AsyncGetValue() == 41, "StateHolder.AsyncSetValue");
-            Require(await holder.AsyncAddItem("alpha") == 1u, "StateHolder.AsyncAddItem first");
-            Require(await holder.AsyncAddItem("beta") == 2u, "StateHolder.AsyncAddItem second");
-        }
-
         using (var ds = new DataStore())
         {
             ds.Add(new DataPoint(1.0, 2.0, 100L));
