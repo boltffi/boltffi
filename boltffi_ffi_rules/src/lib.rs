@@ -1499,6 +1499,8 @@ pub mod transport {
 }
 
 pub mod classification {
+    use super::primitive::Primitive;
+
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub enum PassableCategory {
         Scalar,
@@ -1506,11 +1508,23 @@ pub mod classification {
         WireEncoded,
     }
 
-    pub fn classify_struct(is_repr_c: bool, field_types: &[FieldPrimitive]) -> PassableCategory {
-        if is_repr_c && !field_types.is_empty() && field_types.iter().all(|f| f.is_fixed_width) {
+    pub fn classify_struct(is_repr_c: bool, field_types: &[Primitive]) -> PassableCategory {
+        if is_repr_c && !field_types.is_empty() && has_portable_layout(field_types) {
             PassableCategory::Blittable
         } else {
             PassableCategory::WireEncoded
+        }
+    }
+
+    /// Classifies a struct from per-field primitives where `None` marks a
+    /// field that is not an admissible primitive; any `None` is wire-encoded.
+    pub fn classify_struct_fields<I>(is_repr_c: bool, field_types: I) -> PassableCategory
+    where
+        I: IntoIterator<Item = Option<Primitive>>,
+    {
+        match field_types.into_iter().collect::<Option<Vec<_>>>() {
+            Some(fields) => classify_struct(is_repr_c, &fields),
+            None => PassableCategory::WireEncoded,
         }
     }
 
@@ -1522,32 +1536,58 @@ pub mod classification {
         }
     }
 
-    #[derive(Debug, Clone, Copy)]
-    pub struct FieldPrimitive {
-        pub is_fixed_width: bool,
+    /// Reports whether every supported native ABI gives the fields the same
+    /// bytes.
+    ///
+    /// Most native targets use each scalar's natural alignment; 32-bit x86
+    /// caps alignment at four bytes. Blittable structs must agree on total
+    /// size and every field offset under both profiles. Container alignment
+    /// may differ: allocators over-align rather than under-align storage.
+    fn has_portable_layout(field_types: &[Primitive]) -> bool {
+        match (
+            layout_profile(field_types, u64::MAX),
+            layout_profile(field_types, 4),
+        ) {
+            (Some(natural), Some(four_byte)) => {
+                natural.size == four_byte.size && natural.offsets == four_byte.offsets
+            }
+            _ => false,
+        }
     }
 
-    impl FieldPrimitive {
-        pub fn fixed() -> Self {
-            Self {
-                is_fixed_width: true,
-            }
-        }
+    /// Size, container alignment, and field offsets of a field sequence
+    /// under one alignment profile.
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub struct LayoutProfile {
+        pub size: u64,
+        pub alignment: u64,
+        pub offsets: Vec<u64>,
+    }
 
-        pub fn platform_sized() -> Self {
-            Self {
-                is_fixed_width: false,
-            }
+    /// Walks the fields in source order under C layout rules with every field
+    /// alignment capped at `alignment_cap` (`u64::MAX` for the natural
+    /// profile); `None` when a field has no fixed ABI width.
+    pub fn layout_profile(field_types: &[Primitive], alignment_cap: u64) -> Option<LayoutProfile> {
+        let mut offset = 0_u64;
+        let mut struct_alignment = 1_u64;
+        let mut offsets = Vec::with_capacity(field_types.len());
+        for field in field_types {
+            let size = field.size_bytes()? as u64;
+            let alignment = (field.alignment()? as u64).min(alignment_cap);
+            offset = align_up(offset, alignment);
+            offsets.push(offset);
+            offset += size;
+            struct_alignment = struct_alignment.max(alignment);
         }
+        Some(LayoutProfile {
+            size: align_up(offset, struct_alignment),
+            alignment: struct_alignment,
+            offsets,
+        })
+    }
 
-        pub fn from_type_name(name: &str) -> Option<Self> {
-            match name {
-                "i8" | "u8" | "i16" | "u16" | "i32" | "u32" | "i64" | "u64" | "f32" | "f64"
-                | "bool" => Some(Self::fixed()),
-                "isize" | "usize" => Some(Self::platform_sized()),
-                _ => None,
-            }
-        }
+    fn align_up(offset: u64, alignment: u64) -> u64 {
+        (offset + alignment - 1) & !(alignment - 1)
     }
 
     #[cfg(test)]
@@ -1571,13 +1611,61 @@ pub mod classification {
 
         #[test]
         fn all_fixed_width_struct_is_blittable() {
-            let fields = vec![FieldPrimitive::fixed(), FieldPrimitive::fixed()];
+            let fields = vec![Primitive::U32, Primitive::F32];
             assert_eq!(classify_struct(true, &fields), PassableCategory::Blittable);
         }
 
         #[test]
+        fn wide_scalar_struct_is_blittable() {
+            let fields = vec![Primitive::F64, Primitive::I64];
+            assert_eq!(classify_struct(true, &fields), PassableCategory::Blittable);
+        }
+
+        #[test]
+        fn explicitly_padded_mixed_alignment_struct_is_blittable() {
+            let fields = vec![Primitive::U32, Primitive::U32, Primitive::F64];
+            assert_eq!(classify_struct(true, &fields), PassableCategory::Blittable);
+        }
+
+        #[test]
+        fn non_primitive_field_is_wire_encoded() {
+            let fields = vec![Some(Primitive::U32), None];
+            assert_eq!(
+                classify_struct_fields(true, fields),
+                PassableCategory::WireEncoded
+            );
+        }
+
+        #[test]
+        fn all_primitive_fields_classify_through_shared_rule() {
+            let fields = vec![Some(Primitive::U32), Some(Primitive::F32)];
+            assert_eq!(
+                classify_struct_fields(true, fields),
+                PassableCategory::Blittable
+            );
+        }
+
+        #[test]
+        fn mixed_alignment_struct_is_wire_encoded() {
+            let fields = vec![Primitive::U32, Primitive::F64];
+            assert_eq!(
+                classify_struct(true, &fields),
+                PassableCategory::WireEncoded
+            );
+        }
+
+        #[test]
+        fn trailing_padding_struct_is_wire_encoded() {
+            let fields = vec![Primitive::F64, Primitive::U32];
+            assert_eq!(
+                classify_struct(true, &fields),
+                PassableCategory::WireEncoded
+            );
+        }
+
+        #[test]
         fn struct_with_platform_sized_is_wire_encoded() {
-            let fields = vec![FieldPrimitive::fixed(), FieldPrimitive::platform_sized()];
+            let fields = vec![Primitive::U32, Primitive::USize];
             assert_eq!(
                 classify_struct(true, &fields),
                 PassableCategory::WireEncoded
@@ -1586,7 +1674,7 @@ pub mod classification {
 
         #[test]
         fn struct_without_repr_c_is_wire_encoded() {
-            let fields = vec![FieldPrimitive::fixed()];
+            let fields = vec![Primitive::U32];
             assert_eq!(
                 classify_struct(false, &fields),
                 PassableCategory::WireEncoded

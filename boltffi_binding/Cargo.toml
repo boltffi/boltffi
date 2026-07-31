@@ -11,6 +11,7 @@ categories = ["development-tools::ffi"]
 
 [dependencies]
 boltffi_ast.workspace = true
+boltffi_ffi_rules.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 

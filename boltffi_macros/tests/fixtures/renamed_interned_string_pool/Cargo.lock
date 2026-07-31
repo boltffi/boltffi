@@ -22,6 +22,7 @@ name = "boltffi_binding"
 version = "0.29.0"
 dependencies = [
  "boltffi_ast",
+ "boltffi_ffi_rules",
  "serde",
  "serde_json",
 ]

@@ -1,5 +1,5 @@
 use boltffi_ffi_rules::callable::{CallableForm, ExecutionKind};
-use boltffi_ffi_rules::classification::{self, FieldPrimitive, PassableCategory};
+use boltffi_ffi_rules::classification::{self, PassableCategory};
 
 use crate::ir::abi::CallId;
 use crate::ir::ids::{
@@ -56,22 +56,14 @@ impl RecordDef {
     }
 
     pub fn is_blittable(&self) -> bool {
-        let field_primitives: Vec<FieldPrimitive> = self
-            .fields
-            .iter()
-            .filter_map(|f| match &f.type_expr {
-                TypeExpr::Primitive(p) => Some(p.to_field_primitive()),
-                _ => None,
-            })
-            .collect();
-        let all_primitive = field_primitives.len() == self.fields.len();
-        let classify_fields = if all_primitive {
-            &field_primitives[..]
-        } else {
-            &[]
-        };
         matches!(
-            classification::classify_struct(self.is_repr_c, classify_fields),
+            classification::classify_struct_fields(
+                self.is_repr_c,
+                self.fields.iter().map(|f| match &f.type_expr {
+                    TypeExpr::Primitive(p) => Some(*p),
+                    _ => None,
+                }),
+            ),
             PassableCategory::Blittable,
         )
     }

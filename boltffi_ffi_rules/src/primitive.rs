@@ -1,7 +1,5 @@
 use std::str::FromStr;
 
-use super::classification::FieldPrimitive;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Primitive {
@@ -174,14 +172,6 @@ impl Primitive {
                 | Self::U32
                 | Self::F32
         )
-    }
-
-    pub fn to_field_primitive(self) -> FieldPrimitive {
-        if self.is_platform_sized() {
-            FieldPrimitive::platform_sized()
-        } else {
-            FieldPrimitive::fixed()
-        }
     }
 }
 

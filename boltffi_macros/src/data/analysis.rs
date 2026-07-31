@@ -1,5 +1,8 @@
-use boltffi_ffi_rules::classification::{self, FieldPrimitive, PassableCategory};
-use syn::{Attribute, Fields, ItemEnum, ItemStruct, Type};
+use std::str::FromStr;
+
+use boltffi_ffi_rules::classification::{self, PassableCategory};
+use boltffi_ffi_rules::primitive::Primitive;
+use syn::{Attribute, ItemEnum, ItemStruct, Type};
 
 pub(crate) struct StructDataShape<'a> {
     item_struct: &'a ItemStruct,
@@ -7,11 +10,6 @@ pub(crate) struct StructDataShape<'a> {
 
 pub(crate) struct EnumDataShape<'a> {
     item_enum: &'a ItemEnum,
-}
-
-struct StructFieldFacts {
-    primitives: Vec<FieldPrimitive>,
-    total_fields: usize,
 }
 
 struct DataItemAttributes<'a> {
@@ -28,9 +26,12 @@ impl<'a> StructDataShape<'a> {
     }
 
     pub(crate) fn passable_category(&self) -> PassableCategory {
-        classification::classify_struct(
+        classification::classify_struct_fields(
             self.has_effective_repr_c(),
-            &self.classification_primitives(),
+            self.item_struct
+                .fields
+                .iter()
+                .map(|field| primitive_for(&field.ty)),
         )
     }
 
@@ -42,14 +43,15 @@ impl<'a> StructDataShape<'a> {
         let data_attributes = DataItemAttributes::new(&self.item_struct.attrs);
         data_attributes.has_repr_c() || !data_attributes.has_any_repr()
     }
+}
 
-    fn classification_primitives(&self) -> Vec<FieldPrimitive> {
-        let field_facts = StructFieldFacts::from_fields(&self.item_struct.fields);
-        if field_facts.primitives.len() == field_facts.total_fields {
-            field_facts.primitives
-        } else {
-            Vec::new()
-        }
+fn primitive_for(rust_type: &Type) -> Option<Primitive> {
+    match rust_type {
+        Type::Path(type_path) => type_path
+            .path
+            .get_ident()
+            .and_then(|ident| Primitive::from_str(&ident.to_string()).ok()),
+        _ => None,
     }
 }
 
@@ -88,38 +90,6 @@ impl<'a> EnumDataShape<'a> {
     fn has_effective_integer_repr(&self) -> bool {
         let data_attributes = DataItemAttributes::new(&self.item_enum.attrs);
         self.has_integer_repr() || (self.is_c_style() && !data_attributes.has_any_repr())
-    }
-}
-
-impl StructFieldFacts {
-    fn from_fields(fields: &Fields) -> Self {
-        match fields {
-            Fields::Named(named_fields) => Self::from_field_iter(named_fields.named.iter()),
-            Fields::Unnamed(unnamed_fields) => Self::from_field_iter(unnamed_fields.unnamed.iter()),
-            Fields::Unit => Self {
-                primitives: Vec::new(),
-                total_fields: 0,
-            },
-        }
-    }
-
-    fn from_field_iter<'a>(fields: impl Iterator<Item = &'a syn::Field>) -> Self {
-        let field_types = fields.map(|field| &field.ty).collect::<Vec<_>>();
-        let primitives = field_types.iter().filter_map(Self::primitive_for).collect();
-        Self {
-            primitives,
-            total_fields: field_types.len(),
-        }
-    }
-
-    fn primitive_for(rust_type: &&Type) -> Option<FieldPrimitive> {
-        match rust_type {
-            Type::Path(type_path) => type_path
-                .path
-                .get_ident()
-                .and_then(|ident| FieldPrimitive::from_type_name(&ident.to_string())),
-            _ => None,
-        }
     }
 }
 
@@ -192,5 +162,40 @@ impl<'a> DataItemAttributes<'a> {
         self.attrs
             .iter()
             .any(|attribute| attribute.path().is_ident("repr"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use syn::parse_quote;
+
+    use super::*;
+
+    #[test]
+    fn mixed_alignment_data_struct_is_wire_encoded() {
+        let item: syn::ItemStruct = parse_quote! {
+            pub struct Sample {
+                pub id: u32,
+                pub value: f64,
+            }
+        };
+        assert_eq!(
+            StructDataShape::new(&item).passable_category(),
+            PassableCategory::WireEncoded
+        );
+    }
+
+    #[test]
+    fn uniform_alignment_data_struct_is_blittable() {
+        let item: syn::ItemStruct = parse_quote! {
+            pub struct Sample {
+                pub id: u32,
+                pub value: f32,
+            }
+        };
+        assert_eq!(
+            StructDataShape::new(&item).passable_category(),
+            PassableCategory::Blittable
+        );
     }
 }

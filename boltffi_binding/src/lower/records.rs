@@ -1,4 +1,5 @@
 use boltffi_ast::{RecordDef as SourceRecord, TypeExpr};
+use boltffi_ffi_rules::classification;
 
 use crate::{
     CanonicalName, DirectFieldDecl, DirectRecordDecl, EncodedFieldDecl, EncodedRecordDecl,
@@ -43,14 +44,22 @@ pub fn lower<S: SurfaceLower>(
 /// A record that declares a different `repr` keeps the layout intent it
 /// wrote and crosses encoded. Records whose size or field offsets change
 /// between supported native ABI alignment profiles also cross encoded.
+///
+/// Delegates to [`classification::classify_struct_fields`] so the macro,
+/// the generator, and this lowering share one classifier.
 pub fn is_direct(record: &SourceRecord) -> bool {
-    primitive::has_effective_repr_c(&record.repr)
-        && !record.fields.is_empty()
-        && record
-            .fields
-            .iter()
-            .all(|field| primitive::direct_field_type(&field.type_expr).is_some())
-        && layout::has_portable_byte_layout(record)
+    matches!(
+        classification::classify_struct_fields(
+            primitive::has_effective_repr_c(&record.repr),
+            record.fields.iter().map(|field| match &field.type_expr {
+                TypeExpr::Primitive(field_primitive) => {
+                    Some(primitive::classification_primitive(*field_primitive))
+                }
+                _ => None,
+            }),
+        ),
+        classification::PassableCategory::Blittable
+    )
 }
 
 fn lower_one<S: SurfaceLower>(

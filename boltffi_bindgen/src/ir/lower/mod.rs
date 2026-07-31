@@ -845,6 +845,40 @@ mod tests {
     }
 
     #[test]
+    fn mixed_alignment_record_layout_is_encoded() {
+        let mut contract = test_contract();
+        let record_id = RecordId::new("Trade");
+        contract.catalog.insert_record(RecordDef {
+            is_repr_c: true,
+            is_error: false,
+            id: record_id.clone(),
+            fields: vec![
+                FieldDef {
+                    name: FieldName::new("symbol_id"),
+                    type_expr: TypeExpr::Primitive(PrimitiveType::I32),
+                    doc: None,
+                    default: None,
+                },
+                FieldDef {
+                    name: FieldName::new("price"),
+                    type_expr: TypeExpr::Primitive(PrimitiveType::F64),
+                    doc: None,
+                    default: None,
+                },
+            ],
+            constructors: vec![],
+            methods: vec![],
+            doc: None,
+            deprecated: None,
+        });
+
+        let lowerer = lowerer_for_contract(&contract);
+        let layout = lowerer.record_layout(&record_id);
+
+        assert!(matches!(layout, RecordLayout::Encoded { .. }));
+    }
+
+    #[test]
     fn encoded_record_layout() {
         let mut contract = test_contract();
         let record_id = RecordId::new("Person");

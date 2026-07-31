@@ -65,22 +65,17 @@ impl<'c> Lowerer<'c> {
     }
 
     pub(super) fn is_blittable_record(&self, definition: &RecordDef) -> bool {
-        let field_primitives: Vec<_> = definition
-            .fields
-            .iter()
-            .filter_map(|field| match &field.type_expr {
-                TypeExpr::Primitive(primitive) => Some(primitive.to_field_primitive()),
-                _ => None,
-            })
-            .collect();
-        let all_primitive = field_primitives.len() == definition.fields.len();
-        let classify_fields = if all_primitive {
-            &field_primitives[..]
-        } else {
-            &[]
-        };
         matches!(
-            classification::classify_struct(definition.is_repr_c, classify_fields),
+            classification::classify_struct_fields(
+                definition.is_repr_c,
+                definition
+                    .fields
+                    .iter()
+                    .map(|field| match &field.type_expr {
+                        TypeExpr::Primitive(primitive) => Some(*primitive),
+                        _ => None,
+                    }),
+            ),
             PassableCategory::Blittable,
         )
     }

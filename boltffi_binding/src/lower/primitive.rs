@@ -2,6 +2,27 @@ use boltffi_ast::{Primitive as SourcePrimitive, ReprAttr, ReprItem, TypeExpr};
 
 use crate::{DirectFieldType, IntegerRepr, Primitive};
 
+pub fn classification_primitive(
+    primitive: SourcePrimitive,
+) -> boltffi_ffi_rules::primitive::Primitive {
+    use boltffi_ffi_rules::primitive::Primitive as RulesPrimitive;
+    match primitive {
+        SourcePrimitive::Bool => RulesPrimitive::Bool,
+        SourcePrimitive::I8 => RulesPrimitive::I8,
+        SourcePrimitive::U8 => RulesPrimitive::U8,
+        SourcePrimitive::I16 => RulesPrimitive::I16,
+        SourcePrimitive::U16 => RulesPrimitive::U16,
+        SourcePrimitive::I32 => RulesPrimitive::I32,
+        SourcePrimitive::U32 => RulesPrimitive::U32,
+        SourcePrimitive::I64 => RulesPrimitive::I64,
+        SourcePrimitive::U64 => RulesPrimitive::U64,
+        SourcePrimitive::ISize => RulesPrimitive::ISize,
+        SourcePrimitive::USize => RulesPrimitive::USize,
+        SourcePrimitive::F32 => RulesPrimitive::F32,
+        SourcePrimitive::F64 => RulesPrimitive::F64,
+    }
+}
+
 pub fn direct_field_type(type_expr: &TypeExpr) -> Option<DirectFieldType> {
     match type_expr {
         TypeExpr::Primitive(primitive) => DirectFieldType::new((*primitive).into()),
