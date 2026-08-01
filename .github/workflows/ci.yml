@@ -278,14 +278,14 @@ jobs:
       - name: Verify win-arm64 NuGet restore and publish
         shell: pwsh
         run: |
-          $packageDir = Join-Path $PWD 'examples/platforms/csharp/dist/packages'
           $project = Join-Path $PWD 'examples/platforms/csharp/DemoTest/DemoTest.csproj'
+          $nugetConfig = Join-Path $PWD 'examples/platforms/csharp/DemoTest/NuGet.windows-arm64.config'
           $packagesCache = Join-Path $PWD 'examples/platforms/csharp/dist/.nuget/windows-arm64'
           $publishDir = Join-Path $PWD 'examples/platforms/csharp/dist/publish/win-arm64'
           dotnet publish $project `
             --runtime win-arm64 `
             --self-contained false `
-            --source $packageDir `
+            --property:RestoreConfigFile=$nugetConfig `
             --property:RestorePackagesPath=$packagesCache `
             --property:RestoreNoCache=true `
             --output $publishDir `
