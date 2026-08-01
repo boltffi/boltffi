@@ -26,11 +26,6 @@ impl GuardedCounter {
             details = "Swift releases class handles in deinit; there is no user-facing close() after which a call could be rejected."
         ),
         exclude(
-            typescript,
-            reason = ExclusionReason::ImplementationGap,
-            details = "TypeScript releases class handles through FinalizationRegistry; there is no user-facing close() after which a call could be rejected."
-        ),
-        exclude(
             python,
             reason = ExclusionReason::ImplementationGap,
             details = "Python releases class handles in __del__; there is no user-facing close() after which a call could be rejected."
@@ -54,7 +49,7 @@ impl GuardedCounter {
         exclude(
             typescript,
             reason = ExclusionReason::ImplementationGap,
-            details = "TypeScript releases class handles through FinalizationRegistry; there is no user-facing close() to race against an in-flight call."
+            details = "JavaScript is single-threaded, so dispose() cannot race an in-flight call from another thread; the deferred-free scenario cannot be expressed."
         ),
         exclude(
             python,
