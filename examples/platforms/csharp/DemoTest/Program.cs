@@ -52,6 +52,7 @@ public static class DemoTest
             TestOptionsWithVec();
             TestMultiCrateExports();
             TestClasses();
+            TestCloseGuard();
             TestResultFunctions();
             TestResultClassMethods();
             TestResultEnumErrors();
@@ -2942,6 +2943,52 @@ public static class DemoTest
         {
             consumer.SetProvider(new DataProviderImpl());
             Require(consumer.ComputeSum() == 10UL, "stored DataProvider callback");
+        }
+
+        Console.WriteLine("  PASS\n");
+    }
+
+    private static void TestCloseGuard()
+    {
+        Console.WriteLine("Testing class close guard (GuardedCounter)...");
+
+        DemoCase("case:classes.close_guard.guarded_counter.increment.should_reject_calls_after_close");
+        var counter = new GuardedCounter(1);
+        Require(counter.Increment() == 2, "GuardedCounter.Increment before Dispose");
+        counter.Dispose();
+        try
+        {
+            counter.Increment();
+            Require(false, "GuardedCounter.Increment after Dispose should throw");
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+
+        DemoCase("case:classes.close_guard.guarded_counter.increment_through_gate.should_complete_in_flight_call_when_closed");
+        var gated = new GuardedCounter(10);
+        using var entered = new ManualResetEventSlim(false);
+        using var release = new ManualResetEventSlim(false);
+        int result = 0;
+        var caller = new Thread(() => result = gated.IncrementThroughGate(observed =>
+        {
+            entered.Set();
+            release.Wait();
+            return observed + 5;
+        }));
+        caller.Start();
+        Require(entered.Wait(TimeSpan.FromSeconds(5)), "gate was not entered");
+        gated.Dispose();
+        release.Set();
+        caller.Join();
+        Require(result == 25, "GuardedCounter.IncrementThroughGate result");
+        try
+        {
+            gated.Increment();
+            Require(false, "GuardedCounter.Increment after in-flight Dispose should throw");
+        }
+        catch (ObjectDisposedException)
+        {
         }
 
         Console.WriteLine("  PASS\n");
