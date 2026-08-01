@@ -124,7 +124,8 @@ dist/
 │   ├── runtimes/
 │   │   ├── osx-arm64/native/libmylib.dylib
 │   │   ├── linux-x64/native/libmylib.so
-│   │   └── win-x64/native/mylib.dll
+│   │   ├── win-x64/native/mylib.dll
+│   │   └── win-arm64/native/mylib.dll
 │   └── packages/
 │       └── MyLib.0.1.0.nupkg
 ├── wasm/
@@ -548,12 +549,13 @@ enabled = true
 output = "dist/csharp"
 package_id = "MyOrg.MyLib"
 target_framework = "net10.0"
-runtime_identifiers = ["osx-arm64", "linux-x64", "win-x64"]
+runtime_identifiers = ["osx-arm64", "linux-x64", "win-x64", "win-arm64"]
 ```
 
 `runtime_identifiers` controls which native assets are built and bundled into the NuGet package.
 `current` resolves to the active host RID; canonical values are `osx-arm64`, `osx-x64`,
-`linux-x64`, `linux-arm64`, and `win-x64`.
+`linux-x64`, `linux-arm64`, `win-x64`, and `win-arm64`. Windows hosts can build both
+Windows architectures when the corresponding Rust target and Visual Studio C++ components are installed.
 
 ### Output Structure
 
@@ -568,7 +570,8 @@ dist/csharp/
 ├── runtimes/
 │   ├── osx-arm64/native/libmylib.dylib
 │   ├── linux-x64/native/libmylib.so
-│   └── win-x64/native/mylib.dll
+│   ├── win-x64/native/mylib.dll
+│   └── win-arm64/native/mylib.dll
 └── packages/
     └── MyLib.0.1.0.nupkg
 ```

@@ -34,6 +34,7 @@ pub enum NativeHostPlatform {
     LinuxX86_64,
     LinuxAarch64,
     WindowsX86_64,
+    WindowsAarch64,
 }
 
 impl NativeHostPlatform {
@@ -44,6 +45,7 @@ impl NativeHostPlatform {
             Self::LinuxX86_64 => "linux-x86_64",
             Self::LinuxAarch64 => "linux-aarch64",
             Self::WindowsX86_64 => "windows-x86_64",
+            Self::WindowsAarch64 => "windows-aarch64",
         }
     }
 
@@ -54,6 +56,7 @@ impl NativeHostPlatform {
             ("linux", "x86_64") => Some(Self::LinuxX86_64),
             ("linux", "aarch64") => Some(Self::LinuxAarch64),
             ("windows", "x86_64") => Some(Self::WindowsX86_64),
+            ("windows", "aarch64") => Some(Self::WindowsAarch64),
             _ => None,
         }
     }
@@ -62,7 +65,7 @@ impl NativeHostPlatform {
         match self {
             Self::DarwinArm64 | Self::DarwinX86_64 => format!("lib{artifact_name}.dylib"),
             Self::LinuxX86_64 | Self::LinuxAarch64 => format!("lib{artifact_name}.so"),
-            Self::WindowsX86_64 => format!("{artifact_name}.dll"),
+            Self::WindowsX86_64 | Self::WindowsAarch64 => format!("{artifact_name}.dll"),
         }
     }
 
@@ -71,7 +74,7 @@ impl NativeHostPlatform {
             Self::DarwinArm64 | Self::DarwinX86_64 | Self::LinuxX86_64 | Self::LinuxAarch64 => {
                 format!("lib{artifact_name}.a")
             }
-            Self::WindowsX86_64 => {
+            Self::WindowsX86_64 | Self::WindowsAarch64 => {
                 if cfg!(all(target_os = "windows", target_env = "gnu")) {
                     format!("lib{artifact_name}.a")
                 } else {
@@ -91,7 +94,7 @@ impl NativeHostPlatform {
         match self {
             Self::DarwinArm64 | Self::DarwinX86_64 => "darwin",
             Self::LinuxX86_64 | Self::LinuxAarch64 => "linux",
-            Self::WindowsX86_64 => "win32",
+            Self::WindowsX86_64 | Self::WindowsAarch64 => "win32",
         }
     }
 
@@ -99,7 +102,7 @@ impl NativeHostPlatform {
         match self {
             Self::DarwinArm64 | Self::DarwinX86_64 => Some("-Wl,-rpath,@loader_path"),
             Self::LinuxX86_64 | Self::LinuxAarch64 => Some("-Wl,-rpath,$ORIGIN"),
-            Self::WindowsX86_64 => None,
+            Self::WindowsX86_64 | Self::WindowsAarch64 => None,
         }
     }
 }
@@ -107,14 +110,14 @@ impl NativeHostPlatform {
 trait NativeHostIdentifier: Copy + Eq {
     fn current_marker() -> Self;
 
-    fn from_platform(platform: NativeHostPlatform) -> Self;
+    fn from_platform(platform: NativeHostPlatform) -> Option<Self>;
 
     fn explicit_platform(self) -> Option<NativeHostPlatform>;
 
     fn unsupported_host_message() -> String;
 
     fn current() -> Option<Self> {
-        NativeHostPlatform::current().map(Self::from_platform)
+        NativeHostPlatform::current().and_then(Self::from_platform)
     }
 
     fn resolve_requested(targets: &[Self]) -> Result<Vec<Self>, String> {
@@ -199,14 +202,8 @@ impl JavaHostTarget {
         self.native_host_platform().rpath_flag()
     }
 
-    fn native_host_platform(self) -> NativeHostPlatform {
+    pub(crate) fn native_host_platform(self) -> NativeHostPlatform {
         <Self as NativeHostIdentifier>::resolved_platform(self)
-    }
-}
-
-impl From<NativeHostPlatform> for JavaHostTarget {
-    fn from(value: NativeHostPlatform) -> Self {
-        <Self as NativeHostIdentifier>::from_platform(value)
     }
 }
 
@@ -215,13 +212,14 @@ impl NativeHostIdentifier for JavaHostTarget {
         Self::Current
     }
 
-    fn from_platform(platform: NativeHostPlatform) -> Self {
+    fn from_platform(platform: NativeHostPlatform) -> Option<Self> {
         match platform {
-            NativeHostPlatform::DarwinArm64 => Self::DarwinArm64,
-            NativeHostPlatform::DarwinX86_64 => Self::DarwinX86_64,
-            NativeHostPlatform::LinuxX86_64 => Self::LinuxX86_64,
-            NativeHostPlatform::LinuxAarch64 => Self::LinuxAarch64,
-            NativeHostPlatform::WindowsX86_64 => Self::WindowsX86_64,
+            NativeHostPlatform::DarwinArm64 => Some(Self::DarwinArm64),
+            NativeHostPlatform::DarwinX86_64 => Some(Self::DarwinX86_64),
+            NativeHostPlatform::LinuxX86_64 => Some(Self::LinuxX86_64),
+            NativeHostPlatform::LinuxAarch64 => Some(Self::LinuxAarch64),
+            NativeHostPlatform::WindowsX86_64 => Some(Self::WindowsX86_64),
+            NativeHostPlatform::WindowsAarch64 => None,
         }
     }
 
@@ -255,6 +253,13 @@ pub enum CSharpRuntimeIdentifier {
     LinuxArm64,
     #[serde(rename = "win-x64", alias = "windows-x86_64", alias = "win-x86_64")]
     WinX64,
+    #[serde(
+        rename = "win-arm64",
+        alias = "windows-arm64",
+        alias = "windows-aarch64",
+        alias = "win-aarch64"
+    )]
+    WinArm64,
 }
 
 impl CSharpRuntimeIdentifier {
@@ -265,6 +270,7 @@ impl CSharpRuntimeIdentifier {
         Self::LinuxX64,
         Self::LinuxArm64,
         Self::WinX64,
+        Self::WinArm64,
     ];
 
     pub fn canonical_name(self) -> &'static str {
@@ -275,6 +281,7 @@ impl CSharpRuntimeIdentifier {
             Self::LinuxX64 => "linux-x64",
             Self::LinuxArm64 => "linux-arm64",
             Self::WinX64 => "win-x64",
+            Self::WinArm64 => "win-arm64",
         }
     }
 
@@ -290,6 +297,7 @@ impl CSharpRuntimeIdentifier {
 impl From<NativeHostPlatform> for CSharpRuntimeIdentifier {
     fn from(value: NativeHostPlatform) -> Self {
         <Self as NativeHostIdentifier>::from_platform(value)
+            .expect("native host platform should be supported by C# packaging")
     }
 }
 
@@ -298,14 +306,15 @@ impl NativeHostIdentifier for CSharpRuntimeIdentifier {
         Self::Current
     }
 
-    fn from_platform(platform: NativeHostPlatform) -> Self {
-        match platform {
+    fn from_platform(platform: NativeHostPlatform) -> Option<Self> {
+        Some(match platform {
             NativeHostPlatform::DarwinArm64 => Self::OsxArm64,
             NativeHostPlatform::DarwinX86_64 => Self::OsxX64,
             NativeHostPlatform::LinuxX86_64 => Self::LinuxX64,
             NativeHostPlatform::LinuxAarch64 => Self::LinuxArm64,
             NativeHostPlatform::WindowsX86_64 => Self::WinX64,
-        }
+            NativeHostPlatform::WindowsAarch64 => Self::WinArm64,
+        })
     }
 
     fn explicit_platform(self) -> Option<NativeHostPlatform> {
@@ -316,11 +325,12 @@ impl NativeHostIdentifier for CSharpRuntimeIdentifier {
             Self::LinuxX64 => Some(NativeHostPlatform::LinuxX86_64),
             Self::LinuxArm64 => Some(NativeHostPlatform::LinuxAarch64),
             Self::WinX64 => Some(NativeHostPlatform::WindowsX86_64),
+            Self::WinArm64 => Some(NativeHostPlatform::WindowsAarch64),
         }
     }
 
     fn unsupported_host_message() -> String {
-        "C# packaging is only supported on osx-arm64, osx-x64, linux-x64, linux-arm64, and win-x64 hosts".to_string()
+        "C# packaging is only supported on osx-arm64, osx-x64, linux-x64, linux-arm64, win-x64, and win-arm64 hosts".to_string()
     }
 }
 
@@ -615,7 +625,10 @@ mod tests {
     use std::path::Path;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use super::{Architecture, BuiltLibrary, JavaHostTarget, Platform, RustTarget};
+    use super::{
+        Architecture, BuiltLibrary, CSharpRuntimeIdentifier, JavaHostTarget, NativeHostIdentifier,
+        NativeHostPlatform, Platform, RustTarget,
+    };
 
     #[test]
     fn apple_targets_use_static_libraries() {
@@ -714,6 +727,20 @@ mod tests {
             .expect("expected current host resolution");
 
         assert_eq!(resolved, vec![current_host]);
+    }
+
+    #[test]
+    fn windows_arm64_is_exposed_to_csharp_but_not_java() {
+        assert_eq!(
+            CSharpRuntimeIdentifier::from(NativeHostPlatform::WindowsAarch64),
+            CSharpRuntimeIdentifier::WinArm64
+        );
+        assert_eq!(
+            <JavaHostTarget as NativeHostIdentifier>::from_platform(
+                NativeHostPlatform::WindowsAarch64
+            ),
+            None
+        );
     }
 
     #[test]

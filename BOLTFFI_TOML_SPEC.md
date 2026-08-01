@@ -434,12 +434,12 @@ Controls npm package generation in `boltffi pack wasm`.
 - `package_output` (path, optional): Directory where `boltffi pack csharp` writes `.nupkg` files.
   - Default: `{targets.csharp.output}/packages`
 - `runtime_identifiers` (array of strings, optional): Desired .NET native runtime asset outputs.
-  - Supported canonical values: `current`, `osx-arm64`, `osx-x64`, `linux-x64`, `linux-arm64`, `win-x64`
-  - Supported aliases: `darwin-arm64`, `darwin-x86_64`, `linux-x86_64`, `linux-aarch64`, `windows-x86_64`
+  - Supported canonical values: `current`, `osx-arm64`, `osx-x64`, `linux-x64`, `linux-arm64`, `win-x64`, `win-arm64`
+  - Supported aliases: `darwin-arm64`, `darwin-x86_64`, `linux-x86_64`, `linux-aarch64`, `windows-x86_64`, `windows-arm64`, `windows-aarch64`, `win-aarch64`
   - Default: `["current"]`
   - Behavior: `current` resolves to the active host RID, repeated values are deduped after resolution, and native libraries are packaged under NuGet `runtimes/{rid}/native/`.
   - `--no-build`: skips cross-host build toolchain validation and reuses existing artifacts from `target/{rust-target-triple}/{profile}/`.
-  - For `win-x64` with `--no-build`, `{rust-target-triple}` defaults to `x86_64-pc-windows-msvc`; configure Cargo `build.target` to use another compatible Windows Rust target.
+  - With `--no-build`, `win-x64` defaults to `x86_64-pc-windows-msvc` and `win-arm64` defaults to `aarch64-pc-windows-msvc`; configure Cargo `build.target` to use another architecture-compatible Windows Rust target.
 
 ### `[targets.csharp.nuget]` (optional)
 
@@ -464,7 +464,7 @@ Controls NuGet metadata rendered into the generated `BoltFFI.CSharp.csproj` duri
 
 `[package].description` continues to render as NuGet `Description` when set, and `targets.csharp.package_id` continues to render as NuGet `PackageId`.
 
-`boltffi pack csharp` rejects explicit Cargo `--target` passthrough args because the native asset matrix is controlled by `targets.csharp.runtime_identifiers`. Current-host packaging works on `osx-arm64`, `osx-x64`, `linux-x64`, `linux-arm64`, and `win-x64`. When building native libraries, cross-host support follows the shared desktop toolchain support used by JVM packaging and unsupported host/target pairs fail during preflight.
+`boltffi pack csharp` rejects explicit Cargo `--target` passthrough args because the native asset matrix is controlled by `targets.csharp.runtime_identifiers`. Current-host packaging works on `osx-arm64`, `osx-x64`, `linux-x64`, `linux-arm64`, `win-x64`, and `win-arm64`. Windows hosts can build both Windows architectures when the corresponding Rust target and Visual Studio C++ components are installed. Other unsupported host/target pairs fail during preflight.
 
 ## Apple SwiftPM layouts
 

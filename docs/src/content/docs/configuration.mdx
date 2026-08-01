@@ -584,10 +584,10 @@ Choose which .NET runtime identifiers `pack csharp` builds native assets for:
 ```toml
 [targets.csharp]
 enabled = true
-runtime_identifiers = ["osx-arm64", "linux-x64", "win-x64"]
+runtime_identifiers = ["osx-arm64", "linux-x64", "win-x64", "win-arm64"]
 ```
 
-`current` resolves to the active host RID. Supported canonical values are `osx-arm64`, `osx-x64`, `linux-x64`, `linux-arm64`, and `win-x64`. See [BOLTFFI_TOML_SPEC.md](https://github.com/boltffi/boltffi/blob/main/BOLTFFI_TOML_SPEC.md) for the full list of options including `package_id`, `target_framework`, and `package_output`.
+`current` resolves to the active host RID. Supported canonical values are `osx-arm64`, `osx-x64`, `linux-x64`, `linux-arm64`, `win-x64`, and `win-arm64`. A Windows host can build both Windows architectures when the corresponding Rust target and Visual Studio C++ components are installed. See [BOLTFFI_TOML_SPEC.md](https://github.com/boltffi/boltffi/blob/main/BOLTFFI_TOML_SPEC.md) for the full list of options including `package_id`, `target_framework`, and `package_output`.
 
 ## WASM Configuration
 

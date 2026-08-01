@@ -76,11 +76,13 @@ impl PythonPackagingPlan {
         cli_cargo_args: &[String],
         cli_python_interpreters: &[String],
     ) -> Result<Self> {
-        let host_platform = NativeHostPlatform::current().ok_or_else(|| CliError::CommandFailed {
-            command:
-                "python packaging is only supported on darwin-arm64, darwin-x86_64, linux-x86_64, linux-aarch64, and windows-x86_64 hosts".to_string(),
-            status: None,
-        })?;
+        let host_platform = NativeHostPlatform::current()
+            .filter(|platform| *platform != NativeHostPlatform::WindowsAarch64)
+            .ok_or_else(|| CliError::CommandFailed {
+                command:
+                    "python packaging is only supported on darwin-arm64, darwin-x86_64, linux-x86_64, linux-aarch64, and windows-x86_64 hosts".to_string(),
+                status: None,
+            })?;
         let module_name = config.python_module_name();
         let output_root = absolutize_configured_path(config.python_output())?;
         let wheel_directory = absolutize_configured_path(config.python_wheel_output())?;

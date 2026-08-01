@@ -195,7 +195,7 @@ impl CSharpPackagingPlan {
                 })?;
         let current_host = NativeHostPlatform::current().ok_or_else(|| CliError::CommandFailed {
             command:
-                "C# packaging is only supported on osx-arm64, osx-x64, linux-x64, linux-arm64, and win-x64 hosts".to_string(),
+                "C# packaging is only supported on osx-arm64, osx-x64, linux-x64, linux-arm64, win-x64, and win-arm64 hosts".to_string(),
             status: None,
         })?;
         let build_profile = resolve_build_profile(release, &build_cargo_args);
@@ -725,9 +725,11 @@ fn dotnet_pack(plan: &CSharpPackagingPlan, step: &Step) -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::{
-        CSharpPackageLayout, CSharpPackagingPlan, csharp_no_build_config_args, pack_csharp,
+        CSharpCargoContext, CSharpPackageLayout, CSharpPackagingPlan, CSharpPackagingTarget,
+        csharp_no_build_config_args, pack_csharp, remove_stale_csharp_runtime_assets,
         render_csharp_project,
     };
+    use crate::build::CargoBuildProfile;
     use crate::cargo::{Cargo, CargoCrateType};
     use crate::cli::CliError;
     use crate::commands::pack::{PackCSharpOptions, PackExecutionOptions};
@@ -881,9 +883,31 @@ mod tests {
         }
     }
 
+    fn packaging_target(runtime_identifier: CSharpRuntimeIdentifier) -> CSharpPackagingTarget {
+        let rust_target_triple = expected_no_build_rust_target_triple(runtime_identifier);
+        CSharpPackagingTarget {
+            runtime_identifier,
+            host_target: runtime_identifier.native_host_platform(),
+            cargo_context: CSharpCargoContext {
+                rust_target_triple: rust_target_triple.to_string(),
+                release: false,
+                build_profile: CargoBuildProfile::Debug,
+                artifact_name: "demo".to_string(),
+                cargo_manifest_path: PathBuf::from("/tmp/demo/Cargo.toml"),
+                package_selector: None,
+                target_directory: PathBuf::from("/tmp/demo/target"),
+                cargo_command_args: Vec::new(),
+                toolchain_selector: None,
+            },
+            toolchain: None,
+        }
+    }
+
     fn unsupported_csharp_runtime_identifier() -> CSharpRuntimeIdentifier {
         match NativeHostPlatform::current().expect("supported host for C# packaging tests") {
-            NativeHostPlatform::WindowsX86_64 => CSharpRuntimeIdentifier::OsxArm64,
+            NativeHostPlatform::WindowsX86_64 | NativeHostPlatform::WindowsAarch64 => {
+                CSharpRuntimeIdentifier::OsxArm64
+            }
             _ => CSharpRuntimeIdentifier::WinX64,
         }
     }
@@ -900,6 +924,7 @@ mod tests {
             CSharpRuntimeIdentifier::LinuxX64 => "x86_64-unknown-linux-gnu",
             CSharpRuntimeIdentifier::LinuxArm64 => "aarch64-unknown-linux-gnu",
             CSharpRuntimeIdentifier::WinX64 => "x86_64-pc-windows-msvc",
+            CSharpRuntimeIdentifier::WinArm64 => "aarch64-pc-windows-msvc",
         }
     }
 
@@ -955,16 +980,26 @@ mod tests {
                 .shared_library_filename("demo"),
             "demo.dll"
         );
+        assert_eq!(
+            CSharpRuntimeIdentifier::WinArm64
+                .native_host_platform()
+                .shared_library_filename("demo"),
+            "demo.dll"
+        );
     }
 
     #[test]
     fn csharp_project_includes_packable_native_assets() {
-        let plan = csharp_packaging_plan(PathBuf::from("/tmp/dist/csharp"));
+        let mut plan = csharp_packaging_plan(PathBuf::from("/tmp/dist/csharp"));
+        plan.packaging_targets = vec![
+            packaging_target(CSharpRuntimeIdentifier::WinX64),
+            packaging_target(CSharpRuntimeIdentifier::WinArm64),
+        ];
 
         let project = render_csharp_project(&config(), &plan).expect("C# project should render");
 
         assert!(project.contains("<TargetFramework>net10.0</TargetFramework>"));
-        assert!(project.contains("<RuntimeIdentifiers></RuntimeIdentifiers>"));
+        assert!(project.contains("<RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>"));
         assert!(project.contains("<PackageId>Demo.Runtime</PackageId>"));
         assert!(project.contains("<Version>1.2.3</Version>"));
         assert!(project.contains("<AllowUnsafeBlocks>true</AllowUnsafeBlocks>"));
@@ -1091,6 +1126,55 @@ mod tests {
         );
 
         std::fs::remove_dir_all(project).expect("cleanup temp cdylib project");
+    }
+
+    #[test]
+    fn csharp_no_build_plan_resolves_both_windows_architectures() {
+        let project = temp_cdylib_project();
+        let manifest_path = project.join("Cargo.toml");
+        let mut config = config();
+        config.targets.csharp.runtime_identifiers = Some(vec![
+            CSharpRuntimeIdentifier::WinX64,
+            CSharpRuntimeIdentifier::WinArm64,
+        ]);
+
+        let plan = CSharpPackagingPlan::from_config(
+            &config,
+            false,
+            &cargo_args_for_manifest(&manifest_path),
+            true,
+        )
+        .expect("both Windows C# runtime identifiers should resolve");
+
+        assert_eq!(plan.packaging_targets.len(), 2);
+        assert_eq!(
+            plan.packaging_targets
+                .iter()
+                .map(|target| target.cargo_context.rust_target_triple.as_str())
+                .collect::<Vec<_>>(),
+            ["x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"]
+        );
+
+        std::fs::remove_dir_all(project).expect("cleanup temp cdylib project");
+    }
+
+    #[test]
+    fn removes_stale_windows_arm64_runtime_assets() {
+        let root = unique_temp_dir("boltffi-csharp-stale-runtime-test");
+        let x64 = root.join("runtimes/win-x64/native");
+        let arm64 = root.join("runtimes/win-arm64/native");
+        std::fs::create_dir_all(&x64).expect("create x64 runtime directory");
+        std::fs::create_dir_all(&arm64).expect("create ARM64 runtime directory");
+
+        let mut plan = csharp_packaging_plan(root.clone());
+        plan.packaging_targets = vec![packaging_target(CSharpRuntimeIdentifier::WinX64)];
+
+        remove_stale_csharp_runtime_assets(&plan).expect("remove stale runtime assets");
+
+        assert!(x64.exists());
+        assert!(!arm64.exists());
+
+        std::fs::remove_dir_all(root).expect("cleanup stale runtime test directory");
     }
 
     #[test]

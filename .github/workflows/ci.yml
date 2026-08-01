@@ -216,3 +216,80 @@ jobs:
       - if: matrix.python-version != '3.13'
         run: ./examples/demo/verify-platform-demos.sh --platform python --python python
         shell: bash
+
+  csharp-windows-arm64:
+    name: C# Windows x64 + ARM64 package
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache: false
+          target: aarch64-pc-windows-msvc
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          cache-bin: false
+          prefix-key: v1-rust
+          key: csharp-windows-arm64
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+      - name: Build dual-architecture NuGet package
+        working-directory: examples/demo
+        shell: bash
+        run: >-
+          cargo run --quiet --manifest-path ../../Cargo.toml -p boltffi_cli --
+          --overlay boltffi.csharp-windows.toml
+          --cargo-arg=--features
+          --cargo-arg=csharp-demo
+          pack csharp
+      - name: Verify package assets and PE architectures
+        shell: pwsh
+        run: |
+          $dist = Join-Path $PWD 'examples/platforms/csharp/dist'
+          $package = Get-ChildItem -LiteralPath (Join-Path $dist 'packages') -Filter '*.nupkg' | Select-Object -First 1
+          if (-not $package) { throw 'NuGet package was not generated' }
+
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $archive = [System.IO.Compression.ZipFile]::OpenRead($package.FullName)
+          try {
+            $entries = $archive.Entries.FullName -replace '\\', '/'
+            foreach ($expected in @(
+              'runtimes/win-x64/native/demo.dll',
+              'runtimes/win-arm64/native/demo.dll'
+            )) {
+              if ($entries -notcontains $expected) { throw "Missing NuGet asset: $expected" }
+            }
+          } finally {
+            $archive.Dispose()
+          }
+
+          function Get-PeMachine([string] $Path) {
+            $bytes = [System.IO.File]::ReadAllBytes($Path)
+            $peOffset = [BitConverter]::ToInt32($bytes, 0x3c)
+            [BitConverter]::ToUInt16($bytes, $peOffset + 4)
+          }
+
+          $x64Machine = Get-PeMachine (Join-Path $dist 'runtimes/win-x64/native/demo.dll')
+          $arm64Machine = Get-PeMachine (Join-Path $dist 'runtimes/win-arm64/native/demo.dll')
+          if ($x64Machine -ne 0x8664) { throw ('win-x64 asset has unexpected PE machine 0x{0:X4}' -f $x64Machine) }
+          if ($arm64Machine -ne 0xaa64) { throw ('win-arm64 asset has unexpected PE machine 0x{0:X4}' -f $arm64Machine) }
+      - name: Verify win-arm64 NuGet restore and publish
+        shell: pwsh
+        run: |
+          $packageDir = Join-Path $PWD 'examples/platforms/csharp/dist/packages'
+          $project = Join-Path $PWD 'examples/platforms/csharp/DemoTest/DemoTest.csproj'
+          $packagesCache = Join-Path $PWD 'examples/platforms/csharp/dist/.nuget/windows-arm64'
+          $publishDir = Join-Path $PWD 'examples/platforms/csharp/dist/publish/win-arm64'
+          dotnet publish $project `
+            --runtime win-arm64 `
+            --self-contained false `
+            --source $packageDir `
+            --property:RestorePackagesPath=$packagesCache `
+            --property:RestoreNoCache=true `
+            --output $publishDir `
+            --nologo
+          if (-not (Test-Path -LiteralPath (Join-Path $publishDir 'demo.dll'))) {
+            throw 'win-arm64 native asset was not selected for publish'
+          }

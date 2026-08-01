@@ -1,0 +1,2 @@
+[targets.csharp]
+runtime_identifiers = ["win-x64", "win-arm64"]

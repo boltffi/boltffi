@@ -148,7 +148,13 @@ impl NativeHostToolchain {
         current_host: JavaHostTarget,
     ) -> Result<Self> {
         let cargo_args = Self::cargo_discovery_args(cargo_args, cargo_manifest_path);
-        Self::discover_for_platform(toolchain_selector, &cargo_args, target, current_host, "JVM")
+        Self::discover_for_platform(
+            toolchain_selector,
+            &cargo_args,
+            target.native_host_platform(),
+            current_host.native_host_platform(),
+            "JVM",
+        )
     }
 
     pub fn discover_csharp(
@@ -157,13 +163,7 @@ impl NativeHostToolchain {
         target: NativeHostPlatform,
         current_host: NativeHostPlatform,
     ) -> Result<Self> {
-        Self::discover_for_platform(
-            toolchain_selector,
-            cargo_args,
-            target.into(),
-            current_host.into(),
-            "C#",
-        )
+        Self::discover_for_platform(toolchain_selector, cargo_args, target, current_host, "C#")
     }
 
     pub fn resolve_csharp_no_build_rust_target_triple(
@@ -183,8 +183,8 @@ impl NativeHostToolchain {
                     cargo_args,
                 )
             }
-            NativeHostPlatform::WindowsX86_64 => {
-                resolve_csharp_windows_no_build_rust_target_triple(cargo_args)
+            NativeHostPlatform::WindowsX86_64 | NativeHostPlatform::WindowsAarch64 => {
+                resolve_csharp_windows_no_build_rust_target_triple(cargo_args, target)
             }
         }
     }
@@ -192,8 +192,8 @@ impl NativeHostToolchain {
     fn discover_for_platform(
         toolchain_selector: Option<&str>,
         cargo_args: &[String],
-        target: JavaHostTarget,
-        current_host: JavaHostTarget,
+        target: NativeHostPlatform,
+        current_host: NativeHostPlatform,
         platform_name: &str,
     ) -> Result<Self> {
         ensure_supported_native_host_pair(current_host, target, platform_name)?;
@@ -210,12 +210,12 @@ impl NativeHostToolchain {
 
         match (current_host, target) {
             (
-                JavaHostTarget::DarwinArm64 | JavaHostTarget::DarwinX86_64,
-                JavaHostTarget::DarwinArm64,
+                NativeHostPlatform::DarwinArm64 | NativeHostPlatform::DarwinX86_64,
+                NativeHostPlatform::DarwinArm64,
             )
             | (
-                JavaHostTarget::DarwinArm64 | JavaHostTarget::DarwinX86_64,
-                JavaHostTarget::DarwinX86_64,
+                NativeHostPlatform::DarwinArm64 | NativeHostPlatform::DarwinX86_64,
+                NativeHostPlatform::DarwinX86_64,
             ) => {
                 let linker_program =
                     which::which("clang").map_err(|_| CliError::CommandFailed {
@@ -238,8 +238,8 @@ impl NativeHostToolchain {
                 })
             }
             (
-                JavaHostTarget::DarwinArm64 | JavaHostTarget::DarwinX86_64,
-                JavaHostTarget::LinuxX86_64,
+                NativeHostPlatform::DarwinArm64 | NativeHostPlatform::DarwinX86_64,
+                NativeHostPlatform::LinuxX86_64,
             ) => {
                 let (cargo_linker_program, jni_compiler_program, jni_compiler_args) =
                     resolve_linux_cross_toolchain(cargo_args, &rust_target_triple)?;
@@ -265,8 +265,8 @@ impl NativeHostToolchain {
                     jni_rustflag_linker_args: rustflag_linker_args,
                 })
             }
-            (JavaHostTarget::LinuxX86_64, JavaHostTarget::LinuxX86_64)
-            | (JavaHostTarget::LinuxAarch64, JavaHostTarget::LinuxAarch64) => {
+            (NativeHostPlatform::LinuxX86_64, NativeHostPlatform::LinuxX86_64)
+            | (NativeHostPlatform::LinuxAarch64, NativeHostPlatform::LinuxAarch64) => {
                 let (linker_program, linker_args) =
                     resolve_linux_host_linker(toolchain_selector, cargo_args, &rust_target_triple)?;
                 Ok(Self {
@@ -277,7 +277,10 @@ impl NativeHostToolchain {
                     jni_rustflag_linker_args: rustflag_linker_args,
                 })
             }
-            (JavaHostTarget::WindowsX86_64, JavaHostTarget::WindowsX86_64) => {
+            (
+                NativeHostPlatform::WindowsX86_64 | NativeHostPlatform::WindowsAarch64,
+                NativeHostPlatform::WindowsX86_64 | NativeHostPlatform::WindowsAarch64,
+            ) => {
                 let (linker_program, linker_args) = resolve_windows_host_linker(
                     toolchain_selector,
                     cargo_args,
@@ -338,24 +341,31 @@ impl NativeHostToolchain {
 }
 
 fn ensure_supported_native_host_pair(
-    current_host: JavaHostTarget,
-    target: JavaHostTarget,
+    current_host: NativeHostPlatform,
+    target: NativeHostPlatform,
     platform_name: &str,
 ) -> Result<()> {
     let supported = matches!(
         (current_host, target),
         (
-            JavaHostTarget::DarwinArm64 | JavaHostTarget::DarwinX86_64,
-            JavaHostTarget::DarwinArm64,
+            NativeHostPlatform::DarwinArm64 | NativeHostPlatform::DarwinX86_64,
+            NativeHostPlatform::DarwinArm64,
         ) | (
-            JavaHostTarget::DarwinArm64 | JavaHostTarget::DarwinX86_64,
-            JavaHostTarget::DarwinX86_64,
+            NativeHostPlatform::DarwinArm64 | NativeHostPlatform::DarwinX86_64,
+            NativeHostPlatform::DarwinX86_64,
         ) | (
-            JavaHostTarget::DarwinArm64 | JavaHostTarget::DarwinX86_64,
-            JavaHostTarget::LinuxX86_64,
-        ) | (JavaHostTarget::LinuxX86_64, JavaHostTarget::LinuxX86_64)
-            | (JavaHostTarget::LinuxAarch64, JavaHostTarget::LinuxAarch64)
-            | (JavaHostTarget::WindowsX86_64, JavaHostTarget::WindowsX86_64)
+            NativeHostPlatform::DarwinArm64 | NativeHostPlatform::DarwinX86_64,
+            NativeHostPlatform::LinuxX86_64,
+        ) | (
+            NativeHostPlatform::LinuxX86_64,
+            NativeHostPlatform::LinuxX86_64
+        ) | (
+            NativeHostPlatform::LinuxAarch64,
+            NativeHostPlatform::LinuxAarch64
+        ) | (
+            NativeHostPlatform::WindowsX86_64 | NativeHostPlatform::WindowsAarch64,
+            NativeHostPlatform::WindowsX86_64 | NativeHostPlatform::WindowsAarch64,
+        )
     );
 
     if supported {
@@ -373,19 +383,18 @@ fn ensure_supported_native_host_pair(
 }
 
 fn resolve_rust_target_triple(
-    target: JavaHostTarget,
-    current_host: JavaHostTarget,
+    target: NativeHostPlatform,
+    current_host: NativeHostPlatform,
     toolchain_selector: Option<&str>,
     cargo_args: &[String],
 ) -> Result<String> {
     match target {
-        JavaHostTarget::Current => unreachable!("resolved host target required"),
-        JavaHostTarget::DarwinArm64 => Ok("aarch64-apple-darwin".to_string()),
-        JavaHostTarget::DarwinX86_64 => Ok("x86_64-apple-darwin".to_string()),
-        JavaHostTarget::LinuxX86_64 | JavaHostTarget::LinuxAarch64 => {
+        NativeHostPlatform::DarwinArm64 => Ok("aarch64-apple-darwin".to_string()),
+        NativeHostPlatform::DarwinX86_64 => Ok("x86_64-apple-darwin".to_string()),
+        NativeHostPlatform::LinuxX86_64 | NativeHostPlatform::LinuxAarch64 => {
             resolve_linux_rust_target_triple(target, current_host, toolchain_selector, cargo_args)
         }
-        JavaHostTarget::WindowsX86_64 => {
+        NativeHostPlatform::WindowsX86_64 | NativeHostPlatform::WindowsAarch64 => {
             resolve_windows_rust_target_triple(target, current_host, toolchain_selector, cargo_args)
         }
     }
@@ -397,17 +406,12 @@ fn resolve_csharp_linux_no_build_rust_target_triple(
     toolchain_selector: Option<&str>,
     cargo_args: &[String],
 ) -> Result<String> {
-    resolve_linux_rust_target_triple(
-        target.into(),
-        current_host.into(),
-        toolchain_selector,
-        cargo_args,
-    )
+    resolve_linux_rust_target_triple(target, current_host, toolchain_selector, cargo_args)
 }
 
 fn resolve_linux_rust_target_triple(
-    target: JavaHostTarget,
-    current_host: JavaHostTarget,
+    target: NativeHostPlatform,
+    current_host: NativeHostPlatform,
     toolchain_selector: Option<&str>,
     cargo_args: &[String],
 ) -> Result<String> {
@@ -427,60 +431,88 @@ fn resolve_linux_rust_target_triple(
     validate_linux_rust_target_triple(&host_triple, target)
 }
 
-fn default_linux_rust_target_triple(target: JavaHostTarget) -> &'static str {
+fn default_linux_rust_target_triple(target: NativeHostPlatform) -> &'static str {
     match target {
-        JavaHostTarget::LinuxX86_64 => "x86_64-unknown-linux-gnu",
-        JavaHostTarget::LinuxAarch64 => "aarch64-unknown-linux-gnu",
+        NativeHostPlatform::LinuxX86_64 => "x86_64-unknown-linux-gnu",
+        NativeHostPlatform::LinuxAarch64 => "aarch64-unknown-linux-gnu",
         _ => unreachable!("linux target required"),
     }
 }
 
 fn resolve_windows_rust_target_triple(
-    target: JavaHostTarget,
-    current_host: JavaHostTarget,
+    target: NativeHostPlatform,
+    current_host: NativeHostPlatform,
     toolchain_selector: Option<&str>,
     cargo_args: &[String],
 ) -> Result<String> {
-    if current_host != target
-        && let Some(target_triple) = configured_windows_build_target(cargo_args)?
-    {
-        return Ok(target_triple);
+    if current_host != target {
+        if let Some(target_triple) = configured_windows_build_target(cargo_args, target)? {
+            return Ok(target_triple);
+        }
+
+        return Ok(default_windows_rust_target_triple(target).to_string());
     }
 
-    if let Some(target_triple) = current_host_windows_build_target(cargo_args) {
+    if let Some(target_triple) = current_host_windows_build_target(cargo_args, target) {
         return Ok(target_triple);
     }
 
     let host_triple = rustc_host_triple(toolchain_selector)?;
-    validate_windows_rust_target_triple(&host_triple)
+    validate_windows_rust_target_triple(&host_triple, target)
 }
 
-fn validate_windows_rust_target_triple(target_triple: &str) -> Result<String> {
-    match target_triple {
-        "x86_64-pc-windows-msvc" | "x86_64-pc-windows-gnu" | "x86_64-pc-windows-gnullvm" => {
-            Ok(target_triple.to_string())
-        }
-        _ => Err(CliError::CommandFailed {
-            command: format!(
-                "Windows JVM target '{}' is not a supported windows-x86_64 target",
-                target_triple
-            ),
-            status: None,
-        }),
+fn validate_windows_rust_target_triple(
+    target_triple: &str,
+    target: NativeHostPlatform,
+) -> Result<String> {
+    let is_supported = match target {
+        NativeHostPlatform::WindowsX86_64 => matches!(
+            target_triple,
+            "x86_64-pc-windows-msvc" | "x86_64-pc-windows-gnu" | "x86_64-pc-windows-gnullvm"
+        ),
+        NativeHostPlatform::WindowsAarch64 => matches!(
+            target_triple,
+            "aarch64-pc-windows-msvc" | "aarch64-pc-windows-gnullvm"
+        ),
+        _ => unreachable!("Windows target required"),
+    };
+
+    if is_supported {
+        return Ok(target_triple.to_string());
     }
+
+    Err(CliError::CommandFailed {
+        command: format!(
+            "Windows target '{}' is not a supported {} target",
+            target_triple,
+            target.canonical_name()
+        ),
+        status: None,
+    })
 }
 
-fn resolve_csharp_windows_no_build_rust_target_triple(cargo_args: &[String]) -> Result<String> {
-    if let Some(target_triple) = configured_windows_build_target(cargo_args)? {
+fn resolve_csharp_windows_no_build_rust_target_triple(
+    cargo_args: &[String],
+    target: NativeHostPlatform,
+) -> Result<String> {
+    if let Some(target_triple) = configured_windows_build_target(cargo_args, target)? {
         return Ok(target_triple);
     }
 
-    Ok("x86_64-pc-windows-msvc".to_string())
+    Ok(default_windows_rust_target_triple(target).to_string())
+}
+
+fn default_windows_rust_target_triple(target: NativeHostPlatform) -> &'static str {
+    match target {
+        NativeHostPlatform::WindowsX86_64 => "x86_64-pc-windows-msvc",
+        NativeHostPlatform::WindowsAarch64 => "aarch64-pc-windows-msvc",
+        _ => unreachable!("Windows target required"),
+    }
 }
 
 fn configured_linux_build_target(
     cargo_args: &[String],
-    target: JavaHostTarget,
+    target: NativeHostPlatform,
 ) -> Result<Option<String>> {
     let current_directory = std::env::current_dir().ok();
     let Some(target_triple) =
@@ -498,7 +530,7 @@ fn configured_linux_build_target(
 
 fn current_host_linux_build_target(
     cargo_args: &[String],
-    target: JavaHostTarget,
+    target: NativeHostPlatform,
 ) -> Option<String> {
     let current_directory = std::env::current_dir().ok();
     let target_triple = cargo_configured_build_target(cargo_args, current_directory.as_deref())?;
@@ -511,15 +543,15 @@ fn current_host_linux_build_target(
 
 fn validate_linux_rust_target_triple(
     target_triple: &str,
-    target: JavaHostTarget,
+    target: NativeHostPlatform,
 ) -> Result<String> {
     let is_supported = match target {
-        JavaHostTarget::LinuxX86_64 => {
+        NativeHostPlatform::LinuxX86_64 => {
             target_triple.starts_with("x86_64-")
                 && target_triple.contains("linux")
                 && !target_triple.contains("android")
         }
-        JavaHostTarget::LinuxAarch64 => {
+        NativeHostPlatform::LinuxAarch64 => {
             target_triple.starts_with("aarch64-")
                 && target_triple.contains("linux")
                 && !target_triple.contains("android")
@@ -533,7 +565,7 @@ fn validate_linux_rust_target_triple(
 
     Err(CliError::CommandFailed {
         command: format!(
-            "Linux JVM target '{}' is not a supported {} target",
+            "Linux target '{}' is not a supported {} target",
             target_triple,
             target.canonical_name()
         ),
@@ -541,7 +573,10 @@ fn validate_linux_rust_target_triple(
     })
 }
 
-fn configured_windows_build_target(cargo_args: &[String]) -> Result<Option<String>> {
+fn configured_windows_build_target(
+    cargo_args: &[String],
+    target: NativeHostPlatform,
+) -> Result<Option<String>> {
     let current_directory = std::env::current_dir().ok();
     let Some(target_triple) =
         cargo_configured_build_target(cargo_args, current_directory.as_deref())
@@ -553,17 +588,20 @@ fn configured_windows_build_target(cargo_args: &[String]) -> Result<Option<Strin
         return Ok(None);
     }
 
-    validate_windows_rust_target_triple(&target_triple).map(Some)
+    validate_windows_rust_target_triple(&target_triple, target).map(Some)
 }
 
-fn current_host_windows_build_target(cargo_args: &[String]) -> Option<String> {
+fn current_host_windows_build_target(
+    cargo_args: &[String],
+    target: NativeHostPlatform,
+) -> Option<String> {
     let current_directory = std::env::current_dir().ok();
     let target_triple = cargo_configured_build_target(cargo_args, current_directory.as_deref())?;
     if !target_triple.contains("windows") {
         return None;
     }
 
-    validate_windows_rust_target_triple(&target_triple).ok()
+    validate_windows_rust_target_triple(&target_triple, target).ok()
 }
 
 fn rustc_host_triple(toolchain_selector: Option<&str>) -> Result<String> {
@@ -602,8 +640,8 @@ fn parse_rustc_host_triple(output: &str) -> Option<String> {
 fn ensure_rust_target_installed(
     toolchain_selector: Option<&str>,
     target_triple: &str,
-    target: JavaHostTarget,
-    current_host: JavaHostTarget,
+    target: NativeHostPlatform,
+    current_host: NativeHostPlatform,
 ) -> Result<()> {
     let Some(rustup_path) = which::which("rustup").ok() else {
         return fallback_without_rustup(target, current_host);
@@ -629,7 +667,10 @@ fn ensure_rust_target_installed(
     validate_installed_rustup_target(&installed, target_triple)
 }
 
-fn fallback_without_rustup(target: JavaHostTarget, current_host: JavaHostTarget) -> Result<()> {
+fn fallback_without_rustup(
+    target: NativeHostPlatform,
+    current_host: NativeHostPlatform,
+) -> Result<()> {
     let _ = (target, current_host);
     // rustup is optional here. For the current host we should not block packaging,
     // and for cross-host targets Cargo will still fail with a clear missing-target
@@ -738,11 +779,11 @@ fn resolve_windows_host_linker_with_host_triple(
     let linker_program =
         discover_default_windows_jni_compiler(rust_target_triple).ok_or_else(|| {
             CliError::CommandFailed {
-                command:
-                    "no supported Windows C compiler driver found in PATH for JVM desktop linking"
-                        .to_string(),
-                status: None,
-            }
+            command:
+                "no supported Windows C compiler driver found in PATH for native desktop linking"
+                    .to_string(),
+            status: None,
+        }
         })?;
     let linker_args = windows_host_linker_args(&linker_program, rust_target_triple, &host_triple);
     Ok((linker_program, linker_args))
@@ -755,8 +796,10 @@ fn discover_default_windows_jni_compiler(rust_target_triple: &str) -> Option<Pat
 }
 
 fn default_windows_jni_compiler_candidates(rust_target_triple: &str) -> Vec<&'static str> {
-    if rust_target_triple == "x86_64-pc-windows-msvc" {
+    if rust_target_triple.ends_with("-pc-windows-msvc") {
         vec!["clang-cl", "cl", "clang"]
+    } else if rust_target_triple.starts_with("aarch64-") {
+        vec!["aarch64-w64-mingw32-clang", "clang"]
     } else {
         vec![
             "x86_64-w64-mingw32-gcc",
@@ -768,7 +811,7 @@ fn default_windows_jni_compiler_candidates(rust_target_triple: &str) -> Vec<&'st
 }
 
 fn discover_default_linux_x86_64_cross_compiler(rust_target_triple: &str) -> Option<PathBuf> {
-    if rust_target_triple != default_linux_rust_target_triple(JavaHostTarget::LinuxX86_64) {
+    if rust_target_triple != default_linux_rust_target_triple(NativeHostPlatform::LinuxX86_64) {
         return None;
     }
 
@@ -1077,7 +1120,7 @@ fn configured_linux_x86_64_cross_linker_values(
     configured_linux_x86_64_cross_linker_values_with_sources(
         cargo_args,
         rust_target_triple,
-        (rust_target_triple == default_linux_rust_target_triple(JavaHostTarget::LinuxX86_64))
+        (rust_target_triple == default_linux_rust_target_triple(NativeHostPlatform::LinuxX86_64))
             .then(|| std::env::var("BOLTFFI_JAVA_LINKER_X86_64_UNKNOWN_LINUX_GNU").ok())
             .flatten(),
         cargo_env_key.clone(),
@@ -1190,7 +1233,7 @@ fn missing_linux_x86_64_cross_linker_error(rust_target_triple: &str) -> CliError
         rust_target_triple, cargo_env_key, rust_target_triple
     );
 
-    if rust_target_triple == default_linux_rust_target_triple(JavaHostTarget::LinuxX86_64) {
+    if rust_target_triple == default_linux_rust_target_triple(NativeHostPlatform::LinuxX86_64) {
         command.push_str(
             ", set BOLTFFI_JAVA_LINKER_X86_64_UNKNOWN_LINUX_GNU, or install x86_64-linux-gnu-clang",
         );
@@ -1692,7 +1735,7 @@ mod tests {
         write_linux_cross_linker_wrapper,
     };
     use crate::cli::CliError;
-    use crate::target::{JavaHostTarget, NativeHostPlatform};
+    use crate::target::NativeHostPlatform;
     use std::ffi::OsStr;
     use std::fs;
     use std::path::{Path, PathBuf};
@@ -2291,9 +2334,10 @@ unix
 
     #[test]
     fn ignores_non_windows_cargo_build_target_for_windows_jvm_packaging() {
-        let target = configured_windows_build_target(&[
-            "--config=build.target='x86_64-unknown-linux-gnu'".to_string(),
-        ])
+        let target = configured_windows_build_target(
+            &["--config=build.target='x86_64-unknown-linux-gnu'".to_string()],
+            NativeHostPlatform::WindowsX86_64,
+        )
         .expect("non-windows target should be ignored");
 
         assert_eq!(target, None);
@@ -2302,8 +2346,8 @@ unix
     #[test]
     fn honors_cross_host_linux_build_target_from_cargo_config() {
         let target = resolve_linux_rust_target_triple(
-            JavaHostTarget::LinuxX86_64,
-            JavaHostTarget::DarwinArm64,
+            NativeHostPlatform::LinuxX86_64,
+            NativeHostPlatform::DarwinArm64,
             None,
             &["--config=build.target='x86_64-unknown-linux-musl'".to_string()],
         )
@@ -2315,8 +2359,8 @@ unix
     #[test]
     fn honors_compatible_cargo_build_target_for_current_linux_jvm_host_resolution() {
         let target = resolve_linux_rust_target_triple(
-            JavaHostTarget::LinuxX86_64,
-            JavaHostTarget::LinuxX86_64,
+            NativeHostPlatform::LinuxX86_64,
+            NativeHostPlatform::LinuxX86_64,
             None,
             &["--config=build.target='x86_64-unknown-linux-musl'".to_string()],
         )
@@ -2328,10 +2372,10 @@ unix
     #[cfg(target_os = "linux")]
     #[test]
     fn ignores_cargo_build_target_for_current_linux_jvm_host_resolution() {
-        let current_host = JavaHostTarget::current().expect("supported test host");
+        let current_host = NativeHostPlatform::current().expect("supported test host");
         let configured_target = match current_host {
-            JavaHostTarget::LinuxX86_64 => "aarch64-unknown-linux-gnu",
-            JavaHostTarget::LinuxAarch64 => "x86_64-unknown-linux-gnu",
+            NativeHostPlatform::LinuxX86_64 => "aarch64-unknown-linux-gnu",
+            NativeHostPlatform::LinuxAarch64 => "x86_64-unknown-linux-gnu",
             other => panic!("unexpected current host for linux test: {other:?}"),
         };
         let target = resolve_linux_rust_target_triple(
@@ -2351,14 +2395,44 @@ unix
     #[test]
     fn honors_compatible_cargo_build_target_for_current_windows_jvm_host_resolution() {
         let target = super::resolve_windows_rust_target_triple(
-            JavaHostTarget::WindowsX86_64,
-            JavaHostTarget::WindowsX86_64,
+            NativeHostPlatform::WindowsX86_64,
+            NativeHostPlatform::WindowsX86_64,
             None,
             &["--config=build.target='x86_64-pc-windows-gnu'".to_string()],
         )
         .expect("current windows host should honor compatible cargo build target");
 
         assert_eq!(target, "x86_64-pc-windows-gnu");
+    }
+
+    #[test]
+    fn defaults_windows_x64_to_arm64_cross_build_to_msvc_target() {
+        let target = super::resolve_windows_rust_target_triple(
+            NativeHostPlatform::WindowsAarch64,
+            NativeHostPlatform::WindowsX86_64,
+            None,
+            &[],
+        )
+        .expect("Windows ARM64 cross target should resolve");
+
+        assert_eq!(target, "aarch64-pc-windows-msvc");
+    }
+
+    #[test]
+    fn accepts_cross_architecture_windows_host_pairs() {
+        for (current_host, target) in [
+            (
+                NativeHostPlatform::WindowsX86_64,
+                NativeHostPlatform::WindowsAarch64,
+            ),
+            (
+                NativeHostPlatform::WindowsAarch64,
+                NativeHostPlatform::WindowsX86_64,
+            ),
+        ] {
+            ensure_supported_native_host_pair(current_host, target, "C#")
+                .expect("Windows cross-architecture host pair should be supported");
+        }
     }
 
     #[test]
@@ -2388,6 +2462,36 @@ unix
     }
 
     #[test]
+    fn csharp_no_build_defaults_windows_arm64_rid_to_msvc_triple() {
+        let target = NativeHostToolchain::resolve_csharp_no_build_rust_target_triple(
+            None,
+            &[],
+            NativeHostPlatform::WindowsAarch64,
+            NativeHostPlatform::WindowsX86_64,
+        )
+        .expect("Windows ARM64 no-build C# target should resolve");
+
+        assert_eq!(target, "aarch64-pc-windows-msvc");
+    }
+
+    #[test]
+    fn csharp_no_build_rejects_mismatched_windows_arm64_build_target() {
+        let error = NativeHostToolchain::resolve_csharp_no_build_rust_target_triple(
+            None,
+            &["--config=build.target='x86_64-pc-windows-msvc'".to_string()],
+            NativeHostPlatform::WindowsAarch64,
+            NativeHostPlatform::WindowsX86_64,
+        )
+        .expect_err("x64 target should not be packaged as Windows ARM64");
+
+        assert!(matches!(
+            error,
+            CliError::CommandFailed { command, .. }
+                if command.contains("windows-aarch64")
+        ));
+    }
+
+    #[test]
     fn csharp_no_build_honors_configured_windows_build_target() {
         let target = NativeHostToolchain::resolve_csharp_no_build_rust_target_triple(
             None,
@@ -2403,7 +2507,7 @@ unix
     #[cfg(target_os = "windows")]
     #[test]
     fn ignores_cargo_build_target_for_current_windows_jvm_host_resolution() {
-        let current_host = JavaHostTarget::current().expect("supported test host");
+        let current_host = NativeHostPlatform::current().expect("supported test host");
         let target = super::resolve_windows_rust_target_triple(
             current_host,
             current_host,
@@ -2499,8 +2603,8 @@ unix
     #[test]
     fn rejects_unsupported_jvm_host_pairs_before_toolchain_probing() {
         let error = ensure_supported_native_host_pair(
-            JavaHostTarget::DarwinArm64,
-            JavaHostTarget::WindowsX86_64,
+            NativeHostPlatform::DarwinArm64,
+            NativeHostPlatform::WindowsX86_64,
             "JVM",
         )
         .expect_err("unsupported host pair should fail");
@@ -2519,7 +2623,7 @@ unix
     fn accepts_linux_musl_build_target_for_current_host_jvm_packaging() {
         let target = configured_linux_build_target(
             &["--config=build.target='x86_64-unknown-linux-musl'".to_string()],
-            JavaHostTarget::LinuxX86_64,
+            NativeHostPlatform::LinuxX86_64,
         )
         .expect("linux musl target should be accepted");
 
@@ -2530,7 +2634,7 @@ unix
     fn rejects_mismatched_linux_build_target_for_current_host_jvm_packaging() {
         let error = validate_linux_rust_target_triple(
             "aarch64-unknown-linux-musl",
-            JavaHostTarget::LinuxX86_64,
+            NativeHostPlatform::LinuxX86_64,
         )
         .expect_err("mismatched linux target should fail");
 
@@ -2548,7 +2652,7 @@ unix
     fn rejects_android_linux_build_target_for_desktop_jvm_packaging() {
         let error = configured_linux_build_target(
             &["--config=build.target='x86_64-linux-android'".to_string()],
-            JavaHostTarget::LinuxX86_64,
+            NativeHostPlatform::LinuxX86_64,
         )
         .expect_err("android target should be rejected");
 
@@ -2719,6 +2823,14 @@ unix
         assert_eq!(
             default_windows_jni_compiler_candidates("x86_64-pc-windows-msvc"),
             vec!["clang-cl", "cl", "clang"]
+        );
+        assert_eq!(
+            default_windows_jni_compiler_candidates("aarch64-pc-windows-msvc"),
+            vec!["clang-cl", "cl", "clang"]
+        );
+        assert_eq!(
+            default_windows_jni_compiler_candidates("aarch64-pc-windows-gnullvm"),
+            vec!["aarch64-w64-mingw32-clang", "clang"]
         );
         assert_eq!(
             default_windows_jni_compiler_candidates("x86_64-pc-windows-gnu"),
@@ -2973,19 +3085,20 @@ unix
 
     #[test]
     fn missing_rustup_does_not_block_current_host_packaging() {
-        let current_host = JavaHostTarget::current().expect("supported test host");
+        let current_host = NativeHostPlatform::current().expect("supported test host");
         fallback_without_rustup(current_host, current_host).expect("current host should pass");
     }
 
     #[test]
     fn missing_rustup_defers_cross_host_validation_to_cargo() {
-        let current_host = JavaHostTarget::current().expect("supported test host");
+        let current_host = NativeHostPlatform::current().expect("supported test host");
         let other_host = [
-            JavaHostTarget::DarwinArm64,
-            JavaHostTarget::DarwinX86_64,
-            JavaHostTarget::LinuxX86_64,
-            JavaHostTarget::LinuxAarch64,
-            JavaHostTarget::WindowsX86_64,
+            NativeHostPlatform::DarwinArm64,
+            NativeHostPlatform::DarwinX86_64,
+            NativeHostPlatform::LinuxX86_64,
+            NativeHostPlatform::LinuxAarch64,
+            NativeHostPlatform::WindowsX86_64,
+            NativeHostPlatform::WindowsAarch64,
         ]
         .into_iter()
         .find(|target| *target != current_host)
@@ -3015,17 +3128,36 @@ unix
 
     #[test]
     fn validates_configured_windows_gnu_target_triple() {
-        let target = validate_windows_rust_target_triple("x86_64-pc-windows-gnu")
-            .expect("windows gnu target");
+        let target = validate_windows_rust_target_triple(
+            "x86_64-pc-windows-gnu",
+            NativeHostPlatform::WindowsX86_64,
+        )
+        .expect("windows gnu target");
 
         assert_eq!(target, "x86_64-pc-windows-gnu");
     }
 
     #[test]
     fn validates_configured_windows_gnullvm_target_triple() {
-        let target = validate_windows_rust_target_triple("x86_64-pc-windows-gnullvm")
-            .expect("windows gnullvm target");
+        let target = validate_windows_rust_target_triple(
+            "x86_64-pc-windows-gnullvm",
+            NativeHostPlatform::WindowsX86_64,
+        )
+        .expect("windows gnullvm target");
 
         assert_eq!(target, "x86_64-pc-windows-gnullvm");
+    }
+
+    #[test]
+    fn validates_configured_windows_arm64_target_triples() {
+        for target_triple in ["aarch64-pc-windows-msvc", "aarch64-pc-windows-gnullvm"] {
+            let target = validate_windows_rust_target_triple(
+                target_triple,
+                NativeHostPlatform::WindowsAarch64,
+            )
+            .expect("Windows ARM64 target");
+
+            assert_eq!(target, target_triple);
+        }
     }
 }
