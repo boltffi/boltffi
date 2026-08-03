@@ -25,6 +25,9 @@ walkdir.workspace = true
 indexmap = "2.7"
 object.workspace = true
 
+[target.'cfg(windows)'.dependencies]
+dunce = "1.0"
+
 [dev-dependencies]
 boltffi_ast.workspace = true
 insta.workspace = true

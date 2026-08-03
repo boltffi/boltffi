@@ -2,7 +2,6 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::{OsStr, OsString};
-use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus};
 
@@ -205,7 +204,7 @@ struct CargoManifest {
 
 impl CargoManifest {
     fn new(path: &Path) -> Result<Self, BindingMetadataBuildError> {
-        fs::canonicalize(path)
+        canonicalize_manifest_path(path)
             .map(|path| Self { path })
             .map_err(|source| BindingMetadataBuildError::ManifestPath {
                 path: path.to_path_buf(),
@@ -214,12 +213,22 @@ impl CargoManifest {
     }
 
     fn matches(&self, path: &Path) -> bool {
-        fs::canonicalize(path).is_ok_and(|path| path == self.path)
+        canonicalize_manifest_path(path).is_ok_and(|path| path == self.path)
     }
 
     fn path(&self) -> &Path {
         &self.path
     }
+}
+
+#[cfg(windows)]
+fn canonicalize_manifest_path(path: &Path) -> std::io::Result<PathBuf> {
+    dunce::canonicalize(path)
+}
+
+#[cfg(not(windows))]
+fn canonicalize_manifest_path(path: &Path) -> std::io::Result<PathBuf> {
+    std::fs::canonicalize(path)
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -966,6 +975,22 @@ mod tests {
         );
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn cargo_build_supports_nested_workspace_member_with_inherited_dependency() {
+        if cfg!(miri) {
+            return;
+        }
+
+        let expected = metadata_envelope("metadata_nested_fixture");
+        let fixture = NestedWorkspaceFixture::with_inherited_dependency(&expected);
+        let envelopes = BindingMetadataBuild::new(fixture.manifest())
+            .read()
+            .expect("nested workspace metadata build reads");
+
+        assert_eq!(envelopes, vec![expected]);
+    }
+
     #[test]
     fn cargo_build_reads_feature_gated_macro_metadata() {
         if cfg!(miri) {
@@ -1116,7 +1141,7 @@ mod tests {
                 &manifest,
                 format!(
                     "[package]\nname = \"metadata_fixture\"\nversion = \"0.0.0\"\nedition = \"2024\"\n\n[lib]\npath = \"src/lib.rs\"\n\n[features]\nnative-ffi = []\n\n[dependencies]\nboltffi = {{ path = \"{}\" }}\n",
-                    workspace_crate("boltffi").display()
+                    toml_path(&workspace_crate("boltffi"))
                 ),
             )
             .expect("write metadata fixture manifest");
@@ -1177,6 +1202,68 @@ pub fn view() -> CoreFfi {
         }
     }
 
+    #[cfg(windows)]
+    struct NestedWorkspaceFixture {
+        root: PathBuf,
+        manifest: PathBuf,
+    }
+
+    #[cfg(windows)]
+    impl NestedWorkspaceFixture {
+        fn with_inherited_dependency(envelope: &BindingMetadataEnvelope) -> Self {
+            let root = temp_root("boltffi-bindgen-nested-workspace");
+            let member = root.join("crates").join("nested").join("member");
+            let dependency = root.join("shared");
+            let source_dir = member.join("src");
+            let dependency_source_dir = dependency.join("src");
+            let manifest = member.join("Cargo.toml");
+            fs::create_dir_all(&source_dir).expect("create nested workspace source dir");
+            fs::create_dir_all(&dependency_source_dir)
+                .expect("create nested workspace dependency source dir");
+            fs::write(
+                root.join("Cargo.toml"),
+                "[workspace]\nmembers = [\"crates/nested/member\", \"shared\"]\nresolver = \"3\"\n\n[workspace.dependencies]\nnested_dependency = { path = \"shared\" }\n",
+            )
+            .expect("write nested workspace manifest");
+            fs::write(
+                &manifest,
+                "[package]\nname = \"metadata_nested_fixture\"\nversion = \"0.0.0\"\nedition = \"2024\"\n\n[lib]\npath = \"src/lib.rs\"\n\n[dependencies]\nnested_dependency = { workspace = true }\n",
+            )
+            .expect("write nested workspace member manifest");
+            fs::write(
+                source_dir.join("lib.rs"),
+                Source::with_metadata_and_body(
+                    envelope,
+                    "pub fn exported() -> u32 { nested_dependency::value() }\n",
+                )
+                .into_string(),
+            )
+            .expect("write nested workspace member source");
+            fs::write(
+                dependency.join("Cargo.toml"),
+                "[package]\nname = \"nested_dependency\"\nversion = \"0.0.0\"\nedition = \"2024\"\n\n[lib]\npath = \"src/lib.rs\"\n",
+            )
+            .expect("write nested workspace dependency manifest");
+            fs::write(
+                dependency_source_dir.join("lib.rs"),
+                "pub fn value() -> u32 { 7 }\n",
+            )
+            .expect("write nested workspace dependency source");
+            Self { root, manifest }
+        }
+
+        fn manifest(&self) -> PathBuf {
+            self.manifest.clone()
+        }
+    }
+
+    #[cfg(windows)]
+    impl Drop for NestedWorkspaceFixture {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.root);
+        }
+    }
+
     impl Drop for FixtureCrate {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.root);
@@ -1194,7 +1281,7 @@ pub fn view() -> CoreFfi {
             let dependency = match self {
                 Self::Boltffi => format!(
                     "\n[dependencies]\nboltffi = {{ path = \"{}\" }}\n",
-                    workspace_crate("boltffi").display()
+                    toml_path(&workspace_crate("boltffi"))
                 ),
                 Self::Metadata(_) => {
                     "\n[dependencies]\nmetadata_dependency = { path = \"metadata_dependency\" }\n"
@@ -1310,6 +1397,10 @@ pub mod api {
             .parent()
             .expect("workspace root")
             .join(name)
+    }
+
+    fn toml_path(path: &Path) -> String {
+        path.to_string_lossy().replace('\\', "/")
     }
 
     fn temp_root(prefix: &str) -> PathBuf {
