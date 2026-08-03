@@ -633,6 +633,7 @@ mod tests {
         assert!(source.contains("internal sealed class WireReader"));
         assert!(source.contains("internal sealed class WireWriter"));
         assert!(source.contains("internal static extern void FreeBuf(FfiBuf buffer);"));
+        assert!(source.contains("internal static extern FfiBuf BufFromBytes"));
         assert!(source.contains("[In] byte[] nameBytes, nuint nameLength"));
         assert!(output.diagnostics().is_empty());
     }

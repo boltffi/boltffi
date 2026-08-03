@@ -21,6 +21,34 @@ fn target(host: CSharpHost) -> Target<CSharpHost, CBridge> {
 }
 
 #[test]
+fn csharp_target_compiles_a_regular_vec_u8_wire_api() {
+    let bindings = bindings(
+        r#"
+        #[export]
+        pub fn echo_bytes(value: Vec<u8>) -> Vec<u8> { value }
+        "#,
+    );
+    let output = target(
+        CSharpHost::new()
+            .namespace("Company.Bindings")
+            .expect("valid namespace")
+            .native_library("demo_native"),
+    )
+    .render(&bindings)
+    .expect("a regular Vec<u8> API should render");
+
+    let module = output
+        .files()
+        .iter()
+        .find(|file| file.path().as_path() == Path::new("Demo.cs"))
+        .map(|file| file.contents())
+        .expect("generated Demo.cs");
+    assert!(module.contains("internal static extern FfiBuf BufFromBytes"));
+
+    compile_csharp_with_dotnet_when_available(&output, "csharp-vec-u8-wire-runtime");
+}
+
+#[test]
 fn csharp_target_qualifies_a_class_method_named_after_its_return_record() {
     let bindings = bindings(
         r#"
@@ -182,6 +210,7 @@ fn compile_csharp_with_dotnet_when_available(output: &GeneratedOutput, prefix: &
         .arg("build")
         .arg(directory.join("Smoke.csproj"))
         .arg("--nologo")
+        .env("APPDATA", directory.join("appdata"))
         .output()
         .expect("dotnet build should execute");
     assert!(

@@ -1352,7 +1352,9 @@ impl Function {
             })
             .transpose()?;
         let is_asynchronous = asynchronous.is_some();
-        let copy_buffer_entry = requires_copy_buffer
+        // The wire runtime's FfiBuf helpers use BufFromBytes as well as closure
+        // callbacks that explicitly require copy-buffer support.
+        let copy_buffer_entry = (requires_wire_runtime || requires_copy_buffer)
             .then(|| {
                 bridge
                     .support()
