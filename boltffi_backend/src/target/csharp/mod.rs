@@ -231,7 +231,7 @@ impl host::HostBackend for CSharpHost {
     fn assemble<'decl>(
         &self,
         bindings: &Bindings<Self::Surface>,
-        _bridge: &Self::Bridge,
+        bridge: &Self::Bridge,
         _context: &RenderContext<Self::Surface>,
         declarations: Vec<RenderedDeclaration<'decl, Self::Surface>>,
     ) -> Result<GeneratedOutput> {
@@ -240,6 +240,7 @@ impl host::HostBackend for CSharpHost {
             &namespace,
             Name::new(bindings.package().name()).pascal()?,
             Literal::string(&self.library_for(bindings)),
+            Literal::string(bridge.support().buffer_from_bytes()?.name()),
         )
         .render(declarations)
     }
@@ -885,6 +886,7 @@ mod tests {
         assert!(source.contains("EnumeratorCancellation"));
         assert!(source.contains("NativeEngineValuesPopBatch"));
         assert!(source.contains("NativeMethods.FreeBuf(buffer);"));
+        assert!(source.contains("internal static extern FfiBuf BufFromBytes"));
         assert!(source.contains(
             "await foreach (var item in ReadAll(subscription, cancellation.Token)) callback(item);"
         ));
@@ -1320,6 +1322,33 @@ mod tests {
         assert!(module.contains("profile.Encode(profileWriter);"));
         assert!(module.contains("return global::Demo.Profile.Decode(resultReader);"));
         assert!(output.diagnostics().is_empty());
+    }
+
+    #[test]
+    fn csharp_target_emits_copy_support_for_standalone_wire_types() {
+        for source in [
+            r#"
+            #[data]
+            pub struct Profile {
+                pub name: String,
+            }
+            "#,
+            r#"
+            #[data]
+            pub enum Shape {
+                Empty,
+                Label(String),
+            }
+            "#,
+        ] {
+            let output = target(CSharpHost::new())
+                .render(&bindings(source))
+                .expect("standalone wire types should render");
+
+            let module = file(&output, "Demo.cs");
+            assert!(module.contains("internal static extern FfiBuf BufFromBytes"));
+            assert!(output.diagnostics().is_empty());
+        }
     }
 
     #[test]

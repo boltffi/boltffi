@@ -49,6 +49,42 @@ fn csharp_target_compiles_a_regular_vec_u8_wire_api() {
 }
 
 #[test]
+fn csharp_target_compiles_standalone_wire_types() {
+    let bindings = bindings(
+        r#"
+        #[data]
+        pub struct Profile {
+            pub name: String,
+        }
+
+        #[data]
+        pub enum Shape {
+            Empty,
+            Label(String),
+        }
+        "#,
+    );
+    let output = target(
+        CSharpHost::new()
+            .namespace("Company.Bindings")
+            .expect("valid namespace")
+            .native_library("demo_native"),
+    )
+    .render(&bindings)
+    .expect("standalone wire types should render");
+
+    let module = output
+        .files()
+        .iter()
+        .find(|file| file.path().as_path() == Path::new("Demo.cs"))
+        .map(|file| file.contents())
+        .expect("generated Demo.cs");
+    assert!(module.contains("internal static extern FfiBuf BufFromBytes"));
+
+    compile_csharp_with_dotnet_when_available(&output, "csharp-standalone-wire-types");
+}
+
+#[test]
 fn csharp_target_qualifies_a_class_method_named_after_its_return_record() {
     let bindings = bindings(
         r#"
