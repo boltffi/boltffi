@@ -135,6 +135,8 @@ Want another language? [Open an issue](https://github.com/boltffi/boltffi/issues
 cargo install boltffi_cli
 ```
 
+Prebuilt CLI archives are also attached to each [GitHub release](https://github.com/boltffi/boltffi/releases). Each archive has a matching `.sha256` checksum file. For Windows ARM64, download `boltffi-windows-arm64.zip` and `boltffi-windows-arm64.zip.sha256`.
+
 Add BoltFFI to your library crate:
 
 ```bash

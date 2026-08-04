@@ -20,6 +20,39 @@ description: "Install the BoltFFI CLI and crate dependencies, configure Cargo ou
 cargo install boltffi_cli
 ```
 
+### Download a prebuilt CLI
+
+Each [GitHub release](https://github.com/boltffi/boltffi/releases) includes a CLI archive and a matching SHA-256 checksum file:
+
+| Platform | Archive | Checksum |
+| --- | --- | --- |
+| Linux x86_64 | `boltffi-linux-x86_64.tar.gz` | `boltffi-linux-x86_64.tar.gz.sha256` |
+| Linux x86_64 (musl) | `boltffi-linux-x86_64-musl.tar.gz` | `boltffi-linux-x86_64-musl.tar.gz.sha256` |
+| macOS x86_64 | `boltffi-darwin-x86_64.tar.gz` | `boltffi-darwin-x86_64.tar.gz.sha256` |
+| macOS ARM64 | `boltffi-darwin-aarch64.tar.gz` | `boltffi-darwin-aarch64.tar.gz.sha256` |
+| Windows x86_64 | `boltffi-windows-x86_64.zip` | `boltffi-windows-x86_64.zip.sha256` |
+| Windows ARM64 | `boltffi-windows-arm64.zip` | `boltffi-windows-arm64.zip.sha256` |
+
+For example, download and verify the Windows ARM64 build in PowerShell. Replace `<VERSION>` with the release version without the leading `v`:
+
+```powershell
+$version = "<VERSION>"
+$asset = "boltffi-windows-arm64.zip"
+$release = "https://github.com/boltffi/boltffi/releases/download/v$version"
+
+Invoke-WebRequest "$release/$asset" -OutFile $asset
+Invoke-WebRequest "$release/$asset.sha256" -OutFile "$asset.sha256"
+
+$expected = (Get-Content "$asset.sha256" -Raw).Trim().Split()[0]
+$actual = (Get-FileHash $asset -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($actual -ne $expected) {
+    throw "Checksum verification failed"
+}
+
+Expand-Archive $asset -DestinationPath .
+.\boltffi.exe check
+```
+
 ## Add to your project
 
 Add BoltFFI to your library crate:
