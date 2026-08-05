@@ -6,7 +6,7 @@ use boltffi_binding::{
     ClosureReturn, DirectValueType, DirectVectorElementType, Direction, ErrorChannel,
     ErrorPlacement, ExecutionDecl, ExportedCallable, HandlePresence, HandleTarget,
     ImportedCallable, ImportedMethodDecl, IncomingParam, IntoRust, Native, OutOfRust,
-    OutgoingParam, ParamDecl, ParamPlanRender, Primitive, Receive, ReturnPlanRender,
+    OutgoingParam, ParamDecl, ParamPlanRender, Primitive, Receive, RecordId, ReturnPlanRender,
     ReturnValueSlot, Surface, TypeRef, VTableSlot, native,
 };
 
@@ -597,6 +597,15 @@ impl<'plan> ReturnPlanRender<'plan, Native, OutOfRust> for ProxyRequirements {
     fn closure(&mut self, closure: &'plan ClosureReturn<Native, OutOfRust>) -> Self::Output {
         self.collect_exported_callable(closure.invoke());
     }
+
+    /// A native opaque record return hands Swift an owned handle, which carries
+    /// no callback or closure payload, so it contributes no proxy requirements.
+    ///
+    /// This walk visits every exported callable to discover callback proxies,
+    /// including callables the Swift target renders through the opaque record
+    /// path, so it must not fall through to the trait's reject-by-capability
+    /// default.
+    fn native_opaque_record(&mut self, _: RecordId) -> Self::Output {}
 }
 
 impl<'plan> ReturnPlanRender<'plan, Native, IntoRust> for ProxyRequirements {
