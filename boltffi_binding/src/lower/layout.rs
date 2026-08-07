@@ -30,7 +30,22 @@ impl WideScalarAlignment {
 /// to that alignment so an array of these records lays out without
 /// internal padding.
 pub fn compute(record: &SourceRecord) -> Result<RecordLayout, LowerError> {
-    compute_with_wide_scalar_alignment(record, WideScalarAlignment::EightBytes)
+    let field_types = direct_field_types(record)?;
+    let profile = profile(&field_types, WideScalarAlignment::EightBytes);
+    let alignment = ByteAlignment::new(profile.alignment)
+        .map_err(|error| LowerError::invalid_alignment(error.bytes()))?;
+    let fields = record
+        .fields
+        .iter()
+        .zip(&profile.offsets)
+        .map(|(field, offset)| FieldLayout::new(FieldKey::from(field), ByteOffset::new(*offset)))
+        .collect();
+
+    Ok(RecordLayout::new(
+        ByteSize::new(profile.size),
+        alignment,
+        fields,
+    ))
 }
 
 /// Reports whether every supported native ABI gives a record the same bytes.
@@ -42,49 +57,57 @@ pub fn compute(record: &SourceRecord) -> Result<RecordLayout, LowerError> {
 /// larger alignment so generated allocators always over-align rather than
 /// under-align storage.
 pub fn has_portable_byte_layout(record: &SourceRecord) -> bool {
-    let eight_byte_layout =
-        compute_with_wide_scalar_alignment(record, WideScalarAlignment::EightBytes);
-    let four_byte_layout =
-        compute_with_wide_scalar_alignment(record, WideScalarAlignment::FourBytes);
-
-    matches!(
-        (eight_byte_layout, four_byte_layout),
-        (Ok(eight_byte), Ok(four_byte))
-            if eight_byte.size() == four_byte.size()
-                && eight_byte.fields() == four_byte.fields()
-    )
+    direct_field_types(record).is_ok_and(|field_types| portable_direct_fields(&field_types))
 }
 
-fn compute_with_wide_scalar_alignment(
-    record: &SourceRecord,
-    wide_scalar_alignment: WideScalarAlignment,
-) -> Result<RecordLayout, LowerError> {
-    let (offset, alignment, fields) = record.fields.iter().try_fold(
-        (0_u64, 1_u64, Vec::new()),
-        |(offset, alignment, mut fields), field| {
-            let field_type = primitive::direct_field_type(&field.type_expr)
-                .ok_or_else(|| LowerError::unsupported_type(UnsupportedType::RecordField))?;
-            let field_alignment = field_alignment(field_type, wide_scalar_alignment).get();
-            let field_offset = align_up(offset, field_alignment);
-            fields.push(FieldLayout::new(
-                FieldKey::from(field),
-                ByteOffset::new(field_offset),
-            ));
-            Ok::<_, LowerError>((
-                field_offset + field_type.byte_size().get(),
-                alignment.max(field_alignment),
-                fields,
-            ))
-        },
-    )?;
-    let alignment = ByteAlignment::new(alignment)
-        .map_err(|error| LowerError::invalid_alignment(error.bytes()))?;
+/// Reports whether fields of these types get the same bytes on every
+/// supported native ABI.
+///
+/// The profile-agreement half of the record classification rule; see
+/// [`has_portable_byte_layout`] for the profiles compared.
+pub(crate) fn portable_direct_fields(field_types: &[DirectFieldType]) -> bool {
+    let natural = profile(field_types, WideScalarAlignment::EightBytes);
+    let four_byte = profile(field_types, WideScalarAlignment::FourBytes);
+    natural.size == four_byte.size && natural.offsets == four_byte.offsets
+}
 
-    Ok(RecordLayout::new(
-        ByteSize::new(align_up(offset, alignment.get())),
+struct LayoutProfile {
+    size: u64,
+    alignment: u64,
+    offsets: Vec<u64>,
+}
+
+fn direct_field_types(record: &SourceRecord) -> Result<Vec<DirectFieldType>, LowerError> {
+    record
+        .fields
+        .iter()
+        .map(|field| {
+            primitive::direct_field_type(&field.type_expr)
+                .ok_or_else(|| LowerError::unsupported_type(UnsupportedType::RecordField))
+        })
+        .collect()
+}
+
+fn profile(
+    field_types: &[DirectFieldType],
+    wide_scalar_alignment: WideScalarAlignment,
+) -> LayoutProfile {
+    let mut offset = 0_u64;
+    let mut alignment = 1_u64;
+    let mut offsets = Vec::with_capacity(field_types.len());
+    for field_type in field_types {
+        let field_alignment = field_alignment(*field_type, wide_scalar_alignment).get();
+        offset = align_up(offset, field_alignment);
+        offsets.push(offset);
+        offset += field_type.byte_size().get();
+        alignment = alignment.max(field_alignment);
+    }
+
+    LayoutProfile {
+        size: align_up(offset, alignment),
         alignment,
-        fields,
-    ))
+        offsets,
+    }
 }
 
 fn field_alignment(

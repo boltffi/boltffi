@@ -1,8 +1,9 @@
-use boltffi_ast::{RecordDef as SourceRecord, TypeExpr};
+use boltffi_ast::{Primitive as SourcePrimitive, RecordDef as SourceRecord, TypeExpr};
 
 use crate::{
-    CanonicalName, DirectFieldDecl, DirectRecordDecl, EncodedFieldDecl, EncodedRecordDecl,
-    ExportedMethodDecl, FieldKey, InitializerDecl, NativeSymbol, RecordDecl, ValueRef,
+    CanonicalName, DirectFieldDecl, DirectFieldType, DirectRecordDecl, EncodedFieldDecl,
+    EncodedRecordDecl, ExportedMethodDecl, FieldKey, InitializerDecl, NativeSymbol, RecordDecl,
+    ValueRef,
 };
 
 use super::{
@@ -44,13 +45,37 @@ pub fn lower<S: SurfaceLower>(
 /// wrote and crosses encoded. Records whose size or field offsets change
 /// between supported native ABI alignment profiles also cross encoded.
 pub fn is_direct(record: &SourceRecord) -> bool {
-    primitive::has_effective_repr_c(&record.repr)
-        && !record.fields.is_empty()
-        && record
-            .fields
-            .iter()
-            .all(|field| primitive::direct_field_type(&field.type_expr).is_some())
-        && layout::has_portable_byte_layout(record)
+    direct_record_fields(
+        primitive::has_effective_repr_c(&record.repr),
+        record.fields.iter().map(|field| match &field.type_expr {
+            TypeExpr::Primitive(field_primitive) => Some(*field_primitive),
+            _ => None,
+        }),
+    )
+}
+
+/// Classifies record fields for direct-vs-encoded crossing from per-field
+/// primitives, `None` marking a field whose type is not a primitive.
+///
+/// The record classification rule itself, split out from [`is_direct`] so the
+/// `#[data]` expansion classifies the struct it compiles through the same rule
+/// this lowering applies to the aggregated contract: effective `repr(C)`, at
+/// least one field, every field an admissible fixed-width primitive, and byte
+/// layout agreement across the supported native ABI alignment profiles.
+pub fn direct_record_fields<I>(effective_repr_c: bool, field_primitives: I) -> bool
+where
+    I: IntoIterator<Item = Option<SourcePrimitive>>,
+{
+    let Some(field_types) = field_primitives
+        .into_iter()
+        .map(|field_primitive| {
+            field_primitive.and_then(|field_primitive| DirectFieldType::new(field_primitive.into()))
+        })
+        .collect::<Option<Vec<_>>>()
+    else {
+        return false;
+    };
+    effective_repr_c && !field_types.is_empty() && layout::portable_direct_fields(&field_types)
 }
 
 fn lower_one<S: SurfaceLower>(
