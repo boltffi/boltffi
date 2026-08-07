@@ -64,5 +64,5 @@ pub use ir::*;
 pub use ir::{ErrorChannel, ErrorPlacement};
 pub use lower::{
     DeclarationFamily, DeclarationMap, LowerError, LowerErrorKind, LoweredBindings, SurfaceLower,
-    UnsupportedType, lower, lower_with_declarations,
+    UnsupportedType, direct_record_fields, lower, lower_with_declarations,
 };
