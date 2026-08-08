@@ -41,7 +41,8 @@ pub fn lower<S: SurfaceLower>(
 /// A record with no `repr` items qualifies because `#[data]` materializes
 /// `#[repr(C)]` on the emitted struct; expansion verifies the resulting
 /// layout against the lowered record layout with compile-time assertions.
-/// A record that declares a different `repr` keeps the layout intent it
+/// A record that declares any repr other than plain `repr(C)` — including
+/// `repr(C, packed)` or `repr(C, align(N))` — keeps the layout intent it
 /// wrote and crosses encoded. Records whose size or field offsets change
 /// between supported native ABI alignment profiles also cross encoded.
 pub fn is_direct(record: &SourceRecord) -> bool {
@@ -66,6 +67,9 @@ pub fn direct_record_fields<I>(effective_repr_c: bool, field_primitives: I) -> b
 where
     I: IntoIterator<Item = Option<SourcePrimitive>>,
 {
+    if !effective_repr_c {
+        return false;
+    }
     let Some(field_types) = field_primitives
         .into_iter()
         .map(|field_primitive| {
@@ -75,7 +79,7 @@ where
     else {
         return false;
     };
-    effective_repr_c && !field_types.is_empty() && layout::portable_direct_fields(&field_types)
+    !field_types.is_empty() && layout::portable_direct_fields(&field_types)
 }
 
 fn lower_one<S: SurfaceLower>(
@@ -373,6 +377,40 @@ mod tests {
             vec![field("raw", TypeExpr::Primitive(Primitive::U64))],
         );
         record.repr = ReprAttr::new(vec![ReprItem::Transparent]);
+
+        let bindings = lower_record::<Native>(record);
+
+        encoded_record(&bindings);
+    }
+
+    #[test]
+    fn classifies_packed_record_as_encoded() {
+        let mut record = record(
+            "demo::Packet",
+            "packet",
+            vec![
+                field("tag", TypeExpr::Primitive(Primitive::U8)),
+                field("count", TypeExpr::Primitive(Primitive::U32)),
+            ],
+        );
+        record.repr = ReprAttr::new(vec![ReprItem::C, ReprItem::Packed(None)]);
+
+        let bindings = lower_record::<Native>(record);
+
+        encoded_record(&bindings);
+    }
+
+    #[test]
+    fn classifies_over_aligned_record_as_encoded() {
+        let mut record = record(
+            "demo::Cell",
+            "cell",
+            vec![
+                field("a", TypeExpr::Primitive(Primitive::U32)),
+                field("b", TypeExpr::Primitive(Primitive::U32)),
+            ],
+        );
+        record.repr = ReprAttr::new(vec![ReprItem::C, ReprItem::Align(8)]);
 
         let bindings = lower_record::<Native>(record);
 
