@@ -58,11 +58,11 @@ pub fn is_direct(record: &SourceRecord) -> bool {
 /// Classifies record fields for direct-vs-encoded crossing from per-field
 /// primitives, `None` marking a field whose type is not a primitive.
 ///
-/// The record classification rule itself, split out from [`is_direct`] so the
-/// `#[data]` expansion classifies the struct it compiles through the same rule
-/// this lowering applies to the aggregated contract: effective `repr(C)`, at
-/// least one field, every field an admissible fixed-width primitive, and byte
-/// layout agreement across the supported native ABI alignment profiles.
+/// The record classification rule itself, split out of `is_direct` and
+/// exported so a lane that cannot run the full lowering pass classifies a
+/// record through the same rule: effective `repr(C)`, at least one field,
+/// every field an admissible fixed-width primitive, and byte layout
+/// agreement across the supported native ABI alignment profiles.
 pub fn direct_record_fields<I>(effective_repr_c: bool, field_primitives: I) -> bool
 where
     I: IntoIterator<Item = Option<SourcePrimitive>>,
