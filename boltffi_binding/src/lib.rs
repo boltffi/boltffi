@@ -31,11 +31,12 @@
 //! an enum is C-style or data-bearing, a callable gets concrete lower
 //! and lift plans, a native symbol is picked and validated. The
 //! lowering pass runs once; nothing downstream re-runs it on the same
-//! source.
+//! source. Any lane that must classify outside the pass applies the
+//! same exported rule rather than keeping a copy.
 //!
 //! # Public surfaces
 //!
-//! Two public entry points sit alongside [`ir`]:
+//! Three public entry points sit alongside [`ir`]:
 //!
 //! - [`lower`] is the macro-facing API. Given a
 //!   [`boltffi_ast::SourceContract`] and a target [`SurfaceLower`]
@@ -46,6 +47,13 @@
 //!   imports. `boltffi_bindgen` reconstructs a [`Bindings<S>`] from
 //!   the serialized metadata embedded in the user's compiled
 //!   artifact and reads it through the [`ir`] types.
+//! - [`direct_record_fields`] is the record classification rule on its
+//!   own: effective `repr(C)`, at least one field, every field an
+//!   admissible fixed-width primitive, and byte layout agreement across
+//!   the supported native ABI alignment profiles. It is the single
+//!   statement of the rule `is_direct` applies during lowering, exported
+//!   so a lane that cannot run the full pass still classifies a record
+//!   identically to the compiled library.
 //!
 //! # What this crate does not do
 //!
