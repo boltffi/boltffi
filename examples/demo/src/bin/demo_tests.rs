@@ -909,11 +909,10 @@ fn module_name_for_source(src_root: &Path, path: &Path) -> AppResult<String> {
         .collect();
     if parts.last().is_some_and(|part| part == "mod.rs") {
         parts.pop();
-    } else if let Some(last) = parts.last_mut() {
-        if let Some(stripped) = last.strip_suffix(".rs") {
+    } else if let Some(last) = parts.last_mut()
+        && let Some(stripped) = last.strip_suffix(".rs") {
             *last = stripped.to_string();
         }
-    }
     Ok(parts.join("::"))
 }
 

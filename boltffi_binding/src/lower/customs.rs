@@ -30,18 +30,27 @@ use crate::{
 };
 
 use super::{
-    LowerError, error::UnsupportedType, ids::DeclarationIds, index::Index, metadata, types,
+    LowerError, error::UnsupportedType, ids::DeclarationIds, index::Index, metadata, opaque, types,
 };
 
 pub fn lower(index: &Index, ids: &DeclarationIds) -> Result<Vec<CustomTypeDecl>, LowerError> {
     index
         .customs()
         .iter()
-        .map(|custom| lower_one(ids, custom))
+        .map(|custom| lower_one(index, ids, custom))
         .collect()
 }
 
-fn lower_one(ids: &DeclarationIds, custom: &SourceCustom) -> Result<CustomTypeDecl, LowerError> {
+fn lower_one(
+    index: &Index,
+    ids: &DeclarationIds,
+    custom: &SourceCustom,
+) -> Result<CustomTypeDecl, LowerError> {
+    if opaque::contains(index, &custom.repr) {
+        return Err(LowerError::unsupported_type(
+            UnsupportedType::NativeOpaqueRecordField,
+        ));
+    }
     let custom_id = ids.custom(&custom.id)?;
     let representation = types::lower(ids, &custom.repr)?;
     if representation.contains_interned_string() {

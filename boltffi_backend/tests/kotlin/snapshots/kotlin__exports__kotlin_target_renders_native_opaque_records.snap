@@ -1,0 +1,97 @@
+---
+source: boltffi_backend/tests/kotlin/exports.rs
+expression: rendered
+---
+===== com/boltffi/demo/Demo.kt =====
+@file:OptIn(kotlin.ExperimentalUnsignedTypes::class)
+
+package com.boltffi.demo
+@Suppress("FunctionName")
+private object Native {
+    @JvmStatic external fun boltffi_record_native_snapshot_drop(handle: Long): Unit
+    @JvmStatic external fun boltffi_record_native_snapshot_dsize(handle: Long): Long
+    @JvmStatic external fun boltffi_record_native_snapshot_get_count(handle: Long): Int
+    @JvmStatic external fun boltffi_record_native_snapshot_has_score(handle: Long): Int
+    @JvmStatic external fun boltffi_record_native_snapshot_get_score(handle: Long): Double
+    @JvmStatic external fun boltffi_record_native_snapshot_has_label(handle: Long): Int
+    @JvmStatic external fun boltffi_record_native_snapshot_borrow_title(handle: Long): ByteArray?
+    @JvmStatic external fun boltffi_record_native_snapshot_borrow_payload(handle: Long): ByteArray?
+    @JvmStatic external fun boltffi_record_native_snapshot_borrow_label(handle: Long): ByteArray?
+    @JvmStatic external fun boltffi_function_demo_make_snapshot(input: java.nio.ByteBuffer, __boltffi_input_len: Int, count: Int): Long
+}
+
+
+class Snapshot internal constructor(handle: Long) : AutoCloseable {
+    private val lifecycle = java.util.concurrent.locks.ReentrantReadWriteLock()
+    private var nativeHandle: Long = handle
+    init { require(handle != 0L) { "native opaque record returned null" } }
+
+    override fun close() {
+        lifecycle.writeLock().lock()
+        try {
+            val handle = nativeHandle
+            if (handle != 0L) {
+                nativeHandle = 0L
+                Native.boltffi_record_native_snapshot_drop(handle)
+            }
+        } finally {
+            lifecycle.writeLock().unlock()
+        }
+    }
+
+    private inline fun <T> withHandle(action: (Long) -> T): T {
+        lifecycle.readLock().lock()
+        try {
+            val handle = nativeHandle
+            check(handle != 0L) { "Snapshot has already been closed" }
+            return action(handle)
+        } finally {
+            lifecycle.readLock().unlock()
+        }
+    }
+
+    val count: UInt
+        get() = withHandle { handle ->
+        Native.boltffi_record_native_snapshot_get_count(handle).toUInt()
+        }
+
+    val title: String
+        get() = withHandle { handle ->
+        val bytes = Native.boltffi_record_native_snapshot_borrow_title(handle) ?: error("borrow failed for title")
+        bytes.toString(Charsets.UTF_8)
+        }
+
+    val payload: ByteArray
+        get() = withHandle { handle ->
+        val bytes = Native.boltffi_record_native_snapshot_borrow_payload(handle) ?: error("borrow failed for payload")
+        bytes
+        }
+
+    val score: Double?
+        get() = withHandle { handle ->
+        if (Native.boltffi_record_native_snapshot_has_score(handle) == 0) {
+            null
+        } else {
+            Native.boltffi_record_native_snapshot_get_score(handle)
+        }
+        }
+
+    val label: String?
+        get() = withHandle { handle ->
+        if (Native.boltffi_record_native_snapshot_has_label(handle) == 0) {
+            null
+        } else {
+            val bytes = Native.boltffi_record_native_snapshot_borrow_label(handle) ?: error("borrow failed for label")
+            bytes.toString(Charsets.UTF_8)
+        }
+        }
+}
+
+fun makeSnapshot(input: ByteArray, count: UInt): Snapshot {
+    val __boltffi_input_raw = input
+    val __boltffi_input_raw_buffer = java.nio.ByteBuffer.allocateDirect(__boltffi_input_raw.size)
+    __boltffi_input_raw_buffer.put(__boltffi_input_raw)
+    __boltffi_input_raw_buffer.flip()
+    val __boltffi_handle = Native.boltffi_function_demo_make_snapshot(__boltffi_input_raw_buffer, __boltffi_input_raw.size, count.toInt())
+    return Snapshot(__boltffi_handle)
+}

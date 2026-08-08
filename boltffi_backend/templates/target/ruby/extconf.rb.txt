@@ -1,0 +1,97 @@
+# frozen_string_literal: true
+
+require "fileutils"
+require "json"
+require "mkmf"
+require "open3"
+require "rbconfig"
+
+crate_stem = "{{ crate_stem }}"
+archive_basename = "lib#{crate_stem}_ffi.a"
+archive_path = File.join(__dir__, archive_basename)
+native_libs_path = File.join(__dir__, "#{archive_basename}.native-libs")
+manifest = ENV["BOLTFFI_CRATE_MANIFEST"]
+
+if manifest && !File.exist?(archive_path)
+  manifest = File.expand_path(manifest)
+  crate_root = File.dirname(manifest)
+  lib_source = File.join(crate_root, "src", "lib.rs")
+  env = {
+    "BOLTFFI_BINDING_EXPANSION" => "1",
+    "BOLTFFI_BINDING_EXPANSION_ROOT" => crate_root,
+    "BOLTFFI_BINDING_EXPANSION_SOURCE" => lib_source,
+    "BOLTFFI_BINDING_EXPANSION_SURFACE" => "native",
+    "CARGO_TERM_COLOR" => "never",
+  }
+
+  cargo = ENV.fetch("CARGO", "cargo")
+  target_dir = File.join(__dir__, "target")
+  rustc_args = [
+    cargo,
+    "rustc",
+    "--manifest-path", manifest,
+    "--target-dir", target_dir,
+    "--release",
+    "--lib",
+    "--crate-type", "staticlib",
+    "--message-format", "json-render-diagnostics",
+  ]
+  stdout, stderr, status = Open3.capture3(env, *rustc_args)
+  abort(stderr) unless status.success?
+
+  built_archive = nil
+  stdout.each_line do |line|
+    begin
+      message = JSON.parse(line)
+    rescue JSON::ParserError
+      next
+    end
+
+    next unless message["reason"] == "compiler-artifact"
+    target = message["target"] || {}
+    next unless Array(target["kind"]).include?("staticlib")
+
+    built_archive = Array(message["filenames"]).find { |filename| filename.end_with?(".a") }
+  end
+  abort("cargo rustc succeeded but produced no staticlib artifact") unless built_archive
+
+  FileUtils.cp(built_archive, archive_path)
+
+  native_stdout, native_stderr, = Open3.capture3(
+    env,
+    cargo,
+    "rustc",
+    "--manifest-path", manifest,
+    "--target-dir", target_dir,
+    "--release",
+    "--lib",
+    "--",
+    "--print", "native-static-libs",
+  )
+  native_libs = native_stderr.each_line.find { |line| line.include?("native-static-libs:") }
+  native_libs = native_libs&.split("native-static-libs:", 2)&.last.to_s
+  native_libs = native_libs.gsub(/\e\[[0-9;]*m/, "").strip
+  File.write(native_libs_path, native_libs)
+end
+
+$CFLAGS << " -std=c99"
+$LOCAL_LIBS << " #{archive_path}" if File.exist?(archive_path)
+
+if File.exist?(native_libs_path)
+  $LOCAL_LIBS << " " << File.read(native_libs_path).strip
+end
+
+init_symbol = "Init_#{crate_stem}_native"
+exports_ruby_abi_version = have_macro("RUBY_DLN_CHECK_ABI", "ruby.h")
+case RbConfig::CONFIG["host_os"]
+when /darwin/
+  $DLDFLAGS << " -Wl,-exported_symbol,_#{init_symbol}"
+  $DLDFLAGS << " -Wl,-exported_symbol,_ruby_abi_version" if exports_ruby_abi_version
+when /linux|bsd|solaris/
+  abi_export = exports_ruby_abi_version ? " ruby_abi_version;" : ""
+  exports = File.join(__dir__, "#{crate_stem}_native.exports")
+  File.write(exports, "{ global: #{init_symbol};#{abi_export} local: *; };\n")
+  $DLDFLAGS << " -Wl,--version-script=#{exports} -Wl,--exclude-libs,ALL"
+end
+
+create_makefile("#{crate_stem}_native")

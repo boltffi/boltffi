@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import uuid
 
-{% if !records.is_empty() || has_data_enums %}
+{% if has_native_opaque_records %}
+from typing import NoReturn
+
+{% endif %}
+{% if uses_dataclass_records || has_data_enums %}
 from dataclasses import dataclass
 
 {% endif %}
@@ -22,6 +26,17 @@ MODULE_NAME: str
 PACKAGE_NAME: str
 PACKAGE_VERSION: str | None
 {% for record in records %}
+{%- if let Some(native_opaque) = record.native_opaque %}
+class {{ record.class_name }}:
+    def __init__(self, _: NoReturn, /) -> None: ...
+    def close(self) -> None: ...
+{%- for prop in native_opaque.props() %}
+
+    @property
+    def {{ prop.name() }}(self) -> {{ prop.annotation() }}: ...
+{%- endfor %}
+
+{%- else %}
 @dataclass(frozen=True, slots=True)
 class {{ record.class_name }}:
 {%- for constant in record.constants %}
@@ -42,6 +57,7 @@ class {{ record.class_name }}:
     {% if method.asynchronous %}async {% endif %}def {{ method.python_name }}(self{% for parameter in method.parameters %}, {{ parameter.name }}: {{ parameter.annotation }}{% endfor %}) -> {{ method.return_annotation }}: ...
 {%- endfor %}
 
+{%- endif %}
 {% if let Some(exception_name) = record.exception_name %}
 class {{ exception_name }}(RuntimeError):
     error: {{ record.class_name }}

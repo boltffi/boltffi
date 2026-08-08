@@ -322,7 +322,10 @@ mod tests {
         RecordId as SourceRecordId, SourceContract, TypeExpr,
     };
 
-    use crate::lower::{LowerError, LowerErrorKind, lower};
+    use crate::lower::{
+        LowerError, LowerErrorKind, UnsupportedType, callable, ids::DeclarationIds, index::Index,
+        lower, symbol::SymbolAllocator,
+    };
     use crate::{
         Bindings, CanonicalName, ConstantDecl, ConstantId, ConstantOwner, ConstantValueDecl, Decl,
         DefaultValue, DirectValueType, IntegerValue, Native, Primitive as BindingPrimitive,
@@ -1204,6 +1207,77 @@ mod tests {
                 .and_then(|deprecated| deprecated.message()),
             Some("use GREETING_V2")
         );
+    }
+
+    #[test]
+    fn native_opaque_record_type_in_constant_accessor_is_rejected() {
+        use boltffi_ast::{FieldDef, RecordDef, RecordEncoding, Source as AstSource};
+
+        let mut opaque = RecordDef::new("demo::Snap".into(), name("Snap"));
+        opaque.encoding = RecordEncoding::NativeOpaque;
+        opaque.fields = vec![FieldDef::new(
+            name("x"),
+            TypeExpr::Primitive(Primitive::U32),
+        )];
+        let opaque_type = TypeExpr::record(
+            boltffi_ast::RecordId::new("demo::Snap"),
+            boltffi_ast::Path::single("Snap"),
+        );
+        let const_def = ConstantDef {
+            id: boltffi_ast::ConstantId::new("demo::SNAP"),
+            name: name("SNAP").into(),
+            owner: None,
+            type_expr: opaque_type,
+            value: ConstExpr::Raw("SNAP_VALUE".to_owned()),
+            user_attrs: Vec::new(),
+            doc: None,
+            deprecated: None,
+            source: AstSource::exported(),
+            source_span: None,
+        };
+        let mut contract = package();
+        contract.records.push(opaque);
+        contract.constants.push(const_def);
+
+        let error = lower::<Native>(&contract)
+            .expect_err("native opaque records are only valid as free-function returns");
+        assert!(
+            matches!(
+                error.kind(),
+                LowerErrorKind::UnsupportedType(UnsupportedType::NativeOpaqueRecordConstant)
+            ),
+            "expected NativeOpaqueRecordConstant, got {error:?}"
+        );
+    }
+
+    #[test]
+    fn named_opaque_record_constant_accessor_is_rejected_as_nested_return() {
+        use boltffi_ast::{RecordDef, RecordEncoding};
+
+        let mut opaque = RecordDef::new("demo::Opaque".into(), name("Opaque"));
+        opaque.encoding = RecordEncoding::NativeOpaque;
+        let mut envelope = RecordDef::new("demo::Envelope".into(), name("Envelope"));
+        envelope.fields.push(boltffi_ast::FieldDef::new(
+            name("opaque"),
+            TypeExpr::record("demo::Opaque".into(), SourcePath::single("Opaque")),
+        ));
+        let mut contract = package();
+        contract.records = vec![opaque, envelope];
+        let index = Index::new(&contract);
+        let ids = DeclarationIds::from_source(&contract).expect("source ids");
+        let error = callable::lower_constant_accessor::<Native>(
+            &index,
+            &ids,
+            &mut SymbolAllocator::new(),
+            callable::CallableOwner::Function,
+            &TypeExpr::record("demo::Envelope".into(), SourcePath::single("Envelope")),
+        )
+        .expect_err("opaque envelope accessor must reject before record lowering");
+
+        assert!(matches!(
+            error.kind(),
+            LowerErrorKind::UnsupportedType(UnsupportedType::NativeOpaqueRecordNestedReturn)
+        ));
     }
 
     #[test]

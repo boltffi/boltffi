@@ -55,6 +55,10 @@ enum Body {
 }
 
 impl AssociatedConstants {
+    pub(super) fn empty() -> Self {
+        Self(Vec::new())
+    }
+
     pub(super) fn from_owner(
         owner: ConstantOwner,
         bridge: &CBridgeContract,

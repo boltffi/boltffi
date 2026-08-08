@@ -1,4 +1,4 @@
-use boltffi_ast::{FieldDef, RecordDef, RecordId};
+use boltffi_ast::{FieldDef, RecordDef, RecordEncoding, RecordId};
 use syn::spanned::Spanned;
 
 use crate::attributes::Attributes;
@@ -12,7 +12,11 @@ pub fn scan(
     marked: &Marked<'_, syn::ItemStruct>,
     declared_types: &DeclaredTypes,
 ) -> Result<RecordDef, ScanError> {
-    let mut record = build(marked.item(), marked.scope(), declared_types)?;
+    let encoding = match marked.marker() {
+        crate::marker::Marker::DataOpaque => RecordEncoding::NativeOpaque,
+        _ => RecordEncoding::Standard,
+    };
+    let mut record = build(marked.item(), marked.scope(), declared_types, encoding)?;
     marked.marker().append_value_attrs(&mut record.user_attrs);
     Ok(record)
 }
@@ -21,6 +25,7 @@ fn build(
     item: &syn::ItemStruct,
     scope: &ModuleScope,
     declared_types: &DeclaredTypes,
+    encoding: RecordEncoding,
 ) -> Result<RecordDef, ScanError> {
     unsupported::generics(&item.generics, &format!("record {}", item.ident))?;
     let id = RecordId::new(scope.path().qualified(&item.ident.to_string()));
@@ -28,33 +33,43 @@ fn build(
     let scanner = Scanner::new(declared_types, scope);
     let attrs = Attributes::new(&item.attrs, &scanner);
     record.repr = repr::scan(&item.attrs);
+    record.encoding = encoding;
     record.source = attributes::source(&item.vis, scope, item.span());
     record.source_span = record.source.span.clone();
     record.doc = attrs.doc();
     record.deprecated = attrs.deprecated()?;
     record.user_attrs = attrs.user_attrs();
-    record.fields = record_fields(&item.fields, &scanner)?;
+    record.fields = record_fields(&item.fields, &scanner, encoding)?;
     Ok(record)
 }
 
-fn record_fields(fields: &syn::Fields, scanner: &Scanner<'_>) -> Result<Vec<FieldDef>, ScanError> {
+fn record_fields(
+    fields: &syn::Fields,
+    scanner: &Scanner<'_>,
+    encoding: RecordEncoding,
+) -> Result<Vec<FieldDef>, ScanError> {
     match fields {
         syn::Fields::Named(named) => named
             .named
             .iter()
-            .map(|field| record_field(field, scanner))
+            .map(|field| record_field(field, scanner, encoding))
             .collect(),
         syn::Fields::Unnamed(_) => Err(unsupported::feature(UnsupportedFeature::TupleStruct)),
         syn::Fields::Unit => Err(unsupported::feature(UnsupportedFeature::UnitStruct)),
     }
 }
 
-fn record_field(field: &syn::Field, scanner: &Scanner<'_>) -> Result<FieldDef, ScanError> {
+fn record_field(
+    field: &syn::Field,
+    scanner: &Scanner<'_>,
+    _encoding: RecordEncoding,
+) -> Result<FieldDef, ScanError> {
     let ident = field
         .ident
         .as_ref()
         .ok_or_else(|| unsupported::feature(UnsupportedFeature::TupleStruct))?;
-    let mut scanned = FieldDef::new(name::source(ident), scanner.scan(&field.ty)?);
+    let type_expr = scanner.scan(&field.ty)?;
+    let mut scanned = FieldDef::new(name::source(ident), type_expr);
     let attrs = Attributes::new(&field.attrs, scanner);
     scanned.source = attributes::source(&field.vis, scanner.scope(), field.span());
     scanned.source_span = scanned.source.span.clone();
@@ -81,6 +96,16 @@ mod tests {
             &parse(source),
             &ModuleScope::root("demo"),
             &DeclaredTypes::new(),
+            RecordEncoding::Standard,
+        )
+    }
+
+    fn scan_opaque(source: &str) -> Result<RecordDef, ScanError> {
+        super::build(
+            &parse(source),
+            &ModuleScope::root("demo"),
+            &DeclaredTypes::new(),
+            RecordEncoding::NativeOpaque,
         )
     }
 
@@ -173,12 +198,54 @@ mod tests {
             &parse("pub struct Shape { pub center: Point }"),
             &ModuleScope::root("demo"),
             &declared_types,
+            RecordEncoding::Standard,
         )
         .expect("scan");
 
         assert_eq!(
             record.fields[0].type_expr,
             TypeExpr::record(RecordId::new("demo::Point"), Path::single("Point"))
+        );
+    }
+
+    #[test]
+    fn opaque_record_scans_owned_fields() {
+        let record =
+            scan_opaque("pub struct Snapshot { pub name: Option<String>, pub major: u32 }")
+                .expect("opaque record");
+
+        assert_eq!(record.encoding, RecordEncoding::NativeOpaque);
+        assert_eq!(
+            record.fields[0].type_expr,
+            TypeExpr::option(TypeExpr::String)
+        );
+        assert_eq!(
+            record.fields[1].type_expr,
+            TypeExpr::Primitive(Primitive::U32)
+        );
+    }
+
+    #[test]
+    fn opaque_record_rejects_generics() {
+        let error = scan_opaque("pub struct Snapshot<T> { pub value: T }")
+            .expect_err("type generic rejected");
+        assert_eq!(
+            error,
+            ScanError::UnsupportedGenerics {
+                item: "record Snapshot".to_owned()
+            }
+        );
+    }
+
+    #[test]
+    fn opaque_record_rejects_lifetime_generics() {
+        let error = scan_opaque("pub struct Snapshot<'a> { pub name: &'a str }")
+            .expect_err("lifetime generic rejected");
+        assert_eq!(
+            error,
+            ScanError::UnsupportedGenerics {
+                item: "record Snapshot".to_owned()
+            }
         );
     }
 

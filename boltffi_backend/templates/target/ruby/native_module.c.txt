@@ -1,0 +1,279 @@
+#include "boltffi.h"
+#include "ruby.h"
+#include "ruby/encoding.h"
+#include <stdint.h>
+#include <string.h>
+#include <stdlib.h>
+
+#if defined(_MSC_VER)
+#define BOLTFFI_RUBY_ALWAYS_INLINE static __forceinline
+#elif defined(__GNUC__) || defined(__clang__)
+#define BOLTFFI_RUBY_ALWAYS_INLINE static inline __attribute__((always_inline))
+#else
+#define BOLTFFI_RUBY_ALWAYS_INLINE static inline
+#endif
+
+#if defined(RUBY_DLN_CHECK_ABI) && !defined(_WIN32) && !defined(__MINGW32__) && !defined(__CYGWIN__)
+/* Keep Ruby's weak ABI marker from being stripped. */
+static void *boltffi_ruby_keep_abi_version __attribute__((used)) = (void *)&ruby_abi_version;
+#endif
+
+#ifndef RUBY_TYPED_EMBEDDABLE
+#define BOLTFFI_RUBY_TYPED_EMBEDDABLE 0
+#define BOLTFFI_RUBY_HAS_TYPED_EMBEDDABLE 0
+#else
+#define BOLTFFI_RUBY_TYPED_EMBEDDABLE RUBY_TYPED_EMBEDDABLE
+#define BOLTFFI_RUBY_HAS_TYPED_EMBEDDABLE 1
+#endif
+
+/* Install a frozen, GC-registered static interned string into `slot`. `lit`
+ * must be a string literal so `sizeof(lit) - 1` yields its byte length.
+ * Registered before assignment so a GC during allocation sees a live slot. */
+#define BOLTFFI_RUBY_DEFINE_INTERNED_STATIC(slot, lit) \
+    do { \
+        rb_global_variable(&(slot)); \
+        (slot) = rb_utf8_str_new_static((lit), sizeof(lit) - 1); \
+        RB_ENC_CODERANGE_SET((slot), RUBY_ENC_CODERANGE_VALID); \
+        rb_obj_freeze(slot); \
+    } while (0)
+
+{% if needs_bool_helper %}
+static inline int boltffi_ruby_bool(VALUE value) {
+    if (value != Qtrue && value != Qfalse) {
+        rb_raise(rb_eTypeError, "expected bool");
+    }
+    return value == Qtrue;
+}
+{% endif %}
+{% if needs_string_helper || needs_bytes_helper || body.contains("boltffi_ruby_wire_") %}
+BOLTFFI_RUBY_ALWAYS_INLINE uint16_t boltffi_ruby_read_u16_le(const uint8_t *buffer) {
+    uint16_t result = 0;
+    memcpy(&result, buffer, sizeof(result));
+#if defined(__BYTE_ORDER__) && defined(__ORDER_BIG_ENDIAN__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    result = __builtin_bswap16(result);
+#endif
+    return result;
+}
+
+BOLTFFI_RUBY_ALWAYS_INLINE uint32_t boltffi_ruby_read_u32_le(const uint8_t *buffer) {
+    uint32_t result = 0;
+    memcpy(&result, buffer, sizeof(result));
+#if defined(__BYTE_ORDER__) && defined(__ORDER_BIG_ENDIAN__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    result = __builtin_bswap32(result);
+#endif
+    return result;
+}
+
+BOLTFFI_RUBY_ALWAYS_INLINE uint64_t boltffi_ruby_read_u64_le(const uint8_t *buffer) {
+    uint64_t result = 0;
+    memcpy(&result, buffer, sizeof(result));
+#if defined(__BYTE_ORDER__) && defined(__ORDER_BIG_ENDIAN__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    result = __builtin_bswap64(result);
+#endif
+    return result;
+}
+{% endif %}
+{% if needs_string_helper || needs_bytes_helper %}
+typedef struct {
+    const char *ptr;
+    long len;
+} boltffi_ruby_string_build;
+{% endif %}
+{% if needs_string_helper %}
+static VALUE boltffi_ruby_build_utf8_string_protected(VALUE raw_state) {
+    boltffi_ruby_string_build *state = (boltffi_ruby_string_build *)(uintptr_t)raw_state;
+    VALUE value = rb_utf8_str_new(state->ptr, state->len);
+    RB_ENC_CODERANGE_SET(value, RUBY_ENC_CODERANGE_VALID);
+    return value;
+}
+{% endif %}
+{% if needs_bytes_helper %}
+static VALUE boltffi_ruby_build_bytes_protected(VALUE raw_state) {
+    boltffi_ruby_string_build *state = (boltffi_ruby_string_build *)(uintptr_t)raw_state;
+    return rb_str_new(state->ptr, state->len);
+}
+{% endif %}
+{% if needs_string_helper %}
+static VALUE boltffi_ruby_decode_string(FfiBuf_u8 buffer) {
+    if (buffer.ptr == NULL || buffer.len < sizeof(uint32_t)) {
+        boltffi_free_buf(buffer);
+        rb_raise(rb_eRuntimeError, "native function returned truncated string buffer");
+    }
+
+    uint32_t wire_len = boltffi_ruby_read_u32_le(buffer.ptr);
+    if ((uintptr_t)wire_len > buffer.len - sizeof(uint32_t)) {
+        boltffi_free_buf(buffer);
+        rb_raise(rb_eRuntimeError, "native function returned truncated string buffer");
+    }
+
+    boltffi_ruby_string_build state = { (const char *)buffer.ptr + sizeof(uint32_t), (long)wire_len };
+    int error = 0;
+    VALUE value = rb_protect(boltffi_ruby_build_utf8_string_protected, (VALUE)(uintptr_t)&state, &error);
+    boltffi_free_buf(buffer);
+    if (error) rb_jump_tag(error);
+    return value;
+}
+{% endif %}
+{% if needs_bytes_helper %}
+static VALUE boltffi_ruby_decode_bytes(FfiBuf_u8 buffer) {
+    if (buffer.ptr == NULL || buffer.len < sizeof(uint32_t)) {
+        boltffi_free_buf(buffer);
+        rb_raise(rb_eRuntimeError, "native function returned truncated bytes buffer");
+    }
+
+    uint32_t wire_len = boltffi_ruby_read_u32_le(buffer.ptr);
+    if ((uintptr_t)wire_len > buffer.len - sizeof(uint32_t)) {
+        boltffi_free_buf(buffer);
+        rb_raise(rb_eRuntimeError, "native function returned truncated bytes buffer");
+    }
+
+    boltffi_ruby_string_build state = { (const char *)buffer.ptr + sizeof(uint32_t), (long)wire_len };
+    int error = 0;
+    VALUE value = rb_protect(boltffi_ruby_build_bytes_protected, (VALUE)(uintptr_t)&state, &error);
+    boltffi_free_buf(buffer);
+    if (error) rb_jump_tag(error);
+    return value;
+}
+{% endif %}
+{% if body.contains("boltffi_ruby_wire_") %}
+typedef struct {
+    const uint8_t *ptr;
+    const uint8_t *end;
+} boltffi_ruby_wire_reader;
+
+static boltffi_ruby_wire_reader boltffi_ruby_wire_reader_new(FfiBuf_u8 buffer) {
+    boltffi_ruby_wire_reader reader;
+    reader.ptr = buffer.ptr;
+    reader.end = buffer.ptr == NULL ? NULL : buffer.ptr + buffer.len;
+    return reader;
+}
+
+static int boltffi_ruby_wire_read_exact(boltffi_ruby_wire_reader *reader, uintptr_t len, const uint8_t **out) {
+    if (reader->ptr == NULL || reader->end == NULL || (uintptr_t)(reader->end - reader->ptr) < len) return 0;
+    *out = reader->ptr;
+    reader->ptr += len;
+    return 1;
+}
+
+static int boltffi_ruby_wire_read_u8(boltffi_ruby_wire_reader *reader, uint8_t *out) {
+    const uint8_t *bytes;
+    if (!boltffi_ruby_wire_read_exact(reader, 1, &bytes)) return 0;
+    *out = bytes[0];
+    return 1;
+}
+
+static int boltffi_ruby_wire_read_i8(boltffi_ruby_wire_reader *reader, int8_t *out) {
+    uint8_t value;
+    if (!boltffi_ruby_wire_read_u8(reader, &value)) return 0;
+    *out = (int8_t)value;
+    return 1;
+}
+
+static int boltffi_ruby_wire_read_bool(boltffi_ruby_wire_reader *reader, int *out) {
+    uint8_t value;
+    if (!boltffi_ruby_wire_read_u8(reader, &value)) return 0;
+    if (value > 1) return 0;
+    *out = value != 0;
+    return 1;
+}
+
+static int boltffi_ruby_wire_read_option_tag(boltffi_ruby_wire_reader *reader, int *out) {
+    uint8_t value;
+    if (!boltffi_ruby_wire_read_u8(reader, &value)) return 0;
+    if (value > 1) return 0;
+    *out = value != 0;
+    return 1;
+}
+
+static int boltffi_ruby_wire_read_u16(boltffi_ruby_wire_reader *reader, uint16_t *out) {
+    const uint8_t *bytes;
+    if (!boltffi_ruby_wire_read_exact(reader, sizeof(uint16_t), &bytes)) return 0;
+    *out = boltffi_ruby_read_u16_le(bytes);
+    return 1;
+}
+
+static int boltffi_ruby_wire_read_i16(boltffi_ruby_wire_reader *reader, int16_t *out) {
+    uint16_t value;
+    if (!boltffi_ruby_wire_read_u16(reader, &value)) return 0;
+    *out = (int16_t)value;
+    return 1;
+}
+
+static int boltffi_ruby_wire_read_u32(boltffi_ruby_wire_reader *reader, uint32_t *out) {
+    const uint8_t *bytes;
+    if (!boltffi_ruby_wire_read_exact(reader, sizeof(uint32_t), &bytes)) return 0;
+    *out = boltffi_ruby_read_u32_le(bytes);
+    return 1;
+}
+
+static int boltffi_ruby_wire_read_i32(boltffi_ruby_wire_reader *reader, int32_t *out) {
+    uint32_t value;
+    if (!boltffi_ruby_wire_read_u32(reader, &value)) return 0;
+    *out = (int32_t)value;
+    return 1;
+}
+
+static int boltffi_ruby_wire_read_u64(boltffi_ruby_wire_reader *reader, uint64_t *out) {
+    const uint8_t *bytes;
+    if (!boltffi_ruby_wire_read_exact(reader, sizeof(uint64_t), &bytes)) return 0;
+    *out = boltffi_ruby_read_u64_le(bytes);
+    return 1;
+}
+
+static int boltffi_ruby_wire_read_i64(boltffi_ruby_wire_reader *reader, int64_t *out) {
+    uint64_t value;
+    if (!boltffi_ruby_wire_read_u64(reader, &value)) return 0;
+    *out = (int64_t)value;
+    return 1;
+}
+
+static int boltffi_ruby_wire_read_f32(boltffi_ruby_wire_reader *reader, float *out) {
+    uint32_t bits;
+    if (!boltffi_ruby_wire_read_u32(reader, &bits)) return 0;
+    memcpy(out, &bits, sizeof(bits));
+    return 1;
+}
+
+static int boltffi_ruby_wire_read_f64(boltffi_ruby_wire_reader *reader, double *out) {
+    uint64_t bits;
+    if (!boltffi_ruby_wire_read_u64(reader, &bits)) return 0;
+    memcpy(out, &bits, sizeof(bits));
+    return 1;
+}
+
+static int boltffi_ruby_wire_read_bytes(boltffi_ruby_wire_reader *reader, uint8_t **out_ptr, uintptr_t *out_len) {
+    uint32_t len;
+    const uint8_t *bytes;
+    if (!boltffi_ruby_wire_read_u32(reader, &len)) return 0;
+    if (!boltffi_ruby_wire_read_exact(reader, len, &bytes)) return 0;
+    uint8_t *copy = NULL;
+    if (len > 0) {
+        copy = (uint8_t *)malloc((size_t)len);
+        if (copy == NULL) return 0;
+        memcpy(copy, bytes, len);
+    }
+    *out_ptr = copy;
+    *out_len = (uintptr_t)len;
+    return 1;
+}
+
+static int boltffi_ruby_wire_read_string(boltffi_ruby_wire_reader *reader, char **out_ptr, uintptr_t *out_len) {
+    uint8_t *bytes = NULL;
+    if (!boltffi_ruby_wire_read_bytes(reader, &bytes, out_len)) return 0;
+    *out_ptr = (char *)bytes;
+    return 1;
+}
+{% endif %}
+{{ body }}
+
+void Init_{{ init_name }}(void) {
+{%- if ractor_safe %}
+    rb_ext_ractor_safe(true);
+{%- endif %}
+    VALUE mod = rb_define_module("{{ module_name }}");
+    VALUE native = rb_define_module_under(mod, "Native");
+{%- for function in functions %}
+    rb_define_module_function(native, "{{ function.ruby_name }}", {{ function.wrapper }}, {{ function.registration_arity }});
+{%- endfor %}
+{{ init_body }}
+}

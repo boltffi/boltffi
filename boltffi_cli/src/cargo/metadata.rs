@@ -21,6 +21,8 @@ pub(crate) struct CargoMetadata {
 pub(crate) struct CargoMetadataPackage {
     pub(crate) id: String,
     pub(crate) name: String,
+    #[serde(default)]
+    pub(crate) version: String,
     pub(crate) manifest_path: PathBuf,
     pub(crate) targets: Vec<CargoMetadataPackageTarget>,
     #[serde(default)]

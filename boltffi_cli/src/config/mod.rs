@@ -18,9 +18,9 @@ pub use symbols::{DebugSymbolsBundle, DebugSymbolsConfig, DebugSymbolsFormat};
 pub use targets::{
     AndroidConfig, AndroidPackConfig, AppleConfig, CSharpConfig, DartConfig, HeaderConfig,
     JavaConfig, KotlinApiStyle, KotlinConfig, KotlinDesktopLoader, KotlinFactoryStyle,
-    KotlinMultiplatformConfig, PythonConfig, SpmConfig, SpmDistribution, SpmLayout, SwiftConfig,
-    TargetsConfig, WasmConfig, WasmNpmTarget, WasmOptimizeLevel, WasmOptimizeOnMissing,
-    WasmProfile, XcframeworkConfig,
+    KotlinMultiplatformConfig, PythonConfig, RubyConfig, SpmConfig, SpmDistribution, SpmLayout,
+    SwiftConfig, TargetsConfig, WasmConfig, WasmNpmTarget, WasmOptimizeLevel,
+    WasmOptimizeOnMissing, WasmProfile, XcframeworkConfig,
 };
 #[cfg(test)]
 pub use targets::{CSharpNugetConfig, JavaJvmConfig, PythonWheelConfig};
@@ -755,6 +755,7 @@ impl Config {
             Target::Header => self.is_apple_enabled() || self.is_android_enabled(),
             Target::Dart => self.is_dart_enabled(),
             Target::Python => self.is_python_enabled(),
+            Target::Ruby => self.is_ruby_enabled(),
             Target::CSharp => self.is_csharp_enabled(),
         }
     }
@@ -902,6 +903,52 @@ impl Config {
 
     pub fn python_wheel_interpreters(&self) -> Option<&[String]> {
         self.targets.python.wheel.interpreters.as_deref()
+    }
+
+    pub fn is_ruby_enabled(&self) -> bool {
+        self.targets.ruby.enabled
+    }
+
+    pub fn ruby_output(&self) -> PathBuf {
+        self.targets
+            .ruby
+            .output
+            .clone()
+            .unwrap_or_else(|| PathBuf::from("dist/ruby"))
+    }
+
+    pub fn ruby_gem_name(&self) -> Option<String> {
+        self.targets.ruby.gem_name.clone()
+    }
+
+    pub fn ruby_ractor_safe(&self) -> bool {
+        self.targets.ruby.ractor_safe
+    }
+
+    /// Returns extra Ruby source files to include in the generated package.
+    pub fn ruby_extra_files(&self) -> &[PathBuf] {
+        &self.targets.ruby.extra_files
+    }
+
+    pub fn ruby_pack_output(&self) -> PathBuf {
+        self.targets
+            .ruby
+            .gem
+            .output
+            .clone()
+            .unwrap_or_else(|| self.ruby_output().join("pkg"))
+    }
+
+    pub fn ruby_pack_targets(&self) -> Option<&[crate::config::targets::ruby::RubyGemPlatform]> {
+        self.targets.ruby.gem.targets.as_deref()
+    }
+
+    pub fn ruby_pack_glibc_version(&self) -> Option<&str> {
+        self.targets.ruby.gem.glibc_version.as_deref()
+    }
+
+    pub fn ruby_pack_cargo_zigbuild(&self) -> Option<&str> {
+        self.targets.ruby.gem.cargo_zigbuild.as_deref()
     }
 
     pub fn csharp_output(&self) -> PathBuf {

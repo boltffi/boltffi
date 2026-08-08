@@ -33,6 +33,8 @@ pub enum KmpCapability {
     Constants,
     /// Custom type declarations.
     CustomTypes,
+    /// Native opaque record declarations (unsupported on KMP; use the Kotlin/JNI target).
+    NativeOpaqueRecords,
     /// Future binding shapes this backend does not know how to admit yet.
     UnknownBindingShapes,
 }
@@ -53,6 +55,7 @@ impl KmpCapability {
             Self::Streams => "streams",
             Self::Constants => "constants",
             Self::CustomTypes => "custom types",
+            Self::NativeOpaqueRecords => "native opaque records (unsupported on KMP)",
             Self::UnknownBindingShapes => "unknown binding shapes",
         }
     }

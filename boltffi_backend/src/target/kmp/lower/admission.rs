@@ -380,6 +380,9 @@ impl<'bindings> KmpAdmission<'bindings> {
                 _ => vec![KmpCapability::UnknownBindingShapes],
             },
             ReturnPlan::ClosureViaOutPointer(_) => vec![KmpCapability::Callbacks],
+            ReturnPlan::NativeOpaqueRecord { .. } => {
+                vec![KmpCapability::NativeOpaqueRecords]
+            }
             _ => vec![KmpCapability::UnknownBindingShapes],
         }
     }
@@ -500,6 +503,9 @@ impl<'bindings> KmpAdmission<'bindings> {
     ) -> Vec<KmpCapability> {
         match record {
             RecordDecl::Direct(_) => vec![KmpCapability::DirectRecords],
+            RecordDecl::Encoded(record) if record.is_native_opaque() => {
+                vec![KmpCapability::NativeOpaqueRecords]
+            }
             RecordDecl::Encoded(record) => {
                 self.encoded_record_capabilities(record.fields().iter().collect(), visiting)
             }

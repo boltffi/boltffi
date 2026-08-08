@@ -1,4 +1,5 @@
 use boltffi_ffi_rules::classification::{self, FieldPrimitive, PassableCategory};
+use boltffi_scan::is_boltffi_data_or_error_marker;
 use syn::{Attribute, Fields, ItemEnum, ItemStruct, Type};
 
 pub(crate) struct StructDataShape<'a> {
@@ -129,15 +130,7 @@ impl<'a> DataItemAttributes<'a> {
     }
 
     fn is_boltffi_data(&self) -> bool {
-        self.attrs.iter().any(|attribute| {
-            attribute.path().is_ident("data")
-                || attribute.path().is_ident("error")
-                || attribute
-                    .path()
-                    .segments
-                    .last()
-                    .is_some_and(|segment| segment.ident == "data" || segment.ident == "error")
-        })
+        self.attrs.iter().any(is_boltffi_data_or_error_marker)
     }
 
     fn has_repr_c(&self) -> bool {

@@ -10,6 +10,7 @@ pub enum Target {
     Header,
     Dart,
     Python,
+    Ruby,
     CSharp,
 }
 
@@ -24,6 +25,7 @@ impl Target {
             Target::Header => "header",
             Target::Dart => "dart",
             Target::Python => "python",
+            Target::Ruby => "ruby",
             Target::CSharp => "csharp",
         }
     }

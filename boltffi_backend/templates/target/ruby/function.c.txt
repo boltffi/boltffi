@@ -1,0 +1,19 @@
+/* boltffi:ruby:function name={{ ruby_name }} wrapper={{ wrapper }} argc={{ argc }} arity={{ registration_arity }} */
+static VALUE {{ wrapper }}({{ signature_params }}) {
+    (void)self;
+{%- if variadic %}
+    if (argc != {{ argc }}) {
+        rb_raise(rb_eArgError, "wrong number of arguments (given %d, expected {{ argc }})", argc);
+    }
+{%- endif %}
+{%- for param in params %}
+{%- for declaration in param.declarations %}
+    {{ declaration }}
+{%- endfor %}
+{%- endfor %}
+    {{ return_decl }}
+{%- for line in cleanup %}
+    {{ line }}
+{%- endfor %}
+    return {{ return_expr }};
+}

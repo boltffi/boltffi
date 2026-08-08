@@ -567,6 +567,7 @@ impl Function {
                     ty,
                     codec,
                     shape,
+                    transport: _,
                     receive,
                 }) => {
                     if *shape != native::BufferShape::Slice {

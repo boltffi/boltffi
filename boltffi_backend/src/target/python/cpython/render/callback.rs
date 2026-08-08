@@ -807,6 +807,7 @@ impl<'plan> ParamPlanRender<'plan, Native, OutOfRust> for MethodParamArity {
         _: &TypeRef,
         _: &ReadPlan,
         shape: native::BufferShape,
+        _: boltffi_binding::EncodedParamTransport,
         _: (),
     ) -> Self::Output {
         match shape {
@@ -867,6 +868,7 @@ impl<'plan, 'render> ParamPlanRender<'plan, Native, OutOfRust> for MethodParamVa
         _: &TypeRef,
         codec: &ReadPlan,
         shape: native::BufferShape,
+        _: boltffi_binding::EncodedParamTransport,
         _: (),
     ) -> Self::Output {
         match shape {

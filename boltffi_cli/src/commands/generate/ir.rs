@@ -90,9 +90,10 @@ pub fn run_ir_generation(config: &Config, options: &GenerateOptions) -> Result<(
         GenerateTarget::KotlinMultiplatform => generate_kmp(config, options),
         GenerateTarget::Typescript => generate_typescript(config, options),
         GenerateTarget::CSharp => generate_csharp(config, options),
+        GenerateTarget::Ruby => generate_ruby(config, options),
         other => Err(CliError::CommandFailed {
             command: format!(
-                "--ir is only available for swift, python, java, kotlin, kmp, typescript, and csharp, not {}",
+                "--ir is only available for swift, python, java, kotlin, kmp, typescript, csharp, and ruby, not {}",
                 target_label(other)
             ),
             status: None,
@@ -735,6 +736,39 @@ fn print_coverage(target: &str, output: &GeneratedOutput) {
     });
 }
 
+fn generate_ruby(config: &Config, options: &GenerateOptions) -> Result<()> {
+    if !config.is_ruby_enabled() {
+        return Err(CliError::CommandFailed {
+            command: "targets.ruby.enabled = false".to_string(),
+            status: None,
+        });
+    }
+
+    let cargo_args = config
+        .cargo_args_for_command("generate")
+        .into_iter()
+        .chain(options.cargo_args.iter().cloned())
+        .collect::<Vec<_>>();
+    let manifest_path = Cargo::current(&cargo_args)?.manifest_path()?;
+    let output_directory = options
+        .output
+        .clone()
+        .unwrap_or_else(|| config.ruby_output());
+
+    Generation::new(manifest_path)
+        .cargo_args(cargo_args)
+        .coverage_mode(CoverageMode::Partial)
+        .ruby_ractor_safe(config.ruby_ractor_safe())
+        .ruby_extra_files(config.ruby_extra_files().to_vec())
+        .render(Target::Ruby)
+        .and_then(|output| {
+            print_coverage("ruby", &output);
+            Generation::write_output(output, &output_directory)
+        })
+        .map(drop)
+        .map_err(|error| generation_error("ruby", error))
+}
+
 fn generation_error(target: &str, error: GenerationError) -> CliError {
     CliError::CommandFailed {
         command: format!("generate {target}: {error}"),
@@ -759,6 +793,7 @@ fn target_label(target: &GenerateTarget) -> &'static str {
         GenerateTarget::Typescript => "typescript",
         GenerateTarget::Dart => "dart",
         GenerateTarget::Python => "python",
+        GenerateTarget::Ruby => "ruby",
         GenerateTarget::CSharp => "csharp",
         GenerateTarget::All => "all",
     }

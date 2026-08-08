@@ -19,6 +19,7 @@ use crate::{
             CallbackHandleLifecycle, JniBridgeContract,
             name::{LookupText, ModifiedUtf8},
             template::{
+                borrow_wrapper::BorrowWrapperView,
                 callback::{CallbackCompletionInvokerView, CallbackRegistrationView},
                 closure::{CallbackClosureHandleView, ClosureRegistrationView},
                 method::NativeMethodView,
@@ -56,6 +57,7 @@ struct SourceFileTemplate {
     success_out_writers: Vec<SuccessOutWriterView>,
     closure_handles: Vec<CallbackClosureHandleView>,
     closures: Vec<ClosureRegistrationView>,
+    borrow_wrappers: Vec<BorrowWrapperView>,
     methods: Vec<NativeMethodView>,
     direct_stream_batches: Vec<DirectStreamBatchView>,
 }
@@ -91,6 +93,11 @@ impl SourceFile {
             .iter()
             .map(ClosureRegistrationView::from_registration)
             .collect::<Result<Vec<_>>>()?;
+        let borrow_wrappers = contract
+            .borrow_wrappers()
+            .iter()
+            .map(BorrowWrapperView::from_wrapper)
+            .collect::<Result<Vec<_>>>()?;
         let direct_stream_batches = contract
             .streams()
             .iter()
@@ -124,6 +131,12 @@ impl SourceFile {
             &closures,
             &closure_handles,
         );
+        // borrow_wrapper.c uses INT32_MAX (via limits.h) and boltffi_jni_throw_runtime
+        // (from exceptions.c), so force both support fragments when borrow wrappers
+        // are present, even if no other source feature would have selected them.
+        let has_borrow_wrappers = !borrow_wrappers.is_empty();
+        let uses_limits_final = features.uses_limits || has_borrow_wrappers;
+        let uses_exceptions_final = features.uses_exceptions || has_borrow_wrappers;
         let callback_handle_lifecycle = match contract.callback_handle_lifecycle() {
             Some(lifecycle) => lifecycle.clone(),
             None => CallbackHandleLifecycle::new(contract.class())?,
@@ -147,13 +160,13 @@ impl SourceFile {
             .literal(),
             free_buffer: contract.free_buffer().clone(),
             buffer_with_len: contract.buffer_with_len().clone(),
-            uses_limits: features.uses_limits,
+            uses_limits: uses_limits_final,
             checks_status: features.checks_status,
             checks_error_buffer: features.checks_error_buffer,
             uses_byte_arrays: features.uses_byte_arrays,
             uses_record_arrays: features.uses_record_arrays,
             uses_direct_buffers: features.uses_direct_buffers,
-            uses_exceptions: features.uses_exceptions,
+            uses_exceptions: uses_exceptions_final,
             uses_lifecycle: features.uses_lifecycle,
             uses_continuations: features.uses_continuations,
             uses_callback_handles: features.uses_callback_handles,
@@ -165,6 +178,7 @@ impl SourceFile {
             success_out_writers,
             closure_handles,
             closures,
+            borrow_wrappers,
             methods,
             direct_stream_batches,
         }

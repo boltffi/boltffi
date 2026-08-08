@@ -95,10 +95,10 @@ mod types;
 
 pub use boltffi_ast::{BuiltinType, MapKind};
 pub use callable::{
-    CallableDecl, ClosureForm, ClosureParameter, ClosureRegistration, ClosureReturn, ErrorChannel,
-    ErrorDecl, ErrorPlacement, ExecutionDecl, ExportedCallable, ImportedCallable, IncomingParam,
-    OutgoingParam, ParamDecl, ParamDirection, ParamPlan, ParamPlanRender, Receive, ReturnDecl,
-    ReturnPlan, ReturnPlanRender, ReturnValueSlot,
+    CallableDecl, ClosureForm, ClosureParameter, ClosureRegistration, ClosureReturn,
+    EncodedParamTransport, ErrorChannel, ErrorDecl, ErrorPlacement, ExecutionDecl,
+    ExportedCallable, ImportedCallable, IncomingParam, OutgoingParam, ParamDecl, ParamDirection,
+    ParamPlan, ParamPlanRender, Receive, ReturnDecl, ReturnPlan, ReturnPlanRender, ReturnValueSlot,
 };
 pub use closure::ClosureSignature;
 pub use codec::{
@@ -121,8 +121,9 @@ pub use decl::{
     CallbackLocalMethodDecl, CallbackLocalProtocol, ClassDecl, ClassThreadSafety, ConstantDecl,
     ConstantOwner, ConstantValueDecl, CustomTypeDecl, DataEnumDecl, DataVariantDecl,
     DataVariantPayload, Decl, DeclarationRef, DeclarationRole, DirectFieldDecl, DirectRecordDecl,
-    EncodedFieldDecl, EncodedRecordDecl, EnumDecl, ExportedMethodDecl, FieldKey, FunctionDecl,
-    ImportedMethodDecl, InitializerDecl, MethodDecl, RecordDecl, StreamDecl, StreamItemPlan,
+    EncodedFieldDecl, EncodedRecordDecl, EncodedRecordStorage, EnumDecl, ExportedMethodDecl,
+    FieldKey, FunctionDecl, ImportedMethodDecl, InitializerDecl, MethodDecl,
+    NativeOpaqueFieldExports, NativeOpaqueRecordExports, RecordDecl, StreamDecl, StreamItemPlan,
     StreamItemPlanRender, StreamMode, StreamProtocol, VariantTag,
 };
 pub(crate) use decl::{ClassDeclParts, InvalidClassDecl, StreamDeclParts};

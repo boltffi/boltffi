@@ -164,9 +164,9 @@ mod tests {
         CustomTypeConverter, CustomTypeConverters, CustomTypeDef, CustomTypeId, EnumDef, EnumId,
         ExecutionKind, FieldDef, FnSig, FnTrait, FnTraitKind, FunctionDef, FunctionId,
         IntegerLiteral, Literal, MethodDef, MethodId, PackageInfo, ParameterDef, ParameterPassing,
-        Path, Primitive, Receiver, RecordDef, RecordId, ReprAttr, ReprItem, ReturnDef, Source,
-        SourceContract, SourceName, StreamDef, StreamId, TraitBounds, TraitDef, TraitId, TypeExpr,
-        UserAttr, VariantDef, VariantPayload, Visibility,
+        Path, Primitive, Receiver, RecordDef, RecordEncoding, RecordId, ReprAttr, ReprItem,
+        ReturnDef, Source, SourceContract, SourceName, StreamDef, StreamId, TraitBounds, TraitDef,
+        TraitId, TypeExpr, UserAttr, VariantDef, VariantPayload, Visibility,
     };
     use boltffi_binding::{Native, Wasm32, lower_with_declarations};
     use proc_macro2::TokenStream;
@@ -222,11 +222,40 @@ mod tests {
                         .join("target")
                         .join("experimental-wrapper-checks-target"),
                 )
+                .env_remove("BOLTFFI_BINDING_EXPANSION")
+                .env_remove("BOLTFFI_BINDING_EXPANSION_SOURCE")
+                .env_remove("BOLTFFI_BINDING_EXPANSION_ROOT")
+                .env_remove("BOLTFFI_BINDING_EXPANSION_SURFACE")
                 .output()
                 .expect("run cargo check for generated crate");
             assert!(
                 output.status.success(),
                 "generated crate failed to check\nstdout:\n{}\nstderr:\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+
+        fn test(&self) {
+            if cfg!(miri) {
+                return;
+            }
+            let output = Command::new(cargo())
+                .arg("test")
+                .arg("--quiet")
+                .arg("--manifest-path")
+                .arg(self.root.join("Cargo.toml"))
+                .env(
+                    "CARGO_TARGET_DIR",
+                    workspace_root()
+                        .join("target")
+                        .join("experimental-wrapper-checks-target"),
+                )
+                .output()
+                .expect("run cargo test for generated crate");
+            assert!(
+                output.status.success(),
+                "generated crate tests failed\nstdout:\n{}\nstderr:\n{}",
                 String::from_utf8_lossy(&output.stdout),
                 String::from_utf8_lossy(&output.stderr)
             );
@@ -275,6 +304,12 @@ mod tests {
         let generated_crate = GeneratedCrate::create(name);
         generated_crate.write(code);
         generated_crate.check();
+    }
+
+    fn assert_generated_crate_tests(name: &str, code: TokenStream) {
+        let generated_crate = GeneratedCrate::create(name);
+        generated_crate.write(code);
+        generated_crate.test();
     }
 
     fn assert_generated_crate_checks_target(name: &str, target_triple: &str, code: TokenStream) {
@@ -1758,6 +1793,35 @@ mod tests {
         source
     }
 
+    fn borrowed_bytes_param_contract() -> SourceContract {
+        let mut function = FunctionDef::new(
+            FunctionId::new("demo::bytes_len"),
+            CanonicalName::single("bytes_len"),
+        );
+        let mut parameter = parameter("bytes", byte_slice());
+        parameter.passing = ParameterPassing::Ref;
+        parameter.user_attrs.push(UserAttr::new(
+            Path::single("borrowed"),
+            AttributeInput::Empty,
+        ));
+        function.parameters = vec![parameter];
+        function.returns = ReturnDef::value(TypeExpr::Primitive(Primitive::U32));
+        let mut source = SourceContract::new(PackageInfo::new("demo", None));
+        source.functions.push(function);
+        source
+    }
+
+    fn borrowed_marked_string_param_contract() -> SourceContract {
+        let mut source = borrowed_string_param_contract();
+        source.functions[0].parameters[0]
+            .user_attrs
+            .push(UserAttr::new(
+                Path::single("borrowed"),
+                AttributeInput::Empty,
+            ));
+        source
+    }
+
     fn mutable_string_param_contract() -> SourceContract {
         let mut function = FunctionDef::new(
             FunctionId::new("demo::rewrite"),
@@ -2480,6 +2544,95 @@ mod tests {
     }
 
     #[test]
+    fn native_borrowed_slice_wrappers_pass_raw_bytes_and_utf8() {
+        let bytes_source = borrowed_bytes_param_contract();
+        let bytes_lowered = lower_with_declarations::<Native>(&bytes_source).expect("bytes lower");
+        let bytes_expansion = Expansion::new(&bytes_lowered);
+        let bytes_tokens = expand_function(
+            &bytes_expansion,
+            &bytes_source.functions[0],
+            syn::parse_quote! { pub fn bytes_len(bytes: &[u8]) -> u32 { bytes.len() as u32 } },
+        )
+        .expect("bytes wrapper");
+        let string_source = borrowed_marked_string_param_contract();
+        let string_lowered =
+            lower_with_declarations::<Native>(&string_source).expect("string lower");
+        let string_expansion = Expansion::new(&string_lowered);
+        let string_tokens = expand_function(
+            &string_expansion,
+            &string_source.functions[0],
+            syn::parse_quote! { pub fn name_len(name: &str) -> u32 { name.len() as u32 } },
+        )
+        .expect("string wrapper");
+
+        let rendered = format!("{bytes_tokens} {string_tokens}");
+        assert!(rendered.contains("from_raw_parts"));
+        assert!(!rendered.contains("WireReader"));
+        assert_generated_crate_tests(
+            "native-borrowed-slice-runtime",
+            quote! {
+                #bytes_tokens
+                #string_tokens
+
+                #[cfg(test)]
+                mod generated_tests {
+                    use super::*;
+
+                    #[test]
+                    fn bytes_are_not_length_prefixed_and_reject_null_nonempty_input() {
+                        assert_eq!(::boltffi::__private::take_last_error(), None);
+                        assert_eq!(unsafe {
+                            boltffi_function_demo_bytes_len(core::ptr::null(), 3)
+                        }, 0);
+                        assert_eq!(
+                            ::boltffi::__private::take_last_error().as_deref(),
+                            Some("bytes: null pointer with non-zero length (buf_len=3)")
+                        );
+                        assert_eq!(::boltffi::__private::take_last_error(), None);
+
+                        let bytes = [0xff_u8, 0, 0x7f];
+                        assert_eq!(unsafe {
+                            boltffi_function_demo_bytes_len(bytes.as_ptr(), bytes.len())
+                        }, 3);
+                        assert_eq!(::boltffi::__private::take_last_error(), None);
+                        assert_eq!(unsafe { boltffi_function_demo_bytes_len(core::ptr::null(), 0) }, 0);
+                        assert_eq!(::boltffi::__private::take_last_error(), None);
+                    }
+
+                    #[test]
+                    fn strings_use_raw_utf8_and_expose_input_errors() {
+                        assert_eq!(::boltffi::__private::take_last_error(), None);
+                        assert_eq!(unsafe {
+                            boltffi_function_demo_name_len(core::ptr::null(), 4)
+                        }, 0);
+                        assert_eq!(
+                            ::boltffi::__private::take_last_error().as_deref(),
+                            Some("name: null pointer with non-zero length (buf_len=4)")
+                        );
+                        assert_eq!(::boltffi::__private::take_last_error(), None);
+
+                        let unicode = "hé🙂".as_bytes();
+                        assert_eq!(unsafe {
+                            boltffi_function_demo_name_len(unicode.as_ptr(), unicode.len())
+                        }, unicode.len() as u32);
+                        assert_eq!(::boltffi::__private::take_last_error(), None);
+
+                        let invalid = [0xff_u8];
+                        assert_eq!(unsafe {
+                            boltffi_function_demo_name_len(invalid.as_ptr(), invalid.len())
+                        }, 0);
+                        assert_eq!(
+                            ::boltffi::__private::take_last_error().as_deref(),
+                            Some("name: invalid UTF-8: invalid utf-8 sequence of 1 bytes from index 0 (buf_len=1)")
+                        );
+                        assert_eq!(::boltffi::__private::take_last_error(), None);
+                    }
+                }
+            },
+        );
+    }
+
+    #[test]
     fn function_expansion_uses_exact_source_declaration() {
         let source = source_contract();
         let lowered = lower_with_declarations::<Native>(&source).expect("lowered bindings");
@@ -2918,6 +3071,363 @@ mod tests {
             ":: boltffi :: __private :: wire :: WireEncode :: wire_size (& self . name)"
         ));
         assert!(rendered.contains("let name : String = __boltffi_name_decoded ;"));
+    }
+
+    #[test]
+    fn native_opaque_record_expansion_generates_accessor_exports() {
+        let mut source = SourceContract::new(PackageInfo::new("demo", None));
+        let mut snapshot = RecordDef::new(
+            "demo::Snapshot".into(),
+            SourceName::new("Snapshot", CanonicalName::single("snapshot")),
+        );
+        snapshot.encoding = RecordEncoding::NativeOpaque;
+        snapshot.fields = vec![
+            FieldDef::new(
+                SourceName::new("major", CanonicalName::single("major")),
+                TypeExpr::Primitive(Primitive::U32),
+            ),
+            FieldDef::new(
+                SourceName::new("name", CanonicalName::single("name")),
+                TypeExpr::option(TypeExpr::String),
+            ),
+        ];
+        source.records.push(snapshot);
+        let lowered = lower_with_declarations::<Native>(&source).expect("lowered bindings");
+        let expansion = Expansion::new(&lowered);
+
+        let tokens = expand_record(&expansion, &source.records[0]).expect("expanded record");
+
+        syn::parse2::<syn::File>(quote! {
+            pub struct Snapshot {
+                pub major: u32,
+                pub name: Option<String>,
+            }
+            #tokens
+        })
+        .expect("native opaque record expansion parses");
+        let rendered = tokens.to_string();
+        // No WireEncode/WireDecode/WirePassable - pure opaque box
+        assert!(!rendered.contains("WireEncode for Snapshot"));
+        assert!(!rendered.contains("WireDecode for Snapshot"));
+        assert!(!rendered.contains("WirePassable for Snapshot"));
+        // Generates drop and dsize exports
+        assert!(rendered.contains("boltffi_record_native_snapshot_drop"));
+        assert!(rendered.contains("boltffi_record_native_snapshot_dsize"));
+        // Generates primitive getter
+        assert!(rendered.contains("boltffi_record_native_snapshot_get_major"));
+        // Generates optional string has + borrow
+        assert!(rendered.contains("boltffi_record_native_snapshot_has_name"));
+        assert!(rendered.contains("boltffi_record_native_snapshot_borrow_name"));
+        // Box::into_raw should not appear in record expansion (appears in function wrapper)
+        assert!(!rendered.contains("Box :: into_raw"));
+    }
+
+    #[test]
+    fn native_opaque_interned_record_expansion_emits_and_executes_accessors() {
+        let source = boltffi_scan::scan_file(
+            syn::parse_str(
+                r#"
+                use boltffi::InternedString;
+
+                boltffi::interned_string_pool! {
+                    pub BrowserName {
+                        Chrome = "Chrome",
+                        Safari = "Safari",
+                    }
+                }
+
+                #[boltffi::data(opaque)]
+                pub struct Snapshot {
+                    pub browser: InternedString<BrowserName>,
+                    pub maybe_browser: Option<InternedString<BrowserName>>,
+                }
+                "#,
+            )
+            .expect("valid source"),
+            PackageInfo::new("demo", None),
+        )
+        .expect("source scans");
+        let lowered = lower_with_declarations::<Native>(&source).expect("source lowers");
+        let expansion = Expansion::new(&lowered);
+        let tokens = expand_record(&expansion, &source.records[0]).expect("expanded record");
+        let rendered = tokens.to_string();
+
+        for helper in [
+            "boltffi_record_native_snapshot_interned_browser_tag",
+            "boltffi_record_native_snapshot_interned_browser_id",
+            "boltffi_record_native_snapshot_interned_browser_borrow_dynamic",
+            "boltffi_record_native_snapshot_interned_maybe_browser_tag",
+            "boltffi_record_native_snapshot_interned_maybe_browser_id",
+            "boltffi_record_native_snapshot_interned_maybe_browser_borrow_dynamic",
+        ] {
+            assert!(
+                rendered.contains(helper),
+                "missing generated helper {helper}"
+            );
+        }
+
+        assert_generated_crate_tests(
+            "native-opaque-interned-record-runtime",
+            quote! {
+                use boltffi::InternedString;
+
+                boltffi::interned_string_pool! {
+                    pub BrowserName {
+                        Chrome = "Chrome",
+                        Safari = "Safari",
+                    }
+                }
+
+                #[boltffi::data(opaque)]
+                pub struct Snapshot {
+                    pub browser: InternedString<BrowserName>,
+                    pub maybe_browser: Option<InternedString<BrowserName>>,
+                }
+
+                #tokens
+
+                #[cfg(test)]
+                mod generated_tests {
+                    use super::*;
+
+                    #[test]
+                    fn accessors_distinguish_static_dynamic_and_absent_interned_values() {
+                        let handle = Box::into_raw(Box::new(Snapshot {
+                            browser: BrowserName::CHROME,
+                            maybe_browser: Some(InternedString::<BrowserName>::from_str("Firefox")),
+                        })) as *mut std::ffi::c_void;
+
+                        unsafe {
+                            assert_eq!(boltffi_record_native_snapshot_interned_browser_tag(handle), 0);
+                            assert_eq!(boltffi_record_native_snapshot_interned_browser_id(handle), 0);
+
+                            let mut ptr = std::ptr::null();
+                            let mut len = 0usize;
+                            assert_eq!(
+                                boltffi_record_native_snapshot_interned_browser_borrow_dynamic(
+                                    handle,
+                                    &mut ptr,
+                                    &mut len,
+                                ),
+                                0,
+                            );
+                            assert_eq!(
+                                boltffi_record_native_snapshot_interned_maybe_browser_tag(handle),
+                                1,
+                            );
+                            assert_eq!(
+                                boltffi_record_native_snapshot_interned_maybe_browser_id(handle),
+                                0,
+                            );
+                            assert_eq!(
+                                boltffi_record_native_snapshot_interned_maybe_browser_borrow_dynamic(
+                                    handle,
+                                    &mut ptr,
+                                    &mut len,
+                                ),
+                                1,
+                            );
+                            assert_eq!(std::slice::from_raw_parts(ptr, len), b"Firefox");
+                            boltffi_record_native_snapshot_drop(handle);
+                        }
+
+                        let absent = Box::into_raw(Box::new(Snapshot {
+                            browser: BrowserName::SAFARI,
+                            maybe_browser: None,
+                        })) as *mut std::ffi::c_void;
+                        unsafe {
+                            assert_eq!(
+                                boltffi_record_native_snapshot_interned_maybe_browser_tag(absent),
+                                0xff,
+                            );
+                            assert_eq!(
+                                boltffi_record_native_snapshot_interned_maybe_browser_id(absent),
+                                0,
+                            );
+                            let mut ptr = std::ptr::null();
+                            let mut len = 0usize;
+                            assert_eq!(
+                                boltffi_record_native_snapshot_interned_maybe_browser_borrow_dynamic(
+                                    absent,
+                                    &mut ptr,
+                                    &mut len,
+                                ),
+                                0,
+                            );
+                            boltffi_record_native_snapshot_drop(absent);
+                        }
+                    }
+                }
+            },
+        );
+    }
+
+    #[test]
+    fn namespaced_opaque_record_expansion_uses_handle_return_abi_without_wire_traits() {
+        let mut source = SourceContract::new(PackageInfo::new("demo", None));
+        let mut snapshot = RecordDef::new(
+            "demo::Snapshot".into(),
+            SourceName::new("Snapshot", CanonicalName::single("snapshot")),
+        );
+        snapshot.encoding = RecordEncoding::NativeOpaque;
+        snapshot.fields = vec![FieldDef::new(
+            SourceName::new("name", CanonicalName::single("name")),
+            TypeExpr::String,
+        )];
+        source.records.push(snapshot);
+        let mut factory = FunctionDef::new(
+            FunctionId::new("demo::snapshot"),
+            CanonicalName::single("snapshot"),
+        );
+        factory.returns = ReturnDef::value(TypeExpr::record(
+            RecordId::new("demo::Snapshot"),
+            Path::single("Snapshot"),
+        ));
+        source.functions.push(factory);
+
+        let lowered = lower_with_declarations::<Native>(&source).expect("lowered bindings");
+        let expansion = Expansion::new(&lowered);
+        let record_tokens = expand_record(&expansion, &source.records[0]).expect("opaque record");
+        let function_tokens = expand_function(
+            &expansion,
+            &source.functions[0],
+            syn::parse_quote! {
+                pub fn snapshot() -> Snapshot {
+                    Snapshot { name: "Ada".to_owned() }
+                }
+            },
+        )
+        .expect("opaque return wrapper");
+        let rendered = format!("{record_tokens} {function_tokens}");
+
+        assert!(!rendered.contains("WireEncode for Snapshot"));
+        assert!(!rendered.contains("WireDecode for Snapshot"));
+        assert!(!rendered.contains("WirePassable for Snapshot"));
+        assert!(rendered.contains("-> * mut :: core :: ffi :: c_void"));
+        assert!(rendered.contains("Box :: into_raw"));
+        assert_generated_crate_checks(
+            "namespaced-native-opaque-record-return",
+            quote! {
+                #[boltffi::data(opaque)]
+                pub struct Snapshot {
+                    pub name: String,
+                }
+
+                #record_tokens
+                #function_tokens
+            },
+        );
+    }
+
+    #[test]
+    fn native_opaque_record_exports_execute_and_drop_once() {
+        let mut source = SourceContract::new(PackageInfo::new("demo", None));
+        let mut snapshot = RecordDef::new(
+            "demo::Snapshot".into(),
+            SourceName::new("Snapshot", CanonicalName::single("snapshot")),
+        );
+        snapshot.encoding = RecordEncoding::NativeOpaque;
+        snapshot.fields = vec![
+            FieldDef::new(
+                SourceName::new("major", CanonicalName::single("major")),
+                TypeExpr::Primitive(Primitive::U32),
+            ),
+            FieldDef::new(
+                SourceName::new("name", CanonicalName::single("name")),
+                TypeExpr::option(TypeExpr::String),
+            ),
+        ];
+        source.records.push(snapshot);
+        let lowered = lower_with_declarations::<Native>(&source).expect("lowered bindings");
+        let expansion = Expansion::new(&lowered);
+        let tokens = expand_record(&expansion, &source.records[0]).expect("expanded record");
+
+        assert_generated_crate_tests(
+            "native-opaque-record-runtime",
+            quote! {
+                use std::sync::atomic::{AtomicUsize, Ordering};
+
+                static DROP_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+                pub struct Snapshot {
+                    pub major: u32,
+                    pub name: Option<String>,
+                }
+
+                impl Drop for Snapshot {
+                    fn drop(&mut self) {
+                        DROP_COUNT.fetch_add(1, Ordering::SeqCst);
+                    }
+                }
+
+                #tokens
+
+                #[cfg(test)]
+                mod generated_tests {
+                    use super::*;
+
+                    #[test]
+                    fn accessors_report_storage_and_drop_exactly_once() {
+                        let mut name = String::with_capacity(32);
+                        name.push_str("Ada");
+                        let expected_size = std::mem::size_of::<Snapshot>() + name.capacity();
+                        let handle = Box::into_raw(Box::new(Snapshot {
+                            major: 7,
+                            name: Some(name),
+                        })) as *mut std::ffi::c_void;
+
+                        unsafe {
+                            assert_eq!(boltffi_record_native_snapshot_get_major(handle), 7);
+                            assert_eq!(boltffi_record_native_snapshot_has_name(handle), 1);
+                            assert_eq!(boltffi_record_native_snapshot_dsize(handle), expected_size);
+
+                            let mut ptr = std::ptr::null();
+                            let mut len = 0usize;
+                            assert_eq!(
+                                boltffi_record_native_snapshot_borrow_name(
+                                    handle,
+                                    &mut ptr,
+                                    &mut len,
+                                ),
+                                1,
+                            );
+                            assert_eq!(std::slice::from_raw_parts(ptr, len), b"Ada");
+                            assert_eq!(
+                                boltffi_record_native_snapshot_borrow_name(
+                                    handle,
+                                    std::ptr::null_mut(),
+                                    &mut len,
+                                ),
+                                0,
+                            );
+                            boltffi_record_native_snapshot_drop(handle);
+                        }
+
+                        assert_eq!(DROP_COUNT.load(Ordering::SeqCst), 1);
+                    }
+                }
+            },
+        );
+    }
+
+    #[test]
+    fn namespaced_opaque_record_export_compiles_without_binding_expansion_environment() {
+        assert_generated_crate_checks(
+            "namespaced-native-opaque-record-legacy-export",
+            quote! {
+                use boltffi::export;
+
+                #[boltffi::data(opaque)]
+                pub struct Snapshot {
+                    pub name: String,
+                }
+
+                #[export]
+                pub fn snapshot() -> Snapshot {
+                    Snapshot { name: "Ada".to_owned() }
+                }
+            },
+        );
     }
 
     #[test]

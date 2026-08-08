@@ -1,8 +1,9 @@
 use askama::Template as AskamaTemplate;
 use boltffi_binding::{
     CanonicalName, ConstantOwner, DirectFieldDecl, DirectRecordDecl, EncodedFieldDecl,
-    EncodedRecordDecl, ExportedMethodDecl, FieldKey, InitializerDecl, Native, NativeSymbol,
-    Receive, RecordDecl, RecordId, TypeRef,
+    EncodedRecordDecl, ExportedMethodDecl, FieldKey, InitializerDecl, Native,
+    NativeOpaqueFieldExports, NativeOpaqueRecordExports, NativeSymbol, Receive, RecordDecl,
+    RecordId, TypeRef,
 };
 
 use crate::{
@@ -37,6 +38,7 @@ pub struct Record {
     error: bool,
     fields: Vec<Field>,
     constants: AssociatedConstants,
+    opaque_fields: Vec<NativeOpaqueField>,
     initializers: Vec<ExportedCall>,
     static_methods: Vec<ExportedCall>,
     instance_methods: Vec<ExportedCall>,
@@ -50,6 +52,32 @@ enum RecordBody {
     },
     Encoded {
         size: Expression,
+    },
+    NativeOpaque {
+        exports: NativeOpaqueRecordExports,
+    },
+}
+
+/// Kotlin field info for a native opaque record field accessor.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NativeOpaqueField {
+    pub(crate) name: Identifier,
+    pub(crate) ty: TypeName,
+    pub(crate) optional: bool,
+    pub(crate) has_fn: Option<Identifier>,
+    pub(crate) access: NativeOpaqueFieldKind,
+    /// For unsigned primitives, the conversion method to apply (e.g. `.toUInt()`).
+    pub(crate) conversion: Option<Identifier>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum NativeOpaqueFieldKind {
+    Primitive {
+        get_fn: Identifier,
+    },
+    Borrow {
+        borrow_fn: Identifier,
+        is_string: bool,
     },
 }
 
@@ -80,6 +108,9 @@ impl Record {
     ) -> Result<Self> {
         match declaration {
             RecordDecl::Direct(record) => Self::from_direct(record, host, bridge, context),
+            RecordDecl::Encoded(record) if record.is_native_opaque() => {
+                Self::from_native_opaque(record)
+            }
             RecordDecl::Encoded(record) => Self::from_encoded(record, host, bridge, context),
             _ => Err(KotlinHost::unsupported("unknown record declaration")),
         }
@@ -104,7 +135,7 @@ impl Record {
     pub fn size(&self) -> u64 {
         match self.body {
             RecordBody::Direct { size, .. } => size,
-            RecordBody::Encoded { .. } => 0,
+            RecordBody::Encoded { .. } | RecordBody::NativeOpaque { .. } => 0,
         }
     }
 
@@ -112,11 +143,37 @@ impl Record {
         match &self.body {
             RecordBody::Direct { wire_size, .. } => wire_size.as_ref(),
             RecordBody::Encoded { size } => Some(size),
+            RecordBody::NativeOpaque { .. } => None,
         }
     }
 
     pub fn encoded(&self) -> bool {
         matches!(self.body, RecordBody::Encoded { .. })
+    }
+
+    pub fn native_opaque(&self) -> bool {
+        matches!(self.body, RecordBody::NativeOpaque { .. })
+    }
+
+    pub fn native_opaque_drop_fn(&self) -> Option<Identifier> {
+        match &self.body {
+            RecordBody::NativeOpaque { exports } => {
+                Identifier::parse(exports.drop().name().as_str()).ok()
+            }
+            _ => None,
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn native_opaque_exports(&self) -> Option<&NativeOpaqueRecordExports> {
+        match &self.body {
+            RecordBody::NativeOpaque { exports } => Some(exports),
+            _ => None,
+        }
+    }
+
+    pub fn opaque_fields(&self) -> &[NativeOpaqueField] {
+        &self.opaque_fields
     }
 
     pub fn error(&self) -> bool {
@@ -149,7 +206,7 @@ impl Record {
     pub fn direct_fields(&self) -> &[Field] {
         match self.body {
             RecordBody::Direct { .. } => &self.fields,
-            RecordBody::Encoded { .. } => &[],
+            RecordBody::Encoded { .. } | RecordBody::NativeOpaque { .. } => &[],
         }
     }
 
@@ -205,6 +262,33 @@ impl Record {
         ))
     }
 
+    fn from_native_opaque(record: &EncodedRecordDecl<Native>) -> Result<Self> {
+        let exports = record
+            .native_opaque_exports()
+            .ok_or(KotlinHost::broken_bridge_contract(
+                "native opaque record missing helper exports",
+            ))?;
+        let opaque_fields = record
+            .fields()
+            .iter()
+            .zip(exports.fields())
+            .map(|(field, fexp)| NativeOpaqueField::from_field(field, fexp))
+            .collect::<Result<Vec<_>>>()?;
+        Ok(Self {
+            name: Name::new(record.name()).type_name(),
+            body: RecordBody::NativeOpaque {
+                exports: exports.clone(),
+            },
+            error: false,
+            fields: Vec::new(),
+            constants: AssociatedConstants::empty(),
+            opaque_fields,
+            initializers: Vec::new(),
+            static_methods: Vec::new(),
+            instance_methods: Vec::new(),
+        })
+    }
+
     fn from_direct(
         record: &DirectRecordDecl<Native>,
         host: &KotlinHost,
@@ -241,6 +325,7 @@ impl Record {
                 .iter()
                 .map(|field| Field::from_direct(field, record, &buffer, &reader, &writer, context))
                 .collect::<Result<Vec<_>>>()?,
+            opaque_fields: Vec::new(),
             initializers: Self::initializer_calls(record.initializers(), host, bridge, context)?,
             static_methods: Self::methods(record.methods(), None, host, bridge, context)?,
             instance_methods: Self::methods(
@@ -292,6 +377,7 @@ impl Record {
                     Field::from_encoded(field, host, context, &reader, &writer, current.clone())
                 })
                 .collect::<Result<Vec<_>>>()?,
+            opaque_fields: Vec::new(),
             initializers: Self::initializer_calls(record.initializers(), host, bridge, context)?,
             static_methods: Self::methods(record.methods(), None, host, bridge, context)?,
             instance_methods: Self::methods(
@@ -530,5 +616,177 @@ impl Field {
             FieldKey::Position(position) => Identifier::parse(format!("field{position}")),
             _ => Err(KotlinHost::unsupported("unknown direct record field key")),
         }
+    }
+}
+
+impl NativeOpaqueField {
+    pub fn name(&self) -> &Identifier {
+        &self.name
+    }
+
+    pub fn ty(&self) -> &TypeName {
+        &self.ty
+    }
+
+    pub fn optional(&self) -> bool {
+        self.optional
+    }
+
+    pub fn has_fn(&self) -> Option<&Identifier> {
+        self.has_fn.as_ref()
+    }
+
+    pub fn is_primitive(&self) -> bool {
+        matches!(self.access, NativeOpaqueFieldKind::Primitive { .. })
+    }
+
+    pub fn is_string(&self) -> bool {
+        matches!(&self.access, NativeOpaqueFieldKind::Borrow { is_string, .. } if *is_string)
+    }
+
+    #[allow(dead_code)]
+    pub fn is_bytes(&self) -> bool {
+        matches!(&self.access, NativeOpaqueFieldKind::Borrow { is_string, .. } if !is_string)
+    }
+
+    pub fn get_fn(&self) -> Option<&Identifier> {
+        match &self.access {
+            NativeOpaqueFieldKind::Primitive { get_fn } => Some(get_fn),
+            _ => None,
+        }
+    }
+
+    pub fn borrow_fn(&self) -> Option<&Identifier> {
+        match &self.access {
+            NativeOpaqueFieldKind::Borrow { borrow_fn, .. } => Some(borrow_fn),
+            _ => None,
+        }
+    }
+
+    fn from_field(field: &EncodedFieldDecl, exports: &NativeOpaqueFieldExports) -> Result<Self> {
+        use crate::target::kotlin::primitive::KotlinPrimitive;
+        let key = field.key();
+        let name = match key {
+            FieldKey::Named(n) => Name::new(n).parameter()?,
+            _ => return Err(KotlinHost::unsupported("unnamed native opaque field")),
+        };
+        let (ty_inner, optional) = match field.ty() {
+            TypeRef::Optional(inner) => (inner.as_ref(), true),
+            ty => (ty, false),
+        };
+        let has_fn = if optional {
+            Some(Identifier::parse(
+                exports
+                    .has()
+                    .ok_or(KotlinHost::broken_bridge_contract(
+                        "optional native opaque field without has export",
+                    ))?
+                    .name()
+                    .as_str(),
+            )?)
+        } else {
+            None
+        };
+        let (ty, access) = match ty_inner {
+            TypeRef::Primitive(p) => {
+                let get_sym = exports
+                    .get()
+                    .ok_or(KotlinHost::broken_bridge_contract(
+                        "primitive native opaque field without get export",
+                    ))?
+                    .name()
+                    .as_str();
+                let kotlin_ty = KotlinPrimitive::new(*p).api_type()?;
+                let ty = if optional {
+                    kotlin_ty.nullable()
+                } else {
+                    kotlin_ty
+                };
+                (
+                    ty,
+                    NativeOpaqueFieldKind::Primitive {
+                        get_fn: Identifier::parse(get_sym)?,
+                    },
+                )
+            }
+            TypeRef::String => {
+                let borrow_sym = exports
+                    .borrow()
+                    .ok_or(KotlinHost::broken_bridge_contract(
+                        "string native opaque field without borrow export",
+                    ))?
+                    .name()
+                    .as_str();
+                let ty = if optional {
+                    TypeName::new("String").nullable()
+                } else {
+                    TypeName::new("String")
+                };
+                (
+                    ty,
+                    NativeOpaqueFieldKind::Borrow {
+                        borrow_fn: Identifier::parse(borrow_sym)?,
+                        is_string: true,
+                    },
+                )
+            }
+            TypeRef::Bytes => {
+                let borrow_sym = exports
+                    .borrow()
+                    .ok_or(KotlinHost::broken_bridge_contract(
+                        "bytes native opaque field without borrow export",
+                    ))?
+                    .name()
+                    .as_str();
+                let ty = if optional {
+                    TypeName::new("ByteArray").nullable()
+                } else {
+                    TypeName::new("ByteArray")
+                };
+                (
+                    ty,
+                    NativeOpaqueFieldKind::Borrow {
+                        borrow_fn: Identifier::parse(borrow_sym)?,
+                        is_string: false,
+                    },
+                )
+            }
+            _ => {
+                return Err(KotlinHost::unsupported(
+                    "unsupported native opaque field type",
+                ));
+            }
+        };
+        // Compute unsigned conversion for the public API type
+        let conversion = match ty_inner {
+            TypeRef::Primitive(boltffi_binding::Primitive::U8) => {
+                Some(Identifier::parse("toUByte")?)
+            }
+            TypeRef::Primitive(boltffi_binding::Primitive::U16) => {
+                Some(Identifier::parse("toUShort")?)
+            }
+            TypeRef::Primitive(boltffi_binding::Primitive::U32) => {
+                Some(Identifier::parse("toUInt")?)
+            }
+            TypeRef::Primitive(boltffi_binding::Primitive::U64)
+            | TypeRef::Primitive(boltffi_binding::Primitive::USize) => {
+                Some(Identifier::parse("toULong")?)
+            }
+            _ => None,
+        };
+        Ok(Self {
+            name,
+            ty,
+            optional,
+            has_fn,
+            access,
+            conversion,
+        })
+    }
+}
+
+impl NativeOpaqueField {
+    pub fn conversion(&self) -> Option<&Identifier> {
+        self.conversion.as_ref()
     }
 }

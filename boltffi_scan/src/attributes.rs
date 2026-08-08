@@ -87,7 +87,9 @@ impl<'a, 'types> Attributes<'a, 'types> {
                     }
                     Err(meta.error("unsupported deprecated attribute key"))
                 })
-                .map_err(|_| invalid_attribute(attr))?;
+                .map_err(|e| ScanError::InvalidAttribute {
+                    attribute: format!("{}: {e}", spelling::attr(attr)),
+                })?;
                 Ok(DeprecationInfo::new(parts.note, parts.since))
             }
         }
@@ -389,6 +391,22 @@ mod tests {
                 PathRoot::Absolute,
                 vec![PathSegment::new("serde"), PathSegment::new("transparent")]
             )
+        );
+    }
+
+    #[test]
+    fn deprecated_with_unknown_key_includes_reason_in_error() {
+        let attrs = attrs("#[deprecated(reason = \"typo\")] struct Point;");
+        let err = with_attrs(&attrs, |scanned| scanned.deprecated()).unwrap_err();
+        let ScanError::InvalidAttribute { attribute } = err else {
+            panic!("expected InvalidAttribute, got {err:?}");
+        };
+        // The error must include the attribute spelling AND the syn parse error so
+        // the author knows which key was wrong, not just that parsing failed.
+        assert!(attribute.contains("deprecated"), "must name the attribute");
+        assert!(
+            attribute.contains("unsupported deprecated attribute key"),
+            "must include the syn error reason; got: `{attribute}`"
         );
     }
 

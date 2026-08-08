@@ -1,6 +1,19 @@
 [workspace]
 resolver = "3"
-members = ["boltffi", "boltffi_core", "boltffi_macros", "boltffi_bindgen", "boltffi_cli", "boltffi_ffi_rules", "boltffi_ast", "boltffi_binding", "boltffi_backend", "boltffi_scan", "boltffi_verify", "boltffi_tests"]
+members = [
+  "boltffi",
+  "boltffi_core",
+  "boltffi_macros",
+  "boltffi_bindgen",
+  "boltffi_cli",
+  "boltffi_ffi_rules",
+  "boltffi_ast",
+  "boltffi_binding",
+  "boltffi_backend",
+  "boltffi_scan",
+  "boltffi_verify",
+  "boltffi_tests",
+]
 exclude = ["benchmarks/adapters/uniffi", "examples/demo"]
 
 [workspace.package]

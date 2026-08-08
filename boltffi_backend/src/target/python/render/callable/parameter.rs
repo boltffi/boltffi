@@ -9,7 +9,7 @@ use crate::{
     target::python::{
         codec::{EncodedCrossing, Expression as CodecExpression},
         name_style::Name,
-        syntax::{Expression, Identifier, Literal, TypeAnnotation},
+        syntax::{CallExpression, Expression, Identifier, Literal, TypeAnnotation},
     },
 };
 
@@ -106,22 +106,47 @@ impl<'plan, 'package> ParamPlanRender<'plan, Native, IntoRust> for StubArgument<
 
     fn encoded(
         &mut self,
-        _: &TypeRef,
+        ty: &TypeRef,
         codec: &WritePlan,
         _: native::BufferShape,
+        transport: boltffi_binding::EncodedParamTransport,
         receive: Receive,
     ) -> Self::Output {
-        match (
-            self.package.has_native_encoded_crossing(codec.root())?,
-            EncodedCrossing::of(codec.root()),
-            receive,
-        ) {
-            (true, _, Receive::ByValue | Receive::ByRef)
-            | (false, EncodedCrossing::Utf8Text, Receive::ByValue | Receive::ByRef) => {
-                Ok(Expression::identifier(self.name.clone()))
+        match transport {
+            boltffi_binding::EncodedParamTransport::Wire => {
+                // When the callee owns the wire buffer and the caller already has
+                // a native-encoded value, pass it directly instead of re-encoding.
+                match (
+                    self.package.has_native_encoded_crossing(codec.root())?,
+                    EncodedCrossing::of(codec.root()),
+                    receive,
+                ) {
+                    (true, _, Receive::ByValue | Receive::ByRef)
+                    | (false, EncodedCrossing::Utf8Text, Receive::ByValue | Receive::ByRef) => {
+                        Ok(Expression::identifier(self.name.clone()))
+                    }
+                    _ => CodecExpression::write_argument(codec, self.package)
+                        .map(CodecExpression::into_expression),
+                }
             }
-            _ => CodecExpression::write_argument(codec, self.package)
-                .map(CodecExpression::into_expression),
+            boltffi_binding::EncodedParamTransport::BorrowedSlice => match ty {
+                TypeRef::Bytes => Ok(Expression::identifier(self.name.clone())),
+                TypeRef::String => Ok(Expression::call(
+                    CallExpression::new(Expression::attribute(
+                        Expression::identifier(self.name.clone()),
+                        Identifier::parse("encode")?,
+                    ))
+                    .positional(Expression::literal(Literal::string("utf-8"))),
+                )),
+                _ => Err(crate::core::Error::UnsupportedTarget {
+                    target: "python",
+                    shape: "borrowed slice parameter type",
+                }),
+            },
+            _ => Err(crate::core::Error::UnsupportedTarget {
+                target: "python",
+                shape: "unknown encoded parameter transport",
+            }),
         }
     }
 
@@ -174,23 +199,20 @@ impl<'plan, 'package> ParamPlanRender<'plan, Native, IntoRust> for WireHelperUse
         _: &TypeRef,
         codec: &WritePlan,
         shape: native::BufferShape,
+        transport: boltffi_binding::EncodedParamTransport,
         receive: Receive,
     ) -> Self::Output {
-        match (
-            shape,
-            self.package.has_native_encoded_crossing(codec.root())?,
-            EncodedCrossing::of(codec.root()),
-            receive,
-        ) {
-            (
-                native::BufferShape::Slice,
-                false,
-                EncodedCrossing::Utf8Text,
-                Receive::ByValue | Receive::ByRef,
-            )
-            | (native::BufferShape::Slice, true, _, Receive::ByValue | Receive::ByRef) => Ok(false),
-            (native::BufferShape::Slice, _, _, _) => {
-                CodecExpression::write_argument(codec, self.package).map(|_| true)
+        match (shape, transport) {
+            (native::BufferShape::Slice, boltffi_binding::EncodedParamTransport::Wire) => {
+                match (
+                    self.package.has_native_encoded_crossing(codec.root())?,
+                    EncodedCrossing::of(codec.root()),
+                    receive,
+                ) {
+                    (false, EncodedCrossing::Utf8Text, Receive::ByValue | Receive::ByRef)
+                    | (true, _, Receive::ByValue | Receive::ByRef) => Ok(false),
+                    _ => CodecExpression::write_argument(codec, self.package).map(|_| true),
+                }
             }
             _ => Ok(false),
         }
