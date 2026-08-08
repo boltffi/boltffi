@@ -48,7 +48,9 @@ pub fn compute(record: &SourceRecord) -> Result<RecordLayout, LowerError> {
     ))
 }
 
-/// Reports whether every supported native ABI gives a record the same bytes.
+/// Reports whether fields of these types get the same bytes on every
+/// supported native ABI: the profile-agreement half of the record
+/// classification rule.
 ///
 /// Most native targets align `i64`, `u64`, and `f64` to eight bytes. The
 /// 32-bit x86 ABI aligns those scalars to four bytes instead. Direct records
@@ -56,15 +58,6 @@ pub fn compute(record: &SourceRecord) -> Result<RecordLayout, LowerError> {
 /// field offset. Their container alignment may differ: the IR retains the
 /// larger alignment so generated allocators always over-align rather than
 /// under-align storage.
-pub fn has_portable_byte_layout(record: &SourceRecord) -> bool {
-    direct_field_types(record).is_ok_and(|field_types| portable_direct_fields(&field_types))
-}
-
-/// Reports whether fields of these types get the same bytes on every
-/// supported native ABI.
-///
-/// The profile-agreement half of the record classification rule; see
-/// [`has_portable_byte_layout`] for the profiles compared.
 pub(crate) fn portable_direct_fields(field_types: &[DirectFieldType]) -> bool {
     let natural = profile(field_types, WideScalarAlignment::EightBytes);
     let four_byte = profile(field_types, WideScalarAlignment::FourBytes);

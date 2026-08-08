@@ -25,12 +25,12 @@ pub fn integer_repr(repr: &ReprAttr) -> Option<IntegerRepr> {
     })
 }
 
-pub fn has_repr_c(repr: &ReprAttr) -> bool {
-    repr.items.iter().any(|item| matches!(item, ReprItem::C))
-}
-
+/// Reports whether a record's repr pins the plain C layout the direct
+/// crossing assumes: no repr at all (`#[data]` materializes `#[repr(C)]`)
+/// or `repr(C)` with no layout modifier. `packed`, `align(N)`, and any
+/// other item change the compiled layout, so such records cross encoded.
 pub fn has_effective_repr_c(repr: &ReprAttr) -> bool {
-    repr.items.is_empty() || has_repr_c(repr)
+    repr.items.iter().all(|item| matches!(item, ReprItem::C))
 }
 
 impl From<SourcePrimitive> for Primitive {
