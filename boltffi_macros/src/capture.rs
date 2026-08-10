@@ -264,9 +264,6 @@ fn wrapper_tokens(
     if !item.sig.generics.params.is_empty() {
         return Err("generic functions have no per-invocation wrapper");
     }
-    if item.sig.asyncness.is_some() {
-        return Err("async functions have no per-invocation wrapper yet");
-    }
     if item.sig.variadic.is_some() || item.sig.abi.is_some() {
         return Err("extern or variadic functions have no per-invocation wrapper");
     }
@@ -311,9 +308,20 @@ fn wrapper_tokens(
     let ident = &item.sig.ident;
     let symbol = invocation_symbol(&ident.to_string());
     def.native_symbol = Some(symbol.clone());
-    let symbol_ident = quote::format_ident!("{symbol}");
     let facade = facade();
 
+    if item.sig.asyncness.is_some() {
+        return Ok(async_wrapper_tokens(
+            ident,
+            &symbol,
+            &names,
+            &types,
+            &return_type,
+            &facade,
+        ));
+    }
+
+    let symbol_ident = quote::format_ident!("{symbol}");
     Ok(quote! {
         #[doc(hidden)]
         #[unsafe(no_mangle)]
@@ -350,6 +358,121 @@ fn wrapper_tokens(
             }
         }
     })
+}
+
+/// The async family behind one record-carried start symbol: poll, complete, cancel,
+/// free, and panic-message companions are fixed suffixes of it — an ABI convention
+/// like the trailing status parameter, not a name derived from user items.
+fn async_wrapper_tokens(
+    ident: &syn::Ident,
+    symbol: &str,
+    names: &[syn::Ident],
+    types: &[syn::Type],
+    return_type: &syn::Type,
+    facade: &TokenStream,
+) -> TokenStream {
+    let start_ident = quote::format_ident!("{symbol}");
+    let poll_ident = quote::format_ident!("{symbol}_poll");
+    let complete_ident = quote::format_ident!("{symbol}_complete");
+    let cancel_ident = quote::format_ident!("{symbol}_cancel");
+    let free_ident = quote::format_ident!("{symbol}_free");
+    let panic_message_ident = quote::format_ident!("{symbol}_panic_message");
+
+    quote! {
+        #[doc(hidden)]
+        #[unsafe(no_mangle)]
+        #[allow(clippy::missing_safety_doc)]
+        pub unsafe extern "C" fn #start_ident(
+            #(#names: <#types as #facade::__private::capture::FfiCross<crate::__BoltffiTag>>::Ffi,)*
+        ) -> #facade::__private::RustFutureHandle {
+            #(
+                let #names = match <#types as #facade::__private::capture::FfiCross<crate::__BoltffiTag>>::lift(#names) {
+                    ::core::result::Result::Ok(value) => value,
+                    ::core::result::Result::Err(error) => {
+                        unsafe {
+                            #facade::__private::capture::note_invalid_arg(::core::ptr::null_mut(), error)
+                        };
+                        return #facade::__private::rustfuture::rust_future_invalid_arg::<#return_type>();
+                    }
+                };
+            )*
+            #facade::__private::rustfuture::rust_future_new(async move {
+                #ident(#(#names),*).await
+            })
+        }
+
+        #[doc(hidden)]
+        #[unsafe(no_mangle)]
+        #[allow(clippy::missing_safety_doc)]
+        pub unsafe extern "C" fn #poll_ident(
+            handle: #facade::__private::RustFutureHandle,
+            callback_data: u64,
+            callback: #facade::__private::RustFutureContinuationCallback,
+        ) {
+            unsafe {
+                #facade::__private::rustfuture::rust_future_poll::<#return_type>(
+                    handle,
+                    callback,
+                    callback_data,
+                )
+            }
+        }
+
+        #[doc(hidden)]
+        #[unsafe(no_mangle)]
+        #[allow(clippy::missing_safety_doc)]
+        pub unsafe extern "C" fn #complete_ident(
+            handle: #facade::__private::RustFutureHandle,
+            __boltffi_status: *mut #facade::__private::FfiStatus,
+        ) -> <#return_type as #facade::__private::capture::FfiCross<crate::__BoltffiTag>>::Ffi {
+            match unsafe {
+                #facade::__private::rustfuture::rust_future_complete::<#return_type>(handle)
+            } {
+                ::core::result::Result::Ok(value) => {
+                    if !__boltffi_status.is_null() {
+                        unsafe { *__boltffi_status = #facade::__private::FfiStatus::OK };
+                    }
+                    <#return_type as #facade::__private::capture::FfiCross<crate::__BoltffiTag>>::lower(value)
+                }
+                ::core::result::Result::Err(status) => {
+                    if !__boltffi_status.is_null() {
+                        unsafe { *__boltffi_status = status };
+                    }
+                    <#return_type as #facade::__private::capture::FfiCross<crate::__BoltffiTag>>::poisoned()
+                }
+            }
+        }
+
+        #[doc(hidden)]
+        #[unsafe(no_mangle)]
+        #[allow(clippy::missing_safety_doc)]
+        pub unsafe extern "C" fn #cancel_ident(handle: #facade::__private::RustFutureHandle) {
+            unsafe { #facade::__private::rustfuture::rust_future_cancel::<#return_type>(handle) }
+        }
+
+        #[doc(hidden)]
+        #[unsafe(no_mangle)]
+        #[allow(clippy::missing_safety_doc)]
+        pub unsafe extern "C" fn #free_ident(handle: #facade::__private::RustFutureHandle) {
+            unsafe { #facade::__private::rustfuture::rust_future_free::<#return_type>(handle) }
+        }
+
+        #[doc(hidden)]
+        #[unsafe(no_mangle)]
+        #[allow(clippy::missing_safety_doc)]
+        pub unsafe extern "C" fn #panic_message_ident(
+            handle: #facade::__private::RustFutureHandle,
+        ) -> #facade::__private::FfiBuf {
+            match unsafe {
+                #facade::__private::rustfuture::rust_future_panic_message::<#return_type>(handle)
+            } {
+                ::core::option::Option::Some(message) => {
+                    #facade::__private::FfiBuf::wire_encode(&message)
+                }
+                ::core::option::Option::None => #facade::__private::FfiBuf::empty(),
+            }
+        }
+    }
 }
 
 fn crossing_unsupported(ty: &syn::Type) -> bool {
