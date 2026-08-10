@@ -1605,7 +1605,25 @@ static int boltffi_tests_check_callbacks(void) {
         boltffi_release_class_boltffi_tests_classes_thread_safe_counter(thread_safe);
         return 741;
     }
+    if (boltffi_function_boltffi_tests_classes_shared_counter_snapshot(thread_safe) != 26) {
+        boltffi_release_class_boltffi_tests_classes_thread_safe_counter(thread_safe);
+        return 819;
+    }
+    RustFutureHandle shared_snapshot = boltffi_function_boltffi_tests_classes_async_shared_counter_snapshot(thread_safe);
+    if (shared_snapshot == 0) {
+        boltffi_release_class_boltffi_tests_classes_thread_safe_counter(thread_safe);
+        return 820;
+    }
+    /* The future holds a strong reference, so closing the handle here must not
+       free the object while the call is still in flight. */
     boltffi_release_class_boltffi_tests_classes_thread_safe_counter(thread_safe);
+    boltffi_async_function_boltffi_tests_classes_async_shared_counter_snapshot_poll(shared_snapshot, 0, boltffi_tests_async_noop);
+    FfiStatus shared_snapshot_status = FFI_STATUS_INTERNAL_ERROR;
+    int32_t shared_snapshot_value = boltffi_async_function_boltffi_tests_classes_async_shared_counter_snapshot_complete(shared_snapshot, &shared_snapshot_status);
+    boltffi_async_function_boltffi_tests_classes_async_shared_counter_snapshot_free(shared_snapshot);
+    if (shared_snapshot_status.code != FFI_STATUS_OK.code || shared_snapshot_value != 26) {
+        return 821;
+    }
     uint64_t map = boltffi_init_class_boltffi_tests_classes_fixture_map_new();
     if (map == 0) {
         return 739;
