@@ -64,6 +64,9 @@
 {% include "bridge/jni/lifecycle.c" %}
 {%- endif %}
 
+{%- for wrapper in borrow_wrappers %}
+{% include "bridge/jni/borrow_wrapper.c" %}
+{%- endfor %}
 {%- for method in methods %}
 {% include "bridge/jni/method.c" %}
 {%- endfor %}

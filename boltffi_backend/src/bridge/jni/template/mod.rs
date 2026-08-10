@@ -13,6 +13,7 @@
 //! new fact, the contract should expose that fact as a typed value rather than
 //! letting the template layer infer it from strings.
 
+mod borrow_wrapper;
 mod callback;
 mod closure;
 mod method;

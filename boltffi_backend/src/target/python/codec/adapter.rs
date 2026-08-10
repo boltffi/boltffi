@@ -450,6 +450,9 @@ impl<'collector, 'binding> ReturnPlanRender<'binding, Native, OutOfRust>
     fn closure(&mut self, closure: &'binding ClosureReturn<Native, OutOfRust>) {
         self.adapters.collect_rust_callable(closure.invoke());
     }
+
+    /// An opaque record crosses as a bare handle and needs no codec adapter.
+    fn native_opaque_record(&mut self, _: boltffi_binding::RecordId) {}
 }
 
 struct IntoRustReturnAdapters<'collector, 'binding> {

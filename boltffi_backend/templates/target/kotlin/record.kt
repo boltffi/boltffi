@@ -1,4 +1,75 @@
-{%- if record.empty() %}
+{%- if record.native_opaque() %}
+class {{ record.name() }} internal constructor(handle: Long) : AutoCloseable {
+    private val lifecycle = java.util.concurrent.locks.ReentrantReadWriteLock()
+    private var nativeHandle: Long = handle
+    init { require(handle != 0L) { "native opaque record returned null" } }
+
+    override fun close() {
+        lifecycle.writeLock().lock()
+        try {
+            val handle = nativeHandle
+            if (handle != 0L) {
+                nativeHandle = 0L
+                Native.{{ record.native_opaque_drop_fn().unwrap() }}(handle)
+            }
+        } finally {
+            lifecycle.writeLock().unlock()
+        }
+    }
+
+    private inline fun <T> withHandle(action: (Long) -> T): T {
+        lifecycle.readLock().lock()
+        try {
+            val handle = nativeHandle
+            check(handle != 0L) { "{{ record.name() }} has already been closed" }
+            return action(handle)
+        } finally {
+            lifecycle.readLock().unlock()
+        }
+    }
+{%- for field in record.opaque_fields() %}
+
+    val {{ field.name() }}: {{ field.ty() }}
+        get() = withHandle { handle ->
+{%- if field.optional() %}
+        if (Native.{{ field.has_fn().unwrap() }}(handle) == 0) {
+            null
+{%- if field.is_primitive() %}
+        } else {
+{%- if let Some(conv) = field.conversion() %}
+            Native.{{ field.get_fn().unwrap() }}(handle).{{ conv }}()
+{%- else %}
+            Native.{{ field.get_fn().unwrap() }}(handle)
+{%- endif %}
+        }
+{%- else %}
+        } else {
+            val bytes = Native.{{ field.borrow_fn().unwrap() }}(handle) ?: error("borrow failed for {{ field.name() }}")
+{%- if field.is_string() %}
+            bytes.toString(Charsets.UTF_8)
+{%- else %}
+            bytes
+{%- endif %}
+        }
+{%- endif %}
+{%- else if field.is_primitive() %}
+{%- if let Some(conv) = field.conversion() %}
+        Native.{{ field.get_fn().unwrap() }}(handle).{{ conv }}()
+{%- else %}
+        Native.{{ field.get_fn().unwrap() }}(handle)
+{%- endif %}
+{%- else %}
+        val bytes = Native.{{ field.borrow_fn().unwrap() }}(handle) ?: error("borrow failed for {{ field.name() }}")
+{%- if field.is_string() %}
+        bytes.toString(Charsets.UTF_8)
+{%- else %}
+        bytes
+{%- endif %}
+{%- endif %}
+        }
+{%- endfor %}
+}
+{%- else if record.empty() %}
 {{ record.documentation() }}object {{ record.name() }}{% if record.error() %} : Exception(){% endif %} {
 {%- if record.encoded() %}
     internal fun wireSize(): Int = 0

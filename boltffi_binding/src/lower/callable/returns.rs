@@ -6,8 +6,8 @@ use crate::{
 };
 
 use super::super::{
-    LowerError, codecs, enums, error::UnsupportedType, ids::DeclarationIds, index::Index, records,
-    surface::SurfaceLower, symbol::SymbolAllocator, types,
+    LowerError, codecs, enums, error::UnsupportedType, ids::DeclarationIds, index::Index, opaque,
+    records, surface::SurfaceLower, symbol::SymbolAllocator, types,
 };
 
 use super::{
@@ -54,7 +54,19 @@ where
         ReturnDef::Value(type_expr) => {
             if let TypeExpr::Result { ok, err } = type_expr {
                 let ok_type_expr = substitute_self_type(owner, ok)?;
+                if opaque::contains(index, &ok_type_expr) {
+                    return Err(LowerError::unsupported_type(
+                        UnsupportedType::NativeOpaqueRecordResult,
+                    ));
+                }
                 let err_type_expr = substitute_self_type(owner, err)?;
+                // Reject opaque records in the error arm as well
+                // (e.g. Result<T, Opaque> or Result<T, Option<Opaque>>).
+                if opaque::contains(index, &err_type_expr) {
+                    return Err(LowerError::unsupported_type(
+                        UnsupportedType::NativeOpaqueRecordResult,
+                    ));
+                }
                 let success =
                     lower_return_plan::<S, D>(index, ids, allocator, root_encoding, &ok_type_expr)?
                         .into_out();
@@ -70,8 +82,37 @@ where
                 ));
             }
             let type_expr = substitute_self_type(owner, type_expr)?;
+            // Reject nested native opaque records (Option<Opaque>, Vec<Opaque>, named
+            // records containing opaque fields, etc.) after Self-type substitution so that a
+            // method returning Option<Self> on a native-opaque record is also caught. Only an
+            // exact top-level native opaque record is admitted to lower_plain_return.
+            let is_direct_opaque_record = matches!(
+                &type_expr,
+                TypeExpr::Record { id, .. }
+                    if index.record(id).is_some_and(|record| {
+                        record.encoding == boltffi_ast::RecordEncoding::NativeOpaque
+                    })
+            );
+            if !is_direct_opaque_record && opaque::contains(index, &type_expr) {
+                return Err(LowerError::unsupported_type(
+                    UnsupportedType::NativeOpaqueRecordNestedReturn,
+                ));
+            }
             let plan =
                 lower_plain_return::<S, D>(index, ids, allocator, root_encoding, &type_expr)?;
+            // Native opaque records are only valid as synchronous, infallible,
+            // exact top-level free-function returns. Provide a distinct error
+            // variant for callback/trait positions to give clearer diagnostics.
+            if matches!(plan, ReturnPlan::NativeOpaqueRecord { .. }) {
+                let error = match owner {
+                    CallableOwner::Function => None,
+                    CallableOwner::Trait(_) => Some(UnsupportedType::NativeOpaqueRecordInCallback),
+                    _ => Some(UnsupportedType::NativeOpaqueRecordMethod),
+                };
+                if let Some(kind) = error {
+                    return Err(LowerError::unsupported_type(kind));
+                }
+            }
             Ok((
                 ReturnDecl::new(ElementMeta::new(None, None, None), plan),
                 ErrorDecl::none(),
@@ -169,6 +210,15 @@ where
         TypeExpr::Primitive(primitive) => Ok(ReturnPlan::DirectViaReturnSlot {
             ty: DirectValueType::primitive(Primitive::from(*primitive)),
         }),
+        TypeExpr::Record { id, .. }
+            if index.record(id).is_some_and(|r| {
+                r.encoding == boltffi_ast::RecordEncoding::NativeOpaque
+            }) =>
+        {
+            Ok(ReturnPlan::NativeOpaqueRecord {
+                record: ids.record(id)?,
+            })
+        }
         TypeExpr::Record { id, .. } if index.record(id).is_some_and(records::is_direct) => {
             let ty = DirectValueType::record(ids.record(id)?);
             Ok(match S::direct_record_return_slot() {
@@ -215,5 +265,130 @@ where
                 "return value-plan lowering reached a source type reserved for handle, closure, owner-substitution, or generic rejection before the direct/encoded fallback",
             ))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use boltffi_ast::{
+        CanonicalName, FieldDef, PackageInfo, Path, Primitive as SourcePrimitive, RecordDef,
+        RecordEncoding, ReturnDef, SourceContract, TypeExpr,
+    };
+
+    use crate::{LowerErrorKind, Native, OutOfRust, UnsupportedType};
+
+    use super::*;
+
+    fn name(value: &str) -> CanonicalName {
+        CanonicalName::single(value)
+    }
+
+    fn opaque_record() -> RecordDef {
+        let mut record = RecordDef::new("demo::Opaque".into(), name("Opaque"));
+        record.encoding = RecordEncoding::NativeOpaque;
+        record
+    }
+
+    fn opaque_type() -> TypeExpr {
+        TypeExpr::record("demo::Opaque".into(), Path::single("Opaque"))
+    }
+
+    fn lower_return(
+        source: &SourceContract,
+        owner: CallableOwner,
+        returns: ReturnDef,
+    ) -> Result<Lowered<Native, OutOfRust>, LowerError> {
+        let index = Index::new(source);
+        let ids = DeclarationIds::from_source(source).expect("source ids");
+        lower::<Native, OutOfRust>(
+            &index,
+            &ids,
+            &mut SymbolAllocator::new(),
+            owner,
+            codecs::RootEncoding::Surface,
+            &returns,
+        )
+    }
+
+    #[test]
+    fn result_ok_opaque_is_rejected_as_native_opaque_record_result() {
+        let mut source = SourceContract::new(PackageInfo::new("demo", None));
+        source.records.push(opaque_record());
+        let error = lower_return(
+            &source,
+            CallableOwner::Function,
+            ReturnDef::value(TypeExpr::Result {
+                ok: Box::new(opaque_type()),
+                err: Box::new(TypeExpr::String),
+            }),
+        )
+        .expect_err("Result<Opaque, E> must reject");
+
+        assert!(matches!(
+            error.kind(),
+            LowerErrorKind::UnsupportedType(UnsupportedType::NativeOpaqueRecordResult)
+        ));
+    }
+
+    #[test]
+    fn result_error_opaque_is_rejected_as_native_opaque_record_result() {
+        let mut source = SourceContract::new(PackageInfo::new("demo", None));
+        source.records.push(opaque_record());
+        let error = lower_return(
+            &source,
+            CallableOwner::Function,
+            ReturnDef::value(TypeExpr::Result {
+                ok: Box::new(TypeExpr::Primitive(SourcePrimitive::U32)),
+                err: Box::new(opaque_type()),
+            }),
+        )
+        .expect_err("Result<T, Opaque> must reject");
+
+        assert!(matches!(
+            error.kind(),
+            LowerErrorKind::UnsupportedType(UnsupportedType::NativeOpaqueRecordResult)
+        ));
+    }
+
+    #[test]
+    fn named_envelope_returning_opaque_is_rejected_before_record_lowering() {
+        let mut envelope = RecordDef::new("demo::Envelope".into(), name("Envelope"));
+        envelope
+            .fields
+            .push(FieldDef::new(name("opaque"), opaque_type()));
+        let mut source = SourceContract::new(PackageInfo::new("demo", None));
+        source.records = vec![opaque_record(), envelope];
+        let error = lower_return(
+            &source,
+            CallableOwner::Function,
+            ReturnDef::value(TypeExpr::record(
+                "demo::Envelope".into(),
+                Path::single("Envelope"),
+            )),
+        )
+        .expect_err("named opaque envelope must reject before record lowering");
+
+        assert!(matches!(
+            error.kind(),
+            LowerErrorKind::UnsupportedType(UnsupportedType::NativeOpaqueRecordNestedReturn)
+        ));
+    }
+
+    #[test]
+    fn trait_owner_direct_opaque_return_is_rejected_as_callback() {
+        let mut source = SourceContract::new(PackageInfo::new("demo", None));
+        source.records.push(opaque_record());
+        let owner_trait = boltffi_ast::TraitDef::new("demo::Sink".into(), name("Sink"));
+        let error = lower_return(
+            &source,
+            CallableOwner::Trait(&owner_trait),
+            ReturnDef::value(opaque_type()),
+        )
+        .expect_err("trait opaque return must reject as callback");
+
+        assert!(matches!(
+            error.kind(),
+            LowerErrorKind::UnsupportedType(UnsupportedType::NativeOpaqueRecordInCallback)
+        ));
     }
 }

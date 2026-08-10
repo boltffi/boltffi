@@ -443,6 +443,9 @@ impl<'plan, S: Surface> ReturnPlanRender<'plan, S, IntoRust> for ErrorPayloadTyp
     fn closure(&mut self, closure: &'plan ClosureReturn<S, IntoRust>) {
         self.insert_imported_callable(closure.invoke());
     }
+
+    /// An opaque record handle carries no error payload of its own.
+    fn native_opaque_record(&mut self, _: RecordId) {}
 }
 
 impl<'plan, S: Surface> ReturnPlanRender<'plan, S, OutOfRust> for ErrorPayloadTypes {
@@ -479,6 +482,9 @@ impl<'plan, S: Surface> ReturnPlanRender<'plan, S, OutOfRust> for ErrorPayloadTy
     fn closure(&mut self, closure: &'plan ClosureReturn<S, OutOfRust>) {
         self.insert_exported_callable(closure.invoke());
     }
+
+    /// An opaque record handle carries no error payload of its own.
+    fn native_opaque_record(&mut self, _: RecordId) {}
 }
 
 impl<'plan, S: Surface> StreamItemPlanRender<'plan, S> for ErrorPayloadTypes {

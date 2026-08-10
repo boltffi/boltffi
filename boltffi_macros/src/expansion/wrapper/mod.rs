@@ -11,6 +11,7 @@ pub mod encoded;
 pub mod enumeration;
 pub mod function;
 pub mod handle;
+mod native_opaque;
 pub mod param;
 pub mod record;
 pub mod returns;

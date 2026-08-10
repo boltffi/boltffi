@@ -121,8 +121,9 @@ pub use decl::{
     CallbackLocalMethodDecl, CallbackLocalProtocol, ClassDecl, ClassThreadSafety, ConstantDecl,
     ConstantOwner, ConstantValueDecl, CustomTypeDecl, DataEnumDecl, DataVariantDecl,
     DataVariantPayload, Decl, DeclarationRef, DeclarationRole, DirectFieldDecl, DirectRecordDecl,
-    EncodedFieldDecl, EncodedRecordDecl, EnumDecl, ExportedMethodDecl, FieldKey, FunctionDecl,
-    ImportedMethodDecl, InitializerDecl, MethodDecl, RecordDecl, StreamDecl, StreamItemPlan,
+    EncodedFieldDecl, EncodedRecordDecl, EncodedRecordStorage, EnumDecl, ExportedMethodDecl,
+    FieldKey, FunctionDecl, ImportedMethodDecl, InitializerDecl, MethodDecl,
+    NativeOpaqueFieldExports, NativeOpaqueRecordExports, RecordDecl, StreamDecl, StreamItemPlan,
     StreamItemPlanRender, StreamMode, StreamProtocol, VariantTag,
 };
 pub(crate) use decl::{ClassDeclParts, InvalidClassDecl, StreamDeclParts};

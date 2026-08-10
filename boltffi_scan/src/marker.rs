@@ -6,6 +6,7 @@ use crate::ScanError;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Marker {
     Data,
+    DataOpaque,
     DataImpl,
     CustomFfi,
     Error,
@@ -51,6 +52,7 @@ impl Marker {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Data => "data",
+            Self::DataOpaque => "data(opaque)",
             Self::DataImpl => "data(impl)",
             Self::CustomFfi => "custom_ffi",
             Self::Error => "error",
@@ -100,10 +102,12 @@ impl Marker {
     fn from_data(attr: &syn::Attribute) -> Result<Self, ScanError> {
         match &attr.meta {
             syn::Meta::Path(_) => Ok(Self::Data),
-            syn::Meta::List(list) => parse_data_impl
-                .parse2(list.tokens.clone())
-                .map(|_| Self::DataImpl)
-                .map_err(|_| invalid(attr)),
+            syn::Meta::List(list) if parse_data_impl.parse2(list.tokens.clone()).is_ok() => {
+                Ok(Self::DataImpl)
+            }
+            syn::Meta::List(list) if parse_data_opaque.parse2(list.tokens.clone()).is_ok() => {
+                Ok(Self::DataOpaque)
+            }
             _ => Err(invalid(attr)),
         }
     }
@@ -141,6 +145,14 @@ fn parse_data_impl(input: syn::parse::ParseStream<'_>) -> syn::Result<()> {
     Ok(())
 }
 
+fn parse_data_opaque(input: syn::parse::ParseStream<'_>) -> syn::Result<()> {
+    let ident = input.parse::<syn::Ident>()?;
+    if ident != "opaque" {
+        return Err(input.error("expected `opaque`"));
+    }
+    Ok(())
+}
+
 fn parse_export_args(input: syn::parse::ParseStream<'_>) -> syn::Result<ExportMarker> {
     let args = syn::punctuated::Punctuated::<syn::Ident, syn::Token![,]>::parse_terminated(input)?;
     if !args.is_empty()
@@ -155,22 +167,18 @@ fn parse_export_args(input: syn::parse::ParseStream<'_>) -> syn::Result<ExportMa
 }
 
 fn marker_name(attr: &syn::Attribute) -> Option<String> {
+    ["custom_ffi", "data", "error", "export", "skip"]
+        .into_iter()
+        .find(|marker| is_boltffi_marker_path(attr, marker))
+        .map(str::to_owned)
+}
+
+fn is_boltffi_marker_path(attr: &syn::Attribute, marker_name: &str) -> bool {
     let segments = attr.path().segments.iter().collect::<Vec<_>>();
     match segments.as_slice() {
-        [segment] => Some(segment.ident.to_string()).filter(|name| {
-            matches!(
-                name.as_str(),
-                "custom_ffi" | "data" | "error" | "export" | "skip"
-            )
-        }),
-        [namespace, marker] if namespace.ident == "boltffi" => Some(marker.ident.to_string())
-            .filter(|name| {
-                matches!(
-                    name.as_str(),
-                    "custom_ffi" | "data" | "error" | "export" | "skip"
-                )
-            }),
-        _ => None,
+        [marker] => marker.ident == marker_name,
+        [namespace, marker] => namespace.ident == "boltffi" && marker.ident == marker_name,
+        _ => false,
     }
 }
 
@@ -223,6 +231,10 @@ mod tests {
         assert_eq!(
             Marker::detect(&struct_attrs("#[boltffi::data] struct S { x: i32 }")),
             Ok(Some(Marker::Data))
+        );
+        assert_eq!(
+            Marker::detect(&struct_attrs("#[data(opaque)] struct S { x: u32 }")),
+            Ok(Some(Marker::DataOpaque))
         );
         assert_eq!(
             Marker::detect(&struct_attrs("struct S { x: i32 }")),

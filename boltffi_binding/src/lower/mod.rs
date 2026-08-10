@@ -53,6 +53,7 @@ mod layout;
 mod metadata;
 mod methods;
 mod names;
+mod opaque;
 mod primitive;
 mod records;
 mod streams;

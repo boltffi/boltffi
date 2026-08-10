@@ -11,7 +11,7 @@ use crate::expansion::{
     contract::{DeclarationPair, Expansion},
     error::Error,
     rust_api,
-    wrapper::{self, associated_fn, encoded, export, names},
+    wrapper::{self, associated_fn, encoded, export, names, native_opaque},
 };
 
 pub struct Record<'expansion, 'lowered, S: boltffi_binding::SurfaceLower> {
@@ -360,6 +360,11 @@ impl<'expansion, 'lowered, S: boltffi_binding::SurfaceLower> Encoded<'expansion,
 
 impl<'expansion, 'lowered> Encoded<'expansion, 'lowered, Native> {
     fn exports(self, rust_type: Type) -> Result<TokenStream, Error> {
+        // An opaque record exposes no initializers or wire methods; its whole
+        // host surface is the generated handle accessors.
+        if self.binding.is_native_opaque() {
+            return native_opaque::render(self.source, self.binding);
+        }
         associated_fn::AssociatedFunctions::new(
             RecordOwner {
                 source: self.source,

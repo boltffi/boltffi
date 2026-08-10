@@ -402,4 +402,9 @@ impl<'plan, 'package> ReturnPlanRender<'plan, Native, OutOfRust> for ReturnHint<
             shape: "unsupported return stub",
         })
     }
+
+    fn native_opaque_record(&mut self, record: RecordId) -> Self::Output {
+        let name = self.package.record_name(record)?;
+        Ok(TypeHint::new(TypeAnnotation::identifier(name)))
+    }
 }

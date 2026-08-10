@@ -218,6 +218,9 @@ enum ReturnConversion {
     CallbackHandle(CallbackHandle),
     ScalarOption(Primitive),
     ParameterMutation(ParameterMutation),
+    NativeOpaqueRecord {
+        ty: TypeName,
+    },
 }
 
 impl Function {
@@ -949,7 +952,7 @@ impl<'plan> ParamPlanRender<'plan, Native, IntoRust> for NativeArgumentRender<'_
 
     fn encoded(
         &mut self,
-        _: &'plan TypeRef,
+        _ty: &'plan TypeRef,
         codec: &'plan <IntoRust as Direction>::Codec,
         shape: <Native as Surface>::BufferShape,
         receive: <IntoRust as Direction>::Receive,
@@ -1122,6 +1125,14 @@ impl<'plan> ReturnPlanRender<'plan, Native, OutOfRust> for FunctionReturnPlan<'_
 
     fn closure(&mut self, _closure: &'plan ClosureReturn<Native, OutOfRust>) -> Self::Output {
         Err(KotlinHost::unsupported("closure function return"))
+    }
+
+    fn native_opaque_record(&mut self, record: RecordId) -> Self::Output {
+        let ty = Record::type_name_from_id(record, self.context)?;
+        Ok(FunctionReturn {
+            ty: Some(ty.clone()),
+            conversion: ReturnConversion::NativeOpaqueRecord { ty },
+        })
     }
 }
 
@@ -1353,6 +1364,18 @@ impl FunctionReturn {
             }
             ReturnConversion::ParameterMutation(mutation) => {
                 mutation.statements(call, host, context)
+            }
+            ReturnConversion::NativeOpaqueRecord { ty } => {
+                let handle = Identifier::parse("__boltffi_handle")?;
+                Ok(vec![
+                    Statement::value(handle.clone(), call),
+                    Statement::expression(Expression::construct(
+                        ty.clone(),
+                        [Expression::identifier(handle)]
+                            .into_iter()
+                            .collect::<ArgumentList>(),
+                    )),
+                ])
             }
         }
     }

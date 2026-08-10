@@ -376,6 +376,27 @@ impl<'expansion, 'lowered> Input<'expansion, 'lowered, boltffi_binding::Native> 
             ReturnPlan::ClosureViaOutPointer(_) => {
                 Err(Error::UnsupportedExpansion("closure out-pointer return"))
             }
+            ReturnPlan::NativeOpaqueRecord { .. } => {
+                // The record is boxed and handed to the host as a `*mut c_void`
+                // handle. The host reads fields through the generated accessor
+                // exports and releases the box through the generated destructor.
+                let rust_type = self.rust_type.as_ref().ok_or(Error::SourceSyntaxMismatch(
+                    "native opaque record return requires a source return type",
+                ))?;
+                let result = locals.result();
+                Ok(Tokens {
+                    items: Vec::new(),
+                    ffi_parameters: Vec::new(),
+                    return_type: quote! { -> *mut ::core::ffi::c_void },
+                    body: quote! {
+                        #(#conversions)*
+                        let #result: #rust_type = #call;
+                        #(#writebacks)*
+                        ::std::boxed::Box::into_raw(::std::boxed::Box::new(#result))
+                            .cast::<::core::ffi::c_void>()
+                    },
+                })
+            }
             _ => Err(Error::UnsupportedExpansion("unknown return")),
         }
     }
@@ -690,6 +711,9 @@ impl<'expansion, 'lowered> FailureInput<'expansion, 'lowered, boltffi_binding::N
             }
             ReturnPlan::ClosureViaOutPointer(_) => Ok(quote! {
                 return ::boltffi::__private::FfiStatus::INVALID_ARG;
+            }),
+            ReturnPlan::NativeOpaqueRecord { .. } => Ok(quote! {
+                return ::core::ptr::null_mut();
             }),
             _ => Err(Error::UnsupportedExpansion("return failure")),
         }
