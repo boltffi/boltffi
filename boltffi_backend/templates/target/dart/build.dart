@@ -28,6 +28,9 @@ String targetTripleFromCodeConfig(CodeConfig codeConfig) {
     (OS.macOS, Architecture.arm64) => 'aarch64-apple-darwin',
     (OS.macOS, Architecture.x64) => 'x86_64-apple-darwin',
 
+    (OS.windows, Architecture.arm64) => 'aarch64-pc-windows-msvc',
+    (OS.windows, Architecture.x64) => 'x86_64-pc-windows-msvc',
+
     (_, _) => throw UnsupportedError(
       'Unsupported target: $codeConfig.targetOS on $codeConfig.targetArchitecture',
     ),

@@ -68,6 +68,16 @@ impl BindingExpansion {
         Self::resolve_selection(config, build_cargo_args, surface, None)
     }
 
+    /// Like [`Self::resolve_preferred`], but for a non-`Native` surface.
+    pub fn resolve_preferred_for_surface(
+        config: &Config,
+        build_cargo_args: &[String],
+        surface: BindingMetadataSurface,
+        preferred_artifact: &str,
+    ) -> Result<Self> {
+        Self::resolve_selection(config, build_cargo_args, surface, Some(preferred_artifact))
+    }
+
     fn resolve_selection(
         config: &Config,
         build_cargo_args: &[String],
@@ -341,6 +351,10 @@ impl BindingExpansion {
     pub(crate) fn fixture_features(mut self, features: &str) -> Self {
         self.features = features.into();
         self
+    }
+
+    pub(crate) fn surface(&self) -> BindingMetadataSurface {
+        self.surface
     }
 }
 

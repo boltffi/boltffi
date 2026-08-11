@@ -770,6 +770,26 @@ mod tests {
     }
 
     #[test]
+    fn qualified_path_resolves_type_reexported_by_name() {
+        let contract = scan(
+            "pub mod model { #[data] pub enum ForeignKind { Guest, Member } } \
+             pub mod session { pub use crate::model::ForeignKind; } \
+             pub mod api { \
+                 #[export] pub fn echo(kind: crate::session::ForeignKind) -> crate::session::ForeignKind { kind } \
+             }",
+        );
+
+        assert_eq!(
+            contract.functions[0].parameters[0].type_expr,
+            enumeration("demo::model::ForeignKind", "crate::session::ForeignKind")
+        );
+        assert_eq!(
+            value_return(&contract.functions[0].returns),
+            &enumeration("demo::model::ForeignKind", "crate::session::ForeignKind")
+        );
+    }
+
+    #[test]
     fn c_style_enum_scan_accepts_borrowed_string_export_return() {
         let contract = scan(
             "#[data] \

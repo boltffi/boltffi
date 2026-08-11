@@ -164,11 +164,24 @@ impl DeclaredTypes {
         let Some(path) = self.resolve_source_path(scope, path, || spelling::path(path))? else {
             return Ok(SourceType::Unknown);
         };
-        Ok(match self.by_path.get(&path) {
-            Some(declared_type) => SourceType::Declared(declared_type),
-            None if self.source_types.contains_path(&path) => SourceType::Unregistered,
-            None => SourceType::External(path),
-        })
+        if let Some(declared_type) = self.by_path.get(&path) {
+            return Ok(SourceType::Declared(declared_type));
+        }
+        if self.source_types.contains_path(&path) {
+            return Ok(SourceType::Unregistered);
+        }
+        // `path` can itself be a re-export, not a declaration site; chase it
+        // down before giving up as external.
+        if let TypeResolution::Known(declaration_path) = self.source_types.resolve_reexported(&path)
+        {
+            if let Some(declared_type) = self.by_path.get(&declaration_path) {
+                return Ok(SourceType::Declared(declared_type));
+            }
+            if self.source_types.contains_path(&declaration_path) {
+                return Ok(SourceType::Unregistered);
+            }
+        }
+        Ok(SourceType::External(path))
     }
 
     pub(super) fn root_visible_path(
@@ -546,7 +559,10 @@ impl TypeNamespace {
         match scope.expand(path) {
             PathExpansion::Relative(path) => self.resolve_relative(scope, path),
             PathExpansion::Imported { local, path } => self.resolve_imported(scope, &local, path),
-            PathExpansion::Qualified(path) => self.resolve_qualified(path),
+            // Fall back to reexport resolution, same as resolve_public_path:
+            // a qualified path can name a type through its reexport, not
+            // just its declaration site.
+            PathExpansion::Qualified(path) => self.resolve_public_path(path),
             PathExpansion::Ambiguous => TypeResolution::Ambiguous,
             PathExpansion::Unsupported => TypeResolution::Unknown,
         }

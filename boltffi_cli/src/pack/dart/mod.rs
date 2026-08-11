@@ -2,8 +2,8 @@ use std::path::Path;
 
 use crate::{
     build::{
-        BuildOptions, BuildSelection, Builder, CargoBuildProfile, OutputCallback, all_successful,
-        failed_targets, resolve_build_profile,
+        BindingExpansion, BuildOptions, BuildSelection, Builder, CargoBuildProfile, OutputCallback,
+        all_successful, failed_targets, resolve_build_profile,
     },
     cargo::Cargo,
     cli::{CliError, Result},
@@ -32,15 +32,9 @@ fn build_dart_targets(
         None
     };
 
-    let build_options = BuildOptions {
-        release,
-        selection: BuildSelection::Package {
-            package: config.library_name().to_string(),
-            cargo_args: build_cargo_args.to_vec(),
-        },
-        on_output,
-    };
-    let builder = Builder::new(config, build_options);
+    let expansion = dart_expansion(config, build_cargo_args)?;
+
+    let builder = Builder::new(config, dart_build_options(expansion, release, on_output));
     let results = builder.build_targets(&config.dart_targets())?;
 
     if all_successful(&results) {
@@ -49,6 +43,27 @@ fn build_dart_targets(
 
     let failed = failed_targets(&results);
     Err(CliError::Pack(PackError::BuildFailed { targets: failed }))
+}
+
+// Cargo only sets CARGO_FEATURE_* for build scripts, so this must build as
+// a binding expansion for the macros to see active features (same fix as
+// the Python target's cdylib build). resolve_preferred (not
+// resolve_for_surface) keeps the configured/default artifact selected
+// even when the package has more than one FFI-capable cargo target.
+fn dart_expansion(config: &Config, build_cargo_args: &[String]) -> Result<BindingExpansion> {
+    BindingExpansion::resolve_preferred(config, build_cargo_args, &config.crate_artifact_name())
+}
+
+fn dart_build_options(
+    expansion: BindingExpansion,
+    release: bool,
+    on_output: Option<OutputCallback>,
+) -> BuildOptions {
+    BuildOptions {
+        release,
+        selection: BuildSelection::Expanded(Box::new(expansion)),
+        on_output,
+    }
 }
 
 pub(crate) fn pack_dart(
@@ -297,7 +312,17 @@ fn write_web_setup_doc(
 mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use super::{conditional_export_shim, move_native_bindings, write_web_setup_doc};
+    use super::{
+        BindingExpansion, BuildSelection, conditional_export_shim, dart_build_options,
+        dart_expansion, move_native_bindings, write_web_setup_doc,
+    };
+    use crate::config::Config;
+
+    fn parse_config(input: &str) -> Config {
+        let parsed: Config = toml::from_str(input).expect("toml parse failed");
+        parsed.validate().expect("config validation failed");
+        parsed
+    }
 
     fn unique_temp_dir(prefix: &str) -> std::path::PathBuf {
         let unique_suffix = SystemTime::now()
@@ -305,6 +330,61 @@ mod tests {
             .expect("system time before unix epoch")
             .as_nanos();
         std::env::temp_dir().join(format!("{prefix}-{unique_suffix}"))
+    }
+
+    /// `pack dart` must build the cdylib as a binding expansion, not a plain
+    /// `cargo build`: the #[data]/#[error] macros read active features from
+    /// BINDING_METADATA_FEATURES_ENV, which only `BuildSelection::Expanded`
+    /// wires up (see `Builder::apply_expansion`). A plain build silently
+    /// drops every #[cfg(feature = ...)]-gated module from the FFI surface.
+    #[test]
+    fn dart_cdylib_builds_as_a_binding_expansion() {
+        let expansion = BindingExpansion::fixture(
+            "/workspace/Cargo.toml",
+            "/workspace/demo/Cargo.toml",
+            ["--features".to_string(), "ffi".to_string()],
+        );
+
+        let options = dart_build_options(expansion, false, None);
+
+        assert!(matches!(options.selection, BuildSelection::Expanded(_)));
+    }
+
+    /// A crate whose only other FFI-capable target is a cdylib example must
+    /// still resolve through the configured/default artifact rather than
+    /// erroring on the ambiguity.
+    #[test]
+    fn dart_expansion_prefers_the_configured_artifact_over_an_ambiguous_ffi_target_set() {
+        let crate_dir = unique_temp_dir("boltffi-dart-multi-ffi-target-test");
+        std::fs::create_dir_all(crate_dir.join("src")).expect("create src dir");
+        std::fs::create_dir_all(crate_dir.join("examples")).expect("create examples dir");
+        std::fs::write(
+            crate_dir.join("Cargo.toml"),
+            "[package]\n\
+             name = \"demo_multi\"\n\
+             version = \"0.1.0\"\n\
+             edition = \"2021\"\n\n\
+             [lib]\n\
+             crate-type = [\"cdylib\", \"rlib\"]\n\n\
+             [[example]]\n\
+             name = \"extra\"\n\
+             crate-type = [\"cdylib\"]\n",
+        )
+        .expect("write Cargo.toml");
+        std::fs::write(crate_dir.join("src/lib.rs"), "").expect("write lib.rs");
+        std::fs::write(crate_dir.join("examples/extra.rs"), "fn main() {}\n")
+            .expect("write example");
+
+        let config = parse_config("[package]\nname = \"demo_multi\"\n");
+        let cargo_args = vec![
+            "--manifest-path".to_string(),
+            crate_dir.join("Cargo.toml").display().to_string(),
+        ];
+
+        let expansion = dart_expansion(&config, &cargo_args);
+
+        std::fs::remove_dir_all(&crate_dir).expect("cleanup temp dir");
+        assert!(expansion.is_ok(), "{:?}", expansion.err());
     }
 
     #[test]
