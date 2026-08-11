@@ -328,6 +328,15 @@ mod tests {
         assert!(result.is_err());
     }
 
+    // Like a record with its own #[export] impl, an enum with one rejects
+    // at the scan stage (ConflictingDeclarations: the same name can't be
+    // both an `enum`/`#[data]` declaration and an `#[export] impl`
+    // target), so an enum with populated initializers()/methods() is not
+    // reachable through supported source syntax today. The defensive
+    // rejection in Enumeration::from_declaration stays in place for when
+    // that changes, but is not covered by an end-to-end test here for the
+    // same reason.
+
     fn record_bindings() -> Bindings<Wasm32> {
         let source = boltffi_scan::scan_file(
             syn::parse_str(
@@ -711,8 +720,10 @@ mod tests {
 
         assert!(source.contains("typedef Timestamp = int;"));
         assert!(source.contains("Timestamp keepTimestamp(Timestamp arg0)"));
-        assert!(source.contains("BigInt.from(arg0).toJS"));
-        assert!(source.contains(").toDartInt"));
+        // dart:js_interop has no BigInt.toJS/JSBigInt.toDartInt -- must
+        // round-trip through the boltffiInt64ToJS/FromJS helpers instead.
+        assert!(source.contains("boltffiInt64ToJS(arg0)"));
+        assert!(source.contains("boltffiInt64FromJS("));
     }
 
     #[test]
@@ -750,6 +761,11 @@ mod tests {
         // invalid Dart).
         assert!(source.contains("Future<int> addAsync(int arg0) async =>"));
         assert!(!source.contains("async addAsync"));
+        // Without this, a class handle can only ever be released by
+        // nondeterministic JS finalization -- there's no way to call the
+        // JS wrapper's BoltFFIHandle.dispose() from Dart at all.
+        assert!(source.contains("void dispose$() {"));
+        assert!(source.contains("js.callMethodVarArgs('dispose'.toJS, []);"));
     }
 
     #[test]
@@ -780,6 +796,16 @@ mod tests {
         let source = source_of(&output);
         assert!(source.contains("JSObject boltffiDurationToJS(Duration value) {"));
         assert!(source.contains("Duration boltffiDurationFromJS(JSObject value) {"));
+        // dart:js_interop's JSBigInt has no int/BigInt conversion members
+        // (no BigInt.toJS, no JSBigInt.toDartInt), which Duration's own
+        // helpers also depend on -- verified against a real Dart SDK that
+        // `BigInt.toJS`/`JSBigInt.toDartInt` don't analyze, and that this
+        // constructor/toString round-trip does.
+        assert!(source.contains("JSAny boltffiInt64ToJS(int value) {"));
+        assert!(source.contains("int boltffiInt64FromJS(JSAny value) {"));
+        assert!(source.contains("globalContext.getProperty('BigInt'.toJS)"));
+        assert!(!source.contains("BigInt.from(wholeSeconds).toJS"));
+        assert!(!source.contains("as JSBigInt).toDartInt"));
     }
 
     fn direct_vector_bindings() -> Bindings<Wasm32> {

@@ -88,7 +88,7 @@ pub fn to_js(expr: &str, ty: &TypeRef, context: &RenderContext<Wasm32>) -> Resul
             | Primitive::USize,
         ) => format!("({expr}).toJS"),
         TypeRef::Primitive(Primitive::I64 | Primitive::U64) => {
-            format!("BigInt.from({expr}).toJS")
+            format!("boltffiInt64ToJS({expr})")
         }
         TypeRef::Primitive(Primitive::F32 | Primitive::F64) => format!("({expr}).toJS"),
         TypeRef::String | TypeRef::InternedString { .. } => format!("({expr}).toJS"),
@@ -143,7 +143,7 @@ pub fn from_js(expr: &str, ty: &TypeRef, context: &RenderContext<Wasm32>) -> Res
             | Primitive::USize,
         ) => format!("({expr} as JSNumber).toDartInt"),
         TypeRef::Primitive(Primitive::I64 | Primitive::U64) => {
-            format!("({expr} as JSBigInt).toDartInt")
+            format!("boltffiInt64FromJS({expr} as JSAny)")
         }
         TypeRef::Primitive(Primitive::F32 | Primitive::F64) => {
             format!("({expr} as JSNumber).toDartDouble")

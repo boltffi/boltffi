@@ -162,9 +162,9 @@ fn generate_dart(config: &Config, options: &GenerateOptions) -> Result<()> {
 }
 
 fn generate_dart_web(config: &Config, options: &GenerateOptions) -> Result<()> {
-    if !config.is_dart_web_enabled() {
+    if !config.should_process(Target::DartWeb, options.experimental) {
         return Err(CliError::CommandFailed {
-            command: "targets.dart_web.enabled = false".to_string(),
+            command: "targets.dart_web.enabled = false (or requires --experimental)".to_string(),
             status: None,
         });
     }
@@ -927,6 +927,36 @@ mod tests {
 
     fn demo_manifest_path() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../examples/demo/Cargo.toml")
+    }
+
+    /// `targets.dart_web.enabled = true` alone must not bypass the same
+    /// experimental opt-in `GenerateTarget::All` and `pack dart-web` both
+    /// require -- this must fail on the gate itself, before ever touching
+    /// cargo, so a config with no real crate on disk is enough to prove it.
+    #[test]
+    fn generate_dart_web_requires_experimental_opt_in() {
+        let config = parse_config(
+            r#"
+[package]
+name = "demo"
+
+[targets.dart_web]
+enabled = true
+"#,
+        );
+
+        let result = run_generation(
+            &config,
+            &GenerateOptions {
+                target: GenerateTarget::DartWeb,
+                output: None,
+                experimental: false,
+                cargo_args: Vec::new(),
+                deny_skipped: false,
+            },
+        );
+
+        assert!(result.is_err());
     }
 
     #[test]

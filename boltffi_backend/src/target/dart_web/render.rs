@@ -573,6 +573,19 @@ impl Enumeration {
         decl: &EnumDecl<Wasm32>,
         context: &RenderContext<Wasm32>,
     ) -> Result<Self> {
+        // Enums render as either a wrapped int (C-style) or a sealed class
+        // hierarchy over plain data classes (data enums) -- neither has a
+        // binding to a JS object of its own, so an inherent
+        // initializer/method exported on the enum's impl block has
+        // nowhere to be called from (same reasoning as Record).
+        let (initializers, methods) = match decl {
+            EnumDecl::CStyle(cstyle) => (cstyle.initializers(), cstyle.methods()),
+            EnumDecl::Data(data) => (data.initializers(), data.methods()),
+            _ => return Err(unsupported("enum declaration")),
+        };
+        if !initializers.is_empty() || !methods.is_empty() {
+            return Err(unsupported("enum with inherent initializers/methods"));
+        }
         let source = match decl {
             EnumDecl::CStyle(cstyle) => Self::c_style(cstyle)?,
             EnumDecl::Data(data) => Self::data(data, context)?,
@@ -941,7 +954,13 @@ impl Class {
 
         let source = format!(
             "@JS('{namespace}.{name}')\nexternal JSObject get {class_ref};\n\n\
-             class {name} {{\n  final JSObject js;\n  const {name}._(this.js);\n\n  static {name} fromJS(JSObject js) => {name}._(js);\n\n{members}\n}}\n\n",
+             class {name} {{\n  final JSObject js;\n  const {name}._(this.js);\n\n  static {name} fromJS(JSObject js) => {name}._(js);\n\n\
+             \x20\x20// Releases the underlying Rust handle. The JS wrapper (BoltFFIHandle)\n\
+             \x20\x20// also finalizes it automatically if this is never called, but that's\n\
+             \x20\x20// nondeterministic GC timing -- call this to release deterministically.\n\
+             \x20\x20void dispose$() {{\n\
+             \x20\x20\x20\x20js.callMethodVarArgs('dispose'.toJS, []);\n\
+             \x20\x20}}\n\n{members}\n}}\n\n",
             members = members.join("\n"),
         );
 
@@ -1090,18 +1109,29 @@ impl<'m> Module<'m> {
              /// Must be awaited before calling anything else this package\n\
              /// exports.\n\
              Future<void> init() => _boltffiReady.toDart.then((_) {{}});\n\n\
+             // dart:js_interop's JSBigInt has no int/BigInt conversion members
+             // (no BigInt.toJS, no JSBigInt.toDartInt) -- round-trip through the
+             // JS BigInt constructor and its decimal string representation instead.\n\
+             JSAny boltffiInt64ToJS(int value) {{\n\
+             \x20\x20return (globalContext.getProperty('BigInt'.toJS) as JSFunction)\n\
+             \x20\x20\x20\x20\x20\x20.callAsConstructor<JSAny>(BigInt.from(value).toString().toJS);\n\
+             }}\n\n\
+             int boltffiInt64FromJS(JSAny value) {{\n\
+             \x20\x20final text = (value as JSObject).callMethodVarArgs('toString'.toJS, []) as JSString;\n\
+             \x20\x20return BigInt.parse(text.toDart).toInt();\n\
+             }}\n\n\
              // The wire format for `std::time::Duration` is `{{ secs: bigint,\n\
              // nanos: number }}` (see runtime/typescript/src/wire.ts).\n\
              JSObject boltffiDurationToJS(Duration value) {{\n\
              \x20\x20final result = JSObject();\n\
              \x20\x20final wholeSeconds = value.inSeconds;\n\
              \x20\x20final remainderMicros = value.inMicroseconds - wholeSeconds * 1000000;\n\
-             \x20\x20result.setProperty('secs'.toJS, BigInt.from(wholeSeconds).toJS);\n\
+             \x20\x20result.setProperty('secs'.toJS, boltffiInt64ToJS(wholeSeconds));\n\
              \x20\x20result.setProperty('nanos'.toJS, (remainderMicros * 1000).toJS);\n\
              \x20\x20return result;\n\
              }}\n\n\
              Duration boltffiDurationFromJS(JSObject value) {{\n\
-             \x20\x20final secs = (value.getProperty('secs'.toJS) as JSBigInt).toDartInt;\n\
+             \x20\x20final secs = boltffiInt64FromJS(value.getProperty('secs'.toJS) as JSAny);\n\
              \x20\x20final nanos = (value.getProperty('nanos'.toJS) as JSNumber).toDartInt;\n\
              \x20\x20return Duration(seconds: secs, microseconds: nanos ~/ 1000);\n\
              }}\n\n"

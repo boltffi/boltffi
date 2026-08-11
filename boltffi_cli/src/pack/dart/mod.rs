@@ -192,6 +192,12 @@ fn unify_native_and_web(
         step.finish_success();
     }
 
+    {
+        let step = reporter.step("Realigning the native asset ID");
+        patch_native_asset_name(package_dir, &config.crate_artifact_name())?;
+        step.finish_success();
+    }
+
     pack_wrapped_wasm_module(config, &options.execution, reporter)?;
     // Always regenerate the web half here, independent of
     // options.execution.regenerate: that flag is calibrated for the
@@ -269,6 +275,44 @@ fn move_native_bindings(lib_dir: &Path, native_dir: &Path, package_name: &str) -
     })
 }
 
+// A `@Native` annotation with no explicit `assetId:` resolves against the
+// *current library's own URI* by default. Before this move, that URI was
+// `package:<name>/<artifact>.dart`, matching the code asset the build hook
+// registers under that same bare name -- but move_native_bindings just
+// relocated the file to lib/src/native/<artifact>.dart, changing its
+// default-resolved assetId to `package:<name>/src/native/<artifact>.dart`
+// without touching the hook. Every native call would fail to resolve at
+// runtime unless the hook's registered asset name is realigned to match.
+//
+// Idempotent the same way move_native_bindings is: a second `pack dart`
+// with `--regenerate=false` sees a hook/build.dart already patched by a
+// prior run (regeneration would have overwritten it with the unpatched
+// template again, but that only happens before this function runs).
+fn patch_native_asset_name(package_dir: &Path, artifact_name: &str) -> Result<()> {
+    let hook_path = package_dir.join("hook/build.dart");
+    let source = std::fs::read_to_string(&hook_path).map_err(|source| CliError::ReadFailed {
+        path: hook_path.clone(),
+        source,
+    })?;
+    let unpatched = format!("const assetName = \"{artifact_name}.dart\";");
+    let patched = format!("const assetName = \"src/native/{artifact_name}.dart\";");
+    if source.contains(&patched) {
+        return Ok(());
+    }
+    if !source.contains(&unpatched) {
+        return Err(CliError::CommandFailed {
+            command: format!("expected {} to declare `{unpatched}`", hook_path.display()),
+            status: None,
+        });
+    }
+    std::fs::write(&hook_path, source.replace(&unpatched, &patched)).map_err(|source| {
+        CliError::WriteFailed {
+            path: hook_path,
+            source,
+        }
+    })
+}
+
 fn conditional_export_shim(package_name: &str, web_module_name: &str) -> String {
     format!(
         "library;\n\n\
@@ -328,7 +372,7 @@ mod tests {
 
     use super::{
         BindingExpansion, BuildSelection, conditional_export_shim, dart_build_options,
-        dart_expansion, move_native_bindings, write_web_setup_doc,
+        dart_expansion, move_native_bindings, patch_native_asset_name, write_web_setup_doc,
     };
     use crate::config::Config;
 
@@ -434,6 +478,67 @@ mod tests {
         let moved = std::fs::read_to_string(native_dir.join("demo.dart")).expect("moved file");
         assert_eq!(moved, "library demo;\n");
 
+        std::fs::remove_dir_all(&package_dir).expect("cleanup temp dir");
+    }
+
+    /// `@Native` with no explicit `assetId:` resolves against its own
+    /// library's default URI -- after move_native_bindings relocates the
+    /// file, the hook's still-registered bare asset name no longer
+    /// matches, so every native call fails at runtime unless this patch
+    /// realigns it to the new relative path.
+    #[test]
+    fn patch_native_asset_name_realigns_the_hook_asset_path() {
+        let package_dir = unique_temp_dir("boltffi-patch-native-asset-name-test");
+        let hook_dir = package_dir.join("hook");
+        std::fs::create_dir_all(&hook_dir).expect("create hook dir");
+        std::fs::write(
+            hook_dir.join("build.dart"),
+            "const assetName = \"demo.dart\";\n",
+        )
+        .expect("write hook file");
+
+        patch_native_asset_name(&package_dir, "demo").expect("patch succeeds");
+
+        let patched =
+            std::fs::read_to_string(hook_dir.join("build.dart")).expect("patched hook file");
+        assert_eq!(patched, "const assetName = \"src/native/demo.dart\";\n");
+
+        std::fs::remove_dir_all(&package_dir).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn patch_native_asset_name_is_a_no_op_when_already_patched() {
+        let package_dir = unique_temp_dir("boltffi-patch-native-asset-name-idempotent-test");
+        let hook_dir = package_dir.join("hook");
+        std::fs::create_dir_all(&hook_dir).expect("create hook dir");
+        std::fs::write(
+            hook_dir.join("build.dart"),
+            "const assetName = \"src/native/demo.dart\";\n",
+        )
+        .expect("write already-patched hook file");
+
+        patch_native_asset_name(&package_dir, "demo").expect("patch is a no-op");
+
+        let unchanged = std::fs::read_to_string(hook_dir.join("build.dart")).expect("hook file");
+        assert_eq!(unchanged, "const assetName = \"src/native/demo.dart\";\n");
+
+        std::fs::remove_dir_all(&package_dir).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn patch_native_asset_name_fails_when_the_hook_does_not_declare_the_expected_asset_name() {
+        let package_dir = unique_temp_dir("boltffi-patch-native-asset-name-mismatch-test");
+        let hook_dir = package_dir.join("hook");
+        std::fs::create_dir_all(&hook_dir).expect("create hook dir");
+        std::fs::write(
+            hook_dir.join("build.dart"),
+            "const assetName = \"other.dart\";\n",
+        )
+        .expect("write hook file");
+
+        let result = patch_native_asset_name(&package_dir, "demo");
+
+        assert!(result.is_err());
         std::fs::remove_dir_all(&package_dir).expect("cleanup temp dir");
     }
 

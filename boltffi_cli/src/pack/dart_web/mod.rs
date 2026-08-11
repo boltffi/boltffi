@@ -8,6 +8,7 @@ use std::fs;
 use std::path::Path;
 
 use boltffi_backend::target::dart_web::DartWebHost;
+use boltffi_bindgen::target::Target;
 
 use crate::{
     cli::{CliError, Result},
@@ -51,9 +52,9 @@ pub(crate) fn pack_dart_web(
     options: PackDartWebOptions,
     reporter: &Reporter,
 ) -> Result<()> {
-    if !config.is_dart_web_enabled() {
+    if !config.should_process(Target::DartWeb, options.experimental) {
         return Err(CliError::CommandFailed {
-            command: "targets.dart_web.enabled = false".to_string(),
+            command: "targets.dart_web.enabled = false (or requires --experimental)".to_string(),
             status: None,
         });
     }
@@ -214,7 +215,10 @@ fn render_loader_script(namespace: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::render_loader_script;
+    use super::{pack_dart_web, render_loader_script};
+    use crate::commands::pack::{PackDartWebOptions, PackExecutionOptions};
+    use crate::config::Config;
+    use crate::reporter::{Reporter, Verbosity};
 
     #[test]
     fn loader_publishes_the_namespace_and_ready_globals() {
@@ -225,5 +229,42 @@ mod tests {
         assert!(
             script.contains("globalThis[\"__boltffi_demo_ready\"] = __boltffiModule.initialized;")
         );
+    }
+
+    /// `targets.dart_web.enabled = true` alone must not bypass the same
+    /// experimental opt-in `generate dart-web`/`should_process` require
+    /// elsewhere -- this must fail on the gate itself, before ever
+    /// touching cargo, so a config with no real crate on disk is enough
+    /// to prove it.
+    #[test]
+    fn pack_dart_web_requires_experimental_opt_in() {
+        let config: Config = toml::from_str(
+            r#"
+[package]
+name = "demo"
+
+[targets.dart_web]
+enabled = true
+"#,
+        )
+        .expect("toml parse failed");
+        config.validate().expect("config validation failed");
+
+        let result = pack_dart_web(
+            &config,
+            PackDartWebOptions {
+                execution: PackExecutionOptions {
+                    release: false,
+                    regenerate: false,
+                    no_build: true,
+                    deny_skipped: false,
+                    cargo_args: Vec::new(),
+                },
+                experimental: false,
+            },
+            &Reporter::new(Verbosity::Quiet),
+        );
+
+        assert!(result.is_err());
     }
 }
