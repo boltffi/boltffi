@@ -192,9 +192,9 @@ impl<'a> Builder<'a> {
         command.arg("--target").arg(triple);
 
         self.apply_common_build_args(&mut command);
-        apply_wasm_import_undefined(&mut command, triple);
         command.args(&command_args.command_args);
         self.apply_expansion(&mut command)?;
+        apply_wasm_import_undefined(&mut command);
 
         let success = run_command_streaming(&mut command, self.options.on_output.as_ref());
 
@@ -316,41 +316,21 @@ impl<'a> Builder<'a> {
 // time, not link time. wasm-ld's default policy treats an unresolved
 // symbol as a hard link error unless told otherwise, so every wasm
 // build needs `--import-undefined` or linking fails as soon as a crate
-// actually uses streams/async. Appends to (rather than overwrites) any
-// existing target-specific or global RUSTFLAGS so this doesn't silently
-// drop flags the caller already set.
-fn apply_wasm_import_undefined(command: &mut Command, triple: &str) {
-    let target_key = format!("CARGO_TARGET_{}_RUSTFLAGS", env_key_for_triple(triple));
-    let existing = std::env::var(&target_key)
-        .ok()
-        .filter(|value| !value.is_empty())
-        .or_else(|| {
-            std::env::var("RUSTFLAGS")
-                .ok()
-                .filter(|value| !value.is_empty())
-        });
-    command.env(&target_key, wasm_import_undefined_rustflags(existing));
-}
-
-fn wasm_import_undefined_rustflags(existing: Option<String>) -> String {
-    const IMPORT_UNDEFINED: &str = "-Clink-args=--import-undefined";
-    match existing {
-        Some(existing) => format!("{existing} {IMPORT_UNDEFINED}"),
-        None => IMPORT_UNDEFINED.to_owned(),
-    }
-}
-
-fn env_key_for_triple(triple: &str) -> String {
-    triple
-        .chars()
-        .map(|character| {
-            if character.is_ascii_alphanumeric() {
-                character.to_ascii_uppercase()
-            } else {
-                '_'
-            }
-        })
-        .collect()
+// actually uses streams/async.
+//
+// Passed as a trailing `cargo rustc -- ...` argument (must run after
+// `apply_expansion`, which is what puts the `--` separator on the
+// command line) rather than via RUSTFLAGS/CARGO_TARGET_<triple>_RUSTFLAGS/
+// build.rustflags: Cargo's rustflags sources are mutually exclusive and
+// precedence-ordered (CARGO_ENCODED_RUSTFLAGS > RUSTFLAGS > target
+// rustflags > build.rustflags), so writing to any one of them risks
+// either being silently outranked by a higher-precedence source the
+// caller already set, or itself outranking and hiding a lower one (e.g.
+// a workspace's `[build] rustflags` in .cargo/config.toml). A trailing
+// rustc argument always layers on top of whatever rustflags Cargo
+// resolves, regardless of which source they came from.
+fn apply_wasm_import_undefined(command: &mut Command) {
+    command.arg("-C").arg("link-arg=--import-undefined");
 }
 
 pub(crate) fn run_command_streaming(cmd: &mut Command, on_output: Option<&OutputCallback>) -> bool {
@@ -427,8 +407,8 @@ pub fn failed_targets(results: &[BuildResult]) -> Vec<String> {
 mod tests {
     use super::{
         BindingExpansion, BuildOptions, BuildSelection, Builder, CargoBuildCommandArgs,
-        CargoBuildProfile, env_key_for_triple, resolve_build_profile, run_command_streaming,
-        wasm_import_undefined_rustflags,
+        CargoBuildProfile, apply_wasm_import_undefined, resolve_build_profile,
+        run_command_streaming,
     };
     use crate::config::Config;
     use crate::target::RustTarget;
@@ -565,32 +545,64 @@ name = "demo"
         );
     }
 
-    #[test]
-    fn wasm_target_env_key_uppercases_and_replaces_hyphens() {
-        assert_eq!(
-            env_key_for_triple("wasm32-unknown-unknown"),
-            "WASM32_UNKNOWN_UNKNOWN"
-        );
-    }
-
     /// boltffi_core's async/stream wasm bridge imports `__boltffi_wake`/
     /// `__boltffi_stream_wake` as plain `extern "C"` functions meant to be
     /// resolved as wasm imports at instantiation time, not link time --
     /// without `--import-undefined`, wasm-ld's default policy treats them
     /// as a hard link error as soon as a crate actually uses streams/async.
+    ///
+    /// This must be a trailing `cargo rustc -- ...` argument, appended
+    /// after the `--` the binding expansion already put on the command
+    /// line -- not a RUSTFLAGS-family env var, since those sources are
+    /// mutually exclusive and precedence-ordered, so writing to one risks
+    /// being silently outranked by (or itself hiding) whatever the caller
+    /// already configured through a different source.
     #[test]
-    fn wasm_import_undefined_flag_is_appended_when_nothing_else_is_set() {
-        assert_eq!(
-            wasm_import_undefined_rustflags(None),
-            "-Clink-args=--import-undefined"
+    fn wasm_build_appends_import_undefined_after_the_expansion_separator() {
+        let config: Config = toml::from_str(
+            r#"
+[package]
+name = "demo"
+"#,
+        )
+        .unwrap();
+        let expansion = BindingExpansion::fixture(
+            "/external/workspace/Cargo.toml",
+            "/external/workspace/demo/Cargo.toml",
+            Vec::new(),
         );
-    }
+        let builder = Builder::new(
+            &config,
+            BuildOptions {
+                release: false,
+                selection: BuildSelection::Expanded(Box::new(expansion)),
+                on_output: None,
+            },
+        );
+        let command_args = builder.cargo_build_command_args();
+        let mut command = Command::new("cargo");
+        builder.apply_cargo_build_prefix(&mut command, &command_args);
+        command.arg("--target").arg("wasm32-unknown-unknown");
+        builder.apply_common_build_args(&mut command);
+        command.args(&command_args.command_args);
+        builder.apply_expansion(&mut command).unwrap();
+        apply_wasm_import_undefined(&mut command);
 
-    #[test]
-    fn wasm_import_undefined_flag_is_appended_to_existing_rustflags() {
+        let arguments = command
+            .get_args()
+            .map(|argument| argument.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+
         assert_eq!(
-            wasm_import_undefined_rustflags(Some("-C target-feature=+simd128".to_owned())),
-            "-C target-feature=+simd128 -Clink-args=--import-undefined"
+            &arguments[arguments.len() - 6..],
+            [
+                "--lib",
+                "--",
+                "--cfg",
+                "boltffi_binding_expansion",
+                "-C",
+                "link-arg=--import-undefined"
+            ]
         );
     }
 
