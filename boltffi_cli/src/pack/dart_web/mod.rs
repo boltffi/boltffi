@@ -20,12 +20,30 @@ use crate::{
 };
 
 const RUNTIME_SOURCES: &[(&str, &str)] = &[
-    ("callback.js", include_str!("../../../vendor/runtime-js/callback.js")),
-    ("handle.js", include_str!("../../../vendor/runtime-js/handle.js")),
-    ("index.js", include_str!("../../../vendor/runtime-js/index.js")),
-    ("module.js", include_str!("../../../vendor/runtime-js/module.js")),
-    ("stream.js", include_str!("../../../vendor/runtime-js/stream.js")),
-    ("wire.js", include_str!("../../../vendor/runtime-js/wire.js")),
+    (
+        "callback.js",
+        include_str!("../../../vendor/runtime-js/callback.js"),
+    ),
+    (
+        "handle.js",
+        include_str!("../../../vendor/runtime-js/handle.js"),
+    ),
+    (
+        "index.js",
+        include_str!("../../../vendor/runtime-js/index.js"),
+    ),
+    (
+        "module.js",
+        include_str!("../../../vendor/runtime-js/module.js"),
+    ),
+    (
+        "stream.js",
+        include_str!("../../../vendor/runtime-js/stream.js"),
+    ),
+    (
+        "wire.js",
+        include_str!("../../../vendor/runtime-js/wire.js"),
+    ),
 ];
 
 pub(crate) fn pack_dart_web(
