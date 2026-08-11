@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use crate::{
     build::{
         BuildOptions, BuildSelection, Builder, CargoBuildProfile, OutputCallback, all_successful,
@@ -10,7 +12,11 @@ use crate::{
         pack::PackDartOptions,
     },
     config::Config,
-    pack::{PackError, print_cargo_line, resolve_build_cargo_args},
+    pack::{
+        PackError,
+        dart_web::{generate_and_vendor_web, pack_wrapped_wasm_module},
+        print_cargo_line, resolve_build_cargo_args,
+    },
     reporter::{Reporter, Step},
 };
 
@@ -136,6 +142,130 @@ pub(crate) fn pack_dart(
 
     step.finish_success();
 
+    if config.is_dart_web_enabled() {
+        unify_native_and_web(config, &options, &package_dir, reporter)?;
+    }
+
     reporter.finish();
     Ok(())
+}
+
+/// Folds the dart_web output into this same package, so a consumer
+/// imports one package (`import 'package:{name}/{name}.dart'`) and gets
+/// the right backend automatically — a plain `dart:ffi` desktop/mobile
+/// build sees `src/native/{name}.dart`, a web build sees
+/// `src/web/{name}.dart`, chosen by Dart's own conditional-export
+/// mechanism, `dart.library.js_interop` (true only when compiling for
+/// web). Neither renderer needs to know this happens — `target::dart`'s
+/// own output just gets moved into a subdirectory of itself, and
+/// `target::dart_web`'s output is generated directly into another one;
+/// both are self-contained Dart source with no assumptions about their
+/// own file location.
+fn unify_native_and_web(
+    config: &Config,
+    options: &PackDartOptions,
+    package_dir: &Path,
+    reporter: &Reporter,
+) -> Result<()> {
+    reporter.section("🔗", "Unifying native + web Dart packages");
+
+    let package_name = &config.package.name;
+    let lib_dir = package_dir.join("lib");
+    let native_dir = lib_dir.join("src/native");
+    let web_dir = lib_dir.join("src/web");
+
+    {
+        let step = reporter.step("Moving native bindings under src/native");
+        std::fs::create_dir_all(&native_dir).map_err(|source| CliError::CreateDirectoryFailed {
+            path: native_dir.clone(),
+            source,
+        })?;
+        let native_file = lib_dir.join(format!("{package_name}.dart"));
+        let native_dest = native_dir.join(format!("{package_name}.dart"));
+        std::fs::rename(&native_file, &native_dest).map_err(|source| CliError::CopyFailed {
+            from: native_file,
+            to: native_dest,
+            source,
+        })?;
+        step.finish_success();
+    }
+
+    pack_wrapped_wasm_module(config, &options.execution, reporter)?;
+    generate_and_vendor_web(
+        config,
+        &options.execution,
+        options.experimental,
+        &web_dir,
+        reporter,
+    )?;
+
+    {
+        let step = reporter.step("Writing the conditional-export shim");
+        let shim_path = lib_dir.join(format!("{package_name}.dart"));
+        let shim = format!(
+            "library;\n\n\
+             export 'src/native/{package_name}.dart'\n\
+             \x20\x20\x20\x20if (dart.library.js_interop) 'src/web/{package_name}.dart';\n"
+        );
+        std::fs::write(&shim_path, shim).map_err(|source| CliError::WriteFailed {
+            path: shim_path,
+            source,
+        })?;
+        step.finish_success();
+    }
+
+    {
+        let step = reporter.step("Writing web setup instructions");
+        write_web_setup_doc(package_dir, package_name)?;
+        step.finish_success();
+    }
+
+    Ok(())
+}
+
+/// Everything under `lib/src/web/` has to be copied into the consuming
+/// app's own `web/` directory by hand — there is no Flutter or plain-Dart
+/// mechanism that reaches into a dependency's `lib/` and serves arbitrary
+/// files from it. Spelling out the exact files and the `index.html`
+/// snippet here (rather than only in out-of-band docs) means the one
+/// unavoidable manual step is a copy-paste, not a look-up.
+fn write_web_setup_doc(package_dir: &Path, package_name: &str) -> Result<()> {
+    let js_namespace = format!("__boltffi_{package_name}");
+    let doc = format!(
+        "# Web setup\n\n\
+         The contents of `lib/src/web/` have to be copied into your app's `web/`\n\
+         directory (Flutter or plain Dart web) once. They won't be picked up\n\
+         automatically just by depending on this package.\n\n\
+         ## 1. Copy these files, from `lib/src/web/`\n\n\
+         - `{package_name}_web_loader.mjs`\n\
+         - `web/` (whole folder — compiled JS, the wasm binary, and the vendored runtime)\n\n\
+         No npm install, no build step — everything here resolves via plain relative\n\
+         imports a browser understands natively.\n\n\
+         ## 2. Add this to `web/index.html`, before your compiled app's own script tag\n\n\
+         ```html\n\
+         <script type=\"module\" src=\"{package_name}_web_loader.mjs\"></script>\n\
+         ```\n\n\
+         ## 3. Call this once before using the package\n\n\
+         ```dart\n\
+         import 'package:{package_name}/{package_name}.dart';\n\n\
+         await init();\n\
+         ```\n\n\
+         `init()` only *waits* for the module the script tag above already started\n\
+         loading — it doesn't load anything itself. On native (dart:ffi) targets,\n\
+         `init()` isn't part of the generated API at all; only the web half needs it.\n\n\
+         ---\n\n\
+         Why the manual copy: `pack dart` only ever runs in this package's own repo,\n\
+         never in a consuming app's build — there's no hook it could use to place\n\
+         files into an app it doesn't know about. And Flutter's own asset-bundling\n\
+         system (`flutter: assets:`) isn't a safe substitute here: it serves files\n\
+         through a different pipeline that doesn't guarantee the correct MIME types\n\
+         for `.wasm`/`.js`, which can silently break loading in production.\n\n\
+         The global JS namespace this package's web half uses is `{js_namespace}` —\n\
+         only relevant if you're debugging, never something you need to reference.\n"
+    );
+    let doc_path = package_dir.join("WEB_SETUP.md");
+    std::fs::write(&doc_path, doc).map_err(|source| CliError::WriteFailed {
+        path: doc_path,
+        source,
+    })
 }
