@@ -1,12 +1,6 @@
-//! Builds `runtime/typescript` from source and embeds the fresh output
+//! Builds `vendor/runtime-typescript` from source and embeds the output
 //! into the `boltffi` binary, so `pack dart-web` can vendor it with zero
-//! npm/Node dependency on the consuming side. Prefers the monorepo's own
-//! `../runtime/typescript` (the single source of truth for anyone working
-//! in this repo) and falls back to `vendor/runtime-typescript`, a copy
-//! kept inside the crate root so it ships with a packaged/published
-//! `boltffi_cli` -- Cargo can never package a sibling directory, so a
-//! `cargo install`/crates.io build has no way to reach the monorepo copy
-//! at all. The vendored copy has no CI check keeping it in sync; run
+//! npm/Node dependency on the consuming side. Run
 //! `scripts/sync-dart-web-runtime.sh`/`.ps1` (and commit the result)
 //! whenever `runtime/typescript/src` changes.
 
@@ -18,13 +12,7 @@ include!("src/pack/dart_web/runtime_sources_codegen.rs");
 
 fn main() {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let monorepo_runtime_dir = manifest_dir.join("../runtime/typescript");
-    let vendored_runtime_dir = manifest_dir.join("vendor/runtime-typescript");
-    let runtime_dir = if monorepo_runtime_dir.join("src").exists() {
-        monorepo_runtime_dir
-    } else {
-        vendored_runtime_dir
-    };
+    let runtime_dir = manifest_dir.join("vendor/runtime-typescript");
     let src_dir = runtime_dir.join("src");
     let dist_dir = runtime_dir.join("dist");
     let out_dir = PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR set by cargo"));
@@ -41,8 +29,7 @@ fn main() {
 
     if !src_dir.exists() {
         panic!(
-            "boltffi_cli build.rs: expected TypeScript runtime sources at {} \
-             (neither ../runtime/typescript nor vendor/runtime-typescript exists here)",
+            "boltffi_cli build.rs: expected TypeScript runtime sources at {}",
             src_dir.display()
         );
     }

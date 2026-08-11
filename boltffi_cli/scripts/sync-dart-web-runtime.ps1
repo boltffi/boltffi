@@ -1,12 +1,10 @@
 # Re-syncs boltffi_cli/vendor/runtime-typescript from runtime/typescript.
 #
-# build.rs builds @boltffi/runtime from source so pack dart-web's vendored
-# copy never goes stale -- but that only works from a full monorepo
-# checkout, since a packaged/published boltffi_cli crate (cargo install,
-# crates.io) can never contain a sibling ../runtime/typescript directory.
-# This vendored copy is build.rs's fallback source for that case. It has
-# no CI check keeping it in sync, so run this (and commit the result)
-# whenever runtime/typescript/src changes.
+# build.rs builds @boltffi/runtime from this vendored copy so a packaged
+# boltffi_cli crate (cargo install, crates.io) always has the source on
+# hand -- Cargo can never package a sibling ../runtime/typescript
+# directory. There's no CI check keeping the copy in sync, so run this
+# (and commit the result) whenever runtime/typescript/src changes.
 
 $ErrorActionPreference = "Stop"
 
