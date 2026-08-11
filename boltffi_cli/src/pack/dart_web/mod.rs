@@ -4,6 +4,9 @@
 //! at all). `@boltffi/runtime` is built fresh from source at `boltffi_cli`
 //! compile time (see `build.rs`) rather than a hand-copied snapshot.
 
+#[cfg(test)]
+mod runtime_sources_codegen;
+
 use std::fs;
 use std::path::Path;
 

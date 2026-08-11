@@ -168,17 +168,7 @@ fn unify_native_and_web(
 
     {
         let step = reporter.step("Moving native bindings under src/native");
-        std::fs::create_dir_all(&native_dir).map_err(|source| CliError::CreateDirectoryFailed {
-            path: native_dir.clone(),
-            source,
-        })?;
-        let native_file = lib_dir.join(format!("{package_name}.dart"));
-        let native_dest = native_dir.join(format!("{package_name}.dart"));
-        std::fs::rename(&native_file, &native_dest).map_err(|source| CliError::CopyFailed {
-            from: native_file,
-            to: native_dest,
-            source,
-        })?;
+        move_native_bindings(&lib_dir, &native_dir, package_name)?;
         step.finish_success();
     }
 
@@ -194,14 +184,11 @@ fn unify_native_and_web(
     {
         let step = reporter.step("Writing the conditional-export shim");
         let shim_path = lib_dir.join(format!("{package_name}.dart"));
-        let shim = format!(
-            "library;\n\n\
-             export 'src/native/{package_name}.dart'\n\
-             \x20\x20\x20\x20if (dart.library.js_interop) 'src/web/{package_name}.dart';\n"
-        );
-        std::fs::write(&shim_path, shim).map_err(|source| CliError::WriteFailed {
-            path: shim_path,
-            source,
+        std::fs::write(&shim_path, conditional_export_shim(package_name)).map_err(|source| {
+            CliError::WriteFailed {
+                path: shim_path,
+                source,
+            }
         })?;
         step.finish_success();
     }
@@ -213,6 +200,28 @@ fn unify_native_and_web(
     }
 
     Ok(())
+}
+
+fn move_native_bindings(lib_dir: &Path, native_dir: &Path, package_name: &str) -> Result<()> {
+    std::fs::create_dir_all(native_dir).map_err(|source| CliError::CreateDirectoryFailed {
+        path: native_dir.to_path_buf(),
+        source,
+    })?;
+    let native_file = lib_dir.join(format!("{package_name}.dart"));
+    let native_dest = native_dir.join(format!("{package_name}.dart"));
+    std::fs::rename(&native_file, &native_dest).map_err(|source| CliError::CopyFailed {
+        from: native_file,
+        to: native_dest,
+        source,
+    })
+}
+
+fn conditional_export_shim(package_name: &str) -> String {
+    format!(
+        "library;\n\n\
+         export 'src/native/{package_name}.dart'\n\
+         \x20\x20\x20\x20if (dart.library.js_interop) 'src/web/{package_name}.dart';\n"
+    )
 }
 
 fn write_web_setup_doc(package_dir: &Path, package_name: &str) -> Result<()> {
@@ -254,4 +263,77 @@ fn write_web_setup_doc(package_dir: &Path, package_name: &str) -> Result<()> {
         path: doc_path,
         source,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use super::{conditional_export_shim, move_native_bindings, write_web_setup_doc};
+
+    fn unique_temp_dir(prefix: &str) -> std::path::PathBuf {
+        let unique_suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time before unix epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!("{prefix}-{unique_suffix}"))
+    }
+
+    #[test]
+    fn conditional_export_shim_picks_web_only_under_js_interop() {
+        let shim = conditional_export_shim("demo");
+
+        assert_eq!(
+            shim,
+            "library;\n\n\
+             export 'src/native/demo.dart'\n\
+             \x20\x20\x20\x20if (dart.library.js_interop) 'src/web/demo.dart';\n"
+        );
+    }
+
+    #[test]
+    fn move_native_bindings_relocates_the_generated_file() {
+        let package_dir = unique_temp_dir("boltffi-move-native-bindings-test");
+        let lib_dir = package_dir.join("lib");
+        let native_dir = lib_dir.join("src/native");
+        std::fs::create_dir_all(&lib_dir).expect("create lib dir");
+        std::fs::write(lib_dir.join("demo.dart"), "library demo;\n").expect("write native file");
+
+        move_native_bindings(&lib_dir, &native_dir, "demo").expect("move succeeds");
+
+        assert!(!lib_dir.join("demo.dart").exists());
+        let moved = std::fs::read_to_string(native_dir.join("demo.dart")).expect("moved file");
+        assert_eq!(moved, "library demo;\n");
+
+        std::fs::remove_dir_all(&package_dir).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn move_native_bindings_fails_when_the_native_file_is_missing() {
+        let package_dir = unique_temp_dir("boltffi-move-native-bindings-missing-test");
+        let lib_dir = package_dir.join("lib");
+        let native_dir = lib_dir.join("src/native");
+        std::fs::create_dir_all(&lib_dir).expect("create lib dir");
+
+        let result = move_native_bindings(&lib_dir, &native_dir, "demo");
+
+        assert!(result.is_err());
+        std::fs::remove_dir_all(&package_dir).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn write_web_setup_doc_lists_the_files_to_copy_and_the_js_namespace() {
+        let package_dir = unique_temp_dir("boltffi-write-web-setup-doc-test");
+        std::fs::create_dir_all(&package_dir).expect("create package dir");
+
+        write_web_setup_doc(&package_dir, "demo").expect("doc writes");
+
+        let doc =
+            std::fs::read_to_string(package_dir.join("WEB_SETUP.md")).expect("doc is readable");
+        assert!(doc.contains("demo_web_loader.mjs"));
+        assert!(doc.contains("import 'package:demo/demo.dart';"));
+        assert!(doc.contains("__boltffi_demo"));
+
+        std::fs::remove_dir_all(&package_dir).expect("cleanup temp dir");
+    }
 }
