@@ -13,6 +13,7 @@ impl Experimental {
             name: "async_streams",
         },
         Experimental::WholeTarget(Target::Dart),
+        Experimental::WholeTarget(Target::DartWeb),
         Experimental::WholeTarget(Target::KotlinMultiplatform),
     ];
 

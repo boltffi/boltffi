@@ -9,6 +9,7 @@ pub enum Target {
     TypeScript,
     Header,
     Dart,
+    DartWeb,
     Python,
     CSharp,
 }
@@ -23,6 +24,7 @@ impl Target {
             Target::TypeScript => "typescript",
             Target::Header => "header",
             Target::Dart => "dart",
+            Target::DartWeb => "dart_web",
             Target::Python => "python",
             Target::CSharp => "csharp",
         }

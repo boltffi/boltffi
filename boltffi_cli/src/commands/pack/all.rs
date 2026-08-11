@@ -6,9 +6,9 @@ use crate::reporter::Reporter;
 
 use super::{
     PackAllOptions, PackAndroidOptions, PackAppleOptions, PackCSharpOptions, PackDartOptions,
-    PackJavaOptions, PackKmpOptions, PackPythonOptions, PackWasmOptions, pack_android, pack_apple,
-    pack_csharp, pack_dart, pack_kmp, pack_prepared_java, pack_python, pack_wasm,
-    prepare_java_pack,
+    PackDartWebOptions, PackJavaOptions, PackKmpOptions, PackPythonOptions, PackWasmOptions,
+    pack_android, pack_apple, pack_csharp, pack_dart, pack_dart_web, pack_kmp, pack_prepared_java,
+    pack_python, pack_wasm, prepare_java_pack,
 };
 
 pub(super) fn pack_all(
@@ -113,6 +113,18 @@ pub(super) fn pack_all(
         pack_dart(
             config,
             PackDartOptions {
+                execution: options.execution.clone(),
+                experimental: options.experimental,
+            },
+            reporter,
+        )?;
+        packed_any = true;
+    }
+
+    if config.should_process(Target::DartWeb, options.experimental) {
+        pack_dart_web(
+            config,
+            PackDartWebOptions {
                 execution: options.execution.clone(),
                 experimental: options.experimental,
             },

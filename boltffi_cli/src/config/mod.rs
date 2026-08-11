@@ -16,11 +16,11 @@ pub use cargo::{CargoConfig, PackageConfig};
 pub use experimental::Experimental;
 pub use symbols::{DebugSymbolsBundle, DebugSymbolsConfig, DebugSymbolsFormat};
 pub use targets::{
-    AndroidConfig, AndroidPackConfig, AppleConfig, CSharpConfig, DartConfig, HeaderConfig,
-    JavaConfig, KotlinApiStyle, KotlinConfig, KotlinDesktopLoader, KotlinFactoryStyle,
-    KotlinMultiplatformConfig, PythonConfig, SpmConfig, SpmDistribution, SpmLayout, SwiftConfig,
-    TargetsConfig, WasmConfig, WasmNpmTarget, WasmOptimizeLevel, WasmOptimizeOnMissing,
-    WasmProfile, XcframeworkConfig,
+    AndroidConfig, AndroidPackConfig, AppleConfig, CSharpConfig, DartConfig, DartWebConfig,
+    HeaderConfig, JavaConfig, KotlinApiStyle, KotlinConfig, KotlinDesktopLoader,
+    KotlinFactoryStyle, KotlinMultiplatformConfig, PythonConfig, SpmConfig, SpmDistribution,
+    SpmLayout, SwiftConfig, TargetsConfig, WasmConfig, WasmNpmTarget, WasmOptimizeLevel,
+    WasmOptimizeOnMissing, WasmProfile, XcframeworkConfig,
 };
 #[cfg(test)]
 pub use targets::{CSharpNugetConfig, JavaJvmConfig, PythonWheelConfig};
@@ -393,6 +393,10 @@ impl Config {
         self.targets.dart.enabled
     }
 
+    pub fn is_dart_web_enabled(&self) -> bool {
+        self.targets.dart_web.enabled
+    }
+
     pub fn is_python_enabled(&self) -> bool {
         self.targets.python.enabled
     }
@@ -755,6 +759,7 @@ impl Config {
             Target::TypeScript => self.is_wasm_enabled(),
             Target::Header => self.is_apple_enabled() || self.is_android_enabled(),
             Target::Dart => self.is_dart_enabled(),
+            Target::DartWeb => self.is_dart_web_enabled(),
             Target::Python => self.is_python_enabled(),
             Target::CSharp => self.is_csharp_enabled(),
         }
@@ -1142,6 +1147,18 @@ impl Config {
 
     pub fn dart_targets(&self) -> Vec<RustTarget> {
         self.dart_native_targets().to_vec()
+    }
+
+    pub fn dart_web_output(&self) -> PathBuf {
+        self.targets.dart_web.output.clone()
+    }
+
+    pub fn dart_web_module_name(&self) -> String {
+        self.targets
+            .dart_web
+            .module_name
+            .clone()
+            .unwrap_or_else(|| normalize_module_name(&self.package.name))
     }
 }
 

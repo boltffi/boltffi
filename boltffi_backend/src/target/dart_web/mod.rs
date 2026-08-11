@@ -47,6 +47,16 @@ impl DartWebHost {
     pub fn into_target(self) -> Target<Self, WasmBridge> {
         Target::new(self, WasmBridge)
     }
+
+    /// The global JS object name every `@JS()` extern in the generated
+    /// Dart file binds through. `pack dart-web`'s generated loader
+    /// script must publish the wrapped `target::typescript` module's
+    /// exports under this exact name (see `boltffi_cli::pack::dart_web`)
+    /// — it is derived from the module name so multiple boltffi-generated
+    /// packages loaded on the same page don't collide on a shared global.
+    pub fn js_namespace(&self) -> String {
+        format!("__boltffi_{}", self.module)
+    }
 }
 
 impl host::HostBackend for DartWebHost {
@@ -98,7 +108,7 @@ impl host::HostBackend for DartWebHost {
         _bridge: &Self::Bridge,
         context: &RenderContext<Self::Surface>,
     ) -> Result<Emitted> {
-        Function::from_declaration(decl, context)?.render()
+        Function::from_declaration(decl, context, &self.js_namespace())?.render()
     }
 
     fn class(
@@ -107,7 +117,7 @@ impl host::HostBackend for DartWebHost {
         _bridge: &Self::Bridge,
         context: &RenderContext<Self::Surface>,
     ) -> Result<Emitted> {
-        Class::from_declaration(decl, context)?.render()
+        Class::from_declaration(decl, context, &self.js_namespace())?.render()
     }
 
     fn callback(
@@ -125,7 +135,7 @@ impl host::HostBackend for DartWebHost {
         _bridge: &Self::Bridge,
         context: &RenderContext<Self::Surface>,
     ) -> Result<Emitted> {
-        Stream::from_declaration(decl, context)?.render()
+        Stream::from_declaration(decl, context, &self.js_namespace())?.render()
     }
 
     fn constant(
@@ -153,7 +163,7 @@ impl host::HostBackend for DartWebHost {
         _context: &RenderContext<Self::Surface>,
         declarations: Vec<RenderedDeclaration<'decl, Self::Surface>>,
     ) -> Result<GeneratedOutput> {
-        render::Module::new(&self.module).render(declarations)
+        render::Module::new(&self.module, &self.js_namespace()).render(declarations)
     }
 }
 
@@ -354,6 +364,24 @@ mod tests {
     }
 
     #[test]
+    fn renders_an_init_gate_bound_to_the_pack_step_loader_global() {
+        let output = DartWebHost::new("demo")
+            .expect("host constructs")
+            .into_target()
+            .render(&bindings())
+            .expect("target renders");
+        let source = source_of(&output);
+
+        // Must match `DartWebHost::js_namespace` / `Module::ready_global`
+        // exactly — this is the one contract `pack dart-web`'s generated
+        // loader script has to uphold for any of the rest of the file to
+        // resolve to anything at runtime.
+        assert!(source.contains("@JS('__boltffi_demo_ready')"));
+        assert!(source.contains("external JSPromise<JSAny?> get _boltffiReady;"));
+        assert!(source.contains("Future<void> init() => _boltffiReady.toDart.then((_) {});"));
+    }
+
+    #[test]
     fn renders_free_functions_calling_the_wrapped_js_module() {
         let output = DartWebHost::new("demo")
             .expect("host constructs")
@@ -362,11 +390,11 @@ mod tests {
             .expect("target renders");
         let source = source_of(&output);
 
-        assert!(source.contains("@JS('boltffiPoc.add')"));
+        assert!(source.contains("@JS('__boltffi_demo.add')"));
         assert!(source.contains("int add(int arg0, int arg1)"));
-        assert!(source.contains("@JS('boltffiPoc.shout')"));
+        assert!(source.contains("@JS('__boltffi_demo.shout')"));
         assert!(source.contains("String shout(String arg0)"));
-        assert!(source.contains("@JS('boltffiPoc.addAsync')"));
+        assert!(source.contains("@JS('__boltffi_demo.addAsync')"));
         assert!(source.contains("addAsync(int arg0, int arg1) async"));
         assert!(source.contains(".toDart"));
     }
@@ -388,7 +416,7 @@ mod tests {
         assert!(source.contains("if (callback is AdderJsWrapper) return callback.js;"));
         assert!(source.contains("createJSInteropWrapper(_AdderJSAdapter(callback))"));
         assert!(source.contains("boltffiCallbackToJSAdder"));
-        assert!(source.contains("@JS('boltffiPoc.callAdder')"));
+        assert!(source.contains("@JS('__boltffi_demo.callAdder')"));
     }
 
     #[test]
@@ -433,7 +461,7 @@ mod tests {
         assert!(source.contains("await _impl.greet("));
         // The `JsWrapper` side awaits the raw JS object's Promise.
         assert!(source.contains("as JSPromise<JSAny?>).toDart"));
-        assert!(source.contains("@JS('boltffiPoc.callAsyncGreeter')"));
+        assert!(source.contains("@JS('__boltffi_demo.callAsyncGreeter')"));
         assert!(
             source
                 .contains("Future<String> callAsyncGreeter(AsyncGreeter arg0, String arg1) async")
@@ -566,7 +594,7 @@ mod tests {
             .render(&class_bindings())
             .expect("target renders");
         let source = source_of(&output);
-        assert!(source.contains("@JS('boltffiPoc.Counter')"));
+        assert!(source.contains("@JS('__boltffi_demo.Counter')"));
         assert!(source.contains("external JSObject get _boltffiCounterClass;"));
         assert!(source.contains("class Counter"));
         // `new` is a JS reserved word, but class members aren't reached

@@ -8,6 +8,7 @@ use boltffi_backend::core::{CoverageMode, bridge, host};
 use boltffi_backend::target::{
     csharp::CSharpHost,
     dart::DartHost,
+    dart_web::DartWebHost,
     java::{JavaDesktopLoader, JavaHost, JavaVersion},
     kmp::{DEFAULT_KMP_MODULE_NAME, DEFAULT_KMP_PACKAGE_NAME, KmpHost, KmpSupportMode},
     kotlin::{KotlinApiStyle, KotlinDesktopLoader, KotlinFactoryStyle, KotlinHost},
@@ -79,6 +80,7 @@ pub struct Generation {
     kmp_support_mode: KmpSupportMode,
     typescript_module: Option<String>,
     typescript_runtime_package: Option<String>,
+    dart_web_module: Option<String>,
 }
 
 impl Generation {
@@ -132,6 +134,7 @@ impl Generation {
             kmp_support_mode: KmpSupportMode::Strict,
             typescript_module: None,
             typescript_runtime_package: None,
+            dart_web_module: None,
         }
     }
 
@@ -422,6 +425,12 @@ impl Generation {
         self
     }
 
+    #[allow(missing_docs)]
+    pub fn dart_web_module(mut self, module: impl Into<String>) -> Self {
+        self.dart_web_module = Some(module.into());
+        self
+    }
+
     /// Reads the embedded metadata, selects the target surface contract, and renders it.
     pub fn render(&self, target: Target) -> Result<GeneratedOutput, GenerationError> {
         match target {
@@ -436,6 +445,7 @@ impl Generation {
             }
             Target::Swift => self.render_swift(),
             Target::TypeScript => self.render_typescript(),
+            Target::DartWeb => self.render_dart_web(),
             Target::Header => Err(GenerationError::UnsupportedTarget { target }),
         }
     }
@@ -471,7 +481,7 @@ impl Generation {
             Target::KotlinMultiplatform => self.render_kmp_bindings(bindings),
             Target::CSharp => self.render_csharp_bindings(bindings),
             Target::Dart => self.render_dart_bindings(bindings),
-            Target::Swift | Target::TypeScript | Target::Header => {
+            Target::Swift | Target::TypeScript | Target::Header | Target::DartWeb => {
                 Err(GenerationError::UnsupportedTarget { target })
             }
         }
@@ -633,6 +643,20 @@ impl Generation {
                     .as_deref()
                     .unwrap_or("@boltffi/runtime"),
             );
+        self.render_backend(&host.into_target(), bindings)
+    }
+
+    fn render_dart_web(&self) -> Result<GeneratedOutput, GenerationError> {
+        let bindings = self.bindings::<Wasm32>()?;
+        self.render_dart_web_bindings(&bindings)
+    }
+
+    fn render_dart_web_bindings(
+        &self,
+        bindings: &Bindings<Wasm32>,
+    ) -> Result<GeneratedOutput, GenerationError> {
+        let module = self.dart_web_module.as_deref().unwrap_or("boltffi");
+        let host = DartWebHost::new(module).map_err(GenerationError::Render)?;
         self.render_backend(&host.into_target(), bindings)
     }
 

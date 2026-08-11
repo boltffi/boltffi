@@ -10,8 +10,8 @@ use crate::commands::generate::{GenerateOptions, GenerateTarget, run_generate_wi
 use crate::commands::init::InitOptions;
 use crate::commands::pack::{
     PackAllOptions, PackAndroidOptions, PackAppleOptions, PackCSharpOptions, PackCommand,
-    PackDartOptions, PackExecutionOptions, PackJavaOptions, PackKmpOptions, PackPythonOptions,
-    PackWasmOptions, check_java_packaging_prereqs,
+    PackDartOptions, PackDartWebOptions, PackExecutionOptions, PackJavaOptions, PackKmpOptions,
+    PackPythonOptions, PackWasmOptions, check_java_packaging_prereqs,
 };
 use crate::commands::verify::VerifyOptions;
 use crate::commands::{run_build, run_check, run_doctor, run_init, run_pack, run_verify};
@@ -192,6 +192,11 @@ pub(crate) enum GenerateTargetArg {
     Typescript,
     #[value(help = "Generate experimental Dart bindings")]
     Dart,
+    #[value(
+        alias = "dart-web",
+        help = "Generate experimental Dart-for-web (dart:js_interop) bindings"
+    )]
+    DartWeb,
     #[value(help = "Generate Python bindings")]
     Python,
     #[value(help = "Generate C# bindings")]
@@ -354,6 +359,22 @@ pub(crate) enum PackTargetArg {
     },
 
     #[command(
+        name = "dart-web",
+        about = "Build + package experimental Dart-for-web (dart:js_interop) artifacts",
+        long_about = "Build + package experimental Dart-for-web (dart:js_interop) artifacts.\n\nWraps `pack wasm`'s output (target::typescript's generated JS + the compiled wasm binary) rather than a separate build. Requires \"web\" in targets.wasm.npm.targets.\n\nOutputs:\n  - Dart file + loader + vendored JS/wasm: {targets.dart_web.output}\n"
+    )]
+    DartWeb {
+        #[arg(long)]
+        release: bool,
+
+        #[arg(long)]
+        no_build: bool,
+
+        #[arg(long, help = "Enable experimental targets/features")]
+        experimental: bool,
+    },
+
+    #[command(
         about = "Build + package C# artifacts",
         long_about = "Build + package C# artifacts.\n\nOutputs:\n  - C# package project: {targets.csharp.output}\n  - NuGet package:      {targets.csharp.package_output}\n  - Native assets:      runtimes/<rid>/native inside the .nupkg\n"
     )]
@@ -477,6 +498,7 @@ pub(crate) fn execute_command(
                         GenerateTargetArg::Java => GenerateTarget::Java,
                         GenerateTargetArg::Typescript => GenerateTarget::Typescript,
                         GenerateTargetArg::Dart => GenerateTarget::Dart,
+                        GenerateTargetArg::DartWeb => GenerateTarget::DartWeb,
                         GenerateTargetArg::Python => GenerateTarget::Python,
                         GenerateTargetArg::Csharp => GenerateTarget::CSharp,
                         GenerateTargetArg::All => GenerateTarget::All,
@@ -627,6 +649,20 @@ pub(crate) fn execute_command(
                         no_build,
                         deny_skipped,
                         cargo_args,
+                    ),
+                    experimental,
+                }),
+                PackTargetArg::DartWeb {
+                    release,
+                    no_build,
+                    experimental,
+                } => PackCommand::DartWeb(PackDartWebOptions {
+                    execution: pack_execution_options(
+                        release,
+                        regenerate,
+                        no_build,
+                        deny_skipped,
+                        cargo_args.clone(),
                     ),
                     experimental,
                 }),
@@ -1021,6 +1057,19 @@ fn release_pack_commands(
 
             if config.should_process(Target::Dart, false) {
                 commands.push(PackCommand::Dart(PackDartOptions {
+                    execution: pack_execution_options(
+                        true,
+                        false,
+                        false,
+                        false,
+                        cargo_args.to_vec(),
+                    ),
+                    experimental: false,
+                }));
+            }
+
+            if config.should_process(Target::DartWeb, false) {
+                commands.push(PackCommand::DartWeb(PackDartWebOptions {
                     execution: pack_execution_options(
                         true,
                         false,

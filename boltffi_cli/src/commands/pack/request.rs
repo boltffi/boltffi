@@ -9,6 +9,7 @@ pub enum PackCommand {
     Java(PackJavaOptions),
     Python(PackPythonOptions),
     Dart(PackDartOptions),
+    DartWeb(PackDartWebOptions),
     CSharp(PackCSharpOptions),
 }
 
@@ -60,6 +61,11 @@ pub struct PackPythonOptions {
 }
 
 pub struct PackDartOptions {
+    pub execution: PackExecutionOptions,
+    pub experimental: bool,
+}
+
+pub struct PackDartWebOptions {
     pub execution: PackExecutionOptions,
     pub experimental: bool,
 }

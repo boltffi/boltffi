@@ -90,6 +90,7 @@ pub fn run_generation(config: &Config, options: &GenerateOptions) -> Result<()> 
         GenerateTarget::KotlinMultiplatform => generate_kmp(config, options),
         GenerateTarget::Typescript => generate_typescript(config, options),
         GenerateTarget::Dart => generate_dart(config, options),
+        GenerateTarget::DartWeb => generate_dart_web(config, options),
         GenerateTarget::CSharp => generate_csharp(config, options),
         GenerateTarget::Header => generate_header(config, options),
         other => Err(CliError::CommandFailed {
@@ -158,6 +159,39 @@ fn generate_dart(config: &Config, options: &GenerateOptions) -> Result<()> {
     Generation::write_output(output, &output_directory)
         .map(drop)
         .map_err(|error| generation_error(Target::Dart.name(), error))
+}
+
+fn generate_dart_web(config: &Config, options: &GenerateOptions) -> Result<()> {
+    if !config.is_dart_web_enabled() {
+        return Err(CliError::CommandFailed {
+            command: "targets.dart_web.enabled = false".to_string(),
+            status: None,
+        });
+    }
+
+    let expansion = BindingExpansion::resolve_for_commands(
+        config,
+        &["build", "generate"],
+        &options.cargo_args,
+    )?;
+    let output_directory = options
+        .output
+        .clone()
+        .unwrap_or_else(|| config.dart_web_output());
+
+    expansion
+        .generation()
+        .binding_surface(BindingMetadataSurface::Wasm32)
+        .coverage_mode(CoverageMode::Partial)
+        .dart_web_module(config.dart_web_module_name())
+        .render(Target::DartWeb)
+        .map_err(|error| generation_error(Target::DartWeb.name(), error))
+        .and_then(|output| {
+            print_coverage(Target::DartWeb.name(), &output, options.deny_skipped)?;
+            Generation::write_output(output, &output_directory)
+                .map(drop)
+                .map_err(|error| generation_error(Target::DartWeb.name(), error))
+        })
 }
 
 fn generate_typescript(config: &Config, options: &GenerateOptions) -> Result<()> {
@@ -854,6 +888,7 @@ fn target_label(target: &GenerateTarget) -> &'static str {
         GenerateTarget::Header => "header",
         GenerateTarget::Typescript => "typescript",
         GenerateTarget::Dart => "dart",
+        GenerateTarget::DartWeb => "dart_web",
         GenerateTarget::Python => "python",
         GenerateTarget::CSharp => "csharp",
         GenerateTarget::All => "all",
