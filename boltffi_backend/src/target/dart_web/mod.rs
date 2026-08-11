@@ -1,0 +1,449 @@
+//! `dart:js_interop` bindings over the `target::typescript` wasm/JS
+//! module. Deliberately does not re-derive wire encoding, memory
+//! management, or async/callback protocol — all of that already exists,
+//! tested, in `target::typescript` + `@boltffi/runtime`; this target only
+//! answers "what Dart-side glue calls that JS the same way" (see
+//! `interop.rs`).
+
+mod interop;
+mod name_style;
+mod render;
+mod syntax;
+
+use boltffi_binding::{
+    Bindings, CallbackDecl, ClassDecl, ConstantDecl, CustomTypeDecl, EnumDecl, FunctionDecl,
+    RecordDecl, StreamDecl, Wasm32,
+};
+
+use crate::{
+    bridge::wasm::{WasmBridge, WasmBridgeContract},
+    core::{
+        BindingCapability, BridgeCapability, CapabilityRequirements, Emitted, Error,
+        GeneratedOutput, HostCapabilities, RenderContext, RenderedDeclaration, Result, Target,
+        contract::sealed, host,
+    },
+};
+
+use render::{Callback, Class, Constant, CustomType, Enumeration, Function, Record};
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[non_exhaustive]
+pub struct DartWebHost {
+    module: String,
+}
+
+impl DartWebHost {
+    pub fn new(module: impl Into<String>) -> Result<Self> {
+        let module = module.into();
+        if module.is_empty() {
+            return Err(Error::UnsupportedTarget {
+                target: "dart_web",
+                shape: "empty module name",
+            });
+        }
+        Ok(Self { module })
+    }
+
+    pub fn into_target(self) -> Target<Self, WasmBridge> {
+        Target::new(self, WasmBridge)
+    }
+}
+
+impl host::HostBackend for DartWebHost {
+    type Surface = Wasm32;
+    type Bridge = WasmBridgeContract;
+    type Syntax = syntax::Syntax;
+
+    fn name(&self) -> &'static str {
+        "dart_web"
+    }
+
+    fn binding_capabilities(&self) -> HostCapabilities {
+        HostCapabilities::new()
+            .stable(BindingCapability::Records)
+            .stable(BindingCapability::Enums)
+            .stable(BindingCapability::Functions)
+            .stable(BindingCapability::Classes)
+            .stable(BindingCapability::Callbacks)
+            .stable(BindingCapability::Constants)
+            .stable(BindingCapability::CustomTypes)
+    }
+
+    fn bridge_capabilities(&self) -> CapabilityRequirements<BridgeCapability> {
+        CapabilityRequirements::new().require(BridgeCapability::Wasm)
+    }
+
+    fn record(
+        &self,
+        decl: &RecordDecl<Self::Surface>,
+        _bridge: &Self::Bridge,
+        context: &RenderContext<Self::Surface>,
+    ) -> Result<Emitted> {
+        Record::from_declaration(decl, context)?.render()
+    }
+
+    fn enumeration(
+        &self,
+        decl: &EnumDecl<Self::Surface>,
+        _bridge: &Self::Bridge,
+        context: &RenderContext<Self::Surface>,
+    ) -> Result<Emitted> {
+        Enumeration::from_declaration(decl, context)?.render()
+    }
+
+    fn function(
+        &self,
+        decl: &FunctionDecl<Self::Surface>,
+        _bridge: &Self::Bridge,
+        context: &RenderContext<Self::Surface>,
+    ) -> Result<Emitted> {
+        Function::from_declaration(decl, context)?.render()
+    }
+
+    fn class(
+        &self,
+        decl: &ClassDecl<Self::Surface>,
+        _bridge: &Self::Bridge,
+        context: &RenderContext<Self::Surface>,
+    ) -> Result<Emitted> {
+        Class::from_declaration(decl, context)?.render()
+    }
+
+    fn callback(
+        &self,
+        decl: &CallbackDecl<Self::Surface>,
+        _bridge: &Self::Bridge,
+        context: &RenderContext<Self::Surface>,
+    ) -> Result<Emitted> {
+        Callback::from_declaration(decl, context)?.render()
+    }
+
+    fn stream(
+        &self,
+        _decl: &StreamDecl<Self::Surface>,
+        _bridge: &Self::Bridge,
+        _context: &RenderContext<Self::Surface>,
+    ) -> Result<Emitted> {
+        Err(Error::UnsupportedTarget {
+            target: "dart_web",
+            shape: "streams are not yet supported",
+        })
+    }
+
+    fn constant(
+        &self,
+        decl: &ConstantDecl<Self::Surface>,
+        _bridge: &Self::Bridge,
+        context: &RenderContext<Self::Surface>,
+    ) -> Result<Emitted> {
+        Constant::from_declaration(decl, context)?.render()
+    }
+
+    fn custom_type(
+        &self,
+        decl: &CustomTypeDecl,
+        _bridge: &Self::Bridge,
+        context: &RenderContext<Self::Surface>,
+    ) -> Result<Emitted> {
+        CustomType::from_declaration(decl, context)?.render()
+    }
+
+    fn assemble<'decl>(
+        &self,
+        _bindings: &Bindings<Self::Surface>,
+        _bridge: &Self::Bridge,
+        _context: &RenderContext<Self::Surface>,
+        declarations: Vec<RenderedDeclaration<'decl, Self::Surface>>,
+    ) -> Result<GeneratedOutput> {
+        render::Module::new(&self.module).render(declarations)
+    }
+}
+
+impl sealed::HostBackend for DartWebHost {}
+
+#[cfg(test)]
+mod tests {
+    use boltffi_ast::PackageInfo;
+    use boltffi_binding::{Bindings, Wasm32, lower};
+
+    use super::DartWebHost;
+
+    fn bindings() -> Bindings<Wasm32> {
+        let source = boltffi_scan::scan_file(
+            syn::parse_str(
+                r#"
+                #[export]
+                pub fn add(a: i32, b: i32) -> i32 { a + b }
+
+                #[export]
+                pub fn shout(name: String) -> String { name.to_uppercase() }
+
+                #[export]
+                pub async fn add_async(a: i32, b: i32) -> i32 { a + b }
+
+                #[export]
+                pub trait Adder {
+                    fn add(&self, a: i32, b: i32) -> i32;
+                }
+
+                #[export]
+                pub fn call_adder(adder: Box<dyn Adder>, a: i32, b: i32) -> i32 {
+                    adder.add(a, b)
+                }
+                "#,
+            )
+            .expect("valid source"),
+            PackageInfo::new("demo", None),
+        )
+        .expect("source scans");
+        lower::<Wasm32>(&source).expect("source lowers")
+    }
+
+    fn record_bindings() -> Bindings<Wasm32> {
+        let source = boltffi_scan::scan_file(
+            syn::parse_str(
+                r#"
+                #[data]
+                #[repr(C)]
+                pub struct Point {
+                    pub x: f64,
+                    pub y: f64,
+                }
+
+                #[data]
+                pub struct User {
+                    pub name: String,
+                    pub scores: Vec<i32>,
+                }
+
+                #[data]
+                #[repr(i8)]
+                pub enum Status {
+                    Inactive = -1,
+                    Active = 1,
+                }
+
+                #[data]
+                pub enum Filter {
+                    None,
+                    ByName { name: String },
+                }
+
+                #[export]
+                pub fn echo_point(value: Point) -> Point { value }
+
+                #[export]
+                pub fn echo_user(value: User) -> User { value }
+
+                #[export]
+                pub fn echo_status(value: Status) -> Status { value }
+
+                #[export]
+                pub fn echo_filter(value: Filter) -> Filter { value }
+                "#,
+            )
+            .expect("valid source"),
+            PackageInfo::new("demo", None),
+        )
+        .expect("source scans");
+        lower::<Wasm32>(&source).expect("source lowers")
+    }
+
+    fn constant_bindings() -> Bindings<Wasm32> {
+        let source = boltffi_scan::scan_file(
+            syn::parse_str(
+                r#"
+                #[export]
+                pub const ENABLED: bool = true;
+
+                #[export]
+                pub const ANSWER: u32 = 42;
+
+                #[export]
+                pub const LABEL: &str = "boltffi";
+                "#,
+            )
+            .expect("valid source"),
+            PackageInfo::new("demo", None),
+        )
+        .expect("source scans");
+        lower::<Wasm32>(&source).expect("source lowers")
+    }
+
+    fn class_bindings() -> Bindings<Wasm32> {
+        let source = boltffi_scan::scan_file(
+            syn::parse_str(
+                r#"
+                pub struct Counter(i32);
+
+                #[export]
+                impl Counter {
+                    pub fn new(initial: i32) -> Self { Self(initial) }
+
+                    pub fn get(&self) -> i32 { self.0 }
+
+                    pub fn add(&self, amount: i32) -> i32 { self.0 + amount }
+                }
+                "#,
+            )
+            .expect("valid source"),
+            PackageInfo::new("demo", None),
+        )
+        .expect("source scans");
+        lower::<Wasm32>(&source).expect("source lowers")
+    }
+
+    fn source_of(output: &crate::core::GeneratedOutput) -> String {
+        output
+            .files()
+            .iter()
+            .find(|file| file.path().as_path().ends_with("demo.dart"))
+            .expect("dart module")
+            .contents()
+            .to_owned()
+    }
+
+    #[test]
+    fn renders_free_functions_calling_the_wrapped_js_module() {
+        let output = DartWebHost::new("demo")
+            .expect("host constructs")
+            .into_target()
+            .render(&bindings())
+            .expect("target renders");
+        let source = source_of(&output);
+
+        assert!(source.contains("@JS('boltffiPoc.add')"));
+        assert!(source.contains("int add(int arg0, int arg1)"));
+        assert!(source.contains("@JS('boltffiPoc.shout')"));
+        assert!(source.contains("String shout(String arg0)"));
+        assert!(source.contains("@JS('boltffiPoc.addAsync')"));
+        assert!(source.contains("addAsync(int arg0, int arg1) async"));
+        assert!(source.contains(".toDart"));
+    }
+
+    #[test]
+    fn renders_callback_interface_adapter_and_js_wrapper_escape_hatch() {
+        let output = DartWebHost::new("demo")
+            .expect("host constructs")
+            .into_target()
+            .render(&bindings())
+            .expect("target renders");
+        let source = source_of(&output);
+
+        assert!(source.contains("abstract interface class Adder"));
+        assert!(source.contains("int add(int arg0, int arg1);"));
+        assert!(source.contains("@JSExport()"));
+        assert!(source.contains("class _AdderJSAdapter"));
+        assert!(source.contains("final class AdderJsWrapper implements Adder"));
+        assert!(source.contains("if (callback is AdderJsWrapper) return callback.js;"));
+        assert!(source.contains("createJSInteropWrapper(_AdderJSAdapter(callback))"));
+        assert!(source.contains("boltffiCallbackToJSAdder"));
+        assert!(source.contains("@JS('boltffiPoc.callAdder')"));
+    }
+
+    #[test]
+    fn renders_records_and_enums_as_plain_js_object_shapes() {
+        let output = DartWebHost::new("demo")
+            .expect("host constructs")
+            .into_target()
+            .render(&record_bindings())
+            .expect("target renders");
+        let source = source_of(&output);
+
+        assert!(source.contains("class Point"));
+        assert!(source.contains("final double x;"));
+        assert!(source.contains("static Point fromJS(JSObject js)"));
+        assert!(source.contains("class User"));
+        assert!(source.contains("final String name;"));
+        assert!(source.contains("final List<int> scores;"));
+        assert!(source.contains("class Status"));
+        assert!(source.contains("static const Inactive = Status._(-1);"));
+        assert!(source.contains("static const Active = Status._(1);"));
+        assert!(source.contains("abstract class Filter"));
+        assert!(source.contains("class Filter$None extends Filter"));
+        assert!(source.contains("class Filter$ByName extends Filter"));
+        assert!(source.contains("case 'ByName': return Filter$ByName("));
+
+        // Call-site conversions: a record parameter/return converts via
+        // its own generated `toJS()`/`fromJS()`, not a made-up method —
+        // this is exactly the shape a real `to_js`/`from_js` mismatch
+        // would silently break without erroring at Rust compile time.
+        assert!(source.contains("Point echoPoint(Point arg0)"));
+        assert!(source.contains("(arg0).toJS()"));
+        assert!(source.contains("Point.fromJS("));
+        assert!(source.contains("Status echoStatus(Status arg0)"));
+        assert!(source.contains("Status.fromJS("));
+    }
+
+    #[test]
+    fn renders_custom_type_call_sites_through_its_representation() {
+        let source = boltffi_scan::scan_file(
+            syn::parse_str(
+                r#"
+                custom_type!(
+                    pub Timestamp,
+                    remote = TimestampRust,
+                    repr = i64,
+                    into_ffi = timestamp_into_ffi,
+                    try_from_ffi = timestamp_from_ffi
+                );
+
+                #[export]
+                pub fn keep_timestamp(value: TimestampRust) -> TimestampRust { value }
+                "#,
+            )
+            .expect("valid source"),
+            PackageInfo::new("demo", None),
+        )
+        .expect("source scans");
+        let bindings = lower::<Wasm32>(&source).expect("source lowers");
+
+        let output = DartWebHost::new("demo")
+            .expect("host constructs")
+            .into_target()
+            .render(&bindings)
+            .expect("target renders");
+        let source = source_of(&output);
+
+        assert!(source.contains("typedef Timestamp = int;"));
+        // The representation is `i64` -> `int`, converted the same way a
+        // plain `int` parameter/return would be (BigInt round trip), not
+        // through a nonexistent method on the typedef.
+        assert!(source.contains("Timestamp keepTimestamp(Timestamp arg0)"));
+        assert!(source.contains("BigInt(arg0).toJS"));
+        assert!(source.contains(").toDartInt"));
+    }
+
+    #[test]
+    fn renders_inline_constants() {
+        let output = DartWebHost::new("demo")
+            .expect("host constructs")
+            .into_target()
+            .render(&constant_bindings())
+            .expect("target renders");
+        let source = source_of(&output);
+
+        assert!(source.contains("final bool ENABLED = true;"));
+        assert!(source.contains("final int ANSWER = 42;"));
+        assert!(source.contains("final String LABEL = 'boltffi';"));
+    }
+
+    #[test]
+    fn renders_classes_wrapping_the_js_class_instance() {
+        let output = DartWebHost::new("demo")
+            .expect("host constructs")
+            .into_target()
+            .render(&class_bindings())
+            .expect("target renders");
+        let source = source_of(&output);
+        assert!(source.contains("@JS('boltffiPoc.Counter')"));
+        assert!(source.contains("external JSObject get _boltffiCounterClass;"));
+        assert!(source.contains("class Counter"));
+        // `new` is a JS reserved word, but class members aren't reached
+        // through JS identifier syntax here (`callMethod` is a
+        // string-keyed call) — `target::typescript` itself keeps `new`
+        // as a literal static method name, so this target must too.
+        assert!(source.contains("_boltffiCounterClass.callMethodVarArgs('new'.toJS,"));
+        assert!(source.contains("(js).callMethodVarArgs('add'.toJS,"));
+    }
+}
