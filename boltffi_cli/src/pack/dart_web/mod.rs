@@ -1,11 +1,8 @@
 //! Packages the `dart_web` (js_interop over wasm) target: runs `pack wasm`
 //! unmodified, then vendors the result so it needs zero npm/Node.js on the
 //! consuming side (the primary use case, a Flutter web app, has no npm step
-//! at all). `@boltffi/runtime` is built fresh from source at `boltffi_cli`
-//! compile time (see `build.rs`) rather than a hand-copied snapshot.
-
-#[cfg(test)]
-mod runtime_sources_codegen;
+//! at all). `@boltffi/runtime` ships as the pre-built JS in
+//! `vendor/runtime-js` (see `scripts/sync-dart-web-runtime.sh`/`.ps1`).
 
 use std::fs;
 use std::path::Path;
@@ -22,7 +19,14 @@ use crate::{
     reporter::Reporter,
 };
 
-include!(concat!(env!("OUT_DIR"), "/dart_web_runtime_sources.rs"));
+const RUNTIME_SOURCES: &[(&str, &str)] = &[
+    ("callback.js", include_str!("../../../vendor/runtime-js/callback.js")),
+    ("handle.js", include_str!("../../../vendor/runtime-js/handle.js")),
+    ("index.js", include_str!("../../../vendor/runtime-js/index.js")),
+    ("module.js", include_str!("../../../vendor/runtime-js/module.js")),
+    ("stream.js", include_str!("../../../vendor/runtime-js/stream.js")),
+    ("wire.js", include_str!("../../../vendor/runtime-js/wire.js")),
+];
 
 pub(crate) fn pack_dart_web(
     config: &Config,
@@ -140,16 +144,6 @@ fn vendor_web_assets(config: &Config, output_directory: &Path, reporter: &Report
         let from = npm_output_directory.join(&file_name);
         let to = web_directory.join(&file_name);
         fs::copy(&from, &to).map_err(|source| CliError::CopyFailed { from, to, source })?;
-    }
-
-    if RUNTIME_SOURCES.is_empty() {
-        return Err(CliError::CommandFailed {
-            command: "pack dart-web: this boltffi build has no vendored @boltffi/runtime \
-                      (it was compiled outside a full boltffi monorepo checkout, where \
-                      build.rs has no runtime/typescript/src to build from)"
-                .to_string(),
-            status: None,
-        });
     }
 
     let bindings_file_name = format!("{wasm_module_name}.js");
