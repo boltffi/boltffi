@@ -506,6 +506,15 @@ fn render_data_class(
         to_js_entries.push(format!("    result.setProperty('tag'.toJS, '{tag}'.toJS);"));
     }
 
+    // An enum variant class is immutable (`final` fields, `const`
+    // constructor) matching target::dart's own data-enum variant classes;
+    // a plain record is mutable (no `final`, no `const`) matching
+    // target::dart's own Record -- app code that assigns to a record field
+    // after construction must keep working on the web half too.
+    let immutable = extends.is_some();
+    let field_keyword = if immutable { "final " } else { "" };
+    let ctor_keyword = if immutable { "const " } else { "" };
+
     for field in fields {
         let DataField {
             dart_name,
@@ -513,7 +522,7 @@ fn render_data_class(
             ty,
         } = field;
         let dart_type = interop::dart_type(ty, context)?;
-        field_decls.push(format!("  final {dart_type} {dart_name};"));
+        field_decls.push(format!("  {field_keyword}{dart_type} {dart_name};"));
         ctor_params.push(format!("required this.{dart_name}"));
         let to_js = interop::to_js(dart_name, ty, context)?;
         to_js_entries.push(format!(
@@ -538,7 +547,7 @@ fn render_data_class(
     };
 
     Ok(format!(
-        "{header} {{\n{fields}\n\n  const {name}({ctor_params_decl}){extra_ctor};\n\n  {override_kw}JSObject toJS() {{\n    final result = JSObject();\n{to_js}\n    return result;\n  }}\n\n  static {name} fromJS(JSObject js) {{\n    return {name}({from_js});\n  }}\n}}\n\n",
+        "{header} {{\n{fields}\n\n  {ctor_keyword}{name}({ctor_params_decl}){extra_ctor};\n\n  {override_kw}JSObject toJS() {{\n    final result = JSObject();\n{to_js}\n    return result;\n  }}\n\n  static {name} fromJS(JSObject js) {{\n    return {name}({from_js});\n  }}\n}}\n\n",
         fields = field_decls.join("\n"),
         to_js = to_js_entries.join("\n"),
         from_js = from_js_args.join(", "),
@@ -594,26 +603,34 @@ impl Enumeration {
         Ok(Self { source })
     }
 
+    // A real Dart `enum` (not a hand-rolled wrapped-int class), with the
+    // same lowerCamelCase variant names target::dart's native C-style enum
+    // uses -- the unified package's whole premise is that app code (switch
+    // patterns, `.name`, equality) sees one Dart API regardless of which
+    // half (native or web) it's actually running against.
     fn c_style(decl: &boltffi_binding::CStyleEnumDecl<Wasm32>) -> Result<String> {
         let name = Name::new(decl.name()).dart_type_name();
-        let mut variant_entries = Vec::new();
-        let mut from_raw_cases = Vec::new();
-        for variant in decl.variants() {
-            let variant_name = Name::new(variant.name()).dart_type_name();
-            let value = variant.discriminant().get();
-            variant_entries.push(format!(
-                "  static const {variant_name} = {name}._({value});"
-            ));
-            from_raw_cases.push(format!("      case {value}: return {name}.{variant_name};"));
-        }
+        let variant_entries = decl
+            .variants()
+            .iter()
+            .map(|variant| {
+                let variant_name = Name::new(variant.name()).dart_identifier();
+                let value = variant.discriminant().get();
+                format!("  {variant_name}({value})")
+            })
+            .collect::<Vec<_>>()
+            .join(",\n");
 
         Ok(format!(
-            "class {name} {{\n  final int value;\n  const {name}._(this.value);\n\n{variants}\n\n  JSAny toJS() => value.toJS;\n\n  static {name} fromJS(JSAny js) => _fromRaw((js as JSNumber).toDartInt);\n\n  static {name} _fromRaw(int value) {{\n    switch (value) {{\n{cases}\n      default: throw StateError('Unknown {name} value: \\$value');\n    }}\n  }}\n}}\n\n",
-            variants = variant_entries.join("\n"),
-            cases = from_raw_cases.join("\n"),
+            "enum {name} {{\n{variant_entries};\n\n  final int value;\n  const {name}(this.value);\n\n  JSAny toJS() => value.toJS;\n\n  static {name} fromJS(JSAny js) => _fromRaw((js as JSNumber).toDartInt);\n\n  static {name} _fromRaw(int value) => values.firstWhere(\n    (variant) => variant.value == value,\n    orElse: () => throw ArgumentError.value(value, 'value', 'unknown {name} value'),\n  );\n}}\n\n",
         ))
     }
 
+    // A `sealed class` with a named factory constructor per variant --
+    // matching target::dart's native data-enum shape exactly (`sealed`,
+    // not `abstract`, plus `factory Name.variantName({required fields}) =
+    // VariantClass;`) -- so app code written against the native half's
+    // pattern-matching/construction API works unchanged here.
     fn data(
         decl: &boltffi_binding::DataEnumDecl<Wasm32>,
         context: &RenderContext<Wasm32>,
@@ -621,8 +638,10 @@ impl Enumeration {
         let name = Name::new(decl.name()).dart_type_name();
         let mut variant_classes = Vec::new();
         let mut from_js_cases = Vec::new();
+        let mut factory_constructors = Vec::new();
 
         for variant in decl.variants() {
+            let variant_name = Name::new(variant.name()).dart_identifier();
             let variant_dart_name = Name::new(variant.name()).dart_type_name();
             // Must match target::typescript's wire tag spelling exactly.
             let tag = variant_dart_name.clone();
@@ -657,10 +676,33 @@ impl Enumeration {
             from_js_cases.push(format!(
                 "      case '{tag}': return {variant_type}({from_js_args});"
             ));
+
+            let params = if fields.is_empty() {
+                String::new()
+            } else {
+                let required = fields
+                    .iter()
+                    .map(|field| {
+                        let dart_type = interop::dart_type(&field.ty, context)?;
+                        Ok(format!("required {dart_type} {}", field.dart_name))
+                    })
+                    .collect::<Result<Vec<_>>>()?
+                    .join(", ");
+                format!("{{{required}}}")
+            };
+            // `const factory` (not just `factory`) -- the redirect target
+            // is a const constructor (see render_data_class's `immutable`
+            // branch), and target::dart's own enumeration.dart template
+            // marks its redirecting factories const too, so app code that
+            // does `const Enum.variant(...)` must keep compiling here.
+            factory_constructors.push(format!(
+                "  const factory {name}.{variant_name}({params}) = {variant_type};"
+            ));
         }
 
         Ok(format!(
-            "abstract class {name} {{\n  const {name}._();\n\n  JSObject toJS();\n\n  static {name} fromJS(JSObject js) {{\n    final tag = (js.getProperty('tag'.toJS) as JSString).toDart;\n    switch (tag) {{\n{cases}\n      default: throw StateError('Unknown {name} tag: \\$tag');\n    }}\n  }}\n}}\n\n{variants}",
+            "sealed class {name} {{\n  const {name}._();\n\n{factories}\n\n  JSObject toJS();\n\n  static {name} fromJS(JSObject js) {{\n    final tag = (js.getProperty('tag'.toJS) as JSString).toDart;\n    switch (tag) {{\n{cases}\n      default: throw StateError('Unknown {name} tag: \\$tag');\n    }}\n  }}\n}}\n\n{variants}",
+            factories = factory_constructors.join("\n"),
             cases = from_js_cases.join("\n"),
             variants = variant_classes.join(""),
         ))
@@ -797,12 +839,15 @@ impl Constant {
         if decl.owner().is_some() {
             return Err(unsupported("associated constant"));
         }
+        // Matches target::dart's own Constant::from_declaration: lowerCamel
+        // name (not SCREAMING_SNAKE_CASE) and a `const` (not `final`)
+        // declaration.
         let name = Name::new(decl.name()).dart_constant_name();
         let source = match decl.value() {
             ConstantValueDecl::Inline { ty, value, .. } => {
                 let dart_type = interop::dart_type(ty, context)?;
                 let literal = render_default_value(value, context)?;
-                format!("final {dart_type} {name} = {literal};\n\n")
+                format!("const {dart_type} {name} = {literal};\n\n")
             }
             ConstantValueDecl::Accessor { .. } => return Err(unsupported("accessor constant")),
             _ => return Err(unsupported("constant value shape")),
@@ -841,7 +886,6 @@ fn render_default_value(value: &DefaultValue, context: &RenderContext<Wasm32>) -
             variant_name,
         } => {
             let enum_dart_name = Name::new(enum_name).dart_type_name();
-            let variant_dart_name = Name::new(variant_name).dart_type_name();
             // Data enums render each unit variant as its own subclass
             // (`Enum$Variant`), not a static member on `Enum` itself.
             let is_data_enum = context
@@ -856,8 +900,12 @@ fn render_default_value(value: &DefaultValue, context: &RenderContext<Wasm32>) -
                 })
                 .ok_or_else(|| unsupported("enum default referencing an unknown enum"))?;
             if is_data_enum {
+                let variant_dart_name = Name::new(variant_name).dart_type_name();
                 format!("{enum_dart_name}${variant_dart_name}()")
             } else {
+                // A real Dart enum's values are lowerCamelCase, matching
+                // target::dart's own C-style enum variants.
+                let variant_dart_name = Name::new(variant_name).dart_identifier();
                 format!("{enum_dart_name}.{variant_dart_name}")
             }
         }
@@ -892,24 +940,32 @@ pub struct Class {
     diagnostics: Vec<Diagnostic>,
 }
 
+// Every declaration `decl.initializers()` yields already returns exactly
+// `Self` (that's the IR's own is_initializer test), so a sync initializer
+// is always eligible to be *the* unnamed constructor -- matches
+// target::dart's Placement::Initializer rule (Factory when
+// `!asynchronous`), which is what lets app code call `ClassName(args)` on
+// native. An async initializer can't be a Dart constructor (constructors
+// can't be `async`), so it keeps rendering as a named static method,
+// exactly like target::dart does for its own async initializers.
 fn render_class_initializer(
     initializer: &boltffi_binding::InitializerDecl<Wasm32>,
     name: &str,
     class_ref: &str,
     context: &RenderContext<Wasm32>,
 ) -> Result<String> {
-    let method_name = Name::new(initializer.name()).dart_identifier();
     let js_name = Name::new(initializer.name()).js_member_name();
     let signature = call_signature(initializer.callable(), context)?;
     let params = signature.dart_params_decl();
     let arguments = signature.js_call_arguments();
     let call_js = format!("{class_ref}.callMethodVarArgs('{js_name}'.toJS, [{arguments}])");
     Ok(if signature.asynchronous {
+        let method_name = Name::new(initializer.name()).dart_identifier();
         format!(
             "  static Future<{name}> {method_name}({params}) async => {name}._((await ({call_js} as JSPromise<JSAny?>).toDart) as JSObject);",
         )
     } else {
-        format!("  static {name} {method_name}({params}) => {name}._({call_js} as JSObject);",)
+        format!("  factory {name}({params}) => {name}._({call_js} as JSObject);",)
     })
 }
 

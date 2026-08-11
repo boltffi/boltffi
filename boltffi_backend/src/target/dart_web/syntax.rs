@@ -75,15 +75,6 @@ pub const DART_KEYWORDS: &[&str] = &[
     "yield",
 ];
 
-pub fn escape_dart_identifier(value: impl Into<String>) -> String {
-    let value = value.into();
-    if DART_KEYWORDS.contains(&value.as_str()) {
-        format!("{value}_")
-    } else {
-        value
-    }
-}
-
 pub fn dart_string_literal(value: &str) -> String {
     let mut out = String::with_capacity(value.len() + 2);
     out.push('\'');

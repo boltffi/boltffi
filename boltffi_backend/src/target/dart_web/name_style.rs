@@ -1,8 +1,7 @@
 use boltffi_binding::CanonicalName;
 
 use crate::core::name_case;
-
-use super::syntax::escape_dart_identifier;
+use crate::target::dart::name_style::Name as NativeName;
 
 // Must match target::typescript's own top-level escaping exactly, or this
 // binds to a JS export that doesn't exist.
@@ -78,23 +77,36 @@ impl<'name> Name<'name> {
         name_case::lower_camel(self.0)
     }
 
+    // Delegates to target::dart's own Name for every Dart-facing
+    // conversion (lowerCamelCase, UpperCamelCase, keyword escaping) --
+    // the unified package's whole premise is that app code sees one Dart
+    // API regardless of which half (native or web) it's actually running
+    // against, so these two targets cannot have their own independent
+    // casing/escaping rules.
     pub fn dart_identifier(&self) -> String {
-        escape_dart_identifier(name_case::lower_camel(self.0))
+        NativeName::new(self.0)
+            .lower_camel()
+            .expect(
+                "a canonical name lowered from a valid Rust identifier is a valid Dart identifier",
+            )
+            .as_str()
+            .to_owned()
     }
 
     pub fn dart_type_name(&self) -> String {
-        name_case::upper_camel(self.0)
+        NativeName::new(self.0)
+            .upper_camel()
+            .expect(
+                "a canonical name lowered from a valid Rust identifier is a valid Dart identifier",
+            )
+            .as_str()
+            .to_owned()
     }
 
+    // Matches target::dart's own Constant::from_declaration, which uses
+    // lowerCamelCase (not SCREAMING_SNAKE_CASE) for associated/top-level
+    // constants.
     pub fn dart_constant_name(&self) -> String {
-        escape_dart_identifier(
-            self.0
-                .parts()
-                .iter()
-                .map(boltffi_binding::NamePart::as_str)
-                .collect::<Vec<_>>()
-                .join("_")
-                .to_ascii_uppercase(),
-        )
+        self.dart_identifier()
     }
 }

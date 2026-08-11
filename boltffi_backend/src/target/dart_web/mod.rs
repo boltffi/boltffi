@@ -586,11 +586,12 @@ mod tests {
         assert!(source.contains("@JS('__boltffi_demo.callAdder')"));
 
         // `new` is a Dart keyword, so the Dart-side method is escaped to
-        // `new_` -- but target::typescript's callback invoker calls the
+        // `$new` (matching target::dart's own keyword-escaping convention)
+        // -- but target::typescript's callback invoker calls the
         // unescaped JS property name (`new`), so the adapter must export
         // under that name via a per-member @JSExport override rather than
         // just inheriting the escaped Dart method name.
-        assert!(source.contains("@JSExport('new')\n  JSAny? new_(JSAny? arg0)"));
+        assert!(source.contains("@JSExport('new')\n  JSAny? $new(JSAny? arg0)"));
         assert!(source.contains("_js.callMethodVarArgs('new'.toJS, [(arg0).toJS])"));
     }
 
@@ -671,26 +672,47 @@ mod tests {
         let source = source_of(&output);
 
         assert!(source.contains("class Point"));
-        assert!(source.contains("final double x;"));
+        // A plain record's fields are mutable (no `final`) and its
+        // constructor isn't `const`, matching target::dart's own Record --
+        // app code that assigns to a field after construction must keep
+        // working on the web half too.
+        assert!(source.contains("double x;"));
+        assert!(!source.contains("final double x;"));
         assert!(source.contains("static Point fromJS(JSObject js)"));
         assert!(source.contains("class User"));
-        assert!(source.contains("final String name;"));
-        assert!(source.contains("final List<int> scores;"));
+        assert!(source.contains("String name;"));
+        assert!(source.contains("List<int> scores;"));
         // `extension` is a Dart contextual keyword but not JS-reserved: the
-        // Dart field must be escaped (`extension_`), but the wire property
-        // key read/written on the JS side must stay unescaped -- it has to
+        // Dart field must be escaped (`$extension`, matching target::dart's
+        // own keyword-escaping convention), but the wire property key
+        // read/written on the JS side must stay unescaped -- it has to
         // match target::typescript's PropertyKey, which only escapes
         // JS-reserved names.
-        assert!(source.contains("final bool extension_;"));
-        assert!(source.contains("result.setProperty('extension'.toJS, (extension_).toJS);"));
+        assert!(source.contains("bool $extension;"));
+        assert!(!source.contains("final bool $extension;"));
+        assert!(source.contains("result.setProperty('extension'.toJS, ($extension).toJS);"));
         assert!(
-            source.contains("extension_: (js.getProperty('extension'.toJS) as JSBoolean).toDart")
+            source.contains("$extension: (js.getProperty('extension'.toJS) as JSBoolean).toDart")
         );
-        assert!(!source.contains("'extension_'.toJS"));
-        assert!(source.contains("class Status"));
-        assert!(source.contains("static const Inactive = Status._(-1);"));
-        assert!(source.contains("static const Active = Status._(1);"));
-        assert!(source.contains("abstract class Filter"));
+        assert!(!source.contains("'$extension'.toJS"));
+        // A real Dart `enum` with lowerCamelCase variants, matching
+        // target::dart's own C-style enum shape exactly.
+        assert!(source.contains("enum Status {"));
+        assert!(source.contains("  inactive(-1),"));
+        assert!(source.contains("  active(1);"));
+        assert!(source.contains("final int value;"));
+        assert!(source.contains("const Status(this.value);"));
+        assert!(source.contains("sealed class Filter"));
+        assert!(!source.contains("abstract class Filter"));
+        // `const factory` -- app code invoking `const Filter.none()` etc.
+        // in a constant context must keep compiling.
+        assert!(source.contains("const factory Filter.none() = Filter$None;"));
+        assert!(
+            source.contains("const factory Filter.byName({required String name}) = Filter$ByName;")
+        );
+        assert!(source.contains(
+            "const factory Filter.byRange({required int value0, required int value1}) = Filter$ByRange;"
+        ));
         assert!(source.contains("class Filter$None extends Filter"));
         assert!(source.contains("const Filter$None() : super._();"));
         assert!(source.contains("class Filter$ByName extends Filter"));
@@ -708,8 +730,10 @@ mod tests {
 
         // A data enum's unit-variant default instantiates the variant's
         // own subclass (`Filter$None()`) -- `Filter` has no static members,
-        // so `Filter.None` (the C-style-enum syntax) would not analyze.
-        assert!(source.contains("Filter DEFAULT_FILTER = Filter$None();"));
+        // so `Filter.none` (the C-style-enum syntax) would not analyze.
+        // The constant name is lowerCamelCase and `const`, matching
+        // target::dart's own Constant convention.
+        assert!(source.contains("const Filter defaultFilter = Filter$None();"));
     }
 
     #[test]
@@ -759,9 +783,11 @@ mod tests {
             .expect("target renders");
         let source = source_of(&output);
 
-        assert!(source.contains("final bool ENABLED = true;"));
-        assert!(source.contains("final int ANSWER = 42;"));
-        assert!(source.contains("final String LABEL = 'boltffi';"));
+        // Matches target::dart's own constant convention: lowerCamelCase
+        // name, `const` (not `final`).
+        assert!(source.contains("const bool enabled = true;"));
+        assert!(source.contains("const int answer = 42;"));
+        assert!(source.contains("const String label = 'boltffi';"));
     }
 
     #[test]
@@ -907,8 +933,10 @@ mod tests {
             .expect("target renders under partial coverage");
         let source = source_of(&output);
 
-        assert!(source.contains("static Counter new_(int arg0) =>"));
-        assert!(source.contains("int get_() =>"));
+        // A sync initializer returning exactly `Self` renders as the
+        // class's unnamed `factory` constructor, matching target::dart.
+        assert!(source.contains("factory Counter(int arg0) =>"));
+        assert!(source.contains("int $get() =>"));
         assert!(source.contains("int add(int arg0) =>"));
         assert!(!source.contains("scores("));
     }

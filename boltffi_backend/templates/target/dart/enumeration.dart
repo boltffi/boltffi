@@ -34,7 +34,7 @@
   const {{ enumeration.name() }}();
 {%- for variant in enumeration.data_body().variants() %}
 
-{{ variant.member_documentation() }}  factory {{ enumeration.name() }}.{{ variant.name() }}({% if !variant.unit() %}{
+{{ variant.member_documentation() }}  const factory {{ enumeration.name() }}.{{ variant.name() }}({% if !variant.unit() %}{
 {%- for field in variant.fields() %}
     required {{ field.ty() }} {{ field.name() }},{% endfor %}
   }{% endif %}) = {{ variant.class_name() }};
