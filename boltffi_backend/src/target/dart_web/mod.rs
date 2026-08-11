@@ -190,6 +190,22 @@ mod tests {
                 pub fn call_adder(adder: Box<dyn Adder>, a: i32, b: i32) -> i32 {
                     adder.add(a, b)
                 }
+
+                #[export]
+                pub fn apply_closure(callback: impl Fn(i32) -> i32, value: i32) -> i32 {
+                    callback(value)
+                }
+
+                #[export]
+                #[allow(async_fn_in_trait)]
+                pub trait AsyncGreeter {
+                    async fn greet(&self, name: String) -> String;
+                }
+
+                #[export]
+                pub async fn call_async_greeter(greeter: impl AsyncGreeter, name: String) -> String {
+                    greeter.greet(name).await
+                }
                 "#,
             )
             .expect("valid source"),
@@ -339,6 +355,55 @@ mod tests {
         assert!(source.contains("createJSInteropWrapper(_AdderJSAdapter(callback))"));
         assert!(source.contains("boltffiCallbackToJSAdder"));
         assert!(source.contains("@JS('boltffiPoc.callAdder')"));
+    }
+
+    #[test]
+    fn renders_closures_as_wrapped_js_function_values() {
+        let output = DartWebHost::new("demo")
+            .expect("host constructs")
+            .into_target()
+            .render(&bindings())
+            .expect("target renders");
+        let source = source_of(&output);
+
+        assert!(source.contains("int applyClosure(int Function(int) arg0, int arg1)"));
+        // The Dart closure is wrapped in a JS-typed function literal that
+        // decodes its own argument and re-encodes its own return, then
+        // converted with `.toJS` — not passed directly (a raw Dart
+        // function value isn't a valid wasm import target).
+        assert!(source.contains("(JSAny? __jsArg0)"));
+        assert!(source.contains("arg0((__jsArg0 as JSNumber).toDartInt)"));
+        assert!(source.contains(".toJS,"));
+    }
+
+    #[test]
+    fn renders_async_callback_methods_with_a_real_js_promise() {
+        let output = DartWebHost::new("demo")
+            .expect("host constructs")
+            .into_target()
+            .render(&bindings())
+            .expect("target renders");
+        let source = source_of(&output);
+
+        assert!(source.contains("abstract interface class AsyncGreeter"));
+        assert!(source.contains("Future<String> greet(String arg0);"));
+        // `@JSExport` does not turn a `Future` return into a real JS
+        // `Promise` on its own (verified in a browser — the raw exported
+        // value has no `.then`) — the adapter method must stay
+        // synchronous and explicitly convert an inner async closure via
+        // `.toJS`, or `target::typescript`'s trampoline resolves
+        // immediately with a value that was never actually awaited.
+        assert!(source.contains("JSPromise<JSAny?> greet(JSAny? arg0) {"));
+        assert!(source.contains("return (() async {"));
+        assert!(source.contains("})().toJS;"));
+        assert!(source.contains("await _impl.greet("));
+        // The `JsWrapper` side awaits the raw JS object's Promise.
+        assert!(source.contains("as JSPromise<JSAny?>).toDart"));
+        assert!(source.contains("@JS('boltffiPoc.callAsyncGreeter')"));
+        assert!(
+            source
+                .contains("Future<String> callAsyncGreeter(AsyncGreeter arg0, String arg1) async")
+        );
     }
 
     #[test]

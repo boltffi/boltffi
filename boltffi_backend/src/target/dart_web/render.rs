@@ -109,140 +109,253 @@ fn handle_type_ref(target: &boltffi_binding::HandleTarget) -> Result<TypeRef> {
     }
 }
 
-/// A function/method/initializer body, shared across free functions,
-/// class initializers, and class/callback methods — they only differ in
-/// how the JS call target is named and whether a receiver is prepended.
+/// One parameter of a call signature. `value_ty` is `None` only for a
+/// closure parameter — Rust never hands an `@JSExport` adapter method a
+/// closure to decode, so nothing downstream needs a `TypeRef` for that
+/// case, just the two pre-built expressions below.
+struct ParamInfo {
+    dart_type: String,
+    /// Expression converting this already-bound Dart argument (`arg{i}`)
+    /// into what the wrapped JS call expects. Used wherever Dart calls
+    /// into JS (free functions, class methods, `JsWrapper`s).
+    js_call_expr: String,
+    value_ty: Option<TypeRef>,
+}
+
+/// A function/method/initializer/closure body, shared across every call
+/// shape this target renders — they only differ in how the JS call
+/// target is named and whether a receiver/adapter wraps it.
 struct CallSignature {
-    dart_params: Vec<String>,
-    js_arguments: Vec<String>,
+    params: Vec<ParamInfo>,
     return_dart_type: String,
-    return_expr_wrapper: Box<dyn Fn(&str) -> String>,
+    /// `None` means void.
+    return_ty: Option<TypeRef>,
     asynchronous: bool,
+}
+
+impl CallSignature {
+    fn dart_params_decl(&self) -> String {
+        self.params
+            .iter()
+            .map(|param| param.dart_type.clone())
+            .zip(0..)
+            .map(|(ty, index)| format!("{ty} arg{index}"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
+    fn js_call_arguments(&self) -> String {
+        self.params
+            .iter()
+            .map(|param| param.js_call_expr.clone())
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
+    /// The declared Dart return type: `Future<T>` (or `Future<void>`)
+    /// when asynchronous, `T` otherwise.
+    fn dart_return_signature(&self) -> String {
+        if self.asynchronous {
+            format!("Future<{}>", self.return_dart_type)
+        } else {
+            self.return_dart_type.clone()
+        }
+    }
+
+    /// Decodes a raw JS return expression into Dart — used wherever
+    /// Dart called into JS and needs the result back.
+    fn decode_return(&self, raw_expr: &str, context: &RenderContext<Wasm32>) -> Result<String> {
+        match &self.return_ty {
+            None => Ok(String::new()),
+            Some(ty) => interop::from_js(raw_expr, ty, context),
+        }
+    }
+
+    /// Encodes a Dart return expression into JS — used wherever JS
+    /// called into Dart (an `@JSExport` adapter method, or a wrapped
+    /// closure) and needs to hand a result back to JS.
+    fn encode_return(&self, dart_expr: &str, context: &RenderContext<Wasm32>) -> Result<String> {
+        match &self.return_ty {
+            None => Ok(String::new()),
+            Some(ty) => interop::to_js(dart_expr, ty, context),
+        }
+    }
 }
 
 fn call_signature(
     callable: &ExportedCallable<Wasm32>,
     context: &RenderContext<Wasm32>,
 ) -> Result<CallSignature> {
-    let mut dart_params = Vec::new();
-    let mut js_arguments = Vec::new();
+    let mut params = Vec::new();
 
     for (index, param) in callable.params().iter().enumerate() {
-        let value = param
-            .payload()
-            .as_value()
-            .ok_or_else(|| unsupported("closure parameter"))?;
-        let boundary = boundary_for_param(value, context)?;
         let dart_name = format!("arg{index}");
-        dart_params.push(format!("{} {dart_name}", boundary.dart_type));
-        js_arguments.push(interop::to_js(&dart_name, &boundary.ty, context)?);
+        match param.payload() {
+            boltffi_binding::IncomingParam::Value(plan) => {
+                let boundary = boundary_for_param(plan, context)?;
+                let js_call_expr = interop::to_js(&dart_name, &boundary.ty, context)?;
+                params.push(ParamInfo {
+                    dart_type: boundary.dart_type,
+                    js_call_expr,
+                    value_ty: Some(boundary.ty),
+                });
+            }
+            boltffi_binding::IncomingParam::Closure(closure) => {
+                params.push(closure_param_info(closure, &dart_name, context)?);
+            }
+        }
     }
 
     let asynchronous = matches!(callable.execution(), ExecutionDecl::Asynchronous(_));
-    let (return_dart_type, return_expr_wrapper) =
-        return_boundary(callable.returns().plan(), context)?;
+    let (return_dart_type, return_ty) = return_boundary(callable.returns().plan(), context)?;
 
     Ok(CallSignature {
-        dart_params,
-        js_arguments,
+        params,
         return_dart_type,
-        return_expr_wrapper,
+        return_ty,
         asynchronous,
     })
 }
 
-/// Same idea as `call_signature`, but for a callback *method*: Rust is
-/// the caller here, so parameters flow `OutOfRust` (Rust -> foreign) and
-/// the return flows `IntoRust` (foreign -> Rust) — the opposite of a
-/// free function/initializer/class method. Only synchronous methods are
-/// handled; async callback methods need a distinct completion protocol
-/// this target does not implement yet (see `Callback::from_declaration`).
+/// Builds the `ParamInfo` for an inbound closure (`impl Fn` parameter):
+/// the Dart-facing type is a plain function type, and crossing it to JS
+/// means wrapping the Dart function value in a JS-typed function literal
+/// that decodes its own arguments and re-encodes its own return — the
+/// exact same shape as a callback adapter method, just anonymous.
+fn closure_param_info(
+    closure: &boltffi_binding::ClosureParameter<Wasm32, boltffi_binding::IntoRust>,
+    dart_name: &str,
+    context: &RenderContext<Wasm32>,
+) -> Result<ParamInfo> {
+    let inner = callback_method_signature(closure.invoke(), context)?;
+    let dart_type = format!(
+        "{} Function({})",
+        inner.return_dart_type,
+        inner
+            .params
+            .iter()
+            .map(|param| param.dart_type.clone())
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+    let js_call_expr = wrap_dart_callable_as_js_function(dart_name, &inner, context)?;
+    Ok(ParamInfo {
+        dart_type,
+        js_call_expr,
+        value_ty: None,
+    })
+}
+
+/// Wraps a Dart callable expression (a closure value, or `_impl.method`)
+/// in a JS-typed function literal + `.toJS`: decodes each JS-side
+/// argument via `from_js`, calls the Dart callable, re-encodes the
+/// result via `to_js`. This is the general mechanism for exposing Dart
+/// code to JS (as opposed to `to_js`/`from_js`, which convert values,
+/// not callables).
+fn wrap_dart_callable_as_js_function(
+    dart_callable_expr: &str,
+    signature: &CallSignature,
+    context: &RenderContext<Wasm32>,
+) -> Result<String> {
+    let js_params = (0..signature.params.len())
+        .map(|i| format!("JSAny? __jsArg{i}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let decoded_args = signature
+        .params
+        .iter()
+        .enumerate()
+        .map(|(i, param)| {
+            let ty = param
+                .value_ty
+                .as_ref()
+                .ok_or_else(|| unsupported("nested closure parameter"))?;
+            interop::from_js(&format!("__jsArg{i}"), ty, context)
+        })
+        .collect::<Result<Vec<_>>>()?
+        .join(", ");
+    let call_expr = format!("{dart_callable_expr}({decoded_args})");
+    let body = if signature.return_ty.is_none() {
+        format!("{{ {call_expr}; }}")
+    } else {
+        let encoded = signature.encode_return("__boltffiResult", context)?;
+        format!("{{ final __boltffiResult = {call_expr}; return {encoded}; }}")
+    };
+    Ok(format!("(({js_params}) {body}).toJS"))
+}
+
+/// Same idea as `call_signature`, but for a callback *method* (or a
+/// closure's own body): Rust is the caller here, so parameters flow
+/// `OutOfRust` (Rust -> foreign) and the return flows `IntoRust`
+/// (foreign -> Rust) — the opposite of a free function/initializer/class
+/// method. Only synchronous methods are handled directly; async callback
+/// methods are handled separately (see `Callback::from_declaration`).
 fn callback_method_signature(
     callable: &ImportedCallable<Wasm32>,
     context: &RenderContext<Wasm32>,
 ) -> Result<CallSignature> {
-    let mut dart_params = Vec::new();
-    let mut js_arguments = Vec::new();
+    let mut params = Vec::new();
 
     for (index, param) in callable.params().iter().enumerate() {
+        let dart_name = format!("arg{index}");
         let value = param
             .payload()
             .as_value()
-            .ok_or_else(|| unsupported("closure parameter"))?;
+            .ok_or_else(|| unsupported("closure parameter on a callback/closure body"))?;
         let boundary = boundary_for_param(value, context)?;
-        let dart_name = format!("arg{index}");
-        dart_params.push(format!("{} {dart_name}", boundary.dart_type));
-        js_arguments.push(interop::to_js(&dart_name, &boundary.ty, context)?);
+        let js_call_expr = interop::to_js(&dart_name, &boundary.ty, context)?;
+        params.push(ParamInfo {
+            dart_type: boundary.dart_type,
+            js_call_expr,
+            value_ty: Some(boundary.ty),
+        });
     }
 
     let asynchronous = matches!(callable.execution(), ExecutionDecl::Asynchronous(_));
-    let (return_dart_type, return_expr_wrapper) =
-        return_boundary(callable.returns().plan(), context)?;
+    let (return_dart_type, return_ty) = return_boundary(callable.returns().plan(), context)?;
 
     Ok(CallSignature {
-        dart_params,
-        js_arguments,
+        params,
         return_dart_type,
-        return_expr_wrapper,
+        return_ty,
         asynchronous,
     })
 }
 
-#[allow(clippy::type_complexity)]
 fn return_boundary<D: Direction>(
     plan: &ReturnPlan<Wasm32, D>,
     context: &RenderContext<Wasm32>,
-) -> Result<(String, Box<dyn Fn(&str) -> String>)>
+) -> Result<(String, Option<TypeRef>)>
 where
     D::Opposite: ParamDirection<Wasm32>,
 {
     Ok(match plan {
-        ReturnPlan::Void => ("void".to_owned(), Box::new(|_: &str| String::new())),
+        ReturnPlan::Void => ("void".to_owned(), None),
         ReturnPlan::DirectViaReturnSlot { ty } | ReturnPlan::DirectViaOutPointer { ty } => {
             let ty = direct_primitive(ty)?;
             let dart_type = interop::dart_type(&ty, context)?;
-            let from = interop::from_js("__boltffiRaw", &ty, context)?;
-            (
-                dart_type,
-                Box::new(move |raw| from.replace("__boltffiRaw", raw)),
-            )
+            (dart_type, Some(ty))
         }
         ReturnPlan::EncodedViaReturnSlot { ty, .. }
         | ReturnPlan::EncodedViaOutPointer { ty, .. } => {
             let dart_type = interop::dart_type(ty, context)?;
-            let from = interop::from_js("__boltffiRaw", ty, context)?;
-            (
-                dart_type,
-                Box::new(move |raw| from.replace("__boltffiRaw", raw)),
-            )
+            (dart_type, Some(ty.clone()))
         }
         ReturnPlan::HandleViaReturnSlot { target, .. }
         | ReturnPlan::HandleViaOutPointer { target, .. } => {
             let ty = handle_type_ref(target)?;
             let dart_type = interop::dart_type(&ty, context)?;
-            let from = interop::from_js("__boltffiRaw", &ty, context)?;
-            (
-                dart_type,
-                Box::new(move |raw| from.replace("__boltffiRaw", raw)),
-            )
+            (dart_type, Some(ty))
         }
         ReturnPlan::ScalarOptionViaReturnSlot { primitive, .. } => {
             let ty = TypeRef::Optional(Box::new(TypeRef::Primitive(*primitive)));
             let dart_type = interop::dart_type(&ty, context)?;
-            let from = interop::from_js("__boltffiRaw", &ty, context)?;
-            (
-                dart_type,
-                Box::new(move |raw| from.replace("__boltffiRaw", raw)),
-            )
+            (dart_type, Some(ty))
         }
         ReturnPlan::DirectVecViaReturnSlot { element } => {
             let ty = direct_vector_type(element)?;
             let dart_type = interop::dart_type(&ty, context)?;
-            let from = interop::from_js("__boltffiRaw", &ty, context)?;
-            (
-                dart_type,
-                Box::new(move |raw| from.replace("__boltffiRaw", raw)),
-            )
+            (dart_type, Some(ty))
         }
         ReturnPlan::ClosureViaOutPointer(_) => return Err(unsupported("closure return")),
         _ => return Err(unsupported("return plan")),
@@ -263,7 +376,7 @@ impl Function {
         let dart_name = Name::new(decl.name()).dart_identifier();
         let signature = call_signature(decl.callable(), context)?;
         Ok(Self {
-            source: render_free_function(&js_name, &dart_name, &signature),
+            source: render_free_function(&js_name, &dart_name, &signature, context)?,
         })
     }
 
@@ -275,19 +388,14 @@ impl Function {
 /// Renders a free function: an `@JS()` extern bound to
 /// `boltffiPoc.<jsName>` plus a public Dart wrapper that converts
 /// arguments/return value at the boundary.
-/// The declared Dart return type for a call signature: `Future<T>` (or
-/// `Future<void>`) when asynchronous, `T` otherwise.
-fn dart_return_signature(signature: &CallSignature) -> String {
-    if signature.asynchronous {
-        format!("Future<{}>", signature.return_dart_type)
-    } else {
-        signature.return_dart_type.clone()
-    }
-}
-
-fn render_free_function(js_name: &str, dart_name: &str, signature: &CallSignature) -> String {
-    let params = signature.dart_params.join(", ");
-    let arguments = signature.js_arguments.join(", ");
+fn render_free_function(
+    js_name: &str,
+    dart_name: &str,
+    signature: &CallSignature,
+    context: &RenderContext<Wasm32>,
+) -> Result<String> {
+    let params = signature.dart_params_decl();
+    let arguments = signature.js_call_arguments();
     let extern_name = format!("_boltffiExtern_{js_name}");
 
     let js_return_type = if signature.asynchronous {
@@ -295,7 +403,7 @@ fn render_free_function(js_name: &str, dart_name: &str, signature: &CallSignatur
     } else {
         "JSAny?".to_owned()
     };
-    let extern_params = (0..signature.dart_params.len())
+    let extern_params = (0..signature.params.len())
         .map(|i| format!("JSAny? arg{i}"))
         .collect::<Vec<_>>()
         .join(", ");
@@ -307,7 +415,7 @@ fn render_free_function(js_name: &str, dart_name: &str, signature: &CallSignatur
     let async_keyword = if signature.asynchronous { "async " } else { "" };
     out.push_str(&format!(
         "{} {dart_name}({params}) {async_keyword}{{\n",
-        dart_return_signature(signature)
+        signature.dart_return_signature()
     ));
 
     let call_expr = format!("{extern_name}({arguments})");
@@ -317,14 +425,14 @@ fn render_free_function(js_name: &str, dart_name: &str, signature: &CallSignatur
         call_expr
     };
 
-    if signature.return_dart_type == "void" {
+    if signature.return_ty.is_none() {
         out.push_str(&format!("  {awaited_expr};\n}}\n\n"));
     } else {
-        let wrapped = (signature.return_expr_wrapper)(&awaited_expr);
-        out.push_str(&format!("  return {wrapped};\n}}\n\n"));
+        let decoded = signature.decode_return(&awaited_expr, context)?;
+        out.push_str(&format!("  return {decoded};\n}}\n\n"));
     }
 
-    out
+    Ok(out)
 }
 
 /// Renders a record as a plain Dart data class matching the JS object
@@ -547,40 +655,89 @@ impl Callback {
             let method_name = Name::new(method.name()).dart_identifier();
             let js_name = Name::new(method.name()).js_member_name();
             let signature = callback_method_signature(method.callable(), context)?;
-            if signature.asynchronous {
-                // Async callback methods need a distinct completion
-                // protocol (requestId + explicit `_complete` call) not
-                // yet implemented by this target.
-                return Err(unsupported("async callback method"));
-            }
-            let params = signature.dart_params.join(", ");
-            let param_names = (0..signature.dart_params.len())
-                .map(|i| format!("arg{i}"))
+            let dart_params = signature.dart_params_decl();
+            let public_return = signature.dart_return_signature();
+
+            interface_methods.push(format!("  {public_return} {method_name}({dart_params});"));
+
+            // `@JSExport` methods must have a JS-compatible signature —
+            // custom Dart types (records, enums, classes, other
+            // callbacks) have no automatic bridging, so this always
+            // decodes/encodes manually via `from_js`/`to_js` rather than
+            // relying on `@JSExport`'s bridging for the few types it
+            // does auto-convert.
+            //
+            // `@JSExport` does NOT convert an `async` method's `Future`
+            // return into a real JS `Promise` — verified against a real
+            // browser: the raw exported value has no `.then`, so
+            // `target::typescript`'s trampoline (`Promise.resolve(x).then
+            // (...)`) resolves immediately with the unconverted Dart
+            // `Future` object instead of awaiting it. `target::typescript`
+            // itself still owns the whole requestId/status/`_complete`
+            // completion protocol on the other side of that Promise, so
+            // the fix is narrow: keep the exported method synchronous and
+            // explicitly convert an inner async closure's `Future` via
+            // `.toJS` before returning it.
+            let adapter_js_params = (0..signature.params.len())
+                .map(|i| format!("JSAny? arg{i}"))
                 .collect::<Vec<_>>()
                 .join(", ");
+            let decoded_args = signature
+                .params
+                .iter()
+                .enumerate()
+                .map(|(i, param)| {
+                    let ty = param
+                        .value_ty
+                        .as_ref()
+                        .ok_or_else(|| unsupported("closure parameter on a callback method"))?;
+                    interop::from_js(&format!("arg{i}"), ty, context)
+                })
+                .collect::<Result<Vec<_>>>()?
+                .join(", ");
+            let impl_call = format!("_impl.{method_name}({decoded_args})");
+            let adapter_method = if signature.asynchronous {
+                let inner_body = if signature.return_ty.is_none() {
+                    format!("{{ await {impl_call}; }}")
+                } else {
+                    let encoded = signature.encode_return("__boltffiResult", context)?;
+                    format!("{{ final __boltffiResult = await {impl_call}; return {encoded}; }}")
+                };
+                format!(
+                    "  JSPromise<JSAny?> {method_name}({adapter_js_params}) {{\n    return (() async {inner_body})().toJS;\n  }}"
+                )
+            } else {
+                let body = if signature.return_ty.is_none() {
+                    format!("{{ {impl_call}; }}")
+                } else {
+                    let encoded = signature.encode_return("__boltffiResult", context)?;
+                    format!("{{ final __boltffiResult = {impl_call}; return {encoded}; }}")
+                };
+                format!("  JSAny? {method_name}({adapter_js_params}) {body}")
+            };
+            adapter_methods.push(adapter_method);
 
-            interface_methods.push(format!(
-                "  {} {method_name}({params});",
-                signature.return_dart_type
-            ));
-
-            adapter_methods.push(format!(
-                "  {} {method_name}({params}) => _impl.{method_name}({param_names});",
-                signature.return_dart_type
-            ));
-
-            let js_arguments = signature.js_arguments.join(", ");
-            let call_js = format!("_js.callMethodVarArgs('{js_name}'.toJS, [{js_arguments}])");
-            if signature.return_dart_type == "void" {
+            // JsWrapper: Dart calling out to a raw JS object. A sync
+            // method calls straight through; an async method awaits the
+            // JS Promise the raw object's method is expected to return.
+            let js_arguments = signature.js_call_arguments();
+            let raw_call = format!("_js.callMethodVarArgs('{js_name}'.toJS, [{js_arguments}])");
+            let (wrapper_async, raw_result) = if signature.asynchronous {
+                (
+                    "async ",
+                    format!("(await ({raw_call} as JSPromise<JSAny?>).toDart)"),
+                )
+            } else {
+                ("", raw_call)
+            };
+            if signature.return_ty.is_none() {
                 wrapper_methods.push(format!(
-                    "  @override\n  {} {method_name}({params}) {{ {call_js}; }}",
-                    signature.return_dart_type
+                    "  @override\n  {public_return} {method_name}({dart_params}) {wrapper_async}{{ {raw_result}; }}"
                 ));
             } else {
-                let wrapped = (signature.return_expr_wrapper)(&call_js);
+                let decoded = signature.decode_return(&raw_result, context)?;
                 wrapper_methods.push(format!(
-                    "  @override\n  {} {method_name}({params}) => {wrapped};",
-                    signature.return_dart_type
+                    "  @override\n  {public_return} {method_name}({dart_params}) {wrapper_async}{{ return {decoded}; }}"
                 ));
             }
         }
@@ -597,7 +754,7 @@ impl Callback {
              final class {name}JsWrapper implements {name} {{\n  final JSObject js;\n  const {name}JsWrapper(this.js);\n  JSObject get _js => js;\n\n{wrapper}\n}}\n\n\
              JSObject boltffiCallbackToJS{name}({name} callback) {{\n  if (callback is {name}JsWrapper) return callback.js;\n  return createJSInteropWrapper(_{name}JSAdapter(callback));\n}}\n\n",
             interface = interface_methods.join("\n"),
-            adapter = adapter_methods.join("\n"),
+            adapter = adapter_methods.join("\n\n"),
             wrapper = wrapper_methods.join("\n\n"),
         );
 
@@ -707,8 +864,8 @@ impl Class {
             let method_name = Name::new(initializer.name()).dart_identifier();
             let js_name = Name::new(initializer.name()).js_member_name();
             let signature = call_signature(initializer.callable(), context)?;
-            let params = signature.dart_params.join(", ");
-            let arguments = signature.js_arguments.join(", ");
+            let params = signature.dart_params_decl();
+            let arguments = signature.js_call_arguments();
             members.push(format!(
                 "  static {name} {method_name}({params}) => {name}._({class_ref}.callMethodVarArgs('{js_name}'.toJS, [{arguments}]) as JSObject);",
             ));
@@ -718,32 +875,32 @@ impl Class {
             let method_name = Name::new(method.name()).dart_identifier();
             let js_name = Name::new(method.name()).js_member_name();
             let signature = call_signature(method.callable(), context)?;
-            let params = signature.dart_params.join(", ");
+            let params = signature.dart_params_decl();
             let is_static = method.callable().receiver().is_none();
             let target = if is_static {
                 class_ref.clone()
             } else {
                 "js".to_owned()
             };
-            let js_arguments = signature.js_arguments.join(", ");
+            let js_arguments = signature.js_call_arguments();
             let call_js =
                 format!("({target}).callMethodVarArgs('{js_name}'.toJS, [{js_arguments}])");
             let keyword = if is_static { "static " } else { "" };
             let async_keyword = if signature.asynchronous { "async " } else { "" };
             let call_expr = if signature.asynchronous {
-                format!("(await ({call_js}).toDart)")
+                format!("(await ({call_js} as JSPromise<JSAny?>).toDart)")
             } else {
                 call_js
             };
-            let body = if signature.return_dart_type == "void" {
+            let body = if signature.return_ty.is_none() {
                 format!("{{ {call_expr}; }}")
             } else {
-                let wrapped = (signature.return_expr_wrapper)(&call_expr);
-                format!("=> {wrapped};")
+                let decoded = signature.decode_return(&call_expr, context)?;
+                format!("=> {decoded};")
             };
             members.push(format!(
                 "  {keyword}{} {async_keyword}{method_name}({params}) {body}",
-                dart_return_signature(&signature)
+                signature.dart_return_signature()
             ));
         }
 
