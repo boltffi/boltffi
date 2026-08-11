@@ -285,16 +285,96 @@ mod tests {
     }
 
     #[test]
-    fn rejects_a_fallible_callback_method() {
-        // target::typescript's wasm callback adapter needs a WireResult/
-        // thrown-Error encoding for a fallible callback's Err(E) case that
-        // dart_web doesn't emit yet; silently dropping the error channel
-        // would give Dart implementations no way to signal failure.
-        let result = DartWebHost::new("demo")
+    fn renders_a_fallible_callback_method_via_wire_result() {
+        // A fallible callback method's Dart implementation signals Err(E)
+        // by throwing, matching target::dart's own convention -- the
+        // adapter wraps that as target::typescript's wasm callback bridge
+        // expects (`{tag: 'ok'|'err', ...}`, see
+        // runtime/typescript/src/wire.ts), and the JsWrapper escape hatch
+        // unwraps the same shape back into a thrown Dart exception.
+        let output = DartWebHost::new("demo")
             .expect("host constructs")
             .into_target()
-            .render(&fallible_callback_bindings());
-        assert!(result.is_err());
+            .render(&fallible_callback_bindings())
+            .expect("target renders");
+        let source = source_of(&output);
+
+        assert!(source.contains("abstract interface class Validator"));
+        assert!(source.contains("int validate(int arg0);"));
+
+        // Adapter: Dart implementation's throw becomes a wire error.
+        assert!(source.contains("@JSExport('validate')"));
+        assert!(source.contains("try {"));
+        assert!(
+            source
+                .contains("final __boltffiResult = _impl.validate((arg0 as JSNumber).toDartInt);")
+        );
+        assert!(source.contains("return boltffiWireOk((__boltffiResult).toJS);"));
+        assert!(source.contains("} on BoltFFIStringException catch (__boltffiError) {"));
+        assert!(source.contains("return boltffiWireErr((__boltffiError.message).toJS);"));
+
+        // JsWrapper escape hatch: a raw JS object's wire error becomes a
+        // thrown Dart exception instead of a silently-wrong success value.
+        assert!(
+            source.contains(
+                "final __boltffiTag = (__boltffiRaw as JSObject).getProperty('tag'.toJS);"
+            )
+        );
+        assert!(
+            source.contains(
+                "if (__boltffiTag != null && (__boltffiTag as JSString).toDart == 'err') {"
+            )
+        );
+        assert!(source.contains(
+            "throw BoltFFIStringException(((__boltffiRaw as JSObject).getProperty('error'.toJS) as JSString).toDart);"
+        ));
+    }
+
+    fn fallible_async_record_error_callback_bindings() -> Bindings<Wasm32> {
+        let source = boltffi_scan::scan_file(
+            syn::parse_str(
+                r#"
+                #[data]
+                pub struct ValidationError {
+                    pub reason: String,
+                }
+
+                #[export]
+                pub trait AsyncValidator {
+                    async fn validate(&self, value: i32) -> Result<i32, ValidationError>;
+                }
+
+                #[export]
+                pub async fn call_async_validator(validator: Box<dyn AsyncValidator>, value: i32) -> i32 {
+                    validator.validate(value).await.unwrap_or(0)
+                }
+                "#,
+            )
+            .expect("valid source"),
+            PackageInfo::new("demo", None),
+        )
+        .expect("source scans");
+        lower::<Wasm32>(&source).expect("source lowers")
+    }
+
+    #[test]
+    fn renders_an_async_fallible_callback_method_with_a_record_error() {
+        // Matches an async trait method returning `Result<T, E>` where `E`
+        // is a #[data] record -- the record itself is thrown/caught
+        // directly (it already implements Exception, since it's the
+        // error-channel payload) rather than being wrapped like a String
+        // error is.
+        let output = DartWebHost::new("demo")
+            .expect("host constructs")
+            .into_target()
+            .render(&fallible_async_record_error_callback_bindings())
+            .expect("target renders");
+        let source = source_of(&output);
+
+        assert!(source.contains("class ValidationError implements Exception"));
+        assert!(source.contains("Future<int> validate(int arg0);"));
+        assert!(source.contains("JSPromise<JSAny?> validate(JSAny? arg0) {"));
+        assert!(source.contains("on ValidationError catch (__boltffiError) {"));
     }
 
     fn nullable_closure_bindings() -> Bindings<Wasm32> {

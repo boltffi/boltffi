@@ -127,6 +127,11 @@ struct CallSignature {
     params: Vec<ParamInfo>,
     return_dart_type: String,
     return_ty: Option<TypeRef>,
+    // Only ever set by callback_method_signature, for a callback method
+    // whose Rust trait method returns `Result<T, E>`. Dart calls into
+    // Rust (functions/class methods) go through call_signature instead,
+    // which never populates this.
+    error_ty: Option<TypeRef>,
     asynchronous: bool,
 }
 
@@ -203,6 +208,7 @@ fn call_signature(
         params,
         return_dart_type,
         return_ty,
+        error_ty: None,
         asynchronous,
     })
 }
@@ -220,6 +226,14 @@ fn closure_param_info(
         return Err(unsupported("nullable closure parameter"));
     }
     let inner = callback_method_signature(closure.invoke(), context)?;
+    // wrap_dart_callable_as_js_function has no WireResult encoding (that's
+    // only implemented for the Callback interface adapter/wrapper below)
+    // -- a fallible bare closure would have its thrown Dart exception
+    // escape `.toJS` unencoded instead of reaching Rust as a decodable
+    // error.
+    if inner.error_ty.is_some() {
+        return Err(unsupported("fallible closure parameter"));
+    }
     let dart_type = format!(
         "{} Function({})",
         inner.return_dart_type,
@@ -275,13 +289,21 @@ fn callback_method_signature(
     context: &RenderContext<Wasm32>,
 ) -> Result<CallSignature> {
     // target::typescript's wasm callback adapter expects the JS callback to
-    // return either a plain success value, a tagged WireResult, or throw an
-    // Error, encoding the error channel accordingly -- this signature
-    // builder has no representation for that yet, so a Dart implementation
-    // of a fallible callback method has no way to signal Err(E).
-    if !matches!(callable.error(), boltffi_binding::ErrorDecl::None(_)) {
-        return Err(unsupported("fallible callback method"));
-    }
+    // return either a plain success value or a tagged WireResult
+    // (`{tag: 'ok', value}` / `{tag: 'err', error}`, see
+    // runtime/typescript/src/wire.ts's wireOk/wireErr) -- Callback's own
+    // adapter/wrapper rendering builds that shape from a thrown/caught
+    // Dart exception, matching target::dart's own error-catch-binding
+    // convention (only String, Record, and Enum error payloads are
+    // supported there, so the same restriction applies here).
+    let error_ty = match callable.error() {
+        boltffi_binding::ErrorDecl::None(_) => None,
+        boltffi_binding::ErrorDecl::EncodedViaReturnSlot {
+            ty: ty @ (TypeRef::String | TypeRef::Record(_) | TypeRef::Enum(_)),
+            ..
+        } => Some(ty.clone()),
+        _ => return Err(unsupported("callback method error channel")),
+    };
     let mut params = Vec::new();
 
     for (index, param) in callable.params().iter().enumerate() {
@@ -306,8 +328,41 @@ fn callback_method_signature(
         params,
         return_dart_type,
         return_ty,
+        error_ty,
         asynchronous,
     })
+}
+
+// The Dart exception type a callback method's error is caught/thrown as.
+// A `String` error can't itself `implements Exception` (it's a builtin,
+// not a declared type), so it's wrapped in BoltFFIStringException instead
+// -- matching target::dart's own `$$BoltException` convention for the
+// same case.
+fn error_exception_type(ty: &TypeRef, context: &RenderContext<Wasm32>) -> Result<String> {
+    match ty {
+        TypeRef::String => Ok("BoltFFIStringException".to_owned()),
+        TypeRef::Record(_) | TypeRef::Enum(_) => interop::dart_type(ty, context),
+        _ => Err(unsupported("callback error payload type")),
+    }
+}
+
+// Builds the expression thrown on the Dart-implementation side once the
+// wire error value (already decoded to `decoded_expr`) is known.
+fn error_throw_expression(ty: &TypeRef, decoded_expr: &str) -> Result<String> {
+    match ty {
+        TypeRef::String => Ok(format!("BoltFFIStringException({decoded_expr})")),
+        TypeRef::Record(_) | TypeRef::Enum(_) => Ok(decoded_expr.to_owned()),
+        _ => Err(unsupported("callback error payload type")),
+    }
+}
+
+// The expression that recovers the wire-encodable error value from a
+// caught Dart exception of `error_exception_type(ty, ..)`.
+fn error_caught_value(ty: &TypeRef, caught_expr: &str) -> String {
+    match ty {
+        TypeRef::String => format!("{caught_expr}.message"),
+        _ => caught_expr.to_owned(),
+    }
 }
 
 fn return_boundary<D: Direction>(
@@ -461,7 +516,7 @@ impl Record {
             _ => return Err(unsupported("record declaration")),
         };
 
-        let source = render_data_class(&name, None, &fields, context)?;
+        let source = render_data_class(&name, None, &fields, decl.is_error_payload(), context)?;
         Ok(Self { source })
     }
 
@@ -495,6 +550,7 @@ fn render_data_class(
     name: &str,
     extends: Option<(&str, &str)>,
     fields: &[DataField],
+    implements_exception: bool,
     context: &RenderContext<Wasm32>,
 ) -> Result<String> {
     let mut field_decls = Vec::new();
@@ -538,7 +594,16 @@ fn render_data_class(
             "@override\n  ",
             " : super._()".to_owned(),
         ),
-        None => (format!("class {name}"), "", String::new()),
+        None => {
+            // A data-enum variant class inherits "implements Exception"
+            // through `extends` instead of declaring it again here.
+            let exception_clause = if implements_exception {
+                " implements Exception"
+            } else {
+                ""
+            };
+            (format!("class {name}{exception_clause}"), "", String::new())
+        }
     };
     let ctor_params_decl = if ctor_params.is_empty() {
         String::new()
@@ -621,8 +686,13 @@ impl Enumeration {
             .collect::<Vec<_>>()
             .join(",\n");
 
+        let exception_clause = if decl.is_error_payload() {
+            " implements Exception"
+        } else {
+            ""
+        };
         Ok(format!(
-            "enum {name} {{\n{variant_entries};\n\n  final int value;\n  const {name}(this.value);\n\n  JSAny toJS() => value.toJS;\n\n  static {name} fromJS(JSAny js) => _fromRaw((js as JSNumber).toDartInt);\n\n  static {name} _fromRaw(int value) => values.firstWhere(\n    (variant) => variant.value == value,\n    orElse: () => throw ArgumentError.value(value, 'value', 'unknown {name} value'),\n  );\n}}\n\n",
+            "enum {name}{exception_clause} {{\n{variant_entries};\n\n  final int value;\n  const {name}(this.value);\n\n  JSAny toJS() => value.toJS;\n\n  static {name} fromJS(JSAny js) => _fromRaw((js as JSNumber).toDartInt);\n\n  static {name} _fromRaw(int value) => values.firstWhere(\n    (variant) => variant.value == value,\n    orElse: () => throw ArgumentError.value(value, 'value', 'unknown {name} value'),\n  );\n}}\n\n",
         ))
     }
 
@@ -657,6 +727,7 @@ impl Enumeration {
                 &variant_type,
                 Some((&name, &tag)),
                 &fields,
+                false,
                 context,
             )?);
 
@@ -700,8 +771,13 @@ impl Enumeration {
             ));
         }
 
+        let exception_clause = if decl.is_error_payload() {
+            " implements Exception"
+        } else {
+            ""
+        };
         Ok(format!(
-            "sealed class {name} {{\n  const {name}._();\n\n{factories}\n\n  JSObject toJS();\n\n  static {name} fromJS(JSObject js) {{\n    final tag = (js.getProperty('tag'.toJS) as JSString).toDart;\n    switch (tag) {{\n{cases}\n      default: throw StateError('Unknown {name} tag: \\$tag');\n    }}\n  }}\n}}\n\n{variants}",
+            "sealed class {name}{exception_clause} {{\n  const {name}._();\n\n{factories}\n\n  JSObject toJS();\n\n  static {name} fromJS(JSObject js) {{\n    final tag = (js.getProperty('tag'.toJS) as JSString).toDart;\n    switch (tag) {{\n{cases}\n      default: throw StateError('Unknown {name} tag: \\$tag');\n    }}\n  }}\n}}\n\n{variants}",
             factories = factory_constructors.join("\n"),
             cases = from_js_cases.join("\n"),
             variants = variant_classes.join(""),
@@ -757,25 +833,48 @@ impl Callback {
                 .collect::<Result<Vec<_>>>()?
                 .join(", ");
             let impl_call = format!("_impl.{method_name}({decoded_args})");
+            let await_kw = if signature.asynchronous { "await " } else { "" };
+            let inner_body = match &signature.error_ty {
+                None => {
+                    if signature.return_ty.is_none() {
+                        format!("{{ {await_kw}{impl_call}; }}")
+                    } else {
+                        let encoded = signature.encode_return("__boltffiResult", context)?;
+                        format!(
+                            "{{ final __boltffiResult = {await_kw}{impl_call}; return {encoded}; }}"
+                        )
+                    }
+                }
+                // Wraps the Dart implementation's success/thrown-exception
+                // outcome as the `{tag: 'ok'|'err', ...}` wire shape
+                // target::typescript's wasm callback adapter expects (see
+                // runtime/typescript/src/wire.ts's WireResult) -- Rust
+                // decodes this back into its own `Result<T, E>` on the
+                // other side of the boundary.
+                Some(error_ty) => {
+                    let exception_type = error_exception_type(error_ty, context)?;
+                    let success = if signature.return_ty.is_none() {
+                        format!("{await_kw}{impl_call};\n      return boltffiWireOk(null);")
+                    } else {
+                        let encoded = signature.encode_return("__boltffiResult", context)?;
+                        format!(
+                            "final __boltffiResult = {await_kw}{impl_call};\n      return boltffiWireOk({encoded});"
+                        )
+                    };
+                    let caught_value = error_caught_value(error_ty, "__boltffiError");
+                    let encoded_error = interop::to_js(&caught_value, error_ty, context)?;
+                    format!(
+                        "{{\n    try {{\n      {success}\n    }} on {exception_type} catch (__boltffiError) {{\n      return boltffiWireErr({encoded_error});\n    }}\n  }}"
+                    )
+                }
+            };
             let adapter_method = if signature.asynchronous {
-                let inner_body = if signature.return_ty.is_none() {
-                    format!("{{ await {impl_call}; }}")
-                } else {
-                    let encoded = signature.encode_return("__boltffiResult", context)?;
-                    format!("{{ final __boltffiResult = await {impl_call}; return {encoded}; }}")
-                };
                 format!(
                     "  @JSExport('{js_name}')\n  JSPromise<JSAny?> {method_name}({adapter_js_params}) {{\n    return (() async {inner_body})().toJS;\n  }}"
                 )
             } else {
-                let body = if signature.return_ty.is_none() {
-                    format!("{{ {impl_call}; }}")
-                } else {
-                    let encoded = signature.encode_return("__boltffiResult", context)?;
-                    format!("{{ final __boltffiResult = {impl_call}; return {encoded}; }}")
-                };
                 format!(
-                    "  @JSExport('{js_name}')\n  JSAny? {method_name}({adapter_js_params}) {body}"
+                    "  @JSExport('{js_name}')\n  JSAny? {method_name}({adapter_js_params}) {inner_body}"
                 )
             };
             adapter_methods.push(adapter_method);
@@ -790,16 +889,40 @@ impl Callback {
             } else {
                 ("", raw_call)
             };
-            if signature.return_ty.is_none() {
-                wrapper_methods.push(format!(
-                    "  @override\n  {public_return} {method_name}({dart_params}) {wrapper_async}{{ {raw_result}; }}"
-                ));
-            } else {
-                let decoded = signature.decode_return(&raw_result, context)?;
-                wrapper_methods.push(format!(
-                    "  @override\n  {public_return} {method_name}({dart_params}) {wrapper_async}{{ return {decoded}; }}"
-                ));
-            }
+            let wrapper_body = match &signature.error_ty {
+                None => {
+                    if signature.return_ty.is_none() {
+                        format!("{{ {raw_result}; }}")
+                    } else {
+                        let decoded = signature.decode_return(&raw_result, context)?;
+                        format!("{{ return {decoded}; }}")
+                    }
+                }
+                // Unwraps the same `{tag: 'ok'|'err', ...}` wire shape the
+                // adapter above builds, for the case where a raw JS object
+                // (not a Dart implementation routed through the adapter)
+                // is speaking the wire contract directly.
+                Some(error_ty) => {
+                    let error_value = interop::from_js(
+                        "(__boltffiRaw as JSObject).getProperty('error'.toJS)",
+                        error_ty,
+                        context,
+                    )?;
+                    let throw_expr = error_throw_expression(error_ty, &error_value)?;
+                    let value_decode = if signature.return_ty.is_none() {
+                        String::new()
+                    } else {
+                        let decoded = signature.decode_return("__boltffiValue", context)?;
+                        format!("return {decoded};\n    ")
+                    };
+                    format!(
+                        "{{\n    final __boltffiRaw = {raw_result};\n    final __boltffiTag = (__boltffiRaw as JSObject).getProperty('tag'.toJS);\n    if (__boltffiTag != null && (__boltffiTag as JSString).toDart == 'err') {{\n      throw {throw_expr};\n    }}\n    final __boltffiValue = __boltffiTag != null && (__boltffiTag as JSString).toDart == 'ok'\n        ? (__boltffiRaw as JSObject).getProperty('value'.toJS)\n        : __boltffiRaw;\n    {value_decode}}}"
+                    )
+                }
+            };
+            wrapper_methods.push(format!(
+                "  @override\n  {public_return} {method_name}({dart_params}) {wrapper_async}{wrapper_body}"
+            ));
         }
 
         let source = format!(
@@ -1238,6 +1361,35 @@ impl<'m> Module<'m> {
              \x20\x20final secs = boltffiInt64FromJS(value.getProperty('secs'.toJS) as JSAny);\n\
              \x20\x20final nanos = (value.getProperty('nanos'.toJS) as JSNumber).toDartInt;\n\
              \x20\x20return Duration(seconds: secs, microseconds: nanos ~/ 1000);\n\
+             }}\n\n\
+             // A Rust `Result<T, E>` crossing through a callback method
+             // wraps its outcome as `{{tag: 'ok', value}}` /
+             // `{{tag: 'err', error}}` (see runtime/typescript/src/wire.ts's
+             // wireOk/wireErr) -- the callback adapter builds this from a
+             // thrown/caught Dart exception, and the JsWrapper escape hatch
+             // unwraps it back into one.\n\
+             JSObject boltffiWireOk(JSAny? value) {{\n\
+             \x20\x20final result = JSObject();\n\
+             \x20\x20result.setProperty('tag'.toJS, 'ok'.toJS);\n\
+             \x20\x20result.setProperty('value'.toJS, value);\n\
+             \x20\x20return result;\n\
+             }}\n\n\
+             JSObject boltffiWireErr(JSAny? error) {{\n\
+             \x20\x20final result = JSObject();\n\
+             \x20\x20result.setProperty('tag'.toJS, 'err'.toJS);\n\
+             \x20\x20result.setProperty('error'.toJS, error);\n\
+             \x20\x20return result;\n\
+             }}\n\n\
+             // A `String` Rust error can't itself `implements Exception`
+             // (it's a builtin, not a declared type), so a fallible
+             // callback method with a String error throws/catches this
+             // wrapper instead -- matches target::dart's own
+             // `$$BoltException` convention for the same case.\n\
+             class BoltFFIStringException implements Exception {{\n\
+             \x20\x20final String message;\n\
+             \x20\x20const BoltFFIStringException(this.message);\n\n\
+             \x20\x20@override\n\
+             \x20\x20String toString() => message;\n\
              }}\n\n"
         );
         FileLayout::new()
