@@ -28,11 +28,22 @@ fn main() {
     );
 
     if !src_dir.exists() {
-        panic!(
-            "boltffi_cli build.rs: expected `runtime/typescript/src` at {} \
-             (this build.rs only works from a full boltffi monorepo checkout)",
+        // A packaged crate (`cargo install`/crates.io) never carries a
+        // sibling `runtime/typescript` -- Cargo's own packaging can't
+        // include paths outside the crate root. Degrade instead of
+        // panicking so `boltffi_cli` stays buildable there; `pack
+        // dart-web` fails with a clear error at runtime instead, in the
+        // rare case someone still asks for it from a build like this.
+        println!(
+            "cargo:warning=boltffi_cli build.rs: `runtime/typescript/src` not found at {} \
+             (not a full boltffi monorepo checkout) -- pack dart-web's vendored runtime \
+             will be empty in this build",
             src_dir.display()
         );
+        let generated_path = out_dir.join("dart_web_runtime_sources.rs");
+        fs::write(&generated_path, render_runtime_sources_source(&[]))
+            .expect("write generated runtime sources file");
+        return;
     }
 
     build_runtime(&runtime_dir);

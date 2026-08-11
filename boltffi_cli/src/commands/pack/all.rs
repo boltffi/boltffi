@@ -86,6 +86,7 @@ pub(super) fn pack_all(
             config,
             PackWasmOptions {
                 execution: options.execution.clone(),
+                require_npm_metadata: true,
             },
             reporter,
         )?;

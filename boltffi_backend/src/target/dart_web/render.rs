@@ -458,11 +458,15 @@ fn render_data_class(
         ),
         None => (format!("class {name}"), "", String::new()),
     };
+    let ctor_params_decl = if ctor_params.is_empty() {
+        String::new()
+    } else {
+        format!("{{{}}}", ctor_params.join(", "))
+    };
 
     Ok(format!(
-        "{header} {{\n{fields}\n\n  const {name}({{{ctor}}}){extra_ctor};\n\n  {override_kw}JSObject toJS() {{\n    final result = JSObject();\n{to_js}\n    return result;\n  }}\n\n  static {name} fromJS(JSObject js) {{\n    return {name}({from_js});\n  }}\n}}\n\n",
+        "{header} {{\n{fields}\n\n  const {name}({ctor_params_decl}){extra_ctor};\n\n  {override_kw}JSObject toJS() {{\n    final result = JSObject();\n{to_js}\n    return result;\n  }}\n\n  static {name} fromJS(JSObject js) {{\n    return {name}({from_js});\n  }}\n}}\n\n",
         fields = field_decls.join("\n"),
-        ctor = ctor_params.join(", "),
         to_js = to_js_entries.join("\n"),
         from_js = from_js_args.join(", "),
     ))
@@ -471,7 +475,7 @@ fn render_data_class(
 fn field_key_name(key: &boltffi_binding::FieldKey) -> String {
     match key {
         boltffi_binding::FieldKey::Named(name) => Name::new(name).dart_identifier(),
-        boltffi_binding::FieldKey::Position(position) => format!("field{position}"),
+        boltffi_binding::FieldKey::Position(position) => format!("value{position}"),
         _ => "field".to_owned(),
     }
 }
@@ -774,9 +778,16 @@ impl Class {
             let signature = call_signature(initializer.callable(), context)?;
             let params = signature.dart_params_decl();
             let arguments = signature.js_call_arguments();
-            members.push(format!(
-                "  static {name} {method_name}({params}) => {name}._({class_ref}.callMethodVarArgs('{js_name}'.toJS, [{arguments}]) as JSObject);",
-            ));
+            let call_js = format!("{class_ref}.callMethodVarArgs('{js_name}'.toJS, [{arguments}])");
+            if signature.asynchronous {
+                members.push(format!(
+                    "  static Future<{name}> {method_name}({params}) async => {name}._((await ({call_js} as JSPromise<JSAny?>).toDart) as JSObject);",
+                ));
+            } else {
+                members.push(format!(
+                    "  static {name} {method_name}({params}) => {name}._({call_js} as JSObject);",
+                ));
+            }
         }
 
         for method in decl.methods() {
@@ -807,7 +818,7 @@ impl Class {
                 format!("=> {decoded};")
             };
             members.push(format!(
-                "  {keyword}{} {async_keyword}{method_name}({params}) {body}",
+                "  {keyword}{} {method_name}({params}) {async_keyword}{body}",
                 signature.dart_return_signature()
             ));
         }
@@ -854,26 +865,37 @@ impl Stream {
         let js_item_callback =
             format!("((JSAny? __boltffiItem) {{ __boltffiController.add({decode_item}); }}).toJS");
 
-        let (call_target, extern_decl) = match decl.owner() {
-            Some(_) => ("(js)".to_owned(), String::new()),
+        let extern_decl = match decl.owner() {
+            Some(_) => String::new(),
             None => {
                 let extern_name = format!("_boltffiExtern_{js_name}");
-                (
-                    extern_name.clone(),
-                    format!(
-                        "@JS('{namespace}.{js_name}')\nexternal JSObject {extern_name}([JSAny? callback]);\n\n"
-                    ),
+                format!(
+                    "@JS('{namespace}.{js_name}')\nexternal JSObject {extern_name}([JSAny? callback]);\n\n"
                 )
             }
         };
 
+        // An owned stream is reached as a method on the instance's JS
+        // object (like any other method); a free stream's extern binds
+        // directly to the wrapped module's function, so it's called, not
+        // looked up as a property on something else.
+        let session_or_cancellable_expr = match decl.owner() {
+            Some(_) if callback_mode => {
+                format!(
+                    "(js).callMethodVarArgs('{js_name}'.toJS, [{js_item_callback}]) as JSObject"
+                )
+            }
+            Some(_) => format!("(js).callMethodVarArgs('{js_name}'.toJS, []) as JSObject"),
+            None if callback_mode => {
+                format!("_boltffiExtern_{js_name}({js_item_callback})")
+            }
+            None => format!("_boltffiExtern_{js_name}()"),
+        };
         let cancellable_expr = if callback_mode {
-            format!(
-                "{call_target}.callMethodVarArgs('{js_name}'.toJS, [{js_item_callback}]) as JSObject"
-            )
+            session_or_cancellable_expr
         } else {
             format!(
-                "({call_target}.callMethodVarArgs('{js_name}'.toJS, []) as JSObject).callMethodVarArgs('consume'.toJS, [{js_item_callback}]) as JSObject"
+                "({session_or_cancellable_expr}).callMethodVarArgs('consume'.toJS, [{js_item_callback}]) as JSObject"
             )
         };
 

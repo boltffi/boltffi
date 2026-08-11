@@ -185,6 +185,9 @@ mod tests {
                 pub fn shout(name: String) -> String { name.to_uppercase() }
 
                 #[export]
+                pub fn delete() -> i32 { 0 }
+
+                #[export]
                 pub async fn add_async(a: i32, b: i32) -> i32 { a + b }
 
                 #[export]
@@ -249,6 +252,7 @@ mod tests {
                 pub enum Filter {
                     None,
                     ByName { name: String },
+                    ByRange(i32, i32),
                 }
 
                 #[export]
@@ -338,9 +342,13 @@ mod tests {
                 impl Counter {
                     pub fn new(initial: i32) -> Self { Self(initial) }
 
+                    pub async fn connect(initial: i32) -> Self { Self(initial) }
+
                     pub fn get(&self) -> i32 { self.0 }
 
                     pub fn add(&self, amount: i32) -> i32 { self.0 + amount }
+
+                    pub async fn add_async(&self, amount: i32) -> i32 { self.0 + amount }
                 }
                 "#,
             )
@@ -391,6 +399,10 @@ mod tests {
         assert!(source.contains("@JS('__boltffi_demo.addAsync')"));
         assert!(source.contains("addAsync(int arg0, int arg1) async"));
         assert!(source.contains(".toDart"));
+        // Must match target::typescript's own reserved-word escaping
+        // (prefix underscore) or this binds to a JS export that was never
+        // produced.
+        assert!(source.contains("@JS('__boltffi_demo._delete')"));
     }
 
     #[test]
@@ -496,8 +508,13 @@ mod tests {
         assert!(source.contains("static const Active = Status._(1);"));
         assert!(source.contains("abstract class Filter"));
         assert!(source.contains("class Filter$None extends Filter"));
+        assert!(source.contains("const Filter$None() : super._();"));
         assert!(source.contains("class Filter$ByName extends Filter"));
         assert!(source.contains("case 'ByName': return Filter$ByName("));
+        assert!(source.contains("class Filter$ByRange extends Filter"));
+        assert!(source.contains("final int value0;"));
+        assert!(source.contains("final int value1;"));
+        assert!(source.contains("result.setProperty('value0'.toJS, (value0).toJS);"));
 
         assert!(source.contains("Point echoPoint(Point arg0)"));
         assert!(source.contains("(arg0).toJS()"));
@@ -538,7 +555,7 @@ mod tests {
 
         assert!(source.contains("typedef Timestamp = int;"));
         assert!(source.contains("Timestamp keepTimestamp(Timestamp arg0)"));
-        assert!(source.contains("BigInt(arg0).toJS"));
+        assert!(source.contains("BigInt.from(arg0).toJS"));
         assert!(source.contains(").toDartInt"));
     }
 
@@ -569,5 +586,13 @@ mod tests {
         assert!(source.contains("class Counter"));
         assert!(source.contains("_boltffiCounterClass.callMethodVarArgs('new'.toJS,"));
         assert!(source.contains("(js).callMethodVarArgs('add'.toJS,"));
+        // Async initializer: returns Future<Counter> and awaits the JS Promise.
+        assert!(source.contains("static Future<Counter> connect(int arg0) async =>"));
+        assert!(source.contains("as JSPromise<JSAny?>).toDart) as JSObject);"));
+        // Async instance method: `async` goes after the parameter list, not
+        // before the method name (`Future<int> async addAsync(...)` is
+        // invalid Dart).
+        assert!(source.contains("Future<int> addAsync(int arg0) async =>"));
+        assert!(!source.contains("async addAsync"));
     }
 }

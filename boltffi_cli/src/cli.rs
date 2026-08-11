@@ -612,6 +612,7 @@ pub(crate) fn execute_command(
                         deny_skipped,
                         cargo_args.clone(),
                     ),
+                    require_npm_metadata: true,
                 }),
                 PackTargetArg::Java { release, no_build } => PackCommand::Java(PackJavaOptions {
                     execution: pack_execution_options(
@@ -963,6 +964,7 @@ fn release_pack_commands(
                         false,
                         cargo_args.to_vec(),
                     ),
+                    require_npm_metadata: true,
                 }));
             }
         }
@@ -1028,6 +1030,7 @@ fn release_pack_commands(
                         false,
                         cargo_args.to_vec(),
                     ),
+                    require_npm_metadata: true,
                 }));
             }
             if config.should_process(Target::Python, false) {

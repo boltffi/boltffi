@@ -65,7 +65,7 @@ impl<'name> Name<'name> {
     pub fn js_export_name(&self) -> String {
         let base = name_case::lower_camel(self.0);
         if JS_RESERVED.contains(&base.as_str()) {
-            format!("{base}_")
+            format!("_{base}")
         } else {
             base
         }

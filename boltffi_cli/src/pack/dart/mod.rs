@@ -180,15 +180,18 @@ fn unify_native_and_web(
         &web_dir,
         reporter,
     )?;
+    let web_module_name = config.dart_web_module_name();
 
     {
         let step = reporter.step("Writing the conditional-export shim");
         let shim_path = lib_dir.join(format!("{package_name}.dart"));
-        std::fs::write(&shim_path, conditional_export_shim(package_name)).map_err(|source| {
-            CliError::WriteFailed {
-                path: shim_path,
-                source,
-            }
+        std::fs::write(
+            &shim_path,
+            conditional_export_shim(package_name, &web_module_name),
+        )
+        .map_err(|source| CliError::WriteFailed {
+            path: shim_path,
+            source,
         })?;
         step.finish_success();
     }
@@ -202,6 +205,10 @@ fn unify_native_and_web(
     Ok(())
 }
 
+// A second `pack dart` with `--regenerate=false` leaves `lib/<package>.dart`
+// as the conditional-export shim this same function wrote last time, not
+// fresh native bindings -- moving it would clobber the real native
+// bindings already sitting in native_dir. Detect and skip that case.
 fn move_native_bindings(lib_dir: &Path, native_dir: &Path, package_name: &str) -> Result<()> {
     std::fs::create_dir_all(native_dir).map_err(|source| CliError::CreateDirectoryFailed {
         path: native_dir.to_path_buf(),
@@ -209,6 +216,14 @@ fn move_native_bindings(lib_dir: &Path, native_dir: &Path, package_name: &str) -
     })?;
     let native_file = lib_dir.join(format!("{package_name}.dart"));
     let native_dest = native_dir.join(format!("{package_name}.dart"));
+    let existing =
+        std::fs::read_to_string(&native_file).map_err(|source| CliError::ReadFailed {
+            path: native_file.clone(),
+            source,
+        })?;
+    if existing.starts_with("library;\n\nexport 'src/native/") {
+        return Ok(());
+    }
     std::fs::rename(&native_file, &native_dest).map_err(|source| CliError::CopyFailed {
         from: native_file,
         to: native_dest,
@@ -216,11 +231,11 @@ fn move_native_bindings(lib_dir: &Path, native_dir: &Path, package_name: &str) -
     })
 }
 
-fn conditional_export_shim(package_name: &str) -> String {
+fn conditional_export_shim(package_name: &str, web_module_name: &str) -> String {
     format!(
         "library;\n\n\
          export 'src/native/{package_name}.dart'\n\
-         \x20\x20\x20\x20if (dart.library.js_interop) 'src/web/{package_name}.dart';\n"
+         \x20\x20\x20\x20if (dart.library.js_interop) 'src/web/{web_module_name}.dart';\n"
     )
 }
 
@@ -281,7 +296,7 @@ mod tests {
 
     #[test]
     fn conditional_export_shim_picks_web_only_under_js_interop() {
-        let shim = conditional_export_shim("demo");
+        let shim = conditional_export_shim("demo", "demo");
 
         assert_eq!(
             shim,
@@ -289,6 +304,13 @@ mod tests {
              export 'src/native/demo.dart'\n\
              \x20\x20\x20\x20if (dart.library.js_interop) 'src/web/demo.dart';\n"
         );
+    }
+
+    #[test]
+    fn conditional_export_shim_references_a_custom_web_module_name() {
+        let shim = conditional_export_shim("demo", "demo_web");
+
+        assert!(shim.contains("if (dart.library.js_interop) 'src/web/demo_web.dart';"));
     }
 
     #[test]
@@ -318,6 +340,34 @@ mod tests {
         let result = move_native_bindings(&lib_dir, &native_dir, "demo");
 
         assert!(result.is_err());
+        std::fs::remove_dir_all(&package_dir).expect("cleanup temp dir");
+    }
+
+    /// A second `pack dart --regenerate=false` must not clobber the real
+    /// native bindings already sitting in native_dir with the shim
+    /// `lib/<package>.dart` was rewritten into on the previous run.
+    #[test]
+    fn move_native_bindings_is_a_no_op_when_the_lib_file_is_already_the_shim() {
+        let package_dir = unique_temp_dir("boltffi-move-native-bindings-idempotent-test");
+        let lib_dir = package_dir.join("lib");
+        let native_dir = lib_dir.join("src/native");
+        std::fs::create_dir_all(&native_dir).expect("create native dir");
+        std::fs::write(
+            native_dir.join("demo.dart"),
+            "library demo;\n// real native bindings\n",
+        )
+        .expect("write existing native bindings");
+        std::fs::write(
+            lib_dir.join("demo.dart"),
+            conditional_export_shim("demo", "demo"),
+        )
+        .expect("write shim as lib file");
+
+        move_native_bindings(&lib_dir, &native_dir, "demo").expect("move is a no-op");
+
+        let native = std::fs::read_to_string(native_dir.join("demo.dart")).expect("native file");
+        assert_eq!(native, "library demo;\n// real native bindings\n");
+
         std::fs::remove_dir_all(&package_dir).expect("cleanup temp dir");
     }
 

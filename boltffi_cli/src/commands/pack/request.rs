@@ -48,6 +48,11 @@ pub struct PackKmpOptions {
 
 pub struct PackWasmOptions {
     pub execution: PackExecutionOptions,
+    /// `pack dart-web` wraps `pack wasm` purely for its compiled JS/wasm
+    /// output; it never touches `package.json`/`README.md`, so it has no
+    /// reason to require `targets.wasm.npm.package_name` the way a
+    /// standalone `pack wasm` (or `pack dart` unifying native+web) does.
+    pub require_npm_metadata: bool,
 }
 
 pub struct PackJavaOptions {

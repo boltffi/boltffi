@@ -23,11 +23,11 @@ pub fn dart_type(ty: &TypeRef, context: &RenderContext<Wasm32>) -> Result<String
             | Primitive::I16
             | Primitive::U16
             | Primitive::I32
-            | Primitive::U32,
+            | Primitive::U32
+            | Primitive::ISize
+            | Primitive::USize,
         ) => "int".to_owned(),
-        TypeRef::Primitive(
-            Primitive::I64 | Primitive::U64 | Primitive::ISize | Primitive::USize,
-        ) => "int".to_owned(),
+        TypeRef::Primitive(Primitive::I64 | Primitive::U64) => "int".to_owned(),
         TypeRef::Primitive(Primitive::F32 | Primitive::F64) => "double".to_owned(),
         TypeRef::String | TypeRef::InternedString { .. } => "String".to_owned(),
         TypeRef::Bytes => "Uint8List".to_owned(),
@@ -83,11 +83,13 @@ pub fn to_js(expr: &str, ty: &TypeRef, context: &RenderContext<Wasm32>) -> Resul
             | Primitive::I16
             | Primitive::U16
             | Primitive::I32
-            | Primitive::U32,
+            | Primitive::U32
+            | Primitive::ISize
+            | Primitive::USize,
         ) => format!("({expr}).toJS"),
-        TypeRef::Primitive(
-            Primitive::I64 | Primitive::U64 | Primitive::ISize | Primitive::USize,
-        ) => format!("BigInt({expr}).toJS"),
+        TypeRef::Primitive(Primitive::I64 | Primitive::U64) => {
+            format!("BigInt.from({expr}).toJS")
+        }
         TypeRef::Primitive(Primitive::F32 | Primitive::F64) => format!("({expr}).toJS"),
         TypeRef::String | TypeRef::InternedString { .. } => format!("({expr}).toJS"),
         TypeRef::Bytes => format!("({expr}).toJS"),
@@ -133,11 +135,13 @@ pub fn from_js(expr: &str, ty: &TypeRef, context: &RenderContext<Wasm32>) -> Res
             | Primitive::I16
             | Primitive::U16
             | Primitive::I32
-            | Primitive::U32,
+            | Primitive::U32
+            | Primitive::ISize
+            | Primitive::USize,
         ) => format!("({expr} as JSNumber).toDartInt"),
-        TypeRef::Primitive(
-            Primitive::I64 | Primitive::U64 | Primitive::ISize | Primitive::USize,
-        ) => format!("({expr} as JSBigInt).toDartInt"),
+        TypeRef::Primitive(Primitive::I64 | Primitive::U64) => {
+            format!("({expr} as JSBigInt).toDartInt")
+        }
         TypeRef::Primitive(Primitive::F32 | Primitive::F64) => {
             format!("({expr} as JSNumber).toDartDouble")
         }

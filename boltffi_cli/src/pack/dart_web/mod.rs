@@ -68,6 +68,7 @@ pub(crate) fn pack_wrapped_wasm_module(
         config,
         PackWasmOptions {
             execution: execution.clone(),
+            require_npm_metadata: false,
         },
         reporter,
     )?;
@@ -141,14 +142,25 @@ fn vendor_web_assets(config: &Config, output_directory: &Path, reporter: &Report
         fs::copy(&from, &to).map_err(|source| CliError::CopyFailed { from, to, source })?;
     }
 
+    if RUNTIME_SOURCES.is_empty() {
+        return Err(CliError::CommandFailed {
+            command: "pack dart-web: this boltffi build has no vendored @boltffi/runtime \
+                      (it was compiled outside a full boltffi monorepo checkout, where \
+                      build.rs has no runtime/typescript/src to build from)"
+                .to_string(),
+            status: None,
+        });
+    }
+
     let bindings_file_name = format!("{wasm_module_name}.js");
     let bindings_source = fs::read_to_string(npm_output_directory.join(&bindings_file_name))
         .map_err(|source| CliError::ReadFailed {
             path: npm_output_directory.join(&bindings_file_name),
             source,
         })?;
+    let runtime_import = format!("\"{}\"", config.wasm_runtime_package());
     let rewritten_bindings =
-        bindings_source.replace("\"@boltffi/runtime\"", "\"./boltffi_runtime/index.js\"");
+        bindings_source.replace(&runtime_import, "\"./boltffi_runtime/index.js\"");
     let bindings_dest = web_directory.join(&bindings_file_name);
     fs::write(&bindings_dest, rewritten_bindings).map_err(|source| CliError::WriteFailed {
         path: bindings_dest,
