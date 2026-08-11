@@ -344,11 +344,12 @@ fn write_web_setup_doc(
          ## 3. Call this once before using the package\n\n\
          ```dart\n\
          import 'package:{package_name}/{package_name}.dart';\n\n\
-         await init();\n\
+         await boltffiInit();\n\
          ```\n\n\
-         `init()` only *waits* for the module the script tag above already started\n\
-         loading — it doesn't load anything itself. On native (dart:ffi) targets,\n\
-         `init()` isn't part of the generated API at all; only the web half needs it.\n\n\
+         `boltffiInit()` only *waits* for the module the script tag above already\n\
+         started loading — it doesn't load anything itself. On native (dart:ffi)\n\
+         targets, `boltffiInit()` isn't part of the generated API at all; only the\n\
+         web half needs it.\n\n\
          ---\n\n\
          Why the manual copy: `pack dart` only ever runs in this package's own repo,\n\
          never in a consuming app's build — there's no hook it could use to place\n\
@@ -623,6 +624,9 @@ mod tests {
         assert!(doc.contains("demo_web_loader.mjs"));
         assert!(doc.contains("import 'package:demo/demo.dart';"));
         assert!(doc.contains("__boltffi_demo"));
+        // Plain `init()` would collide with a Rust crate exporting a
+        // function of the same very plausible name.
+        assert!(doc.contains("await boltffiInit();"));
 
         std::fs::remove_dir_all(&package_dir).expect("cleanup temp dir");
     }

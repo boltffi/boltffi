@@ -217,6 +217,9 @@ mod tests {
                 pub fn delete() -> i32 { 0 }
 
                 #[export]
+                pub fn init() -> i32 { 0 }
+
+                #[export]
                 pub fn maybe_value(present: bool) -> Option<i32> {
                     if present { Some(42) } else { None }
                 }
@@ -501,7 +504,28 @@ mod tests {
 
         assert!(source.contains("@JS('__boltffi_demo_ready')"));
         assert!(source.contains("external JSPromise<JSAny?> get _boltffiReady;"));
-        assert!(source.contains("Future<void> init() => _boltffiReady.toDart.then((_) {});"));
+        // Plain `init` would collide with an exported Rust function of the
+        // same (very plausible) name -- Dart doesn't allow two top-level
+        // declarations with the same identifier, so both would fail to
+        // analyze. Prefixed to match every other generated helper's
+        // reserved namespace.
+        assert!(
+            source.contains("Future<void> boltffiInit() => _boltffiReady.toDart.then((_) {});")
+        );
+    }
+
+    #[test]
+    fn does_not_collide_with_an_exported_function_named_init() {
+        let output = DartWebHost::new("demo")
+            .expect("host constructs")
+            .into_target()
+            .render(&bindings())
+            .expect("target renders");
+        let source = source_of(&output);
+
+        assert!(source.contains("Future<void> boltffiInit() =>"));
+        assert!(source.contains("int init() {"));
+        assert_eq!(source.matches("int init()").count(), 1);
     }
 
     #[test]
@@ -834,6 +858,59 @@ mod tests {
             .into_target()
             .render(&direct_vector_bindings());
         assert!(result.is_err());
+    }
+
+    fn class_with_unsupported_method_bindings() -> Bindings<Wasm32> {
+        let source = boltffi_scan::scan_file(
+            syn::parse_str(
+                r#"
+                pub struct Counter(i32);
+
+                #[export]
+                impl Counter {
+                    pub fn new(initial: i32) -> Self { Self(initial) }
+
+                    pub fn get(&self) -> i32 { self.0 }
+
+                    pub fn scores(&self) -> Vec<i32> { vec![self.0] }
+
+                    pub fn add(&self, amount: i32) -> i32 { self.0 + amount }
+                }
+                "#,
+            )
+            .expect("valid source"),
+            PackageInfo::new("demo", None),
+        )
+        .expect("source scans");
+        lower::<Wasm32>(&source).expect("source lowers")
+    }
+
+    #[test]
+    fn rejects_a_class_with_an_unsupported_method_under_complete_coverage() {
+        let result = DartWebHost::new("demo")
+            .expect("host constructs")
+            .into_target()
+            .render(&class_with_unsupported_method_bindings());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn keeps_supported_class_members_when_one_method_is_unsupported_under_partial_coverage() {
+        // One unsupported method (here, a Vec<i32> direct-vector return)
+        // must not drop the whole class -- the constructor and every other
+        // supported method should still render, matching
+        // target::typescript's Class::from_declaration.
+        let output = DartWebHost::new("demo")
+            .expect("host constructs")
+            .into_target()
+            .render_partial(&class_with_unsupported_method_bindings())
+            .expect("target renders under partial coverage");
+        let source = source_of(&output);
+
+        assert!(source.contains("static Counter new_(int arg0) =>"));
+        assert!(source.contains("int get_() =>"));
+        assert!(source.contains("int add(int arg0) =>"));
+        assert!(!source.contains("scores("));
     }
 
     fn associated_constant_bindings() -> Bindings<Wasm32> {

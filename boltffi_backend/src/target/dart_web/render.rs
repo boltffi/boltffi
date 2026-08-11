@@ -6,8 +6,8 @@ use boltffi_binding::{
 };
 
 use crate::core::{
-    Emitted, Error, FileLayout, FilePath, FilePlan, GeneratedOutput, RenderContext,
-    RenderedDeclaration, Result,
+    CoverageMode, Diagnostic, Emitted, Error, FileLayout, FilePath, FilePlan, GeneratedOutput,
+    RenderContext, RenderedDeclaration, Result,
 };
 
 use super::interop;
@@ -889,6 +889,64 @@ impl CustomType {
 
 pub struct Class {
     source: String,
+    diagnostics: Vec<Diagnostic>,
+}
+
+fn render_class_initializer(
+    initializer: &boltffi_binding::InitializerDecl<Wasm32>,
+    name: &str,
+    class_ref: &str,
+    context: &RenderContext<Wasm32>,
+) -> Result<String> {
+    let method_name = Name::new(initializer.name()).dart_identifier();
+    let js_name = Name::new(initializer.name()).js_member_name();
+    let signature = call_signature(initializer.callable(), context)?;
+    let params = signature.dart_params_decl();
+    let arguments = signature.js_call_arguments();
+    let call_js = format!("{class_ref}.callMethodVarArgs('{js_name}'.toJS, [{arguments}])");
+    Ok(if signature.asynchronous {
+        format!(
+            "  static Future<{name}> {method_name}({params}) async => {name}._((await ({call_js} as JSPromise<JSAny?>).toDart) as JSObject);",
+        )
+    } else {
+        format!("  static {name} {method_name}({params}) => {name}._({call_js} as JSObject);",)
+    })
+}
+
+fn render_class_method(
+    method: &boltffi_binding::ExportedMethodDecl<Wasm32, boltffi_binding::NativeSymbol>,
+    class_ref: &str,
+    context: &RenderContext<Wasm32>,
+) -> Result<String> {
+    let method_name = Name::new(method.name()).dart_identifier();
+    let js_name = Name::new(method.name()).js_member_name();
+    let signature = call_signature(method.callable(), context)?;
+    let params = signature.dart_params_decl();
+    let is_static = method.callable().receiver().is_none();
+    let target = if is_static {
+        class_ref.to_owned()
+    } else {
+        "js".to_owned()
+    };
+    let js_arguments = signature.js_call_arguments();
+    let call_js = format!("({target}).callMethodVarArgs('{js_name}'.toJS, [{js_arguments}])");
+    let keyword = if is_static { "static " } else { "" };
+    let async_keyword = if signature.asynchronous { "async " } else { "" };
+    let call_expr = if signature.asynchronous {
+        format!("(await ({call_js} as JSPromise<JSAny?>).toDart)")
+    } else {
+        call_js
+    };
+    let body = if signature.return_ty.is_none() {
+        format!("{{ {call_expr}; }}")
+    } else {
+        let decoded = signature.decode_return(&call_expr, context)?;
+        format!("=> {decoded};")
+    };
+    Ok(format!(
+        "  {keyword}{} {method_name}({params}) {async_keyword}{body}",
+        signature.dart_return_signature()
+    ))
 }
 
 impl Class {
@@ -899,58 +957,46 @@ impl Class {
     ) -> Result<Self> {
         let name = Name::new(decl.name()).dart_type_name();
         let class_ref = format!("_boltffi{name}Class");
-        let mut members = Vec::new();
 
-        for initializer in decl.initializers() {
-            let method_name = Name::new(initializer.name()).dart_identifier();
-            let js_name = Name::new(initializer.name()).js_member_name();
-            let signature = call_signature(initializer.callable(), context)?;
-            let params = signature.dart_params_decl();
-            let arguments = signature.js_call_arguments();
-            let call_js = format!("{class_ref}.callMethodVarArgs('{js_name}'.toJS, [{arguments}])");
-            if signature.asynchronous {
-                members.push(format!(
-                    "  static Future<{name}> {method_name}({params}) async => {name}._((await ({call_js} as JSPromise<JSAny?>).toDart) as JSObject);",
-                ));
-            } else {
-                members.push(format!(
-                    "  static {name} {method_name}({params}) => {name}._({call_js} as JSObject);",
-                ));
-            }
-        }
-
-        for method in decl.methods() {
-            let method_name = Name::new(method.name()).dart_identifier();
-            let js_name = Name::new(method.name()).js_member_name();
-            let signature = call_signature(method.callable(), context)?;
-            let params = signature.dart_params_decl();
-            let is_static = method.callable().receiver().is_none();
-            let target = if is_static {
-                class_ref.clone()
-            } else {
-                "js".to_owned()
-            };
-            let js_arguments = signature.js_call_arguments();
-            let call_js =
-                format!("({target}).callMethodVarArgs('{js_name}'.toJS, [{js_arguments}])");
-            let keyword = if is_static { "static " } else { "" };
-            let async_keyword = if signature.asynchronous { "async " } else { "" };
-            let call_expr = if signature.asynchronous {
-                format!("(await ({call_js} as JSPromise<JSAny?>).toDart)")
-            } else {
-                call_js
-            };
-            let body = if signature.return_ty.is_none() {
-                format!("{{ {call_expr}; }}")
-            } else {
-                let decoded = signature.decode_return(&call_expr, context)?;
-                format!("=> {decoded};")
-            };
-            members.push(format!(
-                "  {keyword}{} {method_name}({params}) {async_keyword}{body}",
-                signature.dart_return_signature()
-            ));
-        }
+        // One unsupported member (e.g. a Vec<i32> direct-vector parameter)
+        // must not drop the whole class -- matches target::typescript's
+        // Class::from_declaration, which keeps every other successfully
+        // rendered initializer/method and records a diagnostic instead.
+        let (members, diagnostics) = decl
+            .initializers()
+            .iter()
+            .map(|initializer| {
+                (
+                    initializer.name(),
+                    render_class_initializer(initializer, &name, &class_ref, context),
+                )
+            })
+            .chain(decl.methods().iter().map(|method| {
+                (
+                    method.name(),
+                    render_class_method(method, &class_ref, context),
+                )
+            }))
+            .try_fold(
+                (Vec::new(), Vec::new()),
+                |(mut rendered, mut diagnostics), (member_name, result)| match result {
+                    Ok(member) => {
+                        rendered.push(member);
+                        Ok((rendered, diagnostics))
+                    }
+                    Err(Error::UnsupportedTarget { shape, .. })
+                        if matches!(context.coverage_mode(), CoverageMode::Partial) =>
+                    {
+                        diagnostics.push(Diagnostic::new(format!(
+                            "{}: {shape}",
+                            member_name.as_path_string()
+                        )));
+                        Ok((rendered, diagnostics))
+                    }
+                    Err(error) => Err(error),
+                },
+            )?;
+        let members = members.join("\n");
 
         let source = format!(
             "@JS('{namespace}.{name}')\nexternal JSObject get {class_ref};\n\n\
@@ -961,14 +1007,16 @@ impl Class {
              \x20\x20void dispose$() {{\n\
              \x20\x20\x20\x20js.callMethodVarArgs('dispose'.toJS, []);\n\
              \x20\x20}}\n\n{members}\n}}\n\n",
-            members = members.join("\n"),
         );
 
-        Ok(Self { source })
+        Ok(Self {
+            source,
+            diagnostics,
+        })
     }
 
     pub fn render(&self) -> Result<Emitted> {
-        Ok(Emitted::primary(self.source.clone()))
+        Ok(Emitted::primary(self.source.clone()).with_diagnostics(self.diagnostics.clone()))
     }
 }
 
@@ -1108,7 +1156,7 @@ impl<'m> Module<'m> {
              /// Waits for the wrapped wasm module to finish instantiating.\n\
              /// Must be awaited before calling anything else this package\n\
              /// exports.\n\
-             Future<void> init() => _boltffiReady.toDart.then((_) {{}});\n\n\
+             Future<void> boltffiInit() => _boltffiReady.toDart.then((_) {{}});\n\n\
              // dart:js_interop's JSBigInt has no int/BigInt conversion members
              // (no BigInt.toJS, no JSBigInt.toDartInt) -- round-trip through the
              // JS BigInt constructor and its decimal string representation instead.\n\
