@@ -122,7 +122,13 @@ pub(super) fn pack_all(
         packed_any = true;
     }
 
-    if config.should_process(Target::DartWeb, options.experimental) {
+    // When `dart` is also enabled, `pack_dart` above already folds the web
+    // half in via `unify_native_and_web` -- packing it again standalone
+    // here would rebuild/repack the wasm module a second time and produce
+    // a redundant `dart_web.output` directory alongside the unified package.
+    if config.should_process(Target::DartWeb, options.experimental)
+        && !config.should_process(Target::Dart, options.experimental)
+    {
         pack_dart_web(
             config,
             PackDartWebOptions {

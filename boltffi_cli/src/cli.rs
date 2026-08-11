@@ -1071,7 +1071,14 @@ fn release_pack_commands(
                 }));
             }
 
-            if config.should_process(Target::DartWeb, false) {
+            // When `dart` is also enabled, `pack dart` already folds the web
+            // half in via `unify_native_and_web` -- packing it again
+            // standalone here would rebuild/repack the wasm module a second
+            // time and produce a redundant `dart_web.output` directory
+            // alongside the unified package.
+            if config.should_process(Target::DartWeb, false)
+                && !config.should_process(Target::Dart, false)
+            {
                 commands.push(PackCommand::DartWeb(PackDartWebOptions {
                     execution: pack_execution_options(
                         true,
@@ -1358,6 +1365,64 @@ enabled = true
             &config,
             Some(BuildPlatformArg::All)
         ));
+    }
+
+    #[test]
+    fn release_all_does_not_pack_dart_web_standalone_when_dart_is_also_enabled() {
+        // `pack dart` already folds the web half in via
+        // `unify_native_and_web` when both targets are enabled -- a
+        // standalone `PackCommand::DartWeb` alongside it would rebuild and
+        // repack the wasm module a second time for no reason.
+        let config = parse_config(
+            r#"
+experimental = ["dart", "dart_web"]
+
+[package]
+name = "mylib"
+
+[targets.dart]
+enabled = true
+
+[targets.dart_web]
+enabled = true
+"#,
+        );
+
+        let commands = release_pack_commands(&config, Some(BuildPlatformArg::All), &[]);
+
+        assert!(
+            commands
+                .iter()
+                .any(|command| matches!(command, PackCommand::Dart(_)))
+        );
+        assert!(
+            !commands
+                .iter()
+                .any(|command| matches!(command, PackCommand::DartWeb(_)))
+        );
+    }
+
+    #[test]
+    fn release_all_packs_dart_web_standalone_when_dart_is_not_enabled() {
+        let config = parse_config(
+            r#"
+experimental = ["dart_web"]
+
+[package]
+name = "mylib"
+
+[targets.dart_web]
+enabled = true
+"#,
+        );
+
+        let commands = release_pack_commands(&config, Some(BuildPlatformArg::All), &[]);
+
+        assert!(
+            commands
+                .iter()
+                .any(|command| matches!(command, PackCommand::DartWeb(_)))
+        );
     }
 
     #[test]

@@ -1,8 +1,8 @@
 use boltffi_binding::{
-    CallbackDecl, ClassDecl, ConstantDecl, ConstantValueDecl, CustomTypeDecl, DefaultValue,
+    CallbackDecl, ClassDecl, ConstantDecl, ConstantValueDecl, CustomTypeDecl, Decl, DefaultValue,
     DirectValueType, DirectVectorElementType, Direction, EnumDecl, ExecutionDecl, ExportedCallable,
-    FunctionDecl, ImportedCallable, ParamDirection, ParamPlan, RecordDecl, ReturnPlan, StreamDecl,
-    StreamItemPlan, TypeRef, Wasm32,
+    FunctionDecl, HandlePresence, ImportedCallable, ParamDirection, ParamPlan, Primitive,
+    RecordDecl, ReturnPlan, StreamDecl, StreamItemPlan, TypeRef, Wasm32,
 };
 
 use crate::core::{
@@ -34,11 +34,22 @@ fn direct_primitive(ty: &DirectValueType) -> Result<TypeRef> {
     }
 }
 
+// target::typescript's direct-vector boundary (render/direct_vector.rs) crosses
+// non-bool primitives as a typed array (Int32Array, Float64Array, ...), not a
+// plain JS array -- dart_web doesn't yet emit typed-array conversions, so only
+// bool (which TS itself represents as a plain boolean array) is supported here.
 fn direct_vector_type(element: &DirectVectorElementType) -> Result<TypeRef> {
     match element {
-        DirectVectorElementType::Primitive(primitive) => Ok(TypeRef::Sequence(Box::new(
-            TypeRef::Primitive(primitive.primitive()),
-        ))),
+        DirectVectorElementType::Primitive(primitive)
+            if primitive.primitive() == Primitive::Bool =>
+        {
+            Ok(TypeRef::Sequence(Box::new(TypeRef::Primitive(
+                Primitive::Bool,
+            ))))
+        }
+        DirectVectorElementType::Primitive(_) => {
+            Err(unsupported("direct vector of non-bool primitives"))
+        }
         DirectVectorElementType::Record(_) => Err(unsupported("direct-record vector")),
         _ => Err(unsupported("direct vector element type")),
     }
@@ -60,8 +71,10 @@ fn boundary_for_param<D: Direction>(
             dart_type: interop::dart_type(ty, context)?,
             ty: ty.clone(),
         }),
-        ParamPlan::Handle { target, .. } => {
-            let ty = handle_type_ref(target)?;
+        ParamPlan::Handle {
+            target, presence, ..
+        } => {
+            let ty = apply_handle_presence(handle_type_ref(target)?, *presence);
             Ok(Boundary {
                 dart_type: interop::dart_type(&ty, context)?,
                 ty,
@@ -91,6 +104,16 @@ fn handle_type_ref(target: &boltffi_binding::HandleTarget) -> Result<TypeRef> {
         boltffi_binding::HandleTarget::Callback(id) => Ok(TypeRef::Callback(*id)),
         boltffi_binding::HandleTarget::Stream(_) => Err(unsupported("stream handle")),
         _ => Err(unsupported("handle target")),
+    }
+}
+
+// An `Option<Class>`/`Option<&Class>` boundary crosses as a JS handle that
+// may be `null`, so its Dart type must stay nullable instead of assuming
+// every handle is present.
+fn apply_handle_presence(ty: TypeRef, presence: HandlePresence) -> TypeRef {
+    match presence {
+        HandlePresence::Nullable => TypeRef::Optional(Box::new(ty)),
+        _ => ty,
     }
 }
 
@@ -291,9 +314,13 @@ where
             let dart_type = interop::dart_type(ty, context)?;
             (dart_type, Some(ty.clone()))
         }
-        ReturnPlan::HandleViaReturnSlot { target, .. }
-        | ReturnPlan::HandleViaOutPointer { target, .. } => {
-            let ty = handle_type_ref(target)?;
+        ReturnPlan::HandleViaReturnSlot {
+            target, presence, ..
+        }
+        | ReturnPlan::HandleViaOutPointer {
+            target, presence, ..
+        } => {
+            let ty = apply_handle_presence(handle_type_ref(target)?, *presence);
             let dart_type = interop::dart_type(&ty, context)?;
             (dart_type, Some(ty))
         }
@@ -394,6 +421,13 @@ impl Record {
         decl: &RecordDecl<Wasm32>,
         context: &RenderContext<Wasm32>,
     ) -> Result<Self> {
+        // Records render as plain data classes with no binding to a JS
+        // object of their own (only the encoded fields cross the
+        // boundary), so an inherent initializer/method exported on the
+        // record's impl block has nowhere to be called from.
+        if !decl.initializers().is_empty() || !decl.methods().is_empty() {
+            return Err(unsupported("record with inherent initializers/methods"));
+        }
         let name = Name::new(decl.name()).dart_type_name();
         let fields: Vec<(String, TypeRef)> = match decl {
             RecordDecl::Direct(record) => record
@@ -696,15 +730,13 @@ impl Constant {
         context: &RenderContext<Wasm32>,
     ) -> Result<Self> {
         if decl.owner().is_some() {
-            return Ok(Self {
-                source: String::new(),
-            });
+            return Err(unsupported("associated constant"));
         }
         let name = Name::new(decl.name()).dart_constant_name();
         let source = match decl.value() {
             ConstantValueDecl::Inline { ty, value, .. } => {
                 let dart_type = interop::dart_type(ty, context)?;
-                let literal = render_default_value(value)?;
+                let literal = render_default_value(value, context)?;
                 format!("final {dart_type} {name} = {literal};\n\n")
             }
             ConstantValueDecl::Accessor { .. } => return Err(unsupported("accessor constant")),
@@ -718,7 +750,7 @@ impl Constant {
     }
 }
 
-fn render_default_value(value: &DefaultValue) -> Result<String> {
+fn render_default_value(value: &DefaultValue, context: &RenderContext<Wasm32>) -> Result<String> {
     Ok(match value {
         DefaultValue::Bool(value) => value.to_string(),
         DefaultValue::Integer(value) => value.get().to_string(),
@@ -727,11 +759,28 @@ fn render_default_value(value: &DefaultValue) -> Result<String> {
         DefaultValue::EnumVariant {
             enum_name,
             variant_name,
-        } => format!(
-            "{}.{}",
-            Name::new(enum_name).dart_type_name(),
-            Name::new(variant_name).dart_type_name()
-        ),
+        } => {
+            let enum_dart_name = Name::new(enum_name).dart_type_name();
+            let variant_dart_name = Name::new(variant_name).dart_type_name();
+            // Data enums render each unit variant as its own subclass
+            // (`Enum$Variant`), not a static member on `Enum` itself.
+            let is_data_enum = context
+                .bindings()
+                .decls()
+                .iter()
+                .find_map(|decl| match decl {
+                    Decl::Enum(enumeration) if enumeration.name() == enum_name => {
+                        Some(matches!(enumeration.as_ref(), EnumDecl::Data(_)))
+                    }
+                    _ => None,
+                })
+                .ok_or_else(|| unsupported("enum default referencing an unknown enum"))?;
+            if is_data_enum {
+                format!("{enum_dart_name}${variant_dart_name}()")
+            } else {
+                format!("{enum_dart_name}.{variant_dart_name}")
+            }
+        }
         DefaultValue::Null => "null".to_owned(),
         _ => return Err(unsupported("constant literal shape")),
     })
@@ -907,7 +956,10 @@ impl Stream {
              \x20\x20\x20\x20onListen: () {{\n\
              \x20\x20\x20\x20\x20\x20__boltffiCancellable = {cancellable_expr};\n\
              \x20\x20\x20\x20\x20\x20(__boltffiCancellable!.getProperty('done'.toJS) as JSPromise).toDart\n\
-             \x20\x20\x20\x20\x20\x20\x20\x20.then((_) {{ __boltffiController.close(); }});\n\
+             \x20\x20\x20\x20\x20\x20\x20\x20.then((_) {{ __boltffiController.close(); }}, onError: (Object error, StackTrace stackTrace) {{\n\
+             \x20\x20\x20\x20\x20\x20\x20\x20\x20\x20__boltffiController.addError(error, stackTrace);\n\
+             \x20\x20\x20\x20\x20\x20\x20\x20\x20\x20__boltffiController.close();\n\
+             \x20\x20\x20\x20\x20\x20}});\n\
              \x20\x20\x20\x20}},\n\
              \x20\x20\x20\x20onCancel: () {{\n\
              \x20\x20\x20\x20\x20\x20__boltffiCancellable?.callMethodVarArgs('cancel'.toJS, []);\n\
@@ -970,7 +1022,22 @@ impl<'m> Module<'m> {
              /// Waits for the wrapped wasm module to finish instantiating.\n\
              /// Must be awaited before calling anything else this package\n\
              /// exports.\n\
-             Future<void> init() => _boltffiReady.toDart.then((_) {{}});\n\n"
+             Future<void> init() => _boltffiReady.toDart.then((_) {{}});\n\n\
+             // The wire format for `std::time::Duration` is `{{ secs: bigint,\n\
+             // nanos: number }}` (see runtime/typescript/src/wire.ts).\n\
+             JSObject boltffiDurationToJS(Duration value) {{\n\
+             \x20\x20final result = JSObject();\n\
+             \x20\x20final wholeSeconds = value.inSeconds;\n\
+             \x20\x20final remainderMicros = value.inMicroseconds - wholeSeconds * 1000000;\n\
+             \x20\x20result.setProperty('secs'.toJS, BigInt.from(wholeSeconds).toJS);\n\
+             \x20\x20result.setProperty('nanos'.toJS, (remainderMicros * 1000).toJS);\n\
+             \x20\x20return result;\n\
+             }}\n\n\
+             Duration boltffiDurationFromJS(JSObject value) {{\n\
+             \x20\x20final secs = (value.getProperty('secs'.toJS) as JSBigInt).toDartInt;\n\
+             \x20\x20final nanos = (value.getProperty('nanos'.toJS) as JSNumber).toDartInt;\n\
+             \x20\x20return Duration(seconds: secs, microseconds: nanos ~/ 1000);\n\
+             }}\n\n"
         );
         FileLayout::new()
             .with_file(

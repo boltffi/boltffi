@@ -28,10 +28,21 @@ pub struct DartWebHost {
 impl DartWebHost {
     pub fn new(module: impl Into<String>) -> Result<Self> {
         let module = module.into();
-        if module.is_empty() {
+        // Used to build generated file/directory names (`<module>.dart`,
+        // `<module>_web_loader.mjs`); anything but a plain identifier risks
+        // writing outside the requested output directory.
+        let is_valid_identifier = !module.is_empty()
+            && module
+                .chars()
+                .next()
+                .is_some_and(|ch| ch.is_ascii_alphabetic() || ch == '_')
+            && module
+                .chars()
+                .all(|ch| ch.is_ascii_alphanumeric() || ch == '_');
+        if !is_valid_identifier {
             return Err(Error::UnsupportedTarget {
                 target: "dart_web",
-                shape: "empty module name",
+                shape: "module name must be a non-empty identifier of ASCII letters, digits, and underscores, not starting with a digit",
             });
         }
         Ok(Self { module })
@@ -169,6 +180,24 @@ mod tests {
     }
 
     #[test]
+    fn rejects_a_module_name_with_path_traversal() {
+        assert!(DartWebHost::new("../demo").is_err());
+        assert!(DartWebHost::new("demo/../../etc").is_err());
+        assert!(DartWebHost::new("demo/sub").is_err());
+        assert!(DartWebHost::new("demo\\sub").is_err());
+    }
+
+    #[test]
+    fn rejects_a_module_name_starting_with_a_digit() {
+        assert!(DartWebHost::new("1demo").is_err());
+    }
+
+    #[test]
+    fn accepts_an_underscore_prefixed_module_name() {
+        assert!(DartWebHost::new("_demo").is_ok());
+    }
+
+    #[test]
     fn js_namespace_is_derived_from_the_module_name() {
         let host = DartWebHost::new("demo").expect("host constructs");
         assert_eq!(host.js_namespace(), "__boltffi_demo");
@@ -266,6 +295,9 @@ mod tests {
 
                 #[export]
                 pub fn echo_filter(value: Filter) -> Filter { value }
+
+                #[export]
+                pub const DEFAULT_FILTER: Filter = Filter::None;
                 "#,
             )
             .expect("valid source"),
@@ -343,6 +375,10 @@ mod tests {
                     pub fn new(initial: i32) -> Self { Self(initial) }
 
                     pub async fn connect(initial: i32) -> Self { Self(initial) }
+
+                    pub fn try_new(initial: i32) -> Option<Self> {
+                        if initial < 0 { None } else { Some(Self(initial)) }
+                    }
 
                     pub fn get(&self) -> i32 { self.0 }
 
@@ -486,6 +522,10 @@ mod tests {
         assert!(source.contains("(js).callMethodVarArgs('counts'.toJS, [((JSAny? __boltffiItem)"));
         assert!(source.contains("getProperty('done'.toJS) as JSPromise"));
         assert!(source.contains("__boltffiCancellable?.callMethodVarArgs('cancel'.toJS, []);"));
+        // A rejected `done` promise must reach the stream as an error, not
+        // leave the controller open forever with an unhandled Future error.
+        assert!(source.contains("onError: (Object error, StackTrace stackTrace) {"));
+        assert!(source.contains("__boltffiController.addError(error, stackTrace);"));
     }
 
     #[test]
@@ -521,6 +561,11 @@ mod tests {
         assert!(source.contains("Point.fromJS("));
         assert!(source.contains("Status echoStatus(Status arg0)"));
         assert!(source.contains("Status.fromJS("));
+
+        // A data enum's unit-variant default instantiates the variant's
+        // own subclass (`Filter$None()`) -- `Filter` has no static members,
+        // so `Filter.None` (the C-style-enum syntax) would not analyze.
+        assert!(source.contains("Filter DEFAULT_FILTER = Filter$None();"));
     }
 
     #[test]
@@ -595,4 +640,104 @@ mod tests {
         assert!(source.contains("Future<int> addAsync(int arg0) async =>"));
         assert!(!source.contains("async addAsync"));
     }
+
+    #[test]
+    fn renders_an_optional_class_return_as_a_nullable_dart_type() {
+        // `Option<Self>` crosses as a nullable handle -- the wrapped call
+        // can return JS `null` -- so the generated static method must stay
+        // nullable (`Counter?`) and null-check before decoding, instead of
+        // force-casting a possibly-null result.
+        let output = DartWebHost::new("demo")
+            .expect("host constructs")
+            .into_target()
+            .render(&class_bindings())
+            .expect("target renders");
+        let source = source_of(&output);
+        assert!(source.contains("static Counter? tryNew(int arg0) =>"));
+        assert!(source.contains("== null ? null :"));
+        assert!(source.contains("Counter.fromJS(__boltffiValue as JSObject)"));
+        assert!(!source.contains("static Counter tryNew"));
+    }
+
+    #[test]
+    fn defines_duration_conversion_helpers_in_the_preamble() {
+        let output = DartWebHost::new("demo")
+            .expect("host constructs")
+            .into_target()
+            .render(&bindings())
+            .expect("target renders");
+        let source = source_of(&output);
+        assert!(source.contains("JSObject boltffiDurationToJS(Duration value) {"));
+        assert!(source.contains("Duration boltffiDurationFromJS(JSObject value) {"));
+    }
+
+    fn direct_vector_bindings() -> Bindings<Wasm32> {
+        let source = boltffi_scan::scan_file(
+            syn::parse_str(
+                r#"
+                #[export]
+                pub fn scores() -> Vec<i32> { vec![1, 2, 3] }
+                "#,
+            )
+            .expect("valid source"),
+            PackageInfo::new("demo", None),
+        )
+        .expect("source scans");
+        lower::<Wasm32>(&source).expect("source lowers")
+    }
+
+    #[test]
+    fn rejects_a_direct_vector_of_non_bool_primitives() {
+        // target::typescript crosses this as a typed array (Int32Array),
+        // not a plain JS array; dart_web doesn't emit typed-array
+        // conversions yet, so this must be reported unsupported rather
+        // than silently emitting a broken JSArray cast.
+        let result = DartWebHost::new("demo")
+            .expect("host constructs")
+            .into_target()
+            .render(&direct_vector_bindings());
+        assert!(result.is_err());
+    }
+
+    fn associated_constant_bindings() -> Bindings<Wasm32> {
+        let source = boltffi_scan::scan_file(
+            syn::parse_str(
+                r#"
+                pub struct Counter(i32);
+
+                #[export]
+                impl Counter {
+                    pub const DEFAULT: i32 = 0;
+
+                    pub fn new(initial: i32) -> Self { Self(initial) }
+                }
+                "#,
+            )
+            .expect("valid source"),
+            PackageInfo::new("demo", None),
+        )
+        .expect("source scans");
+        lower::<Wasm32>(&source).expect("source lowers")
+    }
+
+    #[test]
+    fn rejects_an_associated_constant() {
+        // Silently emitting an empty declaration would report full
+        // coverage while dropping the constant from the generated API;
+        // an associated constant has no owning JS object member to bind
+        // to here, so this must surface as unsupported instead.
+        let result = DartWebHost::new("demo")
+            .expect("host constructs")
+            .into_target()
+            .render(&associated_constant_bindings());
+        assert!(result.is_err());
+    }
+
+    // A record with its own #[export] impl currently rejects at the scan
+    // stage (ConflictingDeclarations: the same name can't be both a
+    // `#[data]` record and an `#[export] impl` target), so a record with
+    // populated initializers()/methods() is not reachable through
+    // supported source syntax today. The defensive rejection in
+    // Record::from_declaration stays in place for when that changes, but
+    // is not covered by an end-to-end test here for the same reason.
 }

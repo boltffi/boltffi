@@ -198,17 +198,23 @@ fn unify_native_and_web(
 
     {
         let step = reporter.step("Writing web setup instructions");
-        write_web_setup_doc(package_dir, package_name)?;
+        write_web_setup_doc(package_dir, package_name, &web_module_name)?;
         step.finish_success();
     }
 
     Ok(())
 }
 
-// A second `pack dart` with `--regenerate=false` leaves `lib/<package>.dart`
-// as the conditional-export shim this same function wrote last time, not
-// fresh native bindings -- moving it would clobber the real native
-// bindings already sitting in native_dir. Detect and skip that case.
+// Two cases must be a no-op rather than an error:
+// - A second `pack dart` with `--regenerate=false` leaves `lib/<package>.dart`
+//   as the conditional-export shim this same function wrote last time, not
+//   fresh native bindings -- moving it would clobber the real native
+//   bindings already sitting in native_dir.
+// - A prior `unify_native_and_web` run already moved the file here and then
+//   failed later (e.g. the wasm/web half failed to build) -- on retry,
+//   `lib/<package>.dart` no longer exists at all, but native_dir already
+//   has it; treating a missing source as an error would make that failure
+//   unrecoverable without deleting native_dir by hand.
 fn move_native_bindings(lib_dir: &Path, native_dir: &Path, package_name: &str) -> Result<()> {
     std::fs::create_dir_all(native_dir).map_err(|source| CliError::CreateDirectoryFailed {
         path: native_dir.to_path_buf(),
@@ -216,6 +222,9 @@ fn move_native_bindings(lib_dir: &Path, native_dir: &Path, package_name: &str) -
     })?;
     let native_file = lib_dir.join(format!("{package_name}.dart"));
     let native_dest = native_dir.join(format!("{package_name}.dart"));
+    if !native_file.exists() && native_dest.exists() {
+        return Ok(());
+    }
     let existing =
         std::fs::read_to_string(&native_file).map_err(|source| CliError::ReadFailed {
             path: native_file.clone(),
@@ -239,21 +248,25 @@ fn conditional_export_shim(package_name: &str, web_module_name: &str) -> String 
     )
 }
 
-fn write_web_setup_doc(package_dir: &Path, package_name: &str) -> Result<()> {
-    let js_namespace = format!("__boltffi_{package_name}");
+fn write_web_setup_doc(
+    package_dir: &Path,
+    package_name: &str,
+    web_module_name: &str,
+) -> Result<()> {
+    let js_namespace = format!("__boltffi_{web_module_name}");
     let doc = format!(
         "# Web setup\n\n\
          The contents of `lib/src/web/` have to be copied into your app's `web/`\n\
          directory (Flutter or plain Dart web) once. They won't be picked up\n\
          automatically just by depending on this package.\n\n\
          ## 1. Copy these files, from `lib/src/web/`\n\n\
-         - `{package_name}_web_loader.mjs`\n\
+         - `{web_module_name}_web_loader.mjs`\n\
          - `web/` (whole folder — compiled JS, the wasm binary, and the vendored runtime)\n\n\
          No npm install, no build step — everything here resolves via plain relative\n\
          imports a browser understands natively.\n\n\
          ## 2. Add this to `web/index.html`, before your compiled app's own script tag\n\n\
          ```html\n\
-         <script type=\"module\" src=\"{package_name}_web_loader.mjs\"></script>\n\
+         <script type=\"module\" src=\"{web_module_name}_web_loader.mjs\"></script>\n\
          ```\n\n\
          ## 3. Call this once before using the package\n\n\
          ```dart\n\
@@ -371,18 +384,62 @@ mod tests {
         std::fs::remove_dir_all(&package_dir).expect("cleanup temp dir");
     }
 
+    /// If a prior `unify_native_and_web` run moved the file here and then
+    /// failed later (e.g. the wasm/web half failed to build), retrying must
+    /// not error just because `lib/<package>.dart` no longer exists --
+    /// native_dir already has it from the earlier attempt.
+    #[test]
+    fn move_native_bindings_is_a_no_op_when_already_moved_by_a_prior_failed_attempt() {
+        let package_dir = unique_temp_dir("boltffi-move-native-bindings-retry-test");
+        let lib_dir = package_dir.join("lib");
+        let native_dir = lib_dir.join("src/native");
+        std::fs::create_dir_all(&native_dir).expect("create native dir");
+        std::fs::write(
+            native_dir.join("demo.dart"),
+            "library demo;\n// real native bindings\n",
+        )
+        .expect("write existing native bindings");
+        // lib_dir exists but lib/demo.dart does not -- the state left behind
+        // by a prior run that moved the file and then failed before writing
+        // the shim.
+        std::fs::create_dir_all(&lib_dir).expect("create lib dir");
+
+        move_native_bindings(&lib_dir, &native_dir, "demo").expect("move is a no-op");
+
+        let native = std::fs::read_to_string(native_dir.join("demo.dart")).expect("native file");
+        assert_eq!(native, "library demo;\n// real native bindings\n");
+
+        std::fs::remove_dir_all(&package_dir).expect("cleanup temp dir");
+    }
+
     #[test]
     fn write_web_setup_doc_lists_the_files_to_copy_and_the_js_namespace() {
         let package_dir = unique_temp_dir("boltffi-write-web-setup-doc-test");
         std::fs::create_dir_all(&package_dir).expect("create package dir");
 
-        write_web_setup_doc(&package_dir, "demo").expect("doc writes");
+        write_web_setup_doc(&package_dir, "demo", "demo").expect("doc writes");
 
         let doc =
             std::fs::read_to_string(package_dir.join("WEB_SETUP.md")).expect("doc is readable");
         assert!(doc.contains("demo_web_loader.mjs"));
         assert!(doc.contains("import 'package:demo/demo.dart';"));
         assert!(doc.contains("__boltffi_demo"));
+
+        std::fs::remove_dir_all(&package_dir).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn write_web_setup_doc_references_a_custom_web_module_name() {
+        let package_dir = unique_temp_dir("boltffi-write-web-setup-doc-custom-module-test");
+        std::fs::create_dir_all(&package_dir).expect("create package dir");
+
+        write_web_setup_doc(&package_dir, "demo", "demo_web").expect("doc writes");
+
+        let doc =
+            std::fs::read_to_string(package_dir.join("WEB_SETUP.md")).expect("doc is readable");
+        assert!(doc.contains("demo_web_web_loader.mjs"));
+        assert!(doc.contains("import 'package:demo/demo.dart';"));
+        assert!(doc.contains("`__boltffi_demo_web`"));
 
         std::fs::remove_dir_all(&package_dir).expect("cleanup temp dir");
     }
