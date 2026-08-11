@@ -192,6 +192,7 @@ impl<'a> Builder<'a> {
         command.arg("--target").arg(triple);
 
         self.apply_common_build_args(&mut command);
+        apply_wasm_import_undefined(&mut command, triple);
         command.args(&command_args.command_args);
         self.apply_expansion(&mut command)?;
 
@@ -308,6 +309,50 @@ impl<'a> Builder<'a> {
     }
 }
 
+// boltffi_core's wasm bridge imports its async/stream wake callbacks
+// (`__boltffi_wake`, `__boltffi_stream_wake`) as plain `extern "C"`
+// functions with no definition anywhere in the crate graph -- they're
+// meant to be host-provided wasm imports, resolved at instantiation
+// time, not link time. wasm-ld's default policy treats an unresolved
+// symbol as a hard link error unless told otherwise, so every wasm
+// build needs `--import-undefined` or linking fails as soon as a crate
+// actually uses streams/async. Appends to (rather than overwrites) any
+// existing target-specific or global RUSTFLAGS so this doesn't silently
+// drop flags the caller already set.
+fn apply_wasm_import_undefined(command: &mut Command, triple: &str) {
+    let target_key = format!("CARGO_TARGET_{}_RUSTFLAGS", env_key_for_triple(triple));
+    let existing = std::env::var(&target_key)
+        .ok()
+        .filter(|value| !value.is_empty())
+        .or_else(|| {
+            std::env::var("RUSTFLAGS")
+                .ok()
+                .filter(|value| !value.is_empty())
+        });
+    command.env(&target_key, wasm_import_undefined_rustflags(existing));
+}
+
+fn wasm_import_undefined_rustflags(existing: Option<String>) -> String {
+    const IMPORT_UNDEFINED: &str = "-Clink-args=--import-undefined";
+    match existing {
+        Some(existing) => format!("{existing} {IMPORT_UNDEFINED}"),
+        None => IMPORT_UNDEFINED.to_owned(),
+    }
+}
+
+fn env_key_for_triple(triple: &str) -> String {
+    triple
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() {
+                character.to_ascii_uppercase()
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
 pub(crate) fn run_command_streaming(cmd: &mut Command, on_output: Option<&OutputCallback>) -> bool {
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
 
@@ -382,7 +427,8 @@ pub fn failed_targets(results: &[BuildResult]) -> Vec<String> {
 mod tests {
     use super::{
         BindingExpansion, BuildOptions, BuildSelection, Builder, CargoBuildCommandArgs,
-        CargoBuildProfile, resolve_build_profile, run_command_streaming,
+        CargoBuildProfile, env_key_for_triple, resolve_build_profile, run_command_streaming,
+        wasm_import_undefined_rustflags,
     };
     use crate::config::Config;
     use crate::target::RustTarget;
@@ -516,6 +562,35 @@ name = "demo"
             Some((OsStr::new("IPHONEOS_DEPLOYMENT_TARGET"), None)),
             "non-iOS targets must explicitly remove IPHONEOS_DEPLOYMENT_TARGET, \
              not just leave it inherited from the parent process env"
+        );
+    }
+
+    #[test]
+    fn wasm_target_env_key_uppercases_and_replaces_hyphens() {
+        assert_eq!(
+            env_key_for_triple("wasm32-unknown-unknown"),
+            "WASM32_UNKNOWN_UNKNOWN"
+        );
+    }
+
+    /// boltffi_core's async/stream wasm bridge imports `__boltffi_wake`/
+    /// `__boltffi_stream_wake` as plain `extern "C"` functions meant to be
+    /// resolved as wasm imports at instantiation time, not link time --
+    /// without `--import-undefined`, wasm-ld's default policy treats them
+    /// as a hard link error as soon as a crate actually uses streams/async.
+    #[test]
+    fn wasm_import_undefined_flag_is_appended_when_nothing_else_is_set() {
+        assert_eq!(
+            wasm_import_undefined_rustflags(None),
+            "-Clink-args=--import-undefined"
+        );
+    }
+
+    #[test]
+    fn wasm_import_undefined_flag_is_appended_to_existing_rustflags() {
+        assert_eq!(
+            wasm_import_undefined_rustflags(Some("-C target-feature=+simd128".to_owned())),
+            "-C target-feature=+simd128 -Clink-args=--import-undefined"
         );
     }
 
