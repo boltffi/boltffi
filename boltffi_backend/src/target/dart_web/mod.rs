@@ -24,7 +24,7 @@ use crate::{
     },
 };
 
-use render::{Callback, Class, Constant, CustomType, Enumeration, Function, Record};
+use render::{Callback, Class, Constant, CustomType, Enumeration, Function, Record, Stream};
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 #[non_exhaustive]
@@ -65,6 +65,7 @@ impl host::HostBackend for DartWebHost {
             .stable(BindingCapability::Functions)
             .stable(BindingCapability::Classes)
             .stable(BindingCapability::Callbacks)
+            .stable(BindingCapability::Streams)
             .stable(BindingCapability::Constants)
             .stable(BindingCapability::CustomTypes)
     }
@@ -120,14 +121,11 @@ impl host::HostBackend for DartWebHost {
 
     fn stream(
         &self,
-        _decl: &StreamDecl<Self::Surface>,
+        decl: &StreamDecl<Self::Surface>,
         _bridge: &Self::Bridge,
-        _context: &RenderContext<Self::Surface>,
+        context: &RenderContext<Self::Surface>,
     ) -> Result<Emitted> {
-        Err(Error::UnsupportedTarget {
-            target: "dart_web",
-            shape: "streams are not yet supported",
-        })
+        Stream::from_declaration(decl, context)?.render()
     }
 
     fn constant(
@@ -256,6 +254,42 @@ mod tests {
 
                 #[export]
                 pub fn echo_filter(value: Filter) -> Filter { value }
+                "#,
+            )
+            .expect("valid source"),
+            PackageInfo::new("demo", None),
+        )
+        .expect("source scans");
+        lower::<Wasm32>(&source).expect("source lowers")
+    }
+
+    fn stream_bindings() -> Bindings<Wasm32> {
+        let source = boltffi_scan::scan_file(
+            syn::parse_str(
+                r#"
+                use std::sync::Arc;
+                use boltffi::EventSubscription;
+
+                #[data]
+                pub struct Message {
+                    pub text: String,
+                }
+
+                pub struct EventBus;
+
+                #[export]
+                impl EventBus {
+                    pub fn new() -> Self { Self }
+
+                    #[ffi_stream(item = i32)]
+                    pub fn values(&self) -> Arc<EventSubscription<i32>> { todo!() }
+
+                    #[ffi_stream(item = Message, mode = "batch")]
+                    pub fn messages(&self) -> Arc<EventSubscription<Message>> { todo!() }
+
+                    #[ffi_stream(item = i32, mode = "callback")]
+                    pub fn counts(&self) -> Arc<EventSubscription<i32>> { todo!() }
+                }
                 "#,
             )
             .expect("valid source"),
@@ -404,6 +438,37 @@ mod tests {
             source
                 .contains("Future<String> callAsyncGreeter(AsyncGreeter arg0, String arg1) async")
         );
+    }
+
+    #[test]
+    fn renders_streams_as_extension_methods_returning_dart_streams() {
+        let output = DartWebHost::new("demo")
+            .expect("host constructs")
+            .into_target()
+            .render(&stream_bindings())
+            .expect("target renders");
+        let source = source_of(&output);
+
+        // `Async` mode: no args to the JS method, `.consume()` called by
+        // this target itself to get a `StreamCancellable`.
+        assert!(source.contains("extension EventBus$valuesStream on EventBus"));
+        assert!(source.contains("Stream<int> values() {"));
+        assert!(source.contains(
+            "(js).callMethodVarArgs('values'.toJS, []) as JSObject).callMethodVarArgs('consume'.toJS,"
+        ));
+        // `Batch` mode renders identically to `Async` from this target's
+        // perspective — Dart only ever exposes a plain `Stream<T>`.
+        assert!(source.contains("extension EventBus$messagesStream on EventBus"));
+        assert!(source.contains("Stream<Message> messages() {"));
+        // `Callback` mode: the callback is the JS method's own argument,
+        // returning a `StreamCancellable` directly (no extra `.consume`).
+        assert!(source.contains("extension EventBus$countsStream on EventBus"));
+        assert!(source.contains("Stream<int> counts() {"));
+        assert!(source.contains("(js).callMethodVarArgs('counts'.toJS, [((JSAny? __boltffiItem)"));
+        // Every mode wires cancellation and completion through the same
+        // `StreamCancellable` shape.
+        assert!(source.contains("getProperty('done'.toJS) as JSPromise"));
+        assert!(source.contains("__boltffiCancellable?.callMethodVarArgs('cancel'.toJS, []);"));
     }
 
     #[test]

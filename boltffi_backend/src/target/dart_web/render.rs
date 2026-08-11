@@ -6,8 +6,8 @@
 use boltffi_binding::{
     CallbackDecl, ClassDecl, ConstantDecl, ConstantValueDecl, CustomTypeDecl, DefaultValue,
     DirectValueType, DirectVectorElementType, Direction, EnumDecl, ExecutionDecl, ExportedCallable,
-    FunctionDecl, ImportedCallable, ParamDirection, ParamPlan, RecordDecl, ReturnPlan, TypeRef,
-    Wasm32,
+    FunctionDecl, ImportedCallable, ParamDirection, ParamPlan, RecordDecl, ReturnPlan, StreamDecl,
+    StreamItemPlan, TypeRef, Wasm32,
 };
 
 use crate::core::{
@@ -918,6 +918,109 @@ impl Class {
     }
 }
 
+/// Renders a stream declaration as a `Stream<T>` (or, for a free-function
+/// stream, a top-level function returning one). Every Rust-side stream
+/// mode (`Async`/`Batch`/`Callback`) unifies to the same Dart shape:
+/// `target::typescript`'s `StreamSession.consume(callback)` /
+/// `StreamCancellable` are both public JS methods regardless of which
+/// mode produced them, so this never needs to touch the poll/wake
+/// protocol directly — it just wraps a Dart callback as a JS function
+/// (the same mechanism closures use) and lets the already-generated JS
+/// drive it.
+pub struct Stream {
+    source: String,
+}
+
+impl Stream {
+    pub fn from_declaration(
+        decl: &StreamDecl<Wasm32>,
+        context: &RenderContext<Wasm32>,
+    ) -> Result<Self> {
+        let item_ty = match decl.item() {
+            StreamItemPlan::Direct { ty, .. } => direct_primitive(ty)?,
+            StreamItemPlan::Encoded { ty, .. } => ty.clone(),
+            _ => return Err(unsupported("stream item plan")),
+        };
+        let dart_item_type = interop::dart_type(&item_ty, context)?;
+        let decode_item = interop::from_js("__boltffiItem", &item_ty, context)?;
+        let method_name = Name::new(decl.name()).dart_identifier();
+        let js_name = Name::new(decl.name()).js_member_name();
+        let callback_mode = matches!(decl.mode(), boltffi_binding::StreamMode::Callback);
+
+        // A JS function wrapping a Dart callback that decodes one item
+        // and pushes it into the controller — the exact same
+        // decode/wrap/`.toJS` shape a plain closure parameter uses.
+        let js_item_callback =
+            format!("((JSAny? __boltffiItem) {{ __boltffiController.add({decode_item}); }}).toJS");
+
+        let (call_target, extern_decl) = match decl.owner() {
+            Some(_) => ("(js)".to_owned(), String::new()),
+            None => {
+                let extern_name = format!("_boltffiExtern_{js_name}");
+                (
+                    extern_name.clone(),
+                    format!(
+                        "@JS('boltffiPoc.{js_name}')\nexternal JSObject {extern_name}([JSAny? callback]);\n\n"
+                    ),
+                )
+            }
+        };
+
+        // `Callback`-mode streams: the generated JS method already
+        // requires the callback up front and returns a
+        // `StreamCancellable` directly. `Async`/`Batch`-mode streams:
+        // the method takes no argument and returns a raw
+        // `StreamSession`, so this calls its public `consume(callback)`
+        // itself to get the same `StreamCancellable` shape.
+        let cancellable_expr = if callback_mode {
+            format!(
+                "{call_target}.callMethodVarArgs('{js_name}'.toJS, [{js_item_callback}]) as JSObject"
+            )
+        } else {
+            format!(
+                "({call_target}.callMethodVarArgs('{js_name}'.toJS, []) as JSObject).callMethodVarArgs('consume'.toJS, [{js_item_callback}]) as JSObject"
+            )
+        };
+
+        let body = format!(
+            "Stream<{dart_item_type}> {method_name}() {{\n\
+             \x20\x20late final StreamController<{dart_item_type}> __boltffiController;\n\
+             \x20\x20JSObject? __boltffiCancellable;\n\
+             \x20\x20__boltffiController = StreamController<{dart_item_type}>(\n\
+             \x20\x20\x20\x20onListen: () {{\n\
+             \x20\x20\x20\x20\x20\x20__boltffiCancellable = {cancellable_expr};\n\
+             \x20\x20\x20\x20\x20\x20(__boltffiCancellable!.getProperty('done'.toJS) as JSPromise).toDart\n\
+             \x20\x20\x20\x20\x20\x20\x20\x20.then((_) {{ __boltffiController.close(); }});\n\
+             \x20\x20\x20\x20}},\n\
+             \x20\x20\x20\x20onCancel: () {{\n\
+             \x20\x20\x20\x20\x20\x20__boltffiCancellable?.callMethodVarArgs('cancel'.toJS, []);\n\
+             \x20\x20\x20\x20}},\n\
+             \x20\x20);\n\
+             \x20\x20return __boltffiController.stream;\n\
+             }}\n\n"
+        );
+
+        let source = match decl.owner() {
+            Some(id) => {
+                let owner = context
+                    .class(id)
+                    .ok_or_else(|| unsupported("stream owner without declaration"))?;
+                let owner_name = Name::new(owner.name()).dart_type_name();
+                format!(
+                    "extension {owner_name}${method_name}Stream on {owner_name} {{\n  {body}}}\n\n"
+                )
+            }
+            None => format!("{extern_decl}{body}"),
+        };
+
+        Ok(Self { source })
+    }
+
+    pub fn render(&self) -> Result<Emitted> {
+        Ok(Emitted::primary(self.source.clone()))
+    }
+}
+
 /// Assembles every rendered declaration into a single `.dart` file. This
 /// target only ever produces one file per package (unlike
 /// `target::typescript`'s browser/node split) — the Dart side always goes
@@ -936,6 +1039,7 @@ impl<'m> Module<'m> {
         declarations: Vec<RenderedDeclaration<'decl, Wasm32>>,
     ) -> Result<GeneratedOutput> {
         let preamble = "// Generated by boltffi (target: dart_web). Do not edit by hand.\n\
+                         import 'dart:async';\n\
                          import 'dart:js_interop';\n\
                          import 'dart:js_interop_unsafe';\n\
                          import 'dart:typed_data';\n\n"
