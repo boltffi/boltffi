@@ -1,10 +1,3 @@
-//! `dart:js_interop` bindings over the `target::typescript` wasm/JS
-//! module. Deliberately does not re-derive wire encoding, memory
-//! management, or async/callback protocol — all of that already exists,
-//! tested, in `target::typescript` + `@boltffi/runtime`; this target only
-//! answers "what Dart-side glue calls that JS the same way" (see
-//! `interop.rs`).
-
 mod interop;
 mod name_style;
 mod render;
@@ -48,12 +41,6 @@ impl DartWebHost {
         Target::new(self, WasmBridge)
     }
 
-    /// The global JS object name every `@JS()` extern in the generated
-    /// Dart file binds through. `pack dart-web`'s generated loader
-    /// script must publish the wrapped `target::typescript` module's
-    /// exports under this exact name (see `boltffi_cli::pack::dart_web`)
-    /// — it is derived from the module name so multiple boltffi-generated
-    /// packages loaded on the same page don't collide on a shared global.
     pub fn js_namespace(&self) -> String {
         format!("__boltffi_{}", self.module)
     }
@@ -175,6 +162,17 @@ mod tests {
     use boltffi_binding::{Bindings, Wasm32, lower};
 
     use super::DartWebHost;
+
+    #[test]
+    fn rejects_an_empty_module_name() {
+        assert!(DartWebHost::new("").is_err());
+    }
+
+    #[test]
+    fn js_namespace_is_derived_from_the_module_name() {
+        let host = DartWebHost::new("demo").expect("host constructs");
+        assert_eq!(host.js_namespace(), "__boltffi_demo");
+    }
 
     fn bindings() -> Bindings<Wasm32> {
         let source = boltffi_scan::scan_file(
@@ -372,10 +370,6 @@ mod tests {
             .expect("target renders");
         let source = source_of(&output);
 
-        // Must match `DartWebHost::js_namespace` / `Module::ready_global`
-        // exactly — this is the one contract `pack dart-web`'s generated
-        // loader script has to uphold for any of the rest of the file to
-        // resolve to anything at runtime.
         assert!(source.contains("@JS('__boltffi_demo_ready')"));
         assert!(source.contains("external JSPromise<JSAny?> get _boltffiReady;"));
         assert!(source.contains("Future<void> init() => _boltffiReady.toDart.then((_) {});"));
@@ -429,10 +423,6 @@ mod tests {
         let source = source_of(&output);
 
         assert!(source.contains("int applyClosure(int Function(int) arg0, int arg1)"));
-        // The Dart closure is wrapped in a JS-typed function literal that
-        // decodes its own argument and re-encodes its own return, then
-        // converted with `.toJS` — not passed directly (a raw Dart
-        // function value isn't a valid wasm import target).
         assert!(source.contains("(JSAny? __jsArg0)"));
         assert!(source.contains("arg0((__jsArg0 as JSNumber).toDartInt)"));
         assert!(source.contains(".toJS,"));
@@ -449,17 +439,12 @@ mod tests {
 
         assert!(source.contains("abstract interface class AsyncGreeter"));
         assert!(source.contains("Future<String> greet(String arg0);"));
-        // `@JSExport` does not turn a `Future` return into a real JS
-        // `Promise` on its own (verified in a browser — the raw exported
-        // value has no `.then`) — the adapter method must stay
-        // synchronous and explicitly convert an inner async closure via
-        // `.toJS`, or `target::typescript`'s trampoline resolves
-        // immediately with a value that was never actually awaited.
+        // Adapter must stay sync + convert via .toJS: @JSExport doesn't
+        // turn a Future return into a real Promise on its own.
         assert!(source.contains("JSPromise<JSAny?> greet(JSAny? arg0) {"));
         assert!(source.contains("return (() async {"));
         assert!(source.contains("})().toJS;"));
         assert!(source.contains("await _impl.greet("));
-        // The `JsWrapper` side awaits the raw JS object's Promise.
         assert!(source.contains("as JSPromise<JSAny?>).toDart"));
         assert!(source.contains("@JS('__boltffi_demo.callAsyncGreeter')"));
         assert!(
@@ -477,24 +462,16 @@ mod tests {
             .expect("target renders");
         let source = source_of(&output);
 
-        // `Async` mode: no args to the JS method, `.consume()` called by
-        // this target itself to get a `StreamCancellable`.
         assert!(source.contains("extension EventBus$valuesStream on EventBus"));
         assert!(source.contains("Stream<int> values() {"));
         assert!(source.contains(
             "(js).callMethodVarArgs('values'.toJS, []) as JSObject).callMethodVarArgs('consume'.toJS,"
         ));
-        // `Batch` mode renders identically to `Async` from this target's
-        // perspective — Dart only ever exposes a plain `Stream<T>`.
         assert!(source.contains("extension EventBus$messagesStream on EventBus"));
         assert!(source.contains("Stream<Message> messages() {"));
-        // `Callback` mode: the callback is the JS method's own argument,
-        // returning a `StreamCancellable` directly (no extra `.consume`).
         assert!(source.contains("extension EventBus$countsStream on EventBus"));
         assert!(source.contains("Stream<int> counts() {"));
         assert!(source.contains("(js).callMethodVarArgs('counts'.toJS, [((JSAny? __boltffiItem)"));
-        // Every mode wires cancellation and completion through the same
-        // `StreamCancellable` shape.
         assert!(source.contains("getProperty('done'.toJS) as JSPromise"));
         assert!(source.contains("__boltffiCancellable?.callMethodVarArgs('cancel'.toJS, []);"));
     }
@@ -522,10 +499,6 @@ mod tests {
         assert!(source.contains("class Filter$ByName extends Filter"));
         assert!(source.contains("case 'ByName': return Filter$ByName("));
 
-        // Call-site conversions: a record parameter/return converts via
-        // its own generated `toJS()`/`fromJS()`, not a made-up method —
-        // this is exactly the shape a real `to_js`/`from_js` mismatch
-        // would silently break without erroring at Rust compile time.
         assert!(source.contains("Point echoPoint(Point arg0)"));
         assert!(source.contains("(arg0).toJS()"));
         assert!(source.contains("Point.fromJS("));
@@ -564,9 +537,6 @@ mod tests {
         let source = source_of(&output);
 
         assert!(source.contains("typedef Timestamp = int;"));
-        // The representation is `i64` -> `int`, converted the same way a
-        // plain `int` parameter/return would be (BigInt round trip), not
-        // through a nonexistent method on the typedef.
         assert!(source.contains("Timestamp keepTimestamp(Timestamp arg0)"));
         assert!(source.contains("BigInt(arg0).toJS"));
         assert!(source.contains(").toDartInt"));
@@ -597,10 +567,6 @@ mod tests {
         assert!(source.contains("@JS('__boltffi_demo.Counter')"));
         assert!(source.contains("external JSObject get _boltffiCounterClass;"));
         assert!(source.contains("class Counter"));
-        // `new` is a JS reserved word, but class members aren't reached
-        // through JS identifier syntax here (`callMethod` is a
-        // string-keyed call) — `target::typescript` itself keeps `new`
-        // as a literal static method name, so this target must too.
         assert!(source.contains("_boltffiCounterClass.callMethodVarArgs('new'.toJS,"));
         assert!(source.contains("(js).callMethodVarArgs('add'.toJS,"));
     }

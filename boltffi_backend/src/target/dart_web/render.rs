@@ -1,8 +1,3 @@
-//! Builds Dart source text for each declaration kind. Every declaration
-//! renders as `dart:js_interop` glue calling straight into the
-//! `target::typescript` module this target wraps — see `interop.rs` for
-//! the per-`TypeRef` conversion rules this leans on.
-
 use boltffi_binding::{
     CallbackDecl, ClassDecl, ConstantDecl, ConstantValueDecl, CustomTypeDecl, DefaultValue,
     DirectValueType, DirectVectorElementType, Direction, EnumDecl, ExecutionDecl, ExportedCallable,
@@ -25,21 +20,11 @@ fn unsupported(shape: &'static str) -> Error {
     }
 }
 
-/// The JS-facing type and Dart↔JS conversion for one function parameter
-/// or return value, derived from the shared `ParamPlan`/`ReturnPlan` the
-/// wasm surface already computed. This target does not remake any of
-/// `target::typescript`'s marshalling decisions — it only needs to know
-/// which JS-boundary shape a plan settled on (scalar / wire-encoded /
-/// handle / etc.) so it can call the already-generated JS the same way.
 struct Boundary {
     dart_type: String,
     ty: TypeRef,
 }
 
-/// `Direct` transport is a wasm-side ABI optimization (the value occupies
-/// a native call slot instead of going through the wire); it does not
-/// change the JS-facing declared type at all, so a direct record/enum
-/// maps to the exact same `TypeRef` its encoded counterpart would.
 fn direct_primitive(ty: &DirectValueType) -> Result<TypeRef> {
     match ty {
         DirectValueType::Primitive(primitive) => Ok(TypeRef::Primitive(*primitive)),
@@ -109,26 +94,15 @@ fn handle_type_ref(target: &boltffi_binding::HandleTarget) -> Result<TypeRef> {
     }
 }
 
-/// One parameter of a call signature. `value_ty` is `None` only for a
-/// closure parameter — Rust never hands an `@JSExport` adapter method a
-/// closure to decode, so nothing downstream needs a `TypeRef` for that
-/// case, just the two pre-built expressions below.
 struct ParamInfo {
     dart_type: String,
-    /// Expression converting this already-bound Dart argument (`arg{i}`)
-    /// into what the wrapped JS call expects. Used wherever Dart calls
-    /// into JS (free functions, class methods, `JsWrapper`s).
     js_call_expr: String,
     value_ty: Option<TypeRef>,
 }
 
-/// A function/method/initializer/closure body, shared across every call
-/// shape this target renders — they only differ in how the JS call
-/// target is named and whether a receiver/adapter wraps it.
 struct CallSignature {
     params: Vec<ParamInfo>,
     return_dart_type: String,
-    /// `None` means void.
     return_ty: Option<TypeRef>,
     asynchronous: bool,
 }
@@ -152,8 +126,6 @@ impl CallSignature {
             .join(", ")
     }
 
-    /// The declared Dart return type: `Future<T>` (or `Future<void>`)
-    /// when asynchronous, `T` otherwise.
     fn dart_return_signature(&self) -> String {
         if self.asynchronous {
             format!("Future<{}>", self.return_dart_type)
@@ -162,8 +134,6 @@ impl CallSignature {
         }
     }
 
-    /// Decodes a raw JS return expression into Dart — used wherever
-    /// Dart called into JS and needs the result back.
     fn decode_return(&self, raw_expr: &str, context: &RenderContext<Wasm32>) -> Result<String> {
         match &self.return_ty {
             None => Ok(String::new()),
@@ -171,9 +141,6 @@ impl CallSignature {
         }
     }
 
-    /// Encodes a Dart return expression into JS — used wherever JS
-    /// called into Dart (an `@JSExport` adapter method, or a wrapped
-    /// closure) and needs to hand a result back to JS.
     fn encode_return(&self, dart_expr: &str, context: &RenderContext<Wasm32>) -> Result<String> {
         match &self.return_ty {
             None => Ok(String::new()),
@@ -217,11 +184,6 @@ fn call_signature(
     })
 }
 
-/// Builds the `ParamInfo` for an inbound closure (`impl Fn` parameter):
-/// the Dart-facing type is a plain function type, and crossing it to JS
-/// means wrapping the Dart function value in a JS-typed function literal
-/// that decodes its own arguments and re-encodes its own return — the
-/// exact same shape as a callback adapter method, just anonymous.
 fn closure_param_info(
     closure: &boltffi_binding::ClosureParameter<Wasm32, boltffi_binding::IntoRust>,
     dart_name: &str,
@@ -246,12 +208,6 @@ fn closure_param_info(
     })
 }
 
-/// Wraps a Dart callable expression (a closure value, or `_impl.method`)
-/// in a JS-typed function literal + `.toJS`: decodes each JS-side
-/// argument via `from_js`, calls the Dart callable, re-encodes the
-/// result via `to_js`. This is the general mechanism for exposing Dart
-/// code to JS (as opposed to `to_js`/`from_js`, which convert values,
-/// not callables).
 fn wrap_dart_callable_as_js_function(
     dart_callable_expr: &str,
     signature: &CallSignature,
@@ -284,12 +240,6 @@ fn wrap_dart_callable_as_js_function(
     Ok(format!("(({js_params}) {body}).toJS"))
 }
 
-/// Same idea as `call_signature`, but for a callback *method* (or a
-/// closure's own body): Rust is the caller here, so parameters flow
-/// `OutOfRust` (Rust -> foreign) and the return flows `IntoRust`
-/// (foreign -> Rust) — the opposite of a free function/initializer/class
-/// method. Only synchronous methods are handled directly; async callback
-/// methods are handled separately (see `Callback::from_declaration`).
 fn callback_method_signature(
     callable: &ImportedCallable<Wasm32>,
     context: &RenderContext<Wasm32>,
@@ -362,7 +312,6 @@ where
     })
 }
 
-/// Renders one free function.
 pub struct Function {
     source: String,
 }
@@ -386,14 +335,8 @@ impl Function {
     }
 }
 
-/// Renders a free function: an `@JS()` extern bound to
-/// `{namespace}.<jsName>` plus a public Dart wrapper that converts
-/// arguments/return value at the boundary. `namespace` is the global JS
-/// object `pack dart-web`'s generated loader publishes the wrapped
-/// `target::typescript` module's exports under (see
-/// `DartWebHost::js_namespace`) — it must match exactly what that loader
-/// actually names the global, or every `@JS()` extern in this file binds
-/// to nothing.
+// `namespace` must match `DartWebHost::js_namespace` exactly, or every
+// `@JS()` extern in the file binds to nothing.
 fn render_free_function(
     js_name: &str,
     dart_name: &str,
@@ -442,8 +385,6 @@ fn render_free_function(
     Ok(out)
 }
 
-/// Renders a record as a plain Dart data class matching the JS object
-/// shape `target::typescript` emits for it (`interface { field: T }`).
 pub struct Record {
     source: String,
 }
@@ -481,8 +422,6 @@ impl Record {
     }
 }
 
-/// Shared body for both plain records and data-enum variant payloads:
-/// both cross as a plain JS object with one property per field.
 fn render_data_class(
     name: &str,
     extends: Option<(&str, &str)>,
@@ -511,16 +450,14 @@ fn render_data_class(
         from_js_args.push(format!("{field_name}: {from_js}"));
     }
 
-    let (header, footer, override_kw, extra_ctor) = match extends {
+    let (header, override_kw, extra_ctor) = match extends {
         Some((base, _)) => (
             format!("class {name} extends {base}"),
-            String::new(),
             "@override\n  ",
             " : super._()".to_owned(),
         ),
-        None => (format!("class {name}"), String::new(), "", String::new()),
+        None => (format!("class {name}"), "", String::new()),
     };
-    let _ = footer;
 
     Ok(format!(
         "{header} {{\n{fields}\n\n  const {name}({{{ctor}}}){extra_ctor};\n\n  {override_kw}JSObject toJS() {{\n    final result = JSObject();\n{to_js}\n    return result;\n  }}\n\n  static {name} fromJS(JSObject js) {{\n    return {name}({from_js});\n  }}\n}}\n\n",
@@ -539,9 +476,6 @@ fn field_key_name(key: &boltffi_binding::FieldKey) -> String {
     }
 }
 
-/// Renders a C-style or data enum matching the JS shape
-/// `target::typescript` emits (a raw number, or a `{ tag, ...fields }`
-/// object respectively).
 pub struct Enumeration {
     source: String,
 }
@@ -589,10 +523,7 @@ impl Enumeration {
 
         for variant in decl.variants() {
             let variant_dart_name = Name::new(variant.name()).dart_type_name();
-            // Same spelling `target::typescript` uses for the wire tag
-            // string (`Name::variant_identifier`, upper-camel of the
-            // variant's canonical name) — must match exactly, since
-            // that's the literal `.tag` property value on the JS side.
+            // Must match target::typescript's wire tag spelling exactly.
             let tag = variant_dart_name.clone();
             let variant_type = format!("{name}${variant_dart_name}");
             let fields: Vec<(String, TypeRef)> = variant
@@ -639,11 +570,6 @@ impl Enumeration {
     }
 }
 
-/// Renders a callback trait as a Dart interface plus the machinery to
-/// cross it to JS: a `@JSExport` adapter (for a real Dart
-/// implementation) and a `{Name}JsWrapper` escape hatch that skips the
-/// dart2js/dart2wasm hop entirely when the caller already has a raw JS
-/// object satisfying the same shape.
 pub struct Callback {
     source: String,
 }
@@ -667,24 +593,9 @@ impl Callback {
 
             interface_methods.push(format!("  {public_return} {method_name}({dart_params});"));
 
-            // `@JSExport` methods must have a JS-compatible signature —
-            // custom Dart types (records, enums, classes, other
-            // callbacks) have no automatic bridging, so this always
-            // decodes/encodes manually via `from_js`/`to_js` rather than
-            // relying on `@JSExport`'s bridging for the few types it
-            // does auto-convert.
-            //
-            // `@JSExport` does NOT convert an `async` method's `Future`
-            // return into a real JS `Promise` — verified against a real
-            // browser: the raw exported value has no `.then`, so
-            // `target::typescript`'s trampoline (`Promise.resolve(x).then
-            // (...)`) resolves immediately with the unconverted Dart
-            // `Future` object instead of awaiting it. `target::typescript`
-            // itself still owns the whole requestId/status/`_complete`
-            // completion protocol on the other side of that Promise, so
-            // the fix is narrow: keep the exported method synchronous and
-            // explicitly convert an inner async closure's `Future` via
-            // `.toJS` before returning it.
+            // `@JSExport` doesn't turn an async method's Future into a
+            // real Promise (verified in-browser: no `.then`), so this
+            // stays synchronous and converts the inner Future via `.toJS`.
             let adapter_js_params = (0..signature.params.len())
                 .map(|i| format!("JSAny? arg{i}"))
                 .collect::<Vec<_>>()
@@ -724,9 +635,6 @@ impl Callback {
             };
             adapter_methods.push(adapter_method);
 
-            // JsWrapper: Dart calling out to a raw JS object. A sync
-            // method calls straight through; an async method awaits the
-            // JS Promise the raw object's method is expected to return.
             let js_arguments = signature.js_call_arguments();
             let raw_call = format!("_js.callMethodVarArgs('{js_name}'.toJS, [{js_arguments}])");
             let (wrapper_async, raw_result) = if signature.asynchronous {
@@ -773,9 +681,7 @@ impl Callback {
     }
 }
 
-/// Renders a constant. Only `ConstantValueDecl::Inline` is supported —
-/// `Accessor` constants need a module-init hook this target does not
-/// have yet (see module docs).
+// Accessor constants need a module-init hook this target doesn't have yet.
 pub struct Constant {
     source: String,
 }
@@ -786,8 +692,6 @@ impl Constant {
         context: &RenderContext<Wasm32>,
     ) -> Result<Self> {
         if decl.owner().is_some() {
-            // Associated constants render alongside their owner; skip
-            // here the same way `target::typescript` does.
             return Ok(Self {
                 source: String::new(),
             });
@@ -829,7 +733,6 @@ fn render_default_value(value: &DefaultValue) -> Result<String> {
     })
 }
 
-/// Renders a custom type as a bare typedef over its wire representation.
 pub struct CustomType {
     source: String,
 }
@@ -851,9 +754,6 @@ impl CustomType {
     }
 }
 
-/// Renders a class: static/initializer methods call the exported JS
-/// class constructor object directly, instance methods forward to the
-/// wrapped JS instance.
 pub struct Class {
     source: String,
 }
@@ -926,15 +826,10 @@ impl Class {
     }
 }
 
-/// Renders a stream declaration as a `Stream<T>` (or, for a free-function
-/// stream, a top-level function returning one). Every Rust-side stream
-/// mode (`Async`/`Batch`/`Callback`) unifies to the same Dart shape:
-/// `target::typescript`'s `StreamSession.consume(callback)` /
-/// `StreamCancellable` are both public JS methods regardless of which
-/// mode produced them, so this never needs to touch the poll/wake
-/// protocol directly — it just wraps a Dart callback as a JS function
-/// (the same mechanism closures use) and lets the already-generated JS
-/// drive it.
+// Every Rust-side stream mode (Async/Batch/Callback) unifies to the same
+// Dart Stream<T>: target::typescript's StreamSession.consume(callback) /
+// StreamCancellable are public JS methods regardless of mode, so this
+// never touches the poll/wake protocol directly.
 pub struct Stream {
     source: String,
 }
@@ -956,9 +851,6 @@ impl Stream {
         let js_name = Name::new(decl.name()).js_member_name();
         let callback_mode = matches!(decl.mode(), boltffi_binding::StreamMode::Callback);
 
-        // A JS function wrapping a Dart callback that decodes one item
-        // and pushes it into the controller — the exact same
-        // decode/wrap/`.toJS` shape a plain closure parameter uses.
         let js_item_callback =
             format!("((JSAny? __boltffiItem) {{ __boltffiController.add({decode_item}); }}).toJS");
 
@@ -975,12 +867,6 @@ impl Stream {
             }
         };
 
-        // `Callback`-mode streams: the generated JS method already
-        // requires the callback up front and returns a
-        // `StreamCancellable` directly. `Async`/`Batch`-mode streams:
-        // the method takes no argument and returns a raw
-        // `StreamSession`, so this calls its public `consume(callback)`
-        // itself to get the same `StreamCancellable` shape.
         let cancellable_expr = if callback_mode {
             format!(
                 "{call_target}.callMethodVarArgs('{js_name}'.toJS, [{js_item_callback}]) as JSObject"
@@ -1030,10 +916,6 @@ impl Stream {
     }
 }
 
-/// Assembles every rendered declaration into a single `.dart` file. This
-/// target only ever produces one file per package (unlike
-/// `target::typescript`'s browser/node split) — the Dart side always goes
-/// through `dart:js_interop`, so there is no separate "node" surface.
 pub struct Module<'m> {
     name: &'m str,
     namespace: &'m str,
@@ -1044,11 +926,8 @@ impl<'m> Module<'m> {
         Self { name, namespace }
     }
 
-    /// The global JS property `pack dart-web`'s generated loader script
-    /// must set (as a `Promise`) once it has instantiated the wrapped
-    /// `target::typescript` module and published its exports under
-    /// `namespace` — read by the `init()` function below. Kept as one
-    /// function so the loader and the renderer can't drift independently.
+    // Kept as one function so the loader script and this renderer can't
+    // drift on the global name independently.
     pub fn ready_global(namespace: &str) -> String {
         format!("{namespace}_ready")
     }

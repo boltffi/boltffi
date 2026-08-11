@@ -1,15 +1,3 @@
-//! Converts between a Rust surface type (`TypeRef`) and the Dart-side
-//! `dart:js_interop` value that crosses to/from the `target::typescript`
-//! module this target wraps.
-//!
-//! This target never re-derives wire encoding, memory layout, or async
-//! protocol decisions — `target::typescript` already made those and
-//! already ships a tested JS module that does the marshalling. This file
-//! only answers "what Dart type does this become, and how do I convert it
-//! at the JS boundary" for a given `TypeRef` — the same boundary-level
-//! question `target::typescript`'s own declared parameter/return types
-//! answer, just phrased in Dart instead of TS.
-
 use boltffi_binding::{BuiltinType, EnumDecl, Primitive, TypeRef};
 
 use crate::core::{Error, RenderContext};
@@ -26,9 +14,6 @@ fn unsupported(shape: &'static str) -> Error {
     }
 }
 
-/// The Dart-side type a `TypeRef` value has once it has already crossed
-/// the JS boundary (i.e. after `from_js`, or what a Dart-side
-/// implementation of a callback method sees/returns directly).
 pub fn dart_type(ty: &TypeRef, context: &RenderContext<Wasm32>) -> Result<String> {
     Ok(match ty {
         TypeRef::Primitive(Primitive::Bool) => "bool".to_owned(),
@@ -89,8 +74,6 @@ pub fn dart_type(ty: &TypeRef, context: &RenderContext<Wasm32>) -> Result<String
     })
 }
 
-/// Converts a Dart-valued expression into the JS-valued expression the
-/// wrapped `target::typescript` module expects as an argument.
 pub fn to_js(expr: &str, ty: &TypeRef, context: &RenderContext<Wasm32>) -> Result<String> {
     Ok(match ty {
         TypeRef::Primitive(Primitive::Bool) => format!("({expr}).toJS"),
@@ -108,25 +91,17 @@ pub fn to_js(expr: &str, ty: &TypeRef, context: &RenderContext<Wasm32>) -> Resul
         TypeRef::Primitive(Primitive::F32 | Primitive::F64) => format!("({expr}).toJS"),
         TypeRef::String | TypeRef::InternedString { .. } => format!("({expr}).toJS"),
         TypeRef::Bytes => format!("({expr}).toJS"),
-        // Records and enums generate their own `JSObject/JSAny toJS()`
-        // instance method (see `render::Record`/`render::Enumeration`).
         TypeRef::Record(_) | TypeRef::Enum(_) => format!("({expr}).toJS()"),
-        // The `Class` wrapper (see `render::Class`) has no conversion
-        // method — it just holds the underlying JS instance in `.js`.
+        // Class has no conversion method; it just holds the JS instance.
         TypeRef::Class(_) => format!("({expr}).js"),
         TypeRef::Callback(id) => {
             let callback = context
                 .callback(*id)
                 .ok_or_else(|| unsupported("callback"))?;
             let name = Name::new(callback.name()).dart_type_name();
-            // Matches the per-callback free function `render::Callback`
-            // emits alongside the interface/adapter/wrapper — see its
-            // doc comment for why this isn't a single generic helper.
             format!("boltffiCallbackToJS{name}({expr})")
         }
-        // A custom type is a bare `typedef` over its representation
-        // (see `render::CustomType`) — it has no conversion method of
-        // its own, so convert through the representation type instead.
+        // Custom is a bare typedef; convert through its representation.
         TypeRef::Custom(id) => {
             let custom = context
                 .custom_type(*id)
@@ -149,8 +124,6 @@ pub fn to_js(expr: &str, ty: &TypeRef, context: &RenderContext<Wasm32>) -> Resul
     })
 }
 
-/// Converts a JS-valued expression (already cast to `JSAny`/`JSObject` as
-/// appropriate) into a Dart value.
 pub fn from_js(expr: &str, ty: &TypeRef, context: &RenderContext<Wasm32>) -> Result<String> {
     Ok(match ty {
         TypeRef::Primitive(Primitive::Bool) => format!("({expr} as JSBoolean).toDart"),

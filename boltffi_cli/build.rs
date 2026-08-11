@@ -1,19 +1,8 @@
-//! Builds `runtime/typescript` from its own source and embeds the fresh
-//! output into the `boltffi` binary, so `pack dart-web` can vendor it into
-//! a package with zero npm/Node dependency on the *consuming* side (a
-//! Flutter web app never touches this).
-//!
-//! This exists specifically to avoid the failure mode a hand-maintained,
-//! manually-copied snapshot has: it drifts out of sync with
-//! `runtime/typescript/src` silently, with no compiler to catch it (this
-//! bit a real, working POC once, over a stale `WASM_ABI_VERSION`). Building
-//! from source at `boltffi_cli`'s own compile time means the embedded copy
-//! can never be older than the source tree it was compiled against.
-//!
-//! Only whoever *compiles* `boltffi_cli` from source needs Node/npm
-//! available — already true today for anyone touching the wasm/TypeScript
-//! target's own test suite. Nobody who runs the resulting `boltffi` binary,
-//! and nobody consuming a `pack dart-web` package, ever needs it.
+//! Builds `runtime/typescript` from source and embeds the fresh output
+//! into the `boltffi` binary, so `pack dart-web` can vendor it with zero
+//! npm/Node dependency on the consuming side. A hand-copied snapshot
+//! drifts out of sync with `runtime/typescript/src` silently -- building
+//! from source at compile time means it can't be stale.
 
 use std::fs;
 use std::path::{Path, PathBuf};

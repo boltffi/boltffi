@@ -150,17 +150,9 @@ pub(crate) fn pack_dart(
     Ok(())
 }
 
-/// Folds the dart_web output into this same package, so a consumer
-/// imports one package (`import 'package:{name}/{name}.dart'`) and gets
-/// the right backend automatically — a plain `dart:ffi` desktop/mobile
-/// build sees `src/native/{name}.dart`, a web build sees
-/// `src/web/{name}.dart`, chosen by Dart's own conditional-export
-/// mechanism, `dart.library.js_interop` (true only when compiling for
-/// web). Neither renderer needs to know this happens — `target::dart`'s
-/// own output just gets moved into a subdirectory of itself, and
-/// `target::dart_web`'s output is generated directly into another one;
-/// both are self-contained Dart source with no assumptions about their
-/// own file location.
+// Folds the dart_web output into this same package: native goes under
+// src/native, web under src/web, picked by Dart's own
+// dart.library.js_interop conditional export.
 fn unify_native_and_web(
     config: &Config,
     options: &PackDartOptions,
@@ -223,12 +215,6 @@ fn unify_native_and_web(
     Ok(())
 }
 
-/// Everything under `lib/src/web/` has to be copied into the consuming
-/// app's own `web/` directory by hand — there is no Flutter or plain-Dart
-/// mechanism that reaches into a dependency's `lib/` and serves arbitrary
-/// files from it. Spelling out the exact files and the `index.html`
-/// snippet here (rather than only in out-of-band docs) means the one
-/// unavoidable manual step is a copy-paste, not a look-up.
 fn write_web_setup_doc(package_dir: &Path, package_name: &str) -> Result<()> {
     let js_namespace = format!("__boltffi_{package_name}");
     let doc = format!(

@@ -8,11 +8,6 @@ pub struct DartWebConfig {
     pub output: PathBuf,
     #[serde(default)]
     pub enabled: bool,
-    /// Dart module file name (`{module_name}.dart`). Defaults to the
-    /// normalized package name, matching `targets.wasm.typescript`'s own
-    /// `module_name` default — this target's generated Dart calls
-    /// straight into that module's JS output, so the two should agree
-    /// unless a project has a real reason to diverge.
     pub module_name: Option<String>,
 }
 

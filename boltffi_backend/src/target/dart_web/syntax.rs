@@ -1,13 +1,3 @@
-//! Minimal Dart source-text helpers: identifier escaping and string
-//! literal quoting. Unlike `target::typescript`'s typed AST (`syntax::*`),
-//! this target builds source as plain strings — its job is thin JS
-//! interop glue over an already-generated module, not a marshalling
-//! codec, so a typed AST buys little here.
-
-/// Reserved words that cannot be used as a plain Dart identifier.
-/// (Built-in identifiers like `abstract`/`async` are contextually legal
-/// and deliberately excluded — only the unconditionally reserved set
-/// needs escaping.)
 pub const DART_KEYWORDS: &[&str] = &[
     "assert", "break", "case", "catch", "class", "const", "continue", "default", "do", "else",
     "enum", "extends", "false", "final", "finally", "for", "if", "in", "is", "new", "null",
@@ -15,9 +5,6 @@ pub const DART_KEYWORDS: &[&str] = &[
     "with",
 ];
 
-/// Escapes `value` if it collides with a reserved Dart identifier by
-/// appending an underscore, matching the convention already used by
-/// `target::dart` and `target::typescript`.
 pub fn escape_dart_identifier(value: impl Into<String>) -> String {
     let value = value.into();
     if DART_KEYWORDS.contains(&value.as_str()) {
@@ -27,8 +14,6 @@ pub fn escape_dart_identifier(value: impl Into<String>) -> String {
     }
 }
 
-/// Quotes a Dart string literal, escaping backslashes, quotes, `$`
-/// (Dart string interpolation), and control characters.
 pub fn dart_string_literal(value: &str) -> String {
     let mut out = String::with_capacity(value.len() + 2);
     out.push('\'');
@@ -46,13 +31,6 @@ pub fn dart_string_literal(value: &str) -> String {
     out.push('\'');
     out
 }
-
-// -- Minimal `LanguageSyntax` conformance ---------------------------------
-//
-// This target renders plain strings rather than a typed AST (see
-// `render.rs`'s doc comment for why), so every associated type below is
-// the same thin `Fragment(String)` wrapper. The trait still has to be
-// satisfied because `host::HostBackend::Syntax` requires it.
 
 use std::fmt;
 

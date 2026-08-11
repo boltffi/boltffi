@@ -1154,11 +1154,8 @@ impl Config {
     }
 
     pub fn dart_web_module_name(&self) -> String {
-        // Matches native dart's own convention (`dart_package(package.name)`,
-        // unnormalized) rather than the JS/TS side's `normalize_module_name`
-        // — the two need to agree by default so a unified native+web
-        // package (see `pack::dart::unify_native_and_web`) can reference
-        // both halves under one shared basename without a mismatch.
+        // Matches native dart's raw (unnormalized) default so a unified
+        // native+web package shares one basename between both halves.
         self.targets
             .dart_web
             .module_name
