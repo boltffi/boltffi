@@ -1,5 +1,7 @@
 use std::path::Path;
 
+use boltffi_bindgen::target::Target;
+
 use crate::{
     build::{
         BindingExpansion, BuildOptions, BuildSelection, Builder, CargoBuildProfile, OutputCallback,
@@ -157,7 +159,10 @@ pub(crate) fn pack_dart(
 
     step.finish_success();
 
-    if config.is_dart_web_enabled() {
+    // Matches the same experimental gate `pack dart-web`/`should_process`
+    // apply everywhere else -- `targets.dart_web.enabled = true` alone
+    // must not bypass the experimental opt-in this target still requires.
+    if config.should_process(Target::DartWeb, options.experimental) {
         unify_native_and_web(config, &options, &package_dir, reporter)?;
     }
 
@@ -188,9 +193,18 @@ fn unify_native_and_web(
     }
 
     pack_wrapped_wasm_module(config, &options.execution, reporter)?;
+    // Always regenerate the web half here, independent of
+    // options.execution.regenerate: that flag is calibrated for the
+    // *native* bindings (already generated once elsewhere in a `release`
+    // pipeline, so skipping a redundant regeneration is safe there), but
+    // web_dir is the only place this ever gets populated -- a top-level
+    // `generate --target=all` writes dart_web output to
+    // targets.dart_web.output instead. Reusing regenerate=false here would
+    // leave lib/src/web empty even though the shim below exports it.
     generate_and_vendor_web(
         config,
         &options.execution,
+        true,
         options.experimental,
         &web_dir,
         reporter,

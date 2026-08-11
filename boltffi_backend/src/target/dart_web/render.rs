@@ -212,6 +212,13 @@ fn closure_param_info(
     dart_name: &str,
     context: &RenderContext<Wasm32>,
 ) -> Result<ParamInfo> {
+    // An `Option<Box<dyn Fn(...)>>` parameter's `None` case has nowhere to
+    // go: the generated Dart type stays non-nullable and every value gets
+    // wrapped/called unconditionally, so a caller can never actually pass
+    // an absent closure through.
+    if matches!(closure.presence(), HandlePresence::Nullable) {
+        return Err(unsupported("nullable closure parameter"));
+    }
     let inner = callback_method_signature(closure.invoke(), context)?;
     let dart_type = format!(
         "{} Function({})",
@@ -267,6 +274,14 @@ fn callback_method_signature(
     callable: &ImportedCallable<Wasm32>,
     context: &RenderContext<Wasm32>,
 ) -> Result<CallSignature> {
+    // target::typescript's wasm callback adapter expects the JS callback to
+    // return either a plain success value, a tagged WireResult, or throw an
+    // Error, encoding the error channel accordingly -- this signature
+    // builder has no representation for that yet, so a Dart implementation
+    // of a fallible callback method has no way to signal Err(E).
+    if !matches!(callable.error(), boltffi_binding::ErrorDecl::None(_)) {
+        return Err(unsupported("fallible callback method"));
+    }
     let mut params = Vec::new();
 
     for (index, param) in callable.params().iter().enumerate() {
@@ -429,20 +444,19 @@ impl Record {
             return Err(unsupported("record with inherent initializers/methods"));
         }
         let name = Name::new(decl.name()).dart_type_name();
-        let fields: Vec<(String, TypeRef)> = match decl {
+        let fields: Vec<DataField> = match decl {
             RecordDecl::Direct(record) => record
                 .fields()
                 .iter()
                 .map(|field| {
-                    let key = field_key_name(field.key());
                     let ty = TypeRef::Primitive(field.ty().primitive());
-                    (key, ty)
+                    DataField::new(field.key(), ty)
                 })
                 .collect(),
             RecordDecl::Encoded(record) => record
                 .fields()
                 .iter()
-                .map(|field| (field_key_name(field.key()), field.ty().clone()))
+                .map(|field| DataField::new(field.key(), field.ty().clone()))
                 .collect(),
             _ => return Err(unsupported("record declaration")),
         };
@@ -456,10 +470,31 @@ impl Record {
     }
 }
 
+// The Dart field identifier and the JS wire property key are separate
+// namespaces with separate escaping rules (target::dart's keyword list
+// vs. target::typescript's -- e.g. a field named `extension` needs Dart
+// escaping but not JS, while `import` needs JS escaping but not Dart),
+// so a field carries both instead of one name serving both purposes.
+struct DataField {
+    dart_name: String,
+    wire_key: String,
+    ty: TypeRef,
+}
+
+impl DataField {
+    fn new(key: &boltffi_binding::FieldKey, ty: TypeRef) -> Self {
+        Self {
+            dart_name: field_dart_name(key),
+            wire_key: field_wire_key(key),
+            ty,
+        }
+    }
+}
+
 fn render_data_class(
     name: &str,
     extends: Option<(&str, &str)>,
-    fields: &[(String, TypeRef)],
+    fields: &[DataField],
     context: &RenderContext<Wasm32>,
 ) -> Result<String> {
     let mut field_decls = Vec::new();
@@ -471,17 +506,21 @@ fn render_data_class(
         to_js_entries.push(format!("    result.setProperty('tag'.toJS, '{tag}'.toJS);"));
     }
 
-    for (field_name, ty) in fields {
+    for field in fields {
+        let DataField {
+            dart_name,
+            wire_key,
+            ty,
+        } = field;
         let dart_type = interop::dart_type(ty, context)?;
-        field_decls.push(format!("  final {dart_type} {field_name};"));
-        ctor_params.push(format!("required this.{field_name}"));
-        let to_js = interop::to_js(field_name, ty, context)?;
+        field_decls.push(format!("  final {dart_type} {dart_name};"));
+        ctor_params.push(format!("required this.{dart_name}"));
+        let to_js = interop::to_js(dart_name, ty, context)?;
         to_js_entries.push(format!(
-            "    result.setProperty('{field_name}'.toJS, {to_js});"
+            "    result.setProperty('{wire_key}'.toJS, {to_js});"
         ));
-        let from_js =
-            interop::from_js(&format!("js.getProperty('{field_name}'.toJS)"), ty, context)?;
-        from_js_args.push(format!("{field_name}: {from_js}"));
+        let from_js = interop::from_js(&format!("js.getProperty('{wire_key}'.toJS)"), ty, context)?;
+        from_js_args.push(format!("{dart_name}: {from_js}"));
     }
 
     let (header, override_kw, extra_ctor) = match extends {
@@ -506,9 +545,20 @@ fn render_data_class(
     ))
 }
 
-fn field_key_name(key: &boltffi_binding::FieldKey) -> String {
+fn field_dart_name(key: &boltffi_binding::FieldKey) -> String {
     match key {
         boltffi_binding::FieldKey::Named(name) => Name::new(name).dart_identifier(),
+        boltffi_binding::FieldKey::Position(position) => format!("value{position}"),
+        _ => "field".to_owned(),
+    }
+}
+
+// Must match target::typescript's PropertyKey::from_field/Display exactly,
+// or these bindings read/write a JS object property the wire side never
+// uses.
+fn field_wire_key(key: &boltffi_binding::FieldKey) -> String {
+    match key {
+        boltffi_binding::FieldKey::Named(name) => Name::new(name).js_export_name(),
         boltffi_binding::FieldKey::Position(position) => format!("value{position}"),
         _ => "field".to_owned(),
     }
@@ -564,11 +614,11 @@ impl Enumeration {
             // Must match target::typescript's wire tag spelling exactly.
             let tag = variant_dart_name.clone();
             let variant_type = format!("{name}${variant_dart_name}");
-            let fields: Vec<(String, TypeRef)> = variant
+            let fields: Vec<DataField> = variant
                 .payload()
                 .fields()
                 .iter()
-                .map(|field| (field_key_name(field.key()), field.ty().clone()))
+                .map(|field| DataField::new(field.key(), field.ty().clone()))
                 .collect();
 
             variant_classes.push(render_data_class(
@@ -580,13 +630,13 @@ impl Enumeration {
 
             let from_js_args = fields
                 .iter()
-                .map(|(field_name, ty)| {
+                .map(|field| {
                     let from_js = interop::from_js(
-                        &format!("js.getProperty('{field_name}'.toJS)"),
-                        ty,
+                        &format!("js.getProperty('{}'.toJS)", field.wire_key),
+                        &field.ty,
                         context,
                     )?;
-                    Ok(format!("{field_name}: {from_js}"))
+                    Ok(format!("{}: {from_js}", field.dart_name))
                 })
                 .collect::<Result<Vec<_>>>()?
                 .join(", ");
@@ -660,7 +710,7 @@ impl Callback {
                     format!("{{ final __boltffiResult = await {impl_call}; return {encoded}; }}")
                 };
                 format!(
-                    "  JSPromise<JSAny?> {method_name}({adapter_js_params}) {{\n    return (() async {inner_body})().toJS;\n  }}"
+                    "  @JSExport('{js_name}')\n  JSPromise<JSAny?> {method_name}({adapter_js_params}) {{\n    return (() async {inner_body})().toJS;\n  }}"
                 )
             } else {
                 let body = if signature.return_ty.is_none() {
@@ -669,7 +719,9 @@ impl Callback {
                     let encoded = signature.encode_return("__boltffiResult", context)?;
                     format!("{{ final __boltffiResult = {impl_call}; return {encoded}; }}")
                 };
-                format!("  JSAny? {method_name}({adapter_js_params}) {body}")
+                format!(
+                    "  @JSExport('{js_name}')\n  JSAny? {method_name}({adapter_js_params}) {body}"
+                )
             };
             adapter_methods.push(adapter_method);
 
@@ -750,11 +802,26 @@ impl Constant {
     }
 }
 
+// `{:?}` on f64::NAN/INFINITY/NEG_INFINITY produces "NaN"/"inf"/"-inf",
+// none of which are valid Dart expressions -- Dart spells these
+// double.nan/double.infinity/double.negativeInfinity.
+fn render_float_literal(value: f64) -> String {
+    if value.is_nan() {
+        "double.nan".to_owned()
+    } else if value == f64::INFINITY {
+        "double.infinity".to_owned()
+    } else if value == f64::NEG_INFINITY {
+        "double.negativeInfinity".to_owned()
+    } else {
+        format!("{value:?}")
+    }
+}
+
 fn render_default_value(value: &DefaultValue, context: &RenderContext<Wasm32>) -> Result<String> {
     Ok(match value {
         DefaultValue::Bool(value) => value.to_string(),
         DefaultValue::Integer(value) => value.get().to_string(),
-        DefaultValue::Float(value) => format!("{:?}", value.to_f64()),
+        DefaultValue::Float(value) => render_float_literal(value.to_f64()),
         DefaultValue::String(value) => super::syntax::dart_string_literal(value),
         DefaultValue::EnumVariant {
             enum_name,
@@ -1045,5 +1112,31 @@ impl<'m> Module<'m> {
                     .with_preamble(preamble),
             )
             .assemble_declarations(declarations)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::render_float_literal;
+
+    // Rust has no NaN/infinity float *literal* syntax (only the associated
+    // consts f64::NAN/INFINITY, which the classifier treats as accessor
+    // constants, not inline defaults), so these values aren't currently
+    // reachable through a #[export] const default -- this is a direct unit
+    // test of the pure formatting logic rather than an end-to-end fixture.
+    #[test]
+    fn renders_finite_floats_with_debug_formatting() {
+        assert_eq!(render_float_literal(1.5), "1.5");
+        assert_eq!(render_float_literal(0.0), "0.0");
+    }
+
+    #[test]
+    fn renders_nan_and_infinity_as_dart_double_constants() {
+        assert_eq!(render_float_literal(f64::NAN), "double.nan");
+        assert_eq!(render_float_literal(f64::INFINITY), "double.infinity");
+        assert_eq!(
+            render_float_literal(f64::NEG_INFINITY),
+            "double.negativeInfinity"
+        );
     }
 }

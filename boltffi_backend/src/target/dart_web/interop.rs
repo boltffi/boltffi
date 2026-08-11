@@ -113,9 +113,12 @@ pub fn to_js(expr: &str, ty: &TypeRef, context: &RenderContext<Wasm32>) -> Resul
         TypeRef::Builtin(BuiltinType::Duration) => format!("boltffiDurationToJS({expr})"),
         TypeRef::Builtin(BuiltinType::Uuid | BuiltinType::Url) => format!("({expr}).toJS"),
         TypeRef::Optional(inner) => {
-            let converted = to_js("__boltffiValue", inner, context)?;
+            // `expr` may be a call (a raw extern/JS invocation), not just a
+            // variable -- evaluate it once into a local instead of
+            // re-embedding it in both the null check and the non-null arm.
+            let converted = to_js("__boltffiRaw!", inner, context)?;
             format!(
-                "(({expr}) == null ? null : (() {{ final __boltffiValue = ({expr})!; return {converted}; }})())"
+                "(() {{ final __boltffiRaw = {expr}; return __boltffiRaw == null ? null : {converted}; }})()"
             )
         }
         TypeRef::Sequence(inner) => {
@@ -185,9 +188,12 @@ pub fn from_js(expr: &str, ty: &TypeRef, context: &RenderContext<Wasm32>) -> Res
             format!("({expr} as JSString).toDart")
         }
         TypeRef::Optional(inner) => {
-            let converted = from_js("__boltffiValue", inner, context)?;
+            // `expr` may be a call (a raw extern/JS invocation), not just a
+            // variable -- evaluate it once into a local instead of
+            // re-embedding it in both the null check and the non-null arm.
+            let converted = from_js("__boltffiRaw!", inner, context)?;
             format!(
-                "(({expr}) == null ? null : (() {{ final __boltffiValue = ({expr})!; return {converted}; }})())"
+                "(() {{ final __boltffiRaw = {expr}; return __boltffiRaw == null ? null : {converted}; }})()"
             )
         }
         TypeRef::Sequence(inner) => {

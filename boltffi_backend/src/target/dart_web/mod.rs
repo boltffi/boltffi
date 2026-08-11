@@ -217,11 +217,17 @@ mod tests {
                 pub fn delete() -> i32 { 0 }
 
                 #[export]
+                pub fn maybe_value(present: bool) -> Option<i32> {
+                    if present { Some(42) } else { None }
+                }
+
+                #[export]
                 pub async fn add_async(a: i32, b: i32) -> i32 { a + b }
 
                 #[export]
                 pub trait Adder {
                     fn add(&self, a: i32, b: i32) -> i32;
+                    fn new(&self, a: i32) -> i32;
                 }
 
                 #[export]
@@ -253,6 +259,75 @@ mod tests {
         lower::<Wasm32>(&source).expect("source lowers")
     }
 
+    fn fallible_callback_bindings() -> Bindings<Wasm32> {
+        let source = boltffi_scan::scan_file(
+            syn::parse_str(
+                r#"
+                #[export]
+                pub trait Validator {
+                    fn validate(&self, value: i32) -> Result<i32, String>;
+                }
+
+                #[export]
+                pub fn call_validator(validator: Box<dyn Validator>, value: i32) -> i32 {
+                    validator.validate(value).unwrap_or(0)
+                }
+                "#,
+            )
+            .expect("valid source"),
+            PackageInfo::new("demo", None),
+        )
+        .expect("source scans");
+        lower::<Wasm32>(&source).expect("source lowers")
+    }
+
+    #[test]
+    fn rejects_a_fallible_callback_method() {
+        // target::typescript's wasm callback adapter needs a WireResult/
+        // thrown-Error encoding for a fallible callback's Err(E) case that
+        // dart_web doesn't emit yet; silently dropping the error channel
+        // would give Dart implementations no way to signal failure.
+        let result = DartWebHost::new("demo")
+            .expect("host constructs")
+            .into_target()
+            .render(&fallible_callback_bindings());
+        assert!(result.is_err());
+    }
+
+    fn nullable_closure_bindings() -> Bindings<Wasm32> {
+        let source = boltffi_scan::scan_file(
+            syn::parse_str(
+                r#"
+                #[export]
+                pub fn apply_optional_closure(
+                    callback: Option<Box<dyn Fn(i32) -> i32>>,
+                    value: i32,
+                ) -> i32 {
+                    callback.map(|f| f(value)).unwrap_or(value)
+                }
+                "#,
+            )
+            .expect("valid source"),
+            PackageInfo::new("demo", None),
+        )
+        .expect("source scans");
+        lower::<Wasm32>(&source).expect("source lowers")
+    }
+
+    #[test]
+    fn rejects_a_nullable_closure_parameter() {
+        // `Option<Box<dyn Fn>>`'s `None` case has nowhere to go: the
+        // generated Dart type stays non-nullable and every value gets
+        // wrapped/called unconditionally, so this must be reported
+        // unsupported rather than making the Rust API's None case
+        // unreachable from Dart.
+        let result = DartWebHost::new("demo")
+            .expect("host constructs")
+            .into_target()
+            .render(&nullable_closure_bindings());
+        assert!(result.is_err());
+    }
+
     fn record_bindings() -> Bindings<Wasm32> {
         let source = boltffi_scan::scan_file(
             syn::parse_str(
@@ -268,6 +343,7 @@ mod tests {
                 pub struct User {
                     pub name: String,
                     pub scores: Vec<i32>,
+                    pub extension: bool,
                 }
 
                 #[data]
@@ -439,6 +515,22 @@ mod tests {
         // (prefix underscore) or this binds to a JS export that was never
         // produced.
         assert!(source.contains("@JS('__boltffi_demo._delete')"));
+
+        // `expr` inside interop::from_js's Optional branch is a call
+        // (`_boltffiExtern_maybeValue(...)`), not a variable -- it must be
+        // evaluated exactly once (into a temporary), not once for the null
+        // check and again for the non-null decode, or an Option-returning
+        // export invokes the underlying JS/Rust call twice per call site.
+        assert_eq!(
+            source.matches("_boltffiExtern_maybeValue(").count(),
+            2,
+            "the extern call site should appear once in the declaration and \
+             once in the call, not duplicated by the null check:\n{source}"
+        );
+        assert!(source.contains(
+            "final __boltffiRaw = _boltffiExtern_maybeValue((arg0).toJS); \
+             return __boltffiRaw == null ? null : (__boltffiRaw! as JSNumber).toDartInt;"
+        ));
     }
 
     #[test]
@@ -459,6 +551,14 @@ mod tests {
         assert!(source.contains("createJSInteropWrapper(_AdderJSAdapter(callback))"));
         assert!(source.contains("boltffiCallbackToJSAdder"));
         assert!(source.contains("@JS('__boltffi_demo.callAdder')"));
+
+        // `new` is a Dart keyword, so the Dart-side method is escaped to
+        // `new_` -- but target::typescript's callback invoker calls the
+        // unescaped JS property name (`new`), so the adapter must export
+        // under that name via a per-member @JSExport override rather than
+        // just inheriting the escaped Dart method name.
+        assert!(source.contains("@JSExport('new')\n  JSAny? new_(JSAny? arg0)"));
+        assert!(source.contains("_js.callMethodVarArgs('new'.toJS, [(arg0).toJS])"));
     }
 
     #[test]
@@ -543,6 +643,17 @@ mod tests {
         assert!(source.contains("class User"));
         assert!(source.contains("final String name;"));
         assert!(source.contains("final List<int> scores;"));
+        // `extension` is a Dart contextual keyword but not JS-reserved: the
+        // Dart field must be escaped (`extension_`), but the wire property
+        // key read/written on the JS side must stay unescaped -- it has to
+        // match target::typescript's PropertyKey, which only escapes
+        // JS-reserved names.
+        assert!(source.contains("final bool extension_;"));
+        assert!(source.contains("result.setProperty('extension'.toJS, (extension_).toJS);"));
+        assert!(
+            source.contains("extension_: (js.getProperty('extension'.toJS) as JSBoolean).toDart")
+        );
+        assert!(!source.contains("'extension_'.toJS"));
         assert!(source.contains("class Status"));
         assert!(source.contains("static const Inactive = Status._(-1);"));
         assert!(source.contains("static const Active = Status._(1);"));
@@ -655,7 +766,7 @@ mod tests {
         let source = source_of(&output);
         assert!(source.contains("static Counter? tryNew(int arg0) =>"));
         assert!(source.contains("== null ? null :"));
-        assert!(source.contains("Counter.fromJS(__boltffiValue as JSObject)"));
+        assert!(source.contains("Counter.fromJS(__boltffiRaw! as JSObject)"));
         assert!(!source.contains("static Counter tryNew"));
     }
 

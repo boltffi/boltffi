@@ -63,6 +63,7 @@ pub(crate) fn pack_dart_web(
     generate_and_vendor_web(
         config,
         &options.execution,
+        options.execution.regenerate,
         options.experimental,
         &config.dart_web_output(),
         reporter,
@@ -104,6 +105,7 @@ pub(crate) fn pack_wrapped_wasm_module(
 pub(crate) fn generate_and_vendor_web(
     config: &Config,
     execution: &PackExecutionOptions,
+    regenerate: bool,
     experimental: bool,
     output_directory: &Path,
     reporter: &Reporter,
@@ -116,7 +118,7 @@ pub(crate) fn generate_and_vendor_web(
         })?
         .js_namespace();
 
-    if execution.regenerate {
+    if regenerate {
         let step = reporter.step("Generating Dart bindings");
         run_generate_with_output(
             config,

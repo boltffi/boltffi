@@ -1154,13 +1154,16 @@ impl Config {
     }
 
     pub fn dart_web_module_name(&self) -> String {
-        // Matches native dart's raw (unnormalized) default so a unified
-        // native+web package shares one basename between both halves.
+        // DartWebHost::new requires a plain identifier (letters/digits/
+        // underscore), but a Cargo package name may contain hyphens --
+        // normalize the default the same way the wasm/TypeScript module
+        // name is, so a hyphenated package.name doesn't make dart_web
+        // reject every default-configured project outright.
         self.targets
             .dart_web
             .module_name
             .clone()
-            .unwrap_or_else(|| self.package.name.clone())
+            .unwrap_or_else(|| normalize_module_name(&self.package.name))
     }
 }
 
@@ -2366,6 +2369,41 @@ enabled = true
             PathBuf::from("dist/python/wheelhouse")
         );
         assert_eq!(config.python_wheel_interpreters(), None);
+    }
+
+    #[test]
+    fn dart_web_module_name_normalizes_a_hyphenated_default() {
+        // DartWebHost::new only accepts a plain identifier (letters,
+        // digits, underscore); a raw hyphenated package.name would make
+        // dart_web reject the module name for every default-configured
+        // project with a hyphenated Cargo package name.
+        let config = parse_config(
+            r#"
+[package]
+name = "my-lib"
+
+[targets.dart_web]
+enabled = true
+"#,
+        );
+
+        assert_eq!(config.dart_web_module_name(), "my_lib");
+    }
+
+    #[test]
+    fn dart_web_module_name_uses_the_configured_override_unnormalized() {
+        let config = parse_config(
+            r#"
+[package]
+name = "my-lib"
+
+[targets.dart_web]
+enabled = true
+module_name = "custom_module"
+"#,
+        );
+
+        assert_eq!(config.dart_web_module_name(), "custom_module");
     }
 
     #[test]
