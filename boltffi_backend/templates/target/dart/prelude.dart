@@ -929,6 +929,44 @@ final class _$$BoltFFIHandleMap<O> {
   }
 }
 
+/// Lets a caller cancel one or more in-flight async calls together: create
+/// one, pass it to each call's `cancellationToken:` parameter, and call
+/// [cancel] to cancel every call currently using it. Once cancelled, a
+/// token is spent -- passing it to a further call rejects that call
+/// immediately with [$$BoltCancelledException] rather than silently never
+/// cancelling it.
+final class $$BoltCancellationToken {
+  final Set<void Function()> _attached = {};
+  bool _cancelled = false;
+
+  bool get isCancelled => _cancelled;
+
+  void cancel() {
+    if (_cancelled) return;
+    _cancelled = true;
+    // Copy first: an attached callback detaches itself (see
+    // _$$BoltFFIAsync.create) as part of finishing its own call, which
+    // would otherwise mutate this set while iterating it.
+    for (final onCancel in _attached.toList()) {
+      onCancel();
+    }
+    _attached.clear();
+  }
+
+  void _attach(void Function() onCancel) => _attached.add(onCancel);
+
+  void _detach(void Function() onCancel) => _attached.remove(onCancel);
+}
+
+/// Thrown by an async call's `Future` when a [$$BoltCancellationToken]
+/// cancelled it before it completed naturally.
+final class $$BoltCancelledException implements Exception {
+  const $$BoltCancelledException();
+
+  @override
+  String toString() => 'BoltFFI call was cancelled';
+}
+
 final class _$$BoltFFIAsync {
   static const int _k$RustFuturePoll$Ready = 0;
   static const int _k$RustFuturePoll$MaybeReady = 1;
@@ -947,17 +985,46 @@ final class _$$BoltFFIAsync {
     required R Function($$ffi.Pointer<$$ffi.Void> handle) completeFuture,
     required void Function($$ffi.Pointer<$$ffi.Void> handle) freeFuture,
     required void Function($$ffi.Pointer<$$ffi.Void> handle) cancelFuture,
+    $$BoltCancellationToken? cancellationToken,
   }) async {
+    // A spent token must reject a new call outright, not silently attach
+    // to something that will never be cancelled again.
+    if (cancellationToken?.isCancelled ?? false) {
+      throw const $$BoltCancelledException();
+    }
+
     final handle = createFuture();
     final completer = $$async.Completer<R>();
     late final $$ffi.NativeCallable<
       $$ffi.Void Function($$ffi.Uint64, $$ffi.Int8)
     >
     completerCallbackCallable;
+    var finished = false;
+
+    void onTokenCancel() {
+      if (finished) return;
+      finished = true;
+      // cancelFuture before close/free: if Rust still has a continuation
+      // registered for this handle, cancelling it can deliver one last
+      // signal through completerCallbackCallable's still-open native
+      // trampoline (completerCallback's own `finished` guard no-ops it) --
+      // closing first would delete that trampoline out from under the
+      // call, which NativeCallable.close documents as undefined behavior.
+      try {
+        cancelFuture(handle);
+      } finally {
+        completerCallbackCallable.close();
+        freeFuture(handle);
+      }
+      completer.completeError(const $$BoltCancelledException());
+    }
 
     void completerCallback(int data, int res) {
+      if (finished) return;
       switch (res) {
         case _k$RustFuturePoll$Ready:
+          finished = true;
+          cancellationToken?._detach(onTokenCancel);
           completerCallbackCallable.close();
 
           try {
@@ -977,6 +1044,7 @@ final class _$$BoltFFIAsync {
     completerCallbackCallable = $$ffi.NativeCallable.listener(
       completerCallback,
     );
+    cancellationToken?._attach(onTokenCancel);
 
     pollFuture(handle, 0, completerCallbackCallable.nativeFunction);
 

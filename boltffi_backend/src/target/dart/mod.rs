@@ -318,10 +318,63 @@ mod tests {
             .expect("async functions should render");
 
         let source = file(&output, "demo/lib/demo.dart");
-        assert!(source.contains("Future<int> fetchCount(int seed)"));
+        // An async call takes an optional cancellation token -- passing
+        // one lets the caller reach into Rust and drop the in-flight
+        // future via $$BoltCancellationToken/cancelFuture, while every
+        // existing `await fetchCount(seed)` call site keeps compiling
+        // unchanged.
+        assert!(source.contains(
+            "Future<int> fetchCount(int seed, {$$BoltCancellationToken? cancellationToken})"
+        ));
         assert!(source.contains("_$$BoltFFIAsync.create"));
         assert!(source.contains("pollFuture:"));
         assert!(source.contains("completeFuture:"));
+        assert!(source.contains("cancelFuture:"));
+        assert!(source.contains("cancellationToken: cancellationToken,"));
+    }
+
+    #[test]
+    fn dart_target_appends_cancellation_token_to_every_async_call_shape() {
+        let bindings = bindings(
+            r#"
+            #[export]
+            pub async fn ping() {}
+
+            pub struct Counter(i32);
+
+            #[export]
+            impl Counter {
+                pub async fn connect() -> Self { Self(0) }
+
+                pub async fn add(&self, amount: i32) -> i32 { amount }
+
+                pub fn get(&self) -> i32 { self.0 }
+            }
+            "#,
+        );
+        let output = target(DartHost::new().package("demo"))
+            .render(&bindings)
+            .expect("async calls should render");
+
+        let source = file(&output, "demo/lib/demo.dart");
+        // A zero-parameter async call: the token is the sole parameter, no
+        // leading ", " from an empty parameter list.
+        assert!(source.contains("Future<void> ping({$$BoltCancellationToken? cancellationToken})"));
+        // An async initializer that isn't the class's primary (sync)
+        // constructor renders as a static method, same as any other async
+        // call -- it gets the token too.
+        assert!(source.contains(
+            "static Future<Counter> connect({$$BoltCancellationToken? cancellationToken})"
+        ));
+        assert!(
+            source.contains(
+                "Future<int> add(int amount, {$$BoltCancellationToken? cancellationToken})"
+            )
+        );
+        // A sync method must not gain a cancellation token it can never use.
+        // (`get` is a Dart keyword, escaped to `$get`.)
+        assert!(source.contains("int $get()"));
+        assert!(!source.contains("int $get({"));
     }
 
     #[test]
@@ -444,7 +497,9 @@ mod tests {
         let source = file(&output, "demo/lib/demo.dart");
         assert!(source.contains("int Function(int) makeAdder(int $base)"));
         assert!(source.contains("String Function(String) makeLabeler(String prefix)"));
-        assert!(source.contains("Future<int Function(int)> makeAsyncAdder(int $base)"));
+        assert!(source.contains(
+            "Future<int Function(int)> makeAsyncAdder(int $base, {$$BoltCancellationToken? cancellationToken})"
+        ));
         assert!(source.contains("int Function(int) tryMakeAdder(int $base)"));
         assert!(source.contains("int Function(int) makeChecker()"));
         assert!(source.contains("_$$BoltReturnedClosureRegistration"));

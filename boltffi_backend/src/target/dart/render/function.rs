@@ -51,6 +51,10 @@ pub struct Function {
     return_type: TypeFragment,
     placement: FunctionPlacement,
     body: String,
+    // Only ever true for a non-getter async call (a getter can't declare
+    // any parameter at all, and a factory constructor is never async by
+    // construction -- see the `FunctionPlacement::Factory` guard below).
+    cancellable: bool,
 }
 
 enum FunctionPlacement {
@@ -278,6 +282,7 @@ impl Function {
             }
             Placement::Initializer { .. } => FunctionPlacement::Static,
         };
+        let cancellable = asynchronous && !matches!(placement, FunctionPlacement::Getter { .. });
 
         let call = match completion {
             Some(asynchronous) => render_async_call(
@@ -287,6 +292,7 @@ impl Function {
                 &receiver_setup,
                 &cleanup,
                 &returns,
+                cancellable,
             )?,
             None => render_sync_call(
                 start_function,
@@ -303,6 +309,7 @@ impl Function {
             return_type: public_return_type,
             placement,
             body: indent(&call, 2),
+            cancellable,
         })
     }
 
@@ -338,6 +345,10 @@ impl Function {
 
     fn body(&self) -> &str {
         &self.body
+    }
+
+    fn cancellable(&self) -> bool {
+        self.cancellable
     }
 }
 
@@ -1134,6 +1145,7 @@ fn render_async_call(
     setup: &[String],
     cleanup: &[String],
     returns: &DartReturn,
+    cancellable: bool,
 ) -> Result<String> {
     let create_body = {
         let mut statements = setup.to_vec();
@@ -1165,13 +1177,19 @@ fn render_async_call(
         }
         statements.join("\n")
     };
+    let cancellation_token_argument = if cancellable {
+        "\n  cancellationToken: cancellationToken,"
+    } else {
+        ""
+    };
     Ok(format!(
-        "return _$$BoltFFIAsync.create(\n  createFuture: () {{\n{}\n  }},\n  pollFuture: _f${},\n  completeFuture: (_p$handle) {{\n{}\n  }},\n  freeFuture: _f${},\n  cancelFuture: _f${},\n);",
+        "return _$$BoltFFIAsync.create(\n  createFuture: () {{\n{}\n  }},\n  pollFuture: _f${},\n  completeFuture: (_p$handle) {{\n{}\n  }},\n  freeFuture: _f${},\n  cancelFuture: _f${},{}\n);",
         indent(&create_body, 4),
         asynchronous.poll.name().as_str(),
         indent(&completion_body, 4),
         asynchronous.free.name().as_str(),
         asynchronous.cancel.name().as_str(),
+        cancellation_token_argument,
     ))
 }
 
