@@ -206,6 +206,10 @@ jobs:
         uses: Aandreba/setup-binaryen@v1.0.0
         with:
           token: ${{ github.token }}
+      - if: matrix.python-version == '3.13'
+        uses: dart-lang/setup-dart@v1
+        with:
+          sdk: 3.10.8
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.0.x'
