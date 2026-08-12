@@ -318,11 +318,6 @@ mod tests {
             .expect("async functions should render");
 
         let source = file(&output, "demo/lib/demo.dart");
-        // An async call takes an optional cancellation token -- passing
-        // one lets the caller reach into Rust and drop the in-flight
-        // future via $$BoltCancellationToken/cancelFuture, while every
-        // existing `await fetchCount(seed)` call site keeps compiling
-        // unchanged.
         assert!(source.contains(
             "Future<int> fetchCount(int seed, {$$BoltCancellationToken? cancellationToken})"
         ));
@@ -357,12 +352,7 @@ mod tests {
             .expect("async calls should render");
 
         let source = file(&output, "demo/lib/demo.dart");
-        // A zero-parameter async call: the token is the sole parameter, no
-        // leading ", " from an empty parameter list.
         assert!(source.contains("Future<void> ping({$$BoltCancellationToken? cancellationToken})"));
-        // An async initializer that isn't the class's primary (sync)
-        // constructor renders as a static method, same as any other async
-        // call -- it gets the token too.
         assert!(source.contains(
             "static Future<Counter> connect({$$BoltCancellationToken? cancellationToken})"
         ));
@@ -371,8 +361,6 @@ mod tests {
                 "Future<int> add(int amount, {$$BoltCancellationToken? cancellationToken})"
             )
         );
-        // A sync method must not gain a cancellation token it can never use.
-        // (`get` is a Dart keyword, escaped to `$get`.)
         assert!(source.contains("int $get()"));
         assert!(!source.contains("int $get({"));
     }

@@ -51,9 +51,6 @@ pub struct Function {
     return_type: TypeFragment,
     placement: FunctionPlacement,
     body: String,
-    // Only ever true for a non-getter async call (a getter can't declare
-    // any parameter at all, and a factory constructor is never async by
-    // construction -- see the `FunctionPlacement::Factory` guard below).
     cancellable: bool,
 }
 

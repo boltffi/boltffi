@@ -929,12 +929,6 @@ final class _$$BoltFFIHandleMap<O> {
   }
 }
 
-/// Lets a caller cancel one or more in-flight async calls together: create
-/// one, pass it to each call's `cancellationToken:` parameter, and call
-/// [cancel] to cancel every call currently using it. Once cancelled, a
-/// token is spent -- passing it to a further call rejects that call
-/// immediately with [$$BoltCancelledException] rather than silently never
-/// cancelling it.
 final class $$BoltCancellationToken {
   final Set<void Function()> _attached = {};
   bool _cancelled = false;
@@ -944,9 +938,6 @@ final class $$BoltCancellationToken {
   void cancel() {
     if (_cancelled) return;
     _cancelled = true;
-    // Copy first: an attached callback detaches itself (see
-    // _$$BoltFFIAsync.create) as part of finishing its own call, which
-    // would otherwise mutate this set while iterating it.
     for (final onCancel in _attached.toList()) {
       onCancel();
     }
@@ -958,8 +949,6 @@ final class $$BoltCancellationToken {
   void _detach(void Function() onCancel) => _attached.remove(onCancel);
 }
 
-/// Thrown by an async call's `Future` when a [$$BoltCancellationToken]
-/// cancelled it before it completed naturally.
 final class $$BoltCancelledException implements Exception {
   const $$BoltCancelledException();
 
@@ -987,8 +976,6 @@ final class _$$BoltFFIAsync {
     required void Function($$ffi.Pointer<$$ffi.Void> handle) cancelFuture,
     $$BoltCancellationToken? cancellationToken,
   }) async {
-    // A spent token must reject a new call outright, not silently attach
-    // to something that will never be cancelled again.
     if (cancellationToken?.isCancelled ?? false) {
       throw const $$BoltCancelledException();
     }
@@ -1004,12 +991,9 @@ final class _$$BoltFFIAsync {
     void onTokenCancel() {
       if (finished) return;
       finished = true;
-      // cancelFuture before close/free: if Rust still has a continuation
-      // registered for this handle, cancelling it can deliver one last
-      // signal through completerCallbackCallable's still-open native
-      // trampoline (completerCallback's own `finished` guard no-ops it) --
-      // closing first would delete that trampoline out from under the
-      // call, which NativeCallable.close documents as undefined behavior.
+      // Must cancel before close/free: closing the trampoline first, while
+      // Rust may still deliver one last signal through it, is undefined
+      // behavior per NativeCallable.close.
       try {
         cancelFuture(handle);
       } finally {
