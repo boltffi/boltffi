@@ -1,4 +1,4 @@
-import { BoltFFIHandle, BoltFFIModule, CallbackRegistry, StreamCancellable, StreamSession, WASM_ABI_VERSION, instantiateBoltFFI, matchWireResult, utf8ByteCount, wireArraySize, wireMapSize, wireOptionalSize, wireResultSize, wireStringSize, writeUnexpectedCallbackError } from {{ runtime_package }};
+import { BoltFFICancelledError, BoltFFIHandle, BoltFFIModule, CallbackRegistry, StreamCancellable, StreamSession, WASM_ABI_VERSION, instantiateBoltFFI, matchWireResult, utf8ByteCount, wireArraySize, wireMapSize, wireOptionalSize, wireResultSize, wireStringSize, writeUnexpectedCallbackError } from {{ runtime_package }};
 import type { BoltFFIExports, Duration, WireCodec, WireResult } from {{ runtime_package }};
 
 let _module: BoltFFIModule;
@@ -14,4 +14,9 @@ export default async function init(source: BufferSource | Response | WebAssembly
   _module = await instantiateBoltFFI(source, WASM_ABI_VERSION, { env: _callbackImports });
   _exports = _module.exports;
 {{ constant_initializers }}
+}
+
+// Lower-level counterpart to `options.signal` -- see AsyncFutureManager.cancelById.
+export function __boltffiCancelById(callId: number): void {
+  _module.asyncManager.cancelById(callId);
 }
