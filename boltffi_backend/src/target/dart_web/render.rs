@@ -175,6 +175,58 @@ impl CallSignature {
             Some(ty) => interop::to_js(dart_expr, ty, context),
         }
     }
+
+    // Only for an outbound call (function/initializer/method calling into
+    // Rust) -- callback_method_signature also builds a CallSignature, for
+    // the opposite direction (Rust calling into Dart), which has no
+    // cancellation concept.
+    fn dart_params_decl_with_cancellation(&self) -> String {
+        let positional = self.dart_params_decl();
+        if !self.asynchronous {
+            return positional;
+        }
+        if positional.is_empty() {
+            "{ $$BoltCancellationToken? cancellationToken }".to_owned()
+        } else {
+            format!("{positional}, {{ $$BoltCancellationToken? cancellationToken }}")
+        }
+    }
+
+    // The shared wasm/JS bridge's async calls take a trailing
+    // `(options?: { signal?: AbortSignal }, __boltffiCancelId?: number)` --
+    // dart_web never has a `signal` to offer (constructing a real JS
+    // AbortController from Dart would cost a JS interop round trip on every
+    // call), so `options` is always `null` here and cancellation instead
+    // goes through the plain int `__boltffiCallId` this call registers
+    // below, free to pass unlike a JS object.
+    fn js_call_arguments_with_cancellation(&self) -> String {
+        let arguments = self.js_call_arguments();
+        if !self.asynchronous {
+            return arguments;
+        }
+        if arguments.is_empty() {
+            "null, __boltffiCallId?.toJS".to_owned()
+        } else {
+            format!("{arguments}, null, __boltffiCallId?.toJS")
+        }
+    }
+
+    // Wraps `body_statement` (a single already-cancelled-checked statement,
+    // e.g. `return decoded;` or `awaited;`) with the already-cancelled
+    // pre-check and the register/unregister bracket around the call,
+    // matching native Dart's own token semantics. Returns the statements to
+    // place inside the function's own braces, not a nested block.
+    fn wrap_cancellable_async_call(&self, body_statement: &str) -> String {
+        format!(
+            "if (cancellationToken?.isCancelled ?? false) {{\n    \
+             throw const $$BoltCancelledException();\n  \
+             }}\n  \
+             final __boltffiCallId = cancellationToken?._registerCall();\n  \
+             try {{\n    {body_statement}\n  }} finally {{\n    \
+             if (__boltffiCallId != null) cancellationToken!._unregisterCall(__boltffiCallId);\n  \
+             }}"
+        )
+    }
 }
 
 fn call_signature(
@@ -441,8 +493,8 @@ fn render_free_function(
     context: &RenderContext<Wasm32>,
     namespace: &str,
 ) -> Result<String> {
-    let params = signature.dart_params_decl();
-    let arguments = signature.js_call_arguments();
+    let params = signature.dart_params_decl_with_cancellation();
+    let arguments = signature.js_call_arguments_with_cancellation();
     let extern_name = format!("_boltffiExtern_{js_name}");
 
     let js_return_type = if signature.asynchronous {
@@ -452,6 +504,13 @@ fn render_free_function(
     };
     let extern_params = (0..signature.params.len())
         .map(|i| format!("JSAny? arg{i}"))
+        .chain(
+            signature
+                .asynchronous
+                .then(|| ["JSAny? options".to_owned(), "JSAny? cancelId".to_owned()])
+                .into_iter()
+                .flatten(),
+        )
         .collect::<Vec<_>>()
         .join(", ");
 
@@ -472,11 +531,19 @@ fn render_free_function(
         call_expr
     };
 
-    if signature.return_ty.is_none() {
-        out.push_str(&format!("  {awaited_expr};\n}}\n\n"));
+    let body_statement = if signature.return_ty.is_none() {
+        format!("{awaited_expr};")
     } else {
         let decoded = signature.decode_return(&awaited_expr, context)?;
-        out.push_str(&format!("  return {decoded};\n}}\n\n"));
+        format!("return {decoded};")
+    };
+    if signature.asynchronous {
+        out.push_str(&format!(
+            "  {}\n}}\n\n",
+            signature.wrap_cancellable_async_call(&body_statement)
+        ));
+    } else {
+        out.push_str(&format!("  {body_statement}\n}}\n\n"));
     }
 
     Ok(out)
@@ -1079,13 +1146,17 @@ fn render_class_initializer(
 ) -> Result<String> {
     let js_name = Name::new(initializer.name()).js_member_name();
     let signature = call_signature(initializer.callable(), context)?;
-    let params = signature.dart_params_decl();
-    let arguments = signature.js_call_arguments();
+    let params = signature.dart_params_decl_with_cancellation();
+    let arguments = signature.js_call_arguments_with_cancellation();
     let call_js = format!("{class_ref}.callMethodVarArgs('{js_name}'.toJS, [{arguments}])");
     Ok(if signature.asynchronous {
         let method_name = Name::new(initializer.name()).dart_identifier();
+        let body_statement = format!(
+            "return {name}._((await ({call_js} as JSPromise<JSAny?>).toDart) as JSObject);"
+        );
         format!(
-            "  static Future<{name}> {method_name}({params}) async => {name}._((await ({call_js} as JSPromise<JSAny?>).toDart) as JSObject);",
+            "  static Future<{name}> {method_name}({params}) async {{\n    {}\n  }}",
+            signature.wrap_cancellable_async_call(&body_statement)
         )
     } else {
         format!("  factory {name}({params}) => {name}._({call_js} as JSObject);",)
@@ -1100,14 +1171,14 @@ fn render_class_method(
     let method_name = Name::new(method.name()).dart_identifier();
     let js_name = Name::new(method.name()).js_member_name();
     let signature = call_signature(method.callable(), context)?;
-    let params = signature.dart_params_decl();
+    let params = signature.dart_params_decl_with_cancellation();
     let is_static = method.callable().receiver().is_none();
     let target = if is_static {
         class_ref.to_owned()
     } else {
         "js".to_owned()
     };
-    let js_arguments = signature.js_call_arguments();
+    let js_arguments = signature.js_call_arguments_with_cancellation();
     let call_js = format!("({target}).callMethodVarArgs('{js_name}'.toJS, [{js_arguments}])");
     let keyword = if is_static { "static " } else { "" };
     let async_keyword = if signature.asynchronous { "async " } else { "" };
@@ -1116,6 +1187,19 @@ fn render_class_method(
     } else {
         call_js
     };
+    if signature.asynchronous {
+        let body_statement = if signature.return_ty.is_none() {
+            format!("{call_expr};")
+        } else {
+            let decoded = signature.decode_return(&call_expr, context)?;
+            format!("return {decoded};")
+        };
+        return Ok(format!(
+            "  {keyword}{} {method_name}({params}) {async_keyword}{{\n    {}\n  }}",
+            signature.dart_return_signature(),
+            signature.wrap_cancellable_async_call(&body_statement)
+        ));
+    }
     let body = if signature.return_ty.is_none() {
         format!("{{ {call_expr}; }}")
     } else {
@@ -1324,6 +1408,7 @@ impl<'m> Module<'m> {
         declarations: Vec<RenderedDeclaration<'decl, Wasm32>>,
     ) -> Result<GeneratedOutput> {
         let ready_global = Self::ready_global(self.namespace);
+        let namespace = self.namespace;
         let preamble = format!(
             "// Generated by boltffi (target: dart_web). Do not edit by hand.\n\
              import 'dart:async';\n\
@@ -1336,6 +1421,8 @@ impl<'m> Module<'m> {
              /// Must be awaited before calling anything else this package\n\
              /// exports.\n\
              Future<void> boltffiInit() => _boltffiReady.toDart.then((_) {{}});\n\n\
+             @JS('{namespace}.__boltffiCancelById')\n\
+             external void _boltffiCancelById(JSAny? callId);\n\n\
              // dart:js_interop's JSBigInt has no int/BigInt conversion members
              // (no BigInt.toJS, no JSBigInt.toDartInt) -- round-trip through the
              // JS BigInt constructor and its decimal string representation instead.\n\
@@ -1390,6 +1477,37 @@ impl<'m> Module<'m> {
              \x20\x20const BoltFFIStringException(this.message);\n\n\
              \x20\x20@override\n\
              \x20\x20String toString() => message;\n\
+             }}\n\n\
+             // Named to match target::dart's own `$$BoltCancellationToken`.\n\
+             // Tracks plain ints instead of wrapping a real JS\n\
+             // AbortController -- constructing one from Dart would cost a JS\n\
+             // interop round trip on every call, unlike a bare int.\n\
+             final class $$BoltCancellationToken {{\n\
+             \x20\x20static int _nextCallId = 0;\n\n\
+             \x20\x20bool _isCancelled = false;\n\
+             \x20\x20final Set<int> _activeCallIds = {{}};\n\n\
+             \x20\x20bool get isCancelled => _isCancelled;\n\n\
+             \x20\x20void cancel() {{\n\
+             \x20\x20\x20\x20if (_isCancelled) return;\n\
+             \x20\x20\x20\x20_isCancelled = true;\n\
+             \x20\x20\x20\x20for (final id in _activeCallIds) {{\n\
+             \x20\x20\x20\x20\x20\x20_boltffiCancelById(id.toJS);\n\
+             \x20\x20\x20\x20}}\n\
+             \x20\x20\x20\x20_activeCallIds.clear();\n\
+             \x20\x20}}\n\n\
+             \x20\x20int _registerCall() {{\n\
+             \x20\x20\x20\x20final id = _nextCallId++;\n\
+             \x20\x20\x20\x20_activeCallIds.add(id);\n\
+             \x20\x20\x20\x20return id;\n\
+             \x20\x20}}\n\n\
+             \x20\x20void _unregisterCall(int id) {{\n\
+             \x20\x20\x20\x20_activeCallIds.remove(id);\n\
+             \x20\x20}}\n\
+             }}\n\n\
+             final class $$BoltCancelledException implements Exception {{\n\
+             \x20\x20const $$BoltCancelledException();\n\n\
+             \x20\x20@override\n\
+             \x20\x20String toString() => 'BoltFFI call was cancelled';\n\
              }}\n\n"
         );
         FileLayout::new()

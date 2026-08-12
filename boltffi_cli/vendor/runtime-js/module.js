@@ -38,6 +38,7 @@ export class BoltFFICancelledError extends Error {
 export class AsyncFutureManager {
     constructor() {
         this.pendingFutures = new Map();
+        this.cancelIds = new Map();
         this.wokenHandles = new Set();
         this.drainScheduled = false;
         this._module = null;
@@ -74,6 +75,32 @@ export class AsyncFutureManager {
             entry.reject(this.extractAsyncError(handle, status, entry.panicMessage, entry.free));
         }
     }
+    // Cancelling only marks the future's state; it doesn't itself trigger a
+    // wake, so this forces a repoll rather than waiting on one that may never
+    // come. Deferred rather than immediate: `cancel` can be reached from an
+    // `abort` event fired synchronously by a Rust future's own poll (e.g. one
+    // whose poll implementation calls a JS callback that in turn aborts its
+    // own signal) -- repolling right here would reenter the Rust future while
+    // it's still on the stack. A no-op if `handle` already settled by the
+    // time the deferred repoll runs.
+    cancel(handle) {
+        const entry = this.pendingFutures.get(handle);
+        if (!entry)
+            return;
+        entry.cancel(handle);
+        queueMicrotask(() => this.repollHandle(handle));
+    }
+    // dart_web's counterpart to a real AbortController: constructing one from
+    // Dart costs a JS interop round trip on every call, so dart_web instead
+    // passes pollAsync a plain int (`cancelId`) it generated itself -- free to
+    // marshal, unlike a JS object -- and cancels through this directly instead
+    // of via `signal`.
+    cancelById(callId) {
+        const handle = this.cancelIds.get(callId);
+        if (handle === undefined)
+            return;
+        this.cancel(handle);
+    }
     extractAsyncError(handle, status, panicMessage, free) {
         if (status === -2 /* WasmPollStatus.Panicked */ && this._module) {
             const bufPtr = panicMessage(handle);
@@ -89,7 +116,7 @@ export class AsyncFutureManager {
         }
         return new Error(`Unknown poll status: ${status}`);
     }
-    pollAsync(handle, pollSync, panicMessage, free) {
+    pollAsync(handle, pollSync, panicMessage, free, cancel, signal, cancelId) {
         // Poll before registering. An async fn that never yields — the common
         // case, and the whole of `async_add` — was paying a Map insert, a Map
         // delete, a five-field entry object and a `new Promise` executor to
@@ -103,8 +130,46 @@ export class AsyncFutureManager {
         if (status < 0) {
             return Promise.reject(this.extractAsyncError(handle, status, panicMessage, free));
         }
+        // The signal may have aborted before this poll returned, or reentrantly
+        // during it -- AbortSignal never replays a past event, so a listener
+        // registered only below would miss it and leave the future running.
+        if (signal?.aborted) {
+            cancel(handle);
+            const cancelledStatus = pollSync(handle);
+            return Promise.reject(this.extractAsyncError(handle, cancelledStatus, panicMessage, free));
+        }
         return new Promise((resolve, reject) => {
-            this.pendingFutures.set(handle, { resolve, reject, pollSync, panicMessage, free });
+            let onAbort;
+            if (signal) {
+                onAbort = () => this.cancel(handle);
+                signal.addEventListener("abort", onAbort, { once: true });
+            }
+            if (cancelId !== undefined) {
+                this.cancelIds.set(cancelId, handle);
+            }
+            // Detach on settle: a signal shared across many calls would otherwise
+            // accumulate one dead listener per finished call, and a stale cancelId
+            // could reach a different, unrelated call once `handle` is recycled.
+            const detach = () => {
+                if (onAbort)
+                    signal.removeEventListener("abort", onAbort);
+                if (cancelId !== undefined)
+                    this.cancelIds.delete(cancelId);
+            };
+            this.pendingFutures.set(handle, {
+                resolve: (h) => {
+                    detach();
+                    resolve(h);
+                },
+                reject: (error) => {
+                    detach();
+                    reject(error);
+                },
+                pollSync,
+                panicMessage,
+                free,
+                cancel,
+            });
         });
     }
 }

@@ -622,7 +622,9 @@ mod tests {
         assert!(source.contains("@JS('__boltffi_demo.shout')"));
         assert!(source.contains("String shout(String arg0)"));
         assert!(source.contains("@JS('__boltffi_demo.addAsync')"));
-        assert!(source.contains("addAsync(int arg0, int arg1) async"));
+        assert!(source.contains(
+            "addAsync(int arg0, int arg1, { $$BoltCancellationToken? cancellationToken }) async"
+        ));
         assert!(source.contains(".toDart"));
         // Must match target::typescript's own reserved-word escaping
         // (prefix underscore) or this binds to a JS export that was never
@@ -644,6 +646,86 @@ mod tests {
             "final __boltffiRaw = _boltffiExtern_maybeValue((arg0).toJS); \
              return __boltffiRaw == null ? null : (__boltffiRaw! as JSNumber).toDartInt;"
         ));
+    }
+
+    fn cancellation_bindings() -> Bindings<Wasm32> {
+        let source = boltffi_scan::scan_file(
+            syn::parse_str(
+                r#"
+                #[export]
+                pub async fn ping() {}
+
+                #[export]
+                pub fn add(a: i32, b: i32) -> i32 { a + b }
+
+                pub struct Counter(i32);
+
+                #[export]
+                impl Counter {
+                    pub async fn connect() -> Self { Self(0) }
+
+                    pub async fn tick(&self) -> i32 { self.0 }
+                }
+                "#,
+            )
+            .expect("valid source"),
+            PackageInfo::new("demo", None),
+        )
+        .expect("source scans");
+        lower::<Wasm32>(&source).expect("source lowers")
+    }
+
+    #[test]
+    fn defines_the_cancellation_token_in_the_preamble() {
+        let output = DartWebHost::new("demo")
+            .expect("host constructs")
+            .into_target()
+            .render(&cancellation_bindings())
+            .expect("target renders");
+        let source = source_of(&output);
+
+        assert!(source.contains("final class $$BoltCancellationToken {"));
+        assert!(source.contains("bool get isCancelled => _isCancelled;"));
+        assert!(source.contains("void cancel() {"));
+        assert!(source.contains("int _registerCall() {"));
+        assert!(source.contains("void _unregisterCall(int id) {"));
+        assert!(source.contains("final class $$BoltCancelledException implements Exception {"));
+        assert!(source.contains("@JS('__boltffi_demo.__boltffiCancelById')"));
+        assert!(source.contains("external void _boltffiCancelById(JSAny? callId);"));
+    }
+
+    #[test]
+    fn appends_a_cancellation_token_to_every_async_call_shape() {
+        let output = DartWebHost::new("demo")
+            .expect("host constructs")
+            .into_target()
+            .render(&cancellation_bindings())
+            .expect("target renders");
+        let source = source_of(&output);
+
+        // Zero-parameter async free function: the token is the sole
+        // parameter, no leading ", " from an empty parameter list.
+        assert!(source.contains("ping({ $$BoltCancellationToken? cancellationToken }) async"));
+        assert!(source.contains("null, __boltffiCallId?.toJS)"));
+        assert!(source.contains("if (cancellationToken?.isCancelled ?? false)"));
+        assert!(source.contains("final __boltffiCallId = cancellationToken?._registerCall();"));
+        assert!(source.contains("cancellationToken!._unregisterCall(__boltffiCallId);"));
+
+        // A sync free function must not gain a token it can never use.
+        assert!(source.contains("int add(int arg0, int arg1)"));
+        assert!(!source.contains("int add(int arg0, int arg1, {"));
+
+        // Async initializer, rendered as a static method.
+        assert!(source.contains(
+            "static Future<Counter> connect({ $$BoltCancellationToken? cancellationToken }) async {"
+        ));
+
+        // Async instance method.
+        assert!(
+            source.contains(
+                "Future<int> tick({ $$BoltCancellationToken? cancellationToken }) async {"
+            )
+        );
     }
 
     #[test]
@@ -709,10 +791,10 @@ mod tests {
         assert!(source.contains("await _impl.greet("));
         assert!(source.contains("as JSPromise<JSAny?>).toDart"));
         assert!(source.contains("@JS('__boltffi_demo.callAsyncGreeter')"));
-        assert!(
-            source
-                .contains("Future<String> callAsyncGreeter(AsyncGreeter arg0, String arg1) async")
-        );
+        assert!(source.contains(
+            "Future<String> callAsyncGreeter(AsyncGreeter arg0, String arg1, \
+             { $$BoltCancellationToken? cancellationToken }) async"
+        ));
     }
 
     #[test]
@@ -884,12 +966,17 @@ mod tests {
         assert!(source.contains("_boltffiCounterClass.callMethodVarArgs('new'.toJS,"));
         assert!(source.contains("(js).callMethodVarArgs('add'.toJS,"));
         // Async initializer: returns Future<Counter> and awaits the JS Promise.
-        assert!(source.contains("static Future<Counter> connect(int arg0) async =>"));
+        assert!(source.contains(
+            "static Future<Counter> connect(int arg0, \
+             { $$BoltCancellationToken? cancellationToken }) async {"
+        ));
         assert!(source.contains("as JSPromise<JSAny?>).toDart) as JSObject);"));
         // Async instance method: `async` goes after the parameter list, not
         // before the method name (`Future<int> async addAsync(...)` is
         // invalid Dart).
-        assert!(source.contains("Future<int> addAsync(int arg0) async =>"));
+        assert!(source.contains(
+            "Future<int> addAsync(int arg0, { $$BoltCancellationToken? cancellationToken }) async {"
+        ));
         assert!(!source.contains("async addAsync"));
         // Without this, a class handle can only ever be released by
         // nondeterministic JS finalization -- there's no way to call the
