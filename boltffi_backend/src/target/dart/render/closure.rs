@@ -15,7 +15,7 @@ use crate::{
 use super::{
     callback::{
         method::{
-            native_default, public_return_type, render_fallible_entry_return,
+            exceptional_return_value, public_return_type, render_fallible_entry_return,
             render_infallible_entry_return,
         },
         parameter::CallbackParameter,
@@ -167,10 +167,7 @@ impl ClosureArgument {
             }
             _ => TypeFragment::new(format!("$$ffi.NativeCallable<{release_signature}>")),
         };
-        let exceptional_return = match signature.returns().native() {
-            "$$ffi.Void" => None,
-            _ => Some(native_default(native_return(call_pointer)?)?),
-        };
+        let exceptional_return = exceptional_return_value(native_return(call_pointer)?)?;
         let registration = ClosureRegistration {
             source,
             presence,

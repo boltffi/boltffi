@@ -640,6 +640,27 @@ extension type _$$BoltWireEncoder(_$$BoltBufWriter writer) {
   }
 }
 
+const _k$unexpectedCallbackErrorMarker = <int>[
+  0x42, 0x4f, 0x4c, 0x54, 0x46, 0x46, 0x49, 0x5f,
+  0x43, 0x41, 0x4c, 0x4c, 0x42, 0x41, 0x43, 0x4b,
+];
+
+_$$BoltFFIBuf _f$encodeUnexpectedCallbackError(Object error) {
+  final message = error.toString();
+  final encoded = $$convert.utf8.encode(message);
+  final size = _k$unexpectedCallbackErrorMarker.length + 1 + 4 + encoded.length;
+  final storage = _$$BoltCallocPtr<$$ffi.Uint8>.alloc(size);
+  final writer = _$$BoltWireEncoder(
+    _$$BoltBufWriter.fromSpan(storage.ptr, storage.len),
+  );
+  for (final byte in _k$unexpectedCallbackErrorMarker) {
+    writer.writeU8(byte);
+  }
+  writer.writeU8(1);
+  writer.writeString(message);
+  return _f$boltffi_buf_from_bytes(storage.ptr, writer.len);
+}
+
 final class _$$BoltBufReader {
   final $$typed_data.Uint8List bytes;
   final $$typed_data.ByteData data;

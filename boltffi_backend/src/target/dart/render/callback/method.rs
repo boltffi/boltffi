@@ -649,11 +649,10 @@ fn render_async_entry(
         format!("final implementation = _k$handles.get({handle});"),
         missing_implementation,
     ];
-    statements.extend(
-        parameters
-            .iter()
-            .flat_map(|parameter| parameter.entry_setup().iter().cloned()),
-    );
+    let decode = parameters
+        .iter()
+        .flat_map(|parameter| parameter.entry_setup().iter().cloned())
+        .collect::<Vec<_>>();
     let arguments = parameters
         .iter()
         .map(CallbackParameter::entry_argument)
@@ -661,13 +660,14 @@ fn render_async_entry(
         .join(", ");
     let call = format!("await implementation.{method}({arguments})");
     let has_payload = completion_parameters.len() == 3;
-    let mut success = async_success_payload(
+    let mut success = decode;
+    success.extend(async_success_payload(
         declaration.callable().returns().plan(),
         &call,
         has_payload.then(|| &completion_parameters[2]),
         bridge,
         context,
-    )?;
+    )?);
     let success_payload = has_payload.then(|| {
         if completion_parameters[2] == CBridgeType::Buffer {
             "_l$payloadBuffer"
@@ -680,30 +680,77 @@ fn render_async_entry(
     let mut catches = Vec::new();
     if let ErrorDecl::EncodedViaReturnSlot { ty, codec, .. } = declaration.callable().error() {
         let binding = error_catch_binding(ty, context)?;
-        let mut body = encode_value(codec, binding.value.as_str(), "_l$error", bridge, context)?;
+        // A C-style enum error crosses as a bare 4-byte discriminant, not a
+        // wire-encoded payload -- a data enum (with variant fields) still
+        // needs the normal codec below, since it has no `.value` getter.
+        let is_c_style_enum = matches!(
+            ty,
+            TypeRef::Enum(id) if matches!(context.enumeration(*id), Some(EnumDecl::CStyle(_)))
+        );
+        let mut body = if is_c_style_enum {
+            vec![
+                format!(
+                    "final _l$errorStorage = _$$BoltCallocPtr<$$ffi.Uint8>.alloc(4);"
+                ),
+                format!(
+                    "_l$errorStorage.ptr.cast<$$ffi.Int32>().value = {}.value;",
+                    binding.name
+                ),
+                format!(
+                    "final _l$errorBuffer = _f${}(_l$errorStorage.ptr, 4);",
+                    bridge.support().buffer_from_bytes()?.name()
+                ),
+            ]
+        } else {
+            encode_value(codec, binding.value.as_str(), "_l$error", bridge, context)?
+        };
         body.push(completion_call(
             &completion_context,
             1,
             Some("_l$errorBuffer"),
         ));
+        let unexpected = if has_payload && completion_parameters[2] == CBridgeType::Buffer {
+            format!(
+                "_l$complete({completion_context}, $$ffi.Struct.create<_$$BoltFFIStatus>()..code = 1, _f$encodeUnexpectedCallbackError({}));",
+                binding.name
+            )
+        } else if has_payload {
+            format!(
+                "_l$complete({completion_context}, $$ffi.Struct.create<_$$BoltFFIStatus>()..code = 100, {});",
+                native_default(&completion_parameters[2])?
+            )
+        } else {
+            format!(
+                "_l$complete({completion_context}, $$ffi.Struct.create<_$$BoltFFIStatus>()..code = 100);"
+            )
+        };
         catches.push(format!(
-            "on {} catch ({}) {{\n{}\n}}",
-            binding.ty,
+            "catch ({}) {{\n  if ({} is {}) {{\n{}\n  }} else {{\n    {}\n  }}\n}}",
             binding.name,
-            indent(&body.join("\n"), 2)
+            binding.name,
+            binding.ty,
+            indent(&body.join("\n"), 4),
+            unexpected
+        ));
+    } else {
+        let unexpected = if has_payload && completion_parameters[2] == CBridgeType::Buffer {
+            format!(
+                "_l$complete({completion_context}, $$ffi.Struct.create<_$$BoltFFIStatus>()..code = 100, $$ffi.Struct.create<_$$BoltFFIBuf>());"
+            )
+        } else if has_payload {
+            format!(
+                "_l$complete({completion_context}, $$ffi.Struct.create<_$$BoltFFIStatus>()..code = 100, {});",
+                native_default(&completion_parameters[2])?
+            )
+        } else {
+            format!(
+                "_l$complete({completion_context}, $$ffi.Struct.create<_$$BoltFFIStatus>()..code = 100);"
+            )
+        };
+        catches.push(format!(
+            "catch (_l$caught) {{\n  {unexpected}\n}}"
         ));
     }
-    let panic_arguments = if has_payload {
-        format!(
-            "{completion_context}, $$ffi.Struct.create<_$$BoltFFIStatus>()..code = 100, {}",
-            native_default(&completion_parameters[2])?
-        )
-    } else {
-        format!("{completion_context}, $$ffi.Struct.create<_$$BoltFFIStatus>()..code = 100")
-    };
-    catches.push(format!(
-        "catch (_) {{\n  _l$complete({panic_arguments});\n}}"
-    ));
     statements.push(format!(
         "try {{\n{}\n}} {}",
         indent(&success.join("\n"), 2),
@@ -760,6 +807,7 @@ fn render_async_proxy(
     let success = async_proxy_success(
         declaration.callable().returns().plan(),
         has_payload.then_some("_p$value2"),
+        has_payload.then_some(&completion_parameters[2]),
         bridge,
         context,
     )?;
@@ -869,7 +917,8 @@ fn async_success_payload(
 fn async_proxy_success(
     plan: &ReturnPlan<Native, IntoRust>,
     payload: Option<&str>,
-    _bridge: &CBridgeContract,
+    payload_ty: Option<&CBridgeType>,
+    bridge: &CBridgeContract,
     context: &RenderContext<Native>,
 ) -> Result<Vec<String>> {
     let Some(payload) = payload else {
@@ -880,10 +929,14 @@ fn async_proxy_success(
     };
     Ok(match plan {
         ReturnPlan::DirectViaReturnSlot { ty } | ReturnPlan::DirectViaOutPointer { ty } => {
-            vec![format!(
-                "_l$completer.complete({});",
-                direct_from_native(ty, payload, context)?
-            )]
+            let decoded = match (ty, payload_ty) {
+                (DirectValueType::Record(_), Some(CBridgeType::Buffer)) => format!(
+                    "{}._m$wireDecode(_$$BoltWireDecoder(_$$BoltBufReader.fromSpan({payload}.ptr, {payload}.len)))",
+                    type_name::direct_value(ty, context)?
+                ),
+                _ => direct_from_native(ty, payload, context)?,
+            };
+            vec![format!("_l$completer.complete({decoded});")]
         }
         ReturnPlan::EncodedViaReturnSlot { codec, .. }
         | ReturnPlan::EncodedViaOutPointer { codec, .. } => {
@@ -908,7 +961,7 @@ fn async_proxy_success(
             ),
         ],
         ReturnPlan::DirectVecViaReturnSlot { element } => {
-            direct_vector_decode_statements(element, payload, "_l$decoded", context)?
+            direct_vector_decode_statements(element, payload, "_l$decoded", bridge, context)?
                 .into_iter()
                 .chain(["_l$completer.complete(_l$decoded);".to_owned()])
                 .collect()
@@ -1043,7 +1096,7 @@ fn encode_direct_vector(
     element: &DirectVectorElementType,
     prefix: &str,
     bridge: &CBridgeContract,
-    context: &RenderContext<Native>,
+    _context: &RenderContext<Native>,
 ) -> Result<Vec<String>> {
     let mut statements = vec![format!("final _l$value = {value};")];
     match element {
@@ -1062,14 +1115,7 @@ fn encode_direct_vector(
             ).replace("buffer_symbol", bridge.support().buffer_from_bytes()?.name()));
         }
         DirectVectorElementType::Record(record) => {
-            let c_record = context
-                .record(*record)
-                .ok_or(Error::UnexpectedBindingShape {
-                    layer: "dart callback",
-                    shape: "missing direct-record vector declaration",
-                })?;
-            let public = Name::new(c_record.name()).upper_camel()?;
-            let native = format!("_$${public}");
+            let native = native::direct_record_struct(bridge, *record)?;
             statements.extend([
                 format!("final {prefix}Storage = _$$BoltCallocPtr<{native}>.alloc($$ffi.sizeOf<{native}>() * _l$value.length);"),
                 format!("for (var _l$index = 0; _l$index < _l$value.length; _l$index++) {{ _l$value[_l$index]._m$writeStruct({prefix}Storage.ptr.elementAt(_l$index)); }}"),
@@ -1128,7 +1174,13 @@ fn decode_direct_vector_return(
     let mut statements = vec![format!("final {prefix}Buffer = {call};")];
     statements.push("try {".to_owned());
     statements.extend(
-        direct_vector_decode_statements(element, &format!("{prefix}Buffer"), "_l$value", context)?
+        direct_vector_decode_statements(
+            element,
+            &format!("{prefix}Buffer"),
+            "_l$value",
+            bridge,
+            context,
+        )?
             .into_iter()
             .map(|statement| format!("  {statement}")),
     );
@@ -1144,6 +1196,7 @@ fn direct_vector_decode_statements(
     element: &DirectVectorElementType,
     buffer: &str,
     value: &str,
+    bridge: &CBridgeContract,
     context: &RenderContext<Native>,
 ) -> Result<Vec<String>> {
     Ok(match element {
@@ -1159,7 +1212,7 @@ fn direct_vector_decode_statements(
         }
         DirectVectorElementType::Record(record) => {
             let public = type_name::direct_value(&DirectValueType::Record(*record), context)?;
-            let native = format!("_$${public}");
+            let native = native::direct_record_struct(bridge, *record)?;
             vec![
                 format!("final _l$count = {buffer}.len ~/ $$ffi.sizeOf<{native}>();"),
                 format!(
@@ -1394,9 +1447,27 @@ fn completion_call(context: &str, status: i32, payload: Option<&str>) -> String 
 }
 
 fn native_exceptional_return(ty: &CBridgeType) -> Result<String> {
+    Ok(match exceptional_return_value(ty)? {
+        Some(value) => format!(", {value}"),
+        None => String::new(),
+    })
+}
+
+pub fn exceptional_return_value(ty: &CBridgeType) -> Result<Option<String>> {
     Ok(match ty {
-        CBridgeType::Void => String::new(),
-        _ => format!(", {}", native_default(ty)?),
+        CBridgeType::Void
+        | CBridgeType::Status
+        | CBridgeType::Buffer
+        | CBridgeType::String
+        | CBridgeType::Span
+        | CBridgeType::CallbackHandle(_)
+        | CBridgeType::Named(_)
+        | CBridgeType::DirectRecord(_)
+        | CBridgeType::FutureHandle
+        | CBridgeType::ConstPointer(_)
+        | CBridgeType::MutPointer(_)
+        | CBridgeType::FunctionPointer { .. } => None,
+        _ => Some(native_default(ty)?),
     })
 }
 

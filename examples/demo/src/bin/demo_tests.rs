@@ -9,7 +9,7 @@ use syn::punctuated::Punctuated;
 use syn::{Attribute, Ident, Item, LitStr, Token, Type, Visibility, bracketed, parenthesized};
 
 // These identifiers intentionally match `boltffi_bindgen/src/render/*` folder names.
-const TARGETS: &[&str] = &["swift", "kotlin", "java", "csharp", "typescript", "python"];
+const TARGETS: &[&str] = &["swift", "kotlin", "java", "csharp", "typescript", "python", "dart"];
 
 type AppResult<T> = Result<T, String>;
 
@@ -699,6 +699,11 @@ fn platform_scans(repo_root: &Path) -> Vec<PlatformScan> {
             name: "python",
             roots: vec![repo_root.join("examples/platforms/python/tests")],
             suffixes: &["py"],
+        },
+        PlatformScan {
+            name: "dart",
+            roots: vec![repo_root.join("examples/platforms/dart/test")],
+            suffixes: &["dart"],
         },
     ]
 }

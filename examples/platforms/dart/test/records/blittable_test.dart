@@ -61,10 +61,11 @@ void main() {
       reason: "case:records.blittable.point.should_compute_distance",
     );
 
-    final scaledPoint = point.scale(2.5);
-    expect(scaledPoint.x, 2.5);
+    final toScale = Point(x: 1.0, y: 2.0);
+    toScale.scale(2.5);
+    expect(toScale.x, 2.5);
     expect(
-      scaledPoint.y,
+      toScale.y,
       5.0,
       reason: "case:records.blittable.point.should_scale_coordinates",
     );

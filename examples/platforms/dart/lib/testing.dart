@@ -175,7 +175,7 @@ final class AsyncResultFormatterImpl implements AsyncResultFormatter {
   @override
   Future<String> renderMessage(String scope, String message) {
     if (scope.isEmpty) {
-      return Future.error(MathError.negativeInput);
+      throw MathError.negativeInput;
     }
     return Future.value('$scope::${message.toUpperCase()}');
   }
@@ -183,7 +183,7 @@ final class AsyncResultFormatterImpl implements AsyncResultFormatter {
   @override
   Future<Point> transformPoint(Point point, Status status) {
     if (status == Status.inactive) {
-      return Future.error(MathError.negativeInput);
+      throw MathError.negativeInput;
     }
     return Future.value(Point(x: point.x + 500.0, y: point.y + 600.0));
   }

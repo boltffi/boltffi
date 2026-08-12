@@ -77,7 +77,7 @@ host_dart_native_target() {
 
 pack_host_dart() {
     local overlay
-    overlay="$(mktemp "${TMPDIR:-/tmp}/boltffi-dart-host.XXXXXX.toml")"
+    overlay="$(mktemp "${TMPDIR:-/tmp}/boltffi-dart-host.toml.XXXXXX")"
     printf '[targets.dart]\nnative_targets = ["%s"]\n' "$(host_dart_native_target)" >"$overlay"
     run_boltffi --overlay "$overlay" pack dart --release
     rm -f "$overlay"

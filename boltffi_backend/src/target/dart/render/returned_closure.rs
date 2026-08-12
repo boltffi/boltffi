@@ -65,6 +65,7 @@ impl ReturnedClosure {
                     plan,
                     group,
                     protocol,
+                    bridge,
                     context,
                 ),
                 IncomingParam::Closure(_) => {

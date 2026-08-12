@@ -168,7 +168,7 @@ impl CodecWrite for Writer<'_, '_> {
     ) -> Vec<Self::Stmt> {
         vec![self.scope.value(value).and_then(|value| {
             Ok(WriteStatement::new(format!(
-                "if ({value} == null) {{\n  {}.writeU8(0);\n}} else {{\n  {}.writeU8(1);\n  final {} = {value};\n{}\n}}",
+                "if ({value} == null) {{\n  {}.writeU8(0);\n}} else {{\n  {}.writeU8(1);\n  final {} = {value}!;\n{}\n}}",
                 self.name,
                 self.name,
                 binder_name(binder),

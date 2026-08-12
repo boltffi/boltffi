@@ -230,12 +230,14 @@ impl CallbackParameter {
             DirectVectorElementType::Record(record) => {
                 let public_record =
                     type_name::direct_value(&DirectValueType::Record(*record), context)?;
-                let (CBridgeType::ConstPointer(_) | CBridgeType::MutPointer(_)) =
-                    parameters.parameter(vector.pointer()).ty()
-                else {
-                    return broken("direct-record vector pointer type");
+                let native = match parameters.parameter(vector.pointer()).ty() {
+                    CBridgeType::ConstPointer(inner) | CBridgeType::MutPointer(inner) => {
+                        super::super::super::native::NativeType::from_c(inner)?
+                            .native()
+                            .to_owned()
+                    }
+                    _ => return broken("direct-record vector pointer type"),
                 };
-                let native = format!("_$${public_record}");
                 let storage = format!("_l${name}Storage");
                 let entry_setup = vec![format!(
                     "final _l${name}Count = {length} ~/ $$ffi.sizeOf<{}>();",

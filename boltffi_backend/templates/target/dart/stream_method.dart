@@ -30,7 +30,7 @@
       {{ prepare }}
 {%- when None %}
 {%- endmatch %}
-      controller.addAll({{ method.delivery().read() }});
+      {{ method.delivery().read() }}.forEach(controller.add);
 {%- match method.delivery().cleanup() %}
 {%- when Some with (cleanup) %}
       {{ cleanup }}
@@ -55,7 +55,7 @@
       {{ prepare }}
 {%- when None %}
 {%- endmatch %}
-      controller.addAll({{ method.delivery().read() }});
+      {{ method.delivery().read() }}.forEach(controller.add);
 {%- match method.delivery().cleanup() %}
 {%- when Some with (cleanup) %}
       {{ cleanup }}

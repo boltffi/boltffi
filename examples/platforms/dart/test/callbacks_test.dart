@@ -59,16 +59,16 @@ void main() {
     expect(asyncResultPoint.x, 503.0);
     expect(asyncResultPoint.y, 604.0);
 
-    expect(
-      () => renderMessageWithAsyncResultCallback(
+    await expectLater(
+      renderMessageWithAsyncResultCallback(
         asyncResultFormatter,
         '',
         'result',
       ),
       throwsA(MathError.negativeInput),
     );
-    expect(
-      () => transformPointWithAsyncResultCallback(
+    await expectLater(
+      transformPointWithAsyncResultCallback(
         asyncResultFormatter,
         Point(x: 3.0, y: 4.0),
         Status.inactive,

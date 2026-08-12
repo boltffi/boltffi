@@ -349,7 +349,7 @@ mod tests {
         assert!(source.contains("Future<int?> load(String key)"));
         assert!(source.contains("TransformerVTable extends $$ffi.Struct"));
         assert!(source.contains("TransformerBridge.create(transformer)"));
-        assert!(source.contains("$$ffi.NativeCallable.listener"));
+        assert!(source.contains("$$ffi.NativeCallable.isolateLocal"));
         assert!(output.diagnostics().is_empty());
     }
 

@@ -1,2 +1,2 @@
 static final $$ffi.NativeCallable<{{ signature }}> {{ name }} =
-    $$ffi.NativeCallable.listener({{ entry }});
+    $$ffi.NativeCallable.isolateLocal({{ entry }});

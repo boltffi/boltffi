@@ -143,7 +143,7 @@ impl CodecSize for Sizer<'_, '_> {
 
     fn optional(&mut self, value: &ValueRef, binder: BinderId, inner: Self::Expr) -> Self::Expr {
         Ok(SizeExpression::new(format!(
-            "1 + ({} == null ? 0 : (() {{ final {} = {}; return {}; }})())",
+            "1 + ({} == null ? 0 : (() {{ final {} = {}!; return {}; }})())",
             self.value(value)?,
             binder_name(binder),
             self.value(value)?,

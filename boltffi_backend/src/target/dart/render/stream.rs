@@ -27,6 +27,7 @@ struct StreamMethodTemplate<'a> {
 
 pub struct Stream {
     owner: Option<Identifier>,
+    name: Identifier,
     method: String,
 }
 
@@ -122,6 +123,7 @@ impl Stream {
         };
         Ok(Self {
             owner,
+            name: method.name.clone(),
             method: StreamMethodTemplate { method: &method }
                 .render()
                 .expect("rendering an in-memory Dart stream method template cannot fail"),
@@ -142,6 +144,10 @@ impl Stream {
 
     fn method(&self) -> &str {
         &self.method
+    }
+
+    fn method_name(&self) -> &Identifier {
+        &self.name
     }
 
     fn associated_method(&self) -> String {

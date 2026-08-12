@@ -11,7 +11,7 @@
 
   void _f$throwIfDisposed() {
     if (_handle == 0) {
-      throw StateError('{{ class.name() }} has already been disposed');
+      throw $$BoltException('Object has been disposed');
     }
   }
 

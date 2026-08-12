@@ -58,7 +58,10 @@ enum FunctionPlacement {
     Static,
     Getter { associated: bool },
     Instance,
-    Factory { owner: Identifier },
+    Factory {
+        owner: Identifier,
+        constructor: Option<Identifier>,
+    },
 }
 
 pub struct DartParameter {
@@ -191,6 +194,7 @@ impl Function {
                         plan,
                         group,
                         start_function,
+                        bridge,
                         context,
                     ),
                     IncomingParam::Closure(closure) => {
@@ -271,10 +275,13 @@ impl Function {
             Placement::Static => FunctionPlacement::Static,
             Placement::Getter { associated } => FunctionPlacement::Getter { associated },
             Placement::Instance(_) => FunctionPlacement::Instance,
-            Placement::Initializer { owner, primary }
-                if primary && !asynchronous && returns.public_type.as_str() == owner.as_str() =>
+            Placement::Initializer { owner, .. }
+                if !asynchronous && returns.public_type.as_str() == owner.as_str() =>
             {
-                FunctionPlacement::Factory { owner }
+                FunctionPlacement::Factory {
+                    owner,
+                    constructor: factory_constructor_name(&name),
+                }
             }
             Placement::Initializer { .. } => FunctionPlacement::Static,
         };
@@ -387,8 +394,15 @@ impl FunctionPlacement {
 
     fn owner(&self) -> &Identifier {
         match self {
-            Self::Factory { owner } => owner,
+            Self::Factory { owner, .. } => owner,
             _ => unreachable!("template guards Dart factory owner access"),
+        }
+    }
+
+    fn constructor(&self) -> Option<&Identifier> {
+        match self {
+            Self::Factory { constructor, .. } => constructor.as_ref(),
+            _ => None,
         }
     }
 
@@ -463,6 +477,7 @@ pub fn render_parameter(
     plan: &ParamPlan<Native, boltffi_binding::IntoRust>,
     group: &ParameterGroup,
     function: &impl NativeParameterSource,
+    bridge: &CBridgeContract,
     context: &RenderContext<Native>,
 ) -> Result<DartParameter> {
     match plan {
@@ -548,8 +563,8 @@ pub fn render_parameter(
                 DartArgument::new(Vec::new(), vec![argument], Vec::new()),
             ))
         }
-        ParamPlan::DirectVec { element, .. } => {
-            let ParameterGroup::DirectVector(group) = group else {
+        ParamPlan::DirectVec { element, receive } => {
+            let ParameterGroup::DirectVector(_group) = group else {
                 return broken("direct-vector Dart parameter disagrees with C bridge group");
             };
             let storage = format!("_l${}Storage", name.as_str());
@@ -560,6 +575,12 @@ pub fn render_parameter(
                     let native_type = vector.native();
                     let populate = vector.populate(&storage, name.as_str())?;
                     let public_type = type_name::direct_vector(element, context)?;
+                    let writeback = match receive {
+                        Receive::ByMutRef => vec![format!(
+                            "{name}.setAll(0, {storage}.ptr.asTypedList({name}.length));"
+                        )],
+                        _ => Vec::new(),
+                    };
                     let argument = DartArgument::new(
                         vec![
                             format!(
@@ -570,19 +591,14 @@ pub fn render_parameter(
                             populate,
                         ],
                         vec![format!("{storage}.ptr"), format!("{name}.length")],
-                        Vec::new(),
+                        writeback,
                     );
                     Ok(DartParameter::new(name, public_type, argument))
                 }
                 DirectVectorElementType::Record(record) => {
                     let direct = DirectValueType::Record(*record);
                     let public = type_name::direct_value(&direct, context)?;
-                    let (CBridgeType::ConstPointer(_) | CBridgeType::MutPointer(_)) =
-                        function.parameter(group.pointer()).ty()
-                    else {
-                        return broken("direct-record vector pointer type");
-                    };
-                    let native = format!("_$${public}");
+                    let native = dart_native::direct_record_struct(bridge, *record)?;
                     let argument = DartArgument::new(
                         vec![
                             format!(
@@ -912,7 +928,7 @@ fn encoded_error_check(
         _ => return super::super::unsupported("Dart encoded error payload"),
     };
     Ok(vec![
-        format!("if ({buffer}.ptr != $$ffi.nullptr) {{"),
+        format!("if ({buffer}.ptr != $$ffi.nullptr && {buffer}.len != 0) {{"),
         "  try {".to_owned(),
         format!(
             "    final _l$errorReader = _$$BoltWireDecoder(_$$BoltBufReader.fromSpan({buffer}.ptr, {buffer}.len));"
@@ -959,7 +975,7 @@ fn encoded_return(
         .render_with(&mut Reader::new("_l$resultReader", context))?
         .into_source();
     let mut value = out_return(type_name::type_ref(ty, context)?, expression, out)?;
-    value.after_call.insert(0, format!(
+    value.after_call.push(format!(
         "final _l$decodedResult = (() {{\n  try {{\n    final _l$resultReader = _$$BoltWireDecoder(_$$BoltBufReader.fromSpan(_l$result.ptr, _l$result.len));\n    return {};\n  }} finally {{\n    _f${}(_l$result);\n  }}\n}})();",
         value.expression.as_deref().unwrap_or("null"),
         bridge.support().buffer_free()?.name(),
@@ -1048,7 +1064,7 @@ fn direct_vector_return(
         }
         DirectVectorElementType::Record(record) => {
             let public = type_name::direct_value(&DirectValueType::Record(*record), context)?;
-            let native = format!("_$${public}");
+            let native = dart_native::direct_record_struct(bridge, *record)?;
             (
                 vec![format!(
                     "final _l$count = _l$result.len ~/ $$ffi.sizeOf<{native}>();"
@@ -1173,6 +1189,13 @@ fn render_async_call(
         asynchronous.free.name().as_str(),
         asynchronous.cancel.name().as_str(),
     ))
+}
+
+fn factory_constructor_name(name: &Identifier) -> Option<Identifier> {
+    match name.as_str() {
+        "new" | "$new" => None,
+        _ => Some(name.clone()),
+    }
 }
 
 fn out_pointer(
