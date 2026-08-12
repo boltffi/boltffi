@@ -150,7 +150,12 @@ void main() {
     final benchmarkPoint = DataPoint(x: 1.0, y: 2.0, timestamp: 123);
     final successResponse = createSuccessResponse(42, benchmarkPoint);
     expect(successResponse.requestId, 42);
-    expect(successResponse.result is $$BoltResult$Ok, isTrue);
+    expect(
+      successResponse.result is $$BoltResult$Ok,
+      isTrue,
+      reason:
+          'case:results.error_enums.benchmark_response.should_make_success_response',
+    );
     expect(successResponse.result.okValue(), benchmarkPoint);
 
     expect(

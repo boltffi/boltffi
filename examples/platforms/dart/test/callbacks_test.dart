@@ -91,6 +91,7 @@ void main() {
     final messageFormatter = MessageFormatterImpl();
     final optionalMessageCallback = OptionalMessageCallbackImpl();
     final resultMessageCallback = ResultMessageCallbackImpl();
+    final stringResultMessageCallback = StringResultMessageCallbackImpl();
 
     expect(invokeValueCallback(doubler, 4), 8);
     expect(invokeValueCallbackTwice(doubler, 3, 4), 14);
@@ -144,6 +145,19 @@ void main() {
     expect(
       () => invokeResultMessageCallback(resultMessageCallback, -1),
       throwsA(MathError.negativeInput),
+    );
+
+    expect(
+      invokeStringResultMessageCallback(stringResultMessageCallback, 8),
+      'message:8',
+      reason:
+          "case:callbacks.sync_traits.string_result_message_callback.should_return_encoded_success",
+    );
+    expect(
+      () => invokeStringResultMessageCallback(stringResultMessageCallback, -1),
+      throwsBoltException("negative key: -1"),
+      reason:
+          "case:callbacks.sync_traits.string_result_message_callback.should_report_string_error",
     );
 
     final processed = processVec(vecProcessor, Int32List.fromList([1, 2, 3]));

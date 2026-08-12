@@ -148,6 +148,17 @@ final class ResultMessageCallbackImpl implements ResultMessageCallback {
   }
 }
 
+final class StringResultMessageCallbackImpl
+    implements StringResultMessageCallback {
+  @override
+  String renderMessage(int key) {
+    if (key < 0) {
+      throw $$BoltException('negative key: $key');
+    }
+    return 'message:$key';
+  }
+}
+
 final class AsyncFetcherImpl implements AsyncFetcher {
   @override
   Future<int> fetchValue(int key) => Future.value(key * 100);

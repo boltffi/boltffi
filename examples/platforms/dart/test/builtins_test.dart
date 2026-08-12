@@ -21,7 +21,11 @@ void main() {
     );
 
     final instant = DateTime.fromMillisecondsSinceEpoch(1710000000123);
-    expect(echoSystemTime(instant), instant);
+    expect(
+      echoSystemTime(instant),
+      instant,
+      reason: "case:builtins.system_time.should_roundtrip_value",
+    );
     final preEpochInstant = DateTime.fromMillisecondsSinceEpoch(-500);
     expect(
       echoSystemTime(preEpochInstant),
@@ -42,7 +46,11 @@ void main() {
 
     final uuidStr = '550e8400-e29b-41d4-a716-446655440000';
     final uuidValue = $$BoltUUIDValue.parse(uuidStr);
-    expect(echoUuid(uuidValue), uuidValue);
+    expect(
+      echoUuid(uuidValue),
+      uuidValue,
+      reason: "case:builtins.uuid.should_roundtrip_value",
+    );
     expect(uuidToString(uuidValue), uuidStr, reason: "case:builtins.uuid.should_format_canonical_string");
 
     final uri = Uri.parse('https://example.com/path?q=boltffi');

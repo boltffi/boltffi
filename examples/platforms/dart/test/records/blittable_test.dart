@@ -4,7 +4,11 @@ import 'package:demo/demo.dart';
 
 void main() {
   test('blittable records', () {
-    expect(Point.$new(7.0, 8.0), Point(x: 7.0, y: 8.0));
+    expect(
+      Point.$new(7.0, 8.0),
+      Point(x: 7.0, y: 8.0),
+      reason: "case:records.blittable.point.should_construct_with_static_new",
+    );
     final point = makePoint(1.0, 2.0);
     expect(
       point,
@@ -155,7 +159,11 @@ void main() {
       3,
       reason: "case:records.blittable.locations.should_count_vector_items",
     );
-    expect(processLocations([]), 0);
+    expect(
+      processLocations([]),
+      0,
+      reason: "case:records.blittable.locations.should_count_empty_vector",
+    );
 
     final hostLocations = [
       Location(

@@ -109,7 +109,12 @@ void main() {
       [Point(x: 2.0, y: 3.0), Point(x: 4.0, y: 5.0)],
     );
     expect(borrowedPoints.constructorVariant(), 'with_borrowed_points');
-    expect(borrowedPoints.summary(), 'label=borrowed;points=2;first=2.0:3.0');
+    expect(
+      borrowedPoints.summary(),
+      'label=borrowed;points=2;first=2.0:3.0',
+      reason:
+          "case:classes.constructor_matrix.with_borrowed_points.should_accept_borrowed_blittable_slice",
+    );
     expect(borrowedPoints.payloadChecksum(), 0);
     expect(borrowedPoints.vectorCount(), 2);
 
@@ -118,7 +123,12 @@ void main() {
       Person(name: 'Grace', age: 41),
     ]);
     expect(borrowedPeople.constructorVariant(), 'with_borrowed_people');
-    expect(borrowedPeople.summary(), 'people=2;age_total=81;names=Ada|Grace');
+    expect(
+      borrowedPeople.summary(),
+      'people=2;age_total=81;names=Ada|Grace',
+      reason:
+          "case:classes.constructor_matrix.with_borrowed_people.should_accept_borrowed_encoded_record_slice",
+    );
     expect(borrowedPeople.payloadChecksum(), 0);
     expect(borrowedPeople.vectorCount(), 83);
 

@@ -19,7 +19,11 @@ void main() {
 
   test('i8', () {
     expect(echoI8(0), 0);
-    expect(echoI8(-7), -7, reason: "case:should_roundtrip_negative_value");
+    expect(
+      echoI8(-7),
+      -7,
+      reason: "case:primitives.scalars.i8.should_roundtrip_negative_value",
+    );
   });
 
   test('u8', () {

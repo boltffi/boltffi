@@ -38,7 +38,12 @@ void main() {
         ['common'],
       ],
     );
-    expect(echoFilter(groupFilter), groupFilter);
+    expect(
+      echoFilter(groupFilter),
+      groupFilter,
+      reason:
+          "case:enums.complex_variants.filter.by_groups.should_roundtrip_nested_string_vectors",
+    );
 
     final anchors = [Point(x: 0.0, y: 0.0), Point(x: 1.0, y: 2.0)];
     final pointsFilter = Filter.byPoints(anchors: anchors);
@@ -208,7 +213,12 @@ void main() {
     );
 
     final yesMaybeCircle = Shape.maybeCircle(5.0);
-    expect(yesMaybeCircle, isA<Shape$Circle>());
+    expect(
+      yesMaybeCircle,
+      isA<Shape$Circle>(),
+      reason:
+          "case:enums.data_enum.shape.maybe_circle.should_return_some_for_positive_radius",
+    );
 
     final notMaybeCircle = Shape.maybeCircle(0.0);
     expect(
@@ -279,7 +289,8 @@ void main() {
     expect(
       apexSome,
       isA<Shape$Apex>(),
-      reason: "case:enums.data_enum.shape.apex.should_roundtrip_none_payload",
+      reason:
+          "case:enums.data_enum.shape.apex.should_roundtrip_some_point_payload",
     );
     expect((apexSome as Shape$Apex).tip, isNotNull);
     expect(apexSome.tip, Point(x: 3.0, y: 4.0));
@@ -332,7 +343,7 @@ void main() {
     expect(
       messageSummary(Message.ping()),
       'ping',
-      reason: "case:enums.data_enum.message.ping.should_roundtrip_unit_variant",
+      reason: "case:enums.data_enum.message.ping.should_render_ping_summary",
     );
 
     final dog = echoAnimal(Animal.dog(name: 'Rex', breed: 'Labrador'));
@@ -358,9 +369,17 @@ void main() {
     );
     expect((cat as Animal$Cat).name, 'Whiskers');
     expect(cat.indoor, isTrue);
-    expect(animalName(Animal.cat(name: 'Whiskers', indoor: true)), 'Whiskers');
+    expect(
+      animalName(Animal.cat(name: 'Whiskers', indoor: true)),
+      'Whiskers',
+      reason: "case:enums.data_enum.animal.cat.should_derive_name",
+    );
 
-    expect(animalName(Animal.fish(count: 5)), '5 fish');
+    expect(
+      animalName(Animal.fish(count: 5)),
+      '5 fish',
+      reason: "case:enums.data_enum.animal.fish.should_derive_count_label",
+    );
     final fish = echoAnimal(Animal.fish(count: 7));
     expect(
       fish,
@@ -376,7 +395,12 @@ void main() {
         height: 480,
       ),
     );
-    expect(image, isA<Message$Image>());
+    expect(
+      image,
+      isA<Message$Image>(),
+      reason:
+          "case:enums.data_enum.message.image.should_roundtrip_url_dimensions_payload",
+    );
     final img = image as Message$Image;
     expect(img.url, 'https://example.com/cat.png');
     expect(img.width, 640);
@@ -390,10 +414,15 @@ void main() {
         ),
       ),
       'image: 640x480 at https://example.com/cat.png',
+      reason: "case:enums.data_enum.message.image.should_render_image_summary",
     );
 
     final ping = echoMessage(Message.ping());
-    expect(ping, isA<Message$Ping>());
+    expect(
+      ping,
+      isA<Message$Ping>(),
+      reason: "case:enums.data_enum.message.ping.should_roundtrip_unit_variant",
+    );
 
     final redirect = echoApiResponse(
       ApiResponse.redirect(url: 'https://example.com/new'),
@@ -402,13 +431,22 @@ void main() {
       redirect,
       isA<ApiResponse$Redirect>(),
       reason:
-          "case:enums.complex_variants.api_response.success.should_roundtrip_string_payload",
+          "case:enums.complex_variants.api_response.redirect.should_roundtrip_url_payload",
     );
     expect((redirect as ApiResponse$Redirect).url, 'https://example.com/new');
 
     final success = echoApiResponse(ApiResponse.success(data: 'ok'));
-    expect(success, isA<ApiResponse$Success>());
-    expect(isSuccess(ApiResponse.success(data: 'data')), isTrue);
+    expect(
+      success,
+      isA<ApiResponse$Success>(),
+      reason:
+          "case:enums.complex_variants.api_response.success.should_roundtrip_string_payload",
+    );
+    expect(
+      isSuccess(ApiResponse.success(data: 'data')),
+      isTrue,
+      reason: "case:enums.complex_variants.api_response.success.should_identify_success",
+    );
     expect(
       isSuccess(ApiResponse.empty()),
       isFalse,

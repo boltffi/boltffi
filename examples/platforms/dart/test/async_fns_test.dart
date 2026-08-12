@@ -68,7 +68,11 @@ void main() {
       reason:
           "case:async_fns.results.fetch_data.should_return_scaled_positive_id",
     );
-    expect(() => fetchData(0), throwsBoltException("invalid id"));
+    expect(
+      () => fetchData(0),
+      throwsBoltException("invalid id"),
+      reason: "case:async_fns.results.fetch_data.should_reject_non_positive_id",
+    );
 
     final counting = await asyncGetNumbers(4);
     expect(

@@ -5,6 +5,11 @@ void main() {
   test('strings', () {
     expect(echoString('hello'), 'hello');
     expect(
+      borrowedStaticString(),
+      'borrowed static',
+      reason: "case:primitives.strings.borrowed_static_string.should_return_value",
+    );
+    expect(
       echoString(''),
       '',
       reason: "case:primitives.strings.string.should_roundtrip_empty",

@@ -80,7 +80,22 @@ void main() {
       2,
       reason: "case:options.complex.vec.should_report_length_for_some",
     );
-    expect(optionalVecLength(null), isNull);
+    expect(
+      optionalVecLength(null),
+      isNull,
+      reason: "case:options.complex.vec.should_return_none_for_absent_length",
+    );
+
+    expect(
+      radiusIfCircle(Shape.circle(radius: 5.0)),
+      5.0,
+      reason: "case:options.complex.shape.should_return_radius_for_circle",
+    );
+    expect(
+      radiusIfCircle(Shape.rectangle(width: 2.0, height: 3.0)),
+      isNull,
+      reason: "case:options.complex.shape.should_return_none_for_non_circle",
+    );
 
     expect(
       findName(3),

@@ -28,6 +28,11 @@ use boltffi::*;
         python,
         reason = ExclusionReason::CoverageGap,
         details = "This regression fixture is currently enabled only for the C# demo."
+    ),
+    exclude(
+        dart,
+        reason = ExclusionReason::ImplementationGap,
+        details = "The native Dart target does not emit a binding for a closure parameter accepting a direct-vector Vec<i32> argument at all -- apply_vector_closure doesn't appear in the generated output, so there is nothing to call."
     )
 )]
 #[export]

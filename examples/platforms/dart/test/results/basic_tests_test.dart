@@ -83,6 +83,18 @@ void main() {
     );
 
     expect(
+      isEven(4),
+      isTrue,
+      reason: 'case:results.basic.is_even.should_return_parity',
+    );
+    expect(isEven(3), isFalse);
+    expect(
+      () => isEven(-1),
+      throwsBoltException('negative input'),
+      reason: 'case:results.basic.is_even.should_reject_negative_input',
+    );
+
+    expect(
       validateName('Dart'),
       'Hello, Dart!',
       reason: 'case:results.basic.validate_name.should_greet_valid_name',
