@@ -576,9 +576,9 @@ pub fn render_parameter(
                     let populate = vector.populate(&storage, name.as_str())?;
                     let public_type = type_name::direct_vector(element, context)?;
                     let writeback = match receive {
-                        Receive::ByMutRef => vec![format!(
-                            "{name}.setAll(0, {storage}.ptr.asTypedList({name}.length));"
-                        )],
+                        Receive::ByMutRef => {
+                            vec![vector.writeback(&storage, name.as_str())?]
+                        }
                         _ => Vec::new(),
                     };
                     let argument = DartArgument::new(

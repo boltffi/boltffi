@@ -46,6 +46,35 @@ impl PrimitiveVector {
         })
     }
 
+    /// Copies a mutable direct-vector's native storage back into the host
+    /// list after the call (`&mut [T]` parameters). `Bool`, `ISize`, and
+    /// `USize` have no `Pointer<T>.asTypedList()` view in `dart:ffi` -- same
+    /// reason `populate` and `copied_from` special-case them above -- so
+    /// they're copied back element by element instead.
+    pub fn writeback(&self, storage: &str, source: &str) -> Result<String> {
+        Ok(match self.primitive {
+            Primitive::Bool => format!(
+                "{source}.setAll(0, List<bool>.generate({source}.length, (_l$index) => {storage}.ptr.cast<$$ffi.Uint8>().elementAt(_l$index).value != 0));"
+            ),
+            Primitive::ISize | Primitive::USize => format!(
+                "{source}.setAll(0, List<int>.generate({source}.length, (_l$index) => {storage}.ptr.elementAt(_l$index).value));"
+            ),
+            Primitive::I8
+            | Primitive::U8
+            | Primitive::I16
+            | Primitive::U16
+            | Primitive::I32
+            | Primitive::U32
+            | Primitive::I64
+            | Primitive::U64
+            | Primitive::F32
+            | Primitive::F64 => {
+                format!("{source}.setAll(0, {storage}.ptr.asTypedList({source}.length));")
+            }
+            _ => return super::super::unsupported("unknown direct-vector primitive"),
+        })
+    }
+
     pub fn copied_from(&self, pointer: &str, length: &str) -> Result<String> {
         let copied = match self.primitive {
             Primitive::Bool => format!(

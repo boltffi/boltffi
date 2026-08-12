@@ -15,7 +15,7 @@ use crate::{
 
 use super::super::super::{
     codec::{
-        Reader, Sizer, ValueScope, WriteStatement, Writer, primitive_read_method,
+        Reader, Sizer, ValueScope, WriteStatement, Writer, primitive_read_method, primitive_size,
         primitive_write_method,
     },
     name_style::Name,
@@ -89,7 +89,7 @@ impl CallbackMethod {
             .iter()
             .zip(slot.source_parameter_groups())
             .map(|(parameter, group)| {
-                CallbackParameter::from_declaration(parameter, group, slot, context)
+                CallbackParameter::from_declaration(parameter, group, slot, bridge, context)
             })
             .collect::<Result<Vec<_>>>()?;
         let name = Name::new(declaration.name()).lower_camel()?;
@@ -680,24 +680,29 @@ fn render_async_entry(
     let mut catches = Vec::new();
     if let ErrorDecl::EncodedViaReturnSlot { ty, codec, .. } = declaration.callable().error() {
         let binding = error_catch_binding(ty, context)?;
-        // A C-style enum error crosses as a bare 4-byte discriminant, not a
-        // wire-encoded payload -- a data enum (with variant fields) still
-        // needs the normal codec below, since it has no `.value` getter.
-        let is_c_style_enum = matches!(
-            ty,
-            TypeRef::Enum(id) if matches!(context.enumeration(*id), Some(EnumDecl::CStyle(_)))
-        );
-        let mut body = if is_c_style_enum {
+        // A C-style enum error crosses as a bare discriminant in its
+        // declared repr width, not a wire-encoded payload -- a data enum
+        // (with variant fields) still needs the normal codec below, since
+        // it has no `.value` getter.
+        let c_style_repr = match ty {
+            TypeRef::Enum(id) => match context.enumeration(*id) {
+                Some(EnumDecl::CStyle(decl)) => Some(decl.repr()),
+                _ => None,
+            },
+            _ => None,
+        };
+        let mut body = if let Some(repr) = c_style_repr {
+            let primitive = repr.primitive();
+            let size = primitive_size(primitive);
+            let write_method = primitive_write_method(primitive);
             vec![
+                format!("final _l$errorStorage = _$$BoltCallocPtr<$$ffi.Uint8>.alloc({size});"),
                 format!(
-                    "final _l$errorStorage = _$$BoltCallocPtr<$$ffi.Uint8>.alloc(4);"
-                ),
-                format!(
-                    "_l$errorStorage.ptr.cast<$$ffi.Int32>().value = {}.value;",
+                    "_$$BoltWireEncoder(_$$BoltBufWriter.fromSpan(_l$errorStorage.ptr, _l$errorStorage.len)).{write_method}({}.value);",
                     binding.name
                 ),
                 format!(
-                    "final _l$errorBuffer = _f${}(_l$errorStorage.ptr, 4);",
+                    "final _l$errorBuffer = _f${}(_l$errorStorage.ptr, {size});",
                     bridge.support().buffer_from_bytes()?.name()
                 ),
             ]

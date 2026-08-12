@@ -83,7 +83,13 @@ impl ClosureArgument {
                 let OutgoingParam::Value(_) = parameter.payload() else {
                     return super::super::unsupported("nested closure parameter");
                 };
-                CallbackParameter::from_declaration(parameter, parameter_group, protocol, context)
+                CallbackParameter::from_declaration(
+                    parameter,
+                    parameter_group,
+                    protocol,
+                    bridge,
+                    context,
+                )
             })
             .collect::<Result<Vec<_>>>()?;
 

@@ -4,7 +4,7 @@ use boltffi_binding::{
 };
 
 use crate::{
-    bridge::c::{ParameterGroup, Type as CBridgeType},
+    bridge::c::{CBridgeContract, ParameterGroup},
     core::{Error, RenderContext, Result},
 };
 
@@ -31,6 +31,7 @@ impl CallbackParameter {
         parameter: &boltffi_binding::ParamDecl<Native, OutOfRust>,
         group: &ParameterGroup,
         parameters: &impl NativeParameterSource,
+        bridge: &CBridgeContract,
         context: &RenderContext<Native>,
     ) -> Result<Self> {
         let OutgoingParam::Value(plan) = parameter.payload() else {
@@ -134,7 +135,7 @@ impl CallbackParameter {
                 ))
             }
             ParamPlan::DirectVec { element, .. } => {
-                Self::direct_vector(name, element, group, parameters, context)
+                Self::direct_vector(name, element, group, parameters, bridge, context)
             }
             ParamPlan::Handle {
                 target, presence, ..
@@ -189,6 +190,7 @@ impl CallbackParameter {
         element: &DirectVectorElementType,
         group: &ParameterGroup,
         parameters: &impl NativeParameterSource,
+        bridge: &CBridgeContract,
         context: &RenderContext<Native>,
     ) -> Result<Self> {
         let ParameterGroup::DirectVector(vector) = group else {
@@ -230,14 +232,13 @@ impl CallbackParameter {
             DirectVectorElementType::Record(record) => {
                 let public_record =
                     type_name::direct_value(&DirectValueType::Record(*record), context)?;
-                let native = match parameters.parameter(vector.pointer()).ty() {
-                    CBridgeType::ConstPointer(inner) | CBridgeType::MutPointer(inner) => {
-                        super::super::super::native::NativeType::from_c(inner)?
-                            .native()
-                            .to_owned()
-                    }
-                    _ => return broken("direct-record vector pointer type"),
-                };
+                // The C bridge crosses a direct-record vector as packed bytes
+                // (see `DirectVectorElementType::Record` in
+                // `bridge/c/parameter/direct_vector.rs`), so the pointer
+                // parameter's own type is `Uint8`, not the record struct --
+                // the native struct name has to come from the record's own
+                // registration on the bridge instead.
+                let native = super::super::super::native::direct_record_struct(bridge, *record)?;
                 let storage = format!("_l${name}Storage");
                 let entry_setup = vec![format!(
                     "final _l${name}Count = {length} ~/ $$ffi.sizeOf<{}>();",
