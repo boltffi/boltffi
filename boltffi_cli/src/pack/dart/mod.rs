@@ -1,3 +1,7 @@
+use std::path::Path;
+
+use boltffi_bindgen::target::Target;
+
 use crate::{
     build::{
         BindingExpansion, BuildOptions, BuildSelection, Builder, CargoBuildProfile, OutputCallback,
@@ -10,7 +14,11 @@ use crate::{
         pack::PackDartOptions,
     },
     config::Config,
-    pack::{PackError, print_cargo_line, resolve_build_cargo_args},
+    pack::{
+        PackError,
+        dart_web::{generate_and_vendor_web, pack_wrapped_wasm_module},
+        print_cargo_line, resolve_build_cargo_args,
+    },
     reporter::{Reporter, Step},
 };
 
@@ -151,21 +159,236 @@ pub(crate) fn pack_dart(
 
     step.finish_success();
 
+    // Matches the same experimental gate `pack dart-web`/`should_process`
+    // apply everywhere else -- `targets.dart_web.enabled = true` alone
+    // must not bypass the experimental opt-in this target still requires.
+    if config.should_process(Target::DartWeb, options.experimental) {
+        unify_native_and_web(config, &options, &package_dir, reporter)?;
+    }
+
     reporter.finish();
     Ok(())
+}
+
+// Folds the dart_web output into this same package: native goes under
+// src/native, web under src/web, picked by Dart's own
+// dart.library.js_interop conditional export.
+fn unify_native_and_web(
+    config: &Config,
+    options: &PackDartOptions,
+    package_dir: &Path,
+    reporter: &Reporter,
+) -> Result<()> {
+    reporter.section("🔗", "Unifying native + web Dart packages");
+
+    let package_name = &config.package.name;
+    let lib_dir = package_dir.join("lib");
+    let native_dir = lib_dir.join("src/native");
+    let web_dir = lib_dir.join("src/web");
+
+    {
+        let step = reporter.step("Moving native bindings under src/native");
+        move_native_bindings(&lib_dir, &native_dir, package_name)?;
+        step.finish_success();
+    }
+
+    {
+        let step = reporter.step("Realigning the native asset ID");
+        patch_native_asset_name(package_dir, &config.crate_artifact_name())?;
+        step.finish_success();
+    }
+
+    pack_wrapped_wasm_module(config, &options.execution, reporter)?;
+    // Always regenerate the web half here, independent of
+    // options.execution.regenerate: that flag is calibrated for the
+    // *native* bindings (already generated once elsewhere in a `release`
+    // pipeline, so skipping a redundant regeneration is safe there), but
+    // web_dir is the only place this ever gets populated -- a top-level
+    // `generate --target=all` writes dart_web output to
+    // targets.dart_web.output instead. Reusing regenerate=false here would
+    // leave lib/src/web empty even though the shim below exports it.
+    generate_and_vendor_web(
+        config,
+        &options.execution,
+        true,
+        options.experimental,
+        &web_dir,
+        reporter,
+    )?;
+    let web_module_name = config.dart_web_module_name();
+
+    {
+        let step = reporter.step("Writing the conditional-export shim");
+        let shim_path = lib_dir.join(format!("{package_name}.dart"));
+        std::fs::write(
+            &shim_path,
+            conditional_export_shim(package_name, &web_module_name),
+        )
+        .map_err(|source| CliError::WriteFailed {
+            path: shim_path,
+            source,
+        })?;
+        step.finish_success();
+    }
+
+    {
+        let step = reporter.step("Writing web setup instructions");
+        write_web_setup_doc(package_dir, package_name, &web_module_name)?;
+        step.finish_success();
+    }
+
+    Ok(())
+}
+
+// Two cases must be a no-op rather than an error:
+// - A second `pack dart` with `--regenerate=false` leaves `lib/<package>.dart`
+//   as the conditional-export shim this same function wrote last time, not
+//   fresh native bindings -- moving it would clobber the real native
+//   bindings already sitting in native_dir.
+// - A prior `unify_native_and_web` run already moved the file here and then
+//   failed later (e.g. the wasm/web half failed to build) -- on retry,
+//   `lib/<package>.dart` no longer exists at all, but native_dir already
+//   has it; treating a missing source as an error would make that failure
+//   unrecoverable without deleting native_dir by hand.
+fn move_native_bindings(lib_dir: &Path, native_dir: &Path, package_name: &str) -> Result<()> {
+    std::fs::create_dir_all(native_dir).map_err(|source| CliError::CreateDirectoryFailed {
+        path: native_dir.to_path_buf(),
+        source,
+    })?;
+    let native_file = lib_dir.join(format!("{package_name}.dart"));
+    let native_dest = native_dir.join(format!("{package_name}.dart"));
+    if !native_file.exists() && native_dest.exists() {
+        return Ok(());
+    }
+    let existing =
+        std::fs::read_to_string(&native_file).map_err(|source| CliError::ReadFailed {
+            path: native_file.clone(),
+            source,
+        })?;
+    if existing.starts_with("library;\n\nexport 'src/native/") {
+        return Ok(());
+    }
+    std::fs::rename(&native_file, &native_dest).map_err(|source| CliError::CopyFailed {
+        from: native_file,
+        to: native_dest,
+        source,
+    })
+}
+
+// A `@Native` annotation with no explicit `assetId:` resolves against the
+// *current library's own URI* by default. Before this move, that URI was
+// `package:<name>/<artifact>.dart`, matching the code asset the build hook
+// registers under that same bare name -- but move_native_bindings just
+// relocated the file to lib/src/native/<artifact>.dart, changing its
+// default-resolved assetId to `package:<name>/src/native/<artifact>.dart`
+// without touching the hook. Every native call would fail to resolve at
+// runtime unless the hook's registered asset name is realigned to match.
+//
+// Idempotent the same way move_native_bindings is: a second `pack dart`
+// with `--regenerate=false` sees a hook/build.dart already patched by a
+// prior run (regeneration would have overwritten it with the unpatched
+// template again, but that only happens before this function runs).
+fn patch_native_asset_name(package_dir: &Path, artifact_name: &str) -> Result<()> {
+    let hook_path = package_dir.join("hook/build.dart");
+    let source = std::fs::read_to_string(&hook_path).map_err(|source| CliError::ReadFailed {
+        path: hook_path.clone(),
+        source,
+    })?;
+    let unpatched = format!("const assetName = \"{artifact_name}.dart\";");
+    let patched = format!("const assetName = \"src/native/{artifact_name}.dart\";");
+    if source.contains(&patched) {
+        return Ok(());
+    }
+    if !source.contains(&unpatched) {
+        return Err(CliError::CommandFailed {
+            command: format!("expected {} to declare `{unpatched}`", hook_path.display()),
+            status: None,
+        });
+    }
+    std::fs::write(&hook_path, source.replace(&unpatched, &patched)).map_err(|source| {
+        CliError::WriteFailed {
+            path: hook_path,
+            source,
+        }
+    })
+}
+
+fn conditional_export_shim(package_name: &str, web_module_name: &str) -> String {
+    format!(
+        "library;\n\n\
+         export 'src/native/{package_name}.dart'\n\
+         \x20\x20\x20\x20if (dart.library.js_interop) 'src/web/{web_module_name}.dart';\n"
+    )
+}
+
+fn write_web_setup_doc(
+    package_dir: &Path,
+    package_name: &str,
+    web_module_name: &str,
+) -> Result<()> {
+    let js_namespace = format!("__boltffi_{web_module_name}");
+    let doc = format!(
+        "# Web setup\n\n\
+         The contents of `lib/src/web/` have to be copied into your app's `web/`\n\
+         directory (Flutter or plain Dart web) once. They won't be picked up\n\
+         automatically just by depending on this package.\n\n\
+         ## 1. Copy these files, from `lib/src/web/`\n\n\
+         - `{web_module_name}_web_loader.mjs`\n\
+         - `web/` (whole folder — compiled JS, the wasm binary, and the vendored runtime)\n\n\
+         No npm install, no build step — everything here resolves via plain relative\n\
+         imports a browser understands natively.\n\n\
+         ## 2. Add this to `web/index.html`, before your compiled app's own script tag\n\n\
+         ```html\n\
+         <script type=\"module\" src=\"{web_module_name}_web_loader.mjs\"></script>\n\
+         ```\n\n\
+         ## 3. Call this once before using the package\n\n\
+         ```dart\n\
+         import 'package:{package_name}/{package_name}.dart';\n\n\
+         await boltffiInit();\n\
+         ```\n\n\
+         `boltffiInit()` only *waits* for the module the script tag above already\n\
+         started loading — it doesn't load anything itself. On native (dart:ffi)\n\
+         targets, `boltffiInit()` isn't part of the generated API at all; only the\n\
+         web half needs it.\n\n\
+         ---\n\n\
+         Why the manual copy: `pack dart` only ever runs in this package's own repo,\n\
+         never in a consuming app's build — there's no hook it could use to place\n\
+         files into an app it doesn't know about. And Flutter's own asset-bundling\n\
+         system (`flutter: assets:`) isn't a safe substitute here: it serves files\n\
+         through a different pipeline that doesn't guarantee the correct MIME types\n\
+         for `.wasm`/`.js`, which can silently break loading in production.\n\n\
+         The global JS namespace this package's web half uses is `{js_namespace}` —\n\
+         only relevant if you're debugging, never something you need to reference.\n"
+    );
+    let doc_path = package_dir.join("WEB_SETUP.md");
+    std::fs::write(&doc_path, doc).map_err(|source| CliError::WriteFailed {
+        path: doc_path,
+        source,
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use super::{BindingExpansion, BuildSelection, dart_build_options, dart_expansion};
+    use super::{
+        BindingExpansion, BuildSelection, conditional_export_shim, dart_build_options,
+        dart_expansion, move_native_bindings, patch_native_asset_name, write_web_setup_doc,
+    };
     use crate::config::Config;
 
     fn parse_config(input: &str) -> Config {
         let parsed: Config = toml::from_str(input).expect("toml parse failed");
         parsed.validate().expect("config validation failed");
         parsed
+    }
+
+    fn unique_temp_dir(prefix: &str) -> std::path::PathBuf {
+        let unique_suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time before unix epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!("{prefix}-{unique_suffix}"))
     }
 
     /// `pack dart` must build the cdylib as a binding expansion, not a plain
@@ -191,13 +414,7 @@ mod tests {
     /// erroring on the ambiguity.
     #[test]
     fn dart_expansion_prefers_the_configured_artifact_over_an_ambiguous_ffi_target_set() {
-        let unique_suffix = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("system time before unix epoch")
-            .as_nanos();
-        let crate_dir = std::env::temp_dir().join(format!(
-            "boltffi-dart-multi-ffi-target-test-{unique_suffix}"
-        ));
+        let crate_dir = unique_temp_dir("boltffi-dart-multi-ffi-target-test");
         std::fs::create_dir_all(crate_dir.join("src")).expect("create src dir");
         std::fs::create_dir_all(crate_dir.join("examples")).expect("create examples dir");
         std::fs::write(
@@ -227,5 +444,206 @@ mod tests {
 
         std::fs::remove_dir_all(&crate_dir).expect("cleanup temp dir");
         assert!(expansion.is_ok(), "{:?}", expansion.err());
+    }
+
+    #[test]
+    fn conditional_export_shim_picks_web_only_under_js_interop() {
+        let shim = conditional_export_shim("demo", "demo");
+
+        assert_eq!(
+            shim,
+            "library;\n\n\
+             export 'src/native/demo.dart'\n\
+             \x20\x20\x20\x20if (dart.library.js_interop) 'src/web/demo.dart';\n"
+        );
+    }
+
+    #[test]
+    fn conditional_export_shim_references_a_custom_web_module_name() {
+        let shim = conditional_export_shim("demo", "demo_web");
+
+        assert!(shim.contains("if (dart.library.js_interop) 'src/web/demo_web.dart';"));
+    }
+
+    #[test]
+    fn move_native_bindings_relocates_the_generated_file() {
+        let package_dir = unique_temp_dir("boltffi-move-native-bindings-test");
+        let lib_dir = package_dir.join("lib");
+        let native_dir = lib_dir.join("src/native");
+        std::fs::create_dir_all(&lib_dir).expect("create lib dir");
+        std::fs::write(lib_dir.join("demo.dart"), "library demo;\n").expect("write native file");
+
+        move_native_bindings(&lib_dir, &native_dir, "demo").expect("move succeeds");
+
+        assert!(!lib_dir.join("demo.dart").exists());
+        let moved = std::fs::read_to_string(native_dir.join("demo.dart")).expect("moved file");
+        assert_eq!(moved, "library demo;\n");
+
+        std::fs::remove_dir_all(&package_dir).expect("cleanup temp dir");
+    }
+
+    /// `@Native` with no explicit `assetId:` resolves against its own
+    /// library's default URI -- after move_native_bindings relocates the
+    /// file, the hook's still-registered bare asset name no longer
+    /// matches, so every native call fails at runtime unless this patch
+    /// realigns it to the new relative path.
+    #[test]
+    fn patch_native_asset_name_realigns_the_hook_asset_path() {
+        let package_dir = unique_temp_dir("boltffi-patch-native-asset-name-test");
+        let hook_dir = package_dir.join("hook");
+        std::fs::create_dir_all(&hook_dir).expect("create hook dir");
+        std::fs::write(
+            hook_dir.join("build.dart"),
+            "const assetName = \"demo.dart\";\n",
+        )
+        .expect("write hook file");
+
+        patch_native_asset_name(&package_dir, "demo").expect("patch succeeds");
+
+        let patched =
+            std::fs::read_to_string(hook_dir.join("build.dart")).expect("patched hook file");
+        assert_eq!(patched, "const assetName = \"src/native/demo.dart\";\n");
+
+        std::fs::remove_dir_all(&package_dir).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn patch_native_asset_name_is_a_no_op_when_already_patched() {
+        let package_dir = unique_temp_dir("boltffi-patch-native-asset-name-idempotent-test");
+        let hook_dir = package_dir.join("hook");
+        std::fs::create_dir_all(&hook_dir).expect("create hook dir");
+        std::fs::write(
+            hook_dir.join("build.dart"),
+            "const assetName = \"src/native/demo.dart\";\n",
+        )
+        .expect("write already-patched hook file");
+
+        patch_native_asset_name(&package_dir, "demo").expect("patch is a no-op");
+
+        let unchanged = std::fs::read_to_string(hook_dir.join("build.dart")).expect("hook file");
+        assert_eq!(unchanged, "const assetName = \"src/native/demo.dart\";\n");
+
+        std::fs::remove_dir_all(&package_dir).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn patch_native_asset_name_fails_when_the_hook_does_not_declare_the_expected_asset_name() {
+        let package_dir = unique_temp_dir("boltffi-patch-native-asset-name-mismatch-test");
+        let hook_dir = package_dir.join("hook");
+        std::fs::create_dir_all(&hook_dir).expect("create hook dir");
+        std::fs::write(
+            hook_dir.join("build.dart"),
+            "const assetName = \"other.dart\";\n",
+        )
+        .expect("write hook file");
+
+        let result = patch_native_asset_name(&package_dir, "demo");
+
+        assert!(result.is_err());
+        std::fs::remove_dir_all(&package_dir).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn move_native_bindings_fails_when_the_native_file_is_missing() {
+        let package_dir = unique_temp_dir("boltffi-move-native-bindings-missing-test");
+        let lib_dir = package_dir.join("lib");
+        let native_dir = lib_dir.join("src/native");
+        std::fs::create_dir_all(&lib_dir).expect("create lib dir");
+
+        let result = move_native_bindings(&lib_dir, &native_dir, "demo");
+
+        assert!(result.is_err());
+        std::fs::remove_dir_all(&package_dir).expect("cleanup temp dir");
+    }
+
+    /// A second `pack dart --regenerate=false` must not clobber the real
+    /// native bindings already sitting in native_dir with the shim
+    /// `lib/<package>.dart` was rewritten into on the previous run.
+    #[test]
+    fn move_native_bindings_is_a_no_op_when_the_lib_file_is_already_the_shim() {
+        let package_dir = unique_temp_dir("boltffi-move-native-bindings-idempotent-test");
+        let lib_dir = package_dir.join("lib");
+        let native_dir = lib_dir.join("src/native");
+        std::fs::create_dir_all(&native_dir).expect("create native dir");
+        std::fs::write(
+            native_dir.join("demo.dart"),
+            "library demo;\n// real native bindings\n",
+        )
+        .expect("write existing native bindings");
+        std::fs::write(
+            lib_dir.join("demo.dart"),
+            conditional_export_shim("demo", "demo"),
+        )
+        .expect("write shim as lib file");
+
+        move_native_bindings(&lib_dir, &native_dir, "demo").expect("move is a no-op");
+
+        let native = std::fs::read_to_string(native_dir.join("demo.dart")).expect("native file");
+        assert_eq!(native, "library demo;\n// real native bindings\n");
+
+        std::fs::remove_dir_all(&package_dir).expect("cleanup temp dir");
+    }
+
+    /// If a prior `unify_native_and_web` run moved the file here and then
+    /// failed later (e.g. the wasm/web half failed to build), retrying must
+    /// not error just because `lib/<package>.dart` no longer exists --
+    /// native_dir already has it from the earlier attempt.
+    #[test]
+    fn move_native_bindings_is_a_no_op_when_already_moved_by_a_prior_failed_attempt() {
+        let package_dir = unique_temp_dir("boltffi-move-native-bindings-retry-test");
+        let lib_dir = package_dir.join("lib");
+        let native_dir = lib_dir.join("src/native");
+        std::fs::create_dir_all(&native_dir).expect("create native dir");
+        std::fs::write(
+            native_dir.join("demo.dart"),
+            "library demo;\n// real native bindings\n",
+        )
+        .expect("write existing native bindings");
+        // lib_dir exists but lib/demo.dart does not -- the state left behind
+        // by a prior run that moved the file and then failed before writing
+        // the shim.
+        std::fs::create_dir_all(&lib_dir).expect("create lib dir");
+
+        move_native_bindings(&lib_dir, &native_dir, "demo").expect("move is a no-op");
+
+        let native = std::fs::read_to_string(native_dir.join("demo.dart")).expect("native file");
+        assert_eq!(native, "library demo;\n// real native bindings\n");
+
+        std::fs::remove_dir_all(&package_dir).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn write_web_setup_doc_lists_the_files_to_copy_and_the_js_namespace() {
+        let package_dir = unique_temp_dir("boltffi-write-web-setup-doc-test");
+        std::fs::create_dir_all(&package_dir).expect("create package dir");
+
+        write_web_setup_doc(&package_dir, "demo", "demo").expect("doc writes");
+
+        let doc =
+            std::fs::read_to_string(package_dir.join("WEB_SETUP.md")).expect("doc is readable");
+        assert!(doc.contains("demo_web_loader.mjs"));
+        assert!(doc.contains("import 'package:demo/demo.dart';"));
+        assert!(doc.contains("__boltffi_demo"));
+        // Plain `init()` would collide with a Rust crate exporting a
+        // function of the same very plausible name.
+        assert!(doc.contains("await boltffiInit();"));
+
+        std::fs::remove_dir_all(&package_dir).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn write_web_setup_doc_references_a_custom_web_module_name() {
+        let package_dir = unique_temp_dir("boltffi-write-web-setup-doc-custom-module-test");
+        std::fs::create_dir_all(&package_dir).expect("create package dir");
+
+        write_web_setup_doc(&package_dir, "demo", "demo_web").expect("doc writes");
+
+        let doc =
+            std::fs::read_to_string(package_dir.join("WEB_SETUP.md")).expect("doc is readable");
+        assert!(doc.contains("demo_web_web_loader.mjs"));
+        assert!(doc.contains("import 'package:demo/demo.dart';"));
+        assert!(doc.contains("`__boltffi_demo_web`"));
+
+        std::fs::remove_dir_all(&package_dir).expect("cleanup temp dir");
     }
 }

@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { AsyncFutureManager, BoltFFIModule, instantiateBoltFFI } from "../src/module.js";
+import {
+  AsyncFutureManager,
+  BoltFFICancelledError,
+  BoltFFIModule,
+  instantiateBoltFFI,
+} from "../src/module.js";
 import { CallbackRegistry } from "../src/callback.js";
 import { StreamPollManager, StreamPollResult, StreamSession } from "../src/stream.js";
 import {
@@ -561,6 +566,96 @@ describe("BoltFFIModule async completion", () => {
     ).toThrow("invalid argument");
 
     expect(freedAllocations).toContainEqual([256, 4]);
+  });
+});
+
+describe("AsyncFutureManager cancellation", () => {
+  const PENDING = 0;
+  const CANCELLED = -1;
+
+  it("rejects immediately when the signal is already aborted", async () => {
+    const { module } = createHarness();
+    const controller = new AbortController();
+    controller.abort();
+    const pollSync = vi.fn().mockReturnValue(PENDING);
+    const cancel = vi.fn();
+
+    // A real Rust poll_sync unconditionally reports Cancelled once marked,
+    // so the mock does the same once `cancel` has been invoked.
+    pollSync.mockImplementation(() => (cancel.mock.calls.length > 0 ? CANCELLED : PENDING));
+
+    await expect(
+      module.asyncManager.pollAsync(
+        1,
+        pollSync,
+        () => 0,
+        () => {},
+        cancel,
+        controller.signal
+      )
+    ).rejects.toThrow(BoltFFICancelledError);
+    expect(cancel).toHaveBeenCalledWith(1);
+  });
+
+  it("rejects when the signal aborts reentrantly during the initial poll", async () => {
+    const { module } = createHarness();
+    const controller = new AbortController();
+    const cancel = vi.fn(() => controller.abort());
+    let polls = 0;
+    const pollSync = vi.fn(() => {
+      polls += 1;
+      // First poll: nothing has cancelled the future yet, so it's still
+      // running -- but the abort happens to fire during this exact call
+      // (simulating a signal aborted reentrantly mid-poll, not just before
+      // the call started), which is the scenario `signal.aborted` must
+      // still catch since AbortSignal never replays a past event.
+      if (polls === 1) {
+        controller.abort();
+        return PENDING;
+      }
+      return CANCELLED;
+    });
+
+    await expect(
+      module.asyncManager.pollAsync(
+        2,
+        pollSync,
+        () => 0,
+        () => {},
+        cancel,
+        controller.signal
+      )
+    ).rejects.toThrow(BoltFFICancelledError);
+    expect(polls).toBe(2);
+  });
+
+  it("cancels a pending call via cancelById using the id passed to pollAsync", async () => {
+    const { module } = createHarness();
+    const cancel = vi.fn();
+    let cancelled = false;
+    const pollSync = vi.fn(() => (cancelled ? CANCELLED : PENDING));
+    cancel.mockImplementation(() => {
+      cancelled = true;
+    });
+
+    const pending = module.asyncManager.pollAsync(
+      3,
+      pollSync,
+      () => 0,
+      () => {},
+      cancel,
+      undefined,
+      42
+    );
+    module.asyncManager.cancelById(42);
+
+    await expect(pending).rejects.toThrow(BoltFFICancelledError);
+    expect(cancel).toHaveBeenCalledWith(3);
+  });
+
+  it("treats cancelById as a no-op for an unknown or already-settled id", () => {
+    const { module } = createHarness();
+    expect(() => module.asyncManager.cancelById(999)).not.toThrow();
   });
 });
 

@@ -29,6 +29,7 @@ pub struct Function {
     returns: TypeName,
     body: Vec<Statement>,
     asynchronous: bool,
+    async_options: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -48,6 +49,13 @@ struct Return {
     arguments: Vec<Expression>,
     cleanup: Vec<Statement>,
     success: Vec<Statement>,
+}
+
+// `pre_setup` must run before parameter setup, so an already-aborted call
+// bails out before transferring anything to Rust with no cleanup path.
+struct AsyncCall {
+    pre_setup: Vec<Statement>,
+    body: Vec<Statement>,
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -256,6 +264,7 @@ impl Function {
             body: &'function [Statement],
             static_method: bool,
             asynchronous: bool,
+            async_options: &'function Option<String>,
         }
 
         Ok(MethodDeclaration::new(
@@ -266,6 +275,7 @@ impl Function {
                 body: &self.body,
                 static_method,
                 asynchronous: self.asynchronous,
+                async_options: &self.async_options,
             }
             .render()?,
         ))
@@ -392,6 +402,7 @@ impl Function {
             returns: &'function TypeName,
             body: &'function [Statement],
             asynchronous: bool,
+            async_options: &'function Option<String>,
         }
 
         Ok(MethodDeclaration::new(
@@ -401,6 +412,7 @@ impl Function {
                 returns: &self.returns,
                 body: &self.body,
                 asynchronous: self.asynchronous,
+                async_options: &self.async_options,
             }
             .render()?,
         ))
@@ -516,7 +528,14 @@ impl Function {
             .iter()
             .flat_map(|parameter| parameter.cleanup.iter().cloned())
             .collect::<Vec<_>>();
-        let (call, asynchronous) = match callable.execution() {
+        // A `__boltffi`-prefixed fallback avoids colliding with a real
+        // `options` parameter, or with a plain `boltffiOptions` fallback
+        // colliding with a declared `boltffi_options`.
+        let options_name = match parameters.iter().any(|p| p.name.to_string() == "options") {
+            true => Identifier::known("__boltffiOptions"),
+            false => Identifier::known("options"),
+        };
+        let (pre_setup, call, asynchronous, async_options) = match callable.execution() {
             ExecutionDecl::Synchronous(_) => {
                 let arguments = arguments
                     .into_iter()
@@ -539,7 +558,7 @@ impl Function {
                         false => vec![Statement::try_finally(call, returns.cleanup.clone())],
                     })
                     .collect();
-                (call, false)
+                (Vec::new(), call, false, None)
             }
             ExecutionDecl::Asynchronous(protocol) => {
                 if receiver
@@ -548,13 +567,19 @@ impl Function {
                 {
                     return Err(Self::unsupported("asynchronous mutable receiver"));
                 }
+                let async_call = returns.render_async(
+                    Expression::native_call(symbol, arguments),
+                    protocol,
+                    &failure,
+                    &options_name,
+                )?;
                 (
-                    returns.render_async(
-                        Expression::native_call(symbol, arguments),
-                        protocol,
-                        &failure,
-                    )?,
+                    async_call.pre_setup,
+                    async_call.body,
                     true,
+                    Some(format!(
+                        "{options_name}?: {{ signal?: AbortSignal }}, __boltffiCancelId?: number"
+                    )),
                 )
             }
             _ => return Err(Self::unsupported("unknown execution protocol")),
@@ -563,7 +588,9 @@ impl Function {
             .as_ref()
             .into_iter()
             .flat_map(|receiver| receiver.setup.iter().cloned());
-        let body = receiver_setup
+        let body = pre_setup
+            .into_iter()
+            .chain(receiver_setup)
             .chain(parameter_setup)
             .chain(match parameter_cleanup.is_empty() {
                 true => call,
@@ -583,6 +610,7 @@ impl Function {
             returns: return_type,
             body,
             asynchronous,
+            async_options,
         })
     }
 
@@ -1434,14 +1462,15 @@ impl Return {
         start: Expression,
         protocol: &wasm32::AsyncProtocol,
         failure: &Failure,
-    ) -> Result<Vec<Statement>> {
+        options_name: &Identifier,
+    ) -> Result<AsyncCall> {
         let wasm32::AsyncProtocol::PollHandle {
             handle,
             poll_sync,
             complete,
+            cancel,
             free,
             panic_message,
-            ..
         } = protocol
         else {
             return Err(Function::unsupported("unknown asynchronous protocol"));
@@ -1453,7 +1482,7 @@ impl Return {
         let awaited = Identifier::known("__boltffiAwaitedFuture");
         let callback_handle = Identifier::known("__boltffiHandle");
         let callback_value = Expression::identifier(callback_handle.clone());
-        let lifecycle = [poll_sync, panic_message, free]
+        let lifecycle = [poll_sync, panic_message, free, cancel]
             .into_iter()
             .map(|symbol| {
                 Ok(Expression::parameter_lambda(
@@ -1467,6 +1496,30 @@ impl Return {
                 ))
             })
             .collect::<Result<Vec<_>>>()?;
+        let signal = Identifier::known("__boltffiSignal");
+        // A separate trailing parameter, not nested in `options`, for
+        // callers that can pass a bare number but not build a JS object
+        // cheaply. `signal` stays the only mechanism idiomatic callers see.
+        let cancel_id = Identifier::known("__boltffiCancelId");
+        // Reading off a plain optional options parameter, rather than
+        // destructuring it in the signature, avoids allocating a fresh `{}`
+        // on every call that omits it.
+        let signal_binding = Statement::constant(
+            signal.clone(),
+            Expression::optional_property(
+                Expression::identifier(options_name.clone()),
+                Identifier::known("signal"),
+            ),
+        );
+        // Runs before parameter setup, matching `fetch()`: an already-
+        // aborted signal rejects immediately, before anything is allocated.
+        let signal_check = Statement::throw_when(
+            Expression::optional_property(
+                Expression::identifier(signal.clone()),
+                Identifier::known("aborted"),
+            ),
+            Expression::construct("BoltFFICancelledError", ArgumentList::default()),
+        );
         let poll = Expression::call(
             Expression::property(
                 Expression::identifier(Identifier::known("_module")),
@@ -1475,6 +1528,10 @@ impl Return {
             Identifier::known("pollAsync"),
             std::iter::once(Expression::identifier(future.clone()))
                 .chain(lifecycle)
+                .chain([
+                    Expression::identifier(signal),
+                    Expression::identifier(cancel_id),
+                ])
                 .collect::<ArgumentList>(),
         )
         .await_value();
@@ -1490,11 +1547,14 @@ impl Return {
                 .into_iter()
                 .collect::<ArgumentList>(),
         ));
-        Ok(vec![
-            Statement::constant(future, start),
-            Statement::constant(awaited, poll),
-            Statement::try_finally(completion, vec![release]),
-        ])
+        Ok(AsyncCall {
+            pre_setup: vec![signal_binding, signal_check],
+            body: vec![
+                Statement::constant(future, start),
+                Statement::constant(awaited, poll),
+                Statement::try_finally(completion, vec![release]),
+            ],
+        })
     }
 
     fn render_async_completion(

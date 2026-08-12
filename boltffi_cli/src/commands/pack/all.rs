@@ -6,9 +6,9 @@ use crate::reporter::Reporter;
 
 use super::{
     PackAllOptions, PackAndroidOptions, PackAppleOptions, PackCSharpOptions, PackDartOptions,
-    PackJavaOptions, PackKmpOptions, PackPythonOptions, PackWasmOptions, pack_android, pack_apple,
-    pack_csharp, pack_dart, pack_kmp, pack_prepared_java, pack_python, pack_wasm,
-    prepare_java_pack,
+    PackDartWebOptions, PackJavaOptions, PackKmpOptions, PackPythonOptions, PackWasmOptions,
+    pack_android, pack_apple, pack_csharp, pack_dart, pack_dart_web, pack_kmp, pack_prepared_java,
+    pack_python, pack_wasm, prepare_java_pack,
 };
 
 pub(super) fn pack_all(
@@ -86,6 +86,7 @@ pub(super) fn pack_all(
             config,
             PackWasmOptions {
                 execution: options.execution.clone(),
+                require_npm_metadata: true,
             },
             reporter,
         )?;
@@ -113,6 +114,24 @@ pub(super) fn pack_all(
         pack_dart(
             config,
             PackDartOptions {
+                execution: options.execution.clone(),
+                experimental: options.experimental,
+            },
+            reporter,
+        )?;
+        packed_any = true;
+    }
+
+    // When `dart` is also enabled, `pack_dart` above already folds the web
+    // half in via `unify_native_and_web` -- packing it again standalone
+    // here would rebuild/repack the wasm module a second time and produce
+    // a redundant `dart_web.output` directory alongside the unified package.
+    if config.should_process(Target::DartWeb, options.experimental)
+        && !config.should_process(Target::Dart, options.experimental)
+    {
+        pack_dart_web(
+            config,
+            PackDartWebOptions {
                 execution: options.execution.clone(),
                 experimental: options.experimental,
             },

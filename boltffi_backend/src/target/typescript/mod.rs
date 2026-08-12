@@ -1276,8 +1276,13 @@ mod tests {
             .expect("browser module");
 
         assert!(browser.contents().contains(
-            "export async function asyncAdd(left: number, right: number): Promise<number>"
+            "export async function asyncAdd(left: number, right: number, options?: { signal?: AbortSignal }, __boltffiCancelId?: number): Promise<number>"
         ));
+        assert!(
+            browser
+                .contents()
+                .contains("const __boltffiSignal = options?.signal;")
+        );
         assert!(
             browser
                 .contents()
@@ -1287,18 +1292,30 @@ mod tests {
         assert!(
             browser
                 .contents()
-                .contains("export async function asyncName(value: string): Promise<string>")
+                .contains("if (__boltffiSignal?.aborted) throw new BoltFFICancelledError();")
         );
-        assert!(browser.contents().contains("_module.takePackedUtf8String("));
-        assert!(browser.contents().contains(
-            "export async function asyncValues(value: readonly number[] | Int32Array): Promise<Int32Array>"
-        ));
-        assert!(browser.contents().contains("_module.takeSlotI32Array()"));
+        assert!(browser.contents().contains("__boltffiHandle) =>"));
         assert!(
             browser
                 .contents()
-                .contains("export async function asyncSize(): Promise<number>")
+                .contains(", __boltffiSignal, __boltffiCancelId)")
         );
+        assert!(
+            browser
+                .contents()
+                .contains("import { BoltFFICancelledError,")
+        );
+        assert!(browser.contents().contains(
+            "export async function asyncName(value: string, options?: { signal?: AbortSignal }, __boltffiCancelId?: number): Promise<string>"
+        ));
+        assert!(browser.contents().contains("_module.takePackedUtf8String("));
+        assert!(browser.contents().contains(
+            "export async function asyncValues(value: readonly number[] | Int32Array, options?: { signal?: AbortSignal }, __boltffiCancelId?: number): Promise<Int32Array>"
+        ));
+        assert!(browser.contents().contains("_module.takeSlotI32Array()"));
+        assert!(browser.contents().contains(
+            "export async function asyncSize(options?: { signal?: AbortSignal }, __boltffiCancelId?: number): Promise<number>"
+        ));
         assert!(
             !browser
                 .contents()
@@ -1314,13 +1331,115 @@ mod tests {
                 "AsyncPointCodec.decode(_module.readerFromWriter(__boltffiReturnWriter))"
             )
         );
-        assert!(browser.contents().contains("async get(): Promise<number>"));
+        assert!(browser.contents().contains(
+            "async get(options?: { signal?: AbortSignal }, __boltffiCancelId?: number): Promise<number>"
+        ));
+        assert!(browser.contents().contains(
+            "async duplicate(options?: { signal?: AbortSignal }, __boltffiCancelId?: number): Promise<Worker>"
+        ));
+        assert!(browser.contents().contains("Worker._fromHandle("));
+    }
+
+    #[test]
+    fn checks_an_aborted_signal_before_any_parameter_setup_runs() {
+        // A `String` parameter's setup allocates ownership Rust will take on
+        // the native call -- if the pre-abort check ran after that setup
+        // instead of before it, an already-aborted call would leak the
+        // allocation with no cleanup path.
+        let output = TypeScriptHost::new("demo")
+            .expect("host constructs")
+            .into_target()
+            .render(&async_bindings())
+            .expect("target renders");
+        let browser = output
+            .files()
+            .iter()
+            .find(|file| file.path().as_path().ends_with("demo.ts"))
+            .expect("browser module");
+        let source = browser.contents();
+
+        let abort_check = source
+            .find("if (__boltffiSignal?.aborted) throw new BoltFFICancelledError();")
+            .expect("pre-abort check present");
+        let param_setup = source
+            .find("_module.allocOwnedString(value)")
+            .expect("string parameter setup present");
+        assert!(
+            abort_check < param_setup,
+            "pre-abort check must run before parameter setup:\n{source}"
+        );
+    }
+
+    #[test]
+    fn appends_an_internal_options_name_when_the_callable_already_has_one() {
+        let output = TypeScriptHost::new("demo")
+            .expect("host constructs")
+            .into_target()
+            .render(&async_bindings_with_options_param())
+            .expect("target renders");
+        let browser = output
+            .files()
+            .iter()
+            .find(|file| file.path().as_path().ends_with("demo.ts"))
+            .expect("browser module");
+
+        assert!(browser.contents().contains(
+            "export async function asyncEcho(options: string, __boltffiOptions?: { signal?: AbortSignal }, __boltffiCancelId?: number): Promise<string>"
+        ));
         assert!(
             browser
                 .contents()
-                .contains("async duplicate(): Promise<Worker>")
+                .contains("const __boltffiSignal = __boltffiOptions?.signal;")
         );
-        assert!(browser.contents().contains("Worker._fromHandle("));
+    }
+
+    fn async_bindings_with_options_param() -> Bindings<Wasm32> {
+        let source = boltffi_scan::scan_file(
+            syn::parse_str(
+                r#"
+                #[export]
+                pub async fn async_echo(options: String) -> String { options }
+                "#,
+            )
+            .expect("valid source"),
+            PackageInfo::new("demo", None),
+        )
+        .expect("source scans");
+        lower::<Wasm32>(&source).expect("source lowers")
+    }
+
+    #[test]
+    fn falls_back_to_a_double_underscore_options_name_when_the_plain_fallback_also_collides() {
+        // A callable declaring both `options` and `boltffi_options` would
+        // make a plain `boltffiOptions` fallback collide too -- the
+        // generated name must stay collision-free either way.
+        let source = boltffi_scan::scan_file(
+            syn::parse_str(
+                r#"
+                #[export]
+                pub async fn async_echo(options: String, boltffi_options: String) -> String {
+                    format!("{options}{boltffi_options}")
+                }
+                "#,
+            )
+            .expect("valid source"),
+            PackageInfo::new("demo", None),
+        )
+        .expect("source scans");
+        let output = TypeScriptHost::new("demo")
+            .expect("host constructs")
+            .into_target()
+            .render(&lower::<Wasm32>(&source).expect("source lowers"))
+            .expect("target renders");
+        let browser = output
+            .files()
+            .iter()
+            .find(|file| file.path().as_path().ends_with("demo.ts"))
+            .expect("browser module");
+
+        assert!(browser.contents().contains(
+            "export async function asyncEcho(options: string, boltffiOptions: string, __boltffiOptions?: { signal?: AbortSignal }, __boltffiCancelId?: number): Promise<string>"
+        ));
     }
 
     #[test]

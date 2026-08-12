@@ -70,10 +70,12 @@ interface PendingFuture {
   pollSync: (handle: number) => number;
   panicMessage: (handle: number) => number;
   free: (handle: number) => void;
+  cancel: (handle: number) => void;
 }
 
 export class AsyncFutureManager {
   private pendingFutures = new Map<number, PendingFuture>();
+  private cancelIds = new Map<number, number>();
   private wokenHandles = new Set<number>();
   private drainScheduled = false;
   private _module: BoltFFIModule | null = null;
@@ -115,6 +117,25 @@ export class AsyncFutureManager {
     }
   }
 
+  // Cancelling only marks the future's state, so this forces a repoll --
+  // deferred rather than immediate, since `cancel` can fire synchronously
+  // from within a Rust future's own poll (e.g. a callback that aborts its
+  // own signal), and repolling right here would reenter it mid-poll.
+  private cancel(handle: number): void {
+    const entry = this.pendingFutures.get(handle);
+    if (!entry) return;
+    entry.cancel(handle);
+    queueMicrotask(() => this.repollHandle(handle));
+  }
+
+  // A lower-level counterpart to `signal` for callers that can pass a
+  // plain int but not cheaply build a real AbortController.
+  cancelById(callId: number): void {
+    const handle = this.cancelIds.get(callId);
+    if (handle === undefined) return;
+    this.cancel(handle);
+  }
+
   private extractAsyncError(
     handle: number,
     status: number,
@@ -140,7 +161,10 @@ export class AsyncFutureManager {
     handle: number,
     pollSync: (handle: number) => number,
     panicMessage: (handle: number) => number,
-    free: (handle: number) => void
+    free: (handle: number) => void,
+    cancel: (handle: number) => void,
+    signal?: AbortSignal,
+    cancelId?: number
   ): Promise<number> {
     // Poll before registering. An async fn that never yields — the common
     // case, and the whole of `async_add` — was paying a Map insert, a Map
@@ -157,8 +181,46 @@ export class AsyncFutureManager {
         this.extractAsyncError(handle, status, panicMessage, free)
       );
     }
+    // The signal may have aborted before this poll returned, or reentrantly
+    // during it -- AbortSignal never replays a past event, so a listener
+    // registered only below would miss it and leave the future running.
+    if (signal?.aborted) {
+      cancel(handle);
+      const cancelledStatus = pollSync(handle);
+      return Promise.reject(
+        this.extractAsyncError(handle, cancelledStatus, panicMessage, free)
+      );
+    }
     return new Promise((resolve, reject) => {
-      this.pendingFutures.set(handle, { resolve, reject, pollSync, panicMessage, free });
+      let onAbort: (() => void) | undefined;
+      if (signal) {
+        onAbort = () => this.cancel(handle);
+        signal.addEventListener("abort", onAbort, { once: true });
+      }
+      if (cancelId !== undefined) {
+        this.cancelIds.set(cancelId, handle);
+      }
+      // Detach on settle: a signal shared across many calls would otherwise
+      // accumulate one dead listener per finished call, and a stale cancelId
+      // could reach a different, unrelated call once `handle` is recycled.
+      const detach = (): void => {
+        if (onAbort) signal!.removeEventListener("abort", onAbort);
+        if (cancelId !== undefined) this.cancelIds.delete(cancelId);
+      };
+      this.pendingFutures.set(handle, {
+        resolve: (h) => {
+          detach();
+          resolve(h);
+        },
+        reject: (error) => {
+          detach();
+          reject(error);
+        },
+        pollSync,
+        panicMessage,
+        free,
+        cancel,
+      });
     });
   }
 }

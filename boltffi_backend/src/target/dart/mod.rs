@@ -2,10 +2,15 @@
 
 mod codec;
 mod default_value;
-mod name_style;
+// dart_web shares these two modules so the web/js_interop target's generated
+// Dart syntax (identifier escaping, camelCase conventions) can never drift
+// from what this native/dart:ffi target already emits -- the unified
+// package's whole premise is that app code sees one Dart API regardless of
+// which half it's actually running against.
+pub(crate) mod name_style;
 mod native;
 mod render;
-mod syntax;
+pub(crate) mod syntax;
 mod type_name;
 mod value_semantics;
 
@@ -598,8 +603,8 @@ mod tests {
 
         let source = file(&output, "demo/lib/demo.dart");
         assert!(source.contains("Point $new(int x, int y)"));
-        assert!(source.contains("factory Message.ping() = Message$Ping;"));
-        assert!(source.contains("factory Message.values({"));
+        assert!(source.contains("const factory Message.ping() = Message$Ping;"));
+        assert!(source.contains("const factory Message.values({"));
         assert!(source.contains("void dispose$()"));
         assert!(source.contains("void dispose()"));
         assert!(source.contains("int $get()"));

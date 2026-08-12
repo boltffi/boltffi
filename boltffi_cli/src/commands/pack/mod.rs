@@ -7,13 +7,14 @@ use crate::reporter::Reporter;
 
 pub use self::request::{
     PackAllOptions, PackAndroidOptions, PackAppleOptions, PackCSharpOptions, PackCommand,
-    PackDartOptions, PackExecutionOptions, PackJavaOptions, PackKmpOptions, PackPythonOptions,
-    PackWasmOptions,
+    PackDartOptions, PackDartWebOptions, PackExecutionOptions, PackJavaOptions, PackKmpOptions,
+    PackPythonOptions, PackWasmOptions,
 };
 pub(crate) use crate::pack::android::pack_android;
 pub(crate) use crate::pack::apple::pack_apple;
 pub(crate) use crate::pack::csharp::pack_csharp;
 pub(crate) use crate::pack::dart::pack_dart;
+pub(crate) use crate::pack::dart_web::pack_dart_web;
 pub(crate) use crate::pack::java::{
     check_java_packaging_prereqs, ensure_java_no_build_supported, pack_java, pack_prepared_java,
     prepare_java_pack,
@@ -32,6 +33,7 @@ pub fn run_pack(config: &Config, command: PackCommand, reporter: &Reporter) -> R
         PackCommand::Java(options) => pack_java(config, options, reporter),
         PackCommand::Python(options) => pack_python(config, options, reporter),
         PackCommand::Dart(options) => pack_dart(config, options, reporter),
+        PackCommand::DartWeb(options) => pack_dart_web(config, options, reporter),
         PackCommand::CSharp(options) => pack_csharp(config, options, reporter),
     }
 }

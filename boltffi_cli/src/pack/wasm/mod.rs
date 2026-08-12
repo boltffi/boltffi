@@ -35,7 +35,8 @@ pub(crate) fn pack_wasm(
             status: None,
         });
     }
-    if config.wasm_npm_generate_package_json() && config.wasm_npm_package_name().is_none() {
+    let generate_npm_metadata = should_generate_npm_metadata(&options, config);
+    if generate_npm_metadata && config.wasm_npm_package_name().is_none() {
         return Err(CliError::CommandFailed {
             command: "targets.wasm.npm.package_name is required for pack wasm".to_string(),
             status: None,
@@ -160,14 +161,14 @@ pub(crate) fn pack_wasm(
     generate_wasm_loader_entrypoints(&module_name, &enabled_targets, &npm_output)?;
     step.finish_success();
 
-    if config.wasm_npm_generate_package_json() {
+    if generate_npm_metadata {
         let step = reporter.step("Generating package.json");
         let package_json_path =
             generate_wasm_package_json(config, &module_name, &enabled_targets, &npm_output)?;
         step.finish_success_with(&format!("{}", package_json_path.display()));
     }
 
-    if config.wasm_npm_generate_readme() {
+    if options.require_npm_metadata && config.wasm_npm_generate_readme() {
         let step = reporter.step("Generating README.md");
         let readme_path =
             generate_wasm_readme(config, &module_name, &enabled_targets, &npm_output)?;
@@ -175,6 +176,10 @@ pub(crate) fn pack_wasm(
     }
 
     Ok(())
+}
+
+fn should_generate_npm_metadata(options: &PackWasmOptions, config: &Config) -> bool {
+    options.require_npm_metadata && config.wasm_npm_generate_package_json()
 }
 
 /// Whether the pack should drop debug sections.
@@ -467,7 +472,8 @@ fn transpile_typescript_bundle(
 mod tests {
     use std::path::PathBuf;
 
-    use super::{WasmArtifactPath, should_strip_debug};
+    use super::{WasmArtifactPath, should_generate_npm_metadata, should_strip_debug};
+    use crate::commands::pack::{PackExecutionOptions, PackWasmOptions};
     use crate::config::{Config, WasmProfile};
 
     fn parse_config(input: &str) -> Config {
@@ -493,6 +499,45 @@ mod tests {
         assert!(!should_strip_debug(
             &parse_config(BARE_CONFIG),
             WasmProfile::Debug
+        ));
+    }
+
+    fn execution_options() -> PackExecutionOptions {
+        PackExecutionOptions {
+            release: false,
+            regenerate: false,
+            no_build: false,
+            deny_skipped: false,
+            cargo_args: Vec::new(),
+        }
+    }
+
+    /// `pack dart-web` wraps `pack wasm` purely for its compiled JS/wasm
+    /// output; it must not be forced to satisfy targets.wasm.npm.package_name
+    /// the way a standalone `pack wasm` does.
+    #[test]
+    fn wrapped_wasm_pack_does_not_require_npm_metadata() {
+        let options = PackWasmOptions {
+            execution: execution_options(),
+            require_npm_metadata: false,
+        };
+
+        assert!(!should_generate_npm_metadata(
+            &options,
+            &parse_config(BARE_CONFIG)
+        ));
+    }
+
+    #[test]
+    fn standalone_wasm_pack_requires_npm_metadata_by_default() {
+        let options = PackWasmOptions {
+            execution: execution_options(),
+            require_npm_metadata: true,
+        };
+
+        assert!(should_generate_npm_metadata(
+            &options,
+            &parse_config(BARE_CONFIG)
         ));
     }
 
