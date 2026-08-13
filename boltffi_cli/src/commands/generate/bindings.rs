@@ -92,6 +92,7 @@ pub fn run_generation(config: &Config, options: &GenerateOptions) -> Result<()> 
         GenerateTarget::Dart => generate_dart(config, options),
         GenerateTarget::CSharp => generate_csharp(config, options),
         GenerateTarget::Header => generate_header(config, options),
+        GenerateTarget::C => generate_c(config, options),
         other => Err(CliError::CommandFailed {
             command: format!("cannot directly generate {}", target_label(other)),
             status: None,
@@ -457,6 +458,45 @@ fn generate_python(config: &Config, options: &GenerateOptions) -> Result<()> {
         expansion.toolchain_selector().map(str::to_owned),
         options.deny_skipped,
     )
+}
+
+fn generate_c(config: &Config, options: &GenerateOptions) -> Result<()> {
+    if !config.is_c_enabled() {
+        return Err(CliError::CommandFailed {
+            command: "targets.c.enabled = false".to_string(),
+            status: None,
+        });
+    }
+
+    if !config.should_process(Target::C, options.experimental) {
+        return Err(CliError::CommandFailed {
+            command: format!(
+                "{} is experimental, use --experimental flag or add \"{}\" to [experimental]",
+                Target::C.name(),
+                Target::C.name()
+            ),
+            status: None,
+        });
+    }
+
+    let expansion = BindingExpansion::resolve_for_commands(
+        config,
+        &["build", "generate"],
+        &options.cargo_args,
+    )?;
+    let output_directory = options.output.clone().unwrap_or_else(|| config.c_output());
+
+    expansion
+        .generation()
+        .coverage_mode(CoverageMode::Partial)
+        .render(Target::C)
+        .map_err(|error| generation_error(Target::C.name(), error))
+        .and_then(|output| {
+            print_coverage(Target::C.name(), &output, options.deny_skipped)?;
+            Generation::write_output(output, &output_directory)
+                .map(drop)
+                .map_err(|error| generation_error(Target::C.name(), error))
+        })
 }
 
 fn generate_kotlin(config: &Config, options: &GenerateOptions) -> Result<()> {
@@ -856,6 +896,7 @@ fn target_label(target: &GenerateTarget) -> &'static str {
         GenerateTarget::Dart => "dart",
         GenerateTarget::Python => "python",
         GenerateTarget::CSharp => "csharp",
+        GenerateTarget::C => "c",
         GenerateTarget::All => "all",
     }
 }

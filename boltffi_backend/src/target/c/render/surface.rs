@@ -10,7 +10,19 @@ use crate::{
 
 use super::prefix::PackagePrefix;
 
-pub fn render(bindings: &Bindings<Native>, context: &RenderContext<Native>) -> Result<String> {
+pub fn render(
+    bindings: &Bindings<Native>,
+    context: &RenderContext<Native>,
+    rendered: &std::collections::HashSet<boltffi_binding::DeclarationId>,
+) -> Result<String> {
+    // Partial coverage may skip declarations. Everything record-shaped uses
+    // the closure of rendered records: a rendered encoded record may embed
+    // another record whose codec the emitted helpers call, so those records
+    // must be included even when their own declaration was skipped.
+    let record_ids = included_record_ids(bindings, rendered);
+    let is_rendered = |decl: &boltffi_binding::Decl<Native>| {
+        rendered.contains(&boltffi_binding::DeclarationRef::from(decl).id())
+    };
     let prefix = PackagePrefix::from_context(context);
     let mut out = String::new();
     out.push_str("#include <stdlib.h>\n#include <string.h>\n\n");
@@ -32,6 +44,9 @@ pub fn render(bindings: &Bindings<Native>, context: &RenderContext<Native>) -> R
     for decl in bindings.decls() {
         match boltffi_binding::DeclarationRef::from(decl) {
             boltffi_binding::DeclarationRef::Enum(EnumDecl::CStyle(enumeration)) => {
+                if !is_rendered(decl) {
+                    continue;
+                }
                 out.push_str(&format!(
                     "typedef ___{} {};\n",
                     Name::new(enumeration.name()).r#type(),
@@ -39,6 +54,9 @@ pub fn render(bindings: &Bindings<Native>, context: &RenderContext<Native>) -> R
                 ));
             }
             boltffi_binding::DeclarationRef::Record(RecordDecl::Direct(record)) => {
+                if !is_rendered(decl) {
+                    continue;
+                }
                 out.push_str(&format!(
                     "typedef ___{} {};\n",
                     Name::new(record.name()).r#type(),
@@ -46,6 +64,9 @@ pub fn render(bindings: &Bindings<Native>, context: &RenderContext<Native>) -> R
                 ));
             }
             boltffi_binding::DeclarationRef::Class(class) => {
+                if !is_rendered(decl) {
+                    continue;
+                }
                 let ty = type_name(&prefix, class.name());
                 out.push_str(&format!(
                     "typedef struct {{ uint64_t _boltffi_handle; }} {ty};\n"
@@ -60,6 +81,9 @@ pub fn render(bindings: &Bindings<Native>, context: &RenderContext<Native>) -> R
         if let boltffi_binding::DeclarationRef::Record(RecordDecl::Encoded(record)) =
             boltffi_binding::DeclarationRef::from(decl)
         {
+            if !record_ids.contains(&record.id()) {
+                continue;
+            }
             let ty = type_name(&prefix, record.name());
             out.push_str(&format!(
                 "typedef struct {ty}View {ty}View;\ntypedef struct {ty} {ty};\n"
@@ -83,6 +107,9 @@ pub fn render(bindings: &Bindings<Native>, context: &RenderContext<Native>) -> R
         if let boltffi_binding::DeclarationRef::Record(record) =
             boltffi_binding::DeclarationRef::from(decl)
         {
+            if !record_ids.contains(&record.id()) {
+                continue;
+            }
             let ty = type_name(&prefix, record.name());
             let slice_element = if matches!(record, RecordDecl::Encoded(_)) {
                 format!("{ty}View")
@@ -101,6 +128,9 @@ pub fn render(bindings: &Bindings<Native>, context: &RenderContext<Native>) -> R
         if let boltffi_binding::DeclarationRef::Record(RecordDecl::Encoded(record)) =
             boltffi_binding::DeclarationRef::from(decl)
         {
+            if !record_ids.contains(&record.id()) {
+                continue;
+            }
             let ty = type_name(&prefix, record.name());
             out.push_str(&format!("struct {ty}View {{\n"));
             for field in record.fields() {
@@ -140,11 +170,72 @@ pub fn render(bindings: &Bindings<Native>, context: &RenderContext<Native>) -> R
         if let boltffi_binding::DeclarationRef::Record(RecordDecl::Encoded(record)) =
             boltffi_binding::DeclarationRef::from(decl)
         {
+            if !record_ids.contains(&record.id()) {
+                continue;
+            }
             out.push_str(&record_codec(record, context)?);
         }
     }
-    out.push_str(&free_helpers(bindings, context)?);
+    out.push_str(&free_helpers(bindings, context, &record_ids)?);
     Ok(out)
+}
+
+/// Collects the records whose surface must be emitted: every rendered record
+/// plus the encoded records they transitively reference through fields.
+fn included_record_ids(
+    bindings: &Bindings<Native>,
+    rendered: &std::collections::HashSet<boltffi_binding::DeclarationId>,
+) -> std::collections::HashSet<boltffi_binding::RecordId> {
+    use std::collections::{HashMap, HashSet};
+
+    let encoded: HashMap<boltffi_binding::RecordId, &boltffi_binding::EncodedRecordDecl<Native>> =
+        bindings
+            .decls()
+            .iter()
+            .filter_map(|decl| match boltffi_binding::DeclarationRef::from(decl) {
+                boltffi_binding::DeclarationRef::Record(RecordDecl::Encoded(record)) => {
+                    Some((record.id(), &**record))
+                }
+                _ => None,
+            })
+            .collect();
+    let mut included: HashSet<boltffi_binding::RecordId> = rendered
+        .iter()
+        .filter_map(|id| match id {
+            boltffi_binding::DeclarationId::Record(record) => Some(*record),
+            _ => None,
+        })
+        .collect();
+    let mut queue: Vec<boltffi_binding::RecordId> = included.iter().copied().collect();
+    while let Some(id) = queue.pop() {
+        let Some(record) = encoded.get(&id) else {
+            continue;
+        };
+        for field in record.fields() {
+            collect_record_refs(field.ty(), &encoded, &mut included, &mut queue);
+        }
+    }
+    included
+}
+
+fn collect_record_refs(
+    ty: &TypeRef,
+    encoded: &std::collections::HashMap<
+        boltffi_binding::RecordId,
+        &boltffi_binding::EncodedRecordDecl<Native>,
+    >,
+    included: &mut std::collections::HashSet<boltffi_binding::RecordId>,
+    queue: &mut Vec<boltffi_binding::RecordId>,
+) {
+    match ty {
+        TypeRef::Record(id) if encoded.contains_key(id) && !included.contains(id) => {
+            included.insert(*id);
+            queue.push(*id);
+        }
+        TypeRef::Optional(inner) => collect_record_refs(inner, encoded, included, queue),
+        TypeRef::Sequence(element) => collect_record_refs(element, encoded, included, queue),
+        _ => {}
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -840,7 +931,11 @@ fn wire_read_stmt(primitive: Primitive, expr: &str, package: &str) -> String {
     format!("{expr} = {};", wire_read_expr(primitive, package))
 }
 
-fn free_helpers(bindings: &Bindings<Native>, context: &RenderContext<Native>) -> Result<String> {
+fn free_helpers(
+    bindings: &Bindings<Native>,
+    context: &RenderContext<Native>,
+    record_ids: &std::collections::HashSet<boltffi_binding::RecordId>,
+) -> Result<String> {
     let mut out = String::new();
     let p = package_member(context);
     let package_type_prefix = package_pascal(context);
@@ -856,6 +951,9 @@ fn free_helpers(bindings: &Bindings<Native>, context: &RenderContext<Native>) ->
         if let boltffi_binding::DeclarationRef::Record(record) =
             boltffi_binding::DeclarationRef::from(decl)
         {
+            if !record_ids.contains(&record.id()) {
+                continue;
+            }
             let ty = type_name(&prefix, record.name());
             let m = Name::new(record.name()).member();
             if matches!(record, RecordDecl::Encoded(encoded) if encoded.fields().iter().any(|field| type_owns(field.ty(), context)))

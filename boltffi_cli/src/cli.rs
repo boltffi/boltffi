@@ -196,6 +196,8 @@ pub(crate) enum GenerateTargetArg {
     Python,
     #[value(help = "Generate C# bindings")]
     Csharp,
+    #[value(help = "Generate experimental C bindings (sync surface)")]
+    C,
     #[value(help = "Generate all bindings")]
     All,
 }
@@ -479,6 +481,7 @@ pub(crate) fn execute_command(
                         GenerateTargetArg::Dart => GenerateTarget::Dart,
                         GenerateTargetArg::Python => GenerateTarget::Python,
                         GenerateTargetArg::Csharp => GenerateTarget::CSharp,
+                        GenerateTargetArg::C => GenerateTarget::C,
                         GenerateTargetArg::All => GenerateTarget::All,
                     })
                     .unwrap_or(GenerateTarget::All),
@@ -1426,6 +1429,21 @@ enabled = true
             Commands::Generate {
                 target: Some(GenerateTargetArg::Csharp),
                 experimental: false,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn cli_parses_generate_c_target() {
+        let cli = Cli::try_parse_from(["boltffi", "generate", "c", "--experimental"])
+            .expect("cli parse should succeed");
+
+        assert!(matches!(
+            cli.command,
+            Commands::Generate {
+                target: Some(GenerateTargetArg::C),
+                experimental: true,
                 ..
             }
         ));
