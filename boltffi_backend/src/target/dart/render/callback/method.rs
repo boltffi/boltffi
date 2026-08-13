@@ -752,9 +752,7 @@ fn render_async_entry(
                 "_l$complete({completion_context}, $$ffi.Struct.create<_$$BoltFFIStatus>()..code = 100);"
             )
         };
-        catches.push(format!(
-            "catch (_l$caught) {{\n  {unexpected}\n}}"
-        ));
+        catches.push(format!("catch (_l$caught) {{\n  {unexpected}\n}}"));
     }
     statements.push(format!(
         "try {{\n{}\n}} {}",
@@ -1186,8 +1184,8 @@ fn decode_direct_vector_return(
             bridge,
             context,
         )?
-            .into_iter()
-            .map(|statement| format!("  {statement}")),
+        .into_iter()
+        .map(|statement| format!("  {statement}")),
     );
     statements.push("  return _l$value;".to_owned());
     statements.push(format!(
