@@ -928,7 +928,7 @@ fn encoded_error_check(
         _ => return super::super::unsupported("Dart encoded error payload"),
     };
     Ok(vec![
-        format!("if ({buffer}.ptr != $$ffi.nullptr && {buffer}.len != 0) {{"),
+        format!("if ({buffer}.ptr != $$ffi.nullptr) {{"),
         "  try {".to_owned(),
         format!(
             "    final _l$errorReader = _$$BoltWireDecoder(_$$BoltBufReader.fromSpan({buffer}.ptr, {buffer}.len));"
