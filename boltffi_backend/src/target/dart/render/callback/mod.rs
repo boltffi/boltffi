@@ -29,7 +29,6 @@ pub struct Callback {
     register_declaration: String,
     create_declaration: String,
     register_name: Identifier,
-    create_name: Identifier,
     native_vtable: NativeVTable,
     interface_methods: Vec<String>,
     proxy_methods: Vec<String>,
@@ -79,7 +78,6 @@ impl Callback {
             register_declaration: native::declaration(protocol.register())?,
             create_declaration: native::declaration(protocol.create_handle())?,
             register_name: Identifier::parse(protocol.register().name())?,
-            create_name: Identifier::parse(protocol.create_handle().name())?,
             native_vtable: NativeVTable::from_protocol(protocol)?,
             interface_methods: methods
                 .iter()
@@ -141,10 +139,6 @@ impl Callback {
 
     fn register_name(&self) -> &Identifier {
         &self.register_name
-    }
-
-    fn create_name(&self) -> &Identifier {
-        &self.create_name
     }
 
     fn native_vtable(&self) -> &NativeVTable {
