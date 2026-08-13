@@ -25,6 +25,11 @@ impl SupportFunctions {
                     Type::Void,
                 )?,
                 Function::new(
+                    "boltffi_buf_into_string",
+                    vec![Parameter::new("buf", Type::Buffer)?],
+                    Type::String,
+                )?,
+                Function::new(
                     "boltffi_buf_from_bytes",
                     vec![
                         Parameter::new("ptr", Type::ConstPointer(Box::new(Type::Uint8)))?,
