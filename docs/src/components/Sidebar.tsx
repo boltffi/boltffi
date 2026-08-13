@@ -172,6 +172,7 @@ const sections: Section[] = [
       { id: "python-packaging", label: "Python" },
     ]
   },
+  { id: "c", label: "C (Experimental)", icon: FlaskConical },
   { 
     id: "configuration", 
     label: "Configuration", 
@@ -182,6 +183,7 @@ const sections: Section[] = [
       { id: "swiftpm-layouts", label: "SwiftPM Layouts" },
       { id: "android-configuration", label: "Android" },
       { id: "java-configuration", label: "Java" },
+      { id: "c-configuration", label: "C (Experimental)" },
       { id: "c-sharp-configuration", label: "C#" },
       { id: "wasm-configuration", label: "WASM" },
       { id: "python-configuration", label: "Python" },

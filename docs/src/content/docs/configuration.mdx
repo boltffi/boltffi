@@ -544,6 +544,22 @@ The default output is `dist/java/android`. The `min_sdk` sets the minimum Androi
 
 Both JVM and Android targets can be enabled simultaneously. They share the same `package`, `module_name`, and `min_version` settings but produce separate output.
 
+<h2 id="c-configuration">C Configuration (experimental)</h2>
+
+Enable the experimental C target and choose its output root:
+
+```toml
+[targets.c]
+enabled = true
+output = "dist/c"
+```
+
+`boltffi generate c --experimental` writes the intermediate header at
+`{output}/boltffi.h`. `boltffi pack c --experimental` stages the public header
+at `{output}/include/<library>.h` and native libraries under `{output}/lib`.
+The target is currently host-oriented; see [C](/docs/c) for supported API
+shapes and platform limitations.
+
 <h2 id="c-sharp-configuration">C# Configuration</h2>
 
 The `[targets.csharp]` section controls C# generation and NuGet packaging.
