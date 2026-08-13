@@ -56,7 +56,9 @@ pub struct Function {
 enum FunctionPlacement {
     TopLevel,
     Static,
-    Getter { associated: bool },
+    Getter {
+        associated: bool,
+    },
     Instance,
     Factory {
         owner: Identifier,
