@@ -35,7 +35,13 @@ impl AsyncFactory {
             reason = ExclusionReason::CoverageGap,
             details = "The Python demo does not yet exercise async class initializers."
         )
-    )]
+    ,
+    exclude(
+        c,
+        reason = ExclusionReason::ImplementationGap,
+        details = "C target is sync-only; async initializers are not yet supported"
+    )
+)]
     pub async fn new(value: i32) -> Self {
         Self { value }
     }

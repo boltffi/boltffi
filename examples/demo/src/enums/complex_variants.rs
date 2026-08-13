@@ -17,26 +17,56 @@ pub enum Filter {
     "enums.complex_variants.filter.none.should_roundtrip_unit_variant",
     justification = "Ensure the unit Filter::None variant crosses the FFI boundary unchanged.",
     directions = "Call `enums::complex_variants::echo_filter` through the generated binding and assert the unit Filter::None variant crosses the FFI boundary unchanged."
+,
+    exclude(
+        c,
+        reason = ExclusionReason::ImplementationGap,
+        details = "C target does not yet surface payload-carrying enums"
+    )
 )]
 #[demo_bench_macros::demo_case(
     "enums.complex_variants.filter.by_name.should_roundtrip_string_payload",
     justification = "Ensure the Filter::ByName variant preserves its string payload when round-tripped.",
     directions = "Call `enums::complex_variants::echo_filter` through the generated binding and assert the Filter::ByName variant preserves its string payload when round-tripped."
+,
+    exclude(
+        c,
+        reason = ExclusionReason::ImplementationGap,
+        details = "C target does not yet surface payload-carrying enums"
+    )
 )]
 #[demo_bench_macros::demo_case(
     "enums.complex_variants.filter.by_tags.should_roundtrip_string_vector_payload",
     justification = "Ensure the Filter::ByTags variant preserves a vector of UTF-8 strings when round-tripped.",
     directions = "Call `enums::complex_variants::echo_filter` through the generated binding and assert the Filter::ByTags variant preserves a vector of UTF-8 strings when round-tripped."
+,
+    exclude(
+        c,
+        reason = ExclusionReason::ImplementationGap,
+        details = "C target does not yet surface payload-carrying enums"
+    )
 )]
 #[demo_bench_macros::demo_case(
     "enums.complex_variants.filter.by_groups.should_roundtrip_nested_string_vectors",
     justification = "Ensure the Filter::ByGroups variant preserves nested UTF-8 string vectors when round-tripped.",
     directions = "Call `enums::complex_variants::echo_filter` through the generated binding and assert the Filter::ByGroups variant preserves nested UTF-8 string vectors when round-tripped."
+,
+    exclude(
+        c,
+        reason = ExclusionReason::ImplementationGap,
+        details = "C target does not yet surface payload-carrying enums"
+    )
 )]
 #[demo_bench_macros::demo_case(
     "enums.complex_variants.filter.by_points.should_roundtrip_record_vector_payload",
     justification = "Ensure the Filter::ByPoints variant preserves a vector of Point records when round-tripped.",
     directions = "Call `enums::complex_variants::echo_filter` through the generated binding and assert the Filter::ByPoints variant preserves a vector of Point records when round-tripped."
+,
+    exclude(
+        c,
+        reason = ExclusionReason::ImplementationGap,
+        details = "C target does not yet surface payload-carrying enums"
+    )
 )]
 #[export]
 pub fn echo_filter(f: Filter) -> Filter {
@@ -47,26 +77,56 @@ pub fn echo_filter(f: Filter) -> Filter {
     "enums.complex_variants.filter.by_name.should_describe_string_payload",
     justification = "Ensure describe_filter renders a ByName string payload in the summary.",
     directions = "Call `enums::complex_variants::describe_filter` through the generated binding and assert describe_filter renders a ByName string payload in the summary."
+,
+    exclude(
+        c,
+        reason = ExclusionReason::ImplementationGap,
+        details = "C target does not yet surface payload-carrying enums"
+    )
 )]
 #[demo_bench_macros::demo_case(
     "enums.complex_variants.filter.by_range.should_describe_numeric_bounds",
     justification = "Ensure describe_filter renders a ByRange numeric lower and upper bound.",
     directions = "Call `enums::complex_variants::describe_filter` through the generated binding and assert describe_filter renders a ByRange numeric lower and upper bound."
+,
+    exclude(
+        c,
+        reason = ExclusionReason::ImplementationGap,
+        details = "C target does not yet surface payload-carrying enums"
+    )
 )]
 #[demo_bench_macros::demo_case(
     "enums.complex_variants.filter.by_tags.should_describe_string_vector_payload",
     justification = "Ensure describe_filter counts the UTF-8 strings in a ByTags vector payload.",
     directions = "Call `enums::complex_variants::describe_filter` through the generated binding and assert describe_filter counts the UTF-8 strings in a ByTags vector payload."
+,
+    exclude(
+        c,
+        reason = ExclusionReason::ImplementationGap,
+        details = "C target does not yet surface payload-carrying enums"
+    )
 )]
 #[demo_bench_macros::demo_case(
     "enums.complex_variants.filter.by_groups.should_describe_nested_string_vectors",
     justification = "Ensure describe_filter counts the outer vector in a ByGroups nested vector payload.",
     directions = "Call `enums::complex_variants::describe_filter` through the generated binding and assert describe_filter counts the outer vector in a ByGroups nested vector payload."
+,
+    exclude(
+        c,
+        reason = ExclusionReason::ImplementationGap,
+        details = "C target does not yet surface payload-carrying enums"
+    )
 )]
 #[demo_bench_macros::demo_case(
     "enums.complex_variants.filter.by_points.should_describe_record_vector_payload",
     justification = "Ensure describe_filter counts Point records in a ByPoints vector payload.",
     directions = "Call `enums::complex_variants::describe_filter` through the generated binding and assert describe_filter counts Point records in a ByPoints vector payload."
+,
+    exclude(
+        c,
+        reason = ExclusionReason::ImplementationGap,
+        details = "C target does not yet surface payload-carrying enums"
+    )
 )]
 #[export]
 pub fn describe_filter(f: Filter) -> String {
@@ -93,11 +153,23 @@ pub enum ApiResponse {
     "enums.complex_variants.api_response.success.should_roundtrip_string_payload",
     justification = "Ensure the ApiResponse::Success variant preserves its string payload when round-tripped.",
     directions = "Call `enums::complex_variants::echo_api_response` through the generated binding and assert the ApiResponse::Success variant preserves its string payload when round-tripped."
+,
+    exclude(
+        c,
+        reason = ExclusionReason::ImplementationGap,
+        details = "C target does not yet surface payload-carrying enums"
+    )
 )]
 #[demo_bench_macros::demo_case(
     "enums.complex_variants.api_response.redirect.should_roundtrip_url_payload",
     justification = "Ensure the ApiResponse::Redirect variant preserves its URL payload when round-tripped.",
     directions = "Call `enums::complex_variants::echo_api_response` through the generated binding and assert the ApiResponse::Redirect variant preserves its URL payload when round-tripped."
+,
+    exclude(
+        c,
+        reason = ExclusionReason::ImplementationGap,
+        details = "C target does not yet surface payload-carrying enums"
+    )
 )]
 #[export]
 pub fn echo_api_response(response: ApiResponse) -> ApiResponse {
@@ -108,11 +180,23 @@ pub fn echo_api_response(response: ApiResponse) -> ApiResponse {
     "enums.complex_variants.api_response.success.should_identify_success",
     justification = "Ensure is_success returns true for the ApiResponse::Success variant.",
     directions = "Call `enums::complex_variants::is_success` through the generated binding and assert is_success returns true for the ApiResponse::Success variant."
+,
+    exclude(
+        c,
+        reason = ExclusionReason::ImplementationGap,
+        details = "C target does not yet surface payload-carrying enums"
+    )
 )]
 #[demo_bench_macros::demo_case(
     "enums.complex_variants.api_response.empty.should_not_identify_as_success",
     justification = "Ensure is_success returns false for the ApiResponse::Empty variant.",
     directions = "Call `enums::complex_variants::is_success` through the generated binding and assert is_success returns false for the ApiResponse::Empty variant."
+,
+    exclude(
+        c,
+        reason = ExclusionReason::ImplementationGap,
+        details = "C target does not yet surface payload-carrying enums"
+    )
 )]
 #[export]
 pub fn is_success(response: ApiResponse) -> bool {
