@@ -238,7 +238,15 @@ impl<'a> State<'a> {
                 let c = surface::direct_vector_type(element, self.context, use_)?;
                 self.params.push(format!("{c} {name}"));
                 self.args.push(format!("{name}.ptr"));
-                self.args.push(format!("{name}.len"));
+                // Packed direct-record vectors carry a byte count; typed
+                // primitive vectors carry an element count.
+                self.args.push(match element {
+                    boltffi_binding::DirectVectorElementType::Record(_) => format!(
+                        "{name}.len * sizeof({})",
+                        surface::direct_vector_element_type(element, self.context)?
+                    ),
+                    _ => format!("{name}.len"),
+                });
             }
             ParamPlan::Handle {
                 target: HandleTarget::Callback(id),
@@ -250,6 +258,7 @@ impl<'a> State<'a> {
             }
             ParamPlan::Handle {
                 target: HandleTarget::Class(id),
+                receive,
                 ..
             } => {
                 let class = self.context.class(*id).ok_or(Error::BrokenBridgeContract {
@@ -258,8 +267,17 @@ impl<'a> State<'a> {
                 })?;
                 let c = PackagePrefix::from_context(self.context)
                     .type_name(&Name::new(class.name()).r#type());
-                self.params.push(format!("const {c} *{name}"));
-                self.args.push(format!("{name}->_boltffi_handle"));
+                if *receive == Receive::ByValue {
+                    // Ownership transfers to the Rust side, which frees the
+                    // handle after the call; invalidate the caller's copy.
+                    self.params.push(format!("{c} *{name}"));
+                    self.args.push(format!("{name}->_boltffi_handle"));
+                    self.cleanup
+                        .push(format!("    {name}->_boltffi_handle = 0;"));
+                } else {
+                    self.params.push(format!("const {c} *{name}"));
+                    self.args.push(format!("{name}->_boltffi_handle"));
+                }
             }
             _ => return unsupported("callable parameter plan"),
         }

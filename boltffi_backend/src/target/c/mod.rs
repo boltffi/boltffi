@@ -159,6 +159,12 @@ impl host::HostBackend for CHost {
         _context: &RenderContext<Self::Surface>,
         declarations: Vec<RenderedDeclaration<'decl, Self::Surface>>,
     ) -> Result<GeneratedOutput> {
+        // Partial coverage may skip declarations; the semantic surface may
+        // only emit types whose declarations actually rendered.
+        let rendered: std::collections::HashSet<boltffi_binding::DeclarationId> = declarations
+            .iter()
+            .map(|declaration| declaration.declaration().id())
+            .collect();
         let emitted = declarations
             .into_iter()
             .map(|declaration| declaration.into_parts().1)
@@ -170,7 +176,7 @@ impl host::HostBackend for CHost {
         let file = crate::core::FilePlan::all(crate::core::FilePath::new("boltffi.h")?)
             .with_preamble(format!(
                 "\n{}\n#ifdef __cplusplus\nextern \"C\" {{\n#endif\n{}",
-                render::surface::render(_bindings, _context)?,
+                render::surface::render(_bindings, _context, &rendered)?,
                 render::result::preamble()
             ))
             .with_postamble("\n#ifdef __cplusplus\n}\n#endif\n");
