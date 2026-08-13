@@ -8,7 +8,7 @@ use crate::{
 
 use super::super::{
     LowerError, codecs, enums, error::UnsupportedType, ids::DeclarationIds, index::Index, metadata,
-    records, surface::SurfaceLower, symbol::SymbolAllocator, types,
+    opaque, records, surface::SurfaceLower, symbol::SymbolAllocator, types,
 };
 
 use super::{
@@ -62,6 +62,15 @@ where
     D::Opposite: ParamDirection<S>,
 {
     let type_expr = substitute_self_type(owner, &parameter.type_expr)?;
+    // A native opaque record only ever travels out of Rust as an owned handle.
+    // Accepting one as a parameter would fall through to the encoded-record
+    // path and render wire encoding against a handle-only host wrapper, so it
+    // is rejected here rather than mis-rendered downstream.
+    if opaque::contains(index, &type_expr) {
+        return Err(LowerError::unsupported_type(
+            UnsupportedType::NativeOpaqueRecordParameter,
+        ));
+    }
     let receive = receive_for_passing(parameter.passing);
     let canonical_name = CanonicalName::from(&parameter.name);
     let meta = metadata::element_meta(

@@ -10,6 +10,7 @@ use boltffi_ast::RecordDef;
 use boltffi_binding::{EncodedRecordDecl, Native, Primitive};
 use proc_macro2::TokenStream;
 use quote::quote;
+use syn::Type;
 
 use crate::expansion::{error::Error, wrapper::names};
 
@@ -17,14 +18,18 @@ use crate::expansion::{error::Error, wrapper::names};
 pub(crate) fn render(
     source: &RecordDef,
     binding: &EncodedRecordDecl<Native>,
+    rust_type: &Type,
 ) -> Result<TokenStream, Error> {
     if !binding.initializers().is_empty() || !binding.methods().is_empty() {
         return Err(Error::UnsupportedExpansion(
             "native opaque record initializers and methods",
         ));
     }
-    let record_ident = names::SourceSpelling::new(&source.name)
-        .ident("source record name is not a Rust identifier")?;
+    // These exports are emitted at crate root, so the record has to be named by
+    // the crate-root-qualified path the expander resolved. A bare source
+    // identifier only resolves for records that happen to be re-exported at the
+    // root, and silently fails to compile for module-nested ones.
+    let record_ident = rust_type;
 
     let exports = binding
         .native_opaque_exports()

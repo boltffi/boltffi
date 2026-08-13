@@ -317,14 +317,17 @@ fn native_opaque_source_field_supported(ty: &TypeExpr) -> bool {
     }
 }
 
+// `InternedString` is deliberately absent: no host that advertises
+// `NativeOpaqueRecords` also advertises `InternedString`, so admitting the
+// shape here would mint tag/id/borrow helper symbols that every target then
+// refuses during capability negotiation. Reject it at the source instead, and
+// widen this when a host renders the interned accessor surface.
 fn native_opaque_owned_field_supported(ty: &TypeExpr) -> bool {
-    matches!(
-        ty,
-        TypeExpr::Primitive(_) | TypeExpr::String | TypeExpr::InternedString { .. }
-    ) || matches!(
-        ty,
-        TypeExpr::Vec(element) if matches!(element.as_ref(), TypeExpr::Primitive(boltffi_ast::Primitive::U8))
-    )
+    matches!(ty, TypeExpr::Primitive(_) | TypeExpr::String)
+        || matches!(
+            ty,
+            TypeExpr::Vec(element) if matches!(element.as_ref(), TypeExpr::Primitive(boltffi_ast::Primitive::U8))
+        )
 }
 
 // Keep this check after lowering as a defense-in-depth assertion over the IR.

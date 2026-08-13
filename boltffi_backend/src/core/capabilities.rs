@@ -520,26 +520,18 @@ mod tests {
     }
 
     #[test]
-    fn analysis_propagates_native_opaque_and_interned_requirements_to_dependents() {
+    fn analysis_propagates_native_opaque_requirements_to_dependents() {
         use boltffi_ast::PackageInfo;
         use boltffi_binding::{Native, lower};
 
         let source = boltffi_scan::scan_file(
             syn::parse_str(
                 r#"
-                use boltffi::InternedString;
-
-                boltffi::interned_string_pool! {
-                    pub BrowserName {
-                        Chrome = "Chrome",
-                    }
-                }
-
                 #[data(opaque)]
                 pub struct Snapshot {
                     pub count: u32,
-                    pub browser: InternedString<BrowserName>,
-                    pub maybe_browser: Option<InternedString<BrowserName>>,
+                    pub label: String,
+                    pub tag: Option<String>,
                 }
 
                 #[export]
@@ -566,12 +558,6 @@ mod tests {
                     .any(|capability| capability == BindingCapability::NativeOpaqueRecords),
                 "native opaque capability must propagate to every dependent declaration"
             );
-            assert!(
-                requirements
-                    .iter()
-                    .any(|capability| capability == BindingCapability::InternedString),
-                "interned-string capability must propagate from native opaque record fields"
-            );
             match DeclarationRef::from(declaration) {
                 DeclarationRef::Record(_) | DeclarationRef::Function(_) => {}
                 other => panic!("unexpected declaration in test contract: {other:?}"),
@@ -582,12 +568,6 @@ mod tests {
                 .contract_requirements()
                 .iter()
                 .any(|capability| capability == BindingCapability::NativeOpaqueRecords)
-        );
-        assert!(
-            analysis
-                .contract_requirements()
-                .iter()
-                .any(|capability| capability == BindingCapability::InternedString)
         );
     }
 

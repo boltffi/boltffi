@@ -363,7 +363,7 @@ impl<'expansion, 'lowered> Encoded<'expansion, 'lowered, Native> {
         // An opaque record exposes no initializers or wire methods; its whole
         // host surface is the generated handle accessors.
         if self.binding.is_native_opaque() {
-            return native_opaque::render(self.source, self.binding);
+            return native_opaque::render(self.source, self.binding, &rust_type);
         }
         associated_fn::AssociatedFunctions::new(
             RecordOwner {

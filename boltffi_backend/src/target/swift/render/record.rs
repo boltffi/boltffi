@@ -107,7 +107,7 @@ impl Record {
         match declaration {
             RecordDecl::Direct(record) => Self::from_direct(record, bridge, context),
             RecordDecl::Encoded(record) if record.is_native_opaque() => {
-                Self::from_native_opaque(record, context)
+                Self::from_native_opaque(record, bridge, context)
             }
             RecordDecl::Encoded(record) => Self::from_encoded(record, bridge, context),
             _ => Err(SwiftHost::unsupported("unknown record declaration")),
@@ -249,7 +249,8 @@ impl Record {
 
     fn from_native_opaque(
         record: &EncodedRecordDecl<Native>,
-        _context: &RenderContext<Native>,
+        bridge: &CBridgeContract,
+        context: &RenderContext<Native>,
     ) -> Result<Self> {
         let exports = record
             .native_opaque_exports()
@@ -273,7 +274,13 @@ impl Record {
                 opaque_fields,
             },
             fields: Vec::new(),
-            constants: AssociatedConstants::empty(),
+            // Associated constants stay valid on an opaque record: they are
+            // compile-time values on the type, not reads through the handle.
+            constants: AssociatedConstants::from_owner(
+                ConstantOwner::Record(record.id()),
+                bridge,
+                context,
+            )?,
             initializers: Vec::new(),
             static_methods: Vec::new(),
             instance_methods: Vec::new(),
