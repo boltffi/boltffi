@@ -553,7 +553,7 @@ mod tests {
         assert!(source.contains("_p$writer.writeU8(mode.value);"));
         assert!(source.contains("WideMode._m$fromDiscriminant(_p$reader.readU64())"));
         assert!(source.contains("_p$writer.writeU64(wideMode.value);"));
-        assert!(source.contains("$$convert.utf8.encode(endpoint.toString()).length"));
+        assert!(source.contains("((endpoint).toString().length * 3)"));
         assert!(source.contains("$$BoltResult.err($$BoltException(_p$reader.readString()))"));
         assert!(source.contains(".writeString(_l$boltffiValue0.message);"));
         assert!(source.contains("utf8.encode(_l$boltffiValue0.message).length"));
@@ -623,7 +623,7 @@ mod tests {
 
         let source = file(&output, "demo/lib/demo.dart");
         assert!(source.contains("(int,) echoSingle((int,) value)"));
-        assert!(source.contains("return (_l$resultReader.readI32(),);"));
+        assert!(source.contains("_l$decodedResult = (_l$resultReader.readI32(),);"));
         assert!(source.contains("writeI32(value.$1);"));
         assert!(output.diagnostics().is_empty());
     }

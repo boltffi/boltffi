@@ -137,16 +137,19 @@ final class _$$BoltCallocPtr<T extends $$ffi.SizedNativeType>
 }
 
 abstract class _$$BoltStoragePool {
-  static const int kMinCapacity = 1 << 4;
+  // 8 (not 16) so small fixed-size payloads -- e.g. a data enum variant with
+  // just a discriminant + one f64 -- still land in a bucket instead of
+  // falling through to an unpooled alloc on every call.
+  static const int kMinCapacity = 1 << 3;
   static const int kMaxCapacity = 1 << 20;
-  static const int kBucketCount = 17;
+  static const int kBucketCount = 18;
   static const int kCapacityPerBucket = 4;
 
   static final List<_$$BoltCallocPtr<$$ffi.Uint8>?> buckets = List.filled(kCapacityPerBucket * kBucketCount, null);
   static final $$typed_data.Uint8List counts = $$typed_data.Uint8List(kBucketCount);
 
   static int getBucketIndex(int capacity) {
-    return (capacity - 1).bitLength - 4;
+    return (capacity - 1).bitLength - 3;
   }
 
   @pragma('vm:prefer-inline')

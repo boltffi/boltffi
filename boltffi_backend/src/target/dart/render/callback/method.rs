@@ -1010,15 +1010,18 @@ fn encode_value(
         .map(WriteStatement::into_source)
         .collect::<Vec<_>>();
     Ok(vec![
-        format!("final {storage} = _$$BoltCallocPtr<$$ffi.Uint8>.alloc({size});"),
+        format!("final {storage} = _$$BoltStoragePool.acquireStorage({size});"),
         format!(
             "final {writer} = _$$BoltWireEncoder(_$$BoltBufWriter.fromSpan({storage}.ptr, {storage}.len));"
         ),
         writes.join("\n"),
+        // `buffer_from_bytes` copies into a Rust-owned buffer, so the pooled
+        // storage can go back to the pool immediately afterward.
         format!("final {buffer} = _f$buffer_symbol({storage}.ptr, {writer}.len);").replace(
             "buffer_symbol",
             bridge.support().buffer_from_bytes()?.name(),
         ),
+        format!("_$$BoltStoragePool.releaseStorage({storage});"),
     ])
 }
 
@@ -1058,13 +1061,14 @@ fn encode_direct_wire(
     };
     let mut statements = vec![format!("final _l$value = {value};")];
     statements.extend([
-        format!("final {prefix}Storage = _$$BoltCallocPtr<$$ffi.Uint8>.alloc({size});"),
+        format!("final {prefix}Storage = _$$BoltStoragePool.acquireStorage({size});"),
         format!("final {prefix}Writer = _$$BoltWireEncoder(_$$BoltBufWriter.fromSpan({prefix}Storage.ptr, {prefix}Storage.len));"),
         write,
         format!(
             "final {prefix}Buffer = _f$buffer_symbol({prefix}Storage.ptr, {prefix}Writer.len);"
         )
         .replace("buffer_symbol", bridge.support().buffer_from_bytes()?.name()),
+        format!("_$$BoltStoragePool.releaseStorage({prefix}Storage);"),
     ]);
     Ok(statements)
 }
@@ -1078,7 +1082,7 @@ fn encode_scalar_option(
     let size = 1 + super::super::super::codec::primitive_size(primitive);
     Ok(vec![
         format!("final _l$value = {value};"),
-        format!("final {prefix}Storage = _$$BoltCallocPtr<$$ffi.Uint8>.alloc({size});"),
+        format!("final {prefix}Storage = _$$BoltStoragePool.acquireStorage({size});"),
         format!(
             "final {prefix}Writer = _$$BoltWireEncoder(_$$BoltBufWriter.fromSpan({prefix}Storage.ptr, {prefix}Storage.len));"
         ),
@@ -1093,6 +1097,7 @@ fn encode_scalar_option(
             "buffer_symbol",
             bridge.support().buffer_from_bytes()?.name(),
         ),
+        format!("_$$BoltStoragePool.releaseStorage({prefix}Storage);"),
     ])
 }
 

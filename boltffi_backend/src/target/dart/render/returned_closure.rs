@@ -134,6 +134,11 @@ impl ReturnedClosure {
             None => format!("{invocation};"),
         });
         body.extend(returns.after_call.iter().cloned());
+        body.extend(
+            parameters
+                .iter()
+                .flat_map(|parameter| parameter.cleanup().iter().cloned()),
+        );
         if let Some(expression) = &returns.expression {
             body.push(format!("return {expression};"));
         }
