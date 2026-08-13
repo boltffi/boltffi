@@ -901,9 +901,8 @@ pub fn render_return(
         value
             .arguments
             .insert(0, "_l$completionStatus.ptr".to_owned());
-        error_checks.push(
-            "final _l$completionStatusCode = _l$completionStatus.ptr.ref.code;".to_owned(),
-        );
+        error_checks
+            .push("final _l$completionStatusCode = _l$completionStatus.ptr.ref.code;".to_owned());
         error_checks.push("_l$completionStatus.dispose();".to_owned());
         error_checks.push(status_check("_l$completionStatusCode"));
     }
