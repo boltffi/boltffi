@@ -16,7 +16,7 @@ pub use cargo::{CargoConfig, PackageConfig};
 pub use experimental::Experimental;
 pub use symbols::{DebugSymbolsBundle, DebugSymbolsConfig, DebugSymbolsFormat};
 pub use targets::{
-    AndroidConfig, AndroidPackConfig, AppleConfig, CSharpConfig, DartConfig, HeaderConfig,
+    AndroidConfig, AndroidPackConfig, AppleConfig, CConfig, CSharpConfig, DartConfig, HeaderConfig,
     JavaConfig, KotlinApiStyle, KotlinConfig, KotlinDesktopLoader, KotlinFactoryStyle,
     KotlinMultiplatformConfig, PythonConfig, SpmConfig, SpmDistribution, SpmLayout, SwiftConfig,
     TargetsConfig, WasmConfig, WasmNpmTarget, WasmOptimizeLevel, WasmOptimizeOnMissing,
@@ -401,6 +401,10 @@ impl Config {
         self.targets.csharp.enabled
     }
 
+    pub fn is_c_enabled(&self) -> bool {
+        self.targets.c.enabled
+    }
+
     pub fn is_kotlin_multiplatform_enabled(&self) -> bool {
         self.targets.kotlin_multiplatform.enabled
     }
@@ -757,7 +761,7 @@ impl Config {
             Target::Dart => self.is_dart_enabled(),
             Target::Python => self.is_python_enabled(),
             Target::CSharp => self.is_csharp_enabled(),
-            Target::C => false,
+            Target::C => self.is_c_enabled(),
         }
     }
 
@@ -908,6 +912,10 @@ impl Config {
 
     pub fn csharp_output(&self) -> PathBuf {
         self.targets.csharp.output.clone()
+    }
+
+    pub fn c_output(&self) -> PathBuf {
+        self.targets.c.output.clone()
     }
 
     pub fn csharp_namespace(&self) -> Option<&str> {
@@ -2698,5 +2706,35 @@ runtime_identifiers = ["linux-x64", "linux-x64"]
             Err(ConfigError::Validation(message))
                 if message.contains("targets.csharp.runtime_identifiers contains duplicate runtime identifier")
         ));
+    }
+
+    #[test]
+    fn c_target_is_experimental_and_requires_opt_in() {
+        assert!(Experimental::is_target_experimental(Target::C));
+        let config = parse_config(
+            r#"
+[package]
+name = "my-lib"
+
+[targets.c]
+enabled = true
+"#,
+        );
+        assert!(!config.should_process(Target::C, false));
+        assert!(config.should_process(Target::C, true));
+        // Opt in via [experimental].
+        let config = parse_config(
+            r#"
+experimental = ["c"]
+
+[package]
+name = "my-lib"
+
+[targets.c]
+enabled = true
+"#,
+        );
+        assert!(config.should_process(Target::C, false));
+        assert_eq!(config.c_output(), PathBuf::from("dist/c"));
     }
 }

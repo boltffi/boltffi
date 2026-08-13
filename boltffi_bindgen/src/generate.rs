@@ -6,6 +6,7 @@ use boltffi_backend::bridge::c::CBridge;
 use boltffi_backend::core::bridge::BridgeBackend;
 use boltffi_backend::core::{CoverageMode, bridge, host};
 use boltffi_backend::target::{
+    c::CHost,
     csharp::CSharpHost,
     dart::DartHost,
     java::{JavaDesktopLoader, JavaHost, JavaVersion},
@@ -436,7 +437,11 @@ impl Generation {
             }
             Target::Swift => self.render_swift(),
             Target::TypeScript => self.render_typescript(),
-            Target::Header | Target::C => Err(GenerationError::UnsupportedTarget { target }),
+            Target::C => {
+                let bindings = self.bindings::<Native>()?;
+                self.render_native_bindings(target, &bindings)
+            }
+            Target::Header => Err(GenerationError::UnsupportedTarget { target }),
         }
     }
 
@@ -471,7 +476,8 @@ impl Generation {
             Target::KotlinMultiplatform => self.render_kmp_bindings(bindings),
             Target::CSharp => self.render_csharp_bindings(bindings),
             Target::Dart => self.render_dart_bindings(bindings),
-            Target::Swift | Target::TypeScript | Target::Header | Target::C => {
+            Target::C => self.render_c_bindings(bindings),
+            Target::Swift | Target::TypeScript | Target::Header => {
                 Err(GenerationError::UnsupportedTarget { target })
             }
         }
@@ -648,6 +654,16 @@ impl Generation {
         bridge
             .render_bridge(bindings, &contract)
             .map_err(GenerationError::Render)
+    }
+
+    fn render_c_bindings(
+        &self,
+        bindings: &Bindings<Native>,
+    ) -> Result<GeneratedOutput, GenerationError> {
+        let target = CHost::new()
+            .into_target(bindings)
+            .map_err(GenerationError::Render)?;
+        self.render_backend(&target, bindings)
     }
 
     fn render_csharp_bindings(
