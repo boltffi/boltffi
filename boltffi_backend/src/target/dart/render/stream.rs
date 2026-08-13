@@ -1,7 +1,7 @@
 use askama::Template;
 use boltffi_binding::{
-    ByteSize, DirectValueType, Native, ReadPlan, StreamDecl, StreamItemPlanRender, StreamMode,
-    TypeRef, native,
+    ByteSize, DirectValueType, Native, Primitive, ReadPlan, StreamDecl, StreamItemPlanRender,
+    StreamMode, TypeRef, native,
 };
 
 use crate::{
@@ -62,6 +62,10 @@ enum StreamItem {
         pop_native_type: String,
         byte_size: u64,
         decode: String,
+        // Numeric primitives can be read out of the batch buffer with a
+        // single bulk `.asTypedList()` view instead of a `List.generate`
+        // that pointer-dereferences one element at a time.
+        supports_typed_list: bool,
     },
     Encoded {
         public_type: TypeFragment,
@@ -266,16 +270,31 @@ impl StreamItem {
                 pop_native_type,
                 byte_size,
                 decode,
+                supports_typed_list,
                 ..
             } => Delivery {
+                // Every batch read pays for this allocation (the drain loop
+                // in `_$$BoltStreamCtx.stream` can call it dozens of times
+                // per poll wake), so it skips the finalizer the same way the
+                // async completion-status allocation does, and disposes
+                // synchronously via `cleanup` below.
                 setup: format!(
-                    "final _l$storage = _$$BoltCallocPtr<$$ffi.Uint8>.alloc(batchSize * {byte_size});\nfinal _l$count = _f${}(handle, _l$storage.ptr.cast<{pop_native_type}>(), batchSize);",
+                    "final _l$storage = _$$BoltCallocPtr<$$ffi.Uint8>.allocUnmanaged(batchSize * {byte_size});\nfinal _l$count = _f${}(handle, _l$storage.ptr.cast<{pop_native_type}>(), batchSize);",
                     protocol.pop_batch().name(),
                 ),
                 has_items: "_l$count != 0".to_owned(),
                 prepare: None,
-                read: format!("List.generate(_l$count, (_l$index) => {decode})"),
-                cleanup: None,
+                // Numeric primitives: one bulk typed-data view instead of a
+                // `List.generate` that pointer-dereferences per element. The
+                // view stays valid because `cleanup` (below) only disposes
+                // `_l$storage` after the template's `.forEach` has already
+                // consumed it.
+                read: if *supports_typed_list {
+                    format!("_l$storage.ptr.cast<{pop_native_type}>().asTypedList(_l$count)")
+                } else {
+                    format!("List.generate(_l$count, (_l$index) => {decode})")
+                },
+                cleanup: Some("_l$storage.dispose();".to_owned()),
             },
             Self::Encoded { decode, .. } => Delivery {
                 setup: format!(
@@ -356,11 +375,33 @@ impl<'plan> StreamItemPlanRender<'plan, Native> for ItemRenderer<'_, '_, '_> {
             ),
             _ => return super::super::unsupported("unknown direct stream item"),
         };
+        // Every numeric primitive (not `bool`, which Dart FFI has no typed-
+        // list view for) maps directly onto a Dart typed-data class, so the
+        // whole batch can be read with one `.asTypedList()` call instead of
+        // one `.elementAt(index).value` per item.
+        let supports_typed_list = matches!(
+            ty,
+            DirectValueType::Primitive(
+                Primitive::I8
+                    | Primitive::U8
+                    | Primitive::I16
+                    | Primitive::U16
+                    | Primitive::I32
+                    | Primitive::U32
+                    | Primitive::I64
+                    | Primitive::U64
+                    | Primitive::ISize
+                    | Primitive::USize
+                    | Primitive::F32
+                    | Primitive::F64
+            )
+        );
         Ok(StreamItem::Direct {
             public_type: type_name::direct_value(ty, self.context)?,
             pop_native_type,
             byte_size: size.get(),
             decode,
+            supports_typed_list,
         })
     }
 

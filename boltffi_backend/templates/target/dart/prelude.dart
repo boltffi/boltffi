@@ -1045,7 +1045,11 @@ final class _$$BoltStreamCtx {
   });
 
   Stream<O> stream<O>(
-    void Function(
+    // Returns whether the batch it just delivered was full (i.e. there may
+    // be more items already buffered on the Rust side worth reading
+    // immediately, without paying for another `NativeCallable.listener`
+    // round-trip through the event queue).
+    bool Function(
       int handle,
       int batchSize,
       int? itemSize,
@@ -1081,12 +1085,12 @@ final class _$$BoltStreamCtx {
       if (!active) return;
       switch (res) {
         case _k$StreamPollResult$Ready:
-          onReady(handle, _k$defaultBatchSize, itemSize, controller);
+          while (active && onReady(handle, _k$defaultBatchSize, itemSize, controller)) {}
           if (active) {
             pollFn(handle, 0, streamCallbackCallable.nativeFunction);
           }
         case _k$StreamPollResult$Closed:
-          onReady(handle, _k$defaultBatchSize, itemSize, controller);
+          while (onReady(handle, _k$defaultBatchSize, itemSize, controller)) {}
           active = false;
           unsubscribeFn(handle);
           release();

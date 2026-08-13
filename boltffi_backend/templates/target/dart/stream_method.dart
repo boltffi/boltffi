@@ -23,19 +23,21 @@
         {{ cleanup }}
 {%- when None %}
 {%- endmatch %}
-        return;
+        return false;
       }
 {%- match method.delivery().prepare() %}
 {%- when Some with (prepare) %}
       {{ prepare }}
 {%- when None %}
 {%- endmatch %}
-      {{ method.delivery().read() }}.forEach(controller.add);
+      final _l$items = {{ method.delivery().read() }};
+      _l$items.forEach(controller.add);
 {%- match method.delivery().cleanup() %}
 {%- when Some with (cleanup) %}
       {{ cleanup }}
 {%- when None %}
 {%- endmatch %}
+      return _l$items.length >= batchSize;
     },
   );
 {%- else if method.mode().callback() %}
@@ -48,19 +50,21 @@
         {{ cleanup }}
 {%- when None %}
 {%- endmatch %}
-        return;
+        return false;
       }
 {%- match method.delivery().prepare() %}
 {%- when Some with (prepare) %}
       {{ prepare }}
 {%- when None %}
 {%- endmatch %}
-      {{ method.delivery().read() }}.forEach(controller.add);
+      final _l$items = {{ method.delivery().read() }};
+      _l$items.forEach(controller.add);
 {%- match method.delivery().cleanup() %}
 {%- when Some with (cleanup) %}
       {{ cleanup }}
 {%- when None %}
 {%- endmatch %}
+      return _l$items.length >= batchSize;
     },
   );
   return stream.listen(callback);

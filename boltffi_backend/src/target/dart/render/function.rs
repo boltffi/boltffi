@@ -112,6 +112,20 @@ impl OutPointer {
         ))
     }
 
+    // Skips the `NativeFinalizer` registration `.alloc()` pays on every call
+    // -- only safe when the caller disposes the storage itself before it
+    // goes out of scope, which is guaranteed for storage that's read and
+    // discarded within a single synchronous statement sequence (e.g. a
+    // completion status).
+    fn allocation_unmanaged(&self, name: &str) -> Result<String> {
+        let native = dart_native::NativeType::from_c(&self.ty)?;
+        Ok(format!(
+            "final {name} = _$$BoltCallocPtr<{}>.allocUnmanaged($$ffi.sizeOf<{}>());",
+            native.native(),
+            native.native(),
+        ))
+    }
+
     fn read(&self, pointer: &str) -> Result<String> {
         dart_native::pointer_read(&self.ty, pointer)
     }
@@ -876,13 +890,20 @@ pub fn render_return(
 
     let mut error_checks = Vec::new();
     if let Some(completion_status) = completion_status {
+        // Every async completion pays for this allocation, so it skips the
+        // finalizer (`allocation_unmanaged`) and disposes synchronously
+        // right here instead of relying on eventual GC-driven cleanup.
         value
             .before_call
-            .push(completion_status.allocation("_l$completionStatus")?);
+            .push(completion_status.allocation_unmanaged("_l$completionStatus")?);
         value
             .arguments
             .insert(0, "_l$completionStatus.ptr".to_owned());
-        error_checks.push(status_check("_l$completionStatus.ptr.ref.code"));
+        error_checks.push(
+            "final _l$completionStatusCode = _l$completionStatus.ptr.ref.code;".to_owned(),
+        );
+        error_checks.push("_l$completionStatus.dispose();".to_owned());
+        error_checks.push(status_check("_l$completionStatusCode"));
     }
     match error {
         ErrorDecl::None(_) => {

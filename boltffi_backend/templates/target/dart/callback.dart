@@ -85,7 +85,12 @@ final class {{ callback.bridge_name() }} {
     if (implementation is {{ callback.proxy_name() }}) {
       return implementation._m$cloneHandle();
     }
-    return _f${{ callback.create_name() }}(_k$handles.insert(implementation));
+    // `_k$registered` above already guarantees `_k$vtable` is registered
+    // with Rust, so there's nothing left for a native round-trip to check --
+    // both fields are already known here, so build the handle directly.
+    return $$ffi.Struct.create<_$$BoltCallbackHandle>()
+      ..handle = _k$handles.insert(implementation)
+      ..vtable = _k$vtable.ptr.cast();
   }
 
   static {{ callback.name() }} wrap(_$$BoltCallbackHandle handle) {
