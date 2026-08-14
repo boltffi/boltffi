@@ -264,35 +264,44 @@ pub extern "C" fn boltffi_dart_runtime_is_owner_thread(handle: usize) -> bool {
 
 /// Registers a new in-flight call and returns the raw gate pointer, or null
 /// if the instance is already dead.
+///
+/// Reserves a *second*, independent strong reference for
+/// [`boltffi_dart_runtime_wait_gate`] to reclaim, on top of the one
+/// [`PendingGate::raw`] already materializes for
+/// `signal_gate_ok`/`signal_gate_error`. Both references happen to share
+/// the same pointer value (an `Arc`'s data pointer is stable across
+/// clones), so it's safe to call `Arc::from_raw` on that pointer twice
+/// overall, once from each side, in any order -- each independently owns
+/// one of the two units this function pins here. Without this, the two C
+/// calls (`create_gate` then, later, `wait_gate`) would share only one
+/// strong reference between the moment `create_gate` returns and whenever
+/// `wait_gate` runs; if Dart resolves the gate first, `signal_gate_ok`/
+/// `signal_gate_error` would free it before `wait_gate` ever touches it.
 #[unsafe(no_mangle)]
 pub extern "C" fn boltffi_dart_runtime_create_gate(handle: usize) -> *mut c_void {
     get_instance(handle)
         .and_then(|instance| instance.create_gate())
-        .map(|gate| gate.raw())
+        .map(|gate| {
+            let raw = gate.raw();
+            std::mem::forget(gate);
+            raw
+        })
         .unwrap_or(std::ptr::null_mut())
 }
 
 /// Blocks until `gate` is resolved, returning the status as a raw `i64` (0 =
-/// Ok, 1 = Error, 2 = Cancelled).
-///
-/// Takes its own temporary strong reference for the duration of the wait
-/// (via [`Arc::increment_strong_count`]) rather than merely borrowing
-/// through the raw pointer: `signal_gate_ok`/`signal_gate_error` reclaim
-/// and drop *their* strong reference (the one `create_gate` handed back)
-/// as soon as the wait resolves, on a different thread, concurrently with
-/// this function still using the `Condvar`/`Mutex` internally -- without
-/// this function holding its own reference, that drop can free the `Gate`
-/// out from under the wait, a genuine data race caught by Miri.
+/// Ok, 1 = Error, 2 = Cancelled). Reclaims the strong reference
+/// `boltffi_dart_runtime_create_gate` reserved for this call -- see its
+/// docs -- so this never races `signal_gate_ok`/`signal_gate_error`'s own,
+/// separate reference regardless of which resolves first.
 ///
 /// # Safety
 /// `gate` must be a non-null pointer previously returned by
 /// `boltffi_dart_runtime_create_gate` and not yet passed to
-/// `signal_gate_ok`/`signal_gate_error`.
+/// `boltffi_dart_runtime_wait_gate`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn boltffi_dart_runtime_wait_gate(gate: *mut c_void) -> i64 {
-    let raw = gate as *const Gate;
-    unsafe { Arc::increment_strong_count(raw) };
-    let gate = unsafe { Arc::from_raw(raw) };
+    let gate = unsafe { Arc::from_raw(gate as *const Gate) };
     gate.wait() as i64
 }
 
@@ -342,15 +351,22 @@ fn hooks_table() -> &'static HooksTable {
     HOOKS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-/// Bumped on every [`boltffi_dart_runtime_release_hooks`] call, so a
-/// per-thread cache entry is only trusted if captured at the epoch still
-/// current now. Global rather than per-handle because Dart's handle
-/// allocator can reuse a numeric handle after release.
-static HOOKS_RELEASE_EPOCH: AtomicUsize = AtomicUsize::new(1);
-
 thread_local! {
     /// Per-thread last-hit cache for [`boltffi_dart_runtime_get_hooks_ref`].
-    static HOOKS_CACHE: Cell<Option<(usize, usize, Arc<HooksEntry>)>> = const { Cell::new(None) };
+    /// Holds a `Weak`, not a strong `Arc`: a thread that calls a callback
+    /// once and never again would otherwise pin this cache slot's strong
+    /// reference alive indefinitely (until that thread happens to look up
+    /// something else, or exits) even after
+    /// [`boltffi_dart_runtime_release_hooks`] drops the table's own
+    /// reference -- a real leak on long-lived worker threads. A `Weak`
+    /// only resolves to `Some` while some other strong reference (the
+    /// table's own, or one an in-flight dispatch elsewhere is holding)
+    /// keeps the entry alive, and correctly (and cheaply) fails after
+    /// release, including if the numeric handle gets reused for a
+    /// different registration afterward -- a `Weak` is tied to the
+    /// specific allocation it was created from, never to the handle
+    /// number, so no separate epoch/staleness tracking is needed either.
+    static HOOKS_CACHE: Cell<Option<(usize, Weak<HooksEntry>)>> = const { Cell::new(None) };
 }
 
 /// Associates an opaque, shim-owned "hooks" pointer with the same `handle`
@@ -387,22 +403,24 @@ pub unsafe extern "C" fn boltffi_dart_runtime_register_hooks(
 /// Resolves `handle` to its registered hooks, cloning the `Arc` while the
 /// table's own lock is held so a concurrent `release_hooks` can't free it
 /// out from under the caller. Checks this thread's local cache first; a
-/// miss falls back to the table and refreshes the cache.
+/// miss (or a cached entry whose `Weak` no longer upgrades) falls back to
+/// the table and refreshes the cache.
 ///
 /// Rust-only API: called by generated Rust shim code, never by Dart.
 pub fn boltffi_dart_runtime_get_hooks_ref(handle: usize) -> Option<Arc<HooksEntry>> {
-    let epoch = HOOKS_RELEASE_EPOCH.load(Ordering::SeqCst);
     HOOKS_CACHE.with(|cache| {
-        if let Some((cached_handle, cached_epoch, entry)) = cache.take()
+        if let Some((cached_handle, weak)) = cache.take()
             && cached_handle == handle
-            && cached_epoch == epoch
+            && let Some(entry) = weak.upgrade()
         {
-            let out = entry.clone();
-            cache.set(Some((cached_handle, cached_epoch, entry)));
-            return Some(out);
+            cache.set(Some((cached_handle, Arc::downgrade(&entry))));
+            return Some(entry);
         }
+        // Either a miss, a different handle, or released and fully dropped
+        // since it was cached (`weak` then drops here, permanently dead) --
+        // fall through to a real lookup.
         let entry = hooks_table().lock().unwrap().get(&handle).cloned()?;
-        cache.set(Some((handle, epoch, entry.clone())));
+        cache.set(Some((handle, Arc::downgrade(&entry))));
         Some(entry)
     })
 }
@@ -413,7 +431,6 @@ pub fn boltffi_dart_runtime_get_hooks_ref(handle: usize) -> Option<Arc<HooksEntr
 #[unsafe(no_mangle)]
 pub extern "C" fn boltffi_dart_runtime_release_hooks(handle: usize) {
     hooks_table().lock().unwrap().remove(&handle);
-    HOOKS_RELEASE_EPOCH.fetch_add(1, Ordering::SeqCst);
 }
 
 /// Reads back a raw status value received from Dart as a [`CallStatus`].
@@ -669,6 +686,29 @@ mod tests {
         assert_eq!(caller.join().unwrap(), CallStatus::Ok as i64);
     }
 
+    /// Regression test for the race Codex flagged on the C-callable
+    /// surface: `signal_gate_ok`/`signal_gate_error` reclaiming the gate
+    /// *before* the caller even reaches `wait_gate` (deterministically
+    /// forced here, not left to scheduling luck) must not free memory
+    /// `wait_gate` then touches.
+    #[test]
+    fn c_surface_wait_gate_is_safe_even_if_signaled_before_it_starts() {
+        let handle = boltffi_dart_runtime_create_instance();
+        let gate = boltffi_dart_runtime_create_gate(handle);
+        assert!(!gate.is_null(), "instance is alive, gate must be created");
+        let gate_addr = gate as usize;
+
+        // Resolve it right now, deterministically before any wait_gate
+        // call exists anywhere -- exactly the window `create_gate`'s
+        // reserved second reference exists to survive.
+        unsafe { signal_gate_ok(gate_addr as *mut c_void) };
+
+        assert_eq!(
+            unsafe { boltffi_dart_runtime_wait_gate(gate_addr as *mut c_void) },
+            CallStatus::Ok as i64
+        );
+    }
+
     #[test]
     fn c_surface_create_gate_on_dead_instance_returns_null() {
         let handle = boltffi_dart_runtime_create_instance();
@@ -716,7 +756,15 @@ mod tests {
 
         boltffi_dart_runtime_release_hooks(handle);
         assert_eq!(unsafe { *(held.ptr() as *const u64) }, 0xdead_beef);
-        assert!(boltffi_dart_runtime_get_hooks_ref(handle).is_none());
+        // A thread with no prior cache entry for this handle -- genuinely
+        // independent of `held` -- must not find it once released, even
+        // though `held` (representing some other, already in-flight
+        // dispatch) is still keeping the allocation alive.
+        let found_elsewhere =
+            std::thread::spawn(move || boltffi_dart_runtime_get_hooks_ref(handle).is_none())
+                .join()
+                .unwrap();
+        assert!(found_elsewhere);
 
         drop(held); // only now does `free_u64_hooks` actually run
     }
@@ -828,5 +876,47 @@ mod tests {
 
         boltffi_dart_runtime_release_hooks(hooks_handle);
         assert!(boltffi_dart_runtime_get_hooks_ref(hooks_handle).is_none());
+    }
+
+    /// Regression test: a thread that resolves a handle once (populating
+    /// its `HOOKS_CACHE` entry) and never looks anything up again must not
+    /// keep the hooks allocation pinned alive forever via that cached
+    /// reference -- it must actually free once `release_hooks` drops the
+    /// table's own (last) reference, the same as if this thread had never
+    /// cached anything at all.
+    #[test]
+    fn cache_does_not_keep_a_handle_alive_after_the_last_real_reference_drops() {
+        static FREED: AtomicI64 = AtomicI64::new(0);
+        unsafe extern "C" fn free_and_flag(ptr: *mut c_void) {
+            drop(unsafe { Box::from_raw(ptr as *mut u64) });
+            FREED.fetch_add(1, Ordering::SeqCst);
+        }
+
+        let hooks_handle = 0x6060;
+        let instance_handle = boltffi_dart_runtime_create_instance();
+        let hooks: Box<u64> = Box::new(0);
+        let hooks_ptr = Box::into_raw(hooks) as *mut c_void;
+        unsafe {
+            boltffi_dart_runtime_register_hooks(
+                hooks_handle,
+                instance_handle,
+                hooks_ptr,
+                free_and_flag,
+            )
+        };
+
+        // Warm this thread's cache, then drop the only other reference we
+        // hold directly -- from here on, the table's own entry and this
+        // thread's cached `Weak` are the only things that know about it.
+        drop(boltffi_dart_runtime_get_hooks_ref(hooks_handle).expect("registered"));
+
+        assert_eq!(FREED.load(Ordering::SeqCst), 0, "not released yet");
+        boltffi_dart_runtime_release_hooks(hooks_handle);
+        assert_eq!(
+            FREED.load(Ordering::SeqCst),
+            1,
+            "the table drop was the last strong reference -- a Weak-holding \
+             cache entry on this thread must not have kept it alive"
+        );
     }
 }

@@ -105,6 +105,10 @@ impl ScalarType {
             Type::Float64 => Self::Float64,
             Type::SignedPointerWidth => Self::SignedPointerWidth,
             Type::PointerWidth => Self::PointerWidth,
+            // Crosses the FFI boundary as its integer repr already (see
+            // `NativeType::from_c`'s identical unwrap on the Dart side) --
+            // not a distinct scalar shape of its own.
+            Type::CStyleEnum { repr, .. } => return Self::from_c(repr),
             _ => return None,
         })
     }

@@ -399,7 +399,14 @@ fn render_shim_listener_entry(
         .map(CallbackParameter::entry_argument)
         .collect::<Vec<_>>()
         .join(", ");
-    let call = format!("implementation.{method}({arguments})");
+    let mut call = format!("implementation.{method}({arguments})");
+    if matches!(slot.returns(), CBridgeType::CStyleEnum { .. }) {
+        // The shim's `_l$out` is typed as the enum's native integer repr
+        // (see `ScalarType::from_c`'s unwrap of `CStyleEnum`), but the
+        // Dart method returns the enum type itself -- `.value` is its
+        // discriminant accessor (see `enumeration.dart`).
+        call = format!("{call}.value");
+    }
     let mut try_body = decode;
     if is_void {
         try_body.push(format!("{call};"));

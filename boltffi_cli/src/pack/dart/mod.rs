@@ -170,6 +170,24 @@ pub(crate) fn pack_dart(
     let dart_shim_rs_path = scratch::Directory::for_target("dart")?.join("dart_shims.rs");
 
     if !options.execution.no_build {
+        // `--regenerate false` trusts an earlier run already staged this in
+        // scratch (`<cargo_target_dir>/boltffi/pack/dart/`) -- but scratch
+        // lives under `target/`, so it doesn't survive `cargo clean` (or a
+        // fresh checkout) the way the already-generated Dart package files
+        // do. Failing here with a clear, actionable message beats letting
+        // `boltffi/build.rs` hard-panic deep inside the cargo build with a
+        // message that doesn't know this ran through `pack dart` at all.
+        if !options.execution.regenerate && !dart_shim_rs_path.exists() {
+            return Err(CliError::CommandFailed {
+                command: format!(
+                    "pack dart --regenerate false: no staged shim at {} -- run `pack dart` \
+                     without --regenerate false at least once (e.g. after `cargo clean`) \
+                     before reusing it",
+                    dart_shim_rs_path.display()
+                ),
+                status: None,
+            });
+        }
         let step = reporter.step("Building Rust cdylib");
         let results = build_dart_targets(
             config,
