@@ -1,0 +1,258 @@
+---
+source: boltffi_backend/src/target/c/mod.rs
+expression: render_header(&output)
+---
+#pragma once
+
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+#if defined(_MSC_VER)
+#include <intrin.h>
+#elif !defined(__cplusplus)
+#include <stdatomic.h>
+#endif
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+typedef struct {
+    int32_t code;
+} FfiStatus;
+
+#ifdef __cplusplus
+static inline FfiStatus boltffi_status_from_code(int32_t code) {
+    FfiStatus status = { code };
+    return status;
+}
+#define FFI_STATUS_OK boltffi_status_from_code(0)
+#define FFI_STATUS_NULL_POINTER boltffi_status_from_code(1)
+#define FFI_STATUS_BUFFER_TOO_SMALL boltffi_status_from_code(2)
+#define FFI_STATUS_INVALID_ARG boltffi_status_from_code(3)
+#define FFI_STATUS_CANCELLED boltffi_status_from_code(4)
+#define FFI_STATUS_INTERNAL_ERROR boltffi_status_from_code(100)
+#else
+#define FFI_STATUS_OK ((FfiStatus){0})
+#define FFI_STATUS_NULL_POINTER ((FfiStatus){1})
+#define FFI_STATUS_BUFFER_TOO_SMALL ((FfiStatus){2})
+#define FFI_STATUS_INVALID_ARG ((FfiStatus){3})
+#define FFI_STATUS_CANCELLED ((FfiStatus){4})
+#define FFI_STATUS_INTERNAL_ERROR ((FfiStatus){100})
+#endif
+
+typedef struct {
+    uint8_t *ptr;
+    uintptr_t len;
+    uintptr_t cap;
+    uintptr_t align;
+} FfiBuf_u8;
+
+typedef struct {
+    uint8_t *ptr;
+    uintptr_t len;
+    uintptr_t cap;
+} FfiString;
+
+typedef struct {
+    FfiString message;
+} FfiError;
+
+typedef struct {
+    const uint8_t *ptr;
+    uintptr_t len;
+} FfiSpan;
+
+typedef const void *RustFutureHandle;
+typedef int8_t StreamPollResult;
+typedef int32_t WaitResult;
+typedef void (*RustFutureContinuationCallback)(uint64_t callback_data, int8_t poll_result);
+typedef void (*StreamContinuationCallback)(uint64_t callback_data, StreamPollResult result);
+
+#if defined(_MSC_VER)
+static inline bool boltffi_atomic_u8_cas(uint8_t *state, uint8_t expected, uint8_t desired) {
+    return _InterlockedCompareExchange8((volatile char *)state, (char)desired, (char)expected) == (char)expected;
+}
+
+static inline uint64_t boltffi_atomic_u64_exchange(uint64_t *slot, uint64_t value) {
+    return (uint64_t)_InterlockedExchange64((volatile __int64 *)slot, (__int64)value);
+}
+
+static inline bool boltffi_atomic_u64_cas(uint64_t *slot, uint64_t expected, uint64_t desired) {
+    return (uint64_t)_InterlockedCompareExchange64((volatile __int64 *)slot, (__int64)desired, (__int64)expected) == expected;
+}
+
+static inline uint64_t boltffi_atomic_u64_load(uint64_t *slot) {
+    return (uint64_t)_InterlockedCompareExchange64((volatile __int64 *)slot, 0, 0);
+}
+#elif defined(__cplusplus) && (defined(__clang__) || defined(__GNUC__))
+static inline bool boltffi_atomic_u8_cas(uint8_t *state, uint8_t expected, uint8_t desired) {
+    return __atomic_compare_exchange_n(state, &expected, desired, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE);
+}
+
+static inline uint64_t boltffi_atomic_u64_exchange(uint64_t *slot, uint64_t value) {
+    return __atomic_exchange_n(slot, value, __ATOMIC_ACQ_REL);
+}
+
+static inline bool boltffi_atomic_u64_cas(uint64_t *slot, uint64_t expected, uint64_t desired) {
+    return __atomic_compare_exchange_n(slot, &expected, desired, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE);
+}
+
+static inline uint64_t boltffi_atomic_u64_load(uint64_t *slot) {
+    return __atomic_load_n(slot, __ATOMIC_ACQUIRE);
+}
+#elif defined(__cplusplus)
+#error "BoltFFI C++ atomics require GCC, Clang, or MSVC"
+#else
+static inline bool boltffi_atomic_u8_cas(uint8_t *state, uint8_t expected, uint8_t desired) {
+    return atomic_compare_exchange_strong_explicit((_Atomic uint8_t *)state, &expected, desired, memory_order_acq_rel, memory_order_acquire);
+}
+
+static inline uint64_t boltffi_atomic_u64_exchange(uint64_t *slot, uint64_t value) {
+    return atomic_exchange_explicit((_Atomic uint64_t *)slot, value, memory_order_acq_rel);
+}
+
+static inline bool boltffi_atomic_u64_cas(uint64_t *slot, uint64_t expected, uint64_t desired) {
+    return atomic_compare_exchange_strong_explicit((_Atomic uint64_t *)slot, &expected, desired, memory_order_acq_rel, memory_order_acquire);
+}
+
+static inline uint64_t boltffi_atomic_u64_load(uint64_t *slot) {
+    return atomic_load_explicit((_Atomic uint64_t *)slot, memory_order_acquire);
+}
+#endif
+
+typedef struct {
+    uint64_t handle;
+    const void *vtable;
+} BoltFFICallbackHandle;
+
+void boltffi_free_string(FfiString string);
+void boltffi_free_buf(FfiBuf_u8 buf);
+FfiString boltffi_buf_into_string(FfiBuf_u8 buf);
+FfiBuf_u8 boltffi_buf_from_bytes(const uint8_t *ptr, uintptr_t len);
+FfiBuf_u8 boltffi_buf_with_len(uintptr_t len);
+FfiStatus boltffi_last_error_message(FfiString *out);
+void boltffi_clear_last_error(void);
+typedef struct {
+    double x;
+    double y;
+} ___Point;
+typedef uint8_t ___Mode;
+#define MODE_FAST ((___Mode)1)
+#define MODE_SLOW ((___Mode)2)
+
+#ifdef __cplusplus
+}
+#endif
+#include <stdlib.h>
+#include <string.h>
+
+typedef struct { const uint8_t *ptr; uintptr_t len; } DemoBytesView;
+typedef struct { const char *ptr; uintptr_t len; } DemoStringView;
+typedef struct { uint8_t *ptr; uintptr_t len; } DemoBytes;
+typedef struct { char *ptr; uintptr_t len; } DemoString;
+typedef struct { bool has_value; uint32_t value; } DemoOptionU32;
+typedef struct { bool has_value; float value; } DemoOptionF32;
+typedef struct { bool has_value; DemoStringView value; } DemoOptionStringView;
+typedef struct { bool has_value; DemoString value; } DemoOptionString;
+typedef struct { const DemoStringView *ptr; uintptr_t len; } DemoStringSlice;
+typedef struct { DemoString *ptr; uintptr_t len; } DemoStringSequence;
+typedef ___Point DemoPoint;
+typedef ___Mode DemoMode;
+typedef struct { const bool *ptr; uintptr_t len; } DemoBoolSlice;
+typedef struct { bool *ptr; uintptr_t len; } DemoBoolSequence;
+typedef struct { const int8_t *ptr; uintptr_t len; } DemoI8Slice;
+typedef struct { int8_t *ptr; uintptr_t len; } DemoI8Sequence;
+typedef struct { const uint8_t *ptr; uintptr_t len; } DemoU8Slice;
+typedef struct { uint8_t *ptr; uintptr_t len; } DemoU8Sequence;
+typedef struct { const int16_t *ptr; uintptr_t len; } DemoI16Slice;
+typedef struct { int16_t *ptr; uintptr_t len; } DemoI16Sequence;
+typedef struct { const uint16_t *ptr; uintptr_t len; } DemoU16Slice;
+typedef struct { uint16_t *ptr; uintptr_t len; } DemoU16Sequence;
+typedef struct { const int32_t *ptr; uintptr_t len; } DemoI32Slice;
+typedef struct { int32_t *ptr; uintptr_t len; } DemoI32Sequence;
+typedef struct { const uint32_t *ptr; uintptr_t len; } DemoU32Slice;
+typedef struct { uint32_t *ptr; uintptr_t len; } DemoU32Sequence;
+typedef struct { const int64_t *ptr; uintptr_t len; } DemoI64Slice;
+typedef struct { int64_t *ptr; uintptr_t len; } DemoI64Sequence;
+typedef struct { const uint64_t *ptr; uintptr_t len; } DemoU64Slice;
+typedef struct { uint64_t *ptr; uintptr_t len; } DemoU64Sequence;
+typedef struct { const intptr_t *ptr; uintptr_t len; } DemoISizeSlice;
+typedef struct { intptr_t *ptr; uintptr_t len; } DemoISizeSequence;
+typedef struct { const uintptr_t *ptr; uintptr_t len; } DemoUSizeSlice;
+typedef struct { uintptr_t *ptr; uintptr_t len; } DemoUSizeSequence;
+typedef struct { const float *ptr; uintptr_t len; } DemoF32Slice;
+typedef struct { float *ptr; uintptr_t len; } DemoF32Sequence;
+typedef struct { const double *ptr; uintptr_t len; } DemoF64Slice;
+typedef struct { double *ptr; uintptr_t len; } DemoF64Sequence;
+typedef struct { const DemoPoint *ptr; uintptr_t len; } DemoPointSlice;
+typedef struct { DemoPoint *ptr; uintptr_t len; } DemoPointSequence;
+
+typedef struct { uint8_t *ptr; uintptr_t len; uintptr_t offset; bool ok; } BoltFFICWireWriter;
+typedef struct { const uint8_t *ptr; uintptr_t len; uintptr_t offset; bool ok; } BoltFFICWireReader;
+static inline void boltffi_c_demo_write(BoltFFICWireWriter *w, const void *src, uintptr_t n) {
+    if (!w->ok || n > w->len - w->offset) { w->ok = false; return; }
+    if (n != 0) memcpy(w->ptr + w->offset, src, n);
+    w->offset += n;
+}
+static inline void boltffi_c_demo_read(BoltFFICWireReader *r, void *dst, uintptr_t n) {
+    if (!r->ok || n > r->len - r->offset) { r->ok = false; return; }
+    if (n != 0) memcpy(dst, r->ptr + r->offset, n);
+    r->offset += n;
+}
+static inline void boltffi_c_demo_write_u8(BoltFFICWireWriter *w, uint8_t v) { boltffi_c_demo_write(w, &v, 1); }
+static inline void boltffi_c_demo_write_u32(BoltFFICWireWriter *w, uint32_t v) {
+    uint8_t b[4] = {(uint8_t)v, (uint8_t)(v >> 8), (uint8_t)(v >> 16), (uint8_t)(v >> 24)};
+    boltffi_c_demo_write(w, b, 4);
+}
+static inline uint8_t boltffi_c_demo_read_u8(BoltFFICWireReader *r) { uint8_t v = 0; boltffi_c_demo_read(r, &v, 1); return v; }
+static inline uint32_t boltffi_c_demo_read_u32(BoltFFICWireReader *r) {
+    uint8_t b[4] = {0,0,0,0}; boltffi_c_demo_read(r, b, 4);
+    return (uint32_t)b[0] | ((uint32_t)b[1] << 8) | ((uint32_t)b[2] << 16) | ((uint32_t)b[3] << 24);
+}
+static inline void *boltffi_c_demo_alloc(uintptr_t count, uintptr_t size) {
+    if (count == 0) return NULL;
+    if (size != 0 && count > (uintptr_t)-1 / size) return NULL;
+    return calloc((size_t)count, (size_t)size);
+}
+static inline bool boltffi_c_demo_copy_string(BoltFFICWireReader *r, DemoString *out) {
+    uint32_t n = boltffi_c_demo_read_u32(r); char *copy;
+    if (!r->ok || (uintptr_t)n > r->len - r->offset) return false;
+    copy = (char *)boltffi_c_demo_alloc((uintptr_t)n + 1, 1);
+    if (copy == NULL) { r->ok = false; return false; }
+    boltffi_c_demo_read(r, copy, n); copy[n] = '\0'; out->ptr = copy; out->len = n; return r->ok;
+}
+static inline bool boltffi_c_demo_copy_bytes(BoltFFICWireReader *r, DemoBytes *out) {
+    uint32_t n = boltffi_c_demo_read_u32(r); uint8_t *copy;
+    if (!r->ok || (uintptr_t)n > r->len - r->offset) return false;
+    copy = (uint8_t *)boltffi_c_demo_alloc(n, 1);
+    if (n != 0 && copy == NULL) { r->ok = false; return false; }
+    boltffi_c_demo_read(r, copy, n); out->ptr = copy; out->len = n; return r->ok;
+}
+static inline DemoStringView demo_string_view(const char *ptr, uintptr_t len) { DemoStringView v={ptr,len}; return v; }
+static inline DemoBytesView demo_bytes_view(const uint8_t *ptr, uintptr_t len) { DemoBytesView v={ptr,len}; return v; }
+static inline void demo_string_free(DemoString *v) { if (v == NULL) return; free((void *)v->ptr); v->ptr=NULL; v->len=0; }
+static inline void demo_string_sequence_free(DemoStringSequence *v) { if (v == NULL) return; for (uintptr_t i=0;i<v->len;++i) demo_string_free(&v->ptr[i]); free((void *)v->ptr); v->ptr=NULL; v->len=0; }
+static inline void demo_bytes_free(DemoBytes *v) { if (v == NULL) return; free((void *)v->ptr); v->ptr=NULL; v->len=0; }
+static inline void demo_bool_sequence_free(DemoBoolSequence *v) { if (v == NULL) return; free((void *)v->ptr); v->ptr=NULL; v->len=0; }
+static inline void demo_i8_sequence_free(DemoI8Sequence *v) { if (v == NULL) return; free((void *)v->ptr); v->ptr=NULL; v->len=0; }
+static inline void demo_u8_sequence_free(DemoU8Sequence *v) { if (v == NULL) return; free((void *)v->ptr); v->ptr=NULL; v->len=0; }
+static inline void demo_i16_sequence_free(DemoI16Sequence *v) { if (v == NULL) return; free((void *)v->ptr); v->ptr=NULL; v->len=0; }
+static inline void demo_u16_sequence_free(DemoU16Sequence *v) { if (v == NULL) return; free((void *)v->ptr); v->ptr=NULL; v->len=0; }
+static inline void demo_i32_sequence_free(DemoI32Sequence *v) { if (v == NULL) return; free((void *)v->ptr); v->ptr=NULL; v->len=0; }
+static inline void demo_u32_sequence_free(DemoU32Sequence *v) { if (v == NULL) return; free((void *)v->ptr); v->ptr=NULL; v->len=0; }
+static inline void demo_i64_sequence_free(DemoI64Sequence *v) { if (v == NULL) return; free((void *)v->ptr); v->ptr=NULL; v->len=0; }
+static inline void demo_u64_sequence_free(DemoU64Sequence *v) { if (v == NULL) return; free((void *)v->ptr); v->ptr=NULL; v->len=0; }
+static inline void demo_isize_sequence_free(DemoISizeSequence *v) { if (v == NULL) return; free((void *)v->ptr); v->ptr=NULL; v->len=0; }
+static inline void demo_usize_sequence_free(DemoUSizeSequence *v) { if (v == NULL) return; free((void *)v->ptr); v->ptr=NULL; v->len=0; }
+static inline void demo_f32_sequence_free(DemoF32Sequence *v) { if (v == NULL) return; free((void *)v->ptr); v->ptr=NULL; v->len=0; }
+static inline void demo_f64_sequence_free(DemoF64Sequence *v) { if (v == NULL) return; free((void *)v->ptr); v->ptr=NULL; v->len=0; }
+static inline void demo_point_sequence_free(DemoPointSequence *v) { if (v == NULL) return; free((void *)v->ptr); v->ptr=NULL; v->len=0; }
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#ifdef __cplusplus
+}
+#endif

@@ -29,6 +29,12 @@ use boltffi::*;
         reason = ExclusionReason::CoverageGap,
         details = "This regression fixture is currently enabled only for the C# demo."
     )
+,
+    exclude(
+        c,
+        reason = ExclusionReason::ImplementationGap,
+        details = "C target does not yet wrap closure parameters ergonomically"
+    )
 )]
 #[export]
 pub fn apply_vector_closure(f: impl Fn(Vec<i32>) -> i32, values: Vec<i32>) -> i32 {

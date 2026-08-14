@@ -76,7 +76,13 @@ impl EventBus {
             "classes::streams::EventBus::emit_message",
             "classes::streams::EventBus::subscribe_messages",
         ]
-    )]
+    ,
+    exclude(
+        c,
+        reason = ExclusionReason::ImplementationGap,
+        details = "C target is sync-only; streams are not yet supported"
+    )
+)]
     #[ffi_stream(item = StreamMessage)]
     pub fn subscribe_messages(&self) -> Arc<EventSubscription<StreamMessage>> {
         self.message_producer.subscribe()
