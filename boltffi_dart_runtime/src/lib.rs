@@ -274,13 +274,24 @@ pub extern "C" fn boltffi_dart_runtime_create_gate(handle: usize) -> *mut c_void
 /// Blocks until `gate` is resolved, returning the status as a raw `i64` (0 =
 /// Ok, 1 = Error, 2 = Cancelled).
 ///
+/// Takes its own temporary strong reference for the duration of the wait
+/// (via [`Arc::increment_strong_count`]) rather than merely borrowing
+/// through the raw pointer: `signal_gate_ok`/`signal_gate_error` reclaim
+/// and drop *their* strong reference (the one `create_gate` handed back)
+/// as soon as the wait resolves, on a different thread, concurrently with
+/// this function still using the `Condvar`/`Mutex` internally -- without
+/// this function holding its own reference, that drop can free the `Gate`
+/// out from under the wait, a genuine data race caught by Miri.
+///
 /// # Safety
 /// `gate` must be a non-null pointer previously returned by
 /// `boltffi_dart_runtime_create_gate` and not yet passed to
 /// `signal_gate_ok`/`signal_gate_error`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn boltffi_dart_runtime_wait_gate(gate: *mut c_void) -> i64 {
-    let gate = unsafe { &*(gate as *const Gate) };
+    let raw = gate as *const Gate;
+    unsafe { Arc::increment_strong_count(raw) };
+    let gate = unsafe { Arc::from_raw(raw) };
     gate.wait() as i64
 }
 
