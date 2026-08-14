@@ -38,7 +38,13 @@ pub fn run_generate_with_output(config: &Config, options: GenerateOptions) -> Re
         GenerateTarget::Java => bindings::run_generation(config, &options),
         GenerateTarget::Header => bindings::run_generation(config, &options),
         GenerateTarget::Typescript => bindings::run_generation(config, &options),
-        GenerateTarget::Dart => bindings::run_generation(config, &options),
+        GenerateTarget::Dart => {
+            bindings::run_generation(config, &options)?;
+            // Every Dart generation entry point relocates the generated
+            // shim into scratch, not just `pack dart`.
+            crate::pack::dart::relocate_dart_shim_to_scratch(config)?;
+            Ok(())
+        }
         GenerateTarget::Python => bindings::run_generation(config, &options),
         GenerateTarget::CSharp => bindings::run_generation(config, &options),
         GenerateTarget::All => {
@@ -118,6 +124,9 @@ pub fn run_generate_with_output(config: &Config, options: GenerateOptions) -> Re
                         deny_skipped: options.deny_skipped,
                     },
                 )?;
+                // See the `GenerateTarget::Dart` arm above for why this is
+                // needed here too, not just from `pack dart`.
+                crate::pack::dart::relocate_dart_shim_to_scratch(config)?;
             }
 
             if config.should_process(Target::Python, options.experimental) {

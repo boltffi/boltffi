@@ -208,6 +208,7 @@ fn build_wasm_target(
         release: matches!(profile, WasmProfile::Release),
         selection: BuildSelection::Expanded(Box::new(expansion)),
         on_output,
+        extra_env: Vec::new(),
     };
     let builder = Builder::new(config, build_options);
     let results = builder.build_wasm_with_triple(config.wasm_triple())?;

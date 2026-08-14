@@ -1,0 +1,7 @@
+name: boltffi_dart_runtime_smoke_test
+description: Dart-side smoke test for the boltffi_dart_runtime crate.
+publish_to: none
+environment:
+  sdk: ^3.9.0
+dependencies:
+  ffi: ^2.1.3

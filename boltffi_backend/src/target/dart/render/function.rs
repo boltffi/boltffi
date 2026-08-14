@@ -1185,14 +1185,48 @@ fn render_sync_call(
     let mut arguments = arguments.to_vec();
     arguments.extend(returns.arguments.iter().cloned());
     let invocation = format!("_f${}({})", function.name(), arguments.join(", "));
-    statements.push(match &returns.call_result {
+
+    if cleanup.is_empty() {
+        statements.push(match &returns.call_result {
+            Some(result) => format!("final {result} = {invocation};"),
+            None => format!("{invocation};"),
+        });
+        statements.extend(returns.after_call.iter().cloned());
+        if let Some(expression) = &returns.expression {
+            statements.push(format!("return {expression};"));
+        }
+        return statements.join("\n");
+    }
+
+    // `after_call` can throw before reaching `return`; without `finally`,
+    // `cleanup` (writeback, pool release) would never run on that path.
+    let mut inner = vec![match &returns.call_result {
         Some(result) => format!("final {result} = {invocation};"),
         None => format!("{invocation};"),
-    });
-    statements.extend(returns.after_call.iter().cloned());
-    statements.extend(cleanup.iter().cloned());
-    if let Some(expression) = &returns.expression {
-        statements.push(format!("return {expression};"));
+    }];
+    inner.extend(returns.after_call.iter().cloned());
+
+    match &returns.expression {
+        Some(expression) => {
+            statements.push(format!(
+                "late final {} _l$callResult;",
+                returns.public_type.as_str()
+            ));
+            inner.push(format!("_l$callResult = {expression};"));
+            statements.push(format!(
+                "try {{\n{}\n}} finally {{\n{}\n}}",
+                indent(&inner.join("\n"), 2),
+                indent(&cleanup.join("\n"), 2),
+            ));
+            statements.push("return _l$callResult;".to_owned());
+        }
+        None => {
+            statements.push(format!(
+                "try {{\n{}\n}} finally {{\n{}\n}}",
+                indent(&inner.join("\n"), 2),
+                indent(&cleanup.join("\n"), 2),
+            ));
+        }
     }
     statements.join("\n")
 }

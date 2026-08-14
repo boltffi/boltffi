@@ -1,0 +1,18 @@
+[package]
+name = "boltffi_dart_runtime"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Thread-safe synchronous callback dispatch runtime for BoltFFI's native Dart target"
+keywords = ["ffi", "dart", "runtime", "callbacks"]
+categories = ["development-tools::ffi"]
+
+[lib]
+# Only ever consumed as an ordinary Rust dependency: the generated Dart
+# shim is plain Rust, `include!()`'d into the `boltffi` facade crate.
+crate-type = ["rlib"]
+
+[lints]
+workspace = true

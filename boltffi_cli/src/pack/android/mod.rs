@@ -255,6 +255,7 @@ pub(crate) fn build_android_targets(
         release,
         selection: BuildSelection::Expanded(Box::new(binding_expansion.clone())),
         on_output,
+        extra_env: Vec::new(),
     };
     let builder = Builder::new(config, build_options);
     let results = builder.build_android(targets)?;

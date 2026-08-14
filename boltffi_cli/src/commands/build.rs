@@ -171,6 +171,7 @@ fn build_options(release: bool, selection: BuildSelection) -> BuildOptions {
         release,
         selection,
         on_output: None,
+        extra_env: Vec::new(),
     }
 }
 

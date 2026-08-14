@@ -1,5 +1,27 @@
 extern crate self as boltffi;
 
+/// The generated Dart callback-dispatch shim (see `boltffi_backend`'s
+/// `target::dart::render::shim`), staged into `OUT_DIR` by this crate's
+/// `build.rs`.
+#[cfg(feature = "dart")]
+#[doc(hidden)]
+#[allow(
+    unsafe_op_in_unsafe_fn,
+    non_snake_case,
+    non_upper_case_globals,
+    dead_code
+)]
+mod __dart_shims {
+    include!(concat!(env!("OUT_DIR"), "/dart_shims.rs"));
+}
+
+/// Re-exported so `boltffi_dart_runtime_create_instance`/`signal_gate_ok`/
+/// `signal_gate_error` -- called directly by generated Dart code -- stay on
+/// the final link's object list.
+#[cfg(feature = "dart")]
+#[doc(hidden)]
+pub use boltffi_dart_runtime as __dart_runtime;
+
 pub use boltffi_core::{
     ArcFromCallbackHandle, BoxFromCallbackHandle, CallbackForeignType, CallbackHandle,
     CustomFfiConvertible, CustomTypeConversionError, EventSubscription, FfiType, InternedString,

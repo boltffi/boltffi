@@ -56,18 +56,18 @@ final class {{ callback.bridge_name() }} {
 
 {{ callable }}
 {%- endfor %}
+{%- for declaration in callback.shim_declarations() %}
+
+{{ declaration }}
+{%- endfor %}
 
   static final _$$BoltCallocPtr<{{ callback.native_vtable().name() }}> _k$vtable = (() {
     final vtable = _$$BoltCallocPtr<{{ callback.native_vtable().name() }}>.alloc(
       $$ffi.sizeOf<{{ callback.native_vtable().name() }}>(),
     );
     vtable.ptr.ref
-      ..free = $$ffi.Pointer.fromFunction<
-        $$ffi.Void Function($$ffi.Uint64)
-      >(_m$free)
-      ..clone = $$ffi.Pointer.fromFunction<
-        $$ffi.Uint64 Function($$ffi.Uint64)
-      >(_m$clone, 0)
+{{ callback.free_vtable_initializer() }}
+{{ callback.clone_vtable_initializer() }}
 {%- for initializer in callback.vtable_initializers() %}
 {{ initializer }}
 {%- endfor %};
@@ -88,8 +88,12 @@ final class {{ callback.bridge_name() }} {
     // `_k$registered` above already guarantees `_k$vtable` is registered
     // with Rust, so there's nothing left for a native round-trip to check --
     // both fields are already known here, so build the handle directly.
+    final handle = _k$handles.insert(implementation);
+    // Captures the calling isolate's thread as this registration's owner.
+    final instanceHandle = _f$boltffi_dart_runtime_create_instance();
+    {{ callback.shim_register_call() }}
     return $$ffi.Struct.create<_$$BoltCallbackHandle>()
-      ..handle = _k$handles.insert(implementation)
+      ..handle = handle
       ..vtable = _k$vtable.ptr.cast();
   }
 
@@ -100,11 +104,20 @@ final class {{ callback.bridge_name() }} {
     return _k$handles.get(handle.handle) ?? {{ callback.proxy_name() }}(handle);
   }
 
-  static void _m$free(int handle) => _k$handles.remove(handle);
+  static void _m$free(int handle) {
+    _k$handles.remove(handle);
+    _f${{ callback.shim_release_symbol() }}(handle);
+  }
 
-  static int _m$clone(int handle) {
-    final implementation = _k$handles.get(handle);
-    return implementation == null ? 0 : _k$handles.insert(implementation);
+  static int _m$clone(int originalHandle) {
+    final implementation = _k$handles.get(originalHandle);
+    if (implementation == null) return 0;
+    final handle = _k$handles.insert(implementation);
+    // A clone is a genuinely new registration, not an alias -- it needs
+    // its own hooks, since shim dispatch is keyed by `handle`.
+    final instanceHandle = _f$boltffi_dart_runtime_create_instance();
+    {{ callback.shim_register_call() }}
+    return handle;
   }
 {%- for entry in callback.entries() %}
 

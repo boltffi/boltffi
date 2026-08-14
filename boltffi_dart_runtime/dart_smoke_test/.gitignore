@@ -1,0 +1,5 @@
+# https://dart.dev/guides/libraries/private-files
+.dart_tool/
+
+# Rust build output for the reference_dispatcher sub-crate.
+reference_dispatcher/target/

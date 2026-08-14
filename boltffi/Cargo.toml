@@ -18,10 +18,12 @@ fast-alloc = ["boltffi_core/fast-alloc"]
 uuid = ["boltffi_core/uuid"]
 chrono = ["boltffi_core/chrono"]
 url = ["boltffi_core/url"]
+dart = ["dep:boltffi_dart_runtime"]
 
 [dependencies]
 boltffi_core.workspace = true
 boltffi_macros.workspace = true
+boltffi_dart_runtime = { workspace = true, optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt", "macros"] }

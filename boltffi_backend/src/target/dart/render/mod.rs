@@ -10,6 +10,7 @@ pub mod function;
 mod module;
 mod record;
 mod returned_closure;
+pub(crate) mod shim;
 mod stream;
 
 pub use callback::Callback;

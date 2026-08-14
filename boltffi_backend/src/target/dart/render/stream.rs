@@ -285,12 +285,13 @@ impl StreamItem {
                 has_items: "_l$count != 0".to_owned(),
                 prepare: None,
                 // Numeric primitives: one bulk typed-data view instead of a
-                // `List.generate` that pointer-dereferences per element. The
-                // view stays valid because `cleanup` (below) only disposes
-                // `_l$storage` after the template's `.forEach` has already
-                // consumed it.
+                // `List.generate` that pointer-dereferences per element.
+                // `.sublist(0)` copies it, since `cleanup` below disposes
+                // `_l$storage` before batch mode returns this value.
                 read: if *supports_typed_list {
-                    format!("_l$storage.ptr.cast<{pop_native_type}>().asTypedList(_l$count)")
+                    format!(
+                        "_l$storage.ptr.cast<{pop_native_type}>().asTypedList(_l$count).sublist(0)"
+                    )
                 } else {
                     format!("List.generate(_l$count, (_l$index) => {decode})")
                 },
@@ -375,10 +376,10 @@ impl<'plan> StreamItemPlanRender<'plan, Native> for ItemRenderer<'_, '_, '_> {
             ),
             _ => return super::super::unsupported("unknown direct stream item"),
         };
-        // Every numeric primitive (not `bool`, which Dart FFI has no typed-
-        // list view for) maps directly onto a Dart typed-data class, so the
-        // whole batch can be read with one `.asTypedList()` call instead of
-        // one `.elementAt(index).value` per item.
+        // Every fixed-width numeric primitive maps onto a Dart typed-data
+        // class, so the batch reads with one `.asTypedList()` call. Excluded:
+        // `bool` (no typed-list view), `isize`/`usize` (platform-dependent
+        // width, no `Pointer<IntPtr>.asTypedList`).
         let supports_typed_list = matches!(
             ty,
             DirectValueType::Primitive(
@@ -390,8 +391,6 @@ impl<'plan> StreamItemPlanRender<'plan, Native> for ItemRenderer<'_, '_, '_> {
                     | Primitive::U32
                     | Primitive::I64
                     | Primitive::U64
-                    | Primitive::ISize
-                    | Primitive::USize
                     | Primitive::F32
                     | Primitive::F64
             )

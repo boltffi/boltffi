@@ -10,14 +10,53 @@ use crate::{
         pack::PackDartOptions,
     },
     config::Config,
-    pack::{PackError, print_cargo_line, resolve_build_cargo_args},
+    pack::{PackError, print_cargo_line, resolve_build_cargo_args, scratch},
     reporter::{Reporter, Step},
 };
+
+/// `dart_shims.rs` is a build-time handoff from Dart generation to the
+/// later build step's `build.rs`, never something the Dart package ships.
+/// Relocates it out of the Dart package tree into
+/// `scratch::Directory::for_target("dart")`. Called from every Dart
+/// generation entry point (not just `pack dart`) so `pack dart --regenerate
+/// false` works regardless of which command generated the bindings. Does
+/// not delete the scratch copy after a build consumes it -- scratch is
+/// durable until `cargo clean`, not single-shot.
+pub(crate) fn relocate_dart_shim_to_scratch(config: &Config) -> Result<std::path::PathBuf> {
+    let scratch_path = scratch::Directory::for_target("dart")?.join("dart_shims.rs");
+    let generated_path = config
+        .dart_output()
+        .join(&config.package.name)
+        .join("native")
+        .join("dart_shims.rs");
+
+    if generated_path.exists() {
+        std::fs::create_dir_all(scratch_path.parent().expect("scratch path has a parent"))
+            .map_err(|source| CliError::CreateDirectoryFailed {
+                path: scratch_path.clone(),
+                source,
+            })?;
+        std::fs::rename(&generated_path, &scratch_path)
+            .or_else(|_| {
+                // `rename` can fail across filesystem/volume boundaries.
+                std::fs::copy(&generated_path, &scratch_path)?;
+                std::fs::remove_file(&generated_path)
+            })
+            .map_err(|source| CliError::CopyFailed {
+                from: generated_path,
+                to: scratch_path.clone(),
+                source,
+            })?;
+    }
+
+    Ok(scratch_path)
+}
 
 fn build_dart_targets(
     config: &Config,
     release: bool,
     build_cargo_args: &[String],
+    dart_shim_rs_path: Option<&std::path::Path>,
     step: &Step,
 ) -> Result<()> {
     let on_output: Option<OutputCallback> = if step.is_verbose() {
@@ -26,9 +65,34 @@ fn build_dart_targets(
         None
     };
 
-    let expansion = dart_expansion(config, build_cargo_args)?;
+    // Always enabled (not just when a shim was generated) to keep the
+    // built artifact stable across runs -- build.rs stages an empty stub
+    // when BOLTFFI_DART_SHIM_RS is unset.
+    let mut dart_cargo_args = build_cargo_args.to_vec();
+    dart_cargo_args.push("--features".to_string());
+    dart_cargo_args.push("boltffi/dart".to_string());
 
-    let builder = Builder::new(config, dart_build_options(expansion, release, on_output));
+    let expansion = dart_expansion(config, &dart_cargo_args)?;
+
+    let mut options = dart_build_options(expansion, release, on_output);
+    if let Some(shim_path) = dart_shim_rs_path {
+        // Must be absolute: this crosses into `boltffi`'s build.rs via env
+        // var, whose cwd is `boltffi`'s own crate root, not wherever this
+        // CLI was invoked from.
+        let absolute_shim_path = if shim_path.is_absolute() {
+            shim_path.to_path_buf()
+        } else {
+            std::env::current_dir()
+                .map(|cwd| cwd.join(shim_path))
+                .unwrap_or_else(|_| shim_path.to_path_buf())
+        };
+        options.extra_env.push((
+            "BOLTFFI_DART_SHIM_RS".to_string(),
+            absolute_shim_path.display().to_string(),
+        ));
+    }
+
+    let builder = Builder::new(config, options);
     let results = builder.build_targets(&config.dart_targets())?;
 
     if all_successful(&results) {
@@ -57,6 +121,7 @@ fn dart_build_options(
         release,
         selection: BuildSelection::Expanded(Box::new(expansion)),
         on_output,
+        extra_env: Vec::new(),
     }
 }
 
@@ -77,17 +142,10 @@ pub(crate) fn pack_dart(
     let build_cargo_args = resolve_build_cargo_args(config, &options.execution.cargo_args);
     let build_profile = resolve_build_profile(options.execution.release, &build_cargo_args);
 
-    if !options.execution.no_build {
-        let step = reporter.step("Building Rust cdylib");
-        build_dart_targets(
-            config,
-            matches!(build_profile, CargoBuildProfile::Release),
-            &build_cargo_args,
-            &step,
-        )?;
-        step.finish_success();
-    }
-
+    // Bindings are generated before the Rust cdylib is built, unlike other
+    // targets: generation also emits `dart_shims.rs`, which the build needs
+    // staged in scratch first. `run_generate_with_output` already relocates
+    // it as part of `GenerateTarget::Dart`.
     if options.execution.regenerate {
         let step = reporter.step("Generating Dart bindings");
         run_generate_with_output(
@@ -101,6 +159,20 @@ pub(crate) fn pack_dart(
             },
         )?;
 
+        step.finish_success();
+    }
+
+    let dart_shim_rs_path = scratch::Directory::for_target("dart")?.join("dart_shims.rs");
+
+    if !options.execution.no_build {
+        let step = reporter.step("Building Rust cdylib");
+        build_dart_targets(
+            config,
+            matches!(build_profile, CargoBuildProfile::Release),
+            &build_cargo_args,
+            Some(&dart_shim_rs_path),
+            &step,
+        )?;
         step.finish_success();
     }
 

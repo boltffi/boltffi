@@ -1126,3 +1126,20 @@ final class _$$BoltStreamCtx {
     );
   }
 }
+
+// Thread-safe callback dispatch (see `boltffi_dart_runtime`'s crate-level
+// docs). Bound directly to that crate's own symbol names -- the shim is
+// generated Rust, `include!()`'d into the `boltffi` crate, not a
+// separately-compiled C library.
+@$$ffi.Native<$$ffi.Size Function()>(symbol: 'boltffi_dart_runtime_create_instance')
+external int _f$boltffi_dart_runtime_create_instance();
+
+@$$ffi.Native<$$ffi.Void Function($$ffi.Pointer<$$ffi.Void>)>(
+  symbol: 'signal_gate_ok',
+)
+external void _f$signal_gate_ok($$ffi.Pointer<$$ffi.Void> gate);
+
+@$$ffi.Native<$$ffi.Void Function($$ffi.Pointer<$$ffi.Void>)>(
+  symbol: 'signal_gate_error',
+)
+external void _f$signal_gate_error($$ffi.Pointer<$$ffi.Void> gate);

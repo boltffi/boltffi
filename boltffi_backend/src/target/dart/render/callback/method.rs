@@ -24,6 +24,7 @@ use super::super::super::{
     syntax::{Expression, Identifier, Parameter, TypeFragment},
     type_name,
 };
+use super::super::shim::{ShimMethod, shim_symbol_name, shim_type_name};
 use super::super::{Documentation, indent};
 use super::parameter::{CallbackParameter, group_indices};
 
@@ -70,13 +71,25 @@ pub struct CallbackMethod {
     entry: String,
     callable: Option<String>,
     vtable_initializer: String,
+    /// Present only for a synchronous, scalar/void-shaped method that
+    /// qualified for shim dispatch (see `render::shim`).
+    shim_wiring: Option<ShimWiring>,
+}
+
+struct ShimWiring {
+    fast_declaration: String,
+    listener_declaration: String,
+    register_arguments: String,
+    register_argument_types: (String, String),
 }
 
 impl CallbackMethod {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         declaration: &ImportedMethodDecl<Native, VTableSlot>,
         slot: &CallbackSlot,
         callback_name: &Identifier,
+        vtable_name: &str,
         bridge: &CBridgeContract,
         context: &RenderContext<Native>,
     ) -> Result<Self> {
@@ -161,7 +174,11 @@ impl CallbackMethod {
         .expect("rendering an in-memory Dart callback entry cannot fail");
 
         let native_signature = TypeFragment::new(native_function_signature(slot)?);
-        let (callable, vtable_initializer) = if asynchronous {
+        let shim_method = (!asynchronous)
+            .then(|| ShimMethod::from_slot(slot))
+            .flatten()
+            .filter(|_| matches!(declaration.callable().error(), ErrorDecl::None(_)));
+        let (callable, vtable_initializer, shim_wiring) = if asynchronous {
             let callable_name = Identifier::parse(format!("_k${name}Callable"))?;
             (
                 Some(
@@ -174,16 +191,81 @@ impl CallbackMethod {
                     .expect("rendering an in-memory Dart callback callable cannot fail"),
                 ),
                 format!("..{} = {callable_name}.nativeFunction", slot.name()),
+                None,
             )
         } else {
             let exceptional = native_exceptional_return(slot.returns())?;
-            (
-                None,
-                format!(
-                    "..{} = $$ffi.Pointer.fromFunction<{native_signature}>({callback_name}Bridge.{entry_name}{exceptional})",
-                    slot.name()
+            // `static`: this declaration lives at `Bridge` class scope,
+            // read from `create()`/`_m$clone`, both static themselves.
+            let fast_declaration = format!(
+                "static final _k${name}Fast = $$ffi.Pointer.fromFunction<{native_signature}>({callback_name}Bridge.{entry_name}{exceptional});"
+            );
+            match shim_method {
+                Some(shim_method) => {
+                    let symbol = shim_symbol_name(&shim_type_name(vtable_name), &shim_method);
+                    let native_return = NativeType::from_c(slot.returns())?.dart().to_owned();
+                    // Real parameter names, not bare types: a bare
+                    // identifier in a concrete Dart function declaration is
+                    // parsed as that parameter's name with an implicit
+                    // `dynamic` type, not a type-only positional slot.
+                    let native_params = slot
+                        .parameters()
+                        .iter()
+                        .map(|parameter| {
+                            NativeType::from_c(parameter.ty()).and_then(|ty| {
+                                native::parameter_name(parameter.name())
+                                    .map(|name| format!("{} {name}", ty.dart()))
+                            })
+                        })
+                        .collect::<Result<Vec<_>>>()?
+                        .join(", ");
+                    let symbol_fn_name = Identifier::parse(format!("_f${symbol}"))?;
+                    // `external static`, not `static external`: Dart
+                    // requires that exact modifier order.
+                    let symbol_declaration = format!(
+                        "@$$ffi.Native<{native_signature}>(symbol: '{symbol}')\n  external static {native_return} {symbol_fn_name}({native_params});"
+                    );
+                    let vtable_initializer = format!(
+                        "..{} = $$ffi.Native.addressOf<$$ffi.NativeFunction<{native_signature}>>({symbol_fn_name})",
+                        slot.name()
+                    );
+                    let listener_entry_name = Identifier::parse(format!("_m${name}Listener"))?;
+                    let listener_signature = shim_listener_native_signature(slot, &shim_method)?;
+                    let listener_entry_body = render_shim_listener_entry(
+                        declaration,
+                        slot,
+                        &parameters,
+                        &listener_entry_name,
+                    )?;
+                    let listener_declaration = format!(
+                        "{symbol_declaration}\n  {listener_entry_body}\n  static final _k${name}Listener = $$ffi.NativeCallable<{listener_signature}>.listener({listener_entry_name});"
+                    );
+                    let register_arguments =
+                        format!("_k${name}Fast, _k${name}Listener.nativeFunction");
+                    let register_argument_types = (
+                        format!("$$ffi.Pointer<$$ffi.NativeFunction<{native_signature}>>"),
+                        format!("$$ffi.Pointer<$$ffi.NativeFunction<{listener_signature}>>"),
+                    );
+                    (
+                        None,
+                        vtable_initializer,
+                        Some(ShimWiring {
+                            fast_declaration,
+                            listener_declaration,
+                            register_arguments,
+                            register_argument_types,
+                        }),
+                    )
+                }
+                None => (
+                    None,
+                    format!(
+                        "..{} = $$ffi.Pointer.fromFunction<{native_signature}>({callback_name}Bridge.{entry_name}{exceptional})",
+                        slot.name()
+                    ),
+                    None,
                 ),
-            )
+            }
         };
 
         Ok(Self {
@@ -192,6 +274,7 @@ impl CallbackMethod {
             entry,
             callable,
             vtable_initializer,
+            shim_wiring,
         })
     }
 
@@ -214,6 +297,125 @@ impl CallbackMethod {
     pub fn vtable_initializer(&self) -> Result<String> {
         Ok(self.vtable_initializer.clone())
     }
+
+    /// The static declarations (fast-path pointer + listener-based
+    /// `NativeCallable`) this method needs at the `Bridge` class level, if
+    /// it qualified for shim dispatch. `None` otherwise (async methods, and
+    /// any shape not yet covered -- see `render::shim`'s module docs).
+    pub fn shim_declarations(&self) -> Option<String> {
+        self.shim_wiring.as_ref().map(|wiring| {
+            format!(
+                "{}\n  {}",
+                wiring.fast_declaration, wiring.listener_declaration
+            )
+        })
+    }
+
+    /// This method's two-argument contribution (fast pointer, listener
+    /// pointer) to the per-callback hooks registration call, if it
+    /// qualified for shim dispatch.
+    pub fn shim_register_arguments(&self) -> Option<&str> {
+        self.shim_wiring
+            .as_ref()
+            .map(|wiring| wiring.register_arguments.as_str())
+    }
+
+    /// This method's (fast pointer, listener pointer) native types, paired
+    /// with [`shim_register_arguments`]'s values in the same order.
+    pub fn shim_register_argument_types(&self) -> Option<(&str, &str)> {
+        self.shim_wiring.as_ref().map(|wiring| {
+            (
+                wiring.register_argument_types.0.as_str(),
+                wiring.register_argument_types.1.as_str(),
+            )
+        })
+    }
+}
+
+/// The `NativeCallable<Sig>.listener` signature for a shimmed method's
+/// listener entry: the fast path's parameters, plus a trailing gate
+/// pointer, plus (if non-void) a trailing out-pointer.
+fn shim_listener_native_signature(slot: &CallbackSlot, shim_method: &ShimMethod) -> Result<String> {
+    let mut params = slot
+        .parameters()
+        .iter()
+        .map(|parameter| NativeType::from_c(parameter.ty()).map(|ty| ty.native().to_owned()))
+        .collect::<Result<Vec<_>>>()?;
+    params.push("$$ffi.Pointer<$$ffi.Void>".to_owned());
+    if !shim_method.is_void_return() {
+        let native_return = NativeType::from_c(slot.returns())?.native().to_owned();
+        params.push(format!("$$ffi.Pointer<{native_return}>"));
+    }
+    Ok(format!("$$ffi.Void Function({})", params.join(", ")))
+}
+
+/// The listener entry body for a shimmed method: same argument decoding and
+/// dispatch as the fast-path entry, but writes the result through the
+/// out-pointer and resolves the gate instead of returning directly.
+fn render_shim_listener_entry(
+    declaration: &ImportedMethodDecl<Native, VTableSlot>,
+    slot: &CallbackSlot,
+    parameters: &[CallbackParameter],
+    entry_name: &Identifier,
+) -> Result<String> {
+    let method = Name::new(declaration.name()).lower_camel()?;
+    let native_parameters = slot
+        .parameters()
+        .iter()
+        .map(|parameter| {
+            NativeType::from_c(parameter.ty()).and_then(|ty| {
+                native::parameter_name(parameter.name()).map(|name| format!("{} {name}", ty.dart()))
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let handle = native::parameter_name(
+        slot.parameters()
+            .first()
+            .ok_or(Error::BrokenBridgeContract {
+                bridge: "c",
+                invariant: "Dart callback slot has no handle parameter",
+            })?
+            .name(),
+    )?;
+    let is_void = matches!(declaration.callable().returns().plan(), ReturnPlan::Void);
+
+    let mut params = native_parameters.join(", ");
+    params.push_str(", $$ffi.Pointer<$$ffi.Void> _l$gate");
+    if !is_void {
+        let native_return = NativeType::from_c(slot.returns())?.native().to_owned();
+        params.push_str(&format!(", $$ffi.Pointer<{native_return}> _l$out"));
+    }
+
+    let mut body = vec![format!("final implementation = _k$handles.get({handle});")];
+    body.push(
+        "if (implementation == null) {\n  _f$signal_gate_error(_l$gate);\n  return;\n}".to_string(),
+    );
+    let decode = parameters
+        .iter()
+        .flat_map(|parameter| parameter.entry_setup().iter().cloned())
+        .collect::<Vec<_>>();
+    let arguments = parameters
+        .iter()
+        .map(CallbackParameter::entry_argument)
+        .collect::<Vec<_>>()
+        .join(", ");
+    let call = format!("implementation.{method}({arguments})");
+    let mut try_body = decode;
+    if is_void {
+        try_body.push(format!("{call};"));
+    } else {
+        try_body.push(format!("_l$out.value = {call};"));
+    }
+    try_body.push("_f$signal_gate_ok(_l$gate);".to_owned());
+    body.push(format!(
+        "try {{\n{}\n}} catch (_) {{\n  _f$signal_gate_error(_l$gate);\n}}",
+        indent(&try_body.join("\n"), 2)
+    ));
+
+    Ok(format!(
+        "static void {entry_name}({params}) {{\n{}\n}}",
+        indent(&body.join("\n"), 2)
+    ))
 }
 
 fn render_sync_entry(

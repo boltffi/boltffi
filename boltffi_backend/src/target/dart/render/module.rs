@@ -64,19 +64,26 @@ impl<'host, 'bridge, 'decl> Module<'host, 'bridge, 'decl> {
             .with_file(FilePlan::all(source_path).with_preamble(preamble))
             .assemble_declarations(self.declarations)?;
         let artifact = self.host.artifact_for(bindings);
-        let package_files = GeneratedOutput::new(
-            vec![
-                GeneratedFile::new(
-                    FilePath::new(format!("{package}/pubspec.yaml"))?,
-                    PUBSPEC.replace("{{ artifact_name }}", &package),
-                ),
-                GeneratedFile::new(
-                    FilePath::new(format!("{package}/hook/build.dart"))?,
-                    BUILD_HOOK.replace("{{ artifact_name }}", &artifact),
-                ),
-            ],
-            Vec::new(),
-        );
+        let mut package_generated_files = vec![
+            GeneratedFile::new(
+                FilePath::new(format!("{package}/pubspec.yaml"))?,
+                PUBSPEC.replace("{{ artifact_name }}", &package),
+            ),
+            GeneratedFile::new(
+                FilePath::new(format!("{package}/hook/build.dart"))?,
+                BUILD_HOOK.replace("{{ artifact_name }}", &artifact),
+            ),
+        ];
+        // Always written, even when empty: generation never clears stale
+        // files a previous run left behind, so a conditional write here
+        // could leave an old `dart_shims.rs` compiled into the next build.
+        let shim_source = super::shim::render_module_shim(self.bridge)?
+            .unwrap_or_else(|| "// no qualifying Dart callback shims generated\n".to_string());
+        package_generated_files.push(GeneratedFile::new(
+            FilePath::new(format!("{package}/native/dart_shims.rs"))?,
+            shim_source,
+        ));
+        let package_files = GeneratedOutput::new(package_generated_files, Vec::new());
         Ok(GeneratedOutput::combine([source, package_files]))
     }
 }

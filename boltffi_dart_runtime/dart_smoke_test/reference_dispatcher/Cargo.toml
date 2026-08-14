@@ -1,0 +1,12 @@
+[workspace]
+
+[package]
+name = "reference_dispatcher"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+boltffi_dart_runtime = { path = "../.." }
