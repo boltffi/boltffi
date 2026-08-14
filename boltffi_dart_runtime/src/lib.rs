@@ -381,12 +381,13 @@ pub unsafe extern "C" fn boltffi_dart_runtime_register_hooks(
 pub fn boltffi_dart_runtime_get_hooks_ref(handle: usize) -> Option<Arc<HooksEntry>> {
     let epoch = HOOKS_RELEASE_EPOCH.load(Ordering::Acquire);
     HOOKS_CACHE.with(|cache| {
-        if let Some((cached_handle, cached_epoch, entry)) = cache.take() {
-            if cached_handle == handle && cached_epoch == epoch {
-                let out = entry.clone();
-                cache.set(Some((cached_handle, cached_epoch, entry)));
-                return Some(out);
-            }
+        if let Some((cached_handle, cached_epoch, entry)) = cache.take()
+            && cached_handle == handle
+            && cached_epoch == epoch
+        {
+            let out = entry.clone();
+            cache.set(Some((cached_handle, cached_epoch, entry)));
+            return Some(out);
         }
         let entry = hooks_table().lock().unwrap().get(&handle).cloned()?;
         cache.set(Some((handle, epoch, entry.clone())));
