@@ -1044,6 +1044,7 @@ mod tests {
                 "demo_api/lib/demo_api.dart",
                 "demo_api/pubspec.yaml",
                 "demo_api/hook/build.dart",
+                "demo_api/native/dart_shims.rs",
             ]
         );
         assert!(
