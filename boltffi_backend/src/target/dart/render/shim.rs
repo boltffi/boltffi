@@ -363,17 +363,25 @@ fn render_method_shim(type_name: &str, method: &ShimMethod) -> String {
     let ret = method.returns.rust_name();
     let zero = method.returns.zero_literal();
 
+    // Synthetic `p0, p1, ...` names, not the C bridge's own parameter
+    // names: those are only escaped against *C* keyword collisions, so a
+    // Rust source parameter declared with a raw identifier (`r#type`)
+    // lowers to a plain C name (`type`) that would collide with a Rust
+    // keyword if spliced directly into this generated Rust source. Dart's
+    // FFI call is purely positional, so the actual names are never
+    // observable outside this function.
     let param_decls = std::iter::once("handle: u64".to_owned())
         .chain(
             method
                 .parameters
                 .iter()
-                .map(|(name, ty)| format!("{name}: {}", ty.rust_name())),
+                .enumerate()
+                .map(|(index, (_, ty))| format!("p{index}: {}", ty.rust_name())),
         )
         .collect::<Vec<_>>()
         .join(", ");
     let arg_names = std::iter::once("handle".to_owned())
-        .chain(method.parameters.iter().map(|(name, _)| name.clone()))
+        .chain((0..method.parameters.len()).map(|index| format!("p{index}")))
         .collect::<Vec<_>>()
         .join(", ");
 

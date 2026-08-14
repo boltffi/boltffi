@@ -122,9 +122,19 @@ pub fn run_build(config: &Config, options: BuildCommandOptions) -> Result<Vec<Bu
 // at the shim `pack dart`/`generate dart` already staged in scratch --
 // otherwise this produces a cdylib the generated bindings can't link
 // against. Shares that wiring with `pack dart`'s own build step.
+//
+// Only points at the scratch shim if it already exists: `boltffi release`
+// runs `build` before `generate` (its own step order, not this command's
+// to change), so on a clean checkout nothing has staged a shim yet --
+// passing a path that doesn't exist would make `boltffi/build.rs` hard-
+// panic instead of the harmless empty stub an absent path gets. `release`
+// regenerates and rebuilds Dart properly afterward via `pack dart`, so
+// this build step producing a stub here (same as "no callbacks yet") when
+// nothing has run generation is correct, not a regression.
 fn build_dart(config: &Config, release: bool, cargo_args: &[String]) -> Result<Vec<BuildResult>> {
     let shim_path = scratch::Directory::for_target("dart")?.join("dart_shims.rs");
-    crate::pack::dart::build_dart_targets(config, release, cargo_args, Some(&shim_path), false)
+    let shim_path = shim_path.exists().then_some(shim_path);
+    crate::pack::dart::build_dart_targets(config, release, cargo_args, shim_path.as_deref(), false)
 }
 
 // Cargo only sets CARGO_FEATURE_* for build scripts, so every platform here
