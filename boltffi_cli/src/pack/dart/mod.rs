@@ -1,7 +1,7 @@
 use crate::{
     build::{
-        BindingExpansion, BuildOptions, BuildSelection, Builder, CargoBuildProfile, OutputCallback,
-        all_successful, failed_targets, resolve_build_profile,
+        BindingExpansion, BuildOptions, BuildResult, BuildSelection, Builder, CargoBuildProfile,
+        OutputCallback, all_successful, failed_targets, resolve_build_profile,
     },
     cargo::Cargo,
     cli::{CliError, Result},
@@ -11,7 +11,7 @@ use crate::{
     },
     config::Config,
     pack::{PackError, print_cargo_line, resolve_build_cargo_args, scratch},
-    reporter::{Reporter, Step},
+    reporter::Reporter,
 };
 
 /// `dart_shims.rs` is a build-time handoff from Dart generation to the
@@ -22,10 +22,18 @@ use crate::{
 /// false` works regardless of which command generated the bindings. Does
 /// not delete the scratch copy after a build consumes it -- scratch is
 /// durable until `cargo clean`, not single-shot.
-pub(crate) fn relocate_dart_shim_to_scratch(config: &Config) -> Result<std::path::PathBuf> {
+///
+/// `package_output_root` must be the exact directory generation actually
+/// wrote to (i.e. `options.output` if the caller passed one, otherwise
+/// `config.dart_output()`) -- not recomputed here, since a
+/// `boltffi generate dart --output <dir>` call writes there, not to the
+/// configured default.
+pub(crate) fn relocate_dart_shim_to_scratch(
+    config: &Config,
+    package_output_root: &std::path::Path,
+) -> Result<std::path::PathBuf> {
     let scratch_path = scratch::Directory::for_target("dart")?.join("dart_shims.rs");
-    let generated_path = config
-        .dart_output()
+    let generated_path = package_output_root
         .join(&config.package.name)
         .join("native")
         .join("dart_shims.rs");
@@ -52,14 +60,18 @@ pub(crate) fn relocate_dart_shim_to_scratch(config: &Config) -> Result<std::path
     Ok(scratch_path)
 }
 
-fn build_dart_targets(
+/// Shared by `pack dart` and `boltffi build dart`/`build all`'s Dart leg --
+/// both need the same `dart` feature and `BOLTFFI_DART_SHIM_RS` wiring, or
+/// the resulting cdylib doesn't contain the shim symbols the already-
+/// generated Dart bindings call by name.
+pub(crate) fn build_dart_targets(
     config: &Config,
     release: bool,
     build_cargo_args: &[String],
     dart_shim_rs_path: Option<&std::path::Path>,
-    step: &Step,
-) -> Result<()> {
-    let on_output: Option<OutputCallback> = if step.is_verbose() {
+    verbose: bool,
+) -> Result<Vec<BuildResult>> {
+    let on_output: Option<OutputCallback> = if verbose {
         Some(Box::new(|line: &str| print_cargo_line(line)))
     } else {
         None
@@ -93,14 +105,7 @@ fn build_dart_targets(
     }
 
     let builder = Builder::new(config, options);
-    let results = builder.build_targets(&config.dart_targets())?;
-
-    if all_successful(&results) {
-        return Ok(());
-    }
-
-    let failed = failed_targets(&results);
-    Err(CliError::Pack(PackError::BuildFailed { targets: failed }))
+    builder.build_targets(&config.dart_targets())
 }
 
 // Cargo only sets CARGO_FEATURE_* for build scripts, so this must build as
@@ -166,13 +171,18 @@ pub(crate) fn pack_dart(
 
     if !options.execution.no_build {
         let step = reporter.step("Building Rust cdylib");
-        build_dart_targets(
+        let results = build_dart_targets(
             config,
             matches!(build_profile, CargoBuildProfile::Release),
             &build_cargo_args,
             Some(&dart_shim_rs_path),
-            &step,
+            step.is_verbose(),
         )?;
+        if !all_successful(&results) {
+            return Err(CliError::Pack(PackError::BuildFailed {
+                targets: failed_targets(&results),
+            }));
+        }
         step.finish_success();
     }
 

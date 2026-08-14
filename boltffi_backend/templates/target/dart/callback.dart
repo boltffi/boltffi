@@ -88,12 +88,18 @@ final class {{ callback.bridge_name() }} {
     // `_k$registered` above already guarantees `_k$vtable` is registered
     // with Rust, so there's nothing left for a native round-trip to check --
     // both fields are already known here, so build the handle directly.
-    final handle = _k$handles.insert(implementation);
+    //
     // Captures the calling isolate's thread as this registration's owner.
+    // Also doubles as the dispatch handle itself (not a locally-numbered
+    // one from `_k$handles.insert`): boltffi_dart_runtime's hooks table is
+    // one process-wide map keyed by this same handle across every callback
+    // type, so a per-type counter starting back at a small number for each
+    // type would collide across types.
     final instanceHandle = _f$boltffi_dart_runtime_create_instance();
+    _k$handles.insertAt(instanceHandle, implementation);
     {{ callback.shim_register_call() }}
     return $$ffi.Struct.create<_$$BoltCallbackHandle>()
-      ..handle = handle
+      ..handle = instanceHandle
       ..vtable = _k$vtable.ptr.cast();
   }
 
@@ -112,12 +118,13 @@ final class {{ callback.bridge_name() }} {
   static int _m$clone(int originalHandle) {
     final implementation = _k$handles.get(originalHandle);
     if (implementation == null) return 0;
-    final handle = _k$handles.insert(implementation);
-    // A clone is a genuinely new registration, not an alias -- it needs
-    // its own hooks, since shim dispatch is keyed by `handle`.
+    // A clone is a genuinely new registration, not an alias -- it needs its
+    // own hooks (shim dispatch is keyed by this handle) and its own owner-
+    // thread instance, not `originalHandle`'s.
     final instanceHandle = _f$boltffi_dart_runtime_create_instance();
+    _k$handles.insertAt(instanceHandle, implementation);
     {{ callback.shim_register_call() }}
-    return handle;
+    return instanceHandle;
   }
 {%- for entry in callback.entries() %}
 

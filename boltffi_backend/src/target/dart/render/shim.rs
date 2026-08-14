@@ -17,6 +17,23 @@
 //! This is plain Rust, `include!()`'d into the `boltffi` facade crate by
 //! its `build.rs` (behind the `dart` feature) -- not C compiled by a
 //! separate toolchain.
+//!
+//! Async methods staying on `isolateLocal` is a real, currently-open
+//! thread-safety gap (invoking one from a background thread aborts the
+//! process), not just an unimplemented nice-to-have -- do not "fix" it by
+//! switching `callback_callable.dart`'s `NativeCallable` to `.listener`.
+//! That was tried: it reintroduces a genuine use-after-free, confirmed by
+//! a real demo test regression (`callbacks_test.dart`, reproducible even
+//! same-thread, single-file, `--concurrency=1`) plus a crash on process
+//! teardown. The Rust-side async trampoline drops its encoded argument
+//! buffers (e.g. string wire data) as soon as the vtable call *returns*,
+//! matching `isolateLocal`'s synchronous contract; `.listener` posts and
+//! returns immediately, so the deferred Dart entry body decodes those
+//! buffers only after Rust has already freed them. A correct fix needs
+//! the argument buffers kept alive through completion (not just call
+//! return), likely alongside the same owner-thread-check/gate dual-path
+//! shape used for synchronous methods here -- a real follow-up, not a
+//! template swap.
 
 use crate::bridge::c::{CBridgeContract, Callback, CallbackSlot, Parameter, Type};
 use crate::core::Result;
@@ -67,6 +84,8 @@ pub(crate) enum ScalarType {
     Uint64,
     Float32,
     Float64,
+    SignedPointerWidth,
+    PointerWidth,
 }
 
 impl ScalarType {
@@ -84,6 +103,8 @@ impl ScalarType {
             Type::Uint64 => Self::Uint64,
             Type::Float32 => Self::Float32,
             Type::Float64 => Self::Float64,
+            Type::SignedPointerWidth => Self::SignedPointerWidth,
+            Type::PointerWidth => Self::PointerWidth,
             _ => return None,
         })
     }
@@ -102,6 +123,8 @@ impl ScalarType {
             Self::Uint64 => "u64",
             Self::Float32 => "f32",
             Self::Float64 => "f64",
+            Self::SignedPointerWidth => "isize",
+            Self::PointerWidth => "usize",
         }
     }
 
@@ -388,23 +411,32 @@ fn render_method_shim(type_name: &str, method: &ShimMethod) -> String {
         ));
     }
     body.push_str("    }\n");
-    body.push_str("    let gate = hooks_entry.instance().create_gate().map(|gate| gate.raw()).unwrap_or(::std::ptr::null_mut());\n");
-    body.push_str(&format!("    if gate.is_null() {{ {early_return} }}\n"));
+    // Kept as a normal local (not discarded down to just its raw pointer)
+    // across the listener call and the wait -- `signal_gate_ok`/
+    // `signal_gate_error` reclaim and drop the *other* strong reference as
+    // soon as Dart resolves the gate, which can happen before this thread
+    // even reaches the wait if this were the only reference left.
+    body.push_str(
+        "    let Some(pending_gate) = hooks_entry.instance().create_gate() else { {early_return} };\n"
+            .replace("{early_return}", &early_return)
+            .as_str(),
+    );
+    body.push_str("    let gate = pending_gate.raw();\n");
     if is_void {
         body.push_str(&format!(
             "    unsafe {{ (hooks.{name}_listener)({arg_names}, gate) }};\n"
         ));
-        body.push_str(
-            "    unsafe { ::boltffi_dart_runtime::boltffi_dart_runtime_wait_gate(gate) };\n",
-        );
+        body.push_str("    pending_gate.wait();\n");
         body.push_str("    return;\n");
     } else {
         body.push_str(&format!("    let mut out: {ret} = {zero};\n"));
         body.push_str(&format!(
             "    unsafe {{ (hooks.{name}_listener)({arg_names}, gate, &mut out as *mut {ret}) }};\n"
         ));
-        body.push_str("    let status = unsafe { ::boltffi_dart_runtime::boltffi_dart_runtime_wait_gate(gate) };\n");
-        body.push_str(&format!("    if status != 0 {{ return {zero}; }}\n"));
+        body.push_str("    let status = pending_gate.wait();\n");
+        body.push_str(&format!(
+            "    if !matches!(status, ::boltffi_dart_runtime::CallStatus::Ok) {{ return {zero}; }}\n"
+        ));
         body.push_str("    out\n");
     }
     body.push_str("}\n");

@@ -938,6 +938,13 @@ final class _$$BoltFFIHandleMap<O> {
     return handle;
   }
 
+  // Callback dispatch is keyed process-wide by the same handle across every
+  // callback type (see boltffi_dart_runtime's hooks table), so a caller that
+  // already has a globally-unique handle (from
+  // boltffi_dart_runtime_create_instance) must be able to register under it
+  // directly instead of this map minting its own, per-type-local one.
+  void insertAt(int handle, O value) => _map[handle] = value;
+
   O? get(int handle) => _map[handle];
 
   O? remove(int handle) => _map.remove(handle);
@@ -1020,6 +1027,11 @@ final class _$$BoltStreamCtx {
   static const _k$StreamPollResult$Closed = 1;
 
   static const _k$defaultBatchSize = 16;
+  // Caps how many batches one readiness wake drains before yielding back to
+  // the event queue -- an unbounded drain loop would starve timers,
+  // cancellation, and other isolate work for as long as a producer keeps
+  // refilling as fast as it's drained.
+  static const _k$maxBatchesPerWake = 32;
 
   late final int Function() subscribe;
   late final void Function(
@@ -1085,8 +1097,21 @@ final class _$$BoltStreamCtx {
       if (!active) return;
       switch (res) {
         case _k$StreamPollResult$Ready:
-          while (active && onReady(handle, _k$defaultBatchSize, itemSize, controller)) {}
-          if (active) {
+          var batches = 0;
+          var more = true;
+          while (active &&
+              more &&
+              batches < _k$maxBatchesPerWake) {
+            more = onReady(handle, _k$defaultBatchSize, itemSize, controller);
+            batches++;
+          }
+          if (!active) break;
+          if (more) {
+            // More is likely already buffered -- keep draining without
+            // paying for another native poll round-trip, but only after
+            // yielding this turn so other microtasks/timers get a chance.
+            $$async.scheduleMicrotask(() => streamCallback(data, res));
+          } else {
             pollFn(handle, 0, streamCallbackCallable.nativeFunction);
           }
         case _k$StreamPollResult$Closed:

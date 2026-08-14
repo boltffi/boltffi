@@ -39,10 +39,14 @@ pub fn run_generate_with_output(config: &Config, options: GenerateOptions) -> Re
         GenerateTarget::Header => bindings::run_generation(config, &options),
         GenerateTarget::Typescript => bindings::run_generation(config, &options),
         GenerateTarget::Dart => {
+            let output = options
+                .output
+                .clone()
+                .unwrap_or_else(|| config.dart_output());
             bindings::run_generation(config, &options)?;
             // Every Dart generation entry point relocates the generated
             // shim into scratch, not just `pack dart`.
-            crate::pack::dart::relocate_dart_shim_to_scratch(config)?;
+            crate::pack::dart::relocate_dart_shim_to_scratch(config, &output)?;
             Ok(())
         }
         GenerateTarget::Python => bindings::run_generation(config, &options),
@@ -114,6 +118,10 @@ pub fn run_generate_with_output(config: &Config, options: GenerateOptions) -> Re
             }
 
             if config.should_process(Target::Dart, options.experimental) {
+                let output = options
+                    .output
+                    .clone()
+                    .unwrap_or_else(|| config.dart_output());
                 bindings::run_generation(
                     config,
                     &GenerateOptions {
@@ -126,7 +134,7 @@ pub fn run_generate_with_output(config: &Config, options: GenerateOptions) -> Re
                 )?;
                 // See the `GenerateTarget::Dart` arm above for why this is
                 // needed here too, not just from `pack dart`.
-                crate::pack::dart::relocate_dart_shim_to_scratch(config)?;
+                crate::pack::dart::relocate_dart_shim_to_scratch(config, &output)?;
             }
 
             if config.should_process(Target::Python, options.experimental) {

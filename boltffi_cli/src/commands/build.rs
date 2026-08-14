@@ -6,7 +6,7 @@ use crate::build::{
 };
 use crate::cli::Result;
 use crate::config::Config;
-use crate::pack::PackError;
+use crate::pack::{PackError, scratch};
 
 pub enum BuildPlatform {
     Apple,
@@ -69,8 +69,7 @@ pub fn run_build(config: &Config, options: BuildCommandOptions) -> Result<Vec<Bu
                 return Ok(Vec::new());
             }
             println!("Building for dart ({})...", profile);
-            expanded_builder(config, release, cargo_args.clone())?
-                .build_targets(&config.dart_targets())?
+            build_dart(config, release, &cargo_args)?
         }
         BuildPlatform::All => {
             println!("Building all targets ({})...", profile);
@@ -94,10 +93,7 @@ pub fn run_build(config: &Config, options: BuildCommandOptions) -> Result<Vec<Bu
                 );
             }
             if config.is_dart_enabled() {
-                all_results.extend(
-                    expanded_builder(config, release, cargo_args.clone())?
-                        .build_targets(&config.dart_targets())?,
-                );
+                all_results.extend(build_dart(config, release, &cargo_args)?);
             }
             all_results
         }
@@ -118,6 +114,17 @@ pub fn run_build(config: &Config, options: BuildCommandOptions) -> Result<Vec<Bu
         }
         .into())
     }
+}
+
+// Dart needs its own path, not `expanded_builder`: generated callback
+// vtables call `BoltFFIDartShim_*` symbols by name, which only exist if
+// the `boltffi/dart` feature is enabled and `BOLTFFI_DART_SHIM_RS` points
+// at the shim `pack dart`/`generate dart` already staged in scratch --
+// otherwise this produces a cdylib the generated bindings can't link
+// against. Shares that wiring with `pack dart`'s own build step.
+fn build_dart(config: &Config, release: bool, cargo_args: &[String]) -> Result<Vec<BuildResult>> {
+    let shim_path = scratch::Directory::for_target("dart")?.join("dart_shims.rs");
+    crate::pack::dart::build_dart_targets(config, release, cargo_args, Some(&shim_path), false)
 }
 
 // Cargo only sets CARGO_FEATURE_* for build scripts, so every platform here

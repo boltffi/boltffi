@@ -150,7 +150,7 @@ impl Callback {
                     )
                     .collect::<Vec<_>>();
                 format!(
-                    "_f${}(handle, instanceHandle, {});",
+                    "_f${}(instanceHandle, instanceHandle, {});",
                     super::shim::register_symbol_name(vtable_name),
                     arguments.join(", ")
                 )
