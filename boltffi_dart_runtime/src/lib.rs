@@ -379,7 +379,7 @@ pub unsafe extern "C" fn boltffi_dart_runtime_register_hooks(
 ///
 /// Rust-only API: called by generated Rust shim code, never by Dart.
 pub fn boltffi_dart_runtime_get_hooks_ref(handle: usize) -> Option<Arc<HooksEntry>> {
-    let epoch = HOOKS_RELEASE_EPOCH.load(Ordering::Acquire);
+    let epoch = HOOKS_RELEASE_EPOCH.load(Ordering::SeqCst);
     HOOKS_CACHE.with(|cache| {
         if let Some((cached_handle, cached_epoch, entry)) = cache.take()
             && cached_handle == handle
@@ -401,7 +401,7 @@ pub fn boltffi_dart_runtime_get_hooks_ref(handle: usize) -> Option<Arc<HooksEntr
 #[unsafe(no_mangle)]
 pub extern "C" fn boltffi_dart_runtime_release_hooks(handle: usize) {
     hooks_table().lock().unwrap().remove(&handle);
-    HOOKS_RELEASE_EPOCH.fetch_add(1, Ordering::Release);
+    HOOKS_RELEASE_EPOCH.fetch_add(1, Ordering::SeqCst);
 }
 
 /// Reads back a raw status value received from Dart as a [`CallStatus`].
