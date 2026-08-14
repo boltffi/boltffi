@@ -16,12 +16,13 @@
 //! resolves it via [`signal_gate_ok`]/[`signal_gate_error`]. The isolate's
 //! own thread is never blocked, so there's no deadlock.
 //!
-//! Destruction is two-phase: [`destroy_instance`] marks the instance dead
-//! and cancels outstanding calls but keeps the handle queryable (so
-//! [`instance_outstanding_count`] still resolves); [`forget_instance`]
-//! removes it. Closing a `NativeCallable.listener` while a posted message is
-//! still unprocessed is undefined behavior on Dart's side, so generated code
-//! must drain outstanding calls before forgetting.
+//! Destruction is two-phase: [`boltffi_dart_runtime_destroy_instance`] marks
+//! the instance dead and cancels outstanding calls but keeps the handle
+//! queryable (so [`boltffi_dart_runtime_instance_outstanding_count`] still
+//! resolves); [`boltffi_dart_runtime_forget_instance`] removes it. Closing a
+//! `NativeCallable.listener` while a posted message is still unprocessed is
+//! undefined behavior on Dart's side, so generated code must drain
+//! outstanding calls before forgetting.
 //!
 //! Known limitation: the owner thread is captured once, at registration,
 //! and trusted for the instance's lifetime -- there's no public Dart API to
@@ -385,7 +386,7 @@ pub unsafe extern "C" fn boltffi_dart_runtime_register_hooks(
 
 /// Resolves `handle` to its registered hooks, cloning the `Arc` while the
 /// table's own lock is held so a concurrent `release_hooks` can't free it
-/// out from under the caller. Checks this thread's [`HOOKS_CACHE`] first; a
+/// out from under the caller. Checks this thread's local cache first; a
 /// miss falls back to the table and refreshes the cache.
 ///
 /// Rust-only API: called by generated Rust shim code, never by Dart.
