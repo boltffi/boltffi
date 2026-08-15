@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path as FsPath;
 
-use boltffi_ast::{PackageInfo, Path, PathRoot, PathSegment, SourceContract};
+use boltffi_ast::{PackageInfo, Path, PathRoot, PathSegment, SourceContract, SourceFile};
 
 use crate::declared_types::DeclaredTypes;
 use crate::input::ScanInput;
@@ -20,6 +20,7 @@ pub struct PackageScan {
     root: SourceContract,
     complete: SourceContract,
     root_visible_paths: HashMap<String, Path>,
+    data_source_files: HashMap<String, SourceFile>,
 }
 
 impl PackageScan {
@@ -35,6 +36,13 @@ impl PackageScan {
 
     pub fn complete(&self) -> &SourceContract {
         &self.complete
+    }
+
+    /// Returns the source file that declares a scanned record or enum.
+    ///
+    /// File identity remains available when the compiler cannot provide byte locations for parsed source spans.
+    pub fn data_source_file(&self, id: &str) -> Option<&SourceFile> {
+        self.data_source_files.get(id)
     }
 
     pub fn root_with_support(&self) -> SourceContract {
@@ -145,6 +153,7 @@ pub fn scan_package(input: &ScanInput) -> Result<PackageScan, ScanError> {
     );
     let root_marked = MarkedItems::collect(&root_tree)?;
     let complete_marked = MarkedItems::collect(&complete_tree)?;
+    let data_source_files = data_source_files(&root_marked);
     let declared_types = DeclaredTypes::index(&complete_tree, &complete_marked)?;
     let root =
         scan_marked_with_declarations(&root_marked, &declared_types, input.package().clone())?;
@@ -165,7 +174,34 @@ pub fn scan_package(input: &ScanInput) -> Result<PackageScan, ScanError> {
         root,
         complete,
         root_visible_paths,
+        data_source_files,
     })
+}
+
+fn data_source_files(marked: &MarkedItems<'_>) -> HashMap<String, SourceFile> {
+    let records = marked.records().iter().filter_map(|record| {
+        record.scope().source_file().cloned().map(|source_file| {
+            (
+                record.module().qualified(&record.item().ident.to_string()),
+                source_file,
+            )
+        })
+    });
+    let enumerations = marked.enums().iter().filter_map(|enumeration| {
+        enumeration
+            .scope()
+            .source_file()
+            .cloned()
+            .map(|source_file| {
+                (
+                    enumeration
+                        .module()
+                        .qualified(&enumeration.item().ident.to_string()),
+                    source_file,
+                )
+            })
+    });
+    records.chain(enumerations).collect()
 }
 
 pub fn scan_source(
@@ -1331,6 +1367,7 @@ mod tests {
             root: scan_tree(root, PackageInfo::new("demo", None)).expect("root scans"),
             complete: scan_tree(complete, PackageInfo::new("demo", None)).expect("complete scans"),
             root_visible_paths: HashMap::new(),
+            data_source_files: HashMap::new(),
         };
         let source = scan.root_with_support();
         let counter = source
@@ -1372,6 +1409,7 @@ mod tests {
                     ],
                 ),
             )]),
+            data_source_files: HashMap::new(),
         };
         let source = scan.root_with_support();
 
@@ -1439,6 +1477,7 @@ mod tests {
                     ),
                 ),
             ]),
+            data_source_files: HashMap::new(),
         };
         let source = scan.root_with_support();
         let point = source
@@ -1490,6 +1529,7 @@ mod tests {
             )
             .expect("complete scans"),
             root_visible_paths: HashMap::new(),
+            data_source_files: HashMap::new(),
         };
         let source = scan.root_with_support();
         let point = source

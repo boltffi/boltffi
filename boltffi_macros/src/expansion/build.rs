@@ -1,11 +1,13 @@
+use std::collections::HashMap;
 use std::env;
+use std::ffi::OsString;
 use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use boltffi_ast::{PackageInfo, SourceContract};
+use boltffi_ast::{PackageInfo, SourceContract, SourceFile};
 use boltffi_binding::{
     BINDING_EXPANSION_BUILD_ENV, BINDING_EXPANSION_ROOT_ENV, BINDING_EXPANSION_SOURCE_ENV,
     BINDING_EXPANSION_SURFACE_ENV, BINDING_METADATA_BUILD_ENV, BINDING_METADATA_FEATURES_ENV,
@@ -56,11 +58,18 @@ struct Request {
     emission: Emission,
 }
 
+#[derive(Debug, Eq, PartialEq)]
+enum RustcCfg {
+    Name(String),
+    Value { name: String, value: String },
+}
+
 struct BuildContext {
     request: Request,
     root: SourceContract,
     support: SourceContract,
     visible_paths: Vec<(String, boltffi_ast::Path)>,
+    data_source_files: HashMap<String, SourceFile>,
 }
 
 #[derive(Deserialize)]
@@ -128,6 +137,23 @@ impl BuildContext {
             .root_visible_paths()
             .map(|(id, path)| (id.to_owned(), path.clone()))
             .collect::<Vec<_>>();
+        let data_source_files = scan
+            .root()
+            .records
+            .iter()
+            .map(|record| record.id.as_str())
+            .chain(
+                scan.root()
+                    .enums
+                    .iter()
+                    .map(|enumeration| enumeration.id.as_str()),
+            )
+            .filter_map(|id| {
+                scan.data_source_file(id)
+                    .cloned()
+                    .map(|source_file| (id.to_owned(), source_file))
+            })
+            .collect();
         let root_types =
             RootModuleTypes::with_visible_paths(&scan.complete().package, visible_paths.clone());
         let support = root_types.contract(&scan.root_with_support());
@@ -137,6 +163,7 @@ impl BuildContext {
             root,
             support,
             visible_paths,
+            data_source_files,
         })
     }
 
@@ -182,19 +209,20 @@ impl BuildContext {
         if let Some(scope) = declaration.local_scope() {
             let contract = boltffi_scan::scan_file(scope.clone(), self.request.package.clone())?;
             let id = declaration
-                .resolve(&contract)
+                .resolve(&contract, |_| None)
                 .ok_or_else(|| BuildError::MissingData(declaration.name().to_owned()))?;
             return self.render_data_id(&contract, id);
         }
-        if let Some(id) = declaration.resolve(&self.support) {
+        if let Some(id) = declaration.resolve(&self.support, |id| self.data_source_files.get(id)) {
             return self.render_data_id(&self.support, id);
         }
         let contract =
             boltffi_scan::scan_source(declaration.source(), self.request.package.clone())?;
         let root_types = RootModuleTypes::with_visible_paths(&contract.package, std::iter::empty());
         let contract = root_types.contract(&contract);
+        let source_file = SourceFile::new(declaration.source().display().to_string());
         let id = declaration
-            .resolve(&contract)
+            .resolve(&contract, |_| Some(&source_file))
             .ok_or_else(|| BuildError::MissingData(declaration.name().to_owned()))?;
         self.render_data_id(&contract, id)
     }
@@ -375,7 +403,51 @@ impl Request {
                     .map(str::to_owned)
                     .collect::<Vec<_>>()
             });
-        ActiveCfg::from_cargo_env().with_features(features)
+        RustcCfg::from_arguments(env::args_os())
+            .into_iter()
+            .fold(ActiveCfg::from_cargo_env(), |active, compiler_cfg| {
+                compiler_cfg.apply(active)
+            })
+            .with_features(features)
+    }
+}
+
+impl RustcCfg {
+    fn from_arguments(arguments: impl IntoIterator<Item = OsString>) -> Vec<Self> {
+        let arguments = arguments.into_iter().collect::<Vec<_>>();
+        arguments
+            .windows(2)
+            .filter_map(|pair| {
+                (pair[0].to_str() == Some("--cfg"))
+                    .then(|| pair[1].to_str())
+                    .flatten()
+            })
+            .chain(
+                arguments
+                    .iter()
+                    .filter_map(|argument| argument.to_str()?.strip_prefix("--cfg=")),
+            )
+            .filter_map(Self::parse)
+            .collect()
+    }
+
+    fn parse(argument: &str) -> Option<Self> {
+        let Some((name, value)) = argument.split_once('=') else {
+            return (!argument.is_empty()).then(|| Self::Name(argument.to_owned()));
+        };
+        let value = value.strip_prefix('"')?.strip_suffix('"')?;
+        (!name.is_empty()).then(|| Self::Value {
+            name: name.to_owned(),
+            value: value.to_owned(),
+        })
+    }
+
+    fn apply(self, active: ActiveCfg) -> ActiveCfg {
+        match self {
+            Self::Name(name) => active.with_name(name),
+            Self::Value { name, value } if name == "feature" => active.with_feature(value),
+            Self::Value { name, value } => active.with_value(name, value),
+        }
     }
 }
 
@@ -478,4 +550,41 @@ fn parsed_surface(key: &'static str) -> Result<BindingMetadataSurface, BuildErro
 
 fn canonical(path: &Path) -> PathBuf {
     path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::ffi::OsString;
+
+    use super::RustcCfg;
+
+    #[test]
+    fn reads_separate_and_inline_compiler_cfg_arguments() {
+        let cfg = RustcCfg::from_arguments(
+            [
+                "rustc",
+                "--cfg",
+                "test",
+                "--cfg",
+                "feature=\"experimental\"",
+                "--cfg=target_feature=\"neon\"",
+            ]
+            .map(OsString::from),
+        );
+
+        assert_eq!(
+            cfg,
+            vec![
+                RustcCfg::Name("test".to_owned()),
+                RustcCfg::Value {
+                    name: "feature".to_owned(),
+                    value: "experimental".to_owned(),
+                },
+                RustcCfg::Value {
+                    name: "target_feature".to_owned(),
+                    value: "neon".to_owned(),
+                },
+            ]
+        );
+    }
 }

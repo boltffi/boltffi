@@ -1,0 +1,13 @@
+[workspace]
+
+[package]
+name = "data_source_resolution"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[features]
+experimental = []
+
+[dependencies]
+boltffi = { path = "../../../../boltffi" }

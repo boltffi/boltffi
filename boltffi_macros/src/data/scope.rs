@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use boltffi_ast::{EnumId, RecordId, SourceContract, SourceSpan};
+use boltffi_ast::{EnumId, RecordId, SourceContract, SourceFile, SourceSpan};
 use proc_macro2::LineColumn;
 use syn::visit::Visit;
 
@@ -145,7 +145,11 @@ impl Declaration {
         self.local_scope.as_ref()
     }
 
-    pub fn resolve(&self, contract: &SourceContract) -> Option<DataId> {
+    pub fn resolve<'source>(
+        &self,
+        contract: &SourceContract,
+        source_file: impl Fn(&str) -> Option<&'source SourceFile>,
+    ) -> Option<DataId> {
         match self.kind {
             DeclarationKind::Record => contract
                 .records
@@ -155,6 +159,7 @@ impl Declaration {
                         record.id.as_str(),
                         record.name.spelling(),
                         record.source_span.as_ref(),
+                        source_file(record.id.as_str()),
                     )
                 })
                 .map(|record| DataId::Record(record.id.clone())),
@@ -166,6 +171,7 @@ impl Declaration {
                         enumeration.id.as_str(),
                         enumeration.name.spelling(),
                         enumeration.source_span.as_ref(),
+                        source_file(enumeration.id.as_str()),
                     )
                 })
                 .map(|enumeration| DataId::Enumeration(enumeration.id.clone())),
@@ -177,16 +183,23 @@ impl Declaration {
         id: &str,
         name: &str,
         span: Option<&SourceSpan>,
+        source_file: Option<&SourceFile>,
     ) -> bool {
         if name != self.name {
             return false;
         }
         self.local_scope.is_some()
-            || span.is_some_and(|span| self.matches_source(span) && self.matches_module(id))
+            || self.matches_module(id)
+                && (span.is_some_and(|span| self.matches_source(span))
+                    || source_file.is_some_and(|source_file| self.matches_source_file(source_file)))
     }
 
     fn matches_source(&self, span: &SourceSpan) -> bool {
-        Self::canonical(Path::new(span.file.as_str())) == Self::canonical(&self.source)
+        self.matches_source_file(&span.file)
+    }
+
+    fn matches_source_file(&self, source_file: &SourceFile) -> bool {
+        Self::canonical(Path::new(source_file.as_str())) == Self::canonical(&self.source)
     }
 
     fn matches_module(&self, id: &str) -> bool {
