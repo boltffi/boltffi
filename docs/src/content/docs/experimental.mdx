@@ -13,6 +13,7 @@ Java, C#, and Python bindings are generally available and no longer require expe
 |---------|-----|--------|
 | Dart target | `dart` | In progress |
 | Kotlin Multiplatform target | `kotlin_multiplatform` | Initial JVM/Android actuals |
+| C target | `c` | Experimental (sync surface) |
 | TS async streams | `typescript.async_streams` | Functional |
 
 ## Enabling
@@ -45,6 +46,15 @@ The CLI flag applies to a single command. The config array applies to every buil
 Enables `boltffi generate kmp` and includes Kotlin Multiplatform output during `boltffi generate all --experimental`. The generated module contains `commonMain` declarations plus `jvmMain` and `androidMain` actuals that delegate to the existing Kotlin/JNI bindings.
 
 This is an initial target slice. Kotlin/Native `cinterop` actuals for iOS/macOS are not generated yet.
+
+### C
+
+**Key:** `c`
+
+Enabled behind the experimental flag. `boltffi generate c --experimental`
+emits a sync-only C header (functions, records, enums, constants, classes,
+sync callbacks, error helpers). Async functions, streams, and async callback
+completions are reported as unsupported rather than half-rendered.
 
 ### TypeScript Async Streams
 

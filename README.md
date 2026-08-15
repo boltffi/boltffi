@@ -117,7 +117,7 @@ The generated bindings use each language's idioms. Swift gets async/await. Kotli
 | Java     | Full support |
 | C#       | Full support |
 | WASM/TypeScript | Full support |
-| C        | Partial      |
+| C        | Experimental (sync surface) |
 | Python   | Full support |
 | C++      | Planned      |
 | Ruby     | Planned      |

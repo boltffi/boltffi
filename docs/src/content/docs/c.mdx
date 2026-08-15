@@ -1,0 +1,142 @@
+---
+title: "C"
+description: "Experimental C bindings for the supported synchronous BoltFFI surface."
+---
+
+# C (experimental)
+
+BoltFFI can generate an experimental, build-system-agnostic C facade over its
+C ABI. The normal C API is the package-prefixed types and `static inline`
+functions in the generated header. The header also contains the raw bridge so
+those inline functions can call it; names such as `boltffi_*`, `Ffi*`, and
+`___*` are ABI plumbing, not the application API.
+
+## Supported surface
+
+The intended ergonomic surface is synchronous exported free functions, direct
+`#[repr(C)] #[data]` records, repr-integer C-style enums, constants, classes,
+and synchronous callback traits. For a package named `demo`, examples include
+`DemoPoint`, `DemoEngine`, `demo_add`, and `DEMO_ANSWER`.
+
+Generation is deliberately incomplete while the target is experimental. Do
+not use the C target for streams, `custom_type!` declarations,
+payload-carrying/data enums, async callback traits, async functions/futures,
+encoded records or other encoded value shapes, or inline closures. These
+shapes have no supported ergonomic C representation; generation can reject or
+report them while support admission is being completed.
+
+## Enable and package
+
+Opt in to the experimental target:
+
+```toml
+[targets.c]
+enabled = true
+output = "dist/c"
+```
+
+Use `generate` to write only the intermediate header:
+
+```sh
+boltffi generate c --experimental
+# dist/c/boltffi.h
+```
+
+Use `pack` for a consumer-ready layout. It builds the selected Rust library
+through BoltFFI's binding-expansion build path, regenerates by default, and
+stages the header plus both native artifacts:
+
+```sh
+boltffi pack c --experimental
+```
+
+On the currently validated Unix host path, the result is:
+
+```text
+dist/c/
+├── boltffi.h                 # generated intermediate header
+├── include/
+│   └── <library>.h           # public packaged header
+└── lib/
+    ├── lib<library>.so       # Linux shared library (.dylib on macOS)
+    └── lib<library>.a        # static archive
+```
+
+`<library>` is the configured BoltFFI library name. The package deliberately
+contains no CMake, Meson, pkg-config, or IDE project files: add its include and
+library paths to your own build system. The selected Rust library must produce
+both a `cdylib` and a `staticlib`:
+
+```toml
+[lib]
+crate-type = ["cdylib", "staticlib"]
+```
+
+C packaging is host-oriented today. Cross-target and Windows artifact staging
+are not yet validated; do not rely on them for a portable release package.
+
+## Link a consumer
+
+After `pack c`, include the packaged header, not the intermediate one:
+
+```sh
+cc -std=c11 -I dist/c/include my_program.c \
+  -L dist/c/lib -l<library> -o my_program
+```
+
+For a shared library, arrange the platform runtime search path when deploying
+(the Linux demo uses an rpath). If you deliberately choose the static archive,
+pass its path explicitly and provide any target/toolchain-specific system
+libraries required by Rust; there is no portable one-line static-link command.
+
+For example, a package named `demo` exposes a prefixed free function as:
+
+```c
+#include "demo.h"
+
+int main(void) {
+    return demo_add(2, 3) == 5 ? 0 : 1;
+}
+```
+
+## Results and ownership
+
+Synchronous exported free functions with a supported out-pointer success value
+expose a tagged typed result when their error is either an exported repr-integer
+C-style enum or `String`. Fallible class initializers with `String` errors use
+the same shape, with the owned class handle as the success member:
+
+```c
+typedef struct {
+    bool ok;
+    union {
+        DemoEngine value;
+        FfiString error;
+    } data;
+} DemoEngineNewResult;
+```
+
+Read `data.value` only when `ok` is true and `data.error` only when it is false.
+A returned error `FfiString` is caller-owned, length-delimited UTF-8. It is
+**not NUL-terminated**: read exactly `len` bytes from `ptr`, then release it
+exactly once with `boltffi_free_string`. Fallible methods and other error shapes
+do not have a supported typed C result facade.
+
+Constructed classes are caller-owned value handles. Call the generated
+`<prefix>_<class>_free(&value)` exactly once when finished; do not copy or use
+the handle afterward. A method pointer borrows the handle only for that call.
+
+If an ABI-only operation yields `FfiBuf_u8` or `FfiString`, it is a Rust-owned
+allocation: release it exactly once with `boltffi_free_buf` or
+`boltffi_free_string`, respectively. Never use `free` or `realloc` on it or
+change its fields. Input byte pointers, callback vtables, and callback context
+storage must remain valid for the complete synchronous consuming call.
+
+## C++
+
+Compile C consumers as **C11 or later**. The packaged header is also checked
+with C++03 mode and newer on GCC and Clang. Its `extern "C"` guards provide ABI
+linkage; the header uses compiler atomic intrinsics in C++ mode rather than
+pretending Rust-owned storage is `std::atomic<T>`. MSVC uses its interlocked
+intrinsics. C++ support is limited to including and calling the supported C
+facade; it does not make unsupported async or encoded C shapes available.

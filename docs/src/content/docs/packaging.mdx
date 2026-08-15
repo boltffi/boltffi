@@ -845,6 +845,21 @@ boltffi pack python --python python3.12 --python python3.13
 
 If you omit `--python` and do not configure `[targets.python.wheel].interpreters`, BoltFFI falls back to the first available default interpreter on the host.
 
+## C (experimental)
+
+C packaging emits build-system-neutral artifacts for the current host rather
+than a project for a particular build tool:
+
+```bash
+boltffi pack c --experimental
+```
+
+The output contains `include/<library>.h`, a shared library, and a static
+archive under `lib/`. Add those paths to your own compiler or build-system
+configuration. The public header requires C11; cross-target, Windows, and C++
+consumer support are not yet validated. See [C](/docs/c) for the supported
+surface, ownership rules, and shared versus static linking guidance.
+
 ## Build Profiles
 
 Debug builds are faster but produce larger, slower binaries:
