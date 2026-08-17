@@ -17,12 +17,18 @@ pub struct CallbackSlot {
     parameter_groups: Vec<ParameterGroup>,
     return_parameter_groups: Vec<ParameterGroup>,
     source_parameter_groups: Vec<ParameterGroup>,
+    asynchronous: bool,
 }
 
 impl CallbackSlot {
     /// Returns the callback slot name.
     pub fn name(&self) -> &Identifier {
         &self.name
+    }
+
+    /// Whether this slot dispatches an asynchronous method.
+    pub const fn is_asynchronous(&self) -> bool {
+        self.asynchronous
     }
 
     /// Returns the C return type for this callback slot.
@@ -88,6 +94,7 @@ impl CallbackSlot {
             parameters,
             return_group_count,
             source_group_count,
+            false,
         )
     }
 
@@ -128,6 +135,7 @@ impl CallbackSlot {
             parameters,
             0,
             source_group_count,
+            true,
         )
     }
 
@@ -137,6 +145,7 @@ impl CallbackSlot {
         parameters: Vec<Parameter>,
         return_group_count: usize,
         source_group_count: usize,
+        asynchronous: bool,
     ) -> Result<Self> {
         let parameter_groups = ParameterGroup::from_params(&parameters)?;
         let return_parameter_groups = parameter_groups
@@ -156,6 +165,7 @@ impl CallbackSlot {
             returns,
             parameters,
             parameter_groups,
+            asynchronous,
             return_parameter_groups,
             source_parameter_groups,
         })

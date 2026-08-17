@@ -6,6 +6,8 @@ publish_to: none
 environment:
   sdk: ^3.10.8
 
+workspace:
+  - pkgs/demo
 
 dependencies:
   test: ^1.31.0

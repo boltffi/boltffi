@@ -64,19 +64,17 @@ impl<'host, 'bridge, 'decl> Module<'host, 'bridge, 'decl> {
             .with_file(FilePlan::all(source_path).with_preamble(preamble))
             .assemble_declarations(self.declarations)?;
         let artifact = self.host.artifact_for(bindings);
-        let package_files = GeneratedOutput::new(
-            vec![
-                GeneratedFile::new(
-                    FilePath::new(format!("{package}/pubspec.yaml"))?,
-                    PUBSPEC.replace("{{ artifact_name }}", &package),
-                ),
-                GeneratedFile::new(
-                    FilePath::new(format!("{package}/hook/build.dart"))?,
-                    BUILD_HOOK.replace("{{ artifact_name }}", &artifact),
-                ),
-            ],
-            Vec::new(),
-        );
+        let package_generated_files = vec![
+            GeneratedFile::new(
+                FilePath::new(format!("{package}/pubspec.yaml"))?,
+                PUBSPEC.replace("{{ artifact_name }}", &package),
+            ),
+            GeneratedFile::new(
+                FilePath::new(format!("{package}/hook/build.dart"))?,
+                BUILD_HOOK.replace("{{ artifact_name }}", &artifact),
+            ),
+        ];
+        let package_files = GeneratedOutput::new(package_generated_files, Vec::new());
         Ok(GeneratedOutput::combine([source, package_files]))
     }
 }

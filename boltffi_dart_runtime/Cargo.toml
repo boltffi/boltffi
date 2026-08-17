@@ -1,0 +1,17 @@
+[package]
+name = "boltffi_dart_runtime"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Thread-safe synchronous callback dispatch runtime for BoltFFI's native Dart target"
+keywords = ["ffi", "dart", "runtime", "callbacks"]
+categories = ["development-tools::ffi"]
+
+[lib]
+# Linked into the user's cdylib via the generated dart shims.
+crate-type = ["rlib"]
+
+[lints]
+workspace = true

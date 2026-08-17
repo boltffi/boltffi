@@ -16,6 +16,8 @@ final class AsyncMethodsTests: DemoTestCase {
         XCTAssertNil(missingItem)
         let processedBatch = try await worker.processBatch(inputs: ["x", "y"])
         XCTAssertEqual(processedBatch, ["test: x", "test: y"])
+        let processedAfterPolls = try await worker.processAfterPolls(input: "data", polls: 5)
+        XCTAssertEqual(processedAfterPolls, "test: data")
     }
 }
 

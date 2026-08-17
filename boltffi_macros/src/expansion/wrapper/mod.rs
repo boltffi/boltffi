@@ -7,6 +7,7 @@ pub mod async_call;
 pub mod callback;
 pub mod class;
 pub mod constant;
+mod dart_shim;
 pub mod encoded;
 pub mod enumeration;
 pub mod function;

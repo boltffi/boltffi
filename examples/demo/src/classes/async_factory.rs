@@ -34,6 +34,11 @@ impl AsyncFactory {
             python,
             reason = ExclusionReason::CoverageGap,
             details = "The Python demo does not yet exercise async class initializers."
+        ),
+        exclude(
+            dart,
+            reason = ExclusionReason::ImplementationGap,
+            details = "The native Dart target does not emit a binding for an async primary/named class initializer at all -- the class doesn't appear in the generated output, so there is nothing to call."
         )
     )]
     pub async fn new(value: i32) -> Self {

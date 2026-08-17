@@ -2,6 +2,7 @@ import 'package:test/test.dart';
 import 'package:demo/demo.dart';
 
 void main() {
+  tearDownAll(shutdownBoltffi);
   test('nested records', () {
     final line = makeLine(0.0, 0.0, 3.0, 4.0);
     expect(

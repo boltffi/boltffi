@@ -4,6 +4,7 @@ import 'package:test/test.dart';
 import 'package:demo/demo.dart';
 
 void main() {
+  tearDownAll(shutdownBoltffi);
   test('custom types', () {
     final timestamp = 1710000000000;
     expect(

@@ -1,0 +1,4 @@
+# `NativeCallable.listener` keeps the isolate alive until
+# `shutdownBoltffi()`. Every test `main` calls `tearDownAll(shutdownBoltffi)`.
+# If a file forgets that, this timeout fails the run instead of hanging.
+timeout: 2m

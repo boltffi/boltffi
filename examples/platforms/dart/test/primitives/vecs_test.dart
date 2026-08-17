@@ -4,6 +4,7 @@ import 'package:test/test.dart';
 import 'package:demo/demo.dart';
 
 void main() {
+  tearDownAll(shutdownBoltffi);
   test('vecs', () {
     final ints = echoVecI32(Int32List.fromList([1, 2, 3]));
     expect(
@@ -148,7 +149,11 @@ void main() {
     expect(range[4], 4);
 
     final reversed = reverseVecI32(Int32List.fromList([1, 2, 3]));
-    expect(reversed[0], 3);
+    expect(
+      reversed[0],
+      3,
+      reason: "case:primitives.vecs.i32.should_reverse_values",
+    );
     expect(reversed[1], 2);
     expect(reversed[2], 1);
 
@@ -173,7 +178,7 @@ void main() {
     expect(
       genF64.length,
       3,
-      reason: "case:primitives.vecs.f64.should_sum_values",
+      reason: "case:primitives.vecs.f64.should_generate_sequence",
     );
     expect(genF64[0], closeTo(0.0, 0.0001));
     expect(genF64[1], closeTo(0.1, 0.0001));
@@ -182,6 +187,7 @@ void main() {
     expect(
       sumF64Vec(Float64List.fromList([1.5, 2.5, 4.0])),
       closeTo(8.0, 0.0001),
+      reason: "case:primitives.vecs.f64.should_sum_values",
     );
 
     final u64Buf = Uint64List.fromList([10, 20, 30]);

@@ -746,7 +746,7 @@ impl Signature {
                     Parameter::continuation_data("callback")?,
                     Parameter::continuation_callback("callback", Type::Int8)?,
                 ],
-                Type::Void,
+                Type::Int8,
             )?,
             Function::exported_with_channel(
                 declaration,

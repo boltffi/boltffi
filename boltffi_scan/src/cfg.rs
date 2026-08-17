@@ -90,6 +90,23 @@ impl ActiveCfg {
         Ok(())
     }
 
+    pub(crate) fn retain_active_enum_variants(
+        &self,
+        item: &mut syn::ItemEnum,
+    ) -> Result<(), ScanError> {
+        item.variants = std::mem::take(&mut item.variants)
+            .into_iter()
+            .map(|variant| {
+                self.matches_attrs(&variant.attrs)
+                    .map(|active| (active, variant))
+            })
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .filter_map(|(active, variant)| active.then_some(variant))
+            .collect();
+        Ok(())
+    }
+
     fn observe_cargo_env(&mut self, name: &str, value: &str) {
         if let Some(feature) = name.strip_prefix("CARGO_FEATURE_") {
             self.features.insert(Self::feature_name(feature));

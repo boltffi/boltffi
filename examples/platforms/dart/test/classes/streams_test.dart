@@ -4,6 +4,7 @@ import 'package:test/test.dart';
 import 'package:demo/demo.dart';
 
 void main() {
+  tearDownAll(shutdownBoltffi);
   test('streams', () async {
     // Encoded record items stream test
     {

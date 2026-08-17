@@ -335,10 +335,80 @@ mod tests {
             .expect("async functions should render");
 
         let source = file(&output, "demo/lib/demo.dart");
-        assert!(source.contains("Future<int> fetchCount(int seed)"));
+        assert!(source.contains(
+            "Future<int> fetchCount(int seed, {$$BoltCancellationToken? cancellationToken})"
+        ));
         assert!(source.contains("_$$BoltFFIAsync.create"));
         assert!(source.contains("pollFuture:"));
         assert!(source.contains("completeFuture:"));
+        assert!(source.contains("cancelFuture:"));
+        assert!(source.contains("cancellationToken: cancellationToken,"));
+        assert!(
+            source.contains("_pending"),
+            "async polls must share one process-lifetime listener"
+        );
+        assert!(
+            source.contains("poll_continuation_noop"),
+            "runtime still exports a thread-safe no-op poll continuation"
+        );
+    }
+
+    #[test]
+    fn dart_target_appends_cancellation_token_to_every_async_call_shape() {
+        let bindings = bindings(
+            r#"
+            #[export]
+            pub async fn ping() {}
+
+            pub struct Counter(i32);
+
+            #[export]
+            impl Counter {
+                pub async fn connect() -> Self { Self(0) }
+
+                pub async fn add(&self, amount: i32) -> i32 { amount }
+
+                pub fn get(&self) -> i32 { self.0 }
+            }
+            "#,
+        );
+        let output = target(DartHost::new().package("demo"))
+            .render(&bindings)
+            .expect("async calls should render");
+
+        let source = file(&output, "demo/lib/demo.dart");
+        assert!(source.contains("Future<void> ping({$$BoltCancellationToken? cancellationToken})"));
+        assert!(source.contains(
+            "static Future<Counter> connect({$$BoltCancellationToken? cancellationToken})"
+        ));
+        assert!(
+            source.contains(
+                "Future<int> add(int amount, {$$BoltCancellationToken? cancellationToken})"
+            )
+        );
+        assert!(source.contains("int $get()"));
+        assert!(!source.contains("int $get({"));
+    }
+
+    #[test]
+    fn dart_target_avoids_cancellation_token_name_collision() {
+        let bindings = bindings(
+            r#"
+            #[export]
+            pub async fn run(cancellation_token: i32) {}
+            "#,
+        );
+        let output = target(DartHost::new().package("demo"))
+            .render(&bindings)
+            .expect("colliding async parameter should render");
+        let source = file(&output, "demo/lib/demo.dart");
+        assert!(source.contains(
+            "Future<void> run(int cancellationToken, {$$BoltCancellationToken? boltCancellationToken})"
+        ));
+        assert!(source.contains("cancellationToken: boltCancellationToken,"));
+        assert!(!source.contains(
+            "Future<void> run(int cancellationToken, {$$BoltCancellationToken? cancellationToken})"
+        ));
     }
 
     #[test]
@@ -366,7 +436,100 @@ mod tests {
         assert!(source.contains("Future<int?> load(String key)"));
         assert!(source.contains("TransformerVTable extends $$ffi.Struct"));
         assert!(source.contains("TransformerBridge.create(transformer)"));
-        assert!(source.contains("$$ffi.NativeCallable.listener"));
+        assert!(
+            source.contains("_$$boltTrackListener($$ffi.NativeCallable.listener(_m$load))"),
+            "async callback slots must use listener, not isolateLocal"
+        );
+        assert!(source.contains("void shutdownBoltffi()"));
+        assert!(source.contains("_$$boltTrackListener"));
+        assert!(
+            source.contains("if (c > 127)"),
+            "ASCII writeString fast path must stay in the prelude"
+        );
+        assert!(source.contains("BoltFFIDartShim_demo_api_transformer_register"));
+        assert!(
+            source.contains("_l$out.value = _m$transform("),
+            "scalar listener write-back must use Pointer.value"
+        );
+        assert!(
+            source.contains("BoltFFIDartShim_demo_api_transformer_transform"),
+            "sync methods stay on the dual-path shim"
+        );
+        assert!(
+            !source.contains("BoltFFIDartShim_demo_api_transformer_load"),
+            "async methods must not be shimmed (wait-on-isolate deadlocks)"
+        );
+        assert!(output.diagnostics().is_empty());
+    }
+
+    #[test]
+    fn dart_shim_symbols_use_callback_register_path() {
+        let bindings = bindings(
+            r#"
+            #[export]
+            pub trait HTTPClient {
+                fn ping(&self) -> i32;
+            }
+
+            #[export]
+            pub fn call(client: impl HTTPClient) -> i32 {
+                client.ping()
+            }
+            "#,
+        );
+        let output = target(DartHost::new().package("demo"))
+            .render(&bindings)
+            .expect("acronym callback should render");
+        let source = file(&output, "demo/lib/demo.dart");
+        assert!(
+            source.contains("abstract interface class HttpClient"),
+            "Dart type name still UpperCamel-of-parts"
+        );
+        // Prefixed from `boltffi_register_callback_<path>`, not the trait leaf.
+        assert!(
+            source.contains("BoltFFIDartShim_demo_api_http_client_register"),
+            "shim symbols must include the full callback identity"
+        );
+        assert!(!source.contains("BoltFFIDartShim_HTTPClient_register"));
+        assert!(!source.contains("BoltFFIDartShim_HttpClient_register"));
+        assert!(output.diagnostics().is_empty());
+    }
+
+    #[test]
+    fn dart_target_listener_writeback_uses_ref_for_structs_and_buffers() {
+        let bindings = bindings(
+            r#"
+            #[data]
+            pub struct Point {
+                pub x: f64,
+                pub y: f64,
+            }
+
+            #[export]
+            pub trait Mapper {
+                fn n(&self, v: i32) -> i32;
+                fn p(&self, point: Point) -> Point;
+                fn s(&self, label: &str) -> String;
+            }
+            "#,
+        );
+        let output = target(DartHost::new().package("demo"))
+            .render(&bindings)
+            .expect("mapper callbacks should render");
+
+        let source = file(&output, "demo/lib/demo.dart");
+        assert!(
+            source.contains("_l$out.value = _m$n("),
+            "i32 out is a scalar pointer"
+        );
+        assert!(
+            source.contains("_l$out.ref = _m$p("),
+            "Point out is a struct pointer"
+        );
+        assert!(
+            source.contains("_l$out.ref = _m$s("),
+            "String out is an FfiBuf struct pointer"
+        );
         assert!(output.diagnostics().is_empty());
     }
 
@@ -410,12 +573,10 @@ mod tests {
 
         let source = file(&output, "demo/lib/demo.dart");
         assert!(source.contains("int apply(int Function(int) callback, int value)"));
-        assert!(source.contains("$$ffi.NativeCallable<"));
-        assert!(source.contains(".isolateLocal("));
-        assert!(source.contains("callbackCall.nativeFunction"));
-        assert!(source.contains("callbackRelease.nativeFunction"));
-        assert!(source.contains("callbackCall.close();"));
-        assert!(source.contains("callbackRelease.close();"));
+        assert!(source.contains("Pointer.fromFunction"));
+        assert!(source.contains(".callPtr"));
+        assert!(source.contains(".releasePtr"));
+        assert!(source.contains(".insert("));
         assert!(source.contains("(int Function(int))? callback"));
         assert!(source.contains("int tryApply(int Function(int) callback, int value)"));
         assert!(source.contains("on MathError catch"));
@@ -461,7 +622,9 @@ mod tests {
         let source = file(&output, "demo/lib/demo.dart");
         assert!(source.contains("int Function(int) makeAdder(int $base)"));
         assert!(source.contains("String Function(String) makeLabeler(String prefix)"));
-        assert!(source.contains("Future<int Function(int)> makeAsyncAdder(int $base)"));
+        assert!(source.contains(
+            "Future<int Function(int)> makeAsyncAdder(int $base, {$$BoltCancellationToken? cancellationToken})"
+        ));
         assert!(source.contains("int Function(int) tryMakeAdder(int $base)"));
         assert!(source.contains("int Function(int) makeChecker()"));
         assert!(source.contains("_$$BoltReturnedClosureRegistration"));
@@ -497,10 +660,17 @@ mod tests {
         assert!(source.contains("int? maybe(int? value)"));
         assert!(source.contains("List<Point> points(List<Point> values)"));
         assert!(source.contains("$$typed_data.Int64List offsets($$typed_data.Int64List values)"));
-        assert!(source.contains("ptr.elementAt(_l$index).value = values[_l$index]"));
+        assert!(
+            source
+                .contains("ptr.cast<$$ffi.IntPtr>().elementAt(_l$index).value = values[_l$index]")
+        );
         assert!(source.contains("List<int>.generate"));
         assert!(!source.contains("cast<$$ffi.IntPtr>().asTypedList"));
         assert!(source.contains("_m$writeStruct"));
+        assert!(
+            source.contains("_$$BoltStoragePool.acquireStorage"),
+            "direct vec params must use the byte pool, not a fresh calloc"
+        );
         assert!(output.diagnostics().is_empty());
     }
 
@@ -570,7 +740,7 @@ mod tests {
         assert!(source.contains("_p$writer.writeU8(mode.value);"));
         assert!(source.contains("WideMode._m$fromDiscriminant(_p$reader.readU64())"));
         assert!(source.contains("_p$writer.writeU64(wideMode.value);"));
-        assert!(source.contains("$$convert.utf8.encode(endpoint.toString()).length"));
+        assert!(source.contains("((endpoint).toString().length * 3)"));
         assert!(source.contains("$$BoltResult.err($$BoltException(_p$reader.readString()))"));
         assert!(source.contains(".writeString(_l$boltffiValue0.message);"));
         assert!(source.contains("utf8.encode(_l$boltffiValue0.message).length"));
@@ -640,7 +810,7 @@ mod tests {
 
         let source = file(&output, "demo/lib/demo.dart");
         assert!(source.contains("(int,) echoSingle((int,) value)"));
-        assert!(source.contains("return (_l$resultReader.readI32(),);"));
+        assert!(source.contains("_l$decodedResult = (_l$resultReader.readI32(),);"));
         assert!(source.contains("writeI32(value.$1);"));
         assert!(output.diagnostics().is_empty());
     }
@@ -710,7 +880,8 @@ mod tests {
             source.contains("$$async.StreamSubscription<int> ticks(void Function(int) callback)")
         );
         assert!(source.contains("$$ffi.NativeCallable.listener(streamCallback)"));
-        assert!(source.contains("unsubscribeFn(handle);\n        release();"));
+        assert!(source.contains("unsubscribeFn(handle);"));
+        assert!(source.contains("release();"));
         assert!(output.diagnostics().is_empty());
     }
 }

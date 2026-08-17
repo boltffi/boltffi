@@ -56,18 +56,18 @@ final class {{ callback.bridge_name() }} {
 
 {{ callable }}
 {%- endfor %}
+{%- for declaration in callback.shim_declarations() %}
+
+{{ declaration }}
+{%- endfor %}
 
   static final _$$BoltCallocPtr<{{ callback.native_vtable().name() }}> _k$vtable = (() {
     final vtable = _$$BoltCallocPtr<{{ callback.native_vtable().name() }}>.alloc(
       $$ffi.sizeOf<{{ callback.native_vtable().name() }}>(),
     );
     vtable.ptr.ref
-      ..free = $$ffi.Pointer.fromFunction<
-        $$ffi.Void Function($$ffi.Uint64)
-      >(_m$free)
-      ..clone = $$ffi.Pointer.fromFunction<
-        $$ffi.Uint64 Function($$ffi.Uint64)
-      >(_m$clone, 0)
+{{ callback.free_vtable_initializer() }}
+{{ callback.clone_vtable_initializer() }}
 {%- for initializer in callback.vtable_initializers() %}
 {{ initializer }}
 {%- endfor %};
@@ -85,7 +85,12 @@ final class {{ callback.bridge_name() }} {
     if (implementation is {{ callback.proxy_name() }}) {
       return implementation._m$cloneHandle();
     }
-    return _f${{ callback.create_name() }}(_k$handles.insert(implementation));
+    // Handle is the Hooks pointer from register.
+    final handle = {{ callback.shim_register_call() }}
+    _k$handles.insertAt(handle, implementation);
+    return $$ffi.Struct.create<_$$BoltCallbackHandle>()
+      ..handle = handle
+      ..vtable = _k$vtable.ptr.cast();
   }
 
   static {{ callback.name() }} wrap(_$$BoltCallbackHandle handle) {
@@ -95,11 +100,18 @@ final class {{ callback.bridge_name() }} {
     return _k$handles.get(handle.handle) ?? {{ callback.proxy_name() }}(handle);
   }
 
-  static void _m$free(int handle) => _k$handles.remove(handle);
+  static void _m$free(int handle) {
+    _k$handles.remove(handle);
+    _f${{ callback.shim_release_symbol() }}(handle);
+  }
 
-  static int _m$clone(int handle) {
-    final implementation = _k$handles.get(handle);
-    return implementation == null ? 0 : _k$handles.insert(implementation);
+  static int _m$clone(int originalHandle) {
+    final implementation = _k$handles.get(originalHandle);
+    if (implementation == null) return 0;
+    // New registration, not an alias of originalHandle.
+    final handle = {{ callback.shim_register_call() }}
+    _k$handles.insertAt(handle, implementation);
+    return handle;
   }
 {%- for entry in callback.entries() %}
 

@@ -3,6 +3,7 @@ import 'package:test/test.dart';
 import 'package:demo/demo.dart';
 
 void main() {
+  tearDownAll(shutdownBoltffi);
   test('multi-crate exports', () {
     final user = ForeignUser(name: 'Ada', age: 37);
     final session = ForeignSession(

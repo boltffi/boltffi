@@ -13,7 +13,7 @@ private object Native {
     @JvmStatic external fun boltffi_release_class_demo_engine(handle: Long): Unit
     @JvmStatic external fun boltffi_init_class_demo_engine_new(): Long
     @JvmStatic external fun boltffi_method_class_demo_engine_compute(`receiver`: Long, value: Int): Long
-    @JvmStatic external fun boltffi_async_method_class_demo_engine_compute_poll(handle: Long, callback_data: Long): Unit
+    @JvmStatic external fun boltffi_async_method_class_demo_engine_compute_poll(handle: Long, callback_data: Long): Byte
     @JvmStatic external fun boltffi_async_method_class_demo_engine_compute_complete(handle: Long): Int
     @JvmStatic external fun boltffi_async_method_class_demo_engine_compute_cancel(handle: Long): Unit
     @JvmStatic external fun boltffi_async_method_class_demo_engine_compute_free(handle: Long): Unit

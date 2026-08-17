@@ -1,7 +1,7 @@
 use askama::Template;
 use boltffi_binding::{
-    ByteSize, DirectValueType, Native, ReadPlan, StreamDecl, StreamItemPlanRender, StreamMode,
-    TypeRef, native,
+    ByteSize, DirectValueType, Native, Primitive, ReadPlan, StreamDecl, StreamItemPlanRender,
+    StreamMode, TypeRef, native,
 };
 
 use crate::{
@@ -27,6 +27,7 @@ struct StreamMethodTemplate<'a> {
 
 pub struct Stream {
     owner: Option<Identifier>,
+    name: Identifier,
     method: String,
 }
 
@@ -61,6 +62,7 @@ enum StreamItem {
         pop_native_type: String,
         byte_size: u64,
         decode: String,
+        supports_typed_list: bool,
     },
     Encoded {
         public_type: TypeFragment,
@@ -122,6 +124,7 @@ impl Stream {
         };
         Ok(Self {
             owner,
+            name: method.name.clone(),
             method: StreamMethodTemplate { method: &method }
                 .render()
                 .expect("rendering an in-memory Dart stream method template cannot fail"),
@@ -142,6 +145,10 @@ impl Stream {
 
     fn method(&self) -> &str {
         &self.method
+    }
+
+    fn method_name(&self) -> &Identifier {
+        &self.name
     }
 
     fn associated_method(&self) -> String {
@@ -260,16 +267,24 @@ impl StreamItem {
                 pop_native_type,
                 byte_size,
                 decode,
+                supports_typed_list,
                 ..
             } => Delivery {
                 setup: format!(
-                    "final _l$storage = _$$BoltCallocPtr<$$ffi.Uint8>.alloc(batchSize * {byte_size});\nfinal _l$count = _f${}(handle, _l$storage.ptr.cast<{pop_native_type}>(), batchSize);",
+                    "final _l$storage = _$$BoltCallocPtr<$$ffi.Uint8>.allocUnmanaged(batchSize * {byte_size});\nfinal _l$count = _f${}(handle, _l$storage.ptr.cast<{pop_native_type}>(), batchSize);",
                     protocol.pop_batch().name(),
                 ),
                 has_items: "_l$count != 0".to_owned(),
                 prepare: None,
-                read: format!("List.generate(_l$count, (_l$index) => {decode})"),
-                cleanup: None,
+                // `.sublist(0)` copies before `cleanup` disposes the buffer.
+                read: if *supports_typed_list {
+                    format!(
+                        "_l$storage.ptr.cast<{pop_native_type}>().asTypedList(_l$count).sublist(0)"
+                    )
+                } else {
+                    format!("List.generate(_l$count, (_l$index) => {decode})")
+                },
+                cleanup: Some("_l$storage.dispose();".to_owned()),
             },
             Self::Encoded { decode, .. } => Delivery {
                 setup: format!(
@@ -350,11 +365,31 @@ impl<'plan> StreamItemPlanRender<'plan, Native> for ItemRenderer<'_, '_, '_> {
             ),
             _ => return super::super::unsupported("unknown direct stream item"),
         };
+        // Every fixed-width numeric primitive maps onto a Dart typed-data
+        // class, so the batch reads with one `.asTypedList()` call. Excluded:
+        // `bool` (no typed-list view), `isize`/`usize` (platform-dependent
+        // width, no `Pointer<IntPtr>.asTypedList`).
+        let supports_typed_list = matches!(
+            ty,
+            DirectValueType::Primitive(
+                Primitive::I8
+                    | Primitive::U8
+                    | Primitive::I16
+                    | Primitive::U16
+                    | Primitive::I32
+                    | Primitive::U32
+                    | Primitive::I64
+                    | Primitive::U64
+                    | Primitive::F32
+                    | Primitive::F64
+            )
+        );
         Ok(StreamItem::Direct {
             public_type: type_name::direct_value(ty, self.context)?,
             pop_native_type,
             byte_size: size.get(),
             decode,
+            supports_typed_list,
         })
     }
 

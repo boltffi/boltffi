@@ -3,6 +3,12 @@ import 'dart:typed_data';
 import 'package:test/test.dart';
 import 'package:demo/demo.dart';
 
+/// `NativeCallable.listener` keeps the isolate alive. Call from each test
+/// file's `main` so `dart test` can exit.
+void boltffiTestHooks() {
+  tearDownAll(shutdownBoltffi);
+}
+
 Matcher throwsBoltException(String messageContent) {
   return throwsA(
     isA<$$BoltException>().having(
@@ -148,6 +154,17 @@ final class ResultMessageCallbackImpl implements ResultMessageCallback {
   }
 }
 
+final class StringResultMessageCallbackImpl
+    implements StringResultMessageCallback {
+  @override
+  String renderMessage(int key) {
+    if (key < 0) {
+      throw $$BoltException('negative key: $key');
+    }
+    return 'message:$key';
+  }
+}
+
 final class AsyncFetcherImpl implements AsyncFetcher {
   @override
   Future<int> fetchValue(int key) => Future.value(key * 100);
@@ -175,7 +192,7 @@ final class AsyncResultFormatterImpl implements AsyncResultFormatter {
   @override
   Future<String> renderMessage(String scope, String message) {
     if (scope.isEmpty) {
-      return Future.error(MathError.negativeInput);
+      throw MathError.negativeInput;
     }
     return Future.value('$scope::${message.toUpperCase()}');
   }
@@ -183,7 +200,7 @@ final class AsyncResultFormatterImpl implements AsyncResultFormatter {
   @override
   Future<Point> transformPoint(Point point, Status status) {
     if (status == Status.inactive) {
-      return Future.error(MathError.negativeInput);
+      throw MathError.negativeInput;
     }
     return Future.value(Point(x: point.x + 500.0, y: point.y + 600.0));
   }

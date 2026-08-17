@@ -1,4 +1,4 @@
-import { BoltFFIHandle, BoltFFIModule, CallbackRegistry, StreamCancellable, StreamSession, WASM_ABI_VERSION, instantiateBoltFFISync, matchWireResult, utf8ByteCount, wireArraySize, wireMapSize, wireOptionalSize, wireResultSize, wireStringSize, writeUnexpectedCallbackError } from {{ runtime_package }};
+import { BoltFFICancelledError, BoltFFIHandle, BoltFFIModule, CallbackRegistry, StreamCancellable, StreamSession, WASM_ABI_VERSION, instantiateBoltFFISync, matchWireResult, utf8ByteCount, wireArraySize, wireMapSize, wireOptionalSize, wireResultSize, wireStringSize, writeUnexpectedCallbackError } from {{ runtime_package }};
 import type { BoltFFIExports, Duration, WireCodec, WireResult } from {{ runtime_package }};
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";

@@ -5,6 +5,7 @@ import 'package:test/test.dart';
 import 'package:demo/demo.dart';
 
 void main() {
+  tearDownAll(shutdownBoltffi);
   test('async functions', () async {
     expect(
       await asyncAdd(3, 7),
@@ -68,7 +69,11 @@ void main() {
       reason:
           "case:async_fns.results.fetch_data.should_return_scaled_positive_id",
     );
-    expect(() => fetchData(0), throwsBoltException("invalid id"));
+    expect(
+      () => fetchData(0),
+      throwsBoltException("invalid id"),
+      reason: "case:async_fns.results.fetch_data.should_reject_non_positive_id",
+    );
 
     final counting = await asyncGetNumbers(4);
     expect(

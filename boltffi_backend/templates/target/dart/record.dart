@@ -11,6 +11,7 @@ final class {{ native.name() }} extends $$ffi.Struct {
 }
 
 extension on {{ record.name() }} {
+  @pragma('vm:prefer-inline')
   {{ native.name() }} _m$toStruct() {
     final _l$result = $$ffi.Struct.create<{{ native.name() }}>();
 {%- for field in record.fields() %}
@@ -19,12 +20,14 @@ extension on {{ record.name() }} {
     return _l$result;
   }
 
+  @pragma('vm:prefer-inline')
   void _m$writeStruct($$ffi.Pointer<{{ native.name() }}> _p$target) {
 {%- for field in record.fields() %}
     _p$target.ref.{{ field.name() }} = {{ field.name() }};
 {%- endfor %}
   }
 
+  @pragma('vm:prefer-inline')
   void _m$updateFromStruct({{ native.name() }} _p$value) {
 {%- for field in record.fields() %}
     {{ field.name() }} = _p$value.{{ field.name() }};
@@ -49,6 +52,7 @@ extension on {{ record.name() }} {
 {%- match record.native() %}
 {%- when Some with (native) %}
 
+  @pragma('vm:prefer-inline')
   factory {{ record.name() }}._m$fromStruct({{ native.name() }} _p$value) =>
       {{ record.name() }}(
 {%- for field in record.fields() %}

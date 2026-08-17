@@ -1,13 +1,23 @@
 use askama::Template;
-use boltffi_binding::Primitive;
+use boltffi_binding::{Primitive, RecordId};
 
 use crate::{
     bridge::c::{
-        CallbackSlot, ClosureParameter, ClosureReturnParameter, Function, Parameter,
-        ParameterIndex, Type,
+        CBridgeContract, CallbackSlot, ClosureParameter, ClosureReturnParameter, Function,
+        Parameter, ParameterIndex, Type,
     },
     core::{Error, Result},
 };
+
+pub fn direct_record_struct(bridge: &CBridgeContract, id: RecordId) -> Result<String> {
+    let record = bridge
+        .source_direct_record(id)
+        .ok_or(Error::BrokenBridgeContract {
+            bridge: "c",
+            invariant: "Dart direct record is missing from the C bridge",
+        })?;
+    Ok(format!("_$${}", record.name()))
+}
 
 pub trait NativeParameterSource {
     fn parameter(&self, index: ParameterIndex) -> &Parameter;
@@ -160,7 +170,8 @@ impl NativeType {
             Type::String => Ok(Self::same("_$$BoltFFIString")),
             Type::Span => Ok(Self::same("_$$BoltFFISpan")),
             Type::FutureHandle => Ok(Self::pointer(Self::new("$$ffi.Void", "void"))),
-            Type::StreamPollResult | Type::WaitResult => Ok(Self::integer("$$ffi.Int32")),
+            Type::StreamPollResult => Ok(Self::integer("$$ffi.Int8")),
+            Type::WaitResult => Ok(Self::integer("$$ffi.Int32")),
             Type::CallbackHandle(_) => Ok(Self::same("_$$BoltCallbackHandle")),
             Type::Named(name) | Type::DirectRecord(name) => {
                 Ok(Self::same(format!("_$${}", name.as_str())))
@@ -240,8 +251,9 @@ pub fn declaration(function: &Function) -> Result<String> {
             })
         })
         .collect::<Result<Vec<_>>>()?;
+    let returns = NativeType::from_c(function.returns())?;
     let declaration = NativeFunction {
-        returns: NativeType::from_c(function.returns())?,
+        returns,
         name: Identifier::parse(function.name())?,
         leaf: function.source_declaration().is_none()
             && parameters

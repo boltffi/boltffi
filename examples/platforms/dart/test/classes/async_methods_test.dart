@@ -3,6 +3,7 @@ import 'package:test/test.dart';
 import 'package:demo/demo.dart';
 
 void main() {
+  tearDownAll(shutdownBoltffi);
   test('async class methods', () async {
     final worker = AsyncWorker('test');
     try {

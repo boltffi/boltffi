@@ -215,6 +215,7 @@ fn build_apple_targets(
         release,
         selection: BuildSelection::Expanded(Box::new(selected_crate.clone())),
         on_output,
+        extra_env: Vec::new(),
     };
     let builder = Builder::new(config, build_options);
     let results = builder.build_targets(targets)?;

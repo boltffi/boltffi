@@ -3,6 +3,7 @@ import 'package:test/test.dart';
 import 'package:demo/demo.dart';
 
 void main() {
+  tearDownAll(shutdownBoltffi);
   test('basic results', () async {
     expect(
       safeDivide(10, 2),
@@ -80,6 +81,18 @@ void main() {
       () => parseInt('not-a-number'),
       throwsBoltException('invalid integer'),
       reason: 'case:results.basic.parse_int.should_reject_invalid_integer',
+    );
+
+    expect(
+      isEven(4),
+      isTrue,
+      reason: 'case:results.basic.is_even.should_return_parity',
+    );
+    expect(isEven(3), isFalse);
+    expect(
+      () => isEven(-1),
+      throwsBoltException('negative input'),
+      reason: 'case:results.basic.is_even.should_reject_negative_input',
     );
 
     expect(

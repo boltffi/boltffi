@@ -1,21 +1,22 @@
-use askama::Template;
 use boltffi_binding::{
     ClosureParameter as BindingClosureParameter, ErrorDecl, HandlePresence, IntoRust, Native,
     OutgoingParam,
 };
+
+use boltffi_binding::CanonicalName;
 
 use crate::{
     bridge::c::{
         CBridgeContract, ClosureParameter as CClosureParameter, Function as CFunction,
         ParameterGroup, Type as CBridgeType,
     },
-    core::{Error, RenderContext, Result},
+    core::{Error, HelperId, RenderContext, Result},
 };
 
 use super::{
     callback::{
         method::{
-            native_default, public_return_type, render_fallible_entry_return,
+            exceptional_return_value, public_return_type, render_fallible_entry_return,
             render_infallible_entry_return,
         },
         parameter::CallbackParameter,
@@ -26,36 +27,15 @@ use crate::target::dart::{
     name_style::Name,
     native::NativeFunctionSignature,
     syntax::{Identifier, Parameter, TypeFragment},
+    type_name,
 };
-
-#[derive(Template)]
-#[template(path = "target/dart/closure_argument.dart", escape = "none")]
-struct ClosureRegistrationTemplate<'a> {
-    registration: &'a ClosureRegistration,
-}
-
-struct ClosureRegistration {
-    source: Identifier,
-    presence: HandlePresence,
-    call_callable: Identifier,
-    release_callable: Identifier,
-    invoke_function: Identifier,
-    release_function: Identifier,
-    callable_type: TypeFragment,
-    release_callable_type: TypeFragment,
-    invoke_return: TypeFragment,
-    invoke_parameters: Vec<Parameter>,
-    invoke_body: String,
-    native_signature: TypeFragment,
-    release_signature: TypeFragment,
-    exceptional_return: Option<String>,
-}
 
 pub struct ClosureArgument {
     pub name: Identifier,
     pub public_type: TypeFragment,
     pub setup: Vec<String>,
     pub arguments: Vec<String>,
+    pub helper: Option<(HelperId, String)>,
 }
 
 impl ClosureArgument {
@@ -83,7 +63,13 @@ impl ClosureArgument {
                 let OutgoingParam::Value(_) = parameter.payload() else {
                     return super::super::unsupported("nested closure parameter");
                 };
-                CallbackParameter::from_declaration(parameter, parameter_group, protocol, context)
+                CallbackParameter::from_declaration(
+                    parameter,
+                    parameter_group,
+                    protocol,
+                    bridge,
+                    context,
+                )
             })
             .collect::<Result<Vec<_>>>()?;
 
@@ -113,12 +99,7 @@ impl ClosureArgument {
             _ => closure_type,
         };
 
-        let call_callable = Identifier::parse(format!("_l${source}Call"))?;
-        let release_callable = Identifier::parse(format!("_l${source}Release"))?;
-        let invoke_function = Identifier::parse(format!("_l${source}Invoke"))?;
-        let release_function = Identifier::parse(format!("_l${source}Drop"))?;
         let native_signature = TypeFragment::new(signature.native());
-        let release_signature = TypeFragment::new("$$ffi.Void Function($$ffi.Pointer<$$ffi.Void>)");
         let native_parameters = native_parameters(protocol, &signature)?;
         let invocation_arguments = parameters
             .iter()
@@ -126,8 +107,8 @@ impl ClosureArgument {
             .collect::<Vec<_>>()
             .join(", ");
         let source_call = match presence {
-            HandlePresence::Nullable => format!("{source}!({invocation_arguments})"),
-            _ => format!("{source}({invocation_arguments})"),
+            HandlePresence::Nullable => format!("implementation!({invocation_arguments})"),
+            _ => format!("implementation({invocation_arguments})"),
         };
         let mut invoke_body = parameters
             .iter()
@@ -155,75 +136,85 @@ impl ClosureArgument {
             _ => return super::super::unsupported("Dart closure error channel"),
         }
 
-        let callable_type = match presence {
-            HandlePresence::Nullable => {
-                TypeFragment::new(format!("$$ffi.NativeCallable<{native_signature}>")).optional()
+        let returns = native_return(call_pointer)?;
+        let missing = super::callback::method::native_default(returns)?;
+        let missing_return = if missing.is_empty() {
+            "return;".to_owned()
+        } else {
+            format!("return {missing};")
+        };
+        let invoke_body = format!(
+            "final implementation = _map[_p$context.address];\n  if (implementation == null) {missing_return}\n{}",
+            indent(&invoke_body.join("\n"), 2)
+        );
+        let error_key = match invoke.error() {
+            ErrorDecl::None(_) => "infallible".to_owned(),
+            ErrorDecl::EncodedViaReturnSlot { ty, .. } => {
+                type_name::type_ref(ty, context)?.to_string()
             }
-            _ => TypeFragment::new(format!("$$ffi.NativeCallable<{native_signature}>")),
+            _ => return super::super::unsupported("Dart closure error channel"),
         };
-        let release_callable_type = match presence {
-            HandlePresence::Nullable => {
-                TypeFragment::new(format!("$$ffi.NativeCallable<{release_signature}>")).optional()
-            }
-            _ => TypeFragment::new(format!("$$ffi.NativeCallable<{release_signature}>")),
-        };
-        let exceptional_return = match signature.returns().native() {
-            "$$ffi.Void" => None,
-            _ => Some(native_default(native_return(call_pointer)?)?),
-        };
-        let registration = ClosureRegistration {
-            source,
-            presence,
-            call_callable,
-            release_callable,
-            invoke_function,
-            release_function,
-            callable_type,
-            release_callable_type,
-            invoke_return: TypeFragment::new(signature.returns().dart()),
-            invoke_parameters: native_parameters,
-            invoke_body: indent(&invoke_body.join("\n"), 2),
-            native_signature,
-            release_signature,
-            exceptional_return,
-        };
-        let setup = vec![registration.source()];
-
-        let call_argument = match registration.presence {
-            HandlePresence::Nullable => {
-                format!(
-                    "{}?.nativeFunction ?? $$ffi.nullptr",
-                    registration.call_callable
-                )
-            }
-            _ => format!("{}.nativeFunction", registration.call_callable),
-        };
-        let release_argument = match registration.presence {
-            HandlePresence::Nullable => format!(
-                "{}?.nativeFunction ?? $$ffi.nullptr",
-                registration.release_callable
+        let class = helper_class_name(&format!(
+            "{}__{}__{}",
+            public_type.as_str(),
+            signature.native(),
+            error_key
+        ));
+        let helper_id = HelperId::new(CanonicalName::single(class.clone()));
+        let exceptional = exceptional_return_value(returns)?;
+        let exceptional_clause = exceptional
+            .as_deref()
+            .map(|value| format!(", {value}"))
+            .unwrap_or_default();
+        let invoke_params = native_parameters
+            .iter()
+            .map(|parameter| parameter.to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let helper = format!(
+            "final class {class} {{\n  static final _map = <int, {public_inner}>{{}};\n  static int _n = 1;\n\n  static int insert({public_inner} value) {{\n    final handle = _n += 2;\n    _map[handle] = value;\n    return handle;\n  }}\n\n  static {invoke_ret} call({invoke_params}) {{\n    {invoke_body}\n  }}\n\n  static void release($$ffi.Pointer<$$ffi.Void> _p$context) {{\n    _map.remove(_p$context.address);\n  }}\n\n  static final callPtr = $$ffi.Pointer.fromFunction<{native_signature}>(call{exceptional_clause});\n  static final _releaseCallable = _$$boltTrackListener($$ffi.NativeCallable<$$ffi.Void Function($$ffi.Pointer<$$ffi.Void>)>.listener(release));\n  static final releasePtr = _releaseCallable.nativeFunction;\n}}\n",
+            public_inner = public_type.as_str().trim_end_matches('?'),
+            invoke_ret = signature.returns().dart(),
+        );
+        let handle = format!("_l${source}Handle");
+        let (setup, arguments) = match presence {
+            HandlePresence::Nullable => (
+                vec![format!(
+                    "final {handle} = {source} == null ? 0 : {class}.insert({source});"
+                )],
+                vec![
+                    format!("{handle} == 0 ? $$ffi.nullptr : {class}.callPtr"),
+                    format!(
+                        "{handle} == 0 ? $$ffi.nullptr : $$ffi.Pointer<$$ffi.Void>.fromAddress({handle})"
+                    ),
+                    format!("{handle} == 0 ? $$ffi.nullptr : {class}.releasePtr"),
+                ],
             ),
-            _ => format!("{}.nativeFunction", registration.release_callable),
+            _ => (
+                vec![format!("final {handle} = {class}.insert({source});")],
+                vec![
+                    format!("{class}.callPtr"),
+                    format!("$$ffi.Pointer<$$ffi.Void>.fromAddress({handle})"),
+                    format!("{class}.releasePtr"),
+                ],
+            ),
         };
         Ok(Self {
-            name: registration.source,
+            name: source,
             public_type,
             setup,
-            arguments: vec![call_argument, "$$ffi.nullptr".to_owned(), release_argument],
+            arguments,
+            helper: Some((helper_id, helper)),
         })
     }
 }
 
-impl ClosureRegistration {
-    fn source(&self) -> String {
-        ClosureRegistrationTemplate { registration: self }
-            .render()
-            .expect("rendering an in-memory Dart closure registration cannot fail")
-    }
-
-    fn nullable(&self) -> bool {
-        self.presence == HandlePresence::Nullable
-    }
+fn helper_class_name(signature: &str) -> String {
+    let sanitized = signature
+        .chars()
+        .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '_' })
+        .collect::<String>();
+    format!("_Cl${sanitized}")
 }
 
 fn native_parameters(

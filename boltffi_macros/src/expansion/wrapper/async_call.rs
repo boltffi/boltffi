@@ -398,7 +398,7 @@ impl NativeProtocol {
                 handle: ::boltffi::__private::RustFutureHandle,
                 callback_data: u64,
                 callback: ::boltffi::__private::RustFutureContinuationCallback,
-            ) {
+            ) -> i8 {
                 unsafe {
                     ::boltffi::__private::rustfuture::rust_future_poll::<#rust_return_type>(
                         handle,

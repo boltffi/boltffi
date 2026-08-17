@@ -5,6 +5,25 @@ import 'dart:typed_data' as $$typed_data;
 import 'dart:ffi' as $$ffi;
 import 'package:ffi/ffi.dart' as $$extffi;
 
+/// Process-lifetime [NativeCallable.listener]s. Dart keeps the isolate
+/// alive until every listener is [NativeCallable.close]d — a CLI that
+/// never closes them hangs after `main` returns.
+final _$$boltProcessListeners = <Object>[];
+
+T _$$boltTrackListener<T>(T callable) {
+  _$$boltProcessListeners.add(callable as Object);
+  return callable;
+}
+
+/// Closes process-lifetime listeners so a Dart CLI can exit. Do not call
+/// this while native code may still invoke those callbacks.
+void shutdownBoltffi() {
+  for (final callable in _$$boltProcessListeners) {
+    (callable as dynamic).close();
+  }
+  _$$boltProcessListeners.clear();
+}
+
 final class _$$BoltFFIStatus extends $$ffi.Struct {
   @$$ffi.Int32()
   external int code;
@@ -137,22 +156,25 @@ final class _$$BoltCallocPtr<T extends $$ffi.SizedNativeType>
 }
 
 abstract class _$$BoltStoragePool {
-  static const int kMinCapacity = 1 << 4;
+  static const int kMinCapacity = 1 << 3;
   static const int kMaxCapacity = 1 << 20;
-  static const int kBucketCount = 17;
+  static const int kBucketCount = 18;
   static const int kCapacityPerBucket = 4;
 
   static final List<_$$BoltCallocPtr<$$ffi.Uint8>?> buckets = List.filled(kCapacityPerBucket * kBucketCount, null);
   static final $$typed_data.Uint8List counts = $$typed_data.Uint8List(kBucketCount);
 
   static int getBucketIndex(int capacity) {
-    return (capacity - 1).bitLength - 4;
+    return (capacity - 1).bitLength - 3;
   }
 
   @pragma('vm:prefer-inline')
   static _$$BoltCallocPtr<$$ffi.Uint8> acquireStorage(int capacity) {
-    if (capacity > kMaxCapacity || capacity < kMinCapacity) {
+    if (capacity > kMaxCapacity) {
       return _$$BoltCallocPtr.alloc(capacity);
+    }
+    if (capacity < kMinCapacity) {
+      capacity = kMinCapacity;
     }
 
     final bucketIdx = getBucketIndex(capacity);
@@ -272,6 +294,185 @@ final class $$BoltBoolList extends $$collection.ListBase<bool> {
 }
 
 abstract final class _$$BoltUtil {
+  @pragma('vm:prefer-inline')
+  static void writeU32le($$ffi.Pointer<$$ffi.Uint8> ptr, int value) {
+    ptr[0] = value & 0xff;
+    ptr[1] = (value >> 8) & 0xff;
+    ptr[2] = (value >> 16) & 0xff;
+    ptr[3] = (value >> 24) & 0xff;
+  }
+
+  /// Wire string: little-endian u32 byte length + UTF-8. ASCII skips encode.
+  @pragma('vm:prefer-inline')
+  static int writeI32le($$ffi.Pointer<$$ffi.Uint8> ptr, int offset, int v) {
+    ptr[offset] = v & 0xff;
+    ptr[offset + 1] = (v >> 8) & 0xff;
+    ptr[offset + 2] = (v >> 16) & 0xff;
+    ptr[offset + 3] = (v >> 24) & 0xff;
+    return offset + 4;
+  }
+
+  @pragma('vm:prefer-inline')
+  static int readI32le($$ffi.Pointer<$$ffi.Uint8> ptr, int offset) {
+    final x =
+        ptr[offset] |
+        (ptr[offset + 1] << 8) |
+        (ptr[offset + 2] << 16) |
+        (ptr[offset + 3] << 24);
+    return x >= 0x80000000 ? x - 0x100000000 : x;
+  }
+
+  @pragma('vm:prefer-inline')
+  static int writeOptionI32($$ffi.Pointer<$$ffi.Uint8> ptr, int? v) {
+    if (v == null) {
+      ptr[0] = 0;
+      return 1;
+    }
+    ptr[0] = 1;
+    writeI32le(ptr, 1, v);
+    return 5;
+  }
+
+  @pragma('vm:prefer-inline')
+  static int? readOptionI32($$ffi.Pointer<$$ffi.Uint8> ptr, int len) {
+    if (len < 1 || ptr[0] == 0) return null;
+    return readI32le(ptr, 1);
+  }
+
+  @pragma('vm:prefer-inline')
+  static int readU32le($$ffi.Pointer<$$ffi.Uint8> ptr, int offset) {
+    return ptr[offset] |
+        (ptr[offset + 1] << 8) |
+        (ptr[offset + 2] << 16) |
+        (ptr[offset + 3] << 24);
+  }
+
+  @pragma('vm:prefer-inline')
+  static int writeOptionU32($$ffi.Pointer<$$ffi.Uint8> ptr, int? v) {
+    if (v == null) {
+      ptr[0] = 0;
+      return 1;
+    }
+    ptr[0] = 1;
+    writeI32le(ptr, 1, v);
+    return 5;
+  }
+
+  @pragma('vm:prefer-inline')
+  static int? readOptionU32($$ffi.Pointer<$$ffi.Uint8> ptr, int len) {
+    if (len < 1 || ptr[0] == 0) return null;
+    return readU32le(ptr, 1);
+  }
+
+  @pragma('vm:prefer-inline')
+  static int writeOptionString(
+    $$ffi.Pointer<$$ffi.Uint8> ptr,
+    int cap,
+    String? v,
+  ) {
+    if (v == null) {
+      ptr[0] = 0;
+      return 1;
+    }
+    ptr[0] = 1;
+    return 1 + writeString(ptr.elementAt(1), cap - 1, v);
+  }
+
+  @pragma('vm:prefer-inline')
+  static String? readOptionString($$ffi.Pointer<$$ffi.Uint8> ptr, int len) {
+    if (len < 1 || ptr[0] == 0) return null;
+    return readString(ptr.elementAt(1), len - 1);
+  }
+
+  @pragma('vm:prefer-inline')
+  static int writeBytes(
+    $$ffi.Pointer<$$ffi.Uint8> ptr,
+    int cap,
+    $$typed_data.Uint8List v,
+  ) {
+    writeU32le(ptr, v.length);
+    ptr.asTypedList(cap).setRange(4, 4 + v.length, v);
+    return 4 + v.length;
+  }
+
+  @pragma('vm:prefer-inline')
+  static $$typed_data.Uint8List readBytes($$ffi.Pointer<$$ffi.Uint8> ptr, int len) {
+    if (len < 4) return $$typed_data.Uint8List(0);
+    final n = ptr[0] | (ptr[1] << 8) | (ptr[2] << 16) | (ptr[3] << 24);
+    if (n <= 0 || 4 + n > len) return $$typed_data.Uint8List(0);
+    return $$typed_data.Uint8List.fromList(
+      $$typed_data.Uint8List.sublistView(ptr.asTypedList(len), 4, 4 + n),
+    );
+  }
+
+  @pragma('vm:prefer-inline')
+  static int writeStringList(
+    $$ffi.Pointer<$$ffi.Uint8> ptr,
+    int cap,
+    List<String> v,
+  ) {
+    writeU32le(ptr, v.length);
+    var offset = 4;
+    for (final item in v) {
+      offset += writeString(ptr.elementAt(offset), cap - offset, item);
+    }
+    return offset;
+  }
+
+  @pragma('vm:prefer-inline')
+  static List<String> readStringList($$ffi.Pointer<$$ffi.Uint8> ptr, int len) {
+    if (len < 4) return const <String>[];
+    final n = ptr[0] | (ptr[1] << 8) | (ptr[2] << 16) | (ptr[3] << 24);
+    if (n <= 0) return const <String>[];
+    final out = List<String>.filled(n, '');
+    var offset = 4;
+    for (var i = 0; i < n; i++) {
+      if (offset + 4 > len) break;
+      final slen =
+          ptr[offset] |
+          (ptr[offset + 1] << 8) |
+          (ptr[offset + 2] << 16) |
+          (ptr[offset + 3] << 24);
+      out[i] = readString(ptr.elementAt(offset), len - offset);
+      offset += 4 + slen;
+    }
+    return out;
+  }
+
+  @pragma('vm:prefer-inline')
+  static int writeString($$ffi.Pointer<$$ffi.Uint8> ptr, int cap, String v) {
+    final units = v.length;
+    writeU32le(ptr, units);
+    final bytes = ptr.asTypedList(cap);
+    for (var i = 0; i < units; i++) {
+      final c = v.codeUnitAt(i);
+      if (c > 127) {
+        final encoded = $$convert.utf8.encode(v);
+        writeU32le(ptr, encoded.length);
+        bytes.setRange(4, 4 + encoded.length, encoded);
+        return 4 + encoded.length;
+      }
+      bytes[4 + i] = c;
+    }
+    return 4 + units;
+  }
+
+  @pragma('vm:prefer-inline')
+  static String readString($$ffi.Pointer<$$ffi.Uint8> ptr, int len) {
+    if (len < 4) return '';
+    final n = ptr[0] | (ptr[1] << 8) | (ptr[2] << 16) | (ptr[3] << 24);
+    if (n <= 0 || 4 + n > len) return '';
+    final view = ptr.asTypedList(len);
+    for (var i = 0; i < n; i++) {
+      if (view[4 + i] > 127) {
+        return $$convert.utf8.decode(
+          $$typed_data.Uint8List.sublistView(view, 4, 4 + n),
+        );
+      }
+    }
+    return String.fromCharCodes(view, 4, 4 + n);
+  }
+
   @pragma('vm:prefer-inline')
   static bool listCompare<T>(List<T> a, List<T> b, bool Function(T, T) cmp) {
     if (identical(a, b)) return true;
@@ -501,6 +702,8 @@ final class _$$BoltBufWriter {
 
   int get len => _offset;
 
+  set len(int value) => _offset = value;
+
   @pragma('vm:prefer-inline')
   void reset() => _offset = 0;
 
@@ -604,12 +807,27 @@ extension type _$$BoltWireEncoder(_$$BoltBufWriter writer) {
     final len = v.length;
     writeU32(len);
     for (int i = 0; i < len; ++i) {
-      onItem(v[i], _$$BoltWireEncoder(writer));
+      onItem(v[i], this);
     }
   }
 
   @pragma('vm:prefer-inline')
-  void writeString(String v) => writeBytes($$convert.utf8.encode(v));
+  void writeString(String v) {
+    final units = v.length;
+    final start = writer.len;
+    writeU32(units);
+    final offset = writer.advance(units);
+    final bytes = writer.bytes;
+    for (var i = 0; i < units; i++) {
+      final c = v.codeUnitAt(i);
+      if (c > 127) {
+        writer.len = start;
+        writeBytes($$convert.utf8.encode(v));
+        return;
+      }
+      bytes[offset + i] = c;
+    }
+  }
 
   @pragma('vm:prefer-inline')
   void writeUri(Uri v) => writeString(v.toString());
@@ -638,6 +856,27 @@ extension type _$$BoltWireEncoder(_$$BoltBufWriter writer) {
     writeU64(v.highBits);
     writeU64(v.lowBits);
   }
+}
+
+const _k$unexpectedCallbackErrorMarker = <int>[
+  0x42, 0x4f, 0x4c, 0x54, 0x46, 0x46, 0x49, 0x5f,
+  0x43, 0x41, 0x4c, 0x4c, 0x42, 0x41, 0x43, 0x4b,
+];
+
+_$$BoltFFIBuf _f$encodeUnexpectedCallbackError(Object error) {
+  final message = error.toString();
+  final encoded = $$convert.utf8.encode(message);
+  final size = _k$unexpectedCallbackErrorMarker.length + 1 + 4 + encoded.length;
+  final storage = _$$BoltCallocPtr<$$ffi.Uint8>.alloc(size);
+  final writer = _$$BoltWireEncoder(
+    _$$BoltBufWriter.fromSpan(storage.ptr, storage.len),
+  );
+  for (final byte in _k$unexpectedCallbackErrorMarker) {
+    writer.writeU8(byte);
+  }
+  writer.writeU8(1);
+  writer.writeString(message);
+  return _f$boltffi_buf_from_bytes(storage.ptr, writer.len);
 }
 
 final class _$$BoltBufReader {
@@ -863,7 +1102,7 @@ extension type _$$BoltWireDecoder(_$$BoltBufReader reader) {
 
   @pragma('vm:prefer-inline')
   List<T> readList<T>(T Function(_$$BoltWireDecoder decoder) readValue) {
-    return List.generate(readU32(), (_) => readValue(_$$BoltWireDecoder(reader)));
+    return List.generate(readU32(), (_) => readValue(this));
   }
 
   @pragma('vm:prefer-inline')
@@ -878,7 +1117,21 @@ extension type _$$BoltWireDecoder(_$$BoltBufReader reader) {
   }
 
   @pragma('vm:prefer-inline')
-  String readString() => $$convert.utf8.decode(readUint8List());
+  String readString() {
+    final size = readU32();
+    final offset = reader.advance(size);
+    final view = $$typed_data.Uint8List.sublistView(
+      reader.bytes,
+      offset,
+      offset + size,
+    );
+    for (var i = 0; i < size; i++) {
+      if (view[i] > 127) {
+        return $$convert.utf8.decode(view);
+      }
+    }
+    return String.fromCharCodes(view);
+  }
 
   @pragma('vm:prefer-inline')
   Uri readUri() => Uri.parse(readString());
@@ -914,6 +1167,9 @@ final class _$$BoltFFIHandleMap<O> {
     return handle;
   }
 
+  // Handle is the Hooks pointer from register; do not mint a second id.
+  void insertAt(int handle, O value) => _map[handle] = value;
+
   O? get(int handle) => _map[handle];
 
   O? remove(int handle) => _map.remove(handle);
@@ -929,13 +1185,141 @@ final class _$$BoltFFIHandleMap<O> {
   }
 }
 
+final class $$BoltCancellationToken {
+  final Set<void Function()> _attached = {};
+  bool _cancelled = false;
+
+  bool get isCancelled => _cancelled;
+
+  void cancel() {
+    if (_cancelled) return;
+    _cancelled = true;
+    for (final onCancel in _attached.toList()) {
+      onCancel();
+    }
+    _attached.clear();
+  }
+
+  void _attach(void Function() onCancel) => _attached.add(onCancel);
+  void _detach(void Function() onCancel) => _attached.remove(onCancel);
+}
+
+final class $$BoltCancelledException implements Exception {
+  const $$BoltCancelledException();
+
+  @override
+  String toString() => 'BoltFFI call was cancelled';
+}
+
+final class _$$BoltAsyncWait {
+  final $$ffi.Pointer<$$ffi.Void> handle;
+  final void Function(Object? value) complete;
+  final void Function(Object error) completeError;
+  final Object? Function($$ffi.Pointer<$$ffi.Void> handle) completeFuture;
+  final void Function($$ffi.Pointer<$$ffi.Void> handle) freeFuture;
+  final int Function(
+    $$ffi.Pointer<$$ffi.Void> handle,
+    int callback_data,
+    $$ffi.Pointer<
+      $$ffi.NativeFunction<$$ffi.Void Function($$ffi.Uint64, $$ffi.Int8)>
+    >
+    callback,
+  )
+  pollFuture;
+  bool cancelled;
+  final $$BoltCancellationToken? token;
+  final void Function()? onCancel;
+
+  _$$BoltAsyncWait({
+    required this.handle,
+    required this.complete,
+    required this.completeError,
+    required this.completeFuture,
+    required this.freeFuture,
+    required this.pollFuture,
+    required this.cancelled,
+    this.token,
+    this.onCancel,
+  });
+}
+
 final class _$$BoltFFIAsync {
   static const int _k$RustFuturePoll$Ready = 0;
   static const int _k$RustFuturePoll$MaybeReady = 1;
 
+  static int _nextId = 1;
+  static final _pending = <int, _$$BoltAsyncWait>{};
+  static $$ffi.NativeCallable<$$ffi.Void Function($$ffi.Uint64, $$ffi.Int8)>?
+  _pollCallable;
+  static final $$ffi.Pointer<
+    $$ffi.NativeFunction<$$ffi.Void Function($$ffi.Uint64, $$ffi.Int8)>
+  >
+  _noopNative = $$ffi.Native.addressOf<
+    $$ffi.NativeFunction<$$ffi.Void Function($$ffi.Uint64, $$ffi.Int8)>
+  >(_f$poll_continuation_noop);
+
+  static $$ffi.Pointer<
+    $$ffi.NativeFunction<$$ffi.Void Function($$ffi.Uint64, $$ffi.Int8)>
+  >
+  _pollNative() {
+    // Recreate on demand; closed again when `_pending` empties so a CLI that
+    // only awaited BoltFFI futures can exit without `shutdownBoltffi()`.
+    if (_pollCallable == null) {
+      final callable = $$ffi.NativeCallable<
+        $$ffi.Void Function($$ffi.Uint64, $$ffi.Int8)
+      >.listener(_onPoll);
+      _$$boltTrackListener(callable);
+      _pollCallable = callable;
+    }
+    return _pollCallable!.nativeFunction;
+  }
+
+  static void _releasePollCallableIfIdle() {
+    if (_pending.isNotEmpty) return;
+    final callable = _pollCallable;
+    if (callable == null) return;
+    _pollCallable = null;
+    _$$boltProcessListeners.remove(callable);
+    callable.close();
+  }
+
+  static void _onPoll(int data, int res) {
+    final wait = _pending[data];
+    if (wait == null) return;
+    switch (res) {
+      case _k$RustFuturePoll$Ready:
+        _pending.remove(data);
+        final onCancel = wait.onCancel;
+        if (onCancel != null) {
+          wait.token?._detach(onCancel);
+        }
+        if (wait.cancelled) {
+          try {
+            wait.completeError(const $$BoltCancelledException());
+          } finally {
+            wait.freeFuture(wait.handle);
+          }
+          _releasePollCallableIfIdle();
+          return;
+        }
+        try {
+          wait.complete(wait.completeFuture(wait.handle));
+        } catch (err) {
+          wait.completeError(err);
+        } finally {
+          wait.freeFuture(wait.handle);
+        }
+        _releasePollCallableIfIdle();
+      case _k$RustFuturePoll$MaybeReady:
+        wait.pollFuture(wait.handle, data, _pollNative());
+      case _:
+        throw $$BoltException("Unexpected poll result: $res");
+    }
+  }
+
   static Future<R> create<R>({
     required $$ffi.Pointer<$$ffi.Void> Function() createFuture,
-    required void Function(
+    required int Function(
       $$ffi.Pointer<$$ffi.Void> handle,
       int callback_data,
       $$ffi.Pointer<
@@ -947,39 +1331,45 @@ final class _$$BoltFFIAsync {
     required R Function($$ffi.Pointer<$$ffi.Void> handle) completeFuture,
     required void Function($$ffi.Pointer<$$ffi.Void> handle) freeFuture,
     required void Function($$ffi.Pointer<$$ffi.Void> handle) cancelFuture,
-  }) async {
-    final handle = createFuture();
-    final completer = $$async.Completer<R>();
-    late final $$ffi.NativeCallable<
-      $$ffi.Void Function($$ffi.Uint64, $$ffi.Int8)
-    >
-    completerCallbackCallable;
-
-    void completerCallback(int data, int res) {
-      switch (res) {
-        case _k$RustFuturePoll$Ready:
-          completerCallbackCallable.close();
-
-          try {
-            completer.complete(completeFuture(handle));
-          } catch (err) {
-            completer.completeError(err);
-          } finally {
-            freeFuture(handle);
-          }
-        case _k$RustFuturePoll$MaybeReady:
-          pollFuture(handle, data, completerCallbackCallable.nativeFunction);
-        case _:
-          throw $$BoltException("Unexpected poll result: $res");
-      }
+    $$BoltCancellationToken? cancellationToken,
+  }) {
+    if (cancellationToken?.isCancelled ?? false) {
+      return $$async.Future<R>.error(const $$BoltCancelledException());
     }
-
-    completerCallbackCallable = $$ffi.NativeCallable.listener(
-      completerCallback,
+    final handle = createFuture();
+    if (cancellationToken?.isCancelled ?? false) {
+      try {
+        cancelFuture(handle);
+      } finally {
+        freeFuture(handle);
+      }
+      return $$async.Future<R>.error(const $$BoltCancelledException());
+    }
+    final completer = $$async.Completer<R>();
+    final id = _nextId++;
+    late final _$$BoltAsyncWait wait;
+    void onTokenCancel() {
+      if (wait.cancelled) return;
+      wait.cancelled = true;
+      cancelFuture(handle);
+    }
+    wait = _$$BoltAsyncWait(
+      handle: handle,
+      complete: (value) => completer.complete(value as R),
+      completeError: completer.completeError,
+      completeFuture: completeFuture,
+      freeFuture: freeFuture,
+      pollFuture: pollFuture,
+      cancelled: false,
+      token: cancellationToken,
+      onCancel: cancellationToken == null ? null : onTokenCancel,
     );
-
-    pollFuture(handle, 0, completerCallbackCallable.nativeFunction);
-
+    _pending[id] = wait;
+    cancellationToken?._attach(onTokenCancel);
+    final status = pollFuture(handle, id, _pollNative());
+    if (status == _k$RustFuturePoll$Ready) {
+      _onPoll(id, status);
+    }
     return completer.future;
   }
 }
@@ -996,6 +1386,11 @@ final class _$$BoltStreamCtx {
   static const _k$StreamPollResult$Closed = 1;
 
   static const _k$defaultBatchSize = 16;
+  // Caps how many batches one readiness wake drains before yielding back to
+  // the event queue -- an unbounded drain loop would starve timers,
+  // cancellation, and other isolate work for as long as a producer keeps
+  // refilling as fast as it's drained.
+  static const _k$maxBatchesPerWake = 32;
 
   late final int Function() subscribe;
   late final void Function(
@@ -1021,7 +1416,11 @@ final class _$$BoltStreamCtx {
   });
 
   Stream<O> stream<O>(
-    void Function(
+    // Returns whether the batch it just delivered was full (i.e. there may
+    // be more items already buffered on the Rust side worth reading
+    // immediately, without paying for another `NativeCallable.listener`
+    // round-trip through the event queue).
+    bool Function(
       int handle,
       int batchSize,
       int? itemSize,
@@ -1057,12 +1456,25 @@ final class _$$BoltStreamCtx {
       if (!active) return;
       switch (res) {
         case _k$StreamPollResult$Ready:
-          onReady(handle, _k$defaultBatchSize, itemSize, controller);
-          if (active) {
+          var batches = 0;
+          var more = true;
+          while (active &&
+              more &&
+              batches < _k$maxBatchesPerWake) {
+            more = onReady(handle, _k$defaultBatchSize, itemSize, controller);
+            batches++;
+          }
+          if (!active) break;
+          if (more) {
+            // More is likely already buffered -- keep draining without
+            // paying for another native poll round-trip, but only after
+            // yielding this turn so other microtasks/timers get a chance.
+            $$async.scheduleMicrotask(() => streamCallback(data, res));
+          } else {
             pollFn(handle, 0, streamCallbackCallable.nativeFunction);
           }
         case _k$StreamPollResult$Closed:
-          onReady(handle, _k$defaultBatchSize, itemSize, controller);
+          while (onReady(handle, _k$defaultBatchSize, itemSize, controller)) {}
           active = false;
           unsubscribeFn(handle);
           release();
@@ -1098,3 +1510,19 @@ final class _$$BoltStreamCtx {
     );
   }
 }
+
+// Symbols from `boltffi_dart_runtime`, linked into the user's cdylib.
+@$$ffi.Native<$$ffi.Void Function($$ffi.Uint64, $$ffi.Int8)>(
+  symbol: 'poll_continuation_noop',
+)
+external void _f$poll_continuation_noop(int data, int res);
+
+@$$ffi.Native<$$ffi.Void Function($$ffi.Pointer<$$ffi.Void>)>(
+  symbol: 'signal_gate_ok',
+)
+external void _f$signal_gate_ok($$ffi.Pointer<$$ffi.Void> gate);
+
+@$$ffi.Native<$$ffi.Void Function($$ffi.Pointer<$$ffi.Void>)>(
+  symbol: 'signal_gate_error',
+)
+external void _f$signal_gate_error($$ffi.Pointer<$$ffi.Void> gate);

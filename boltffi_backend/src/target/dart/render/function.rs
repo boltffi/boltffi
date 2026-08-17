@@ -7,7 +7,7 @@ use boltffi_binding::{
 
 use crate::{
     bridge::c::{CBridgeContract, Function as CFunction, ParameterGroup, Type as CBridgeType},
-    core::{Emitted, Error, RenderContext, Result},
+    core::{AuxChunk, Emitted, Error, HelperId, RenderContext, Result},
 };
 
 use super::super::{
@@ -51,14 +51,21 @@ pub struct Function {
     return_type: TypeFragment,
     placement: FunctionPlacement,
     body: String,
+    helpers: Vec<(HelperId, String)>,
+    cancellation_token: Option<Identifier>,
 }
 
 enum FunctionPlacement {
     TopLevel,
     Static,
-    Getter { associated: bool },
+    Getter {
+        associated: bool,
+    },
     Instance,
-    Factory { owner: Identifier },
+    Factory {
+        owner: Identifier,
+        constructor: Option<Identifier>,
+    },
 }
 
 pub struct DartParameter {
@@ -70,6 +77,7 @@ struct DartArgument {
     setup: Vec<String>,
     native_arguments: Vec<String>,
     writeback: Vec<String>,
+    cleanup: Vec<String>,
 }
 
 pub struct DartReturn {
@@ -78,6 +86,9 @@ pub struct DartReturn {
     pub arguments: Vec<String>,
     pub call_result: Option<String>,
     pub after_call: Vec<String>,
+    /// Always run after the native call, including when `after_call` throws
+    /// (e.g. pooled success-out slots must return to `_$$BoltStoragePool`).
+    pub finally: Vec<String>,
     pub expression: Option<String>,
 }
 
@@ -105,6 +116,18 @@ impl OutPointer {
             "final {name} = _$$BoltCallocPtr<{}>.alloc($$ffi.sizeOf<{}>());",
             native.native(),
             native.native(),
+        ))
+    }
+
+    fn allocation_pooled(&self, name: &str) -> Result<(String, String, String)> {
+        let native = dart_native::NativeType::from_c(&self.ty)?;
+        Ok((
+            format!(
+                "final {name} = _$$BoltStoragePool.acquireStorage($$ffi.sizeOf<{}>());",
+                native.native()
+            ),
+            format!("{name}.ptr.cast<{}>()", native.native()),
+            format!("_$$BoltStoragePool.releaseStorage({name});"),
         ))
     }
 
@@ -148,8 +171,10 @@ impl Function {
 
         let mut group_index = 0;
         let mut receiver_setup = Vec::new();
+        let mut receiver_writeback = Vec::new();
         let mut receiver_cleanup = Vec::new();
         let mut arguments = Vec::new();
+        let mut helpers = Vec::new();
         if callable.receiver().is_some() {
             let receiver = match &placement {
                 Placement::Instance(receiver) => receiver,
@@ -171,7 +196,8 @@ impl Function {
             )?;
             receiver_setup.extend(receiver_argument.setup);
             arguments.extend(receiver_argument.native_arguments);
-            receiver_cleanup.extend(receiver_argument.writeback);
+            receiver_writeback.extend(receiver_argument.writeback);
+            receiver_cleanup.extend(receiver_argument.cleanup);
         }
 
         let parameters = callable
@@ -191,6 +217,7 @@ impl Function {
                         plan,
                         group,
                         start_function,
+                        bridge,
                         context,
                     ),
                     IncomingParam::Closure(closure) => {
@@ -205,6 +232,9 @@ impl Function {
                             bridge,
                             context,
                         )?;
+                        if let Some(helper) = closure.helper.clone() {
+                            helpers.push(helper);
+                        }
                         Ok(DartParameter::new(
                             closure.name,
                             closure.public_type,
@@ -252,12 +282,20 @@ impl Function {
                 .iter()
                 .flat_map(|parameter| parameter.argument.native_arguments.iter().cloned()),
         );
-        let cleanup = receiver_cleanup
+        let writeback = receiver_writeback
             .into_iter()
             .chain(
                 parameters
                     .iter()
                     .flat_map(|parameter| parameter.argument.writeback.iter().cloned()),
+            )
+            .collect::<Vec<_>>();
+        let cleanup = receiver_cleanup
+            .into_iter()
+            .chain(
+                parameters
+                    .iter()
+                    .flat_map(|parameter| parameter.argument.cleanup.iter().cloned()),
             )
             .collect::<Vec<_>>();
 
@@ -271,13 +309,22 @@ impl Function {
             Placement::Static => FunctionPlacement::Static,
             Placement::Getter { associated } => FunctionPlacement::Getter { associated },
             Placement::Instance(_) => FunctionPlacement::Instance,
-            Placement::Initializer { owner, primary }
-                if primary && !asynchronous && returns.public_type.as_str() == owner.as_str() =>
+            Placement::Initializer { owner, .. }
+                if !asynchronous && returns.public_type.as_str() == owner.as_str() =>
             {
-                FunctionPlacement::Factory { owner }
+                FunctionPlacement::Factory {
+                    owner,
+                    constructor: factory_constructor_name(&name),
+                }
             }
             Placement::Initializer { .. } => FunctionPlacement::Static,
         };
+
+        let cancellation_token =
+            match completion.is_some() && !matches!(placement, FunctionPlacement::Getter { .. }) {
+                true => Some(reserved_cancellation_token_name(&declarations)?),
+                false => None,
+            };
 
         let call = match completion {
             Some(asynchronous) => render_async_call(
@@ -287,11 +334,13 @@ impl Function {
                 &receiver_setup,
                 &cleanup,
                 &returns,
+                cancellation_token.as_ref(),
             )?,
             None => render_sync_call(
                 start_function,
                 &arguments,
                 &receiver_setup,
+                &writeback,
                 &cleanup,
                 &returns,
             ),
@@ -303,6 +352,8 @@ impl Function {
             return_type: public_return_type,
             placement,
             body: indent(&call, 2),
+            helpers,
+            cancellation_token,
         })
     }
 
@@ -313,7 +364,18 @@ impl Function {
     }
 
     pub fn render(self) -> Emitted {
-        Emitted::primary([self.source(), "\n".to_owned()].concat())
+        let mut emitted = Emitted::primary([self.source(), "\n".to_owned()].concat());
+        for (id, text) in self.helpers {
+            emitted = emitted.with_aux(AuxChunk::Helper {
+                id,
+                text: text.into(),
+            });
+        }
+        emitted
+    }
+
+    pub fn helpers(&self) -> &[(HelperId, String)] {
+        &self.helpers
     }
 
     fn documentation(&self) -> &Documentation {
@@ -338,6 +400,16 @@ impl Function {
 
     fn body(&self) -> &str {
         &self.body
+    }
+
+    fn cancellable(&self) -> bool {
+        self.cancellation_token.is_some()
+    }
+
+    fn cancellation_token(&self) -> &Identifier {
+        self.cancellation_token
+            .as_ref()
+            .expect("template guards Dart cancellation token access")
     }
 }
 
@@ -368,6 +440,10 @@ impl DartParameter {
     pub fn writeback(&self) -> &[String] {
         &self.argument.writeback
     }
+
+    pub fn cleanup(&self) -> &[String] {
+        &self.argument.cleanup
+    }
 }
 
 impl DartArgument {
@@ -376,6 +452,34 @@ impl DartArgument {
             setup,
             native_arguments,
             writeback,
+            cleanup: Vec::new(),
+        }
+    }
+
+    fn with_cleanup(
+        setup: Vec<String>,
+        native_arguments: Vec<String>,
+        cleanup: Vec<String>,
+    ) -> Self {
+        Self {
+            setup,
+            native_arguments,
+            writeback: Vec::new(),
+            cleanup,
+        }
+    }
+
+    fn with_writeback_and_cleanup(
+        setup: Vec<String>,
+        native_arguments: Vec<String>,
+        writeback: Vec<String>,
+        cleanup: Vec<String>,
+    ) -> Self {
+        Self {
+            setup,
+            native_arguments,
+            writeback,
+            cleanup,
         }
     }
 }
@@ -387,8 +491,15 @@ impl FunctionPlacement {
 
     fn owner(&self) -> &Identifier {
         match self {
-            Self::Factory { owner } => owner,
+            Self::Factory { owner, .. } => owner,
             _ => unreachable!("template guards Dart factory owner access"),
+        }
+    }
+
+    fn constructor(&self) -> Option<&Identifier> {
+        match self {
+            Self::Factory { constructor, .. } => constructor.as_ref(),
+            _ => None,
         }
     }
 
@@ -463,6 +574,7 @@ pub fn render_parameter(
     plan: &ParamPlan<Native, boltffi_binding::IntoRust>,
     group: &ParameterGroup,
     function: &impl NativeParameterSource,
+    bridge: &CBridgeContract,
     context: &RenderContext<Native>,
 ) -> Result<DartParameter> {
     match plan {
@@ -481,6 +593,71 @@ pub fn render_parameter(
                 return super::super::unsupported("mutable encoded parameter");
             }
             let storage = format!("_l${}Storage", name.as_str());
+            let public_type = type_name::type_ref(ty, context)?;
+            if matches!(ty, TypeRef::String) {
+                let written = format!("_l${}Len", name.as_str());
+                let argument = DartArgument::with_cleanup(
+                    vec![
+                        format!(
+                            "final {storage} = _$$BoltStoragePool.acquireStorage(4 + (({name}).length * 3));"
+                        ),
+                        format!(
+                            "final {written} = _$$BoltUtil.writeString({storage}.ptr, {storage}.len, {name});"
+                        ),
+                    ],
+                    vec![format!("{storage}.ptr"), written],
+                    vec![format!("_$$BoltStoragePool.releaseStorage({storage});")],
+                );
+                return Ok(DartParameter::new(name, public_type, argument));
+            }
+            if matches!(ty, TypeRef::Optional(inner) if matches!(inner.as_ref(), TypeRef::String)) {
+                let written = format!("_l${}Len", name.as_str());
+                let argument = DartArgument::with_cleanup(
+                    vec![
+                        format!(
+                            "final {storage} = _$$BoltStoragePool.acquireStorage(1 + ({name} == null ? 0 : 4 + (({name}).length * 3)));"
+                        ),
+                        format!(
+                            "final {written} = _$$BoltUtil.writeOptionString({storage}.ptr, {storage}.len, {name});"
+                        ),
+                    ],
+                    vec![format!("{storage}.ptr"), written],
+                    vec![format!("_$$BoltStoragePool.releaseStorage({storage});")],
+                );
+                return Ok(DartParameter::new(name, public_type, argument));
+            }
+            if matches!(ty, TypeRef::Bytes) {
+                let written = format!("_l${}Len", name.as_str());
+                let argument = DartArgument::with_cleanup(
+                    vec![
+                        format!(
+                            "final {storage} = _$$BoltStoragePool.acquireStorage(4 + ({name}).length);"
+                        ),
+                        format!(
+                            "final {written} = _$$BoltUtil.writeBytes({storage}.ptr, {storage}.len, {name});"
+                        ),
+                    ],
+                    vec![format!("{storage}.ptr"), written],
+                    vec![format!("_$$BoltStoragePool.releaseStorage({storage});")],
+                );
+                return Ok(DartParameter::new(name, public_type, argument));
+            }
+            if matches!(ty, TypeRef::Sequence(inner) if matches!(inner.as_ref(), TypeRef::String)) {
+                let written = format!("_l${}Len", name.as_str());
+                let argument = DartArgument::with_cleanup(
+                    vec![
+                        format!(
+                            "final {storage} = _$$BoltStoragePool.acquireStorage(4 + {name}.fold<int>(0, (_l$size, _l$item) => _l$size + 4 + ((_l$item).length * 3)));"
+                        ),
+                        format!(
+                            "final {written} = _$$BoltUtil.writeStringList({storage}.ptr, {storage}.len, {name});"
+                        ),
+                    ],
+                    vec![format!("{storage}.ptr"), written],
+                    vec![format!("_$$BoltStoragePool.releaseStorage({storage});")],
+                );
+                return Ok(DartParameter::new(name, public_type, argument));
+            }
             let writer = format!("_l${}Writer", name.as_str());
             let size = codec
                 .size_with(&mut Sizer::new(
@@ -499,13 +676,12 @@ pub fn render_parameter(
                 .into_iter()
                 .map(super::super::codec::WriteStatement::into_source)
                 .collect::<Vec<_>>();
-            let public_type = type_name::type_ref(ty, context)?;
             Ok(DartParameter::new(
                 name,
                 public_type,
-                DartArgument::new(
+                DartArgument::with_cleanup(
                 std::iter::once(format!(
-                    "final {storage} = _$$BoltCallocPtr<$$ffi.Uint8>.alloc({size});"
+                    "final {storage} = _$$BoltStoragePool.acquireStorage({size});"
                 ))
                 .chain(std::iter::once(format!(
                     "final {writer} = _$$BoltWireEncoder(_$$BoltBufWriter.fromSpan({storage}.ptr, {storage}.len));"
@@ -516,7 +692,7 @@ pub fn render_parameter(
                     format!("{storage}.ptr"),
                     format!("{writer}.len"),
                 ],
-                Vec::new(),
+                vec![format!("_$$BoltStoragePool.releaseStorage({storage});")],
                 ),
             ))
         }
@@ -548,8 +724,8 @@ pub fn render_parameter(
                 DartArgument::new(Vec::new(), vec![argument], Vec::new()),
             ))
         }
-        ParamPlan::DirectVec { element, .. } => {
-            let ParameterGroup::DirectVector(group) = group else {
+        ParamPlan::DirectVec { element, receive } => {
+            let ParameterGroup::DirectVector(_group) = group else {
                 return broken("direct-vector Dart parameter disagrees with C bridge group");
             };
             let storage = format!("_l${}Storage", name.as_str());
@@ -560,44 +736,49 @@ pub fn render_parameter(
                     let native_type = vector.native();
                     let populate = vector.populate(&storage, name.as_str())?;
                     let public_type = type_name::direct_vector(element, context)?;
-                    let argument = DartArgument::new(
-                        vec![
-                            format!(
-                                "final {storage} = _$$BoltCallocPtr<{}>.alloc($$ffi.sizeOf<{}>() * {name}.length);",
-                                native_type.native(),
-                                native_type.native()
-                            ),
-                            populate,
-                        ],
-                        vec![format!("{storage}.ptr"), format!("{name}.length")],
-                        Vec::new(),
-                    );
+                    let writeback = match receive {
+                        Receive::ByMutRef => {
+                            vec![vector.writeback(&storage, name.as_str())?]
+                        }
+                        _ => Vec::new(),
+                    };
+                    let native = native_type.native();
+                    let setup = vec![
+                        format!(
+                            "final {storage} = _$$BoltStoragePool.acquireStorage($$ffi.sizeOf<{native}>() * {name}.length);"
+                        ),
+                        populate,
+                    ];
+                    let args = vec![
+                        format!("{storage}.ptr.cast<{native}>()"),
+                        format!("{name}.length"),
+                    ];
+                    let release = vec![format!("_$$BoltStoragePool.releaseStorage({storage});")];
+                    let argument = if writeback.is_empty() {
+                        DartArgument::with_cleanup(setup, args, release)
+                    } else {
+                        DartArgument::with_writeback_and_cleanup(setup, args, writeback, release)
+                    };
                     Ok(DartParameter::new(name, public_type, argument))
                 }
                 DirectVectorElementType::Record(record) => {
                     let direct = DirectValueType::Record(*record);
                     let public = type_name::direct_value(&direct, context)?;
-                    let (CBridgeType::ConstPointer(_) | CBridgeType::MutPointer(_)) =
-                        function.parameter(group.pointer()).ty()
-                    else {
-                        return broken("direct-record vector pointer type");
-                    };
-                    let native = format!("_$${public}");
-                    let argument = DartArgument::new(
+                    let native = dart_native::direct_record_struct(bridge, *record)?;
+                    let argument = DartArgument::with_cleanup(
                         vec![
                             format!(
-                                "final {storage} = _$$BoltCallocPtr<{}>.alloc($$ffi.sizeOf<{}>() * {name}.length);",
-                                native, native
+                                "final {storage} = _$$BoltStoragePool.acquireStorage($$ffi.sizeOf<{native}>() * {name}.length);"
                             ),
                             format!(
-                                "for (var _l$index = 0; _l$index < {name}.length; _l$index++) {{ {name}[_l$index]._m$writeStruct({storage}.ptr.elementAt(_l$index)); }}"
+                                "for (var _l$index = 0; _l$index < {name}.length; _l$index++) {{ {name}[_l$index]._m$writeStruct({storage}.ptr.cast<{native}>().elementAt(_l$index)); }}"
                             ),
                         ],
                         vec![
-                            format!("{storage}.ptr.cast<$$ffi.Uint8>()"),
+                            format!("{storage}.ptr"),
                             format!("{name}.length * $$ffi.sizeOf<{native}>()"),
                         ],
-                        Vec::new(),
+                        vec![format!("_$$BoltStoragePool.releaseStorage({storage});")],
                     );
                     Ok(DartParameter::new(
                         name,
@@ -613,12 +794,42 @@ pub fn render_parameter(
                 return broken("scalar-option Dart parameter disagrees with C bridge group");
             };
             let storage = format!("_l${}Storage", name.as_str());
-            let writer = format!("_l${}Writer", name.as_str());
             let public_type = type_name::primitive_type(*primitive)?.optional();
-            let argument = DartArgument::new(
+            if matches!(
+                primitive,
+                boltffi_binding::Primitive::I32 | boltffi_binding::Primitive::U32
+            ) {
+                let written = format!("_l${}Len", name.as_str());
+                let helper = if matches!(primitive, boltffi_binding::Primitive::U32) {
+                    "writeOptionU32"
+                } else {
+                    "writeOptionI32"
+                };
+                let write = format!(
+                    "final {written} = _$$BoltUtil.{helper}({storage}.ptr, {});",
+                    name.as_str()
+                );
+                return Ok(DartParameter::new(
+                    name,
+                    public_type,
+                    DartArgument::with_cleanup(
+                        vec![
+                            format!(
+                                "final {storage} = _$$BoltStoragePool.acquireStorage(1 + {});",
+                                super::super::codec::primitive_size(*primitive)
+                            ),
+                            write,
+                        ],
+                        vec![format!("{storage}.ptr"), written],
+                        vec![format!("_$$BoltStoragePool.releaseStorage({storage});")],
+                    ),
+                ));
+            }
+            let writer = format!("_l${}Writer", name.as_str());
+            let argument = DartArgument::with_cleanup(
                 vec![
                     format!(
-                        "final {storage} = _$$BoltCallocPtr<$$ffi.Uint8>.alloc(1 + {});",
+                        "final {storage} = _$$BoltStoragePool.acquireStorage(1 + {});",
                         super::super::codec::primitive_size(*primitive)
                     ),
                     format!(
@@ -630,7 +841,7 @@ pub fn render_parameter(
                     ),
                 ],
                 vec![format!("{storage}.ptr"), format!("{writer}.len")],
-                Vec::new(),
+                vec![format!("_$$BoltStoragePool.releaseStorage({storage});")],
             );
             Ok(DartParameter::new(name, public_type, argument))
         }
@@ -669,10 +880,10 @@ fn render_receiver(
             };
             let storage = "_l$selfStorage";
             let writer = "_l$selfWriter";
-            Ok(DartArgument::new(
+            Ok(DartArgument::with_cleanup(
                 vec![
                     format!(
-                        "final {storage} = _$$BoltCallocPtr<$$ffi.Uint8>.alloc(_m$wireEncodedSize());"
+                        "final {storage} = _$$BoltStoragePool.acquireStorage(_m$wireEncodedSize());"
                     ),
                     format!(
                         "final {writer} = _$$BoltWireEncoder(_$$BoltBufWriter.fromSpan({storage}.ptr, {storage}.len));"
@@ -680,7 +891,7 @@ fn render_receiver(
                     format!("_m$wireEncode({writer});"),
                 ],
                 vec![format!("{storage}.ptr"), format!("{writer}.len")],
-                Vec::new(),
+                vec![format!("_$$BoltStoragePool.releaseStorage({storage});")],
             ))
         }
     }
@@ -791,6 +1002,7 @@ pub fn render_return(
             arguments: Vec::new(),
             call_result: None,
             after_call: Vec::new(),
+            finally: Vec::new(),
             expression: None,
         },
         ReturnPlan::DirectViaReturnSlot { ty } => direct_return(ty, None, context)?,
@@ -827,6 +1039,7 @@ pub fn render_return(
                 arguments: returned.arguments,
                 call_result: None,
                 after_call: returned.after_call,
+                finally: Vec::new(),
                 expression: Some(returned.expression),
             }
         }
@@ -835,13 +1048,17 @@ pub fn render_return(
 
     let mut error_checks = Vec::new();
     if let Some(completion_status) = completion_status {
-        value
-            .before_call
-            .push(completion_status.allocation("_l$completionStatus")?);
-        value
-            .arguments
-            .insert(0, "_l$completionStatus.ptr".to_owned());
-        error_checks.push(status_check("_l$completionStatus.ptr.ref.code"));
+        // Completions run on the already-ready hot path; a pool slot beats
+        // a fresh calloc + dispose on every Future that resolves.
+        let (alloc, pointer, release) =
+            completion_status.allocation_pooled("_l$completionStatus")?;
+        value.before_call.push(alloc);
+        error_checks.push(format!(
+            "final _l$completionStatusCode = {pointer}.ref.code;"
+        ));
+        error_checks.push(release);
+        error_checks.push(status_check("_l$completionStatusCode"));
+        value.arguments.insert(0, pointer);
     }
     match error {
         ErrorDecl::None(_) => {
@@ -955,13 +1172,27 @@ fn encoded_return(
     bridge: &CBridgeContract,
     context: &RenderContext<Native>,
 ) -> Result<DartReturn> {
-    let expression = codec
-        .render_with(&mut Reader::new("_l$resultReader", context))?
-        .into_source();
-    let mut value = out_return(type_name::type_ref(ty, context)?, expression, out)?;
-    value.after_call.insert(0, format!(
-        "final _l$decodedResult = (() {{\n  try {{\n    final _l$resultReader = _$$BoltWireDecoder(_$$BoltBufReader.fromSpan(_l$result.ptr, _l$result.len));\n    return {};\n  }} finally {{\n    _f${}(_l$result);\n  }}\n}})();",
-        value.expression.as_deref().unwrap_or("null"),
+    let public_type = type_name::type_ref(ty, context)?;
+    let decode_body = if matches!(ty, TypeRef::String) {
+        "_l$decodedResult = _$$BoltUtil.readString(_l$result.ptr, _l$result.len);".to_owned()
+    } else if matches!(ty, TypeRef::Optional(inner) if matches!(inner.as_ref(), TypeRef::String)) {
+        "_l$decodedResult = _$$BoltUtil.readOptionString(_l$result.ptr, _l$result.len);".to_owned()
+    } else if matches!(ty, TypeRef::Bytes) {
+        "_l$decodedResult = _$$BoltUtil.readBytes(_l$result.ptr, _l$result.len);".to_owned()
+    } else if matches!(ty, TypeRef::Sequence(inner) if matches!(inner.as_ref(), TypeRef::String)) {
+        "_l$decodedResult = _$$BoltUtil.readStringList(_l$result.ptr, _l$result.len);".to_owned()
+    } else {
+        let expression = codec
+            .render_with(&mut Reader::new("_l$resultReader", context))?
+            .into_source();
+        format!(
+            "final _l$resultReader = _$$BoltWireDecoder(_$$BoltBufReader.fromSpan(_l$result.ptr, _l$result.len));\n  _l$decodedResult = {expression};"
+        )
+    };
+    let mut value = out_return(public_type, "_l$decodedResult".to_owned(), out)?;
+    value.after_call.push(format!(
+        "late final {} _l$decodedResult;\ntry {{\n  {decode_body}\n}} finally {{\n  _f${}(_l$result);\n}}",
+        value.public_type.as_str(),
         bridge.support().buffer_free()?.name(),
     ));
     value.expression = Some("_l$decodedResult".to_owned());
@@ -1007,10 +1238,31 @@ fn scalar_option_return(
         || type_name::primitive_type(primitive),
         |target| type_name::type_ref(target, context),
     )?;
-    let decoded = format!(
-        "_l$resultReader.readU8() == 0 ? null : _l$resultReader.{}()",
-        super::super::codec::primitive_read_method(primitive)
-    );
+    let decoded_type = type_name::primitive_type(primitive)?.optional();
+    let fast_scalar = matches!(
+        primitive,
+        boltffi_binding::Primitive::I32 | boltffi_binding::Primitive::U32
+    ) && enum_target.is_none();
+    let decoded = if fast_scalar {
+        let helper = if matches!(primitive, boltffi_binding::Primitive::U32) {
+            "readOptionU32"
+        } else {
+            "readOptionI32"
+        };
+        format!("_$$BoltUtil.{helper}(_l$result.ptr, _l$result.len)")
+    } else {
+        format!(
+            "_l$resultReader.readU8() == 0 ? null : _l$resultReader.{}()",
+            super::super::codec::primitive_read_method(primitive)
+        )
+    };
+    let decode_body = if fast_scalar {
+        format!("_l$decoded = {decoded};")
+    } else {
+        format!(
+            "final _l$resultReader = _$$BoltWireDecoder(_$$BoltBufReader.fromSpan(_l$result.ptr, _l$result.len));\n  _l$decoded = {decoded};"
+        )
+    };
     let expression = match enum_target {
         Some(_) => {
             format!("_l$decoded == null ? null : {public_inner}._m$fromDiscriminant(_l$decoded)")
@@ -1023,9 +1275,11 @@ fn scalar_option_return(
         arguments: Vec::new(),
         call_result: Some("_l$result".to_owned()),
         after_call: vec![format!(
-            "final _l$decoded = (() {{\n  try {{\n    final _l$resultReader = _$$BoltWireDecoder(_$$BoltBufReader.fromSpan(_l$result.ptr, _l$result.len));\n    return {decoded};\n  }} finally {{\n    _f${}(_l$result);\n  }}\n}})();",
+            "late final {} _l$decoded;\ntry {{\n  {decode_body}\n}} finally {{\n  _f${}(_l$result);\n}}",
+            decoded_type.as_str(),
             bridge.support().buffer_free()?.name(),
         )],
+        finally: Vec::new(),
         expression: Some(expression),
     })
 }
@@ -1048,7 +1302,7 @@ fn direct_vector_return(
         }
         DirectVectorElementType::Record(record) => {
             let public = type_name::direct_value(&DirectValueType::Record(*record), context)?;
-            let native = format!("_$${public}");
+            let native = dart_native::direct_record_struct(bridge, *record)?;
             (
                 vec![format!(
                     "final _l$count = _l$result.len ~/ $$ffi.sizeOf<{native}>();"
@@ -1060,17 +1314,20 @@ fn direct_vector_return(
         }
         _ => return super::super::unsupported("unknown direct-vector return element"),
     };
+    let public_type = type_name::direct_vector(element, context)?;
     let mut after_call = setup;
     after_call.push(format!(
-        "final _l$decoded = (() {{\n  try {{\n    return {expression};\n  }} finally {{\n    _f${}(_l$result);\n  }}\n}})();",
+        "late final {} _l$decoded;\ntry {{\n  _l$decoded = {expression};\n}} finally {{\n  _f${}(_l$result);\n}}",
+        public_type.as_str(),
         bridge.support().buffer_free()?.name(),
     ));
     Ok(DartReturn {
-        public_type: type_name::direct_vector(element, context)?,
+        public_type,
         before_call: Vec::new(),
         arguments: Vec::new(),
         call_result: Some("_l$result".to_owned()),
         after_call,
+        finally: Vec::new(),
         expression: Some("_l$decoded".to_owned()),
     })
 }
@@ -1087,19 +1344,28 @@ fn out_return(
             arguments: Vec::new(),
             call_result: Some("_l$result".to_owned()),
             after_call: Vec::new(),
+            finally: Vec::new(),
             expression: Some(expression),
         }),
-        Some(out) => Ok(DartReturn {
-            public_type,
-            before_call: vec![out.allocation("_l$resultOut")?],
-            arguments: vec!["_l$resultOut.ptr".to_owned()],
-            call_result: None,
-            after_call: vec![format!(
-                "final _l$result = {};",
-                out.read("_l$resultOut.ptr")?
-            )],
-            expression: Some(expression),
-        }),
+        Some(out) => {
+            let native = dart_native::NativeType::from_c(&out.ty)?;
+            let pooled = format!(
+                "final _l$resultOut = _$$BoltStoragePool.acquireStorage($$ffi.sizeOf<{}>());",
+                native.native()
+            );
+            let ptr = format!("_l$resultOut.ptr.cast<{}>()", native.native());
+            Ok(DartReturn {
+                public_type,
+                before_call: vec![pooled],
+                arguments: vec![ptr.clone()],
+                call_result: None,
+                after_call: vec![format!("final _l$result = {};", out.read(&ptr)?)],
+                // Error checks are prepended to `after_call` and may throw;
+                // keep the pooled out-slot release off that path.
+                finally: vec!["_$$BoltStoragePool.releaseStorage(_l$resultOut);".to_owned()],
+                expression: Some(expression),
+            })
+        }
     }
 }
 
@@ -1107,6 +1373,7 @@ fn render_sync_call(
     function: &CFunction,
     arguments: &[String],
     setup: &[String],
+    writeback: &[String],
     cleanup: &[String],
     returns: &DartReturn,
 ) -> String {
@@ -1115,16 +1382,76 @@ fn render_sync_call(
     let mut arguments = arguments.to_vec();
     arguments.extend(returns.arguments.iter().cloned());
     let invocation = format!("_f${}({})", function.name(), arguments.join(", "));
-    statements.push(match &returns.call_result {
+
+    // `after_call` can throw (status/error checks); arg cleanup and pooled
+    // return-slot release still have to run. Mut writeback stays in `try` so
+    // a failed status does not overwrite the caller's list.
+    let mut finally = returns.finally.clone();
+    finally.extend(cleanup.iter().cloned());
+
+    if writeback.is_empty() && finally.is_empty() {
+        statements.push(match &returns.call_result {
+            Some(result) => format!("final {result} = {invocation};"),
+            None => format!("{invocation};"),
+        });
+        statements.extend(returns.after_call.iter().cloned());
+        if let Some(expression) = &returns.expression {
+            statements.push(format!("return {expression};"));
+        }
+        return statements.join("\n");
+    }
+
+    let mut inner = vec![match &returns.call_result {
         Some(result) => format!("final {result} = {invocation};"),
         None => format!("{invocation};"),
-    });
-    statements.extend(returns.after_call.iter().cloned());
-    statements.extend(cleanup.iter().cloned());
-    if let Some(expression) = &returns.expression {
-        statements.push(format!("return {expression};"));
+    }];
+    inner.extend(returns.after_call.iter().cloned());
+    inner.extend(writeback.iter().cloned());
+
+    match &returns.expression {
+        Some(expression) => {
+            statements.push(format!(
+                "late final {} _l$callResult;",
+                returns.public_type.as_str()
+            ));
+            inner.push(format!("_l$callResult = {expression};"));
+            if finally.is_empty() {
+                statements.extend(inner);
+            } else {
+                statements.push(format!(
+                    "try {{\n{}\n}} finally {{\n{}\n}}",
+                    indent(&inner.join("\n"), 2),
+                    indent(&finally.join("\n"), 2),
+                ));
+            }
+            statements.push("return _l$callResult;".to_owned());
+        }
+        None => {
+            if finally.is_empty() {
+                statements.extend(inner);
+            } else {
+                statements.push(format!(
+                    "try {{\n{}\n}} finally {{\n{}\n}}",
+                    indent(&inner.join("\n"), 2),
+                    indent(&finally.join("\n"), 2),
+                ));
+            }
+        }
     }
     statements.join("\n")
+}
+
+fn reserved_cancellation_token_name(parameters: &[Parameter]) -> Result<Identifier> {
+    const CANDIDATES: &[&str] = &["cancellationToken", "boltCancellationToken"];
+    for candidate in CANDIDATES {
+        if parameters
+            .iter()
+            .all(|parameter| parameter.name().as_str() != *candidate)
+        {
+            return Identifier::parse(*candidate);
+        }
+    }
+    Identifier::parse("boltCancellationToken$")
 }
 
 fn render_async_call(
@@ -1134,6 +1461,7 @@ fn render_async_call(
     setup: &[String],
     cleanup: &[String],
     returns: &DartReturn,
+    cancellation_token: Option<&Identifier>,
 ) -> Result<String> {
     let create_body = {
         let mut statements = setup.to_vec();
@@ -1155,24 +1483,66 @@ fn render_async_call(
             completion_arguments.join(", ")
         );
         let mut statements = returns.before_call.clone();
-        statements.push(match &returns.call_result {
-            Some(result) => format!("final {result} = {invocation};"),
-            None => format!("{invocation};"),
-        });
-        statements.extend(returns.after_call.iter().cloned());
-        if let Some(expression) = &returns.expression {
-            statements.push(format!("return {expression};"));
+        if returns.finally.is_empty() {
+            statements.push(match &returns.call_result {
+                Some(result) => format!("final {result} = {invocation};"),
+                None => format!("{invocation};"),
+            });
+            statements.extend(returns.after_call.iter().cloned());
+            if let Some(expression) = &returns.expression {
+                statements.push(format!("return {expression};"));
+            }
+        } else {
+            let mut inner = vec![match &returns.call_result {
+                Some(result) => format!("final {result} = {invocation};"),
+                None => format!("{invocation};"),
+            }];
+            inner.extend(returns.after_call.iter().cloned());
+            match &returns.expression {
+                Some(expression) => {
+                    statements.push(format!(
+                        "late final {} _l$callResult;",
+                        returns.public_type.as_str()
+                    ));
+                    inner.push(format!("_l$callResult = {expression};"));
+                    statements.push(format!(
+                        "try {{\n{}\n}} finally {{\n{}\n}}",
+                        indent(&inner.join("\n"), 2),
+                        indent(&returns.finally.join("\n"), 2),
+                    ));
+                    statements.push("return _l$callResult;".to_owned());
+                }
+                None => {
+                    statements.push(format!(
+                        "try {{\n{}\n}} finally {{\n{}\n}}",
+                        indent(&inner.join("\n"), 2),
+                        indent(&returns.finally.join("\n"), 2),
+                    ));
+                }
+            }
         }
         statements.join("\n")
     };
+    let cancellation_token_argument = match cancellation_token {
+        Some(name) => format!("\n  cancellationToken: {name},"),
+        None => String::new(),
+    };
     Ok(format!(
-        "return _$$BoltFFIAsync.create(\n  createFuture: () {{\n{}\n  }},\n  pollFuture: _f${},\n  completeFuture: (_p$handle) {{\n{}\n  }},\n  freeFuture: _f${},\n  cancelFuture: _f${},\n);",
+        "return _$$BoltFFIAsync.create(\n  createFuture: () {{\n{}\n  }},\n  pollFuture: _f${},\n  completeFuture: (_p$handle) {{\n{}\n  }},\n  freeFuture: _f${},\n  cancelFuture: _f${},{}\n);",
         indent(&create_body, 4),
         asynchronous.poll.name().as_str(),
         indent(&completion_body, 4),
         asynchronous.free.name().as_str(),
         asynchronous.cancel.name().as_str(),
+        cancellation_token_argument,
     ))
+}
+
+fn factory_constructor_name(name: &Identifier) -> Option<Identifier> {
+    match name.as_str() {
+        "new" | "$new" => None,
+        _ => Some(name.clone()),
+    }
 }
 
 fn out_pointer(

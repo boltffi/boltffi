@@ -117,6 +117,12 @@ impl Expression {
         Self(format!("{receiver}.{property}"))
     }
 
+    /// Same as [`Self::property`], but short-circuits to `undefined`
+    /// instead of throwing when `receiver` is itself `null`/`undefined`.
+    pub fn optional_property(receiver: Self, property: Identifier) -> Self {
+        Self(format!("{receiver}?.{property}"))
+    }
+
     pub fn static_call(ty: impl fmt::Display, method: Identifier, arguments: ArgumentList) -> Self {
         Self(format!("{ty}.{method}({arguments})"))
     }

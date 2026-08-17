@@ -3,6 +3,7 @@ import 'package:test/test.dart';
 import 'package:demo/demo.dart';
 
 void main() {
+  tearDownAll(shutdownBoltffi);
   test('records with defaults', () {
     expect(
       requestTimeoutSeconds(RequestConfig()),
@@ -141,6 +142,23 @@ void main() {
       isNull,
       reason:
           "case:records.default_values.service_config.maybe_with_retries.should_return_none",
+    );
+
+    final fromNonEmptyName = ServiceConfig.fromNonEmptyName(
+      'nonempty',
+      'region',
+    );
+    expect(
+      fromNonEmptyName!.name,
+      'nonempty',
+      reason:
+          "case:records.default_values.service_config.from_non_empty_name.should_return_config_for_non_empty_values",
+    );
+    expect(
+      ServiceConfig.fromNonEmptyName('', 'region'),
+      isNull,
+      reason:
+          "case:records.default_values.service_config.from_non_empty_name.should_return_none_for_empty_values",
     );
   });
 }

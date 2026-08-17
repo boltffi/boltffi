@@ -3,6 +3,7 @@ import 'package:test/test.dart';
 import 'package:demo/demo.dart';
 
 void main() {
+  tearDownAll(shutdownBoltffi);
   test('mixed records', () {
     final record = sampleMixedRecord();
     expect(

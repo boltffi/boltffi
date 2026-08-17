@@ -1,0 +1,14 @@
+# Its own workspace: the repository root must not adopt a fixture as a member.
+[package]
+name = "wasm_wake_link_fixture"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+boltffi = { path = "../../../../boltffi", default-features = false }
+
+[workspace]

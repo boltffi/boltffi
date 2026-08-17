@@ -1,4 +1,4 @@
-use boltffi_binding::{CustomTypeId, DefaultValue, Native, TypeRef};
+use boltffi_binding::{CustomTypeId, DefaultValue, EnumDecl, Native, TypeRef};
 
 use crate::core::{
     RenderContext, Result,
@@ -35,6 +35,21 @@ impl DefaultExpression {
         }
         if let TypeRef::Custom(custom_type) = ty {
             return Self::custom(*custom_type, value, context);
+        }
+        if let (
+            TypeRef::Enum(enumeration),
+            DefaultValue::EnumVariant {
+                enum_name,
+                variant_name,
+            },
+        ) = (ty, value)
+            && matches!(context.enumeration(*enumeration), Some(EnumDecl::Data(_)))
+        {
+            return Ok(Self::Constant(Literal::new(format!(
+                "{}${}()",
+                Name::new(enum_name).upper_camel()?,
+                Name::new(variant_name).upper_camel()?
+            ))));
         }
         Self::literal(value).map(Self::Constant)
     }

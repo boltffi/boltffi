@@ -1,5 +1,33 @@
 extern crate self as boltffi;
 
+/// Re-exported so generated user-crate stubs and Dart `@Native` bindings
+/// can reach the dual-path runtime without a second crate dependency.
+#[cfg(feature = "dart")]
+#[doc(hidden)]
+pub use boltffi_dart_runtime as __dart_runtime;
+
+/// Sync-export enter/leave used by generated `no_mangle` wrappers.
+///
+/// Real tracking lives in `boltffi_dart_runtime` when the `dart` feature is
+/// on; otherwise this is a no-op so non-Dart crates never need
+/// `cfg(boltffi_dart)` (which would trip `unexpected_cfgs`).
+#[doc(hidden)]
+pub mod __dart_sync_ffi {
+    #[cfg(feature = "dart")]
+    pub use boltffi_dart_runtime::SyncFfiScope;
+
+    #[cfg(not(feature = "dart"))]
+    pub struct SyncFfiScope;
+
+    #[cfg(not(feature = "dart"))]
+    impl SyncFfiScope {
+        #[inline(always)]
+        pub fn enter() -> Self {
+            Self
+        }
+    }
+}
+
 pub use boltffi_core::{
     ArcFromCallbackHandle, BoxFromCallbackHandle, CallbackForeignType, CallbackHandle,
     CustomFfiConvertible, CustomTypeConversionError, EventSubscription, FfiType, InternedString,

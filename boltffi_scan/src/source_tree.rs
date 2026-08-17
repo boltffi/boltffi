@@ -111,6 +111,9 @@ fn walk(
             if let syn::Item::Impl(item_impl) = &mut item {
                 cfg.retain_active_impl_items(item_impl)?;
             }
+            if let syn::Item::Enum(item_enum) = &mut item {
+                cfg.retain_active_enum_variants(item_enum)?;
+            }
             match item {
                 syn::Item::Mod(item_mod) => {
                     child_modules.extend(descend(
@@ -471,5 +474,37 @@ mod tests {
 
         assert_eq!(items.len(), 3);
         assert_eq!(methods.len(), 1);
+    }
+
+    #[test]
+    fn enum_variants_follow_the_active_configuration() {
+        let source = "pub enum Mode { #[cfg(feature = \"experimental\")] Experimental, Stable }";
+        let inactive = SourceTree::in_memory("demo", parse_items(source))
+            .expect("inactive enum variant is removed");
+        let active = SourceTree::in_memory_with_cfg(
+            "demo",
+            parse_items(source),
+            &ActiveCfg::default().with_feature("experimental"),
+        )
+        .expect("active enum variant is retained");
+        let variant_names = |tree: &SourceTree| {
+            tree.modules()
+                .iter()
+                .flat_map(SourceModule::items)
+                .find_map(|item| match item {
+                    syn::Item::Enum(enumeration) => Some(
+                        enumeration
+                            .variants
+                            .iter()
+                            .map(|variant| variant.ident.to_string())
+                            .collect::<Vec<_>>(),
+                    ),
+                    _ => None,
+                })
+                .expect("source contains an enum")
+        };
+
+        assert_eq!(variant_names(&inactive), vec!["Stable"]);
+        assert_eq!(variant_names(&active), vec!["Experimental", "Stable"]);
     }
 }

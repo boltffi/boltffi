@@ -81,7 +81,12 @@ pub enum DemoMode {
         "constants::DemoState::INITIAL",
         "records::blittable::Point::ZERO",
         "classes::static_methods::MathUtils::DEFAULT_PRECISION"
-    ]
+    ],
+    exclude(
+        dart,
+        reason = ExclusionReason::ImplementationGap,
+        details = "The native Dart target doesn't emit an associated constant whose value is an enum-variant reference (DemoMode::PREFERRED, DemoState::INITIAL) at all -- only DemoMode::FALLBACK (accessor-backed) and DemoMode::VARIANT_COUNT (inline primitive) appear on the generated types, so this case can't be asserted as a whole."
+    )
 )]
 #[data(impl)]
 impl DemoMode {

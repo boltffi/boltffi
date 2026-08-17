@@ -75,8 +75,11 @@ impl CodecSize for Sizer<'_, '_> {
     }
 
     fn string(&mut self, value: &ValueRef) -> Self::Expr {
+        // Upper bound on UTF-8 byte length instead of an exact `utf8.encode(...).length`,
+        // so sizing doesn't force a throwaway encode pass before the real one in `writeString`.
+        // Matches the bound already used by `_m$wireEncodedSize()` for `BoltException`.
         Ok(SizeExpression::string(format!(
-            "4 + $$convert.utf8.encode({}).length",
+            "4 + (({}).length * 3)",
             self.value(value)?
         )))
     }
@@ -135,7 +138,7 @@ impl CodecSize for Sizer<'_, '_> {
             BuiltinType::Duration | BuiltinType::SystemTime => Ok(SizeExpression::new("12")),
             BuiltinType::Uuid => Ok(SizeExpression::new("16")),
             BuiltinType::Url => Ok(SizeExpression::new(format!(
-                "4 + $$convert.utf8.encode({}.toString()).length",
+                "4 + (({}).toString().length * 3)",
                 self.value(value)?
             ))),
         }
@@ -143,7 +146,7 @@ impl CodecSize for Sizer<'_, '_> {
 
     fn optional(&mut self, value: &ValueRef, binder: BinderId, inner: Self::Expr) -> Self::Expr {
         Ok(SizeExpression::new(format!(
-            "1 + ({} == null ? 0 : (() {{ final {} = {}; return {}; }})())",
+            "1 + ({} == null ? 0 : (() {{ final {} = {}!; return {}; }})())",
             self.value(value)?,
             binder_name(binder),
             self.value(value)?,

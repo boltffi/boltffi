@@ -242,6 +242,10 @@ impl Parameter {
         Self { name, ty }
     }
 
+    pub fn name(&self) -> &Identifier {
+        &self.name
+    }
+
     pub fn ty(&self) -> &TypeFragment {
         &self.ty
     }

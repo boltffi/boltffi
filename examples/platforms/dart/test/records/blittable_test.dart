@@ -3,8 +3,13 @@ import 'package:test/test.dart';
 import 'package:demo/demo.dart';
 
 void main() {
+  tearDownAll(shutdownBoltffi);
   test('blittable records', () {
-    expect(Point.$new(7.0, 8.0), Point(x: 7.0, y: 8.0));
+    expect(
+      Point.$new(7.0, 8.0),
+      Point(x: 7.0, y: 8.0),
+      reason: "case:records.blittable.point.should_construct_with_static_new",
+    );
     final point = makePoint(1.0, 2.0);
     expect(
       point,
@@ -61,10 +66,11 @@ void main() {
       reason: "case:records.blittable.point.should_compute_distance",
     );
 
-    final scaledPoint = point.scale(2.5);
-    expect(scaledPoint.x, 2.5);
+    final toScale = Point(x: 1.0, y: 2.0);
+    toScale.scale(2.5);
+    expect(toScale.x, 2.5);
     expect(
-      scaledPoint.y,
+      toScale.y,
       5.0,
       reason: "case:records.blittable.point.should_scale_coordinates",
     );
@@ -154,7 +160,11 @@ void main() {
       3,
       reason: "case:records.blittable.locations.should_count_vector_items",
     );
-    expect(processLocations([]), 0);
+    expect(
+      processLocations([]),
+      0,
+      reason: "case:records.blittable.locations.should_count_empty_vector",
+    );
 
     final hostLocations = [
       Location(

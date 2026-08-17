@@ -65,6 +65,7 @@ impl ReturnedClosure {
                     plan,
                     group,
                     protocol,
+                    bridge,
                     context,
                 ),
                 IncomingParam::Closure(_) => {
@@ -88,7 +89,7 @@ impl ReturnedClosure {
             context,
         )?;
         let closure_type = TypeFragment::function(
-            returns.public_type,
+            returns.public_type.clone(),
             parameters
                 .iter()
                 .map(|parameter| parameter.public_type().clone()),
@@ -128,13 +129,53 @@ impl ReturnedClosure {
             .collect::<Vec<_>>();
         native_arguments.extend(returns.arguments.iter().cloned());
         let invocation = format!("{native_invoke}({})", native_arguments.join(", "));
-        body.push(match &returns.call_result {
-            Some(result) => format!("final {result} = {invocation};"),
-            None => format!("{invocation};"),
-        });
-        body.extend(returns.after_call.iter().cloned());
-        if let Some(expression) = &returns.expression {
-            body.push(format!("return {expression};"));
+        let cleanup = parameters
+            .iter()
+            .flat_map(|parameter| parameter.cleanup().iter().cloned())
+            .collect::<Vec<_>>();
+
+        let mut finally = returns.finally.clone();
+        finally.extend(cleanup.iter().cloned());
+
+        if finally.is_empty() {
+            body.push(match &returns.call_result {
+                Some(result) => format!("final {result} = {invocation};"),
+                None => format!("{invocation};"),
+            });
+            body.extend(returns.after_call.iter().cloned());
+            if let Some(expression) = &returns.expression {
+                body.push(format!("return {expression};"));
+            }
+        } else {
+            // `after_call` can throw; pooled arg/return storage still releases.
+            let mut inner = vec![match &returns.call_result {
+                Some(result) => format!("final {result} = {invocation};"),
+                None => format!("{invocation};"),
+            }];
+            inner.extend(returns.after_call.iter().cloned());
+
+            match &returns.expression {
+                Some(expression) => {
+                    body.push(format!(
+                        "late final {} _l$callResult;",
+                        returns.public_type.as_str()
+                    ));
+                    inner.push(format!("_l$callResult = {expression};"));
+                    body.push(format!(
+                        "try {{\n{}\n}} finally {{\n{}\n}}",
+                        indent(&inner.join("\n"), 2),
+                        indent(&finally.join("\n"), 2),
+                    ));
+                    body.push("return _l$callResult;".to_owned());
+                }
+                None => {
+                    body.push(format!(
+                        "try {{\n{}\n}} finally {{\n{}\n}}",
+                        indent(&inner.join("\n"), 2),
+                        indent(&finally.join("\n"), 2),
+                    ));
+                }
+            }
         }
 
         let registration = ReturnedClosureRegistration {

@@ -4,6 +4,7 @@ import 'package:test/test.dart';
 import 'package:demo/demo.dart';
 
 void main() {
+  tearDownAll(shutdownBoltffi);
   test('vec bytes', () {
     final echoed = echoBytes(Uint8List.fromList([1, 2, 3, 4]));
     expect(

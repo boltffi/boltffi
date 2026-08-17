@@ -143,6 +143,10 @@ impl<'expansion, 'lowered> Export<'expansion, 'lowered, boltffi_binding::Native>
             #cfg
             #[unsafe(no_mangle)]
             #visibility #safety extern "C" fn #export_ident(#(#ffi_parameters),*) #return_type {
+                // Tracks isolate-blocked sync entries so foreign-thread Dart
+                // callback waits can fail fast instead of deadlocking. No-op
+                // when the `dart` feature is off (see boltffi::__dart_sync_ffi).
+                let _boltffi_dart_sync_ffi = ::boltffi::__dart_sync_ffi::SyncFfiScope::enter();
                 #body
             }
         })

@@ -132,6 +132,7 @@ pub struct BuildOptions {
     pub release: bool,
     pub selection: BuildSelection,
     pub on_output: Option<OutputCallback>,
+    pub extra_env: Vec<(String, String)>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -274,6 +275,10 @@ impl<'a> Builder<'a> {
         );
         if !is_ios {
             command.env_remove("IPHONEOS_DEPLOYMENT_TARGET");
+        }
+
+        for (key, value) in &self.options.extra_env {
+            command.env(key, value);
         }
     }
 
@@ -466,6 +471,7 @@ name = "demo"
                 release: false,
                 selection: BuildSelection::Expanded(Box::new(expansion)),
                 on_output: None,
+                extra_env: Vec::new(),
             },
         );
         let command_args = builder.cargo_build_command_args();

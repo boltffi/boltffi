@@ -69,8 +69,7 @@ pub fn run_build(config: &Config, options: BuildCommandOptions) -> Result<Vec<Bu
                 return Ok(Vec::new());
             }
             println!("Building for dart ({})...", profile);
-            expanded_builder(config, release, cargo_args.clone())?
-                .build_targets(&config.dart_targets())?
+            build_dart(config, release, &cargo_args)?
         }
         BuildPlatform::All => {
             println!("Building all targets ({})...", profile);
@@ -94,10 +93,7 @@ pub fn run_build(config: &Config, options: BuildCommandOptions) -> Result<Vec<Bu
                 );
             }
             if config.is_dart_enabled() {
-                all_results.extend(
-                    expanded_builder(config, release, cargo_args.clone())?
-                        .build_targets(&config.dart_targets())?,
-                );
+                all_results.extend(build_dart(config, release, &cargo_args)?);
             }
             all_results
         }
@@ -118,6 +114,10 @@ pub fn run_build(config: &Config, options: BuildCommandOptions) -> Result<Vec<Bu
         }
         .into())
     }
+}
+
+fn build_dart(config: &Config, release: bool, cargo_args: &[String]) -> Result<Vec<BuildResult>> {
+    crate::pack::dart::build_dart_targets(config, release, cargo_args, false)
 }
 
 // Cargo only sets CARGO_FEATURE_* for build scripts, so every platform here
@@ -171,6 +171,7 @@ fn build_options(release: bool, selection: BuildSelection) -> BuildOptions {
         release,
         selection,
         on_output: None,
+        extra_env: Vec::new(),
     }
 }
 

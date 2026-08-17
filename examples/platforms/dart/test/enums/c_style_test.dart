@@ -2,6 +2,7 @@ import 'package:test/test.dart';
 import 'package:demo/demo.dart';
 
 void main() {
+  tearDownAll(shutdownBoltffi);
   test('C-style enums', () {
     expect(echoStatus(Status.active), Status.active);
     expect(echoStatus(Status.inactive), Status.inactive);

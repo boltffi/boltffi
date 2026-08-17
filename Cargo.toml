@@ -1,7 +1,11 @@
 [workspace]
 resolver = "3"
-members = ["boltffi", "boltffi_core", "boltffi_macros", "boltffi_bindgen", "boltffi_cli", "boltffi_ast", "boltffi_binding", "boltffi_backend", "boltffi_scan", "boltffi_verify", "boltffi_tests"]
-exclude = ["benchmarks/adapters/uniffi", "examples/demo"]
+members = ["boltffi", "boltffi_core", "boltffi_macros", "boltffi_bindgen", "boltffi_cli", "boltffi_ast", "boltffi_binding", "boltffi_backend", "boltffi_scan", "boltffi_verify", "boltffi_tests", "boltffi_dart_runtime"]
+exclude = [
+  "benchmarks/adapters/uniffi",
+  "examples/demo",
+  "boltffi_cli/tests/fixtures/wasm_wake_link",
+]
 
 [workspace.package]
 version = "0.30.0"
@@ -20,6 +24,7 @@ boltffi_binding = { version = "0.30.0", path = "boltffi_binding" }
 boltffi_backend = { version = "0.30.0", path = "boltffi_backend" }
 boltffi_scan = { version = "0.30.0", path = "boltffi_scan" }
 boltffi_verify = { version = "0.30.0", path = "boltffi_verify" }
+boltffi_dart_runtime = { version = "0.30.0", path = "boltffi_dart_runtime" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "2.0"

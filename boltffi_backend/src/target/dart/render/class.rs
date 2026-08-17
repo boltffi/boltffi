@@ -3,7 +3,7 @@ use boltffi_binding::{ClassDecl, ConstantOwner, Native};
 
 use crate::{
     bridge::c::CBridgeContract,
-    core::{Emitted, RenderContext, Result},
+    core::{AuxChunk, Emitted, RenderContext, Result},
     target::dart::syntax::Identifier,
 };
 
@@ -21,6 +21,7 @@ pub struct Class {
     name: Identifier,
     release: Identifier,
     members: Vec<String>,
+    helpers: Vec<(crate::core::HelperId, String)>,
 }
 
 impl Class {
@@ -41,6 +42,10 @@ impl Class {
             bridge,
             context,
         )?;
+        let helpers = methods
+            .iter()
+            .flat_map(|method| method.helpers().iter().cloned())
+            .collect();
         let methods = methods
             .iter()
             .map(|method| indent(&method.source(), 2))
@@ -59,15 +64,23 @@ impl Class {
             name,
             release: Identifier::parse(declaration.release().name().as_str())?,
             members,
+            helpers,
         })
     }
 
     pub fn render(self) -> Emitted {
-        Emitted::primary(
+        let mut emitted = Emitted::primary(
             ClassTemplate { class: &self }
                 .render()
                 .expect("rendering an in-memory Dart class template cannot fail"),
-        )
+        );
+        for (id, text) in self.helpers {
+            emitted = emitted.with_aux(AuxChunk::Helper {
+                id,
+                text: text.into(),
+            });
+        }
+        emitted
     }
 
     fn documentation(&self) -> &Documentation {

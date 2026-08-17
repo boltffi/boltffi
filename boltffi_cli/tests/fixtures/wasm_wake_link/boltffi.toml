@@ -1,0 +1,5 @@
+[package]
+name = "wasm_wake_link_fixture"
+
+[targets.wasm]
+enabled = true

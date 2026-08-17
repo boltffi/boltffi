@@ -15,7 +15,7 @@ use crate::{
 
 use super::super::super::{
     codec::{
-        Reader, Sizer, ValueScope, WriteStatement, Writer, primitive_read_method,
+        Reader, Sizer, ValueScope, WriteStatement, Writer, primitive_read_method, primitive_size,
         primitive_write_method,
     },
     name_style::Name,
@@ -24,6 +24,7 @@ use super::super::super::{
     syntax::{Expression, Identifier, Parameter, TypeFragment},
     type_name,
 };
+use super::super::shim;
 use super::super::{Documentation, indent};
 use super::parameter::{CallbackParameter, group_indices};
 
@@ -70,13 +71,24 @@ pub struct CallbackMethod {
     entry: String,
     callable: Option<String>,
     vtable_initializer: String,
+    /// Present only for a synchronous method that uses shim dispatch.
+    shim_wiring: Option<ShimWiring>,
+}
+
+struct ShimWiring {
+    fast_declaration: String,
+    listener_declaration: String,
+    register_arguments: String,
+    register_argument_types: (String, String),
 }
 
 impl CallbackMethod {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         declaration: &ImportedMethodDecl<Native, VTableSlot>,
         slot: &CallbackSlot,
         callback_name: &Identifier,
+        vtable_name: &str,
         bridge: &CBridgeContract,
         context: &RenderContext<Native>,
     ) -> Result<Self> {
@@ -89,7 +101,7 @@ impl CallbackMethod {
             .iter()
             .zip(slot.source_parameter_groups())
             .map(|(parameter, group)| {
-                CallbackParameter::from_declaration(parameter, group, slot, context)
+                CallbackParameter::from_declaration(parameter, group, slot, bridge, context)
             })
             .collect::<Result<Vec<_>>>()?;
         let name = Name::new(declaration.name()).lower_camel()?;
@@ -161,7 +173,7 @@ impl CallbackMethod {
         .expect("rendering an in-memory Dart callback entry cannot fail");
 
         let native_signature = TypeFragment::new(native_function_signature(slot)?);
-        let (callable, vtable_initializer) = if asynchronous {
+        let (callable, vtable_initializer, shim_wiring) = if asynchronous {
             let callable_name = Identifier::parse(format!("_k${name}Callable"))?;
             (
                 Some(
@@ -174,15 +186,60 @@ impl CallbackMethod {
                     .expect("rendering an in-memory Dart callback callable cannot fail"),
                 ),
                 format!("..{} = {callable_name}.nativeFunction", slot.name()),
+                None,
             )
         } else {
             let exceptional = native_exceptional_return(slot.returns())?;
-            (
+            let fast_source = (
                 None,
                 format!(
-                    "..{} = $$ffi.Pointer.fromFunction<{native_signature}>({callback_name}Bridge.{entry_name}{exceptional})",
-                    slot.name()
+                    "$$ffi.Pointer.fromFunction<{native_signature}>({callback_name}Bridge.{entry_name}{exceptional})"
                 ),
+            );
+            let fast_declaration = format!(
+                "static final _k${name}Fast = {fast_ptr};",
+                fast_ptr = fast_source.1
+            );
+            let symbol = shim::method_symbol(vtable_name, slot.name().as_str());
+            let native_return = NativeType::from_c(slot.returns())?.dart().to_owned();
+            let native_params = slot
+                .parameters()
+                .iter()
+                .map(|parameter| {
+                    NativeType::from_c(parameter.ty()).and_then(|ty| {
+                        native::parameter_name(parameter.name())
+                            .map(|name| format!("{} {name}", ty.dart()))
+                    })
+                })
+                .collect::<Result<Vec<_>>>()?
+                .join(", ");
+            let symbol_fn_name = Identifier::parse(format!("_f${symbol}"))?;
+            let symbol_declaration = format!(
+                "@$$ffi.Native<{native_signature}>(symbol: '{symbol}')\n  external static {native_return} {symbol_fn_name}({native_params});"
+            );
+            let vtable_initializer = format!(
+                "..{} = $$ffi.Native.addressOf<$$ffi.NativeFunction<{native_signature}>>({symbol_fn_name})",
+                slot.name()
+            );
+            let listener_entry_name = Identifier::parse(format!("_m${name}Listener"))?;
+            let listener_signature = shim_listener_native_signature(slot)?;
+            let listener_entry_body =
+                render_shim_listener_entry(slot, &entry_name, &listener_entry_name)?;
+            let listener_declaration = format!(
+                "{symbol_declaration}\n  {listener_entry_body}\n  static final _k${name}Listener = _$$boltTrackListener($$ffi.NativeCallable<{listener_signature}>.listener({listener_entry_name}));"
+            );
+            (
+                fast_source.0,
+                vtable_initializer,
+                Some(ShimWiring {
+                    fast_declaration,
+                    listener_declaration,
+                    register_arguments: format!("_k${name}Fast, _k${name}Listener.nativeFunction"),
+                    register_argument_types: (
+                        format!("$$ffi.Pointer<$$ffi.NativeFunction<{native_signature}>>"),
+                        format!("$$ffi.Pointer<$$ffi.NativeFunction<{listener_signature}>>"),
+                    ),
+                }),
             )
         };
 
@@ -192,6 +249,7 @@ impl CallbackMethod {
             entry,
             callable,
             vtable_initializer,
+            shim_wiring,
         })
     }
 
@@ -214,6 +272,120 @@ impl CallbackMethod {
     pub fn vtable_initializer(&self) -> Result<String> {
         Ok(self.vtable_initializer.clone())
     }
+
+    /// The static declarations (fast-path pointer + listener-based
+    /// `NativeCallable`) this method needs at the `Bridge` class level, if
+    /// it qualified for shim dispatch. `None` otherwise (async methods, and
+    /// any shape not yet covered -- see `render::shim`'s module docs).
+    pub fn shim_declarations(&self) -> Option<String> {
+        self.shim_wiring.as_ref().map(|wiring| {
+            format!(
+                "{}\n  {}",
+                wiring.fast_declaration, wiring.listener_declaration
+            )
+        })
+    }
+
+    /// This method's two-argument contribution (fast pointer, listener
+    /// pointer) to the per-callback hooks registration call, if it
+    /// qualified for shim dispatch.
+    pub fn shim_register_arguments(&self) -> Option<&str> {
+        self.shim_wiring
+            .as_ref()
+            .map(|wiring| wiring.register_arguments.as_str())
+    }
+
+    /// This method's (fast pointer, listener pointer) native types, paired
+    /// with [`shim_register_arguments`]'s values in the same order.
+    pub fn shim_register_argument_types(&self) -> Option<(&str, &str)> {
+        self.shim_wiring.as_ref().map(|wiring| {
+            (
+                wiring.register_argument_types.0.as_str(),
+                wiring.register_argument_types.1.as_str(),
+            )
+        })
+    }
+}
+
+fn c_abi_scalar_return(ty: &CBridgeType) -> bool {
+    matches!(
+        ty,
+        CBridgeType::Bool
+            | CBridgeType::Int8
+            | CBridgeType::Uint8
+            | CBridgeType::Int16
+            | CBridgeType::Uint16
+            | CBridgeType::Int32
+            | CBridgeType::Uint32
+            | CBridgeType::Int64
+            | CBridgeType::Uint64
+            | CBridgeType::Float32
+            | CBridgeType::Float64
+            | CBridgeType::SignedPointerWidth
+            | CBridgeType::PointerWidth
+            | CBridgeType::CStyleEnum { .. }
+    )
+}
+
+/// The `NativeCallable<Sig>.listener` signature for a shimmed method's
+/// listener entry: the fast path's parameters, plus a trailing gate
+/// pointer, plus (if non-void) a trailing out-pointer.
+fn shim_listener_native_signature(slot: &CallbackSlot) -> Result<String> {
+    let mut params = slot
+        .parameters()
+        .iter()
+        .map(|parameter| NativeType::from_c(parameter.ty()).map(|ty| ty.native().to_owned()))
+        .collect::<Result<Vec<_>>>()?;
+    params.push("$$ffi.Pointer<$$ffi.Void>".to_owned());
+    if !matches!(slot.returns(), CBridgeType::Void) {
+        let native_return = NativeType::from_c(slot.returns())?.native().to_owned();
+        params.push(format!("$$ffi.Pointer<{native_return}>"));
+    }
+    Ok(format!("$$ffi.Void Function({})", params.join(", ")))
+}
+
+/// Forwards to the existing fast-path entry so async completion pointers,
+/// wire encoding, and struct returns stay correct. The gate only means the
+/// entry has been invoked (async work may still be in flight).
+fn render_shim_listener_entry(
+    slot: &CallbackSlot,
+    fast_entry: &Identifier,
+    listener_name: &Identifier,
+) -> Result<String> {
+    let native_parameters = slot
+        .parameters()
+        .iter()
+        .map(|parameter| {
+            NativeType::from_c(parameter.ty()).and_then(|ty| {
+                native::parameter_name(parameter.name()).map(|name| format!("{} {name}", ty.dart()))
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let arg_names = slot
+        .parameters()
+        .iter()
+        .map(|parameter| native::parameter_name(parameter.name()))
+        .collect::<Result<Vec<_>>>()?
+        .join(", ");
+
+    let mut params = native_parameters.join(", ");
+    params.push_str(", $$ffi.Pointer<$$ffi.Void> _l$gate");
+    let call = format!("{fast_entry}({arg_names})");
+    let assign = if matches!(slot.returns(), CBridgeType::Void) {
+        format!("{call};")
+    } else {
+        let native_return = NativeType::from_c(slot.returns())?.native().to_owned();
+        params.push_str(&format!(", $$ffi.Pointer<{native_return}> _l$out"));
+        if c_abi_scalar_return(slot.returns()) {
+            format!("_l$out.value = {call};")
+        } else {
+            format!("_l$out.ref = {call};")
+        }
+    };
+
+    Ok(format!(
+        "static void {listener_name}({params}) {{\n  try {{\n    {assign}\n    _f$signal_gate_ok(_l$gate);\n  }} catch (_) {{\n    _f$signal_gate_error(_l$gate);\n  }}\n}}"
+    ))
 }
 
 fn render_sync_entry(
@@ -654,20 +826,28 @@ fn render_async_entry(
             .iter()
             .flat_map(|parameter| parameter.entry_setup().iter().cloned()),
     );
-    let arguments = parameters
+    let owned_arguments = parameters
         .iter()
-        .map(CallbackParameter::entry_argument)
-        .collect::<Vec<_>>()
-        .join(", ");
-    let call = format!("await implementation.{method}({arguments})");
+        .enumerate()
+        .map(|(index, parameter)| {
+            let local = format!("_l$arg{index}");
+            statements.push(format!("final {local} = {};", parameter.entry_argument()));
+            local
+        })
+        .collect::<Vec<_>>();
+    let call = format!(
+        "await implementation.{method}({})",
+        owned_arguments.join(", ")
+    );
     let has_payload = completion_parameters.len() == 3;
-    let mut success = async_success_payload(
+    let mut success = Vec::new();
+    success.extend(async_success_payload(
         declaration.callable().returns().plan(),
         &call,
         has_payload.then(|| &completion_parameters[2]),
         bridge,
         context,
-    )?;
+    )?);
     let success_payload = has_payload.then(|| {
         if completion_parameters[2] == CBridgeType::Buffer {
             "_l$payloadBuffer"
@@ -680,30 +860,80 @@ fn render_async_entry(
     let mut catches = Vec::new();
     if let ErrorDecl::EncodedViaReturnSlot { ty, codec, .. } = declaration.callable().error() {
         let binding = error_catch_binding(ty, context)?;
-        let mut body = encode_value(codec, binding.value.as_str(), "_l$error", bridge, context)?;
+        // A C-style enum error crosses as a bare discriminant in its
+        // declared repr width, not a wire-encoded payload -- a data enum
+        // (with variant fields) still needs the normal codec below, since
+        // it has no `.value` getter.
+        let c_style_repr = match ty {
+            TypeRef::Enum(id) => match context.enumeration(*id) {
+                Some(EnumDecl::CStyle(decl)) => Some(decl.repr()),
+                _ => None,
+            },
+            _ => None,
+        };
+        let mut body = if let Some(repr) = c_style_repr {
+            let primitive = repr.primitive();
+            let size = primitive_size(primitive);
+            let write_method = primitive_write_method(primitive);
+            vec![
+                format!("final _l$errorStorage = _$$BoltCallocPtr<$$ffi.Uint8>.alloc({size});"),
+                format!(
+                    "_$$BoltWireEncoder(_$$BoltBufWriter.fromSpan(_l$errorStorage.ptr, _l$errorStorage.len)).{write_method}({}.value);",
+                    binding.name
+                ),
+                format!(
+                    "final _l$errorBuffer = _f${}(_l$errorStorage.ptr, {size});",
+                    bridge.support().buffer_from_bytes()?.name()
+                ),
+            ]
+        } else {
+            encode_value(codec, binding.value.as_str(), "_l$error", bridge, context)?
+        };
         body.push(completion_call(
             &completion_context,
             1,
             Some("_l$errorBuffer"),
         ));
+        let unexpected = if has_payload && completion_parameters[2] == CBridgeType::Buffer {
+            format!(
+                "_l$complete({completion_context}, $$ffi.Struct.create<_$$BoltFFIStatus>()..code = 1, _f$encodeUnexpectedCallbackError({}));",
+                binding.name
+            )
+        } else if has_payload {
+            format!(
+                "_l$complete({completion_context}, $$ffi.Struct.create<_$$BoltFFIStatus>()..code = 100, {});",
+                native_default(&completion_parameters[2])?
+            )
+        } else {
+            format!(
+                "_l$complete({completion_context}, $$ffi.Struct.create<_$$BoltFFIStatus>()..code = 100);"
+            )
+        };
         catches.push(format!(
-            "on {} catch ({}) {{\n{}\n}}",
-            binding.ty,
+            "catch ({}) {{\n  if ({} is {}) {{\n{}\n  }} else {{\n    {}\n  }}\n}}",
             binding.name,
-            indent(&body.join("\n"), 2)
+            binding.name,
+            binding.ty,
+            indent(&body.join("\n"), 4),
+            unexpected
         ));
-    }
-    let panic_arguments = if has_payload {
-        format!(
-            "{completion_context}, $$ffi.Struct.create<_$$BoltFFIStatus>()..code = 100, {}",
-            native_default(&completion_parameters[2])?
-        )
     } else {
-        format!("{completion_context}, $$ffi.Struct.create<_$$BoltFFIStatus>()..code = 100")
-    };
-    catches.push(format!(
-        "catch (_) {{\n  _l$complete({panic_arguments});\n}}"
-    ));
+        let unexpected = if has_payload && completion_parameters[2] == CBridgeType::Buffer {
+            format!(
+                "_l$complete({completion_context}, $$ffi.Struct.create<_$$BoltFFIStatus>()..code = 100, $$ffi.Struct.create<_$$BoltFFIBuf>());"
+            )
+        } else if has_payload {
+            format!(
+                "_l$complete({completion_context}, $$ffi.Struct.create<_$$BoltFFIStatus>()..code = 100, {});",
+                native_default(&completion_parameters[2])?
+            )
+        } else {
+            format!(
+                "_l$complete({completion_context}, $$ffi.Struct.create<_$$BoltFFIStatus>()..code = 100);"
+            )
+        };
+        catches.push(format!("catch (_l$caught) {{\n  {unexpected}\n}}"));
+    }
     statements.push(format!(
         "try {{\n{}\n}} {}",
         indent(&success.join("\n"), 2),
@@ -760,6 +990,7 @@ fn render_async_proxy(
     let success = async_proxy_success(
         declaration.callable().returns().plan(),
         has_payload.then_some("_p$value2"),
+        has_payload.then_some(&completion_parameters[2]),
         bridge,
         context,
     )?;
@@ -869,7 +1100,8 @@ fn async_success_payload(
 fn async_proxy_success(
     plan: &ReturnPlan<Native, IntoRust>,
     payload: Option<&str>,
-    _bridge: &CBridgeContract,
+    payload_ty: Option<&CBridgeType>,
+    bridge: &CBridgeContract,
     context: &RenderContext<Native>,
 ) -> Result<Vec<String>> {
     let Some(payload) = payload else {
@@ -880,10 +1112,14 @@ fn async_proxy_success(
     };
     Ok(match plan {
         ReturnPlan::DirectViaReturnSlot { ty } | ReturnPlan::DirectViaOutPointer { ty } => {
-            vec![format!(
-                "_l$completer.complete({});",
-                direct_from_native(ty, payload, context)?
-            )]
+            let decoded = match (ty, payload_ty) {
+                (DirectValueType::Record(_), Some(CBridgeType::Buffer)) => format!(
+                    "{}._m$wireDecode(_$$BoltWireDecoder(_$$BoltBufReader.fromSpan({payload}.ptr, {payload}.len)))",
+                    type_name::direct_value(ty, context)?
+                ),
+                _ => direct_from_native(ty, payload, context)?,
+            };
+            vec![format!("_l$completer.complete({decoded});")]
         }
         ReturnPlan::EncodedViaReturnSlot { codec, .. }
         | ReturnPlan::EncodedViaOutPointer { codec, .. } => {
@@ -908,7 +1144,7 @@ fn async_proxy_success(
             ),
         ],
         ReturnPlan::DirectVecViaReturnSlot { element } => {
-            direct_vector_decode_statements(element, payload, "_l$decoded", context)?
+            direct_vector_decode_statements(element, payload, "_l$decoded", bridge, context)?
                 .into_iter()
                 .chain(["_l$completer.complete(_l$decoded);".to_owned()])
                 .collect()
@@ -952,15 +1188,18 @@ fn encode_value(
         .map(WriteStatement::into_source)
         .collect::<Vec<_>>();
     Ok(vec![
-        format!("final {storage} = _$$BoltCallocPtr<$$ffi.Uint8>.alloc({size});"),
+        format!("final {storage} = _$$BoltStoragePool.acquireStorage({size});"),
         format!(
             "final {writer} = _$$BoltWireEncoder(_$$BoltBufWriter.fromSpan({storage}.ptr, {storage}.len));"
         ),
         writes.join("\n"),
+        // `buffer_from_bytes` copies into a Rust-owned buffer, so the pooled
+        // storage can go back to the pool immediately afterward.
         format!("final {buffer} = _f$buffer_symbol({storage}.ptr, {writer}.len);").replace(
             "buffer_symbol",
             bridge.support().buffer_from_bytes()?.name(),
         ),
+        format!("_$$BoltStoragePool.releaseStorage({storage});"),
     ])
 }
 
@@ -1000,13 +1239,14 @@ fn encode_direct_wire(
     };
     let mut statements = vec![format!("final _l$value = {value};")];
     statements.extend([
-        format!("final {prefix}Storage = _$$BoltCallocPtr<$$ffi.Uint8>.alloc({size});"),
+        format!("final {prefix}Storage = _$$BoltStoragePool.acquireStorage({size});"),
         format!("final {prefix}Writer = _$$BoltWireEncoder(_$$BoltBufWriter.fromSpan({prefix}Storage.ptr, {prefix}Storage.len));"),
         write,
         format!(
             "final {prefix}Buffer = _f$buffer_symbol({prefix}Storage.ptr, {prefix}Writer.len);"
         )
         .replace("buffer_symbol", bridge.support().buffer_from_bytes()?.name()),
+        format!("_$$BoltStoragePool.releaseStorage({prefix}Storage);"),
     ]);
     Ok(statements)
 }
@@ -1020,7 +1260,7 @@ fn encode_scalar_option(
     let size = 1 + super::super::super::codec::primitive_size(primitive);
     Ok(vec![
         format!("final _l$value = {value};"),
-        format!("final {prefix}Storage = _$$BoltCallocPtr<$$ffi.Uint8>.alloc({size});"),
+        format!("final {prefix}Storage = _$$BoltStoragePool.acquireStorage({size});"),
         format!(
             "final {prefix}Writer = _$$BoltWireEncoder(_$$BoltBufWriter.fromSpan({prefix}Storage.ptr, {prefix}Storage.len));"
         ),
@@ -1035,6 +1275,7 @@ fn encode_scalar_option(
             "buffer_symbol",
             bridge.support().buffer_from_bytes()?.name(),
         ),
+        format!("_$$BoltStoragePool.releaseStorage({prefix}Storage);"),
     ])
 }
 
@@ -1043,7 +1284,7 @@ fn encode_direct_vector(
     element: &DirectVectorElementType,
     prefix: &str,
     bridge: &CBridgeContract,
-    context: &RenderContext<Native>,
+    _context: &RenderContext<Native>,
 ) -> Result<Vec<String>> {
     let mut statements = vec![format!("final _l$value = {value};")];
     match element {
@@ -1062,14 +1303,7 @@ fn encode_direct_vector(
             ).replace("buffer_symbol", bridge.support().buffer_from_bytes()?.name()));
         }
         DirectVectorElementType::Record(record) => {
-            let c_record = context
-                .record(*record)
-                .ok_or(Error::UnexpectedBindingShape {
-                    layer: "dart callback",
-                    shape: "missing direct-record vector declaration",
-                })?;
-            let public = Name::new(c_record.name()).upper_camel()?;
-            let native = format!("_$${public}");
+            let native = native::direct_record_struct(bridge, *record)?;
             statements.extend([
                 format!("final {prefix}Storage = _$$BoltCallocPtr<{native}>.alloc($$ffi.sizeOf<{native}>() * _l$value.length);"),
                 format!("for (var _l$index = 0; _l$index < _l$value.length; _l$index++) {{ _l$value[_l$index]._m$writeStruct({prefix}Storage.ptr.elementAt(_l$index)); }}"),
@@ -1128,9 +1362,15 @@ fn decode_direct_vector_return(
     let mut statements = vec![format!("final {prefix}Buffer = {call};")];
     statements.push("try {".to_owned());
     statements.extend(
-        direct_vector_decode_statements(element, &format!("{prefix}Buffer"), "_l$value", context)?
-            .into_iter()
-            .map(|statement| format!("  {statement}")),
+        direct_vector_decode_statements(
+            element,
+            &format!("{prefix}Buffer"),
+            "_l$value",
+            bridge,
+            context,
+        )?
+        .into_iter()
+        .map(|statement| format!("  {statement}")),
     );
     statements.push("  return _l$value;".to_owned());
     statements.push(format!(
@@ -1144,6 +1384,7 @@ fn direct_vector_decode_statements(
     element: &DirectVectorElementType,
     buffer: &str,
     value: &str,
+    bridge: &CBridgeContract,
     context: &RenderContext<Native>,
 ) -> Result<Vec<String>> {
     Ok(match element {
@@ -1159,7 +1400,7 @@ fn direct_vector_decode_statements(
         }
         DirectVectorElementType::Record(record) => {
             let public = type_name::direct_value(&DirectValueType::Record(*record), context)?;
-            let native = format!("_$${public}");
+            let native = native::direct_record_struct(bridge, *record)?;
             vec![
                 format!("final _l$count = {buffer}.len ~/ $$ffi.sizeOf<{native}>();"),
                 format!(
@@ -1394,9 +1635,27 @@ fn completion_call(context: &str, status: i32, payload: Option<&str>) -> String 
 }
 
 fn native_exceptional_return(ty: &CBridgeType) -> Result<String> {
+    Ok(match exceptional_return_value(ty)? {
+        Some(value) => format!(", {value}"),
+        None => String::new(),
+    })
+}
+
+pub fn exceptional_return_value(ty: &CBridgeType) -> Result<Option<String>> {
     Ok(match ty {
-        CBridgeType::Void => String::new(),
-        _ => format!(", {}", native_default(ty)?),
+        CBridgeType::Void
+        | CBridgeType::Status
+        | CBridgeType::Buffer
+        | CBridgeType::String
+        | CBridgeType::Span
+        | CBridgeType::CallbackHandle(_)
+        | CBridgeType::Named(_)
+        | CBridgeType::DirectRecord(_)
+        | CBridgeType::FutureHandle
+        | CBridgeType::ConstPointer(_)
+        | CBridgeType::MutPointer(_)
+        | CBridgeType::FunctionPointer { .. } => None,
+        _ => Some(native_default(ty)?),
     })
 }
 

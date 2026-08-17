@@ -2,6 +2,7 @@ import 'package:test/test.dart';
 import 'package:demo/demo.dart';
 
 void main() {
+  tearDownAll(shutdownBoltffi);
   test('primitive options', () {
     expect(
       echoOptionalI32(7),

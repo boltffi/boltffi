@@ -8,7 +8,7 @@ typedef uint8_t ___Mode;
 #define MODE_FAST ((___Mode)1)
 #define MODE_SLOW ((___Mode)2)
 RustFutureHandle boltffi_method_enum_demo_mode_compute(___Mode receiver);
-void boltffi_async_method_enum_demo_mode_compute_poll(RustFutureHandle handle, uint64_t callback_data, void (*callback)(uint64_t, int8_t));
+int8_t boltffi_async_method_enum_demo_mode_compute_poll(RustFutureHandle handle, uint64_t callback_data, void (*callback)(uint64_t, int8_t));
 uint32_t boltffi_async_method_enum_demo_mode_compute_complete(RustFutureHandle handle, FfiStatus *out_status);
 FfiBuf_u8 boltffi_async_method_enum_demo_mode_compute_panic_message(RustFutureHandle handle);
 void boltffi_async_method_enum_demo_mode_compute_cancel(RustFutureHandle handle);
@@ -63,13 +63,13 @@ JNIEXPORT jlong JNICALL Java_com_boltffi_demo_Native_boltffi_1method_1enum_1demo
     return (jlong)__boltffi_result;
 }
 
-JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1async_1method_1enum_1demo_1mode_1compute_1poll(JNIEnv *env, jclass cls, jlong handle, jlong callback_data) {
+JNIEXPORT jbyte JNICALL Java_com_boltffi_demo_Native_boltffi_1async_1method_1enum_1demo_1mode_1compute_1poll(JNIEnv *env, jclass cls, jlong handle, jlong callback_data) {
     (void)cls;
 
     (void)env;
-    boltffi_async_method_enum_demo_mode_compute_poll((RustFutureHandle)handle, callback_data, boltffi_jni_continuation_callback);
+    int8_t __boltffi_result = boltffi_async_method_enum_demo_mode_compute_poll((RustFutureHandle)handle, callback_data, boltffi_jni_continuation_callback);
 
-    return;
+    return (jbyte)__boltffi_result;
 }
 
 JNIEXPORT jint JNICALL Java_com_boltffi_demo_Native_boltffi_1async_1method_1enum_1demo_1mode_1compute_1complete(JNIEnv *env, jclass cls, jlong handle) {

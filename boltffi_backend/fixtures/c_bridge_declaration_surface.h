@@ -110,13 +110,13 @@ uint32_t boltffi_method_class_demo_engine_score(uint64_t receiver, ___Point poin
 FfiStatus boltffi_method_class_demo_engine_advance(uint64_t receiver, uint32_t delta);
 int32_t boltffi_function_demo_add(int32_t left, int32_t right);
 RustFutureHandle boltffi_function_demo_fetch_count(void);
-void boltffi_async_function_demo_fetch_count_poll(RustFutureHandle handle, uint64_t callback_data, void (*callback)(uint64_t, int8_t));
+int8_t boltffi_async_function_demo_fetch_count_poll(RustFutureHandle handle, uint64_t callback_data, void (*callback)(uint64_t, int8_t));
 uint32_t boltffi_async_function_demo_fetch_count_complete(RustFutureHandle handle, FfiStatus *out_status);
 FfiBuf_u8 boltffi_async_function_demo_fetch_count_panic_message(RustFutureHandle handle);
 void boltffi_async_function_demo_fetch_count_cancel(RustFutureHandle handle);
 void boltffi_async_function_demo_fetch_count_free(RustFutureHandle handle);
 RustFutureHandle boltffi_function_demo_refresh(void);
-void boltffi_async_function_demo_refresh_poll(RustFutureHandle handle, uint64_t callback_data, void (*callback)(uint64_t, int8_t));
+int8_t boltffi_async_function_demo_refresh_poll(RustFutureHandle handle, uint64_t callback_data, void (*callback)(uint64_t, int8_t));
 void boltffi_async_function_demo_refresh_complete(RustFutureHandle handle, FfiStatus *out_status);
 FfiBuf_u8 boltffi_async_function_demo_refresh_panic_message(RustFutureHandle handle);
 void boltffi_async_function_demo_refresh_cancel(RustFutureHandle handle);

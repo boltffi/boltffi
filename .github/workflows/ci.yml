@@ -58,6 +58,31 @@ jobs:
           prefix-key: v1-rust
       - run: cargo test --workspace --all-features
 
+  wasm-link-stable:
+    name: WASM link (stable)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          # caching handled by Swatinem/rust-cache below
+          cache: false
+          toolchain: stable
+          target: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          cache-bin: false
+          prefix-key: v1-rust-stable
+      # `rust-toolchain.toml` pins 1.95.0, and only the environment variable
+      # outranks it. The pin is what hides wasm link regressions: rustc stopped
+      # passing `--allow-undefined` on a wasm cdylib link between 1.95 and 1.97,
+      # so a host import left undeclared resolves there and fails for everyone
+      # building on current stable.
+      - run: cargo test -p boltffi_cli --test wasm_wake_link
+        env:
+          RUSTUP_TOOLCHAIN: stable
+
   build:
     name: Build
     runs-on: ${{ matrix.os }}
@@ -206,6 +231,10 @@ jobs:
         uses: Aandreba/setup-binaryen@v1.0.0
         with:
           token: ${{ github.token }}
+      - if: matrix.python-version == '3.13'
+        uses: dart-lang/setup-dart@v1
+        with:
+          sdk: 3.10.8
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.0.x'

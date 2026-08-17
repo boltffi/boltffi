@@ -5,6 +5,7 @@ import 'package:test/test.dart';
 import 'package:demo/demo.dart';
 
 void main() {
+  tearDownAll(shutdownBoltffi);
   test('callbacks', () async {
     final asyncFetcher = AsyncFetcherImpl();
     final asyncPointTransformer = AsyncPointTransformerImpl();
@@ -59,16 +60,16 @@ void main() {
     expect(asyncResultPoint.x, 503.0);
     expect(asyncResultPoint.y, 604.0);
 
-    expect(
-      () => renderMessageWithAsyncResultCallback(
+    await expectLater(
+      renderMessageWithAsyncResultCallback(
         asyncResultFormatter,
         '',
         'result',
       ),
       throwsA(MathError.negativeInput),
     );
-    expect(
-      () => transformPointWithAsyncResultCallback(
+    await expectLater(
+      transformPointWithAsyncResultCallback(
         asyncResultFormatter,
         Point(x: 3.0, y: 4.0),
         Status.inactive,
@@ -91,6 +92,7 @@ void main() {
     final messageFormatter = MessageFormatterImpl();
     final optionalMessageCallback = OptionalMessageCallbackImpl();
     final resultMessageCallback = ResultMessageCallbackImpl();
+    final stringResultMessageCallback = StringResultMessageCallbackImpl();
 
     expect(invokeValueCallback(doubler, 4), 8);
     expect(invokeValueCallbackTwice(doubler, 3, 4), 14);
@@ -144,6 +146,19 @@ void main() {
     expect(
       () => invokeResultMessageCallback(resultMessageCallback, -1),
       throwsA(MathError.negativeInput),
+    );
+
+    expect(
+      invokeStringResultMessageCallback(stringResultMessageCallback, 8),
+      'message:8',
+      reason:
+          "case:callbacks.sync_traits.string_result_message_callback.should_return_encoded_success",
+    );
+    expect(
+      () => invokeStringResultMessageCallback(stringResultMessageCallback, -1),
+      throwsBoltException("negative key: -1"),
+      reason:
+          "case:callbacks.sync_traits.string_result_message_callback.should_report_string_error",
     );
 
     final processed = processVec(vecProcessor, Int32List.fromList([1, 2, 3]));

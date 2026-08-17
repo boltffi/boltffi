@@ -10,6 +10,7 @@ pub mod function;
 mod module;
 mod record;
 mod returned_closure;
+pub(crate) mod shim;
 mod stream;
 
 pub use callback::Callback;
@@ -33,7 +34,7 @@ pub use documentation::Documentation;
 pub fn field_name(key: &FieldKey) -> Result<Identifier> {
     match key {
         FieldKey::Named(name) => Name::new(name).lower_camel(),
-        FieldKey::Position(position) => Identifier::parse(format!("field{position}")),
+        FieldKey::Position(position) => Identifier::parse(format!("value{position}")),
         _ => Err(Error::UnexpectedBindingShape {
             layer: "dart declaration",
             shape: "unknown field key",

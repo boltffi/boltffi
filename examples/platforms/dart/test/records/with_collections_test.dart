@@ -4,6 +4,7 @@ import 'package:test/test.dart';
 import 'package:demo/demo.dart';
 
 void main() {
+  tearDownAll(shutdownBoltffi);
   test('records with collections', () {
     final polygonPoints = [
       Point(x: 0.0, y: 0.0),
