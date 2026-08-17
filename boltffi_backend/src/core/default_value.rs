@@ -1,6 +1,6 @@
 use boltffi_binding::{
-    CanonicalName, CustomTypeId, DirectFieldDecl, EncodedFieldDecl, FieldKey, Native, RecordDecl,
-    RecordId, TypeRef,
+    CanonicalName, CustomTypeId, DirectFieldDecl, EncodedFieldDecl, FieldKey, RecordDecl, RecordId,
+    Surface, TypeRef,
 };
 
 use crate::core::{Error, RenderContext, Result};
@@ -21,9 +21,9 @@ pub enum Field<'bindings> {
 }
 
 impl<'bindings> Representation<'bindings> {
-    pub fn resolve(
+    pub fn resolve<S: Surface>(
         custom_type: CustomTypeId,
-        context: &'bindings RenderContext<Native>,
+        context: &'bindings RenderContext<S>,
     ) -> Result<Self> {
         if context.custom_type_mapping(custom_type).is_some() {
             return Err(Error::UnsupportedTarget {
@@ -45,7 +45,7 @@ impl<'bindings> Representation<'bindings> {
         }
     }
 
-    fn record(record: RecordId, context: &'bindings RenderContext<Native>) -> Result<Self> {
+    fn record<S: Surface>(record: RecordId, context: &'bindings RenderContext<S>) -> Result<Self> {
         let declaration = context.record(record).ok_or(Error::BrokenBridgeContract {
             bridge: context.target(),
             invariant: "missing custom type default representation",
@@ -67,7 +67,7 @@ impl<'bindings> Representation<'bindings> {
         }))
     }
 
-    fn unsupported_record(context: &RenderContext<Native>) -> Result<Self> {
+    fn unsupported_record<S: Surface>(context: &RenderContext<S>) -> Result<Self> {
         Err(Error::UnsupportedTarget {
             target: context.target(),
             shape: "custom type default with non-single-field representation",

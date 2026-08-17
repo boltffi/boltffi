@@ -1,16 +1,16 @@
 use askama::Template as AskamaTemplate;
 use boltffi_binding::{
     CStyleEnumDecl, ConstantDecl, ConstantOwner, ConstantValueDecl, DeclarationRef, DefaultValue,
-    EnumDecl, IntegerRepr, Primitive, TypeRef, Wasm32,
+    EnumDecl, IntegerRepr, TypeRef, Wasm32,
 };
 
 use crate::core::{Emitted, Error, RenderContext, RenderedDeclaration, Result};
 
 use super::super::{
     name_style::Name,
-    syntax::{Expression, Identifier, IntegerLiteral, PropertyKey, StringLiteral, TypeName},
+    syntax::{Expression, Identifier, IntegerLiteral, TypeName},
 };
-use super::{Function, Type};
+use super::{DefaultExpression, Function, Type};
 
 #[derive(AskamaTemplate)]
 #[template(path = "target/typescript/constant.ts", escape = "none")]
@@ -131,44 +131,7 @@ impl Constant {
         {
             return Self::c_style_variant(enumeration, variant_name);
         }
-        match value {
-            DefaultValue::Bool(value) => Ok(Expression::boolean(*value)),
-            DefaultValue::Integer(value)
-                if matches!(ty, TypeRef::Primitive(Primitive::I64 | Primitive::U64)) =>
-            {
-                Ok(Expression::integer_literal(IntegerLiteral::bigint(
-                    value.get(),
-                )))
-            }
-            DefaultValue::Integer(value) => Ok(Expression::integer_literal(
-                IntegerLiteral::number(value.get()),
-            )),
-            DefaultValue::Float(value) => Ok(Expression::floating(value.to_f64())),
-            DefaultValue::String(value) => Ok(Expression::string(StringLiteral::new(value))),
-            DefaultValue::EnumVariant {
-                enum_name,
-                variant_name,
-            } => match ty {
-                TypeRef::Enum(id) => match context.enumeration(*id) {
-                    Some(EnumDecl::CStyle(_)) => Ok(Expression::property(
-                        Expression::identifier(Identifier::parse(
-                            Name::new(enum_name).type_name().to_string(),
-                        )?),
-                        Name::new(variant_name).variant_identifier()?,
-                    )),
-                    Some(EnumDecl::Data(_)) => Ok(Expression::object([(
-                        PropertyKey::Named(Identifier::known("tag")),
-                        Expression::string(StringLiteral::new(
-                            &Name::new(variant_name).variant_identifier()?.to_string(),
-                        )),
-                    )])),
-                    _ => Err(Self::unsupported("constant enum declaration")),
-                },
-                _ => Err(Self::unsupported("constant enum type")),
-            },
-            DefaultValue::Null => Ok(Expression::null()),
-            _ => Err(Self::unsupported("constant default value")),
-        }
+        DefaultExpression::render(ty, value, context)
     }
 
     fn c_style_variant(

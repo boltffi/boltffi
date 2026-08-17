@@ -2,6 +2,11 @@ import Demo
 import XCTest
 
 final class DefaultValuesRecordsTests: DemoTestCase {
+    func testCustomTypeDefault() {
+        demoCase("case:records.default_values.custom_type.should_apply_default")
+        XCTAssertEqual(requestTimeoutSeconds(config: RequestConfig()), 1.5)
+    }
+
     func testServiceConfigDefaults() {
         let implicitDefaults = ServiceConfig(name: "worker")
         XCTAssertEqual(

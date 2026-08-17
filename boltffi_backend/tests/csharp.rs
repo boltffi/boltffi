@@ -20,6 +20,8 @@ fn target(host: CSharpHost) -> Target<CSharpHost, CBridge> {
     host.into_target().expect("C# target")
 }
 
+const CUSTOM_TYPE_DEFAULT: &str = include_str!("fixtures/source/records/custom_type_default.rs");
+
 #[test]
 fn csharp_target_compiles_a_regular_vec_u8_wire_api() {
     let bindings = bindings(
@@ -201,6 +203,31 @@ fn csharp_target_qualifies_a_free_function_named_after_its_return_record() {
     );
 
     compile_csharp_with_dotnet_when_available(&output, "csharp-free-function-shadow-smoke");
+}
+
+#[test]
+fn csharp_target_renders_custom_type_defaults_through_representations() {
+    let bindings = bindings(CUSTOM_TYPE_DEFAULT);
+    let output = target(
+        CSharpHost::new()
+            .namespace("Company.Bindings")
+            .expect("valid namespace")
+            .native_library("demo_native"),
+    )
+    .render(&bindings)
+    .expect("custom type defaults should render");
+    let config = output
+        .files()
+        .iter()
+        .find(|file| file.path().as_path() == Path::new("DeviationConfig.cs"))
+        .map(|file| file.contents())
+        .expect("generated DeviationConfig.cs");
+
+    assert!(
+        config.contains("public DeviationConfig()\n            : this(new LengthFfi(1500.0))"),
+        "{config}"
+    );
+    compile_csharp_with_dotnet_when_available(&output, "csharp-custom-type-default");
 }
 
 fn compile_csharp_with_dotnet_when_available(output: &GeneratedOutput, prefix: &str) {

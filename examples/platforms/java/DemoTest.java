@@ -554,6 +554,9 @@ public final class DemoTest {
 
     private static void testRecordDefaultValues() {
         System.out.println("Testing records (default values)...");
+        demoCase("case:records.default_values.custom_type.should_apply_default");
+        assert Demo.requestTimeoutSeconds(new RequestConfig()) == 1.5 : "RequestConfig default timeout";
+
         ServiceConfig implicitDefaults = new ServiceConfig("worker");
         assert implicitDefaults.name().equals("worker") : "ServiceConfig(name).name";
         assert implicitDefaults.retries() == 3 : "ServiceConfig(name).retries";

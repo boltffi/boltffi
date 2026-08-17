@@ -1,7 +1,12 @@
-use boltffi_binding::{ConstantDecl, ConstantValueDecl, DefaultValue, Native, TypeRef};
+use boltffi_binding::{
+    ConstantDecl, ConstantValueDecl, CustomTypeId, DefaultValue, FieldKey, Native, TypeRef,
+};
 
 use crate::{
-    core::{Error, Result},
+    core::{
+        Error, Result,
+        default_value::{Field as RepresentationField, Representation},
+    },
     target::python::{
         name_style::Name,
         syntax::{CallExpression, Expression, Identifier, Literal, TypeAnnotation},
@@ -97,7 +102,7 @@ impl ConstantStub {
             owner,
             python_name,
             annotation: TypeHint::from_type_ref(ty, package)?.into_annotation(),
-            expression: DefaultExpression::new(value, package)?.into_expression(),
+            expression: DefaultExpression::new(ty, value, package)?.into_expression(),
             uses_wire_helpers: false,
         })
     }
@@ -109,7 +114,18 @@ pub struct DefaultExpression {
 }
 
 impl DefaultExpression {
-    pub fn new(value: &DefaultValue, package: &Package) -> Result<Self> {
+    pub fn new(ty: &TypeRef, value: &DefaultValue, package: &Package) -> Result<Self> {
+        if let TypeRef::Optional(inner) = ty {
+            return match value {
+                DefaultValue::Null => Ok(Self {
+                    expression: Expression::literal(Literal::none()),
+                }),
+                _ => Self::new(inner, value, package),
+            };
+        }
+        if let TypeRef::Custom(custom_type) = ty {
+            return Self::custom(*custom_type, value, package);
+        }
         Ok(Self {
             expression: match value {
                 DefaultValue::Bool(value) => Expression::literal(Literal::bool(*value)),
@@ -129,6 +145,40 @@ impl DefaultExpression {
                 }
             },
         })
+    }
+
+    fn custom(custom_type: CustomTypeId, value: &DefaultValue, package: &Package) -> Result<Self> {
+        match Representation::resolve(custom_type, package.context)? {
+            Representation::Transparent(representation) => {
+                Self::new(representation, value, package)
+            }
+            Representation::Record(record) => {
+                let value = match record.field() {
+                    RepresentationField::Direct(field) => {
+                        Self::new(&TypeRef::Primitive(field.ty().primitive()), value, package)?
+                    }
+                    RepresentationField::Encoded(field) => Self::new(field.ty(), value, package)?,
+                };
+                let field = match record.field().key() {
+                    FieldKey::Named(name) => Name::new(name).function()?,
+                    FieldKey::Position(position) => Name::position_field(*position)?,
+                    _ => {
+                        return Err(Error::UnsupportedTarget {
+                            target: "python",
+                            shape: "custom type default field name",
+                        });
+                    }
+                };
+                Ok(Self {
+                    expression: Expression::call(
+                        CallExpression::new(Expression::identifier(Identifier::parse(
+                            Name::new(record.name()).class(),
+                        )?))
+                        .keyword(field, value.into_expression()),
+                    ),
+                })
+            }
+        }
     }
 
     pub fn into_expression(self) -> Expression {

@@ -6,7 +6,7 @@ use crate::{
     core::{Emitted, RenderContext, Result},
 };
 
-use super::super::{default_value, name_style::Name, type_name};
+use super::super::{default_value::DefaultExpression, name_style::Name, type_name};
 use super::{Documentation, Function, function::Placement};
 use crate::target::dart::syntax::{Literal, TypeFragment};
 
@@ -36,12 +36,12 @@ impl Constant {
         let name = Name::new(declaration.name()).lower_camel()?;
         let source = match declaration.value() {
             ConstantValueDecl::Inline { ty, value, .. } => {
-                let ty = type_name::type_ref(ty, context)?;
-                let value = default_value::literal(value)?;
+                let rendered_type = type_name::type_ref(ty, context)?;
+                let value = DefaultExpression::render(ty, value, context)?.into_constant()?;
                 InlineConstantTemplate {
                     documentation: Documentation::new(declaration.meta().doc(), 0),
                     static_keyword: if associated { "static " } else { "" },
-                    ty: &ty,
+                    ty: &rendered_type,
                     name: &name,
                     value: &value,
                 }

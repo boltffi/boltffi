@@ -916,6 +916,9 @@ class DemoValueTypesTest {
 
     @Test
     fun recordDefaultValuesSurfaceCorrectly() {
+        demoCase("case:records.default_values.custom_type.should_apply_default")
+        assertEquals(1.5, requestTimeoutSeconds(RequestConfig()))
+
         val implicitDefaults = ServiceConfig("worker")
         assertEquals("worker", implicitDefaults.name)
         assertEquals(3, implicitDefaults.retries)

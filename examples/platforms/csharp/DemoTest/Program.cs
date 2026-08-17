@@ -548,6 +548,9 @@ public static class DemoTest
     {
         Console.WriteLine("Testing records with defaults and instance methods (ServiceConfig)...");
 
+        DemoCase("case:records.default_values.custom_type.should_apply_default");
+        Require(RequestTimeoutSeconds(new RequestConfig()) == 1.5, "RequestConfig default timeout");
+
         DemoCase("case:records.default_values.service_config.should_roundtrip_value");
         ServiceConfig config = new ServiceConfig("worker", 3, "standard", null, "https://default");
         ServiceConfig echoed = EchoServiceConfig(config);

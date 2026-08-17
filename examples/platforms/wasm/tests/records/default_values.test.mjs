@@ -1,6 +1,9 @@
 import { assert, assertThrowsWithMessage, demo } from "../support/index.mjs";
 
 export async function run() {
+  globalThis.demoCase("case:records.default_values.custom_type.should_apply_default");
+  assert.equal(demo.requestTimeoutSeconds({}), 1.5);
+
   const implicitDefaults = {
     name: "worker",
     retries: 3,

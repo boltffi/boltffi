@@ -225,6 +225,8 @@ const RECORD_DEFAULTS: &str = r#"
     }
 "#;
 
+const CUSTOM_TYPE_DEFAULT: &str = include_str!("fixtures/source/records/custom_type_default.rs");
+
 const ENUM_RECORD_DEFAULTS: &str = r#"
     #[repr(u8)]
     #[data]
@@ -1378,6 +1380,15 @@ fn java_target_renders_trailing_record_default_constructors() {
     ));
     assert!(config.contains("public ServiceConfig(String name, int retries)"));
     assert!(config.contains("* Optional endpoint."));
+}
+
+#[test]
+fn java_target_renders_custom_type_defaults_through_representations() {
+    let output = render(CUSTOM_TYPE_DEFAULT, CoverageMode::Complete);
+    let config = java_source(&output, "com.boltffi.demo", "DeviationConfig");
+
+    assert!(config.contains("public DeviationConfig()"));
+    assert!(config.contains("this(new LengthFFI(1500.0));"));
 }
 
 #[test]

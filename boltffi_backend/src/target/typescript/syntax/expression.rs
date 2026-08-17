@@ -155,6 +155,10 @@ impl Expression {
         Self("null".to_owned())
     }
 
+    pub fn undefined() -> Self {
+        Self("undefined".to_owned())
+    }
+
     pub fn nan() -> Self {
         Self("Number.NaN".to_owned())
     }
@@ -177,6 +181,12 @@ impl Expression {
 
     pub fn strict_not_equal(self, other: Self) -> Self {
         Self(format!("{self} !== {other}"))
+    }
+
+    pub fn default_when_undefined(self, default: Self) -> Self {
+        self.clone()
+            .strict_equal(Self::undefined())
+            .conditional(default, self)
     }
 
     pub fn construct(ty: impl fmt::Display, arguments: ArgumentList) -> Self {

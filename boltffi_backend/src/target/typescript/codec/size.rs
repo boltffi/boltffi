@@ -10,7 +10,7 @@ use super::super::{
     syntax::{ArgumentList, Expression, Identifier},
 };
 use super::operation::Operation;
-use super::value::ValueExpression;
+use super::value::{RecordDefaults, ValueExpression};
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum SizeKind {
@@ -27,16 +27,35 @@ pub struct SizeExpression {
 
 pub struct Sizer<'context> {
     current: Expression,
+    defaults: RecordDefaults,
     context: &'context RenderContext<'context, Wasm32>,
 }
 
 impl<'context> Sizer<'context> {
     pub fn new(current: Expression, context: &'context RenderContext<'context, Wasm32>) -> Self {
-        Self { current, context }
+        Self {
+            current,
+            defaults: RecordDefaults::default(),
+            context,
+        }
+    }
+
+    pub fn defaulted(
+        current: Expression,
+        defaults: RecordDefaults,
+        context: &'context RenderContext<'context, Wasm32>,
+    ) -> Self {
+        Self {
+            current,
+            defaults,
+            context,
+        }
     }
 
     fn value(&self, value: &ValueRef) -> Result<Expression> {
-        ValueExpression::new(value, self.current.clone()).render()
+        ValueExpression::new(value, self.current.clone())
+            .with_defaults(&self.defaults)
+            .render()
     }
 
     fn unsupported(shape: &'static str) -> Result<SizeExpression> {

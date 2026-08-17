@@ -6,12 +6,12 @@ use boltffi_binding::{
 use crate::{
     bridge::c::CBridgeContract,
     core::{Emitted, Error, RenderContext, Result},
-    target::dart::syntax::{Identifier, Literal, TypeFragment},
+    target::dart::syntax::{Identifier, TypeFragment},
 };
 
 use super::super::{
     codec::{Reader, Sizer, ValueScope, Writer, primitive_read_method, primitive_write_method},
-    default_value,
+    default_value::DefaultExpression,
     native::NativeType,
     type_name,
     value_semantics::ValueSemantics,
@@ -40,7 +40,7 @@ pub struct Record {
 struct Field {
     name: Identifier,
     ty: TypeFragment,
-    default: Option<Literal>,
+    default: Option<DefaultExpression>,
     documentation: Documentation,
     read: String,
     writes: Vec<String>,
@@ -114,7 +114,13 @@ impl Record {
                         default: field
                             .meta()
                             .default()
-                            .map(default_value::literal)
+                            .map(|value| {
+                                DefaultExpression::render(
+                                    &boltffi_binding::TypeRef::Primitive(primitive),
+                                    value,
+                                    context,
+                                )
+                            })
                             .transpose()?,
                         documentation: Documentation::new(field.meta().doc(), 2),
                         read: format!("_p$reader.{}()", primitive_read_method(primitive)),
@@ -188,7 +194,7 @@ impl Record {
                         default: field
                             .meta()
                             .default()
-                            .map(default_value::literal)
+                            .map(|value| DefaultExpression::render(field.ty(), value, context))
                             .transpose()?,
                         documentation: Documentation::new(field.meta().doc(), 2),
                         read: field
@@ -299,6 +305,18 @@ impl Record {
                 .join(" + ")
         }
     }
+
+    fn default_initializers(&self) -> String {
+        let initializers = self
+            .fields
+            .iter()
+            .filter_map(Field::default_initializer)
+            .collect::<Vec<_>>();
+        match initializers.as_slice() {
+            [] => String::new(),
+            _ => format!(" :\n      {}", initializers.join(",\n      ")),
+        }
+    }
 }
 
 impl Field {
@@ -317,8 +335,22 @@ impl Field {
     fn default_clause(&self) -> String {
         self.default.as_ref().map_or_else(
             || format!("required this.{}", self.name),
-            |default| format!("this.{} = {default}", self.name),
+            |default| match default {
+                DefaultExpression::Constant(default) => {
+                    format!("this.{} = {default}", self.name)
+                }
+                DefaultExpression::Runtime(_) => format!("{}? {}", self.ty, self.name),
+            },
         )
+    }
+
+    fn default_initializer(&self) -> Option<String> {
+        match &self.default {
+            Some(DefaultExpression::Runtime(default)) => {
+                Some(format!("{} = {} ?? {default}", self.name, self.name))
+            }
+            Some(DefaultExpression::Constant(_)) | None => None,
+        }
     }
 
     fn read(&self) -> &str {

@@ -268,6 +268,23 @@ mod tests {
     }
 
     #[test]
+    fn dart_target_renders_custom_type_defaults_through_representations() {
+        let bindings = bindings(include_str!(
+            "../../../tests/fixtures/source/records/custom_type_default.rs"
+        ));
+        let output = target(DartHost::new().package("demo"))
+            .render(&bindings)
+            .expect("custom type defaults should render");
+        let source = file(&output, "demo/lib/demo.dart");
+
+        assert!(source.contains("Length? maxRejoinDistance,"), "{source}");
+        assert!(
+            source.contains("maxRejoinDistance = maxRejoinDistance ?? LengthFfi(meters: 1500)"),
+            "{source}"
+        );
+    }
+
+    #[test]
     fn dart_target_uses_binding_ir_record_classification() {
         let bindings = bindings(
             r#"

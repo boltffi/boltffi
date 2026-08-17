@@ -1,7 +1,7 @@
 
 
 export interface {{ name }} {
-{% for field in fields %}  readonly {{ field.key }}: {{ field.ty }};
+{% for field in fields %}  readonly {{ field.key }}{% if field.default.is_some() %}?{% endif %}: {{ field.ty }};
 {% endfor %}}
 {% if error %}
 export class {{ name }}Exception extends Error {

@@ -2,6 +2,7 @@ mod callback;
 mod class;
 mod closure;
 mod constant;
+mod default_value;
 mod documentation;
 mod enumeration;
 mod record;

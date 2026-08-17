@@ -1,9 +1,15 @@
-use boltffi_binding::{DefaultValue, FloatValue, Native, Primitive as BindingPrimitive, TypeRef};
+use boltffi_binding::{
+    CustomTypeId, DefaultValue, FloatValue, Native, Primitive as BindingPrimitive, TypeRef,
+};
 
 use crate::{
-    core::{RenderContext, Result},
+    core::{
+        RenderContext, Result,
+        default_value::{Field as RepresentationField, Representation},
+    },
     target::java::{
         JavaHost, JavaVersion,
+        name_style::Name,
         primitive::Primitive,
         render::{Enumeration, VariantInitialization},
         syntax::{Expression, Identifier, StringLiteral, TypeIdentifier, TypeName},
@@ -25,6 +31,9 @@ impl DefaultExpression {
                 _ => Self::render(inner, value, version, context)
                     .map(|value| Self::optional("of", Some(value), version)),
             };
+        }
+        if let TypeRef::Custom(custom_type) = ty {
+            return Self::custom(*custom_type, value, version, context);
         }
         match value {
             DefaultValue::Bool(value) => match ty {
@@ -48,6 +57,36 @@ impl DefaultExpression {
             },
             DefaultValue::Null => Ok(Expression::null()),
             _ => Err(JavaHost::unsupported("unknown default value")),
+        }
+    }
+
+    fn custom(
+        custom_type: CustomTypeId,
+        value: &DefaultValue,
+        version: JavaVersion,
+        context: &RenderContext<Native>,
+    ) -> Result<Expression> {
+        match Representation::resolve(custom_type, context)? {
+            Representation::Transparent(representation) => {
+                Self::render(representation, value, version, context)
+            }
+            Representation::Record(record) => {
+                let value = match record.field() {
+                    RepresentationField::Direct(field) => Self::render(
+                        &TypeRef::Primitive(field.ty().primitive()),
+                        value,
+                        version,
+                        context,
+                    )?,
+                    RepresentationField::Encoded(field) => {
+                        Self::render(field.ty(), value, version, context)?
+                    }
+                };
+                Ok(Expression::construct(
+                    TypeName::named(Name::new(record.name()).type_name(version)?),
+                    [value].into_iter().collect(),
+                ))
+            }
         }
     }
 

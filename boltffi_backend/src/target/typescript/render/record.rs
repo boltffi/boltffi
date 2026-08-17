@@ -6,14 +6,14 @@ use boltffi_binding::{
 use crate::core::{Diagnostic, Emitted, Error, RenderContext, Result};
 
 use super::super::{
-    codec::{Reader, Sizer, Writer},
+    codec::{Reader, RecordDefaults, Sizer, Writer},
     name_style::Name,
     primitive::Scalar,
     syntax::{
         ArgumentList, Expression, Identifier, MethodDeclaration, PropertyKey, Statement, TypeName,
     },
 };
-use super::{AssociatedConstants, Function, Type};
+use super::{AssociatedConstants, Function, Type, default_value::DefaultExpression};
 
 #[derive(AskamaTemplate)]
 #[template(path = "target/typescript/record.ts", escape = "none")]
@@ -34,6 +34,7 @@ struct Field {
     key: PropertyKey,
     local: Identifier,
     ty: TypeName,
+    default: Option<Expression>,
 }
 
 struct DirectParts {
@@ -88,12 +89,26 @@ impl Record {
                         .ok_or_else(|| Self::error("direct record field layout moves backwards"))?;
                     parts.skip(padding, &writer, &reader);
                     let scalar = Scalar::new(field.ty().primitive())?;
+                    let default = field
+                        .meta()
+                        .default()
+                        .map(|default| {
+                            DefaultExpression::render(
+                                &boltffi_binding::TypeRef::Primitive(field.ty().primitive()),
+                                default,
+                                context,
+                            )
+                        })
+                        .transpose()?;
+                    let field_value = key.access(value.clone())?;
+                    let field_value = default
+                        .clone()
+                        .map(|default| field_value.clone().default_when_undefined(default))
+                        .unwrap_or(field_value);
                     parts.writes.push(Statement::expression(Expression::call(
                         Expression::identifier(writer.clone()),
                         scalar.write_method(),
-                        [key.access(value.clone())?]
-                            .into_iter()
-                            .collect::<ArgumentList>(),
+                        [field_value].into_iter().collect::<ArgumentList>(),
                     )));
                     parts.reads.push(Statement::constant(
                         local.clone(),
@@ -108,6 +123,7 @@ impl Record {
                         key,
                         local,
                         ty: scalar.ty(),
+                        default,
                     });
                     Ok(parts)
                 },
@@ -146,13 +162,26 @@ impl Record {
         let writer = Identifier::known("writer");
         let reader = Identifier::known("reader");
         let value = Expression::identifier(Identifier::known("value"));
+        let fields = record
+            .fields()
+            .iter()
+            .map(|field| Self::encoded_field(field, context))
+            .collect::<Result<Vec<_>>>()?;
+        let defaults = RecordDefaults::new(fields.iter().filter_map(|field| {
+            field
+                .default
+                .clone()
+                .map(|default| (field.key.clone(), default))
+        }));
         let size = record
             .fields()
             .iter()
             .map(|field| {
-                field
-                    .write()
-                    .size_with(&mut Sizer::new(value.clone(), context))
+                field.write().size_with(&mut Sizer::defaulted(
+                    value.clone(),
+                    defaults.clone(),
+                    context,
+                ))
             })
             .collect::<Result<Vec<_>>>()?
             .into_iter()
@@ -163,19 +192,17 @@ impl Record {
             .fields()
             .iter()
             .flat_map(|field| {
-                field
-                    .write()
-                    .render_with(&mut Writer::new(writer.clone(), value.clone(), context))
+                field.write().render_with(&mut Writer::defaulted(
+                    writer.clone(),
+                    value.clone(),
+                    defaults.clone(),
+                    context,
+                ))
             })
             .collect::<Result<Vec<_>>>()?
             .into_iter()
             .map(|write| write.into_statement())
             .collect();
-        let fields = record
-            .fields()
-            .iter()
-            .map(|field| Self::encoded_field(field, context))
-            .collect::<Result<Vec<_>>>()?;
         let reads = record
             .fields()
             .iter()
@@ -213,6 +240,11 @@ impl Record {
             local: key.local()?,
             key,
             ty: Type::from_ref(field.ty(), context)?,
+            default: field
+                .meta()
+                .default()
+                .map(|default| DefaultExpression::render(field.ty(), default, context))
+                .transpose()?,
         })
     }
 

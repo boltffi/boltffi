@@ -17,6 +17,7 @@ use super::super::{
     syntax::{Expression, Identifier, Statement, TypeFragment},
     type_name,
 };
+use super::default_value::DefaultExpression;
 use super::{AssociatedConstants, Documentation, Function, WireTemplate, primitive_type};
 
 #[derive(Template)]
@@ -36,6 +37,7 @@ pub(in crate::target::csharp) struct Record {
     error_payload: bool,
     error_message_field: Option<Identifier>,
     fields: Vec<Field>,
+    default_constructors: Vec<DefaultConstructor>,
     constants: AssociatedConstants,
     methods: Vec<Function>,
     diagnostics: Vec<Diagnostic>,
@@ -47,8 +49,21 @@ struct Field {
     name: Identifier,
     ty: TypeFragment,
     marshal_i1: bool,
+    default: Option<Expression>,
     read: Expression,
     write: Vec<Statement>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct DefaultConstructor {
+    parameters: Vec<ConstructorParameter>,
+    arguments: Vec<Expression>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ConstructorParameter {
+    name: Identifier,
+    ty: TypeFragment,
 }
 
 impl Record {
@@ -108,6 +123,18 @@ impl Record {
                     name: field_name(field.key())?,
                     ty: primitive_type(primitive),
                     marshal_i1: matches!(primitive, boltffi_binding::Primitive::Bool),
+                    default: field
+                        .meta()
+                        .default()
+                        .map(|value| {
+                            DefaultExpression::render(
+                                &boltffi_binding::TypeRef::Primitive(primitive),
+                                value,
+                                None,
+                                context,
+                            )
+                        })
+                        .transpose()?,
                     read: Expression::new(format!("reader.{}()", primitive_read_method(primitive))),
                     write: vec![Statement::new(format!(
                         "writer.{}(this.{});",
@@ -161,6 +188,7 @@ impl Record {
             bridge,
             context,
         )?;
+        let default_constructors = DefaultConstructor::from_fields(&fields);
         Ok(Self {
             documentation: Documentation::summary(declaration.meta().doc(), "    "),
             namespace,
@@ -173,6 +201,7 @@ impl Record {
                 .find(|field| field.name.as_str() == "Message")
                 .map(|field| field.name.clone()),
             fields,
+            default_constructors,
             constants,
             methods,
             diagnostics,
@@ -213,6 +242,11 @@ impl Record {
                     name: field_name(field.key())?,
                     ty: type_name::type_ref(field.ty(), context)?,
                     marshal_i1: false,
+                    default: field
+                        .meta()
+                        .default()
+                        .map(|value| DefaultExpression::render(field.ty(), value, None, context))
+                        .transpose()?,
                     read: field
                         .read()
                         .render_with(&mut Reader::new(reader.clone(), context))
@@ -269,6 +303,7 @@ impl Record {
             bridge,
             context,
         )?;
+        let default_constructors = DefaultConstructor::from_fields(&fields);
         Ok(Self {
             documentation: Documentation::summary(declaration.meta().doc(), "    "),
             namespace,
@@ -281,6 +316,7 @@ impl Record {
                 .find(|field| field.name.as_str() == "Message")
                 .map(|field| field.name.clone()),
             fields,
+            default_constructors,
             constants,
             methods,
             diagnostics,
@@ -306,6 +342,42 @@ impl Record {
             emitted = emitted.with_aux(AuxChunk::ForwardDecl(WireTemplate.render()?.into()));
         }
         Ok(emitted)
+    }
+}
+
+impl DefaultConstructor {
+    fn from_fields(fields: &[Field]) -> Vec<Self> {
+        let trailing_defaults = fields
+            .iter()
+            .rev()
+            .take_while(|field| field.default.is_some())
+            .count();
+        (1..=trailing_defaults)
+            .map(|omitted| {
+                let included = fields.len() - omitted;
+                Self {
+                    parameters: fields
+                        .iter()
+                        .take(included)
+                        .map(|field| ConstructorParameter {
+                            name: field.name.clone(),
+                            ty: field.ty.clone(),
+                        })
+                        .collect(),
+                    arguments: fields
+                        .iter()
+                        .enumerate()
+                        .map(|(index, field)| match index < included {
+                            true => Expression::identifier(field.name.clone()),
+                            false => field
+                                .default
+                                .clone()
+                                .expect("omitted record fields have defaults"),
+                        })
+                        .collect(),
+                }
+            })
+            .collect()
     }
 }
 

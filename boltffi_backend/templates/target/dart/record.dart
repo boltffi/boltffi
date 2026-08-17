@@ -45,7 +45,7 @@ extension on {{ record.name() }} {
   {{ record.name() }}({
 {%- for field in record.fields() %}
     {{ field.default_clause() }},{% endfor %}
-  });
+  }){{ record.default_initializers() }};
 {%- match record.native() %}
 {%- when Some with (native) %}
 

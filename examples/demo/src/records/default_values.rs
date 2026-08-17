@@ -1,6 +1,42 @@
 use boltffi::*;
 
 #[data]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TimeoutFFI {
+    pub seconds: f64,
+}
+
+custom_type!(
+    pub Timeout,
+    remote = chrono::TimeDelta,
+    repr = TimeoutFFI,
+    into_ffi = |timeout: &chrono::TimeDelta| TimeoutFFI {
+        seconds: timeout.num_milliseconds() as f64 / 1_000.0,
+    },
+    try_from_ffi = |timeout: TimeoutFFI| chrono::TimeDelta::try_milliseconds(
+        (timeout.seconds * 1_000.0).round() as i64,
+    )
+    .ok_or(CustomTypeConversionError),
+);
+
+#[data]
+#[derive(Clone, Debug, PartialEq)]
+pub struct RequestConfig {
+    #[boltffi::default(1.5)]
+    pub timeout: chrono::TimeDelta,
+}
+
+#[demo_bench_macros::demo_case(
+    "records.default_values.custom_type.should_apply_default",
+    justification = "Ensure a generated record constructor applies a custom-type default through its record representation.",
+    directions = "Construct `records::default_values::RequestConfig` without a timeout, pass it to `records::default_values::request_timeout_seconds`, and assert the default is 1.5 seconds."
+)]
+#[export]
+pub fn request_timeout_seconds(config: RequestConfig) -> f64 {
+    config.timeout.num_milliseconds() as f64 / 1_000.0
+}
+
+#[data]
 #[derive(Clone, Debug, PartialEq)]
 pub struct ServiceConfig {
     pub name: String,

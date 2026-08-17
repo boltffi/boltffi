@@ -245,6 +245,18 @@ mod tests {
         lower::<Wasm32>(&source).expect("source lowers")
     }
 
+    fn custom_type_default_bindings() -> Bindings<Wasm32> {
+        let source = boltffi_scan::scan_file(
+            syn::parse_str(include_str!(
+                "../../../tests/fixtures/source/records/custom_type_default.rs"
+            ))
+            .expect("valid custom type default source"),
+            PackageInfo::new("demo", None),
+        )
+        .expect("custom type default source scans");
+        lower::<Wasm32>(&source).expect("custom type default source lowers")
+    }
+
     fn constant_bindings() -> Bindings<Wasm32> {
         let source = boltffi_scan::scan_file(
             syn::parse_str(
@@ -1424,6 +1436,31 @@ mod tests {
                 .contents()
                 .contains("export function keepTimestamp(value: Timestamp): Timestamp")
         );
+    }
+
+    #[test]
+    fn renders_custom_type_defaults_through_representations() {
+        let output = TypeScriptHost::new("demo")
+            .expect("host constructs")
+            .into_target()
+            .render(&custom_type_default_bindings())
+            .expect("target renders");
+        let browser = output
+            .files()
+            .iter()
+            .find(|file| file.path().as_path().ends_with("demo.ts"))
+            .expect("browser module");
+
+        assert!(
+            browser
+                .contents()
+                .contains("readonly maxRejoinDistance?: Length;"),
+            "{}",
+            browser.contents()
+        );
+        assert!(browser.contents().contains(
+            "value.maxRejoinDistance === undefined ? { meters: 1500.0 } : value.maxRejoinDistance"
+        ));
     }
 
     /// Only an owned `Vec<u8>` crosses unframed.

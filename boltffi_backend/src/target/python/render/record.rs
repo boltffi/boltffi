@@ -236,7 +236,7 @@ impl RecordField {
             default: field
                 .meta()
                 .default()
-                .map(|value| DefaultExpression::new(value, package))
+                .map(|value| DefaultExpression::new(field.ty(), value, package))
                 .transpose()?
                 .map(DefaultExpression::into_expression),
         })
@@ -283,7 +283,13 @@ impl RecordField {
             default: field
                 .meta()
                 .default()
-                .map(|value| DefaultExpression::new(value, package))
+                .map(|value| {
+                    DefaultExpression::new(
+                        &boltffi_binding::TypeRef::Primitive(field.ty().primitive()),
+                        value,
+                        package,
+                    )
+                })
                 .transpose()?
                 .map(DefaultExpression::into_expression),
         })

@@ -5,6 +5,9 @@ import demo
 
 class DefaultValueRecordTests(DemoTestCase):
     def test_roundtrip_and_describe(self) -> None:
+        self.demo_case("case:records.default_values.custom_type.should_apply_default")
+        self.assertEqual(demo.request_timeout_seconds(demo.RequestConfig()), 1.5)
+
         implicit_defaults = demo.ServiceConfig("worker")
 
         self.demo_case("case:records.default_values.service_config.should_roundtrip_value")

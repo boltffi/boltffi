@@ -17,7 +17,12 @@ namespace {{ record.namespace }}
 {% for field in record.fields %}        {% if field.marshal_i1 %}[field: MarshalAs(UnmanagedType.I1)] {% endif %}{{ field.ty }} {{ field.name }}{% if !loop.last %},{% endif %}
 {% endfor %}    )
 {% endif %}    {
-{% if record.codec_payload %}        internal static {{ record.name }} Decode(WireReader reader) =>
+{% for constructor in record.default_constructors %}        public {{ record.name }}({% for parameter in constructor.parameters %}{{ parameter.ty }} {{ parameter.name }}{% if !loop.last %}, {% endif %}{% endfor %})
+            : this({% for argument in constructor.arguments %}{{ argument }}{% if !loop.last %}, {% endif %}{% endfor %})
+        {
+        }
+
+{% endfor %}{% if record.codec_payload %}        internal static {{ record.name }} Decode(WireReader reader) =>
             new {{ record.name }}({% if !record.fields.is_empty() %}
 {% for field in record.fields %}                {{ field.read }}{% if !loop.last %},{% endif %}
 {% endfor %}            {% endif %});
