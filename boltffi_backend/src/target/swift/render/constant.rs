@@ -141,7 +141,7 @@ impl Constant {
         let body = match declaration.value() {
             ConstantValueDecl::Inline { ty, value, .. } => Body::Inline {
                 ty: SwiftType::type_ref(ty, context)?,
-                value: DefaultExpression::render(ty, value)?,
+                value: DefaultExpression::render(ty, value, context)?,
             },
             ConstantValueDecl::Accessor { symbol, callable } => {
                 Self::accessor_body(symbol, callable, bridge, context, body_prefix)?

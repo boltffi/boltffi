@@ -127,6 +127,11 @@ fn kotlin_target_renders_custom_types_through_representations() {
 }
 
 #[test]
+fn kotlin_target_renders_custom_type_defaults_through_representations() {
+    insta::assert_snapshot!(rendered_fixture("records/custom_type_default"));
+}
+
+#[test]
 fn kotlin_target_renders_custom_type_mappings() {
     let host = KotlinHost::new("com.boltffi.demo", "Demo")
         .expect("Kotlin host")

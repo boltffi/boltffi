@@ -531,6 +531,11 @@ fn swift_target_renders_custom_types_through_representations() {
 }
 
 #[test]
+fn swift_target_renders_custom_type_defaults_through_representations() {
+    insta::assert_snapshot!(rendered_fixture("records/custom_type_default"));
+}
+
+#[test]
 fn swift_target_renders_string_custom_types_through_representations() {
     insta::assert_snapshot!(rendered_fixture("exports/custom_string_type_functions"));
 }

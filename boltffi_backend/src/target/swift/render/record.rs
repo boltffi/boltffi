@@ -258,7 +258,7 @@ impl Record {
                 .fields()
                 .iter()
                 .zip(c_record.fields())
-                .map(|(field, c_field)| Field::from_direct(field, c_field.name()))
+                .map(|(field, c_field)| Field::from_direct(field, c_field.name(), context))
                 .collect::<Result<Vec<_>>>()?,
             constants: AssociatedConstants::from_owner(
                 ConstantOwner::Record(record.id()),
@@ -360,7 +360,11 @@ impl RecordBody {
 }
 
 impl Field {
-    fn from_direct(field: &DirectFieldDecl, c_name: &str) -> Result<Self> {
+    fn from_direct(
+        field: &DirectFieldDecl,
+        c_name: &str,
+        context: &RenderContext<Native>,
+    ) -> Result<Self> {
         let name = Self::field_name(field.key())?;
         let primitive = SwiftPrimitive::new(field.ty().primitive());
         Ok(Self {
@@ -371,7 +375,11 @@ impl Field {
                 .meta()
                 .default()
                 .map(|default| {
-                    DefaultExpression::render(&TypeRef::Primitive(field.ty().primitive()), default)
+                    DefaultExpression::render(
+                        &TypeRef::Primitive(field.ty().primitive()),
+                        default,
+                        context,
+                    )
                 })
                 .transpose()?,
             body: FieldBody::Direct {
@@ -416,7 +424,7 @@ impl Field {
                 default: field
                     .meta()
                     .default()
-                    .map(|default| DefaultExpression::render(field.ty(), default))
+                    .map(|default| DefaultExpression::render(field.ty(), default, context))
                     .transpose()?,
                 body: FieldBody::Encoded {
                     read,

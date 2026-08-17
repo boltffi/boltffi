@@ -1,18 +1,31 @@
-use boltffi_binding::{DefaultValue, FloatValue, Primitive, TypeRef};
+use boltffi_binding::{
+    CustomTypeId, DefaultValue, FieldKey, FloatValue, Native, Primitive, TypeRef,
+};
 
 use crate::{
-    core::Result,
+    core::{
+        RenderContext, Result,
+        default_value::{Field as RepresentationField, Representation},
+    },
     target::swift::{
         SwiftHost,
         name_style::Name,
-        syntax::{ArgumentList, Expression, Literal},
+        syntax::{ArgumentList, Expression, Identifier, Literal},
     },
 };
 
 pub struct DefaultExpression;
 
 impl DefaultExpression {
-    pub fn render(ty: &TypeRef, value: &DefaultValue) -> Result<Expression> {
+    pub fn render(
+        ty: &TypeRef,
+        value: &DefaultValue,
+        context: &RenderContext<Native>,
+    ) -> Result<Expression> {
+        if let TypeRef::Custom(custom_type) = ty {
+            return Self::custom(*custom_type, value, context);
+        }
+
         match value {
             DefaultValue::Bool(value) => Ok(Expression::literal(Literal::bool(*value))),
             DefaultValue::Integer(value) => Self::integer(ty, value.get()),
@@ -27,6 +40,39 @@ impl DefaultExpression {
             )),
             DefaultValue::Null => Ok(Expression::literal(Literal::nil())),
             _ => Err(SwiftHost::unsupported("unknown default literal")),
+        }
+    }
+
+    fn custom(
+        custom_type: CustomTypeId,
+        value: &DefaultValue,
+        context: &RenderContext<Native>,
+    ) -> Result<Expression> {
+        match Representation::resolve(custom_type, context)? {
+            Representation::Transparent(representation) => {
+                Self::render(representation, value, context)
+            }
+            Representation::Record(record) => {
+                let value = match record.field() {
+                    RepresentationField::Direct(field) => {
+                        Self::render(&TypeRef::Primitive(field.ty().primitive()), value, context)?
+                    }
+                    RepresentationField::Encoded(field) => {
+                        Self::render(field.ty(), value, context)?
+                    }
+                };
+                let label = match record.field().key() {
+                    FieldKey::Named(name) => Name::new(name).field()?,
+                    FieldKey::Position(position) => Identifier::parse(format!("field{position}"))?,
+                    _ => return Err(SwiftHost::unsupported("custom type default field name")),
+                };
+                Ok(Expression::call(
+                    Name::new(record.name()).type_name(),
+                    [Expression::labeled(label, value)]
+                        .into_iter()
+                        .collect::<ArgumentList>(),
+                ))
+            }
         }
     }
 

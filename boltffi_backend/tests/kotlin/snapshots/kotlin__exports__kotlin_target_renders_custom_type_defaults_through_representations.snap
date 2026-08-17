@@ -1,0 +1,102 @@
+---
+source: boltffi_backend/tests/kotlin/exports.rs
+expression: "rendered_fixture(\"records/custom_type_default\")"
+---
+===== com/boltffi/demo/Demo.kt =====
+@file:OptIn(kotlin.ExperimentalUnsignedTypes::class)
+
+package com.boltffi.demo
+
+typealias Length = LengthFFI
+
+
+data class LengthFFI(
+    val meters: Double
+) {
+    internal fun wireSize(): Int {
+        return 8
+    }
+
+    internal fun writeTo(writer: WireWriter) {
+        writer.writeF64(meters)
+    }
+    internal fun toByteArray(): ByteArray {
+        val buffer = java.nio.ByteBuffer
+            .allocate(STRUCT_SIZE)
+            .order(java.nio.ByteOrder.nativeOrder())
+        writeTo(buffer, 0)
+        return buffer.array()
+    }
+
+    internal fun toDirectBuffer(): java.nio.ByteBuffer {
+        val buffer = java.nio.ByteBuffer
+            .allocateDirect(STRUCT_SIZE)
+            .order(java.nio.ByteOrder.nativeOrder())
+        writeTo(buffer, 0)
+        return buffer
+    }
+
+    internal fun writeTo(buffer: java.nio.ByteBuffer, offset: Int) {
+        buffer.putDouble(offset, meters)
+    }
+
+    companion object {
+        internal const val STRUCT_SIZE: Int = 8
+        internal fun fromReader(reader: WireReader): LengthFFI {
+            return LengthFFI(
+                reader.readF64()
+            )
+        }
+
+        internal fun fromByteArray(bytes: ByteArray): LengthFFI {
+            require(bytes.size == STRUCT_SIZE)
+            val buffer = java.nio.ByteBuffer
+                .wrap(bytes)
+                .order(java.nio.ByteOrder.nativeOrder())
+            return fromBuffer(buffer, 0)
+        }
+
+        internal fun fromBuffer(buffer: java.nio.ByteBuffer, offset: Int): LengthFFI {
+            return LengthFFI(
+                buffer.getDouble(offset)
+            )
+        }
+    }
+}
+
+
+data class DeviationConfig(
+    val maxRejoinDistance: LengthFFI = LengthFFI(1500.0)
+) {
+    internal fun wireSize(): Int {
+        return this.maxRejoinDistance.wireSize()
+    }
+
+    internal fun writeTo(writer: WireWriter) {
+        this.maxRejoinDistance.writeTo(writer)
+    }
+
+    internal fun toByteArray(): ByteArray {
+        val buffer = WireWriterPool.acquire(wireSize())
+        val writer = buffer.writer
+        try {
+            writeTo(writer)
+            return buffer.bytes()
+        } finally {
+            buffer.close()
+        }
+    }
+
+    companion object {
+        internal fun fromReader(reader: WireReader): DeviationConfig {
+            return DeviationConfig(
+                LengthFFI.fromReader(reader)
+            )
+        }
+
+        internal fun fromByteArray(bytes: ByteArray): DeviationConfig {
+            val reader = WireReader(bytes)
+            return fromReader(reader)
+        }
+    }
+}
