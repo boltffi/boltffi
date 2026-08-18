@@ -104,6 +104,35 @@ impl ActiveCfg {
             .into_iter()
             .filter_map(|(active, variant)| active.then_some(variant))
             .collect();
+        item.variants
+            .iter_mut()
+            .try_for_each(|variant| self.retain_active_fields(&mut variant.fields))?;
+        Ok(())
+    }
+
+    pub(crate) fn retain_active_struct_fields(
+        &self,
+        item: &mut syn::ItemStruct,
+    ) -> Result<(), ScanError> {
+        self.retain_active_fields(&mut item.fields)
+    }
+
+    fn retain_active_fields(&self, fields: &mut syn::Fields) -> Result<(), ScanError> {
+        let fields = match fields {
+            syn::Fields::Named(fields) => &mut fields.named,
+            syn::Fields::Unnamed(fields) => &mut fields.unnamed,
+            syn::Fields::Unit => return Ok(()),
+        };
+        *fields = std::mem::take(fields)
+            .into_iter()
+            .map(|field| {
+                self.matches_attrs(&field.attrs)
+                    .map(|active| (active, field))
+            })
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .filter_map(|(active, field)| active.then_some(field))
+            .collect();
         Ok(())
     }
 

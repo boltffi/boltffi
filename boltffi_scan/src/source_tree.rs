@@ -114,6 +114,9 @@ fn walk(
             if let syn::Item::Enum(item_enum) = &mut item {
                 cfg.retain_active_enum_variants(item_enum)?;
             }
+            if let syn::Item::Struct(item_struct) = &mut item {
+                cfg.retain_active_struct_fields(item_struct)?;
+            }
             match item {
                 syn::Item::Mod(item_mod) => {
                     child_modules.extend(descend(
@@ -506,5 +509,36 @@ mod tests {
 
         assert_eq!(variant_names(&inactive), vec!["Stable"]);
         assert_eq!(variant_names(&active), vec!["Experimental", "Stable"]);
+    }
+
+    #[test]
+    fn data_fields_follow_the_active_configuration() {
+        let source = "pub struct Position { latitude: f64, #[cfg(feature = \"experimental\")] altitude: f64 } \
+                      pub enum Event { Position { latitude: f64, #[cfg(feature = \"experimental\")] altitude: f64 } }";
+        let inactive = SourceTree::in_memory("demo", parse_items(source))
+            .expect("inactive data fields are removed");
+        let active = SourceTree::in_memory_with_cfg(
+            "demo",
+            parse_items(source),
+            &ActiveCfg::default().with_feature("experimental"),
+        )
+        .expect("active data fields are retained");
+        let field_counts = |tree: &SourceTree| {
+            tree.modules()
+                .iter()
+                .flat_map(SourceModule::items)
+                .filter_map(|item| match item {
+                    syn::Item::Struct(record) => Some(record.fields.len()),
+                    syn::Item::Enum(enumeration) => enumeration
+                        .variants
+                        .first()
+                        .map(|variant| variant.fields.len()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+
+        assert_eq!(field_counts(&inactive), vec![1, 1]);
+        assert_eq!(field_counts(&active), vec![2, 2]);
     }
 }
