@@ -57,3 +57,19 @@ pub fn reverse_bytes(data: Vec<u8>) -> Vec<u8> {
 pub fn generate_bytes(size: i32) -> Vec<u8> {
     vec![42u8; size.max(0) as usize]
 }
+
+/// Returns a buffer whose capacity overshoots its length.
+///
+/// `generate_bytes` hands back a `Vec` the allocator sized exactly, which is
+/// the shape almost nothing real produces. A decompressor, a serializer, any
+/// loop that pushes without knowing the final count — all of them land on a
+/// capacity the growth curve picked, not the one the payload needs. That is
+/// the case the packed return has to handle without copying.
+#[export]
+#[benchmark_candidate(function, uniffi, wasm_bindgen)]
+pub fn generate_bytes_overallocated(size: i32) -> Vec<u8> {
+    let size = size.max(0) as usize;
+    let mut out = Vec::with_capacity(size + size / 8 + 64);
+    out.resize(size, 42u8);
+    out
+}

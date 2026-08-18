@@ -165,6 +165,23 @@ impl FfiBuf {
             return ((len as u64) << 32) | (ptr as u64);
         }
 
+        if self.align == 1 {
+            // The host frees this with `Vec::from_raw_parts(ptr, len, len)`, so
+            // a capacity above the length has to go before the pointer can
+            // cross. `shrink_to_fit` asks the allocator to split the block in
+            // place; dlmalloc does that without touching the payload, which is
+            // the whole point of trying it before falling back to a copy.
+            let mut bytes = unsafe { self.into_vec::<u8>() };
+            bytes.shrink_to_fit();
+            if bytes.capacity() == len {
+                let mut bytes = ManuallyDrop::new(bytes);
+                return ((len as u64) << 32) | (bytes.as_mut_ptr() as u64);
+            }
+            let boxed = bytes.into_boxed_slice();
+            let ptr = Box::into_raw(boxed) as *mut u8;
+            return ((len as u64) << 32) | (ptr as u64);
+        }
+
         let bytes = unsafe { self.as_byte_slice() }.to_vec().into_boxed_slice();
         drop(self);
         let ptr = Box::into_raw(bytes) as *mut u8;

@@ -16,4 +16,18 @@ export async function run() {
   if (demo.bytesSum(Uint8Array.from([1, 2, 3, 4])) !== 10) {
     throw new Error("bytesSum returned incorrect sum");
   }
+
+  // A returned buffer whose capacity exceeds its length takes a different path
+  // out of the module: the capacity has to go before the pointer can cross,
+  // and shrinking it in place must not disturb the payload.
+  const overallocated = demo.generateBytesOverallocated(1000);
+  if (overallocated.length !== 1000) {
+    throw new Error(
+      `generateBytesOverallocated returned ${overallocated.length} bytes, expected 1000`,
+    );
+  }
+  if (!overallocated.every((byte) => byte === 42)) {
+    throw new Error("generateBytesOverallocated returned a corrupted payload");
+  }
+  assertArrayEqual(demo.generateBytesOverallocated(0), []);
 }
