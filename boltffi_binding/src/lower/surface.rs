@@ -89,6 +89,19 @@ pub trait SurfaceLower:
         crate::CodecNode::Bytes
     }
 
+    /// Whether a `&mut [u8]` parameter crosses as a direct vector.
+    ///
+    /// Native surfaces keep it on byte-buffer transport, where the wrapper
+    /// hands the callee a raw `*mut u8` and the host reads its own buffer back
+    /// afterwards — nothing to copy, nothing to decode. Wasm32 has no such
+    /// path: its byte-buffer decode builds a `Vec` the wrapper owns, so
+    /// everything the callee wrote would be dropped with it. Direct-vector
+    /// transport carries the pointer unframed and copies back, which is the
+    /// shape that works there.
+    fn writable_byte_slice_is_direct_vector() -> bool {
+        false
+    }
+
     #[doc(hidden)]
     fn direct_record_return_slot() -> ReturnValueSlot;
 
@@ -223,6 +236,10 @@ impl SurfaceLower for Wasm32 {
 
     fn root_bytes_return_codec() -> crate::CodecNode {
         crate::CodecNode::RawBytes
+    }
+
+    fn writable_byte_slice_is_direct_vector() -> bool {
+        true
     }
 
     fn direct_record_return_slot() -> ReturnValueSlot {

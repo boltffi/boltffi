@@ -203,6 +203,13 @@ mod tests {
                 pub fn echo_vec_bool(value: Vec<bool>) -> Vec<bool> { value }
 
                 #[export]
+                pub fn fill_bytes(value: &mut [u8]) {
+                    for byte in value.iter_mut() {
+                        *byte = 7;
+                    }
+                }
+
+                #[export]
                 pub fn increment_u64(value: &mut [u64]) {
                     if let Some(first) = value.first_mut() {
                         *first += 1;
@@ -805,6 +812,25 @@ mod tests {
         assert!(browser.contents().contains(
             "return _module.takePackedBytes((_exports.boltffi_function_demo_echo_bytes as Function)(__boltffi_value_allocation.ptr, __boltffi_value_allocation.len) as bigint);"
         ));
+        // A writable byte slice crosses as a direct vector: the pointer goes
+        // unframed and the host copies back what the callee wrote. Framing it
+        // as a byte buffer would decode into a `Vec` the wrapper owns, and
+        // every write would be dropped with it.
+        assert!(
+            browser
+                .contents()
+                .contains("const __boltffi_value_allocation = _module.allocU8Array(value);")
+        );
+        assert!(browser.contents().contains(
+            "_module.copyPrimitiveBufferInto(__boltffi_value_allocation, value, \"u8\");"
+        ));
+        // The free cannot be skipped when the copy back throws, so it sits in a
+        // `finally` of its own rather than after the copy in the same block.
+        assert!(
+            browser
+                .contents()
+                .contains("_module.freePrimitiveBuffer(__boltffi_value_allocation);")
+        );
         assert!(browser.contents().contains(
             "export function echoVecI32(value: readonly number[] | Int32Array): Int32Array"
         ));

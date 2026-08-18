@@ -164,6 +164,18 @@ impl DirectVectorPrimitive {
         }
     }
 
+    /// The `u8` direct-vector primitive, for a slice the callee writes into.
+    ///
+    /// Byte-buffer transport is the right carrier for every other shape of
+    /// bytes, and it is why [`Self::new`] rejects `u8`. But it has no way to
+    /// return what the callee wrote: the payload is decoded into a buffer the
+    /// callee owns, and a `&mut [u8]` pointing at that buffer is dropped when
+    /// the call ends. Direct-vector transport passes the pointer through and
+    /// copies back, which is what a writable slice needs.
+    pub const fn writable_bytes() -> Self {
+        Self(Primitive::U8)
+    }
+
     /// Returns the scalar primitive.
     pub const fn primitive(self) -> Primitive {
         self.0
@@ -184,8 +196,12 @@ impl<'de> Deserialize<'de> for DirectVectorPrimitive {
     where
         D: Deserializer<'de>,
     {
-        let primitive = Primitive::deserialize(deserializer)?;
-        Self::new(primitive).ok_or_else(|| de::Error::custom("u8 uses byte-buffer transport"))
+        // `u8` is admitted here even though [`Self::new`] rejects it, because
+        // [`Self::writable_bytes`] mints one for `&mut [u8]` and metadata has
+        // to round-trip what lowering produced. The invariant that byte
+        // buffers do not take this transport is enforced at the one place that
+        // decides it, not at the decoder.
+        Ok(Self(Primitive::deserialize(deserializer)?))
     }
 }
 

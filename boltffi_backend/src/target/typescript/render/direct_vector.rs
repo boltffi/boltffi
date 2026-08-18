@@ -28,6 +28,9 @@ struct RecordVector {
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum PrimitiveVector {
     Bool,
+    /// Only reachable from `&mut [u8]`. Every other shape of bytes crosses as
+    /// a byte buffer, which cannot carry the callee's writes back.
+    U8,
     I8,
     I16,
     U16,
@@ -297,7 +300,7 @@ impl PrimitiveVector {
             Primitive::U64 => Self::U64,
             Primitive::F32 => Self::F32,
             Primitive::F64 => Self::F64,
-            Primitive::U8 => return DirectVector::unsupported("u8 direct vector"),
+            Primitive::U8 => Self::U8,
             _ => return DirectVector::unsupported("unknown direct vector primitive"),
         })
     }
@@ -305,6 +308,7 @@ impl PrimitiveVector {
     fn primitive(self) -> Primitive {
         match self {
             Self::Bool => Primitive::Bool,
+            Self::U8 => Primitive::U8,
             Self::I8 => Primitive::I8,
             Self::I16 => Primitive::I16,
             Self::U16 => Primitive::U16,
@@ -320,6 +324,7 @@ impl PrimitiveVector {
     fn typed_array(self) -> TypeName {
         TypeName::named(match self {
             Self::Bool => "Uint8Array",
+            Self::U8 => "Uint8Array",
             Self::I8 => "Int8Array",
             Self::I16 => "Int16Array",
             Self::U16 => "Uint16Array",
@@ -335,6 +340,7 @@ impl PrimitiveVector {
     fn allocation_method(self) -> &'static str {
         match self {
             Self::Bool => "allocBoolArray",
+            Self::U8 => "allocU8Array",
             Self::I8 => "allocI8Array",
             Self::I16 => "allocI16Array",
             Self::U16 => "allocU16Array",
@@ -350,6 +356,7 @@ impl PrimitiveVector {
     fn take_method(self) -> &'static str {
         match self {
             Self::Bool => "takeSlotBoolArray",
+            Self::U8 => "takeSlotU8Array",
             Self::I8 => "takeSlotI8Array",
             Self::I16 => "takeSlotI16Array",
             Self::U16 => "takeSlotU16Array",
@@ -365,6 +372,7 @@ impl PrimitiveVector {
     fn borrow_method(self) -> &'static str {
         match self {
             Self::Bool => "borrowBoolArray",
+            Self::U8 => "borrowU8Array",
             Self::I8 => "borrowI8Array",
             Self::I16 => "borrowI16Array",
             Self::U16 => "borrowU16Array",
@@ -379,7 +387,7 @@ impl PrimitiveVector {
 
     const fn alignment(self) -> usize {
         match self {
-            Self::Bool | Self::I8 => 1,
+            Self::Bool | Self::U8 | Self::I8 => 1,
             Self::I16 | Self::U16 => 2,
             Self::I32 | Self::U32 | Self::F32 => 4,
             Self::I64 | Self::U64 | Self::F64 => 8,
@@ -389,6 +397,7 @@ impl PrimitiveVector {
     fn element_name(self) -> &'static str {
         match self {
             Self::Bool => "bool",
+            Self::U8 => "u8",
             Self::I8 => "i8",
             Self::I16 => "i16",
             Self::U16 => "u16",

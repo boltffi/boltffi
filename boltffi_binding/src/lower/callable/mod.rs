@@ -65,8 +65,9 @@ use std::any::TypeId;
 
 use crate::{
     ClosureForm, ClosureParameter, ClosureRegistration, ClosureReturn, ClosureSignature,
-    DirectVectorElementType, Direction, ExecutionDecl, ExportedCallable, ForeignBody,
-    HandlePresence, ImportedCallable, IntoRust, OutOfRust, Primitive, Receive, RustBody, TypeRef,
+    DirectVectorElementType, DirectVectorPrimitive, Direction, ExecutionDecl, ExportedCallable,
+    ForeignBody, HandlePresence, ImportedCallable, IntoRust, OutOfRust, Primitive, Receive,
+    RustBody, TypeRef,
 };
 
 use super::{
@@ -201,6 +202,18 @@ impl ValueSpecialization {
             (TypeExpr::Vec(inner), Receive::ByValue) => {
                 Self::direct_vector_element(index, ids, inner)
                     .map(|element| element.map(Self::DirectVector))
+            }
+            // A writable byte slice cannot go through byte-buffer transport:
+            // that decodes the payload into a buffer the callee owns, so
+            // whatever the callee writes is dropped with it. Direct-vector
+            // transport passes the pointer and copies back.
+            (TypeExpr::Slice(inner), Receive::ByMutRef)
+                if S::writable_byte_slice_is_direct_vector()
+                    && Self::primitive(inner) == Some(Primitive::U8) =>
+            {
+                Ok(Some(Self::DirectVector(
+                    DirectVectorElementType::Primitive(DirectVectorPrimitive::writable_bytes()),
+                )))
             }
             (TypeExpr::Slice(inner), Receive::ByRef | Receive::ByMutRef) => {
                 Ok(Self::primitive(inner)

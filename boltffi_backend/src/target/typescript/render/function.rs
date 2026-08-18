@@ -1136,27 +1136,33 @@ impl Parameter {
         let allocation = Identifier::parse(format!("__boltffi_{name}_allocation"))?;
         let allocation_value = Expression::identifier(allocation.clone());
         let value = Expression::identifier(name.clone());
-        let mut cleanup = match vector.writeback() {
-            true => vec![Statement::expression(Expression::call(
-                Expression::identifier(Identifier::known("_module")),
-                Identifier::known("copyPrimitiveBufferInto"),
-                [
-                    allocation_value.clone(),
-                    value.clone(),
-                    Expression::string(vector.element_literal()),
-                ]
-                .into_iter()
-                .collect::<ArgumentList>(),
-            ))],
-            false => Vec::new(),
-        };
-        cleanup.push(Statement::expression(Expression::call(
+        let free = Statement::expression(Expression::call(
             Expression::identifier(Identifier::known("_module")),
             vector.free_method(),
             [allocation_value.clone()]
                 .into_iter()
                 .collect::<ArgumentList>(),
-        )));
+        ));
+        // The copy back can throw — a destination view detaches if the callee
+        // grew linear memory — and a throw there must not take the free with
+        // it, so the free gets a `finally` of its own.
+        let cleanup = match vector.writeback() {
+            true => vec![Statement::try_finally(
+                vec![Statement::expression(Expression::call(
+                    Expression::identifier(Identifier::known("_module")),
+                    Identifier::known("copyPrimitiveBufferInto"),
+                    [
+                        allocation_value.clone(),
+                        value.clone(),
+                        Expression::string(vector.element_literal()),
+                    ]
+                    .into_iter()
+                    .collect::<ArgumentList>(),
+                ))],
+                vec![free],
+            )],
+            false => vec![free],
+        };
         Ok(Self {
             ty: vector.parameter_type()?,
             setup: vec![Statement::constant(

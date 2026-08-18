@@ -5424,8 +5424,16 @@ mod tests {
         assert!(tokens.contains("__boltffi_right_ptr"), "{tokens}");
     }
 
+    /// A `&mut [u8]` parameter borrows the host's buffer in place.
+    ///
+    /// This used to decode the payload into a `Vec<u8>` the wrapper owned and
+    /// hand the callee `as_mut_slice()` of it — so everything the callee wrote
+    /// was dropped when the wrapper returned, with no error anywhere. Byte
+    /// buffers have no way to carry writes back, which is why a writable slice
+    /// takes direct-vector transport instead: the pointer crosses unframed and
+    /// the host copies back from the same buffer it passed in.
     #[test]
-    fn wasm_mutable_bytes_param_expansion_decodes_mut_slice_ref() {
+    fn wasm_mutable_bytes_param_expansion_borrows_the_host_buffer() {
         let source = mutable_bytes_param_contract();
         let lowered = lower_with_declarations::<Wasm32>(&source).expect("lowered bindings");
         let expansion = Expansion::new(&lowered);
@@ -5447,33 +5455,19 @@ mod tests {
                 #[cfg(target_arch = "wasm32")]
                 #[unsafe(no_mangle)]
                 pub unsafe extern "C" fn boltffi_function_demo_fill(
-                    __boltffi_bytes_ptr: *const u8,
+                    __boltffi_bytes_ptr: *mut u8,
                     __boltffi_bytes_len: usize
                 ) -> u32 {
-                    let mut __boltffi_bytes_storage: Vec<u8> = {
-                        if __boltffi_bytes_ptr.is_null() && __boltffi_bytes_len > 0 {
-                            ::boltffi::__private::set_last_error_len(stringify!(__boltffi_bytes_storage), "null pointer with non-zero length", __boltffi_bytes_len as usize);
-                            return <u32 as ::core::default::Default>::default();
-                        }
-                        let __boltffi_bytes: &[u8] = if __boltffi_bytes_len == 0 {
-                            &[]
-                        } else {
-                            unsafe {
-                                ::core::slice::from_raw_parts(
-                                    __boltffi_bytes_ptr,
-                                    __boltffi_bytes_len
-                                )
-                            }
-                        };
-                        match ::boltffi::__private::wire::decode::<Vec<u8> >(__boltffi_bytes) {
-                            Ok(value) => value,
-                            Err(error) => {
-                                ::boltffi::__private::set_last_error_display(stringify!(__boltffi_bytes_storage), "wire decode failed", &error, __boltffi_bytes_len as usize);
-                                return <u32 as ::core::default::Default>::default();
-                            }
+                    let bytes: &mut [u8] = if __boltffi_bytes_ptr.is_null() {
+                        &mut []
+                    } else {
+                        unsafe {
+                            ::core::slice::from_raw_parts_mut(
+                                __boltffi_bytes_ptr,
+                                __boltffi_bytes_len
+                            )
                         }
                     };
-                    let bytes = __boltffi_bytes_storage.as_mut_slice();
                     fill(bytes)
                 }
             }
