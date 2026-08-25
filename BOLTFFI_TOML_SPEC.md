@@ -498,6 +498,33 @@ Generates a binary-only SwiftPM package intended to be depended on by a separate
 - Generated Swift bindings are written to `{swift.output}/BoltFFIGenerated/{module_name}.swift` so you can include them in your wrapper target.
 ## Dart
 
+### `[targets.c]` (experimental, optional)
+
+The C host target is experimental. `boltffi generate c --experimental` (or
+listing `c` under `[experimental]`) writes an intermediate `boltffi.h`; use
+`boltffi pack c --experimental` to stage a consumer package.
+
+- `enabled` (bool): Whether C generation and packaging are active.
+  - Default: `false`
+- `output` (path): C output root.
+  - Default: `dist/c`
+  - `generate c` writes `{output}/boltffi.h`.
+  - `pack c` stages `{output}/include/<library>.h`, a host shared library, and
+    a static archive beneath `{output}/lib`.
+- The normal API is the package-prefixed ergonomic facade. Raw `boltffi_*`,
+  `Ffi*`, and `___*` declarations in the same header are bridge details.
+- The intended supported surface is synchronous free functions, direct
+  `#[repr(C)]` records, repr-integer C-style enums, constants, classes, and
+  sync callback traits. Streams, custom types, payload enums, async callbacks,
+  futures, encoded value shapes, and inline closures have no supported
+  ergonomic C representation.
+- C consumers require C11 or later. The public header is also checked in
+  C++03 mode and newer on GCC/Clang; its C++ atomics use compiler intrinsics
+  (and MSVC uses interlocked intrinsics).
+
+C packaging is currently host-oriented and Unix-validated. Cross-target and
+Windows artifact staging should not be relied on until separately validated.
+
 ### `[targets.dart]` (optional)
 - `enabled` (bool): Whether Dart generation and packaging are active.
   - Default: `false`
