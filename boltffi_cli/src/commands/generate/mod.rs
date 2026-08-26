@@ -562,10 +562,17 @@ package = "com.boltffi.demo"
         )
         .expect_err("strict KMP generation should reject unsupported demo APIs");
 
+        // The demo exposes several surfaces KMP cannot render. Which one trips
+        // first is incidental: a `#[data(opaque)]` record is refused during
+        // capability negotiation, before the renderer can report an incomplete
+        // declaration set. Both are fail-closed outcomes, so assert the failure
+        // rather than the mechanism that produced it.
         assert!(
-            matches!(error, crate::cli::CliError::CommandFailed { command, status: None }
+            matches!(&error, crate::cli::CliError::CommandFailed { command, status: None }
                 if command.contains("generate kmp: render bindings")
-                    && command.contains("did not render every declaration"))
+                    && (command.contains("did not render every declaration")
+                        || command.contains("does not support binding capability"))),
+            "{error:?}"
         );
 
         if output_directory.exists() {

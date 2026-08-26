@@ -84,7 +84,7 @@ fn jni_bridge_indexes_native_methods_by_source_symbol() {
         .source_method(function.symbol().id())
         .expect("JNI method for source symbol");
 
-    assert_eq!(method.source_symbol(), function.symbol().id());
+    assert_eq!(method.source_symbol(), Some(function.symbol().id()));
     assert_eq!(
         method.c_function().name(),
         function.symbol().name().as_str()

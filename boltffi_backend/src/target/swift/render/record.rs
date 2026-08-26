@@ -24,6 +24,24 @@ use crate::{
     },
 };
 
+/// Template context for a native opaque record field accessor.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NativeOpaqueField {
+    pub(crate) documentation: Documentation,
+    pub(crate) name: Identifier,
+    pub(crate) ty: TypeName,
+    pub(crate) optional: bool,
+    pub(crate) has_fn: Option<Identifier>,
+    pub(crate) access: NativeOpaqueFieldAccess,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum NativeOpaqueFieldAccess {
+    Primitive { get_fn: Identifier },
+    String { borrow_fn: Identifier },
+    Bytes { borrow_fn: Identifier },
+}
+
 #[derive(Template)]
 #[template(path = "target/swift/record.swift", escape = "none")]
 struct RecordTemplate<'a> {
@@ -61,6 +79,10 @@ enum RecordBody {
         codec_payload: bool,
     },
     Encoded,
+    NativeOpaque {
+        drop: Identifier,
+        opaque_fields: Vec<NativeOpaqueField>,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -84,6 +106,9 @@ impl Record {
     ) -> Result<Self> {
         match declaration {
             RecordDecl::Direct(record) => Self::from_direct(record, bridge, context),
+            RecordDecl::Encoded(record) if record.is_native_opaque() => {
+                Self::from_native_opaque(record, bridge, context)
+            }
             RecordDecl::Encoded(record) => Self::from_encoded(record, bridge, context),
             _ => Err(SwiftHost::unsupported("unknown record declaration")),
         }
@@ -108,6 +133,24 @@ impl Record {
         Ok(emitted)
     }
 
+    fn is_native_opaque(&self) -> bool {
+        matches!(self.body, RecordBody::NativeOpaque { .. })
+    }
+
+    fn native_opaque_drop(&self) -> &Identifier {
+        match &self.body {
+            RecordBody::NativeOpaque { drop, .. } => drop,
+            _ => unreachable!(),
+        }
+    }
+
+    fn opaque_fields(&self) -> &[NativeOpaqueField] {
+        match &self.body {
+            RecordBody::NativeOpaque { opaque_fields, .. } => opaque_fields,
+            _ => &[],
+        }
+    }
+
     fn name(&self) -> &TypeName {
         &self.name
     }
@@ -130,7 +173,7 @@ impl Record {
     fn c_type(&self) -> &TypeName {
         match &self.body {
             RecordBody::Direct { c_type, .. } => c_type,
-            RecordBody::Encoded => unreachable!(),
+            RecordBody::Encoded | RecordBody::NativeOpaque { .. } => unreachable!(),
         }
     }
 
@@ -183,17 +226,18 @@ impl Record {
     }
 
     fn requires_wire_runtime(&self) -> bool {
-        self.body.requires_wire_runtime()
-            || self.constants.requires_wire_runtime()
-            || self
-                .initializers
-                .iter()
-                .any(Initializer::requires_wire_runtime)
-            || self
-                .static_methods
-                .iter()
-                .chain(self.instance_methods.iter())
-                .any(AssociatedFunction::requires_wire_runtime)
+        !self.is_native_opaque()
+            && (self.body.requires_wire_runtime()
+                || self.constants.requires_wire_runtime()
+                || self
+                    .initializers
+                    .iter()
+                    .any(Initializer::requires_wire_runtime)
+                || self
+                    .static_methods
+                    .iter()
+                    .chain(self.instance_methods.iter())
+                    .any(AssociatedFunction::requires_wire_runtime))
     }
 
     fn requires_async_runtime(&self) -> bool {
@@ -201,6 +245,47 @@ impl Record {
             .iter()
             .chain(self.instance_methods.iter())
             .any(AssociatedFunction::requires_async_runtime)
+    }
+
+    fn from_native_opaque(
+        record: &EncodedRecordDecl<Native>,
+        bridge: &CBridgeContract,
+        context: &RenderContext<Native>,
+    ) -> Result<Self> {
+        let exports = record
+            .native_opaque_exports()
+            .ok_or(Error::BrokenBridgeContract {
+                bridge: SwiftHost::TARGET,
+                invariant: "native opaque record missing helper exports",
+            })?;
+        let drop = Identifier::parse(exports.drop().name().as_str())?;
+        let opaque_fields = record
+            .fields()
+            .iter()
+            .zip(exports.fields())
+            .map(|(field, fexp)| NativeOpaqueField::from_field(field, fexp))
+            .collect::<Result<Vec<_>>>()?;
+        Ok(Self {
+            documentation: Documentation::new(record.meta().doc(), ""),
+            name: Name::new(record.name()).type_name(),
+            conforms_to_error: false,
+            body: RecordBody::NativeOpaque {
+                drop,
+                opaque_fields,
+            },
+            fields: Vec::new(),
+            // Associated constants stay valid on an opaque record: they are
+            // compile-time values on the type, not reads through the handle.
+            constants: AssociatedConstants::from_owner(
+                ConstantOwner::Record(record.id()),
+                bridge,
+                context,
+            )?,
+            initializers: Vec::new(),
+            static_methods: Vec::new(),
+            instance_methods: Vec::new(),
+            diagnostics: Vec::new(),
+        })
     }
 
     fn from_direct(
@@ -355,6 +440,7 @@ impl RecordBody {
         match self {
             Self::Direct { codec_payload, .. } => *codec_payload,
             Self::Encoded => true,
+            Self::NativeOpaque { .. } => false,
         }
     }
 }
@@ -498,5 +584,163 @@ impl Field {
             FieldKey::Position(position) => Identifier::parse(format!("field{position}")),
             _ => Err(SwiftHost::unsupported("unknown record field key")),
         }
+    }
+}
+
+impl NativeOpaqueField {
+    pub fn name(&self) -> &Identifier {
+        &self.name
+    }
+
+    pub fn ty(&self) -> &TypeName {
+        &self.ty
+    }
+
+    pub fn documentation(&self) -> &Documentation {
+        &self.documentation
+    }
+
+    pub fn is_primitive(&self) -> bool {
+        matches!(self.access, NativeOpaqueFieldAccess::Primitive { .. })
+    }
+
+    pub fn is_string(&self) -> bool {
+        matches!(self.access, NativeOpaqueFieldAccess::String { .. })
+    }
+
+    #[allow(dead_code)]
+    pub fn is_bytes(&self) -> bool {
+        matches!(self.access, NativeOpaqueFieldAccess::Bytes { .. })
+    }
+
+    pub fn optional(&self) -> bool {
+        self.optional
+    }
+
+    pub fn has_fn(&self) -> Option<&Identifier> {
+        self.has_fn.as_ref()
+    }
+
+    pub fn get_fn(&self) -> Option<&Identifier> {
+        match &self.access {
+            NativeOpaqueFieldAccess::Primitive { get_fn } => Some(get_fn),
+            _ => None,
+        }
+    }
+
+    pub fn borrow_fn(&self) -> Option<&Identifier> {
+        match &self.access {
+            NativeOpaqueFieldAccess::String { borrow_fn }
+            | NativeOpaqueFieldAccess::Bytes { borrow_fn } => Some(borrow_fn),
+            _ => None,
+        }
+    }
+
+    fn from_field(
+        field: &boltffi_binding::EncodedFieldDecl,
+        exports: &boltffi_binding::NativeOpaqueFieldExports,
+    ) -> Result<Self> {
+        let key = field.key();
+        let name = match key {
+            FieldKey::Named(n) => Name::new(n).field()?,
+            _ => return Err(SwiftHost::unsupported("unnamed native opaque field")),
+        };
+        let (ty_inner, optional) = match field.ty() {
+            TypeRef::Optional(inner) => (inner.as_ref(), true),
+            ty => (ty, false),
+        };
+        let has_fn = if optional {
+            Some(Identifier::parse(
+                exports
+                    .has()
+                    .ok_or(Error::BrokenBridgeContract {
+                        bridge: SwiftHost::TARGET,
+                        invariant: "optional native opaque field without has export",
+                    })?
+                    .name()
+                    .as_str(),
+            )?)
+        } else {
+            None
+        };
+        let (ty, access) = match ty_inner {
+            TypeRef::Primitive(p) => {
+                let get_sym = exports
+                    .get()
+                    .ok_or(Error::BrokenBridgeContract {
+                        bridge: SwiftHost::TARGET,
+                        invariant: "primitive native opaque field without get export",
+                    })?
+                    .name()
+                    .as_str();
+                let swift_ty = SwiftPrimitive::new(*p).api_type()?;
+                let ty = if optional {
+                    swift_ty.optional()
+                } else {
+                    swift_ty
+                };
+                (
+                    ty,
+                    NativeOpaqueFieldAccess::Primitive {
+                        get_fn: Identifier::parse(get_sym)?,
+                    },
+                )
+            }
+            TypeRef::String => {
+                let borrow_sym = exports
+                    .borrow()
+                    .ok_or(Error::BrokenBridgeContract {
+                        bridge: SwiftHost::TARGET,
+                        invariant: "string native opaque field without borrow export",
+                    })?
+                    .name()
+                    .as_str();
+                let ty = if optional {
+                    TypeName::new("String").optional()
+                } else {
+                    TypeName::new("String")
+                };
+                (
+                    ty,
+                    NativeOpaqueFieldAccess::String {
+                        borrow_fn: Identifier::parse(borrow_sym)?,
+                    },
+                )
+            }
+            TypeRef::Bytes => {
+                let borrow_sym = exports
+                    .borrow()
+                    .ok_or(Error::BrokenBridgeContract {
+                        bridge: SwiftHost::TARGET,
+                        invariant: "bytes native opaque field without borrow export",
+                    })?
+                    .name()
+                    .as_str();
+                let ty = if optional {
+                    TypeName::new("Data").optional()
+                } else {
+                    TypeName::new("Data")
+                };
+                (
+                    ty,
+                    NativeOpaqueFieldAccess::Bytes {
+                        borrow_fn: Identifier::parse(borrow_sym)?,
+                    },
+                )
+            }
+            _ => {
+                return Err(SwiftHost::unsupported(
+                    "unsupported native opaque field type",
+                ));
+            }
+        };
+        Ok(Self {
+            documentation: Documentation::new(field.meta().doc(), "    "),
+            name,
+            ty,
+            optional,
+            has_fn,
+            access,
+        })
     }
 }

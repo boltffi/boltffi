@@ -53,6 +53,7 @@ mod layout;
 mod metadata;
 mod methods;
 mod names;
+mod opaque;
 mod primitive;
 mod records;
 mod streams;
@@ -275,6 +276,83 @@ mod tests {
                 codec: ReadPlan::new(CodecNode::Builtin(BuiltinType::Duration)),
                 shape: native::BufferShape::Buffer,
             }
+        );
+    }
+
+    /// Lowers a source snippet and returns the error a rejected shape produced.
+    fn lower_snippet_error(source: &str) -> crate::LowerError {
+        let scanned = boltffi_scan::scan_file(
+            syn::parse_str(source).expect("valid source"),
+            SourcePackage::new("demo", None),
+        )
+        .expect("source scans");
+        super::lower::<Native>(&scanned).expect_err("unsupported opaque shape must reject")
+    }
+
+    fn assert_unsupported(source: &str, expected: crate::UnsupportedType) {
+        let error = lower_snippet_error(source);
+        assert!(
+            matches!(
+                error.kind(),
+                crate::LowerErrorKind::UnsupportedType(kind) if *kind == expected
+            ),
+            "expected {expected:?}, got {error:?}"
+        );
+    }
+
+    const OPAQUE_RECORD: &str = r#"
+        #[data(opaque)]
+        pub struct Snapshot {
+            pub count: u32,
+        }
+    "#;
+
+    #[test]
+    fn opaque_record_parameter_is_rejected() {
+        assert_unsupported(
+            &format!(
+                "{OPAQUE_RECORD}\n#[export]\npub fn consume(snapshot: Snapshot) {{ let _ = snapshot; }}"
+            ),
+            crate::UnsupportedType::NativeOpaqueRecordParameter,
+        );
+    }
+
+    #[test]
+    fn opaque_record_constant_is_rejected() {
+        assert_unsupported(
+            &format!(
+                "{OPAQUE_RECORD}\n#[export]\npub const SNAPSHOT: Snapshot = Snapshot {{ count: 0 }};"
+            ),
+            crate::UnsupportedType::NativeOpaqueRecordConstant,
+        );
+    }
+
+    #[test]
+    fn opaque_record_stream_item_is_rejected() {
+        assert_unsupported(
+            &format!(
+                r#"{OPAQUE_RECORD}
+pub struct Events;
+
+#[export]
+impl Events {{
+    #[ffi_stream(item = Snapshot)]
+    pub fn subscribe(&self) -> std::sync::Arc<boltffi::EventSubscription<Snapshot>> {{
+        unimplemented!()
+    }}
+}}"#
+            ),
+            crate::UnsupportedType::NativeOpaqueRecordStreamItem,
+        );
+    }
+
+    #[test]
+    fn opaque_record_async_return_is_rejected() {
+        assert_unsupported(
+            &format!(
+                "{OPAQUE_RECORD}\n#[export]\npub async fn capture() -> Snapshot {{ unimplemented!() }}"
+            ),
+            crate::UnsupportedType::NativeOpaqueRecordAsync,
         );
     }
 }

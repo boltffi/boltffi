@@ -42,9 +42,10 @@ use crate::{CanonicalName, ConstantDecl, ConstantValueDecl, DefaultValue, Intege
 
 use super::{
     LowerError, callable,
+    error::UnsupportedType,
     ids::DeclarationIds,
     index::Index,
-    metadata,
+    metadata, opaque,
     surface::SurfaceLower,
     symbol::{SymbolAllocator, to_snake_case},
     types,
@@ -71,6 +72,14 @@ fn lower_one<S: SurfaceLower>(
     let constant_id = ids.constant(&constant.id)?;
     let owner = callable::CallableOwner::from_constant(index, constant.owner.as_ref())?;
     let type_expr = callable::substitute_self_type(owner, &constant.type_expr)?;
+    // A constant is read once and cached by the host. Handing back an owned
+    // Rust handle would create a live allocation nobody is responsible for
+    // releasing, so opaque records are rejected in constant position.
+    if opaque::contains(index, &type_expr) {
+        return Err(LowerError::unsupported_type(
+            UnsupportedType::NativeOpaqueRecordConstant,
+        ));
+    }
     let value = lower_value_decl::<S>(index, ids, allocator, owner, constant, &type_expr)?;
     let declaration = ConstantDecl::new(
         constant_id,

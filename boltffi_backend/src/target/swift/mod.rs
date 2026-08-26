@@ -154,6 +154,7 @@ impl host::HostBackend for SwiftHost {
             .stable(BindingCapability::Constants)
             .stable(BindingCapability::CustomTypes)
             .stable(BindingCapability::Callbacks)
+            .stable(BindingCapability::NativeOpaqueRecords)
     }
 
     fn bridge_capabilities(&self) -> CapabilityRequirements<BridgeCapability> {

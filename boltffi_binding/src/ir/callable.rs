@@ -11,8 +11,8 @@ use crate::{
     AsyncProtocolIntrospect, BindingError, BindingErrorKind, BufferShapeRules, BuiltinType,
     CallableScope, CanonicalName, ClosureRegistrationIntrospect, ClosureSignature, DeclarationId,
     DirectValueType, DirectVectorElementType, Direction, ElementMeta, ForeignBody, HandlePresence,
-    HandleTarget, IntegerRepr, IntoRust, NativeSymbol, OutOfRust, Primitive, RustBody, Surface,
-    TypeRef,
+    HandleTarget, IntegerRepr, IntoRust, NativeSymbol, OutOfRust, Primitive, RecordId, RustBody,
+    Surface, TypeRef,
 };
 
 /// One call shape ready to be turned into target code.
@@ -1299,6 +1299,16 @@ where
     /// (Win64) would otherwise force a hidden sret pointer on wide
     /// struct returns. No backend guessing, no platform split.
     ClosureViaOutPointer(ClosureReturn<S, D>),
+    /// Opaque native record returned as a `void *` boxed handle.
+    ///
+    /// The Rust function boxes the record in a `Box<Record>` and returns
+    /// it as a raw `*mut c_void`. Host code accesses fields through
+    /// generated per-field Rust accessor exports and releases the box
+    /// through the generated destructor.
+    NativeOpaqueRecord {
+        /// Declaration of the returned record.
+        record: RecordId,
+    },
 }
 
 /// Where a returned value is delivered in the native ABI.
@@ -1366,6 +1376,14 @@ where
 
     /// Renders a closure return.
     fn closure(&mut self, closure: &'plan ClosureReturn<S, D>) -> Self::Output;
+
+    /// Renders a native opaque record return (`void *` boxed handle).
+    #[allow(unused_variables)]
+    fn native_opaque_record(&mut self, record: RecordId) -> Self::Output {
+        unreachable!(
+            "native opaque records must be rejected by target capability checks before rendering"
+        )
+    }
 }
 
 impl<S: Surface, D: Direction> ReturnPlan<S, D>
@@ -1406,6 +1424,7 @@ where
                 presence,
             } => renderer.handle(ReturnValueSlot::OutPointer, target, *carrier, *presence),
             Self::ClosureViaOutPointer(closure) => renderer.closure(closure),
+            Self::NativeOpaqueRecord { record } => renderer.native_opaque_record(*record),
         }
     }
 
@@ -1420,7 +1439,8 @@ where
             | Self::DirectVecViaReturnSlot { .. }
             | Self::DirectViaOutPointer { .. }
             | Self::EncodedViaOutPointer { .. }
-            | Self::HandleViaOutPointer { .. } => Box::new(std::iter::empty()),
+            | Self::HandleViaOutPointer { .. }
+            | Self::NativeOpaqueRecord { .. } => Box::new(std::iter::empty()),
         }
     }
 
@@ -1432,6 +1452,7 @@ where
                 | Self::HandleViaReturnSlot { .. }
                 | Self::ScalarOptionViaReturnSlot { .. }
                 | Self::DirectVecViaReturnSlot { .. }
+                | Self::NativeOpaqueRecord { .. }
         )
     }
 
@@ -1493,6 +1514,9 @@ where
             Self::ClosureViaOutPointer(closure) => {
                 closure.append_referenced_declarations(references)
             }
+            Self::NativeOpaqueRecord { record } => {
+                references.insert(DeclarationId::Record(*record));
+            }
             Self::Void | Self::ScalarOptionViaReturnSlot { .. } => {}
         }
     }
@@ -1514,6 +1538,7 @@ where
                 direct_vector_references_declaration(element, declaration)
             }
             Self::ClosureViaOutPointer(closure) => closure.references_declaration(declaration),
+            Self::NativeOpaqueRecord { record } => declaration == DeclarationId::Record(*record),
             Self::Void | Self::ScalarOptionViaReturnSlot { .. } => false,
         }
     }

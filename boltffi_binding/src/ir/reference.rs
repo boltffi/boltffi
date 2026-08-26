@@ -676,6 +676,10 @@ impl<'plan, S: Surface> ReturnPlanRender<'plan, S, IntoRust> for DeclarationRefe
     fn closure(&mut self, closure: &'plan ClosureReturn<S, IntoRust>) {
         self.insert_imported_callable(closure.invoke());
     }
+
+    fn native_opaque_record(&mut self, record: RecordId) {
+        self.insert(DeclarationReference::record(record));
+    }
 }
 
 impl<'plan, S: Surface> ReturnPlanRender<'plan, S, OutOfRust> for DeclarationReferences {
@@ -716,6 +720,10 @@ impl<'plan, S: Surface> ReturnPlanRender<'plan, S, OutOfRust> for DeclarationRef
 
     fn closure(&mut self, closure: &'plan ClosureReturn<S, OutOfRust>) {
         self.insert_exported_callable(closure.invoke());
+    }
+
+    fn native_opaque_record(&mut self, record: RecordId) {
+        self.insert(DeclarationReference::record(record));
     }
 }
 

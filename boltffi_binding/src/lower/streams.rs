@@ -23,7 +23,7 @@ use super::{
     error::UnsupportedType,
     ids::DeclarationIds,
     index::Index,
-    layout, metadata, records,
+    layout, metadata, opaque, records,
     surface::SurfaceLower,
     symbol::{StreamLifecycle, SymbolAllocator},
     types,
@@ -73,6 +73,13 @@ fn lower_item<S: SurfaceLower>(
     type_expr: &TypeExpr,
 ) -> Result<StreamItemPlan<S>, LowerError> {
     validate_item_type(type_expr)?;
+    // Stream items are decoded from the wire on the host side, which a
+    // handle-only opaque record cannot support.
+    if opaque::contains(index, type_expr) {
+        return Err(LowerError::unsupported_type(
+            UnsupportedType::NativeOpaqueRecordStreamItem,
+        ));
+    }
     match type_expr {
         TypeExpr::Primitive(primitive) => {
             let size = BindingPrimitive::from(*primitive).byte_size::<S>();

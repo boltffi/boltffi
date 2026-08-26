@@ -51,7 +51,7 @@ pub use ids::{
 pub use literal::{ConstExpr, DefaultValue, FloatLiteral, IntegerLiteral, Literal};
 pub use name::{CanonicalName, GenericArgument, NamePart, Path, PathRoot, PathSegment, SourceName};
 pub use primitive::Primitive;
-pub use record::{FieldDef, RecordDef};
+pub use record::{FieldDef, RecordDef, RecordEncoding};
 pub use source::{Source, SourceFile, SourceSpan, Visibility};
 pub use stream::{StreamDef, StreamMode};
 pub use trait_def::TraitDef;

@@ -1,13 +1,14 @@
-use boltffi_ast::{RecordDef as SourceRecord, TypeExpr};
+use boltffi_ast::{RecordDef as SourceRecord, RecordEncoding, TypeExpr};
 
 use crate::{
     CanonicalName, DirectFieldDecl, DirectRecordDecl, EncodedFieldDecl, EncodedRecordDecl,
-    ExportedMethodDecl, FieldKey, InitializerDecl, NativeSymbol, RecordDecl, ValueRef,
+    EncodedRecordStorage, ExportedMethodDecl, FieldKey, InitializerDecl, NativeOpaqueFieldExports,
+    NativeOpaqueRecordExports, NativeSymbol, RecordDecl, TypeRef, ValueRef,
 };
 
 use super::{
     LowerError, codecs, error::UnsupportedType, ids::DeclarationIds, index::Index, layout,
-    metadata, methods, primitive, surface::SurfaceLower, symbol::SymbolAllocator, types,
+    metadata, methods, opaque, primitive, surface::SurfaceLower, symbol::SymbolAllocator, types,
 };
 
 /// Lowers every record in the source contract.
@@ -31,6 +32,21 @@ pub fn lower<S: SurfaceLower>(
         .collect()
 }
 
+/// Reports whether a source record is defined by the crate being generated.
+///
+/// Record ids are `<crate>::<path>::<Type>`, so the leading segment identifies the
+/// owning crate. Cargo package names may use dashes where the module path uses
+/// underscores, so both spellings are treated as equal.
+fn is_root_crate_record(index: &Index, record: &SourceRecord) -> bool {
+    let root = index.source().package.name.replace('-', "_");
+    record
+        .id
+        .as_str()
+        .split("::")
+        .next()
+        .is_some_and(|owner| owner.replace('-', "_") == root)
+}
+
 /// Reports whether a source record crosses by direct memory.
 ///
 /// Exposed to the codec lane so a nested `TypeExpr::Record(id)` can
@@ -44,7 +60,8 @@ pub fn lower<S: SurfaceLower>(
 /// wrote and crosses encoded. Records whose size or field offsets change
 /// between supported native ABI alignment profiles also cross encoded.
 pub fn is_direct(record: &SourceRecord) -> bool {
-    primitive::has_effective_repr_c(&record.repr)
+    record.encoding == RecordEncoding::Standard
+        && primitive::has_effective_repr_c(&record.repr)
         && !record.fields.is_empty()
         && record
             .fields
@@ -59,12 +76,54 @@ fn lower_one<S: SurfaceLower>(
     allocator: &mut SymbolAllocator,
     record: &SourceRecord,
 ) -> Result<RecordDecl<S>, LowerError> {
+    if record.encoding == RecordEncoding::NativeOpaque && !record.methods.is_empty() {
+        return Err(LowerError::unsupported_type(
+            UnsupportedType::NativeOpaqueRecordMethod,
+        ));
+    }
+    // Opaque records need generated Rust helper exports (`drop`, `dsize`, and the
+    // per-field accessors). The macro expander only renders wrappers for root-crate
+    // records plus support records that carry methods, so an opaque record owned by
+    // a dependency would have its exports lowered here while no Rust definition is
+    // ever emitted, leaving the host bindings referencing missing symbols. Reject it
+    // during lowering instead of shipping an unlinkable artifact.
+    if record.encoding == RecordEncoding::NativeOpaque && !is_root_crate_record(index, record) {
+        return Err(LowerError::unsupported_type(
+            UnsupportedType::NativeOpaqueRecordDependency,
+        ));
+    }
+    if record.encoding != RecordEncoding::NativeOpaque
+        && record
+            .fields
+            .iter()
+            .any(|field| opaque::contains(index, &field.type_expr))
+    {
+        return Err(LowerError::unsupported_type(
+            UnsupportedType::NativeOpaqueRecordField,
+        ));
+    }
+    // Validate the source expression before `types::lower` erases the distinction
+    // between owned and borrowed string/byte representations (e.g. `String` vs
+    // `str`, and `Vec<u8>` vs `[u8]`). Native opaque accessors borrow from the
+    // record's owned storage, so borrowed source forms must never reach dsize or
+    // accessor generation.
+    if record.encoding == RecordEncoding::NativeOpaque
+        && record
+            .fields
+            .iter()
+            .any(|field| !native_opaque_source_field_supported(&field.type_expr))
+    {
+        return Err(LowerError::unsupported_type(
+            UnsupportedType::NativeOpaqueRecordField,
+        ));
+    }
     let initializers = methods::lower_record_initializers::<S>(index, ids, allocator, record)?;
     let record_methods = methods::lower_record_methods::<S>(index, ids, allocator, record)?;
     if is_direct(record) {
         lower_direct(index, ids, record, initializers, record_methods).map(RecordDecl::direct)
     } else {
-        lower_encoded(index, ids, record, initializers, record_methods).map(RecordDecl::encoded)
+        lower_encoded(index, ids, allocator, record, initializers, record_methods)
+            .map(RecordDecl::encoded)
     }
 }
 
@@ -108,6 +167,7 @@ fn lower_direct<S: SurfaceLower>(
 fn lower_encoded<S: SurfaceLower>(
     index: &Index,
     ids: &DeclarationIds,
+    allocator: &mut SymbolAllocator,
     record: &SourceRecord,
     initializers: Vec<InitializerDecl<S>>,
     record_methods: Vec<ExportedMethodDecl<S, NativeSymbol>>,
@@ -134,8 +194,15 @@ fn lower_encoded<S: SurfaceLower>(
             ))
         })
         .collect::<Result<Vec<_>, LowerError>>()?;
+    let storage = match record.encoding {
+        RecordEncoding::NativeOpaque => EncodedRecordStorage::NativeOpaque,
+        _ => EncodedRecordStorage::Decoded,
+    };
+    let native_opaque_exports = (storage == EncodedRecordStorage::NativeOpaque)
+        .then(|| lower_native_opaque_exports(allocator, record, &fields))
+        .transpose()?;
 
-    Ok(EncodedRecordDecl::new(
+    let mut lowered = EncodedRecordDecl::new(
         ids.record(&record.id)?,
         CanonicalName::from(&record.name),
         metadata::decl_meta(record.doc.as_ref(), record.deprecated.as_ref()),
@@ -151,7 +218,164 @@ fn lower_encoded<S: SurfaceLower>(
             ),
             ValueRef::self_value(),
         )?,
-    ))
+    )
+    .with_storage(storage);
+    if let Some(exports) = native_opaque_exports {
+        lowered = lowered.with_native_opaque_exports(exports);
+    }
+    Ok(lowered)
+}
+
+fn lower_native_opaque_exports(
+    allocator: &mut SymbolAllocator,
+    record: &SourceRecord,
+    fields: &[EncodedFieldDecl],
+) -> Result<NativeOpaqueRecordExports, LowerError> {
+    if fields
+        .iter()
+        .any(|field| !native_opaque_field_supported(field.ty()))
+    {
+        return Err(LowerError::unsupported_type(
+            UnsupportedType::NativeOpaqueRecordField,
+        ));
+    }
+
+    let source_id = record.id.as_str();
+    let drop = allocator.mint_native_opaque_record_export(source_id, "drop")?;
+    let dsize = allocator.mint_native_opaque_record_export(source_id, "dsize")?;
+    let fields = record
+        .fields
+        .iter()
+        .zip(fields.iter())
+        .map(|(source, field)| {
+            let field_suffix = source_member_suffix(&source.name);
+            let (ty, optional) = match field.ty() {
+                TypeRef::Optional(inner) => (inner.as_ref(), true),
+                ty => (ty, false),
+            };
+            let has = optional
+                .then(|| {
+                    allocator
+                        .mint_native_opaque_record_export(source_id, &format!("has_{field_suffix}"))
+                })
+                .transpose()?;
+            let get = matches!(ty, TypeRef::Primitive(_))
+                .then(|| {
+                    allocator
+                        .mint_native_opaque_record_export(source_id, &format!("get_{field_suffix}"))
+                })
+                .transpose()?;
+            let borrow = matches!(ty, TypeRef::String | TypeRef::Bytes)
+                .then(|| {
+                    allocator.mint_native_opaque_record_export(
+                        source_id,
+                        &format!("borrow_{field_suffix}"),
+                    )
+                })
+                .transpose()?;
+            let interned_tag = matches!(ty, TypeRef::InternedString { .. })
+                .then(|| {
+                    allocator.mint_native_opaque_record_export(
+                        source_id,
+                        &format!("interned_{field_suffix}_tag"),
+                    )
+                })
+                .transpose()?;
+            let interned_id = matches!(ty, TypeRef::InternedString { .. })
+                .then(|| {
+                    allocator.mint_native_opaque_record_export(
+                        source_id,
+                        &format!("interned_{field_suffix}_id"),
+                    )
+                })
+                .transpose()?;
+            let interned_borrow_dynamic = matches!(ty, TypeRef::InternedString { .. })
+                .then(|| {
+                    allocator.mint_native_opaque_record_export(
+                        source_id,
+                        &format!("interned_{field_suffix}_borrow_dynamic"),
+                    )
+                })
+                .transpose()?;
+            Ok(NativeOpaqueFieldExports::new(
+                field.key().clone(),
+                has,
+                get,
+                borrow,
+                interned_tag,
+                interned_id,
+                interned_borrow_dynamic,
+            ))
+        })
+        .collect::<Result<Vec<_>, LowerError>>()?;
+    Ok(NativeOpaqueRecordExports::new(drop, dsize, fields))
+}
+
+fn native_opaque_source_field_supported(ty: &TypeExpr) -> bool {
+    match ty {
+        TypeExpr::Option(inner) => native_opaque_owned_field_supported(inner),
+        ty => native_opaque_owned_field_supported(ty),
+    }
+}
+
+// `InternedString` is deliberately absent: no host that advertises
+// `NativeOpaqueRecords` also advertises `InternedString`, so admitting the
+// shape here would mint tag/id/borrow helper symbols that every target then
+// refuses during capability negotiation. Reject it at the source instead, and
+// widen this when a host renders the interned accessor surface.
+fn native_opaque_owned_field_supported(ty: &TypeExpr) -> bool {
+    matches!(ty, TypeExpr::Primitive(_) | TypeExpr::String)
+        || matches!(
+            ty,
+            TypeExpr::Vec(element) if matches!(element.as_ref(), TypeExpr::Primitive(boltffi_ast::Primitive::U8))
+        )
+}
+
+// Keep this check after lowering as a defense-in-depth assertion over the IR.
+// Source validation above is authoritative because TypeRef intentionally erases
+// whether String/Bytes originated from owned or borrowed Rust syntax.
+fn native_opaque_field_supported(ty: &TypeRef) -> bool {
+    match ty {
+        TypeRef::Primitive(_)
+        | TypeRef::String
+        | TypeRef::Bytes
+        | TypeRef::InternedString { .. } => true,
+        TypeRef::Optional(inner) => {
+            !matches!(inner.as_ref(), TypeRef::Optional(_)) && native_opaque_field_supported(inner)
+        }
+        _ => false,
+    }
+}
+
+fn source_member_suffix(name: &boltffi_ast::SourceName) -> String {
+    name.parts()
+        .map(|part| part.as_str())
+        .map(to_snake_case)
+        .collect::<Vec<_>>()
+        .join("_")
+}
+
+fn to_snake_case(input: &str) -> String {
+    let mut output = String::new();
+    let mut prev_is_lower_or_digit = false;
+    for ch in input.chars() {
+        if matches!(ch, '-' | ' ' | '.') {
+            if !output.ends_with('_') {
+                output.push('_');
+            }
+            prev_is_lower_or_digit = false;
+        } else if ch.is_ascii_uppercase() {
+            if prev_is_lower_or_digit {
+                output.push('_');
+            }
+            output.push(ch.to_ascii_lowercase());
+            prev_is_lower_or_digit = false;
+        } else {
+            output.push(ch);
+            prev_is_lower_or_digit = ch.is_ascii_lowercase() || ch.is_ascii_digit();
+        }
+    }
+    output
 }
 
 #[cfg(test)]
@@ -161,19 +385,20 @@ mod tests {
         DeprecationInfo as SourceDeprecationInfo, DocComment as SourceDocComment, EnumDef,
         ExecutionKind, FieldDef, FnSig, FnTrait, FnTraitKind, IntegerLiteral, MapKind, MethodDef,
         MethodId as SourceMethodId, PackageInfo as SourcePackage, ParameterDef, ParameterPassing,
-        Path as SourcePath, PathRoot, PathSegment, Primitive, Receiver, RecordDef, ReprAttr,
-        ReprItem, ReturnDef, Source, SourceContract, TypeExpr, VariantDef, VariantPayload,
+        Path as SourcePath, PathRoot, PathSegment, Primitive, Receiver, RecordDef, RecordEncoding,
+        ReprAttr, ReprItem, ReturnDef, Source, SourceContract, TypeExpr, VariantDef,
+        VariantPayload,
     };
 
     use crate::lower::lower;
     use crate::{
         BindingErrorKind, Bindings, ByteSize, CanonicalName, CodecNode, Decl, DefaultValue,
-        DirectRecordDecl, DirectValueType, DirectVectorElementType, EncodedRecordDecl, EnumId,
-        ErrorDecl, ExecutionDecl, ExportedMethodDecl, FieldKey, HandlePresence, InitializerDecl,
-        IntegerValue, IntrinsicOp, LowerError, LowerErrorKind, Native, NativeSymbol, OpNode,
-        OutOfRust, ParamPlan, Primitive as BindingPrimitive, ReadPlan, Receive, RecordDecl,
-        RecordId, ReturnPlan, SurfaceLower, TypeRef, UnsupportedType, ValueRef, Wasm32, native,
-        wasm32,
+        DirectRecordDecl, DirectValueType, DirectVectorElementType, EncodedRecordDecl,
+        EncodedRecordStorage, EnumId, ErrorDecl, ExecutionDecl, ExportedMethodDecl, FieldKey,
+        HandlePresence, InitializerDecl, IntegerValue, IntrinsicOp, LowerError, LowerErrorKind,
+        Native, NativeSymbol, OpNode, OutOfRust, ParamPlan, Primitive as BindingPrimitive,
+        ReadPlan, Receive, RecordDecl, RecordId, ReturnPlan, SurfaceLower, TypeRef,
+        UnsupportedType, ValueRef, Wasm32, native, wasm32,
     };
 
     fn package() -> SourceContract {
@@ -339,6 +564,192 @@ mod tests {
         ));
 
         encoded_record(&bindings);
+    }
+
+    #[test]
+    fn native_opaque_record_lowers_helper_symbols_into_binding_ir() {
+        let mut source = record(
+            "demo::Snapshot",
+            "snapshot",
+            vec![
+                field("count", TypeExpr::Primitive(Primitive::U32)),
+                field("name", TypeExpr::option(TypeExpr::String)),
+            ],
+        );
+        source.encoding = RecordEncoding::NativeOpaque;
+
+        let bindings = lower_record::<Native>(source);
+        let record = encoded_record(&bindings);
+        let exports = record
+            .native_opaque_exports()
+            .expect("native opaque helper exports");
+
+        assert_eq!(record.storage(), EncodedRecordStorage::NativeOpaque);
+        assert_eq!(
+            exports.drop().name().as_str(),
+            "boltffi_record_native_demo_snapshot_drop"
+        );
+        assert_eq!(
+            exports.dsize().name().as_str(),
+            "boltffi_record_native_demo_snapshot_dsize"
+        );
+        assert_eq!(exports.fields().len(), 2);
+        assert_eq!(
+            exports.fields()[0]
+                .get()
+                .expect("primitive getter")
+                .name()
+                .as_str(),
+            "boltffi_record_native_demo_snapshot_get_count"
+        );
+        let name_exports = &exports.fields()[1];
+        assert_eq!(
+            name_exports
+                .has()
+                .expect("optional string presence")
+                .name()
+                .as_str(),
+            "boltffi_record_native_demo_snapshot_has_name"
+        );
+        assert_eq!(
+            name_exports
+                .borrow()
+                .expect("string borrow")
+                .name()
+                .as_str(),
+            "boltffi_record_native_demo_snapshot_borrow_name"
+        );
+        assert!(
+            bindings
+                .symbols()
+                .symbols()
+                .iter()
+                .any(|symbol| symbol.name().as_str() == "boltffi_record_native_demo_snapshot_drop")
+        );
+
+        let serialized = serde_json::to_vec(&bindings).expect("serialize opaque bindings");
+        let decoded: Bindings<Native> =
+            serde_json::from_slice(&serialized).expect("deserialize opaque bindings");
+        let decoded_exports = encoded_record(&decoded)
+            .native_opaque_exports()
+            .expect("serialized opaque helper exports");
+        assert_eq!(decoded_exports, exports);
+    }
+
+    #[test]
+    fn native_opaque_record_rejects_unsupported_field_shapes() {
+        let mut source = record(
+            "demo::Snapshot",
+            "snapshot",
+            vec![field("names", TypeExpr::vec(TypeExpr::String))],
+        );
+        source.encoding = RecordEncoding::NativeOpaque;
+
+        let error = lower_record_result::<Native>(source)
+            .expect_err("opaque records only expose supported accessor fields");
+
+        assert!(matches!(
+            error.kind(),
+            LowerErrorKind::UnsupportedType(UnsupportedType::NativeOpaqueRecordField)
+        ));
+    }
+
+    #[test]
+    fn native_opaque_record_rejects_borrowed_string_and_byte_fields_before_type_lowering() {
+        for (name, type_expr) in [
+            ("borrowed_str", TypeExpr::Str),
+            (
+                "borrowed_bytes",
+                TypeExpr::slice(TypeExpr::Primitive(Primitive::U8)),
+            ),
+            ("optional_borrowed_str", TypeExpr::option(TypeExpr::Str)),
+            (
+                "optional_borrowed_bytes",
+                TypeExpr::option(TypeExpr::slice(TypeExpr::Primitive(Primitive::U8))),
+            ),
+            (
+                "nested_option",
+                TypeExpr::option(TypeExpr::option(TypeExpr::String)),
+            ),
+        ] {
+            let mut source = record("demo::Snapshot", "snapshot", vec![field(name, type_expr)]);
+            source.encoding = RecordEncoding::NativeOpaque;
+
+            let error = lower_record_result::<Native>(source)
+                .expect_err("borrowed and nested optional fields cannot expose opaque accessors");
+            assert!(matches!(
+                error.kind(),
+                LowerErrorKind::UnsupportedType(UnsupportedType::NativeOpaqueRecordField)
+            ));
+        }
+    }
+
+    #[test]
+    fn native_opaque_record_accepts_owned_string_and_byte_vector_fields() {
+        let mut source = record(
+            "demo::Snapshot",
+            "snapshot",
+            vec![
+                field("name", TypeExpr::String),
+                field("payload", TypeExpr::vec(TypeExpr::Primitive(Primitive::U8))),
+                field("maybe_name", TypeExpr::option(TypeExpr::String)),
+                field(
+                    "maybe_payload",
+                    TypeExpr::option(TypeExpr::vec(TypeExpr::Primitive(Primitive::U8))),
+                ),
+            ],
+        );
+        source.encoding = RecordEncoding::NativeOpaque;
+
+        let bindings = lower_record::<Native>(source);
+        assert!(encoded_record(&bindings).is_native_opaque());
+    }
+
+    #[test]
+    fn native_opaque_records_with_same_name_in_different_modules_mint_distinct_symbols() {
+        let mut alpha = record(
+            "demo::alpha::Config",
+            "Config",
+            vec![field("value", TypeExpr::Primitive(Primitive::U32))],
+        );
+        alpha.encoding = RecordEncoding::NativeOpaque;
+
+        let mut beta = record(
+            "demo::beta::Config",
+            "Config",
+            vec![field("label", TypeExpr::String)],
+        );
+        beta.encoding = RecordEncoding::NativeOpaque;
+
+        let bindings = lower_records::<Native>(vec![alpha, beta]);
+
+        // Both records lower without a duplicate-symbol error.
+        let names: Vec<&str> = bindings
+            .symbols()
+            .symbols()
+            .iter()
+            .map(|symbol| symbol.name().as_str())
+            .collect();
+        assert!(
+            names.contains(&"boltffi_record_native_demo_alpha_config_drop"),
+            "alpha Config drop symbol: {names:?}"
+        );
+        assert!(
+            names.contains(&"boltffi_record_native_demo_beta_config_drop"),
+            "beta Config drop symbol: {names:?}"
+        );
+        // The field accessor symbols are also distinct.
+        assert!(names.contains(&"boltffi_record_native_demo_alpha_config_get_value"));
+        assert!(names.contains(&"boltffi_record_native_demo_beta_config_borrow_label"));
+        // No two symbols share the same name.
+        let mut sorted = names.clone();
+        sorted.sort();
+        sorted.dedup();
+        assert_eq!(
+            sorted.len(),
+            names.len(),
+            "duplicate symbols minted: {names:?}"
+        );
     }
 
     #[test]
@@ -1093,6 +1504,7 @@ mod tests {
                 codec,
                 shape: native::BufferShape::Slice,
                 receive: Receive::ByValue,
+                ..
             } => {
                 assert_eq!(ty, &TypeRef::Optional(Box::new(TypeRef::String)));
                 assert_eq!(
@@ -1123,6 +1535,7 @@ mod tests {
                 codec,
                 shape: native::BufferShape::Slice,
                 receive: Receive::ByValue,
+                ..
             } => {
                 assert_eq!(
                     ty,
@@ -1162,6 +1575,7 @@ mod tests {
                 codec,
                 shape: native::BufferShape::Slice,
                 receive: Receive::ByValue,
+                ..
             } => {
                 assert_eq!(
                     ty,
@@ -1235,6 +1649,7 @@ mod tests {
                 codec,
                 shape: native::BufferShape::Slice,
                 receive: Receive::ByValue,
+                ..
             } => {
                 assert_eq!(ty, &TypeRef::Record(RecordId::from_raw(0)));
                 assert_eq!(
@@ -1310,6 +1725,7 @@ mod tests {
                 codec,
                 shape: native::BufferShape::Slice,
                 receive: Receive::ByValue,
+                ..
             } => {
                 assert_eq!(ty, &TypeRef::Enum(EnumId::from_raw(0)));
                 assert_eq!(codec.root(), &CodecNode::DataEnum(EnumId::from_raw(0)));
@@ -1406,6 +1822,7 @@ mod tests {
                 codec,
                 shape: native::BufferShape::Slice,
                 receive: (),
+                ..
             } => {
                 assert_eq!(codec.root(), &CodecNode::String);
             }
@@ -1978,6 +2395,7 @@ mod tests {
                 codec,
                 shape: wasm32::BufferShape::Slice,
                 receive: Receive::ByValue,
+                ..
             } => assert_eq!(codec.root(), &CodecNode::Utf8String),
             other => panic!("expected wasm32 slice param shape, got {other:?}"),
         }
@@ -2432,6 +2850,184 @@ mod tests {
             },
             other => panic!("expected InvalidBindings, got {other:?}"),
         }
+    }
+
+    // Negative tests: native opaque record in method/initializer positions.
+    // Opaque records are only allowed as synchronous, infallible, exact top-level
+    // free-function returns; all method/initializer positions must be rejected.
+
+    fn native_opaque_record_def() -> RecordDef {
+        let mut record = RecordDef::new("demo::Snapshot".into(), name("Snapshot"));
+        record.encoding = RecordEncoding::NativeOpaque;
+        record.fields = vec![field("count", TypeExpr::Primitive(Primitive::U32))];
+        record
+    }
+
+    fn opaque_record_type() -> TypeExpr {
+        TypeExpr::record(
+            boltffi_ast::RecordId::new("demo::Snapshot"),
+            boltffi_ast::Path::single("Snapshot"),
+        )
+    }
+
+    #[test]
+    fn native_opaque_record_owned_by_a_dependency_crate_is_rejected() {
+        // The macro expander renders record wrappers for root-crate records plus
+        // support records that carry methods. A dependency-owned opaque record with
+        // only fields matches neither, so its `drop`/`dsize`/accessor exports would
+        // be lowered without any Rust definition backing them. Lowering must reject
+        // it rather than emit bindings that reference missing symbols.
+        let mut foreign = RecordDef::new("model::ForeignSnapshot".into(), name("ForeignSnapshot"));
+        foreign.encoding = RecordEncoding::NativeOpaque;
+        foreign.fields = vec![field("value", TypeExpr::Primitive(Primitive::U32))];
+
+        let error = lower_records_result::<Native>(vec![foreign])
+            .expect_err("dependency-owned native opaque record must be rejected");
+        assert!(
+            matches!(
+                error.kind(),
+                LowerErrorKind::UnsupportedType(UnsupportedType::NativeOpaqueRecordDependency)
+            ),
+            "expected NativeOpaqueRecordDependency, got {error:?}"
+        );
+    }
+
+    #[test]
+    fn native_opaque_record_owned_by_the_root_crate_is_accepted() {
+        // Guards the dependency check against over-rejecting: the same shape owned by
+        // the root crate must still lower.
+        let mut rooted = RecordDef::new("demo::Snapshot".into(), name("Snapshot"));
+        rooted.encoding = RecordEncoding::NativeOpaque;
+        rooted.fields = vec![field("value", TypeExpr::Primitive(Primitive::U32))];
+
+        lower_records_result::<Native>(vec![rooted])
+            .expect("root-crate native opaque record must lower");
+    }
+
+    #[test]
+    fn native_opaque_record_return_in_record_method_is_rejected() {
+        // A record method whose return type is another native opaque record should
+        // be rejected because opaque records are only valid as free-function returns.
+        let other_opaque_id = "demo::OtherSnapshot".into();
+        let mut other_opaque = RecordDef::new(other_opaque_id, name("OtherSnapshot"));
+        other_opaque.encoding = RecordEncoding::NativeOpaque;
+        other_opaque.fields = vec![field("x", TypeExpr::Primitive(Primitive::U32))];
+        let other_type = TypeExpr::record(
+            boltffi_ast::RecordId::new("demo::OtherSnapshot"),
+            boltffi_ast::Path::single("OtherSnapshot"),
+        );
+        let mut m = method("get_other", Receiver::Shared);
+        m.returns = ReturnDef::value(other_type);
+        let mut point = point_record();
+        point.methods = vec![m];
+        let error = lower_records_result::<Native>(vec![point, other_opaque])
+            .expect_err("native opaque return in record method must be rejected");
+        assert!(
+            matches!(
+                error.kind(),
+                LowerErrorKind::UnsupportedType(UnsupportedType::NativeOpaqueRecordMethod)
+            ),
+            "expected NativeOpaqueRecordMethod, got {error:?}"
+        );
+    }
+
+    #[test]
+    fn native_opaque_record_return_in_record_static_method_is_rejected() {
+        // A no-receiver method (which lowers as an initializer slot) returning a
+        // native opaque record should be rejected: opaque records are free-function-only.
+        let mut m = method("create_snapshot", Receiver::None);
+        m.returns = ReturnDef::value(opaque_record_type());
+        let opaque = native_opaque_record_def();
+        let mut point = point_record();
+        point.methods = vec![m];
+        let error = lower_records_result::<Native>(vec![point, opaque])
+            .expect_err("native opaque return in static record method must be rejected");
+        assert!(
+            matches!(
+                error.kind(),
+                LowerErrorKind::UnsupportedType(UnsupportedType::NativeOpaqueRecordMethod)
+            ),
+            "expected NativeOpaqueRecordMethod for static method, got {error:?}"
+        );
+    }
+
+    #[test]
+    fn native_opaque_record_rejects_primitive_method_before_callable_lowering() {
+        let mut method = method("count", Receiver::Shared);
+        method.returns = ReturnDef::value(TypeExpr::Primitive(Primitive::U32));
+        let mut opaque = native_opaque_record_def();
+        opaque.methods = vec![method];
+
+        let error = lower_record_result::<Native>(opaque)
+            .expect_err("opaque record methods are never admitted");
+        assert!(matches!(
+            error.kind(),
+            LowerErrorKind::UnsupportedType(UnsupportedType::NativeOpaqueRecordMethod)
+        ));
+    }
+
+    #[test]
+    fn native_opaque_record_rejects_string_initializer_before_callable_lowering() {
+        let mut initializer = method("new", Receiver::None);
+        initializer.returns = ReturnDef::value(TypeExpr::String);
+        let mut opaque = native_opaque_record_def();
+        opaque.methods = vec![initializer];
+
+        let error = lower_record_result::<Native>(opaque)
+            .expect_err("opaque record initializers are never admitted");
+        assert!(matches!(
+            error.kind(),
+            LowerErrorKind::UnsupportedType(UnsupportedType::NativeOpaqueRecordMethod)
+        ));
+    }
+
+    #[test]
+    fn native_opaque_record_true_initializer_returning_self_is_rejected() {
+        // A true record initializer (no receiver, returns Self) on a native
+        // opaque record must be rejected: the initializer would wrap the
+        // CallableOwner::Record context and is not a free-function return.
+        let self_type = TypeExpr::record(
+            boltffi_ast::RecordId::new("demo::Snapshot"),
+            boltffi_ast::Path::single("Snapshot"),
+        );
+        // is_initializer: Receiver::None + returns_owner (type matches the record)
+        let mut ctor = method("new", Receiver::None);
+        ctor.returns = ReturnDef::value(self_type);
+        let mut opaque = native_opaque_record_def();
+        opaque.methods = vec![ctor];
+        let error = lower_record_result::<Native>(opaque)
+            .expect_err("native opaque record initializer must be rejected");
+        assert!(
+            matches!(
+                error.kind(),
+                LowerErrorKind::UnsupportedType(UnsupportedType::NativeOpaqueRecordMethod)
+            ),
+            "expected NativeOpaqueRecordMethod for true initializer, got {error:?}"
+        );
+    }
+
+    #[test]
+    fn native_opaque_record_method_returning_option_self_is_rejected() {
+        // Regression: Option<Self> on a native opaque record method must be
+        // rejected. Previously, Self substitution ran after the nested-opaque
+        // admission check, so Option<SelfType> evaded the guard and lowered
+        // as encoded. The fix moves the check to after substitute_self_type.
+        let mut m = method("maybe_self", Receiver::Shared);
+        m.returns = ReturnDef::value(TypeExpr::Option(Box::new(TypeExpr::SelfType)));
+        let mut opaque = native_opaque_record_def();
+        opaque.methods = vec![m];
+        let error = lower_record_result::<Native>(opaque)
+            .expect_err("Option<Self> return on native opaque record method must be rejected");
+        assert!(
+            matches!(
+                error.kind(),
+                LowerErrorKind::UnsupportedType(
+                    UnsupportedType::NativeOpaqueRecordNestedReturn
+                        | UnsupportedType::NativeOpaqueRecordMethod
+                )
+            ),
+            "expected NativeOpaqueRecordNestedReturn or NativeOpaqueRecordMethod, got {error:?}"
+        );
     }
 
     #[test]

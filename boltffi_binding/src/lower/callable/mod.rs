@@ -66,7 +66,8 @@ use std::any::TypeId;
 use crate::{
     ClosureForm, ClosureParameter, ClosureRegistration, ClosureReturn, ClosureSignature,
     DirectVectorElementType, Direction, ExecutionDecl, ExportedCallable, ForeignBody,
-    HandlePresence, ImportedCallable, IntoRust, OutOfRust, Primitive, Receive, RustBody, TypeRef,
+    HandlePresence, ImportedCallable, IntoRust, OutOfRust, Primitive, Receive, ReturnPlan,
+    RustBody, TypeRef,
 };
 
 use super::{
@@ -610,6 +611,17 @@ pub fn lower_function<S: SurfaceLower>(
         &function.returns,
     )?;
     let execution = lower_execution::<S>(allocator, function.execution, start_symbol_name)?;
+    // An opaque record is handed over as an owned handle returned directly from
+    // the call. The async protocols deliver results through a completion slot
+    // that has no representation for that handle, so reject the combination
+    // here rather than letting expansion fail with a generic shape error.
+    if matches!(returns.plan(), ReturnPlan::NativeOpaqueRecord { .. })
+        && matches!(execution, ExecutionDecl::Asynchronous(_))
+    {
+        return Err(LowerError::unsupported_type(
+            UnsupportedType::NativeOpaqueRecordAsync,
+        ));
+    }
 
     Ok(ExportedCallable::<S>::new(
         None, parameters, returns, error, execution,

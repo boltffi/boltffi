@@ -24,6 +24,8 @@ pub enum BindingCapability {
     Constants,
     /// Custom type declarations.
     CustomTypes,
+    /// Records returned as boxed opaque handles with per-field Rust accessor exports.
+    NativeOpaqueRecords,
     /// Any declaration that references a tagged [`InternedString`] type.
     ///
     /// `InternedString` crosses the wire in a TAGGED format (byte 0 = tag;
@@ -122,9 +124,9 @@ pub type BridgeCapabilities = CapabilitySet<BridgeCapability>;
 
 /// Contract-scoped binding capability requirements.
 ///
-/// Computes the `InternedString` transitive dependency closure once, then
-/// serves each declaration's requirement set by its family-tagged identity.
-/// A `DeclarationId` keeps declarations with equal raw ids but different
+/// Computes transitive named-type capability closures once, then serves each
+/// declaration's requirement set by its family-tagged identity. A
+/// `DeclarationId` keeps declarations with equal raw ids but different
 /// families distinct while traversing the dependency graph.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct BindingCapabilityAnalysis {
@@ -138,13 +140,28 @@ impl BindingCapabilityAnalysis {
         let declarations = bindings.decls();
         let declaration_ids = declarations.iter().map(Decl::id).collect::<BTreeSet<_>>();
         let mut dependents: BTreeMap<DeclarationId, Vec<DeclarationId>> = BTreeMap::new();
-        let mut interned_declarations = BTreeSet::new();
+        let mut direct_requirements = BTreeMap::new();
+        let transitive_capabilities = [
+            BindingCapability::InternedString,
+            BindingCapability::NativeOpaqueRecords,
+        ];
+        let mut transitive_declarations = transitive_capabilities
+            .into_iter()
+            .map(|capability| (capability, BTreeSet::new()))
+            .collect::<BTreeMap<_, _>>();
 
         for declaration in declarations {
             let declaration_ref = DeclarationRef::from(declaration);
-            if declaration_ref.contains_interned_string() {
-                interned_declarations.insert(declaration.id());
+            let requirements = CapabilityRequirements::from_direct_decl(declaration);
+            for capability in transitive_capabilities {
+                if requirements.iter().any(|required| required == capability) {
+                    transitive_declarations
+                        .get_mut(&capability)
+                        .expect("transitive capability seed must be present")
+                        .insert(declaration.id());
+                }
             }
+            direct_requirements.insert(declaration.id(), requirements);
 
             let mut dependencies = BTreeSet::new();
             declaration_ref.append_referenced_declarations(&mut dependencies);
@@ -158,14 +175,16 @@ impl BindingCapabilityAnalysis {
             }
         }
 
-        let mut pending = interned_declarations
-            .iter()
-            .copied()
-            .collect::<VecDeque<_>>();
-        while let Some(dependency) = pending.pop_front() {
-            for dependent in dependents.get(&dependency).into_iter().flatten() {
-                if interned_declarations.insert(*dependent) {
-                    pending.push_back(*dependent);
+        for declarations_with_capability in transitive_declarations.values_mut() {
+            let mut pending = declarations_with_capability
+                .iter()
+                .copied()
+                .collect::<VecDeque<_>>();
+            while let Some(dependency) = pending.pop_front() {
+                for dependent in dependents.get(&dependency).into_iter().flatten() {
+                    if declarations_with_capability.insert(*dependent) {
+                        pending.push_back(*dependent);
+                    }
                 }
             }
         }
@@ -173,10 +192,13 @@ impl BindingCapabilityAnalysis {
         let mut contract_requirements = CapabilityRequirements::new();
         let mut declaration_requirements = BTreeMap::new();
         for declaration in declarations {
-            let mut requirements =
-                CapabilityRequirements::new().require(BindingCapability::from_decl(declaration));
-            if interned_declarations.contains(&declaration.id()) {
-                requirements = requirements.require(BindingCapability::InternedString);
+            let mut requirements = direct_requirements
+                .remove(&declaration.id())
+                .expect("direct capability requirements must include every declaration");
+            for (capability, declarations_with_capability) in &transitive_declarations {
+                if declarations_with_capability.contains(&declaration.id()) {
+                    requirements = requirements.require(*capability);
+                }
             }
             for capability in requirements.iter() {
                 contract_requirements = contract_requirements.require(capability);
@@ -239,6 +261,19 @@ where
 }
 
 impl CapabilityRequirements<BindingCapability> {
+    /// Builds the direct, non-transitive requirements for one declaration.
+    fn from_direct_decl<S: Surface>(decl: &Decl<S>) -> Self {
+        let declaration = DeclarationRef::from(decl);
+        let mut requirements = Self::new().require(BindingCapability::from_decl(decl));
+        if matches!(declaration, DeclarationRef::Record(record) if record.is_native_opaque()) {
+            requirements = requirements.require(BindingCapability::NativeOpaqueRecords);
+        }
+        if declaration.contains_interned_string() {
+            requirements = requirements.require(BindingCapability::InternedString);
+        }
+        requirements
+    }
+
     /// Builds the full set of binding capabilities required by one declaration.
     ///
     /// The declaration is resolved within `bindings`, so the returned set includes
@@ -482,6 +517,58 @@ mod tests {
         // Plain String does NOT trigger the gate.
         assert!(!TypeRef::String.contains_interned_string());
         assert!(!TypeRef::Optional(Box::new(TypeRef::String)).contains_interned_string());
+    }
+
+    #[test]
+    fn analysis_propagates_native_opaque_requirements_to_dependents() {
+        use boltffi_ast::PackageInfo;
+        use boltffi_binding::{Native, lower};
+
+        let source = boltffi_scan::scan_file(
+            syn::parse_str(
+                r#"
+                #[data(opaque)]
+                pub struct Snapshot {
+                    pub count: u32,
+                    pub label: String,
+                    pub tag: Option<String>,
+                }
+
+                #[export]
+                pub fn inspect(input: u32) -> Snapshot {
+                    let _ = input;
+                    unimplemented!()
+                }
+                "#,
+            )
+            .expect("valid source"),
+            PackageInfo::new("demo", None),
+        )
+        .expect("source scans");
+        let bindings = lower::<Native>(&source).expect("source lowers");
+        let analysis = BindingCapabilityAnalysis::new(&bindings);
+
+        for declaration in bindings.decls() {
+            let requirements = analysis
+                .declaration_requirements(declaration.id())
+                .expect("analysis includes every declaration");
+            assert!(
+                requirements
+                    .iter()
+                    .any(|capability| capability == BindingCapability::NativeOpaqueRecords),
+                "native opaque capability must propagate to every dependent declaration"
+            );
+            match DeclarationRef::from(declaration) {
+                DeclarationRef::Record(_) | DeclarationRef::Function(_) => {}
+                other => panic!("unexpected declaration in test contract: {other:?}"),
+            }
+        }
+        assert!(
+            analysis
+                .contract_requirements()
+                .iter()
+                .any(|capability| capability == BindingCapability::NativeOpaqueRecords)
+        );
     }
 
     #[test]
