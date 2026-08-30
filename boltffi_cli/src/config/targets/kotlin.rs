@@ -76,6 +76,8 @@ pub struct AndroidConfig {
     #[serde(default)]
     pub pack: AndroidPackConfig,
     #[serde(default)]
+    pub link: AndroidLinkConfig,
+    #[serde(default)]
     pub debug_symbols: DebugSymbolsConfig,
 }
 
@@ -90,6 +92,7 @@ impl Default for AndroidConfig {
             kotlin: KotlinConfig::default(),
             header: HeaderConfig::default(),
             pack: AndroidPackConfig::default(),
+            link: AndroidLinkConfig::default(),
             debug_symbols: DebugSymbolsConfig::default(),
         }
     }
@@ -128,6 +131,12 @@ impl AndroidConfig {
 #[derive(Debug, Deserialize, Serialize, Clone, Default)]
 pub struct AndroidPackConfig {
     pub output: Option<PathBuf>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone, Default)]
+pub struct AndroidLinkConfig {
+    #[serde(default)]
+    pub extra_args: Vec<String>,
 }
 
 fn default_android_output() -> PathBuf {

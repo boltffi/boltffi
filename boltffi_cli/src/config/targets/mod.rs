@@ -21,7 +21,7 @@ pub use java::JavaConfig;
 pub use java::JavaJvmConfig;
 pub use kmp::KotlinMultiplatformConfig;
 pub use kotlin::{
-    AndroidConfig, AndroidPackConfig, KotlinApiStyle, KotlinConfig, KotlinDesktopLoader,
+    AndroidConfig, AndroidPackConfig, AndroidLinkConfig, KotlinApiStyle, KotlinConfig, KotlinDesktopLoader,
     KotlinFactoryStyle,
 };
 pub use python::PythonConfig;

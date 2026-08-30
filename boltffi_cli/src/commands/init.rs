@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use crate::cli::Result;
 use crate::config::{
-    AndroidConfig, AndroidPackConfig, AppleConfig, CSharpConfig, CargoConfig, Config, DartConfig,
+    AndroidConfig, AndroidLinkConfig, AndroidPackConfig, AppleConfig, CSharpConfig, CargoConfig, Config, DartConfig,
     DebugSymbolsConfig, ErrorStyle, HeaderConfig, JavaConfig, KotlinConfig, KotlinFactoryStyle,
     KotlinMultiplatformConfig, PackageConfig, PythonConfig, SpmConfig, SwiftConfig, TargetsConfig,
     WasmConfig, XcframeworkConfig,
@@ -126,6 +126,7 @@ fn create_default_config(package_name: &str) -> Config {
                 },
                 header: HeaderConfig { output: None },
                 pack: AndroidPackConfig { output: None },
+                link: AndroidLinkConfig::default(),
                 debug_symbols: DebugSymbolsConfig::default(),
             },
             kotlin_multiplatform: KotlinMultiplatformConfig::default(),

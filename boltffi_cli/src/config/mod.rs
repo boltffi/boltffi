@@ -16,7 +16,7 @@ pub use cargo::{CargoConfig, PackageConfig};
 pub use experimental::Experimental;
 pub use symbols::{DebugSymbolsBundle, DebugSymbolsConfig, DebugSymbolsFormat};
 pub use targets::{
-    AndroidConfig, AndroidPackConfig, AppleConfig, CSharpConfig, DartConfig, HeaderConfig,
+    AndroidConfig, AndroidLinkConfig, AndroidPackConfig, AppleConfig, CSharpConfig, DartConfig, HeaderConfig,
     JavaConfig, KotlinApiStyle, KotlinConfig, KotlinDesktopLoader, KotlinFactoryStyle,
     KotlinMultiplatformConfig, PythonConfig, SpmConfig, SpmDistribution, SpmLayout, SwiftConfig,
     TargetsConfig, WasmConfig, WasmNpmTarget, WasmOptimizeLevel, WasmOptimizeOnMissing,
@@ -676,6 +676,10 @@ impl Config {
 
     pub fn android_debug_symbols_bundle(&self) -> DebugSymbolsBundle {
         self.targets.android.debug_symbols.bundle
+    }
+
+    pub fn android_extra_link_args(&self) -> &[String] {
+        &self.targets.android.link.extra_args
     }
 
     pub fn kotlin_class_name(&self) -> String {
@@ -2698,5 +2702,23 @@ runtime_identifiers = ["linux-x64", "linux-x64"]
             Err(ConfigError::Validation(message))
                 if message.contains("targets.csharp.runtime_identifiers contains duplicate runtime identifier")
         ));
+    }
+
+    #[test]
+    fn parses_android_link_extra_args() {
+        let config = parse_config(
+            r#"
+[package]
+name = "mylib"
+
+[targets.android.link]
+extra_args = ["-Wl,-z,max-page-size=16384"]
+"#,
+        );
+
+        assert_eq!(
+            config.android_extra_link_args(),
+            &["-Wl,-z,max-page-size=16384".to_string()]
+        );
     }
 }

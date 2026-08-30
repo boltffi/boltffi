@@ -215,6 +215,7 @@ impl<'a> AndroidPackager<'a> {
             &object_path,
             &library.path,
             &export_script_path,
+            self.config.android_extra_link_args(),
         ));
         run_command(link)?;
 
@@ -323,8 +324,9 @@ fn android_shared_link_args(
     object_path: &Path,
     library_path: &Path,
     export_script_path: &Path,
+    extra_args: &[String],
 ) -> Vec<OsString> {
-    vec![
+    let mut args = vec![
         OsString::from("-shared"),
         OsString::from("-o"),
         dest_path.as_os_str().to_os_string(),
@@ -341,7 +343,9 @@ fn android_shared_link_args(
         OsString::from("-lm"),
         OsString::from("-llog"),
         OsString::from("-ldl"),
-    ]
+    ];
+    args.extend(extra_args.iter().map(OsString::from));
+    args
 }
 
 fn write_android_export_version_script(path: &Path) -> Result<()> {
@@ -706,6 +710,7 @@ enabled = true
             Path::new("/tmp/out/jni_glue.o"),
             Path::new("/tmp/out/libdemo.a"),
             Path::new("/tmp/out/exports.map"),
+            &[],
         );
 
         assert!(!args.contains(&OsString::from("-Wl,--exclude-libs,ALL")));
@@ -721,6 +726,7 @@ enabled = true
             Path::new("/tmp/out/jni_glue.o"),
             Path::new("/tmp/out/libdemo.a"),
             Path::new("/tmp/out/exports.map"),
+            &[],
         );
 
         assert!(
@@ -763,7 +769,7 @@ enabled = true
         let export_script_path =
             PathBuf::from(OsString::from_vec(b"/tmp/exports-\xFC.map".to_vec()));
         let args =
-            android_shared_link_args(&dest_path, &object_path, &library_path, &export_script_path);
+            android_shared_link_args(&dest_path, &object_path, &library_path, &export_script_path, &[]);
 
         assert_eq!(
             args[2].as_os_str().as_bytes(),
@@ -780,6 +786,25 @@ enabled = true
         assert_eq!(
             args[10].as_os_str().as_bytes(),
             export_script_path.as_os_str().as_bytes()
+        );
+    }
+    
+    #[test]
+    fn android_linker_appends_configured_extra_link_args() {
+        let extra_args = vec!["-Wl,-z,max-page-size=16384".to_string()];
+        let args = android_shared_link_args(
+            Path::new("/tmp/out/libdemo.so"),
+            Path::new("/tmp/out/jni_glue.o"),
+            Path::new("/tmp/out/libdemo.a"),
+            Path::new("/tmp/out/exports.map"),
+            &extra_args,
+        );
+
+        assert!(args.contains(&OsString::from("-Wl,-z,max-page-size=16384")));
+        assert_eq!(
+            args.last(),
+            Some(&OsString::from("-Wl,-z,max-page-size=16384")),
+            "extra link args should be appended after the built-in flags so they can override them"
         );
     }
 }
