@@ -482,10 +482,11 @@ impl ClassHandleOperations {
         class_id: ClassId,
         callable: &ExportedCallable<S>,
     ) -> Self {
+        let asynchronous = matches!(callable.execution(), ExecutionDecl::Asynchronous(_));
         callable.params().iter().fold(
             self.with_return(class_id, callable.returns().plan()),
             |operations, param| match param.payload() {
-                IncomingParam::Value(plan) => operations.with_param(class_id, plan),
+                IncomingParam::Value(plan) => operations.with_param(class_id, plan, asynchronous),
                 IncomingParam::Closure(_) => operations,
             },
         )
@@ -530,6 +531,7 @@ impl ClassHandleOperations {
         mut self,
         class_id: ClassId,
         plan: &ParamPlan<S, IntoRust>,
+        asynchronous: bool,
     ) -> Self {
         let ParamPlan::Handle {
             target, receive, ..
@@ -542,6 +544,7 @@ impl ClassHandleOperations {
         }
         match receive {
             Receive::ByValue => self.take = true,
+            Receive::ByRef if asynchronous => self.retained_shared = true,
             Receive::ByRef => self.shared = true,
             Receive::ByMutRef => self.mutable = true,
             _ => {}

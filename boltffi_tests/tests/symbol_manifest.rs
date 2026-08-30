@@ -255,6 +255,7 @@ fn lowering_produces_the_claimed_crossing_matrix() {
         "param:encoded:by-mut-ref",
         "param:encoded:by-ref",
         "param:encoded:by-value",
+        "param:handle:by-ref",
         "param:handle:by-value",
         "param:scalar-option",
         "receiver:by-mut-ref",

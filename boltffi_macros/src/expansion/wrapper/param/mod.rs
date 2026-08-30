@@ -56,11 +56,21 @@ pub fn wasm32_requires_failure_return(param: &ParamDecl<Wasm32, IntoRust>) -> bo
     }
 }
 
+/// Whether the wrapper hands a parameter straight to the call or has to keep it
+/// alive past the wrapper's own stack frame (async exports).
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum Capture {
+    #[default]
+    Borrowed,
+    Retained,
+}
+
 pub struct Input<'expansion, 'lowered, S: SurfaceLower> {
     param: &'lowered ParamDecl<S, IntoRust>,
     source: rust_api::Parameter<'lowered>,
     failure: TokenStream,
     expansion: &'expansion Expansion<'lowered, S>,
+    capture: Capture,
 }
 
 impl<'expansion, 'lowered, S: SurfaceLower> Input<'expansion, 'lowered, S> {
@@ -75,7 +85,13 @@ impl<'expansion, 'lowered, S: SurfaceLower> Input<'expansion, 'lowered, S> {
             source,
             failure,
             expansion,
+            capture: Capture::Borrowed,
         }
+    }
+
+    pub fn with_capture(mut self, capture: Capture) -> Self {
+        self.capture = capture;
+        self
     }
 }
 
@@ -178,6 +194,7 @@ impl<'expansion, 'lowered> Input<'expansion, 'lowered, Native> {
                 self.source,
                 ident,
                 self.failure,
+                self.capture,
             )
             .render(),
             IncomingParam::Closure(closure) => closure::Input::new(
@@ -257,6 +274,7 @@ impl<'expansion, 'lowered> Input<'expansion, 'lowered, Wasm32> {
                 self.source,
                 ident,
                 self.failure,
+                self.capture,
             )
             .render(),
             IncomingParam::Closure(closure) => closure::Input::new(

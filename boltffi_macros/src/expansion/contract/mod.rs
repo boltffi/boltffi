@@ -2142,6 +2142,40 @@ mod tests {
         source
     }
 
+    fn async_borrowed_class_param_contract(passing: ParameterPassing) -> SourceContract {
+        let mut function = FunctionDef::new(
+            FunctionId::new("demo::engine_id"),
+            CanonicalName::single("engine_id"),
+        );
+        function.execution = ExecutionKind::Async;
+        let mut parameter = parameter("engine", class("Engine"));
+        parameter.passing = passing;
+        function.parameters = vec![parameter];
+        function.returns = ReturnDef::value(TypeExpr::Primitive(Primitive::U32));
+
+        let mut source = SourceContract::new(PackageInfo::new("demo", None));
+        source.classes.push(engine_class());
+        source.functions.push(function);
+        source
+    }
+
+    fn async_borrowed_optional_class_param_contract() -> SourceContract {
+        let mut function = FunctionDef::new(
+            FunctionId::new("demo::engine_id"),
+            CanonicalName::single("engine_id"),
+        );
+        function.execution = ExecutionKind::Async;
+        let mut parameter = parameter("engine", TypeExpr::option(class("Engine")));
+        parameter.passing = ParameterPassing::Ref;
+        function.parameters = vec![parameter];
+        function.returns = ReturnDef::value(TypeExpr::Primitive(Primitive::U32));
+
+        let mut source = SourceContract::new(PackageInfo::new("demo", None));
+        source.classes.push(engine_class());
+        source.functions.push(function);
+        source
+    }
+
     fn result_class_string_contract() -> SourceContract {
         let mut function = FunctionDef::new(
             FunctionId::new("demo::try_open"),
@@ -4859,6 +4893,87 @@ mod tests {
 
         let error = expand_function(&expansion, &source.functions[0], syntax)
             .expect_err("async borrowed params must not capture FFI memory");
+
+        assert_eq!(
+            error.to_string(),
+            "unsupported expansion: async reference parameter"
+        );
+    }
+
+    #[test]
+    fn async_borrowed_class_param_expansion_retains_required_handle() {
+        let source = async_borrowed_class_param_contract(ParameterPassing::Ref);
+        let lowered = lower_with_declarations::<Native>(&source).expect("lowered bindings");
+        let expansion = Expansion::new(&lowered);
+        let syntax = syn::parse_quote! {
+            pub async fn engine_id(engine: &Engine) -> u32 {
+                7
+            }
+        };
+
+        let tokens =
+            expand_function(&expansion, &source.functions[0], syntax).expect("expanded function");
+
+        assert!(tokens.to_string().contains(
+            &quote! {
+                pub unsafe extern "C" fn boltffi_function_demo_engine_id(
+                    engine: u64
+                ) -> ::boltffi::__private::RustFutureHandle {
+                    if engine == 0 {
+                        ::boltffi::__private::set_last_error(concat!(stringify!(engine), ": null class handle"));
+                        return ::boltffi::__private::rustfuture::rust_future_invalid_arg::<u32>();
+                    }
+                    let engine = match unsafe {
+                        __BoltffiEngineHandle::retain(engine as usize as *mut __BoltffiEngineHandle)
+                    } {
+                        Some(handle) => handle,
+                        None => {
+                            ::boltffi::__private::set_last_error(concat!(stringify!(engine), ": released class handle"));
+                            return ::boltffi::__private::rustfuture::rust_future_invalid_arg::<u32>();
+                        }
+                    };
+                    ::boltffi::__private::rustfuture::rust_future_new(async move {
+                        engine_id(engine.shared()).await
+                    })
+                }
+            }
+            .to_string()
+        ));
+    }
+
+    #[test]
+    fn async_mutably_borrowed_class_param_expansion_is_rejected() {
+        let source = async_borrowed_class_param_contract(ParameterPassing::RefMut);
+        let lowered = lower_with_declarations::<Native>(&source).expect("lowered bindings");
+        let expansion = Expansion::new(&lowered);
+        let syntax = syn::parse_quote! {
+            pub async fn engine_id(engine: &mut Engine) -> u32 {
+                7
+            }
+        };
+
+        let error = expand_function(&expansion, &source.functions[0], syntax)
+            .expect_err("async exclusive class borrows must not be retained");
+
+        assert_eq!(
+            error.to_string(),
+            "unsupported expansion: async reference parameter"
+        );
+    }
+
+    #[test]
+    fn async_borrowed_optional_class_param_expansion_is_rejected() {
+        let source = async_borrowed_optional_class_param_contract();
+        let lowered = lower_with_declarations::<Native>(&source).expect("lowered bindings");
+        let expansion = Expansion::new(&lowered);
+        let syntax = syn::parse_quote! {
+            pub async fn engine_id(engine: &Option<Engine>) -> u32 {
+                7
+            }
+        };
+
+        let error = expand_function(&expansion, &source.functions[0], syntax)
+            .expect_err("nullable class borrows must not be retained");
 
         assert_eq!(
             error.to_string(),

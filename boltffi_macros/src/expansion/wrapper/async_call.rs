@@ -1,7 +1,7 @@
 use boltffi_binding::{
-    DirectValueType, ErrorDecl, ExecutionDecl, ExportedCallable, FunctionDecl, HandleTarget,
-    IncomingParam, IntoRust, Native, NativeSymbol, ParamDecl, ParamPlan, Receive, ReturnPlan,
-    Wasm32, native, wasm32,
+    DirectValueType, ErrorDecl, ExecutionDecl, ExportedCallable, FunctionDecl, HandlePresence,
+    HandleTarget, IncomingParam, IntoRust, Native, NativeSymbol, ParamDecl, ParamPlan, Receive,
+    ReturnPlan, Wasm32, native, wasm32,
 };
 use proc_macro2::TokenStream;
 use quote::quote;
@@ -347,9 +347,12 @@ impl<'lowered, S: boltffi_binding::SurfaceLower> CapturedParameters<'lowered, S>
                 self.validate_receive(*receive)
             }
             IncomingParam::Value(ParamPlan::Handle {
-                target, receive, ..
+                target,
+                receive,
+                presence,
+                ..
             }) => {
-                self.validate_receive(*receive)?;
+                self.validate_handle_receive(target, *receive, *presence)?;
                 self.validate_handle_target(target)
             }
             IncomingParam::Value(ParamPlan::ScalarOption { .. })
@@ -368,6 +371,21 @@ impl<'lowered, S: boltffi_binding::SurfaceLower> CapturedParameters<'lowered, S>
                 Err(Error::UnsupportedExpansion("async reference parameter"))
             }
             _ => Err(Error::UnsupportedExpansion("async receive mode")),
+        }
+    }
+
+    /// A required shared class handle is retained for the future's lifetime, so
+    /// deriving `&T` from the guard is safe. Every other borrow still points at
+    /// caller-owned FFI memory that only lives for the synchronous call.
+    fn validate_handle_receive(
+        &self,
+        target: &HandleTarget,
+        receive: Receive,
+        presence: HandlePresence,
+    ) -> Result<(), Error> {
+        match (target, receive, presence) {
+            (HandleTarget::Class(_), Receive::ByRef, HandlePresence::Required) => Ok(()),
+            _ => self.validate_receive(receive),
         }
     }
 

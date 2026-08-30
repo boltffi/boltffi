@@ -8,6 +8,7 @@ pub struct Input<'expansion, 'lowered, S: boltffi_binding::SurfaceLower> {
     source: rust_api::Callable<'lowered>,
     failure: TokenStream,
     expansion: &'expansion Expansion<'lowered, S>,
+    capture: wrapper::param::Capture,
 }
 
 impl<'expansion, 'lowered, S: boltffi_binding::SurfaceLower> Input<'expansion, 'lowered, S> {
@@ -22,7 +23,15 @@ impl<'expansion, 'lowered, S: boltffi_binding::SurfaceLower> Input<'expansion, '
             source,
             failure,
             expansion,
+            capture: wrapper::param::Capture::Borrowed,
         }
+    }
+
+    /// Async exports outlive the extern function, so parameters that can be
+    /// held past the call are retained rather than borrowed.
+    fn retaining(mut self) -> Self {
+        self.capture = wrapper::param::Capture::Retained;
+        self
     }
 
     fn validate_parameter_count(&self) -> Result<(), Error> {
@@ -60,7 +69,7 @@ impl<'expansion, 'lowered> Input<'expansion, 'lowered, boltffi_binding::Native> 
 
     pub fn render_async(self) -> Result<Tokens, Error> {
         self.validate_execution(true)?;
-        self.render_parameters()
+        self.retaining().render_parameters()
     }
 
     fn render_parameters(self) -> Result<Tokens, Error> {
@@ -72,6 +81,7 @@ impl<'expansion, 'lowered> Input<'expansion, 'lowered, boltffi_binding::Native> 
             .zip(self.source.parameters())
             .map(|(param, source)| {
                 wrapper::param::Input::new(param, source, self.failure.clone(), self.expansion)
+                    .with_capture(self.capture)
                     .render()
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -87,7 +97,7 @@ impl<'expansion, 'lowered> Input<'expansion, 'lowered, boltffi_binding::Wasm32> 
 
     pub fn render_async(self) -> Result<Tokens, Error> {
         self.validate_execution(true)?;
-        self.render_parameters()
+        self.retaining().render_parameters()
     }
 
     fn render_parameters(self) -> Result<Tokens, Error> {
@@ -100,6 +110,7 @@ impl<'expansion, 'lowered> Input<'expansion, 'lowered, boltffi_binding::Wasm32> 
             .zip(self.source.parameters())
             .map(|(param, source)| {
                 wrapper::param::Input::new(param, source, self.failure.clone(), self.expansion)
+                    .with_capture(self.capture)
                     .render()
             })
             .collect::<Result<Vec<_>, _>>()?;
