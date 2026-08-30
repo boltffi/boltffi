@@ -16,11 +16,11 @@ pub use cargo::{CargoConfig, PackageConfig};
 pub use experimental::Experimental;
 pub use symbols::{DebugSymbolsBundle, DebugSymbolsConfig, DebugSymbolsFormat};
 pub use targets::{
-    AndroidConfig, AndroidLinkConfig, AndroidPackConfig, AppleConfig, CSharpConfig, DartConfig, HeaderConfig,
-    JavaConfig, KotlinApiStyle, KotlinConfig, KotlinDesktopLoader, KotlinFactoryStyle,
-    KotlinMultiplatformConfig, PythonConfig, SpmConfig, SpmDistribution, SpmLayout, SwiftConfig,
-    TargetsConfig, WasmConfig, WasmNpmTarget, WasmOptimizeLevel, WasmOptimizeOnMissing,
-    WasmProfile, XcframeworkConfig,
+    AndroidConfig, AndroidLinkConfig, AndroidPackConfig, AppleConfig, CSharpConfig, DartConfig,
+    HeaderConfig, JavaConfig, KotlinApiStyle, KotlinConfig, KotlinDesktopLoader,
+    KotlinFactoryStyle, KotlinMultiplatformConfig, PythonConfig, SpmConfig, SpmDistribution,
+    SpmLayout, SwiftConfig, TargetsConfig, WasmConfig, WasmNpmTarget, WasmOptimizeLevel,
+    WasmOptimizeOnMissing, WasmProfile, XcframeworkConfig,
 };
 #[cfg(test)]
 pub use targets::{CSharpNugetConfig, JavaJvmConfig, PythonWheelConfig};

@@ -2,10 +2,10 @@ use std::path::{Path, PathBuf};
 
 use crate::cli::Result;
 use crate::config::{
-    AndroidConfig, AndroidLinkConfig, AndroidPackConfig, AppleConfig, CSharpConfig, CargoConfig, Config, DartConfig,
-    DebugSymbolsConfig, ErrorStyle, HeaderConfig, JavaConfig, KotlinConfig, KotlinFactoryStyle,
-    KotlinMultiplatformConfig, PackageConfig, PythonConfig, SpmConfig, SwiftConfig, TargetsConfig,
-    WasmConfig, XcframeworkConfig,
+    AndroidConfig, AndroidLinkConfig, AndroidPackConfig, AppleConfig, CSharpConfig, CargoConfig,
+    Config, DartConfig, DebugSymbolsConfig, ErrorStyle, HeaderConfig, JavaConfig, KotlinConfig,
+    KotlinFactoryStyle, KotlinMultiplatformConfig, PackageConfig, PythonConfig, SpmConfig,
+    SwiftConfig, TargetsConfig, WasmConfig, XcframeworkConfig,
 };
 
 pub struct InitOptions {

@@ -768,8 +768,13 @@ enabled = true
         let library_path = PathBuf::from(OsString::from_vec(b"/tmp/lib-\xFD.a".to_vec()));
         let export_script_path =
             PathBuf::from(OsString::from_vec(b"/tmp/exports-\xFC.map".to_vec()));
-        let args =
-            android_shared_link_args(&dest_path, &object_path, &library_path, &export_script_path, &[]);
+        let args = android_shared_link_args(
+            &dest_path,
+            &object_path,
+            &library_path,
+            &export_script_path,
+            &[],
+        );
 
         assert_eq!(
             args[2].as_os_str().as_bytes(),
@@ -788,7 +793,7 @@ enabled = true
             export_script_path.as_os_str().as_bytes()
         );
     }
-    
+
     #[test]
     fn android_linker_appends_configured_extra_link_args() {
         let extra_args = vec!["-Wl,-z,max-page-size=16384".to_string()];
