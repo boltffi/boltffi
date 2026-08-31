@@ -53,6 +53,18 @@ mod tests {
     }
 
     #[test]
+    fn cpp_only_keywords_are_escaped_for_portable_header() {
+        assert_eq!(
+            Identifier::escape("class").expect("escaped").as_str(),
+            "class_"
+        );
+        assert_eq!(
+            Identifier::escape("namespace").expect("escaped").as_str(),
+            "namespace_"
+        );
+    }
+
+    #[test]
     fn type_fragment_renders_pointer_types() {
         // Pointer types render as `const <inner> *` through the bridge fragment.
         let fragment = TypeFragment::anonymous(&crate::bridge::c::Type::ConstPointer(Box::new(

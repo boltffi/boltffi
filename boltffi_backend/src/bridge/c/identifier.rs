@@ -22,10 +22,11 @@ impl Identifier {
         }
     }
 
-    /// Creates a C identifier, appending an underscore when the input is a keyword.
+    /// Creates a valid portable ABI identifier, appending an underscore when the
+    /// input is reserved by C or C++ (the header is compilable under both).
     pub fn escape(identifier: impl Into<String>) -> Result<Self> {
         let identifier = identifier.into();
-        match Syntax::keyword(&identifier) {
+        match Syntax::reserved(&identifier) {
             true => Self::parse(format!("{identifier}_")),
             false => Self::parse(identifier),
         }

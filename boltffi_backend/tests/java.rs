@@ -2512,7 +2512,7 @@ fn java_target_rejects_generated_name_collisions() {
         matches!(
             &error,
             Error::JavaNameCollision { scope, name }
-            if scope == "boltffi_function_demo_collision" && name == "_class"
+            if scope == "boltffi_function_demo_collision" && name == "class_"
         ),
         "{error:?}"
     );
