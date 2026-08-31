@@ -23,7 +23,7 @@ PACKAGE_NAME: str
 PACKAGE_VERSION: str | None
 {% for record in records %}
 @dataclass(frozen=True, slots=True)
-class {{ record.class_name }}:
+class {{ record.class_name }}{% if !record.bases.is_empty() %}({% for base in record.bases %}{{ base }}{% if !loop.last %}, {% endif %}{% endfor %}){% endif %}:
 {{- record.documentation.docstring("    ") }}
 {%- for constant in record.constants %}
     {{ constant.python_name }}: ClassVar[{{ constant.annotation }}]
@@ -76,6 +76,7 @@ class {{ enumeration.class_name }}:
 {%- endfor %}
 
 {% for variant in wire.variants %}
+{%- if !variant.transparent() %}
 @dataclass(frozen=True, slots=True)
 class {{ variant.class_name }}({{ enumeration.class_name }}):
 {{- variant.documentation.docstring("    ") }}
@@ -86,6 +87,7 @@ class {{ variant.class_name }}({{ enumeration.class_name }}):
 {%- endfor %}
 {%- else %}
     pass
+{%- endif %}
 {%- endif %}
 
 {% endfor %}

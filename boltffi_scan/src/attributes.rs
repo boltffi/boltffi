@@ -60,6 +60,18 @@ impl<'a, 'types> Attributes<'a, 'types> {
             })
     }
 
+    pub(super) fn transparent(&self) -> Result<bool, ScanError> {
+        self.attrs
+            .iter()
+            .filter(|attr| is_transparent_attr(attr))
+            .try_fold(false, |_, attr| match &attr.meta {
+                syn::Meta::Path(_) => Ok(true),
+                _ => Err(ScanError::InvalidAttribute {
+                    attribute: spelling::attr(attr),
+                }),
+            })
+    }
+
     pub(super) fn user_attrs(&self) -> Vec<UserAttr> {
         self.attrs
             .iter()
@@ -181,13 +193,18 @@ fn is_boltffi_owned_attr(attr: &syn::Attribute) -> bool {
                 | "ffi_stream"
                 | "name"
                 | "custom_ffi"
-                | "custom_type",
+                | "custom_type"
+                | "transparent",
         )
     )
 }
 
 fn is_default_attr(attr: &syn::Attribute) -> bool {
     matches!(attr_name(attr).as_deref(), Some("default"))
+}
+
+fn is_transparent_attr(attr: &syn::Attribute) -> bool {
+    matches!(attr_name(attr).as_deref(), Some("transparent"))
 }
 
 fn attr_name(attr: &syn::Attribute) -> Option<String> {

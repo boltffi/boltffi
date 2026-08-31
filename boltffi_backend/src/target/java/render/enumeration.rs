@@ -331,6 +331,9 @@ impl Data {
         version: JavaVersion,
         context: &RenderContext<Native>,
     ) -> Result<Self> {
+        if enumeration.has_transparent_variants() {
+            return Err(JavaHost::unsupported("transparent data enum variant"));
+        }
         let name = Name::new(enumeration.name()).type_name(version)?;
         let variants = enumeration
             .variants()

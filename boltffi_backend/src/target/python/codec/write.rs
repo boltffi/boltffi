@@ -92,6 +92,20 @@ impl<'package> Writer<'package> {
                     [wire_value],
                 )
             }
+            // A transparent enum's payload records carry no tagged
+            // `_boltffi_wire` of their own — the tag depends on which enum a
+            // shared payload is written through — so the enum class
+            // dispatches over the value instead.
+            EnumCodec::Data {
+                class_name,
+                transparent: true,
+            } => Ok(Expression::call(
+                CallExpression::new(Expression::attribute(
+                    Expression::identifier(class_name),
+                    Identifier::parse("_boltffi_wire_value")?,
+                ))
+                .positional(value),
+            )),
             EnumCodec::Data { .. } => Ok(Expression::call(CallExpression::new(
                 Expression::attribute(value, Identifier::parse("_boltffi_wire")?),
             ))),
@@ -164,13 +178,10 @@ impl<'package> CodecWrite for Writer<'package> {
     }
 
     fn data_enum(&mut self, id: EnumId, value: &ValueRef) -> Vec<Self::Stmt> {
-        vec![self.value(value).and_then(|value| {
-            self.package.enum_codec(id).and_then(|_| {
-                Ok(Expression::call(CallExpression::new(
-                    Expression::attribute(value, Identifier::parse("_boltffi_wire")?),
-                )))
-            })
-        })]
+        vec![
+            self.value(value)
+                .and_then(|value| self.write_enum(value, id)),
+        ]
     }
 
     fn class_handle(&mut self, id: ClassId, value: &ValueRef) -> Vec<Self::Stmt> {

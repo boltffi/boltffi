@@ -503,9 +503,27 @@ class {{ enumeration.class_name }}:
         tag = reader.u32()
 {%- for variant in wire.variants %}
         if tag == {{ variant.tag }}:
+{%- if let Some(payload) = variant.transparent_payload %}
+            return {{ payload }}._boltffi_from_reader(reader)
+{%- else %}
             return {{ variant.class_name }}._boltffi_from_reader_payload(reader)
+{%- endif %}
 {%- endfor %}
         raise ValueError("invalid {{ enumeration.class_name }} tag")
+{%- if wire.transparent %}
+
+    @classmethod
+    def _boltffi_wire_value(cls, value) -> bytes:
+{%- for variant in wire.variants %}
+{%- if let Some(payload) = variant.transparent_payload %}
+        if type(value) is {{ payload }}:
+            return _boltffi_wire_u32({{ variant.tag }}) + value._boltffi_wire()
+{%- endif %}
+{%- endfor %}
+        if isinstance(value, cls):
+            return value._boltffi_wire()
+        raise TypeError(f"expected {{ enumeration.class_name }}, got {type(value).__name__}")
+{%- endif %}
 {%- for constructor in enumeration.constructors %}
 
     @classmethod
@@ -534,6 +552,7 @@ class {{ enumeration.class_name }}:
 {%- endfor %}
 
 {% for variant in wire.variants %}
+{%- if !variant.transparent() %}
 @dataclass(frozen=True, slots=True)
 class {{ variant.class_name }}({{ enumeration.class_name }}):
 {{- variant.documentation.docstring("    ") }}
@@ -567,6 +586,7 @@ class {{ variant.class_name }}({{ enumeration.class_name }}):
         )
 {%- else %}
         return cls()
+{%- endif %}
 {%- endif %}
 
 {% endfor %}
@@ -620,7 +640,11 @@ class {{ exception_name }}(RuntimeError):
 {% for record in records %}
 {%- match record.wire %}
 {%- when RecordWire::Fixed(fixed) %}
+{%- if record.bases.is_empty() %}
 {{ record.class_name }} = _native.{{ record.class_name }}
+{%- else %}
+{{ record.class_name }} = _native.{{ record.type_factory }}(({% for base in record.bases %}{{ base }},{% if !loop.last %} {% endif %}{% endfor %}))
+{%- endif %}
 {{ record.class_name }}.__module__ = __name__
 {%- if !record.documentation.is_empty() %}
 {{ record.class_name }}.__doc__ = {{ record.documentation.literal() }}
@@ -689,7 +713,7 @@ def _boltffi_attach_{{ record.class_name }}_from_reader(cls, reader: "_BoltFfiWi
 {%- endfor %}
 {%- when RecordWire::Fields(wire_fields) %}
 @dataclass(frozen=True, slots=True)
-class {{ record.class_name }}:
+class {{ record.class_name }}{% if !record.bases.is_empty() %}({% for base in record.bases %}{{ base }}{% if !loop.last %}, {% endif %}{% endfor %}){% endif %}:
 {{- record.documentation.docstring("    ") }}
 {%- for field in record.fields %}
     {{ field.name }}: {{ field.annotation }}{% if let Some(default) = field.default %} = {{ default }}{% endif %}
@@ -901,7 +925,9 @@ __all__ = [
 {%- endif %}
 {%- if let Some(wire) = enumeration.wire %}
 {%- for variant in wire.variants %}
+{%- if !variant.transparent() %}
     "{{ variant.class_name }}",
+{%- endif %}
 {%- endfor %}
 {%- endif %}
 {%- endfor %}

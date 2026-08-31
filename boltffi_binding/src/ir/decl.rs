@@ -1414,6 +1414,11 @@ impl<S: Surface> DataEnumDecl<S> {
         &self.variants
     }
 
+    /// Returns whether any variant renders as its payload record.
+    pub fn has_transparent_variants(&self) -> bool {
+        self.variants.iter().any(DataVariantDecl::transparent)
+    }
+
     /// Returns the initializers.
     pub fn initializers(&self) -> &[InitializerDecl<S>] {
         &self.initializers
@@ -1526,6 +1531,10 @@ pub struct DataVariantDecl {
     name: CanonicalName,
     tag: VariantTag,
     payload: DataVariantPayload,
+    /// Whether the variant renders as its payload record instead of a
+    /// wrapper class, where the backend supports that shape.
+    #[serde(default, skip_serializing_if = "core::ops::Not::not")]
+    transparent: bool,
     meta: ElementMeta,
 }
 
@@ -1534,12 +1543,14 @@ impl DataVariantDecl {
         name: CanonicalName,
         tag: VariantTag,
         payload: DataVariantPayload,
+        transparent: bool,
         meta: ElementMeta,
     ) -> Self {
         Self {
             name,
             tag,
             payload,
+            transparent,
             meta,
         }
     }
@@ -1557,6 +1568,29 @@ impl DataVariantDecl {
     /// Returns the payload shape.
     pub fn payload(&self) -> &DataVariantPayload {
         &self.payload
+    }
+
+    /// Returns whether the variant renders as its payload record.
+    pub const fn transparent(&self) -> bool {
+        self.transparent
+    }
+
+    /// Returns the payload record id of a transparent variant.
+    ///
+    /// Lowering guarantees a transparent variant carries exactly one
+    /// record-typed field, so this is `Some` whenever
+    /// [`transparent`](Self::transparent) is true.
+    pub fn transparent_payload(&self) -> Option<RecordId> {
+        if !self.transparent {
+            return None;
+        }
+        match self.payload.fields() {
+            [field] => match field.ty() {
+                TypeRef::Record(id) => Some(*id),
+                _ => None,
+            },
+            _ => None,
+        }
     }
 
     /// Returns the element metadata.

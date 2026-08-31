@@ -37,6 +37,9 @@ pub struct Record {
     body: RecordBody,
     error: bool,
     fields: Vec<Field>,
+    /// The sealed interfaces of the transparent enums this record is a
+    /// payload of, in contract order.
+    conformances: Vec<TypeName>,
     constants: AssociatedConstants,
     initializers: Vec<ExportedCall>,
     static_methods: Vec<ExportedCall>,
@@ -127,6 +130,47 @@ impl Record {
 
     pub fn error(&self) -> bool {
         self.error
+    }
+
+    /// The record's supertype clause: `Exception(…)` when the record is an
+    /// error payload, then the sealed interface of every transparent enum it
+    /// is a payload of. Kotlin cannot declare conformance after the fact, so
+    /// the record's own declaration is the only place the interfaces can go.
+    pub fn supertypes(&self) -> String {
+        let mut parts = Vec::new();
+        if self.error {
+            parts.push(match self.error_message() {
+                Some(message) => format!("Exception({message})"),
+                None => "Exception()".to_owned(),
+            });
+        }
+        parts.extend(self.conformances.iter().map(ToString::to_string));
+        match parts.is_empty() {
+            true => String::new(),
+            false => format!(" : {}", parts.join(", ")),
+        }
+    }
+
+    /// The sealed interfaces of the transparent enums whose variants carry
+    /// this record as their payload.
+    fn conformances(id: RecordId, context: &RenderContext<Native>) -> Vec<TypeName> {
+        use boltffi_binding::{DeclarationRef, EnumDecl};
+        context
+            .bindings()
+            .decls()
+            .iter()
+            .filter_map(|declaration| match DeclarationRef::from(declaration) {
+                DeclarationRef::Enum(EnumDecl::Data(enumeration))
+                    if enumeration
+                        .variants()
+                        .iter()
+                        .any(|variant| variant.transparent_payload() == Some(id)) =>
+                {
+                    Some(Name::new(enumeration.name()).type_name())
+                }
+                _ => None,
+            })
+            .collect()
     }
 
     pub fn error_message(&self) -> Option<&Identifier> {
@@ -237,6 +281,7 @@ impl Record {
                     .then(|| Expression::integer(wire_size)),
             },
             error: record.is_error_payload(),
+            conformances: Self::conformances(record.id(), context),
             constants: AssociatedConstants::from_owner(
                 ConstantOwner::Record(record.id()),
                 host,
@@ -287,6 +332,7 @@ impl Record {
             documentation: Documentation::new(record.meta().doc()),
             body: RecordBody::Encoded { size },
             error: record.is_error_payload(),
+            conformances: Self::conformances(record.id(), context),
             constants: AssociatedConstants::from_owner(
                 ConstantOwner::Record(record.id()),
                 host,

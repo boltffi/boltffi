@@ -53,6 +53,9 @@ struct DataTemplate {
     register_wrapper: Identifier,
     wire_encoder: Identifier,
     owned_decoder: Identifier,
+    /// Encode through the class-level `_boltffi_wire_value` dispatch: a
+    /// transparent payload record has no tagged `_boltffi_wire` of its own.
+    transparent: bool,
 }
 
 pub struct Enumeration {
@@ -116,7 +119,7 @@ impl Enumeration {
                 }
                 .render()?
             }
-            Shape::Data => {
+            Shape::Data { transparent } => {
                 let type_object = symbols.type_object()?;
                 DataTemplate {
                     class_name: symbols.class_name,
@@ -125,6 +128,7 @@ impl Enumeration {
                     register_wrapper: symbols.register_wrapper,
                     wire_encoder: symbols.parser,
                     owned_decoder: symbols.boxer,
+                    transparent,
                 }
                 .render()?
             }
@@ -154,7 +158,7 @@ impl Enumeration {
     pub fn primitive(&self) -> Option<primitive::Runtime> {
         match self.shape {
             Shape::CStyle { primitive, .. } => Some(primitive),
-            Shape::Data => None,
+            Shape::Data { .. } => None,
         }
     }
 
@@ -168,7 +172,7 @@ impl Enumeration {
                     .map(ToString::to_string)
                     .unwrap_or_default()
             )),
-            Shape::Data => c::Statement::new(format!(
+            Shape::Data { .. } => c::Statement::new(format!(
                 "Py_CLEAR({})",
                 self.symbols
                     .type_object
@@ -180,7 +184,7 @@ impl Enumeration {
     }
 
     pub fn needs_owned_buffer(&self) -> bool {
-        matches!(self.shape, Shape::Data)
+        matches!(self.shape, Shape::Data { .. })
     }
 
     pub fn owned_buffers(&self) -> impl Iterator<Item = result::OwnedBuffer> + '_ {
@@ -293,7 +297,9 @@ impl Enumeration {
         let callables = Self::data_callables(enumeration, &symbols, bridge, context)?;
         Ok(Self {
             symbols,
-            shape: Shape::Data,
+            shape: Shape::Data {
+                transparent: enumeration.has_transparent_variants(),
+            },
             method,
             callables,
         })
@@ -629,7 +635,9 @@ enum Shape {
         variants: Vec<Variant>,
         primitive: primitive::Runtime,
     },
-    Data,
+    Data {
+        transparent: bool,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
