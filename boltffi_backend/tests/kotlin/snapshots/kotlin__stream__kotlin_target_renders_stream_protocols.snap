@@ -83,17 +83,33 @@ data class Point(
 }
 
 class Engine internal constructor(internal val handle: Long) : AutoCloseable {
+    private val __boltffi_calls = java.util.concurrent.atomic.AtomicLong(1L)
     private val __boltffi_closed = java.util.concurrent.atomic.AtomicBoolean(false)
 
     override fun close() {
         if (__boltffi_closed.compareAndSet(false, true)) {
-            Native.boltffi_release_class_demo_engine(handle)
+            boltffiRelease()
         }
     }
 
     internal fun boltffiHandle(): Long {
         check(!__boltffi_closed.get()) { "Engine is closed" }
         return handle
+    }
+
+    internal fun boltffiRetain(): Long {
+        while (true) {
+            check(!__boltffi_closed.get()) { "Engine is closed" }
+            val calls = __boltffi_calls.get()
+            check(calls != 0L) { "Engine is closed" }
+            if (__boltffi_calls.compareAndSet(calls, calls + 1L)) return handle
+        }
+    }
+
+    internal fun boltffiRelease() {
+        if (__boltffi_calls.decrementAndGet() == 0L) {
+            Native.boltffi_release_class_demo_engine(handle)
+        }
     }
 }
 

@@ -184,9 +184,9 @@ fn kotlin_target_renders_class_handles_and_associated_callables() {
 
     assert!(rendered.contains("internal fun boltffiHandle(): Long {"));
     assert!(rendered.contains("check(!__boltffi_closed.get()) { \"Engine is closed\" }"));
-    assert!(
-        rendered.contains("Native.boltffi_method_class_demo_engine_value(this.boltffiHandle())")
-    );
+    assert!(rendered.contains("internal fun boltffiRetain(): Long {"));
+    assert!(rendered.contains("internal fun boltffiRelease() {"));
+    assert!(rendered.contains("Native.boltffi_method_class_demo_engine_value(__boltffi_receiver)"));
     assert!(!rendered.contains("this.handle"));
     assert!(rendered.contains("other.boltffiHandle()"));
     assert!(rendered.contains("other?.boltffiHandle() ?: 0L"));

@@ -521,39 +521,7 @@ impl Call {
             scope.package,
             scope.return_context,
         )?;
-        let protected = receiver
-            .iter()
-            .flat_map(|receiver| receiver.native.prepare.iter().cloned())
-            .chain(
-                parameters
-                    .iter()
-                    .flat_map(|parameter| parameter.native.prepare.iter().cloned()),
-            )
-            .chain(success)
-            .collect::<Vec<_>>();
-        let cleanup = parameters
-            .iter()
-            .flat_map(|parameter| parameter.native.cleanup.iter().cloned())
-            .chain(
-                receiver
-                    .iter()
-                    .flat_map(|receiver| receiver.native.cleanup.iter().cloned()),
-            )
-            .collect::<Vec<_>>();
-        let protected = match cleanup.is_empty() {
-            true => protected,
-            false => vec![Statement::try_finally(protected, cleanup)],
-        };
-        let body = receiver
-            .iter()
-            .flat_map(|receiver| receiver.native.acquire.iter().cloned())
-            .chain(
-                parameters
-                    .iter()
-                    .flat_map(|parameter| parameter.native.acquire.iter().cloned()),
-            )
-            .chain(protected)
-            .collect();
+        let body = guarded_body(receiver.as_ref(), &parameters, success);
         Ok(Self {
             signature: CallSignature::new(
                 name,
@@ -848,6 +816,97 @@ impl NativeArgument {
             runtime: RuntimeRequirement::Wire,
         }
     }
+}
+
+/// Nests the receiver's cleanup around the parameter acquires so a throwing
+/// parameter acquire cannot leak the receiver's in-flight retain.
+fn guarded_body(
+    receiver: Option<&Receiver>,
+    parameters: &[BoundParameter],
+    success: Vec<Statement>,
+) -> Vec<Statement> {
+    let guarded = parameter_guarded(receiver, parameters, success);
+    let cleanup = receiver
+        .iter()
+        .flat_map(|receiver| receiver.native.cleanup.iter().cloned())
+        .collect::<Vec<_>>();
+    let guarded = match cleanup.is_empty() {
+        true => guarded,
+        false => vec![Statement::try_finally(guarded, cleanup)],
+    };
+    receiver
+        .iter()
+        .flat_map(|receiver| receiver.native.acquire.iter().cloned())
+        .chain(guarded)
+        .collect()
+}
+
+/// Guards async future creation: the receiver's retain is released only when
+/// creation throws, since on success the future's free hook releases it.
+fn guarded_create_body(
+    receiver: Option<&Receiver>,
+    parameters: &[BoundParameter],
+    success: Vec<Statement>,
+    version: JavaVersion,
+) -> Vec<Statement> {
+    let guarded = parameter_guarded(receiver, parameters, success);
+    let cleanup = receiver
+        .iter()
+        .flat_map(|receiver| receiver.native.cleanup.iter().cloned())
+        .collect::<Vec<_>>();
+    let guarded = match cleanup.is_empty() {
+        true => guarded,
+        false => {
+            let failure = Identifier::known("__boltffi_failure");
+            let recovery = cleanup
+                .into_iter()
+                .chain([Statement::throw_value(Expression::identifier(
+                    failure.clone(),
+                ))])
+                .collect();
+            vec![Statement::try_catch(
+                guarded,
+                TypeName::named(TypeIdentifier::known("Throwable", version)),
+                failure,
+                recovery,
+            )]
+        }
+    };
+    receiver
+        .iter()
+        .flat_map(|receiver| receiver.native.acquire.iter().cloned())
+        .chain(guarded)
+        .collect()
+}
+
+fn parameter_guarded(
+    receiver: Option<&Receiver>,
+    parameters: &[BoundParameter],
+    success: Vec<Statement>,
+) -> Vec<Statement> {
+    let protected = receiver
+        .iter()
+        .flat_map(|receiver| receiver.native.prepare.iter().cloned())
+        .chain(
+            parameters
+                .iter()
+                .flat_map(|parameter| parameter.native.prepare.iter().cloned()),
+        )
+        .chain(success)
+        .collect::<Vec<_>>();
+    let cleanup = parameters
+        .iter()
+        .flat_map(|parameter| parameter.native.cleanup.iter().cloned())
+        .collect::<Vec<_>>();
+    let protected = match cleanup.is_empty() {
+        true => protected,
+        false => vec![Statement::try_finally(protected, cleanup)],
+    };
+    parameters
+        .iter()
+        .flat_map(|parameter| parameter.native.acquire.iter().cloned())
+        .chain(protected)
+        .collect()
 }
 
 impl RuntimeRequirement {
@@ -1408,13 +1467,26 @@ impl Receiver {
         carrier: native::HandleCarrier,
         receive: Receive,
     ) -> Result<Self> {
-        Primitive::from_handle_carrier(carrier)?;
+        let primitive = Primitive::from_handle_carrier(carrier)?;
+        let retained = Identifier::known("__boltffi_receiver");
         match receive {
             Receive::ByRef | Receive::ByMutRef => Ok(Self {
                 ty,
-                native: NativeArgument::direct(
-                    Expression::this().call(Identifier::known("rawHandle"), Default::default()),
-                ),
+                native: NativeArgument {
+                    acquire: vec![Statement::value(
+                        TypeName::primitive(primitive),
+                        retained.clone(),
+                        Expression::this()
+                            .call(Identifier::known("boltffiRetain"), Default::default()),
+                    )],
+                    prepare: Vec::new(),
+                    expressions: vec![Expression::identifier(retained)],
+                    cleanup: vec![Statement::expression(
+                        Expression::this()
+                            .call(Identifier::known("boltffiRelease"), Default::default()),
+                    )],
+                    runtime: RuntimeRequirement::None,
+                },
                 mutation: None,
                 support: ReceiverSupport::Handle(carrier),
             }),
