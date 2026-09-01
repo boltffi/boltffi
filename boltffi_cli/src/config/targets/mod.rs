@@ -1,4 +1,5 @@
 pub mod apple;
+pub mod c;
 pub mod c_header;
 pub mod csharp;
 pub mod dart;
@@ -11,6 +12,7 @@ pub mod wasm;
 pub use apple::{
     AppleConfig, SpmConfig, SpmDistribution, SpmLayout, SwiftConfig, XcframeworkConfig,
 };
+pub use c::CConfig;
 pub use c_header::HeaderConfig;
 pub use csharp::CSharpConfig;
 #[cfg(test)]
@@ -49,4 +51,6 @@ pub struct TargetsConfig {
     pub python: PythonConfig,
     #[serde(default)]
     pub csharp: CSharpConfig,
+    #[serde(default)]
+    pub c: CConfig,
 }
