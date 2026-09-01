@@ -1346,3 +1346,18 @@ The items below are deliberately not pinned by this ADR. Each one is downstream 
 - **Per-language template revisions.** How a `DirectRecord` is spelled in Swift versus Kotlin versus Java is the backend's job and is the reason backends exist. Templates change with idiom, taste, and language version. The architectural seam (Section 3.3, "What stays drifty") is exactly between "decided once" (covered by this ADR) and "spelled per language" (template work).
 
 These are tracked in implementation notes and PRs. They are downstream of accepting this architecture and do not change its shape.
+
+---
+
+## Addendum (2026-08): The fifth answer — macro expansion
+
+Section 1.5 counts four answers to "is this record blittable?", all on the generator side, and the architecture above makes those four structurally one: after the resolver's single branch, a backend cannot disagree because there is nothing to disagree with.
+
+There was a fifth answer the ADR did not cover. The pre-promotion `#[data]` expansion in `boltffi_macros` classified the record again — at proc-macro time, inside the user's crate, where it fixes the compiled library's ABI. That answer came from `ffi_rules::classification`, which was width-blind: it accepted any repr(C) struct of fixed-width primitives, without checking that the field offsets agree across native alignment profiles. The result was the drift of Section 1.5 reproduced across the FFI boundary itself: a mixed-alignment record (`{ i64, i32, f64 }`) compiled into the dylib as raw struct bytes while every IR-backed backend generated wire-encoded access.
+
+Promoting Binding IR generation removed that classifier structurally: the expansion now consumes lowered binding declarations and never re-decides an FFI fact. What remains is making the one rule that survives — `records::is_direct` in `boltffi_binding::lower` — actually sound at the boundary:
+
+- The rule is stated once as `direct_record_fields` and applied by `is_direct`. It requires effective `repr(C)`, at least one field, every field an admissible fixed-width primitive, and byte layout agreement across the supported native ABI alignment profiles.
+- Effective `repr(C)` is strict: `repr(C, packed)` and `repr(C, align(N))` change the compiled layout the direct crossing assumes, so such records cross encoded rather than direct with wrong offsets. `repr(packed)` on a `#[data]` record is rejected outright at expansion with a targeted error, because the wire encoder takes field references, which is an error (E0793) on packed structs.
+
+The same "decided once, then structural" property the IR gives backends is the end state for the macro side as well: the per-invocation wrapper work (RFC #665) can make the expansion's crossing representation a *type-level* consequence of this classification, at which point disagreement between the compiled ABI and the generated bindings becomes inexpressible rather than tested-for.
