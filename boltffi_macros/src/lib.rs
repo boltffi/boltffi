@@ -50,13 +50,19 @@ pub fn data(attribute: TokenStream, item: TokenStream) -> TokenStream {
     if attribute.to_string().trim() == "impl" {
         expand(item)
     } else {
-        expand_data(data::repr::materialize(item))
+        match data::repr::materialize(item) {
+            Ok(item) => expand_data(item),
+            Err(error) => error,
+        }
     }
 }
 
 #[proc_macro_attribute]
 pub fn error(_attribute: TokenStream, item: TokenStream) -> TokenStream {
-    expand_data(data::repr::materialize(item))
+    match data::repr::materialize(item) {
+        Ok(item) => expand_data(item),
+        Err(error) => error,
+    }
 }
 
 #[proc_macro_attribute]

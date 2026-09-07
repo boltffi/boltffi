@@ -205,7 +205,7 @@ impl<'a> Scanner<'a> {
         if name == "str" {
             return Ok(TypeExpr::Str);
         }
-        if let Some(primitive) = Primitive::from_rust_name(&name) {
+        if let Some(primitive) = primitive_path(&type_path.path) {
             return Ok(TypeExpr::Primitive(primitive));
         }
         let path = ast_path(&type_path.path, self)?;
@@ -508,6 +508,28 @@ impl<'a> Scanner<'a> {
     }
 }
 
+/// Resolves a type path to a primitive: a bare spelling like `i64`, or the
+/// canonical qualified forms `std::primitive::i64` / `core::primitive::i64`.
+/// Any other qualified path may name a user type that shares the leaf
+/// spelling, so it does not resolve.
+pub fn primitive_path(path: &syn::Path) -> Option<Primitive> {
+    if path
+        .segments
+        .iter()
+        .any(|segment| !matches!(segment.arguments, syn::PathArguments::None))
+    {
+        return None;
+    }
+    let primitive = Primitive::from_rust_name(&path.segments.last()?.ident.to_string())?;
+    match path.segments.len() {
+        1 => Some(primitive),
+        3 => ((path.segments[0].ident == "std" || path.segments[0].ident == "core")
+            && path.segments[1].ident == "primitive")
+            .then_some(primitive),
+        _ => None,
+    }
+}
+
 pub fn unwrapped(ty: &syn::Type) -> &syn::Type {
     match ty {
         syn::Type::Paren(paren) => unwrapped(&paren.elem),
@@ -787,6 +809,22 @@ mod tests {
             BaseTrait::Function(Box::new(function_trait)),
             bounds,
         ))
+    }
+
+    #[test]
+    fn resolves_primitives_from_bare_and_canonical_spellings_only() {
+        assert_eq!(
+            scan("std::primitive::i64"),
+            Ok(TypeExpr::Primitive(Primitive::I64))
+        );
+        assert_eq!(
+            scan("core::primitive::f32"),
+            Ok(TypeExpr::Primitive(Primitive::F32))
+        );
+        assert!(
+            scan("mymod::i64").is_err(),
+            "a user type sharing a primitive leaf spelling must not resolve as that primitive"
+        );
     }
 
     #[test]
