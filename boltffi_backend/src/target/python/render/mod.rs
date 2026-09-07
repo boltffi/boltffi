@@ -320,6 +320,28 @@ impl<'bindings> Package<'bindings> {
             })
     }
 
+    /// The enum classes of the transparent enums whose variants carry this
+    /// record as their payload, in contract order. The record class inherits
+    /// them so `isinstance` against the enum class holds for payloads read
+    /// straight off the wire.
+    pub fn transparent_conformances(&self, record_id: RecordId) -> Result<Vec<Identifier>> {
+        self.declarations
+            .enums
+            .iter()
+            .filter_map(|enumeration| match enumeration {
+                EnumDecl::Data(enumeration)
+                    if enumeration
+                        .variants()
+                        .iter()
+                        .any(|variant| variant.transparent_payload() == Some(record_id)) =>
+                {
+                    Some(Identifier::parse(Name::new(enumeration.name()).class()))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
     pub fn direct_record_struct(&self, record_id: RecordId) -> Result<FixedStruct> {
         self.declarations
             .records
@@ -370,8 +392,12 @@ impl<'bindings> Package<'bindings> {
                     Ok(EnumCodec::CStyle(enumeration.repr().primitive()))
                 }
                 EnumDecl::Data(enumeration) => {
-                    Identifier::parse(Name::new(enumeration.name()).class())
-                        .map(|class_name| EnumCodec::Data { class_name })
+                    Identifier::parse(Name::new(enumeration.name()).class()).map(|class_name| {
+                        EnumCodec::Data {
+                            class_name,
+                            transparent: enumeration.has_transparent_variants(),
+                        }
+                    })
                 }
                 _ => Err(Error::UnsupportedTarget {
                     target: "python",

@@ -48,6 +48,7 @@ fn variant_def(variant: &syn::Variant, scanner: &Scanner<'_>) -> Result<VariantD
     let attrs = Attributes::new(&variant.attrs, scanner);
     declaration.discriminant = discriminant(variant)?;
     declaration.payload = payload(&variant.fields, scanner)?;
+    declaration.transparent = attrs.transparent()?;
     declaration.source = attributes::public_source(scanner.scope(), variant.span());
     declaration.source_span = declaration.source.span.clone();
     declaration.doc = attrs.doc();
@@ -195,6 +196,29 @@ mod tests {
             error,
             unsupported::feature(UnsupportedFeature::NonLiteralEnumDiscriminant)
         );
+    }
+
+    #[test]
+    fn transparent_attribute_is_captured() {
+        let mut declared_types = DeclaredTypes::new();
+        declared_types.register_record(RecordId::new("demo::Point"));
+        let enumeration = super::build(
+            &parse("pub enum Shape { #[boltffi::transparent] Dot(Point), Empty }"),
+            &ModuleScope::root("demo"),
+            &declared_types,
+        )
+        .expect("scan");
+
+        assert!(enumeration.variants[0].transparent);
+        assert!(!enumeration.variants[1].transparent);
+    }
+
+    #[test]
+    fn transparent_attribute_with_input_is_rejected() {
+        let error = scan("pub enum Shape { #[boltffi::transparent(1)] Dot(u32) }")
+            .expect_err("transparent takes no input");
+
+        assert!(matches!(error, ScanError::InvalidAttribute { .. }));
     }
 
     #[test]

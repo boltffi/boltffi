@@ -983,4 +983,34 @@ class DemoValueTypesTest {
         demoCase("case:records.default_values.service_config.maybe_with_retries.should_return_none")
         assertNull(ServiceConfig.maybeWithRetries(-1))
     }
+
+    @Test
+    fun transparentVariantPayloadsAreTheVariants() {
+        demoCase("case:enums.transparent.waypoint.should_roundtrip_a_blittable_payload")
+        assertEquals(Point(3.0, 4.0), echoWaypoint(Point(3.0, 4.0)))
+        demoCase("case:enums.transparent.waypoint.should_roundtrip_an_encoded_payload")
+        assertEquals(Label("north"), echoWaypoint(Label("north")))
+
+        demoCase("case:enums.transparent.waypoint.should_roundtrip_the_wrapped_and_unit_variants")
+        assertEquals(Waypoint.Note("here"), echoWaypoint(Waypoint.Note("here")))
+        assertEquals(Waypoint.Unset, echoWaypoint(Waypoint.Unset))
+
+        // the same payload crosses under each enum's own tag, and `when` over
+        // the base smart-casts straight to the payload record
+        demoCase("case:enums.transparent.anchor.should_carry_the_shared_payload_under_its_own_tag")
+        val point = Point(1.0, 2.0)
+        assertEquals(point, echoWaypoint(point))
+        assertEquals(point, echoAnchor(point))
+        assertEquals(Anchor.Origin, echoAnchor(Anchor.Origin))
+        val crossed: Waypoint = echoWaypoint(point)
+        assertEquals(
+            1.0,
+            when (crossed) {
+                is Point -> crossed.x
+                is Label -> 0.0
+                is Waypoint.Note -> 0.0
+                Waypoint.Unset -> 0.0
+            },
+        )
+    }
 }

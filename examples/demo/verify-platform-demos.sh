@@ -83,6 +83,11 @@ pack_host_dart() {
     rm -f "$overlay"
 }
 
+# Transparent variants only render for kotlin and python, so the demo keeps
+# them behind a feature; the other targets would fail to generate. The kotlin
+# gradle build passes the same feature to its own codegen step.
+transparent_demo_args=(--cargo-arg=--features --cargo-arg=transparent-demo)
+
 host_default_platforms() {
     case "$(uname -s)" in
         Darwin)
@@ -183,10 +188,10 @@ for selected_platform in "${selected_platforms[@]}"; do
             ;;
         python)
             if [[ -n "$python_interpreter" ]]; then
-                run_step "pack python" run_boltffi pack python --release --python "$python_interpreter"
+                run_step "pack python" run_boltffi "${transparent_demo_args[@]}" pack python --release --python "$python_interpreter"
                 run_step "python demo" "$python_dir/test-demo.sh" --python "$python_interpreter"
             else
-                run_step "pack python" run_boltffi pack python --release
+                run_step "pack python" run_boltffi "${transparent_demo_args[@]}" pack python --release
                 run_step "python demo" "$python_dir/test-demo.sh"
             fi
             ;;

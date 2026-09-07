@@ -149,6 +149,11 @@ fn kotlin_target_qualifies_shadowed_data_enum_payloads() {
 }
 
 #[test]
+fn kotlin_target_renders_transparent_enums_as_sealed_interfaces() {
+    insta::assert_snapshot!(rendered_fixture("enums/transparent"));
+}
+
+#[test]
 fn kotlin_target_qualifies_kotlin_primitive_names_shadowed_by_a_sibling_variant() {
     insta::assert_snapshot!(rendered_fixture("enums/primitive_shadow"));
 }

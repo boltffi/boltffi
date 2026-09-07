@@ -39,6 +39,7 @@ impl EncodedField {
             KotlinType::type_ref(field.ty(), context)?,
             writer,
             current,
+            None,
         )
     }
 
@@ -59,9 +60,11 @@ impl EncodedField {
             KotlinType::type_ref_with_package(field.ty(), context, package)?,
             writer,
             current,
+            Some(package),
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn from_declaration_with_reader(
         field: &EncodedFieldDecl,
         host: &KotlinHost,
@@ -70,8 +73,12 @@ impl EncodedField {
         ty: TypeName,
         writer: &Identifier,
         current: Expression,
+        package: Option<&KotlinPackage>,
     ) -> Result<Self> {
         let mut writer = Writer::new(writer.clone(), host, context)?.current(current.clone());
+        if let Some(package) = package {
+            writer = writer.package(package);
+        }
         let write = field
             .write()
             .render_with(&mut writer)
@@ -85,10 +92,13 @@ impl EncodedField {
                 ty,
                 read: field.read().render_with(&mut reader)?.into_expression(),
                 write: write.clone(),
-                size: field
-                    .write()
-                    .size_with(&mut Sizer::new(host, context)?.current(current))?
-                    .into_expression(),
+                size: {
+                    let mut sizer = Sizer::new(host, context)?.current(current);
+                    if let Some(package) = package {
+                        sizer = sizer.package(package);
+                    }
+                    field.write().size_with(&mut sizer)?.into_expression()
+                },
             }),
             _ => Err(KotlinHost::unsupported("multi-statement encoded field")),
         }
