@@ -23,6 +23,7 @@ pub struct Input<'lowered, C> {
     source: rust_api::Parameter<'lowered>,
     ident: Ident,
     failure: TokenStream,
+    capture: super::Capture,
 }
 
 impl<C> Plan<C> {
@@ -47,12 +48,14 @@ impl<'lowered, C> Input<'lowered, C> {
         source: rust_api::Parameter<'lowered>,
         ident: Ident,
         failure: TokenStream,
+        capture: super::Capture,
     ) -> Self {
         Self {
             plan,
             source,
             ident,
             failure,
+            capture,
         }
     }
 }
@@ -103,6 +106,11 @@ impl<'lowered, C> Input<'lowered, C> {
             self.source
                 .class_handle(&self.plan.target, self.plan.presence, self.plan.receive)?;
         let conversion = self.conversion(&class, carrier.zero())?;
+        let argument = if self.retains_class_handle() {
+            quote! { #ident.shared() }
+        } else {
+            quote! { #ident }
+        };
 
         Ok(Tokens {
             items: Vec::new(),
@@ -110,8 +118,17 @@ impl<'lowered, C> Input<'lowered, C> {
             ffi_parameter_types: vec![ffi_type.clone()],
             conversions: vec![conversion],
             writebacks: Vec::new(),
-            argument: quote! { #ident },
+            argument,
         })
+    }
+
+    /// Async exports keep a strong reference instead of a bare `&T`, so the
+    /// foreign side cannot free the object while the future is alive.
+    fn retains_class_handle(&self) -> bool {
+        matches!(self.capture, super::Capture::Retained)
+            && matches!(self.plan.target, HandleTarget::Class(_))
+            && matches!(self.plan.receive, Receive::ByRef)
+            && matches!(self.plan.presence, HandlePresence::Required)
     }
 
     fn callback_tokens(
@@ -177,6 +194,16 @@ impl<'lowered, C> Input<'lowered, C> {
                             #failure
                         }
                     })
+                };
+            },
+            (Receive::ByRef, HandlePresence::Required) if self.retains_class_handle() => quote! {
+                #null_check
+                let #ident = match unsafe { #handle_type::retain(#handle_pointer) } {
+                    Some(handle) => handle,
+                    None => {
+                        ::boltffi::__private::set_last_error(concat!(stringify!(#ident), ": released class handle"));
+                        #failure
+                    }
                 };
             },
             (Receive::ByRef, HandlePresence::Required) => quote! {

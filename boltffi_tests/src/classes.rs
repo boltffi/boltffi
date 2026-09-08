@@ -380,3 +380,15 @@ impl ClassTestFixture {
             .collect()
     }
 }
+
+// --- baseline repro: async class-handle reference parameters ---
+
+#[export]
+pub fn shared_counter_snapshot(counter: &ThreadSafeCounter) -> i32 {
+    counter.get()
+}
+
+#[export]
+pub async fn async_shared_counter_snapshot(counter: &ThreadSafeCounter) -> i32 {
+    counter.get()
+}
