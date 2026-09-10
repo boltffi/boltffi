@@ -230,23 +230,36 @@ impl<'a> State<'a> {
                 self.pack_scalar_option(&name, *primitive);
             }
             ParamPlan::DirectVec { element, receive } => {
-                let use_ = if *receive == Receive::ByMutRef {
+                let mutable = *receive == Receive::ByMutRef;
+                let use_ = if mutable {
                     surface::ValueUse::ParamMut
                 } else {
                     surface::ValueUse::Param
                 };
                 let c = surface::direct_vector_type(element, self.context, use_)?;
                 self.params.push(format!("{c} {name}"));
-                self.args.push(format!("{name}.ptr"));
-                // Packed direct-record vectors carry a byte count; typed
-                // primitive vectors carry an element count.
-                self.args.push(match element {
-                    boltffi_binding::DirectVectorElementType::Record(_) => format!(
-                        "{name}.len * sizeof({})",
-                        surface::direct_vector_element_type(element, self.context)?
-                    ),
-                    _ => format!("{name}.len"),
-                });
+                match element {
+                    // Packed direct-record vectors cross the C ABI as opaque bytes with a
+                    // byte count, so the typed slice pointer needs a byte-pointer cast: the
+                    // bridge parameter is a const/non-const uint8_t pointer, never the
+                    // element pointer this facade slice type carries.
+                    boltffi_binding::DirectVectorElementType::Record(_) => {
+                        self.args.push(format!(
+                            "({}uint8_t *){name}.ptr",
+                            if mutable { "" } else { "const " }
+                        ));
+                        self.args.push(format!(
+                            "{name}.len * sizeof({})",
+                            surface::direct_vector_element_type(element, self.context)?
+                        ));
+                    }
+                    // Typed primitive vectors carry an element pointer and an element count,
+                    // matching the typed bridge parameter.
+                    _ => {
+                        self.args.push(format!("{name}.ptr"));
+                        self.args.push(format!("{name}.len"));
+                    }
+                }
             }
             ParamPlan::Handle {
                 target: HandleTarget::Callback(id),

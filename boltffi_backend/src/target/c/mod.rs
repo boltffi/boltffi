@@ -379,6 +379,19 @@ mod tests {
             #[export]
             pub fn greet(name: String) -> String { name }
 
+            #[repr(C)]
+            #[data]
+            pub struct Pair {
+                pub a: i32,
+                pub b: i32,
+            }
+
+            #[export]
+            pub fn total(pairs: Vec<crate::Pair>) -> u32 { 0 }
+
+            #[export]
+            pub fn measure(pairs: &[crate::Pair]) -> u32 { 0 }
+
             #[repr(i32)]
             #[data]
             pub enum DivisionError { DivideByZero = 1 }
@@ -405,6 +418,15 @@ mod tests {
             .find(|file| file.path().as_path() == std::path::Path::new("boltffi.h"))
             .expect("boltffi.h")
             .contents();
+        // "total" takes Vec<direct record>: a packed direct vector, whose
+        // pointer crosses the ABI as opaque bytes with a byte count. The facade
+        // must cast the typed slice pointer and scale the element count; either
+        // half missing fails the compile below. "measure" takes a shared slice
+        // of the same record, which packs through an encoded slice instead.
+        assert!(header.contains(
+            "boltffi_function_demo_total((const uint8_t *)pairs.ptr, pairs.len * sizeof(DemoPair))"
+        ));
+
         let dir = std::env::temp_dir().join(format!("boltffi_c_test_{}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("temp dir");
         std::fs::write(dir.join("boltffi.h"), header).expect("write header");
