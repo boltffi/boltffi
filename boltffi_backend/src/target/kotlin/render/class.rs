@@ -49,7 +49,9 @@ pub struct Initializer {
 struct ConstructorSignature(Vec<String>);
 
 /// Handle read through the generated closed-check accessor. Check-then-act:
-/// a `close()` racing the native call is not covered.
+/// a `close()` racing the native call is not covered. Receivers instead go
+/// through the generated `boltffiRetain()`/`boltffiRelease()` in-flight
+/// counter, which defers the native free past the racing call.
 fn guarded_handle(receiver: impl fmt::Display, presence: HandlePresence) -> Result<Expression> {
     let accessor = Identifier::parse("boltffiHandle")?;
     match presence {
@@ -84,14 +86,16 @@ impl Class {
         let name = Self::type_name(decl.name())?;
         let instance_methods = Self::methods(
             decl.methods(),
-            Some(guarded_handle("this", HandlePresence::Required)?),
+            Some(Expression::identifier(Identifier::parse(
+                "__boltffi_receiver",
+            )?)),
             host,
             bridge,
             context,
         )?;
         validate_reserved_members(
             &name,
-            &["close", "boltffiHandle"],
+            &["close", "boltffiHandle", "boltffiRetain", "boltffiRelease"],
             instance_methods
                 .iter()
                 .filter(|method| method.parameters().is_empty())

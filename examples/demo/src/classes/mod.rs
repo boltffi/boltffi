@@ -2,6 +2,7 @@
 pub mod async_factory;
 pub mod async_methods;
 pub mod borrowed;
+pub mod close_guard;
 pub mod constructor_matrix;
 pub mod constructors;
 pub mod methods;
@@ -14,6 +15,7 @@ pub mod unsafe_single_threaded;
 pub use async_factory::*;
 pub use async_methods::*;
 pub use borrowed::*;
+pub use close_guard::*;
 pub use constructor_matrix::*;
 pub use constructors::*;
 pub use methods::*;
