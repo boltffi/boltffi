@@ -1,0 +1,19 @@
+[package]
+name = "pim_toy"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+pim_runtime.workspace = true
+pim_macros.workspace = true
+pim_dep.workspace = true
+
+[features]
+extras = []
+
+[dev-dependencies]
+trybuild.workspace = true
