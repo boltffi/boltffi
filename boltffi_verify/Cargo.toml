@@ -11,5 +11,5 @@ categories = ["development-tools::ffi", "development-tools::testing"]
 
 [dependencies]
 thiserror.workspace = true
-tree-sitter = "0.26"
+tree-sitter = "0.27"
 tree-sitter-swift = "0.7"
