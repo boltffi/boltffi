@@ -33,7 +33,7 @@ quote = "1.0"
 proc-macro2 = { version = "1.0", features = ["span-locations"] }
 rustc_lexer = "0.1"
 walkdir = "2.4"
-rstest = "0.26"
+rstest = "0.27"
 tokio = "1"
 object = "0.40"
 insta = "1.46"
