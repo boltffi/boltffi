@@ -1233,7 +1233,7 @@ mod tests {
         ));
         assert!(jvm_jni.contains("boltffi_function_demo_add(left, right)"));
 
-        assert!(build_gradle.contains("kotlin(\"multiplatform\") version \"2.4.0\""));
+        assert!(build_gradle.contains("kotlin(\"multiplatform\") version \"2.4.20\""));
         assert!(build_gradle.contains("id(\"com.android.library\") version \"8.5.2\""));
         assert!(build_gradle.contains("jvm {"));
         assert!(build_gradle.contains("androidTarget {"));
