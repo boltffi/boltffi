@@ -2,14 +2,11 @@ use super::*;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AsyncCall {
-    create_acquire: Vec<Statement>,
-    create_prepare: Vec<Statement>,
-    create: Expression,
-    create_cleanup: Vec<Statement>,
+    create_body: Vec<Statement>,
     poll: Expression,
     complete: Vec<Statement>,
     cancel: Expression,
-    free: Expression,
+    free_body: Vec<Statement>,
     native_methods: Vec<Method>,
 }
 
@@ -100,67 +97,33 @@ impl AsyncCall {
             failure,
             vec![Statement::throw_value(failure_call)],
         )];
-        Ok(Self {
-            create_acquire: arguments
+        let free_body = std::iter::once(Statement::expression(
+            free.call(scope.native_owner, [future.clone()])?,
+        ))
+        .chain(
+            arguments
                 .receiver
-                .into_iter()
-                .flat_map(|receiver| receiver.native.acquire.iter().cloned())
-                .chain(
-                    arguments
-                        .parameters
-                        .iter()
-                        .flat_map(|parameter| parameter.native.acquire.iter().cloned()),
-                )
-                .collect(),
-            create_prepare: arguments
-                .receiver
-                .into_iter()
-                .flat_map(|receiver| receiver.native.prepare.iter().cloned())
-                .chain(
-                    arguments
-                        .parameters
-                        .iter()
-                        .flat_map(|parameter| parameter.native.prepare.iter().cloned()),
-                )
-                .collect(),
-            create,
-            create_cleanup: arguments
-                .parameters
                 .iter()
-                .flat_map(|parameter| parameter.native.cleanup.iter().cloned())
-                .chain(
-                    arguments
-                        .receiver
-                        .into_iter()
-                        .flat_map(|receiver| receiver.native.cleanup.iter().cloned()),
-                )
-                .collect(),
+                .flat_map(|receiver| receiver.native.cleanup.iter().cloned()),
+        )
+        .collect();
+        Ok(Self {
+            create_body: guarded_create_body(
+                arguments.receiver,
+                arguments.parameters,
+                vec![Statement::return_value(create)],
+                scope.version,
+            ),
             poll: poll.call(scope.native_owner, [future.clone(), continuation])?,
             complete: complete_body,
-            cancel: cancel.call(scope.native_owner, [future.clone()])?,
-            free: free.call(scope.native_owner, [future])?,
+            cancel: cancel.call(scope.native_owner, [future])?,
+            free_body,
             native_methods: vec![start, poll, complete, cancel, free, panic_message],
         })
     }
 
-    pub fn create_acquire(&self) -> &[Statement] {
-        &self.create_acquire
-    }
-
-    pub fn create_prepare(&self) -> &[Statement] {
-        &self.create_prepare
-    }
-
-    pub fn create(&self) -> &Expression {
-        &self.create
-    }
-
-    pub fn create_cleanup(&self) -> &[Statement] {
-        &self.create_cleanup
-    }
-
-    pub fn has_create_cleanup(&self) -> bool {
-        !self.create_cleanup.is_empty()
+    pub fn create_body(&self) -> &[Statement] {
+        &self.create_body
     }
 
     pub fn poll(&self) -> &Expression {
@@ -175,8 +138,8 @@ impl AsyncCall {
         &self.cancel
     }
 
-    pub fn free(&self) -> &Expression {
-        &self.free
+    pub fn free_body(&self) -> &[Statement] {
+        &self.free_body
     }
 
     pub fn native_methods(&self) -> &[Method] {

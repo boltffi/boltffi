@@ -274,7 +274,7 @@ impl Class {
     }
 
     pub fn signatures(&self) -> Vec<ErasedSignature> {
-        ["close", "rawHandle"]
+        ["close", "rawHandle", "boltffiRetain", "boltffiRelease"]
             .into_iter()
             .map(|name| ErasedSignature::new(Identifier::known(name), []))
             .chain(
