@@ -18,7 +18,7 @@ use crate::pack::symbols::{
     ensure_debug_symbols_profile_has_debuginfo, ensure_existing_debug_symbol_artifacts_are_usable,
 };
 use crate::reporter::Reporter;
-use crate::target::{BuiltLibrary, Platform};
+use crate::target::{Architecture, BuiltLibrary, Platform, RustTarget};
 
 use super::{
     discover_built_libraries_for_targets, missing_built_libraries, print_cargo_line,
@@ -47,7 +47,11 @@ pub(crate) fn pack_android(
 
     reporter.section("🤖", "Packing Android");
 
-    ensure_android_kotlin_desktop_no_build_supported(config, options.execution.no_build)?;
+    ensure_android_kotlin_desktop_no_build_supported(
+        config,
+        options.execution.no_build,
+        options.skip_desktop,
+    )?;
 
     let build_cargo_args = resolve_build_cargo_args(config, &options.execution.cargo_args);
     let binding_expansion = (!options.execution.no_build)
@@ -55,9 +59,9 @@ pub(crate) fn pack_android(
         .transpose()?;
     let build_profile =
         crate::build::resolve_build_profile(options.execution.release, &build_cargo_args);
-    let android_targets = config.android_targets();
+    let android_targets = selected_android_targets(config, &options.architectures)?;
 
-    if let Some(binding_expansion) = binding_expansion.as_ref() {
+    if let Some(binding_expansion) = binding_expansion.as_ref().filter(|_| !options.desktop_only) {
         if config.android_debug_symbols_enabled() {
             ensure_debug_symbols_profile_has_debuginfo(
                 &build_cargo_args,
@@ -108,6 +112,18 @@ pub(crate) fn pack_android(
         step.finish_success();
     }
 
+    // `--desktop-only` stops here: with no architecture built there is nothing to
+    // discover or package, and the jniLibs already on disk stay as they are.
+    if options.desktop_only {
+        package_android_kotlin_desktop_natives(
+            config,
+            &options,
+            binding_expansion.as_ref(),
+            reporter,
+        )?;
+        return Ok(());
+    }
+
     let libraries = match binding_expansion.as_ref() {
         Some(expansion) => BuiltLibrary::discover_for_targets(
             expansion.target_directory(),
@@ -155,8 +171,12 @@ pub(crate) fn pack_android(
     Ok(())
 }
 
-fn ensure_android_kotlin_desktop_no_build_supported(config: &Config, no_build: bool) -> Result<()> {
-    if no_build && should_package_android_kotlin_desktop_natives(config) {
+fn ensure_android_kotlin_desktop_no_build_supported(
+    config: &Config,
+    no_build: bool,
+    skip_desktop: bool,
+) -> Result<()> {
+    if no_build && should_package_android_kotlin_desktop_natives(config, skip_desktop) {
         return Err(CliError::CommandFailed {
             command: "pack android --no-build is unsupported while Kotlin desktop native packaging is enabled; rerun without --no-build".to_string(),
             status: None,
@@ -166,8 +186,46 @@ fn ensure_android_kotlin_desktop_no_build_supported(config: &Config, no_build: b
     Ok(())
 }
 
-fn should_package_android_kotlin_desktop_natives(config: &Config) -> bool {
-    config.android_kotlin_desktop_pack_enabled()
+/// The configured Android targets, narrowed to `architectures` when it asks for
+/// some. An architecture the configuration does not carry is an error rather
+/// than an empty build, so a typo cannot quietly produce a partial package.
+fn selected_android_targets(
+    config: &Config,
+    architectures: &[Architecture],
+) -> Result<Vec<RustTarget>> {
+    let configured = config.android_targets();
+    if architectures.is_empty() {
+        return Ok(configured);
+    }
+
+    let unknown: Vec<_> = architectures
+        .iter()
+        .filter(|architecture| {
+            !configured
+                .iter()
+                .any(|target| target.architecture() == **architecture)
+        })
+        .map(|architecture| format!("{architecture:?}").to_lowercase())
+        .collect();
+    if !unknown.is_empty() {
+        return Err(CliError::CommandFailed {
+            command: format!(
+                "architecture(s) {} are not configured under targets.android.architectures",
+                unknown.join(", ")
+            ),
+            status: None,
+        });
+    }
+
+    Ok(configured
+        .into_iter()
+        .filter(|target| architectures.contains(&target.architecture()))
+        .collect())
+}
+
+fn should_package_android_kotlin_desktop_natives(config: &Config, skip_desktop: bool) -> bool {
+    !skip_desktop
+        && config.android_kotlin_desktop_pack_enabled()
         && matches!(
             config.android_kotlin_desktop_loader(),
             KotlinDesktopLoader::Bundled
@@ -180,7 +238,7 @@ fn package_android_kotlin_desktop_natives(
     binding_expansion: Option<&BindingExpansion>,
     reporter: &Reporter,
 ) -> Result<()> {
-    if !should_package_android_kotlin_desktop_natives(config) {
+    if !should_package_android_kotlin_desktop_natives(config, options.skip_desktop) {
         return Ok(());
     }
     let binding_expansion = binding_expansion.ok_or_else(|| CliError::CommandFailed {
@@ -346,13 +404,21 @@ enabled = true
         );
 
         assert!(should_package_android_kotlin_desktop_natives(
-            &bundled_enabled
+            &bundled_enabled,
+            false
         ));
         assert!(!should_package_android_kotlin_desktop_natives(
-            &bundled_disabled
+            &bundled_disabled,
+            false
         ));
         assert!(!should_package_android_kotlin_desktop_natives(
-            &system_loader
+            &system_loader,
+            false
+        ));
+        // the flag overrides a configuration that would otherwise pack them
+        assert!(!should_package_android_kotlin_desktop_natives(
+            &bundled_enabled,
+            true
         ));
     }
 }

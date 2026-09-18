@@ -18,6 +18,7 @@ use crate::commands::{run_build, run_check, run_doctor, run_init, run_pack, run_
 use crate::config::{Config, ConfigError};
 use crate::pack::PackError;
 use crate::reporter;
+use crate::target::Architecture;
 use crate::toolchain::AndroidToolchainError;
 
 #[derive(Parser)]
@@ -203,6 +204,28 @@ pub(crate) enum GenerateTargetArg {
 }
 
 #[derive(Clone, Copy, clap::ValueEnum)]
+pub(crate) enum AndroidArchitectureArg {
+    Arm64,
+    Armv7,
+    // the derive would kebab-case this to `x86-64`; the configuration spells it
+    // `x86_64` under targets.android.architectures, and that has to be accepted
+    #[value(name = "x86_64", alias = "x86-64")]
+    X86_64,
+    X86,
+}
+
+impl From<AndroidArchitectureArg> for Architecture {
+    fn from(arg: AndroidArchitectureArg) -> Self {
+        match arg {
+            AndroidArchitectureArg::Arm64 => Architecture::Arm64,
+            AndroidArchitectureArg::Armv7 => Architecture::Armv7,
+            AndroidArchitectureArg::X86_64 => Architecture::X86_64,
+            AndroidArchitectureArg::X86 => Architecture::X86,
+        }
+    }
+}
+
+#[derive(Clone, Copy, clap::ValueEnum)]
 pub(crate) enum BuildPlatformArg {
     #[value(help = "Build Apple targets (iOS + iOS-simulator, and macOS if enabled)")]
     Apple,
@@ -272,6 +295,26 @@ pub(crate) enum PackTargetArg {
 
         #[arg(long)]
         no_build: bool,
+
+        #[arg(
+            long = "architecture",
+            value_name = "ARCH",
+            help = "Build only this architecture, repeatable; defaults to every configured one"
+        )]
+        architectures: Vec<AndroidArchitectureArg>,
+
+        #[arg(
+            long,
+            conflicts_with = "desktop_only",
+            help = "Skip the Kotlin desktop natives, whatever the configuration says"
+        )]
+        skip_desktop: bool,
+
+        #[arg(
+            long,
+            help = "Build only the Kotlin desktop natives, leaving the Android architectures alone"
+        )]
+        desktop_only: bool,
 
         #[arg(long, help = "Enable experimental targets/features")]
         experimental: bool,
@@ -561,6 +604,9 @@ pub(crate) fn execute_command(
                 PackTargetArg::Android {
                     release,
                     no_build,
+                    architectures,
+                    skip_desktop,
+                    desktop_only,
                     experimental: _,
                 } => PackCommand::Android(PackAndroidOptions {
                     execution: pack_execution_options(
@@ -570,6 +616,9 @@ pub(crate) fn execute_command(
                         deny_skipped,
                         cargo_args.clone(),
                     ),
+                    architectures: architectures.into_iter().map(Architecture::from).collect(),
+                    skip_desktop,
+                    desktop_only,
                 }),
                 PackTargetArg::Kmp {
                     release,
@@ -917,6 +966,9 @@ fn release_pack_commands(
                         false,
                         cargo_args.to_vec(),
                     ),
+                    architectures: Vec::new(),
+                    skip_desktop: false,
+                    desktop_only: false,
                 }));
             }
         }
@@ -972,6 +1024,9 @@ fn release_pack_commands(
                         false,
                         cargo_args.to_vec(),
                     ),
+                    architectures: Vec::new(),
+                    skip_desktop: false,
+                    desktop_only: false,
                 }));
             }
             if config.should_process(Target::KotlinMultiplatform, false) {
