@@ -1,0 +1,9 @@
+[package]
+name = "pim_dep"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+pim_runtime.workspace = true
+pim_macros.workspace = true
