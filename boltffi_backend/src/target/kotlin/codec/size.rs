@@ -8,6 +8,7 @@ use crate::{
     target::kotlin::{
         KotlinHost,
         codec::value::ValueExpression,
+        name_style::KotlinPackage,
         primitive::KotlinPrimitive,
         render::Enumeration,
         syntax::{ArgumentList, Expression, Identifier},
@@ -19,6 +20,7 @@ pub struct Sizer<'context> {
     current: Expression,
     host: &'context KotlinHost,
     context: &'context RenderContext<'context, Native>,
+    package: Option<KotlinPackage>,
 }
 
 pub struct SizeExpression {
@@ -35,11 +37,17 @@ impl<'context> Sizer<'context> {
             current: Expression::identifier(Identifier::parse("value")?),
             host,
             context,
+            package: None,
         })
     }
 
     pub fn current(mut self, current: Expression) -> Self {
         self.current = current;
+        self
+    }
+
+    pub fn package(mut self, package: &KotlinPackage) -> Self {
+        self.package = Some(package.clone());
         self
     }
 
@@ -174,7 +182,8 @@ impl CodecSize for Sizer<'_> {
     }
 
     fn data_enum(&mut self, id: EnumId, value: &ValueRef) -> Self::Expr {
-        Enumeration::size_expression(id, self.value(value)?, self.context).map(SizeExpression::new)
+        Enumeration::size_expression(id, self.value(value)?, self.context, self.package.as_ref())
+            .map(SizeExpression::new)
     }
 
     fn class_handle(&mut self, _id: ClassId, _value: &ValueRef) -> Self::Expr {

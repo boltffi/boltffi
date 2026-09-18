@@ -85,6 +85,18 @@ impl LowerError {
         Self::new(LowerErrorKind::FieldPositionOverflow)
     }
 
+    pub(crate) fn invalid_transparent_variant(
+        enumeration: impl fmt::Display,
+        variant: impl fmt::Display,
+        reason: &'static str,
+    ) -> Self {
+        Self::new(LowerErrorKind::InvalidTransparentVariant {
+            enumeration: enumeration.to_string(),
+            variant: variant.to_string(),
+            reason,
+        })
+    }
+
     /// Returns the reason lowering failed.
     pub fn kind(&self) -> &LowerErrorKind {
         &self.kind
@@ -148,6 +160,16 @@ impl fmt::Display for LowerError {
             }
             LowerErrorKind::VariantTagOverflow => formatter.write_str("enum variant tag overflow"),
             LowerErrorKind::FieldPositionOverflow => formatter.write_str("field position overflow"),
+            LowerErrorKind::InvalidTransparentVariant {
+                enumeration,
+                variant,
+                reason,
+            } => {
+                write!(
+                    formatter,
+                    "transparent variant `{enumeration}::{variant}` {reason}"
+                )
+            }
             LowerErrorKind::InvalidBindings(error) => error.fmt(formatter),
         }
     }
@@ -209,6 +231,17 @@ pub enum LowerErrorKind {
     VariantTagOverflow,
     /// A tuple field index could not fit in a field position.
     FieldPositionOverflow,
+    /// A `#[boltffi::transparent]` variant has a shape the attribute cannot
+    /// take: a payload that is not exactly one record, or a payload record
+    /// another transparent variant of the same enum already carries.
+    InvalidTransparentVariant {
+        /// Enum owning the variant.
+        enumeration: String,
+        /// Variant carrying the attribute.
+        variant: String,
+        /// Why the shape is rejected.
+        reason: &'static str,
+    },
     /// The lowered contract failed binding validation.
     InvalidBindings(BindingError),
 }

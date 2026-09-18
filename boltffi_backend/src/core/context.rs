@@ -128,6 +128,24 @@ impl<'bindings, S: Surface> RenderContext<'bindings, S> {
         }
     }
 
+    /// Returns whether the record is the payload of a transparent data-enum
+    /// variant, i.e. whether its rendered type declares supertypes.
+    pub fn is_transparent_payload(&self, id: RecordId) -> bool {
+        self.bindings
+            .decls()
+            .iter()
+            .filter_map(|declaration| {
+                DeclarationRef::enumeration(DeclarationRef::from(declaration))
+            })
+            .any(|enumeration| match enumeration {
+                EnumDecl::Data(enumeration) => enumeration
+                    .variants()
+                    .iter()
+                    .any(|variant| variant.transparent_payload() == Some(id)),
+                _ => false,
+            })
+    }
+
     /// Returns the function declaration with the given id.
     pub fn function(&self, id: FunctionId) -> Option<&'bindings FunctionDecl<S>> {
         self.find(DeclarationId::Function(id), DeclarationRef::function)

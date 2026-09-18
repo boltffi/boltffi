@@ -161,7 +161,7 @@ impl<'package> CodecRead for Reader<'package> {
     }
 
     fn data_enum(&mut self, id: EnumId) -> Self::Expr {
-        let EnumCodec::Data { class_name } = self.package.enum_codec(id)? else {
+        let EnumCodec::Data { class_name, .. } = self.package.enum_codec(id)? else {
             return Err(Error::UnsupportedTarget {
                 target: "python",
                 shape: "c-style enum reached data enum wire reader",
@@ -247,5 +247,8 @@ impl<'package> CodecRead for Reader<'package> {
 
 pub enum EnumCodec {
     CStyle(Primitive),
-    Data { class_name: Identifier },
+    Data {
+        class_name: Identifier,
+        transparent: bool,
+    },
 }
