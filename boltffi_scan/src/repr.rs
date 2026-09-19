@@ -2,7 +2,7 @@ use syn::{Token, punctuated::Punctuated};
 
 use boltffi_ast::{Primitive, ReprAttr, ReprItem};
 
-pub(super) fn scan(attrs: &[syn::Attribute]) -> ReprAttr {
+pub fn scan(attrs: &[syn::Attribute]) -> ReprAttr {
     ReprAttr::new(
         attrs
             .iter()
