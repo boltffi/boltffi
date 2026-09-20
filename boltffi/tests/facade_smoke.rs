@@ -1,5 +1,7 @@
 use boltffi::*;
 
+scaffolding!();
+
 #[data]
 #[derive(Clone, Copy)]
 struct Point {

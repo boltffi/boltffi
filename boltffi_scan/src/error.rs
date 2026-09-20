@@ -62,6 +62,9 @@ pub enum ScanError {
     UnsupportedClassImplShape {
         target: String,
     },
+    UnsupportedCapturedClassImpl {
+        target: String,
+    },
     UnsupportedGenerics {
         item: String,
     },
@@ -191,6 +194,13 @@ impl fmt::Display for ScanError {
                 write!(
                     formatter,
                     "exported class impl `{target}` cannot implement a trait"
+                )
+            }
+            Self::UnsupportedCapturedClassImpl { target } => {
+                write!(
+                    formatter,
+                    "class impl target `{target}` is not captured per invocation; \
+                     export the class as a bare name from its type's module"
                 )
             }
             Self::UnsupportedGenerics { item } => {
@@ -354,6 +364,14 @@ mod tests {
             }
             .to_string(),
             "exported class impl `Engine` cannot implement a trait"
+        );
+        assert_eq!(
+            ScanError::UnsupportedCapturedClassImpl {
+                target: "crate::runtime::Engine".to_owned()
+            }
+            .to_string(),
+            "class impl target `crate::runtime::Engine` is not captured per invocation; \
+             export the class as a bare name from its type's module"
         );
         assert_eq!(
             ScanError::UnsupportedGenerics {

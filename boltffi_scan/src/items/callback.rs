@@ -17,6 +17,14 @@ pub fn scan(
     build(marked.item(), marked.scope(), declared_types)
 }
 
+pub(crate) fn scan_item(
+    item: &syn::ItemTrait,
+    scope: &ModuleScope,
+    declared_types: &DeclaredTypes,
+) -> Result<TraitDef, ScanError> {
+    build(item, scope, declared_types)
+}
+
 fn build(
     item: &syn::ItemTrait,
     scope: &ModuleScope,

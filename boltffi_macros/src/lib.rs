@@ -2,6 +2,7 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::{DeriveInput, parse_macro_input};
 
+mod capture;
 mod custom;
 mod data;
 mod expansion;
@@ -32,38 +33,57 @@ pub fn ffi_stream(_attribute: TokenStream, item: TokenStream) -> TokenStream {
 
 #[proc_macro_attribute]
 pub fn custom_ffi(_attribute: TokenStream, item: TokenStream) -> TokenStream {
-    expand(item)
+    let captured = capture_if_enabled(|| capture::custom_ffi_tokens(item.clone()));
+    append_capture(expand(item), captured)
 }
 
 #[proc_macro]
 pub fn custom_type(item: TokenStream) -> TokenStream {
-    custom::r#type::custom_type_impl(item)
+    let captured = capture_if_enabled(|| capture::custom_type_tokens(item.clone()));
+    append_capture(custom::r#type::custom_type_impl(item), captured)
 }
 
 #[proc_macro]
 pub fn interned_string_pool(item: TokenStream) -> TokenStream {
-    interned_string::interned_string_pool_impl(item)
+    let captured = capture_if_enabled(|| capture::interned_string_pool_tokens(item.clone()));
+    append_capture(interned_string::interned_string_pool_impl(item), captured)
 }
 
 #[proc_macro_attribute]
 pub fn data(attribute: TokenStream, item: TokenStream) -> TokenStream {
-    if attribute.to_string().trim() == "impl" {
+    let is_impl = attribute.to_string().trim() == "impl";
+    let captured = capture_if_enabled(|| {
+        capture::item_tokens(
+            item.clone(),
+            if is_impl {
+                capture::ImplCapture::Methods
+            } else {
+                capture::ImplCapture::Class(proc_macro2::TokenStream::new())
+            },
+        )
+    });
+    let expanded = if is_impl {
         expand(item)
     } else {
         expand_data(data::repr::materialize(item))
-    }
+    };
+    append_capture(expanded, captured)
 }
 
 #[proc_macro_attribute]
 pub fn error(_attribute: TokenStream, item: TokenStream) -> TokenStream {
-    expand_data(data::repr::materialize(item))
+    let captured = capture_if_enabled(|| capture::error_item_tokens(item.clone()));
+    append_capture(expand_data(data::repr::materialize(item)), captured)
 }
 
 #[proc_macro_attribute]
-pub fn export(_attribute: TokenStream, item: TokenStream) -> TokenStream {
+pub fn export(attribute: TokenStream, item: TokenStream) -> TokenStream {
     match syn::parse::<syn::Item>(item.clone()) {
         Ok(syn::Item::Const(_) | syn::Item::Fn(_) | syn::Item::Impl(_) | syn::Item::Trait(_)) => {
-            expand(item)
+            let captured = capture_if_enabled(|| {
+                capture::item_tokens(item.clone(), capture::ImplCapture::Class(attribute.into()))
+            });
+            append_capture(expand(item), captured)
         }
         Ok(item) => syn::Error::new_spanned(
             item,
@@ -73,6 +93,38 @@ pub fn export(_attribute: TokenStream, item: TokenStream) -> TokenStream {
         .into(),
         Err(error) => error.to_compile_error().into(),
     }
+}
+
+#[proc_macro]
+pub fn scaffolding(item: TokenStream) -> TokenStream {
+    if !item.is_empty() {
+        return syn::Error::new(
+            proc_macro2::Span::call_site(),
+            "boltffi::scaffolding! takes no arguments",
+        )
+        .to_compile_error()
+        .into();
+    }
+    capture::scaffolding_tokens().into()
+}
+
+// Metadata-only and explicit expansion builds retain their existing contract.
+// Ordinary builds additionally emit source records, without reclassifying the ABI.
+fn capture_if_enabled(
+    capture: impl FnOnce() -> proc_macro2::TokenStream,
+) -> proc_macro2::TokenStream {
+    if std::env::var_os(boltffi_binding::BINDING_METADATA_BUILD_ENV).is_some()
+        || std::env::var_os(boltffi_binding::BINDING_EXPANSION_BUILD_ENV).is_some()
+    {
+        proc_macro2::TokenStream::new()
+    } else {
+        capture()
+    }
+}
+
+fn append_capture(expanded: TokenStream, captured: proc_macro2::TokenStream) -> TokenStream {
+    let expanded = proc_macro2::TokenStream::from(expanded);
+    quote!(#expanded #captured).into()
 }
 
 #[proc_macro_attribute]

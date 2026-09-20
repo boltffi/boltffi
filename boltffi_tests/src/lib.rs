@@ -4,6 +4,8 @@
 
 use boltffi::*;
 
+scaffolding!();
+
 #[data]
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub struct FixturePoint {

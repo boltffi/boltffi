@@ -1,4 +1,6 @@
 use boltffi::*;
+
+scaffolding!();
 use std::sync::atomic::{AtomicI32, Ordering};
 
 #[data]

@@ -1,3 +1,5 @@
+boltffi::scaffolding!();
+
 pub mod coordinate;
 pub mod event;
 #[cfg(not(feature = "experimental"))]

@@ -40,6 +40,53 @@ pub fn scan(
     Ok(custom)
 }
 
+pub(crate) fn scan_macro_tokens(
+    tokens: proc_macro2::TokenStream,
+    scope: &ModuleScope,
+    declared_types: &DeclaredTypes,
+) -> Result<CustomTypeDef, ScanError> {
+    let spec = syn::parse2::<ParsedSpec>(tokens)
+        .map_err(invalid_custom_type)
+        .and_then(Spec::from_parsed)?;
+    build_from_spec(&spec, scope, declared_types)
+}
+
+pub(crate) fn scan_trait_impl_item(
+    item: &syn::ItemImpl,
+    scope: &ModuleScope,
+    declared_types: &DeclaredTypes,
+) -> Result<CustomTypeDef, ScanError> {
+    let spec = Spec::parse_trait_impl(item)?;
+    build_from_spec(&spec, scope, declared_types)
+}
+
+fn build_from_spec(
+    spec: &Spec,
+    scope: &ModuleScope,
+    declared_types: &DeclaredTypes,
+) -> Result<CustomTypeDef, ScanError> {
+    let custom_name = name::source(spec.name());
+    let custom_id = CustomTypeId::new(scope.path().qualified(&spec.name().to_string()));
+    let mut converters = spec.converters(scope.path());
+    mark_deferred_module(&mut converters.into_ffi);
+    mark_deferred_module(&mut converters.try_from_ffi);
+    let scanner = Scanner::new(declared_types, scope);
+    Ok(CustomTypeDef::new(
+        custom_id,
+        custom_name,
+        spec.remote_type().clone(),
+        scanner.scan(spec.repr())?,
+        spec.error().cloned(),
+        converters,
+    ))
+}
+
+fn mark_deferred_module(converter: &mut boltffi_ast::CustomTypeConverter) {
+    if let boltffi_ast::CustomTypeConverter::Path(path) = converter {
+        path.segments.insert(0, PathSegment::new("$self"));
+    }
+}
+
 pub struct Spec {
     visibility: Option<syn::Visibility>,
     name: syn::Ident,

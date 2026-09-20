@@ -1,0 +1,70 @@
+# Per-invocation discovery
+
+For a Rust declaration such as `#[data] struct Route { point: Point }`, capture emits
+a source fragment plus a compiler-resolved descriptor for `Point`. Bindgen reads
+these records from compiled artifacts, aggregates the fragments, and passes the
+result to the same binding IR lowerer used by the scanner.
+
+Add the identity anchor once at the root of each participating crate:
+
+```rust
+boltffi::scaffolding!();
+```
+
+The anchor defines a crate-local tag so `custom_type!` can register foreign types
+without violating Rust's orphan rules. Those registrations remain per-crate.
+Forgetting the anchor can produce an unresolved `crate::__BoltffiTag` diagnostic.
+
+Capture covers data and error types, exported functions, classes, callback traits,
+associated methods and constants, custom types, streams, and interned-string pools.
+Ordinary builds emit records; explicit binding-metadata and expansion builds retain
+their existing behavior. The macro entry points still use the binding IR expansion
+path for runtime implementations and FFI wrappers. Capture introduces no separate
+crossing classifier or experimental wrapper ABI.
+
+## Selection and fallback
+
+Generation tries the source-record build first. A nonempty record set can replace
+the envelope only when all records belong to the root package and aggregation
+succeeds. The following conditions retain the scanner-backed envelope path:
+
+- dependency-contributed records, pending explicit dependency visibility semantics;
+- unsupported captures, unresolved references, and shadowed builtin names;
+- conditional members, fields, or variants that the enclosing attribute macro sees
+  before rustc has evaluated their `cfg` / `cfg_attr` attributes.
+
+Conditional captures emit an unsupported marker without projecting references to
+conditionally absent types. This preserves valid Rust builds rather than turning
+a disabled member into a missing-type error. Genuine aggregation errors, such as
+conflicting duplicate declarations, still fail generation.
+
+When Cargo's target directory is not explicitly overridden, source-record and
+envelope builds use separate `boltffi-source-records` and `boltffi-metadata`
+subdirectories. This keeps their differing build flags from invalidating each
+other's cached artifacts.
+
+## Remaining work
+
+This is a discovery integration step, not completion of RFC #665. Runtime expansion
+still scans source. Records alone do not guarantee that every macro-generated or
+`include!`-generated export has a callable wrapper. Dependency visibility, imported
+class identity, and conditional-member capture require further work before the
+scanner can be retired.
+
+Per-invocation wrapper work must separately demonstrate agreement with the binding
+IR for ownership, direct records and vectors, options, results, handles, and both
+Native and Wasm32 surfaces.
+
+## Verification
+
+The bindgen tests compare capture-fed and scanner-fed lowering on both surfaces.
+An end-to-end generation test makes the envelope build fail deliberately, proving
+that a supported root-only surface is generated from records. Another test verifies
+that a disabled method referring to an unavailable type compiles, signals a capture
+gap, and generates only its active API through fallback. Artifact tests cover source
+records across dependency artifacts and wasm32 when that target is installed.
+
+One parallel workspace run failed while reading the demo's `libdemo.a` from the
+source-record build directory. The same CLI test passed in isolation and all 474
+CLI tests passed on rerun. Concurrent builds sharing artifact paths remain a
+suspected race to investigate; the rerun does not establish that it is fixed.
