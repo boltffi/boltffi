@@ -52,6 +52,11 @@ impl GuardedCounter {
             details = "JavaScript is single-threaded, so dispose() cannot race an in-flight call from another thread; the deferred-free scenario cannot be expressed."
         ),
         exclude(
+            dart,
+            reason = ExclusionReason::CoverageGap,
+            details = "The Dart demo does not yet exercise dispose$() racing an in-flight call from another thread; its gated-call test only checks normal callback completion."
+        ),
+        exclude(
             python,
             reason = ExclusionReason::ImplementationGap,
             details = "Python releases class handles in __del__; there is no user-facing close() to race against an in-flight call."
