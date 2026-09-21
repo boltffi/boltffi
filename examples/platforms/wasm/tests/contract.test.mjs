@@ -10,7 +10,9 @@ const repositoryRoot = dirname(dirname(dirname(wasmRoot)));
 const rustSourceRoot = join(repositoryRoot, "examples", "demo", "src");
 const generatedDeclarationPath = join(wasmRoot, "dist", "demo.d.ts");
 
-const unsupportedTopLevelFunctions = new Set();
+const unsupportedTopLevelFunctions = new Set([
+  "async_fns/mod.rs::asyncResumedThreadName",
+]);
 
 const unsupportedTypeMembers = new Set();
 

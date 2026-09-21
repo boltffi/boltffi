@@ -2682,6 +2682,9 @@ public static class DemoTest
             "AsyncMakeMixedRecord.Shape");
         Require(made.Parameters.Tags.SequenceEqual(parameters.Tags), "AsyncMakeMixedRecord.Parameters");
 
+        DemoCase("case:async_fns.native_wake.resumed_thread.should_not_be_the_waking_thread");
+        Require(await AsyncResumedThreadName() != "boltffi-demo-waker", "AsyncResumedThreadName resumed on the waking thread");
+
         Console.WriteLine("  PASS\n");
     }
 

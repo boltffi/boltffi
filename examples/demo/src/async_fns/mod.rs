@@ -7,6 +7,44 @@ use crate::{
     },
 };
 use boltffi::*;
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::task::{Context, Poll};
+use std::time::Duration;
+
+const WAKER_THREAD_NAME: &str = "boltffi-demo-waker";
+
+struct WakeFromNativeThread {
+    woken: Arc<AtomicBool>,
+    spawned: bool,
+}
+
+impl Future for WakeFromNativeThread {
+    type Output = ();
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+        if self.woken.load(Ordering::Acquire) {
+            return Poll::Ready(());
+        }
+        if !self.spawned {
+            self.spawned = true;
+            let woken = Arc::clone(&self.woken);
+            let waker = cx.waker().clone();
+            std::thread::Builder::new()
+                .name(WAKER_THREAD_NAME.to_owned())
+                .spawn(move || {
+                    // Lets the host park its continuation so the wake drives the resume path.
+                    std::thread::sleep(Duration::from_millis(20));
+                    woken.store(true, Ordering::Release);
+                    waker.wake();
+                })
+                .expect("waker thread should spawn");
+        }
+        Poll::Pending
+    }
+}
 
 /// Adds two numbers asynchronously.
 #[demo_bench_macros::demo_case(
@@ -139,4 +177,24 @@ pub async fn async_make_mixed_record(
     parameters: MixedRecordParameters,
 ) -> MixedRecord {
     make_mixed_record(name, anchor, priority, shape, parameters)
+}
+
+#[demo_bench_macros::demo_case(
+    "async_fns.native_wake.resumed_thread.should_not_be_the_waking_thread",
+    justification = "Ensure hosts resume an async call on their own threads instead of inline on the Rust thread that woke the future, which may be a runtime worker that must not block, run host callbacks, or drop native objects.",
+    directions = "Await `async_fns::async_resumed_thread_name` through the generated binding and assert the returned thread name is not `boltffi-demo-waker`.",
+    exclude(
+        typescript,
+        reason = ExclusionReason::ImplementationGap,
+        details = "wasm32 has no native threads, so nothing can wake the future from another thread."
+    )
+)]
+#[export]
+pub async fn async_resumed_thread_name() -> String {
+    WakeFromNativeThread {
+        woken: Arc::new(AtomicBool::new(false)),
+        spawned: false,
+    }
+    .await;
+    std::thread::current().name().unwrap_or_default().to_owned()
 }

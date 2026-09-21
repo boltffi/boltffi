@@ -62,4 +62,10 @@ final class AsyncFnsTests: DemoTestCase {
         )
         XCTAssertEqual(createdRecord, record)
     }
+
+    func testAsyncCallsResumeOffTheWakingThread() async throws {
+        demoCase("case:async_fns.native_wake.resumed_thread.should_not_be_the_waking_thread")
+        let resumedThread = try await asyncResumedThreadName()
+        XCTAssertNotEqual(resumedThread, "boltffi-demo-waker")
+    }
 }

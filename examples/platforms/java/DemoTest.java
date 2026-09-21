@@ -2161,6 +2161,10 @@ public final class DemoTest {
                 record.parameters()
             ).get().equals(record) : "asyncMakeMixedRecord";
 
+            demoCase("case:async_fns.native_wake.resumed_thread.should_not_be_the_waking_thread");
+            String resumedThread = Demo.asyncResumedThreadName().get();
+            assert !resumedThread.equals("boltffi-demo-waker") : "asyncResumedThreadName resumed on the waking thread";
+
             demoCase("case:async_fns.basic.get_numbers.should_return_counting_sequence");
             int[] counting = Demo.asyncGetNumbers(4).get();
             assert counting.length == 4 : "asyncGetNumbers length";

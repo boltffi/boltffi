@@ -7,6 +7,7 @@ import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -208,6 +209,14 @@ class DemoCallbacksAndAsyncTest {
             assertEquals("a, b, c", asyncConcat(listOf("a", "b", "c")))
             demoCase("case:async_fns.basic.get_numbers.should_return_counting_sequence")
             assertContentEquals(intArrayOf(0, 1, 2, 3, 4), asyncGetNumbers(5))
+        }
+    }
+
+    @Test
+    fun asyncCallsResumeOffTheWakingThread() = runBlocking {
+        withTimeout(10_000) {
+            demoCase("case:async_fns.native_wake.resumed_thread.should_not_be_the_waking_thread")
+            assertNotEquals("boltffi-demo-waker", asyncResumedThreadName())
         }
     }
 

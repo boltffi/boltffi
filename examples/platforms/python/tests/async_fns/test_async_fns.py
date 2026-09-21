@@ -73,3 +73,7 @@ class AsyncFunctionTests(AsyncDemoTestCase):
             ),
             record,
         )
+
+    async def test_async_calls_resume_off_the_waking_thread(self) -> None:
+        self.demo_case("case:async_fns.native_wake.resumed_thread.should_not_be_the_waking_thread")
+        self.assertNotEqual(await demo.async_resumed_thread_name(), "boltffi-demo-waker")
