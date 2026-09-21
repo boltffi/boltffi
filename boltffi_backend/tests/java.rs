@@ -885,6 +885,7 @@ const ASYNC_RUNTIME_PROBE: &str = r#"
     import java.util.concurrent.CountDownLatch;
     import java.util.concurrent.atomic.AtomicInteger;
     import java.util.concurrent.atomic.AtomicLong;
+    import java.util.concurrent.atomic.AtomicReference;
 
     public final class AsyncRuntimeProbe {
         private AsyncRuntimeProbe() {}
@@ -925,11 +926,13 @@ const ASYNC_RUNTIME_PROBE: &str = r#"
             AtomicInteger polls = new AtomicInteger();
             AtomicInteger freed = new AtomicInteger();
             AtomicLong continuation = new AtomicLong();
+            AtomicReference<Thread> repollThread = new AtomicReference<>();
             CompletableFuture<Integer> result = BoltFfiAsync.call(
                 () -> 12L,
                 (future, handle) -> {
-                    polls.incrementAndGet();
                     continuation.set(handle);
+                    repollThread.set(Thread.currentThread());
+                    polls.incrementAndGet();
                 },
                 future -> 73,
                 future -> fail("pending cancellation"),
@@ -937,11 +940,12 @@ const ASYNC_RUNTIME_PROBE: &str = r#"
             );
             require(!result.isDone(), "pending result");
             BoltFfiAsync.resume(continuation.get(), (byte) 1);
-            require(polls.get() == 2, "pending repoll");
+            eventually(() -> polls.get() == 2, "pending repoll");
+            require(repollThread.get() != Thread.currentThread(), "repoll off the resuming thread");
             require(!result.isDone(), "repoll result");
             BoltFfiAsync.resume(continuation.get(), (byte) 0);
             require(result.join() == 73, "pending value");
-            require(freed.get() == 1, "pending free");
+            eventually(() -> freed.get() == 1, "pending free");
         }
 
         private static void startFailure() {
@@ -1072,7 +1076,7 @@ const ASYNC_RUNTIME_PROBE: &str = r#"
                 start.countDown();
                 join(cancellation);
                 join(readiness);
-                require(freed.get() == 1, "race free " + iteration);
+                eventually(() -> freed.get() == 1, "race free " + iteration);
                 require(completed.get() + cancelled.get() == 1, "race owner " + iteration);
                 if (result.isCancelled()) {
                     require(cancelled.get() == 1, "race cancellation " + iteration);
@@ -1081,6 +1085,14 @@ const ASYNC_RUNTIME_PROBE: &str = r#"
                     require(completed.get() == 1, "race completion " + iteration);
                 }
             });
+        }
+
+        private static void eventually(java.util.function.BooleanSupplier condition, String message) {
+            long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
+            while (!condition.getAsBoolean()) {
+                if (System.nanoTime() > deadline) fail(message);
+                Thread.yield();
+            }
         }
 
         private static void await(CountDownLatch latch) {
