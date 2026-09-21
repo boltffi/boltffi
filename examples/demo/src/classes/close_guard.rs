@@ -1,4 +1,4 @@
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use boltffi::*;
 
@@ -6,6 +6,7 @@ use boltffi::*;
 /// caller-supplied callback, so tests can race `close()` against it.
 pub struct GuardedCounter {
     value: Mutex<i32>,
+    lifetime: Arc<()>,
 }
 
 #[export]
@@ -13,6 +14,7 @@ impl GuardedCounter {
     pub fn new(initial: i32) -> Self {
         Self {
             value: Mutex::new(initial),
+            lifetime: Arc::new(()),
         }
     }
 
@@ -40,7 +42,7 @@ impl GuardedCounter {
     #[demo_bench_macros::demo_case(
         "classes.close_guard.guarded_counter.increment_through_gate.should_complete_in_flight_call_when_closed",
         justification = "Ensure close() during an in-flight method call defers freeing the native object until the call completes, so the call finishes against live memory and only later calls fail (issue #664).",
-        directions = "Call `classes::close_guard::GuardedCounter::increment_through_gate` on one thread, block inside the gate callback, close the handle from a second thread, release the gate, and assert the in-flight call returns the correct value while a subsequent call raises the language-native closed-object error.",
+        directions = "Call `classes::close_guard::GuardedCounter::increment_through_gate`, close the handle while inside the gate callback (from a second thread or reentrantly on single-isolate targets), then return from the gate and assert the in-flight call returns the correct value while a subsequent call raises the language-native closed-object error.",
         exclude(
             swift,
             reason = ExclusionReason::ImplementationGap,
@@ -52,18 +54,21 @@ impl GuardedCounter {
             details = "JavaScript is single-threaded, so dispose() cannot race an in-flight call from another thread; the deferred-free scenario cannot be expressed."
         ),
         exclude(
-            dart,
-            reason = ExclusionReason::CoverageGap,
-            details = "The Dart demo does not yet exercise dispose$() racing an in-flight call from another thread; its gated-call test only checks normal callback completion."
-        ),
-        exclude(
             python,
             reason = ExclusionReason::ImplementationGap,
             details = "Python releases class handles in __del__; there is no user-facing close() to race against an in-flight call."
         )
     )]
     pub fn increment_through_gate(&self, gate: impl Fn(i32) -> i32) -> i32 {
-        let delta = gate(*self.value.lock().unwrap());
+        // A weak token detects premature destruction even when freed memory
+        // still happens to contain the expected counter value.
+        let lifetime = Arc::downgrade(&self.lifetime);
+        let observed = *self.value.lock().unwrap();
+        let delta = gate(observed);
+        assert!(
+            lifetime.upgrade().is_some(),
+            "GuardedCounter was freed during an in-flight call"
+        );
         let mut guard = self.value.lock().unwrap();
         *guard += delta;
         *guard
