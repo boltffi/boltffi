@@ -579,6 +579,16 @@ const ASYNC_FUNCTIONS: &str = r#"
         pub fn new() -> Self { Self }
         pub async fn run(&self, value: i32) -> i32 { value }
     }
+
+    #[data]
+    pub struct AsyncLabel {
+        pub text: String,
+    }
+
+    #[data(impl)]
+    impl AsyncLabel {
+        pub async fn measure(&self, extra: i32) -> i32 { self.text.len() as i32 + extra }
+    }
 "#;
 
 const STREAMS: &str = r#"
@@ -2068,6 +2078,13 @@ fn java_target_renders_async_functions_and_methods_from_poll_handle_protocols() 
     ));
     assert!(worker.contains(
         "(future) -> {\n                Native.boltffi_async_method_class_demo_worker_run_free(future);\n                this.boltffiRelease();\n            }"
+    ));
+    let label = java_source(&output, "com.boltffi.demo", "AsyncLabel");
+    assert!(label.contains(
+        "    return Native.boltffi_method_record_demo_async_label_measure(__boltffi_receiver_wire.directBuffer(), __boltffi_receiver_wire.size(), extra);\n} finally {\n    __boltffi_receiver_wire.close();\n}"
+    ));
+    assert!(label.contains(
+        "(future) -> {\n                Native.boltffi_async_method_record_demo_async_label_measure_free(future);\n            }"
     ));
     assert!(output.coverage().unsupported().is_empty());
 }

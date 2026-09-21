@@ -521,7 +521,12 @@ impl Call {
             scope.package,
             scope.return_context,
         )?;
-        let body = guarded_body(receiver.as_ref(), &parameters, success);
+        let body = guarded_body(
+            receiver.as_ref(),
+            &parameters,
+            success,
+            ReceiverRelease::AfterCall,
+        );
         Ok(Self {
             signature: CallSignature::new(
                 name,
@@ -818,45 +823,30 @@ impl NativeArgument {
     }
 }
 
+#[derive(Clone, Copy)]
+enum ReceiverRelease {
+    AfterCall,
+    /// On success the async future's free hook releases the receiver instead.
+    OnFailure(JavaVersion),
+}
+
 /// Nests the receiver's cleanup around the parameter acquires so a throwing
 /// parameter acquire cannot leak the receiver's in-flight retain.
 fn guarded_body(
     receiver: Option<&Receiver>,
     parameters: &[BoundParameter],
     success: Vec<Statement>,
+    release: ReceiverRelease,
 ) -> Vec<Statement> {
     let guarded = parameter_guarded(receiver, parameters, success);
     let cleanup = receiver
         .iter()
         .flat_map(|receiver| receiver.native.cleanup.iter().cloned())
         .collect::<Vec<_>>();
-    let guarded = match cleanup.is_empty() {
-        true => guarded,
-        false => vec![Statement::try_finally(guarded, cleanup)],
-    };
-    receiver
-        .iter()
-        .flat_map(|receiver| receiver.native.acquire.iter().cloned())
-        .chain(guarded)
-        .collect()
-}
-
-/// Guards async future creation: the receiver's retain is released only when
-/// creation throws, since on success the future's free hook releases it.
-fn guarded_create_body(
-    receiver: Option<&Receiver>,
-    parameters: &[BoundParameter],
-    success: Vec<Statement>,
-    version: JavaVersion,
-) -> Vec<Statement> {
-    let guarded = parameter_guarded(receiver, parameters, success);
-    let cleanup = receiver
-        .iter()
-        .flat_map(|receiver| receiver.native.cleanup.iter().cloned())
-        .collect::<Vec<_>>();
-    let guarded = match cleanup.is_empty() {
-        true => guarded,
-        false => {
+    let guarded = match (cleanup.is_empty(), release) {
+        (true, _) => guarded,
+        (false, ReceiverRelease::AfterCall) => vec![Statement::try_finally(guarded, cleanup)],
+        (false, ReceiverRelease::OnFailure(version)) => {
             let failure = Identifier::known("__boltffi_failure");
             let recovery = cleanup
                 .into_iter()
@@ -1462,6 +1452,10 @@ impl ErrorConversion {
 }
 
 impl Receiver {
+    fn retains_handle(&self) -> bool {
+        matches!(self.support, ReceiverSupport::Handle(_))
+    }
+
     pub fn class(
         ty: TypeIdentifier,
         carrier: native::HandleCarrier,

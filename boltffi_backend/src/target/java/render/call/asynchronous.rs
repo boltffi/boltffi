@@ -97,22 +97,28 @@ impl AsyncCall {
             failure,
             vec![Statement::throw_value(failure_call)],
         )];
+        let retained = arguments
+            .receiver
+            .filter(|receiver| receiver.retains_handle());
         let free_body = std::iter::once(Statement::expression(
             free.call(scope.native_owner, [future.clone()])?,
         ))
         .chain(
-            arguments
-                .receiver
+            retained
                 .iter()
                 .flat_map(|receiver| receiver.native.cleanup.iter().cloned()),
         )
         .collect();
+        let release = match retained {
+            Some(_) => ReceiverRelease::OnFailure(scope.version),
+            None => ReceiverRelease::AfterCall,
+        };
         Ok(Self {
-            create_body: guarded_create_body(
+            create_body: guarded_body(
                 arguments.receiver,
                 arguments.parameters,
                 vec![Statement::return_value(create)],
-                scope.version,
+                release,
             ),
             poll: poll.call(scope.native_owner, [future.clone(), continuation])?,
             complete: complete_body,
