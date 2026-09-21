@@ -148,17 +148,24 @@ impl Class {
     }
 }
 
-/// Rejects methods that would duplicate a generated helper. The lifecycle
-/// helpers only collide at zero parameters; `RawHandle` is a property,
-/// which C# rejects alongside a method of any arity.
+/// Rejects methods that would duplicate a generated member. The lifecycle
+/// helpers only collide at zero parameters; `Handle` and `RawHandle` are
+/// properties, which C# rejects alongside a method of any arity.
 fn validate_reserved_members(scope: &Identifier, methods: &[Function]) -> Result<()> {
     methods
         .iter()
         .find(|method| {
-            method.name.as_str() == "RawHandle"
+            ["Handle", "RawHandle"].contains(&method.name.as_str())
                 || (method.parameters.is_empty()
-                    && ["ThrowIfDisposed", "BoltffiRetain", "BoltffiRelease"]
-                        .contains(&method.name.as_str()))
+                    && [
+                        "TakeHandle",
+                        "ThrowIfDisposed",
+                        "BoltffiRetain",
+                        "BoltffiRelease",
+                        "Release",
+                        "Dispose",
+                    ]
+                    .contains(&method.name.as_str()))
         })
         .map_or(Ok(()), |method| {
             Err(Error::CSharpNameCollision {

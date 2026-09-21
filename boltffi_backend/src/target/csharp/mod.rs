@@ -1336,6 +1336,52 @@ mod tests {
     }
 
     #[test]
+    fn csharp_target_rejects_class_methods_colliding_with_dispose_members() {
+        for method in ["release", "dispose", "take_handle"] {
+            let bindings = bindings(&format!(
+                r#"
+                pub struct Resource;
+
+                #[export]
+                impl Resource {{
+                    pub fn new() -> Self {{ Self }}
+                    pub fn {method}(&self) {{}}
+                }}
+                "#
+            ));
+            let error = target(CSharpHost::new())
+                .render(&bindings)
+                .expect_err("dispose members must retain their generated names");
+            assert!(
+                matches!(error, Error::CSharpNameCollision { .. }),
+                "{method}"
+            );
+        }
+
+        let bindings = bindings(
+            r#"
+            pub struct Resource;
+
+            #[export]
+            impl Resource {
+                pub fn new() -> Self { Self }
+                pub fn handle(&self, index: i32) -> i32 { index }
+            }
+            "#,
+        );
+        let error = target(CSharpHost::new())
+            .render(&bindings)
+            .expect_err("the handle property must retain its generated name");
+        assert_eq!(
+            error,
+            Error::CSharpNameCollision {
+                scope: "Resource".to_owned(),
+                name: "Handle".to_owned(),
+            }
+        );
+    }
+
+    #[test]
     fn csharp_target_rejects_class_methods_colliding_with_lifecycle_helpers() {
         let bindings = bindings(
             r#"
