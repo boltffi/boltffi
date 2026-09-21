@@ -43,30 +43,16 @@
       rangeStrategy: "update-lockfile",
     },
     {
-      description: "Group rust-toolchain updates",
-      matchManagers: ["custom.regex"],
-      matchDepNames: ["rust"],
+      // On Jan 1, Apr 1, Jul 1, and Oct 1, propose the latest eligible stable
+      // Rust release that has been available for at least 60 days. Any
+      // compatibility exception must be documented in the PR.
+      description: "Update the pinned Rust toolchain quarterly after a 60-day release cooldown",
+      matchManagers: ["rust-toolchain"],
+      schedule: ["* * 1 */3 *"],
+      minimumReleaseAge: "60 days",
+      internalChecksFilter: "strict",
       groupName: "rust-toolchain",
       commitMessagePrefix: "chore(deps):",
-    },
-  ],
-
-  customManagers: [
-    {
-      // Renovate has no built-in manager for rust-toolchain.toml (PR #32432
-      // was closed unmerged). Track the `channel = "x.y.z"` line against
-      // rust-lang/rust GitHub releases.
-      //
-      // Refs:
-      //   https://docs.renovatebot.com/modules/manager/regex/
-      //   https://github.com/renovatebot/renovate/pull/32432
-      //   https://github.com/arkedge/renovate-config/blob/main/rust-toolchain.json5
-      customType: "regex",
-      managerFilePatterns: ["/(^|/)rust-toolchain\\.toml$/"],
-      matchStrings: ["channel\\s*=\\s*\"(?<currentValue>\\d+\\.\\d+\\.\\d+)\""],
-      depNameTemplate: "rust",
-      packageNameTemplate: "rust-lang/rust",
-      datasourceTemplate: "github-releases",
     },
   ],
 }
