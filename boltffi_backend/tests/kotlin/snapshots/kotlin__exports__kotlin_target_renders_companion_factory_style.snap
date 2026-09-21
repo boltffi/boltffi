@@ -67,7 +67,13 @@ class Engine internal constructor(internal val handle: Long) : AutoCloseable {
     fun swap(other: Engine): Engine {
         val __boltffi_receiver = boltffiRetain()
         try {
-            return Engine(Native.boltffi_method_class_demo_engine_swap(__boltffi_receiver, other.boltffiHandle()))
+            var __boltffi_other_handle = 0L
+            try {
+                __boltffi_other_handle = other.boltffiRetain()
+                return Engine(Native.boltffi_method_class_demo_engine_swap(__boltffi_receiver, __boltffi_other_handle))
+            } finally {
+                if (__boltffi_other_handle != 0L) other.boltffiRelease()
+            }
         } finally {
             boltffiRelease()
         }
@@ -76,8 +82,14 @@ class Engine internal constructor(internal val handle: Long) : AutoCloseable {
     fun maybeSwap(other: Engine?): Engine? {
         val __boltffi_receiver = boltffiRetain()
         try {
-            val __boltffi_handle = Native.boltffi_method_class_demo_engine_maybe_swap(__boltffi_receiver, other?.boltffiHandle() ?: 0L)
-            return if (__boltffi_handle == 0L) null else Engine(__boltffi_handle)
+            var __boltffi_other_handle = 0L
+            try {
+                __boltffi_other_handle = other?.boltffiRetain() ?: 0L
+                val __boltffi_handle = Native.boltffi_method_class_demo_engine_maybe_swap(__boltffi_receiver, __boltffi_other_handle)
+                return if (__boltffi_handle == 0L) null else Engine(__boltffi_handle)
+            } finally {
+                if (__boltffi_other_handle != 0L) other?.boltffiRelease()
+            }
         } finally {
             boltffiRelease()
         }

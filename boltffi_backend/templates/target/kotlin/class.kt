@@ -54,6 +54,9 @@
 {%- endfor %}
 {%- if async_call.has_create_cleanup() %}
                     try {
+{%- for statement in async_call.create_prepare() %}
+                        {{ statement }}
+{%- endfor %}
                         {{ async_call.create() }}
                     } finally {
 {%- for statement in async_call.create_cleanup() %}
@@ -109,6 +112,9 @@
 {%- endfor %}
 {%- if async_call.has_create_cleanup() %}
                     try {
+{%- for statement in async_call.create_prepare() %}
+                        {{ statement }}
+{%- endfor %}
                         {{ async_call.create() }}
                     } finally {
 {%- for statement in async_call.create_cleanup() %}
@@ -169,6 +175,9 @@
 {%- endfor %}
 {%- if async_call.has_create_cleanup() %}
                     try {
+{%- for statement in async_call.create_prepare() %}
+                        {{ statement }}
+{%- endfor %}
                         {{ async_call.create() }}
                     } finally {
 {%- for statement in async_call.create_cleanup() %}
@@ -190,8 +199,11 @@
 {%- endfor %}
             },
             free = { future ->
-                Native.{{ async_call.free() }}(future)
-                boltffiRelease()
+                try {
+                    Native.{{ async_call.free() }}(future)
+                } finally {
+                    boltffiRelease()
+                }
             },
             cancel = { future -> Native.{{ async_call.cancel() }}(future) },
         )

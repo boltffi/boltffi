@@ -458,10 +458,19 @@ impl<'plan> ParamPlanRender<'plan, Native, OutOfRust> for HandleParameterRender<
             HandleTarget::Class(class) => {
                 let handle =
                     ClassHandle::new(*class, carrier, presence, self.version, self.context, None)?;
-                Ok(HandleParameter::direct(
-                    Parameter::new(self.name.clone(), ValueType::Reference(handle.ty().clone())),
-                    handle.native_argument(value)?,
-                ))
+                let retained = handle.retained_argument(&self.source, value, self.version)?;
+                Ok(HandleParameter {
+                    public: Parameter::new(
+                        self.name.clone(),
+                        ValueType::Reference(handle.ty().clone()),
+                    ),
+                    acquire: vec![retained.acquire],
+                    prepare: vec![retained.prepare],
+                    arguments: vec![retained.expression],
+                    cleanup: vec![retained.cleanup],
+                    wire_runtime: false,
+                    direct_vector_runtime: false,
+                })
             }
             HandleTarget::Callback(callback) => {
                 let handle = CallbackHandle::new(

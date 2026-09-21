@@ -891,7 +891,7 @@ mod tests {
             "await foreach (var item in ReadAll(subscription, cancellation.Token)) callback(item);"
         ));
         let callback_subscribe = source
-            .find("ulong subscription = NativeMethods.NativeEngineTicksSubscribe(receiver);")
+            .find("ulong subscription = SubscribeRetained(receiver);")
             .expect("callback stream should subscribe synchronously");
         let callback_task = source[callback_subscribe..]
             .find("global::System.Threading.Tasks.Task.Run(async () =>")
@@ -937,9 +937,13 @@ mod tests {
         assert!(source.contains("IAsyncEnumerable<int> Snapshots(this Store self"));
         assert!(source.contains("IAsyncEnumerable<string> Snapshots(this Draft self"));
         assert!(
-            source.contains("=> StoreSnapshotsStreamRuntime.ReadAll(self.Handle")
-                && source.contains("=> DraftSnapshotsStreamRuntime.ReadAll(self.Handle")
+            source.contains("=> StoreSnapshotsStreamRuntime.ReadAll(self, ")
+                && source.contains("=> DraftSnapshotsStreamRuntime.ReadAll(self, ")
         );
+        assert!(source.contains("internal static ulong SubscribeRetained(Store receiver)"));
+        assert!(source.contains("ulong handle = receiver.BoltffiRetain();"));
+        assert!(source.contains("return NativeMethods.NativeStoreSnapshotsSubscribe(handle);"));
+        assert!(source.contains("receiver.BoltffiRelease();"));
         assert!(output.diagnostics().is_empty());
     }
 
@@ -1216,8 +1220,8 @@ mod tests {
         assert!(class.contains("public int Get()"));
         assert!(class.contains("public void Increment()"));
         assert!(class.contains("public static int Add(int a, int b)"));
-        assert!(class.contains("private ulong BoltffiRetain()"));
-        assert!(class.contains("private void BoltffiRelease()"));
+        assert!(class.contains("internal ulong BoltffiRetain()"));
+        assert!(class.contains("internal void BoltffiRelease()"));
         assert!(class.contains("ulong boltffiReceiver = BoltffiRetain();"));
         assert!(class.contains("BoltffiRelease();"));
         assert!(class.contains("NativeMethods.NativeCounterRelease(RawHandle);"));
@@ -1288,8 +1292,46 @@ mod tests {
             "ulong boltffiReceiver = BoltffiRetain();\n                    try\n                    {\n                        return NativeMethods.NativeWorkerRun(boltffiReceiver, value);\n                    }\n                    catch\n                    {\n                        BoltffiRelease();\n                        throw;\n                    }"
         ));
         assert!(class.contains(
-            "boltffiFuture =>\n                {\n                    NativeMethods.NativeWorkerRunFree(boltffiFuture);\n                    BoltffiRelease();\n                }"
+            "boltffiFuture =>\n                {\n                    try\n                    {\n                        NativeMethods.NativeWorkerRunFree(boltffiFuture);\n                    }\n                    finally\n                    {\n                        BoltffiRelease();\n                    }\n                }"
         ));
+        assert!(output.diagnostics().is_empty());
+    }
+
+    #[test]
+    fn csharp_target_retains_class_handle_arguments() {
+        let bindings = bindings(
+            r#"
+            pub struct Resource;
+
+            #[export]
+            impl Resource {
+                pub fn new() -> Self { Self }
+                pub fn merge(&self, other: &Resource) -> i32 { 0 }
+                pub async fn merge_async(&self, other: &Resource) -> i32 { 0 }
+            }
+
+            #[export]
+            pub fn inspect(resource: &Resource) -> i32 { 0 }
+            "#,
+        );
+        let output = target(CSharpHost::new())
+            .render(&bindings)
+            .expect("class handle arguments should render");
+
+        let class = file(&output, "Resource.cs");
+        assert!(class.contains(
+            "ulong boltffiReceiver = BoltffiRetain();\n            ulong otherHandle = 0;\n            try\n            {\n                otherHandle = other.BoltffiRetain();\n                return NativeMethods.NativeResourceMerge(boltffiReceiver, otherHandle);\n            }\n            finally\n            {\n                if (otherHandle != 0) other.BoltffiRelease();\n                BoltffiRelease();\n            }"
+        ));
+        assert!(class.contains(
+            "ulong boltffiReceiver = BoltffiRetain();\n                    ulong otherHandle = 0;\n                    try\n                    {\n                        otherHandle = other.BoltffiRetain();\n                        return NativeMethods.NativeResourceMergeAsync(boltffiReceiver, otherHandle);\n                    }\n                    catch\n                    {\n                        BoltffiRelease();\n                        throw;\n                    }\n                    finally\n                    {\n                        if (otherHandle != 0) other.BoltffiRelease();\n                    }"
+        ));
+        assert!(!class.contains("other.Handle"));
+
+        let module = file(&output, "Demo.cs");
+        assert!(module.contains("ulong resourceHandle = 0;"));
+        assert!(module.contains("resourceHandle = resource.BoltffiRetain();"));
+        assert!(module.contains("if (resourceHandle != 0) resource.BoltffiRelease();"));
+        assert!(!module.contains("resource.Handle"));
         assert!(output.diagnostics().is_empty());
     }
 

@@ -22,7 +22,7 @@ use crate::{
         render::{
             ClosureHandle, DirectVector, Enumeration,
             callback::CallbackHandle,
-            class::ClassHandle,
+            class::{ClassHandle, RetainedHandle},
             native::Method,
             record::Record,
             signature::{CallSignature, Parameter, ReturnType, ValueType},
@@ -811,6 +811,16 @@ impl NativeArgument {
         }
     }
 
+    fn retained(handle: RetainedHandle) -> Self {
+        Self {
+            acquire: vec![handle.acquire],
+            prepare: vec![handle.prepare],
+            expressions: vec![handle.expression],
+            cleanup: vec![handle.cleanup],
+            runtime: RuntimeRequirement::None,
+        }
+    }
+
     fn encoded(write: crate::target::java::codec::EncodedWrite) -> Self {
         let (acquire, prepare, expressions, cleanup) = write.into_parts();
         Self {
@@ -974,9 +984,13 @@ impl<'plan> ParamPlanRender<'plan, Native, IntoRust> for NativeArgumentRender<'_
             HandleTarget::Class(class) => {
                 ClassHandle::new(*class, carrier, presence, self.version, self.context, None)
                     .and_then(|handle| {
-                        handle.native_argument(Expression::identifier(self.name.clone()))
+                        handle.retained_argument(
+                            &self.source,
+                            Expression::identifier(self.name.clone()),
+                            self.version,
+                        )
                     })
-                    .map(NativeArgument::direct)
+                    .map(NativeArgument::retained)
             }
             HandleTarget::Callback(callback) => CallbackHandle::new(
                 *callback,

@@ -78,8 +78,11 @@ class Engine internal constructor(internal val handle: Long) : AutoCloseable {
                 Native.boltffi_async_method_class_demo_engine_compute_complete(future).toUInt()
             },
             free = { future ->
-                Native.boltffi_async_method_class_demo_engine_compute_free(future)
-                boltffiRelease()
+                try {
+                    Native.boltffi_async_method_class_demo_engine_compute_free(future)
+                } finally {
+                    boltffiRelease()
+                }
             },
             cancel = { future -> Native.boltffi_async_method_class_demo_engine_compute_cancel(future) },
         )

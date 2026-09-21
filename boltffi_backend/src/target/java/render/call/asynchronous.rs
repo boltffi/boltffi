@@ -100,15 +100,14 @@ impl AsyncCall {
         let retained = arguments
             .receiver
             .filter(|receiver| receiver.retains_handle());
-        let free_body = std::iter::once(Statement::expression(
-            free.call(scope.native_owner, [future.clone()])?,
-        ))
-        .chain(
-            retained
-                .iter()
-                .flat_map(|receiver| receiver.native.cleanup.iter().cloned()),
-        )
-        .collect();
+        let free_call = Statement::expression(free.call(scope.native_owner, [future.clone()])?);
+        let free_body = match retained {
+            Some(receiver) => vec![Statement::try_finally(
+                vec![free_call],
+                receiver.native.cleanup.clone(),
+            )],
+            None => vec![free_call],
+        };
         let release = match retained {
             Some(_) => ReceiverRelease::OnFailure(scope.version),
             None => ReceiverRelease::AfterCall,

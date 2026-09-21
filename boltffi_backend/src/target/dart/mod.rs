@@ -354,6 +354,38 @@ mod tests {
     }
 
     #[test]
+    fn dart_target_holds_class_handle_arguments_in_flight() {
+        let bindings = bindings(
+            r#"
+            pub struct Resource;
+
+            #[export]
+            impl Resource {
+                pub fn new() -> Self { Self }
+                pub fn merge(&self, other: &Resource) -> i32 { 0 }
+                pub async fn merge_async(&self, other: &Resource) -> i32 { 0 }
+            }
+
+            #[export]
+            pub fn inspect(resource: &Resource) -> i32 { 0 }
+            "#,
+        );
+        let output = target(DartHost::new().package("demo"))
+            .render(&bindings)
+            .expect("class handle arguments should render");
+
+        let source = file(&output, "demo/lib/demo.dart");
+        assert!(source.contains(
+            "  int merge(Resource other) {\n    _f$beginCall();\n    try {\n      other._f$beginCall();\n      try {\n        _f$throwIfDisposed();\n        final _l$result = _f$boltffi_method_class_demo_api_resource_merge(_handle, other._handle);\n        return _l$result;\n      } finally {\n        other._f$endCall();\n      }\n    } finally {\n      _f$endCall();\n    }\n  }"
+        ));
+        assert!(source.contains(
+            "  Future<int> mergeAsync(Resource other, {$$BoltCancellationToken? cancellationToken}) {\n    other._f$beginCall();\n    try {\n      return _$$BoltFFIAsync.create(\n"
+        ));
+        assert!(source.contains("resource._f$beginCall();\n  try {\n"));
+        assert!(source.contains("  } finally {\n    resource._f$endCall();\n  }"));
+    }
+
+    #[test]
     fn dart_target_appends_cancellation_token_to_every_async_call_shape() {
         let bindings = bindings(
             r#"

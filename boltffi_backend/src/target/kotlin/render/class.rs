@@ -49,9 +49,9 @@ pub struct Initializer {
 struct ConstructorSignature(Vec<String>);
 
 /// Handle read through the generated closed-check accessor. Check-then-act:
-/// a `close()` racing the native call is not covered. Receivers instead go
-/// through the generated `boltffiRetain()`/`boltffiRelease()` in-flight
-/// counter, which defers the native free past the racing call.
+/// a `close()` racing the native call is not covered. Receivers and call
+/// arguments instead go through the generated `boltffiRetain()`/`boltffiRelease()`
+/// in-flight counter, which defers the native free past the racing call.
 fn guarded_handle(receiver: impl fmt::Display, presence: HandlePresence) -> Result<Expression> {
     let accessor = Identifier::parse("boltffiHandle")?;
     match presence {
@@ -277,6 +277,13 @@ pub struct ClassHandle {
     presence: HandlePresence,
 }
 
+pub struct RetainedHandle {
+    pub setup: Statement,
+    pub prepare: Statement,
+    pub expression: Expression,
+    pub cleanup: Statement,
+}
+
 impl ClassHandle {
     pub fn new(
         id: ClassId,
@@ -299,6 +306,40 @@ impl ClassHandle {
 
     pub fn parameter_argument(&self, value: Expression) -> Result<Expression> {
         guarded_handle(value, self.presence)
+    }
+
+    /// Retains the argument for the native call. The retained handle starts
+    /// at zero so a throwing retain (or an earlier parameter's) leaves nothing
+    /// to release.
+    pub fn retained_argument(
+        &self,
+        source_name: &Name,
+        value: Identifier,
+    ) -> Result<RetainedHandle> {
+        let retained = source_name.generated("handle")?;
+        let retain = Identifier::parse("boltffiRetain")?;
+        let release = Identifier::parse("boltffiRelease")?;
+        let (retain, release) = match self.presence {
+            HandlePresence::Required => (
+                Expression::call(&value, retain, ArgumentList::from_iter([])),
+                Expression::call(&value, release, ArgumentList::from_iter([])),
+            ),
+            HandlePresence::Nullable => (
+                Expression::safe_call(&value, retain, ArgumentList::from_iter([]))
+                    .or_else(Expression::long(0)),
+                Expression::safe_call(&value, release, ArgumentList::from_iter([])),
+            ),
+            _ => return Err(KotlinHost::unsupported("unknown class handle presence")),
+        };
+        Ok(RetainedHandle {
+            setup: Statement::variable(retained.clone(), Expression::long(0)),
+            prepare: Statement::assign(retained.clone(), retain),
+            cleanup: Statement::if_then(
+                Expression::identifier(retained.clone()).not_equal(Expression::long(0)),
+                Statement::expression(release),
+            ),
+            expression: Expression::identifier(retained),
+        })
     }
 
     pub fn value_expression(&self, value: Expression) -> Result<Expression> {

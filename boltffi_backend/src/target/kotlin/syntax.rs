@@ -508,6 +508,18 @@ impl Statement {
         Self(format!("val {name} = {value}"))
     }
 
+    pub fn variable(name: Identifier, value: Expression) -> Self {
+        Self(format!("var {name} = {value}"))
+    }
+
+    pub fn assign(name: Identifier, value: Expression) -> Self {
+        Self(format!("{name} = {value}"))
+    }
+
+    pub fn if_then(condition: Expression, statement: Self) -> Self {
+        Self(format!("if ({condition}) {statement}"))
+    }
+
     pub fn return_value(value: Expression) -> Self {
         Self(format!("return {value}"))
     }

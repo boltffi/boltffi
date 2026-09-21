@@ -13,14 +13,7 @@ namespace {{ class.namespace }}
 
         private {{ class.carrier_type }} RawHandle => unchecked(({{ class.carrier_type }})(ulong)global::System.Threading.Interlocked.Read(ref handle));
 
-        internal {{ class.carrier_type }} Handle
-        {
-            get
-            {
-                ThrowIfDisposed();
-                return RawHandle;
-            }
-        }
+        internal {{ class.carrier_type }} Handle => global::System.Threading.Volatile.Read(ref closed) != 0 ? 0 : RawHandle;
 
         internal {{ class.name }}({{ class.carrier_type }} handle)
         {
@@ -51,7 +44,7 @@ namespace {{ class.namespace }}
                 throw new global::System.ObjectDisposedException(nameof({{ class.name }}));
         }
 
-        private {{ class.carrier_type }} BoltffiRetain()
+        internal {{ class.carrier_type }} BoltffiRetain()
         {
             while (true)
             {
@@ -64,7 +57,7 @@ namespace {{ class.namespace }}
             }
         }
 
-        private void BoltffiRelease()
+        internal void BoltffiRelease()
         {
             if (global::System.Threading.Interlocked.Decrement(ref calls) == 0)
                 NativeMethods.{{ class.release_name }}(RawHandle);

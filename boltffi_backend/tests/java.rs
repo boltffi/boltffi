@@ -578,6 +578,7 @@ const ASYNC_FUNCTIONS: &str = r#"
     impl Worker {
         pub fn new() -> Self { Self }
         pub async fn run(&self, value: i32) -> i32 { value }
+        pub async fn merge(&self, other: &Worker) -> i32 { 0 }
     }
 
     #[data]
@@ -1638,10 +1639,16 @@ fn java_target_renders_class_ownership_and_handle_calls_from_binding_ir() {
         factory.contains("return (__boltffi_handle == 0L ? null : new Counter(__boltffi_handle));")
     );
     assert!(factory.contains("public int read(Counter counter)"));
-    assert!(factory.contains("counter.rawHandle()"));
+    assert!(factory.contains("long __boltffi_counter_handle = 0L;"));
+    assert!(factory.contains("__boltffi_counter_handle = counter.boltffiRetain();"));
+    assert!(factory.contains("Native.boltffi_method_class_demo_factory_read(__boltffi_receiver, __boltffi_counter_handle)"));
+    assert!(factory.contains("if (__boltffi_counter_handle != 0L) counter.boltffiRelease();"));
+    assert!(!factory.contains("counter.rawHandle()"));
 
     assert!(module.contains("public static String describe(Counter counter)"));
-    assert!(module.contains("counter.rawHandle()"));
+    assert!(module.contains("__boltffi_counter_handle = counter.boltffiRetain();"));
+    assert!(module.contains("if (__boltffi_counter_handle != 0L) counter.boltffiRelease();"));
+    assert!(!module.contains("counter.rawHandle()"));
     assert!(module.contains("public static Counter makeCounter(int value)"));
     assert!(module.contains("public static Counter maybeCounter(int value)"));
     assert!(module.contains("static native long"));
@@ -1850,10 +1857,12 @@ fn java_target_renders_streams_from_shared_protocols_and_item_plans() {
         event_bus.contains("public StreamSubscription<BoltFFIResult<Integer, String>> results(")
     );
     assert!(event_bus.contains("public StreamSubscription<Integer> valueBatches()"));
-    assert!(
-        event_bus
-            .contains("Native.boltffi_stream_demo_event_bus_values_subscribe(this.rawHandle())")
-    );
+    assert!(event_bus.contains("long __boltffi_receiver = this.boltffiRetain();"));
+    assert!(event_bus.contains(
+        "subscription = Native.boltffi_stream_demo_event_bus_values_subscribe(__boltffi_receiver);"
+    ));
+    assert!(event_bus.contains("} finally {\n    this.boltffiRelease();\n}"));
+    assert!(!event_bus.contains("this.rawHandle()"));
     assert!(!event_bus.contains("subscribe(this.handle)"));
     assert!(event_bus.contains("BoltFfiStreamBatches.ints(bytes)"));
     assert!(event_bus.contains("DirectVectorCodec.readRecords(bytes, 16"));
@@ -2077,7 +2086,10 @@ fn java_target_renders_async_functions_and_methods_from_poll_handle_protocols() 
         "long __boltffi_receiver = this.boltffiRetain();\n                try {\n    return Native.boltffi_method_class_demo_worker_run(__boltffi_receiver, value);\n} catch (Throwable __boltffi_failure) {\n    this.boltffiRelease();\n    throw __boltffi_failure;\n}"
     ));
     assert!(worker.contains(
-        "(future) -> {\n                Native.boltffi_async_method_class_demo_worker_run_free(future);\n                this.boltffiRelease();\n            }"
+        "(future) -> {\n                try {\n    Native.boltffi_async_method_class_demo_worker_run_free(future);\n} finally {\n    this.boltffiRelease();\n}\n            }"
+    ));
+    assert!(worker.contains(
+        "long __boltffi_receiver = this.boltffiRetain();\n                try {\n    long __boltffi_other_handle = 0L;\n    try {\n        __boltffi_other_handle = other.boltffiRetain();\n        return Native.boltffi_method_class_demo_worker_merge(__boltffi_receiver, __boltffi_other_handle);\n    } finally {\n        if (__boltffi_other_handle != 0L) other.boltffiRelease();\n    }\n} catch (Throwable __boltffi_failure) {\n    this.boltffiRelease();\n    throw __boltffi_failure;\n}"
     ));
     let label = java_source(&output, "com.boltffi.demo", "AsyncLabel");
     assert!(label.contains(
