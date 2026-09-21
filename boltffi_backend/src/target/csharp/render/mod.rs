@@ -1806,7 +1806,11 @@ fn render_async_body(
         ),
         None => format!("NativeMethods.{}", asynchronous.free_name),
     };
-    let mut lines = setup.iter().map(ToString::to_string).collect::<Vec<_>>();
+    let mut lines = guard
+        .map(|guard| guard.check.to_string())
+        .into_iter()
+        .chain(setup.iter().map(ToString::to_string))
+        .collect::<Vec<_>>();
     lines.push(format!(
         "return BoltFFIAsync.{call}(\n    {create},\n    NativeMethods.{},\n    {future} =>\n    {{\n{}\n    }},\n    NativeMethods.{},\n    {free},\n    cancellationToken);",
         asynchronous.poll_name,
@@ -1867,6 +1871,8 @@ struct LoweredReceiver {
 /// increments the call counter, release decrements it and frees the native
 /// allocation once the counter drains after `Dispose()`.
 struct ReceiverGuard {
+    /// Throws at the call site for async calls, whose retain runs inside the task.
+    check: Statement,
     retain: Statement,
     release: Statement,
 }
@@ -1985,6 +1991,7 @@ fn lower_class_receiver(
         encoded_writeback: None,
         setup: Vec::new(),
         guard: Some(ReceiverGuard {
+            check: Statement::new("ThrowIfDisposed();"),
             retain: Statement::new(format!(
                 "{} boltffiReceiver = BoltffiRetain();",
                 handle_carrier_type(carrier)?

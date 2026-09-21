@@ -17,8 +17,7 @@ namespace {{ class.namespace }}
         {
             get
             {
-                if (global::System.Threading.Volatile.Read(ref closed) != 0)
-                    throw new global::System.ObjectDisposedException(nameof({{ class.name }}));
+                ThrowIfDisposed();
                 return RawHandle;
             }
         }
@@ -46,12 +45,17 @@ namespace {{ class.namespace }}
             return RawHandle;
         }
 
+        private void ThrowIfDisposed()
+        {
+            if (global::System.Threading.Volatile.Read(ref closed) != 0)
+                throw new global::System.ObjectDisposedException(nameof({{ class.name }}));
+        }
+
         private {{ class.carrier_type }} BoltffiRetain()
         {
             while (true)
             {
-                if (global::System.Threading.Volatile.Read(ref closed) != 0)
-                    throw new global::System.ObjectDisposedException(nameof({{ class.name }}));
+                ThrowIfDisposed();
                 long calls = global::System.Threading.Interlocked.Read(ref this.calls);
                 if (calls == 0)
                     throw new global::System.ObjectDisposedException(nameof({{ class.name }}));

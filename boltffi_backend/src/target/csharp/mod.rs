@@ -1269,6 +1269,7 @@ mod tests {
             impl Worker {
                 pub fn new() -> Self { Self }
                 pub async fn run(&self, value: i32) -> i32 { value }
+                pub async fn label(&self, prefix: String) -> String { prefix }
             }
             "#,
         );
@@ -1277,6 +1278,12 @@ mod tests {
             .expect("async class method should render");
 
         let class = file(&output, "Worker.cs");
+        assert!(class.contains(
+            "{\n            ThrowIfDisposed();\n            return BoltFFIAsync.CallAsync<int>("
+        ));
+        assert!(class.contains(
+            "{\n            ThrowIfDisposed();\n            WireWriter prefixWriter = new WireWriter();"
+        ));
         assert!(class.contains(
             "ulong boltffiReceiver = BoltffiRetain();\n                    try\n                    {\n                        return NativeMethods.NativeWorkerRun(boltffiReceiver, value);\n                    }\n                    catch\n                    {\n                        BoltffiRelease();\n                        throw;\n                    }"
         ));
