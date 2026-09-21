@@ -941,7 +941,10 @@ const ASYNC_RUNTIME_PROBE: &str = r#"
             require(!result.isDone(), "pending result");
             BoltFfiAsync.resume(continuation.get(), (byte) 1);
             eventually(() -> polls.get() == 2, "pending repoll");
-            require(repollThread.get() != Thread.currentThread(), "repoll off the resuming thread");
+            require(
+                repollThread.get().getName().equals("boltffi-async-resume"),
+                "repoll off the resuming thread"
+            );
             require(!result.isDone(), "repoll result");
             BoltFfiAsync.resume(continuation.get(), (byte) 0);
             require(result.join() == 73, "pending value");
@@ -2053,7 +2056,8 @@ fn java_target_renders_async_functions_and_methods_from_poll_handle_protocols() 
     assert!(module.contains("boltffi_async_function_demo_refresh_panic_message(future)"));
     assert!(module.contains("BoltFfiAsync.failure(__boltffi_failure, () -> Native."));
     assert!(module.contains("(future, continuation) -> Native."));
-    assert!(module.contains("signal.future.whenCompleteAsync("));
+    assert!(module.contains("() -> finishAsyncPoll(currentPoll, pollResult, error)"));
+    assert!(module.contains("new Thread(task, \"boltffi-async-resume\")"));
     assert!(
         module.contains(
             "static void boltffiFutureContinuationCallback(long handle, byte pollResult)"

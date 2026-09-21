@@ -24,8 +24,23 @@ final class BoltFfiAsync {
         new java.util.concurrent.atomic.AtomicLong(1L);
     private static final java.util.concurrent.ConcurrentHashMap<Long, PollSignal> CONTINUATIONS =
         new java.util.concurrent.ConcurrentHashMap<>();
+    private static final java.util.concurrent.Executor RESUMES =
+        java.util.concurrent.Executors.newCachedThreadPool(task -> {
+            Thread thread = new Thread(task, "boltffi-async-resume");
+            thread.setDaemon(true);
+            return thread;
+        });
 
     private BoltFfiAsync() {}
+
+    /** Moves a resume off the thread that woke the future, or runs it inline if it cannot. */
+    private static void resumeOffWakingThread(Runnable resume) {
+        try {
+            RESUMES.execute(resume);
+        } catch (Throwable rejected) {
+            resume.run();
+        }
+    }
 
     static void resume(long handle, byte result) {
         PollSignal signal = CONTINUATIONS.get(handle);
@@ -229,8 +244,10 @@ final class BoltFfiAsync {
                 }
                 if (!signal.future.isDone()) {
                     if (phase.compareAndSet(Phase.POLLING, Phase.WAITING)) {
-                        signal.future.whenCompleteAsync(
-                            (pollResult, error) -> finishAsyncPoll(currentPoll, pollResult, error)
+                        signal.future.whenComplete(
+                            (pollResult, error) -> resumeOffWakingThread(
+                                () -> finishAsyncPoll(currentPoll, pollResult, error)
+                            )
                         );
                         return;
                     }
