@@ -229,7 +229,7 @@ final class BoltFfiAsync {
                 }
                 if (!signal.future.isDone()) {
                     if (phase.compareAndSet(Phase.POLLING, Phase.WAITING)) {
-                        signal.future.whenComplete(
+                        signal.future.whenCompleteAsync(
                             (pollResult, error) -> finishAsyncPoll(currentPoll, pollResult, error)
                         );
                         return;

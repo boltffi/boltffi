@@ -2041,6 +2041,7 @@ fn java_target_renders_async_functions_and_methods_from_poll_handle_protocols() 
     assert!(module.contains("boltffi_async_function_demo_refresh_panic_message(future)"));
     assert!(module.contains("BoltFfiAsync.failure(__boltffi_failure, () -> Native."));
     assert!(module.contains("(future, continuation) -> Native."));
+    assert!(module.contains("signal.future.whenCompleteAsync("));
     assert!(
         module.contains(
             "static void boltffiFutureContinuationCallback(long handle, byte pollResult)"
