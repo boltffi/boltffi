@@ -78,7 +78,7 @@ static void ___ListenerVTable_on_point(uint64_t handle, ___Point point) {
 
     boltffi_jni_exit(env, attached);
     return;
-__boltffi_fail:
+__boltffi_fail:;
 
     if (__boltffi_point_array != NULL) {
         (*env)->DeleteLocalRef(env, __boltffi_point_array);

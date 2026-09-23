@@ -388,13 +388,14 @@ fn swift_target_renders_async_callback_return_shapes() {
 }
 
 #[test]
-fn swift_target_emits_strict_unexpected_callback_error_payload_helper() {
+fn swift_target_uses_the_native_unexpected_callback_error_encoder() {
     let rendered =
         rendered_swift_runtime(SourceFixture::one("callback/async_callback_return_shapes"));
 
-    assert!(rendered.contains("func boltffiEncodeUnexpectedCallbackError(_ error: Error)"));
-    assert!(rendered.contains("boltffiUnexpectedCallbackErrorMarker"));
-    assert!(rendered.contains("boltffiUnexpectedCallbackErrorVersion"));
+    assert!(
+        rendered.contains("func boltffiEncodeUnexpectedCallbackError(_ error: Error) -> FfiBuf_u8")
+    );
+    assert!(rendered.contains("boltffi_callback_error(message.baseAddress, UInt(message.count))"));
 }
 
 #[test]

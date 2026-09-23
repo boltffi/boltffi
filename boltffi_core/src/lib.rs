@@ -132,6 +132,19 @@ impl UnexpectedFfiCallbackError {
         &self.0
     }
 
+    pub fn encode(message: &str) -> FfiBuf {
+        let (message, length) = match u32::try_from(message.len()) {
+            Ok(length) => (message, length),
+            Err(_) => return Self::encode("callback error message exceeds the wire limit"),
+        };
+        let mut payload = Vec::with_capacity(Self::WIRE_HEADER_LEN + message.len());
+        payload.extend_from_slice(&Self::WIRE_MARKER);
+        payload.push(Self::WIRE_VERSION);
+        payload.extend_from_slice(&length.to_le_bytes());
+        payload.extend_from_slice(message.as_bytes());
+        FfiBuf::from_vec(payload)
+    }
+
     /// Classifies a foreign callback error payload without decoding declared errors heuristically.
     ///
     /// The envelope is the marker, one version byte, a little-endian `u32` UTF-8 byte length, and
@@ -195,9 +208,59 @@ impl From<UnexpectedFfiCallbackError> for String {
     }
 }
 
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn boltffi_callback_error(message: *const u8, length: usize) -> FfiBuf {
+    let bytes = if message.is_null() {
+        b"foreign callback failed".as_slice()
+    } else {
+        unsafe { core::slice::from_raw_parts(message, length) }
+    };
+    UnexpectedFfiCallbackError::encode(&String::from_utf8_lossy(bytes))
+}
+
 #[cfg(test)]
 mod unexpected_ffi_callback_error_tests {
     use super::{UnexpectedFfiCallbackError, UnexpectedFfiCallbackPayload};
+
+    #[test]
+    fn native_callback_errors_preserve_empty_and_unicode_messages() {
+        ["", "callback failed", "東京\0🦀"]
+            .into_iter()
+            .for_each(|message| {
+                let buffer =
+                    unsafe { super::boltffi_callback_error(message.as_ptr(), message.len()) };
+                let payload = unsafe { buffer.into_vec::<u8>() };
+                assert_eq!(
+                    UnexpectedFfiCallbackError::classify_payload(&payload),
+                    UnexpectedFfiCallbackPayload::Unexpected(UnexpectedFfiCallbackError::new(
+                        message
+                    ))
+                );
+            });
+    }
+
+    #[test]
+    fn native_callback_errors_use_a_message_when_capture_fails() {
+        let buffer = unsafe { super::boltffi_callback_error(core::ptr::null(), 0) };
+        let payload = unsafe { buffer.into_vec::<u8>() };
+        assert_eq!(
+            UnexpectedFfiCallbackError::classify_payload(&payload),
+            UnexpectedFfiCallbackPayload::Unexpected(UnexpectedFfiCallbackError::new(
+                "foreign callback failed"
+            ))
+        );
+    }
+
+    #[test]
+    fn native_callback_errors_replace_invalid_utf8() {
+        let message = [0xff];
+        let buffer = unsafe { super::boltffi_callback_error(message.as_ptr(), message.len()) };
+        let payload = unsafe { buffer.into_vec::<u8>() };
+        assert_eq!(
+            UnexpectedFfiCallbackError::classify_payload(&payload),
+            UnexpectedFfiCallbackPayload::Unexpected(UnexpectedFfiCallbackError::new("�"))
+        );
+    }
 
     fn payload(version: u8, message: &[u8]) -> Vec<u8> {
         let mut payload = UnexpectedFfiCallbackError::WIRE_MARKER.to_vec();

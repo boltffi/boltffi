@@ -47,3 +47,41 @@ static bool boltffi_jni_lookup_static_method_with_diagnostic(JNIEnv *env, jclass
     }
     return true;
 }
+
+static FfiBuf_u8 boltffi_jni_callback_error(JNIEnv *env) {
+    jthrowable exception = (*env)->ExceptionOccurred(env);
+    (*env)->ExceptionClear(env);
+    if (exception == NULL) {
+        return {{ callback_error }}(NULL, 0);
+    }
+    if ((*env)->PushLocalFrame(env, 8) != JNI_OK) {
+        (*env)->ExceptionClear(env);
+        (*env)->DeleteLocalRef(env, exception);
+        return {{ callback_error }}(NULL, 0);
+    }
+    FfiBuf_u8 error = {0};
+    jclass exception_class = (*env)->GetObjectClass(env, exception);
+    if (exception_class == NULL) goto done;
+    jmethodID to_string = (*env)->GetMethodID(env, exception_class, "toString", "()Ljava/lang/String;");
+    if (to_string == NULL) goto done;
+    jstring message = (jstring)(*env)->CallObjectMethod(env, exception, to_string);
+    if ((*env)->ExceptionCheck(env) || message == NULL) goto done;
+    jclass string_class = (*env)->GetObjectClass(env, message);
+    if (string_class == NULL) goto done;
+    jmethodID get_bytes = (*env)->GetMethodID(env, string_class, "getBytes", "(Ljava/lang/String;)[B");
+    if (get_bytes == NULL) goto done;
+    jstring charset = (*env)->NewStringUTF(env, "UTF-8");
+    if (charset == NULL) goto done;
+    jbyteArray message_bytes = (jbyteArray)(*env)->CallObjectMethod(env, message, get_bytes, charset);
+    if ((*env)->ExceptionCheck(env) || message_bytes == NULL) goto done;
+    jsize length = (*env)->GetArrayLength(env, message_bytes);
+    jbyte *bytes = (*env)->GetByteArrayElements(env, message_bytes, NULL);
+    if (bytes == NULL) goto done;
+    error = {{ callback_error }}((const uint8_t *)bytes, (uintptr_t)length);
+    (*env)->ReleaseByteArrayElements(env, message_bytes, bytes, JNI_ABORT);
+done:
+    boltffi_jni_clear_exception(env);
+    (*env)->PopLocalFrame(env, NULL);
+    (*env)->DeleteLocalRef(env, exception);
+    return error.ptr != NULL ? error : {{ callback_error }}(NULL, 0);
+}

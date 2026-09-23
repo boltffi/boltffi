@@ -669,6 +669,9 @@ fn render_fallible_entry_body(
         indent_lines(&success, 4),
         indent_lines(&failure, 4),
     ));
+    if !matches!(error_type, TypeRef::String) {
+        body.push("catch (global::System.Exception boltffiUnexpectedError)\n{\n    return FfiBuf.FromUnexpectedCallbackError(boltffiUnexpectedError);\n}".to_owned());
+    }
     Ok(Statement::new(indent_lines(&body, 12)))
 }
 
@@ -1201,6 +1204,7 @@ fn render_async_entry_body(
 
     let mut catches = Vec::new();
     let mut catches_all_exceptions = false;
+    let mut unexpected_failure = "catch\n{\n    boltffiComplete(100, default);\n}";
     if let ErrorChannel::Encoded {
         placement: ErrorPlacement::ReturnSlot,
         ty,
@@ -1209,6 +1213,7 @@ fn render_async_entry_body(
     } = declaration.callable().error().channel()
     {
         catches_all_exceptions = matches!(ty, TypeRef::String);
+        unexpected_failure = "catch (global::System.Exception boltffiUnexpectedError)\n{\n    boltffiComplete(100, FfiBuf.FromUnexpectedCallbackError(boltffiUnexpectedError));\n}";
         let error = Identifier::parse("boltffiError")?;
         let writer = Identifier::parse("boltffiErrorWriter")?;
         let (exception, value) = callback_error_exception(ty, &error, context)?;
@@ -1227,7 +1232,7 @@ fn render_async_entry_body(
         ));
     }
     if !catches_all_exceptions {
-        catches.push("catch\n{\n    boltffiComplete(100, default);\n}".to_owned());
+        catches.push(unexpected_failure.to_owned());
     }
     let complete_values = |status: &str, value: &str| {
         params

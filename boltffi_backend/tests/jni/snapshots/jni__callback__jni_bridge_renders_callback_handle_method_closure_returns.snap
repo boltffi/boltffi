@@ -172,14 +172,18 @@ static uint32_t boltffi_jni____closure__u32_to_u32_call(void *user_data, uint32_
     jlong handle = (jlong)(uintptr_t)user_data;
 
     uint32_t result = (uint32_t)(*env)->CallStaticIntMethod(env, g____closure__u32_to_u32_class, g____closure__u32_to_u32_call_method, handle, (jint)arg0);
-    if (boltffi_jni_clear_exception(env)) {
-
-        boltffi_jni_exit(env, attached);
-        return 0;
+    if ((*env)->ExceptionCheck(env)) {
+        goto __boltffi_fail;
     }
 
     boltffi_jni_exit(env, attached);
     return result;
+__boltffi_fail:;
+
+    boltffi_jni_clear_exception(env);
+    boltffi_jni_exit(env, attached);
+
+        return 0;
 }
 
 static void boltffi_jni____closure__u32_to_u32_release(void *user_data) {
@@ -259,7 +263,7 @@ static FfiStatus ___ListenerVTable_make_handler(uint64_t handle, void *return_ou
     }
 
     jlong __boltffi_return_handle = (*env)->CallStaticLongMethod(env, g____ListenerVTable_class, g____ListenerVTable_make_handler_method, (jlong)handle);
-    if (boltffi_jni_clear_exception(env)) {
+    if ((*env)->ExceptionCheck(env)) {
         goto __boltffi_fail;
     }
 
@@ -282,7 +286,7 @@ static FfiStatus ___ListenerVTable_make_handler(uint64_t handle, void *return_ou
 
     boltffi_jni_exit(env, attached);
     return result;
-__boltffi_fail:
+__boltffi_fail:;
 
     boltffi_jni_clear_exception(env);
     boltffi_jni_exit(env, attached);

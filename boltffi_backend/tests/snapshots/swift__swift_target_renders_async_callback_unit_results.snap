@@ -67,10 +67,7 @@ private var boltffiListenerVtable: ___ListenerVTable = {
                         completion?(completionContext, FfiStatus(code: 1), boltffi_buf_from_bytes(boltffiErrorBuffer.baseAddress, UInt(boltffiErrorBuffer.count)))
                     }
                 } catch {
-                    let boltffiErrorBytes = boltffiEncodeUnexpectedCallbackError(error)
-                    boltffiErrorBytes.withUnsafeBufferPointer { boltffiErrorBuffer in
-                        completion?(completionContext, FfiStatus(code: 1), boltffi_buf_from_bytes(boltffiErrorBuffer.baseAddress, UInt(boltffiErrorBuffer.count)))
-                    }
+                    completion?(completionContext, FfiStatus(code: 1), boltffiEncodeUnexpectedCallbackError(error))
                 }
             }
         }

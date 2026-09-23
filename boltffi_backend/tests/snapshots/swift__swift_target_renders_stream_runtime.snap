@@ -504,22 +504,10 @@ private final class BoltFFIStreamContext<Item>: BoltFFIStreamPollContext, @unche
     return [UInt8](writer.finalize())
 }
 
-/// Reserved marker for an error that does not match a callback's declared error type.
-private let boltffiUnexpectedCallbackErrorMarker = Array("BOLTFFI_CALLBACK".utf8)
-
-/// Version of the unexpected callback error payload written by this generated binding.
-private let boltffiUnexpectedCallbackErrorVersion: UInt8 = 1
-
-/// Encodes an unexpected host-language callback error for conversion by the Rust error owner.
-///
-/// Declared callback errors keep their normal wire representation. The marker lets Rust detect this
-/// fallback before decoding the payload as the declared error type.
-func boltffiEncodeUnexpectedCallbackError(_ error: Error) -> [UInt8] {
-    var writer = WireWriter()
-    writer.data.append(contentsOf: boltffiUnexpectedCallbackErrorMarker)
-    writer.writeU8(boltffiUnexpectedCallbackErrorVersion)
-    writer.writeString(String(describing: error))
-    return [UInt8](writer.finalize())
+func boltffiEncodeUnexpectedCallbackError(_ error: Error) -> FfiBuf_u8 {
+    Array(String(describing: error).utf8).withUnsafeBufferPointer { message in
+        boltffi_callback_error(message.baseAddress, UInt(message.count))
+    }
 }
 
 @inline(__always)

@@ -161,12 +161,7 @@ impl CallbackArgument {
                         ),
                     ]
                     .into_iter()
-                    .chain(payload.iter().map(|payload| {
-                        Expression::cast(
-                            payload.c_type().clone(),
-                            Expression::literal(Literal::compound_zero()),
-                        )
-                    })),
+                    .chain(payload.iter().map(|payload| payload.failure_value())),
                 ),
                 payload.clone(),
             )),

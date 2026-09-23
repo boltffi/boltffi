@@ -2,7 +2,7 @@ use crate::core::{Error, Result};
 
 use boltffi_binding::ClosureSignature;
 
-use super::super::{C_BRIDGE_CONTRACT, Identifier};
+use super::super::{C_BRIDGE_CONTRACT, Identifier, ReturnChannel};
 use super::{Parameter, ParameterGroup, ParameterIndex};
 
 /// C ABI parameters that carry one closure argument.
@@ -15,10 +15,15 @@ pub struct ClosureParameter {
     context: ParameterIndex,
     release: ParameterIndex,
     parameters: Vec<Parameter>,
+    return_channel: ReturnChannel,
     parameter_groups: Vec<ParameterGroup>,
 }
 
 impl ClosureParameter {
+    pub(crate) fn return_channel(&self) -> ReturnChannel {
+        self.return_channel
+    }
+
     /// Returns the source parameter name.
     pub fn name(&self) -> &str {
         self.name.as_str()
@@ -60,6 +65,7 @@ impl ClosureParameter {
         name: &Identifier,
         signature: &ClosureSignature,
         parameters: &[Parameter],
+        return_channel: ReturnChannel,
     ) -> Result<Self> {
         let context = call + 1;
         let release = call + 2;
@@ -90,6 +96,7 @@ impl ClosureParameter {
             context: ParameterIndex::new(context),
             release: ParameterIndex::new(release),
             parameters: parameters.to_vec(),
+            return_channel,
             parameter_groups: ParameterGroup::from_params(parameters)?,
         })
     }

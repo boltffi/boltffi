@@ -43,6 +43,14 @@ impl SupportFunctions {
                     Type::Buffer,
                 )?,
                 Function::new(
+                    "boltffi_callback_error",
+                    vec![
+                        Parameter::new("message", Type::ConstPointer(Box::new(Type::Uint8)))?,
+                        Parameter::new("length", Type::PointerWidth)?,
+                    ],
+                    Type::Buffer,
+                )?,
+                Function::new(
                     "boltffi_last_error_message",
                     vec![Parameter::new(
                         "out",
@@ -77,6 +85,13 @@ impl SupportFunctions {
         self.function(
             "boltffi_buf_with_len",
             "missing C buffer allocation support symbol",
+        )
+    }
+
+    pub(crate) fn callback_error(&self) -> Result<&Function> {
+        self.function(
+            "boltffi_callback_error",
+            "missing C callback error support symbol",
         )
     }
 

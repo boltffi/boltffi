@@ -6,8 +6,9 @@ pub use signature::Signature;
 
 use boltffi_binding::{
     CStyleEnumDecl, ClassDecl, ConstantDecl, ConstantValueDecl, DataEnumDecl, DeclarationId,
-    DeclarationRef, DirectRecordDecl, EncodedRecordDecl, EnumDecl, ExportedCallable,
-    ExportedMethodDecl, InitializerDecl, Native, NativeSymbol, RecordDecl, SymbolId,
+    DeclarationRef, DirectRecordDecl, Direction, EncodedRecordDecl, EnumDecl, ErrorDecl,
+    ExportedCallable, ExportedMethodDecl, InitializerDecl, Native, NativeSymbol, RecordDecl,
+    SymbolId,
 };
 
 use crate::core::{Error, Result};
@@ -25,6 +26,15 @@ pub enum ReturnChannel {
     Value,
     /// The return slot carries an encoded error payload.
     EncodedError,
+}
+
+impl ReturnChannel {
+    pub(crate) fn from_error<D: Direction>(error: &ErrorDecl<Native, D>) -> Self {
+        match error {
+            ErrorDecl::EncodedViaReturnSlot { .. } => Self::EncodedError,
+            _ => Self::Value,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

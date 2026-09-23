@@ -4,8 +4,8 @@ JNIEXPORT void JNICALL {{ invoker.success }}(JNIEnv *env, jclass cls, jlong call
 {%- if invoker.payload_bytes %}
     FfiBuf_u8 payload = boltffi_jni_byte_array_to_buffer(env, result);
     if ((*env)->ExceptionCheck(env)) {
-        (*env)->ExceptionClear(env);
-        complete((void *)context, (FfiStatus){.code = 1}, (FfiBuf_u8){0});
+        {{ free_buffer }}(payload);
+        complete((void *)context, (FfiStatus){.code = 1}, boltffi_jni_callback_error(env));
         return;
     }
     complete((void *)context, (FfiStatus){.code = 0}, payload);
@@ -38,7 +38,9 @@ JNIEXPORT void JNICALL {{ invoker.failure }}(JNIEnv *env, jclass cls, jlong call
     (void)env;
     (void)cls;
     void (*complete)(void *, FfiStatus{% if invoker.has_payload %}, {{ invoker.payload_c_type }}{% endif %}) = (void (*)(void *, FfiStatus{% if invoker.has_payload %}, {{ invoker.payload_c_type }}{% endif %}))callback;
-{%- if invoker.has_payload %}
+{%- if invoker.payload_bytes %}
+    complete((void *)context, (FfiStatus){.code = 1}, boltffi_jni_callback_error(env));
+{%- else if invoker.has_payload %}
     complete((void *)context, (FfiStatus){.code = 1}, ({{ invoker.payload_c_type }}){0});
 {%- else %}
     complete((void *)context, (FfiStatus){.code = 1});
@@ -54,8 +56,8 @@ JNIEXPORT void JNICALL {{ error }}(JNIEnv *env, jclass cls, jlong callback, jlon
 {%- if invoker.payload_bytes %}
     FfiBuf_u8 payload = boltffi_jni_byte_array_to_buffer(env, result);
     if ((*env)->ExceptionCheck(env)) {
-        (*env)->ExceptionClear(env);
-        complete((void *)context, (FfiStatus){.code = 1}, (FfiBuf_u8){0});
+        {{ free_buffer }}(payload);
+        complete((void *)context, (FfiStatus){.code = 1}, boltffi_jni_callback_error(env));
         return;
     }
     complete((void *)context, (FfiStatus){.code = 1}, payload);

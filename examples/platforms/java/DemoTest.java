@@ -57,6 +57,7 @@ public final class DemoTest {
             testClosures();
             testSyncCallbacks();
             testAsyncCallbacks();
+            testCallbackErrors();
             testAsyncFunctions();
             testAsyncClassMethods();
             testSingleThreadedStateHolder();
@@ -1973,6 +1974,90 @@ public final class DemoTest {
         assert transformedBoxed.y() == 24.0 : "transformPointBoxed.y";
 
         System.out.println("  PASS\n");
+    }
+
+    private static void checkCallbackMode(int mode) {
+        if (mode == 1) throw new MathError.Exception(MathError.NEGATIVE_INPUT);
+        if (mode == 2) throw new IllegalStateException("unchecked callback failure 東京🦀");
+    }
+
+    private static void testCallbackErrors() throws Exception {
+        FallibleWorker worker = new FallibleWorker() {
+            public void run(int mode) { checkCallbackMode(mode); }
+            public int value(int mode) { checkCallbackMode(mode); return 42; }
+        };
+        AsyncFallibleWorker asyncWorker = new AsyncFallibleWorker() {
+            public CompletableFuture<Void> run(int mode) {
+                return CompletableFuture.runAsync(() -> checkCallbackMode(mode));
+            }
+            public CompletableFuture<Integer> value(int mode) {
+                return CompletableFuture.supplyAsync(() -> { checkCallbackMode(mode); return 42; });
+            }
+        };
+        demoCase("case:callbacks.errors.unit.should_report_success");
+        Demo.invokeUnitWorker(worker, 0);
+        try {
+            Demo.invokeUnitWorker(worker, 1);
+            throw new AssertionError("case:callbacks.errors.unit.should_report_declared_error");
+        } catch (MathError.Exception error) {
+            assert error.getError() == MathError.NEGATIVE_INPUT : "case:callbacks.errors.unit.should_report_declared_error";
+        }
+        try {
+            Demo.invokeUnitWorker(worker, 2);
+            throw new AssertionError("case:callbacks.errors.unit.should_report_unexpected_error");
+        } catch (MathError.Exception error) {
+            assert error.getError() == MathError.OVERFLOW : "case:callbacks.errors.unit.should_report_unexpected_error";
+        }
+        assert Demo.invokeValueWorker(worker, 0) == 42 : "case:callbacks.errors.value.should_report_success";
+        try {
+            Demo.invokeValueWorker(worker, 1);
+            throw new AssertionError("case:callbacks.errors.value.should_report_declared_error");
+        } catch (MathError.Exception error) {
+            assert error.getError() == MathError.NEGATIVE_INPUT : "case:callbacks.errors.value.should_report_declared_error";
+        }
+        try {
+            Demo.invokeValueWorker(worker, 2);
+            throw new AssertionError("case:callbacks.errors.value.should_report_unexpected_error");
+        } catch (MathError.Exception error) {
+            assert error.getError() == MathError.OVERFLOW : "case:callbacks.errors.value.should_report_unexpected_error";
+        }
+        demoCase("case:callbacks.errors.async_unit.should_report_success");
+        Demo.invokeAsyncUnitWorker(asyncWorker, 0).get(5, java.util.concurrent.TimeUnit.SECONDS);
+        try {
+            Demo.invokeAsyncUnitWorker(asyncWorker, 1).get(5, java.util.concurrent.TimeUnit.SECONDS);
+            throw new AssertionError("case:callbacks.errors.async_unit.should_report_declared_error");
+        } catch (java.util.concurrent.ExecutionException error) {
+            assert error.getCause() instanceof MathError.Exception : "case:callbacks.errors.async_unit.should_report_declared_error";
+            assert ((MathError.Exception) error.getCause()).getError() == MathError.NEGATIVE_INPUT : "case:callbacks.errors.async_unit.should_report_declared_error";
+        }
+        try {
+            Demo.invokeAsyncUnitWorker(asyncWorker, 2).get(5, java.util.concurrent.TimeUnit.SECONDS);
+            throw new AssertionError("case:callbacks.errors.async_unit.should_report_unexpected_error");
+        } catch (java.util.concurrent.ExecutionException error) {
+            assert error.getCause() instanceof MathError.Exception : "case:callbacks.errors.async_unit.should_report_unexpected_error";
+            assert ((MathError.Exception) error.getCause()).getError() == MathError.OVERFLOW : "case:callbacks.errors.async_unit.should_report_unexpected_error";
+        }
+        assert Demo.invokeAsyncValueWorker(asyncWorker, 0).get(5, java.util.concurrent.TimeUnit.SECONDS) == 42 : "case:callbacks.errors.async_value.should_report_success";
+        try {
+            Demo.invokeAsyncValueWorker(asyncWorker, 1).get(5, java.util.concurrent.TimeUnit.SECONDS);
+            throw new AssertionError("case:callbacks.errors.async_value.should_report_declared_error");
+        } catch (java.util.concurrent.ExecutionException error) {
+            assert error.getCause() instanceof MathError.Exception : "case:callbacks.errors.async_value.should_report_declared_error";
+            assert ((MathError.Exception) error.getCause()).getError() == MathError.NEGATIVE_INPUT : "case:callbacks.errors.async_value.should_report_declared_error";
+        }
+        try {
+            Demo.invokeAsyncValueWorker(asyncWorker, 2).get(5, java.util.concurrent.TimeUnit.SECONDS);
+            throw new AssertionError("case:callbacks.errors.async_value.should_report_unexpected_error");
+        } catch (java.util.concurrent.ExecutionException error) {
+            assert error.getCause() instanceof MathError.Exception : "case:callbacks.errors.async_value.should_report_unexpected_error";
+            assert ((MathError.Exception) error.getCause()).getError() == MathError.OVERFLOW : "case:callbacks.errors.async_value.should_report_unexpected_error";
+        }
+        try {
+            Demo.applyResultClosure(value -> { throw new IllegalStateException("unexpected closure error"); }, 0);
+            throw new AssertionError("unexpected closure error was reported as success");
+        } catch (MathError.Exception error) {
+            assert error.getError() == MathError.OVERFLOW;
+        }
     }
 
     private static void testAsyncCallbacks() {

@@ -7643,7 +7643,7 @@ mod tests {
     }
 
     #[test]
-    fn wasm_typed_callback_errors_claim_the_unexpected_error_protocol_when_async() {
+    fn wasm_typed_callback_errors_convert_unexpected_sync_and_async_errors() {
         let source = typed_fallible_listener_contract();
         let lowered = lower_with_declarations::<Wasm32>(&source).expect("lowered bindings");
         let expansion = Expansion::new(&lowered);
@@ -7653,7 +7653,7 @@ mod tests {
         let rendered = tokens.to_string();
         syn::parse2::<syn::File>(tokens).expect("expanded callback parses");
 
-        assert_eq!(rendered.matches("classify_payload").count(), 1);
+        assert_eq!(rendered.matches("classify_payload").count(), 2);
         assert!(rendered.contains("UnexpectedFfiCallbackPayload :: Unexpected"));
         assert!(rendered.contains("UnexpectedFfiCallbackPayload :: Malformed"));
         assert!(rendered.contains(
@@ -8504,7 +8504,7 @@ mod tests {
                 .contains(":: boltffi :: __private :: take_packed_bytes (__boltffi_error_packed)")
         );
         assert!(rendered.contains(
-            ":: boltffi :: __private :: wire :: decode :: < String > (__boltffi_packed_bytes . as_slice ())"
+            ":: boltffi :: __private :: wire :: decode :: < String > (__boltffi_error_bytes . as_slice ())"
         ));
     }
 
@@ -8556,7 +8556,7 @@ mod tests {
                 .contains(":: boltffi :: __private :: take_packed_bytes (__boltffi_error_packed)")
         );
         assert!(rendered.contains(
-            ":: boltffi :: __private :: wire :: decode :: < String > (__boltffi_packed_bytes . as_slice ())"
+            ":: boltffi :: __private :: wire :: decode :: < String > (__boltffi_error_bytes . as_slice ())"
         ));
     }
 

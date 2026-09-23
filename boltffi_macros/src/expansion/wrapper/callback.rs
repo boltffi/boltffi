@@ -1,3 +1,7 @@
+use super::encoded::callback_error::{
+    classified_callback_error_value, classify_callback_error_payload,
+};
+
 use boltffi_ast::{
     AttributeInput, ExecutionKind, MethodDef, ParameterDef, ParameterPassing, Receiver, ReturnDef,
     TraitDef, TypeExpr, UserAttr,
@@ -2978,20 +2982,13 @@ where
     ) -> Result<TokenStream, Error> {
         let error_slot = S::callback_encoded_error(error_shape)?;
         let fallible = self.source.fallible()?;
-        let error_type = fallible.error_written_type()?;
-        let declared_error = error_slot.decode(
+        let error_value = error_slot.decode_foreign(
             quote! { __boltffi_error },
             error_codec,
-            error_type.clone(),
-            fallible.error(),
+            error_ty,
+            &fallible,
             self.expansion,
         )?;
-        let error_value = error_slot.foreign_error_value(
-            error_ty,
-            &error_type,
-            quote! { unsafe { __boltffi_error.as_byte_slice() } },
-            declared_error,
-        );
         let success = self.foreign_success_value()?;
         let success_storage = self.foreign_success_storage()?;
         let error_empty = error_slot.is_empty(quote! { __boltffi_error });
@@ -4442,40 +4439,6 @@ enum CallbackEncodedError {
     WasmPacked,
 }
 
-fn classify_callback_error_payload(
-    error_type: &Type,
-    bytes: TokenStream,
-    declared_error: TokenStream,
-) -> TokenStream {
-    quote! {
-        match ::boltffi::__private::UnexpectedFfiCallbackError::classify_payload(#bytes) {
-            ::boltffi::__private::UnexpectedFfiCallbackPayload::NotUnexpected => {
-                #declared_error
-            }
-            ::boltffi::__private::UnexpectedFfiCallbackPayload::Unexpected(error)
-            | ::boltffi::__private::UnexpectedFfiCallbackPayload::Malformed(error) => {
-                <#error_type as ::core::convert::From<
-                    ::boltffi::__private::UnexpectedFfiCallbackError
-                >>::from(error)
-            }
-        }
-    }
-}
-
-fn classified_callback_error_value(
-    error_ty: &TypeRef,
-    error_type: &Type,
-    bytes: TokenStream,
-    declared_error: TokenStream,
-) -> TokenStream {
-    match error_ty {
-        TypeRef::Record(_) | TypeRef::Enum(_) => {
-            classify_callback_error_payload(error_type, bytes, declared_error)
-        }
-        _ => declared_error,
-    }
-}
-
 fn wasm_foreign_callback_error_value(
     error_ty: &TypeRef,
     error_type: &Type,
@@ -4546,6 +4509,41 @@ impl CallbackEncodedError {
             }
             Self::WasmPacked => declared_error,
         }
+    }
+
+    fn decode_foreign<S: SurfaceLower>(
+        &self,
+        value: TokenStream,
+        codec: &CodecNode,
+        error_ty: &TypeRef,
+        fallible: &rust_api::Fallible<'_>,
+        expansion: &Expansion<'_, S>,
+    ) -> Result<TokenStream, Error> {
+        let rust_type = fallible.error_written_type()?;
+        let bytes = match self {
+            Self::NativeBuffer => quote! { unsafe { #value.as_byte_slice() } },
+            Self::WasmPacked => quote! { __boltffi_error_bytes.as_slice() },
+        };
+        let declared = wrapper::encoded::incoming::Value::new(codec, expansion).expression(
+            wrapper::encoded::incoming::Bytes::new(
+                &rust_type,
+                fallible.error(),
+                bytes.clone(),
+                quote! { panic!("callback method error conversion failed: {:?}", error) },
+            ),
+        )?;
+        let error = classified_callback_error_value(error_ty, &rust_type, bytes, declared);
+        Ok(match self {
+            Self::NativeBuffer => error,
+            Self::WasmPacked => quote! {
+                {
+                    let __boltffi_error_bytes = unsafe {
+                        ::boltffi::__private::take_packed_bytes(#value)
+                    };
+                    #error
+                }
+            },
+        })
     }
 
     fn decode<'lowered, S: SurfaceLower>(

@@ -1354,27 +1354,17 @@ impl EncodedCallbackError {
         }
     }
 
-    /// Returns an unexpected-error payload to a synchronous native callback caller.
     fn unexpected_catch_statement(&self) -> Statement {
-        self.returning_payload_statement(self.unexpected_bytes_statement())
+        Statement::new("return boltffiEncodeUnexpectedCallbackError(error)")
     }
 
-    /// Completes an asynchronous native callback with an unexpected-error payload.
     fn unexpected_completion_statement(&self, completion: &AsyncCompletion) -> Statement {
-        self.completion_payload_statement(self.unexpected_bytes_statement(), completion)
-    }
-
-    /// Encodes the caught host-language error in the reserved unexpected-error envelope.
-    fn unexpected_bytes_statement(&self) -> Statement {
-        Statement::let_value(
-            self.buffer.bytes(),
-            Expression::call(
-                "boltffiEncodeUnexpectedCallbackError",
-                [Expression::new("error")]
-                    .into_iter()
-                    .collect::<ArgumentList>(),
-            ),
-        )
+        Statement::expression(completion.call(
+            AsyncCompletion::failure_status(),
+            Some(Expression::new(
+                "boltffiEncodeUnexpectedCallbackError(error)",
+            )),
+        ))
     }
 
     /// Returns encoded callback error bytes from a synchronous callback invocation.

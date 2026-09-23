@@ -12,7 +12,7 @@ use crate::core::Result;
 
 use boltffi_binding::ClosureSignature;
 
-use super::{Identifier, Type};
+use super::{Identifier, ReturnChannel, Type};
 
 pub use byte_slice::ByteSliceParameter;
 pub use callback_completion::CallbackCompletionParameter;
@@ -61,6 +61,7 @@ enum ParameterRole {
         name: Identifier,
         signature: ClosureSignature,
         parameters: Vec<Parameter>,
+        return_channel: ReturnChannel,
     },
     ClosureContext(Identifier),
     ClosureRelease(Identifier),
@@ -69,6 +70,7 @@ enum ParameterRole {
         signature: ClosureSignature,
         call_type: Type,
         parameters: Vec<Parameter>,
+        return_channel: ReturnChannel,
     },
 }
 
@@ -210,6 +212,7 @@ impl Parameter {
         signature: &ClosureSignature,
         ty: Type,
         parameters: Vec<Parameter>,
+        return_channel: ReturnChannel,
     ) -> Result<Self> {
         Self::with_role(
             format!("{name}_call"),
@@ -218,6 +221,7 @@ impl Parameter {
                 name: Identifier::escape(name)?,
                 signature: signature.clone(),
                 parameters,
+                return_channel,
             },
         )
     }
@@ -249,6 +253,7 @@ impl Parameter {
         signature: &ClosureSignature,
         call_type: Type,
         parameters: Vec<Parameter>,
+        return_channel: ReturnChannel,
     ) -> Result<Self> {
         Self::with_role(
             name,
@@ -258,6 +263,7 @@ impl Parameter {
                 signature: signature.clone(),
                 call_type,
                 parameters,
+                return_channel,
             },
         )
     }

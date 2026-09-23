@@ -170,11 +170,14 @@ fn jni_bridge_cleans_up_failed_direct_record_closure_arguments() {
     assert!(rendered.contains(
         "__boltffi_arg0_array = boltffi_jni_record_to_byte_array(env, &arg0, (uintptr_t)sizeof(arg0));"
     ));
-    assert!(!rendered.contains("goto __boltffi_fail;"));
-    assert!(rendered.contains(
-        "if (__boltffi_arg0_array == NULL) {\n        boltffi_jni_clear_exception(env);"
-    ));
-    assert!(rendered.contains("boltffi_jni_exit(env, attached);\n        return (___Point){0};"));
+    assert!(rendered.contains("if (__boltffi_arg0_array == NULL) {\n        goto __boltffi_fail;"));
+    let cleanup = rendered
+        .split("__boltffi_fail:;")
+        .nth(1)
+        .expect("failure cleanup");
+    assert!(cleanup.contains("DeleteLocalRef(env, __boltffi_arg0_array)"));
+    assert!(cleanup.contains("boltffi_jni_exit(env, attached);"));
+    assert!(cleanup.contains("return (___Point){0};"));
 }
 
 #[test]

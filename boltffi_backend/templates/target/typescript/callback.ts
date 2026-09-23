@@ -23,17 +23,22 @@ _callbackImports[{{ clone_import }}] = (handle: number): number => {
 };
 
 {% for method in methods %}_callbackImports[{{ method.import }}] = (handle: number{% match method.return_pointer %}{% when Some with (pointer) %}, {{ pointer }}: number{% when None %}{% endmatch %}{% for parameter in method.parameters %}{% for binding in parameter.bindings %}, {{ binding.name }}: {{ binding.carrier_type }}{% endfor %}{% endfor %}): {{ method.carrier_return }} => {
-  const callback = {{ registry }}.get(handle);
-{% for parameter in method.parameters %}{% for statement in parameter.setup %}  {{ statement }}
-{% endfor %}{% endfor %}{% match method.fallible %}{% when Some with (fallible) %}  const result = {{ method.invocation }};
-  return matchWireResult(result, (success) => {
-{% for statement in fallible.success_setup %}    {{ statement }}
-{% endfor %}{% if fallible.encoded_success %}    _module.writeU64(successPointer, (BigInt(resultWriter.len) << 32n) | BigInt(resultWriter.ptr >>> 0));
-{% endif %}    return 0n;
-  }, (error) => {
-{% for statement in fallible.error_setup %}    {{ statement }}
-{% endfor %}    return (BigInt(resultWriter.len) << 32n) | BigInt(resultWriter.ptr >>> 0);
-  });
+{% if method.fallible.is_some() %}  try {
+{% endif %}{% if method.fallible.is_some() %}  {% endif %}  const callback = {{ registry }}.get(handle);
+{% for parameter in method.parameters %}{% for statement in parameter.setup %}{% if method.fallible.is_some() %}  {% endif %}  {{ statement }}
+{% endfor %}{% endfor %}{% match method.fallible %}{% when Some with (fallible) %}    const result = {{ method.invocation }};
+    return matchWireResult(result, (success) => {
+{% for statement in fallible.success_setup %}      {{ statement }}
+{% endfor %}{% if fallible.encoded_success %}      _module.writeU64(successPointer, (BigInt(resultWriter.len) << 32n) | BigInt(resultWriter.ptr >>> 0));
+{% endif %}      return 0n;
+    }, (error) => {
+{% for statement in fallible.error_setup %}      {{ statement }}
+{% endfor %}      return (BigInt(resultWriter.len) << 32n) | BigInt(resultWriter.ptr >>> 0);
+    });
+  } catch (error) {
+    const errorWriter = writeUnexpectedCallbackError(_module, error);
+    return (BigInt(errorWriter.len) << 32n) | BigInt(errorWriter.ptr >>> 0);
+  }
 {% when None %}{% if method.returns_void %}  {{ method.invocation }};
 {% else if method.returns_string %}  const result = {{ method.invocation }};
   const allocation = _module.allocOwnedString(result);

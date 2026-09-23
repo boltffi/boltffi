@@ -4,6 +4,8 @@ static {{ closure.c_return_type }} {{ closure.call }}(void *user_data{% for para
     if (!boltffi_jni_enter(&env, &attached)) {
 {%- if closure.returns_void %}
         return;
+{%- else if closure.returns_error %}
+        return {{ callback_error }}(NULL, 0);
 {%- else %}
         return {{ closure.failure_value }};
 {%- endif %}
@@ -11,9 +13,9 @@ static {{ closure.c_return_type }} {{ closure.call }}(void *user_data{% for para
     jlong handle = (jlong)(uintptr_t)user_data;
 {% include "bridge/jni/closure/byte_array_declarations.c" %}
 {% include "bridge/jni/closure/closure_handle_declarations.c" %}
-{% include "bridge/jni/closure/byte_arrays.c" %}
 {% include "bridge/jni/closure/direct_vector_declarations.c" %}
 {% include "bridge/jni/closure/record_declarations.c" %}
+{% include "bridge/jni/closure/byte_arrays.c" %}
 {% include "bridge/jni/closure/direct_vectors.c" %}
 {% include "bridge/jni/closure/records.c" %}
 {% include "bridge/jni/closure/closure_handles.c" %}
@@ -30,22 +32,21 @@ static {{ closure.c_return_type }} {{ closure.call }}(void *user_data{% for para
 {%- else %}
     {{ closure.c_return_type }} result = ({{ closure.c_return_type }})(*env)->CallStatic{{ closure.call_method_suffix }}Method(env, {{ closure.global_class }}, {{ closure.call_method }}, handle{% if closure.has_jni_arguments %}, {{ closure.jni_arguments }}{% endif %});
 {%- endif %}
-    if (boltffi_jni_clear_exception(env)) {
-{% include "bridge/jni/closure/cleanup.c" %}
-        boltffi_jni_exit(env, attached);
-        return {{ closure.failure_value }};
+    if ((*env)->ExceptionCheck(env)) {
+        goto __boltffi_fail;
     }
 {%- if closure.returns_bytes %}
     {{ closure.c_return_type }} result = boltffi_jni_byte_array_to_buffer(env, __boltffi_return_array);
     (*env)->DeleteLocalRef(env, __boltffi_return_array);
+    if ((*env)->ExceptionCheck(env)) {
+        {{ free_buffer }}(result);
+        goto __boltffi_fail;
+    }
 {%- else if closure.returns_record %}
     {{ closure.c_return_type }} result = {0};
     if (!boltffi_jni_read_record(env, __boltffi_return_array, (uintptr_t)sizeof(result), &result)) {
         (*env)->DeleteLocalRef(env, __boltffi_return_array);
-        boltffi_jni_clear_exception(env);
-{% include "bridge/jni/closure/cleanup.c" %}
-        boltffi_jni_exit(env, attached);
-        return {{ closure.failure_value }};
+        goto __boltffi_fail;
     }
     (*env)->DeleteLocalRef(env, __boltffi_return_array);
 {%- else if closure.returns_callback_handle %}
@@ -60,4 +61,15 @@ static {{ closure.c_return_type }} {{ closure.call }}(void *user_data{% for para
     boltffi_jni_exit(env, attached);
     return result;
 {%- endif %}
+{%- if closure.returns_void %}
+    return;
+{%- endif %}
+__boltffi_fail:;
+{%- if closure.returns_error %}
+    FfiBuf_u8 callback_error = boltffi_jni_callback_error(env);
+{%- endif %}
+{% include "bridge/jni/closure/cleanup.c" %}
+    boltffi_jni_clear_exception(env);
+    boltffi_jni_exit(env, attached);
+{% include "bridge/jni/closure/fail.c" %}
 }

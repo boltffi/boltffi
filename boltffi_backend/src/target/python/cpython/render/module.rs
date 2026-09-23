@@ -25,6 +25,7 @@ use crate::{
 #[template(path = "target/python/native_module.c", escape = "none")]
 struct NativeModuleTemplate {
     module_name: String,
+    callback_error_storage: Identifier,
     method_table: Identifier,
     module_definition: Identifier,
     free_function: Identifier,
@@ -89,6 +90,7 @@ impl<'render, 'bindings> NativeModule<'render, 'bindings> {
         let methods = declarations.methods(bridge);
         let support = ModuleSupport::new(bridge, declarations.support())?;
         let source = NativeModuleTemplate {
+            callback_error_storage: self.bridge.callback_error()?.storage_name().clone(),
             module_name: bridge.module().as_str().to_owned(),
             method_table: bridge.symbols().method_table().clone(),
             module_definition: bridge.symbols().module_definition().clone(),

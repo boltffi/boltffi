@@ -8,6 +8,8 @@ static {{ method.c_return_type }} {{ method.function }}({% for parameter in meth
 {%- endfor %}
 {%- if method.returns_void %}
         return;
+{%- else if method.returns_error %}
+        return {{ callback_error }}(NULL, 0);
 {%- else %}
         return {{ method.failure_value }};
 {%- endif %}
@@ -18,7 +20,10 @@ static {{ method.c_return_type }} {{ method.function }}({% for parameter in meth
 {% include "bridge/jni/callback/method/callback_handles.c" %}
 {% include "bridge/jni/callback/method/closure_handles.c" %}
 {% include "bridge/jni/callback/method/invoke.c" %}
-__boltffi_fail:
+__boltffi_fail:;
+{%- if method.returns_error %}
+    FfiBuf_u8 callback_error = boltffi_jni_callback_error(env);
+{%- endif %}
 {% include "bridge/jni/callback/method/cleanup.c" %}
     boltffi_jni_clear_exception(env);
     boltffi_jni_exit(env, attached);

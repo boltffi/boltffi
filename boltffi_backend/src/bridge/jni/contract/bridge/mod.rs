@@ -47,6 +47,7 @@ pub struct JniBridgeContract {
     header_style: JniHeaderStyle,
     free_buffer: Identifier,
     buffer_with_len: Identifier,
+    callback_error: Identifier,
     callback_handle_lifecycle: Option<CallbackHandleLifecycle>,
     callbacks: Vec<CallbackRegistration>,
     callback_completions: Vec<CallbackCompletionInvoker>,
@@ -81,6 +82,10 @@ impl JniBridgeContract {
     /// Returns the C support function that releases owned BoltFFI byte buffers.
     pub fn free_buffer(&self) -> &Identifier {
         &self.free_buffer
+    }
+
+    pub(crate) fn callback_error(&self) -> &Identifier {
+        &self.callback_error
     }
 
     pub(crate) fn buffer_with_len(&self) -> &Identifier {

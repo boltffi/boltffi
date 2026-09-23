@@ -712,7 +712,7 @@ impl Signature {
             symbol,
             params,
             returns,
-            self.return_channel(callable.error()),
+            ReturnChannel::from_error(callable.error()),
         )
     }
 
@@ -753,7 +753,7 @@ impl Signature {
                 &symbols.complete,
                 complete_params,
                 self.async_complete_return(callable.returns().plan(), callable.error())?,
-                self.return_channel(callable.error()),
+                ReturnChannel::from_error(callable.error()),
             )?,
             Function::exported(
                 declaration,
@@ -895,6 +895,7 @@ impl Signature {
                         .collect(),
                 },
                 closure_params,
+                ReturnChannel::from_error(error),
             )?,
             Parameter::closure_context(name)?,
             Parameter::closure_release(name)?,
@@ -922,7 +923,13 @@ impl Signature {
                 .chain(return_params.iter().map(|parameter| parameter.ty().clone()))
                 .collect(),
         };
-        Parameter::closure_return("return_out", closure.signature(), call_type, closure_params)
+        Parameter::closure_return(
+            "return_out",
+            closure.signature(),
+            call_type,
+            closure_params,
+            ReturnChannel::from_error(invoke.error()),
+        )
     }
 
     fn return_params<D>(
@@ -999,16 +1006,6 @@ impl Signature {
                 layer: C_BRIDGE_LAYER,
                 shape: "unknown error declaration",
             }),
-        }
-    }
-
-    fn return_channel<D>(&self, error: &ErrorDecl<Native, D>) -> ReturnChannel
-    where
-        D: Direction,
-    {
-        match error {
-            ErrorDecl::EncodedViaReturnSlot { .. } => ReturnChannel::EncodedError,
-            _ => ReturnChannel::Value,
         }
     }
 

@@ -181,9 +181,17 @@ static {{ method.returns.c_type }} {{ method.function }}(uint64_t handle{% if le
 {%- endif %}
 done:
     if (PyErr_Occurred()) {
-        PyErr_Print();
-{%- if let Some(completion) = method.completion %}
+{%- if let Some(fallible) = method.fallible_return %}
+        {{ fallible.error.value }} = boltffi_python_callback_error();
+{%- elif let Some(completion) = method.completion %}
         completion_status = FFI_STATUS_INTERNAL_ERROR;
+{%- if completion.payload.fallible %}
+        {{ completion.payload.value() }} = boltffi_python_callback_error();
+{%- else %}
+        PyErr_Print();
+{%- endif %}
+{%- else %}
+        PyErr_Print();
 {%- endif %}
     }
 {%- for param in method.params %}

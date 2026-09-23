@@ -2,6 +2,7 @@ use boltffi_binding::{CodecNode, Primitive};
 
 use crate::expansion::error::Error;
 
+pub mod callback_error;
 pub mod incoming;
 pub mod outgoing;
 

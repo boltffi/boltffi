@@ -3,8 +3,8 @@ use boltffi_binding::{ExecutionDecl, ImportedMethodDecl, Native, VTableSlot};
 use crate::core::Result;
 
 use super::super::{
-    Field, Identifier, Parameter, ParameterGroup, ParameterIndex, Type, function::Signature,
-    names::Names,
+    Field, Identifier, Parameter, ParameterGroup, ParameterIndex, ReturnChannel, Type,
+    function::Signature, names::Names,
 };
 
 /// One method slot in a native callback vtable.
@@ -13,6 +13,7 @@ use super::super::{
 pub struct CallbackSlot {
     name: Identifier,
     returns: Type,
+    return_channel: ReturnChannel,
     parameters: Vec<Parameter>,
     parameter_groups: Vec<ParameterGroup>,
     return_parameter_groups: Vec<ParameterGroup>,
@@ -21,6 +22,10 @@ pub struct CallbackSlot {
 }
 
 impl CallbackSlot {
+    pub(crate) fn return_channel(&self) -> ReturnChannel {
+        self.return_channel
+    }
+
     /// Returns the callback slot name.
     pub fn name(&self) -> &Identifier {
         &self.name
@@ -95,6 +100,7 @@ impl CallbackSlot {
             return_group_count,
             source_group_count,
             false,
+            ReturnChannel::from_error(method.callable().error()),
         )
     }
 
@@ -136,6 +142,7 @@ impl CallbackSlot {
             0,
             source_group_count,
             true,
+            ReturnChannel::Value,
         )
     }
 
@@ -146,6 +153,7 @@ impl CallbackSlot {
         return_group_count: usize,
         source_group_count: usize,
         asynchronous: bool,
+        return_channel: ReturnChannel,
     ) -> Result<Self> {
         let parameter_groups = ParameterGroup::from_params(&parameters)?;
         let return_parameter_groups = parameter_groups
@@ -163,6 +171,7 @@ impl CallbackSlot {
         Ok(Self {
             name,
             returns,
+            return_channel,
             parameters,
             parameter_groups,
             asynchronous,

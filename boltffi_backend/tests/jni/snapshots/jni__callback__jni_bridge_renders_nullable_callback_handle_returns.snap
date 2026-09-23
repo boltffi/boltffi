@@ -143,13 +143,13 @@ static uint32_t ___ListenerVTable_on_value(uint64_t handle, uint32_t value) {
     }
 
     uint32_t result = (uint32_t)(*env)->CallStaticIntMethod(env, g____ListenerVTable_class, g____ListenerVTable_on_value_method, (jlong)handle, (jint)value);
-    if (boltffi_jni_clear_exception(env)) {
+    if ((*env)->ExceptionCheck(env)) {
         goto __boltffi_fail;
     }
 
     boltffi_jni_exit(env, attached);
     return result;
-__boltffi_fail:
+__boltffi_fail:;
 
     boltffi_jni_clear_exception(env);
     boltffi_jni_exit(env, attached);

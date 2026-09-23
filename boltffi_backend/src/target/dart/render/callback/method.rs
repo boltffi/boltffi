@@ -568,7 +568,7 @@ pub fn render_fallible_entry_return(
     )?;
     failure.push("return _l$errorBuffer;".to_owned());
     Ok(vec![format!(
-        "try {{\n{}\n}} on {} catch ({}) {{\n{}\n}}",
+        "try {{\n{}\n}} on {} catch ({}) {{\n{}\n}} catch (_l$unexpectedError) {{\n  return _f$encodeUnexpectedCallbackError(_l$unexpectedError);\n}}",
         indent(&success.join("\n"), 2),
         error_binding.ty,
         error_binding.name,
@@ -1053,6 +1053,7 @@ fn async_success_payload(
     };
     match (plan, payload) {
         (ReturnPlan::Void, CBridgeType::Buffer) => Ok(vec![
+            format!("{call};"),
             "final _l$payloadBuffer = $$ffi.Struct.create<_$$BoltFFIBuf>();".to_owned(),
         ]),
         (ReturnPlan::DirectViaReturnSlot { ty }, CBridgeType::Buffer)
@@ -1113,6 +1114,20 @@ fn async_proxy_success(
     Ok(match plan {
         ReturnPlan::DirectViaReturnSlot { ty } | ReturnPlan::DirectViaOutPointer { ty } => {
             let decoded = match (ty, payload_ty) {
+                (DirectValueType::Primitive(primitive), Some(CBridgeType::Buffer)) => format!(
+                    "_$$BoltWireDecoder(_$$BoltBufReader.fromSpan({payload}.ptr, {payload}.len)).{}()",
+                    primitive_read_method(*primitive)
+                ),
+                (DirectValueType::Enum(id), Some(CBridgeType::Buffer)) => {
+                    let Some(EnumDecl::CStyle(enumeration)) = context.enumeration(*id) else {
+                        return super::unsupported("Dart direct callback enum wire decoding");
+                    };
+                    format!(
+                        "{}._m$fromDiscriminant(_$$BoltWireDecoder(_$$BoltBufReader.fromSpan({payload}.ptr, {payload}.len)).{}())",
+                        type_name::direct_value(ty, context)?,
+                        primitive_read_method(enumeration.repr().primitive())
+                    )
+                }
                 (DirectValueType::Record(_), Some(CBridgeType::Buffer)) => format!(
                     "{}._m$wireDecode(_$$BoltWireDecoder(_$$BoltBufReader.fromSpan({payload}.ptr, {payload}.len)))",
                     type_name::direct_value(ty, context)?

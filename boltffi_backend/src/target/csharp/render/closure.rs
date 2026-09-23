@@ -217,7 +217,7 @@ impl ClosureArgument {
                 let mut failure = vec![format!("WireWriter {writer} = new WireWriter();")];
                 failure.extend(writes.into_iter().map(|statement| statement.to_string()));
                 failure.push(format!("return FfiBuf.FromBytes({writer}.ToArray());"));
-                let call = format!(
+                let mut call = format!(
                     "{success_name} = default;\n            try\n            {{\n                {success_name} = implementation({});\n                return default;\n            }}\n            catch ({exception} {error})\n            {{\n{}\n            }}",
                     invocation_arguments.join(", "),
                     failure
@@ -226,6 +226,9 @@ impl ClosureArgument {
                         .collect::<Vec<_>>()
                         .join("\n")
                 );
+                if !matches!(error_type, TypeRef::String) {
+                    call.push_str("\n            catch (global::System.Exception boltffiUnexpectedError)\n            {\n                return FfiBuf.FromUnexpectedCallbackError(boltffiUnexpectedError);\n            }");
+                }
                 (Some(success_type), TypeFragment::new("FfiBuf"), call, true)
             }
             _ => return super::super::unsupported("closure return shape"),

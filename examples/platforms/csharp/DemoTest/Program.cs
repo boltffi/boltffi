@@ -60,6 +60,7 @@ public static class DemoTest
             await TestAsyncClassMethods();
             await TestAsyncCancellation();
             TestCallbackTraits();
+            await TestCallbackErrors();
             TestClosures();
             await TestAsyncCallbackTraits();
             await TestStreams();
@@ -2883,6 +2884,130 @@ public static class DemoTest
         Console.WriteLine("  PASS\n");
     }
 
+    private sealed class Worker : FallibleWorker
+    {
+        public void Run(int mode)
+        {
+            if (mode == 1) throw new MathErrorException(MathError.NegativeInput);
+            if (mode == 2) throw new InvalidOperationException("unchecked callback failure 東京🦀");
+        }
+
+        public int Value(int mode)
+        {
+            Run(mode);
+            return 42;
+        }
+    }
+
+    private sealed class AsyncErrorWorker : AsyncFallibleWorker
+    {
+        public async System.Threading.Tasks.Task Run(int mode)
+        {
+            await System.Threading.Tasks.Task.Yield();
+            new Worker().Run(mode);
+        }
+
+        public async System.Threading.Tasks.Task<int> Value(int mode)
+        {
+            await System.Threading.Tasks.Task.Yield();
+            return new Worker().Value(mode);
+        }
+    }
+
+    private static async System.Threading.Tasks.Task TestCallbackErrors()
+    {
+        var worker = new Worker();
+        var asyncWorker = new AsyncErrorWorker();
+        DemoCase("case:callbacks.errors.unit.should_report_success");
+        InvokeUnitWorker(worker, 0);
+        DemoCase("case:callbacks.errors.unit.should_report_declared_error");
+        try
+        {
+            InvokeUnitWorker(worker, 1);
+            Require(false, "callback failure was reported as success");
+        }
+        catch (MathErrorException error)
+        {
+            Require(error.Error == MathError.NegativeInput, "callback error conversion");
+        }
+        DemoCase("case:callbacks.errors.unit.should_report_unexpected_error");
+        try
+        {
+            InvokeUnitWorker(worker, 2);
+            Require(false, "callback failure was reported as success");
+        }
+        catch (MathErrorException error)
+        {
+            Require(error.Error == MathError.Overflow, "callback error conversion");
+        }
+        DemoCase("case:callbacks.errors.value.should_report_success");
+        Require(InvokeValueWorker(worker, 0) == 42, "callback value");
+        DemoCase("case:callbacks.errors.value.should_report_declared_error");
+        try
+        {
+            InvokeValueWorker(worker, 1);
+            Require(false, "callback failure was reported as success");
+        }
+        catch (MathErrorException error)
+        {
+            Require(error.Error == MathError.NegativeInput, "callback error conversion");
+        }
+        DemoCase("case:callbacks.errors.value.should_report_unexpected_error");
+        try
+        {
+            InvokeValueWorker(worker, 2);
+            Require(false, "callback failure was reported as success");
+        }
+        catch (MathErrorException error)
+        {
+            Require(error.Error == MathError.Overflow, "callback error conversion");
+        }
+        DemoCase("case:callbacks.errors.async_unit.should_report_success");
+        await InvokeAsyncUnitWorker(asyncWorker, 0);
+        DemoCase("case:callbacks.errors.async_unit.should_report_declared_error");
+        try
+        {
+            await InvokeAsyncUnitWorker(asyncWorker, 1);
+            Require(false, "callback failure was reported as success");
+        }
+        catch (MathErrorException error)
+        {
+            Require(error.Error == MathError.NegativeInput, "callback error conversion");
+        }
+        DemoCase("case:callbacks.errors.async_unit.should_report_unexpected_error");
+        try
+        {
+            await InvokeAsyncUnitWorker(asyncWorker, 2);
+            Require(false, "callback failure was reported as success");
+        }
+        catch (MathErrorException error)
+        {
+            Require(error.Error == MathError.Overflow, "callback error conversion");
+        }
+        DemoCase("case:callbacks.errors.async_value.should_report_success");
+        Require(await InvokeAsyncValueWorker(asyncWorker, 0) == 42, "callback value");
+        DemoCase("case:callbacks.errors.async_value.should_report_declared_error");
+        try
+        {
+            await InvokeAsyncValueWorker(asyncWorker, 1);
+            Require(false, "callback failure was reported as success");
+        }
+        catch (MathErrorException error)
+        {
+            Require(error.Error == MathError.NegativeInput, "callback error conversion");
+        }
+        DemoCase("case:callbacks.errors.async_value.should_report_unexpected_error");
+        try
+        {
+            await InvokeAsyncValueWorker(asyncWorker, 2);
+            Require(false, "callback failure was reported as success");
+        }
+        catch (MathErrorException error)
+        {
+            Require(error.Error == MathError.Overflow, "callback error conversion");
+        }
+    }
+
     private static void TestCallbackTraits()
     {
         Console.WriteLine("Testing callback traits...");
@@ -2985,6 +3110,15 @@ public static class DemoTest
             "ApplyOptionalPointClosure Some");
         Require(ApplyOptionalPointClosure(point => point, null) == null, "ApplyOptionalPointClosure None");
         Require(ApplyResultClosure(v => v * 2, 6) == 12, "ApplyResultClosure Ok");
+        try
+        {
+            ApplyResultClosure(value => throw new InvalidOperationException("unexpected closure error"), 0);
+            Require(false, "unexpected closure error was reported as success");
+        }
+        catch (MathErrorException error)
+        {
+            Require(error.Error == MathError.Overflow, "unexpected closure error conversion");
+        }
         try
         {
             ApplyResultClosure(_ => throw new MathErrorException(MathError.NegativeInput), 6);

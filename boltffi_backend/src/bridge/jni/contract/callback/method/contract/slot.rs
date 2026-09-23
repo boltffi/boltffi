@@ -61,6 +61,7 @@ impl CallbackMethod {
             method_id: Identifier::parse(format!("g_{stem}_{}_method", slot.name()))?,
             signature,
             returns,
+            return_channel: slot.return_channel(),
             c_parameters,
             closure_return,
             arguments,

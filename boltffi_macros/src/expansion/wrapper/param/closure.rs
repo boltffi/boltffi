@@ -622,6 +622,46 @@ impl<'expansion, 'lowered, S: boltffi_binding::SurfaceLower>
         )
     }
 
+    fn error_expression(
+        &self,
+        result: &RustFallibleReturn,
+        bytes: TokenStream,
+    ) -> Result<TokenStream, Error> {
+        let ErrorDecl::EncodedViaReturnSlot { ty, codec, .. } = self.error else {
+            return Err(Error::SourceSyntaxMismatch(
+                "fallible closure requires an encoded error",
+            ));
+        };
+        let declared = self.encoded_expression(
+            codec,
+            &result.error_type,
+            &result.error_source,
+            bytes.clone(),
+        )?;
+        Ok(encoded::callback_error::classified_callback_error_value(
+            ty,
+            &result.error_type,
+            bytes,
+            declared,
+        ))
+    }
+
+    fn packed_error_expression(
+        &self,
+        result: &RustFallibleReturn,
+        packed: TokenStream,
+    ) -> Result<TokenStream, Error> {
+        let error = self.error_expression(result, quote! { __boltffi_error_bytes.as_slice() })?;
+        Ok(quote! {
+            {
+                let __boltffi_error_bytes = unsafe {
+                    ::boltffi::__private::take_packed_bytes(#packed)
+                };
+                #error
+            }
+        })
+    }
+
     fn packed_expression(
         &self,
         codec: &'lowered WritePlan,
@@ -672,36 +712,24 @@ impl<'expansion, 'lowered> ForeignClosureReturn<'expansion, 'lowered, Native> {
                     ty: DirectValueType::Primitive(primitive),
                 },
                 ErrorDecl::EncodedViaReturnSlot {
-                    codec,
                     shape: native::BufferShape::Buffer,
                     ..
                 },
             ) => {
                 let ffi_type = wrapper::type_ref::primitive(*primitive)?;
                 let result = self.rust_fallible_return()?;
-                let error = self.encoded_expression(
-                    codec,
-                    &result.error_type,
-                    &result.error_source,
-                    quote! { __boltffi_error_bytes },
-                )?;
+                let error = self.error_expression(&result, quote! { __boltffi_error_bytes })?;
                 Ok(ForeignClosureReturnTokens::NativeFallibleDirectPrimitive { ffi_type, error })
             }
             (
                 ReturnPlan::DirectViaOutPointer { .. },
                 ErrorDecl::EncodedViaReturnSlot {
-                    codec,
                     shape: native::BufferShape::Buffer,
                     ..
                 },
             ) => {
                 let result = self.rust_fallible_return()?;
-                let error = self.encoded_expression(
-                    codec,
-                    &result.error_type,
-                    &result.error_source,
-                    quote! { __boltffi_error_bytes },
-                )?;
+                let error = self.error_expression(&result, quote! { __boltffi_error_bytes })?;
                 Ok(ForeignClosureReturnTokens::NativeFallibleDirectPassable {
                     ok_type: result.ok_type,
                     error,
@@ -714,7 +742,6 @@ impl<'expansion, 'lowered> ForeignClosureReturn<'expansion, 'lowered, Native> {
                     ..
                 },
                 ErrorDecl::EncodedViaReturnSlot {
-                    codec: error_codec,
                     shape: native::BufferShape::Buffer,
                     ..
                 },
@@ -726,29 +753,18 @@ impl<'expansion, 'lowered> ForeignClosureReturn<'expansion, 'lowered, Native> {
                     &result.ok_source,
                     quote! { __boltffi_success_bytes },
                 )?;
-                let error = self.encoded_expression(
-                    error_codec,
-                    &result.error_type,
-                    &result.error_source,
-                    quote! { __boltffi_error_bytes },
-                )?;
+                let error = self.error_expression(&result, quote! { __boltffi_error_bytes })?;
                 Ok(ForeignClosureReturnTokens::NativeFallibleEncoded { ok, error })
             }
             (
                 ReturnPlan::Void,
                 ErrorDecl::EncodedViaReturnSlot {
-                    codec,
                     shape: native::BufferShape::Buffer,
                     ..
                 },
             ) => {
                 let result = self.rust_fallible_return()?;
-                let error = self.encoded_expression(
-                    codec,
-                    &result.error_type,
-                    &result.error_source,
-                    quote! { __boltffi_error_bytes },
-                )?;
+                let error = self.error_expression(&result, quote! { __boltffi_error_bytes })?;
                 Ok(ForeignClosureReturnTokens::NativeFallibleVoid { error })
             }
             (
@@ -822,36 +838,26 @@ impl<'expansion, 'lowered> ForeignClosureReturn<'expansion, 'lowered, Wasm32> {
                     ty: DirectValueType::Primitive(primitive),
                 },
                 ErrorDecl::EncodedViaReturnSlot {
-                    codec,
                     shape: wasm32::BufferShape::Packed,
                     ..
                 },
             ) => {
                 let ffi_type = wrapper::type_ref::primitive(*primitive)?;
                 let result = self.rust_fallible_return()?;
-                let error = self.packed_expression(
-                    codec,
-                    &result.error_type,
-                    &result.error_source,
-                    quote! { __boltffi_error_packed },
-                )?;
+                let error =
+                    self.packed_error_expression(&result, quote! { __boltffi_error_packed })?;
                 Ok(ForeignClosureReturnTokens::WasmFallibleDirectPrimitive { ffi_type, error })
             }
             (
                 ReturnPlan::DirectViaOutPointer { .. },
                 ErrorDecl::EncodedViaReturnSlot {
-                    codec,
                     shape: wasm32::BufferShape::Packed,
                     ..
                 },
             ) => {
                 let result = self.rust_fallible_return()?;
-                let error = self.packed_expression(
-                    codec,
-                    &result.error_type,
-                    &result.error_source,
-                    quote! { __boltffi_error_packed },
-                )?;
+                let error =
+                    self.packed_error_expression(&result, quote! { __boltffi_error_packed })?;
                 Ok(ForeignClosureReturnTokens::WasmFallibleDirectPassable {
                     ok_type: result.ok_type,
                     error,
@@ -864,7 +870,6 @@ impl<'expansion, 'lowered> ForeignClosureReturn<'expansion, 'lowered, Wasm32> {
                     ..
                 },
                 ErrorDecl::EncodedViaReturnSlot {
-                    codec: error_codec,
                     shape: wasm32::BufferShape::Packed,
                     ..
                 },
@@ -876,29 +881,20 @@ impl<'expansion, 'lowered> ForeignClosureReturn<'expansion, 'lowered, Wasm32> {
                     &result.ok_source,
                     quote! { __boltffi_success.assume_init() },
                 )?;
-                let error = self.packed_expression(
-                    error_codec,
-                    &result.error_type,
-                    &result.error_source,
-                    quote! { __boltffi_error_packed },
-                )?;
+                let error =
+                    self.packed_error_expression(&result, quote! { __boltffi_error_packed })?;
                 Ok(ForeignClosureReturnTokens::WasmFallibleEncoded { ok, error })
             }
             (
                 ReturnPlan::Void,
                 ErrorDecl::EncodedViaReturnSlot {
-                    codec,
                     shape: wasm32::BufferShape::Packed,
                     ..
                 },
             ) => {
                 let result = self.rust_fallible_return()?;
-                let error = self.packed_expression(
-                    codec,
-                    &result.error_type,
-                    &result.error_source,
-                    quote! { __boltffi_error_packed },
-                )?;
+                let error =
+                    self.packed_error_expression(&result, quote! { __boltffi_error_packed })?;
                 Ok(ForeignClosureReturnTokens::WasmFallibleVoid { error })
             }
             (

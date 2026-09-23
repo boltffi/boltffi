@@ -15,16 +15,21 @@ _callbackImports[{{ free_import }}] = (handle: number): void => {
 };
 
 _callbackImports[{{ call_import }}] = (handle: number{% for parameter in parameters %}{% for binding in parameter.imported.bindings %}, {{ binding.name }}: {{ binding.carrier_type }}{% endfor %}{% endfor %}{% match return_pointer %}{% when Some with (pointer) %}, {{ pointer }}: number{% when None %}{% endmatch %}{% match fallible %}{% when Some with (fallible) %}, {{ fallible.success_pointer }}: number{% when None %}{% endmatch %}): {{ carrier_return }} => {
-  const callback = {{ registry }}.get(handle);
-{% for parameter in parameters %}{% for statement in parameter.imported.setup %}  {{ statement }}
-{% endfor %}{% endfor %}{% match fallible %}{% when Some with (fallible) %}  const result = {{ invocation }};
-  return matchWireResult(result, (success) => {
-    _module.{{ fallible.success_write }}({{ fallible.success_pointer }}, success);
-    return 0n;
-  }, (error) => {
-{% for statement in fallible.error_setup %}    {{ statement }}
-{% endfor %}    return (BigInt(resultWriter.len) << 32n) | BigInt(resultWriter.ptr >>> 0);
-  });
+{% if fallible.is_some() %}  try {
+{% endif %}{% if fallible.is_some() %}  {% endif %}  const callback = {{ registry }}.get(handle);
+{% for parameter in parameters %}{% for statement in parameter.imported.setup %}{% if fallible.is_some() %}  {% endif %}  {{ statement }}
+{% endfor %}{% endfor %}{% match fallible %}{% when Some with (fallible) %}    const result = {{ invocation }};
+    return matchWireResult(result, (success) => {
+      _module.{{ fallible.success_write }}({{ fallible.success_pointer }}, success);
+      return 0n;
+    }, (error) => {
+{% for statement in fallible.error_setup %}      {{ statement }}
+{% endfor %}      return (BigInt(resultWriter.len) << 32n) | BigInt(resultWriter.ptr >>> 0);
+    });
+  } catch (error) {
+    const errorWriter = writeUnexpectedCallbackError(_module, error);
+    return (BigInt(errorWriter.len) << 32n) | BigInt(errorWriter.ptr >>> 0);
+  }
 {% when None %}{% if returns_void %}  {{ invocation }};
 {% else if returns_string %}  const result = {{ invocation }};
   const allocation = _module.allocOwnedWireString(result);

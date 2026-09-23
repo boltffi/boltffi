@@ -30,16 +30,24 @@ static FfiBuf_u8 boltffi_jni____closure__to_opt_i32_call(void *user_data) {
     jlong handle = (jlong)(uintptr_t)user_data;
 
     jbyteArray __boltffi_return_array = (jbyteArray)(*env)->CallStaticObjectMethod(env, g____closure__to_opt_i32_class, g____closure__to_opt_i32_call_method, handle);
-    if (boltffi_jni_clear_exception(env)) {
-
-        boltffi_jni_exit(env, attached);
-        return (FfiBuf_u8){0};
+    if ((*env)->ExceptionCheck(env)) {
+        goto __boltffi_fail;
     }
     FfiBuf_u8 result = boltffi_jni_byte_array_to_buffer(env, __boltffi_return_array);
     (*env)->DeleteLocalRef(env, __boltffi_return_array);
+    if ((*env)->ExceptionCheck(env)) {
+        boltffi_free_buf(result);
+        goto __boltffi_fail;
+    }
 
     boltffi_jni_exit(env, attached);
     return result;
+__boltffi_fail:;
+
+    boltffi_jni_clear_exception(env);
+    boltffi_jni_exit(env, attached);
+
+        return (FfiBuf_u8){0};
 }
 
 static void boltffi_jni____closure__to_opt_i32_release(void *user_data) {
@@ -91,16 +99,24 @@ static FfiBuf_u8 boltffi_jni____closure__to_vec_u32_call(void *user_data) {
     jlong handle = (jlong)(uintptr_t)user_data;
 
     jbyteArray __boltffi_return_array = (jbyteArray)(*env)->CallStaticObjectMethod(env, g____closure__to_vec_u32_class, g____closure__to_vec_u32_call_method, handle);
-    if (boltffi_jni_clear_exception(env)) {
-
-        boltffi_jni_exit(env, attached);
-        return (FfiBuf_u8){0};
+    if ((*env)->ExceptionCheck(env)) {
+        goto __boltffi_fail;
     }
     FfiBuf_u8 result = boltffi_jni_byte_array_to_buffer(env, __boltffi_return_array);
     (*env)->DeleteLocalRef(env, __boltffi_return_array);
+    if ((*env)->ExceptionCheck(env)) {
+        boltffi_free_buf(result);
+        goto __boltffi_fail;
+    }
 
     boltffi_jni_exit(env, attached);
     return result;
+__boltffi_fail:;
+
+    boltffi_jni_clear_exception(env);
+    boltffi_jni_exit(env, attached);
+
+        return (FfiBuf_u8){0};
 }
 
 static void boltffi_jni____closure__to_vec_u32_release(void *user_data) {

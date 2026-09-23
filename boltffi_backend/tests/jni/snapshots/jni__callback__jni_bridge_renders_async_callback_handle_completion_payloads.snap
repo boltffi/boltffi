@@ -72,13 +72,13 @@ static uint32_t ___ChildVTable_on_value(uint64_t handle, uint32_t value) {
     }
 
     uint32_t result = (uint32_t)(*env)->CallStaticIntMethod(env, g____ChildVTable_class, g____ChildVTable_on_value_method, (jlong)handle, (jint)value);
-    if (boltffi_jni_clear_exception(env)) {
+    if ((*env)->ExceptionCheck(env)) {
         goto __boltffi_fail;
     }
 
     boltffi_jni_exit(env, attached);
     return result;
-__boltffi_fail:
+__boltffi_fail:;
 
     boltffi_jni_clear_exception(env);
     boltffi_jni_exit(env, attached);
@@ -180,7 +180,7 @@ static void ___SiblingVTable_on_name(uint64_t handle, const uint8_t *name_ptr, u
 
     boltffi_jni_exit(env, attached);
     return;
-__boltffi_fail:
+__boltffi_fail:;
 
     if (name != NULL) {
         (*env)->DeleteLocalRef(env, name);
@@ -278,7 +278,7 @@ static void ___ListenerVTable_child(uint64_t handle, void (*complete)(void *, Ff
 
     boltffi_jni_exit(env, attached);
     return;
-__boltffi_fail:
+__boltffi_fail:;
 
     boltffi_jni_clear_exception(env);
     boltffi_jni_exit(env, attached);
@@ -304,7 +304,7 @@ static void ___ListenerVTable_sibling(uint64_t handle, void (*complete)(void *, 
 
     boltffi_jni_exit(env, attached);
     return;
-__boltffi_fail:
+__boltffi_fail:;
 
     boltffi_jni_clear_exception(env);
     boltffi_jni_exit(env, attached);

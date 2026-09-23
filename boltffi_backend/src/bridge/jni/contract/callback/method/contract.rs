@@ -30,12 +30,17 @@ pub struct CallbackMethod {
     method_id: Identifier,
     signature: String,
     returns: JvmMethodReturn,
+    return_channel: c::ReturnChannel,
     c_parameters: Vec<CallbackCParameter>,
     closure_return: Option<CallbackClosureReturn>,
     arguments: Vec<CallbackArgument>,
 }
 
 impl CallbackMethod {
+    pub(crate) fn returns_error(&self) -> bool {
+        self.return_channel == c::ReturnChannel::EncodedError
+    }
+
     /// Returns the generated C vtable method implementation.
     pub fn function(&self) -> &Identifier {
         &self.function

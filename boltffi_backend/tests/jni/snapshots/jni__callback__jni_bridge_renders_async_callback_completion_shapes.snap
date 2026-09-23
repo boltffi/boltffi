@@ -79,7 +79,7 @@ static void ___ListenerVTable_value(uint64_t handle, uint32_t key, void (*comple
 
     boltffi_jni_exit(env, attached);
     return;
-__boltffi_fail:
+__boltffi_fail:;
 
     boltffi_jni_clear_exception(env);
     boltffi_jni_exit(env, attached);
@@ -116,7 +116,7 @@ static void ___ListenerVTable_point(uint64_t handle, ___Point point, void (*comp
 
     boltffi_jni_exit(env, attached);
     return;
-__boltffi_fail:
+__boltffi_fail:;
 
     if (__boltffi_point_array != NULL) {
         (*env)->DeleteLocalRef(env, __boltffi_point_array);
@@ -136,7 +136,7 @@ static void ___ListenerVTable_values(uint64_t handle, uint32_t count, void (*com
     int attached = 0;
 
     if (!boltffi_jni_enter(&env, &attached)) {
-        complete(complete_context, (FfiStatus){.code = 1}, (FfiBuf_u8){0});
+        complete(complete_context, (FfiStatus){.code = 1}, boltffi_callback_error(NULL, 0));
         return;
     }
 
@@ -147,12 +147,12 @@ static void ___ListenerVTable_values(uint64_t handle, uint32_t count, void (*com
 
     boltffi_jni_exit(env, attached);
     return;
-__boltffi_fail:
+__boltffi_fail:;
 
     boltffi_jni_clear_exception(env);
     boltffi_jni_exit(env, attached);
 
-    complete(complete_context, (FfiStatus){.code = 1}, (FfiBuf_u8){0});
+    complete(complete_context, (FfiStatus){.code = 1}, boltffi_callback_error(NULL, 0));
 
     return;
 }
@@ -162,7 +162,7 @@ static void ___ListenerVTable_try_load(uint64_t handle, uint32_t key, void (*com
     int attached = 0;
 
     if (!boltffi_jni_enter(&env, &attached)) {
-        complete(complete_context, (FfiStatus){.code = 1}, (FfiBuf_u8){0});
+        complete(complete_context, (FfiStatus){.code = 1}, boltffi_callback_error(NULL, 0));
         return;
     }
 
@@ -173,12 +173,12 @@ static void ___ListenerVTable_try_load(uint64_t handle, uint32_t key, void (*com
 
     boltffi_jni_exit(env, attached);
     return;
-__boltffi_fail:
+__boltffi_fail:;
 
     boltffi_jni_clear_exception(env);
     boltffi_jni_exit(env, attached);
 
-    complete(complete_context, (FfiStatus){.code = 1}, (FfiBuf_u8){0});
+    complete(complete_context, (FfiStatus){.code = 1}, boltffi_callback_error(NULL, 0));
 
     return;
 }
@@ -188,7 +188,7 @@ static void ___ListenerVTable_check_enabled(uint64_t handle, uint32_t key, void 
     int attached = 0;
 
     if (!boltffi_jni_enter(&env, &attached)) {
-        complete(complete_context, (FfiStatus){.code = 1}, (FfiBuf_u8){0});
+        complete(complete_context, (FfiStatus){.code = 1}, boltffi_callback_error(NULL, 0));
         return;
     }
 
@@ -199,12 +199,12 @@ static void ___ListenerVTable_check_enabled(uint64_t handle, uint32_t key, void 
 
     boltffi_jni_exit(env, attached);
     return;
-__boltffi_fail:
+__boltffi_fail:;
 
     boltffi_jni_clear_exception(env);
     boltffi_jni_exit(env, attached);
 
-    complete(complete_context, (FfiStatus){.code = 1}, (FfiBuf_u8){0});
+    complete(complete_context, (FfiStatus){.code = 1}, boltffi_callback_error(NULL, 0));
 
     return;
 }
@@ -271,8 +271,8 @@ JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1async_1callback_1co
     void (*complete)(void *, FfiStatus, FfiBuf_u8) = (void (*)(void *, FfiStatus, FfiBuf_u8))callback;
     FfiBuf_u8 payload = boltffi_jni_byte_array_to_buffer(env, result);
     if ((*env)->ExceptionCheck(env)) {
-        (*env)->ExceptionClear(env);
-        complete((void *)context, (FfiStatus){.code = 1}, (FfiBuf_u8){0});
+        boltffi_free_buf(payload);
+        complete((void *)context, (FfiStatus){.code = 1}, boltffi_jni_callback_error(env));
         return;
     }
     complete((void *)context, (FfiStatus){.code = 0}, payload);
@@ -282,7 +282,7 @@ JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1async_1callback_1co
     (void)env;
     (void)cls;
     void (*complete)(void *, FfiStatus, FfiBuf_u8) = (void (*)(void *, FfiStatus, FfiBuf_u8))callback;
-    complete((void *)context, (FfiStatus){.code = 1}, (FfiBuf_u8){0});
+    complete((void *)context, (FfiStatus){.code = 1}, boltffi_jni_callback_error(env));
 }
 
 JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1async_1callback_1complete_1Bytes_1error(JNIEnv *env, jclass cls, jlong callback, jlong context, jbyteArray result) {
@@ -290,8 +290,8 @@ JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1async_1callback_1co
     void (*complete)(void *, FfiStatus, FfiBuf_u8) = (void (*)(void *, FfiStatus, FfiBuf_u8))callback;
     FfiBuf_u8 payload = boltffi_jni_byte_array_to_buffer(env, result);
     if ((*env)->ExceptionCheck(env)) {
-        (*env)->ExceptionClear(env);
-        complete((void *)context, (FfiStatus){.code = 1}, (FfiBuf_u8){0});
+        boltffi_free_buf(payload);
+        complete((void *)context, (FfiStatus){.code = 1}, boltffi_jni_callback_error(env));
         return;
     }
     complete((void *)context, (FfiStatus){.code = 1}, payload);

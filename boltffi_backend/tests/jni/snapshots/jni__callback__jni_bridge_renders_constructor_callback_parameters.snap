@@ -150,7 +150,7 @@ static void ___NotifierVTable_notify(uint64_t handle, uint32_t code) {
 
     boltffi_jni_exit(env, attached);
     return;
-__boltffi_fail:
+__boltffi_fail:;
 
     boltffi_jni_clear_exception(env);
     boltffi_jni_exit(env, attached);
