@@ -419,6 +419,22 @@ fn swift_target_renders_fallible_functions_as_throwing_functions() {
 }
 
 #[test]
+fn swift_target_propagates_errors_through_unit_vector_calls() {
+    let rendered = rendered_fixture("exports/fallible_unit_vectors");
+
+    [
+        "_ = try ids.withUnsafeBufferPointer",
+        "_ = try weights.withUnsafeBufferPointer",
+        "_ = try boltffiPointsStorage.withUnsafeBytes",
+        "_ = try ids.withUnsafeMutableBufferPointer",
+    ]
+    .into_iter()
+    .for_each(|expected| assert!(rendered.contains(expected), "missing `{expected}`"));
+
+    insta::assert_snapshot!(rendered);
+}
+
+#[test]
 fn swift_target_renders_direct_records_and_c_style_enums() {
     insta::assert_snapshot!(rendered_fixture("exports/direct_records_and_c_style_enums"));
 }

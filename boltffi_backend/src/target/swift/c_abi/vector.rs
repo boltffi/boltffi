@@ -396,6 +396,7 @@ impl BorrowedVector {
                 &self.buffer,
                 body,
                 indent,
+                throwing,
             ),
         };
         self.setup
