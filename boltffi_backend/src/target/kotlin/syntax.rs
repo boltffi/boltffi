@@ -397,7 +397,7 @@ impl Expression {
 
     pub fn sum_of(self, parameter: Identifier, body: Self) -> Self {
         Self(format!(
-            "{self}.sumOf {{ {parameter} -> ({body}).toInt() }}"
+            "{self}.sumOf {{ {parameter} -> val __boltffi_size: kotlin.Int = {body}; __boltffi_size }}"
         ))
     }
 
