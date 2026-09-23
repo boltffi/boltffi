@@ -568,6 +568,7 @@ private let rustToSwiftCoverageFile: [String: String] = [
     "bytes/mod.rs": "bytes/BytesTests.swift",
     "callbacks/async_traits.rs": "callbacks/AsyncTraitsTests.swift",
     "callbacks/closures.rs": "callbacks/ClosuresTests.swift",
+    "callbacks/errors.rs": "callbacks/CallbackErrorTests.swift",
     "callbacks/sync_traits.rs": "callbacks/SyncTraitsTests.swift",
     "classes/async_methods.rs": "classes/AsyncMethodsTests.swift",
     "classes/borrowed.rs": "classes/BorrowedTests.swift",

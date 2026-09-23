@@ -2,6 +2,18 @@ import { wireErr, wireOk } from "@boltffi/runtime";
 import { assert, assertRejectsWithCode, assertThrowsWithCode, demo } from "../support/index.mjs";
 
 export async function run() {
+  assert.equal(await demo.invokeAsyncMessageWorker({ run: async () => wireOk(undefined) }), undefined);
+  const declaredError = { code: 400, message: "declared callback failure" };
+  await assert.rejects(
+    demo.invokeAsyncMessageWorker({ run: async () => wireErr(declaredError) }),
+    (error) => error instanceof demo.AppErrorException && error.value.code === declaredError.code && error.value.message === declaredError.message,
+  );
+  await Promise.all(["", "unchecked callback failure 東京\u0000🦀"].map(async (message) => {
+    await assert.rejects(
+      demo.invokeAsyncMessageWorker({ run: async () => { throw new Error(message); } }),
+      (error) => error instanceof demo.AppErrorException && error.value.code === 500 && error.value.message === message,
+    );
+  }));
   const worker = {
     run(mode) {
       if (mode === 1) return wireErr(demo.MathError.NegativeInput);
