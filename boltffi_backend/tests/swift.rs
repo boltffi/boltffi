@@ -395,7 +395,9 @@ fn swift_target_uses_the_native_unexpected_callback_error_encoder() {
     assert!(
         rendered.contains("func boltffiEncodeUnexpectedCallbackError(_ error: Error) -> FfiBuf_u8")
     );
-    assert!(rendered.contains("boltffi_callback_error(message.baseAddress, UInt(message.count))"));
+    assert!(rendered.contains(
+        "boltffi_callback_error(message.bindMemory(to: UInt8.self).baseAddress!, UInt(message.count - 1))"
+    ));
 }
 
 #[test]

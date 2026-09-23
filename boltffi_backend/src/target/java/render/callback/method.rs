@@ -24,7 +24,7 @@ pub struct AsyncBody {
     success: Vec<Statement>,
     error_type: Option<TypeName>,
     error: Vec<Statement>,
-    failure: Statement,
+    completion: Completion,
 }
 
 struct InvocationParameter {
@@ -363,8 +363,9 @@ impl AsyncBody {
         &self.error
     }
 
-    pub fn failure(&self) -> &Statement {
-        &self.failure
+    pub fn failure(&self, exception: &'static str) -> Statement {
+        self.completion
+            .failure(Expression::identifier(Identifier::known(exception)))
     }
 
     fn new(
@@ -388,7 +389,7 @@ impl AsyncBody {
                 .map(|fallible| fallible.completion_statements(error, completion, version, context))
                 .transpose()?
                 .unwrap_or_default(),
-            failure: completion.failure(),
+            completion: completion.clone(),
         })
     }
 }

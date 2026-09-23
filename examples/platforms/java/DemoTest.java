@@ -1982,6 +1982,20 @@ public final class DemoTest {
     }
 
     private static void testCallbackErrors() throws Exception {
+        IllegalStateException exception = new IllegalStateException("unchecked callback failure 東京\u0000🦀");
+        AsyncMessageWorker failedFuture = () -> {
+            CompletableFuture<Void> future = new CompletableFuture<>();
+            future.completeExceptionally(new java.util.concurrent.CompletionException(exception));
+            return future;
+        };
+        assertAsyncCallbackMessage(failedFuture, exception.toString());
+        assertAsyncCallbackMessage(() -> { throw exception; }, exception.toString());
+        assertAsyncCallbackMessage(() -> null, "java.lang.NullPointerException: async callback returned null");
+        IllegalStateException brokenDescription = new IllegalStateException() {
+            @Override
+            public String toString() { throw new IllegalArgumentException("cannot describe exception"); }
+        };
+        assertAsyncCallbackMessage(() -> { throw brokenDescription; }, "foreign callback failed");
         FallibleWorker worker = new FallibleWorker() {
             public void run(int mode) { checkCallbackMode(mode); }
             public int value(int mode) { checkCallbackMode(mode); return 42; }
@@ -2057,6 +2071,16 @@ public final class DemoTest {
             throw new AssertionError("unexpected closure error was reported as success");
         } catch (MathError.Exception error) {
             assert error.getError() == MathError.OVERFLOW;
+        }
+    }
+
+    private static void assertAsyncCallbackMessage(AsyncMessageWorker worker, String message) throws Exception {
+        try {
+            Demo.invokeAsyncMessageWorker(worker).get(5, java.util.concurrent.TimeUnit.SECONDS);
+            throw new AssertionError("callback failure was reported as success");
+        } catch (java.util.concurrent.ExecutionException error) {
+            assert error.getCause() instanceof AppError;
+            assert ((AppError) error.getCause()).message.equals(message) : error.getCause();
         }
     }
 

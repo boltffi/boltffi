@@ -6,6 +6,14 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 
 class CallbackErrorsTest {
+    @Test
+    fun asyncCallbackPreservesExceptionMessage() = runBlocking {
+        val exception = IllegalStateException("unchecked callback failure 東京\u0000🦀")
+        val worker = AsyncMessageWorker { throw exception }
+        val error = assertFailsWith<AppError> { invokeAsyncMessageWorker(worker) }
+        assertEquals(exception.toString(), error.message)
+    }
+
     private fun checkMode(mode: Int) {
         when (mode) {
             1 -> throw MathError.NegativeInput

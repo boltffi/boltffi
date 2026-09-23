@@ -1980,7 +1980,7 @@ fn java_target_renders_async_callbacks_from_completion_protocols() {
     assert!(callback.contains(
         "static void value(long handle, int key, long callbackToken, long callbackContext)"
     ));
-    assert!(callback.contains("__boltffi_future.whenComplete"));
+    assert!(callback.contains("__boltffi_future.handle"));
     assert!(callback.contains("BoltFfiCallbackFailure.unwrap"));
     assert!(callback.contains("instanceof AsyncCallbackError.Exception"));
     assert!(module.contains("boltffi_async_callback_complete_U32"));

@@ -46,10 +46,11 @@ final class {{ callback.callbacks_name() }} {
             __boltffi_future = BoltFfiCallbackFailure.failed(__boltffi_failure);
         }
         if (__boltffi_future == null) {
-            {{ asynchronous.failure() }}
+            Throwable __boltffi_failure = new NullPointerException("async callback returned null");
+            {{ asynchronous.failure("__boltffi_failure") }}
             return;
         }
-        __boltffi_future.whenComplete((__boltffi_result, __boltffi_failure) -> {
+        __boltffi_future.handle((__boltffi_result, __boltffi_failure) -> {
             if (__boltffi_failure != null) {
                 Throwable __boltffi_cause = BoltFfiCallbackFailure.unwrap(__boltffi_failure);
 {% if let Some(error_type) = asynchronous.error_type() %}                if (__boltffi_cause instanceof {{ error_type }}) {
@@ -57,18 +58,19 @@ final class {{ callback.callbacks_name() }} {
                     try {
 {% for statement in asynchronous.error() %}                        {{ statement }}
 {% endfor %}                    } catch (Throwable __boltffi_completion_failure) {
-                        {{ asynchronous.failure() }}
+                        {{ asynchronous.failure("__boltffi_completion_failure") }}
                     }
-                    return;
+                    return null;
                 }
-{% endif %}                {{ asynchronous.failure() }}
-                return;
+{% endif %}                {{ asynchronous.failure("__boltffi_cause") }}
+                return null;
             }
             try {
 {% for statement in asynchronous.success() %}                {{ statement }}
 {% endfor %}            } catch (Throwable __boltffi_completion_failure) {
-                {{ asynchronous.failure() }}
+                {{ asynchronous.failure("__boltffi_completion_failure") }}
             }
+            return null;
         });
 {% else %}{% for statement in method.body() %}        {{ statement }}
 {% endfor %}{% endif %}    }

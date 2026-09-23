@@ -48,15 +48,12 @@ static bool boltffi_jni_lookup_static_method_with_diagnostic(JNIEnv *env, jclass
     return true;
 }
 
-static FfiBuf_u8 boltffi_jni_callback_error(JNIEnv *env) {
-    jthrowable exception = (*env)->ExceptionOccurred(env);
-    (*env)->ExceptionClear(env);
+static FfiBuf_u8 boltffi_jni_encode_callback_error(JNIEnv *env, jthrowable exception) {
     if (exception == NULL) {
         return {{ callback_error }}(NULL, 0);
     }
     if ((*env)->PushLocalFrame(env, 8) != JNI_OK) {
         (*env)->ExceptionClear(env);
-        (*env)->DeleteLocalRef(env, exception);
         return {{ callback_error }}(NULL, 0);
     }
     FfiBuf_u8 error = {0};
@@ -82,6 +79,13 @@ static FfiBuf_u8 boltffi_jni_callback_error(JNIEnv *env) {
 done:
     boltffi_jni_clear_exception(env);
     (*env)->PopLocalFrame(env, NULL);
-    (*env)->DeleteLocalRef(env, exception);
     return error.ptr != NULL ? error : {{ callback_error }}(NULL, 0);
+}
+
+static FfiBuf_u8 boltffi_jni_callback_error(JNIEnv *env) {
+    jthrowable exception = (*env)->ExceptionOccurred(env);
+    (*env)->ExceptionClear(env);
+    FfiBuf_u8 error = boltffi_jni_encode_callback_error(env, exception);
+    (*env)->DeleteLocalRef(env, exception);
+    return error;
 }

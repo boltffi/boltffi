@@ -3,6 +3,27 @@ import Foundation
 import XCTest
 
 final class CallbackErrorTests: DemoTestCase {
+    struct MessageError: Error, CustomStringConvertible {
+        let description: String
+    }
+
+    final class MessageWorker: AsyncMessageWorker {
+        let message: String
+
+        init(message: String) {
+            self.message = message
+        }
+
+        func run() async throws {
+            throw MessageError(description: message)
+        }
+    }
+
+    func testCallbackPreservesErrorMessage() async {
+        await assertCallbackMessage("")
+        await assertCallbackMessage("unexpected callback failure 東京\u{0}🦀")
+    }
+
     final class Worker: FallibleWorker {
         func run(mode: Int32) throws {
             if mode == 1 { throw MathError.negativeInput }
@@ -93,6 +114,15 @@ final class CallbackErrorTests: DemoTestCase {
             XCTFail("callback failure was reported as success")
         } catch {
             XCTAssertEqual(error as? MathError, .overflow)
+        }
+    }
+
+    private func assertCallbackMessage(_ message: String) async {
+        do {
+            try await invokeAsyncMessageWorker(worker: MessageWorker(message: message))
+            XCTFail("callback failure was reported as success")
+        } catch {
+            XCTAssertEqual((error as? AppError)?.message, message)
         }
     }
 }

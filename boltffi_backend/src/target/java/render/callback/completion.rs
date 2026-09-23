@@ -73,8 +73,8 @@ impl Completion {
         self.invoke(&self.success, payload)
     }
 
-    pub fn failure(&self) -> Statement {
-        self.invoke(&self.failure, None)
+    pub fn failure(&self, exception: Expression) -> Statement {
+        self.invoke(&self.failure, Some(exception))
     }
 
     pub fn error(&self, payload: Expression) -> Result<Statement> {

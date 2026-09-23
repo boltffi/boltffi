@@ -1,6 +1,6 @@
 use boltffi::*;
 
-use crate::results::error_enums::MathError;
+use crate::results::error_enums::{AppError, MathError};
 
 #[export]
 pub trait FallibleWorker: Send + Sync {
@@ -13,6 +13,17 @@ pub trait FallibleWorker: Send + Sync {
 pub trait AsyncFallibleWorker: Send + Sync {
     async fn run(&self, mode: i32) -> Result<(), MathError>;
     async fn value(&self, mode: i32) -> Result<i32, MathError>;
+}
+
+#[export]
+#[allow(async_fn_in_trait)]
+pub trait AsyncMessageWorker: Send + Sync {
+    async fn run(&self) -> Result<(), AppError>;
+}
+
+#[export]
+pub async fn invoke_async_message_worker(worker: impl AsyncMessageWorker) -> Result<(), AppError> {
+    worker.run().await
 }
 
 #[demo_bench_macros::demo_case(

@@ -34,15 +34,18 @@ JNIEXPORT void JNICALL {{ invoker.success }}(JNIEnv *env, jclass cls, jlong call
 {%- endif %}
 }
 
-JNIEXPORT void JNICALL {{ invoker.failure }}(JNIEnv *env, jclass cls, jlong callback, jlong context) {
-    (void)env;
+JNIEXPORT void JNICALL {{ invoker.failure }}(JNIEnv *env, jclass cls, jlong callback, jlong context, jthrowable exception) {
     (void)cls;
     void (*complete)(void *, FfiStatus{% if invoker.has_payload %}, {{ invoker.payload_c_type }}{% endif %}) = (void (*)(void *, FfiStatus{% if invoker.has_payload %}, {{ invoker.payload_c_type }}{% endif %}))callback;
 {%- if invoker.payload_bytes %}
-    complete((void *)context, (FfiStatus){.code = 1}, boltffi_jni_callback_error(env));
+    complete((void *)context, (FfiStatus){.code = 1}, boltffi_jni_encode_callback_error(env, exception));
 {%- else if invoker.has_payload %}
+    (void)env;
+    (void)exception;
     complete((void *)context, (FfiStatus){.code = 1}, ({{ invoker.payload_c_type }}){0});
 {%- else %}
+    (void)env;
+    (void)exception;
     complete((void *)context, (FfiStatus){.code = 1});
 {%- endif %}
 }

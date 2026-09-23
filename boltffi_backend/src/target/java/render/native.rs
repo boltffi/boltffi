@@ -5,10 +5,9 @@ use boltffi_binding::NativeSymbol;
 
 use crate::{
     bridge::jni::{
-        CallbackCompletionInvoker, CallbackCompletionPayload, CallbackCompletionPayloadValue,
-        CallbackHandleLifecycle, CallbackHandleMethod, DirectStreamBatchMethod, JniBridgeContract,
-        NativeMethod, NativeParameter, NativeParameterKind, NativeReturn, SuccessOutValue,
-        SuccessOutWriter,
+        CallbackCompletionInvoker, CallbackCompletionPayloadValue, CallbackHandleLifecycle,
+        CallbackHandleMethod, DirectStreamBatchMethod, JniBridgeContract, NativeMethod,
+        NativeParameter, NativeParameterKind, NativeReturn, SuccessOutValue, SuccessOutWriter,
     },
     core::{Error, Result},
     target::java::{
@@ -39,6 +38,7 @@ enum Carrier {
     PrimitiveArray(Primitive),
     ByteArray,
     DirectBuffer,
+    Throwable,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -171,22 +171,29 @@ impl Method {
         invoker: &CallbackCompletionInvoker,
         version: JavaVersion,
     ) -> Result<Vec<Self>> {
+        let payload = invoker.payload().map(|payload| {
+            Parameter::new(
+                Identifier::known("result"),
+                Carrier::from_completion(payload.value()),
+            )
+        });
         Ok([
             Some(Self::callback_completion_method(
                 invoker.success_method().as_str(),
-                invoker.payload(),
+                payload.clone(),
                 version,
             )?),
             Some(Self::callback_completion_method(
                 invoker.failure_method().as_str(),
-                None,
+                Some(Parameter::new(
+                    Identifier::known("exception"),
+                    Carrier::Throwable,
+                )),
                 version,
             )?),
             invoker
                 .error_method()
-                .map(|method| {
-                    Self::callback_completion_method(method.as_str(), invoker.payload(), version)
-                })
+                .map(|method| Self::callback_completion_method(method.as_str(), payload, version))
                 .transpose()?,
         ]
         .into_iter()
@@ -310,7 +317,7 @@ impl Method {
 
     fn callback_completion_method(
         name: &str,
-        payload: Option<&CallbackCompletionPayload>,
+        payload: Option<Parameter<Carrier>>,
         version: JavaVersion,
     ) -> Result<Self> {
         Self::new(
@@ -326,12 +333,7 @@ impl Method {
                 ),
             ]
             .into_iter()
-            .chain(payload.map(|payload| {
-                Parameter::new(
-                    Identifier::known("result"),
-                    Carrier::from_completion(payload.value()),
-                )
-            }))
+            .chain(payload)
             .collect(),
             MethodReturn::Void,
         )
@@ -409,7 +411,9 @@ impl Carrier {
     fn slot_width(self) -> SlotWidth {
         match self {
             Self::Primitive(primitive) => primitive.slot_width(),
-            Self::PrimitiveArray(_) | Self::ByteArray | Self::DirectBuffer => SlotWidth::Single,
+            Self::PrimitiveArray(_) | Self::ByteArray | Self::DirectBuffer | Self::Throwable => {
+                SlotWidth::Single
+            }
         }
     }
 }
@@ -421,6 +425,7 @@ impl fmt::Display for Carrier {
             Self::PrimitiveArray(primitive) => write!(formatter, "{primitive}[]"),
             Self::ByteArray => formatter.write_str("byte[]"),
             Self::DirectBuffer => formatter.write_str("java.nio.ByteBuffer"),
+            Self::Throwable => formatter.write_str("Throwable"),
         }
     }
 }

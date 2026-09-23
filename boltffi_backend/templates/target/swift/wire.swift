@@ -355,7 +355,7 @@
 }
 
 func boltffiEncodeUnexpectedCallbackError(_ error: Error) -> FfiBuf_u8 {
-    Array(String(describing: error).utf8).withUnsafeBufferPointer { message in
-        boltffi_callback_error(message.baseAddress, UInt(message.count))
+    String(describing: error).utf8CString.withUnsafeBytes { message in
+        boltffi_callback_error(message.bindMemory(to: UInt8.self).baseAddress!, UInt(message.count - 1))
     }
 }

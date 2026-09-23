@@ -123,11 +123,10 @@ JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1async_1callback_1co
     complete((void *)context, (FfiStatus){.code = 0}, payload);
 }
 
-JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1async_1callback_1complete_1Bytes_1failure(JNIEnv *env, jclass cls, jlong callback, jlong context) {
-    (void)env;
+JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1async_1callback_1complete_1Bytes_1failure(JNIEnv *env, jclass cls, jlong callback, jlong context, jthrowable exception) {
     (void)cls;
     void (*complete)(void *, FfiStatus, FfiBuf_u8) = (void (*)(void *, FfiStatus, FfiBuf_u8))callback;
-    complete((void *)context, (FfiStatus){.code = 1}, boltffi_jni_callback_error(env));
+    complete((void *)context, (FfiStatus){.code = 1}, boltffi_jni_encode_callback_error(env, exception));
 }
 
 JNIEXPORT void JNICALL Java_com_boltffi_demo_Native_boltffi_1async_1callback_1complete_1Bytes_1error(JNIEnv *env, jclass cls, jlong callback, jlong context, jbyteArray result) {

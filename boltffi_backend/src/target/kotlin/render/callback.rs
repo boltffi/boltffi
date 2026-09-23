@@ -492,7 +492,8 @@ impl AsyncMethodBody {
                     return_value.completion_success_statements(call, completion, host, context)?
                 }
             },
-            failure: completion.failure_statement(),
+            failure: completion
+                .failure_statement(Expression::identifier(Identifier::parse("throwable")?)),
         })
     }
 }
@@ -552,8 +553,8 @@ impl AsyncCompletion {
             })
     }
 
-    fn failure_statement(&self) -> Statement {
-        self.call(&self.failure, None)
+    fn failure_statement(&self, exception: Expression) -> Statement {
+        self.call(&self.failure, Some(exception))
     }
 
     fn call(&self, method: &Identifier, payload: Option<Expression>) -> Statement {

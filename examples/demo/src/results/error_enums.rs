@@ -97,6 +97,15 @@ impl std::fmt::Display for AppError {
 
 impl std::error::Error for AppError {}
 
+impl From<UnexpectedFfiCallbackError> for AppError {
+    fn from(error: UnexpectedFfiCallbackError) -> Self {
+        Self {
+            code: 500,
+            message: error.message().to_owned(),
+        }
+    }
+}
+
 #[demo_bench_macros::demo_case(
     "results.error_enums.may_fail.should_return_success_when_valid",
     justification = "Ensure may_fail returns an Ok success string when the input is valid.",

@@ -336,6 +336,11 @@ impl NativeFunction {
             vec![
                 NativeFunctionParameter::callback_pointer()?,
                 NativeFunctionParameter::callback_context()?,
+                NativeFunctionParameter {
+                    name: Identifier::parse("exception")?,
+                    ty: TypeName::new("Throwable"),
+                    slot_width: SlotWidth::Single,
+                },
             ],
             TypeName::unit(),
         )
