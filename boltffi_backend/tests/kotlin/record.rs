@@ -25,3 +25,12 @@ fn kotlin_target_renders_instance_methods_on_empty_records() {
 
     insta::assert_snapshot!(rendered);
 }
+
+#[test]
+fn kotlin_target_renders_async_instance_methods_on_records() {
+    let rendered = rendered_fixture("records/async_record_methods");
+
+    assert_eq!(rendered.matches("return boltffiCallAsync(").count(), 3);
+
+    insta::assert_snapshot!(rendered);
+}
