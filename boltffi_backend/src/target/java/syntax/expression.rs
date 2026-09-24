@@ -146,6 +146,18 @@ impl Statement {
         Self(format!("{expression};"))
     }
 
+    pub fn declare(ty: TypeName, name: Identifier) -> Self {
+        Self(format!("{ty} {name};"))
+    }
+
+    pub fn assign(name: Identifier, value: Expression) -> Self {
+        Self(format!("{name} = {value};"))
+    }
+
+    pub fn if_then(condition: Expression, statement: Self) -> Self {
+        Self(format!("if ({condition}) {statement}"))
+    }
+
     pub fn return_value(value: Expression) -> Self {
         Self(format!("return {value};"))
     }

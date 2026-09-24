@@ -128,11 +128,7 @@ impl Stream {
     }
 
     fn receiver_argument(&self) -> &'static str {
-        if self.owner.is_some() {
-            "self.Handle"
-        } else {
-            ""
-        }
+        if self.owner.is_some() { "self" } else { "" }
     }
 
     fn primary(&self) -> Result<String> {
@@ -167,27 +163,37 @@ impl Stream {
 
     fn subscribe_call(&self) -> String {
         match self.owner {
-            Some(_) => format!("NativeMethods.{}(receiver)", self.subscribe_method()),
+            Some(_) => "SubscribeRetained(receiver)".to_owned(),
             None => format!("NativeMethods.{}()", self.subscribe_method()),
+        }
+    }
+
+    /// Retains the owner around the native subscribe so a racing `Dispose()`
+    /// cannot free it while Rust borrows the receiver.
+    fn subscribe_helper(&self) -> String {
+        match &self.owner {
+            Some(owner) => format!(
+                "\n\n        internal static ulong SubscribeRetained({owner} receiver)\n        {{\n            ulong handle = receiver.BoltffiRetain();\n            try\n            {{\n                return NativeMethods.{}(handle);\n            }}\n            finally\n            {{\n                receiver.BoltffiRelease();\n            }}\n        }}",
+                self.subscribe_method()
+            ),
+            None => String::new(),
         }
     }
 
     fn runtime_source(&self) -> Result<String> {
         let item = &self.item.ty;
-        let receiver = if self.owner.is_some() {
-            "ulong receiver, "
-        } else {
-            ""
+        let receiver = match &self.owner {
+            Some(owner) => format!("{owner} receiver, "),
+            None => String::new(),
         };
-        let receiver_only = if self.owner.is_some() {
-            "ulong receiver"
-        } else {
-            ""
+        let receiver_only = match &self.owner {
+            Some(owner) => format!("{owner} receiver"),
+            None => String::new(),
         };
         let read_all_receiver = if matches!(self.mode, StreamMode::Callback) {
-            "ulong subscription, "
+            "ulong subscription, ".to_owned()
         } else {
-            receiver
+            receiver.clone()
         };
         let subscription_setup = if matches!(self.mode, StreamMode::Callback) {
             String::new()
@@ -198,12 +204,13 @@ impl Stream {
             )
         };
         let async_runtime = format!(
-            "    internal static class {}\n    {{\n        internal static async global::System.Collections.Generic.IAsyncEnumerable<{item}> ReadAll({read_all_receiver}[global::System.Runtime.CompilerServices.EnumeratorCancellation] global::System.Threading.CancellationToken cancellationToken = default)\n        {{\n{subscription_setup}            if (subscription == 0) yield break;\n            try\n            {{\n                while (true)\n                {{\n                    {item}[] items = ReadBatch(subscription, 16);\n                    foreach ({item} item in items) yield return item;\n                    if (items.Length != 0) continue;\n                    int wait = await global::System.Threading.Tasks.Task.Run(() => NativeMethods.{}(subscription, 100), cancellationToken).ConfigureAwait(false);\n                    if (wait < 0) yield break;\n                }}\n            }}\n            finally\n            {{\n                NativeMethods.{}(subscription);\n                NativeMethods.{}(subscription);\n            }}\n        }}\n\n        internal static {item}[] ReadBatch(ulong subscription, nuint maxCount)\n        {{\n{}\n        }}",
+            "    internal static class {}\n    {{\n        internal static async global::System.Collections.Generic.IAsyncEnumerable<{item}> ReadAll({read_all_receiver}[global::System.Runtime.CompilerServices.EnumeratorCancellation] global::System.Threading.CancellationToken cancellationToken = default)\n        {{\n{subscription_setup}            if (subscription == 0) yield break;\n            try\n            {{\n                while (true)\n                {{\n                    {item}[] items = ReadBatch(subscription, 16);\n                    foreach ({item} item in items) yield return item;\n                    if (items.Length != 0) continue;\n                    int wait = await global::System.Threading.Tasks.Task.Run(() => NativeMethods.{}(subscription, 100), cancellationToken).ConfigureAwait(false);\n                    if (wait < 0) yield break;\n                }}\n            }}\n            finally\n            {{\n                NativeMethods.{}(subscription);\n                NativeMethods.{}(subscription);\n            }}\n        }}\n\n        internal static {item}[] ReadBatch(ulong subscription, nuint maxCount)\n        {{\n{}\n        }}{}",
             self.runtime,
             self.wait_method(),
             self.unsubscribe_method(),
             self.free_method(),
             indent(&self.item.read_batch, 12),
+            self.subscribe_helper(),
         );
         let delivery = match self.mode {
             StreamMode::Async => String::new(),

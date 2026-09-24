@@ -489,6 +489,8 @@ impl Function {
             context,
         )?;
         requires_wire_runtime |= encoded_error.is_some();
+        let mut receiver_guard = None;
+        let mut parameter_guards = Vec::new();
 
         if let Some(receive) = callable.receiver() {
             let group =
@@ -524,6 +526,7 @@ impl Function {
             return_after_status = receiver.return_after_status;
             encoded_writeback = receiver.encoded_writeback;
             setup.extend(receiver.setup);
+            receiver_guard = receiver.guard;
             requires_wire_runtime |= receiver.requires_wire_runtime;
         }
 
@@ -696,16 +699,29 @@ impl Function {
                         return broken_contract("handle parameter does not match the C bridge");
                     }
                     let (public_type, argument) = match target {
-                        HandleTarget::Class(class) => (
-                            type_name::class(*class, context)?,
-                            match presence {
-                                HandlePresence::Required => format!("{name}.Handle"),
-                                HandlePresence::Nullable => {
-                                    format!("{name}?.Handle ?? 0")
-                                }
+                        HandleTarget::Class(class) => {
+                            let retained = generated_identifier(&name, "Handle")?;
+                            let (retain, release) = match presence {
+                                HandlePresence::Required => (
+                                    format!("{name}.BoltffiRetain()"),
+                                    format!("{name}.BoltffiRelease()"),
+                                ),
+                                HandlePresence::Nullable => (
+                                    format!("{name}?.BoltffiRetain() ?? 0"),
+                                    format!("{name}?.BoltffiRelease()"),
+                                ),
                                 _ => return unsupported("unknown handle presence"),
-                            },
-                        ),
+                            };
+                            parameter_guards.push(ParameterGuard {
+                                declare: Statement::new(format!(
+                                    "{} {retained} = 0;",
+                                    handle_carrier_type(*carrier)?
+                                )),
+                                retain: Statement::new(format!("{retained} = {retain};")),
+                                release: Statement::new(format!("if ({retained} != 0) {release};")),
+                            });
+                            (type_name::class(*class, context)?, retained.to_string())
+                        }
                         HandleTarget::Callback(callback) => {
                             requires_callback_runtime = true;
                             let ty = type_name::callback(*callback, context)?;
@@ -1317,8 +1333,12 @@ impl Function {
                 encoded_writeback.as_ref(),
                 encoded_error.as_ref(),
                 handle_return.as_ref(),
+                receiver_guard.as_ref(),
+                &parameter_guards,
             )?),
             None => (!setup.is_empty()
+                || receiver_guard.is_some()
+                || !parameter_guards.is_empty()
                 || encoded_return.is_some()
                 || encoded_writeback.is_some()
                 || encoded_error.is_some()
@@ -1335,6 +1355,8 @@ impl Function {
                     encoded_error.as_ref(),
                     handle_return.as_ref(),
                     &parameter_writebacks,
+                    receiver_guard.as_ref(),
+                    &parameter_guards,
                 )
             })
             .transpose()?,
@@ -1624,6 +1646,8 @@ fn render_callable_body(
     encoded_error: Option<&EncodedError>,
     handle_return: Option<&HandleReturn>,
     parameter_writebacks: &[MutableParameterWriteback],
+    guard: Option<&ReceiverGuard>,
+    parameter_guards: &[ParameterGuard],
 ) -> Result<Statement> {
     let mut lines = setup.iter().map(ToString::to_string).collect::<Vec<_>>();
     if let Some(error) = encoded_error {
@@ -1641,7 +1665,7 @@ fn render_callable_body(
         } else if let Some(value) = return_after_status {
             lines.push(format!("return {value};"));
         }
-        return Ok(Statement::new(indent(&lines.join("\n"), 12)));
+        return finish_callable_body(lines, guard, parameter_guards);
     }
 
     if let Some(handle) = handle_return {
@@ -1651,7 +1675,7 @@ fn render_callable_body(
             handle.native_type,
             handle_value_expression(handle.ty.clone(), &local, handle.nullable, handle.callback,),
         ));
-        return Ok(Statement::new(indent(&lines.join("\n"), 12)));
+        return finish_callable_body(lines, guard, parameter_guards);
     }
 
     match encoded_return {
@@ -1673,7 +1697,58 @@ fn render_callable_body(
         }
         None => lines.push(format!("return {invocation};")),
     }
-    Ok(Statement::new(indent(&lines.join("\n"), 12)))
+    finish_callable_body(lines, guard, parameter_guards)
+}
+
+/// Wraps the call so every retained handle is released: the receiver retain
+/// runs first, parameter retains run inside the `try` behind their zeroed
+/// locals, and the `finally` releases whatever was retained.
+fn finish_callable_body(
+    lines: Vec<String>,
+    guard: Option<&ReceiverGuard>,
+    parameter_guards: &[ParameterGuard],
+) -> Result<Statement> {
+    let body = lines.join("\n");
+    let body = match (guard, parameter_guards.is_empty()) {
+        (None, true) => body,
+        _ => {
+            let (prefix, retains, releases) = guard_sections(guard, parameter_guards);
+            let mut protected = retains;
+            protected.push(body);
+            format!(
+                "{}\ntry\n{{\n{}\n}}\nfinally\n{{\n{}\n}}",
+                prefix.join("\n"),
+                indent(&protected.join("\n"), 4),
+                indent(&releases.join("\n"), 4),
+            )
+        }
+    };
+    Ok(Statement::new(indent(&body, 12)))
+}
+
+fn guard_sections(
+    guard: Option<&ReceiverGuard>,
+    parameter_guards: &[ParameterGuard],
+) -> (Vec<String>, Vec<String>, Vec<String>) {
+    let prefix = guard
+        .map(|guard| guard.retain.to_string())
+        .into_iter()
+        .chain(
+            parameter_guards
+                .iter()
+                .map(|guard| guard.declare.to_string()),
+        )
+        .collect();
+    let retains = parameter_guards
+        .iter()
+        .map(|guard| guard.retain.to_string())
+        .collect();
+    let releases = parameter_guards
+        .iter()
+        .map(|guard| guard.release.to_string())
+        .chain(guard.map(|guard| guard.release.to_string()))
+        .collect();
+    (prefix, retains, releases)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1690,6 +1765,8 @@ fn render_async_body(
     encoded_writeback: Option<&EncodedReturn>,
     encoded_error: Option<&EncodedError>,
     handle_return: Option<&HandleReturn>,
+    guard: Option<&ReceiverGuard>,
+    parameter_guards: &[ParameterGuard],
 ) -> Result<Statement> {
     if encoded_writeback.is_some() {
         return unsupported("mutable encoded value in async function");
@@ -1771,13 +1848,52 @@ fn render_async_body(
         true => "CallAsyncVoid".to_owned(),
         false => format!("CallAsync<{public_return_type}>"),
     };
-    let mut lines = setup.iter().map(ToString::to_string).collect::<Vec<_>>();
+    let create = match (guard, parameter_guards.is_empty()) {
+        (None, true) => format!("() => {start}"),
+        _ => {
+            let (prefix, retains, releases) = guard_sections(None, parameter_guards);
+            let prefix = guard
+                .map(|guard| guard.retain.to_string())
+                .into_iter()
+                .chain(prefix)
+                .collect::<Vec<_>>();
+            let mut protected = retains;
+            protected.push(format!("return {start};"));
+            let recover = guard
+                .map(|guard| format!("\ncatch\n{{\n    {}\n    throw;\n}}", guard.release))
+                .unwrap_or_default();
+            let release = match releases.is_empty() {
+                true => String::new(),
+                false => format!("\nfinally\n{{\n{}\n}}", indent(&releases.join("\n"), 4)),
+            };
+            let body = format!(
+                "{}\ntry\n{{\n{}\n}}{recover}{release}",
+                prefix.join("\n"),
+                indent(&protected.join("\n"), 4),
+            );
+            format!(
+                "() =>\n{}",
+                indent(&format!("{{\n{}\n}}", indent(&body, 4)), 4)
+            )
+        }
+    };
+    let free = match guard {
+        Some(guard) => format!(
+            "{future} =>\n    {{\n        try\n        {{\n            NativeMethods.{}({future});\n        }}\n        finally\n        {{\n            {}\n        }}\n    }}",
+            asynchronous.free_name, guard.release,
+        ),
+        None => format!("NativeMethods.{}", asynchronous.free_name),
+    };
+    let mut lines = guard
+        .map(|guard| guard.check.to_string())
+        .into_iter()
+        .chain(setup.iter().map(ToString::to_string))
+        .collect::<Vec<_>>();
     lines.push(format!(
-        "return BoltFFIAsync.{call}(\n    () => {start},\n    NativeMethods.{},\n    {future} =>\n    {{\n{}\n    }},\n    NativeMethods.{},\n    NativeMethods.{},\n    cancellationToken);",
+        "return BoltFFIAsync.{call}(\n    {create},\n    NativeMethods.{},\n    {future} =>\n    {{\n{}\n    }},\n    NativeMethods.{},\n    {free},\n    cancellationToken);",
         asynchronous.poll_name,
         indent(&completion.join("\n"), 8),
         asynchronous.cancel_name,
-        asynchronous.free_name,
     ));
     Ok(Statement::new(indent(&lines.join("\n"), 12)))
 }
@@ -1825,7 +1941,26 @@ struct LoweredReceiver {
     return_after_status: Option<Expression>,
     encoded_writeback: Option<EncodedReturn>,
     setup: Vec<Statement>,
+    guard: Option<ReceiverGuard>,
     requires_wire_runtime: bool,
+}
+
+/// In-flight guard for class receivers: retain declares the handle local and
+/// increments the call counter, release decrements it and frees the native
+/// allocation once the counter drains after `Dispose()`.
+struct ReceiverGuard {
+    /// Throws at the call site for async calls, whose retain runs inside the task.
+    check: Statement,
+    retain: Statement,
+    release: Statement,
+}
+
+/// In-flight guard for a class handle argument. The zeroed local is declared
+/// before the `try` so a throwing retain leaves nothing for `release` to undo.
+struct ParameterGuard {
+    declare: Statement,
+    retain: Statement,
+    release: Statement,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1883,6 +2018,7 @@ fn lower_receiver(
                 return_after_status: Some(Expression::identifier(output_name)),
                 encoded_writeback: None,
                 setup: Vec::new(),
+                guard: None,
                 requires_wire_runtime: false,
             })
         }
@@ -1904,6 +2040,7 @@ fn lower_receiver(
                 return_after_status: None,
                 encoded_writeback: None,
                 setup: Vec::new(),
+                guard: None,
                 requires_wire_runtime: false,
             })
         }
@@ -1935,10 +2072,18 @@ fn lower_class_receiver(
             array_out: false,
             byte_array: false,
         }],
-        arguments: vec![Expression::new("this.Handle")],
+        arguments: vec![Expression::new("boltffiReceiver")],
         return_after_status: None,
         encoded_writeback: None,
-        setup: vec![Statement::new("ThrowIfDisposed();")],
+        setup: Vec::new(),
+        guard: Some(ReceiverGuard {
+            check: Statement::new("ThrowIfDisposed();"),
+            retain: Statement::new(format!(
+                "{} boltffiReceiver = BoltffiRetain();",
+                handle_carrier_type(carrier)?
+            )),
+            release: Statement::new("BoltffiRelease();"),
+        }),
         requires_wire_runtime: false,
     })
 }
@@ -2055,6 +2200,7 @@ fn lower_encoded_receiver(
         return_after_status: None,
         encoded_writeback,
         setup,
+        guard: None,
         requires_wire_runtime: true,
     })
 }

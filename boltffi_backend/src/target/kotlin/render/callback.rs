@@ -151,6 +151,7 @@ struct HandleParameter {
     public: Parameter,
     native_arguments: Vec<Expression>,
     setup: Vec<Statement>,
+    prepare: Vec<Statement>,
     cleanup: Vec<Statement>,
 }
 
@@ -709,7 +710,11 @@ impl HandleMethod {
                 .iter()
                 .flat_map(|parameter| parameter.setup.iter().cloned())
                 .collect(),
-            call: returned.statements(native_call.expression(), host, context)?,
+            call: parameters
+                .iter()
+                .flat_map(|parameter| parameter.prepare.iter().cloned())
+                .chain(returned.statements(native_call.expression(), host, context)?)
+                .collect(),
             cleanup: parameters
                 .into_iter()
                 .flat_map(|parameter| parameter.cleanup)
@@ -858,6 +863,7 @@ impl<'plan> ParamPlanRender<'plan, Native, OutOfRust> for HandleParameterRender<
                 ),
                 native_arguments: vec![KotlinPrimitive::new(*primitive).native_argument(value)?],
                 setup: Vec::new(),
+                prepare: Vec::new(),
                 cleanup: Vec::new(),
             }),
             DirectValueType::Record(record) => {
@@ -866,6 +872,7 @@ impl<'plan> ParamPlanRender<'plan, Native, OutOfRust> for HandleParameterRender<
                     public: Parameter::new(self.name.clone(), ty),
                     native_arguments: vec![Record::direct_buffer_expression(value)?],
                     setup: Vec::new(),
+                    prepare: Vec::new(),
                     cleanup: Vec::new(),
                 })
             }
@@ -879,6 +886,7 @@ impl<'plan> ParamPlanRender<'plan, Native, OutOfRust> for HandleParameterRender<
                         )?,
                     ],
                     setup: Vec::new(),
+                    prepare: Vec::new(),
                     cleanup: Vec::new(),
                 })
             }
@@ -906,6 +914,7 @@ impl<'plan> ParamPlanRender<'plan, Native, OutOfRust> for HandleParameterRender<
             public: Parameter::new(self.name.clone(), KotlinType::type_ref(ty, self.context)?),
             native_arguments,
             setup,
+            prepare: Vec::new(),
             cleanup,
         })
     }
@@ -921,11 +930,13 @@ impl<'plan> ParamPlanRender<'plan, Native, OutOfRust> for HandleParameterRender<
         match target {
             HandleTarget::Class(class) => {
                 let handle = ClassHandle::new(*class, presence, self.context)?;
+                let retained = handle.retained_argument(&self.source_name, self.name.clone())?;
                 Ok(HandleParameter {
                     public: Parameter::new(self.name.clone(), handle.ty()?),
-                    native_arguments: vec![handle.parameter_argument(value)?],
-                    setup: Vec::new(),
-                    cleanup: Vec::new(),
+                    native_arguments: vec![retained.expression],
+                    setup: vec![retained.setup],
+                    prepare: vec![retained.prepare],
+                    cleanup: vec![retained.cleanup],
                 })
             }
             HandleTarget::Callback(callback) => {
@@ -934,6 +945,7 @@ impl<'plan> ParamPlanRender<'plan, Native, OutOfRust> for HandleParameterRender<
                     public: Parameter::new(self.name.clone(), handle.ty()?),
                     native_arguments: vec![handle.parameter_argument(value)?],
                     setup: Vec::new(),
+                    prepare: Vec::new(),
                     cleanup: Vec::new(),
                 })
             }
@@ -953,6 +965,7 @@ impl<'plan> ParamPlanRender<'plan, Native, OutOfRust> for HandleParameterRender<
             public: Parameter::new(self.name.clone(), ScalarOption::new(primitive).ty()?),
             native_arguments,
             setup,
+            prepare: Vec::new(),
             cleanup,
         })
     }
@@ -965,6 +978,7 @@ impl<'plan> ParamPlanRender<'plan, Native, OutOfRust> for HandleParameterRender<
                 vector.native_argument(Expression::identifier(self.name.clone()))?,
             ],
             setup: Vec::new(),
+            prepare: Vec::new(),
             cleanup: Vec::new(),
         })
     }

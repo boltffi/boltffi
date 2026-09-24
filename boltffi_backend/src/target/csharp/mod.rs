@@ -262,7 +262,7 @@ mod tests {
     use boltffi_ast::PackageInfo;
     use boltffi_binding::{Bindings, Native, lower};
 
-    use crate::{GeneratedOutput, Target, bridge::c::CBridge};
+    use crate::{GeneratedOutput, Target, bridge::c::CBridge, core::Error};
 
     use super::{CSharpCustomMapping, CSharpHost};
 
@@ -891,7 +891,7 @@ mod tests {
             "await foreach (var item in ReadAll(subscription, cancellation.Token)) callback(item);"
         ));
         let callback_subscribe = source
-            .find("ulong subscription = NativeMethods.NativeEngineTicksSubscribe(receiver);")
+            .find("ulong subscription = SubscribeRetained(receiver);")
             .expect("callback stream should subscribe synchronously");
         let callback_task = source[callback_subscribe..]
             .find("global::System.Threading.Tasks.Task.Run(async () =>")
@@ -937,9 +937,13 @@ mod tests {
         assert!(source.contains("IAsyncEnumerable<int> Snapshots(this Store self"));
         assert!(source.contains("IAsyncEnumerable<string> Snapshots(this Draft self"));
         assert!(
-            source.contains("=> StoreSnapshotsStreamRuntime.ReadAll(self.Handle")
-                && source.contains("=> DraftSnapshotsStreamRuntime.ReadAll(self.Handle")
+            source.contains("=> StoreSnapshotsStreamRuntime.ReadAll(self, ")
+                && source.contains("=> DraftSnapshotsStreamRuntime.ReadAll(self, ")
         );
+        assert!(source.contains("internal static ulong SubscribeRetained(Store receiver)"));
+        assert!(source.contains("ulong handle = receiver.BoltffiRetain();"));
+        assert!(source.contains("return NativeMethods.NativeStoreSnapshotsSubscribe(handle);"));
+        assert!(source.contains("receiver.BoltffiRelease();"));
         assert!(output.diagnostics().is_empty());
     }
 
@@ -1216,7 +1220,11 @@ mod tests {
         assert!(class.contains("public int Get()"));
         assert!(class.contains("public void Increment()"));
         assert!(class.contains("public static int Add(int a, int b)"));
-        assert!(class.contains("ThrowIfDisposed();"));
+        assert!(class.contains("internal ulong BoltffiRetain()"));
+        assert!(class.contains("internal void BoltffiRelease()"));
+        assert!(class.contains("ulong boltffiReceiver = BoltffiRetain();"));
+        assert!(class.contains("BoltffiRelease();"));
+        assert!(class.contains("NativeMethods.NativeCounterRelease(RawHandle);"));
         assert!(class.contains("~Counter() => Release();"));
 
         let module = file(&output, "Demo.cs");
@@ -1253,6 +1261,150 @@ mod tests {
         assert!(!class.contains("BoltFfiNew"));
         assert!(!class.contains(".TakeHandle()"));
         assert!(output.diagnostics().is_empty());
+    }
+
+    #[test]
+    fn csharp_target_retains_async_class_receivers_until_future_free() {
+        let bindings = bindings(
+            r#"
+            pub struct Worker;
+
+            #[export]
+            impl Worker {
+                pub fn new() -> Self { Self }
+                pub async fn run(&self, value: i32) -> i32 { value }
+                pub async fn label(&self, prefix: String) -> String { prefix }
+            }
+            "#,
+        );
+        let output = target(CSharpHost::new())
+            .render(&bindings)
+            .expect("async class method should render");
+
+        let class = file(&output, "Worker.cs");
+        assert!(class.contains(
+            "{\n            ThrowIfDisposed();\n            return BoltFFIAsync.CallAsync<int>("
+        ));
+        assert!(class.contains(
+            "{\n            ThrowIfDisposed();\n            WireWriter prefixWriter = new WireWriter();"
+        ));
+        assert!(class.contains(
+            "ulong boltffiReceiver = BoltffiRetain();\n                    try\n                    {\n                        return NativeMethods.NativeWorkerRun(boltffiReceiver, value);\n                    }\n                    catch\n                    {\n                        BoltffiRelease();\n                        throw;\n                    }"
+        ));
+        assert!(class.contains(
+            "boltffiFuture =>\n                {\n                    try\n                    {\n                        NativeMethods.NativeWorkerRunFree(boltffiFuture);\n                    }\n                    finally\n                    {\n                        BoltffiRelease();\n                    }\n                }"
+        ));
+        assert!(output.diagnostics().is_empty());
+    }
+
+    #[test]
+    fn csharp_target_retains_class_handle_arguments() {
+        let bindings = bindings(
+            r#"
+            pub struct Resource;
+
+            #[export]
+            impl Resource {
+                pub fn new() -> Self { Self }
+                pub fn merge(&self, other: &Resource) -> i32 { 0 }
+                pub async fn merge_async(&self, other: &Resource) -> i32 { 0 }
+            }
+
+            #[export]
+            pub fn inspect(resource: &Resource) -> i32 { 0 }
+            "#,
+        );
+        let output = target(CSharpHost::new())
+            .render(&bindings)
+            .expect("class handle arguments should render");
+
+        let class = file(&output, "Resource.cs");
+        assert!(class.contains(
+            "ulong boltffiReceiver = BoltffiRetain();\n            ulong otherHandle = 0;\n            try\n            {\n                otherHandle = other.BoltffiRetain();\n                return NativeMethods.NativeResourceMerge(boltffiReceiver, otherHandle);\n            }\n            finally\n            {\n                if (otherHandle != 0) other.BoltffiRelease();\n                BoltffiRelease();\n            }"
+        ));
+        assert!(class.contains(
+            "ulong boltffiReceiver = BoltffiRetain();\n                    ulong otherHandle = 0;\n                    try\n                    {\n                        otherHandle = other.BoltffiRetain();\n                        return NativeMethods.NativeResourceMergeAsync(boltffiReceiver, otherHandle);\n                    }\n                    catch\n                    {\n                        BoltffiRelease();\n                        throw;\n                    }\n                    finally\n                    {\n                        if (otherHandle != 0) other.BoltffiRelease();\n                    }"
+        ));
+        assert!(!class.contains("other.Handle"));
+
+        let module = file(&output, "Demo.cs");
+        assert!(module.contains("ulong resourceHandle = 0;"));
+        assert!(module.contains("resourceHandle = resource.BoltffiRetain();"));
+        assert!(module.contains("if (resourceHandle != 0) resource.BoltffiRelease();"));
+        assert!(!module.contains("resource.Handle"));
+        assert!(output.diagnostics().is_empty());
+    }
+
+    #[test]
+    fn csharp_target_rejects_class_methods_colliding_with_dispose_members() {
+        for method in ["release", "dispose", "take_handle"] {
+            let bindings = bindings(&format!(
+                r#"
+                pub struct Resource;
+
+                #[export]
+                impl Resource {{
+                    pub fn new() -> Self {{ Self }}
+                    pub fn {method}(&self) {{}}
+                }}
+                "#
+            ));
+            let error = target(CSharpHost::new())
+                .render(&bindings)
+                .expect_err("dispose members must retain their generated names");
+            assert!(
+                matches!(error, Error::CSharpNameCollision { .. }),
+                "{method}"
+            );
+        }
+
+        let bindings = bindings(
+            r#"
+            pub struct Resource;
+
+            #[export]
+            impl Resource {
+                pub fn new() -> Self { Self }
+                pub fn handle(&self, index: i32) -> i32 { index }
+            }
+            "#,
+        );
+        let error = target(CSharpHost::new())
+            .render(&bindings)
+            .expect_err("the handle property must retain its generated name");
+        assert_eq!(
+            error,
+            Error::CSharpNameCollision {
+                scope: "Resource".to_owned(),
+                name: "Handle".to_owned(),
+            }
+        );
+    }
+
+    #[test]
+    fn csharp_target_rejects_class_methods_colliding_with_lifecycle_helpers() {
+        let bindings = bindings(
+            r#"
+            pub struct Resource;
+
+            #[export]
+            impl Resource {
+                pub fn new() -> Self { Self }
+                pub fn boltffi_retain(&self) {}
+            }
+            "#,
+        );
+        let error = target(CSharpHost::new())
+            .render(&bindings)
+            .expect_err("class lifecycle helpers must retain their generated names");
+
+        assert_eq!(
+            error,
+            Error::CSharpNameCollision {
+                scope: "Resource".to_owned(),
+                name: "BoltffiRetain".to_owned(),
+            }
+        );
     }
 
     #[test]

@@ -1356,7 +1356,16 @@ final class _$$BoltFFIAsync {
     );
     _pending[id] = wait;
     cancellationToken?._attach(onTokenCancel);
-    final status = pollFuture(handle, id, _pollNative());
+    final int status;
+    try {
+      status = pollFuture(handle, id, _pollNative());
+    } catch (_) {
+      wait.cancelled = true;
+      cancellationToken?._detach(onTokenCancel);
+      _pending.remove(id);
+      freeFuture(handle);
+      rethrow;
+    }
     if (status == _k$RustFuturePoll$Ready) {
       _onPoll(id, status);
     }

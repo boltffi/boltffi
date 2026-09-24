@@ -83,11 +83,12 @@ data class Point(
 }
 
 class Engine internal constructor(internal val handle: Long) : AutoCloseable {
+    private val __boltffi_calls = java.util.concurrent.atomic.AtomicLong(1L)
     private val __boltffi_closed = java.util.concurrent.atomic.AtomicBoolean(false)
 
     override fun close() {
         if (__boltffi_closed.compareAndSet(false, true)) {
-            Native.boltffi_release_class_demo_engine(handle)
+            boltffiRelease()
         }
     }
 
@@ -95,11 +96,26 @@ class Engine internal constructor(internal val handle: Long) : AutoCloseable {
         check(!__boltffi_closed.get()) { "Engine is closed" }
         return handle
     }
+
+    internal fun boltffiRetain(): Long {
+        while (true) {
+            check(!__boltffi_closed.get()) { "Engine is closed" }
+            val calls = __boltffi_calls.get()
+            check(calls != 0L) { "Engine is closed" }
+            if (__boltffi_calls.compareAndSet(calls, calls + 1L)) return handle
+        }
+    }
+
+    internal fun boltffiRelease() {
+        if (__boltffi_calls.decrementAndGet() == 0L) {
+            Native.boltffi_release_class_demo_engine(handle)
+        }
+    }
 }
 
 fun Engine.points(): PointsSubscription =
     PointsSubscription(
-        handle = Native.boltffi_stream_demo_engine_points_subscribe(boltffiHandle()),
+        handle = boltffiRetain().let { __boltffi_receiver -> try { Native.boltffi_stream_demo_engine_points_subscribe(__boltffi_receiver) } finally { boltffiRelease() } },
         popBatch = Native::boltffi_stream_demo_engine_points_pop_batch,
         wait = Native::boltffi_stream_demo_engine_points_wait,
         unsubscribe = Native::boltffi_stream_demo_engine_points_unsubscribe,
@@ -142,7 +158,7 @@ class PointsSubscription(
 }
 
 fun Engine.names(): kotlinx.coroutines.flow.Flow<String> = kotlinx.coroutines.flow.callbackFlow {
-    val subscription = Native.boltffi_stream_demo_engine_names_subscribe(boltffiHandle())
+    val subscription = boltffiRetain().let { __boltffi_receiver -> try { Native.boltffi_stream_demo_engine_names_subscribe(__boltffi_receiver) } finally { boltffiRelease() } }
     if (subscription == 0L) {
         close()
         return@callbackFlow
@@ -170,7 +186,7 @@ fun Engine.names(): kotlinx.coroutines.flow.Flow<String> = kotlinx.coroutines.fl
 }
 
 fun Engine.ticks(callback: (Int) -> Unit): TicksCancellable {
-    val subscription = Native.boltffi_stream_demo_engine_ticks_subscribe(boltffiHandle())
+    val subscription = boltffiRetain().let { __boltffi_receiver -> try { Native.boltffi_stream_demo_engine_ticks_subscribe(__boltffi_receiver) } finally { boltffiRelease() } }
     if (subscription == 0L) return TicksCancellable {}
     val context = BoltFfiStreamContext(
         scope = boltffiCallbackScope,

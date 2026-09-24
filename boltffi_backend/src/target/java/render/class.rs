@@ -56,6 +56,13 @@ pub struct Constructor {
 struct ConstructorSignature(Vec<ValueType>);
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RetainedHandle {
+    pub acquire: Statement,
+    pub prepare: Statement,
+    pub expression: Expression,
+    pub cleanup: Statement,
+}
+
 pub struct ClassHandle {
     ty: TypeName,
     carrier: Primitive,
@@ -274,7 +281,7 @@ impl Class {
     }
 
     pub fn signatures(&self) -> Vec<ErasedSignature> {
-        ["close", "rawHandle"]
+        ["close", "rawHandle", "boltffiRetain", "boltffiRelease"]
             .into_iter()
             .map(|name| ErasedSignature::new(Identifier::known(name), []))
             .chain(
@@ -347,6 +354,44 @@ impl ClassHandle {
 
     pub const fn carrier(&self) -> Primitive {
         self.carrier
+    }
+
+    /// Retains the argument for the native call. The retained handle starts
+    /// at zero so a throwing retain (or an earlier parameter's) leaves nothing
+    /// to release.
+    pub fn retained_argument(
+        &self,
+        source: &Name,
+        value: Expression,
+        version: JavaVersion,
+    ) -> Result<RetainedHandle> {
+        let retained = source.generated("handle", version)?;
+        let retain = value
+            .clone()
+            .call(Identifier::known("boltffiRetain"), ArgumentList::default());
+        let retain = match self.presence {
+            HandlePresence::Required => retain,
+            HandlePresence::Nullable => value
+                .clone()
+                .equal(Expression::null())
+                .conditional(Expression::long(0), retain),
+            _ => return Err(JavaHost::unsupported("class handle presence")),
+        };
+        Ok(RetainedHandle {
+            acquire: Statement::value(
+                TypeName::primitive(self.carrier),
+                retained.clone(),
+                Expression::long(0),
+            ),
+            prepare: Statement::assign(retained.clone(), retain),
+            cleanup: Statement::if_then(
+                Expression::identifier(retained.clone()).not_equal(Expression::long(0)),
+                Statement::expression(
+                    value.call(Identifier::known("boltffiRelease"), ArgumentList::default()),
+                ),
+            ),
+            expression: Expression::identifier(retained),
+        })
     }
 
     pub fn native_argument(&self, value: Expression) -> Result<Expression> {

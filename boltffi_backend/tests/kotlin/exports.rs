@@ -186,12 +186,16 @@ fn kotlin_target_renders_class_handles_and_associated_callables() {
 
     assert!(rendered.contains("internal fun boltffiHandle(): Long {"));
     assert!(rendered.contains("check(!__boltffi_closed.get()) { \"Engine is closed\" }"));
-    assert!(
-        rendered.contains("Native.boltffi_method_class_demo_engine_value(this.boltffiHandle())")
-    );
+    assert!(rendered.contains("internal fun boltffiRetain(): Long {"));
+    assert!(rendered.contains("internal fun boltffiRelease() {"));
+    assert!(rendered.contains("Native.boltffi_method_class_demo_engine_value(__boltffi_receiver)"));
     assert!(!rendered.contains("this.handle"));
-    assert!(rendered.contains("other.boltffiHandle()"));
-    assert!(rendered.contains("other?.boltffiHandle() ?: 0L"));
+    assert!(rendered.contains("var __boltffi_other_handle = 0L"));
+    assert!(rendered.contains("__boltffi_other_handle = other.boltffiRetain()"));
+    assert!(rendered.contains("__boltffi_other_handle = other?.boltffiRetain() ?: 0L"));
+    assert!(rendered.contains("if (__boltffi_other_handle != 0L) other.boltffiRelease()"));
+    assert!(rendered.contains("if (__boltffi_other_handle != 0L) other?.boltffiRelease()"));
+    assert!(!rendered.contains("other.boltffiHandle()"));
     assert!(!rendered.contains("other.handle"));
     assert!(!rendered.contains("other?.handle"));
 
@@ -308,6 +312,19 @@ fn kotlin_target_renders_async_complete_return_shapes() {
 #[test]
 fn kotlin_target_renders_async_class_methods() {
     insta::assert_snapshot!(rendered_fixture("exports/async_class_methods"));
+}
+
+#[test]
+fn kotlin_target_retains_async_class_arguments_until_the_future_starts() {
+    let rendered = rendered_fixture("exports/async_class_arguments");
+
+    assert!(rendered.contains("var __boltffi_other_handle = 0L"));
+    assert!(rendered.contains("__boltffi_other_handle = other.boltffiRetain()"));
+    assert!(rendered.contains("if (__boltffi_other_handle != 0L) other.boltffiRelease()"));
+    assert!(rendered.contains("__boltffi_engine_handle = engine.boltffiRetain()"));
+    assert!(!rendered.contains(".boltffiHandle()"));
+
+    insta::assert_snapshot!(rendered);
 }
 
 #[test]

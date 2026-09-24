@@ -22,7 +22,7 @@ use crate::{
         render::{
             ClosureHandle, DirectVector, Enumeration,
             callback::CallbackHandle,
-            class::ClassHandle,
+            class::{ClassHandle, RetainedHandle},
             native::Method,
             record::Record,
             signature::{CallSignature, Parameter, ReturnType, ValueType},
@@ -521,39 +521,12 @@ impl Call {
             scope.package,
             scope.return_context,
         )?;
-        let protected = receiver
-            .iter()
-            .flat_map(|receiver| receiver.native.prepare.iter().cloned())
-            .chain(
-                parameters
-                    .iter()
-                    .flat_map(|parameter| parameter.native.prepare.iter().cloned()),
-            )
-            .chain(success)
-            .collect::<Vec<_>>();
-        let cleanup = parameters
-            .iter()
-            .flat_map(|parameter| parameter.native.cleanup.iter().cloned())
-            .chain(
-                receiver
-                    .iter()
-                    .flat_map(|receiver| receiver.native.cleanup.iter().cloned()),
-            )
-            .collect::<Vec<_>>();
-        let protected = match cleanup.is_empty() {
-            true => protected,
-            false => vec![Statement::try_finally(protected, cleanup)],
-        };
-        let body = receiver
-            .iter()
-            .flat_map(|receiver| receiver.native.acquire.iter().cloned())
-            .chain(
-                parameters
-                    .iter()
-                    .flat_map(|parameter| parameter.native.acquire.iter().cloned()),
-            )
-            .chain(protected)
-            .collect();
+        let body = guarded_body(
+            receiver.as_ref(),
+            &parameters,
+            success,
+            ReceiverRelease::AfterCall,
+        );
         Ok(Self {
             signature: CallSignature::new(
                 name,
@@ -838,6 +811,16 @@ impl NativeArgument {
         }
     }
 
+    fn retained(handle: RetainedHandle) -> Self {
+        Self {
+            acquire: vec![handle.acquire],
+            prepare: vec![handle.prepare],
+            expressions: vec![handle.expression],
+            cleanup: vec![handle.cleanup],
+            runtime: RuntimeRequirement::None,
+        }
+    }
+
     fn encoded(write: crate::target::java::codec::EncodedWrite) -> Self {
         let (acquire, prepare, expressions, cleanup) = write.into_parts();
         Self {
@@ -848,6 +831,82 @@ impl NativeArgument {
             runtime: RuntimeRequirement::Wire,
         }
     }
+}
+
+#[derive(Clone, Copy)]
+enum ReceiverRelease {
+    AfterCall,
+    /// On success the async future's free hook releases the receiver instead.
+    OnFailure(JavaVersion),
+}
+
+/// Nests the receiver's cleanup around the parameter acquires so a throwing
+/// parameter acquire cannot leak the receiver's in-flight retain.
+fn guarded_body(
+    receiver: Option<&Receiver>,
+    parameters: &[BoundParameter],
+    success: Vec<Statement>,
+    release: ReceiverRelease,
+) -> Vec<Statement> {
+    let guarded = parameter_guarded(receiver, parameters, success);
+    let cleanup = receiver
+        .iter()
+        .flat_map(|receiver| receiver.native.cleanup.iter().cloned())
+        .collect::<Vec<_>>();
+    let guarded = match (cleanup.is_empty(), release) {
+        (true, _) => guarded,
+        (false, ReceiverRelease::AfterCall) => vec![Statement::try_finally(guarded, cleanup)],
+        (false, ReceiverRelease::OnFailure(version)) => {
+            let failure = Identifier::known("__boltffi_failure");
+            let recovery = cleanup
+                .into_iter()
+                .chain([Statement::throw_value(Expression::identifier(
+                    failure.clone(),
+                ))])
+                .collect();
+            vec![Statement::try_catch(
+                guarded,
+                TypeName::named(TypeIdentifier::known("Throwable", version)),
+                failure,
+                recovery,
+            )]
+        }
+    };
+    receiver
+        .iter()
+        .flat_map(|receiver| receiver.native.acquire.iter().cloned())
+        .chain(guarded)
+        .collect()
+}
+
+fn parameter_guarded(
+    receiver: Option<&Receiver>,
+    parameters: &[BoundParameter],
+    success: Vec<Statement>,
+) -> Vec<Statement> {
+    let protected = receiver
+        .iter()
+        .flat_map(|receiver| receiver.native.prepare.iter().cloned())
+        .chain(
+            parameters
+                .iter()
+                .flat_map(|parameter| parameter.native.prepare.iter().cloned()),
+        )
+        .chain(success)
+        .collect::<Vec<_>>();
+    let cleanup = parameters
+        .iter()
+        .flat_map(|parameter| parameter.native.cleanup.iter().cloned())
+        .collect::<Vec<_>>();
+    let protected = match cleanup.is_empty() {
+        true => protected,
+        false => vec![Statement::try_finally(protected, cleanup)],
+    };
+    parameters
+        .iter()
+        .flat_map(|parameter| parameter.native.acquire.iter().cloned())
+        .chain(protected)
+        .collect()
 }
 
 impl RuntimeRequirement {
@@ -925,9 +984,13 @@ impl<'plan> ParamPlanRender<'plan, Native, IntoRust> for NativeArgumentRender<'_
             HandleTarget::Class(class) => {
                 ClassHandle::new(*class, carrier, presence, self.version, self.context, None)
                     .and_then(|handle| {
-                        handle.native_argument(Expression::identifier(self.name.clone()))
+                        handle.retained_argument(
+                            &self.source,
+                            Expression::identifier(self.name.clone()),
+                            self.version,
+                        )
                     })
-                    .map(NativeArgument::direct)
+                    .map(NativeArgument::retained)
             }
             HandleTarget::Callback(callback) => CallbackHandle::new(
                 *callback,
@@ -1403,18 +1466,35 @@ impl ErrorConversion {
 }
 
 impl Receiver {
+    fn retains_handle(&self) -> bool {
+        matches!(self.support, ReceiverSupport::Handle(_))
+    }
+
     pub fn class(
         ty: TypeIdentifier,
         carrier: native::HandleCarrier,
         receive: Receive,
     ) -> Result<Self> {
-        Primitive::from_handle_carrier(carrier)?;
+        let primitive = Primitive::from_handle_carrier(carrier)?;
+        let retained = Identifier::known("__boltffi_receiver");
         match receive {
             Receive::ByRef | Receive::ByMutRef => Ok(Self {
                 ty,
-                native: NativeArgument::direct(
-                    Expression::this().call(Identifier::known("rawHandle"), Default::default()),
-                ),
+                native: NativeArgument {
+                    acquire: vec![Statement::value(
+                        TypeName::primitive(primitive),
+                        retained.clone(),
+                        Expression::this()
+                            .call(Identifier::known("boltffiRetain"), Default::default()),
+                    )],
+                    prepare: Vec::new(),
+                    expressions: vec![Expression::identifier(retained)],
+                    cleanup: vec![Statement::expression(
+                        Expression::this()
+                            .call(Identifier::known("boltffiRelease"), Default::default()),
+                    )],
+                    runtime: RuntimeRequirement::None,
+                },
                 mutation: None,
                 support: ReceiverSupport::Handle(carrier),
             }),

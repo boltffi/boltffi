@@ -1,20 +1,14 @@
 {% if let Some(asynchronous) = call.async_call() %}        return BoltFfiAsync.call(
             () -> {
-{% for statement in asynchronous.create_acquire() %}                {{ statement }}
-{% endfor %}{% if asynchronous.has_create_cleanup() %}                try {
-{% for statement in asynchronous.create_prepare() %}                    {{ statement }}
-{% endfor %}                    return {{ asynchronous.create() }};
-                } finally {
-{% for statement in asynchronous.create_cleanup() %}                    {{ statement }}
-{% endfor %}                }
-{% else %}{% for statement in asynchronous.create_prepare() %}                {{ statement }}
-{% endfor %}                return {{ asynchronous.create() }};
-{% endif %}            },
+{% for statement in asynchronous.create_body() %}                {{ statement }}
+{% endfor %}            },
             (future, continuation) -> {{ asynchronous.poll() }},
             (future) -> {
 {% for statement in asynchronous.complete() %}                {{ statement }}
 {% endfor %}            },
             (future) -> {{ asynchronous.cancel() }},
-            (future) -> {{ asynchronous.free() }}
+            (future) -> {
+{% for statement in asynchronous.free_body() %}                {{ statement }}
+{% endfor %}            }
         );
 {% endif %}

@@ -100,6 +100,7 @@ impl Class {
                 Err(error) => collect_diagnostic(&mut diagnostics, "method", method.name(), error)?,
             }
         }
+        validate_reserved_members(&name, &methods)?;
         let constants = AssociatedConstants::from_owner(
             ConstantOwner::Class(declaration.id()),
             &namespace,
@@ -145,6 +146,33 @@ impl Class {
             .try_fold(emitted, |emitted, function| function.add_support(emitted))?;
         self.constants.add_support(emitted)
     }
+}
+
+/// Rejects methods that would duplicate a generated member. The lifecycle
+/// helpers only collide at zero parameters; `Handle` and `RawHandle` are
+/// properties, which C# rejects alongside a method of any arity.
+fn validate_reserved_members(scope: &Identifier, methods: &[Function]) -> Result<()> {
+    methods
+        .iter()
+        .find(|method| {
+            ["Handle", "RawHandle"].contains(&method.name.as_str())
+                || (method.parameters.is_empty()
+                    && [
+                        "TakeHandle",
+                        "ThrowIfDisposed",
+                        "BoltffiRetain",
+                        "BoltffiRelease",
+                        "Release",
+                        "Dispose",
+                    ]
+                    .contains(&method.name.as_str()))
+        })
+        .map_or(Ok(()), |method| {
+            Err(Error::CSharpNameCollision {
+                scope: scope.to_string(),
+                name: method.name.to_string(),
+            })
+        })
 }
 
 fn collect_diagnostic(
