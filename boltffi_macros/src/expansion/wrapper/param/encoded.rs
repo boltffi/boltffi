@@ -155,6 +155,7 @@ impl<'expansion, 'lowered, S: boltffi_binding::SurfaceLower> Slice<'expansion, '
             .into_iter()
             .collect(),
             ffi_parameter_types: [pointer_type, quote! { usize }].into_iter().collect(),
+            owned_values: Vec::new(),
             conversions: vec![conversion],
             writebacks: Vec::new(),
             argument: quote! { #ident },
@@ -185,6 +186,7 @@ impl<'expansion, 'lowered, S: boltffi_binding::SurfaceLower> Slice<'expansion, '
             items: Vec::new(),
             ffi_parameters: vec![quote! { #pointer: *mut u8 }, quote! { #length: usize }],
             ffi_parameter_types: vec![quote! { *mut u8 }, quote! { usize }],
+            owned_values: Vec::new(),
             conversions: vec![conversion],
             writebacks: Vec::new(),
             argument: quote! { #ident },

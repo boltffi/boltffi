@@ -210,6 +210,7 @@ impl<'expansion, 'lowered, S: boltffi_binding::SurfaceLower> Class<'expansion, '
                         )
                         .is_err()
                     {
+                        unsafe { Self::release_reference(handle); }
                         return None;
                     }
                     let state = unsafe { *Box::from_raw(handle) };

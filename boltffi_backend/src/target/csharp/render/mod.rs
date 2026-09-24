@@ -478,6 +478,10 @@ impl Function {
         let mut encoded_writeback = None;
         let mut parameter_writebacks = Vec::new();
         let mut setup = Vec::new();
+        let mut owned_handle_declarations = Vec::new();
+        let mut owned_handle_acquisitions = Vec::new();
+        let mut owned_handle_transfers = Vec::new();
+        let mut owned_handle_releases = Vec::new();
         let mut requires_wire_runtime = false;
         let mut requires_callback_runtime = false;
         let mut requires_copy_buffer = false;
@@ -685,7 +689,7 @@ impl Function {
                     target,
                     carrier,
                     presence,
-                    ..
+                    receive,
                 }) => {
                     let ParameterGroup::Value(index) = group else {
                         return broken_contract("handle parameter does not use one C value slot");
@@ -696,16 +700,33 @@ impl Function {
                         return broken_contract("handle parameter does not match the C bridge");
                     }
                     let (public_type, argument) = match target {
-                        HandleTarget::Class(class) => (
-                            type_name::class(*class, context)?,
-                            match presence {
-                                HandlePresence::Required => format!("{name}.Handle"),
-                                HandlePresence::Nullable => {
-                                    format!("{name}?.Handle ?? 0")
-                                }
+                        HandleTarget::Class(class) => {
+                            let public_type = type_name::class(*class, context)?;
+                            let access = match receive {
+                                Receive::ByValue => "TakeHandle()",
+                                Receive::ByRef | Receive::ByMutRef => "Handle",
+                                _ => return unsupported("unknown class handle receive mode"),
+                            };
+                            let argument = match presence {
+                                HandlePresence::Required => format!("{name}.{access}"),
+                                HandlePresence::Nullable => format!("{name}?.{access} ?? 0"),
                                 _ => return unsupported("unknown handle presence"),
-                            },
-                        ),
+                            };
+                            let argument = if *receive == Receive::ByValue {
+                                let handle = generated_identifier(&name, "OwnedHandle")?;
+                                let carrier = handle_carrier_type(*carrier)?;
+                                owned_handle_declarations.push(format!("{carrier} {handle} = 0;"));
+                                owned_handle_acquisitions.push(format!("{handle} = {argument};"));
+                                owned_handle_transfers.push(format!("{handle} = 0;"));
+                                owned_handle_releases.push(format!(
+                                    "if ({handle} != 0) NativeMethods.Native{public_type}Release({handle});"
+                                ));
+                                handle.to_string()
+                            } else {
+                                argument
+                            };
+                            (public_type, argument)
+                        }
                         HandleTarget::Callback(callback) => {
                             requires_callback_runtime = true;
                             let ty = type_name::callback(*callback, context)?;
@@ -1281,10 +1302,50 @@ impl Function {
             invocation_arguments.append(&mut completion_invocation_arguments);
         }
 
-        let invocation = Expression::call(
+        if !owned_handle_declarations.is_empty() {
+            if native_parameters.len() != invocation_arguments.len() {
+                return broken_contract("native argument count does not match its declaration");
+            }
+            native_parameters
+                .iter()
+                .zip(&mut invocation_arguments)
+                .filter(|(parameter, _)| parameter.modifier == "out ")
+                .for_each(|(parameter, argument)| {
+                    setup.push(Statement::new(format!(
+                        "{} {};",
+                        parameter.ty, parameter.name
+                    )));
+                    *argument = Expression::new(format!("out {}", parameter.name));
+                });
+        }
+        let mut invocation = Expression::call(
             Expression::member(Identifier::parse("NativeMethods")?, native_name.clone()),
             ArgumentList::new(invocation_arguments),
         );
+        if !owned_handle_declarations.is_empty() {
+            let call_return_type = if async_symbols.is_some() {
+                TypeFragment::new("nint")
+            } else {
+                native_return_type.clone()
+            };
+            let result = Identifier::parse("boltffiCallResult")?;
+            let transfer = format!(
+                "{}\n{call_return_type} {result};\ntry\n{{\n{}\n    {result} = {invocation};\n{}\n}}\nfinally\n{{\n{}\n}}",
+                owned_handle_declarations.join("\n"),
+                indent(&owned_handle_acquisitions.join("\n"), 4),
+                indent(&owned_handle_transfers.join("\n"), 4),
+                indent(&owned_handle_releases.join("\n"), 4),
+            );
+            if async_symbols.is_some() {
+                invocation = Expression::new(format!(
+                    "{{\n{}\n    return {result};\n}}",
+                    indent(&transfer, 4),
+                ));
+            } else {
+                setup.push(Statement::new(transfer));
+                invocation = Expression::identifier(result);
+            }
+        }
         let receiver = callable.receiver().is_some();
         let extension_owner = match (&call_site, receiver) {
             (CallSite::Enumeration { owner, .. }, true) => Some(direct_type(owner, context)?),

@@ -77,6 +77,7 @@ impl PrimitiveVec {
                     quote! { #length: usize },
                 ],
                 ffi_parameter_types: vec![quote! { *const #element_type }, quote! { usize }],
+                owned_values: Vec::new(),
                 conversions: vec![quote! {
                     let #ident: Vec<#element_type> = if #pointer.is_null() {
                         Vec::new()
@@ -94,6 +95,7 @@ impl PrimitiveVec {
                     quote! { #length: usize },
                 ],
                 ffi_parameter_types: vec![quote! { *const #element_type }, quote! { usize }],
+                owned_values: Vec::new(),
                 conversions: vec![quote! {
                     let #ident: &[#element_type] = if #pointer.is_null() {
                         &[]
@@ -111,6 +113,7 @@ impl PrimitiveVec {
                     quote! { #length: usize },
                 ],
                 ffi_parameter_types: vec![quote! { *mut #element_type }, quote! { usize }],
+                owned_values: Vec::new(),
                 conversions: vec![quote! {
                     let #ident: &mut [#element_type] = if #pointer.is_null() {
                         &mut []
@@ -161,6 +164,7 @@ impl PassableVec {
             items: Vec::new(),
             ffi_parameters: vec![quote! { #pointer: *const u8 }, quote! { #length: usize }],
             ffi_parameter_types: vec![quote! { *const u8 }, quote! { usize }],
+            owned_values: Vec::new(),
             conversions: vec![quote! {
                 let #ident: Vec<#element> = if #pointer.is_null() {
                     Vec::new()

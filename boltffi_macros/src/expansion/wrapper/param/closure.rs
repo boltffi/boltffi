@@ -165,6 +165,7 @@ impl<'expansion, 'lowered> Input<'expansion, 'lowered, Native> {
                 quote! { *mut ::core::ffi::c_void },
                 release_type,
             ],
+            owned_values: Vec::new(),
             conversions: vec![closure],
             writebacks: Vec::new(),
             argument: quote! { #ident },
@@ -258,6 +259,7 @@ impl<'expansion, 'lowered> Input<'expansion, 'lowered, Wasm32> {
             items: Vec::new(),
             ffi_parameters: vec![quote! { #ident: u32 }],
             ffi_parameter_types: vec![quote! { u32 }],
+            owned_values: Vec::new(),
             conversions: vec![quote! {
                 unsafe extern "C" {
                     fn #call(handle: u32 #(, #ffi_parameters)*) #return_type;

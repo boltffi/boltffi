@@ -200,10 +200,10 @@ impl<'expansion, 'lowered> AsyncExports<'expansion, 'lowered, Native> {
             .iter()
             .chain(params.ffi_parameters())
             .collect::<Vec<_>>();
-        let conversions = self
-            .receiver
-            .conversions()
+        let conversions = params
+            .owned_values()
             .iter()
+            .chain(self.receiver.conversions())
             .chain(params.conversions())
             .collect::<Vec<_>>();
         let rust_call = self.rust_call.awaited_expression(params.rust_arguments());
@@ -290,10 +290,10 @@ impl<'expansion, 'lowered> AsyncExports<'expansion, 'lowered, Wasm32> {
             .iter()
             .chain(params.ffi_parameters())
             .collect::<Vec<_>>();
-        let conversions = self
-            .receiver
-            .conversions()
+        let conversions = params
+            .owned_values()
             .iter()
+            .chain(self.receiver.conversions())
             .chain(params.conversions())
             .collect::<Vec<_>>();
         let rust_call = self.rust_call.awaited_expression(params.rust_arguments());

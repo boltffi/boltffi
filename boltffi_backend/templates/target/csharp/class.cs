@@ -27,7 +27,12 @@ namespace {{ class.namespace }}
 {% endfor %}{% for function in class.methods %}
 {% include "target/csharp/function.cs" %}
 {% endfor %}
-        private {{ class.carrier_type }} TakeHandle() => unchecked(({{ class.carrier_type }})(ulong)global::System.Threading.Interlocked.Exchange(ref handle, 0));
+        internal {{ class.carrier_type }} TakeHandle()
+        {
+            {{ class.carrier_type }} owned = unchecked(({{ class.carrier_type }})(ulong)global::System.Threading.Interlocked.Exchange(ref handle, 0));
+            if (owned == 0) throw new global::System.ObjectDisposedException(nameof({{ class.name }}));
+            return owned;
+        }
 
         private void ThrowIfDisposed()
         {

@@ -121,6 +121,7 @@ impl<'expansion, 'lowered> Input<'expansion, 'lowered, boltffi_binding::Wasm32> 
 pub struct Tokens {
     items: Vec<TokenStream>,
     ffi_parameters: Vec<TokenStream>,
+    owned_values: Vec<TokenStream>,
     conversions: Vec<TokenStream>,
     writebacks: Vec<TokenStream>,
     rust_arguments: Vec<TokenStream>,
@@ -135,6 +136,10 @@ impl Tokens {
         let ffi_parameters = params
             .iter()
             .flat_map(|param| param.ffi_parameters().iter().cloned())
+            .collect();
+        let owned_values = params
+            .iter()
+            .flat_map(|param| param.owned_values().iter().cloned())
             .collect();
         let conversions = params
             .iter()
@@ -152,6 +157,7 @@ impl Tokens {
         Self {
             items,
             ffi_parameters,
+            owned_values,
             conversions,
             writebacks,
             rust_arguments,
@@ -167,6 +173,10 @@ impl Tokens {
 
     pub fn conversions(&self) -> &[TokenStream] {
         &self.conversions
+    }
+
+    pub fn owned_values(&self) -> &[TokenStream] {
+        &self.owned_values
     }
 
     pub fn writebacks(&self) -> &[TokenStream] {

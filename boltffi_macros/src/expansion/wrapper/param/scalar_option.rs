@@ -42,6 +42,7 @@ impl Input {
             items: Vec::new(),
             ffi_parameters: vec![quote! { #pointer: *const u8 }, quote! { #length: usize }],
             ffi_parameter_types: vec![quote! { *const u8 }, quote! { usize }],
+            owned_values: Vec::new(),
             conversions: vec![quote! {
                 let #ident: #rust_type = if #pointer.is_null() {
                     None
@@ -73,6 +74,7 @@ impl Input {
             items: Vec::new(),
             ffi_parameters: vec![quote! { #ident: #ffi_type }],
             ffi_parameter_types: vec![ffi_type],
+            owned_values: Vec::new(),
             conversions: vec![quote! {
                 let #ident: #rust_type = if #is_none {
                     None

@@ -5916,13 +5916,14 @@ mod tests {
                 pub unsafe extern "C" fn boltffi_function_demo_open(
                     engine: u64
                 ) -> u64 {
+                    let __boltffi_engine_storage = unsafe {
+                        __BoltffiEngineHandle::take(engine as usize as *mut __BoltffiEngineHandle)
+                    };
                     if engine == 0 {
                         ::boltffi::__private::set_last_error(concat!(stringify!(engine), ": null class handle"));
                         return 0;
                     }
-                    let engine: Engine = match unsafe {
-                        __BoltffiEngineHandle::take(engine as usize as *mut __BoltffiEngineHandle)
-                    } {
+                    let engine: Engine = match __boltffi_engine_storage {
                         Some(value) => value,
                         None => {
                             ::boltffi::__private::set_last_error(concat!(stringify!(engine), ": released class handle"));
@@ -5939,6 +5940,31 @@ mod tests {
                 }
             }
             .to_string()
+        );
+    }
+
+    #[test]
+    fn wasm_owned_class_param_expansion_compiles() {
+        let source = class_param_nullable_return_contract();
+        let lowered = lower_with_declarations::<Wasm32>(&source).expect("lowered bindings");
+        let expansion = Expansion::new(&lowered);
+        let syntax = syn::parse_quote! {
+            pub fn open(engine: Engine) -> Option<Engine> {
+                Some(engine)
+            }
+        };
+        let class = expand_class(&expansion, &source.classes[0]).expect("expanded class");
+        let function =
+            expand_function(&expansion, &source.functions[0], syntax).expect("expanded function");
+
+        assert_generated_crate_checks_target(
+            "wasm_owned_class_param",
+            "wasm32-unknown-unknown",
+            quote! {
+                pub struct Engine;
+                #class
+                #function
+            },
         );
     }
 
