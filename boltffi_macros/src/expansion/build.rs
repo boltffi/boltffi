@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::ffi::OsString;
 use std::fmt;
@@ -20,7 +20,7 @@ use proc_macro2::{Span, TokenStream};
 use quote::{quote, quote_spanned};
 use serde::Deserialize;
 
-use crate::data::scope::{DataId, Declaration};
+use crate::data::scope::{self, DataId, Declaration};
 use crate::expansion::{
     contract::Expansion, error::Error as ExpansionError, expander::Expander, metadata,
     rust_api::RootModuleTypes,
@@ -69,6 +69,7 @@ struct BuildContext {
     root: SourceContract,
     support: SourceContract,
     visible_paths: Vec<(String, boltffi_ast::Path)>,
+    scanned_names: HashSet<(PathBuf, usize)>,
     data_source_files: HashMap<String, SourceFile>,
     /// `support`, lowered. Every `#[data]` that resolves against the crate-wide
     /// contract lowers the same declarations to the same bindings — the
@@ -100,6 +101,23 @@ pub fn item() -> Item {
         .and_then(BuildContext::render)
         .map(Item::Tokens)
         .unwrap_or_else(|error| Item::Error(error.into_compile_error()))
+}
+
+/// Whether the crate-wide scan saw a declaration at one of `anchors`.
+///
+/// Wrappers come from that scan, so an item it misses, such as one expanded
+/// from `macro_rules!` or `include!`, has no callable symbol.
+pub fn scanned(anchors: &[Span]) -> bool {
+    if anchors.is_empty() || !proc_macro::is_available() {
+        return true;
+    }
+    let Ok(context) = context() else {
+        return true;
+    };
+    anchors
+        .iter()
+        .filter_map(|anchor| scope::source_position(anchor.unwrap()))
+        .any(|position| context.scanned_names.contains(&position))
 }
 
 pub fn data(declaration: &Declaration) -> DataItem {
@@ -165,11 +183,13 @@ impl BuildContext {
             RootModuleTypes::with_visible_paths(&scan.complete().package, visible_paths.clone());
         let support = root_types.contract(&scan.root_with_support());
         let root = root_types.contract(scan.root());
+        let scanned_names = declaration_names(&root);
         Ok(Self {
             request,
             root,
             support,
             visible_paths,
+            scanned_names,
             data_source_files,
             support_native: OnceLock::new(),
             support_wasm32: OnceLock::new(),
@@ -606,6 +626,82 @@ fn current_manifest_dir() -> Result<PathBuf, BuildError> {
 fn parsed_surface(key: &'static str) -> Result<BindingMetadataSurface, BuildError> {
     let value = required_env(key)?;
     BindingMetadataSurface::parse(&value).ok_or(BuildError::InvalidSurface { key, value })
+}
+
+/// Where the name of each declaration in `contract` sits in its source file.
+fn declaration_names(contract: &SourceContract) -> HashSet<(PathBuf, usize)> {
+    let methods = contract
+        .records
+        .iter()
+        .flat_map(|record| &record.methods)
+        .chain(
+            contract
+                .enums
+                .iter()
+                .flat_map(|enumeration| &enumeration.methods),
+        )
+        .chain(contract.classes.iter().flat_map(|class| &class.methods))
+        .map(|method| (&method.name, method.source_span.as_ref()));
+    let declarations = contract
+        .functions
+        .iter()
+        .map(|function| (&function.name, function.source_span.as_ref()))
+        .chain(
+            contract
+                .classes
+                .iter()
+                .map(|class| (&class.name, class.source_span.as_ref())),
+        )
+        .chain(
+            contract
+                .traits
+                .iter()
+                .map(|callback| (&callback.name, callback.source_span.as_ref())),
+        )
+        .chain(
+            contract
+                .constants
+                .iter()
+                .map(|constant| (&constant.name, constant.source_span.as_ref())),
+        )
+        .chain(
+            contract
+                .streams
+                .iter()
+                .map(|stream| (&stream.name, stream.source_span.as_ref())),
+        )
+        .chain(methods);
+    let mut texts = HashMap::<PathBuf, Option<String>>::new();
+    declarations
+        .filter_map(|(name, span)| {
+            let span = span?;
+            let file = canonical(Path::new(span.file.as_str()));
+            let text = texts
+                .entry(file.clone())
+                .or_insert_with(|| fs::read_to_string(&file).ok())
+                .as_deref()?;
+            let offset = name_offset(text.get(span.start..)?, name.spelling())?;
+            Some((file, span.start + offset))
+        })
+        .collect()
+}
+
+/// The first identifier spelled `name` in `source`.
+fn name_offset(source: &str, name: &str) -> Option<usize> {
+    let name = name.strip_prefix("r#").unwrap_or(name);
+    rustc_lexer::tokenize(source)
+        .scan(0, |offset, token| {
+            let start = *offset;
+            *offset += token.len;
+            Some((token.kind, start, &source[start..*offset]))
+        })
+        .find_map(|(kind, start, spelling)| {
+            (matches!(
+                kind,
+                rustc_lexer::TokenKind::Ident | rustc_lexer::TokenKind::RawIdent
+            ) && spelling.strip_prefix("r#").unwrap_or(spelling) == name)
+                .then_some(start)
+        })
 }
 
 fn canonical(path: &Path) -> PathBuf {

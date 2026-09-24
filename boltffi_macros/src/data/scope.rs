@@ -188,6 +188,18 @@ impl<'syntax> Visit<'syntax> for ScopeIndexer {
     }
 }
 
+/// Where `span` starts, as a canonical source file and a byte offset into it.
+pub fn source_position(span: proc_macro::Span) -> Option<(PathBuf, usize)> {
+    let file = span.local_file()?;
+    let index = file_index(&file).ok()?;
+    let location = LineColumn {
+        line: span.line(),
+        column: span.column(),
+    };
+    let offset = Declaration::source_offset(&index.text, location)?;
+    Some((Declaration::canonical(&file), offset))
+}
+
 impl Declaration {
     pub fn from_macro_input(item: &proc_macro::TokenStream) -> syn::Result<Self> {
         let parsed = syn::parse::<syn::Item>(item.clone())?;
