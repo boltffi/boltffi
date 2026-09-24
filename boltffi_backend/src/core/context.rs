@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use boltffi_binding::{
     Bindings, CallbackDecl, CallbackId, CanonicalName, ClassDecl, ClassId, ConstantDecl,
     ConstantId, ConstantOwner, CustomTypeDecl, CustomTypeId, DeclarationId, DeclarationRef,
@@ -19,6 +21,7 @@ pub struct RenderContext<'bindings, S: Surface> {
     custom_type_mappings: ResolvedCustomTypeMappings,
     capability_analysis: Option<BindingCapabilityAnalysis>,
     coverage_mode: CoverageMode,
+    pruned_transparent_enums: BTreeSet<EnumId>,
 }
 
 impl<'bindings, S: Surface> RenderContext<'bindings, S> {
@@ -34,6 +37,7 @@ impl<'bindings, S: Surface> RenderContext<'bindings, S> {
             custom_type_mappings: ResolvedCustomTypeMappings::default(),
             capability_analysis: None,
             coverage_mode,
+            pruned_transparent_enums: BTreeSet::new(),
         }
     }
 
@@ -46,6 +50,13 @@ impl<'bindings, S: Surface> RenderContext<'bindings, S> {
     /// Adds contract-scoped capability analysis for this render.
     pub(crate) fn with_capability_analysis(mut self, analysis: BindingCapabilityAnalysis) -> Self {
         self.capability_analysis = Some(analysis);
+        self
+    }
+
+    /// Records the transparent data enums this render leaves out, so payload
+    /// records stop conforming to a type the generated source never declares.
+    pub(crate) fn with_pruned_transparent_enums(mut self, pruned: BTreeSet<EnumId>) -> Self {
+        self.pruned_transparent_enums = pruned;
         self
     }
 
@@ -126,6 +137,46 @@ impl<'bindings, S: Surface> RenderContext<'bindings, S> {
             ConstantOwner::Enum(id) => self.enumeration(id).map(EnumDecl::name),
             ConstantOwner::Class(id) => self.class(id).map(ClassDecl::name),
         }
+    }
+
+    /// Returns the names of the data enums this render emits whose
+    /// transparent variants carry the record as their payload, in contract
+    /// order.
+    ///
+    /// Every backend that gives a payload record a supertype reads the list
+    /// from here, so the record's declaration and the enum's own cannot
+    /// disagree about which conformances exist. Enums the render prunes are
+    /// left out: their type never reaches the generated source, so a record
+    /// conforming to one would name a type nothing declares.
+    pub fn transparent_conformances(
+        &self,
+        id: RecordId,
+    ) -> impl Iterator<Item = &'bindings CanonicalName> + '_ {
+        self.bindings
+            .decls()
+            .iter()
+            .filter_map(|declaration| {
+                DeclarationRef::enumeration(DeclarationRef::from(declaration))
+            })
+            .filter_map(move |enumeration| match enumeration {
+                EnumDecl::Data(enumeration)
+                    if !self.pruned_transparent_enums.contains(&enumeration.id())
+                        && enumeration
+                            .variants()
+                            .iter()
+                            .any(|variant| variant.transparent_payload() == Some(id)) =>
+                {
+                    Some(enumeration.name())
+                }
+                _ => None,
+            })
+    }
+
+    /// Returns whether the record is the payload of a transparent data-enum
+    /// variant this render emits, i.e. whether its rendered type declares
+    /// supertypes.
+    pub fn is_transparent_payload(&self, id: RecordId) -> bool {
+        self.transparent_conformances(id).next().is_some()
     }
 
     /// Returns the function declaration with the given id.

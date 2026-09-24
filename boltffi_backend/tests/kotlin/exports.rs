@@ -160,6 +160,80 @@ fn kotlin_target_qualifies_shadowed_data_enum_payloads() {
 }
 
 #[test]
+fn kotlin_target_renders_transparent_enums_as_sealed_interfaces() {
+    insta::assert_snapshot!(rendered_fixture("enums/transparent"));
+}
+
+/// A pruned transparent enum leaves no sealed interface behind, so the payload
+/// record must drop the conformance rather than name a supertype the file
+/// never declares. Both pruning routes are covered: the capability gate
+/// (`InternedString`) and a render the host rejects (a transparent error
+/// enum).
+#[test]
+fn kotlin_target_drops_conformances_of_pruned_transparent_enums() {
+    for source in [
+        r#"
+        use boltffi::InternedString;
+
+        boltffi::interned_string_pool! {
+            pub BrowserName {
+                Chrome = "Chrome",
+            }
+        }
+
+        #[data]
+        pub struct Ping {
+            sequence: u32,
+        }
+
+        #[data]
+        pub enum Envelope {
+            #[boltffi::transparent]
+            Ping(Ping),
+            Name(InternedString<BrowserName>),
+        }
+        "#,
+        r#"
+        #[data]
+        pub struct Ping {
+            sequence: u32,
+        }
+
+        #[error]
+        pub enum Envelope {
+            #[boltffi::transparent]
+            Ping(Ping),
+            Ack,
+        }
+
+        #[export]
+        pub fn try_ping() -> Result<u32, Envelope> {
+            Ok(1)
+        }
+        "#,
+    ] {
+        let files = super::partial_files(source);
+        let (_, contents) = files
+            .iter()
+            .find(|(path, _)| path.ends_with(".kt"))
+            .expect("Kotlin target should render a Kotlin source file");
+
+        assert!(
+            !contents.contains("interface Envelope"),
+            "pruned transparent enum reached the rendered source:\n{contents}"
+        );
+        assert!(
+            contents.contains("data class Ping(\n"),
+            "payload record was pruned alongside its transparent enum:\n{contents}"
+        );
+        assert!(
+            !contents.contains(": Envelope"),
+            "payload record conformed to a pruned transparent enum:\n{contents}"
+        );
+    }
+}
+
+#[test]
 fn kotlin_target_qualifies_kotlin_primitive_names_shadowed_by_a_sibling_variant() {
     insta::assert_snapshot!(rendered_fixture("enums/primitive_shadow"));
 }

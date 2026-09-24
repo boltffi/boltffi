@@ -1,5 +1,5 @@
 use boltffi_ast::PackageInfo;
-use boltffi_backend::target::kotlin::KotlinHost;
+use boltffi_backend::{GeneratedOutput, target::kotlin::KotlinHost};
 use boltffi_binding::{Native, lower};
 
 mod source;
@@ -66,9 +66,27 @@ pub fn files_with_host(source: &str, host: KotlinHost) -> Vec<(String, String)> 
     let bindings = bindings(source);
     let target = host.into_target().expect("Kotlin target");
 
-    target
-        .render(&bindings)
-        .expect("Kotlin target renders")
+    generated_files(target.render(&bindings).expect("Kotlin target renders"))
+}
+
+/// Renders with partial coverage, so declarations the host cannot render are
+/// pruned instead of failing the render.
+pub fn partial_files(source: &str) -> Vec<(String, String)> {
+    let bindings = bindings(source);
+    let target = KotlinHost::new("com.boltffi.demo", "Demo")
+        .expect("Kotlin host")
+        .into_target()
+        .expect("Kotlin target");
+
+    generated_files(
+        target
+            .render_partial(&bindings)
+            .expect("Kotlin target renders"),
+    )
+}
+
+fn generated_files(output: GeneratedOutput) -> Vec<(String, String)> {
+    output
         .files()
         .iter()
         .map(|file| {
