@@ -15,7 +15,7 @@ use self::args::CargoArguments;
 pub(crate) use self::library::SelectedLibrary;
 #[cfg(test)]
 pub(crate) use self::metadata::CargoCrateType;
-pub(crate) use self::metadata::CargoMetadata;
+pub(crate) use self::metadata::{CargoMetadata, CargoMetadataPackage};
 
 #[derive(Debug, Clone)]
 pub(crate) struct Cargo {

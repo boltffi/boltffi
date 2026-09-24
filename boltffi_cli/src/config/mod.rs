@@ -5,6 +5,7 @@ use boltffi_backend::{CustomTypeMapping, target::python::PackageModule};
 use boltffi_bindgen::target::Target;
 use serde::{Deserialize, Serialize};
 
+use crate::cargo::{Cargo, CargoMetadataPackage};
 use crate::target::{Architecture, CSharpRuntimeIdentifier, JavaHostTarget, Platform, RustTarget};
 
 pub mod cargo;
@@ -1094,10 +1095,11 @@ impl Config {
     }
 
     pub fn package_version(&self) -> Option<String> {
-        self.package
-            .version
-            .clone()
-            .or_else(|| cargo_package_field("version"))
+        self.package.version.clone().or_else(|| {
+            cargo_package_field(self, |package| {
+                Some(package.version.clone()).filter(|version| !version.is_empty())
+            })
+        })
     }
 
     pub fn wasm_npm_version(&self) -> Option<String> {
@@ -1113,7 +1115,7 @@ impl Config {
         self.package
             .license
             .clone()
-            .or_else(|| cargo_package_field("license"))
+            .or_else(|| cargo_package_field(self, |package| package.license.clone()))
     }
 
     pub fn wasm_npm_license(&self) -> Option<String> {
@@ -1129,7 +1131,7 @@ impl Config {
         self.package
             .repository
             .clone()
-            .or_else(|| cargo_package_field("repository"))
+            .or_else(|| cargo_package_field(self, |package| package.repository.clone()))
     }
 
     pub fn wasm_npm_repository(&self) -> Option<String> {
@@ -1289,22 +1291,30 @@ fn to_pascal_case(input: &str) -> String {
         .collect()
 }
 
-fn cargo_package_field(field_name: &str) -> Option<String> {
-    std::fs::read_to_string("Cargo.toml")
+fn cargo_package_field(
+    config: &Config,
+    field: impl FnOnce(&CargoMetadataPackage) -> Option<String>,
+) -> Option<String> {
+    std::env::current_dir()
         .ok()
-        .and_then(|content| {
-            content
-                .lines()
-                .find_map(|line| parse_key_value(line).filter(|(key, _)| key == field_name))
-        })
-        .map(|(_, value)| value)
+        .and_then(|working_directory| cargo_package_field_in(config, working_directory, field))
 }
 
-fn parse_key_value(line: &str) -> Option<(String, String)> {
-    let (raw_key, raw_value) = line.split_once('=')?;
-    let key = raw_key.trim().to_string();
-    let value = raw_value.trim().trim_matches('"').to_string();
-    Some((key, value))
+/// Reads a field of the package cargo resolves for this config, so
+/// workspace-inherited values like `version.workspace = true` are honoured.
+fn cargo_package_field_in(
+    config: &Config,
+    working_directory: PathBuf,
+    field: impl FnOnce(&CargoMetadataPackage) -> Option<String>,
+) -> Option<String> {
+    let cargo = Cargo::in_working_directory(working_directory, &[]);
+    let metadata = cargo.metadata().ok()?;
+    let manifest_path = cargo.manifest_path().ok()?;
+    let package_selector = cargo.effective_package_selector(config, &metadata, &manifest_path);
+    metadata
+        .find_package(&manifest_path, package_selector.as_deref())
+        .ok()
+        .and_then(field)
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -2758,5 +2768,123 @@ enabled = true
         );
         assert!(config.should_process(Target::C, false));
         assert_eq!(config.c_output(), PathBuf::from("dist/c"));
+    }
+
+    fn write_cargo_package(directory: &Path, manifest: &str) {
+        std::fs::create_dir_all(directory.join("src")).expect("package source directory");
+        std::fs::write(directory.join("Cargo.toml"), manifest).expect("cargo manifest");
+        std::fs::write(directory.join("src/lib.rs"), "").expect("package source");
+    }
+
+    fn write_inheriting_workspace(root: &Path) {
+        std::fs::write(
+            root.join("Cargo.toml"),
+            r#"[workspace]
+members = ["crates/demo"]
+
+[workspace.package]
+version = "2.3.4"
+license = "MIT OR Apache-2.0"
+"#,
+        )
+        .expect("workspace manifest");
+        write_cargo_package(
+            &root.join("crates/demo"),
+            r#"[package]
+name = "demo"
+version.workspace = true
+license.workspace = true
+edition = "2021"
+"#,
+        );
+    }
+
+    #[test]
+    fn reads_workspace_inherited_package_fields_from_cargo_metadata() {
+        let workspace = tempfile::tempdir().expect("temporary cargo workspace");
+        write_inheriting_workspace(workspace.path());
+        let config = parse_config(
+            r#"
+[package]
+name = "demo"
+"#,
+        );
+        let member = workspace.path().join("crates/demo");
+
+        assert_eq!(
+            cargo_package_field_in(&config, member.clone(), |package| Some(
+                package.version.clone()
+            )),
+            Some("2.3.4".to_string())
+        );
+        assert_eq!(
+            cargo_package_field_in(&config, member, |package| package.license.clone()),
+            Some("MIT OR Apache-2.0".to_string())
+        );
+    }
+
+    #[test]
+    fn selects_the_configured_member_from_a_workspace_root() {
+        let workspace = tempfile::tempdir().expect("temporary cargo workspace");
+        write_inheriting_workspace(workspace.path());
+        let config = parse_config(
+            r#"
+[package]
+name = "demo"
+"#,
+        );
+
+        assert_eq!(
+            cargo_package_field_in(&config, workspace.path().to_path_buf(), |package| Some(
+                package.version.clone()
+            )),
+            Some("2.3.4".to_string())
+        );
+    }
+
+    #[test]
+    fn ignores_version_keys_outside_the_package_table() {
+        let project = tempfile::tempdir().expect("temporary cargo project");
+        write_cargo_package(
+            &project.path().join("dep"),
+            r#"[package]
+name = "dep"
+version = "9.9.9"
+edition = "2021"
+"#,
+        );
+        write_cargo_package(
+            project.path(),
+            r#"[workspace]
+
+[dependencies.dep]
+version = "9.9.9"
+path = "dep"
+
+[package]
+name = "demo"
+version = "1.2.3"
+edition = "2021"
+"#,
+        );
+        let config = parse_config(
+            r#"
+[package]
+name = "demo"
+"#,
+        );
+
+        assert_eq!(
+            cargo_package_field_in(&config, project.path().to_path_buf(), |package| Some(
+                package.version.clone()
+            )),
+            Some("1.2.3".to_string())
+        );
+        assert_eq!(
+            cargo_package_field_in(&config, project.path().to_path_buf(), |package| package
+                .license
+                .clone()),
+            None
+        );
     }
 }
