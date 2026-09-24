@@ -2643,6 +2643,26 @@ public final class DemoTest {
     private static void testResultEnumErrors() {
         System.out.println("Testing result enum errors...");
 
+        demoCase("case:results.error_enums.message.should_preserve_text");
+        Arrays.asList("", "service failed 東京\u0000🦀").forEach(message -> {
+            try {
+                Demo.failWithMessage(message);
+                throw new AssertionError("expected ServiceError.Failed");
+            } catch (ServiceError.Failed error) {
+                assert message.equals(error.message) : "error message payload";
+            }
+        });
+        demoCase("case:results.error_enums.message.should_preserve_optional_text");
+        Arrays.asList(null, "", "optional failure 東京\u0000🦀").forEach(message -> {
+            Optional<String> optionalMessage = Optional.ofNullable(message);
+            try {
+                Demo.failWithOptionalMessage(optionalMessage);
+                throw new AssertionError("expected ServiceError.Optional");
+            } catch (ServiceError.Optional error) {
+                assert optionalMessage.equals(error.message) : "nullable error message payload";
+            }
+        });
+
         demoCase("case:results.error_enums.checked_divide.should_return_quotient");
         assert Demo.checkedDivide(10, 2) == 5 : "checkedDivide ok";
         demoCase("case:results.error_enums.checked_divide.should_reject_division_by_zero");

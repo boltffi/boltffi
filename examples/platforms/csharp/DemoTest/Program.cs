@@ -2460,6 +2460,35 @@ public static class DemoTest
     {
         Console.WriteLine("Testing result enum/record errors (typed exceptions)...");
 
+        DemoCase("case:results.error_enums.message.should_preserve_text");
+        Array.ForEach(new[] { "", "service failed 東京\0🦀" }, message =>
+        {
+            try
+            {
+                FailWithMessage(message);
+                Require(false, "expected ServiceError.Failed");
+            }
+            catch (ServiceErrorException error)
+            {
+                Require(error.Error is ServiceError.Failed failed && failed.Message == message,
+                    "error message payload");
+            }
+        });
+        DemoCase("case:results.error_enums.message.should_preserve_optional_text");
+        Array.ForEach(new[] { null, "", "optional failure 東京\0🦀" }, message =>
+        {
+            try
+            {
+                FailWithOptionalMessage(message);
+                Require(false, "expected ServiceError.Optional");
+            }
+            catch (ServiceErrorException error)
+            {
+                Require(error.Error is ServiceError.Optional optional && optional.Message == message,
+                    "nullable error message payload");
+            }
+        });
+
         // C-style #[error] enum -> dedicated MathErrorException with
         // an Error property that exposes the underlying enum value.
         DemoCase("case:results.error_enums.checked_divide.should_return_quotient");

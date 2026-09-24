@@ -1,3 +1,5 @@
+use std::{env, fs, process::Command, time::UNIX_EPOCH};
+
 use boltffi_backend::{
     Error,
     target::kotlin::{
@@ -130,6 +132,145 @@ fn kotlin_target_renders_data_enums_through_codec_methods() {
 #[test]
 fn kotlin_target_renders_fallible_returns_as_throwing_functions() {
     insta::assert_snapshot!(rendered_fixture("exports/fallible_returns"));
+}
+
+#[test]
+fn kotlin_target_overrides_exception_messages() {
+    insta::assert_snapshot!(rendered_fixture("enums/error_message"));
+}
+
+#[test]
+fn kotlin_exception_messages_compile_and_preserve_payloads() {
+    let compiler = if cfg!(windows) {
+        "kotlinc.bat"
+    } else {
+        "kotlinc"
+    };
+    if Command::new(compiler).arg("-version").output().is_err() {
+        eprintln!("Kotlin compiler is unavailable; exception runtime coverage runs in the demo");
+        return;
+    }
+
+    let directory = env::temp_dir().join(format!(
+        "boltffi-kotlin-error-messages-{}-{}",
+        std::process::id(),
+        UNIX_EPOCH.elapsed().expect("system clock").as_nanos()
+    ));
+    fs::create_dir_all(&directory).expect("create Kotlin test directory");
+    let source_paths = super::files(&fixture("enums/error_message"))
+        .into_iter()
+        .filter(|(path, _)| path.ends_with(".kt"))
+        .map(|(path, source)| {
+            let path = directory.join(path);
+            fs::create_dir_all(path.parent().expect("generated Kotlin directory"))
+                .expect("create generated Kotlin directory");
+            fs::write(&path, source).expect("write generated Kotlin");
+            path
+        })
+        .collect::<Vec<_>>();
+    let assertions = directory.join("ErrorMessages.kt");
+    fs::write(
+        &assertions,
+        include_str!("../fixtures/kotlin/error_messages.kt"),
+    )
+    .expect("write Kotlin assertions");
+    let jar = directory.join("errors.jar");
+    let compilation = Command::new(compiler)
+        .args(&source_paths)
+        .arg(assertions)
+        .args(["-include-runtime", "-d"])
+        .arg(&jar)
+        .output()
+        .expect("run Kotlin compiler");
+    assert!(
+        compilation.status.success(),
+        "generated Kotlin failed to compile in {}:\n{}\n{}",
+        directory.display(),
+        String::from_utf8_lossy(&compilation.stdout),
+        String::from_utf8_lossy(&compilation.stderr)
+    );
+    let execution = Command::new("java")
+        .arg("-jar")
+        .arg(jar)
+        .output()
+        .expect("run Kotlin assertions");
+    assert!(
+        execution.status.success(),
+        "Kotlin exception assertions failed:\n{}\n{}",
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    fs::remove_dir_all(directory).expect("remove Kotlin test directory");
+}
+
+#[test]
+fn kotlin_target_rejects_incompatible_exception_properties() {
+    let target = KotlinHost::new("com.boltffi.demo", "Demo")
+        .expect("Kotlin host")
+        .into_target()
+        .expect("Kotlin target");
+
+    [
+        (
+            "pub enum ServiceError { Failed { message: u32 } }",
+            "ServiceError.Failed",
+            "message",
+        ),
+        (
+            "pub enum ServiceError { Failed { message: Option<u32> } }",
+            "ServiceError.Failed",
+            "message",
+        ),
+        (
+            "pub enum ServiceError { Failed { cause: String } }",
+            "ServiceError.Failed",
+            "cause",
+        ),
+        (
+            "#[repr(C)] pub struct ServiceError { pub message: u32 }",
+            "ServiceError",
+            "message",
+        ),
+        (
+            "pub struct ServiceError { pub cause: String }",
+            "ServiceError",
+            "cause",
+        ),
+        (
+            "pub enum ServiceError { Failed { localized_message: String } }",
+            "ServiceError.Failed",
+            "localizedMessage",
+        ),
+        (
+            "pub enum ServiceError { Failed { localized_message: Option<String> } }",
+            "ServiceError.Failed",
+            "localizedMessage",
+        ),
+        (
+            "pub struct ServiceError { pub localized_message: String }",
+            "ServiceError",
+            "localizedMessage",
+        ),
+    ]
+    .into_iter()
+    .for_each(|(declaration, expected_scope, expected_name)| {
+        let source = format!(
+            "#[error] {declaration}\n\
+             #[export] pub fn fail() -> Result<(), ServiceError> {{ Ok(()) }}"
+        );
+        let error = target
+            .render(&super::bindings(&source))
+            .expect_err("incompatible exception properties must not render");
+
+        assert!(
+            matches!(
+                &error,
+                Error::KotlinNameCollision { scope, name }
+                    if scope == expected_scope && name == expected_name
+            ),
+            "{error:?}"
+        );
+    });
 }
 
 #[test]

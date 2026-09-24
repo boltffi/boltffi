@@ -1,3 +1,6 @@
+use std::error::Error;
+use std::fmt::{self, Display, Formatter};
+
 use boltffi::*;
 
 use crate::records::blittable::DataPoint;
@@ -104,6 +107,46 @@ impl From<UnexpectedFfiCallbackError> for AppError {
             message: error.message().to_owned(),
         }
     }
+}
+
+#[error]
+#[derive(Clone, Debug, PartialEq)]
+pub enum ServiceError {
+    Failed { message: String },
+    Optional { message: Option<String> },
+}
+
+impl Display for ServiceError {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Failed { message } => formatter.write_str(message),
+            Self::Optional { message } => {
+                formatter.write_str(message.as_deref().unwrap_or("service failed"))
+            }
+        }
+    }
+}
+
+impl Error for ServiceError {}
+
+#[demo_bench_macros::demo_case(
+    "results.error_enums.message.should_preserve_text",
+    justification = "Error variants must preserve their message field when returned as an error.",
+    directions = "Call fail_with_message with Unicode and embedded null text, then check the returned error variant and its message."
+)]
+#[export]
+pub fn fail_with_message(message: String) -> Result<(), ServiceError> {
+    Err(ServiceError::Failed { message })
+}
+
+#[demo_bench_macros::demo_case(
+    "results.error_enums.message.should_preserve_optional_text",
+    justification = "Nullable error messages must distinguish missing text from empty and nonempty text.",
+    directions = "Call fail_with_optional_message with absent, empty, and Unicode text, then check the error variant and its message."
+)]
+#[export]
+pub fn fail_with_optional_message(message: Option<String>) -> Result<(), ServiceError> {
+    Err(ServiceError::Optional { message })
 }
 
 #[demo_bench_macros::demo_case(
