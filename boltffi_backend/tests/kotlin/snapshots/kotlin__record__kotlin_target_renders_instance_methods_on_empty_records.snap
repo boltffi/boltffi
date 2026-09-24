@@ -1,0 +1,69 @@
+---
+source: boltffi_backend/tests/kotlin/record.rs
+expression: rendered
+---
+===== com/boltffi/demo/Demo.kt =====
+@file:OptIn(kotlin.ExperimentalUnsignedTypes::class)
+
+package com.boltffi.demo
+@Suppress("FunctionName")
+private object Native {
+    @JvmStatic external fun boltffi_method_record_demo_marker_describe(`receiver`: java.nio.ByteBuffer, __boltffi_receiver_len: Int): ByteArray?
+    @JvmStatic external fun boltffi_method_record_demo_marker_into_code(`receiver`: java.nio.ByteBuffer, __boltffi_receiver_len: Int): Int
+    @JvmStatic external fun boltffi_method_record_demo_marker_touch(`receiver`: java.nio.ByteBuffer, __boltffi_receiver_len: Int): ByteArray?
+}
+
+
+object Marker {
+    internal fun wireSize(): Int = 0
+
+    internal fun writeTo(writer: WireWriter) {
+    }
+
+    internal fun toByteArray(): ByteArray = ByteArray(0)
+
+    internal fun fromReader(reader: WireReader): Marker {
+        return Marker
+    }
+
+    internal fun fromByteArray(bytes: ByteArray): Marker {
+        require(bytes.size == 0)
+        return Marker
+    }
+
+    fun describe(): String {
+        val __boltffi_marker_wire = WireWriterPool.acquire(this.wireSize())
+        val __boltffi_marker_writer = __boltffi_marker_wire.writer
+        this.writeTo(__boltffi_marker_writer)
+        try {
+            val __boltffi_result = Native.boltffi_method_record_demo_marker_describe(__boltffi_marker_wire.directBuffer(), __boltffi_marker_wire.size()) ?: throw IllegalStateException("null buffer returned")
+            val __boltffi_reader = WireReader(__boltffi_result)
+            return __boltffi_reader.readString()
+        } finally {
+            __boltffi_marker_wire.close()
+        }
+    }
+
+    fun intoCode(): UInt {
+        val __boltffi_marker_wire = WireWriterPool.acquire(this.wireSize())
+        val __boltffi_marker_writer = __boltffi_marker_wire.writer
+        this.writeTo(__boltffi_marker_writer)
+        try {
+            return Native.boltffi_method_record_demo_marker_into_code(__boltffi_marker_wire.directBuffer(), __boltffi_marker_wire.size()).toUInt()
+        } finally {
+            __boltffi_marker_wire.close()
+        }
+    }
+
+    fun touch(): Marker {
+        val __boltffi_marker_wire = WireWriterPool.acquire(this.wireSize())
+        val __boltffi_marker_writer = __boltffi_marker_wire.writer
+        this.writeTo(__boltffi_marker_writer)
+        try {
+            val __boltffi_result = Native.boltffi_method_record_demo_marker_touch(__boltffi_marker_wire.directBuffer(), __boltffi_marker_wire.size()) ?: throw IllegalStateException("null buffer returned")
+            return Marker.fromByteArray(__boltffi_result)
+        } finally {
+            __boltffi_marker_wire.close()
+        }
+    }
+}

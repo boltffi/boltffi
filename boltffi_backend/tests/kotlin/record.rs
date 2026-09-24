@@ -13,3 +13,15 @@ fn kotlin_target_steps_over_direct_record_padding_in_wire_codecs() {
 
     insta::assert_snapshot!(rendered);
 }
+
+#[test]
+fn kotlin_target_renders_instance_methods_on_empty_records() {
+    let rendered = rendered_fixture("records/empty_record_methods");
+
+    assert!(rendered.contains("object Marker {"));
+    assert!(rendered.contains("    fun describe(): String {"));
+    assert!(rendered.contains("    fun intoCode(): UInt {"));
+    assert!(rendered.contains("    fun touch(): Marker {"));
+
+    insta::assert_snapshot!(rendered);
+}

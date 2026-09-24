@@ -110,6 +110,29 @@
 {%- endif %}
     }
 {%- endfor %}
+{%- for method in record.instance_methods() %}
+
+{{ method.documentation().indented("    ") }}    {% if method.async_call().is_some() %}suspend {% endif %}fun {{ method.name() }}({% for parameter in method.parameters() %}{{ parameter.name() }}: {{ parameter.ty() }}{% if !loop.last %}, {% endif %}{% endfor %}){% if let Some(return_type) = method.returns() %}: {{ return_type }}{% endif %} {
+{%- for statement in method.setup() %}
+        {{ statement }}
+{%- endfor %}
+{%- if method.has_cleanup() %}
+        try {
+{%- for statement in method.call() %}
+            {{ statement }}
+{%- endfor %}
+        } finally {
+{%- for statement in method.cleanup() %}
+            {{ statement }}
+{%- endfor %}
+        }
+{%- else %}
+{%- for statement in method.call() %}
+        {{ statement }}
+{%- endfor %}
+{%- endif %}
+    }
+{%- endfor %}
 }
 {%- else if record.encoded() %}
 {{ record.documentation() }}data class {{ record.name() }}(
