@@ -25,14 +25,6 @@ pub fn integer_repr(repr: &ReprAttr) -> Option<IntegerRepr> {
     })
 }
 
-pub fn has_repr_c(repr: &ReprAttr) -> bool {
-    repr.items.iter().any(|item| matches!(item, ReprItem::C))
-}
-
-pub fn has_effective_repr_c(repr: &ReprAttr) -> bool {
-    repr.items.is_empty() || has_repr_c(repr)
-}
-
 impl From<SourcePrimitive> for Primitive {
     fn from(primitive: SourcePrimitive) -> Self {
         match primitive {

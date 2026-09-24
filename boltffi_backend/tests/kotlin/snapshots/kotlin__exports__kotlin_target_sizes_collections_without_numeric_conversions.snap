@@ -1,0 +1,154 @@
+---
+source: boltffi_backend/tests/kotlin/exports.rs
+expression: rendered
+---
+===== com/boltffi/demo/Demo.kt =====
+@file:OptIn(kotlin.ExperimentalUnsignedTypes::class)
+
+package com.boltffi.demo
+
+data class Label(
+    val text: String
+) {
+    internal fun wireSize(): Int {
+        return 4 + Utf8Codec.maxBytes(this.text)
+    }
+
+    internal fun writeTo(writer: WireWriter) {
+        writer.writeString(this.text)
+    }
+
+    internal fun toByteArray(): ByteArray {
+        val buffer = WireWriterPool.acquire(wireSize())
+        val writer = buffer.writer
+        try {
+            writeTo(writer)
+            return buffer.bytes()
+        } finally {
+            buffer.close()
+        }
+    }
+
+    companion object {
+        internal fun fromReader(reader: WireReader): Label {
+            return Label(
+                reader.readString()
+            )
+        }
+
+        internal fun fromByteArray(bytes: ByteArray): Label {
+            val reader = WireReader(bytes)
+            return fromReader(reader)
+        }
+    }
+}
+
+
+data class CollectionSizes(
+    val strings: List<String>,
+    val states: List<State>,
+    val nested: List<List<String>>,
+    val optional: List<String?>,
+    val records: List<Label>,
+    val numbers: UIntArray
+) {
+    internal fun wireSize(): Int {
+        return 4 + this.strings.sumOf { __boltffi_value_0 -> val __boltffi_size: kotlin.Int = 4 + Utf8Codec.maxBytes(__boltffi_value_0); __boltffi_size } + 4 + this.states.sumOf { __boltffi_value_0 -> val __boltffi_size: kotlin.Int = 4; __boltffi_size } + 4 + this.nested.sumOf { __boltffi_value_0 -> val __boltffi_size: kotlin.Int = 4 + __boltffi_value_0.sumOf { __boltffi_value_1 -> val __boltffi_size: kotlin.Int = 4 + Utf8Codec.maxBytes(__boltffi_value_1); __boltffi_size }; __boltffi_size } + 4 + this.optional.sumOf { __boltffi_value_0 -> val __boltffi_size: kotlin.Int = 1 + (__boltffi_value_0?.let { __boltffi_value_1 -> 4 + Utf8Codec.maxBytes(__boltffi_value_1) } ?: 0); __boltffi_size } + 4 + this.records.sumOf { __boltffi_value_0 -> val __boltffi_size: kotlin.Int = __boltffi_value_0.wireSize(); __boltffi_size } + 4 + this.numbers.size * 4
+    }
+
+    internal fun writeTo(writer: WireWriter) {
+        writer.writeSequence(this.strings, this.strings.size, { writer, __boltffi_value_0 -> writer.writeString(__boltffi_value_0) })
+        writer.writeSequence(this.states, this.states.size, { writer, __boltffi_value_0 -> writer.writeI32(__boltffi_value_0.value) })
+        writer.writeSequence(this.nested, this.nested.size, { writer, __boltffi_value_0 -> writer.writeSequence(__boltffi_value_0, __boltffi_value_0.size, { writer, __boltffi_value_1 -> writer.writeString(__boltffi_value_1) }) })
+        writer.writeSequence(this.optional, this.optional.size, { writer, __boltffi_value_0 -> writer.writeOptionalValue(__boltffi_value_0, { writer, __boltffi_value_1 -> writer.writeString(__boltffi_value_1) }) })
+        writer.writeSequence(this.records, this.records.size, { writer, __boltffi_value_0 -> __boltffi_value_0.writeTo(writer) })
+        writer.writeUIntArray(this.numbers)
+    }
+
+    internal fun toByteArray(): ByteArray {
+        val buffer = WireWriterPool.acquire(wireSize())
+        val writer = buffer.writer
+        try {
+            writeTo(writer)
+            return buffer.bytes()
+        } finally {
+            buffer.close()
+        }
+    }
+
+    companion object {
+        internal fun fromReader(reader: WireReader): CollectionSizes {
+            return CollectionSizes(
+                reader.readSequence({ reader -> reader.readString() }),
+                reader.readSequence({ reader -> State.fromValue(reader.readI32()) }),
+                reader.readSequence({ reader -> reader.readSequence({ reader -> reader.readString() }) }),
+                reader.readSequence({ reader -> reader.readOptionalValue({ reader -> reader.readString() }) }),
+                reader.readSequence({ reader -> Label.fromReader(reader) }),
+                reader.readUIntArray()
+            )
+        }
+
+        internal fun fromByteArray(bytes: ByteArray): CollectionSizes {
+            val reader = WireReader(bytes)
+            return fromReader(reader)
+        }
+    }
+}
+
+
+enum class State(val value: Int) {
+    READY(0),
+    COMPLETE(1);
+
+    companion object {
+        fun fromValue(value: Int): State =
+            entries.first { it.value == value }
+    }
+}
+
+
+sealed class CollectionEvent {
+    internal abstract fun wireSize(): kotlin.Int
+
+    internal abstract fun writeTo(writer: WireWriter)
+
+    internal fun toByteArray(): ByteArray {
+        val buffer = WireWriterPool.acquire(wireSize())
+        val writer = buffer.writer
+        try {
+            writeTo(writer)
+            return buffer.bytes()
+        } finally {
+            buffer.close()
+        }
+    }
+
+
+    data class Int(
+        val field0: List<String>
+    ) : CollectionEvent() {
+        internal override fun wireSize(): kotlin.Int {
+            return 4 + 4 + this.field0.sumOf { __boltffi_value_0 -> val __boltffi_size: kotlin.Int = 4 + Utf8Codec.maxBytes(__boltffi_value_0); __boltffi_size }
+        }
+
+        internal override fun writeTo(writer: WireWriter) {
+            writer.writeU32(0.toUInt())
+            writer.writeSequence(this.field0, this.field0.size, { writer, __boltffi_value_0 -> writer.writeString(__boltffi_value_0) })
+        }
+    }
+
+    companion object {
+        internal fun fromReader(reader: WireReader): CollectionEvent {
+            val tag = reader.readU32()
+            return when (tag) {
+                0.toUInt() -> Int(reader.readSequence({ reader -> reader.readString() }))
+                else -> throw IllegalArgumentException("unknown CollectionEvent tag: $tag")
+            }
+        }
+
+        internal fun fromByteArray(bytes: ByteArray): CollectionEvent {
+            val reader = WireReader(bytes)
+            return fromReader(reader)
+        }
+    }
+}

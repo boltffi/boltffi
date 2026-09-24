@@ -95,6 +95,15 @@ fn kotlin_target_renders_encoded_records_through_codec_methods() {
 }
 
 #[test]
+fn kotlin_target_sizes_collections_without_numeric_conversions() {
+    let rendered = rendered_fixture("records/collection_sizes");
+
+    assert!(!rendered.contains(").toInt()"));
+
+    insta::assert_snapshot!(rendered);
+}
+
+#[test]
 fn kotlin_target_encodes_direct_records_nested_in_wire_values() {
     let rendered = rendered_fixture("records/encoded_with_direct_record");
 
