@@ -7,6 +7,7 @@ edition = "2024"
 default = []
 c-demo = []
 csharp-demo = []
+transparent-demo = []
 uniffi = ["dep:uniffi"]
 wasm-bench = ["dep:serde", "dep:serde-wasm-bindgen", "dep:wasm-bindgen", "dep:wasm-bindgen-futures"]
 

@@ -1,12 +1,13 @@
 use boltffi_binding::{
     CStyleEnumDecl, CanonicalName, ConstantOwner, DataEnumDecl, DataVariantDecl,
     DataVariantPayload, EncodedFieldDecl, ExportedMethodDecl, InitializerDecl, Native,
-    NativeSymbol, Receive,
+    NativeSymbol, Receive, TransparentPayload,
 };
 
 use crate::{
     core::{Error, Result},
     target::python::{
+        codec::Expression as CodecExpression,
         cpython::render::{enumeration as enumeration_render, function},
         name_style::Name,
         syntax::{CallExpression, Expression, Identifier, TypeAnnotation},
@@ -51,6 +52,10 @@ pub struct EnumClass {
     pub class_name: Identifier,
     pub exception_name: Option<Identifier>,
     pub register_method: Identifier,
+    /// The enum classes of the transparent enums a C-style enum is a
+    /// payload of; the `IntEnum` class inherits them. Always empty for a
+    /// data enum.
+    pub bases: Vec<Identifier>,
     pub variants: Vec<EnumVariant>,
     pub constants: Vec<ConstantStub>,
     pub wire: Option<DataEnumWire>,
@@ -77,6 +82,7 @@ impl EnumClass {
                 .then(|| package.exception_name(class.class_name()))
                 .transpose()?,
             register_method: class.register_method().clone(),
+            bases: package.transparent_conformances(TransparentPayload::Enum(enumeration.id()))?,
             variants: class
                 .variants()
                 .iter()
@@ -93,6 +99,13 @@ impl EnumClass {
     pub fn from_data(enumeration: &DataEnumDecl<Native>, package: &Package) -> Result<Self> {
         let symbols = enumeration_render::Symbols::from_data(enumeration)?;
         let class_name = symbols.class_name().clone();
+        let transparent = enumeration.has_transparent_variants();
+        if transparent && enumeration.is_error_payload() {
+            return Err(Error::UnsupportedTarget {
+                target: "python",
+                shape: "transparent error enum",
+            });
+        }
         Ok(Self {
             documentation: Documentation::new(enumeration.meta().doc()),
             class_name: class_name.clone(),
@@ -101,9 +114,11 @@ impl EnumClass {
                 .then(|| package.exception_name(&class_name))
                 .transpose()?,
             register_method: symbols.register_method().clone(),
+            bases: Vec::new(),
             variants: Vec::new(),
             constants: package.constants_for_owner(ConstantOwner::Enum(enumeration.id()))?,
             wire: Some(DataEnumWire {
+                transparent,
                 variants: enumeration
                     .variants()
                     .iter()
@@ -161,6 +176,7 @@ impl EnumClass {
         self.wire
             .iter()
             .flat_map(|wire| wire.variants.iter())
+            .filter(|variant| !variant.transparent())
             .try_for_each(DataEnumVariant::validate_names)
     }
 
@@ -184,11 +200,18 @@ impl EnumClass {
         self.wire
             .iter()
             .flat_map(|wire| wire.variants.iter())
+            .filter(|variant| !variant.transparent())
             .map(DataEnumVariant::top_level_name)
     }
 
     pub fn is_int_enum(&self) -> bool {
         self.wire.is_none()
+    }
+
+    /// Whether the class inherits the enum classes of transparent enums, and
+    /// so has to be defined after them.
+    pub fn conforms(&self) -> bool {
+        !self.bases.is_empty()
     }
 
     fn callables(&self) -> impl Iterator<Item = &AssociatedCallable> {
@@ -291,6 +314,11 @@ impl EnumVariant {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DataEnumWire {
+    /// Whether any variant renders as its payload type. A transparent
+    /// enum's write dispatch lives on the enum class (`_boltffi_wire_value`)
+    /// because the tag a shared payload type must write depends on which
+    /// enum it is written through.
+    pub transparent: bool,
     pub variants: Vec<DataEnumVariant>,
 }
 
@@ -301,11 +329,30 @@ pub struct DataEnumVariant {
     pub tag: u32,
     pub fields: Vec<RecordField>,
     pub wire_fields: Vec<EncodedRecordField>,
+    /// The payload class of a transparent variant; no wrapper class is
+    /// emitted for it.
+    pub transparent_payload: Option<TransparentVariant>,
+}
+
+/// How the enum class reads and writes the payload of a transparent
+/// variant, which is its own class.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TransparentVariant {
+    /// The payload class the write dispatch matches with `isinstance`.
+    pub class_name: Identifier,
+    /// The payload bytes of `value`, written after the variant tag.
+    pub encode: Expression,
+    /// The payload read off `reader`, after the variant tag.
+    pub decode: Expression,
 }
 
 impl DataEnumVariant {
     pub fn has_fields(&self) -> bool {
         !self.fields.is_empty()
+    }
+
+    pub fn transparent(&self) -> bool {
+        self.transparent_payload.is_some()
     }
 
     fn from_variant(
@@ -314,6 +361,14 @@ impl DataEnumVariant {
         package: &Package,
     ) -> Result<Self> {
         let fields = Self::payload_fields(variant.payload())?;
+        let wire_fields = fields
+            .iter()
+            .map(|field| EncodedRecordField::from_field(field, package))
+            .collect::<Result<Vec<_>>>()?;
+        let transparent_payload = variant
+            .transparent_payload()
+            .map(|payload| TransparentVariant::new(payload, &wire_fields, package))
+            .transpose()?;
         Ok(Self {
             documentation: Documentation::new(variant.meta().doc()),
             class_name: Identifier::parse(format!(
@@ -322,14 +377,12 @@ impl DataEnumVariant {
                 Name::new(variant.name()).class()
             ))?,
             tag: variant.tag().get(),
+            transparent_payload,
             fields: fields
                 .iter()
                 .map(|field| RecordField::from_encoded(field, package))
                 .collect::<Result<Vec<_>>>()?,
-            wire_fields: fields
-                .iter()
-                .map(|field| EncodedRecordField::from_field(field, package))
-                .collect::<Result<Vec<_>>>()?,
+            wire_fields,
         })
     }
 
@@ -361,5 +414,51 @@ impl DataEnumVariant {
                 });
             }
         })
+    }
+}
+
+impl TransparentVariant {
+    fn new(
+        payload: TransparentPayload,
+        wire_fields: &[EncodedRecordField],
+        package: &Package,
+    ) -> Result<Self> {
+        let value = Expression::identifier(Identifier::parse("value")?);
+        match payload {
+            // A payload record writes and reads itself untagged.
+            TransparentPayload::Record(record) => {
+                let class_name = package.record_name(record)?;
+                Ok(Self {
+                    encode: Expression::call(CallExpression::new(Expression::attribute(
+                        value,
+                        Identifier::parse("_boltffi_wire")?,
+                    ))),
+                    decode: Expression::call(
+                        CallExpression::new(Expression::attribute(
+                            Expression::identifier(class_name.clone()),
+                            Identifier::parse("_boltffi_from_reader")?,
+                        ))
+                        .positional(Expression::identifier(Identifier::parse("reader")?)),
+                    ),
+                    class_name,
+                })
+            }
+            // A C-style enum has no codec methods of its own, so the enum
+            // codec writes its discriminant and the payload field reads it.
+            TransparentPayload::Enum(enumeration) => {
+                let [field] = wire_fields else {
+                    return Err(Error::UnsupportedTarget {
+                        target: "python",
+                        shape: "transparent variant without exactly one payload field",
+                    });
+                };
+                Ok(Self {
+                    class_name: package.enum_name(enumeration)?,
+                    encode: CodecExpression::write_enum_value(value, enumeration, package)?
+                        .into_expression(),
+                    decode: field.decode.clone(),
+                })
+            }
+        }
     }
 }

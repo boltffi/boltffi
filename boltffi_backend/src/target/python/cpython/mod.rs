@@ -479,6 +479,49 @@ mod tests {
         assert_eq!(output.coverage().unsupported().len(), 8);
     }
 
+    /// A conforming payload record's type is built by a factory the package
+    /// calls with the enum bases, so the extension emits no module-init setup
+    /// for it. Pruning the transparent enum has to put the record back on the
+    /// plain lane in both files at once — otherwise the package binds
+    /// `_native.Ping`, which module init never created, and importing it
+    /// raises `AttributeError`.
+    #[test]
+    fn python_target_puts_payloads_of_pruned_transparent_enums_back_on_the_plain_lane() {
+        let output = target()
+            .render_partial(&bindings(
+                r#"
+                use boltffi::InternedString;
+
+                boltffi::interned_string_pool! {
+                    pub BrowserName {
+                        Chrome = "Chrome",
+                    }
+                }
+
+                #[data]
+                pub struct Ping {
+                    sequence: u32,
+                }
+
+                #[data]
+                pub enum Envelope {
+                    #[boltffi::transparent]
+                    Ping(Ping),
+                    Name(InternedString<BrowserName>),
+                }
+                "#,
+            ))
+            .expect("partial Python render should prune the InternedString enum");
+        let init = file(&output, "demo/__init__.py");
+        let extension = extension(&output);
+
+        assert!(!init.contains("Envelope"));
+        assert!(init.contains("Ping = _native.Ping"));
+        assert!(extension.contains("static int boltffi_python_setup_ping_type(PyObject *module)"));
+        assert!(extension.contains("if (!boltffi_python_setup_ping_type(module))"));
+        assert!(!extension.contains("boltffi_python_make_ping_type"));
+    }
+
     #[test]
     fn python_target_completes_cpython_module() {
         let output = target()
@@ -841,6 +884,164 @@ mod tests {
                 "def echo_values(values: Sequence[Sequence[int]]) -> list[list[int]]: ..."
             )
         );
+    }
+
+    #[test]
+    fn python_target_renders_transparent_enums_through_the_class_dispatch() {
+        let output = target()
+            .render(&bindings(
+                r#"
+                #[data]
+                pub struct Ping {
+                    label: String,
+                }
+
+                #[data]
+                pub enum Envelope {
+                    Unset,
+                    #[boltffi::transparent]
+                    Ping(Ping),
+                }
+
+                #[data]
+                pub struct Wrapper {
+                    message: Envelope,
+                }
+
+                #[export]
+                pub fn echo_wrapper(wrapper: Wrapper) -> Wrapper {
+                    wrapper
+                }
+
+                #[export]
+                pub fn echo_envelopes(envelopes: Vec<Envelope>) -> Vec<Envelope> {
+                    envelopes
+                }
+                "#,
+            ))
+            .expect("Python target should render transparent enums");
+        let init = file(&output, "demo/__init__.py");
+        let stub = file(&output, "demo/__init__.pyi");
+        let native = extension(&output);
+
+        // the payload record conforms to the enum class
+        assert!(init.contains("class Ping(Envelope):"));
+        assert!(stub.contains("class Ping(Envelope):"));
+        // no wrapper class is synthesized for the transparent variant, and
+        // __all__ does not name one either
+        assert!(!init.contains("class EnvelopePing"));
+        assert!(!stub.contains("class EnvelopePing"));
+        assert!(!init.contains("\"EnvelopePing\","));
+        // the tag lives on the enum class, so every write dispatches there:
+        // the record field, sequence elements, and the C extension encoder
+        assert!(init.contains("def _boltffi_wire_value(cls, value) -> bytes:"));
+        assert!(init.contains("Envelope._boltffi_wire_value(self.message)"));
+        assert!(
+            init.contains(
+                "lambda __boltffi_value_0: Envelope._boltffi_wire_value(__boltffi_value_0)"
+            )
+        );
+        assert!(native.contains("\"_boltffi_wire_value\""));
+        // reads produce the payload record directly
+        assert!(init.contains("return Ping._boltffi_from_reader(reader)"));
+    }
+
+    #[test]
+    fn python_target_renders_transparent_c_style_enum_payloads() {
+        let output = target()
+            .render(&bindings(
+                r#"
+                #[repr(i32)]
+                #[data]
+                pub enum Mode {
+                    Fast = 0,
+                    Slow = 1,
+                }
+
+                #[data]
+                pub enum Setting {
+                    Unset,
+                    #[boltffi::transparent]
+                    Mode(Mode),
+                    Raw(Mode),
+                }
+
+                #[export]
+                pub fn echo_setting(setting: Setting) -> Setting {
+                    setting
+                }
+                "#,
+            ))
+            .expect("Python target should render transparent C-style enum payloads");
+        let init = file(&output, "demo/__init__.py");
+        let stub = file(&output, "demo/__init__.pyi");
+
+        // the IntEnum inherits the enum class, so it is defined after it
+        assert!(init.contains("class Mode(Setting, IntEnum):"));
+        assert!(stub.contains("class Mode(Setting, IntEnum):"));
+        assert!(init.find("class Setting:") < init.find("class Mode(Setting, IntEnum):"));
+        // no wrapper class for the transparent variant, one for the reuse
+        assert!(!init.contains("class SettingMode"));
+        assert!(init.contains("class SettingRaw(Setting):"));
+        // the enum class dispatches the C-style enum through the enum codec
+        assert!(init.contains("if isinstance(value, Mode):"));
+        assert!(init.contains(
+            "return _boltffi_wire_u32(1) + _boltffi_wire_i32(_boltffi_enum_value(value, Mode, \"Mode\"))"
+        ));
+    }
+
+    #[test]
+    fn python_target_renders_direct_transparent_payloads_through_a_type_factory() {
+        let output = target()
+            .render(&bindings(
+                r#"
+                #[data]
+                pub struct Ping {
+                    sequence: u32,
+                }
+
+                #[data]
+                pub enum Envelope {
+                    Unset,
+                    #[boltffi::transparent]
+                    Ping(Ping),
+                }
+
+                #[data]
+                pub enum Reply {
+                    #[boltffi::transparent]
+                    Ping(Ping),
+                    Ack,
+                }
+
+                #[export]
+                pub fn echo_envelope(envelope: Envelope) -> Envelope {
+                    envelope
+                }
+
+                #[export]
+                pub fn echo_reply(reply: Reply) -> Reply {
+                    reply
+                }
+                "#,
+            ))
+            .expect("Python target should render direct transparent payloads");
+        let init = file(&output, "demo/__init__.py");
+        let stub = file(&output, "demo/__init__.pyi");
+        let native = extension(&output);
+
+        // the C type is created from python with both bases, after the enum
+        // classes exist, rather than at module init
+        assert!(init.contains("Ping = _native._make_ping((Envelope, Reply,))"));
+        assert!(native.contains("PyType_FromSpecWithBases(&boltffi_python_ping_type_spec, bases)"));
+        assert!(!native.contains("boltffi_python_setup_ping_type"));
+        // inheriting python bases makes instances GC-tracked, so the dealloc
+        // has to untrack before freeing
+        assert!(native.contains("PyObject_GC_UnTrack(self);"));
+        // the record is still the variant on both sides
+        assert!(stub.contains("class Ping(Envelope, Reply):"));
+        assert!(init.contains("return Ping._boltffi_from_reader(reader)"));
+        assert!(!init.contains("class EnvelopePing"));
     }
 
     #[test]

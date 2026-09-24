@@ -1,0 +1,250 @@
+---
+source: boltffi_backend/tests/kotlin/exports.rs
+expression: "rendered_fixture(\"enums/transparent\")"
+---
+===== com/boltffi/demo/Demo.kt =====
+@file:OptIn(kotlin.ExperimentalUnsignedTypes::class)
+
+package com.boltffi.demo
+@Suppress("FunctionName")
+private object Native {
+    @JvmStatic external fun boltffi_function_demo_echo_envelope(envelope: java.nio.ByteBuffer, __boltffi_envelope_len: Int): ByteArray?
+    @JvmStatic external fun boltffi_function_demo_echo_envelopes(envelopes: java.nio.ByteBuffer, __boltffi_envelopes_len: Int): ByteArray?
+}
+
+
+data class Ping(
+    val sequence: UInt
+) : Envelope, Reply {
+    internal fun wireSize(): Int {
+        return 4
+    }
+
+    internal fun writeTo(writer: WireWriter) {
+        writer.writeU32(sequence)
+    }
+    internal fun toByteArray(): ByteArray {
+        val buffer = java.nio.ByteBuffer
+            .allocate(STRUCT_SIZE)
+            .order(java.nio.ByteOrder.nativeOrder())
+        writeTo(buffer, 0)
+        return buffer.array()
+    }
+
+    internal fun toDirectBuffer(): java.nio.ByteBuffer {
+        val buffer = java.nio.ByteBuffer
+            .allocateDirect(STRUCT_SIZE)
+            .order(java.nio.ByteOrder.nativeOrder())
+        writeTo(buffer, 0)
+        return buffer
+    }
+
+    internal fun writeTo(buffer: java.nio.ByteBuffer, offset: Int) {
+        buffer.putInt(offset, sequence.toInt())
+    }
+
+    companion object {
+        internal const val STRUCT_SIZE: Int = 4
+        internal fun fromReader(reader: WireReader): Ping {
+            return Ping(
+                reader.readU32()
+            )
+        }
+
+        internal fun fromByteArray(bytes: ByteArray): Ping {
+            require(bytes.size == STRUCT_SIZE)
+            val buffer = java.nio.ByteBuffer
+                .wrap(bytes)
+                .order(java.nio.ByteOrder.nativeOrder())
+            return fromBuffer(buffer, 0)
+        }
+
+        internal fun fromBuffer(buffer: java.nio.ByteBuffer, offset: Int): Ping {
+            return Ping(
+                buffer.getInt(offset).toUInt()
+            )
+        }
+    }
+}
+
+
+data class Note(
+    val body: String
+) : Envelope {
+    internal fun wireSize(): Int {
+        return 4 + Utf8Codec.maxBytes(this.body)
+    }
+
+    internal fun writeTo(writer: WireWriter) {
+        writer.writeString(this.body)
+    }
+
+    internal fun toByteArray(): ByteArray {
+        val buffer = WireWriterPool.acquire(wireSize())
+        val writer = buffer.writer
+        try {
+            writeTo(writer)
+            return buffer.bytes()
+        } finally {
+            buffer.close()
+        }
+    }
+
+    companion object {
+        internal fun fromReader(reader: WireReader): Note {
+            return Note(
+                reader.readString()
+            )
+        }
+
+        internal fun fromByteArray(bytes: ByteArray): Note {
+            val reader = WireReader(bytes)
+            return fromReader(reader)
+        }
+    }
+}
+
+
+sealed interface Envelope {
+
+    object Unset : Envelope
+    data class Raw(
+        val field0: String
+    ) : Envelope
+
+    companion object {
+        internal fun wireSize(value: Envelope): Int {
+            return when (value) {
+                is Unset -> 4
+                is com.boltffi.demo.Ping -> 4 + value.wireSize()
+                is com.boltffi.demo.Note -> 4 + value.wireSize()
+                is Raw -> 4 + 4 + Utf8Codec.maxBytes(value.field0)
+            }
+        }
+
+        internal fun writeTo(value: Envelope, writer: WireWriter) {
+            when (value) {
+                is Unset -> {
+                    writer.writeU32(0.toUInt())
+                }
+                is com.boltffi.demo.Ping -> {
+                    writer.writeU32(1.toUInt())
+                    value.writeTo(writer)
+                }
+                is com.boltffi.demo.Note -> {
+                    writer.writeU32(2.toUInt())
+                    value.writeTo(writer)
+                }
+                is Raw -> {
+                    writer.writeU32(3.toUInt())
+                    writer.writeString(value.field0)
+                }
+            }
+        }
+
+        internal fun toByteArray(value: Envelope): ByteArray {
+            val buffer = WireWriterPool.acquire(wireSize(value))
+            val writer = buffer.writer
+            try {
+                writeTo(value, writer)
+                return buffer.bytes()
+            } finally {
+                buffer.close()
+            }
+        }
+
+        internal fun fromReader(reader: WireReader): Envelope {
+            val tag = reader.readU32()
+            return when (tag) {
+                0.toUInt() -> Unset
+                1.toUInt() -> com.boltffi.demo.Ping.fromReader(reader)
+                2.toUInt() -> com.boltffi.demo.Note.fromReader(reader)
+                3.toUInt() -> Raw(reader.readString())
+                else -> throw IllegalArgumentException("unknown Envelope tag: $tag")
+            }
+        }
+
+        internal fun fromByteArray(bytes: ByteArray): Envelope {
+            val reader = WireReader(bytes)
+            return fromReader(reader)
+        }
+    }
+}
+
+
+sealed interface Reply {
+
+    object Ack : Reply
+
+    companion object {
+        internal fun wireSize(value: Reply): Int {
+            return when (value) {
+                is com.boltffi.demo.Ping -> 4 + value.wireSize()
+                is Ack -> 4
+            }
+        }
+
+        internal fun writeTo(value: Reply, writer: WireWriter) {
+            when (value) {
+                is com.boltffi.demo.Ping -> {
+                    writer.writeU32(0.toUInt())
+                    value.writeTo(writer)
+                }
+                is Ack -> {
+                    writer.writeU32(1.toUInt())
+                }
+            }
+        }
+
+        internal fun toByteArray(value: Reply): ByteArray {
+            val buffer = WireWriterPool.acquire(wireSize(value))
+            val writer = buffer.writer
+            try {
+                writeTo(value, writer)
+                return buffer.bytes()
+            } finally {
+                buffer.close()
+            }
+        }
+
+        internal fun fromReader(reader: WireReader): Reply {
+            val tag = reader.readU32()
+            return when (tag) {
+                0.toUInt() -> com.boltffi.demo.Ping.fromReader(reader)
+                1.toUInt() -> Ack
+                else -> throw IllegalArgumentException("unknown Reply tag: $tag")
+            }
+        }
+
+        internal fun fromByteArray(bytes: ByteArray): Reply {
+            val reader = WireReader(bytes)
+            return fromReader(reader)
+        }
+    }
+}
+
+fun echoEnvelope(envelope: Envelope): Envelope {
+    val __boltffi_envelope_wire = WireWriterPool.acquire(Envelope.wireSize(envelope))
+    val __boltffi_envelope_writer = __boltffi_envelope_wire.writer
+    Envelope.writeTo(envelope, __boltffi_envelope_writer)
+    try {
+        val __boltffi_result = Native.boltffi_function_demo_echo_envelope(__boltffi_envelope_wire.directBuffer(), __boltffi_envelope_wire.size()) ?: throw IllegalStateException("null buffer returned")
+        val __boltffi_reader = WireReader(__boltffi_result)
+        return Envelope.fromReader(__boltffi_reader)
+    } finally {
+        __boltffi_envelope_wire.close()
+    }
+}
+
+fun echoEnvelopes(envelopes: List<Envelope>): List<Envelope> {
+    val __boltffi_envelopes_wire = WireWriterPool.acquire(4 + envelopes.sumOf { __boltffi_value_0 -> (Envelope.wireSize(__boltffi_value_0)).toInt() })
+    val __boltffi_envelopes_writer = __boltffi_envelopes_wire.writer
+    __boltffi_envelopes_writer.writeSequence(envelopes, envelopes.size, { __boltffi_envelopes_writer, __boltffi_value_0 -> Envelope.writeTo(__boltffi_value_0, __boltffi_envelopes_writer) })
+    try {
+        val __boltffi_result = Native.boltffi_function_demo_echo_envelopes(__boltffi_envelopes_wire.directBuffer(), __boltffi_envelopes_wire.size()) ?: throw IllegalStateException("null buffer returned")
+        val __boltffi_reader = WireReader(__boltffi_result)
+        return __boltffi_reader.readSequence({ __boltffi_reader -> Envelope.fromReader(__boltffi_reader) })
+    } finally {
+        __boltffi_envelopes_wire.close()
+    }
+}
