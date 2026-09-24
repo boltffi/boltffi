@@ -1,5 +1,3 @@
-use std::{env, fs, process::Command, time::UNIX_EPOCH};
-
 use boltffi_backend::{
     Error,
     target::kotlin::{
@@ -9,7 +7,7 @@ use boltffi_backend::{
 
 use super::{
     files_with_host, fixture, rendered_files, rendered_fixture, rendered_fixture_with_host,
-    rendered_fixture_with_runtime, rendered_source, source::SourceFixture,
+    rendered_fixture_with_runtime, rendered_source, run_kotlin_assertions, source::SourceFixture,
 };
 
 #[test]
@@ -141,66 +139,10 @@ fn kotlin_target_overrides_exception_messages() {
 
 #[test]
 fn kotlin_exception_messages_compile_and_preserve_payloads() {
-    let compiler = if cfg!(windows) {
-        "kotlinc.bat"
-    } else {
-        "kotlinc"
-    };
-    if Command::new(compiler).arg("-version").output().is_err() {
-        eprintln!("Kotlin compiler is unavailable; exception runtime coverage runs in the demo");
-        return;
-    }
-
-    let directory = env::temp_dir().join(format!(
-        "boltffi-kotlin-error-messages-{}-{}",
-        std::process::id(),
-        UNIX_EPOCH.elapsed().expect("system clock").as_nanos()
-    ));
-    fs::create_dir_all(&directory).expect("create Kotlin test directory");
-    let source_paths = super::files(&fixture("enums/error_message"))
-        .into_iter()
-        .filter(|(path, _)| path.ends_with(".kt"))
-        .map(|(path, source)| {
-            let path = directory.join(path);
-            fs::create_dir_all(path.parent().expect("generated Kotlin directory"))
-                .expect("create generated Kotlin directory");
-            fs::write(&path, source).expect("write generated Kotlin");
-            path
-        })
-        .collect::<Vec<_>>();
-    let assertions = directory.join("ErrorMessages.kt");
-    fs::write(
-        &assertions,
+    run_kotlin_assertions(
+        "enums/error_message",
         include_str!("../fixtures/kotlin/error_messages.kt"),
-    )
-    .expect("write Kotlin assertions");
-    let jar = directory.join("errors.jar");
-    let compilation = Command::new(compiler)
-        .args(&source_paths)
-        .arg(assertions)
-        .args(["-include-runtime", "-d"])
-        .arg(&jar)
-        .output()
-        .expect("run Kotlin compiler");
-    assert!(
-        compilation.status.success(),
-        "generated Kotlin failed to compile in {}:\n{}\n{}",
-        directory.display(),
-        String::from_utf8_lossy(&compilation.stdout),
-        String::from_utf8_lossy(&compilation.stderr)
     );
-    let execution = Command::new("java")
-        .arg("-jar")
-        .arg(jar)
-        .output()
-        .expect("run Kotlin assertions");
-    assert!(
-        execution.status.success(),
-        "Kotlin exception assertions failed:\n{}\n{}",
-        String::from_utf8_lossy(&execution.stdout),
-        String::from_utf8_lossy(&execution.stderr)
-    );
-    fs::remove_dir_all(directory).expect("remove Kotlin test directory");
 }
 
 #[test]

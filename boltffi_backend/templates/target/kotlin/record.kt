@@ -260,6 +260,10 @@
 {%- endif %}
     }
 {%- endfor %}
+{%- if let Some(equality) = equality %}
+
+{{ equality }}
+{%- endif %}
 }
 {%- else %}
 {{ record.documentation() }}data class {{ record.name() }}(

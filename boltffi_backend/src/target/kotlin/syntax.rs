@@ -390,6 +390,30 @@ impl Expression {
         Self(format!("{self} == {other}"))
     }
 
+    pub fn and(self, other: Self) -> Self {
+        Self(format!("{self} && {other}"))
+    }
+
+    pub fn index(self, index: Self) -> Self {
+        Self(format!("{self}[{index}]"))
+    }
+
+    pub fn all(self, parameter: Identifier, body: Self) -> Self {
+        Self(format!("{self}.all {{ {parameter} -> {body} }}"))
+    }
+
+    pub fn fold(
+        self,
+        initial: Self,
+        accumulator: Identifier,
+        element: Identifier,
+        body: Self,
+    ) -> Self {
+        Self(format!(
+            "{self}.fold({initial}) {{ {accumulator}, {element} -> {body} }}"
+        ))
+    }
+
     pub fn conditional(condition: Self, then_value: Self, else_value: Self) -> Self {
         Self(format!("if ({condition}) {then_value} else {else_value}"))
     }

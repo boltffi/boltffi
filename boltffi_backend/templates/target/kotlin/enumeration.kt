@@ -211,6 +211,10 @@
             {{ field.write() }}
 {%- endfor %}
         }
+{%- if let Some(equality) = variant.equality() %}
+
+{{ equality }}
+{%- endif %}
     }
 {%- endif %}
 {%- endfor %}
