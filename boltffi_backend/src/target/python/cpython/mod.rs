@@ -32,6 +32,8 @@ pub struct PythonCExtHost {
     distribution: Option<String>,
     version: Option<String>,
     library: Option<String>,
+    python_requires: Option<String>,
+    console_scripts: Vec<(String, String)>,
 }
 
 impl PythonCExtHost {
@@ -61,6 +63,18 @@ impl PythonCExtHost {
     /// Selects the native shared library artifact loaded by the Python package.
     pub fn native_library(mut self, library: impl Into<String>) -> Self {
         self.library = Some(library.into());
+        self
+    }
+
+    /// Selects the Python version specifier declared by the generated package.
+    pub fn python_requires(mut self, python_requires: impl Into<String>) -> Self {
+        self.python_requires = Some(python_requires.into());
+        self
+    }
+
+    /// Adds a `console_scripts` entry point, such as `demo = demo.cli:main`.
+    pub fn console_script(mut self, name: impl Into<String>, target: impl Into<String>) -> Self {
+        self.console_scripts.push((name.into(), target.into()));
         self
     }
 
@@ -202,6 +216,7 @@ impl host::HostBackend for PythonCExtHost {
             self.native_library_name(bindings)?,
             &declarations,
         )
+        .setup_metadata(self.python_requires.clone(), self.console_scripts.clone())
         .render()?;
         let mut output = GeneratedOutput::combine([
             render::NativeModule::new(bridge, context, declarations).render()?,
@@ -400,7 +415,10 @@ mod tests {
         assert!(init.contains("def ping() -> int:"));
         assert!(stub.contains("def ping() -> int: ..."));
         assert!(extension.contains("boltffi_function_demo_ping"));
-        assert!(file(&output, "setup.py").contains("packages=[\"demo\"]"));
+        assert!(
+            file(&output, "setup.py")
+                .contains("packages=find_packages(include=[\"demo\", \"demo.*\"])")
+        );
         assert!(file(&output, "pyproject.toml").contains("setuptools>=68"));
 
         for omitted in [
@@ -561,6 +579,27 @@ mod tests {
         assert!(setup.contains("Extension(\n            \"demo._native\","));
         assert!(setup.contains("sources=[\"_native.c\"]"));
         assert!(setup.contains("extra_compile_args=extension_compile_args"));
+        assert!(setup.contains("python_requires=\">=3.10\""));
+        assert!(setup.contains("\"\": [\"py.typed\", \"*.pyi\"]"));
+        assert!(setup.contains("\"demo\": [\"*.dll\", \"*.dylib\", \"*.so\"]"));
+        assert!(!setup.contains("entry_points"));
+    }
+
+    #[test]
+    fn python_target_renders_configured_python_requires_and_console_scripts() {
+        let host = PythonCExtHost::new()
+            .python_requires(">=3.14")
+            .console_script("demo", "demo.cli:main")
+            .console_script("demo-admin", "demo.admin:run");
+        let output = target_with_host(host)
+            .render(&empty_bindings())
+            .expect("Python target should render package metadata");
+        let setup = file(&output, "setup.py");
+
+        assert!(setup.contains("python_requires=\">=3.14\","));
+        assert!(setup.contains(
+            "    entry_points={\n        \"console_scripts\": [\n            \"demo = demo.cli:main\",\n            \"demo-admin = demo.admin:run\",\n        ],\n    },\n    zip_safe=False,"
+        ));
     }
 
     #[test]
@@ -586,7 +625,7 @@ mod tests {
         assert!(init.contains("PACKAGE_NAME = \"demo\""));
         assert!(init.contains("return \"libdemo.dylib\""));
         assert!(stub.contains("def add(left: int, right: int) -> int: ..."));
-        assert!(setup.contains("packages=[\"demo_api\"]"));
+        assert!(setup.contains("packages=find_packages(include=[\"demo_api\", \"demo_api.*\"])"));
         assert!(setup.contains("Extension(\n            \"demo_api._native\","));
         assert!(setup.contains("sources=[\"_native.c\"]"));
     }
@@ -617,7 +656,7 @@ mod tests {
         assert!(init.contains("return \"libdemo_ffi.dylib\""));
         assert!(setup.contains("name=\"demo-wheel\""));
         assert!(setup.contains("version=\"1.2.3\""));
-        assert!(setup.contains("packages=[\"demo_api\"]"));
+        assert!(setup.contains("packages=find_packages(include=[\"demo_api\", \"demo_api.*\"])"));
     }
 
     #[test]

@@ -401,6 +401,24 @@ Controls npm package generation in `boltffi pack wasm`.
 - `module_name` (string, optional), Python import package name.
   - Default, Cargo artifact name normalized as a Python module identifier.
   - Validation, must be a valid Python identifier and must not be a Python keyword.
+- `python_requires` (string, optional), version specifier written to `python_requires` in the generated `setup.py`.
+  - Default, `">=3.10"`
+  - Validation, must not be empty when provided. The value is otherwise passed through verbatim as a PEP 440 version specifier, so pip and setuptools validate its syntax when the package is built or installed.
+
+The generated `setup.py` includes the module package and every regular subpackage under it, together with their `py.typed` markers and `.pyi` stubs, so hand-written subpackages placed in the module directory ship in the wheel.
+
+### `[targets.python.scripts]` (optional)
+
+Console scripts declared as `console_scripts` entry points in the generated `setup.py`. Each key is the command name and each value is the entry point it runs.
+
+- Default, none
+- Validation, names must match `[A-Za-z0-9][A-Za-z0-9._-]*`; entry points must use the `module(.module)*:attr(.attr)*` object reference form, where every segment is a Python identifier and not a Python keyword. Extras (`[extra]`) are not supported.
+
+Example:
+```toml
+[targets.python.scripts]
+demo-runtime = "demo_runtime.cli:main"
+```
 
 ### `[targets.python.wheel]` (optional)
 

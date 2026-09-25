@@ -734,7 +734,7 @@ fn write_python(
     toolchain_selector: Option<String>,
     deny_skipped: bool,
 ) -> Result<()> {
-    Generation::new(manifest_path)
+    let generation = Generation::new(manifest_path)
         .cargo_args(cargo_args)
         .cargo_toolchain_selector(toolchain_selector)
         .coverage_mode(CoverageMode::Partial)
@@ -742,6 +742,13 @@ fn write_python(
         .python_distribution_name(config.package.name.clone())
         .python_package_version(config.package_version())
         .python_native_library(artifact_name)
+        .python_requires(config.python_requires());
+    config
+        .python_scripts()
+        .iter()
+        .fold(generation, |generation, (name, target)| {
+            generation.python_script(name, target)
+        })
         .render(Target::Python)
         .map_err(|error| generation_error("python", error))
         .and_then(|output| {

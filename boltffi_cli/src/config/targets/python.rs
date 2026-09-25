@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{collections::BTreeMap, path::PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -7,6 +7,9 @@ pub struct PythonConfig {
     #[serde(default = "default_python_output")]
     pub output: PathBuf,
     pub module_name: Option<String>,
+    pub python_requires: Option<String>,
+    #[serde(default)]
+    pub scripts: BTreeMap<String, String>,
     #[serde(default, alias = "pack")]
     pub wheel: PythonWheelConfig,
     #[serde(default)]
@@ -18,6 +21,8 @@ impl Default for PythonConfig {
         Self {
             output: default_python_output(),
             module_name: None,
+            python_requires: None,
+            scripts: BTreeMap::new(),
             wheel: PythonWheelConfig::default(),
             enabled: false,
         }

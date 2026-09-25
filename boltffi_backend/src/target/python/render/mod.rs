@@ -92,6 +92,9 @@ struct PyprojectTemplate;
 #[template(path = "target/python/setup.py", escape = "none")]
 struct SetupTemplate {
     module_name_literal: Literal,
+    subpackages_literal: Literal,
+    python_requires_literal: Literal,
+    console_scripts: Vec<Literal>,
     package_name_literal: Literal,
     package_version_literal: Literal,
     extension_name_literal: Literal,
@@ -107,6 +110,8 @@ pub struct Package<'bindings> {
     distribution: String,
     version: Option<String>,
     library: String,
+    python_requires: Option<String>,
+    console_scripts: Vec<(String, String)>,
 }
 
 impl<'bindings> Package<'bindings> {
@@ -133,7 +138,21 @@ impl<'bindings> Package<'bindings> {
             distribution,
             version,
             library,
+            python_requires: None,
+            console_scripts: Vec::new(),
         }
+    }
+
+    /// Sets the `python_requires` specifier and `console_scripts` entry points
+    /// declared by the generated `setup.py`.
+    pub fn setup_metadata(
+        mut self,
+        python_requires: Option<String>,
+        console_scripts: Vec<(String, String)>,
+    ) -> Self {
+        self.python_requires = python_requires;
+        self.console_scripts = console_scripts;
+        self
     }
 
     pub fn render(self) -> Result<GeneratedOutput> {
@@ -200,6 +219,15 @@ impl<'bindings> Package<'bindings> {
                     Self::text(
                         SetupTemplate {
                             module_name_literal: Self::literal(&module),
+                            subpackages_literal: Self::literal(format!("{module}.*")),
+                            python_requires_literal: Self::literal(
+                                self.python_requires.as_deref().unwrap_or(">=3.10"),
+                            ),
+                            console_scripts: self
+                                .console_scripts
+                                .iter()
+                                .map(|(name, target)| Self::literal(format!("{name} = {target}")))
+                                .collect(),
                             package_name_literal: Self::literal(&package),
                             package_version_literal: Self::literal(
                                 version.as_deref().unwrap_or("0.0.0"),

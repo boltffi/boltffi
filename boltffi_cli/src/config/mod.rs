@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use boltffi_backend::{CustomTypeMapping, target::python::PackageModule};
@@ -245,6 +245,33 @@ impl Config {
                 "targets.python.module_name must be a valid Python identifier, got '{}'",
                 module_name
             )));
+        }
+
+        if self.is_python_enabled()
+            && let Some(python_requires) = self.targets.python.python_requires.as_deref()
+            && python_requires.trim().is_empty()
+        {
+            return Err(ConfigError::Validation(
+                "targets.python.python_requires must not be empty when provided".to_string(),
+            ));
+        }
+
+        if self.is_python_enabled() {
+            for (name, target) in &self.targets.python.scripts {
+                if !is_console_script_name(name) {
+                    return Err(ConfigError::Validation(format!(
+                        "targets.python.scripts has invalid script name '{}'; names must start with an ASCII letter or digit and contain only ASCII letters, digits, '.', '_' or '-'",
+                        name
+                    )));
+                }
+
+                if !is_console_script_target(target) {
+                    return Err(ConfigError::Validation(format!(
+                        "targets.python.scripts.{} must name an entry point like 'package.module:function', got '{}'",
+                        name, target
+                    )));
+                }
+            }
         }
 
         if self.is_csharp_enabled() {
@@ -902,6 +929,14 @@ impl Config {
             .unwrap_or_else(|| self.crate_artifact_name())
     }
 
+    pub fn python_requires(&self) -> Option<String> {
+        self.targets.python.python_requires.clone()
+    }
+
+    pub fn python_scripts(&self) -> &BTreeMap<String, String> {
+        &self.targets.python.scripts
+    }
+
     pub fn python_wheel_output(&self) -> PathBuf {
         self.targets
             .python
@@ -1158,6 +1193,27 @@ impl Config {
     pub fn dart_targets(&self) -> Vec<RustTarget> {
         self.dart_native_targets().to_vec()
     }
+}
+
+/// Accepts console script names matching `[A-Za-z0-9][A-Za-z0-9._-]*`.
+fn is_console_script_name(name: &str) -> bool {
+    name.chars()
+        .next()
+        .is_some_and(|first| first.is_ascii_alphanumeric())
+        && name.chars().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-')
+        })
+}
+
+/// Accepts entry point object references of the form `module(.module)*:attr(.attr)*`.
+fn is_console_script_target(target: &str) -> bool {
+    let dotted_identifiers = |path: &str| {
+        path.split('.')
+            .all(|segment| PackageModule::parse(segment).is_ok())
+    };
+    target.split_once(':').is_some_and(|(module, attribute)| {
+        dotted_identifiers(module) && dotted_identifiers(attribute)
+    })
 }
 
 fn normalize_module_name(input: &str) -> String {
@@ -2409,6 +2465,174 @@ interpreters = ["python3.11", "python3.12"]
         assert_eq!(
             config.python_wheel_interpreters(),
             Some(["python3.11".to_string(), "python3.12".to_string()].as_slice())
+        );
+    }
+
+    #[test]
+    fn python_package_metadata_defaults_to_no_overrides() {
+        let config = parse_config(
+            r#"
+[package]
+name = "my-lib"
+
+[targets.python]
+enabled = true
+"#,
+        );
+
+        assert_eq!(config.python_requires(), None);
+        assert!(config.python_scripts().is_empty());
+    }
+
+    #[test]
+    fn python_package_metadata_supports_python_requires_and_scripts() {
+        let config = parse_config(
+            r#"
+[package]
+name = "my-lib"
+
+[targets.python]
+enabled = true
+python_requires = ">=3.14"
+
+[targets.python.scripts]
+my-lib = "my_lib.cli:main"
+my-lib-admin = "my_lib.admin:run"
+"#,
+        );
+
+        assert_eq!(config.python_requires().as_deref(), Some(">=3.14"));
+        assert_eq!(
+            config
+                .python_scripts()
+                .iter()
+                .map(|(name, target)| (name.as_str(), target.as_str()))
+                .collect::<Vec<_>>(),
+            vec![
+                ("my-lib", "my_lib.cli:main"),
+                ("my-lib-admin", "my_lib.admin:run"),
+            ]
+        );
+    }
+
+    #[test]
+    fn rejects_empty_python_requires() {
+        let parsed: Config = toml::from_str(
+            r#"
+[package]
+name = "my-lib"
+
+[targets.python]
+enabled = true
+python_requires = " "
+"#,
+        )
+        .expect("toml parse failed");
+
+        assert!(matches!(
+            parsed.validate(),
+            Err(ConfigError::Validation(message))
+                if message.contains("targets.python.python_requires must not be empty")
+        ));
+    }
+
+    fn python_script_config(enabled: bool, name: &str, target: &str) -> Config {
+        toml::from_str(&format!(
+            r#"
+[package]
+name = "my-lib"
+
+[targets.python]
+enabled = {enabled}
+
+[targets.python.scripts]
+"{name}" = "{target}"
+"#
+        ))
+        .expect("toml parse failed")
+    }
+
+    #[test]
+    fn rejects_invalid_python_script_names() {
+        for name in [
+            "",
+            "my lib",
+            "my=lib",
+            "-my-lib",
+            ".my-lib",
+            "my:lib",
+            "my/lib",
+            "mylib\u{e9}",
+        ] {
+            let result = python_script_config(true, name, "my_lib.cli:main").validate();
+
+            assert!(
+                matches!(
+                    &result,
+                    Err(ConfigError::Validation(message))
+                        if message.contains(&format!("targets.python.scripts has invalid script name '{name}'"))
+                ),
+                "script name {name:?} should be rejected, got {result:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_invalid_python_script_targets() {
+        for target in [
+            "",
+            " ",
+            "my_lib",
+            "my_lib:",
+            ":main",
+            "foo bar",
+            "my_lib.cli:main extra",
+            "a:b:c",
+            "my_lib..cli:main",
+            ".my_lib:main",
+            "my_lib.cli:main.",
+            "my-lib.cli:main",
+            "1my_lib:main",
+            "my_lib.class:main",
+            "my_lib.cli:main [extra]",
+        ] {
+            let result = python_script_config(true, "my-lib", target).validate();
+
+            assert!(
+                matches!(
+                    &result,
+                    Err(ConfigError::Validation(message))
+                        if message.contains("targets.python.scripts.my-lib must name an entry point")
+                ),
+                "script target {target:?} should be rejected, got {result:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn accepts_valid_python_script_names_and_targets() {
+        for (name, target) in [
+            ("my-lib", "my_lib:main"),
+            ("my_lib.admin", "my_lib.cli:main"),
+            ("2to3", "my_lib.tools.convert:Converter.run"),
+            ("MyLib", "_private.module:_entry"),
+        ] {
+            let result = python_script_config(true, name, target).validate();
+
+            assert!(
+                result.is_ok(),
+                "script {name:?} = {target:?} should be accepted, got {result:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn skips_python_script_validation_when_python_is_disabled() {
+        let result = python_script_config(false, "my lib", "a:b:c").validate();
+
+        assert!(
+            result.is_ok(),
+            "disabled Python target should not be validated, got {result:?}"
         );
     }
 
