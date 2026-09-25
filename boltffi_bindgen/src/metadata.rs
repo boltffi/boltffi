@@ -2082,6 +2082,7 @@ pub mod domain {
     impl Point {
         pub const ORIGIN: Point = Point { x: 0.0 };
         pub const UNIT: Self = Point { x: 1.0 };
+        #[allow(dead_code)]
         const PRIVATE: f64 = 0.5;
         #[boltffi::skip]
         pub const HIDDEN: f64 = 0.25;
@@ -2163,7 +2164,7 @@ pub mod pools {
 pub mod api {
     use std::sync::Arc;
 
-    use boltffi::{EventSubscription, InternedString, export, ffi_stream};
+    use boltffi::{EventSubscription, InternedString, export};
 
     use crate::clock::{Label, Stamp};
     use crate::domain::Point;
@@ -2249,7 +2250,7 @@ pub mod api {
             Point { x: self.origin.x + by }
         }
 
-        #[ffi_stream(item = Point)]
+        #[boltffi::ffi_stream(item = Point)]
         pub fn moves(&self) -> Arc<EventSubscription<Point>> {
             todo!()
         }
