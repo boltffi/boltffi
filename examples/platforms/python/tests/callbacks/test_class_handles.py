@@ -74,10 +74,68 @@ class ClassHandleTests(DemoTestCase):
         receiver.second = None
         self.assertEqual(drops.count(), 2)
 
+    def test_unretained_messages_are_released_after_return(self):
+        class MeasuringReceiver:
+            def pair(self, first, label, second):
+                if label != "pair":
+                    raise AssertionError(label)
+                return True, first.length() + second.length()
+
+        drops = demo.MessageDrops()
+        self.assertEqual(demo.deliver_message_pair(MeasuringReceiver(), drops, True), 11)
+        self.assertEqual(drops.count(), 2)
+
+    def test_stored_messages_survive_python_exception(self):
+        class ThrowingReceiver(Receiver):
+            def pair(self, first, label, second):
+                super().pair(first, label, second)
+                raise ValueError("receiver failed")
+
+        drops = demo.MessageDrops()
+        receiver = ThrowingReceiver()
+        with self.assertRaises(demo.MathErrorException):
+            demo.deliver_message_pair(receiver, drops, True)
+        self.assertEqual(drops.count(), 0)
+        self.assertEqual(receiver.first.length(), 5)
+        self.assertEqual(receiver.second.length(), 6)
+        receiver.first = None
+        receiver.second = None
+        self.assertEqual(drops.count(), 2)
+
+    def test_callback_can_return_ownership_to_rust(self):
+        class ConsumingReceiver(Receiver):
+            def pair(self, first, label, second):
+                super().pair(first, label, second)
+                return True, demo.consume_messages(first, second)
+
+        drops = demo.MessageDrops()
+        receiver = ConsumingReceiver()
+        self.assertEqual(demo.deliver_message_pair(receiver, drops, True), 11)
+        self.assertEqual(drops.count(), 2)
+        with self.assertRaises(ValueError):
+            receiver.first.length()
+        with self.assertRaises(ValueError):
+            receiver.second.length()
+        receiver.first = None
+        receiver.second = None
+        self.assertEqual(drops.count(), 2)
+
     def test_missing_callback_method_releases_undelivered_messages(self):
         drops = demo.MessageDrops()
         with self.assertRaises(demo.MathErrorException):
             demo.deliver_message_pair(object(), drops, True)
+        self.assertEqual(drops.count(), 2)
+
+    def test_first_wrapper_failure_releases_both_undelivered_messages(self):
+        drops = demo.MessageDrops()
+        receiver = Receiver()
+        with patch.object(
+            demo.OwnedMessage, "__setattr__", side_effect=MemoryError("wrapper failed")
+        ):
+            with self.assertRaises(demo.MathErrorException):
+                demo.deliver_message_pair(receiver, drops, True)
+        self.assertIsNone(receiver.first)
+        self.assertIsNone(receiver.second)
         self.assertEqual(drops.count(), 2)
 
     def test_second_wrapper_failure_releases_both_undelivered_messages(self):
