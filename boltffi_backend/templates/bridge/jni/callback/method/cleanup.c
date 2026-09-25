@@ -2,8 +2,8 @@
     if (!__boltffi_classes_delivered) {
         boltffi_jni_clear_exception(env);
 {%- for parameter in method.c_parameters %}
-{%- if let Some(release) = parameter.class_release %}
-        {{ release }}({{ parameter.name }});
+{%- if let Some(release) = parameter.class_release() %}
+        {{ release }}({{ parameter.name() }});
 {%- endif %}
 {%- endfor %}
         __boltffi_classes_delivered = 1;

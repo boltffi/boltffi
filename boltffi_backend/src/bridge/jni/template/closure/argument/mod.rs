@@ -11,13 +11,11 @@
 //! again.
 
 mod bytes;
-mod c_parameter;
 mod direct_vector;
 mod handle;
 mod record;
 
 pub use bytes::ClosureBytesArgumentView;
-pub use c_parameter::ClosureCParameterView;
 pub use direct_vector::ClosureDirectVectorArgumentView;
 pub use handle::ClosureHandleArgumentView;
 pub use record::ClosureRecordArgumentView;

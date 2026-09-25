@@ -11,18 +11,12 @@
 //! It only prepares the fields that the callback templates print.
 
 use crate::bridge::{
-    c::{ArgumentList, Identifier, Statement},
+    c::{ArgumentList, Identifier},
     jni::{
-        CallbackBytesArgument, CallbackCParameter, CallbackClosureArgument,
-        CallbackCompletionArgument, CallbackHandleArgument, CallbackRecordArgument,
+        CallbackBytesArgument, CallbackClosureArgument, CallbackCompletionArgument,
+        CallbackHandleArgument, CallbackRecordArgument,
     },
 };
-
-pub struct CallbackCParameterView {
-    pub name: Identifier,
-    pub declaration: Statement,
-    pub class_release: Option<Identifier>,
-}
 
 pub struct CallbackBytesArgumentView {
     pub name: Identifier,
@@ -52,16 +46,6 @@ pub struct CallbackClosureArgumentView {
 pub struct CallbackCompletionArgumentView {
     pub callback: Identifier,
     pub failure_arguments: ArgumentList,
-}
-
-impl CallbackCParameterView {
-    pub fn from_parameter(parameter: &CallbackCParameter) -> Self {
-        Self {
-            name: parameter.name().clone(),
-            declaration: parameter.declaration().clone(),
-            class_release: parameter.class_release().cloned(),
-        }
-    }
 }
 
 impl CallbackBytesArgumentView {

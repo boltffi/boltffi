@@ -1,4 +1,4 @@
-static {{ closure.c_return_type }} {{ closure.call }}(void *user_data{% for parameter in closure.c_parameters %}, {{ parameter.declaration }}{% endfor %}) {
+static {{ closure.c_return_type }} {{ closure.call }}(void *user_data{% for parameter in closure.c_parameters %}, {{ parameter.declaration() }}{% endfor %}) {
     JNIEnv *env = NULL;
     int attached = 0;
     if (!boltffi_jni_enter(&env, &attached)) {

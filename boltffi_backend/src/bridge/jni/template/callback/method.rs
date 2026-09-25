@@ -12,13 +12,13 @@
 
 use crate::bridge::{
     c::{ArgumentList, Expression, Identifier, Literal, TypeFragment},
-    jni::{CallbackMethod, name::LookupText},
+    jni::{CallbackCParameter, CallbackMethod, name::LookupText},
 };
 
 use super::{
-    CallbackBytesArgumentView, CallbackCParameterView, CallbackClosureArgumentView,
-    CallbackClosureReturnView, CallbackCompletionArgumentView, CallbackDirectVectorArgumentView,
-    CallbackHandleArgumentView, CallbackRecordArgumentView,
+    CallbackBytesArgumentView, CallbackClosureArgumentView, CallbackClosureReturnView,
+    CallbackCompletionArgumentView, CallbackDirectVectorArgumentView, CallbackHandleArgumentView,
+    CallbackRecordArgumentView,
 };
 
 pub struct CallbackMethodView {
@@ -39,7 +39,7 @@ pub struct CallbackMethodView {
     pub closure_return: Option<CallbackClosureReturnView>,
     pub call_method_suffix: String,
     pub failure_value: Expression,
-    pub c_parameters: Vec<CallbackCParameterView>,
+    pub c_parameters: Vec<CallbackCParameter>,
     pub transfers_classes: bool,
     pub byte_arrays: Vec<CallbackBytesArgumentView>,
     pub direct_vectors: Vec<CallbackDirectVectorArgumentView>,
@@ -74,11 +74,7 @@ impl CallbackMethodView {
             failure_value: method
                 .failure_value()
                 .unwrap_or_else(|| Expression::literal(Literal::integer_zero())),
-            c_parameters: method
-                .c_parameters()
-                .iter()
-                .map(CallbackCParameterView::from_parameter)
-                .collect(),
+            c_parameters: method.c_parameters(),
             transfers_classes: method.transfers_classes(),
             byte_arrays: method
                 .byte_arrays()

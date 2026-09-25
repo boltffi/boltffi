@@ -1,4 +1,4 @@
-JNIEXPORT {{ handle.jni_return_type }} JNICALL {{ handle.call_symbol }}(JNIEnv *env, jclass cls, jlong value{% for parameter in handle.closure.handle_parameters %}, {{ parameter.declaration }}{% endfor %}) {
+JNIEXPORT {{ handle.jni_return_type }} JNICALL {{ handle.call_symbol }}(JNIEnv *env, jclass cls, jlong value{% for parameter in handle.closure.handle_parameters %}, {{ parameter.declaration() }}{% endfor %}) {
     (void)env;
     (void)cls;
     {{ handle.ty }} *closure = {{ handle.ref_ }}(value);

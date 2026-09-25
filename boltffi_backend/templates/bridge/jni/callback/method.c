@@ -1,4 +1,4 @@
-static {{ method.c_return_type }} {{ method.function }}({% for parameter in method.c_parameters %}{{ parameter.declaration }}{% if !loop.last %}, {% endif %}{% endfor %}) {
+static {{ method.c_return_type }} {{ method.function }}({% for parameter in method.c_parameters %}{{ parameter.declaration() }}{% if !loop.last %}, {% endif %}{% endfor %}) {
     JNIEnv *env = NULL;
     int attached = 0;
 {%- if method.transfers_classes %}
@@ -8,8 +8,8 @@ static {{ method.c_return_type }} {{ method.function }}({% for parameter in meth
 {% include "bridge/jni/callback/method/locals.c" %}
     if (!boltffi_jni_enter(&env, &attached)) {
 {%- for parameter in method.c_parameters %}
-{%- if let Some(release) = parameter.class_release %}
-        {{ release }}({{ parameter.name }});
+{%- if let Some(release) = parameter.class_release() %}
+        {{ release }}({{ parameter.name() }});
 {%- endif %}
 {%- endfor %}
 {%- for completion in method.completions %}

@@ -19,8 +19,8 @@ mod method;
 mod registration;
 
 pub use argument::{
-    CallbackBytesArgumentView, CallbackCParameterView, CallbackClosureArgumentView,
-    CallbackCompletionArgumentView, CallbackHandleArgumentView, CallbackRecordArgumentView,
+    CallbackBytesArgumentView, CallbackClosureArgumentView, CallbackCompletionArgumentView,
+    CallbackHandleArgumentView, CallbackRecordArgumentView,
 };
 pub use closure_return::CallbackClosureReturnView;
 pub use completion::CallbackCompletionInvokerView;
