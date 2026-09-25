@@ -53,62 +53,14 @@ impl<'expansion, 'lowered, S: SurfaceLower> Trait<'expansion, 'lowered, S> {
 
 impl<'expansion, 'lowered> Trait<'expansion, 'lowered, Native> {
     pub fn render(self) -> Result<TokenStream, Error> {
-        NativeProtocol::new(
-            self.pair.source(),
-            self.pair.binding(),
-            self.path,
-            self.trait_object_impls,
-            self.expansion,
-        )
-        .tokens()
-    }
-}
-
-impl<'expansion, 'lowered> Trait<'expansion, 'lowered, Wasm32> {
-    pub fn render(self) -> Result<TokenStream, Error> {
-        WasmProtocol::new(
-            self.pair.source(),
-            self.pair.binding(),
-            self.path,
-            self.trait_object_impls,
-            self.expansion,
-        )
-        .tokens()
-    }
-}
-
-struct NativeProtocol<'expansion, 'lowered> {
-    source: &'lowered TraitDef,
-    binding: &'lowered CallbackDecl<Native>,
-    path: Option<TokenStream>,
-    trait_object_impls: bool,
-    expansion: &'expansion Expansion<'lowered, Native>,
-}
-
-impl<'expansion, 'lowered> NativeProtocol<'expansion, 'lowered> {
-    fn new(
-        source: &'lowered TraitDef,
-        binding: &'lowered CallbackDecl<Native>,
-        path: Option<TokenStream>,
-        trait_object_impls: bool,
-        expansion: &'expansion Expansion<'lowered, Native>,
-    ) -> Self {
-        Self {
-            source,
-            binding,
-            path,
-            trait_object_impls,
-            expansion,
-        }
-    }
-
-    fn tokens(self) -> Result<TokenStream, Error> {
-        let local_protocol = self.binding.local_protocol();
-        let names = CallbackNames::new(self.source, local_protocol)?;
-        let protocol = self.binding.protocol();
+        let source = self.pair.source();
+        let binding = self.pair.binding();
+        let local_protocol = binding.local_protocol();
+        let names = CallbackNames::new(source, local_protocol)?;
+        let protocol = binding.protocol();
         let vtable = protocol.vtable();
         let methods = CallbackMethods::new(
-            self.source.methods.as_slice(),
+            source.methods.as_slice(),
             vtable.methods(),
             local_protocol.map(CallbackLocalProtocol::methods),
         )?;
@@ -168,7 +120,7 @@ impl<'expansion, 'lowered> NativeProtocol<'expansion, 'lowered> {
         let trait_ident = &names.trait_ident;
         let trait_path = self.path.unwrap_or_else(|| quote! { #trait_ident });
         let foreign_ident = &names.foreign_ident;
-        let async_trait = AsyncTraitAttribute::from_trait(self.source)?;
+        let async_trait = AsyncTraitAttribute::from_trait(source)?;
         let vtable_ident = &names.vtable_ident;
         let foreign_vtable_static = &names.foreign_vtable_static;
         let register_ident = RustIdent::new(protocol.register().name().as_str())?;
@@ -378,37 +330,15 @@ impl<'expansion, 'lowered> NativeProtocol<'expansion, 'lowered> {
     }
 }
 
-struct WasmProtocol<'expansion, 'lowered> {
-    source: &'lowered TraitDef,
-    binding: &'lowered CallbackDecl<Wasm32>,
-    path: Option<TokenStream>,
-    trait_object_impls: bool,
-    expansion: &'expansion Expansion<'lowered, Wasm32>,
-}
-
-impl<'expansion, 'lowered> WasmProtocol<'expansion, 'lowered> {
-    fn new(
-        source: &'lowered TraitDef,
-        binding: &'lowered CallbackDecl<Wasm32>,
-        path: Option<TokenStream>,
-        trait_object_impls: bool,
-        expansion: &'expansion Expansion<'lowered, Wasm32>,
-    ) -> Self {
-        Self {
-            source,
-            binding,
-            path,
-            trait_object_impls,
-            expansion,
-        }
-    }
-
-    fn tokens(self) -> Result<TokenStream, Error> {
-        let local_protocol = self.binding.local_protocol();
-        let names = CallbackNames::new(self.source, local_protocol)?;
-        let protocol = self.binding.protocol();
+impl<'expansion, 'lowered> Trait<'expansion, 'lowered, Wasm32> {
+    pub fn render(self) -> Result<TokenStream, Error> {
+        let source = self.pair.source();
+        let binding = self.pair.binding();
+        let local_protocol = binding.local_protocol();
+        let names = CallbackNames::new(source, local_protocol)?;
+        let protocol = binding.protocol();
         let methods = CallbackMethods::new(
-            self.source.methods.as_slice(),
+            source.methods.as_slice(),
             protocol.methods(),
             local_protocol.map(CallbackLocalProtocol::methods),
         )?;
@@ -484,7 +414,7 @@ impl<'expansion, 'lowered> WasmProtocol<'expansion, 'lowered> {
         });
         let cfg = quote! { #[cfg(target_arch = "wasm32")] };
         let wasm_foreign_callback_handle_start = wasm32::FOREIGN_CALLBACK_HANDLE_START;
-        let async_trait = AsyncTraitAttribute::from_trait(self.source)?;
+        let async_trait = AsyncTraitAttribute::from_trait(source)?;
         let trait_object_tokens = if supports_trait_object && self.trait_object_impls {
             match local_names {
                 Some(local_names) => {
