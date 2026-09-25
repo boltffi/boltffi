@@ -198,7 +198,7 @@
 {%- else %}
 {{ variant.documentation().indented("    ") }}    data class {{ variant.name() }}(
 {%- for field in variant.fields() %}
-{{ field.documentation().indented("        ") }}        val {{ field.name() }}: {{ field.ty() }}{% if !loop.last %},{% endif %}
+{{ field.documentation().indented("        ") }}        {% if variant.overrides_message(field.name()) %}override {% endif %}val {{ field.name() }}: {{ field.ty() }}{% if !loop.last %},{% endif %}
 {%- endfor %}
     ) : {{ enumeration.name() }}() {
         internal override fun wireSize(): {{ enumeration.wire_size_type() }} {

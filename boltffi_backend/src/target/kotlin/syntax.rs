@@ -187,6 +187,13 @@ impl TypeName {
         Self::new("String")
     }
 
+    pub fn is_string(&self) -> bool {
+        matches!(
+            self.0.as_str(),
+            "String" | "String?" | "kotlin.String" | "kotlin.String?"
+        )
+    }
+
     pub fn byte() -> Self {
         Self::new("Byte")
     }

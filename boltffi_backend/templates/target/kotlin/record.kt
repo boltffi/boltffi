@@ -114,7 +114,7 @@
 {%- else if record.encoded() %}
 {{ record.documentation() }}data class {{ record.name() }}(
 {%- for field in record.fields() %}
-{{ field.documentation().indented("    ") }}    {% if record.error() && field.is_string_message() %}override {% endif %}val {{ field.name() }}: {{ field.ty() }}{% if let Some(default) = field.default() %} = {{ default }}{% endif %}{% if !loop.last %},{% endif %}
+{{ field.documentation().indented("    ") }}    {% if record.overrides_message(field.name()) %}override {% endif %}val {{ field.name() }}: {{ field.ty() }}{% if let Some(default) = field.default() %} = {{ default }}{% endif %}{% if !loop.last %},{% endif %}
 {%- endfor %}
 ){% if record.error() %} : Exception({% if let Some(message) = record.error_message() %}{{ message }}{% endif %}){% endif %} {
 {%- if let Some(wire_size) = record.wire_size() %}
@@ -264,7 +264,7 @@
 {%- else %}
 {{ record.documentation() }}data class {{ record.name() }}(
 {%- for field in record.fields() %}
-{{ field.documentation().indented("    ") }}    {% if record.error() && field.is_string_message() %}override {% endif %}val {{ field.name() }}: {{ field.ty() }}{% if let Some(default) = field.default() %} = {{ default }}{% endif %}{% if !loop.last %},{% endif %}
+{{ field.documentation().indented("    ") }}    {% if record.overrides_message(field.name()) %}override {% endif %}val {{ field.name() }}: {{ field.ty() }}{% if let Some(default) = field.default() %} = {{ default }}{% endif %}{% if !loop.last %},{% endif %}
 {%- endfor %}
 ){% if record.error() %} : Exception({% if let Some(message) = record.error_message() %}{{ message }}{% endif %}){% endif %} {
 {%- if let Some(wire_size) = record.wire_size() %}

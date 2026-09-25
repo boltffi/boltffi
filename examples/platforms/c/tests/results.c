@@ -120,6 +120,38 @@ bool test_result_values(void) {
 }
 
 bool test_error_values(void) {
+    const char message[] = "service failed 東京\0🦀";
+    DemoStringView message_view = demo_string_view(message, sizeof(message) - 1);
+    DemoFailWithMessageResult message_error = demo_fail_with_message(message_view);
+    CHECK(!message_error.ok && message_error.data.error.tag == DEMO_SERVICE_ERROR_FAILED,
+          "case:results.error_enums.message.should_preserve_text");
+    DemoString returned_message = message_error.data.error.data.failed.message;
+    CHECK(returned_message.len == message_view.len && memcmp(returned_message.ptr, message, message_view.len) == 0,
+          "case:results.error_enums.message.should_preserve_text");
+    demo_fail_with_message_result_free(&message_error);
+
+    DemoFailWithOptionalMessageResult optional_error = demo_fail_with_optional_message(
+        (DemoOptionStringView){.has_value = true, .value = message_view});
+    CHECK(!optional_error.ok && optional_error.data.error.tag == DEMO_SERVICE_ERROR_OPTIONAL,
+          "case:results.error_enums.message.should_preserve_optional_text");
+    DemoOptionString returned_optional = optional_error.data.error.data.optional.message;
+    CHECK(returned_optional.has_value && returned_optional.value.len == message_view.len
+          && memcmp(returned_optional.value.ptr, message, message_view.len) == 0,
+          "case:results.error_enums.message.should_preserve_optional_text");
+    demo_fail_with_optional_message_result_free(&optional_error);
+    optional_error = demo_fail_with_optional_message((DemoOptionStringView){0});
+    CHECK(!optional_error.ok && optional_error.data.error.tag == DEMO_SERVICE_ERROR_OPTIONAL
+          && !optional_error.data.error.data.optional.message.has_value,
+          "case:results.error_enums.message.should_preserve_optional_text");
+    demo_fail_with_optional_message_result_free(&optional_error);
+    optional_error = demo_fail_with_optional_message(
+        (DemoOptionStringView){.has_value = true, .value = {"", 0}});
+    CHECK(!optional_error.ok && optional_error.data.error.tag == DEMO_SERVICE_ERROR_OPTIONAL
+          && optional_error.data.error.data.optional.message.has_value
+          && optional_error.data.error.data.optional.message.value.len == 0,
+          "case:results.error_enums.message.should_preserve_optional_text");
+    demo_fail_with_optional_message_result_free(&optional_error);
+
     DemoCheckedDivideResult divided = demo_checked_divide(12, 3);
     CHECK(divided.ok && divided.data.value == 4, "case:results.error_enums.checked_divide.should_return_quotient");
     demo_checked_divide_result_free(&divided);
