@@ -1,4 +1,5 @@
 use super::*;
+use crate::core::Error;
 
 use super::completion::Completion;
 
@@ -16,6 +17,7 @@ pub struct Method {
     doc: Option<Javadoc>,
     wire_runtime: bool,
     direct_vector_runtime: bool,
+    transfers_classes: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -91,6 +93,7 @@ enum SuccessOutOrder {
 }
 
 struct MethodPlan {
+    transfers_classes: bool,
     source: Name,
     name: Identifier,
     jvm_name: Identifier,
@@ -126,6 +129,7 @@ impl Method {
         Self::build(
             source.callable(),
             MethodPlan {
+                transfers_classes: method.transfers_classes(),
                 source: Name::new(source.name()),
                 name: Name::new(source.name()).function(version)?,
                 jvm_name: Identifier::parse_for(method.method().as_str(), version)?,
@@ -156,6 +160,7 @@ impl Method {
         Self::build(
             closure.invoke(),
             MethodPlan {
+                transfers_classes: false,
                 source: Name::new(&CanonicalName::single("closure")),
                 name: Identifier::known("invoke"),
                 jvm_name: Identifier::known("call"),
@@ -176,6 +181,7 @@ impl Method {
         context: &RenderContext<Native>,
     ) -> Result<Self> {
         let MethodPlan {
+            transfers_classes,
             source,
             name,
             jvm_name,
@@ -186,11 +192,27 @@ impl Method {
         } = plan;
         let fallible =
             FallibleReturn::from_channel(source.clone(), callable.error().channel(), success_out)?;
-        let parameters = callable
+        let mut parameters = callable
             .params()
             .iter()
             .map(|parameter| InvocationParameter::from_declaration(parameter, version, context))
             .collect::<Result<Vec<_>>>()?;
+        if transfers_classes {
+            parameters
+                .iter_mut()
+                .enumerate()
+                .try_for_each(|(index, parameter)| {
+                    let local =
+                        Identifier::parse_for(format!("__boltffiArgument{index}"), version)?;
+                    parameter.setup.push(Statement::value(
+                        parameter.public.ty().type_name(),
+                        local.clone(),
+                        parameter.argument.clone(),
+                    ));
+                    parameter.argument = Expression::identifier(local);
+                    Ok::<_, Error>(())
+                })?;
+        }
         let returned = callable
             .returns()
             .plan()
@@ -254,6 +276,7 @@ impl Method {
             .transpose()?;
         Ok(Self {
             name,
+            transfers_classes,
             jvm_name,
             public_parameters: parameters
                 .iter()
@@ -295,6 +318,10 @@ impl Method {
 
     pub fn name(&self) -> &Identifier {
         &self.name
+    }
+
+    pub fn transfers_classes(&self) -> bool {
+        self.transfers_classes
     }
 
     pub fn jvm_name(&self) -> &Identifier {
@@ -535,14 +562,15 @@ impl<'plan> ParamPlanRender<'plan, Native, OutOfRust> for InvocationParameterRen
             HandleTarget::Class(class) => {
                 let handle =
                     ClassHandle::new(*class, carrier, presence, self.version, self.context, None)?;
+                let raw = self.source.generated("handle", self.version)?;
                 Ok(InvocationParameter {
                     public: Parameter::new(
                         self.name.clone(),
                         ValueType::Reference(handle.ty().clone()),
                     ),
-                    jvm: Parameter::new(self.name.clone(), ValueType::Primitive(handle.carrier())),
+                    jvm: Parameter::new(raw.clone(), ValueType::Primitive(handle.carrier())),
                     setup: Vec::new(),
-                    argument: handle.value_expression(value)?,
+                    argument: handle.value_expression(Expression::identifier(raw))?,
                     wire_runtime: false,
                     direct_vector_runtime: false,
                 })

@@ -86,6 +86,13 @@ impl Expression {
         }
     }
 
+    pub fn member(receiver: Self, member: &MemberName) -> Self {
+        match member.needs_quoting() {
+            true => Self(format!("{receiver}[\"{member}\"]")),
+            false => Self(format!("{receiver}.{member}")),
+        }
+    }
+
     pub fn invoke(function: Identifier, arguments: ArgumentList) -> Self {
         Self(format!("{function}({arguments})"))
     }
@@ -219,6 +226,10 @@ impl Expression {
 }
 
 impl Statement {
+    pub fn assignment(name: Identifier, value: Expression) -> Self {
+        Self(format!("{name} = {value};"))
+    }
+
     pub fn constant(name: Identifier, value: Expression) -> Self {
         Self(format!("const {name} = {value};"))
     }

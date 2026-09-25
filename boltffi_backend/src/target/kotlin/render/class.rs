@@ -15,6 +15,7 @@ use crate::{
         render::{
             AssociatedConstants, Documentation,
             function::{ExportedCall, ExportedCallRenderer, ReceiverCarrier},
+            native::NativeCall,
             signature::validate_reserved_members,
         },
         syntax::{ArgumentList, Expression, Identifier, Statement, TypeName},
@@ -329,5 +330,60 @@ impl ClassHandle {
             }
             _ => Err(KotlinHost::unsupported("unknown class handle presence")),
         }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OwnedClassArgument {
+    pub parameter: Identifier,
+    pub local: Identifier,
+    pub release: Identifier,
+    pub presence: HandlePresence,
+}
+
+#[derive(AskamaTemplate)]
+#[template(path = "target/kotlin/owned_call.kt", escape = "none")]
+pub struct OwnedCallTemplate<'call> {
+    pub owned: Vec<&'call OwnedClassArgument>,
+    pub arguments: Vec<(Identifier, Expression)>,
+    pub invocation: Expression,
+}
+
+impl<'call> OwnedCallTemplate<'call> {
+    pub fn expression(
+        method: Identifier,
+        native_arguments: Vec<Expression>,
+        owned: Vec<&'call OwnedClassArgument>,
+    ) -> Result<Expression> {
+        if owned.is_empty() {
+            return Ok(NativeCall::new(method, native_arguments).expression());
+        }
+        let arguments = native_arguments
+            .into_iter()
+            .enumerate()
+            .map(|(index, argument)| {
+                Ok((
+                    Identifier::parse(format!("__boltffiArgument{index}"))?,
+                    argument,
+                ))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let invocation = NativeCall::new(
+            method,
+            arguments
+                .iter()
+                .map(|(name, _)| Expression::identifier(name.clone()))
+                .collect(),
+        )
+        .expression();
+        Ok(Expression::invoke(
+            Self {
+                owned,
+                arguments,
+                invocation,
+            }
+            .render()?,
+            ArgumentList::default(),
+        ))
     }
 }

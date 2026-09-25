@@ -35,11 +35,12 @@ final class {{ callback.callbacks_name() }} {
         return value == null ? 0L : insert(value);
     }
 {% for method in callback.methods() %}
-    static {{ method.jvm_return() }} {{ method.jvm_name() }}(long handle{% for parameter in method.jvm_parameters() %}, {{ parameter.ty() }} {{ parameter.name() }}{% endfor %}) {
+    static {{ method.jvm_return() }} {{ method.jvm_name() }}(long handle{% for parameter in method.jvm_parameters() %}, {{ parameter.ty() }} {{ parameter.name() }}{% endfor %}{% if method.transfers_classes() %}, java.nio.ByteBuffer __boltffi_class_delivery{% endif %}) {
         {{ callback.name() }} implementation = VALUES.get(handle);
         if (implementation == null) throw new IllegalStateException("invalid callback handle");
 {% for statement in method.setup() %}        {{ statement }}
-{% endfor %}{% if let Some(asynchronous) = method.asynchronous() %}        {{ method.public_return() }} __boltffi_future;
+{% endfor %}{% if method.transfers_classes() %}        __boltffi_class_delivery.put(0, (byte) 1);
+{% endif %}{% if let Some(asynchronous) = method.asynchronous() %}        {{ method.public_return() }} __boltffi_future;
         try {
             __boltffi_future = {{ asynchronous.call() }};
         } catch (Throwable __boltffi_failure) {

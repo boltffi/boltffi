@@ -54,6 +54,7 @@ public static class DemoTest
             TestClasses();
             currentDemoCase = null;
             await ClassOwnershipTests.Run();
+            CallbackClassHandleTests.Run();
             TestResultFunctions();
             TestResultClassMethods();
             TestResultEnumErrors();

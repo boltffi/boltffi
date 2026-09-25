@@ -19,7 +19,9 @@ use crate::bridge::{
 };
 
 pub struct CallbackCParameterView {
+    pub name: Identifier,
     pub declaration: Statement,
+    pub class_release: Option<Identifier>,
 }
 
 pub struct CallbackBytesArgumentView {
@@ -55,7 +57,9 @@ pub struct CallbackCompletionArgumentView {
 impl CallbackCParameterView {
     pub fn from_parameter(parameter: &CallbackCParameter) -> Self {
         Self {
+            name: parameter.name().clone(),
             declaration: parameter.declaration().clone(),
+            class_release: parameter.class_release().cloned(),
         }
     }
 }

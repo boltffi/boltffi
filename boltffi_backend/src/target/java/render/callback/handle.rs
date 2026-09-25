@@ -1,4 +1,5 @@
 use super::*;
+use crate::target::java::render::class::{OwnedCallTemplate, OwnedClassArgument};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HandleMethod {
@@ -20,6 +21,7 @@ pub struct AsyncHandleMethod {
 }
 
 struct HandleParameter {
+    owned_class: Option<OwnedClassArgument>,
     public: Parameter<ValueType>,
     acquire: Vec<Statement>,
     prepare: Vec<Statement>,
@@ -118,29 +120,49 @@ impl HandleMethod {
         let callback_data = completion
             .map(|completion| Identifier::parse_for(completion.context().as_str(), version))
             .transpose()?;
-        let call = native.call(
-            &TypeIdentifier::known("Native", version),
-            std::iter::once(
-                Expression::this().call(Identifier::known("rawHandle"), ArgumentList::default()),
-            )
-            .chain(
-                parameters
-                    .iter()
-                    .flat_map(|parameter| parameter.arguments.iter().cloned()),
-            )
-            .chain(
-                callback_data
-                    .as_ref()
-                    .map(|name| Expression::identifier(name.clone())),
-            ),
-        )?;
+        let owned = parameters
+            .iter()
+            .filter_map(|parameter| parameter.owned_class.as_ref())
+            .collect::<Vec<_>>();
+        let arguments = std::iter::once(
+            Expression::this().call(Identifier::known("rawHandle"), ArgumentList::default()),
+        )
+        .chain(
+            parameters
+                .iter()
+                .flat_map(|parameter| parameter.arguments.iter().cloned()),
+        )
+        .chain(
+            callback_data
+                .as_ref()
+                .map(|name| Expression::identifier(name.clone())),
+        )
+        .collect();
+        let (bindings, arguments) = if owned.is_empty() {
+            (Vec::new(), arguments)
+        } else {
+            native.bind_arguments(arguments, version)?
+        };
+        let native_owner = TypeIdentifier::known("Native", version);
+        let call = native.call(&native_owner, arguments)?;
+        let invocation = match completion {
+            Some(_) => vec![Statement::expression(call)],
+            None => returned.statements(call, version, context)?,
+        };
+        let invocation = if owned.is_empty() {
+            invocation
+        } else {
+            vec![Statement::from_template(&OwnedCallTemplate {
+                native_owner: &native_owner,
+                owned,
+                bindings: &bindings,
+                body: &invocation,
+            })?]
+        };
         let protected = parameters
             .iter()
             .flat_map(|parameter| parameter.prepare.iter().cloned())
-            .chain(match completion {
-                Some(_) => vec![Statement::expression(call)],
-                None => returned.statements(call, version, context)?,
-            })
+            .chain(invocation)
             .collect::<Vec<_>>();
         let cleanup = parameters
             .iter()
@@ -355,6 +377,7 @@ impl HandleParameter {
 
     fn direct(public: Parameter<ValueType>, argument: Expression) -> Self {
         Self {
+            owned_class: None,
             public,
             acquire: Vec::new(),
             prepare: Vec::new(),
@@ -371,6 +394,7 @@ impl HandleParameter {
     ) -> Self {
         let (acquire, prepare, arguments, cleanup) = write.into_parts();
         Self {
+            owned_class: None,
             public,
             acquire,
             prepare,
@@ -458,10 +482,26 @@ impl<'plan> ParamPlanRender<'plan, Native, OutOfRust> for HandleParameterRender<
             HandleTarget::Class(class) => {
                 let handle =
                     ClassHandle::new(*class, carrier, presence, self.version, self.context, None)?;
-                Ok(HandleParameter::direct(
+                let declaration = self.context.class(*class).ok_or_else(|| {
+                    JavaHost::broken_bridge_contract(
+                        "missing class declaration for ownership transfer",
+                    )
+                })?;
+                let local = self.source.generated("owned_handle", self.version)?;
+                let mut parameter = HandleParameter::direct(
                     Parameter::new(self.name.clone(), ValueType::Reference(handle.ty().clone())),
-                    handle.native_argument(value)?,
-                ))
+                    Expression::identifier(local.clone()),
+                );
+                parameter.owned_class = Some(OwnedClassArgument {
+                    parameter: self.name.clone(),
+                    local,
+                    release: Identifier::parse_for(
+                        declaration.release().name().as_str(),
+                        self.version,
+                    )?,
+                    presence,
+                });
+                Ok(parameter)
             }
             HandleTarget::Callback(callback) => {
                 let handle = CallbackHandle::new(
@@ -533,6 +573,7 @@ impl<'plan> ParamPlanRender<'plan, Native, OutOfRust> for HandleParameterRender<
     ) -> Self::Output {
         let vector = DirectVector::from_element(element, self.version, self.context)?;
         Ok(HandleParameter {
+            owned_class: None,
             public: Parameter::new(self.name.clone(), ValueType::Reference(vector.ty().clone())),
             acquire: Vec::new(),
             prepare: Vec::new(),

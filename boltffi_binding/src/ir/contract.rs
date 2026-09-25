@@ -9,8 +9,8 @@ use super::error_payloads::ErrorPayloadTypes;
 use super::reference::DeclarationReferences;
 
 use crate::{
-    BindingError, BindingErrorKind, CanonicalName, Decl, DeclarationId, DeclarationRef, Native,
-    NativeSymbol, NativeSymbolTable, Surface, Wasm32,
+    BindingError, BindingErrorKind, CanonicalName, ClassId, Decl, DeclarationId, DeclarationRef,
+    Native, NativeSymbol, NativeSymbolTable, Surface, Wasm32,
 };
 
 /// Schema marker carried in every serialized binding contract.
@@ -176,6 +176,15 @@ impl<S: Surface> Bindings<S> {
     /// Returns the declarations.
     pub fn decls(&self) -> &[Decl<S>] {
         &self.decls
+    }
+
+    /// Returns whether a callback method receives this class as an argument.
+    pub fn passes_class_to_callbacks(&self, class: ClassId) -> bool {
+        self.decls
+            .iter()
+            .flat_map(Decl::imported_callables)
+            .flat_map(|callable| callable.params())
+            .any(|parameter| parameter.payload().class_handle() == Some(class))
     }
 
     /// Returns the native symbol table.

@@ -8,6 +8,7 @@ const suiteModules = [
   "./tests/bytes/mod.test.mjs",
   "./tests/callbacks/async_traits.test.mjs",
   "./tests/callbacks/closures.test.mjs",
+  "./tests/callbacks/class_handles.test.mjs",
   "./tests/callbacks/sync_traits.test.mjs",
   "./tests/callbacks/errors.test.mjs",
   "./tests/classes/async_methods.test.mjs",

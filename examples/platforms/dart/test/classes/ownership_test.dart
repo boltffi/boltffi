@@ -1,5 +1,6 @@
 import 'package:test/test.dart';
 import 'package:demo/demo.dart';
+import 'package:demo_dart/testing.dart';
 
 void main() {
   tearDownAll(shutdownBoltffi);
@@ -15,7 +16,10 @@ void main() {
     rejected.dispose$();
     expect(drops.count(), 2);
     final duplicate = OwnedMessage('duplicate', drops);
-    expect(consumeMessages(duplicate, duplicate), 0);
+    expect(
+      () => consumeMessages(duplicate, duplicate),
+      throwsBoltException('Object has been disposed'),
+    );
     duplicate.dispose$();
     expect(drops.count(), 3);
     final store = MessageStore();

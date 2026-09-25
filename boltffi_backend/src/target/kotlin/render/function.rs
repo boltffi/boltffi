@@ -18,7 +18,7 @@ use crate::{
         render::{
             Documentation,
             callback::CallbackHandle,
-            class::ClassHandle,
+            class::{ClassHandle, OwnedCallTemplate, OwnedClassArgument},
             closure::Closure,
             direct_vector::DirectVector,
             enumeration::Enumeration,
@@ -90,22 +90,6 @@ struct NativeArgument {
     mutation: Option<ParameterMutation>,
     setup: Vec<Statement>,
     cleanup: Vec<Statement>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct OwnedClassArgument {
-    parameter: Identifier,
-    local: Identifier,
-    release: Identifier,
-    presence: HandlePresence,
-}
-
-#[derive(AskamaTemplate)]
-#[template(path = "target/kotlin/owned_call.kt", escape = "none")]
-struct OwnedCallTemplate<'call> {
-    owned: Vec<&'call OwnedClassArgument>,
-    arguments: Vec<(Identifier, Expression)>,
-    invocation: Expression,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -423,41 +407,11 @@ impl<'render> ExportedCallRenderer<'render> {
             .iter()
             .filter_map(|parameter| parameter.owned_class.as_ref())
             .collect::<Vec<_>>();
-        let native_call = if owned.is_empty() {
-            NativeCall::new(
-                Identifier::escape(symbol.name().as_str())?,
-                native_arguments,
-            )
-            .expression()
-        } else {
-            let arguments = native_arguments
-                .into_iter()
-                .enumerate()
-                .map(|(index, argument)| {
-                    Ok((
-                        Identifier::parse(format!("__boltffiArgument{index}"))?,
-                        argument,
-                    ))
-                })
-                .collect::<Result<Vec<_>>>()?;
-            let invocation = NativeCall::new(
-                Identifier::escape(symbol.name().as_str())?,
-                arguments
-                    .iter()
-                    .map(|(name, _)| Expression::identifier(name.clone()))
-                    .collect(),
-            )
-            .expression();
-            Expression::invoke(
-                OwnedCallTemplate {
-                    owned,
-                    arguments,
-                    invocation,
-                }
-                .render()?,
-                ArgumentList::default(),
-            )
-        };
+        let native_call = OwnedCallTemplate::expression(
+            Identifier::escape(symbol.name().as_str())?,
+            native_arguments,
+            owned,
+        )?;
         let error_conversion = ErrorConversion::from_channel(callable.error().channel())?;
         let setup = receiver_setup
             .into_iter()

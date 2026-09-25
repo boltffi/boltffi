@@ -22,7 +22,7 @@ use crate::{
         render::{
             ClosureHandle, DirectVector, Enumeration,
             callback::CallbackHandle,
-            class::ClassHandle,
+            class::{ClassHandle, OwnedCallTemplate, OwnedClassArgument},
             native::Method,
             record::Record,
             signature::{CallSignature, Parameter, ReturnType, ValueType},
@@ -111,23 +111,6 @@ struct NativeArgument {
     expressions: Vec<Expression>,
     cleanup: Vec<Statement>,
     runtime: RuntimeRequirement,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct OwnedClassArgument {
-    parameter: Identifier,
-    local: Identifier,
-    release: Identifier,
-    presence: HandlePresence,
-}
-
-#[derive(AskamaTemplate)]
-#[template(path = "target/java/owned_call.java", escape = "none")]
-struct OwnedCallTemplate<'call> {
-    native_owner: &'call TypeIdentifier,
-    owned: Vec<&'call OwnedClassArgument>,
-    bindings: &'call [Statement],
-    body: &'call [Statement],
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]

@@ -49,11 +49,11 @@ private final class ProducerProxy: Producer, ProducerBridgeable {
     }
 
     func values() -> [Int32] {
-        guard let vtable = handle.vtable?.assumingMemoryBound(to: ___ProducerVTable.self),
+        guard let vtable = self.handle.vtable?.assumingMemoryBound(to: ___ProducerVTable.self),
               let invoke = vtable.pointee.values else {
             fatalError("missing callback vtable entry")
         }
-        let boltffiResult = invoke(handle.handle)
+        let boltffiResult = invoke(self.handle.handle)
         defer { boltffi_free_buf(boltffiResult) }
         guard boltffiResult.len > 0, let boltffiResultPtr = boltffiResult.ptr else { return [] }
         let boltffiResultCount = Int(boltffiResult.len) / MemoryLayout<Int32>.stride

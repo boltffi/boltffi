@@ -10,7 +10,7 @@ int main(void) {
         test_record_collections, test_constants, test_callback_ownership, test_scalar_enums,
         test_result_values, test_error_values, test_nested_records,
         test_service_configs, test_borrowed_constructors, test_optional_record_vectors,
-        test_mutable_values
+        test_mutable_values, test_callback_class_handles
     };
     bool passed = true;
     for (size_t index = 0; index < sizeof(tests) / sizeof(tests[0]); ++index) {

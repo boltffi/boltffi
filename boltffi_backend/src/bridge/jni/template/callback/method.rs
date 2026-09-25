@@ -40,6 +40,7 @@ pub struct CallbackMethodView {
     pub call_method_suffix: String,
     pub failure_value: Expression,
     pub c_parameters: Vec<CallbackCParameterView>,
+    pub transfers_classes: bool,
     pub byte_arrays: Vec<CallbackBytesArgumentView>,
     pub direct_vectors: Vec<CallbackDirectVectorArgumentView>,
     pub record_arrays: Vec<CallbackRecordArgumentView>,
@@ -78,6 +79,7 @@ impl CallbackMethodView {
                 .iter()
                 .map(CallbackCParameterView::from_parameter)
                 .collect(),
+            transfers_classes: method.transfers_classes(),
             byte_arrays: method
                 .byte_arrays()
                 .iter()

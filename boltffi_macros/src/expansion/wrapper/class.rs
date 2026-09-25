@@ -459,9 +459,13 @@ impl ClassHandleOperations {
             .decls()
             .iter()
             .flat_map(|declaration| declaration.exported_callables())
-            .fold(Self::default(), |operations, callable| {
-                operations.with_callable(class.id(), callable)
-            })
+            .fold(
+                Self {
+                    new: expansion.bindings().passes_class_to_callbacks(class.id()),
+                    ..Self::default()
+                },
+                |operations, callable| operations.with_callable(class.id(), callable),
+            )
             .with_class_receivers(class)
             .with_class_streams(class, expansion)
     }

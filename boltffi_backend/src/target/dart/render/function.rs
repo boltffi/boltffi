@@ -18,7 +18,11 @@ use super::super::{
     type_name,
 };
 use super::{
-    Documentation, closure::ClosureArgument, direct_vector::PrimitiveVector, indent,
+    Documentation,
+    class::{OwnedCallTemplate, OwnedClassArgument},
+    closure::ClosureArgument,
+    direct_vector::PrimitiveVector,
+    indent,
     returned_closure::ReturnedClosure,
 };
 
@@ -79,21 +83,6 @@ struct DartArgument {
     native_arguments: Vec<String>,
     writeback: Vec<String>,
     cleanup: Vec<String>,
-}
-
-struct OwnedClassArgument {
-    parameter: Identifier,
-    local: Identifier,
-    release: Identifier,
-    presence: HandlePresence,
-}
-
-#[derive(Template)]
-#[template(path = "target/dart/owned_call.dart", escape = "none")]
-struct OwnedCallTemplate<'call> {
-    owned: Vec<&'call OwnedClassArgument>,
-    invocation: String,
-    returns_value: bool,
 }
 
 pub struct DartReturn {

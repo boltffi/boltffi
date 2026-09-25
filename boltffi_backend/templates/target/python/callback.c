@@ -66,6 +66,9 @@ static {{ method.returns.c_type }} {{ method.function }}(uint64_t handle{% if le
     if ({{ param.object }} == NULL) {
         goto done;
     }
+{%- if param.class_release.is_some() %}
+    {{ param.name }} = 0;
+{%- endif %}
     PyTuple_SET_ITEM(arguments, {{ loop.index0 }}, {{ param.object }});
     {{ param.object }} = NULL;
 {%- endfor %}
@@ -194,6 +197,11 @@ done:
         PyErr_Print();
 {%- endif %}
     }
+{%- for param in method.params %}
+{%- if let Some(release) = param.class_release %}
+    if ({{ param.name }} != 0) {{ release }}({{ param.name }});
+{%- endif %}
+{%- endfor %}
 {%- for param in method.params %}
     Py_XDECREF({{ param.object }});
 {%- endfor %}

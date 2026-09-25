@@ -25,6 +25,7 @@ fn main() {
     ExperimentalExpansion::new(&paths).emit();
     println!("cargo:rerun-if-changed={}", paths.source.display());
     println!("cargo:rerun-if-changed={}", paths.src.display());
+    println!("cargo:rerun-if-changed=tests/callback_class_handles.c");
 
     let source = source_contract(&paths);
     let bindings = lower::<Native>(&source).expect("test contract lowers");
@@ -304,6 +305,7 @@ impl<'paths> CGlue<'paths> {
         let customs = self.customs_harness();
         let closures = self.closures_harness();
         let callbacks = self.callbacks_harness();
+        let callback_classes = include_str!("tests/callback_class_handles.c");
         let classes = self.classes_harness();
         let streams = self.streams_harness();
         let results = self.results_harness();
@@ -315,6 +317,7 @@ impl<'paths> CGlue<'paths> {
 #include <string.h>
 
 {helpers}
+{callback_classes}
 {fill_bytes}
 {bytes}
 {primitives}

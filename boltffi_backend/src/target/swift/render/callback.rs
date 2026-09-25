@@ -21,7 +21,11 @@ use crate::{
             Writer,
         },
         name_style::{GeneratedLocal, Name},
-        render::{Documentation, SwiftType, function::AssociatedFunction},
+        render::{
+            Documentation, SwiftType,
+            class::{ClassHandle, OwnedCallTemplate, OwnedClassArgument},
+            function::AssociatedFunction,
+        },
         syntax::{ArgumentList, Expression, Identifier, ParameterList, Statement, TypeName},
     },
 };
@@ -93,6 +97,7 @@ struct AsyncCompletion {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Parameter {
+    owned_class: Option<OwnedClassArgument>,
     name: Identifier,
     ty: TypeName,
     bindings: Vec<Identifier>,
@@ -739,6 +744,22 @@ impl Method {
 
     fn render_proxy_body(&self) -> Result<String> {
         let invocation = self.proxy_invocation();
+        let arguments = self
+            .parameters
+            .iter()
+            .filter_map(|parameter| parameter.owned_class.as_ref())
+            .collect::<Vec<_>>();
+        let invocation = if arguments.is_empty() {
+            invocation
+        } else {
+            Expression::new(
+                OwnedCallTemplate {
+                    arguments,
+                    invocation,
+                }
+                .render()?,
+            )
+        };
         let statement = self.returns.proxy_statement(invocation)?;
         let body = self
             .parameters
@@ -750,7 +771,7 @@ impl Method {
             });
         Ok([
             format!(
-                "guard let vtable = handle.vtable?.assumingMemoryBound(to: {}.self),\n      let invoke = vtable.pointee.{} else {{\n    fatalError(\"missing callback vtable entry\")\n}}",
+                "guard let vtable = self.handle.vtable?.assumingMemoryBound(to: {}.self),\n      let invoke = vtable.pointee.{} else {{\n    fatalError(\"missing callback vtable entry\")\n}}",
                 self.vtable,
                 self.slot
             ),
@@ -797,7 +818,7 @@ impl Method {
     fn proxy_invocation(&self) -> Expression {
         Expression::call(
             "invoke",
-            std::iter::once(Expression::member("handle", "handle"))
+            std::iter::once(Expression::member("self.handle", "handle"))
                 .chain(self.parameters.iter().flat_map(Parameter::proxy_arguments))
                 .collect::<ArgumentList>(),
         )
@@ -813,6 +834,13 @@ impl Method {
         );
         let invalid_handle = self.execution.invalid_handle_statement(&self.returns);
         let body = [
+            self.parameters
+                .iter()
+                .filter(|parameter| parameter.owned_class.is_some())
+                .flat_map(Parameter::setup)
+                .map(|statement| statement.indented("            "))
+                .collect::<Vec<_>>()
+                .join("\n"),
             format!("            guard handle != 0 else {{ {invalid_handle} }}"),
             format!(
                 "            let wrapper = Unmanaged<{}>.fromOpaque(UnsafeRawPointer(bitPattern: UInt(handle))!).takeUnretainedValue()",
@@ -820,6 +848,7 @@ impl Method {
             ),
             self.parameters
                 .iter()
+                .filter(|parameter| parameter.owned_class.is_none())
                 .flat_map(Parameter::setup)
                 .map(|statement| statement.indented("            "))
                 .collect::<Vec<_>>()
@@ -1749,6 +1778,7 @@ impl<'plan> ParamPlanRender<'plan, Native, OutOfRust> for ParameterPlan<'_, '_> 
         let binding = self.value_binding()?;
         let direct = DirectValue::new(ty, self.bridge, self.context)?;
         Ok(Parameter {
+            owned_class: None,
             name: self.name.clone(),
             ty: direct.api_type().clone(),
             bindings: vec![binding.clone()],
@@ -1785,6 +1815,7 @@ impl<'plan> ParamPlanRender<'plan, Native, OutOfRust> for ParameterPlan<'_, '_> 
         let proxy =
             EncodedProxyArgument::new(&self.source_name, self.name.clone(), codec, self.context)?;
         Ok(Parameter {
+            owned_class: None,
             name: self.name.clone(),
             ty: SwiftType::type_ref(ty, self.context)?,
             bindings: vec![pointer.clone(), length.clone()],
@@ -1823,18 +1854,52 @@ impl<'plan> ParamPlanRender<'plan, Native, OutOfRust> for ParameterPlan<'_, '_> 
         presence: HandlePresence,
         _: (),
     ) -> Self::Output {
-        let HandleTarget::Callback(callback) = target else {
-            return Err(SwiftHost::unsupported("unknown handle callback parameter"));
-        };
         let binding = self.value_binding()?;
-        let handle = CallbackHandle::from_rust_handle(*callback, presence, self.context)?;
+        let value = Expression::identifier(binding.clone());
+        let proxy = Expression::identifier(self.name.clone());
+        let (ty, argument, proxy_argument) = match target {
+            HandleTarget::Class(class) => {
+                let handle = ClassHandle::new(*class, presence, self.context)?;
+                let declaration =
+                    self.context
+                        .class(*class)
+                        .ok_or(Error::BrokenBridgeContract {
+                            bridge: SwiftHost::TARGET,
+                            invariant: "missing class declaration for ownership transfer",
+                        })?;
+                let local = self.source_name.generated("owned_handle")?;
+                let wrapped = self.source_name.generated("value")?;
+                return Ok(Parameter {
+                    owned_class: Some(OwnedClassArgument {
+                        parameter: self.name.clone(),
+                        local: local.clone(),
+                        release: Identifier::parse(declaration.release().name().as_str())?,
+                        presence,
+                    }),
+                    name: self.name.clone(),
+                    ty: handle.api_type(),
+                    bindings: vec![binding],
+                    setup: vec![Statement::let_value(&wrapped, handle.wrap(value))],
+                    argument: Expression::identifier(wrapped),
+                    proxy_arguments: vec![Expression::identifier(local)],
+                    proxy_scopes: Vec::new(),
+                    requires_wire_runtime: false,
+                });
+            }
+            HandleTarget::Callback(callback) => {
+                let handle = CallbackHandle::from_rust_handle(*callback, presence, self.context)?;
+                (handle.api_type(), handle.wrap(value), handle.create(proxy))
+            }
+            _ => return Err(SwiftHost::unsupported("unknown handle callback parameter")),
+        };
         Ok(Parameter {
+            owned_class: None,
             name: self.name.clone(),
-            ty: handle.api_type(),
+            ty,
             bindings: vec![binding.clone()],
             setup: Vec::new(),
-            argument: handle.wrap(Expression::identifier(binding)),
-            proxy_arguments: vec![handle.create(Expression::identifier(self.name.clone()))],
+            argument,
+            proxy_arguments: vec![proxy_argument],
             proxy_scopes: Vec::new(),
             requires_wire_runtime: false,
         })
@@ -1853,6 +1918,7 @@ impl<'plan> ParamPlanRender<'plan, Native, OutOfRust> for ParameterPlan<'_, '_> 
         let proxy =
             EncodedProxyArgument::scalar_option(&self.source_name, self.name.clone(), primitive)?;
         Ok(Parameter {
+            owned_class: None,
             name: self.name.clone(),
             ty: ScalarOption::new(primitive).ty()?,
             bindings: vec![pointer.clone(), length.clone()],
@@ -1897,6 +1963,7 @@ impl<'plan> ParamPlanRender<'plan, Native, OutOfRust> for ParameterPlan<'_, '_> 
         let received = vector.received(&self.source_name, pointer.clone(), length.clone())?;
         let proxy = vector.borrowed(&self.source_name, self.name.clone(), Receive::ByValue)?;
         Ok(Parameter {
+            owned_class: None,
             name: self.name.clone(),
             ty: vector.ty().clone(),
             bindings: vec![pointer, length],
@@ -1939,6 +2006,7 @@ impl<'plan> ParamPlanRender<'plan, Native, OutOfRust> for ProxyParameterSupport<
         _: (),
     ) -> Self::Output {
         match target {
+            HandleTarget::Class(_) => Ok(()),
             HandleTarget::Callback(callback) => {
                 CallbackHandle::validate_proxy(*callback, self.context)
             }

@@ -704,6 +704,41 @@ mod tests {
     }
 
     #[test]
+    fn asynchronous_owned_class_callback_requires_a_supported_lifetime_protocol() {
+        let source = boltffi_scan::scan_file(
+            syn::parse_quote! {
+                pub struct RustHandle;
+                #[export]
+                impl RustHandle {
+                    pub fn value(&self) -> u32 { 42 }
+                }
+                #[export]
+                pub trait Receiver {
+                    async fn attach(&self, handle: RustHandle);
+                }
+            },
+            PackageInfo::new("demo", None),
+        )
+        .expect("source scans");
+        let native = lower_with_declarations::<Native>(&source).expect("native contract lowers");
+        let wasm = lower_with_declarations::<Wasm32>(&source).expect("wasm contract lowers");
+        let expander = expander::Expander::new(&source);
+        [
+            expander.native(&Expansion::new(&native)),
+            expander.wasm32(&Expansion::new(&wasm)),
+        ]
+        .into_iter()
+        .for_each(|result| {
+            assert!(matches!(
+                result,
+                Err(crate::expansion::error::Error::UnsupportedExpansion(
+                    "owned class parameters require a synchronous callback method"
+                ))
+            ));
+        });
+    }
+
+    #[test]
     fn renders_ownerless_stream_from_free_function() {
         let source = ownerless_stream_contract();
         let lowered = lower_with_declarations::<Native>(&source).expect("contract lowers");

@@ -59,6 +59,7 @@ bool test_record_collections(void);
 bool test_constants(void);
 
 bool test_callback_ownership(void);
+bool test_callback_class_handles(void);
 
 bool test_scalar_enums(void);
 

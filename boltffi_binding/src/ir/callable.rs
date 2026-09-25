@@ -9,10 +9,10 @@ use boltffi_ast::FnTraitKind;
 
 use crate::{
     AsyncProtocolIntrospect, BindingError, BindingErrorKind, BufferShapeRules, BuiltinType,
-    CallableScope, CanonicalName, ClosureRegistrationIntrospect, ClosureSignature, DeclarationId,
-    DirectValueType, DirectVectorElementType, Direction, ElementMeta, ForeignBody, HandlePresence,
-    HandleTarget, IntegerRepr, IntoRust, NativeSymbol, OutOfRust, Primitive, RustBody, Surface,
-    TypeRef,
+    CallableScope, CanonicalName, ClassId, ClosureRegistrationIntrospect, ClosureSignature,
+    DeclarationId, DirectValueType, DirectVectorElementType, Direction, ElementMeta, ForeignBody,
+    HandlePresence, HandleTarget, IntegerRepr, IntoRust, NativeSymbol, OutOfRust, Primitive,
+    RustBody, Surface, TypeRef,
 };
 
 /// One call shape ready to be turned into target code.
@@ -309,6 +309,17 @@ impl<S: Surface> OutgoingParam<S> {
         match self {
             Self::Value(plan) => Some(plan),
             Self::Closure(_) => None,
+        }
+    }
+
+    /// Returns the class whose ownership this parameter transfers, if any.
+    pub fn class_handle(&self) -> Option<ClassId> {
+        match self {
+            Self::Value(ParamPlan::Handle {
+                target: HandleTarget::Class(class),
+                ..
+            }) => Some(*class),
+            _ => None,
         }
     }
 

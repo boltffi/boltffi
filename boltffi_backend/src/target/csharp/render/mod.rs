@@ -134,6 +134,7 @@ struct OwnedCallTemplate<'call> {
     arguments: &'call [OwnedArgument],
     invocation: &'call Expression,
     asynchronous: bool,
+    returns_value: bool,
 }
 
 enum OwnedArgument {
@@ -1343,6 +1344,7 @@ impl Function {
                 arguments: &owned_arguments,
                 invocation: &invocation,
                 asynchronous: async_symbols.is_some(),
+                returns_value: true,
             }
             .render()?;
             if async_symbols.is_some() {

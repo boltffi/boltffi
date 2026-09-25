@@ -11,7 +11,7 @@ use boltffi_binding::{
     CanonicalName, ClosureForm, ClosureParameter, ClosureReturn, CodecNode, DirectValueType,
     DirectVectorElementType, Direction, ErrorDecl, ExecutionDecl, ExportedCallable, HandlePresence,
     HandleTarget, ImportSymbol, ImportedCallable, ImportedMethodDecl, IntoRust, Native, OutOfRust,
-    OutgoingParam, ParamDecl, ParamDirection, ParamPlan, Primitive, ReadPlan, ReturnPlan,
+    OutgoingParam, ParamDecl, ParamDirection, ParamPlan, Primitive, ReadPlan, Receive, ReturnPlan,
     ReturnValueSlot, SurfaceLower, TypeRef, VTableSlot, Wasm32, native, wasm32,
 };
 use proc_macro2::{Span, TokenStream};
@@ -873,6 +873,16 @@ where
         expansion: &'expansion Expansion<'lowered, S>,
     ) -> Result<Self, Error> {
         match callable.execution() {
+            ExecutionDecl::Asynchronous(_)
+                if callable
+                    .params()
+                    .iter()
+                    .any(|parameter| parameter.payload().class_handle().is_some()) =>
+            {
+                Err(Error::UnsupportedExpansion(
+                    "owned class parameters require a synchronous callback method",
+                ))
+            }
             ExecutionDecl::Synchronous(_) => Ok(Self {
                 source,
                 callable,
@@ -1041,7 +1051,9 @@ where
         let return_type = return_tokens.local_return_type();
         let method_ident = RustIdent::new(self.source.name.spelling())?;
         let local_state_ident = &names.state_ident;
-        let call = quote! { callback.#method_ident(#(#arguments),*) };
+        let receiver_handle = Ident::new("handle", Span::mixed_site());
+        let callback = Ident::new("callback", Span::mixed_site());
+        let call = quote! { #callback.#method_ident(#(#arguments),*) };
         let local_return = return_tokens.local_body(function_ident.as_ident().clone(), call)?;
         let local_return_items = local_return.items;
         let body = local_return.body;
@@ -1051,11 +1063,11 @@ where
                 #(#local_return_items)*
                 #[cfg(not(target_arch = "wasm32"))]
                 extern "C" fn #function_ident(
-                    handle: u64
+                    #receiver_handle: u64
                     #(, #return_parameters)*
                     #(, #ffi_parameters)*
                 ) #return_type {
-                    let callback = unsafe { &*(handle as *const #local_state_ident) };
+                    let #callback = unsafe { &*(#receiver_handle as *const #local_state_ident) };
                     #(#setup)*
                     #body
                 }
@@ -1160,8 +1172,10 @@ where
         let return_type = return_tokens.local_return_type();
         let method_ident = RustIdent::new(self.source.name.spelling())?;
         let local_lookup_ident = &names.lookup_ident;
+        let receiver_handle = Ident::new("handle", Span::mixed_site());
+        let callback = Ident::new("callback", Span::mixed_site());
         let cfg = quote! { #[cfg(target_arch = "wasm32")] };
-        let call = quote! { callback.#method_ident(#(#arguments),*) };
+        let call = quote! { #callback.#method_ident(#(#arguments),*) };
         let local_return = return_tokens.local_body(function_ident.as_ident().clone(), call)?;
         let local_return_items = local_return.items;
         let body = local_return.body;
@@ -1170,11 +1184,11 @@ where
             #cfg
             #[unsafe(no_mangle)]
             pub extern "C" fn #function_ident(
-                handle: u32
+                #receiver_handle: u32
                 #(, #return_parameters)*
                 #(, #ffi_parameters)*
             ) #return_type {
-                let callback = #local_lookup_ident(handle);
+                let #callback = #local_lookup_ident(#receiver_handle);
                 #(#setup)*
                 #body
             }
@@ -1338,6 +1352,28 @@ impl<'expansion, 'lowered, S: CallbackMethodSurface> MethodParameter<'expansion,
             }
             OutgoingParam::Value(ParamPlan::DirectVec { element, .. }) => {
                 self.foreign_direct_vec_tokens(element)
+            }
+            OutgoingParam::Value(ParamPlan::Handle {
+                target: target @ HandleTarget::Class(_),
+                carrier,
+                presence,
+                receive: (),
+            }) => {
+                let parameter = rust_api::Parameter::new(self.source);
+                let class = parameter.class_handle(target, *presence, Receive::ByValue)?;
+                let value = S::outgoing_handle_value(
+                    self.expansion,
+                    target,
+                    *carrier,
+                    *presence,
+                    parameter.ident()?,
+                    rust_api::HandleReturn::Class(Box::new(class.ty().clone())),
+                )?;
+                Ok(ForeignMethodParameterTokens::new(
+                    S::handle_carrier(*carrier)?.ty().clone(),
+                    Vec::new(),
+                    value,
+                ))
             }
             OutgoingParam::Value(_) => Err(Error::UnsupportedExpansion(
                 "callback method parameter shape",
@@ -3087,7 +3123,8 @@ where
                 presence,
             } => {
                 let result = wrapper::names::Locals::new(Span::call_site()).result();
-                let value = self.local_handle_value(target, carrier, presence, result.clone())?;
+                let value =
+                    self.outgoing_handle_value(target, carrier, presence, result.clone())?;
                 Ok(LocalMethodBody::new(quote! {
                     {
                         let #result = #call;
@@ -3397,7 +3434,7 @@ where
                 presence,
             } => {
                 let success = wrapper::names::Locals::new(Span::call_site()).success();
-                let value = self.local_handle_value(target, carrier, presence, success)?;
+                let value = self.outgoing_handle_value(target, carrier, presence, success)?;
                 Ok(LocalMethodBody::new(quote! {
                     if !__boltffi_success_out.is_null() {
                         unsafe {
@@ -3504,7 +3541,7 @@ where
         }
     }
 
-    fn local_handle_value(
+    fn outgoing_handle_value(
         &self,
         target: &HandleTarget,
         carrier: S::HandleCarrier,
@@ -3512,7 +3549,7 @@ where
         value: Ident,
     ) -> Result<TokenStream, Error> {
         let handle_return = self.handle_return(target, presence)?;
-        S::local_handle_value(
+        S::outgoing_handle_value(
             self.expansion,
             target,
             carrier,
@@ -3636,7 +3673,7 @@ trait CallbackMethodSurface: SurfaceLower {
         expansion: &Expansion<'lowered, Self>,
     ) -> Result<LocalMethodParameterTokens, Error>;
 
-    fn local_handle_value<'lowered>(
+    fn outgoing_handle_value<'lowered>(
         expansion: &Expansion<'lowered, Self>,
         target: &'lowered HandleTarget,
         carrier: Self::HandleCarrier,
@@ -3787,7 +3824,7 @@ impl CallbackMethodSurface for Native {
         })
     }
 
-    fn local_handle_value<'lowered>(
+    fn outgoing_handle_value<'lowered>(
         expansion: &Expansion<'lowered, Self>,
         target: &'lowered HandleTarget,
         carrier: Self::HandleCarrier,
@@ -4193,7 +4230,7 @@ impl CallbackMethodSurface for Wasm32 {
         })
     }
 
-    fn local_handle_value<'lowered>(
+    fn outgoing_handle_value<'lowered>(
         expansion: &Expansion<'lowered, Self>,
         target: &'lowered HandleTarget,
         carrier: Self::HandleCarrier,

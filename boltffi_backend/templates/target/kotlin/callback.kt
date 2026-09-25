@@ -37,11 +37,14 @@ object {{ callback.callbacks_name() }} {
 {%- for method in callback.methods() %}
 
     @JvmStatic
-    fun {{ method.jvm_name() }}(handle: Long{% for parameter in method.jvm_parameters() %}, {{ parameter.name() }}: {{ parameter.ty() }}{% endfor %}){% if let Some(return_type) = method.jvm_return() %}: {{ return_type }}{% endif %} {
+    fun {{ method.jvm_name() }}(handle: Long{% for parameter in method.jvm_parameters() %}, {{ parameter.name() }}: {{ parameter.ty() }}{% endfor %}{% if method.transfers_classes() %}, __boltffi_class_delivery: java.nio.ByteBuffer{% endif %}){% if let Some(return_type) = method.jvm_return() %}: {{ return_type }}{% endif %} {
         val impl = {{ callback.map_name() }}.get(handle) ?: error("{{ callback.map_name() }}: invalid handle $handle")
 {%- for statement in method.setup() %}
         {{ statement }}
 {%- endfor %}
+{%- if method.transfers_classes() %}
+        __boltffi_class_delivery.put(0, 1.toByte())
+{%- endif %}
 {%- if let Some(async_body) = method.async_body() %}
         boltffiLaunchCallback {
             try {

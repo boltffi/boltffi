@@ -821,6 +821,9 @@ class {{ class.class_name }}:
         return {{ stream.subscription_class }}._from_handle(_native.{{ stream.subscribe_method }}(self._handle))
 {%- endfor %}
 
+{% if let Some(register) = class.register_method %}_native.{{ register }}({{ class.class_name }})
+
+{% endif %}
 {% for stream in class.streams %}
 class {{ stream.subscription_class }}:
     __slots__ = ("_handle",)

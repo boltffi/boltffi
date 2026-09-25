@@ -23,10 +23,17 @@ _callbackImports[{{ clone_import }}] = (handle: number): number => {
 };
 
 {% for method in methods %}_callbackImports[{{ method.import }}] = (handle: number{% match method.return_pointer %}{% when Some with (pointer) %}, {{ pointer }}: number{% when None %}{% endmatch %}{% for parameter in method.parameters %}{% for binding in parameter.bindings %}, {{ binding.name }}: {{ binding.carrier_type }}{% endfor %}{% endfor %}): {{ method.carrier_return }} => {
-{% if method.fallible.is_some() %}  try {
-{% endif %}{% if method.fallible.is_some() %}  {% endif %}  const callback = {{ registry }}.get(handle);
-{% for parameter in method.parameters %}{% for statement in parameter.setup %}{% if method.fallible.is_some() %}  {% endif %}  {{ statement }}
-{% endfor %}{% endfor %}{% match method.fallible %}{% when Some with (fallible) %}    const result = {{ method.invocation }};
+{% let guarded = method.transfers_classes() || method.fallible.is_some() %}{% let body_indent %}{% if guarded %}    {% else %}  {% endif %}{% endlet %}{% if method.transfers_classes() %}  let __boltffiClassesDelivered = false;
+{% for parameter in method.parameters %}{% if parameter.class_release.is_some() %}  let {{ parameter.argument }}!: {{ parameter.public_type }};
+{% endif %}{% endfor %}{% endif %}{% if guarded %}  try {
+{% endif %}{% for parameter in method.parameters %}{% if parameter.class_release.is_some() %}{% for statement in parameter.setup %}{{ body_indent }}{{ statement }}
+{% endfor %}{{ body_indent }}{{ parameter.bindings[0].name }} = 0;
+{% endif %}{% endfor %}{{ body_indent }}const callback = {{ registry }}.get(handle);
+{% if let Some(lookup) = method.method_lookup %}    const __boltffiInvoke = {{ lookup }};
+    if (typeof __boltffiInvoke !== "function") throw new TypeError("callback method is not callable");
+{% endif %}{% for parameter in method.parameters %}{% if parameter.class_release.is_none() %}{% for statement in parameter.setup %}{{ body_indent }}{{ statement }}
+{% endfor %}{% endif %}{% endfor %}{% if method.transfers_classes() %}    __boltffiClassesDelivered = true;
+{% endif %}{% match method.fallible %}{% when Some with (fallible) %}    const result = {{ method.invocation }};
     return matchWireResult(result, (success) => {
 {% for statement in fallible.success_setup %}      {{ statement }}
 {% endfor %}{% if fallible.encoded_success %}      _module.writeU64(successPointer, (BigInt(resultWriter.len) << 32n) | BigInt(resultWriter.ptr >>> 0));
@@ -35,28 +42,33 @@ _callbackImports[{{ clone_import }}] = (handle: number): number => {
 {% for statement in fallible.error_setup %}      {{ statement }}
 {% endfor %}      return (BigInt(resultWriter.len) << 32n) | BigInt(resultWriter.ptr >>> 0);
     });
-  } catch (error) {
+{% when None %}{% if method.returns_void %}{{ body_indent }}{{ method.invocation }};
+{% else if method.returns_string %}{{ body_indent }}const result = {{ method.invocation }};
+{{ body_indent }}const allocation = _module.allocOwnedString(result);
+{{ body_indent }}return (BigInt(allocation.len) << 32n) | BigInt(allocation.ptr >>> 0);
+{% else if method.returns_direct_record %}{{ body_indent }}const result = {{ method.invocation }};
+{% for statement in method.encoded_setup %}{{ body_indent }}{{ statement }}
+{% endfor %}
+{% else if method.returns_encoded %}{{ body_indent }}const result = {{ method.invocation }};
+{% for statement in method.encoded_setup %}{{ body_indent }}{{ statement }}
+{% endfor %}{% match method.return_pointer %}{% when Some with (pointer) %}{{ body_indent }}_module.writeCallbackBuffer({{ pointer }}, resultWriter.ptr, resultWriter.len, resultWriter.capacity);
+{% when None %}{% endmatch %}{% else if method.returns_scalar_option %}{{ body_indent }}const result = {{ method.invocation }};
+{{ body_indent }}return _module.{{ method.scalar_option_pack }}(result);
+{% else %}{% match method.vector_return %}{% when Some with (vector) %}{{ body_indent }}const result = {{ method.invocation }};
+{{ body_indent }}const allocation = {{ vector.allocation }};
+{{ body_indent }}_module.{{ vector.write_method }}(allocation, {{ vector.alignment }});
+{% when None %}{{ body_indent }}return {{ method.invocation }};
+{% endmatch %}
+{% endif %}{% endmatch %}{% if method.fallible.is_some() %}  } catch (error) {
     const errorWriter = writeUnexpectedCallbackError(_module, error);
     return (BigInt(errorWriter.len) << 32n) | BigInt(errorWriter.ptr >>> 0);
-  }
-{% when None %}{% if method.returns_void %}  {{ method.invocation }};
-{% else if method.returns_string %}  const result = {{ method.invocation }};
-  const allocation = _module.allocOwnedString(result);
-  return (BigInt(allocation.len) << 32n) | BigInt(allocation.ptr >>> 0);
-{% else if method.returns_direct_record %}  const result = {{ method.invocation }};
-{% for statement in method.encoded_setup %}  {{ statement }}
-{% endfor %}
-{% else if method.returns_encoded %}  const result = {{ method.invocation }};
-{% for statement in method.encoded_setup %}  {{ statement }}
-{% endfor %}{% match method.return_pointer %}{% when Some with (pointer) %}  _module.writeCallbackBuffer({{ pointer }}, resultWriter.ptr, resultWriter.len, resultWriter.capacity);
-{% when None %}{% endmatch %}{% else if method.returns_scalar_option %}  const result = {{ method.invocation }};
-  return _module.{{ method.scalar_option_pack }}(result);
-{% else %}{% match method.vector_return %}{% when Some with (vector) %}  const result = {{ method.invocation }};
-  const allocation = {{ vector.allocation }};
-  _module.{{ vector.write_method }}(allocation, {{ vector.alignment }});
-{% when None %}  return {{ method.invocation }};
-{% endmatch %}
-{% endif %}{% endmatch %}};
+{% endif %}{% if method.transfers_classes() %}  } finally {
+    if (!__boltffiClassesDelivered) {
+{% for parameter in method.parameters %}{% if let Some(release) = parameter.class_release %}      {{ parameter.argument }}?.dispose();
+      if ({{ parameter.bindings[0].name }} !== 0) (_exports.{{ release }} as Function)({{ parameter.bindings[0].name }});
+{% endif %}{% endfor %}    }
+{% endif %}{% if guarded %}  }
+{% endif %}};
 
 {% endfor %}
 {% for method in async_methods %}_callbackImports[{{ method.import }}] = (handle: number, requestId: number{% for parameter in method.parameters %}{% for binding in parameter.bindings %}, {{ binding.name }}: {{ binding.carrier_type }}{% endfor %}{% endfor %}): void => {

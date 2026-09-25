@@ -21,9 +21,14 @@ pub struct CallbackCParameter {
     name: Identifier,
     ty: TypeFragment,
     declaration: Statement,
+    class_release: Option<Identifier>,
 }
 
 impl CallbackCParameter {
+    pub(crate) fn class_release(&self) -> Option<&Identifier> {
+        self.class_release.as_ref()
+    }
+
     /// Returns the C parameter name.
     pub fn name(&self) -> &Identifier {
         &self.name
@@ -46,6 +51,7 @@ impl CallbackCParameter {
             name: Identifier::parse(parameter.name())?,
             ty: TypeFragment::anonymous(parameter.ty())?,
             declaration: TypeFragment::declaration(parameter.ty(), parameter.name())?,
+            class_release: parameter.class_release().cloned(),
         })
     }
 }

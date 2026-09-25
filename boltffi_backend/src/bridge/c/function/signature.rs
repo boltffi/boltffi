@@ -45,6 +45,7 @@ struct FallibleAsyncCallbackSuccess;
 
 trait ReceiveAbi {
     fn takes_ownership(self) -> bool;
+    fn class_parameter_name(self, name: &str) -> String;
     fn needs_encoded_writeback(self) -> bool;
     fn needs_mutable_pointer(self) -> bool;
     fn direct_param_type(self, ty: &DirectValueType, value: Type) -> Type;
@@ -67,6 +68,10 @@ where
 }
 
 impl ReceiveAbi for Receive {
+    fn class_parameter_name(self, name: &str) -> String {
+        name.to_owned()
+    }
+
     fn takes_ownership(self) -> bool {
         self == Receive::ByValue
     }
@@ -100,8 +105,12 @@ impl ReceiveAbi for Receive {
 }
 
 impl ReceiveAbi for () {
+    fn class_parameter_name(self, name: &str) -> String {
+        format!("__boltffi_class_{name}")
+    }
+
     fn takes_ownership(self) -> bool {
-        false
+        true
     }
 
     fn needs_encoded_writeback(self) -> bool {
@@ -253,7 +262,7 @@ where
         let ty = Type::handle_target(target, carrier)?;
         let parameter = match target {
             HandleTarget::Class(class) if receive.takes_ownership() => Parameter::owned_class(
-                self.name.as_str(),
+                receive.class_parameter_name(&self.name),
                 ty,
                 self.signature.names.class_release(*class)?,
             )?,

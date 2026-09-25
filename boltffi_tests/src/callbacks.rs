@@ -4,6 +4,10 @@ use boltffi::*;
 
 use crate::{FixtureMessageRecord, FixturePoint, FixtureStatus};
 
+mod class_handles;
+
+pub use class_handles::*;
+
 #[export]
 pub trait SyncValueCallback {
     fn on_value(&self, value: i32) -> i32;

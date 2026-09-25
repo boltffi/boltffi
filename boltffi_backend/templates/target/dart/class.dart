@@ -16,6 +16,7 @@
   }
 
   int _f$takeHandle() {
+    _f$throwIfDisposed();
     final handle = _handle;
     _handle = 0;
     _finalizer.detach(this);

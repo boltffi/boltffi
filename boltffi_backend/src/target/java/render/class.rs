@@ -400,3 +400,20 @@ impl ClassHandle {
         }
     }
 }
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OwnedClassArgument {
+    pub parameter: Identifier,
+    pub local: Identifier,
+    pub release: Identifier,
+    pub presence: HandlePresence,
+}
+
+#[derive(AskamaTemplate)]
+#[template(path = "target/java/owned_call.java", escape = "none")]
+pub struct OwnedCallTemplate<'call> {
+    pub native_owner: &'call TypeIdentifier,
+    pub owned: Vec<&'call OwnedClassArgument>,
+    pub bindings: &'call [Statement],
+    pub body: &'call [Statement],
+}

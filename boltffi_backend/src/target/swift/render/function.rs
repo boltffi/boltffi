@@ -1,8 +1,8 @@
 use askama::Template;
 
 use boltffi_binding::{
-    CanonicalName, ClassId, ClosureReturn, DirectValueType, DirectVectorElementType, Direction,
-    EnumId, ErrorChannel, ErrorPlacement, ExecutionDecl, ExportedCallable, ExportedMethodDecl,
+    CanonicalName, ClosureReturn, DirectValueType, DirectVectorElementType, Direction, EnumId,
+    ErrorChannel, ErrorPlacement, ExecutionDecl, ExportedCallable, ExportedMethodDecl,
     FunctionDecl, HandlePresence, HandleTarget, IncomingParam, InitializerDecl, IntoRust, Native,
     NativeSymbol, OutOfRust, ParamDecl, ParamPlanRender, Primitive, ReadPlan, Receive, RecordId,
     ReturnPlanRender, ReturnValueSlot, Surface, TypeRef, WritePlan, native,
@@ -28,6 +28,7 @@ use crate::{
         name_style::{GeneratedLocal, Name},
         primitive::SwiftPrimitive,
         render::callback::CallbackHandle,
+        render::class::{ClassHandle, OwnedCallTemplate, OwnedClassArgument},
         render::closure::ClosureArgument,
         render::{Documentation, SwiftType},
         syntax::{
@@ -148,21 +149,6 @@ enum Argument {
     MutableEncoded(MutableEncodedArgument),
     DirectVector(BorrowedVector),
     Closure(Box<ClosureArgument>),
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct OwnedClassArgument {
-    parameter: Identifier,
-    local: Identifier,
-    release: Identifier,
-    presence: HandlePresence,
-}
-
-#[derive(Template)]
-#[template(path = "target/swift/owned_call.swift", escape = "none")]
-struct OwnedCallTemplate<'call> {
-    arguments: Vec<&'call OwnedClassArgument>,
-    invocation: Expression,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -299,12 +285,6 @@ struct ReturnedClosure {
     error: ErrorConversion,
     call_type: TypeName,
     public_ty: TypeName,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct ClassHandle {
-    ty: TypeName,
-    presence: HandlePresence,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2957,85 +2937,6 @@ impl Return {
             ReturnConversion::CallbackHandle(handle) => handle.wrap(call),
             ReturnConversion::Closure(_) => call,
         }
-    }
-}
-
-impl ClassHandle {
-    fn new(id: ClassId, presence: HandlePresence, context: &RenderContext<Native>) -> Result<Self> {
-        Ok(Self {
-            ty: SwiftType::class(id, context)?,
-            presence,
-        })
-    }
-
-    fn api_type(&self) -> TypeName {
-        match self.presence {
-            HandlePresence::Required => self.ty.clone(),
-            HandlePresence::Nullable => self.ty.clone().optional(),
-            _ => self.ty.clone(),
-        }
-    }
-
-    fn parameter_argument(&self, value: Expression) -> Expression {
-        match self.presence {
-            HandlePresence::Required => Expression::member(value, "handle"),
-            HandlePresence::Nullable => Expression::nil_coalescing(
-                Expression::member(Expression::new(format!("{value}?")), "handle"),
-                Self::empty(),
-            ),
-            _ => value,
-        }
-    }
-
-    fn wrap(&self, handle: Expression) -> Expression {
-        let wrapped = Expression::call(
-            &self.ty,
-            [Expression::labeled("handle", handle.clone())]
-                .into_iter()
-                .collect::<ArgumentList>(),
-        );
-        match self.presence {
-            HandlePresence::Required => wrapped,
-            HandlePresence::Nullable => Expression::conditional(
-                Expression::equal(&handle, Self::empty()),
-                Expression::nil(),
-                wrapped,
-            ),
-            _ => wrapped,
-        }
-    }
-
-    fn body(&self, handle: Expression, indent: &str) -> Result<String> {
-        match self.presence {
-            HandlePresence::Required => Ok(Statement::returns(self.wrap(handle)).indented(indent)),
-            HandlePresence::Nullable => {
-                let binding = GeneratedLocal::ReturnHandle.identifier()?;
-                let value = Expression::identifier(binding.clone());
-                Ok([
-                    Statement::let_value(&binding, handle).indented(indent),
-                    Statement::returns(self.wrap(value)).indented(indent),
-                ]
-                .join("\n"))
-            }
-            _ => Ok(Statement::returns(self.wrap(handle)).indented(indent)),
-        }
-    }
-
-    fn factory_body(&self, handle: Expression, indent: &str) -> Result<String> {
-        if self.presence != HandlePresence::Required {
-            return Err(SwiftHost::unsupported("nullable class initializer"));
-        }
-        Ok(Statement::returns(Expression::call(
-            "Self",
-            [Expression::labeled("handle", handle)]
-                .into_iter()
-                .collect::<ArgumentList>(),
-        ))
-        .indented(indent))
-    }
-
-    fn empty() -> Expression {
-        Expression::new("0")
     }
 }
 

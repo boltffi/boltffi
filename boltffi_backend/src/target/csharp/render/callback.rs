@@ -17,8 +17,8 @@ use super::super::{
     type_name,
 };
 use super::{
-    CallbackRuntimeTemplate, CopyBufferTemplate, FreeBufferTemplate, WireTemplate, direct_type,
-    direct_vector_element_type, primitive_type,
+    CallbackRuntimeTemplate, CopyBufferTemplate, FreeBufferTemplate, OwnedArgument,
+    OwnedCallTemplate, WireTemplate, direct_type, direct_vector_element_type, primitive_type,
 };
 
 #[derive(Template)]
@@ -64,7 +64,24 @@ struct CallbackParameter {
     ty: TypeFragment,
 }
 
+struct ReceivedClass {
+    carrier: Identifier,
+    wrapper: Identifier,
+    pending: Identifier,
+    class: TypeFragment,
+    presence: HandlePresence,
+}
+
+#[derive(Template)]
+#[template(path = "target/csharp/callback_class_arguments.cs", escape = "none")]
+struct ReceivedClassesTemplate<'call> {
+    classes: &'call [ReceivedClass],
+    body: &'call Statement,
+}
+
 struct LoweredParameters {
+    received_classes: Vec<ReceivedClass>,
+    proxy_owned: Vec<OwnedArgument>,
     public: Vec<CallbackParameter>,
     entry_setup: Vec<String>,
     entry_arguments: Vec<String>,
@@ -189,23 +206,34 @@ impl CallbackMethod {
             .collect::<Result<Vec<_>>>()?
             .join(", ");
         let error = declaration.callable().error().channel();
-        let infallible = matches!(error, ErrorChannel::None);
-        let fallible = matches!(error, ErrorChannel::Encoded { .. });
-        let entry_body = match (asynchronous, infallible, fallible) {
-            (false, true, _) => render_entry_body(declaration, &name, &lowered, slot, context)?,
-            (false, _, true) => {
+        let entry_body = match (asynchronous, &error) {
+            (false, ErrorChannel::None) => {
+                render_entry_body(declaration, &name, &lowered, slot, context)?
+            }
+            (false, ErrorChannel::Encoded { .. }) => {
                 render_fallible_entry_body(declaration, &name, &lowered, slot, context)?
             }
-            (true, _, _) => {
+            (true, _) => {
                 render_async_entry_body(declaration, &name, &lowered, slot, bridge, context)?
             }
             _ => unsupported_body(slot)?,
         };
-        let proxy_body = match (asynchronous, infallible, fallible) {
-            (false, true, _) => {
+        let entry_body = if lowered.received_classes.is_empty() {
+            entry_body
+        } else {
+            Statement::new(
+                ReceivedClassesTemplate {
+                    classes: &lowered.received_classes,
+                    body: &entry_body,
+                }
+                .render()?,
+            )
+        };
+        let proxy_body = match (asynchronous, &error) {
+            (false, ErrorChannel::None) => {
                 render_proxy_body(declaration, &name, bridge_name, &lowered, context)?
             }
-            (false, _, true) => render_fallible_proxy_body(
+            (false, ErrorChannel::Encoded { .. }) => render_fallible_proxy_body(
                 declaration,
                 &name,
                 bridge_name,
@@ -213,7 +241,7 @@ impl CallbackMethod {
                 slot,
                 context,
             )?,
-            (true, _, _) => {
+            (true, _) => {
                 render_async_proxy_body(declaration, &name, bridge_name, &lowered, slot, context)?
             }
             _ => Statement::new(
@@ -256,6 +284,8 @@ impl LoweredParameters {
         context: &RenderContext<Native>,
     ) -> Result<Self> {
         let mut lowered = Self {
+            received_classes: Vec::new(),
+            proxy_owned: Vec::new(),
             public: Vec::new(),
             entry_setup: Vec::new(),
             entry_arguments: Vec::new(),
@@ -453,21 +483,22 @@ impl LoweredParameters {
                     let (ty, entry, proxy) = match target {
                         HandleTarget::Class(class) => {
                             let ty = type_name::class(*class, context)?;
-                            (
-                                ty.clone(),
-                                match presence {
-                                    HandlePresence::Required => format!("new {ty}({native_name})"),
-                                    HandlePresence::Nullable => format!(
-                                        "{native_name} == 0 ? null : new {ty}({native_name})"
-                                    ),
-                                    _ => return super::unsupported("callback handle presence"),
-                                },
-                                match presence {
-                                    HandlePresence::Required => format!("{name}.Handle"),
-                                    HandlePresence::Nullable => format!("{name}?.Handle ?? 0"),
-                                    _ => return super::unsupported("callback handle presence"),
-                                },
-                            )
+                            let local = Identifier::parse(format!("__boltffiOwnedHandle{name}"))?;
+                            let wrapper = Identifier::parse(format!("__boltffiClass{name}"))?;
+                            lowered.received_classes.push(ReceivedClass {
+                                carrier: native_name.clone(),
+                                wrapper: wrapper.clone(),
+                                pending: Identifier::parse(format!("__boltffiPending{name}"))?,
+                                class: ty.clone(),
+                                presence: *presence,
+                            });
+                            lowered.proxy_owned.push(OwnedArgument::Class {
+                                parameter: name.clone(),
+                                class: ty.clone(),
+                                local: local.clone(),
+                                presence: *presence,
+                            });
+                            (ty.clone(), wrapper.to_string(), format!("{local}.Handle"))
                         }
                         HandleTarget::Callback(callback) => {
                             let ty = type_name::callback(*callback, context)?;
@@ -501,6 +532,22 @@ impl LoweredParameters {
                 _ => return super::unsupported("unknown callback parameter"),
             }
         }
+        if !lowered.received_classes.is_empty() {
+            lowered
+                .entry_arguments
+                .iter_mut()
+                .zip(&lowered.public)
+                .enumerate()
+                .try_for_each(|(index, (argument, parameter))| {
+                    let local = Identifier::parse(format!("__boltffiArgument{index}"))?;
+                    lowered.entry_setup.push(
+                        Statement::local(&local, &parameter.ty, &Expression::new(argument.clone()))
+                            .to_string(),
+                    );
+                    *argument = local.to_string();
+                    Ok::<_, Error>(())
+                })?;
+        }
         Ok(lowered)
     }
 }
@@ -521,6 +568,9 @@ fn render_entry_body(
         }
     )];
     body.extend(parameters.entry_setup.iter().cloned());
+    if !parameters.received_classes.is_empty() {
+        body.push("__boltffiClassesDelivered = true;".to_owned());
+    }
     let call = format!("implementation.{method_name}({arguments})");
     match declaration.callable().returns().plan() {
         ReturnPlan::Void => body.push(format!("{call};")),
@@ -616,6 +666,9 @@ fn render_fallible_entry_body(
         "if (!Handles.TryGetValue(handle, out var implementation)) throw new global::System.InvalidOperationException(\"invalid callback handle\");".to_owned(),
     ];
     success.extend(parameters.entry_setup.iter().cloned());
+    if !parameters.received_classes.is_empty() {
+        success.push("__boltffiClassesDelivered = true;".to_owned());
+    }
     match declaration.callable().returns().plan() {
         ReturnPlan::Void => success.push(format!("{call};")),
         ReturnPlan::DirectViaOutPointer { .. } => success.push(format!(
@@ -684,17 +737,37 @@ fn render_proxy_body(
 ) -> Result<Statement> {
     let slot_name = Name::new(declaration.name()).snake();
     let mut before = vec![
-        "if (handle.IsNull) throw new global::System.ObjectDisposedException(GetType().Name);"
+        "if (this.handle.IsNull) throw new global::System.ObjectDisposedException(GetType().Name);"
             .to_owned(),
         format!(
             "{bridge_name}.{method_name}Fn invoke = global::System.Runtime.InteropServices.Marshal.GetDelegateForFunctionPointer<{bridge_name}.{method_name}Fn>(vtable.{slot_name});"
         ),
     ];
     before.extend(parameters.proxy_setup.iter().cloned());
-    let mut arguments = vec!["handle.handle".to_owned()];
+    let mut arguments = vec!["this.handle.handle".to_owned()];
     arguments.extend(parameters.proxy_arguments.iter().cloned());
     let call = format!("invoke({})", arguments.join(", "));
+    let (transfer, call) = if parameters.proxy_owned.is_empty() {
+        (None, call)
+    } else {
+        (
+            Some(
+                OwnedCallTemplate {
+                    arguments: &parameters.proxy_owned,
+                    invocation: &Expression::new(call),
+                    asynchronous: false,
+                    returns_value: !matches!(
+                        declaration.callable().returns().plan(),
+                        ReturnPlan::Void
+                    ),
+                }
+                .render()?,
+            ),
+            "__boltffiCallResult".to_owned(),
+        )
+    };
     let call_body = match declaration.callable().returns().plan() {
+        ReturnPlan::Void if !parameters.proxy_owned.is_empty() => String::new(),
         ReturnPlan::Void => format!("{call};"),
         ReturnPlan::DirectViaReturnSlot { .. } => format!("return {call};"),
         ReturnPlan::EncodedViaReturnSlot { codec, .. } => {
@@ -758,6 +831,10 @@ fn render_proxy_body(
         }
         _ => return super::unsupported("callback proxy return shape"),
     };
+    let call_body = match transfer {
+        Some(transfer) => format!("{transfer}\n{call_body}"),
+        None => call_body,
+    };
     if parameters.proxy_cleanup.is_empty() {
         before.push(call_body);
     } else {
@@ -796,7 +873,7 @@ fn render_fallible_proxy_body(
     };
     let slot_name = Name::new(declaration.name()).snake();
     let mut before = vec![
-        "if (handle.IsNull) throw new global::System.ObjectDisposedException(GetType().Name);"
+        "if (this.handle.IsNull) throw new global::System.ObjectDisposedException(GetType().Name);"
             .to_owned(),
         format!(
             "{bridge_name}.{method_name}Fn invoke = global::System.Runtime.InteropServices.Marshal.GetDelegateForFunctionPointer<{bridge_name}.{method_name}Fn>(vtable.{slot_name});"
@@ -804,7 +881,7 @@ fn render_fallible_proxy_body(
     ];
     before.extend(parameters.proxy_setup.iter().cloned());
     let mut arguments = vec![None; slot.parameters().len()];
-    arguments[0] = Some("handle.handle".to_owned());
+    arguments[0] = Some("this.handle.handle".to_owned());
     let mut source_arguments = parameters.proxy_arguments.iter();
     for group in slot.source_parameter_groups() {
         for index in callback_group_indices(group)? {
@@ -843,7 +920,20 @@ fn render_fallible_proxy_body(
         .render_with(&mut Reader::new(error_reader.clone(), context))
         .map(ReadExpression::into_expression)?;
     let throw = callback_error_throw(error_type, decode_error, context)?;
-    let mut call_body = vec![format!("FfiBuf boltffiErrorBuffer = {call};")];
+    let mut call_body = if parameters.proxy_owned.is_empty() {
+        vec![format!("FfiBuf boltffiErrorBuffer = {call};")]
+    } else {
+        vec![
+            OwnedCallTemplate {
+                arguments: &parameters.proxy_owned,
+                invocation: &Expression::new(call),
+                asynchronous: false,
+                returns_value: true,
+            }
+            .render()?,
+            "FfiBuf boltffiErrorBuffer = __boltffiCallResult;".to_owned(),
+        ]
+    };
     call_body.push(format!(
         "if (boltffiErrorBuffer.ptr != 0)\n{{\n    try\n    {{\n        WireReader {error_reader} = new WireReader(boltffiErrorBuffer);\n        throw {throw};\n    }}\n    finally\n    {{\n        NativeMethods.FreeBuf(boltffiErrorBuffer);\n    }}\n}}"
     ));
@@ -1294,7 +1384,7 @@ fn render_async_proxy_body(
     };
     let slot_name = Name::new(declaration.name()).snake();
     let mut body = vec![
-        "if (handle.IsNull) throw new global::System.ObjectDisposedException(GetType().Name);"
+        "if (this.handle.IsNull) throw new global::System.ObjectDisposedException(GetType().Name);"
             .to_owned(),
         format!(
             "{bridge_name}.{method_name}Fn invoke = global::System.Runtime.InteropServices.Marshal.GetDelegateForFunctionPointer<{bridge_name}.{method_name}Fn>(vtable.{slot_name});"
@@ -1444,7 +1534,7 @@ fn render_async_proxy_body(
     );
 
     let mut arguments = vec![None; slot.parameters().len()];
-    arguments[0] = Some("handle.handle".to_owned());
+    arguments[0] = Some("this.handle.handle".to_owned());
     let mut source_arguments = parameters.proxy_arguments.iter();
     for group in slot.source_parameter_groups() {
         for index in callback_group_indices(group)? {

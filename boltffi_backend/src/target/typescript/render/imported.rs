@@ -15,6 +15,7 @@ use super::{Type, direct_vector::DirectVector, scalar_option::ScalarOption};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Parameter {
+    pub class_release: Option<Identifier>,
     pub name: Identifier,
     pub public_type: TypeName,
     pub bindings: Vec<Binding>,
@@ -39,16 +40,21 @@ impl Parameter {
         context: &RenderContext<Wasm32>,
     ) -> Result<Self> {
         let name = Name::new(parameter.name()).identifier()?;
-        parameter
+        let parameter = parameter
             .payload()
             .as_value()
             .ok_or_else(|| Self::unsupported("outgoing closure parameter"))?
-            .render_with(&mut Renderer { name, context })
+            .render_with(&mut Renderer {
+                name: Identifier::parse(format!("__boltffi_arg_{name}"))?,
+                context,
+            })?;
+        Ok(Self { name, ..parameter })
     }
 
     pub fn primitive(name: Identifier, primitive: Primitive) -> Result<Self> {
         let value = Expression::identifier(name.clone());
         Ok(Self {
+            class_release: None,
             name: name.clone(),
             public_type: Scalar::new(primitive)?.ty(),
             bindings: vec![Binding {
@@ -94,6 +100,7 @@ impl Parameter {
                     .map(|enumeration| Name::new(enumeration.name()).type_name())
                     .ok_or_else(|| Self::unsupported("imported enum without declaration"))?;
                 Ok(Self {
+                    class_release: None,
                     name: name.clone(),
                     public_type: public_type.clone(),
                     bindings: vec![Binding {
@@ -115,6 +122,7 @@ impl Parameter {
                 let pointer = Identifier::parse(format!("{name}Pointer"))?;
                 let reader = Identifier::parse(format!("{name}Reader"))?;
                 Ok(Self {
+                    class_release: None,
                     name: name.clone(),
                     public_type: Name::new(record.name()).type_name(),
                     bindings: vec![Binding {
@@ -163,6 +171,7 @@ impl Parameter {
         let reader = Identifier::parse(format!("{name}Reader"))?;
         let decoded = codec.render_with(&mut Reader::new(reader.clone(), context))?;
         Ok(Self {
+            class_release: None,
             name: name.clone(),
             public_type: Type::from_ref(ty, context)?,
             bindings: vec![
@@ -199,6 +208,7 @@ impl Parameter {
         let option = ScalarOption::new(primitive)?;
         let value = Expression::identifier(name.clone());
         Ok(Self {
+            class_release: None,
             name: name.clone(),
             public_type: Scalar::new(primitive)?.ty().nullable(),
             bindings: vec![Binding {
@@ -223,6 +233,7 @@ impl Parameter {
         let pointer = Identifier::parse(format!("{name}Pointer"))?;
         let length = Identifier::parse(format!("{name}Length"))?;
         Ok(Self {
+            class_release: None,
             name: name.clone(),
             public_type: vector.return_type(),
             bindings: vec![
@@ -278,12 +289,48 @@ impl<'plan> ParamPlanRender<'plan, Wasm32, OutOfRust> for Renderer<'_> {
 
     fn handle(
         &mut self,
-        _target: &'plan HandleTarget,
+        target: &'plan HandleTarget,
         _carrier: wasm32::HandleCarrier,
-        _presence: HandlePresence,
+        presence: HandlePresence,
         _receive: (),
     ) -> Self::Output {
-        Err(Parameter::unsupported("imported handle parameter"))
+        let HandleTarget::Class(class) = target else {
+            return Err(Parameter::unsupported("imported handle parameter"));
+        };
+        let declaration = self
+            .context
+            .class(*class)
+            .ok_or_else(|| Parameter::unsupported("imported class without declaration"))?;
+        let class = Name::new(declaration.name()).type_name();
+        let binding = self.name.clone();
+        let local = Identifier::parse(format!("{binding}_value"))?;
+        let value = Expression::identifier(binding.clone());
+        let wrap = Expression::static_call(
+            &class,
+            Identifier::known("_fromHandle"),
+            [value.clone()].into_iter().collect(),
+        );
+        let (public_type, wrap) = match presence {
+            HandlePresence::Required => (class, wrap),
+            HandlePresence::Nullable => (
+                class.nullable(),
+                value
+                    .strict_equal(Expression::integer(0))
+                    .conditional(Expression::null(), wrap),
+            ),
+            _ => return Err(Parameter::unsupported("imported class handle presence")),
+        };
+        Ok(Parameter {
+            class_release: Some(Identifier::parse(declaration.release().name().as_str())?),
+            name: self.name.clone(),
+            public_type,
+            bindings: vec![Binding {
+                name: binding,
+                carrier_type: TypeName::number(),
+            }],
+            setup: vec![Statement::assignment(local.clone(), wrap)],
+            argument: Expression::identifier(local),
+        })
     }
 
     fn scalar_option(&mut self, primitive: Primitive) -> Self::Output {

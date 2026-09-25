@@ -21,7 +21,7 @@ use crate::{
         primitive::KotlinPrimitive,
         render::{
             Documentation,
-            class::ClassHandle,
+            class::{ClassHandle, OwnedCallTemplate, OwnedClassArgument},
             direct_vector::DirectVector,
             enumeration::Enumeration,
             jvm_invocation,
@@ -66,6 +66,7 @@ pub struct Method {
     call_return: Vec<Statement>,
     asynchronous: bool,
     async_body: Option<AsyncMethodBody>,
+    transfers_classes: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -148,6 +149,7 @@ struct FallibleReturn<'error> {
 }
 
 struct HandleParameter {
+    owned_class: Option<OwnedClassArgument>,
     public: Parameter,
     native_arguments: Vec<Expression>,
     setup: Vec<Statement>,
@@ -302,6 +304,10 @@ impl Callback {
 }
 
 impl Method {
+    pub fn transfers_classes(&self) -> bool {
+        self.transfers_classes
+    }
+
     pub fn name(&self) -> &Identifier {
         &self.name
     }
@@ -384,11 +390,21 @@ impl Method {
         } else {
             None
         };
-        let parameters = callable
+        let mut parameters = callable
             .params()
             .iter()
             .map(|parameter| jvm_invocation::Parameter::from_declaration(parameter, host, context))
             .collect::<Result<Vec<_>>>()?;
+        if method.transfers_classes() {
+            parameters
+                .iter_mut()
+                .enumerate()
+                .try_for_each(|(index, parameter)| {
+                    let local = Identifier::parse(format!("__boltffiArgument{index}"))?;
+                    parameter.bind_argument(local);
+                    Ok::<_, Error>(())
+                })?;
+        }
         let source_name = Name::new(source.name());
         let fallible =
             FallibleReturn::from_method(source_name.clone(), callable.error().channel(), method)?;
@@ -470,6 +486,7 @@ impl Method {
             call_return,
             asynchronous,
             async_body,
+            transfers_classes: method.transfers_classes(),
         })
     }
 }
@@ -694,10 +711,14 @@ impl HandleMethod {
                 .flat_map(|parameter| parameter.native_arguments.iter().cloned()),
         )
         .collect::<Vec<_>>();
-        let native_call = NativeCall::new(
+        let native_call = OwnedCallTemplate::expression(
             Identifier::escape(method.method().as_str())?,
             native_arguments,
-        );
+            parameters
+                .iter()
+                .filter_map(|parameter| parameter.owned_class.as_ref())
+                .collect(),
+        )?;
         Ok(Self {
             name: Name::new(source.name()).function()?,
             parameters: parameters
@@ -709,7 +730,7 @@ impl HandleMethod {
                 .iter()
                 .flat_map(|parameter| parameter.setup.iter().cloned())
                 .collect(),
-            call: returned.statements(native_call.expression(), host, context)?,
+            call: returned.statements(native_call, host, context)?,
             cleanup: parameters
                 .into_iter()
                 .flat_map(|parameter| parameter.cleanup)
@@ -852,6 +873,7 @@ impl<'plan> ParamPlanRender<'plan, Native, OutOfRust> for HandleParameterRender<
         let value = Expression::identifier(self.name.clone());
         match ty {
             DirectValueType::Primitive(primitive) => Ok(HandleParameter {
+                owned_class: None,
                 public: Parameter::new(
                     self.name.clone(),
                     KotlinPrimitive::new(*primitive).api_type()?,
@@ -863,6 +885,7 @@ impl<'plan> ParamPlanRender<'plan, Native, OutOfRust> for HandleParameterRender<
             DirectValueType::Record(record) => {
                 let ty = Record::type_name_from_id(*record, self.context)?;
                 Ok(HandleParameter {
+                    owned_class: None,
                     public: Parameter::new(self.name.clone(), ty),
                     native_arguments: vec![Record::direct_buffer_expression(value)?],
                     setup: Vec::new(),
@@ -872,6 +895,7 @@ impl<'plan> ParamPlanRender<'plan, Native, OutOfRust> for HandleParameterRender<
             DirectValueType::Enum(enumeration) => {
                 let enumeration = Enumeration::from_id(*enumeration, self.host, self.context)?;
                 Ok(HandleParameter {
+                    owned_class: None,
                     public: Parameter::new(self.name.clone(), enumeration.name().clone()),
                     native_arguments: vec![
                         KotlinPrimitive::new(enumeration.repr()?).native_argument(
@@ -903,6 +927,7 @@ impl<'plan> ParamPlanRender<'plan, Native, OutOfRust> for HandleParameterRender<
         )?;
         let (setup, native_arguments, cleanup) = write.into_direct_parts();
         Ok(HandleParameter {
+            owned_class: None,
             public: Parameter::new(self.name.clone(), KotlinType::type_ref(ty, self.context)?),
             native_arguments,
             setup,
@@ -921,9 +946,19 @@ impl<'plan> ParamPlanRender<'plan, Native, OutOfRust> for HandleParameterRender<
         match target {
             HandleTarget::Class(class) => {
                 let handle = ClassHandle::new(*class, presence, self.context)?;
+                let declaration = self.context.class(*class).ok_or_else(|| {
+                    KotlinHost::unsupported("missing class declaration for ownership transfer")
+                })?;
+                let local = self.source_name.generated("owned_handle")?;
                 Ok(HandleParameter {
+                    owned_class: Some(OwnedClassArgument {
+                        parameter: self.name.clone(),
+                        local: local.clone(),
+                        release: Identifier::escape(declaration.release().name().as_str())?,
+                        presence,
+                    }),
                     public: Parameter::new(self.name.clone(), handle.ty()?),
-                    native_arguments: vec![handle.parameter_argument(value)?],
+                    native_arguments: vec![Expression::identifier(local)],
                     setup: Vec::new(),
                     cleanup: Vec::new(),
                 })
@@ -931,6 +966,7 @@ impl<'plan> ParamPlanRender<'plan, Native, OutOfRust> for HandleParameterRender<
             HandleTarget::Callback(callback) => {
                 let handle = CallbackHandle::new(*callback, presence, self.context)?;
                 Ok(HandleParameter {
+                    owned_class: None,
                     public: Parameter::new(self.name.clone(), handle.ty()?),
                     native_arguments: vec![handle.parameter_argument(value)?],
                     setup: Vec::new(),
@@ -950,6 +986,7 @@ impl<'plan> ParamPlanRender<'plan, Native, OutOfRust> for HandleParameterRender<
         let write = ScalarOption::new(primitive).write(&self.source_name)?;
         let (setup, native_arguments, cleanup) = write.into_direct_parts();
         Ok(HandleParameter {
+            owned_class: None,
             public: Parameter::new(self.name.clone(), ScalarOption::new(primitive).ty()?),
             native_arguments,
             setup,
@@ -960,6 +997,7 @@ impl<'plan> ParamPlanRender<'plan, Native, OutOfRust> for HandleParameterRender<
     fn direct_vector(&mut self, element: &'plan DirectVectorElementType, _: ()) -> Self::Output {
         let vector = DirectVector::from_element(element, self.context)?;
         Ok(HandleParameter {
+            owned_class: None,
             public: Parameter::new(self.name.clone(), vector.ty().clone()),
             native_arguments: vec![
                 vector.native_argument(Expression::identifier(self.name.clone()))?,

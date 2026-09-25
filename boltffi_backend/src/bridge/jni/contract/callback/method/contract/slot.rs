@@ -41,18 +41,26 @@ impl CallbackMethod {
         };
         let (returns, closure_return) = Self::returns(slot, callbacks, closures)?;
         let arguments = Self::arguments(slot, callbacks, closures)?;
-        let c_parameters = slot
+        let c_parameters: Vec<_> = slot
             .parameters()
             .iter()
             .map(CallbackCParameter::from_parameter)
             .collect::<Result<Vec<_>>>()?;
+        let transfers_classes = c_parameters
+            .iter()
+            .any(|parameter| parameter.class_release().is_some());
         let signature = format!(
-            "({}){}",
+            "({}{}){}",
             arguments
                 .iter()
                 .map(CallbackArgument::jni_signature)
                 .collect::<Vec<_>>()
                 .join(""),
+            if transfers_classes {
+                "Ljava/nio/ByteBuffer;"
+            } else {
+                ""
+            },
             returns.signature()
         );
         Ok(Self {
@@ -65,6 +73,7 @@ impl CallbackMethod {
             c_parameters,
             closure_return,
             arguments,
+            transfers_classes,
         })
     }
 

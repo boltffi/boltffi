@@ -9,7 +9,7 @@
 //! code from matching every argument kind just to find the subset it needs.
 
 use crate::bridge::{
-    c::ArgumentList,
+    c::{ArgumentList, Expression, Identifier},
     jni::{
         CallbackArgument, CallbackBytesArgument, CallbackCParameter, CallbackClosureArgument,
         CallbackCompletionArgument, CallbackDirectVectorArgument, CallbackHandleArgument,
@@ -30,7 +30,13 @@ impl CallbackMethod {
         ArgumentList::from_iter(
             self.arguments
                 .iter()
-                .flat_map(CallbackArgument::jni_arguments),
+                .flat_map(CallbackArgument::jni_arguments)
+                .chain(self.transfers_classes().then(|| {
+                    Expression::identifier(
+                        Identifier::parse("__boltffi_class_delivery")
+                            .expect("generated delivery marker"),
+                    )
+                })),
         )
     }
 

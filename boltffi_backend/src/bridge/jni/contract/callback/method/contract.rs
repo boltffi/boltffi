@@ -34,9 +34,14 @@ pub struct CallbackMethod {
     c_parameters: Vec<CallbackCParameter>,
     closure_return: Option<CallbackClosureReturn>,
     arguments: Vec<CallbackArgument>,
+    transfers_classes: bool,
 }
 
 impl CallbackMethod {
+    pub(crate) fn transfers_classes(&self) -> bool {
+        self.transfers_classes
+    }
+
     pub(crate) fn returns_error(&self) -> bool {
         self.return_channel == c::ReturnChannel::EncodedError
     }

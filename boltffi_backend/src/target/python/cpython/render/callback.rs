@@ -15,7 +15,7 @@ use crate::{
     core::{Emitted, Error, RenderContext, Result},
     target::python::{
         codec::{BorrowedPayload, Marshaling, OwnedPayload},
-        cpython::render::{direct, direct_vector, primitive},
+        cpython::render::{class, direct, direct_vector, primitive},
         name_style::Name,
         syntax::Identifier as PythonIdentifier,
     },
@@ -658,6 +658,7 @@ struct FallibleSignature {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct MethodParam {
+    class_release: Option<Identifier>,
     declarations: Vec<c::Statement>,
     name: Identifier,
     object: Identifier,
@@ -682,7 +683,10 @@ impl MethodParam {
         bridge: &PythonCExtBridgeContract,
         context: &RenderContext<Native>,
     ) -> Result<Self> {
-        let name = Identifier::escape(Name::new(parameter.name()).function_text()?)?;
+        let name = Identifier::parse(format!(
+            "__boltffi_arg_{}",
+            Name::new(parameter.name()).function_text()?
+        ))?;
         let object = Identifier::parse(format!("{name}_object"))?;
         match parameter.payload() {
             OutgoingParam::Value(plan) => plan.render_with(&mut MethodParamValue {
@@ -720,6 +724,7 @@ impl MethodParam {
         let direct = direct::NativeSlot::from_direct_value(ty, bridge, context)?;
         let expression = direct.box_expression(name.clone());
         Ok(Self {
+            class_release: None,
             declarations: vec![TypeFragment::declaration(&c_types[0], name.as_str())?],
             name,
             object,
@@ -746,6 +751,7 @@ impl MethodParam {
         let marshaling = payload.marshaling();
         let expression = payload.expression();
         Ok(Self {
+            class_release: None,
             declarations: vec![
                 TypeFragment::declaration(pointer, pointer_name.as_str())?,
                 TypeFragment::declaration(length, length_name.as_str())?,
@@ -775,6 +781,7 @@ impl MethodParam {
         let length_name = Identifier::parse(format!("{name}_len"))?;
         let element = direct_vector::Element::from_element(element, bridge, context)?;
         Ok(Self {
+            class_release: None,
             declarations: vec![
                 TypeFragment::declaration(pointer, pointer_name.as_str())?,
                 TypeFragment::declaration(length, length_name.as_str())?,
@@ -882,14 +889,40 @@ impl<'plan, 'render> ParamPlanRender<'plan, Native, OutOfRust> for MethodParamVa
 
     fn handle(
         &mut self,
-        _: &HandleTarget,
-        _: native::HandleCarrier,
+        target: &HandleTarget,
+        carrier: native::HandleCarrier,
         _: HandlePresence,
         _: (),
     ) -> Self::Output {
-        Err(Error::UnsupportedTarget {
+        let (HandleTarget::Class(class), [ty]) = (target, self.c_types.as_slice()) else {
+            return Err(Error::UnsupportedTarget {
+                target: "python",
+                shape: "callback class parameter ABI mismatch",
+            });
+        };
+        let declaration = self.context.class(*class).ok_or(Error::UnsupportedTarget {
             target: "python",
-            shape: "callback handle method parameter",
+            shape: "callback class without declaration",
+        })?;
+        let symbols = class::Symbols::new(declaration)?;
+        let release =
+            self.bridge
+                .loaded_function(declaration.release())
+                .ok_or(Error::UnsupportedTarget {
+                    target: "python",
+                    shape: "callback class release without C bridge symbol",
+                })?;
+        let name = self.name.clone();
+        Ok(MethodParam {
+            class_release: Some(release.storage_name().clone()),
+            declarations: vec![TypeFragment::declaration(ty, name.as_str())?],
+            expression: c::Expression::call(
+                symbols.boxer()?,
+                c::ArgumentList::from_iter([c::Expression::identifier(name.clone())]),
+            ),
+            name,
+            object: self.object.clone(),
+            marshaling: Marshaling::direct(Some(primitive::Runtime::native_handle(carrier)?)),
         })
     }
 
