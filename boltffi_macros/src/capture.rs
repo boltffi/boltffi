@@ -36,9 +36,16 @@ pub(crate) fn item_tokens(item: proc_macro::TokenStream, impl_capture: ImplCaptu
     let Ok(item) = syn::parse::<syn::Item>(item) else {
         return TokenStream::new();
     };
-    if let Some(tokens) = conditional_capture(&item, matches!(impl_capture, ImplCapture::Class(_)))
-    {
+    let class_identity = matches!(impl_capture, ImplCapture::Class(_));
+    if let Some(tokens) = conditional_capture(&item, class_identity) {
         return tokens;
+    }
+    if !crate::expansion::build::scanned(&scan_anchors(&item)) {
+        return fallback_tokens(
+            &item,
+            class_identity,
+            "items the source scan cannot see have no wrapper",
+        );
     }
     match &item {
         syn::Item::Struct(item) => match capture_struct(item) {
@@ -406,9 +413,39 @@ fn conditional_capture(item: &syn::Item, class_identity: bool) -> Option<TokenSt
     }
     let mut conditional = Conditional::default();
     conditional.visit_item(item);
-    if !conditional.0 {
-        return None;
+    conditional.0.then(|| {
+        fallback_tokens(
+            item,
+            class_identity,
+            "conditional members require whole-crate scanning",
+        )
+    })
+}
+
+/// Tokens the crate-wide scan has seen when it saw `item`: a macro-generated
+/// item's names point at the macro call, an included one's at another file.
+fn scan_anchors(item: &syn::Item) -> Vec<proc_macro2::Span> {
+    match item {
+        syn::Item::Fn(item) => vec![item.sig.ident.span()],
+        syn::Item::Trait(item) => vec![item.ident.span()],
+        syn::Item::Const(item) => vec![item.ident.span()],
+        syn::Item::Impl(item) => item
+            .items
+            .iter()
+            .filter_map(|member| match member {
+                syn::ImplItem::Fn(method) => Some(method.sig.ident.span()),
+                syn::ImplItem::Const(constant) => Some(constant.ident.span()),
+                _ => None,
+            })
+            .chain(std::iter::once(syn::spanned::Spanned::span(&*item.self_ty)))
+            .collect(),
+        _ => Vec::new(),
     }
+}
+
+/// The item's identity plus an unsupported marker, so bindgen keeps the
+/// scanner-backed path for this crate.
+fn fallback_tokens(item: &syn::Item, class_identity: bool, reason: &str) -> TokenStream {
     let (name, identity) = match item {
         syn::Item::Struct(item) => (
             item.ident.to_string(),
@@ -424,10 +461,16 @@ fn conditional_capture(item: &syn::Item, class_identity: bool) -> Option<TokenSt
             let identity = local_identity_tokens(&item.self_ty, &name);
             (name, identity)
         }
-        _ => ("conditional declaration".to_owned(), TokenStream::new()),
+        syn::Item::Impl(item) => (
+            type_leaf_name(&item.self_ty).unwrap_or_else(|| "impl".to_owned()),
+            TokenStream::new(),
+        ),
+        syn::Item::Fn(item) => (item.sig.ident.to_string(), TokenStream::new()),
+        syn::Item::Const(item) => (item.ident.to_string(), TokenStream::new()),
+        _ => ("declaration".to_owned(), TokenStream::new()),
     };
-    let unsupported = unsupported_tokens(&name, "conditional members require whole-crate scanning");
-    Some(quote!(#identity #unsupported))
+    let unsupported = unsupported_tokens(&name, reason);
+    quote!(#identity #unsupported)
 }
 
 #[cfg(test)]

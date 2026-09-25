@@ -1259,6 +1259,90 @@ impl Engine {
     }
 
     #[test]
+    fn items_the_source_scan_cannot_see_fall_back_instead_of_declaring_missing_wrappers() {
+        if cfg!(miri) {
+            return;
+        }
+        let fixture = FixtureCrate::write(
+            Source {
+                code: r#"
+boltffi::scaffolding!();
+#[boltffi::export]
+pub fn plain_add(a: i32, b: i32) -> i32 { a + b }
+
+pub struct Counter;
+
+#[boltffi::data]
+#[derive(Clone, Copy)]
+pub struct Point { pub x: f64 }
+
+macro_rules! exported {
+    ($function:ident, $class:ident, $record:ident) => {
+        #[boltffi::export]
+        pub fn $function(a: i32, b: i32) -> i32 { a * b }
+
+        #[boltffi::export]
+        impl $class {
+            pub fn new() -> Self { Self }
+        }
+
+        #[boltffi::data(impl)]
+        impl $record {
+            pub fn doubled(&self) -> f64 { self.x * 2.0 }
+        }
+    };
+}
+exported!(generated_mul, Counter, Point);
+
+include!("included.rs");
+"#
+                .to_owned(),
+            },
+            Dependency::Boltffi,
+        );
+        fs::write(
+            fixture.root.join("src").join("included.rs"),
+            "#[boltffi::export]\npub fn included_mul(a: i32, b: i32) -> i32 { a * b }\n",
+        )
+        .expect("write included source");
+        let source = BindingMetadataBuild::new(fixture.manifest())
+            .read_source()
+            .expect("valid Rust must compile with capture");
+        let unsupported = source
+            .source_records
+            .iter()
+            .filter_map(|record| match serde_json::from_slice(&record.json) {
+                Ok(boltffi_binding::SourceFragment::Unsupported { name, .. }) => Some(name),
+                _ => None,
+            })
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            unsupported,
+            BTreeSet::from(
+                ["Counter", "Point", "generated_mul", "included_mul"].map(str::to_owned)
+            ),
+            "every item without a scanned wrapper refuses capture"
+        );
+        let swift = crate::generate::Generation::new(fixture.manifest())
+            .render(crate::target::Target::Swift)
+            .expect("scanner fallback must generate what the library exports")
+            .files()
+            .iter()
+            .map(|file| file.contents().to_owned())
+            .collect::<String>();
+        assert!(
+            swift.contains("plainAdd"),
+            "scanned exports stay in the bindings"
+        );
+        assert!(
+            ["generatedMul", "includedMul", "Counter", "doubled"]
+                .iter()
+                .all(|name| !swift.contains(name)),
+            "bindings declare nothing the library does not export"
+        );
+    }
+
+    #[test]
     fn generation_uses_source_records_without_running_the_envelope_build() {
         if cfg!(miri) {
             return;
