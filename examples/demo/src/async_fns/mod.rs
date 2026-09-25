@@ -287,3 +287,21 @@ pub async fn async_resumed_thread_name() -> String {
     .await;
     std::thread::current().name().unwrap_or_default().to_owned()
 }
+
+#[demo_bench_macros::demo_case(
+    "async_fns.named_cancellation_token.should_preserve_both_values",
+    justification = "Ensure parameters named cancellation_token and boltffi_cancellation_token cross the generated async binding without a name collision.",
+    directions = "Call `async_fns::async_cancellation_token_collision` with distinct values and assert their sum.",
+    exclude(
+        c,
+        reason = ExclusionReason::ImplementationGap,
+        details = "C target is sync-only; async functions are not yet supported"
+    )
+)]
+#[export]
+pub async fn async_cancellation_token_collision(
+    cancellation_token: i32,
+    boltffi_cancellation_token: i32,
+) -> i32 {
+    cancellation_token + boltffi_cancellation_token
+}

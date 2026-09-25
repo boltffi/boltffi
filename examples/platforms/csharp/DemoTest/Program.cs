@@ -23,6 +23,7 @@ public static class DemoTest
             TestI16();
             TestU16();
             TestI32();
+            TestGeneratedNameCollisions();
             TestU32();
             TestI64();
             TestU64();
@@ -84,6 +85,14 @@ public static class DemoTest
         Require(!EchoBool(false), "echoBool(false)");
         Require(!NegateBool(true), "negateBool(true)");
         Require(NegateBool(false), "case:primitives.scalars.bool.should_negate_false_to_true negateBool(false)");
+        Console.WriteLine("  PASS\n");
+    }
+
+    private static void TestGeneratedNameCollisions()
+    {
+        Console.WriteLine("Testing generated C# helper names...");
+        DemoCase("case:primitives.scalars.named_status.should_accept_both_names");
+        NotifyStatusCollision(7, 11);
         Console.WriteLine("  PASS\n");
     }
 
@@ -2658,6 +2667,10 @@ public static class DemoTest
     private static async System.Threading.Tasks.Task TestAsyncFunctions()
     {
         Console.WriteLine("Testing async functions...");
+
+        DemoCase("case:async_fns.named_cancellation_token.should_preserve_both_values");
+        Require(await AsyncCancellationTokenCollision(7, 11) == 18,
+            "AsyncCancellationTokenCollision preserves both arguments");
 
         DemoCase("case:async_fns.basic.add.should_return_sum");
         Require(await AsyncAdd(3, 7) == 10, "AsyncAdd(3, 7)");

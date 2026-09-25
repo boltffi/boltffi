@@ -13,6 +13,8 @@ bool test_scalars(void) {
     CHECK(demo_echo_u16(55000) == 55000, "case:primitives.scalars.u16.should_roundtrip_large_value");
     CHECK(demo_echo_i32(-42) == -42, "case:primitives.scalars.i32.should_roundtrip_negative_value");
     CHECK(demo_add_i32(10, 20) == 30, "case:primitives.scalars.i32.should_add_two_values");
+    puts("case:primitives.scalars.named_status.should_accept_both_names");
+    demo_notify_status_collision(7, 11);
     CHECK(demo_add(2, 3) == 5, "case:primitives.scalars.i32.should_add_with_benchmark_alias");
     CHECK(demo_echo_u32(UINT32_C(4000000000)) == UINT32_C(4000000000), "case:primitives.scalars.u32.should_roundtrip_large_value");
     CHECK(demo_echo_i64(-INT64_C(9999999999)) == -INT64_C(9999999999), "case:primitives.scalars.i64.should_roundtrip_large_negative_value");

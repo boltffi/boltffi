@@ -9,6 +9,8 @@ export async function run() {
   assert.equal(demo.echoU16(55_000), 55_000, "case:primitives.scalars.u16.should_roundtrip_large_value");
   assert.equal(demo.echoI32(-42), -42, "case:primitives.scalars.i32.should_roundtrip_negative_value");
   assert.equal(demo.addI32(10, 20), 30, "case:primitives.scalars.i32.should_add_two_values");
+  globalThis.demoCase("case:primitives.scalars.named_status.should_accept_both_names");
+  demo.notifyStatusCollision(7, 11);
   assert.equal(demo.echoU32(2_147_483_647), 2_147_483_647, "case:primitives.scalars.u32.should_roundtrip_large_value");
   assert.equal(demo.echoI64(-9_999_999_999n), -9_999_999_999n, "case:primitives.scalars.i64.should_roundtrip_large_negative_value");
   assert.equal(demo.echoU64(9_999_999_999n), 9_999_999_999n, "case:primitives.scalars.u64.should_roundtrip_large_value");

@@ -9,6 +9,8 @@ import {
 export async function run() {
   globalThis.demoCase("case:async_fns.basic.add.should_return_sum");
   assert.equal(await demo.asyncAdd(3, 7), 10);
+  globalThis.demoCase("case:async_fns.named_cancellation_token.should_preserve_both_values");
+  assert.equal(await demo.asyncCancellationTokenCollision(7, 11), 18);
   globalThis.demoCase("case:async_fns.basic.echo.should_prefix_message");
   assert.equal(await demo.asyncEcho("hello async"), "Echo: hello async");
   globalThis.demoCase("case:async_fns.basic.double_all.should_double_i32_vector");

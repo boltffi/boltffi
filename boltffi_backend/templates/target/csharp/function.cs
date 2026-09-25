@@ -6,7 +6,7 @@
 {% else %}                return {{ function.invocation }};
 {% endif %}            }
         }
-{% else if function.asynchronous.is_some() %}{% if let Some(body) = function.body %}        {{ function.visibility }} {% if function.is_static %}static {% endif %}global::System.Threading.Tasks.Task{% if !function.returns_void %}<{{ function.public_return_type }}>{% endif %} {{ function.name }}({% if let Some(owner) = function.extension_owner %}this {{ owner }} self, {% endif %}{% for parameter in function.parameters %}{{ parameter.ty }} {{ parameter.name }}, {% endfor %}global::System.Threading.CancellationToken cancellationToken = default)
+{% else if function.asynchronous.is_some() %}{% if let Some(body) = function.body %}        {{ function.visibility }} {% if function.is_static %}static {% endif %}global::System.Threading.Tasks.Task{% if !function.returns_void %}<{{ function.public_return_type }}>{% endif %} {{ function.name }}({% if let Some(owner) = function.extension_owner %}this {{ owner }} self, {% endif %}{% for parameter in function.parameters %}{{ parameter.ty }} {{ parameter.name }}, {% endfor %}global::System.Threading.CancellationToken {{ function.names.cancellation_token }} = default)
         {
 {{ body }}
         }
@@ -16,10 +16,10 @@
         }
 {% else if function.checks_status %}        {{ function.visibility }} {% if function.is_static %}static {% endif %}{{ function.public_return_type }} {{ function.name }}({% if let Some(owner) = function.extension_owner %}this {{ owner }} self{% if !function.parameters.is_empty() %}, {% endif %}{% endif %}{% for parameter in function.parameters %}{{ parameter.ty }} {{ parameter.name }}{% if !loop.last %}, {% endif %}{% endfor %})
         {
-            FfiStatus status = {{ function.invocation }};
-            if (status.code != 0)
+            FfiStatus {{ function.names.status }} = {{ function.invocation }};
+            if ({{ function.names.status }}.code != 0)
             {
-                throw new global::System.InvalidOperationException($"BoltFFI call failed with status code {status.code}");
+                throw new global::System.InvalidOperationException($"BoltFFI call failed with status code {{ "{" }}{{ function.names.status }}.code}");
             }
 {% if let Some(value) = function.return_after_status %}            return {{ value }};
 {% endif %}        }

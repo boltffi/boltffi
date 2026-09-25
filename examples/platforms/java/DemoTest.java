@@ -259,6 +259,8 @@ public final class DemoTest {
         assert Demo.echoI32(42) == 42 : "echoI32(42)";
         assert Demo.echoI32(-100) == -100 : "case:primitives.scalars.i32.should_roundtrip_negative_value echoI32(-100)";
         assert Demo.addI32(10, 20) == 30 : "case:primitives.scalars.i32.should_add_two_values addI32(10, 20)";
+        demoCase("case:primitives.scalars.named_status.should_accept_both_names");
+        Demo.notifyStatusCollision(7, 11);
         assert Demo.add(7, 9) == 16 : "case:primitives.scalars.i32.should_add_with_benchmark_alias add(7, 9)";
         System.out.println("  PASS\n");
     }
@@ -2384,6 +2386,8 @@ public final class DemoTest {
             CompletableFuture<Integer> addFuture = Demo.asyncAdd(3, 7);
             demoCase("case:async_fns.basic.add.should_return_sum");
             assert addFuture.get() == 10 : "asyncAdd(3, 7)";
+            demoCase("case:async_fns.named_cancellation_token.should_preserve_both_values");
+            assert Demo.asyncCancellationTokenCollision(7, 11).get() == 18;
 
             CompletableFuture<String> echoFuture = Demo.asyncEcho("hello async");
             demoCase("case:async_fns.basic.echo.should_prefix_message");

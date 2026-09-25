@@ -33,13 +33,14 @@ use crate::{
     core::{
         AuxChunk, Diagnostic, Emitted, Error, FilePath, GeneratedFile, GeneratedOutput, HelperId,
         RenderContext, RenderedDeclaration, Result,
+        lexical::{LexicalPlan, NameStem, Scope, with_lexical_plan},
     },
 };
 
 use super::{
     codec::{ReadExpression, Reader, Writer, primitive_read_method, primitive_write_method},
     name_style::{Name, Namespace},
-    syntax::{ArgumentList, Expression, Identifier, Literal, Statement, TypeFragment},
+    syntax::{ArgumentList, Expression, Identifier, Literal, Statement, Syntax, TypeFragment},
     type_name,
 };
 use documentation::Documentation;
@@ -51,6 +52,68 @@ struct Parameter {
     name: Identifier,
     ty: TypeFragment,
     marshal_i1: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct FunctionNames {
+    status: Identifier,
+    cancellation_token: Identifier,
+    future: Identifier,
+    result: Identifier,
+    handle: Identifier,
+}
+
+impl FunctionNames {
+    fn new(parameters: &[Parameter], asynchronous: bool) -> Result<Self> {
+        with_lexical_plan::<Syntax, _>(|lexical| {
+            let scope = lexical.root();
+            for parameter in parameters {
+                lexical.reserve_external(scope, parameter.name.clone());
+            }
+            let has_parameter = |name| {
+                parameters
+                    .iter()
+                    .any(|parameter| parameter.name.as_str() == name)
+            };
+            let status = allocate_helper(
+                lexical,
+                scope,
+                if asynchronous || has_parameter("status") {
+                    "boltffiStatus"
+                } else {
+                    "status"
+                },
+            )?;
+            let cancellation_token = allocate_helper(
+                lexical,
+                scope,
+                if has_parameter("cancellationToken") {
+                    "boltffiCancellationToken"
+                } else {
+                    "cancellationToken"
+                },
+            )?;
+            let future = allocate_helper(lexical, scope, "boltffiFuture")?;
+            let result = allocate_helper(lexical, scope, "boltffiResult")?;
+            let handle = allocate_helper(lexical, scope, "boltffiHandle")?;
+            Ok(Self {
+                status,
+                cancellation_token,
+                future,
+                result,
+                handle,
+            })
+        })
+    }
+}
+
+fn allocate_helper<'plan>(
+    lexical: &mut LexicalPlan<'plan, Syntax>,
+    scope: Scope<'plan, Syntax>,
+    stem: &str,
+) -> Result<Identifier> {
+    let declaration = lexical.allocate(scope, &NameStem::new(stem))?;
+    Ok(lexical.declare(declaration, Clone::clone).into_parts().0)
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -100,6 +163,7 @@ pub(super) struct Function {
     native_return_type: TypeFragment,
     return_marshal_i1: bool,
     checks_status: bool,
+    names: FunctionNames,
     is_static: bool,
     extension_owner: Option<TypeFragment>,
     return_after_status: Option<Expression>,
@@ -1360,6 +1424,7 @@ impl Function {
             _ => None,
         };
         let is_static = !receiver || extension_owner.is_some();
+        let names = FunctionNames::new(&parameters, async_symbols.is_some())?;
         let asynchronous = async_symbols
             .map(|symbols| {
                 AsyncCall::new(
@@ -1386,6 +1451,7 @@ impl Function {
                 encoded_writeback.as_ref(),
                 encoded_error.as_ref(),
                 handle_return.as_ref(),
+                &names,
             )?),
             None => (!setup.is_empty()
                 || encoded_return.is_some()
@@ -1404,6 +1470,7 @@ impl Function {
                     encoded_error.as_ref(),
                     handle_return.as_ref(),
                     &parameter_writebacks,
+                    &names.status,
                 )
             })
             .transpose()?,
@@ -1449,6 +1516,7 @@ impl Function {
                 false => return_marshal_i1,
             },
             checks_status,
+            names,
             is_static,
             extension_owner,
             return_after_status,
@@ -1697,6 +1765,7 @@ fn render_callable_body(
     encoded_error: Option<&EncodedError>,
     handle_return: Option<&HandleReturn>,
     parameter_writebacks: &[MutableParameterWriteback],
+    status: &Identifier,
 ) -> Result<Statement> {
     let mut lines = setup.iter().map(ToString::to_string).collect::<Vec<_>>();
     if let Some(error) = encoded_error {
@@ -1735,7 +1804,7 @@ fn render_callable_body(
         )),
         None if checks_status => {
             lines.push(format!(
-                "FfiStatus status = {invocation};\nif (status.code != 0)\n{{\n    throw new global::System.InvalidOperationException($\"BoltFFI call failed with status code {{status.code}}\");\n}}"
+                "FfiStatus {status} = {invocation};\nif ({status}.code != 0)\n{{\n    throw new global::System.InvalidOperationException($\"BoltFFI call failed with status code {{{status}.code}}\");\n}}"
             ));
             match (encoded_writeback, return_after_status) {
                 (Some(encoded), _) => lines.push(render_buffer_return(encoded)),
@@ -1763,12 +1832,14 @@ fn render_async_body(
     encoded_writeback: Option<&EncodedReturn>,
     encoded_error: Option<&EncodedError>,
     handle_return: Option<&HandleReturn>,
+    names: &FunctionNames,
 ) -> Result<Statement> {
     if encoded_writeback.is_some() {
         return unsupported("mutable encoded value in async function");
     }
-    let future = Identifier::parse("boltffiFuture")?;
-    let status = Identifier::parse("boltffiStatus")?;
+    let future = &names.future;
+    let status = &names.status;
+    let cancellation_token = &names.cancellation_token;
     let complete = Expression::call(
         Expression::member(
             Identifier::parse("NativeMethods")?,
@@ -1788,7 +1859,7 @@ fn render_async_body(
         Some(error) => {
             completion.push(format!("FfiBuf {} = {complete};", error.buffer));
             completion.push(format!(
-                "BoltFFIAsync.ThrowIfStatus({status}, cancellationToken);"
+                "BoltFFIAsync.ThrowIfStatus({status}, {cancellation_token});"
             ));
             completion.push(render_encoded_error_check(error));
             if let Some(encoded) = encoded_return {
@@ -1801,42 +1872,37 @@ fn render_async_body(
             let encoded = encoded_return.unwrap();
             completion.push(format!("FfiBuf {} = {complete};", encoded.buffer));
             completion.push(format!(
-                "BoltFFIAsync.ThrowIfStatus({status}, cancellationToken);"
+                "BoltFFIAsync.ThrowIfStatus({status}, {cancellation_token});"
             ));
             completion.push(render_buffer_return(encoded));
         }
         None if handle_return.is_some() => {
             let handle = handle_return.unwrap();
-            let local = Identifier::parse("boltffiHandle")?;
+            let local = &names.handle;
             completion.push(format!("{} {local} = {complete};", handle.native_type));
             completion.push(format!(
-                "BoltFFIAsync.ThrowIfStatus({status}, cancellationToken);"
+                "BoltFFIAsync.ThrowIfStatus({status}, {cancellation_token});"
             ));
             completion.push(format!(
                 "return {};",
-                handle_value_expression(
-                    handle.ty.clone(),
-                    &local,
-                    handle.nullable,
-                    handle.callback,
-                )
+                handle_value_expression(handle.ty.clone(), local, handle.nullable, handle.callback,)
             ));
         }
         None if returns_void => {
             completion.push(format!("{complete};"));
             completion.push(format!(
-                "BoltFFIAsync.ThrowIfStatus({status}, cancellationToken);"
+                "BoltFFIAsync.ThrowIfStatus({status}, {cancellation_token});"
             ));
         }
         None => {
             completion.push(format!(
-                "{} boltffiResult = {complete};",
-                asynchronous.complete_return_type
+                "{} {} = {complete};",
+                asynchronous.complete_return_type, names.result
             ));
             completion.push(format!(
-                "BoltFFIAsync.ThrowIfStatus({status}, cancellationToken);"
+                "BoltFFIAsync.ThrowIfStatus({status}, {cancellation_token});"
             ));
-            completion.push("return boltffiResult;".to_owned());
+            completion.push(format!("return {};", names.result));
         }
     }
 
@@ -1846,7 +1912,7 @@ fn render_async_body(
     };
     let mut lines = setup.iter().map(ToString::to_string).collect::<Vec<_>>();
     lines.push(format!(
-        "return BoltFFIAsync.{call}(\n    () => {start},\n    NativeMethods.{},\n    {future} =>\n    {{\n{}\n    }},\n    NativeMethods.{},\n    NativeMethods.{},\n    cancellationToken);",
+        "return BoltFFIAsync.{call}(\n    () => {start},\n    NativeMethods.{},\n    {future} =>\n    {{\n{}\n    }},\n    NativeMethods.{},\n    NativeMethods.{},\n    {cancellation_token});",
         asynchronous.poll_name,
         indent(&completion.join("\n"), 8),
         asynchronous.cancel_name,

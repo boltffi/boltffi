@@ -197,6 +197,8 @@ class DemoCallbacksAndAsyncTest {
         withTimeout(10_000) {
             demoCase("case:async_fns.basic.add.should_return_sum")
             assertEquals(10, asyncAdd(3, 7))
+            demoCase("case:async_fns.named_cancellation_token.should_preserve_both_values")
+            assertEquals(18, asyncCancellationTokenCollision(7, 11))
             demoCase("case:async_fns.basic.echo.should_prefix_message")
             assertEquals("Echo: hello async", asyncEcho("hello async"))
             demoCase("case:async_fns.basic.double_all.should_double_i32_vector")
