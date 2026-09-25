@@ -109,7 +109,7 @@ impl<'render, 'bindings> NativeModule<'render, 'bindings> {
             host_bindings: declarations.host_bindings(),
             functions: declarations.function_sources(),
             methods,
-            cleanup: declarations.cleanup()?,
+            cleanup: declarations.cleanup(),
             type_setups: declarations.type_setups()?,
         }
         .render()?;
@@ -228,19 +228,19 @@ impl ModuleDeclarations {
             .collect()
     }
 
-    fn cleanup(&self) -> Result<Vec<Statement>> {
+    fn cleanup(&self) -> Vec<Statement> {
         self.records
             .iter()
-            .map(|record| Ok(record.declaration.cleanup()))
+            .map(|record| record.declaration.cleanup())
             .chain(
                 self.enums
                     .iter()
-                    .map(|enumeration| Ok(enumeration.declaration.cleanup())),
+                    .map(|enumeration| enumeration.declaration.cleanup()),
             )
             .chain(
                 self.classes
                     .iter()
-                    .filter_map(|class| class.declaration.cleanup().transpose()),
+                    .filter_map(|class| class.declaration.cleanup()),
             )
             .collect()
     }

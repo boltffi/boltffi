@@ -32,15 +32,14 @@ struct ReleaseTemplate {
 struct ClassHandleTemplate {
     class_name: PythonIdentifier,
     type_object: Identifier,
-    register_wrapper: Identifier,
+    register: ExtensionMethod,
     boxer: Identifier,
     handle_type: TypeFragment,
     box_primitive: Identifier,
 }
 
 pub struct Class {
-    symbols: Symbols,
-    register: Option<ExtensionMethod>,
+    handles: Option<ClassHandleTemplate>,
     release: Release,
     callables: Vec<function::Function>,
 }
@@ -79,42 +78,35 @@ impl Class {
                 context,
             )
         });
-        let register = context
+        let callables = initializers.chain(methods).collect::<Result<Vec<_>>>()?;
+        let release = Release::new(declaration, bridge)?;
+        let handles = context
             .bindings()
             .passes_class_to_callbacks(declaration.id())
             .then(|| {
-                ExtensionMethod::new(
-                    MethodName::parse(symbols.register()?.as_str())?,
-                    symbols.register_wrapper()?,
-                    MethodFlags::FastCall,
-                )
+                Ok::<_, Error>(ClassHandleTemplate {
+                    register: ExtensionMethod::new(
+                        MethodName::parse(symbols.register()?.as_str())?,
+                        symbols.register_wrapper()?,
+                        MethodFlags::FastCall,
+                    )?,
+                    type_object: symbols.type_object()?,
+                    boxer: symbols.boxer()?,
+                    handle_type: release.handle.c_type()?,
+                    box_primitive: release.handle.boxer()?,
+                    class_name: symbols.class_name,
+                })
             })
             .transpose()?;
-        let callables = initializers.chain(methods).collect::<Result<Vec<_>>>()?;
         Ok(Self {
-            symbols,
-            register,
-            release: Release::new(declaration, bridge)?,
+            handles,
+            release,
             callables,
         })
     }
 
     pub fn render(self) -> Result<Emitted> {
-        let handles = if self.has_registered_type() {
-            Some(
-                ClassHandleTemplate {
-                    class_name: self.symbols.class_name.clone(),
-                    type_object: self.symbols.type_object()?,
-                    register_wrapper: self.symbols.register_wrapper()?,
-                    boxer: self.symbols.boxer()?,
-                    handle_type: self.release.handle.c_type()?,
-                    box_primitive: self.release.handle.boxer()?,
-                }
-                .render()?,
-            )
-        } else {
-            None
-        };
+        let handles = self.handles.map(|handles| handles.render()).transpose()?;
         let release = self.release.render()?;
         let callables = self
             .callables
@@ -135,26 +127,21 @@ impl Class {
     }
 
     pub fn methods(&self) -> impl Iterator<Item = &ExtensionMethod> {
-        self.register
+        self.handles
             .iter()
+            .map(|handles| &handles.register)
             .chain(std::iter::once(self.release.method()))
             .chain(self.callables.iter().flat_map(function::Function::methods))
     }
 
-    pub fn cleanup(&self) -> Result<Option<Statement>> {
-        self.register
+    pub fn cleanup(&self) -> Option<Statement> {
+        self.handles
             .as_ref()
-            .map(|_| {
-                Ok(Statement::new(format!(
-                    "Py_CLEAR({})",
-                    self.symbols.type_object()?
-                )))
-            })
-            .transpose()
+            .map(|handles| Statement::new(format!("Py_CLEAR({})", handles.type_object)))
     }
 
     pub fn has_registered_type(&self) -> bool {
-        self.register.is_some()
+        self.handles.is_some()
     }
 
     pub fn primitives(&self) -> Vec<primitive::Runtime> {

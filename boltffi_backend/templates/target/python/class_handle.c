@@ -1,6 +1,6 @@
 static PyObject *{{ type_object }} = NULL;
 
-static PyObject *{{ register_wrapper }}(PyObject *self, PyObject *const *args, Py_ssize_t nargs) {
+static PyObject *{{ register.c_function() }}(PyObject *self, PyObject *const *args, Py_ssize_t nargs) {
     (void)self;
     if (nargs != 1) {
         PyErr_SetString(PyExc_TypeError, "class registration requires one type");
