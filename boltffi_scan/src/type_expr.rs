@@ -746,7 +746,7 @@ impl StandardType {
                 "alloc::collections::BTreeMap",
             ],
             Self::Box => &["Box", "std::boxed::Box", "alloc::boxed::Box"],
-            Self::Arc => &["std::sync::Arc", "alloc::sync::Arc"],
+            Self::Arc => &["Arc", "std::sync::Arc", "alloc::sync::Arc"],
             Self::Builtin(BuiltinType::Duration) => {
                 &["Duration", "std::time::Duration", "core::time::Duration"]
             }

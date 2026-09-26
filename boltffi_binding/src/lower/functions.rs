@@ -25,6 +25,7 @@ pub fn lower<S: SurfaceLower>(
     index
         .functions()
         .iter()
+        .filter(|function| index.lowers(function.id.as_str()))
         .map(|function| lower_one::<S>(index, ids, allocator, function))
         .collect()
 }

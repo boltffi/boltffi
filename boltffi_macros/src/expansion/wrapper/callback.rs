@@ -163,6 +163,7 @@ impl<'expansion, 'lowered> NativeProtocol<'expansion, 'lowered> {
             .collect::<Vec<_>>();
         let trait_ident = &names.trait_ident;
         let trait_path = self.path.unwrap_or_else(|| quote! { #trait_ident });
+        let trait_marker = crate::capture::trait_marker(trait_ident);
         let foreign_ident = &names.foreign_ident;
         let async_trait = AsyncTraitAttribute::from_trait(self.source)?;
         let vtable_ident = &names.vtable_ident;
@@ -221,6 +222,15 @@ impl<'expansion, 'lowered> NativeProtocol<'expansion, 'lowered> {
                         #clone_slot: #local_clone_ident,
                         #(#local_method_fields),*
                     };
+
+                    #cfg
+                    impl ::boltffi::__private::CallbackLocalHandle for dyn #trait_path {
+                        fn local_callback_handle(
+                            callback: ::std::sync::Arc<Self>,
+                        ) -> ::boltffi::__private::CallbackHandle {
+                            #local_handle_ident(callback)
+                        }
+                    }
 
                     #cfg
                     pub fn #local_handle_ident(
@@ -367,6 +377,11 @@ impl<'expansion, 'lowered> NativeProtocol<'expansion, 'lowered> {
 
             #trait_object_tokens
 
+            #cfg
+            impl ::boltffi::__private::CallbackMarker for #trait_marker {
+                type Foreign = #foreign_ident;
+            }
+
             #local_protocol_tokens
 
             #dart_shim_tokens
@@ -466,6 +481,7 @@ impl<'expansion, 'lowered> WasmProtocol<'expansion, 'lowered> {
             .collect::<Result<Vec<_>, _>>()?;
         let trait_ident = &names.trait_ident;
         let trait_path = self.path.unwrap_or_else(|| quote! { #trait_ident });
+        let trait_marker = crate::capture::trait_marker(trait_ident);
         let foreign_ident = &names.foreign_ident;
         let create_ident = RustIdent::new(protocol.create_handle().name().as_str())?;
         let free_import = WasmImport::new(protocol.free())?;
@@ -636,6 +652,15 @@ impl<'expansion, 'lowered> WasmProtocol<'expansion, 'lowered> {
                     #(#local_methods)*
 
                     #cfg
+                    impl ::boltffi::__private::CallbackLocalHandle for dyn #trait_path {
+                        fn local_callback_handle(
+                            callback: ::std::sync::Arc<Self>,
+                        ) -> ::boltffi::__private::CallbackHandle {
+                            #local_handle_ident(callback)
+                        }
+                    }
+
+                    #cfg
                     pub fn #local_handle_ident(
                         callback: ::std::sync::Arc<dyn #trait_path>,
                     ) -> ::boltffi::__private::CallbackHandle {
@@ -747,6 +772,11 @@ impl<'expansion, 'lowered> WasmProtocol<'expansion, 'lowered> {
             }
 
             #trait_object_tokens
+
+            #cfg
+            impl ::boltffi::__private::CallbackMarker for #trait_marker {
+                type Foreign = #foreign_ident;
+            }
 
             #local_protocol_tokens
         })
@@ -3454,17 +3484,17 @@ where
                 Ok(match (callback.form(), callback.presence()) {
                     (rust_api::CallbackCarrier::BoxedDyn, HandlePresence::Required) => quote! {
                         unsafe {
-                            <#proxy as ::boltffi::__private::BoxFromCallbackHandle>::box_from_callback_handle(#handle)
+                            ::boltffi::__private::callback_box(#proxy, #handle) as _
                         }
                     },
                     (rust_api::CallbackCarrier::ArcDyn, HandlePresence::Required) => quote! {
                         unsafe {
-                            <#proxy as ::boltffi::__private::ArcFromCallbackHandle>::arc_from_callback_handle(#handle)
+                            ::boltffi::__private::callback_arc(#proxy, #handle) as _
                         }
                     },
                     (rust_api::CallbackCarrier::ImplTrait, HandlePresence::Required) => quote! {
                         unsafe {
-                            *<#proxy as ::boltffi::__private::BoxFromCallbackHandle>::box_from_callback_handle(#handle)
+                            *::boltffi::__private::callback_box(#proxy, #handle)
                         }
                     },
                     (rust_api::CallbackCarrier::BoxedDyn, HandlePresence::Nullable) => quote! {
@@ -3472,7 +3502,7 @@ where
                             None
                         } else {
                             Some(unsafe {
-                                <#proxy as ::boltffi::__private::BoxFromCallbackHandle>::box_from_callback_handle(#handle)
+                                ::boltffi::__private::callback_box(#proxy, #handle) as _
                             })
                         }
                     },
@@ -3481,7 +3511,7 @@ where
                             None
                         } else {
                             Some(unsafe {
-                                <#proxy as ::boltffi::__private::ArcFromCallbackHandle>::arc_from_callback_handle(#handle)
+                                ::boltffi::__private::callback_arc(#proxy, #handle) as _
                             })
                         }
                     },
@@ -3490,7 +3520,7 @@ where
                             None
                         } else {
                             Some(unsafe {
-                                *<#proxy as ::boltffi::__private::BoxFromCallbackHandle>::box_from_callback_handle(#handle)
+                                *::boltffi::__private::callback_box(#proxy, #handle)
                             })
                         }
                     },

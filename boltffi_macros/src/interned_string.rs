@@ -4,9 +4,9 @@ use quote::{format_ident, quote};
 use syn::parse::{Parse, ParseStream};
 use syn::{Ident, LitStr, Token, Visibility, braced};
 
-struct PoolSpec {
-    visibility: Visibility,
-    name: Ident,
+pub(crate) struct PoolSpec {
+    pub(crate) visibility: Visibility,
+    pub(crate) name: Ident,
     entries: Vec<PoolEntry>,
 }
 

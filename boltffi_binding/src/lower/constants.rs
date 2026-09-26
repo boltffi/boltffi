@@ -58,6 +58,13 @@ pub fn lower<S: SurfaceLower>(
     index
         .constants()
         .iter()
+        .filter(|constant| {
+            index.lowers(constant.id.as_str())
+                || constant
+                    .owner
+                    .as_ref()
+                    .is_some_and(|owner| index.lowers(owner_id(owner)))
+        })
         .map(|constant| lower_one::<S>(index, ids, allocator, constant))
         .collect()
 }
@@ -321,6 +328,14 @@ impl IntegerBounds {
 
     const fn contains(self, value: i128) -> bool {
         self.min <= value && value <= self.max
+    }
+}
+
+fn owner_id(owner: &boltffi_ast::ConstantOwner) -> &str {
+    match owner {
+        boltffi_ast::ConstantOwner::Record(id) => id.as_str(),
+        boltffi_ast::ConstantOwner::Enum(id) => id.as_str(),
+        boltffi_ast::ConstantOwner::Class(id) => id.as_str(),
     }
 }
 

@@ -1,28 +1,30 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use boltffi_ast::{
     ClassDef, ConstantDef, ConstantOwner, EnumDef, EnumId, Path, PathRoot, RecordDef, RecordId,
     SourceContract, StreamDef, TraitDef,
 };
-use boltffi_binding::{Native, SerializedBindings, SurfaceLower, Wasm32};
+use boltffi_binding::{Native, SurfaceLower, Wasm32};
 use proc_macro2::TokenStream;
 #[cfg(test)]
 use quote::format_ident;
 use quote::quote;
 use syn::{Path as RustPath, Type};
 
-use crate::expansion::{contract::Expansion, error::Error, metadata, rust_api, wrapper};
+use crate::expansion::{contract::Expansion, error::Error, rust_api, wrapper};
 
 pub struct Expander<'lowered> {
     source: &'lowered SourceContract,
     support: &'lowered SourceContract,
     visible_paths: HashMap<String, Path>,
+    selected: Option<HashSet<String>>,
 }
 
 struct SurfaceExpander<'expansion, 'lowered> {
     source: &'lowered SourceContract,
     support: &'lowered SourceContract,
     visible_paths: &'expansion HashMap<String, Path>,
+    selected: Option<&'expansion HashSet<String>>,
     expansion: ExpansionSurface<'expansion, 'lowered>,
 }
 
@@ -48,6 +50,7 @@ impl<'expansion, 'lowered> SurfaceExpander<'expansion, 'lowered> {
             source,
             support,
             visible_paths,
+            selected: None,
             expansion: ExpansionSurface::Native(expansion),
         }
     }
@@ -62,11 +65,24 @@ impl<'expansion, 'lowered> SurfaceExpander<'expansion, 'lowered> {
             source,
             support,
             visible_paths,
+            selected: None,
             expansion: ExpansionSurface::Wasm32(expansion),
         }
     }
 
+    const fn selecting(mut self, selected: Option<&'expansion HashSet<String>>) -> Self {
+        self.selected = selected;
+        self
+    }
+
+    fn selected(&self, id: &str) -> bool {
+        self.selected.is_none_or(|selected| selected.contains(id))
+    }
+
     fn record_and_enum_imports(&self) -> Result<Vec<TokenStream>, Error> {
+        if self.selected.is_some() {
+            return Ok(Vec::new());
+        }
         let package = self.source.package.name.replace('-', "_");
         self.source
             .records
@@ -155,6 +171,19 @@ impl<'expansion, 'lowered> SurfaceExpander<'expansion, 'lowered> {
                 "dependency data impl target is not visible",
             ))
             .and_then(Self::path_type)
+    }
+
+    /// The declaration's type as its own invocation site names it.
+    fn declared_type(&self, id: &str) -> Result<Type, Error> {
+        if self.selected.is_none() {
+            return self.root_type(id);
+        }
+        let name = id
+            .rsplit("::")
+            .next()
+            .ok_or(Error::SourceSyntaxMismatch("declaration id is empty"))?;
+        syn::parse_str(name)
+            .map_err(|_| Error::SourceSyntaxMismatch("declaration name is not a Rust type"))
     }
 
     fn root_type(&self, id: &str) -> Result<Type, Error> {
@@ -251,6 +280,14 @@ impl<'expansion, 'lowered> SurfaceExpander<'expansion, 'lowered> {
     }
 }
 
+fn owner_id(owner: &ConstantOwner) -> &str {
+    match owner {
+        ConstantOwner::Record(id) => id.as_str(),
+        ConstantOwner::Enum(id) => id.as_str(),
+        ConstantOwner::Class(id) => id.as_str(),
+    }
+}
+
 impl<'lowered> Expander<'lowered> {
     #[cfg(test)]
     pub fn new(source: &'lowered SourceContract) -> Self {
@@ -258,43 +295,38 @@ impl<'lowered> Expander<'lowered> {
             source,
             support: source,
             visible_paths: HashMap::new(),
+            selected: None,
         }
     }
 
-    pub fn with_support(
-        source: &'lowered SourceContract,
-        support: &'lowered SourceContract,
-        visible_paths: impl IntoIterator<Item = (String, Path)>,
+    /// Expands only the declarations one macro invocation owns, resolving
+    /// everything they reference against the rest of `contract`.
+    pub fn invocation(
+        contract: &'lowered SourceContract,
+        selected: impl IntoIterator<Item = String>,
     ) -> Self {
         Self {
-            source,
-            support,
-            visible_paths: visible_paths.into_iter().collect(),
+            source: contract,
+            support: contract,
+            visible_paths: HashMap::new(),
+            selected: Some(selected.into_iter().collect()),
         }
     }
 
     pub fn native(&self, expansion: &Expansion<'lowered, Native>) -> Result<TokenStream, Error> {
         let wrappers =
             SurfaceExpander::native(self.source, self.support, &self.visible_paths, expansion)
+                .selecting(self.selected.as_ref())
                 .expand()?;
-        let metadata = metadata::render(SerializedBindings::native(expansion.bindings().clone()))?;
-
-        Ok(quote! {
-            #wrappers
-            #metadata
-        })
+        Ok(wrappers)
     }
 
     pub fn wasm32(&self, expansion: &Expansion<'lowered, Wasm32>) -> Result<TokenStream, Error> {
         let wrappers =
             SurfaceExpander::wasm32(self.source, self.support, &self.visible_paths, expansion)
+                .selecting(self.selected.as_ref())
                 .expand()?;
-        let metadata = metadata::render(SerializedBindings::wasm32(expansion.bindings().clone()))?;
-
-        Ok(quote! {
-            #wrappers
-            #metadata
-        })
+        Ok(wrappers)
     }
 
     pub fn record_runtime<S: SurfaceLower>(
@@ -393,6 +425,7 @@ impl<'expansion, 'lowered> SurfaceExpander<'expansion, 'lowered> {
         self.support
             .traits
             .iter()
+            .filter(|source| self.selected(source.id.as_str()))
             .map(|source| match self.expansion {
                 ExpansionSurface::Native(expansion) => {
                     wrapper::callback::Trait::new(expansion.callback_trait(source)?, expansion)
@@ -413,8 +446,9 @@ impl<'expansion, 'lowered> SurfaceExpander<'expansion, 'lowered> {
             .source
             .records
             .iter()
+            .filter(|source| self.selected(source.id.as_str()))
             .map(|source| {
-                let rust_type = self.root_type(source.id.as_str())?;
+                let rust_type = self.declared_type(source.id.as_str())?;
                 match self.expansion {
                     ExpansionSurface::Native(expansion) => {
                         wrapper::record::Record::new(expansion.record(source)?, expansion)
@@ -427,7 +461,9 @@ impl<'expansion, 'lowered> SurfaceExpander<'expansion, 'lowered> {
                 }
             })
             .collect::<Result<Vec<_>, _>>()?;
-        records.extend(self.support_records()?);
+        if self.selected.is_none() {
+            records.extend(self.support_records()?);
+        }
         Ok(records)
     }
 
@@ -436,8 +472,9 @@ impl<'expansion, 'lowered> SurfaceExpander<'expansion, 'lowered> {
             .source
             .enums
             .iter()
+            .filter(|source| self.selected(source.id.as_str()))
             .map(|source| {
-                let rust_type = self.root_type(source.id.as_str())?;
+                let rust_type = self.declared_type(source.id.as_str())?;
                 match self.expansion {
                     ExpansionSurface::Native(expansion) => wrapper::enumeration::Enumeration::new(
                         expansion.enumeration(source)?,
@@ -452,7 +489,9 @@ impl<'expansion, 'lowered> SurfaceExpander<'expansion, 'lowered> {
                 }
             })
             .collect::<Result<Vec<_>, _>>()?;
-        enumerations.extend(self.support_enumerations()?);
+        if self.selected.is_none() {
+            enumerations.extend(self.support_enumerations()?);
+        }
         Ok(enumerations)
     }
 
@@ -506,6 +545,7 @@ impl<'expansion, 'lowered> SurfaceExpander<'expansion, 'lowered> {
         self.support
             .classes
             .iter()
+            .filter(|source| self.selected(source.id.as_str()))
             .map(|source| {
                 let rust_type = self
                     .visible_paths
@@ -538,6 +578,7 @@ impl<'expansion, 'lowered> SurfaceExpander<'expansion, 'lowered> {
         self.support
             .streams
             .iter()
+            .filter(|source| self.selected(source.id.as_str()))
             .map(|source| {
                 let owner = self.stream_owner(source)?;
                 match (self.expansion, owner) {
@@ -576,6 +617,12 @@ impl<'expansion, 'lowered> SurfaceExpander<'expansion, 'lowered> {
         self.support
             .constants
             .iter()
+            .filter(|source| {
+                self.selected(source.id.as_str())
+                    || source.owner.as_ref().is_some_and(|owner| {
+                        self.selected.is_some() && self.selected(owner_id(owner))
+                    })
+            })
             .map(|source| {
                 let owner = self.constant_owner(source)?;
                 match (self.expansion, owner) {
@@ -606,6 +653,7 @@ impl<'expansion, 'lowered> SurfaceExpander<'expansion, 'lowered> {
         self.support
             .functions
             .iter()
+            .filter(|source| self.selected(source.id.as_str()))
             .map(|source| {
                 let path = self.visible_paths.get(source.id.as_str());
                 match (self.expansion, path) {
@@ -643,15 +691,10 @@ mod tests {
     use boltffi_ast::{
         CanonicalName, ClassDef, ConstExpr, ConstantDef, ConstantId, ConstantOwner, EnumDef,
         EnumId, FieldDef, FunctionDef, FunctionId, Literal, MethodDef, MethodId, PackageInfo,
-        ParameterDef, PathRoot, PathSegment, Primitive, Receiver, RecordDef, ReprAttr, ReprItem,
-        ReturnDef, SourceContract, SourceName, StreamDef, StreamId, TraitDef, TraitId, TypeExpr,
-        VariantDef,
+        ParameterDef, Primitive, Receiver, RecordDef, ReprAttr, ReprItem, ReturnDef,
+        SourceContract, SourceName, StreamDef, StreamId, TraitDef, TraitId, TypeExpr, VariantDef,
     };
-    use boltffi_bindgen::artifact::BindingMetadataReader;
-    use boltffi_binding::{
-        BindingMetadataSection, BindingMetadataSurface, Native, SerializedBindings, Wasm32,
-        lower_with_declarations,
-    };
+    use boltffi_binding::{Native, Wasm32, lower_with_declarations};
     use proc_macro2::TokenStream;
     use quote::quote;
 
@@ -839,107 +882,6 @@ mod tests {
     }
 
     #[test]
-    fn native_expander_imports_root_codec_targets_by_visible_path() {
-        let mut source = SourceContract::new(PackageInfo::new("demo", None));
-        let mut record = RecordDef::new(
-            "demo::inner::Hidden".into(),
-            CanonicalName::single("Hidden"),
-        );
-        record.fields = vec![FieldDef::new(
-            CanonicalName::single("x"),
-            TypeExpr::Primitive(Primitive::F64),
-        )];
-        source.records.push(record);
-        let lowered = lower_with_declarations::<Native>(&source).expect("contract lowers");
-        let expansion = Expansion::new(&lowered);
-        let visible_paths = vec![(
-            "demo::inner::Hidden".to_owned(),
-            boltffi_ast::Path::new(
-                boltffi_ast::PathRoot::Crate,
-                vec![boltffi_ast::PathSegment::new("Hidden")],
-            ),
-        )];
-
-        let tokens = expander::Expander::with_support(&source, &source, visible_paths)
-            .native(&expansion)
-            .expect("contract expands");
-        let rendered = tokens.to_string();
-
-        assert!(rendered.contains("use crate :: Hidden ;"));
-    }
-
-    #[test]
-    fn native_expander_emits_visible_dependency_data_method_wrappers() {
-        let (root, support, visible_paths) = dependency_data_method_support();
-        let lowered = lower_with_declarations::<Native>(&support).expect("contract lowers");
-        let expansion = Expansion::new(&lowered);
-
-        let tokens = expander::Expander::with_support(&root, &support, visible_paths)
-            .native(&expansion)
-            .expect("contract expands");
-        let rendered = tokens.to_string();
-
-        assert!(rendered.contains("model :: ForeignPoint :: score"));
-        assert!(rendered.contains("model :: ForeignKind :: code"));
-        assert!(
-            !rendered.contains("unsafe impl :: boltffi :: __private :: Passable for ForeignPoint")
-        );
-        assert!(
-            !rendered.contains("unsafe impl :: boltffi :: __private :: Passable for ForeignKind")
-        );
-        assert_generated_crate_checks(
-            "expander_dependency_data_methods",
-            dependency_data_method_crate(tokens),
-        );
-    }
-
-    #[test]
-    fn native_expander_compiles_visible_dependency_class_streams_and_constants() {
-        let (root, support, visible_paths) = dependency_class_member_support();
-        let lowered = lower_with_declarations::<Native>(&support).expect("contract lowers");
-        let expansion = Expansion::new(&lowered);
-
-        let tokens = expander::Expander::with_support(&root, &support, visible_paths)
-            .native(&expansion)
-            .expect("contract expands");
-        let rendered = tokens.to_string();
-
-        assert!(rendered.contains("boltffi_stream_model_foreign_counter_ticks_subscribe"));
-        assert!(rendered.contains("boltffi_const_model_foreign_counter_banner"));
-        assert_generated_crate_checks(
-            "expander_dependency_class_members",
-            dependency_class_member_crate(tokens),
-        );
-    }
-
-    #[test]
-    fn native_data_runtime_emits_only_the_selected_runtime_contracts() {
-        let (_, support, visible_paths) = dependency_data_method_support();
-        let lowered = lower_with_declarations::<Native>(&support).expect("contract lowers");
-        let expansion = Expansion::new(&lowered);
-        let expander = expander::Expander::with_support(&support, &support, visible_paths);
-
-        let record = expander
-            .record_runtime(&support.records[0].id, &expansion)
-            .expect("record runtime expands");
-        let enumeration = expander
-            .enumeration_runtime(&support.enums[0].id, &expansion)
-            .expect("enum runtime expands");
-        let tokens = quote! {
-            #record
-            #enumeration
-        };
-        let rendered = tokens.to_string();
-
-        assert!(rendered.contains("Passable for ForeignPoint"));
-        assert!(rendered.contains("WireEncode for ForeignKind"));
-        assert!(!rendered.contains("model :: ForeignPoint :: score"));
-        assert!(!rendered.contains("model :: ForeignKind :: code"));
-        assert!(!rendered.contains("no_mangle"));
-        assert!(!rendered.contains("boltffi_metadata"));
-    }
-
-    #[test]
     fn expands_native_and_wasm_surfaces_together() {
         let source = source_contract();
         let native_lowered = lower_with_declarations::<Native>(&source).expect("native lowers");
@@ -957,104 +899,6 @@ mod tests {
         assert!(rendered.contains("mod __boltffi_native"));
         assert!(rendered.contains("mod __boltffi_wasm32"));
         assert_generated_crate_checks("expander_all_surfaces", full_contract_crate(tokens));
-    }
-
-    #[test]
-    fn native_expander_emits_binding_metadata_static() {
-        let source = ownerless_stream_contract();
-        let lowered = lower_with_declarations::<Native>(&source).expect("native lowers");
-        let expansion = Expansion::new(&lowered);
-
-        let tokens = expander::Expander::new(&source)
-            .native(&expansion)
-            .expect("native expands");
-        let rendered = tokens.to_string();
-
-        assert!(rendered.contains("boltffi_metadata"));
-        assert!(rendered.contains("not (target_arch = \"wasm32\")"));
-        assert!(rendered.contains(&format!(
-            "unsafe (link_section = {:?})",
-            BindingMetadataSection::MachO.link_section()
-        )));
-        assert!(rendered.contains(&format!(
-            "unsafe (link_section = {:?})",
-            BindingMetadataSection::Object.link_section()
-        )));
-        assert!(rendered.contains("# [used]"));
-        assert!(rendered.contains("const _ : ()"));
-        assert!(rendered.contains("static __BOLTFFI_BINDINGS"));
-    }
-
-    #[test]
-    fn wasm32_expander_emits_binding_metadata_static() {
-        let source = ownerless_stream_contract();
-        let lowered = lower_with_declarations::<Wasm32>(&source).expect("wasm lowers");
-        let expansion = Expansion::new(&lowered);
-
-        let tokens = expander::Expander::new(&source)
-            .wasm32(&expansion)
-            .expect("wasm expands");
-        let rendered = tokens.to_string();
-
-        assert!(rendered.contains("boltffi_metadata"));
-        assert!(rendered.contains("target_arch = \"wasm32\""));
-        assert!(rendered.contains(&format!(
-            "unsafe (link_section = {:?})",
-            BindingMetadataSection::MachO.link_section()
-        )));
-        assert!(rendered.contains(&format!(
-            "unsafe (link_section = {:?})",
-            BindingMetadataSection::Object.link_section()
-        )));
-        assert!(rendered.contains("# [used]"));
-        assert!(rendered.contains("const _ : ()"));
-        assert!(rendered.contains("static __BOLTFFI_BINDINGS"));
-    }
-
-    #[test]
-    fn repeated_metadata_emission_checks_with_metadata_cfg_enabled() {
-        let source = ownerless_stream_contract();
-        let lowered = lower_with_declarations::<Native>(&source).expect("native lowers");
-        let metadata =
-            super::metadata::render(SerializedBindings::native(lowered.bindings().clone()))
-                .expect("metadata renders");
-
-        assert_generated_crate_checks_with_rustflags(
-            "expander_repeated_metadata",
-            quote! {
-                #![deny(warnings)]
-
-                #metadata
-                #metadata
-            },
-            "--cfg boltffi_metadata",
-        );
-    }
-
-    #[test]
-    fn native_expander_metadata_is_read_from_compiled_artifact() {
-        if cfg!(miri) {
-            return;
-        }
-        let source = ownerless_stream_contract();
-        let lowered = lower_with_declarations::<Native>(&source).expect("native lowers");
-        let expected_bindings = SerializedBindings::native(lowered.bindings().clone());
-        let expansion = Expansion::new(&lowered);
-        let tokens = expander::Expander::new(&source)
-            .native(&expansion)
-            .expect("native expands");
-        let generated_crate = GeneratedCrate::static_library("expander_metadata_artifact");
-        generated_crate.write(ownerless_stream_crate(tokens));
-
-        let artifact = generated_crate.build_staticlib_with_rustflags("--cfg boltffi_metadata");
-        let envelopes = BindingMetadataReader::new([artifact])
-            .read_required()
-            .expect("compiled metadata reads");
-
-        assert_eq!(envelopes.len(), 1);
-        assert_eq!(envelopes[0].surface(), BindingMetadataSurface::Native);
-        assert_eq!(envelopes[0].package().name().as_path_string(), "demo");
-        assert_eq!(envelopes[0].bindings(), &expected_bindings);
     }
 
     fn source_contract() -> SourceContract {
@@ -1077,109 +921,6 @@ mod tests {
             TypeExpr::Primitive(Primitive::U32),
         ));
         source
-    }
-
-    fn dependency_data_method_support() -> (
-        SourceContract,
-        SourceContract,
-        Vec<(String, boltffi_ast::Path)>,
-    ) {
-        let root = SourceContract::new(PackageInfo::new("demo", None));
-        let mut support = root.clone();
-        let mut point = RecordDef::new(
-            "model::ForeignPoint".into(),
-            CanonicalName::single("ForeignPoint"),
-        );
-        point.repr = ReprAttr::new(vec![ReprItem::C]);
-        point.fields = vec![FieldDef::new(
-            CanonicalName::single("x"),
-            TypeExpr::Primitive(Primitive::F64),
-        )];
-        let mut score = MethodDef::new(
-            MethodId::new("model::ForeignPoint::score"),
-            CanonicalName::single("score"),
-            Receiver::None,
-        );
-        score.returns = ReturnDef::value(TypeExpr::Primitive(Primitive::U32));
-        point.methods.push(score);
-        support.records.push(point);
-
-        let mut kind = EnumDef::new(
-            EnumId::new("model::ForeignKind"),
-            CanonicalName::single("ForeignKind"),
-        );
-        kind.variants = vec![
-            VariantDef::unit(SourceName::new("Guest", CanonicalName::single("Guest"))),
-            VariantDef::unit(SourceName::new("Member", CanonicalName::single("Member"))),
-        ];
-        let mut code = MethodDef::new(
-            MethodId::new("model::ForeignKind::code"),
-            CanonicalName::single("code"),
-            Receiver::None,
-        );
-        code.returns = ReturnDef::value(TypeExpr::Primitive(Primitive::U32));
-        kind.methods.push(code);
-        support.enums.push(kind);
-
-        let visible_paths = vec![
-            (
-                "model::ForeignPoint".to_owned(),
-                boltffi_ast::Path::new(
-                    PathRoot::Relative,
-                    vec![PathSegment::new("model"), PathSegment::new("ForeignPoint")],
-                ),
-            ),
-            (
-                "model::ForeignKind".to_owned(),
-                boltffi_ast::Path::new(
-                    PathRoot::Relative,
-                    vec![PathSegment::new("model"), PathSegment::new("ForeignKind")],
-                ),
-            ),
-        ];
-
-        (root, support, visible_paths)
-    }
-
-    fn dependency_class_member_support() -> (
-        SourceContract,
-        SourceContract,
-        Vec<(String, boltffi_ast::Path)>,
-    ) {
-        let root = SourceContract::new(PackageInfo::new("demo", None));
-        let mut support = root.clone();
-        let class_id = boltffi_ast::ClassId::new("model::ForeignCounter");
-        support.classes.push(ClassDef::new(
-            class_id.clone(),
-            CanonicalName::single("ForeignCounter"),
-        ));
-        let mut stream = StreamDef::new(
-            StreamId::new("model::ForeignCounter::ticks"),
-            CanonicalName::single("ticks"),
-            TypeExpr::Primitive(Primitive::U32),
-        );
-        stream.owner = Some(class_id.clone());
-        support.streams.push(stream);
-        let mut banner = ConstantDef::new(
-            ConstantId::new("model::ForeignCounter::BANNER"),
-            SourceName::new("BANNER", CanonicalName::single("BANNER")),
-            TypeExpr::slice(TypeExpr::Primitive(Primitive::U8)),
-            ConstExpr::Literal(Literal::Bytes(b"model".to_vec())),
-        );
-        banner.owner = Some(ConstantOwner::Class(class_id));
-        support.constants.push(banner);
-        let visible_paths = vec![(
-            "model::ForeignCounter".to_owned(),
-            boltffi_ast::Path::new(
-                PathRoot::Relative,
-                vec![
-                    PathSegment::new("model"),
-                    PathSegment::new("ForeignCounter"),
-                ],
-            ),
-        )];
-
-        (root, support, visible_paths)
     }
 
     fn listener_trait() -> TraitDef {
@@ -1322,77 +1063,10 @@ mod tests {
         }
     }
 
-    fn dependency_data_method_crate(tokens: TokenStream) -> TokenStream {
-        quote! {
-            #![allow(dead_code)]
-
-            mod model {
-                #[repr(C)]
-                pub struct ForeignPoint {
-                    pub x: f64,
-                }
-
-                impl ForeignPoint {
-                    pub fn score() -> u32 {
-                        7
-                    }
-                }
-
-                pub enum ForeignKind {
-                    Guest,
-                    Member,
-                }
-
-                impl ForeignKind {
-                    pub fn code() -> u32 {
-                        11
-                    }
-                }
-            }
-
-            #tokens
-        }
-    }
-
-    fn dependency_class_member_crate(tokens: TokenStream) -> TokenStream {
-        quote! {
-            #![allow(dead_code)]
-
-            mod model {
-                use std::sync::Arc;
-                use boltffi::{EventSubscription, StreamProducer};
-
-                pub struct ForeignCounter {
-                    producer: StreamProducer<u32>,
-                }
-
-                impl ForeignCounter {
-                    pub fn ticks(&self) -> Arc<EventSubscription<u32>> {
-                        self.producer.subscribe()
-                    }
-
-                    pub const BANNER: &'static [u8] = b"model";
-                }
-            }
-
-            #tokens
-        }
-    }
-
     fn assert_generated_crate_checks(name: &str, code: TokenStream) {
         let generated_crate = GeneratedCrate::create(name);
-        generated_crate.write(code);
+        generated_crate.write(crate::capture::with_trait_identities(code));
         generated_crate.check();
-    }
-
-    fn assert_generated_crate_checks_with_rustflags(
-        name: &str,
-        code: TokenStream,
-        rustflags: &str,
-    ) {
-        let generated_crate = GeneratedCrate::create(name);
-        generated_crate.write(code);
-        generated_crate.check_with_rustflags(rustflags);
     }
 
     struct GeneratedCrate {
@@ -1403,10 +1077,6 @@ mod tests {
     impl GeneratedCrate {
         fn create(name: &str) -> Self {
             Self::new(name, GeneratedCrateOutput::Library)
-        }
-
-        fn static_library(name: &str) -> Self {
-            Self::new(name, GeneratedCrateOutput::StaticLibrary)
         }
 
         fn new(name: &str, output: GeneratedCrateOutput) -> Self {
@@ -1460,77 +1130,6 @@ mod tests {
             );
         }
 
-        fn check_with_rustflags(&self, rustflags: &str) {
-            if cfg!(miri) {
-                return;
-            }
-            let output = Command::new(cargo())
-                .arg("check")
-                .arg("--quiet")
-                .arg("--manifest-path")
-                .arg(self.root.join("Cargo.toml"))
-                .env("RUSTFLAGS", rustflags)
-                .env(
-                    "CARGO_TARGET_DIR",
-                    workspace_root()
-                        .join("target")
-                        .join("expander-checks-target"),
-                )
-                .output()
-                .expect("run cargo check for generated crate");
-            assert!(
-                output.status.success(),
-                "generated crate failed to check\nstdout:\n{}\nstderr:\n{}",
-                String::from_utf8_lossy(&output.stdout),
-                String::from_utf8_lossy(&output.stderr)
-            );
-        }
-
-        fn build_staticlib_with_rustflags(&self, rustflags: &str) -> PathBuf {
-            if cfg!(miri) {
-                return PathBuf::new();
-            }
-            let target = workspace_root().join("target").join("expander-artifacts");
-            let output = Command::new(cargo())
-                .arg("build")
-                .arg("--quiet")
-                .arg("--release")
-                .arg("--manifest-path")
-                .arg(self.root.join("Cargo.toml"))
-                .env("RUSTFLAGS", rustflags)
-                .env("CARGO_TARGET_DIR", &target)
-                .output()
-                .expect("run cargo build for generated staticlib");
-            assert!(
-                output.status.success(),
-                "generated staticlib failed to build\nstdout:\n{}\nstderr:\n{}",
-                String::from_utf8_lossy(&output.stdout),
-                String::from_utf8_lossy(&output.stderr)
-            );
-            self.staticlib_artifact(&target)
-        }
-
-        fn staticlib_artifact(&self, target: &FsPath) -> PathBuf {
-            let release = target.join("release");
-            let extension = if cfg!(target_os = "windows") {
-                "lib"
-            } else {
-                "a"
-            };
-            fs::read_dir(&release)
-                .expect("read generated staticlib output directory")
-                .filter_map(Result::ok)
-                .map(|entry| entry.path())
-                .find(|path| {
-                    path.extension().is_some_and(|actual| actual == extension)
-                        && path
-                            .file_stem()
-                            .and_then(|stem| stem.to_str())
-                            .is_some_and(|stem| stem.contains("generated_expander_check"))
-                })
-                .expect("generated staticlib artifact exists")
-        }
-
         fn manifest(&self) -> String {
             let crate_type = self.output.manifest_section();
             format!(
@@ -1543,14 +1142,12 @@ mod tests {
     #[derive(Clone, Copy)]
     enum GeneratedCrateOutput {
         Library,
-        StaticLibrary,
     }
 
     impl GeneratedCrateOutput {
         const fn manifest_section(self) -> &'static str {
             match self {
                 Self::Library => "\n",
-                Self::StaticLibrary => "\n[lib]\ncrate-type = [\"staticlib\"]\n",
             }
         }
     }

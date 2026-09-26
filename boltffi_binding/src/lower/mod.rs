@@ -46,6 +46,7 @@ mod constants;
 mod customs;
 mod enums;
 mod error;
+mod foreign_names;
 mod functions;
 mod ids;
 mod index;
@@ -65,6 +66,7 @@ use boltffi_ast::SourceContract;
 
 use crate::{BindingError, Bindings, CanonicalName, Decl, PackageInfo};
 
+pub use self::callbacks::has_local_protocol;
 pub use self::error::{DeclarationFamily, LowerError, LowerErrorKind, UnsupportedType};
 pub use self::surface::SurfaceLower;
 
@@ -115,27 +117,61 @@ pub fn lower<S: SurfaceLower>(source: &SourceContract) -> Result<Bindings<S>, Lo
 pub fn lower_with_declarations<S: SurfaceLower>(
     source: &SourceContract,
 ) -> Result<LoweredBindings<S>, LowerError> {
+    foreign_names::require_unique(source)?;
     let ids = DeclarationIds::from_source(source)?;
     let bindings = lower_with_ids::<S>(source, &ids)?;
     let declarations = ids.declaration_map();
     Ok(LoweredBindings::new(bindings, declarations))
 }
 
+/// Lowers only the declarations in `selected`, as one macro invocation expands them.
+///
+/// Every other declaration in `source` is lookup-only: it answers id and shape
+/// questions for the selected ones, which never look past a referenced declaration's
+/// own fields. `shallow` names selected declarations that arrived lookup-only, such as
+/// a `#[data(impl)]` target, and lower without fields or variants. Customs always
+/// lower, since expansion reads their conversions.
+pub fn lower_invocation<S: SurfaceLower>(
+    source: &SourceContract,
+    selected: &std::collections::HashSet<String>,
+    shallow: &std::collections::HashSet<String>,
+) -> Result<LoweredBindings<S>, LowerError> {
+    let ids = DeclarationIds::from_source(source)?;
+    let index = Index::new(source).lowering(selected, shallow);
+    let decls = lower_decls::<S>(&index, &ids)?;
+    let bindings = Bindings::from_invocation_decls(package_info(source), decls)?;
+    Ok(LoweredBindings::new(bindings, ids.declaration_map()))
+}
+
 fn lower_with_ids<S: SurfaceLower>(
     source: &SourceContract,
     ids: &DeclarationIds,
 ) -> Result<Bindings<S>, LowerError> {
-    let index = Index::new(source);
+    let decls = lower_decls::<S>(&Index::new(source), ids)?;
+    Ok(Bindings::from_decls(package_info(source), decls)?)
+}
+
+fn package_info(source: &SourceContract) -> PackageInfo {
+    PackageInfo::new(
+        CanonicalName::single(source.package.name.as_str()),
+        source.package.version.clone(),
+    )
+}
+
+fn lower_decls<S: SurfaceLower>(
+    index: &Index,
+    ids: &DeclarationIds,
+) -> Result<Vec<Decl<S>>, LowerError> {
     let mut allocator = SymbolAllocator::new();
 
-    let records = records::lower::<S>(&index, ids, &mut allocator)?;
-    let enums = enums::lower::<S>(&index, ids, &mut allocator)?;
-    let classes = classes::lower::<S>(&index, ids, &mut allocator)?;
-    let callbacks = callbacks::lower::<S>(&index, ids, &mut allocator)?;
-    let functions = functions::lower::<S>(&index, ids, &mut allocator)?;
-    let streams = streams::lower::<S>(&index, ids, &mut allocator)?;
-    let constants = constants::lower::<S>(&index, ids, &mut allocator)?;
-    let customs = customs::lower(&index, ids)?;
+    let records = records::lower::<S>(index, ids, &mut allocator)?;
+    let enums = enums::lower::<S>(index, ids, &mut allocator)?;
+    let classes = classes::lower::<S>(index, ids, &mut allocator)?;
+    let callbacks = callbacks::lower::<S>(index, ids, &mut allocator)?;
+    let functions = functions::lower::<S>(index, ids, &mut allocator)?;
+    let streams = streams::lower::<S>(index, ids, &mut allocator)?;
+    let constants = constants::lower::<S>(index, ids, &mut allocator)?;
+    let customs = customs::lower(index, ids)?;
 
     let decls = records
         .into_iter()
@@ -176,13 +212,7 @@ fn lower_with_ids<S: SurfaceLower>(
                 .map(|constant| Decl::Constant(Box::new(constant))),
         )
         .collect::<Vec<_>>();
-
-    let package = PackageInfo::new(
-        CanonicalName::single(source.package.name.as_str()),
-        source.package.version.clone(),
-    );
-
-    Ok(Bindings::from_decls(package, decls)?)
+    Ok(decls)
 }
 
 impl From<BindingError> for LowerError {

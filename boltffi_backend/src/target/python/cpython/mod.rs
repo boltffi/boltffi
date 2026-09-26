@@ -1834,7 +1834,9 @@ Coordinates are plain `f64`.
         let stub = file(&output, "demo/__init__.pyi");
 
         assert!(
-            init.contains("max_rejoin_distance: LengthFFI = LengthFFI(meters=1500)"),
+            init.contains(
+                "max_rejoin_distance: LengthFFI = _boltffi_field(default_factory=lambda: LengthFFI(meters=1500))"
+            ),
             "{init}"
         );
         assert!(stub.contains("max_rejoin_distance: LengthFFI = LengthFFI(meters=1500)"));

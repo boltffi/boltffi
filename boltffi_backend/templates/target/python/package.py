@@ -2,6 +2,7 @@ from __future__ import annotations
 
 {% if !records.is_empty() || has_data_enums %}
 from dataclasses import dataclass
+from dataclasses import field as _boltffi_field
 
 {% endif %}
 {% if !enums.is_empty() %}
@@ -539,7 +540,7 @@ class {{ variant.class_name }}({{ enumeration.class_name }}):
 {{- variant.documentation.docstring("    ") }}
 {%- if variant.has_fields() %}
 {%- for field in variant.fields %}
-    {{ field.name }}: {{ field.annotation }}{% if let Some(default) = field.default %} = {{ default }}{% endif %}
+    {{ field.name }}: {{ field.annotation }}{% if let Some(default) = field.default_assignment() %} = {{ default }}{% endif %}
 {{- field.documentation.docstring("    ") }}
 {%- endfor %}
 {%- else %}
@@ -692,7 +693,7 @@ def _boltffi_attach_{{ record.class_name }}_from_reader(cls, reader: "_BoltFfiWi
 class {{ record.class_name }}:
 {{- record.documentation.docstring("    ") }}
 {%- for field in record.fields %}
-    {{ field.name }}: {{ field.annotation }}{% if let Some(default) = field.default %} = {{ default }}{% endif %}
+    {{ field.name }}: {{ field.annotation }}{% if let Some(default) = field.default_assignment() %} = {{ default }}{% endif %}
 {{- field.documentation.docstring("    ") }}
 {%- endfor %}
 

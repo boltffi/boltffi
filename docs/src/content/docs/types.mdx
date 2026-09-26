@@ -663,6 +663,8 @@ BoltFFI recognizes certain standard library and common crate types and maps them
   ]}
 />
 
+These types are matched by name: any signature that spells `Duration`, `SystemTime`, `Uuid` or `Url` crosses as the builtin. So your own `#[data]`, `#[error]`, class, callback or `custom_type!` can't take one of these names. Such a declaration fails to compile with ``a declared type named `Duration` shadows the builtin `Duration` ``. Rename it, for example to `Timeout`.
+
 ### Duration
 
 `std::time::Duration` represents a span of time. BoltFFI encodes it as seconds plus nanoseconds (12 bytes total). Swift uses `TimeInterval` (a `Double` of seconds), Kotlin and Java use `java.time.Duration`, C# uses a `long`, TypeScript uses a `{ secs: bigint, nanos: number }` object, and Python uses seconds as a `float`.

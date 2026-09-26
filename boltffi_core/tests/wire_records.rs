@@ -7,6 +7,7 @@ boltffi_macros::scaffolding!();
 
 pub mod __private {
     pub use boltffi_core::capture;
+    pub use boltffi_core::{CfgEval, lane_resume};
     pub use boltffi_core::{
         EventSubscription, FfiBuf, FfiSpan, FfiStatus, Passable, RustFutureContinuationCallback,
         RustFutureHandle, StreamContinuationCallback, StreamPollResult, SubscriptionHandle,
@@ -770,17 +771,17 @@ mod records {
     fn record_with_option_none() {
         #[data]
         #[derive(Debug, Clone, PartialEq)]
-        struct MaybeValue {
+        struct AbsentValue {
             id: i32,
             value: Option<i64>,
         }
 
-        let original = MaybeValue { id: 2, value: None };
+        let original = AbsentValue { id: 2, value: None };
 
         let mut buf = vec![0u8; original.wire_size()];
         original.encode_to(&mut buf);
 
-        let (decoded, _) = MaybeValue::decode_from(&buf).unwrap();
+        let (decoded, _) = AbsentValue::decode_from(&buf).unwrap();
         assert_eq!(decoded, original);
     }
 
@@ -977,19 +978,19 @@ mod records {
     fn single_field_variable_record() {
         #[data]
         #[derive(Debug, Clone, PartialEq)]
-        struct Single {
+        struct SingleText {
             value: String,
         }
 
-        let original = Single {
+        let original = SingleText {
             value: "test".to_string(),
         };
-        assert!(!Single::is_fixed_size());
+        assert!(!SingleText::is_fixed_size());
 
         let mut buf = vec![0u8; original.wire_size()];
         original.encode_to(&mut buf);
 
-        let (decoded, _) = Single::decode_from(&buf).unwrap();
+        let (decoded, _) = SingleText::decode_from(&buf).unwrap();
         assert_eq!(decoded, original);
     }
 
@@ -1286,21 +1287,21 @@ mod enums {
     fn enum_with_vec_field() {
         #[data]
         #[derive(Debug, Clone, PartialEq)]
-        enum Container {
+        enum ContainerEnum {
             Empty,
             Items(Vec<i32>),
         }
 
-        let empty = Container::Empty;
+        let empty = ContainerEnum::Empty;
         let mut buf = vec![0u8; empty.wire_size()];
         empty.encode_to(&mut buf);
-        let (decoded, _) = Container::decode_from(&buf).unwrap();
+        let (decoded, _) = ContainerEnum::decode_from(&buf).unwrap();
         assert_eq!(decoded, empty);
 
-        let items = Container::Items(vec![1, 2, 3, 4, 5]);
+        let items = ContainerEnum::Items(vec![1, 2, 3, 4, 5]);
         let mut buf = vec![0u8; items.wire_size()];
         items.encode_to(&mut buf);
-        let (decoded, _) = Container::decode_from(&buf).unwrap();
+        let (decoded, _) = ContainerEnum::decode_from(&buf).unwrap();
         assert_eq!(decoded, items);
     }
 
@@ -1343,27 +1344,27 @@ mod enums {
 
         #[data]
         #[derive(Debug, Clone, PartialEq)]
-        struct User {
+        struct Member {
             id: i32,
             status: Status,
         }
 
-        let user = User {
+        let user = Member {
             id: 1,
             status: Status::Active,
         };
         let mut buf = vec![0u8; user.wire_size()];
         user.encode_to(&mut buf);
-        let (decoded, _) = User::decode_from(&buf).unwrap();
+        let (decoded, _) = Member::decode_from(&buf).unwrap();
         assert_eq!(decoded, user);
 
-        let user2 = User {
+        let user2 = Member {
             id: 2,
             status: Status::Inactive,
         };
         let mut buf = vec![0u8; user2.wire_size()];
         user2.encode_to(&mut buf);
-        let (decoded, _) = User::decode_from(&buf).unwrap();
+        let (decoded, _) = Member::decode_from(&buf).unwrap();
         assert_eq!(decoded, user2);
     }
 

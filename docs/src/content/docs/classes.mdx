@@ -111,6 +111,8 @@ counter.increment()
 print(counter.get())  # 2`}
 />
 
+Write the `#[export] impl` in the same module as the struct, as one block per class. BoltFFI finds the class through the struct's name in that module. With the impl anywhere else, a signature that names the class, such as `fn peek(c: &model::Counter)`, fails to compile with ``cannot find `Counter` in `model` ``.
+
 ## Constructors
 
 Methods that return `Self` become constructors. How they appear in the target language depends on the method name and parameters.

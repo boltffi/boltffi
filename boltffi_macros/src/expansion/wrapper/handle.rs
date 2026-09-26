@@ -1,7 +1,6 @@
-use boltffi_binding::{CallbackLocalFunction, native, wasm32};
+use boltffi_binding::{native, wasm32};
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{Ident, parse_str};
 
 use crate::expansion::error::Error;
 
@@ -45,31 +44,5 @@ impl CarrierTokens {
 
     pub fn zero(&self) -> &TokenStream {
         &self.zero
-    }
-}
-
-pub struct CallbackLocalPath {
-    function: CallbackLocalFunction,
-}
-
-impl CallbackLocalPath {
-    pub fn new(function: &CallbackLocalFunction) -> Self {
-        Self {
-            function: function.clone(),
-        }
-    }
-
-    pub fn tokens(self) -> Result<TokenStream, Error> {
-        let ident = self
-            .function
-            .segments()
-            .last()
-            .map(|segment| parse_str::<Ident>(segment.as_str()))
-            .transpose()
-            .map_err(|_| Error::SourceSyntaxMismatch("callback local handle path is not Rust"))?
-            .ok_or(Error::SourceSyntaxMismatch(
-                "callback local handle path is empty",
-            ))?;
-        Ok(quote! { #ident })
     }
 }

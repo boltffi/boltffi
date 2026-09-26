@@ -1,30 +1,24 @@
-//! Reads BoltFFI binding metadata from compiled Rust artifacts.
+//! Reads BoltFFI source records from compiled Rust artifacts.
 //!
-//! The reader owns object-file and archive traversal. The metadata
-//! schema, section names, record framing, and contract validation stay
-//! in `boltffi_binding`.
+//! The reader owns object-file and archive traversal. The record framing
+//! and section names stay in `boltffi_binding`.
 
 use std::borrow::Cow;
-use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use boltffi_binding::{
-    BindingMetadataEnvelope, BindingMetadataError, BindingMetadataHash, BindingMetadataSection,
-    BindingMetadataSectionBytes, RawSourceRecord, SourceRecordError, SourceRecordSectionBytes,
-    is_source_record_section,
+    RawSourceRecord, SourceRecordError, SourceRecordSectionBytes, is_source_record_section,
 };
 use object::read::archive::{ArchiveFile, ArchiveMember};
 use object::read::macho::{FatArch, MachOFatFile};
 use object::{File, FileKind, Object, ObjectSection};
 use thiserror::Error;
 
-/// Reads binding metadata from compiled Rust artifacts.
+/// Reads source records from compiled Rust artifacts.
 ///
 /// The reader accepts object files, shared libraries, static libraries,
-/// and Rust archives. Every metadata record is validated by
-/// `boltffi_binding` before it is returned. Repeated records with the
-/// same contract hash are returned once.
+/// and Rust archives.
 pub struct BindingMetadataReader {
     artifacts: Vec<PathBuf>,
 }
@@ -35,12 +29,6 @@ impl BindingMetadataReader {
         Self {
             artifacts: artifacts.into_iter().collect(),
         }
-    }
-
-    /// Reads validated metadata envelopes from every artifact.
-    pub fn read(&self) -> Result<Vec<BindingMetadataEnvelope>, BindingMetadataReadError> {
-        self.payloads::<BindingMetadataEnvelope>()
-            .map(|envelopes| DeduplicatedEnvelopes::from_envelopes(envelopes).into_vec())
     }
 
     /// Reads per-invocation source records from every artifact.
@@ -55,18 +43,6 @@ impl BindingMetadataReader {
             .map(|artifact| artifact.and_then(|artifact| artifact.payloads()))
             .collect::<Result<Vec<_>, _>>()
             .map(|artifacts| artifacts.into_iter().flatten().collect())
-    }
-
-    /// Reads validated metadata envelopes and rejects empty results.
-    pub fn read_required(&self) -> Result<Vec<BindingMetadataEnvelope>, BindingMetadataReadError> {
-        let envelopes = self.read()?;
-        if envelopes.is_empty() {
-            Err(BindingMetadataReadError::NoMetadata {
-                artifacts: self.artifacts.clone(),
-            })
-        } else {
-            Ok(envelopes)
-        }
     }
 }
 
@@ -89,14 +65,6 @@ pub enum BindingMetadataReadError {
         /// Object parser error.
         source: object::Error,
     },
-    /// A metadata section record failed validation.
-    #[error("decode binding metadata from `{path}`: {source}")]
-    Metadata {
-        /// Artifact path.
-        path: PathBuf,
-        /// Metadata validation error.
-        source: BindingMetadataError,
-    },
     /// A source-record section failed to decode.
     #[error("decode source records from `{path}`: {source}")]
     SourceRecord {
@@ -104,12 +72,6 @@ pub enum BindingMetadataReadError {
         path: PathBuf,
         /// Source record decoding error.
         source: SourceRecordError,
-    },
-    /// No binding metadata records were found in the artifact set.
-    #[error("no BoltFFI binding metadata found in compiled artifacts: {artifacts:?}")]
-    NoMetadata {
-        /// Artifact paths that were searched.
-        artifacts: Vec<PathBuf>,
     },
 }
 
@@ -140,26 +102,6 @@ impl ArtifactBytes {
 trait SectionPayload: Sized {
     fn matches_section(name: &str, segment: Option<&str>) -> bool;
     fn decode_section(path: &Path, bytes: &[u8]) -> Result<Vec<Self>, BindingMetadataReadError>;
-}
-
-impl SectionPayload for BindingMetadataEnvelope {
-    fn matches_section(name: &str, segment: Option<&str>) -> bool {
-        [
-            BindingMetadataSection::MachO,
-            BindingMetadataSection::Object,
-        ]
-        .into_iter()
-        .any(|section| section.matches(name, segment))
-    }
-
-    fn decode_section(path: &Path, bytes: &[u8]) -> Result<Vec<Self>, BindingMetadataReadError> {
-        BindingMetadataSectionBytes::new(bytes)
-            .envelopes()
-            .map_err(|source| BindingMetadataReadError::Metadata {
-                path: path.to_path_buf(),
-                source,
-            })
-    }
 }
 
 impl SectionPayload for RawSourceRecord {
@@ -360,29 +302,6 @@ impl ArchiveMemberKind {
     }
 }
 
-#[derive(Default)]
-struct DeduplicatedEnvelopes {
-    seen: HashSet<BindingMetadataHash>,
-    envelopes: Vec<BindingMetadataEnvelope>,
-}
-
-impl DeduplicatedEnvelopes {
-    fn from_envelopes(envelopes: impl IntoIterator<Item = BindingMetadataEnvelope>) -> Self {
-        envelopes.into_iter().fold(Self::default(), Self::insert)
-    }
-
-    fn insert(mut self, envelope: BindingMetadataEnvelope) -> Self {
-        if self.seen.insert(envelope.contract_hash()) {
-            self.envelopes.push(envelope);
-        }
-        self
-    }
-
-    fn into_vec(self) -> Vec<BindingMetadataEnvelope> {
-        self.envelopes
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::ffi::OsString;
@@ -392,36 +311,7 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use boltffi_ast::{PackageInfo, SourceContract};
-    use boltffi_binding::{
-        BindingMetadataEnvelope, BindingMetadataSection, Native, SerializedBindings,
-        lower_with_declarations,
-    };
-
     use super::{BindingMetadataReadError, BindingMetadataReader};
-
-    #[test]
-    fn reads_metadata_from_compiled_static_library() {
-        let artifact = MetadataArtifact::compile();
-
-        let envelopes = BindingMetadataReader::new([artifact.path()])
-            .read()
-            .expect("artifact metadata reads");
-
-        assert_eq!(envelopes.len(), 1);
-        assert_eq!(envelopes[0].package().name().as_path_string(), "demo");
-    }
-
-    #[test]
-    fn repeated_metadata_records_are_deduplicated() {
-        let artifact = MetadataArtifact::compile_with_repeated_record();
-
-        let envelopes = BindingMetadataReader::new([artifact.path()])
-            .read_required()
-            .expect("artifact metadata reads");
-
-        assert_eq!(envelopes.len(), 1);
-    }
 
     #[test]
     fn reads_source_records_from_compiled_static_library() {
@@ -439,14 +329,14 @@ mod tests {
     }
 
     #[test]
-    fn required_read_rejects_artifact_without_metadata() {
-        let artifact = MetadataArtifact::compile_without_metadata();
+    fn artifact_without_records_reads_none() {
+        let artifact = MetadataArtifact::compile_source("", ArtifactKind::StaticLibrary);
 
-        let error = BindingMetadataReader::new([artifact.path()])
-            .read_required()
-            .expect_err("metadata is required");
+        let records = BindingMetadataReader::new([artifact.path()])
+            .read_source_records()
+            .expect("artifact without records reads");
 
-        assert!(matches!(error, BindingMetadataReadError::NoMetadata { .. }));
+        assert!(records.is_empty());
     }
 
     #[test]
@@ -454,7 +344,7 @@ mod tests {
         let artifact = RawArtifact::new("libbroken.a", malformed_archive_member());
 
         let error = BindingMetadataReader::new([artifact.path()])
-            .read_required()
+            .read_source_records()
             .expect_err("broken object member must reject");
 
         assert!(matches!(error, BindingMetadataReadError::Parse { .. }));
@@ -464,39 +354,39 @@ mod tests {
     fn archive_member_with_non_object_binary_payload_is_ignored() {
         let artifact = RawArtifact::new("libfat.a", non_object_binary_archive_member());
 
-        let error = BindingMetadataReader::new([artifact.path()])
-            .read_required()
-            .expect_err("non-object archive member has no metadata");
+        let records = BindingMetadataReader::new([artifact.path()])
+            .read_source_records()
+            .expect("non-object archive member is skipped");
 
-        assert!(matches!(error, BindingMetadataReadError::NoMetadata { .. }));
+        assert!(records.is_empty());
     }
 
     #[test]
-    fn mach_o_fat_artifact_reads_metadata_from_arch_slice() {
-        let artifact = MetadataArtifact::compile();
-        let bytes = fs::read(artifact.path()).expect("read metadata artifact");
+    fn mach_o_fat_artifact_reads_records_from_arch_slice() {
+        let artifact = MetadataArtifact::compile_with_source_records();
+        let bytes = fs::read(artifact.path()).expect("read record artifact");
         let fat = RawArtifact::new("libdemo-universal", mach_o_fat32(&bytes));
 
-        let envelopes = BindingMetadataReader::new([fat.path()])
-            .read_required()
-            .expect("fat artifact metadata reads");
+        let records = BindingMetadataReader::new([fat.path()])
+            .read_source_records()
+            .expect("fat artifact records read");
 
-        assert_eq!(envelopes.len(), 1);
-        assert_eq!(envelopes[0].package().name().as_path_string(), "demo");
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[0].package.name, "demo");
     }
 
     #[test]
     fn thin_archive_member_is_read_from_archive_directory() {
-        let object = MetadataArtifact::compile_object();
-        let object_bytes = fs::read(object.path()).expect("read metadata object");
+        let object = MetadataArtifact::compile_object_with_source_records();
+        let object_bytes = fs::read(object.path()).expect("read record object");
         let archive = ThinArchive::new("metadata.o", object_bytes);
 
-        let envelopes = BindingMetadataReader::new([archive.path()])
-            .read_required()
-            .expect("thin archive metadata reads");
+        let records = BindingMetadataReader::new([archive.path()])
+            .read_source_records()
+            .expect("thin archive records read");
 
-        assert_eq!(envelopes.len(), 1);
-        assert_eq!(envelopes[0].package().name().as_path_string(), "demo");
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[0].package.name, "demo");
     }
 
     struct MetadataArtifact {
@@ -505,24 +395,16 @@ mod tests {
     }
 
     impl MetadataArtifact {
-        fn compile() -> Self {
-            Self::compile_with_records(1)
-        }
-
-        fn compile_with_repeated_record() -> Self {
-            Self::compile_with_records(2)
-        }
-
-        fn compile_without_metadata() -> Self {
-            Self::compile_with_records(0)
-        }
-
-        fn compile_object() -> Self {
-            Self::compile_with_records_and_kind(1, ArtifactKind::Object)
-        }
-
         fn compile_with_source_records() -> Self {
-            let statics = [
+            Self::compile_source(&Self::source_record_statics(), ArtifactKind::StaticLibrary)
+        }
+
+        fn compile_object_with_source_records() -> Self {
+            Self::compile_source(&Self::source_record_statics(), ArtifactKind::Object)
+        }
+
+        fn source_record_statics() -> String {
+            [
                 source_record_bytes("demo", "1.0.0", "demo::geometry", &[r#"{"prim":"f64"}"#], b"{}"),
                 source_record_bytes("demo", "1.0.0", "demo", &[], b"{}"),
             ]
@@ -540,16 +422,7 @@ mod tests {
                 )
             })
             .collect::<Vec<_>>()
-            .join("\n");
-            Self::compile_source(&statics, ArtifactKind::StaticLibrary)
-        }
-
-        fn compile_with_records(records: usize) -> Self {
-            Self::compile_with_records_and_kind(records, ArtifactKind::StaticLibrary)
-        }
-
-        fn compile_with_records_and_kind(records: usize, kind: ArtifactKind) -> Self {
-            Self::compile_source(&Self::source(records), kind)
+            .join("\n")
         }
 
         fn compile_source(source_text: &str, kind: ArtifactKind) -> Self {
@@ -584,26 +457,6 @@ mod tests {
 
         fn path(&self) -> PathBuf {
             self.path.clone()
-        }
-
-        fn source(records: usize) -> String {
-            let record = metadata_record();
-            let mach_o_section = BindingMetadataSection::MachO.link_section();
-            let object_section = BindingMetadataSection::Object.link_section();
-            let length = record.len();
-            let bytes = record
-                .iter()
-                .map(u8::to_string)
-                .collect::<Vec<_>>()
-                .join(", ");
-            (0..records)
-                .map(|index| {
-                    format!(
-                        "#[cfg_attr(target_vendor = \"apple\", unsafe(link_section = \"{mach_o_section}\"))]\n#[cfg_attr(not(target_vendor = \"apple\"), unsafe(link_section = \"{object_section}\"))]\n#[used]\nstatic BOLTFFI_METADATA_{index}: [u8; {length}] = [{bytes}];"
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join("\n")
         }
     }
 
@@ -686,15 +539,6 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.root);
         }
-    }
-
-    fn metadata_record() -> Vec<u8> {
-        let source = SourceContract::new(PackageInfo::new("demo", None));
-        let lowered = lower_with_declarations::<Native>(&source).expect("empty source lowers");
-        BindingMetadataEnvelope::new(SerializedBindings::native(lowered.into_bindings()))
-            .expect("metadata envelope")
-            .to_section_bytes()
-            .expect("metadata section bytes")
     }
 
     fn source_record_bytes(

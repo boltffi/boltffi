@@ -30,6 +30,7 @@ pub fn lower<S: SurfaceLower>(
     index
         .enums()
         .iter()
+        .filter(|enumeration| index.lowers(enumeration.id.as_str()))
         .map(|enumeration| lower_one(index, ids, allocator, enumeration))
         .collect()
 }
@@ -102,16 +103,21 @@ fn lower_data<S: SurfaceLower>(
     initializers: Vec<InitializerDecl<S>>,
     enum_methods: Vec<ExportedMethodDecl<S, NativeSymbol>>,
 ) -> Result<DataEnumDecl<S>, LowerError> {
-    Ok(DataEnumDecl::new(
-        ids.enumeration(&enumeration.id)?,
-        CanonicalName::from(&enumeration.name),
-        metadata::decl_meta(enumeration.doc.as_ref(), enumeration.deprecated.as_ref()),
+    let variants = if index.is_shallow(enumeration.id.as_str()) {
+        Vec::new()
+    } else {
         enumeration
             .variants
             .iter()
             .enumerate()
             .map(|(variant_index, variant)| lower_variant(index, ids, variant_index, variant))
-            .collect::<Result<Vec<_>, LowerError>>()?,
+            .collect::<Result<Vec<_>, LowerError>>()?
+    };
+    Ok(DataEnumDecl::new(
+        ids.enumeration(&enumeration.id)?,
+        CanonicalName::from(&enumeration.name),
+        metadata::decl_meta(enumeration.doc.as_ref(), enumeration.deprecated.as_ref()),
+        variants,
         initializers,
         enum_methods,
         codecs::plan(

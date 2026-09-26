@@ -56,12 +56,8 @@ impl<'a> PythonSharedLibraryBuilder<'a> {
             command.arg(toolchain_selector);
         }
 
-        // `cargo rustc`, not `cargo build`: the expansion is selected by
-        // `--cfg boltffi_binding_expansion`, which cargo includes in the unit
-        // fingerprint. A plain `cargo build` of the same package writes an
-        // otherwise identical cdylib to the same path, so without the cfg the two
-        // silently reuse each other's artifact and the packaged library can end up
-        // with no FFI exports at all. See `build.rs`' `Builder::apply_expansion`.
+        // `cargo rustc` builds exactly the selected library target, like every
+        // other pack backend. See `build.rs`' `Builder::apply_expansion`.
         command.arg("rustc");
         command
             .arg("--manifest-path")
@@ -80,11 +76,6 @@ impl<'a> PythonSharedLibraryBuilder<'a> {
         // tail, a package set and a non-library target up front — all three of which
         // would otherwise reach cargo alongside the `--cfg` tail and fail obscurely.
         command.args(self.plan.expansion.cargo_args().as_slice());
-        // The same env + `--cfg` every other pack backend gets from `Builder`.
-        // Notably `BOLTFFI_BINDING_METADATA_FEATURES`, which the `#[data]` macro
-        // reads to resolve `#[cfg(feature = ...)]`: cargo sets `CARGO_FEATURE_*`
-        // for build scripts only, never for rustc, so a macro that does not get it
-        // sees no active features and emits no exports for a feature-gated module.
         command.arg("--lib");
         self.plan.expansion.configure_rustc(&mut command)?;
 
@@ -96,17 +87,11 @@ impl<'a> PythonSharedLibraryBuilder<'a> {
 mod tests {
     use std::ffi::OsStr;
 
-    use boltffi_binding::BINDING_METADATA_FEATURES_ENV;
-
     use super::super::plan::PythonPackagingPlan;
     use super::PythonSharedLibraryBuilder;
 
-    /// `pack python` must build through the same expansion every other backend
-    /// uses. Two properties, both of which failed silently before: the `--cfg`
-    /// that keeps an expansion build's fingerprint distinct from a plain
-    /// `cargo build`, and the feature list the `#[data]` macro resolves `#[cfg]`
-    /// against — without it a feature-gated module compiles but exports nothing,
-    /// and the packaged wheel fails at consumer import time.
+    /// `pack python` builds the library with the same Cargo arguments every other
+    /// backend uses.
     #[test]
     fn builds_the_cdylib_as_an_expansion() {
         let plan = PythonPackagingPlan::fixture(true, "demo_ffi");
@@ -121,15 +106,8 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(args.first().map(String::as_str), Some("rustc"));
         assert_eq!(
-            args.iter().rev().take(4).rev().cloned().collect::<Vec<_>>(),
-            vec!["--lib", "--", "--cfg", "boltffi_binding_expansion"],
-        );
-
-        assert!(
-            command.get_envs().any(|(key, value)| {
-                key == OsStr::new(BINDING_METADATA_FEATURES_ENV) && value == Some(OsStr::new("ffi"))
-            }),
-            "the #[data] macro resolves cfg from {BINDING_METADATA_FEATURES_ENV}",
+            args.iter().rev().take(2).rev().cloned().collect::<Vec<_>>(),
+            vec!["--lib", "--"],
         );
     }
 
