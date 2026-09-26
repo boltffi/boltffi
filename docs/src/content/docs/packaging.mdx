@@ -388,6 +388,20 @@ android {
 
 The shared libraries are loaded automatically when you first call into your Kotlin bindings.
 
+### Build Directories
+
+`boltffi pack android` builds all Android ABIs at the same time, each in a Cargo process of its own with its own target directory:
+
+```
+target/boltffi/android/<triple>/cargo/<triple>/<profile>/
+```
+
+Cargo locks a target directory for the whole of a build, so builds sharing one would run one after another. `boltffi pack kmp` builds its Android libraries the same way. To cache Android builds in CI, cache `target/boltffi/android/`.
+
+If you pass `--target-dir` through to Cargo, BoltFFI keeps that directory and builds the ABIs one after another. `pack android --no-build` uses, for each ABI, whichever is newer: the library in this directory or the one in `target/<triple>/<profile>/`. The step-by-step `boltffi build android` workflow still works.
+
+Each ABI's process builds its own copy of the dependencies and build scripts. Don't point them at a shared `build.build-dir`. Stable Cargo locks the build directory for the whole build, so the ABIs would build one after another again. With nightly's `-Zfine-grain-locking`, concurrent builds that both need to compile the same build scripts can deadlock, as of Cargo 1.100 ([rust-lang/cargo#4282](https://github.com/rust-lang/cargo/issues/4282)).
+
 ## Kotlin Multiplatform Packaging
 
 Package the experimental Kotlin Multiplatform module:
