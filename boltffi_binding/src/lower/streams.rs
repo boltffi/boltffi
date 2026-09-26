@@ -37,6 +37,7 @@ pub fn lower<S: SurfaceLower>(
     index
         .streams()
         .iter()
+        .filter(|stream| index.lowers(stream.id.as_str()))
         .map(|stream| lower_one::<S>(index, ids, allocator, stream))
         .collect()
 }

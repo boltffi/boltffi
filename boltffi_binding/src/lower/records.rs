@@ -27,6 +27,7 @@ pub fn lower<S: SurfaceLower>(
     index
         .records()
         .iter()
+        .filter(|record| index.lowers(record.id.as_str()))
         .map(|record| lower_one(index, ids, allocator, record))
         .collect()
 }
@@ -112,28 +113,32 @@ fn lower_encoded<S: SurfaceLower>(
     initializers: Vec<InitializerDecl<S>>,
     record_methods: Vec<ExportedMethodDecl<S, NativeSymbol>>,
 ) -> Result<EncodedRecordDecl<S>, LowerError> {
-    let fields = record
-        .fields
-        .iter()
-        .map(|field| {
-            let key = FieldKey::from(field);
-            let value = ValueRef::self_value().field(key.clone());
-            let ty = types::lower(ids, &field.type_expr)?;
-            let codec = codecs::plan(index, ids, &field.type_expr, value)?;
-            Ok(EncodedFieldDecl::new(
-                key,
-                ty,
-                codec,
-                metadata::value_meta(
-                    index,
-                    &field.type_expr,
-                    field.doc.as_ref(),
-                    None,
-                    field.default.as_ref(),
-                )?,
-            ))
-        })
-        .collect::<Result<Vec<_>, LowerError>>()?;
+    let fields = if index.is_shallow(record.id.as_str()) {
+        Vec::new()
+    } else {
+        record
+            .fields
+            .iter()
+            .map(|field| {
+                let key = FieldKey::from(field);
+                let value = ValueRef::self_value().field(key.clone());
+                let ty = types::lower(ids, &field.type_expr)?;
+                let codec = codecs::plan(index, ids, &field.type_expr, value)?;
+                Ok(EncodedFieldDecl::new(
+                    key,
+                    ty,
+                    codec,
+                    metadata::value_meta(
+                        index,
+                        &field.type_expr,
+                        field.doc.as_ref(),
+                        None,
+                        field.default.as_ref(),
+                    )?,
+                ))
+            })
+            .collect::<Result<Vec<_>, LowerError>>()?
+    };
 
     Ok(EncodedRecordDecl::new(
         ids.record(&record.id)?,
@@ -328,6 +333,51 @@ mod tests {
         ));
 
         encoded_record(&bindings);
+    }
+
+    #[test]
+    fn a_lookup_record_classifies_like_its_resolved_copy() {
+        let slot = TypeExpr::record(
+            format!("{}0", crate::SLOT_ID_PREFIX).into(),
+            SourcePath::single("Other"),
+        );
+        let resolved = [
+            TypeExpr::record("demo::Other".into(), SourcePath::single("Other")),
+            TypeExpr::enumeration("demo::Other".into(), SourcePath::single("Other")),
+            TypeExpr::class("demo::Other".into(), SourcePath::single("Other")),
+        ];
+        let with = |type_expr: TypeExpr| {
+            record(
+                "demo::Pair",
+                "pair",
+                vec![
+                    field("x", TypeExpr::Primitive(Primitive::F64)),
+                    field("other", type_expr),
+                ],
+            )
+        };
+
+        resolved.into_iter().for_each(|type_expr| {
+            assert_eq!(
+                super::is_direct(&with(slot.clone())),
+                super::is_direct(&with(type_expr))
+            );
+        });
+        let data_enum = |type_expr: TypeExpr| {
+            let mut enumeration = EnumDef::new("demo::Shape".into(), name("shape"));
+            enumeration.variants = vec![VariantDef {
+                payload: VariantPayload::Tuple(vec![type_expr]),
+                ..VariantDef::unit(name("holds"))
+            }];
+            enumeration
+        };
+        assert_eq!(
+            crate::lower::enums::is_c_style(&data_enum(slot.clone())),
+            crate::lower::enums::is_c_style(&data_enum(TypeExpr::record(
+                "demo::Other".into(),
+                SourcePath::single("Other"),
+            )))
+        );
     }
 
     #[test]
