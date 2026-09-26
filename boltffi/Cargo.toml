@@ -18,6 +18,7 @@ fast-alloc = ["boltffi_core/fast-alloc"]
 uuid = ["boltffi_core/uuid"]
 chrono = ["boltffi_core/chrono"]
 url = ["boltffi_core/url"]
+getrandom = ["boltffi_core/getrandom"]
 dart = ["dep:boltffi_dart_runtime"]
 
 [dependencies]

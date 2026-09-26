@@ -34,6 +34,8 @@ export {
   StringAlloc,
   WASM_ABI_VERSION,
   WriterAlloc,
+  RandomFillStatus,
+  createRandomFillImport,
   instantiateBoltFFI,
   instantiateBoltFFISync,
   AsyncFutureManager,

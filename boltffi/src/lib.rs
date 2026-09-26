@@ -60,6 +60,9 @@ pub use boltffi_core::{
 /// ```
 pub use boltffi_core::interned_string_pool;
 
+#[cfg(feature = "getrandom")]
+pub use boltffi_core::wasm_getrandom_backend;
+
 #[doc(hidden)]
 pub mod __private {
     pub use boltffi_core::{
