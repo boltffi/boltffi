@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -18,11 +19,12 @@ use boltffi_backend::target::{
 };
 use boltffi_backend::{CustomTypeMapping, GeneratedOutput, Target as BackendTarget};
 use boltffi_binding::{
-    BindingMetadataSurface, Bindings, LowerError, Native, SourceFragmentError, Surface,
-    SurfaceLower, Wasm32, aggregate_records, lower,
+    BindingMetadataSurface, Bindings, LowerError, Native, RawSourceRecord, SourceFragmentError,
+    Surface, SurfaceLower, Wasm32, aggregate_records, lower, reachable_from,
 };
 use thiserror::Error;
 
+use crate::library_symbols::{self, LibrarySymbolsError};
 use crate::metadata::{BindingMetadataBuild, BindingMetadataBuildError};
 use crate::target::Target;
 
@@ -807,23 +809,33 @@ impl Generation {
     }
 
     fn bindings<S: Surface + SurfaceLower>(&self) -> Result<Bindings<S>, GenerationError> {
-        let source = self.metadata_build().read_source()?;
-        if records_cover_the_root(&source.source_records, &source.package) {
-            match aggregate_records(&source.source_records, source.package) {
-                Ok(contract) => return lower::<S>(&contract).map_err(GenerationError::Lower),
-                Err(error) if falls_back_to_envelope(&error) => {}
-                Err(error) => return Err(GenerationError::SourceAggregation(error)),
-            }
+        let build = self.metadata_build();
+        let source = build.read_source()?;
+        if source.source_records.is_empty() {
+            return Err(GenerationError::NoSourceRecords);
         }
-        let surface = self
-            .binding_surface
-            .unwrap_or_else(|| BindingMetadataSurface::from_target_triple(self.triple.as_deref()));
-        self.metadata_build()
-            .read()?
-            .into_iter()
-            .find(|envelope| envelope.surface() == surface)
-            .and_then(|envelope| S::from_serialized(envelope.into_bindings()))
-            .ok_or(GenerationError::MissingSurface { surface })
+        let seeds = seed_crates(&source.source_records, &source.local_packages);
+        let contract = aggregate_records(&source.source_records, source.package)
+            .map_err(GenerationError::SourceAggregation)?;
+        let contract = reachable_from(contract, seeds.iter().map(String::as_str));
+        let bindings = lower::<S>(&contract).map_err(GenerationError::Lower)?;
+        if let Some(library) = linked_library(&source.libraries) {
+            let checked = checked_symbols(&build, library, &contract)?;
+            library_symbols::require_exported(
+                library,
+                bindings
+                    .symbols()
+                    .symbols()
+                    .iter()
+                    .map(|symbol| symbol.name().as_str())
+                    .filter(|name| {
+                        checked
+                            .as_ref()
+                            .is_none_or(|checked| checked.contains(*name))
+                    }),
+            )?;
+        }
+        Ok(bindings)
     }
 
     fn metadata_build(&self) -> BindingMetadataBuild {
@@ -846,6 +858,55 @@ impl Generation {
     }
 }
 
+/// The symbols `library` can vouch for, or `None` for all of them. A wasm surface built for
+/// the host lacks the wasm-only exports, so only the names both surfaces share are checked.
+fn checked_symbols(
+    build: &BindingMetadataBuild,
+    library: &Path,
+    contract: &boltffi_ast::SourceContract,
+) -> Result<Option<BTreeSet<String>>, GenerationError> {
+    if build.surface_is_native()
+        || library
+            .extension()
+            .is_some_and(|extension| extension == "wasm")
+    {
+        return Ok(None);
+    }
+    let native = lower::<Native>(contract).map_err(GenerationError::Lower)?;
+    Ok(Some(
+        native
+            .symbols()
+            .symbols()
+            .iter()
+            .map(|symbol| symbol.name().as_str().to_owned())
+            .collect(),
+    ))
+}
+
+/// The library the bindings load: the dynamic one when built, else the static one.
+fn linked_library(libraries: &[PathBuf]) -> Option<&Path> {
+    let extension = |path: &&PathBuf| {
+        path.extension()
+            .and_then(std::ffi::OsStr::to_str)
+            .map(str::to_owned)
+    };
+    libraries
+        .iter()
+        .find(|path| {
+            matches!(
+                extension(path).as_deref(),
+                Some("dylib" | "so" | "dll" | "wasm")
+            )
+        })
+        .or_else(|| {
+            libraries.iter().find(|path| {
+                matches!(extension(path).as_deref(), Some("a" | "lib"))
+                    && !path.to_string_lossy().ends_with(".dll.lib")
+            })
+        })
+        .map(PathBuf::as_path)
+}
+
 /// Failure while generating bindings from embedded crate metadata.
 #[derive(Debug, Error)]
 pub enum GenerationError {
@@ -858,12 +919,20 @@ pub enum GenerationError {
         /// Surface selected from the target triple.
         surface: BindingMetadataSurface,
     },
+    /// The compiled crate carried no per-invocation source records.
+    #[error(
+        "compiled crate carries no BoltFFI source records; is `boltffi::scaffolding!()` at its root?"
+    )]
+    NoSourceRecords,
     /// Per-invocation source records did not aggregate into one contract.
     #[error("aggregate per-invocation source records: {0}")]
     SourceAggregation(SourceFragmentError),
     /// The aggregated source contract failed to lower.
     #[error("lower aggregated source contract: {0}")]
     Lower(LowerError),
+    /// The bindings call symbols the built library does not export.
+    #[error(transparent)]
+    LibrarySymbols(#[from] LibrarySymbolsError),
     /// The target backend failed to render the bindings.
     #[error("render bindings: {0}")]
     Render(boltffi_backend::Error),
@@ -883,26 +952,6 @@ pub enum GenerationError {
     },
 }
 
-/// The records path covers only surfaces the root package emitted itself;
-/// dependency records mean a multi-crate surface the legacy scan still owns.
-fn records_cover_the_root(
-    records: &[boltffi_binding::RawSourceRecord],
-    package: &boltffi_ast::PackageInfo,
-) -> bool {
-    !records.is_empty() && records.iter().all(|record| record.package == *package)
-}
-
-/// Unsupported captures, unresolved references, and shadowed builtins mean
-/// capture could not see the whole surface; the legacy whole-crate scan still can.
-fn falls_back_to_envelope(error: &SourceFragmentError) -> bool {
-    matches!(
-        error,
-        SourceFragmentError::UnsupportedCapture { .. }
-            | SourceFragmentError::UnresolvedReference { .. }
-            | SourceFragmentError::ShadowedBuiltin { .. }
-    )
-}
-
 fn write_file(path: &Path, contents: &str) -> Result<(), GenerationError> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|source| GenerationError::Write {
@@ -914,6 +963,19 @@ fn write_file(path: &Path, contents: &str) -> Result<(), GenerationError> {
         path: path.to_path_buf(),
         source,
     })
+}
+
+/// Crates whose every declaration binds: those of the root and its path dependencies.
+fn seed_crates(
+    records: &[RawSourceRecord],
+    local_packages: &[boltffi_ast::PackageInfo],
+) -> BTreeSet<String> {
+    records
+        .iter()
+        .filter(|record| local_packages.contains(&record.package))
+        .filter_map(|record| record.module.split("::").next())
+        .map(str::to_owned)
+        .collect()
 }
 
 #[cfg(test)]
@@ -1026,6 +1088,32 @@ mod tests {
         generation
             .render_native_bindings(Target::KotlinMultiplatform, &bindings)
             .expect("primitive KMP bindings should render through the production target route")
+    }
+
+    #[test]
+    fn only_records_of_local_packages_seed_the_bindings() {
+        let record = |package: &str, module: &str| RawSourceRecord {
+            package: SourcePackageInfo::new(package, Some("0.1.0".to_owned())),
+            module: module.to_owned(),
+            slots: Vec::new(),
+            json: Vec::new(),
+        };
+        let records = [
+            record("app", "app"),
+            record("shapes-lib", "shapes_lib::geometry"),
+            record("registry", "registry"),
+            record("shapes-lib", "shapes_lib"),
+        ];
+        let local = [
+            SourcePackageInfo::new("app", Some("0.1.0".to_owned())),
+            SourcePackageInfo::new("shapes-lib", Some("0.1.0".to_owned())),
+            SourcePackageInfo::new("registry", Some("0.2.0".to_owned())),
+        ];
+
+        assert_eq!(
+            super::seed_crates(&records, &local),
+            BTreeSet::from(["app".to_owned(), "shapes_lib".to_owned()])
+        );
     }
 
     #[test]
@@ -1503,61 +1591,5 @@ mod tests {
         );
         assert!(jni.contains("_result = boltffi_function_demo_signed_read(value);"));
         assert!(jni.contains("_result = boltffi_function_demo_wide_read(value);"));
-    }
-
-    #[test]
-    fn capture_gaps_fall_back_to_the_envelope_path() {
-        assert!(falls_back_to_envelope(
-            &SourceFragmentError::UnsupportedCapture {
-                module: "demo".to_owned(),
-                name: "Engine".to_owned(),
-                reason: "trait impls are not captured".to_owned(),
-            }
-        ));
-        assert!(falls_back_to_envelope(
-            &SourceFragmentError::UnresolvedReference {
-                id: "demo::Missing".to_owned(),
-            }
-        ));
-        assert!(falls_back_to_envelope(
-            &SourceFragmentError::ShadowedBuiltin {
-                name: "Duration".to_owned(),
-            }
-        ));
-        assert!(!falls_back_to_envelope(
-            &SourceFragmentError::DuplicateDeclaration {
-                id: "demo::Route".to_owned(),
-            }
-        ));
-        assert!(!falls_back_to_envelope(
-            &SourceFragmentError::MethodsTargetNotData {
-                spelling: "Engine".to_owned(),
-            }
-        ));
-    }
-
-    #[test]
-    fn only_root_owned_record_sets_take_the_records_path() {
-        let root = boltffi_ast::PackageInfo::new("demo", None);
-        let record = |package: &str| boltffi_binding::RawSourceRecord {
-            package: boltffi_ast::PackageInfo::new(package, None),
-            module: package.to_owned(),
-            slots: Vec::new(),
-            json: Vec::new(),
-        };
-
-        assert!(records_cover_the_root(&[record("demo")], &root));
-        assert!(
-            !records_cover_the_root(&[], &root),
-            "an envelope-only root has no records to prefer"
-        );
-        assert!(
-            !records_cover_the_root(&[record("helper")], &root),
-            "dependency records without the root mean the root did not emit"
-        );
-        assert!(
-            !records_cover_the_root(&[record("demo"), record("helper")], &root),
-            "a dependency surface is still the legacy scan's to scope"
-        );
     }
 }

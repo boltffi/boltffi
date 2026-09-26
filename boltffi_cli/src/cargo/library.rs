@@ -12,7 +12,6 @@ pub struct SelectedLibrary {
     package_name: String,
     cargo_manifest_path: PathBuf,
     package_manifest_path: PathBuf,
-    source_path: PathBuf,
     artifact_name: String,
     builds_staticlib: bool,
     builds_cdylib: bool,
@@ -71,10 +70,6 @@ impl SelectedLibrary {
         &self.package_manifest_path
     }
 
-    pub fn source_path(&self) -> &Path {
-        &self.source_path
-    }
-
     pub fn artifact_name(&self) -> &str {
         &self.artifact_name
     }
@@ -97,7 +92,6 @@ impl SelectedLibrary {
             package_name: package.name.clone(),
             cargo_manifest_path: cargo_manifest_path.to_path_buf(),
             package_manifest_path: package.manifest_path.clone(),
-            source_path: target.src_path.clone(),
             artifact_name: target.name.clone(),
             builds_staticlib: target.builds_staticlib(),
             builds_cdylib: target.builds_cdylib(),
@@ -114,10 +108,6 @@ impl SelectedLibrary {
     ) -> Self {
         let package_name = package_name.into();
         let package_manifest_path = package_manifest_path.as_ref().to_path_buf();
-        let source_path = package_manifest_path
-            .parent()
-            .expect("selected library fixture manifest must have a parent")
-            .join("src/lib.rs");
         Self {
             package_id: format!(
                 "path+file://{}#{}@0.1.0",
@@ -127,7 +117,6 @@ impl SelectedLibrary {
             package_name,
             cargo_manifest_path: package_manifest_path.clone(),
             package_manifest_path,
-            source_path,
             artifact_name: artifact_name.into(),
             builds_staticlib: true,
             builds_cdylib: true,

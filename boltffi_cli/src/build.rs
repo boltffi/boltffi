@@ -495,10 +495,7 @@ name = "demo"
                 .windows(2)
                 .any(|arguments| arguments == ["--features", "ffi"])
         );
-        assert_eq!(
-            &arguments[arguments.len() - 4..],
-            ["--lib", "--", "--cfg", "boltffi_binding_expansion"]
-        );
+        assert_eq!(&arguments[arguments.len() - 2..], ["--lib", "--"]);
     }
 
     #[test]
