@@ -169,7 +169,11 @@ Debug information for Apple slice libraries collected by `boltffi pack apple`.
   - Behavior: `boltffi build android`, `boltffi check`, `boltffi doctor`, and
     `boltffi pack android` all resolve against this configured list.
   - `boltffi pack android --no-build` requires one prebuilt Rust static library per configured
-    architecture and ignores stale artifacts for unconfigured ABIs.
+    architecture and ignores stale artifacts for unconfigured ABIs. With `--architecture`, it
+    requires them only for the selected architectures.
+  - `boltffi pack android --architecture <ARCH>` (repeatable) packs only the selected configured
+    architectures and keeps the other configured ABIs already in jniLibs. Naming an unconfigured
+    architecture is an error.
 
 ### `[targets.android.kotlin]` (optional)
 
@@ -231,6 +235,10 @@ Debug information for Android JNI libraries collected by `boltffi pack android`.
   - Default: `true`
 - `output` (path, optional): Directory where the debug-symbol archive is written.
   - Default: `{targets.android.output}/symbols`
+  - Archive: `{crate_artifact_name}.android.symbols.zip` when a run packs every configured
+    architecture. A run with `--architecture` that packs only some of them writes
+    `{crate_artifact_name}.android.<abi>.symbols.zip` per packed ABI and removes the combined
+    archive.
 - `format` (`zip`): Archive format.
   - Default: `zip`
 - `bundle` (`unstripped`): Bundle kind for the archived payloads.

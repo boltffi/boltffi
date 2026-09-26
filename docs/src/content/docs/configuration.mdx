@@ -430,7 +430,7 @@ enabled = true
 output = "dist/android/symbols"
 ```
 
-`boltffi pack android` writes `{crate_artifact_name}.android.symbols.zip` to that directory. The archive mirrors the `jniLibs/<abi>/` layout and includes a `symbols.json` manifest with ABI and target mappings.
+`boltffi pack android` writes `{crate_artifact_name}.android.symbols.zip` to that directory. The archive mirrors the `jniLibs/<abi>/` layout and includes a `symbols.json` manifest with ABI and target mappings. A run that packs only some of the configured ABIs with `--architecture` writes one `{crate_artifact_name}.android.{abi}.symbols.zip` per ABI instead and removes the combined archive.
 
 For release-like packaging profiles, BoltFFI requires Cargo debuginfo to be enabled before it will emit this archive.
 

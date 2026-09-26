@@ -328,11 +328,36 @@ Package everything for Android:
 boltffi pack android --release
 ```
 
-This builds for all Android ABIs (arm64-v8a, armeabi-v7a, x86, x86_64), generates Kotlin bindings and JNI glue, and copies the shared libraries to jniLibs.
+This builds every architecture listed under `targets.android.architectures` (by default `arm64`, `armv7`, `x86_64`, and `x86`, packaged as the arm64-v8a, armeabi-v7a, x86_64, and x86 ABIs), generates Kotlin bindings and JNI glue, and copies the shared libraries to jniLibs. When `[targets.android.kotlin.desktop_pack]` is enabled with the bundled desktop loader, it also packs the Kotlin desktop natives.
 
 If you enable `[targets.android.debug_symbols]`, BoltFFI also writes `{crate_artifact_name}.android.symbols.zip` under `dist/android/symbols/`. That archive mirrors the `jniLibs/<abi>/` layout and includes a `symbols.json` manifest.
 
 For release-style packaging, BoltFFI rejects this option unless the selected Cargo profile has debuginfo enabled.
+
+### Packing a Subset
+
+To split the work across parallel CI jobs, pack one slice per job. Run one `--architecture` job for every configured architecture, because a job doesn't check that the other slices exist. With this configuration:
+
+```toml
+[targets.android]
+architectures = ["arm64", "x86_64"]
+```
+
+the jobs are:
+
+```bash
+boltffi pack android --release --architecture arm64 --skip-desktop
+boltffi pack android --release --architecture x86_64 --skip-desktop
+boltffi pack android --release --desktop-only
+```
+
+- `--architecture <ARCH>` builds only that architecture and can be repeated. Accepted values are `arm64`, `armv7`, `x86_64`, and `x86`. Naming an architecture that isn't configured under `targets.android.architectures` is an error.
+- `--skip-desktop` skips the Kotlin desktop natives even when the configuration enables them.
+- `--desktop-only` builds only the Kotlin desktop natives and leaves jniLibs as they are. It can't be combined with `--architecture` or `--skip-desktop`, and it's an error unless desktop native packaging is enabled.
+
+Slices can also be packed into the same `dist/` one after another. A run only removes jniLibs for ABIs that are no longer configured, so it keeps the ABIs that other slices packaged. Those kept libraries aren't relinked, so if the bindings changed since they were packed, pack their slices again too. BoltFFI prints a warning listing the ABIs it kept.
+
+When a run packs only some of the configured ABIs, it writes one debug symbols archive per ABI, `{crate_artifact_name}.android.{abi}.symbols.zip`, instead of the combined archive. It removes the combined archive, which no longer matches the ABIs it relinked, and any per-ABI archive for an ABI that is no longer configured. A run that packs every configured ABI writes the combined archive and removes the per-ABI archives.
 
 ### Output Structure
 

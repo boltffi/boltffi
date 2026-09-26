@@ -14,17 +14,22 @@ pub enum Platform {
     Windows,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// The CLI spells each value the way the configuration does, so
+/// `--architecture` accepts what `targets.android.architectures` lists.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, clap::ValueEnum)]
 pub enum Architecture {
     #[serde(rename = "arm64")]
     Arm64,
     #[serde(rename = "x86_64")]
+    #[value(name = "x86_64", alias = "x86-64")]
     X86_64,
     #[serde(rename = "armv7")]
     Armv7,
     #[serde(rename = "x86")]
     X86,
+    // not an Android architecture, so `--architecture` does not offer it
     #[serde(rename = "wasm32")]
+    #[value(skip)]
     Wasm32,
 }
 
