@@ -46,6 +46,7 @@ const suiteModules = [
   "./tests/results/error_enums.test.mjs",
   "./tests/results/error_structs.test.mjs",
   "./tests/results/nested_results.test.mjs",
+  "./tests/wasm_interop.test.mjs",
 ];
 
 const entrypointPath = fileURLToPath(import.meta.url);

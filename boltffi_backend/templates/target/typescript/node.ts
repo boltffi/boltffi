@@ -1,5 +1,6 @@
 import { BoltFFICancelledError, BoltFFIHandle, BoltFFIModule, CallbackRegistry, StreamCancellable, StreamSession, WASM_ABI_VERSION, instantiateBoltFFISync, matchWireResult, utf8ByteCount, wireArraySize, wireMapSize, wireOptionalSize, wireResultSize, wireStringSize, writeUnexpectedCallbackError } from {{ runtime_package }};
 import type { BoltFFIExports, Duration, WireCodec, WireResult } from {{ runtime_package }};
+import { wasmBindgen as _wasmBindgen } from {{ imports_module }};
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";

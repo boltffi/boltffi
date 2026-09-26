@@ -12,9 +12,9 @@ use boltffi_binding::{
 use crate::{
     bridge::wasm::{WasmBridge, WasmBridgeContract},
     core::{
-        BindingCapability, BridgeCapability, CapabilityRequirements, Emitted, GeneratedOutput,
-        HostCapabilities, RenderContext, RenderedDeclaration, Result, Target, contract::sealed,
-        host,
+        BindingCapability, BridgeCapability, CapabilityRequirements, Emitted, GeneratedFile,
+        GeneratedOutput, HostCapabilities, RenderContext, RenderedDeclaration, Result, Target,
+        contract::sealed, host,
     },
 };
 
@@ -46,6 +46,10 @@ impl TypeScriptHost {
 
     pub fn into_target(self) -> Target<Self, WasmBridge> {
         Target::new(self, WasmBridge)
+    }
+
+    pub fn runtime_imports(&self) -> Result<GeneratedFile> {
+        Module::new(&self.module, &self.runtime_package).runtime_imports()
     }
 }
 
@@ -749,7 +753,7 @@ mod tests {
             .render(&bindings())
             .expect("target renders");
 
-        assert_eq!(output.files().len(), 2);
+        assert_eq!(output.files().len(), 3);
         let browser = output
             .files()
             .iter()
@@ -1053,7 +1057,10 @@ mod tests {
         assert!(browser.contents().contains("  computed = _readComputed();"));
         assert!(browser.contents().contains("  pair = _readPair();"));
         assert!(browser.contents().contains("  busy = _readBusy();"));
-        assert!(node.contents().contains("const _exports: BoltFFIExports"));
+        assert!(
+            node.contents().find("_exports = module.exports;").unwrap()
+                < node.contents().find("bytes = _readBytes();").unwrap()
+        );
         assert!(node.contents().contains("  bytes = _readBytes();"));
     }
 

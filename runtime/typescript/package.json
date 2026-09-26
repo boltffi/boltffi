@@ -28,7 +28,8 @@
   },
   "devDependencies": {
     "typescript": "^7.0.0",
-    "vitest": "^5.0.0"
+    "vitest": "^5.0.0",
+    "wabt": "^1.0.39"
   },
   "keywords": [
     "ffi",

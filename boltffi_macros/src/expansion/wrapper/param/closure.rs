@@ -272,6 +272,7 @@ impl<'expansion, 'lowered> Input<'expansion, 'lowered, Wasm32> {
             });
         };
         let conversion = quote! {
+            #[link(wasm_import_module = "env")]
             unsafe extern "C" {
                 fn #call(handle: u32 #(, #ffi_parameters)*) #return_type;
                 fn #free(handle: u32);

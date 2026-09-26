@@ -1,63 +1,19 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use askama::Template;
 use serde::Serialize;
 
 use crate::cli::{CliError, Result};
 use crate::config::{Config, WasmNpmTarget};
 
-struct WasmLoaderEntrypoint {
-    filename: &'static str,
-    source: String,
-}
+use super::Error;
 
-impl WasmLoaderEntrypoint {
-    fn browser(filename: &'static str, module_name: &str) -> Self {
-        Self {
-            filename,
-            source: format!(
-                r#"
-                    import init from "./{module_name}.js";
-                    export * from "./{module_name}.js";
-                    export {{ default as init }} from "./{module_name}.js";
-                    export const initialized = (async () => {{
-                    const response = await fetch(new URL("./{module_name}_bg.wasm", import.meta.url));
-                    await init(response);
-                    }})();
-                "#
-            ),
-        }
-    }
-
-    fn node(filename: &'static str, module_name: &str) -> Self {
-        Self {
-            filename,
-            source: format!(
-                r#"
-                   export * from "./{module_name}_node.js";
-                   export {{ default, initialized }} from "./{module_name}_node.js";
-                "#
-            ),
-        }
-    }
-
-    fn write(self, output_directory: &Path) -> Result<()> {
-        let output_path = output_directory.join(self.filename);
-        std::fs::write(&output_path, self.source).map_err(|source| CliError::WriteFailed {
-            path: output_path,
-            source,
-        })
-    }
-}
-
-impl WasmNpmTarget {
-    fn loader_entrypoint(&self, module_name: &str) -> WasmLoaderEntrypoint {
-        match self {
-            Self::Bundler => WasmLoaderEntrypoint::browser("bundler.js", module_name),
-            Self::Web => WasmLoaderEntrypoint::browser("web.js", module_name),
-            Self::Nodejs => WasmLoaderEntrypoint::node("node.js", module_name),
-        }
-    }
+#[derive(Template)]
+#[template(path = "wasm/loader.js", escape = "none")]
+struct WasmLoaderEntrypoint<'module> {
+    module_name: &'module str,
+    target: WasmNpmTarget,
 }
 
 pub(crate) fn generate_wasm_loader_entrypoints(
@@ -65,10 +21,24 @@ pub(crate) fn generate_wasm_loader_entrypoints(
     enabled_targets: &[WasmNpmTarget],
     output_dir: &Path,
 ) -> Result<()> {
-    enabled_targets
-        .iter()
-        .map(|target| target.loader_entrypoint(module_name))
-        .try_for_each(|entrypoint| entrypoint.write(output_dir))
+    enabled_targets.iter().try_for_each(|target| {
+        let filename = match target {
+            WasmNpmTarget::Bundler => "bundler.js",
+            WasmNpmTarget::Web => "web.js",
+            WasmNpmTarget::Nodejs => "node.js",
+        };
+        let source = WasmLoaderEntrypoint {
+            module_name,
+            target: *target,
+        }
+        .render()
+        .map_err(Error::from)?;
+        let output_path = output_dir.join(filename);
+        std::fs::write(&output_path, source).map_err(|source| CliError::WriteFailed {
+            path: output_path,
+            source,
+        })
+    })
 }
 
 pub(crate) fn generate_wasm_package_json(
@@ -119,7 +89,16 @@ pub(crate) fn generate_wasm_package_json(
         files: vec![
             format!("{}.js", module_name),
             format!("{}.d.ts", module_name),
+            format!("{}.js.map", module_name),
             format!("{}_bg.wasm", module_name),
+            format!("{}_bg.js", module_name),
+            format!("{}_imports.js", module_name),
+            format!("{}_imports.d.ts", module_name),
+            format!("{}_imports.js.map", module_name),
+            format!("{}_node.js", module_name),
+            format!("{}_node.d.ts", module_name),
+            format!("{}_node.js.map", module_name),
+            "snippets/".to_string(),
             "bundler.js".to_string(),
             "web.js".to_string(),
             "node.js".to_string(),

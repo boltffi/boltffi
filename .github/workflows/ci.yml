@@ -228,6 +228,13 @@ jobs:
       - if: matrix.python-version == '3.13'
         run: npm install -g typescript
       - if: matrix.python-version == '3.13'
+        shell: python
+        run: |
+          import json, subprocess
+          metadata = json.loads(subprocess.check_output(["cargo", "metadata", "--format-version=1", "--manifest-path", "examples/demo/Cargo.toml", "--features", "wasm-interop"]))
+          version = next(package["version"] for package in metadata["packages"] if package["name"] == "wasm-bindgen")
+          subprocess.run(["cargo", "install", "wasm-bindgen-cli", "--version", "=" + version, "--locked"], check=True)
+      - if: matrix.python-version == '3.13'
         uses: Aandreba/setup-binaryen@v1.0.0
         with:
           token: ${{ github.token }}
@@ -247,6 +254,51 @@ jobs:
       - if: matrix.python-version != '3.13'
         run: ./examples/demo/verify-platform-demos.sh --platform python --python python
         shell: bash
+
+  wasm-bindgen:
+    name: Wasm dependencies (${{ matrix.bindgen }}, Rust ${{ matrix.rust }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        bindgen: ['0.2.122', '0.2.129']
+        rust: ['1.95.0', 'stable']
+        include:
+          - bindgen: '0.2.122'
+            futures: '0.4.72'
+          - bindgen: '0.2.129'
+            futures: '0.4.79'
+    env:
+      RUSTUP_TOOLCHAIN: ${{ matrix.rust }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: ${{ matrix.rust }}
+          target: wasm32-unknown-unknown
+          cache: false
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: wasm-bindgen-${{ matrix.bindgen }}-${{ matrix.rust }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - uses: Aandreba/setup-binaryen@v1.0.0
+        with:
+          token: ${{ github.token }}
+      - run: npm install -g typescript
+      - run: cargo update --manifest-path examples/demo/Cargo.toml -p wasm-bindgen-futures --precise ${{ matrix.futures }}
+      - run: cargo install wasm-bindgen-cli --version '=${{ matrix.bindgen }}' --locked
+      - run: ./examples/demo/verify-platform-demos.sh --platform wasm
+      - run: npm test
+        working-directory: runtime/typescript
+      - run: npm run build:ts && npm test
+        working-directory: examples/platforms/wasm
+      - run: cargo test -p boltffi_cli --test wasm_pack -- --ignored
+      - run: npx playwright install --with-deps chromium firefox webkit
+        working-directory: examples/platforms/wasm
+      - run: npm run test:browser
+        working-directory: examples/platforms/wasm
 
   csharp-windows-arm64:
     name: C# Windows x64 + ARM64 package

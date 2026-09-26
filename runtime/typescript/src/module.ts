@@ -1,6 +1,7 @@
 import { WireReader, WireWriter } from "./wire.js";
 import type { WasmWireWriterAllocator } from "./wire.js";
 import { StreamPollManager } from "./stream.js";
+import type { WasmBindgenModule } from "./wasm-bindgen.js";
 
 const EMPTY_BUFFER = new ArrayBuffer(0);
 
@@ -78,6 +79,7 @@ export class AsyncFutureManager {
   private cancelIds = new Map<number, number>();
   private wokenHandles = new Set<number>();
   private drainScheduled = false;
+  private failure: Error | undefined;
   private _module: BoltFFIModule | null = null;
 
   setModule(module: BoltFFIModule): void {
@@ -85,6 +87,7 @@ export class AsyncFutureManager {
   }
 
   wake(handle: number): void {
+    if (this.failure) return;
     this.wokenHandles.add(handle);
     if (!this.drainScheduled) {
       this.drainScheduled = true;
@@ -105,15 +108,19 @@ export class AsyncFutureManager {
     const entry = this.pendingFutures.get(handle);
     if (!entry) return;
 
-    const status = entry.pollSync(handle);
-    if (status === WasmPollStatus.Ready) {
-      this.pendingFutures.delete(handle);
-      entry.resolve(handle);
-    } else if (status < 0) {
-      this.pendingFutures.delete(handle);
-      entry.reject(
-        this.extractAsyncError(handle, status, entry.panicMessage, entry.free)
-      );
+    try {
+      const status = entry.pollSync(handle);
+      if (this.failure) return;
+      if (status === WasmPollStatus.Ready) {
+        this.pendingFutures.delete(handle);
+        entry.resolve(handle);
+      } else if (status < 0) {
+        const error = this.extractAsyncError(handle, status, entry.panicMessage, entry.free);
+        this.pendingFutures.delete(handle);
+        entry.reject(error);
+      }
+    } catch (error) {
+      this.fail(error);
     }
   }
 
@@ -124,8 +131,12 @@ export class AsyncFutureManager {
   private cancel(handle: number): void {
     const entry = this.pendingFutures.get(handle);
     if (!entry) return;
-    entry.cancel(handle);
-    queueMicrotask(() => this.repollHandle(handle));
+    try {
+      entry.cancel(handle);
+      if (!this.failure) queueMicrotask(() => this.repollHandle(handle));
+    } catch (error) {
+      this.fail(error);
+    }
   }
 
   // Lower-level counterpart to `options.signal` for callers that can pass a
@@ -170,30 +181,38 @@ export class AsyncFutureManager {
     signal?: AbortSignal,
     cancelId?: number
   ): Promise<number> {
-    // Poll before registering. An async fn that never yields — the common
-    // case, and the whole of `async_add` — was paying a Map insert, a Map
-    // delete, a five-field entry object and a `new Promise` executor to
-    // discover on the very next line that it was already done. `wake()` only
-    // adds to a set and queues a microtask, so a wake raised from inside
-    // `pollSync` cannot observe the window where the entry is absent.
-    const status = pollSync(handle);
-    if (status === WasmPollStatus.Ready) {
-      return Promise.resolve(handle);
-    }
-    if (status < 0) {
-      return Promise.reject(
-        this.extractAsyncError(handle, status, panicMessage, free)
-      );
-    }
-    // The signal may have aborted before this poll returned, or reentrantly
-    // during it -- AbortSignal never replays a past event, so a listener
-    // registered only below would miss it and leave the future running.
-    if (signal?.aborted) {
-      cancel(handle);
-      const cancelledStatus = pollSync(handle);
-      return Promise.reject(
-        this.extractAsyncError(handle, cancelledStatus, panicMessage, free)
-      );
+    if (this.failure) return Promise.reject(this.failure);
+    try {
+      // Poll before registering. An async fn that never yields — the common
+      // case, and the whole of `async_add` — was paying a Map insert, a Map
+      // delete, a five-field entry object and a `new Promise` executor to
+      // discover on the very next line that it was already done. `wake()` only
+      // adds to a set and queues a microtask, so a wake raised from inside
+      // `pollSync` cannot observe the window where the entry is absent.
+      const status = pollSync(handle);
+      if (this.failure) return Promise.reject(this.failure);
+      if (status === WasmPollStatus.Ready) {
+        return Promise.resolve(handle);
+      }
+      if (status < 0) {
+        return Promise.reject(
+          this.extractAsyncError(handle, status, panicMessage, free)
+        );
+      }
+      // The signal may have aborted before this poll returned, or reentrantly
+      // during it -- AbortSignal never replays a past event, so a listener
+      // registered only below would miss it and leave the future running.
+      if (signal?.aborted) {
+        cancel(handle);
+        if (this.failure) return Promise.reject(this.failure);
+        const cancelledStatus = pollSync(handle);
+        if (this.failure) return Promise.reject(this.failure);
+        return Promise.reject(
+          this.extractAsyncError(handle, cancelledStatus, panicMessage, free)
+        );
+      }
+    } catch (error) {
+      return Promise.reject(this.fail(error));
     }
     return new Promise((resolve, reject) => {
       // Most suspended calls never cancel. Skip the three extra closures and
@@ -241,6 +260,17 @@ export class AsyncFutureManager {
         cancel,
       });
     });
+  }
+
+  private fail(reason: unknown): Error {
+    if (this.failure) return this.failure;
+    const error = reason instanceof Error ? reason : new Error(String(reason));
+    this.failure = error;
+    this.pendingFutures.forEach((entry) => entry.reject(error));
+    this.pendingFutures.clear();
+    this.cancelIds.clear();
+    this.wokenHandles.clear();
+    return error;
   }
 }
 
@@ -1689,6 +1719,8 @@ export class BoltFFIModule {
 
 export interface BoltFFIImports {
   env?: Record<string, WebAssembly.ImportValue>;
+  wasmBindgen?: WasmBindgenModule;
+  bind?: (module: BoltFFIModule) => void;
 }
 
 function createUnimplementedImport(importName: string): (...args: unknown[]) => never {
@@ -1712,10 +1744,12 @@ export async function instantiateBoltFFI(
   expectedVersion: number,
   imports?: BoltFFIImports
 ): Promise<BoltFFIModule> {
+  imports?.wasmBindgen?.acquire();
   const asyncManager = new AsyncFutureManager();
   const streamManager = new StreamPollManager();
 
   const importObject: WebAssembly.Imports = {
+    ...imports?.wasmBindgen?.imports,
     env: {
       __boltffi_wake: (handle: number) => asyncManager.wake(handle),
       __boltffi_stream_wake: (handle: number, result: number) => streamManager.wake(handle, result),
@@ -1725,23 +1759,29 @@ export async function instantiateBoltFFI(
     __wbindgen_externref_xform__: createImportModuleProxy("__wbindgen_externref_xform__"),
   };
 
-  let instance: WebAssembly.Instance;
-  if (source instanceof WebAssembly.Module) {
-    instance = await WebAssembly.instantiate(source, importObject);
-  } else {
-    const wasmSource = source instanceof Response ? await source.arrayBuffer() : source;
-    ({ instance } = await WebAssembly.instantiate(wasmSource, importObject));
+  try {
+    let instance: WebAssembly.Instance;
+    if (source instanceof WebAssembly.Module) {
+      instance = await WebAssembly.instantiate(source, importObject);
+    } else {
+      const wasmSource = source instanceof Response ? await source.arrayBuffer() : source;
+      ({ instance } = await WebAssembly.instantiate(wasmSource, importObject));
+    }
+    const exports = instance.exports as BoltFFIExports;
+    const actualVersion = exports.boltffi_wasm_abi_version();
+    if (actualVersion !== expectedVersion) {
+      throw new Error(
+        `BoltFFI ABI version mismatch: expected ${expectedVersion}, got ${actualVersion}`
+      );
+    }
+    const module = new BoltFFIModule(instance, asyncManager, streamManager);
+    imports?.bind?.(module);
+    imports?.wasmBindgen?.initialize(instance.exports);
+    return module;
+  } catch (error) {
+    imports?.wasmBindgen?.fail();
+    throw error;
   }
-  const module = new BoltFFIModule(instance, asyncManager, streamManager);
-
-  const actualVersion = module.exports.boltffi_wasm_abi_version();
-  if (actualVersion !== expectedVersion) {
-    throw new Error(
-      `BoltFFI ABI version mismatch: expected ${expectedVersion}, got ${actualVersion}`
-    );
-  }
-
-  return module;
 }
 
 export function instantiateBoltFFISync(
@@ -1749,10 +1789,12 @@ export function instantiateBoltFFISync(
   expectedVersion: number,
   imports?: BoltFFIImports
 ): BoltFFIModule {
+  imports?.wasmBindgen?.acquire();
   const asyncManager = new AsyncFutureManager();
   const streamManager = new StreamPollManager();
 
   const importObject: WebAssembly.Imports = {
+    ...imports?.wasmBindgen?.imports,
     env: {
       __boltffi_wake: (handle: number) => asyncManager.wake(handle),
       __boltffi_stream_wake: (handle: number, result: number) => streamManager.wake(handle, result),
@@ -1762,16 +1804,22 @@ export function instantiateBoltFFISync(
     __wbindgen_externref_xform__: createImportModuleProxy("__wbindgen_externref_xform__"),
   };
 
-  const wasmModule = new WebAssembly.Module(source);
-  const instance = new WebAssembly.Instance(wasmModule, importObject);
-  const module = new BoltFFIModule(instance, asyncManager, streamManager);
-
-  const actualVersion = module.exports.boltffi_wasm_abi_version();
-  if (actualVersion !== expectedVersion) {
-    throw new Error(
-      `BoltFFI ABI version mismatch: expected ${expectedVersion}, got ${actualVersion}`
-    );
+  try {
+    const wasmModule = new WebAssembly.Module(source);
+    const instance = new WebAssembly.Instance(wasmModule, importObject);
+    const exports = instance.exports as BoltFFIExports;
+    const actualVersion = exports.boltffi_wasm_abi_version();
+    if (actualVersion !== expectedVersion) {
+      throw new Error(
+        `BoltFFI ABI version mismatch: expected ${expectedVersion}, got ${actualVersion}`
+      );
+    }
+    const module = new BoltFFIModule(instance, asyncManager, streamManager);
+    imports?.bind?.(module);
+    imports?.wasmBindgen?.initialize(instance.exports);
+    return module;
+  } catch (error) {
+    imports?.wasmBindgen?.fail();
+    throw error;
   }
-
-  return module;
 }

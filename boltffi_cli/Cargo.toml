@@ -16,7 +16,7 @@ name = "boltffi"
 path = "src/main.rs"
 
 [dependencies]
-askama = "0.16"
+askama = { version = "0.16", features = ["serde_json"] }
 boltffi_bindgen.workspace = true
 boltffi_backend.workspace = true
 boltffi_binding.workspace = true
@@ -36,9 +36,16 @@ serde_json.workspace = true
 console = "0.16"
 indicatif = "0.18"
 object.workspace = true
+wasmparser = "0.244"
+semver = { version = "1", features = ["serde"] }
+oxc_allocator = "0.120"
+oxc_ast = "0.120"
+oxc_parser = "0.120"
+oxc_span = "0.120"
+tempfile = "3.23.0"
 
 [dev-dependencies]
-tempfile = "3.23.0"
+wat = "1.244"
 
 [target.'cfg(windows)'.dependencies]
 dunce = "1.0"

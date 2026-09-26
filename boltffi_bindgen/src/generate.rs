@@ -1106,7 +1106,10 @@ mod tests {
                 "primitive TypeScript bindings should render through the production target route",
             );
 
-        assert_eq!(output_paths(&output), vec!["demo.ts", "demo_node.ts"]);
+        assert_eq!(
+            output_paths(&output),
+            vec!["demo.ts", "demo_node.ts", "demo_imports.ts"]
+        );
         assert!(file(&output, "demo.ts").contains("from \"@example/runtime\""));
         assert!(
             file(&output, "demo.ts")
