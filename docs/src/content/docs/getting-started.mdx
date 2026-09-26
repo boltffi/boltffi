@@ -60,6 +60,8 @@ Replace `src/lib.rs`:
 ```rust
 use boltffi::*;
 
+boltffi::scaffolding!();
+
 #[data]
 pub struct Point {
     pub x: f64,
@@ -71,6 +73,36 @@ pub fn distance(a: Point, b: Point) -> f64 {
     ((b.x - a.x).powi(2) + (b.y - a.y).powi(2)).sqrt()
 }
 ```
+
+`boltffi::scaffolding!()` goes once in `src/lib.rs` of every crate that uses BoltFFI. Without
+it, a signature that names a declared type, like `distance` here, fails with
+``cannot find type `__BoltffiTag` in the crate root``.
+
+A signature names a declared type by its own name or through a `use` rename. A `type` alias
+is not followed: after `type Coordinate = Point;`, a signature taking `Coordinate` fails with
+``cannot find macro `Coordinate` ``, while `use crate::Point as Coordinate;` works. Each
+declared name may appear once per crate, even in different modules.
+
+## Types from other crates
+
+A signature can use a `#[data]`, `#[error]`, class or callback declared in a dependency, by
+any path that names it. Each such dependency calls `boltffi::scaffolding!()` too.
+
+- A path dependency in your workspace is bound in full: all of its exports appear in the
+  bindings.
+- A crates.io or git dependency contributes only the types your signatures reach.
+- Two crates declaring the same name are refused, since the bindings put every name in one
+  namespace.
+
+A dependency's exported functions are compiled into that dependency, and the linker keeps
+them only when your crate uses the dependency. If a path dependency is bound but never used,
+`boltffi generate` fails and lists the missing symbols. Name the crate once in `src/lib.rs`:
+
+```rust
+use shapes as _;
+```
+
+`custom_type!` in a dependency is not supported yet.
 
 ## Build, package, or generate
 

@@ -70,14 +70,16 @@ The main crates are:
 - `boltffi_core`: runtime pieces shared by generated code.
 - `boltffi_macros`: procedural macros and Rust wrapper expansion.
 - `boltffi_ast`: the source contract model.
-- `boltffi_scan`: scanner from annotated Rust source into the AST.
+- `boltffi_scan`: parser from annotated Rust items into source fragments.
 - `boltffi_binding`: the Binding IR and lowering rules. This is the source of truth for boundary decisions.
 - `boltffi_backend`: IR-based bridge and target renderers.
 - `boltffi_bindgen`: metadata extraction and generation driver for the new backend path.
 - `boltffi_cli`: the `boltffi` command, packaging, and user-facing configuration.
 - `boltffi_tests`: integration tests that tie scanner, binding, and generated behavior together.
 
-There is still old rendering code in the repository. Do not copy it into new work. The new path is `scan -> ast -> bindings -> backend`, with metadata coming from the compiled artifact. New targets use `boltffi_backend`, not `boltffi_bindgen/src/render/<lang>/`.
+There is still old rendering code in the repository. Do not copy it into new work. The new path is `fragments -> ast -> bindings -> backend`: each macro invocation describes its own item, and bindgen reads those descriptions from the compiled artifact. New targets use `boltffi_backend`, not `boltffi_bindgen/src/render/<lang>/`.
+
+The macros and bindgen learn about a crate without reading its source files. [Per-invocation expansion](./per-invocation-expansion.md) walks one crate through every expansion, and [ADR 0002](../../adrs/0002-adr-declaration-lanes.md) explains why it works this way.
 
 ## Working on the backend path
 

@@ -48,6 +48,8 @@ Replace `src/lib.rs`:
 ```rust
 use boltffi::{data, export};
 
+boltffi::scaffolding!();
+
 #[data]
 pub struct Point {
     pub x: f64,
