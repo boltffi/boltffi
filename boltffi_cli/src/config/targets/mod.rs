@@ -33,6 +33,20 @@ pub use wasm::{WasmConfig, WasmNpmTarget, WasmOptimizeLevel, WasmOptimizeOnMissi
 
 use serde::{Deserialize, Serialize};
 
+/// A `[targets.<name>]` table whose `cargo_args` apply when that target builds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TargetSection {
+    Apple,
+    Android,
+    KotlinMultiplatform,
+    Wasm,
+    Java,
+    Dart,
+    Python,
+    CSharp,
+    C,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct TargetsConfig {
     #[serde(default)]
@@ -53,4 +67,20 @@ pub struct TargetsConfig {
     pub csharp: CSharpConfig,
     #[serde(default)]
     pub c: CConfig,
+}
+
+impl TargetsConfig {
+    pub fn cargo_args(&self, section: TargetSection) -> &[String] {
+        match section {
+            TargetSection::Apple => &self.apple.cargo_args,
+            TargetSection::Android => &self.android.cargo_args,
+            TargetSection::KotlinMultiplatform => &self.kotlin_multiplatform.cargo_args,
+            TargetSection::Wasm => &self.wasm.cargo_args,
+            TargetSection::Java => &self.java.cargo_args,
+            TargetSection::Dart => &self.dart.cargo_args,
+            TargetSection::Python => &self.python.cargo_args,
+            TargetSection::CSharp => &self.csharp.cargo_args,
+            TargetSection::C => &self.c.cargo_args,
+        }
+    }
 }

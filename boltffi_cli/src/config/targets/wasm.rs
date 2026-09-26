@@ -22,6 +22,9 @@ pub struct WasmConfig {
     pub typescript: WasmTypeScriptConfig,
     #[serde(default)]
     pub npm: WasmNpmConfig,
+    /// Cargo arguments for every cargo invocation that builds this target.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cargo_args: Vec<String>,
 }
 
 impl Default for WasmConfig {
@@ -35,6 +38,7 @@ impl Default for WasmConfig {
             optimize: WasmOptimizeConfig::default(),
             typescript: WasmTypeScriptConfig::default(),
             npm: WasmNpmConfig::default(),
+            cargo_args: Vec::new(),
         }
     }
 }

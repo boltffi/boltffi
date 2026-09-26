@@ -5,8 +5,8 @@ use crate::build::{
     count_successful, failed_targets, resolve_build_profile,
 };
 use crate::cli::Result;
-use crate::config::Config;
-use crate::pack::PackError;
+use crate::config::{Config, TargetSection};
+use crate::pack::{PackError, resolve_build_cargo_args};
 
 pub enum BuildPlatform {
     Apple,
@@ -29,71 +29,75 @@ pub fn run_build(config: &Config, options: BuildCommandOptions) -> Result<Vec<Bu
         cargo_args: cli_cargo_args,
     } = options;
 
-    let cargo_args: Vec<String> = config
-        .cargo_args_for_command("build")
-        .into_iter()
-        .chain(cli_cargo_args)
-        .collect();
-
-    let build_profile = resolve_build_profile(release, &cargo_args);
-
-    let profile = build_profile.output_directory_name();
+    let cargo_args = |section| resolve_build_cargo_args(config, section, &cli_cargo_args);
+    let profile_for = |cargo_args: &[String]| {
+        resolve_build_profile(release, cargo_args)
+            .output_directory_name()
+            .to_owned()
+    };
 
     let results = match platform {
         BuildPlatform::Apple => {
             if !config.is_apple_enabled() {
                 return Ok(Vec::new());
             }
-            println!("Building for Apple ({})...", profile);
-            expanded_builder(config, release, cargo_args.clone())?
-                .build_targets(&config.apple_targets())?
+            let cargo_args = cargo_args(TargetSection::Apple);
+            println!("Building for Apple ({})...", profile_for(&cargo_args));
+            expanded_builder(config, release, cargo_args)?.build_targets(&config.apple_targets())?
         }
         BuildPlatform::Android => {
             if !config.is_android_enabled() {
                 return Ok(Vec::new());
             }
-            println!("Building for Android ({})...", profile);
-            expanded_builder(config, release, cargo_args.clone())?
+            let cargo_args = cargo_args(TargetSection::Android);
+            println!("Building for Android ({})...", profile_for(&cargo_args));
+            expanded_builder(config, release, cargo_args)?
                 .build_android(&config.android_targets())?
         }
         BuildPlatform::Wasm => {
             if !config.is_wasm_enabled() {
                 return Ok(Vec::new());
             }
-            println!("Building for wasm ({})...", profile);
-            wasm_builder(config, release, cargo_args.clone())?
+            let cargo_args = cargo_args(TargetSection::Wasm);
+            println!("Building for wasm ({})...", profile_for(&cargo_args));
+            wasm_builder(config, release, cargo_args)?
                 .build_wasm_with_triple(config.wasm_triple())?
         }
         BuildPlatform::Dart => {
             if !config.is_dart_enabled() {
                 return Ok(Vec::new());
             }
-            println!("Building for dart ({})...", profile);
+            let cargo_args = cargo_args(TargetSection::Dart);
+            println!("Building for dart ({})...", profile_for(&cargo_args));
             build_dart(config, release, &cargo_args)?
         }
         BuildPlatform::All => {
-            println!("Building all targets ({})...", profile);
+            println!("Building all targets...");
             let mut all_results = Vec::new();
             if config.is_apple_enabled() {
                 all_results.extend(
-                    expanded_builder(config, release, cargo_args.clone())?
+                    expanded_builder(config, release, cargo_args(TargetSection::Apple))?
                         .build_targets(&config.apple_targets())?,
                 );
             }
             if config.is_android_enabled() {
                 all_results.extend(
-                    expanded_builder(config, release, cargo_args.clone())?
+                    expanded_builder(config, release, cargo_args(TargetSection::Android))?
                         .build_android(&config.android_targets())?,
                 );
             }
             if config.is_wasm_enabled() {
                 all_results.extend(
-                    wasm_builder(config, release, cargo_args.clone())?
+                    wasm_builder(config, release, cargo_args(TargetSection::Wasm))?
                         .build_wasm_with_triple(config.wasm_triple())?,
                 );
             }
             if config.is_dart_enabled() {
-                all_results.extend(build_dart(config, release, &cargo_args)?);
+                all_results.extend(build_dart(
+                    config,
+                    release,
+                    &cargo_args(TargetSection::Dart),
+                )?);
             }
             all_results
         }

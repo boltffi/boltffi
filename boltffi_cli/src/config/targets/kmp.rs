@@ -15,6 +15,9 @@ pub struct KotlinMultiplatformConfig {
     pub preview_prune_unsupported: bool,
     pub package: Option<String>,
     pub module_name: Option<String>,
+    /// Cargo arguments for every cargo invocation that builds this target.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cargo_args: Vec<String>,
 }
 
 impl Default for KotlinMultiplatformConfig {
@@ -25,6 +28,7 @@ impl Default for KotlinMultiplatformConfig {
             preview_prune_unsupported: false,
             package: None,
             module_name: None,
+            cargo_args: Vec::new(),
         }
     }
 }

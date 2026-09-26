@@ -51,6 +51,9 @@ pub struct AppleConfig {
     pub spm: SpmConfig,
     #[serde(default)]
     pub debug_symbols: DebugSymbolsConfig,
+    /// Cargo arguments for every cargo invocation that builds this target.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cargo_args: Vec<String>,
 }
 
 impl Default for AppleConfig {
@@ -67,6 +70,7 @@ impl Default for AppleConfig {
             xcframework: XcframeworkConfig::default(),
             spm: SpmConfig::default(),
             debug_symbols: DebugSymbolsConfig::default(),
+            cargo_args: Vec::new(),
         }
     }
 }

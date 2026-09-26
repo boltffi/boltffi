@@ -17,7 +17,7 @@ use crate::build::{
 use crate::cli::{CliError, Result};
 use crate::commands::generate::bindings::print_coverage;
 use crate::commands::pack::PackAppleOptions;
-use crate::config::{Config, SpmDistribution, SpmLayout};
+use crate::config::{Config, SpmDistribution, SpmLayout, TargetSection};
 use crate::pack::PackError;
 use crate::reporter::Reporter;
 use crate::target::BuiltLibrary;
@@ -54,7 +54,8 @@ pub(crate) fn pack_apple(
         });
     }
 
-    let build_cargo_args = resolve_build_cargo_args(config, &options.execution.cargo_args);
+    let build_cargo_args =
+        resolve_build_cargo_args(config, TargetSection::Apple, &options.execution.cargo_args);
     let selected_crate = BindingExpansion::resolve(config, &build_cargo_args)?;
     let build_profile =
         crate::build::resolve_build_profile(options.execution.release, &build_cargo_args);

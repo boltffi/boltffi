@@ -14,7 +14,7 @@ use crate::commands::generate::{
     run_generate_c_header_with_manifest, run_generate_kmp_with_manifest,
 };
 use crate::commands::pack::PackKmpOptions;
-use crate::config::Config;
+use crate::config::{Config, TargetSection};
 use crate::pack::PackError;
 use crate::pack::android::{AndroidBindingMode, AndroidPackager, build_android_targets};
 use crate::pack::java::link::{build_jvm_native_library, compile_jni_library_with_layout};
@@ -44,7 +44,11 @@ pub(crate) fn pack_kmp(
 
     reporter.section("🧩", "Packing Kotlin Multiplatform");
 
-    let build_cargo_args = resolve_build_cargo_args(config, &options.execution.cargo_args);
+    let build_cargo_args = resolve_build_cargo_args(
+        config,
+        TargetSection::KotlinMultiplatform,
+        &options.execution.cargo_args,
+    );
     let selected_crate = BindingExpansion::resolve(config, &build_cargo_args)?;
 
     let step = reporter.step("Validating JVM toolchains");

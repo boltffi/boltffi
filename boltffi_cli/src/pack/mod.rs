@@ -16,7 +16,8 @@ use std::process::Command;
 use console::style;
 
 use crate::cli::{CliError, Result};
-use crate::config::Config;
+use crate::commands::generate::GenerateTarget;
+use crate::config::{Config, TargetSection};
 use crate::target::{BuiltLibrary, RustTarget};
 
 #[derive(Debug, thiserror::Error)]
@@ -43,11 +44,35 @@ pub enum PackError {
     BuildFailed { targets: Vec<String> },
 }
 
-pub(crate) fn resolve_build_cargo_args(config: &Config, cli_cargo_args: &[String]) -> Vec<String> {
+/// Build args from config for `section`, then the CLI `--cargo-arg`s.
+pub(crate) fn resolve_build_cargo_args(
+    config: &Config,
+    section: TargetSection,
+    cli_cargo_args: &[String],
+) -> Vec<String> {
     config
-        .cargo_args_for_command("build")
+        .cargo_args_for_target(section, &["build"])
         .into_iter()
         .chain(cli_cargo_args.iter().cloned())
+        .collect()
+}
+
+/// `--cargo-arg`s for a `generate` step that `pack` runs for `section`. `generate` adds the config
+/// args itself, but `generate header` reads no target table, so it also gets `section`'s.
+pub(crate) fn pack_generate_cargo_args(
+    config: &Config,
+    section: TargetSection,
+    target: &GenerateTarget,
+    cli_cargo_args: &[String],
+) -> Vec<String> {
+    let target_cargo_args = match target {
+        GenerateTarget::Header => config.targets.cargo_args(section),
+        _ => &[],
+    };
+    target_cargo_args
+        .iter()
+        .chain(cli_cargo_args)
+        .cloned()
         .collect()
 }
 
@@ -167,8 +192,110 @@ fn parse_target_directory(metadata: &[u8]) -> Result<PathBuf> {
 mod tests {
     use std::path::PathBuf;
 
-    use super::missing_built_libraries;
+    use super::{missing_built_libraries, pack_generate_cargo_args, resolve_build_cargo_args};
+    use crate::commands::generate::bindings::generation_cargo_args;
+    use crate::commands::generate::{GenerateOptions, GenerateTarget};
+    use crate::config::{Config, TargetSection};
     use crate::target::{BuiltLibrary, RustTarget};
+
+    #[test]
+    fn appends_cli_cargo_args_after_target_cargo_args() {
+        let config: Config = toml::from_str(
+            r#"
+[package]
+name = "mylib"
+
+[cargo]
+global_args = ["--locked"]
+
+[targets.android]
+cargo_args = ["--no-default-features", "--features=kotlin"]
+"#,
+        )
+        .expect("toml parse failed");
+
+        assert_eq!(
+            resolve_build_cargo_args(
+                &config,
+                TargetSection::Android,
+                &["--features=extra".to_string()]
+            ),
+            vec![
+                "--locked".to_string(),
+                "--no-default-features".to_string(),
+                "--features=kotlin".to_string(),
+                "--features=extra".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn pack_generate_steps_receive_config_cargo_args_once() {
+        let config: Config = toml::from_str(
+            r#"
+[package]
+name = "mylib"
+
+[cargo]
+global_args = ["--locked"]
+
+[targets.android]
+cargo_args = ["--features=android"]
+
+[targets.wasm]
+cargo_args = ["--features=wasm"]
+
+[targets.dart]
+cargo_args = ["--features=dart"]
+
+[targets.c]
+cargo_args = ["--features=c"]
+"#,
+        )
+        .expect("toml parse failed");
+        let cli_cargo_args = vec!["--features=extra".to_string()];
+
+        [
+            (
+                TargetSection::Android,
+                GenerateTarget::Kotlin,
+                Some(TargetSection::Android),
+            ),
+            (TargetSection::Android, GenerateTarget::Header, None),
+            (
+                TargetSection::Wasm,
+                GenerateTarget::Typescript,
+                Some(TargetSection::Wasm),
+            ),
+            (
+                TargetSection::Dart,
+                GenerateTarget::Dart,
+                Some(TargetSection::Dart),
+            ),
+            (TargetSection::C, GenerateTarget::C, Some(TargetSection::C)),
+        ]
+        .into_iter()
+        .for_each(|(pack_section, target, generate_section)| {
+            let options = GenerateOptions {
+                cargo_args: pack_generate_cargo_args(
+                    &config,
+                    pack_section,
+                    &target,
+                    &cli_cargo_args,
+                ),
+                target,
+                output: None,
+                experimental: false,
+                deny_skipped: false,
+            };
+
+            assert_eq!(
+                generation_cargo_args(&config, generate_section, &options),
+                resolve_build_cargo_args(&config, pack_section, &cli_cargo_args),
+                "{pack_section:?}"
+            );
+        });
+    }
 
     #[test]
     fn reports_missing_built_libraries_for_unbuilt_configured_targets() {

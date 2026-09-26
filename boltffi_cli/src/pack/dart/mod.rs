@@ -9,8 +9,8 @@ use crate::{
         generate::{GenerateOptions, GenerateTarget, run_generate_with_output},
         pack::PackDartOptions,
     },
-    config::Config,
-    pack::{PackError, print_cargo_line, resolve_build_cargo_args},
+    config::{Config, TargetSection},
+    pack::{PackError, pack_generate_cargo_args, print_cargo_line, resolve_build_cargo_args},
     reporter::Reporter,
 };
 
@@ -218,7 +218,8 @@ pub(crate) fn pack_dart(
 
     reporter.section("☕", "Packing Dart");
 
-    let build_cargo_args = resolve_build_cargo_args(config, &options.execution.cargo_args);
+    let build_cargo_args =
+        resolve_build_cargo_args(config, TargetSection::Dart, &options.execution.cargo_args);
     let build_profile = resolve_build_profile(options.execution.release, &build_cargo_args);
 
     if options.execution.regenerate {
@@ -229,7 +230,12 @@ pub(crate) fn pack_dart(
                 target: GenerateTarget::Dart,
                 output: Some(config.dart_output()),
                 experimental: options.experimental,
-                cargo_args: build_cargo_args.clone(),
+                cargo_args: pack_generate_cargo_args(
+                    config,
+                    TargetSection::Dart,
+                    &GenerateTarget::Dart,
+                    &options.execution.cargo_args,
+                ),
                 deny_skipped: options.execution.deny_skipped,
             },
         )?;

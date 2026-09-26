@@ -4,7 +4,7 @@ use std::path::{Component, PathBuf};
 use crate::build::{BindingExpansion, CargoBuildProfile, resolve_build_profile};
 use crate::cargo::Cargo;
 use crate::cli::{CliError, Result};
-use crate::config::Config;
+use crate::config::{Config, TargetSection};
 use crate::pack::resolve_build_cargo_args;
 use crate::target::NativeHostPlatform;
 
@@ -97,7 +97,8 @@ impl PythonPackagingPlan {
             PythonPackageLayout::with_wheel_directory(output_root, wheel_directory, &module_name)
         };
         layout.validate_wheel_directory_safety()?;
-        let build_cargo_args = resolve_build_cargo_args(config, cli_cargo_args);
+        let build_cargo_args =
+            resolve_build_cargo_args(config, TargetSection::Python, cli_cargo_args);
         let build_profile = resolve_build_profile(release, &build_cargo_args);
         let cargo = Cargo::current(&build_cargo_args)?;
 
@@ -343,6 +344,7 @@ mod tests {
                         ]),
                     },
                     enabled: true,
+                    cargo_args: Vec::new(),
                 },
                 ..TargetsConfig::default()
             },

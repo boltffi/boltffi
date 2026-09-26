@@ -16,6 +16,9 @@ pub struct DartConfig {
         deserialize_with = "DartConfig::deserialize_native_targets"
     )]
     pub native_targets: Option<Vec<RustTarget>>,
+    /// Cargo arguments for every cargo invocation that builds this target.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cargo_args: Vec<String>,
 }
 
 impl Default for DartConfig {
@@ -24,6 +27,7 @@ impl Default for DartConfig {
             output: default_dart_output(),
             enabled: false,
             native_targets: None,
+            cargo_args: Vec::new(),
         }
     }
 }

@@ -27,19 +27,6 @@ pub struct BindingExpansion {
 }
 
 impl BindingExpansion {
-    pub fn resolve_for_commands(
-        config: &Config,
-        commands: &[&str],
-        cargo_args: &[String],
-    ) -> Result<Self> {
-        let resolved_cargo_args = config
-            .cargo_args_for_commands(commands)
-            .into_iter()
-            .chain(cargo_args.iter().cloned())
-            .collect::<Vec<_>>();
-        Self::resolve(config, &resolved_cargo_args)
-    }
-
     pub fn resolve(config: &Config, build_cargo_args: &[String]) -> Result<Self> {
         Self::resolve_for_surface(config, build_cargo_args, BindingMetadataSurface::Native)
     }

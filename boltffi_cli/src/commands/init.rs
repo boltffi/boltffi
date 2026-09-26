@@ -105,6 +105,7 @@ fn create_default_config(package_name: &str) -> Config {
                     skip_package_swift: false,
                 },
                 debug_symbols: DebugSymbolsConfig::default(),
+                cargo_args: Vec::new(),
             },
             android: AndroidConfig {
                 enabled: true,
@@ -128,6 +129,7 @@ fn create_default_config(package_name: &str) -> Config {
                 pack: AndroidPackConfig { output: None },
                 link: AndroidLinkConfig::default(),
                 debug_symbols: DebugSymbolsConfig::default(),
+                cargo_args: Vec::new(),
             },
             kotlin_multiplatform: KotlinMultiplatformConfig::default(),
             wasm: WasmConfig::default(),

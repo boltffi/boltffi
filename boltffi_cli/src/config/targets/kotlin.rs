@@ -79,6 +79,9 @@ pub struct AndroidConfig {
     pub link: AndroidLinkConfig,
     #[serde(default)]
     pub debug_symbols: DebugSymbolsConfig,
+    /// Cargo arguments for every cargo invocation that builds this target.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cargo_args: Vec<String>,
 }
 
 impl Default for AndroidConfig {
@@ -94,6 +97,7 @@ impl Default for AndroidConfig {
             pack: AndroidPackConfig::default(),
             link: AndroidLinkConfig::default(),
             debug_symbols: DebugSymbolsConfig::default(),
+            cargo_args: Vec::new(),
         }
     }
 }

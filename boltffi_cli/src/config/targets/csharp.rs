@@ -17,6 +17,9 @@ pub struct CSharpConfig {
     pub nuget: CSharpNugetConfig,
     #[serde(default)]
     pub enabled: bool,
+    /// Cargo arguments for every cargo invocation that builds this target.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cargo_args: Vec<String>,
 }
 
 impl Default for CSharpConfig {
@@ -30,6 +33,7 @@ impl Default for CSharpConfig {
             runtime_identifiers: None,
             nuget: CSharpNugetConfig::default(),
             enabled: false,
+            cargo_args: Vec::new(),
         }
     }
 }

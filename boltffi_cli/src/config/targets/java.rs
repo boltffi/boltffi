@@ -15,6 +15,9 @@ pub struct JavaConfig {
     pub jvm: JavaJvmConfig,
     #[serde(default)]
     pub android: JavaAndroidConfig,
+    /// Cargo arguments for every cargo invocation that builds this target.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cargo_args: Vec<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]

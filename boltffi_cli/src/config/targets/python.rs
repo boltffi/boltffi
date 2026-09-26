@@ -11,6 +11,9 @@ pub struct PythonConfig {
     pub wheel: PythonWheelConfig,
     #[serde(default)]
     pub enabled: bool,
+    /// Cargo arguments for every cargo invocation that builds this target.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cargo_args: Vec<String>,
 }
 
 impl Default for PythonConfig {
@@ -20,6 +23,7 @@ impl Default for PythonConfig {
             module_name: None,
             wheel: PythonWheelConfig::default(),
             enabled: false,
+            cargo_args: Vec::new(),
         }
     }
 }

@@ -43,6 +43,39 @@ crate = "my_lib"
 
 BoltFFI scans and builds the crate specified by `crate`, but uses `name` for all generated module names and paths.
 
+## Cargo Arguments
+
+The `[cargo]` section adds arguments to the `cargo` invocations BoltFFI runs. `global_args` apply to every invocation, and `command_args` apply per BoltFFI command:
+
+```toml
+[cargo]
+global_args = ["--locked"]
+
+[cargo.command_args]
+build = ["--profile", "ffi"]
+```
+
+When your crate gates bindings behind Cargo features, set `cargo_args` on a target table instead. Those arguments apply only where that target builds, for example `boltffi generate python` and `boltffi pack python`:
+
+```toml
+[targets.python]
+enabled = true
+cargo_args = ["--no-default-features", "--features=python"]
+
+[targets.android]
+cargo_args = ["--no-default-features", "--features=kotlin"]
+```
+
+Arguments are passed in this order: `global_args`, `command_args`, the target's `cargo_args`, then any `--cargo-arg` values from the command line.
+
+Each command reads the `cargo_args` of one target table:
+
+- `generate kotlin` and `pack android` use `[targets.android]`. `generate header` uses only the `[cargo]` arguments, but the header step of `pack android` also gets `[targets.android].cargo_args`.
+- `pack kmp` builds its Android libraries with `[targets.kotlin_multiplatform].cargo_args`, not `[targets.android]`.
+- `generate java` and `pack java` use `[targets.java]`, including for the Android output.
+
+`cargo_args` is read only from top-level target tables such as `[targets.android]`. Unknown keys in target tables are ignored, so `cargo_args` under `[targets.android.kotlin]` has no effect.
+
 ## Apple Configuration
 
 The `[targets.apple]` section controls iOS, iOS Simulator, and optionally macOS builds.
