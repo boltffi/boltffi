@@ -1,5 +1,5 @@
 {{ method.documentation() }}{% if method.mode().asynchronous() %}$$async.Stream<{{ method.item_type() }}> {{ method.name() }}() {
-{%- else if method.mode().callback() %}$$async.StreamSubscription<{{ method.item_type() }}> {{ method.name() }}(void Function({{ method.item_type() }}) callback) {
+{%- else if method.mode().callback() %}$$async.StreamSubscription<{{ method.item_type() }}> {{ method.name() }}(void Function({{ method.item_type() }}) callback{% if method.context().take_failure().is_some() %}, {required void Function(Object error) onError}{% endif %}) {
 {%- else %}$$BoltStreamPopBatchHandle<{{ method.item_type() }}> {{ method.name() }}() {
 {%- endif %}
 {%- if method.context().owned() %}
@@ -11,7 +11,8 @@
     waitFn: _f${{ method.context().wait() }},
     unsubscribeFn: _f${{ method.context().unsubscribe() }},
     freeFn: _f${{ method.context().free() }}{% match method.context().item_size() %}{% when Some with (item_size) %},
-    itemSize: {{ item_size }}{% when None %}{% endmatch %},
+    itemSize: {{ item_size }}{% when None %}{% endmatch %}{% match method.context().take_failure() %}{% when Some with (take_failure) %},
+    takeFailure: {{ take_failure }}{% when None %}{% endmatch %},
   );
 {%- if method.mode().asynchronous() %}
   return _l$context.stream<{{ method.item_type() }}>(
@@ -67,7 +68,7 @@
       return _l$items.length >= batchSize;
     },
   );
-  return stream.listen(callback);
+  return stream.listen(callback{% if method.context().take_failure().is_some() %}, onError: onError{% endif %});
 {%- else %}
   return _l$context.batch<{{ method.item_type() }}>(
     (handle, batchSize, itemSize) {

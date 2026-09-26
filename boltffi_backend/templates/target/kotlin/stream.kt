@@ -22,7 +22,14 @@
                 send(item)
             }
         },
-        finish = { close() }
+        finish = { {% if stream.failure().is_some() %}close(it){% else %}close(){% endif %} }{% if let Some(failure) = stream.failure() %},
+        takeFailure = { handle ->
+            val bytes = Native.{{ failure.take_error() }}(handle)
+            if (bytes == null || bytes.isEmpty()) null else {
+                val {{ failure.reader() }} = WireReader(bytes)
+                {{ failure.throwable() }}
+            }
+        }{% endif %}
     )
     context.start()
     awaitClose { context.requestTermination() }
@@ -35,7 +42,14 @@
         popBatch = Native::{{ stream.pop_batch() }},
         wait = Native::{{ stream.wait() }},
         unsubscribe = Native::{{ stream.unsubscribe() }},
-        free = Native::{{ stream.free() }}
+        free = Native::{{ stream.free() }}{% if let Some(failure) = stream.failure() %},
+        takeFailure = { handle ->
+            val bytes = Native.{{ failure.take_error() }}(handle)
+            if (bytes == null || bytes.isEmpty()) null else {
+                val {{ failure.reader() }} = WireReader(bytes)
+                {{ failure.throwable() }}
+            }
+        }{% endif %}
     )
 
 class {{ subscription }}(
@@ -43,9 +57,13 @@ class {{ subscription }}(
     private val popBatch: (Long, Long) -> ByteArray?,
     private val wait: (Long, Int) -> Int,
     private val unsubscribe: (Long) -> Unit,
-    private val free: (Long) -> Unit
+    private val free: (Long) -> Unit{% if stream.failure().is_some() %},
+    private val takeFailure: (Long) -> Throwable?{% endif %}
 ) : AutoCloseable {
     private val closed = java.util.concurrent.atomic.AtomicBoolean(false)
+{%- if stream.failure().is_some() %}
+    @Volatile private var failure: Throwable? = null
+{%- endif %}
 
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
@@ -55,9 +73,21 @@ class {{ subscription }}(
 
     fun popBatch(maxCount: Long = 16L): List<{{ stream.item() }}> {
         if (handle == 0L) return emptyList()
+{%- if stream.failure().is_some() %}
+        // closed before this pop, so nothing can arrive after it: an empty pop is final
+        val ended = failure == null && wait(handle, 0) < 0
+{%- endif %}
         val bytes = popBatch(handle, maxCount)
             ?: throw IllegalStateException("BoltFFI stream pop_batch returned null")
+{%- if stream.failure().is_some() %}
+        if (bytes.isEmpty()) {
+            if (ended) failure = takeFailure(handle)
+            failure?.let { throw it }
+            return emptyList()
+        }
+{%- else %}
         if (bytes.isEmpty()) return emptyList()
+{%- endif %}
 {%- for statement in stream.item_setup() %}
         {{ statement }}
 {%- endfor %}
@@ -77,7 +107,7 @@ class {{ subscription }}(
 }
 {%- endif %}
 {%- if let Some(cancellable) = stream.callback_cancellable() %}
-{{ stream.documentation() }}{% if let Some(receiver) = stream.receiver() %}fun {{ receiver }}.{{ stream.name() }}(callback: ({{ stream.item() }}) -> Unit){% else %}fun {{ stream.name() }}(callback: ({{ stream.item() }}) -> Unit){% endif %}: {{ cancellable }} {
+{{ stream.documentation() }}{% if let Some(receiver) = stream.receiver() %}fun {{ receiver }}.{{ stream.name() }}({% if stream.failure().is_some() %}onError: (Throwable) -> Unit, {% endif %}callback: ({{ stream.item() }}) -> Unit){% else %}fun {{ stream.name() }}({% if stream.failure().is_some() %}onError: (Throwable) -> Unit, {% endif %}callback: ({{ stream.item() }}) -> Unit){% endif %}: {{ cancellable }} {
     val subscription = Native.{{ stream.subscribe() }}({% if stream.receiver().is_some() %}boltffiHandle(){% endif %})
     if (subscription == 0L) return {{ cancellable }} {}
     val context = BoltFfiStreamContext(
@@ -97,7 +127,14 @@ class {{ subscription }}(
                 callback(item)
             }
         },
-        finish = {}
+        finish = {% if stream.failure().is_some() %}{ failure -> failure?.let(onError) }{% else %}{}{% endif %}{% if let Some(failure) = stream.failure() %},
+        takeFailure = { handle ->
+            val bytes = Native.{{ failure.take_error() }}(handle)
+            if (bytes == null || bytes.isEmpty()) null else {
+                val {{ failure.reader() }} = WireReader(bytes)
+                {{ failure.throwable() }}
+            }
+        }{% endif %}
     )
     context.start()
     return {{ cancellable }} { context.requestTermination() }

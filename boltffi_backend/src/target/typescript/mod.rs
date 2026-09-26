@@ -724,6 +724,56 @@ mod tests {
     }
 
     #[test]
+    fn renders_a_fallible_stream_with_its_take_error_reader() {
+        let source = boltffi_scan::scan_file(
+            syn::parse_str(
+                r#"
+                use std::sync::Arc;
+                use boltffi::EventSubscription;
+
+                #[error]
+                pub enum JobError { Refused { code: u32 }, Lost }
+
+                pub struct Jobs;
+
+                #[export]
+                impl Jobs {
+                    pub fn new() -> Self { Self }
+
+                    #[ffi_stream(item = String, error = String)]
+                    pub fn lines(&self) -> Arc<EventSubscription<String, String>> { todo!() }
+
+                    #[ffi_stream(item = i32, error = JobError, mode = "batch")]
+                    pub fn progress(&self) -> Arc<EventSubscription<i32, JobError>> { todo!() }
+                }
+                "#,
+            )
+            .expect("valid source"),
+            PackageInfo::new("demo", None),
+        )
+        .expect("source scans");
+        let output = TypeScriptHost::new("demo")
+            .expect("host constructs")
+            .into_target()
+            .render(&lower::<Wasm32>(&source).expect("source lowers"))
+            .expect("target renders");
+        let contents = output
+            .files()
+            .iter()
+            .find(|file| file.path().as_path().ends_with("demo.ts"))
+            .expect("browser module")
+            .contents();
+
+        assert!(contents.contains(
+            "const __boltffiError = (_exports.boltffi_stream_demo_jobs_lines_take_error as Function)(subscription) as bigint;"
+        ));
+        assert!(
+            contents.contains("return new Error(_module.takePackedWireString(__boltffiError));")
+        );
+        assert!(contents.contains("return new JobErrorException("));
+    }
+
+    #[test]
     fn browser_init_accepts_a_precompiled_wasm_module_source() {
         let output = TypeScriptHost::new("demo")
             .expect("host constructs")

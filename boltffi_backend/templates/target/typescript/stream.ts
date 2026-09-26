@@ -35,6 +35,18 @@ const {{ factory }} = ({% match owner %}{% when Some with (_) %}ownerHandle: num
     (subscription) => {
       (_exports.{{ free }} as Function)(subscription);
     },
+{%- if let Some(failure) = failure %}
+    (subscription) => {
+      const __boltffiError = (_exports.{{ failure.take_error }} as Function)(subscription) as bigint;
+      if (__boltffiError === 0n) {
+        return undefined;
+      }
+{%- for statement in failure.setup %}
+      {{ statement }}
+{%- endfor %}
+      return {{ failure.error }};
+    },
+{%- endif %}
   );
 };
 

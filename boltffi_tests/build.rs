@@ -2156,6 +2156,68 @@ static int boltffi_tests_check_streams(void) {
     }
     boltffi_stream_boltffi_tests_streams_label_stream_subscribe_free(label_subscription);
     boltffi_release_class_boltffi_tests_streams_label_stream(label_stream);
+    uint64_t job_stream = boltffi_init_class_boltffi_tests_streams_job_stream_new();
+    if (job_stream == 0) {
+        return 1300;
+    }
+    uint64_t job_subscription = boltffi_stream_boltffi_tests_streams_job_stream_subscribe_subscribe(job_stream);
+    if (job_subscription == 0) {
+        boltffi_release_class_boltffi_tests_streams_job_stream(job_stream);
+        return 1301;
+    }
+    FfiBuf_u8 job_no_error = boltffi_stream_boltffi_tests_streams_job_stream_subscribe_take_error(job_subscription);
+    if (job_no_error.ptr != 0 || job_no_error.len != 0) {
+        boltffi_free_buf(job_no_error);
+        boltffi_stream_boltffi_tests_streams_job_stream_subscribe_free(job_subscription);
+        boltffi_release_class_boltffi_tests_streams_job_stream(job_stream);
+        return 1302;
+    }
+    FfiBuf_u8 job_reason = boltffi_tests_string_buf("boom", 4);
+    bool job_emitted = boltffi_method_class_boltffi_tests_streams_job_stream_emit(job_stream, 7);
+    bool job_failed = boltffi_method_class_boltffi_tests_streams_job_stream_fail(job_stream, job_reason.ptr, job_reason.len);
+    boltffi_free_buf(job_reason);
+    if (!job_emitted || !job_failed) {
+        boltffi_stream_boltffi_tests_streams_job_stream_subscribe_free(job_subscription);
+        boltffi_release_class_boltffi_tests_streams_job_stream(job_stream);
+        return 1303;
+    }
+    int32_t job_items[4] = {0};
+    uintptr_t job_count = boltffi_stream_boltffi_tests_streams_job_stream_subscribe_pop_batch(job_subscription, job_items, 4);
+    if (job_count != 1 || job_items[0] != 7) {
+        boltffi_stream_boltffi_tests_streams_job_stream_subscribe_free(job_subscription);
+        boltffi_release_class_boltffi_tests_streams_job_stream(job_stream);
+        return 1304;
+    }
+    boltffi_tests_stream_poll_result = -1;
+    boltffi_stream_boltffi_tests_streams_job_stream_subscribe_poll(job_subscription, 0, boltffi_tests_stream_capture);
+    if (boltffi_tests_stream_poll_result != 1
+        || boltffi_stream_boltffi_tests_streams_job_stream_subscribe_wait(job_subscription, 0) != -1) {
+        boltffi_stream_boltffi_tests_streams_job_stream_subscribe_free(job_subscription);
+        boltffi_release_class_boltffi_tests_streams_job_stream(job_stream);
+        return 1305;
+    }
+    const uint8_t job_error_expected[8] = {4, 0, 0, 0, 'b', 'o', 'o', 'm'};
+    int job_error = boltffi_tests_check_buf(
+        boltffi_stream_boltffi_tests_streams_job_stream_subscribe_take_error(job_subscription),
+        job_error_expected,
+        8,
+        1306
+    );
+    if (job_error != 0) {
+        boltffi_stream_boltffi_tests_streams_job_stream_subscribe_free(job_subscription);
+        boltffi_release_class_boltffi_tests_streams_job_stream(job_stream);
+        return job_error;
+    }
+    int job_taken = boltffi_tests_check_empty_buf(
+        boltffi_stream_boltffi_tests_streams_job_stream_subscribe_take_error(job_subscription),
+        1309
+    );
+    boltffi_stream_boltffi_tests_streams_job_stream_subscribe_unsubscribe(job_subscription);
+    boltffi_stream_boltffi_tests_streams_job_stream_subscribe_free(job_subscription);
+    boltffi_release_class_boltffi_tests_streams_job_stream(job_stream);
+    if (job_taken != 0) {
+        return job_taken;
+    }
     return 0;
 }
 "#

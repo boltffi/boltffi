@@ -17,6 +17,7 @@ pub struct Stream {
     poll: Function,
     unsubscribe: Function,
     free: Function,
+    take_error: Option<Function>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -62,6 +63,18 @@ impl Stream {
             .transpose()?
             .into_iter()
             .collect();
+        let take_error = protocol
+            .take_error()
+            .zip(stream.error())
+            .map(|(symbol, error)| {
+                Function::exported(
+                    declaration,
+                    symbol,
+                    vec![Parameter::new("subscription", subscription.clone())?],
+                    Signature::new(names, Vec::new()).encoded_return(error.shape())?,
+                )
+            })
+            .transpose()?;
 
         Ok(Self {
             subscribe: Function::exported(
@@ -108,11 +121,12 @@ impl Stream {
                 vec![Parameter::new("subscription", subscription)?],
                 Type::Void,
             )?,
+            take_error,
         })
     }
 
     /// Returns every C function exposed by this stream protocol.
-    pub fn functions(&self) -> [&Function; 6] {
+    pub fn functions(&self) -> Vec<&Function> {
         [
             &self.subscribe,
             self.pop_batch.function(),
@@ -121,6 +135,9 @@ impl Stream {
             &self.unsubscribe,
             &self.free,
         ]
+        .into_iter()
+        .chain(&self.take_error)
+        .collect()
     }
 
     /// Returns the C stream subscription function.
@@ -151,6 +168,12 @@ impl Stream {
     /// Returns the C stream free function.
     pub fn free(&self) -> &Function {
         &self.free
+    }
+
+    /// Returns the C function that takes a fallible stream's error: the
+    /// encoded error once the stream failed, an empty buffer otherwise.
+    pub fn take_error(&self) -> Option<&Function> {
+        self.take_error.as_ref()
     }
 
     /// Returns the direct batch function when this stream copies direct items.

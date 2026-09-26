@@ -767,6 +767,67 @@ describe("StreamSession", () => {
     expect(free).toHaveBeenCalledOnce();
     expect(free).toHaveBeenCalledWith(13);
   });
+
+  it("throws a failed stream's error after its items, then again", async () => {
+    const batches: number[][] = [[1, 2]];
+    const error = new Error("boom");
+    const takeFailure = vi.fn(() => (batches.length === 0 ? error : undefined));
+    const free = vi.fn();
+    const session = new StreamSession(
+      17,
+      () => batches.shift() ?? [],
+      () => {},
+      new StreamPollManager(),
+      () => {},
+      free,
+      takeFailure
+    );
+
+    const seen: number[] = [];
+    await expect(
+      (async () => {
+        for await (const item of session) seen.push(item);
+      })()
+    ).rejects.toBe(error);
+    expect(seen).toEqual([1, 2]);
+    expect(free).toHaveBeenCalledOnce();
+    expect(takeFailure).toHaveBeenCalledWith(17);
+  });
+
+  it("throws from popBatch only once a failed stream is drained", () => {
+    const batches: number[][] = [[4]];
+    const error = new Error("late");
+    const takeFailure = vi.fn(() => (batches.length === 0 ? error : undefined));
+    const session = new StreamSession(
+      19,
+      () => batches.shift() ?? [],
+      () => {},
+      new StreamPollManager(),
+      () => {},
+      () => {},
+      takeFailure
+    );
+
+    expect(session.popBatch()).toEqual([4]);
+    expect(() => session.popBatch()).toThrow(error);
+    expect(() => session.popBatch()).toThrow(error);
+    expect(takeFailure).toHaveBeenCalledOnce();
+  });
+
+  it("rejects a callback consumer's done with the stream error", async () => {
+    const error = new Error("halted");
+    const session = new StreamSession(
+      23,
+      () => [],
+      () => {},
+      new StreamPollManager(),
+      () => {},
+      () => {},
+      () => error
+    );
+
+    await expect(session.consume(() => {}).done).rejects.toBe(error);
+  });
 });
 
 describe("CallbackRegistry", () => {

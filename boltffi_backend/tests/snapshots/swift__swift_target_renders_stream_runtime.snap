@@ -1,5 +1,6 @@
 ---
 source: boltffi_backend/tests/swift.rs
+assertion_line: 226
 expression: "rendered_swift_runtime(SourceFixture::one(\"stream/protocol_functions\"))"
 ---
 ===== DemoFFI.swift =====
@@ -41,6 +42,9 @@ private final class BoltFFIStreamContext<Item>: BoltFFIStreamPollContext, @unche
     private let atomicCompareExchange: (UnsafeMutablePointer<UInt8>?, UInt8, UInt8) -> Bool
     private let yieldItem: (Item) -> Void
     private let finish: () -> Void
+    private let fail: ((Swift.Error) -> Void)?
+    private let takeFailure: ((UInt64) -> Swift.Error?)?
+    private var failure: Swift.Error?
     private var lifecycle = UInt8(0)
     private var processing = UInt8(0)
 
@@ -53,7 +57,9 @@ private final class BoltFFIStreamContext<Item>: BoltFFIStreamPollContext, @unche
         free: @escaping (UInt64) -> Void,
         atomicCompareExchange: @escaping (UnsafeMutablePointer<UInt8>?, UInt8, UInt8) -> Bool,
         yieldItem: @escaping (Item) -> Void,
-        finish: @escaping () -> Void
+        finish: @escaping () -> Void,
+        fail: ((Swift.Error) -> Void)? = nil,
+        takeFailure: ((UInt64) -> Swift.Error?)? = nil
     ) {
         self.subscription = subscription
         self.batchSize = batchSize
@@ -64,6 +70,8 @@ private final class BoltFFIStreamContext<Item>: BoltFFIStreamPollContext, @unche
         self.atomicCompareExchange = atomicCompareExchange
         self.yieldItem = yieldItem
         self.finish = finish
+        self.fail = fail
+        self.takeFailure = takeFailure
     }
 
     func start() {
@@ -111,6 +119,8 @@ private final class BoltFFIStreamContext<Item>: BoltFFIStreamPollContext, @unche
         }
         drain()
         if result == BoltFFIStreamPollResult.closed.rawValue {
+            // still processing, so the handle cannot be freed under us
+            failure = takeFailure?(subscription)
             requestTermination()
             return false
         }
@@ -144,7 +154,11 @@ private final class BoltFFIStreamContext<Item>: BoltFFIStreamPollContext, @unche
             return
         }
         free(subscription)
-        finish()
+        if let failure, let fail {
+            fail(failure)
+        } else {
+            finish()
+        }
     }
 }
 

@@ -1395,6 +1395,8 @@ final class _$$BoltStreamCtx {
   late final void Function(int) unsubscribeFn;
   late final void Function(int) freeFn;
   late final int? itemSize;
+  // A fallible stream's error once it closed, or null; see `take_error`.
+  final Object? Function(int handle)? takeFailure;
 
   _$$BoltStreamCtx({
     required this.subscribe,
@@ -1403,6 +1405,7 @@ final class _$$BoltStreamCtx {
     required this.unsubscribeFn,
     required this.freeFn,
     this.itemSize,
+    this.takeFailure,
   });
 
   Stream<O> stream<O>(
@@ -1465,9 +1468,11 @@ final class _$$BoltStreamCtx {
           }
         case _k$StreamPollResult$Closed:
           while (onReady(handle, _k$defaultBatchSize, itemSize, controller)) {}
+          final failure = takeFailure?.call(handle);
           active = false;
           unsubscribeFn(handle);
           release();
+          if (failure != null) controller.addError(failure);
           controller.close();
       }
     }
@@ -1483,13 +1488,27 @@ final class _$$BoltStreamCtx {
     List<O> Function(int, int, int?) mapper,
   ) {
     var handle = subscribe();
+    Object? failure;
 
     return $$BoltStreamPopBatchHandle(
       popBatch: (batchSize) {
         if (handle == 0) {
           return [];
         }
-        return mapper(handle, batchSize, itemSize);
+        final takeFailure = this.takeFailure;
+        if (takeFailure == null) {
+          return mapper(handle, batchSize, itemSize);
+        }
+        // closed before this pop, so nothing can arrive after it: an empty
+        // pop is final
+        final ended = failure != null || waitFn(handle, 0) < 0;
+        final items = mapper(handle, batchSize, itemSize);
+        if (items.isEmpty && ended) {
+          failure ??= takeFailure(handle);
+          final error = failure;
+          if (error != null) throw error;
+        }
+        return items;
       },
       cancel: () {
         if (handle == 0) return;

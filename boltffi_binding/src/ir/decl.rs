@@ -487,6 +487,7 @@ impl<S: Surface> Decl<S> {
                     stream.protocol().free(),
                 ]
                 .into_iter()
+                .chain(stream.protocol().take_error())
                 .chain(nested),
             ),
             Self::Constant(constant) => match constant.value() {
@@ -2242,6 +2243,8 @@ pub struct StreamDecl<S: Surface> {
     mode: StreamMode,
     handle: S::HandleCarrier,
     item: StreamItemPlan<S>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    error: Option<StreamErrorPlan<S>>,
     protocol: StreamProtocol,
 }
 
@@ -2253,6 +2256,7 @@ pub(crate) struct StreamDeclParts<S: Surface> {
     pub(crate) mode: StreamMode,
     pub(crate) handle: S::HandleCarrier,
     pub(crate) item: StreamItemPlan<S>,
+    pub(crate) error: Option<StreamErrorPlan<S>>,
     pub(crate) protocol: StreamProtocol,
 }
 
@@ -2266,6 +2270,7 @@ impl<S: Surface> StreamDecl<S> {
             mode: parts.mode,
             handle: parts.handle,
             item: parts.item,
+            error: parts.error,
             protocol: parts.protocol,
         }
     }
@@ -2305,16 +2310,34 @@ impl<S: Surface> StreamDecl<S> {
         &self.item
     }
 
+    /// Returns how the error of a fallible stream is read, or `None` for a
+    /// stream that can only complete.
+    pub fn error(&self) -> Option<&StreamErrorPlan<S>> {
+        self.error.as_ref()
+    }
+
     fn uses_result_codec(&self) -> bool {
         self.item.uses_result_codec()
+            || self
+                .error
+                .as_ref()
+                .is_some_and(|error| error.read.uses_result())
     }
 
     fn uses_builtin_codec(&self, kind: BuiltinType) -> bool {
         self.item.uses_builtin_codec(kind)
+            || self
+                .error
+                .as_ref()
+                .is_some_and(|error| error.read.uses_builtin(kind))
     }
 
     fn append_referenced_declarations(&self, references: &mut BTreeSet<DeclarationId>) {
         self.item.append_referenced_declarations(references);
+        if let Some(error) = &self.error {
+            error.ty.append_referenced_declarations(references);
+            error.read.append_referenced_declarations(references);
+        }
         if let Some(owner) = self.owner {
             references.insert(DeclarationId::Class(owner));
         }
@@ -2322,6 +2345,10 @@ impl<S: Surface> StreamDecl<S> {
 
     fn contains_interned_string(&self) -> bool {
         self.item.contains_interned_string()
+            || self
+                .error
+                .as_ref()
+                .is_some_and(|error| error.read.uses_interned_string())
     }
 
     fn uses_direct_record_vector(&self) -> bool {
@@ -2451,6 +2478,43 @@ impl<S: Surface> StreamItemPlan<S> {
     }
 }
 
+/// How foreign code reads the error a fallible stream ended with.
+///
+/// Once the stream has closed and its buffered items are drained, the
+/// protocol's `take_error` symbol returns the encoded error, or an empty
+/// buffer (null data pointer) when the stream completed or was cancelled.
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+#[serde(bound(
+    serialize = "S::BufferShape: Serialize",
+    deserialize = "S::BufferShape: serde::de::DeserializeOwned"
+))]
+pub struct StreamErrorPlan<S: Surface> {
+    ty: TypeRef,
+    read: ReadPlan,
+    shape: S::BufferShape,
+}
+
+impl<S: Surface> StreamErrorPlan<S> {
+    pub(crate) fn new(ty: TypeRef, read: ReadPlan, shape: S::BufferShape) -> Self {
+        Self { ty, read, shape }
+    }
+
+    /// Returns the error type.
+    pub fn ty(&self) -> &TypeRef {
+        &self.ty
+    }
+
+    /// Returns the foreign-side decoder for the error.
+    pub fn read(&self) -> &ReadPlan {
+        &self.read
+    }
+
+    /// Returns the shape of the buffer `take_error` returns.
+    pub fn shape(&self) -> S::BufferShape {
+        self.shape
+    }
+}
+
 /// Target-language rendering for stream item plans.
 ///
 /// The shared walker owns the `StreamItemPlan` variant traversal.
@@ -2486,6 +2550,8 @@ pub struct StreamProtocol {
     poll: NativeSymbol,
     unsubscribe: NativeSymbol,
     free: NativeSymbol,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    take_error: Option<NativeSymbol>,
 }
 
 impl StreamProtocol {
@@ -2496,6 +2562,7 @@ impl StreamProtocol {
         poll: NativeSymbol,
         unsubscribe: NativeSymbol,
         free: NativeSymbol,
+        take_error: Option<NativeSymbol>,
     ) -> Self {
         Self {
             subscribe,
@@ -2504,6 +2571,7 @@ impl StreamProtocol {
             poll,
             unsubscribe,
             free,
+            take_error,
         }
     }
 
@@ -2535,6 +2603,12 @@ impl StreamProtocol {
     /// Returns the symbol that drops the stream.
     pub fn free(&self) -> &NativeSymbol {
         &self.free
+    }
+
+    /// Returns the symbol that takes a fallible stream's error, once it has
+    /// closed. `None` for a stream that can only complete.
+    pub fn take_error(&self) -> Option<&NativeSymbol> {
+        self.take_error.as_ref()
     }
 }
 

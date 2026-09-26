@@ -402,6 +402,91 @@ impl Sensor {
 }
 ```
 
+### Failing a stream
+
+A stream that can end with an error declares it: `error = E` in the attribute,
+and `EventSubscription<T, E>` as the returned type, created with
+`EventSubscription::fallible`. `fail(error)` ends the stream like `unsubscribe()`
+does, but consumers receive the error once they have drained the events already
+buffered. `E` is any type a fallible function may return as its error: a
+`String`, or an `#[error]` record or enum.
+
+<CodeComparison
+  title=""
+  rust={`pub struct Download {
+    progress: Arc<EventSubscription<u32, DownloadError>>,
+}
+
+#[export]
+impl Download {
+    #[ffi_stream(item = u32, error = DownloadError)]
+    pub fn progress(&self)
+        -> Arc<EventSubscription<u32, DownloadError>>
+    {
+        Arc::clone(&self.progress)
+    }
+
+    pub fn abort(&self, error: DownloadError) {
+        self.progress.fail(error);
+    }
+}`}
+  swift={`// async mode yields an AsyncThrowingStream
+do {
+    for try await percent in download.progress() {
+        print("\\(percent)%")
+    }
+} catch let error as DownloadError {
+    // the stream failed
+}`}
+  kotlin={`try {
+    download.progress().collect { percent ->
+        println("$percent%")
+    }
+} catch (error: DownloadError) {
+    // the stream failed
+}`}
+  java={`// callback mode takes an onError consumer
+StreamSubscription<Integer> sub =
+    download.progress(
+        percent -> System.out.println(percent + "%"),
+        error -> handle(error));`}
+  csharp={`try {
+    await foreach (uint percent in download.Progress()) {
+        Console.WriteLine($"{percent}%");
+    }
+} catch (DownloadErrorException error) {
+    // the stream failed
+}`}
+  python={`subscription = download.progress()
+ended = False
+
+try:
+    while True:
+        # raises once a failed stream is drained
+        batch = subscription.pop_batch()
+        if batch:
+            for percent in batch:
+                print(f"{percent}%")
+        elif ended:
+            break
+        else:
+            ended = subscription.wait(50) < 0
+except DownloadErrorException as error:
+    print(error.error)`}
+/>
+
+A stream that completes or is cancelled ends without an error. How a failure
+arrives depends on the mode:
+
+- **Async**: the stream itself fails: Swift's `AsyncThrowingStream` and Kotlin's
+  `Flow` throw, C# `await foreach` throws, a TypeScript `for await` loop throws,
+  and Dart's `Stream` emits it as an error event.
+- **Batch**: `popBatch` (`pop_batch` in Python) throws the error once the stream
+  has ended and nothing is left to pop, so the ordinary drain loop surfaces it.
+- **Callback**: the method takes an extra error callback: `onError` in Swift,
+  Kotlin, Java and C#, a required named `onError` in Dart. In TypeScript the
+  returned handle's `done` promise rejects with the error.
+
 ### Consumer-side cancellation
 
 In async mode, cancelling the task or breaking out of the loop cancels the subscription. In callback mode, call `cancel()` on the returned handle.

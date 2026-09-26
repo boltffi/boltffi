@@ -1739,19 +1739,29 @@ fn lower_error(
     let decode = codec
         .render_with(&mut codec_reader)
         .map(ReadExpression::into_expression)?;
-    let throw = match ty {
-        TypeRef::String => Expression::new(format!("new BoltException({decode})")),
-        TypeRef::Record(_) | TypeRef::Enum(_) => {
-            let ty = render_type_ref(ty, type_namespace, context)?;
-            Expression::new(format!("new {ty}Exception({decode})"))
-        }
-        _ => return unsupported("encoded error type"),
-    };
+    let throw = error_exception(ty, &decode, type_namespace, context)?;
     Ok(Some(EncodedError {
         buffer,
         reader,
         throw,
     }))
+}
+
+/// The exception a decoded error of type `ty` is thrown as.
+pub(super) fn error_exception(
+    ty: &TypeRef,
+    decode: &impl std::fmt::Display,
+    type_namespace: Option<&Namespace>,
+    context: &RenderContext<Native>,
+) -> Result<Expression> {
+    match ty {
+        TypeRef::String => Ok(Expression::new(format!("new BoltException({decode})"))),
+        TypeRef::Record(_) | TypeRef::Enum(_) => {
+            let ty = render_type_ref(ty, type_namespace, context)?;
+            Ok(Expression::new(format!("new {ty}Exception({decode})")))
+        }
+        _ => unsupported("encoded error type"),
+    }
 }
 
 #[allow(clippy::too_many_arguments)]

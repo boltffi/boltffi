@@ -826,7 +826,7 @@ class {{ class.class_name }}:
 {% endif %}
 {% for stream in class.streams %}
 class {{ stream.subscription_class }}:
-    __slots__ = ("_handle",)
+    __slots__ = ("_handle",{% if stream.failure.is_some() %} "_failure",{% endif %})
 
     def __init__(self) -> None:
         raise TypeError("{{ stream.subscription_class }} cannot be constructed directly")
@@ -835,6 +835,9 @@ class {{ stream.subscription_class }}:
     def _from_handle(cls, handle: int) -> "{{ stream.subscription_class }}":
         value = cls.__new__(cls)
         value._handle = handle
+{%- if stream.failure.is_some() %}
+        value._failure = None
+{%- endif %}
         return value
 
     def __del__(self) -> None:
@@ -843,10 +846,35 @@ class {{ stream.subscription_class }}:
             self._handle = None
             _native.{{ stream.free_method }}(handle)
 
+{%- if let Some(failure) = stream.failure %}
+    def pop_batch(self, max_count: int = 16) -> list[{{ stream.item_annotation }}]:
+        # closed before this pop, so nothing can arrive after it: an empty pop is final
+        ended = self._failure is not None or _native.{{ stream.wait_method }}(self._require_handle(), 0) < 0
+        items = self._pop_batch(max_count)
+        if not items and ended:
+            self._raise_failure()
+        return items
+
+    def _pop_batch(self, max_count: int) -> list[{{ stream.item_annotation }}]:
+{%- for line in stream.pop_batch_body %}
+        {{ line }}
+{%- endfor %}
+
+    def _raise_failure(self) -> None:
+        failure = self._failure
+        if failure is None:
+            data = _native.{{ failure.take_error_method }}(self._require_handle())
+            if not data:
+                return
+            failure = _boltffi_error_exception(_boltffi_read_wire(data, lambda reader: {{ failure.decode }}))
+            self._failure = failure
+        raise failure
+{%- else %}
     def pop_batch(self, max_count: int = 16) -> list[{{ stream.item_annotation }}]:
 {%- for line in stream.pop_batch_body %}
         {{ line }}
 {%- endfor %}
+{%- endif %}
 
     def wait(self, timeout_milliseconds: int) -> int:
         return _native.{{ stream.wait_method }}(self._require_handle(), timeout_milliseconds)

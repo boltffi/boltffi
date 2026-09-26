@@ -42,3 +42,8 @@ fn jni_bridge_indexes_stream_symbols_by_source_id() {
 fn jni_bridge_renders_stream_protocol_functions() {
     insta::assert_snapshot!(rendered_fixture("stream/protocol_functions"));
 }
+
+#[test]
+fn jni_bridge_renders_fallible_stream_take_error() {
+    insta::assert_snapshot!(rendered_fixture("stream/fallible"));
+}

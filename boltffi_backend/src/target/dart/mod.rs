@@ -884,4 +884,46 @@ mod tests {
         assert!(source.contains("release();"));
         assert!(output.diagnostics().is_empty());
     }
+
+    #[test]
+    fn dart_target_renders_fallible_streams_with_their_error_channel() {
+        let bindings = bindings(
+            r#"
+            use boltffi::EventSubscription;
+            use std::sync::Arc;
+
+            #[error]
+            pub enum JobError { Refused { code: u32 }, Lost }
+
+            pub struct Engine;
+
+            #[export]
+            impl Engine {
+                #[ffi_stream(item = String, error = String)]
+                pub fn lines(&self) -> Arc<EventSubscription<String, String>> { loop {} }
+
+                #[ffi_stream(item = i32, error = JobError, mode = "batch")]
+                pub fn progress(&self) -> Arc<EventSubscription<i32, JobError>> { loop {} }
+
+                #[ffi_stream(item = i32, error = String, mode = "callback")]
+                pub fn ticks(&self) -> Arc<EventSubscription<i32, String>> { loop {} }
+            }
+            "#,
+        );
+        let output = target(DartHost::new().package("demo"))
+            .render(&bindings)
+            .expect("fallible streams should render");
+
+        let source = file(&output, "demo/lib/demo.dart");
+        assert!(source.contains(
+            "final _l$errorBuffer = _f$boltffi_stream_demo_api_engine_lines_take_error(handle);"
+        ));
+        assert!(source.contains("return $$BoltException("));
+        assert!(source.contains(
+            "ticks(void Function(int) callback, {required void Function(Object error) onError})"
+        ));
+        assert!(source.contains("return stream.listen(callback, onError: onError);"));
+        assert!(source.contains("if (failure != null) controller.addError(failure);"));
+        assert!(output.diagnostics().is_empty());
+    }
 }

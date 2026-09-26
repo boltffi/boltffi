@@ -222,6 +222,11 @@ fn swift_target_renders_stream_protocols() {
 }
 
 #[test]
+fn swift_target_renders_fallible_streams() {
+    insta::assert_snapshot!(rendered_fixture("stream/fallible"));
+}
+
+#[test]
 fn swift_target_renders_stream_runtime() {
     insta::assert_snapshot!(rendered_swift_runtime(SourceFixture::one(
         "stream/protocol_functions"

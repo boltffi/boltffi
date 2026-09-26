@@ -849,53 +849,10 @@ impl Failure {
                 codec,
                 shape: wasm32::BufferShape::Packed,
             } => {
-                let reader = Identifier::known("__boltffiErrorReader");
-                let decode = codec.render_with(&mut Reader::new(reader.clone(), context))?;
-                let value = match decode.kind() {
-                    Some(ReadKind::String) => FailureValue::String,
-                    Some(ReadKind::Utf8String) => FailureValue::Utf8String,
-                    Some(
-                        ReadKind::Bytes
-                        | ReadKind::RawBytes
-                        | ReadKind::Primitive(_)
-                        | ReadKind::CustomPrimitive(_)
-                        | ReadKind::OptionalPrimitive(_)
-                        | ReadKind::ErrorRecord(_)
-                        | ReadKind::ErrorEnum(_),
-                    )
-                    | None => FailureValue::Encoded {
-                        reader,
-                        decode: decode.into_expression(),
-                    },
-                };
+                let value = FailureValue::from_read(codec, context)?;
                 let action = match policy {
                     FailurePolicy::ReturnNull => FailureAction::ReturnNull,
-                    FailurePolicy::Throw => FailureAction::Throw(match ty {
-                        TypeRef::String => Exception::String,
-                        TypeRef::Record(id) => context
-                            .record(*id)
-                            .map(|record| {
-                                Exception::Typed(TypeName::named(format!(
-                                    "{}Exception",
-                                    Name::new(record.name()).type_name()
-                                )))
-                            })
-                            .ok_or_else(|| {
-                                Function::unsupported("error record without declaration")
-                            })?,
-                        TypeRef::Enum(id) => context
-                            .enumeration(*id)
-                            .map(|enumeration| {
-                                Exception::Typed(TypeName::named(format!(
-                                    "{}Exception",
-                                    Name::new(enumeration.name()).type_name()
-                                )))
-                            })
-                            .ok_or_else(|| {
-                                Function::unsupported("error enum without declaration")
-                            })?,
-                        _ => return Err(Function::unsupported("error payload type")),
-                    }),
+                    FailurePolicy::Throw => FailureAction::Throw(Exception::for_type(ty, context)?),
                 };
                 Ok(Self::Encoded { value, action })
             }
@@ -914,13 +871,7 @@ impl Failure {
                 let (mut failure, value) = value.render(error_value.clone());
                 match action {
                     FailureAction::Throw(exception) => {
-                        failure.push(Statement::throwing(Expression::construct(
-                            match exception {
-                                Exception::String => TypeName::named("Error"),
-                                Exception::Typed(exception) => exception.clone(),
-                            },
-                            [value].into_iter().collect::<ArgumentList>(),
-                        )));
+                        failure.push(Statement::throwing(exception.construct(value)));
                     }
                     FailureAction::ReturnNull => {
                         failure.push(Statement::expression(value));
@@ -951,7 +902,82 @@ impl Failure {
     }
 }
 
+/// The setup statements and the exception a packed error buffer of type `ty`
+/// becomes, for code that hands the error on rather than throwing it.
+pub(super) fn error_exception(
+    ty: &TypeRef,
+    read: &boltffi_binding::ReadPlan,
+    packed: Expression,
+    context: &RenderContext<Wasm32>,
+) -> Result<(Vec<Statement>, Expression)> {
+    let exception = Exception::for_type(ty, context)?;
+    let (setup, value) = FailureValue::from_read(read, context)?.render(packed);
+    Ok((setup, exception.construct(value)))
+}
+
+impl Exception {
+    fn for_type(ty: &TypeRef, context: &RenderContext<Wasm32>) -> Result<Self> {
+        match ty {
+            TypeRef::String => Ok(Self::String),
+            TypeRef::Record(id) => context
+                .record(*id)
+                .map(|record| {
+                    Self::Typed(TypeName::named(format!(
+                        "{}Exception",
+                        Name::new(record.name()).type_name()
+                    )))
+                })
+                .ok_or_else(|| Function::unsupported("error record without declaration")),
+            TypeRef::Enum(id) => context
+                .enumeration(*id)
+                .map(|enumeration| {
+                    Self::Typed(TypeName::named(format!(
+                        "{}Exception",
+                        Name::new(enumeration.name()).type_name()
+                    )))
+                })
+                .ok_or_else(|| Function::unsupported("error enum without declaration")),
+            _ => Err(Function::unsupported("error payload type")),
+        }
+    }
+
+    fn construct(&self, value: Expression) -> Expression {
+        Expression::construct(
+            match self {
+                Self::String => TypeName::named("Error"),
+                Self::Typed(exception) => exception.clone(),
+            },
+            [value].into_iter().collect::<ArgumentList>(),
+        )
+    }
+}
+
 impl FailureValue {
+    fn from_read(
+        read: &boltffi_binding::ReadPlan,
+        context: &RenderContext<Wasm32>,
+    ) -> Result<Self> {
+        let reader = Identifier::known("__boltffiErrorReader");
+        let decode = read.render_with(&mut Reader::new(reader.clone(), context))?;
+        Ok(match decode.kind() {
+            Some(ReadKind::String) => Self::String,
+            Some(ReadKind::Utf8String) => Self::Utf8String,
+            Some(
+                ReadKind::Bytes
+                | ReadKind::RawBytes
+                | ReadKind::Primitive(_)
+                | ReadKind::CustomPrimitive(_)
+                | ReadKind::OptionalPrimitive(_)
+                | ReadKind::ErrorRecord(_)
+                | ReadKind::ErrorEnum(_),
+            )
+            | None => Self::Encoded {
+                reader,
+                decode: decode.into_expression(),
+            },
+        })
+    }
+
     fn render(&self, error: Expression) -> (Vec<Statement>, Expression) {
         match self {
             Self::String => (

@@ -1,5 +1,5 @@
 {% if let Some(doc) = stream.doc() %}{{ doc }}
-{% endif %}{% if stream.callback_delivery() %}    public StreamSubscription<{{ stream.item_type() }}> {{ stream.name() }}(java.util.function.Consumer<{{ stream.item_type() }}> callback) {
+{% endif %}{% if stream.callback_delivery() %}    public StreamSubscription<{{ stream.item_type() }}> {{ stream.name() }}(java.util.function.Consumer<{{ stream.item_type() }}> callback{% if stream.failure().is_some() %}, java.util.function.Consumer<RuntimeException> onError{% endif %}) {
         long subscription = {{ stream.subscribe() }};
         return BoltFfiStream.callback(
             subscription,
@@ -14,7 +14,14 @@
             (streamHandle, continuation) -> {{ stream.poll() }},
             (streamHandle) -> {{ stream.unsubscribe() }},
             (streamHandle) -> {{ stream.free() }},
-            callback
+            callback{% if let Some(failure) = stream.failure() %},
+            (streamHandle) -> {
+                byte[] bytes = {{ failure.take_error() }};
+                if (bytes == null || bytes.length == 0) return null;
+                WireReader {{ failure.reader() }} = new WireReader(bytes);
+                return {{ failure.thrown() }};
+            },
+            onError{% endif %}
         );
     }
 {% else %}    public StreamSubscription<{{ stream.item_type() }}> {{ stream.name() }}() {
@@ -29,7 +36,13 @@
             },
             (streamHandle, timeout) -> {{ stream.wait() }},
             (streamHandle) -> {{ stream.unsubscribe() }},
-            (streamHandle) -> {{ stream.free() }}
+            (streamHandle) -> {{ stream.free() }}{% if let Some(failure) = stream.failure() %},
+            (streamHandle) -> {
+                byte[] bytes = {{ failure.take_error() }};
+                if (bytes == null || bytes.length == 0) return null;
+                WireReader {{ failure.reader() }} = new WireReader(bytes);
+                return {{ failure.thrown() }};
+            }{% endif %}
         );
     }
 {% endif %}
