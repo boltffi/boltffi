@@ -555,6 +555,7 @@ private let typeMemberCoverageGaps: Set<String> = [
 private let featureScopedRustFiles: Set<String> = [
     "callbacks/csharp_closures.rs",
     "classes/async_factory.rs",
+    "classes/ownership.rs",
     "records/mutable.rs"
 ]
 

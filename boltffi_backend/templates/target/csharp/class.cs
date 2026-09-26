@@ -34,6 +34,21 @@ namespace {{ class.namespace }}
             return owned;
         }
 
+        internal ref struct __OwnedHandle
+        {
+            internal {{ class.carrier_type }} Handle { get; private set; }
+
+            internal __OwnedHandle({{ class.carrier_type }} handle) => Handle = handle;
+
+            internal void Commit() => Handle = 0;
+
+            public void Dispose()
+            {
+                if (Handle != 0) NativeMethods.{{ class.release_name }}(Handle);
+                Handle = 0;
+            }
+        }
+
         private void ThrowIfDisposed()
         {
             if (global::System.Threading.Interlocked.Read(ref handle) == 0)

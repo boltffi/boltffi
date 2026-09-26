@@ -4,9 +4,6 @@ use boltffi_ast::PackageInfo;
 use boltffi_backend::{GeneratedOutput, Target, bridge::c::CBridge, target::csharp::CSharpHost};
 use boltffi_binding::{Bindings, Native, lower};
 
-#[path = "csharp/ownership.rs"]
-mod ownership;
-
 // NuGet first-run setup uses a process-global migration mutex.
 static DOTNET_BUILD_LOCK: Mutex<()> = Mutex::new(());
 

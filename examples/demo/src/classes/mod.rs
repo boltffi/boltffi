@@ -5,6 +5,8 @@ pub mod borrowed;
 pub mod constructor_matrix;
 pub mod constructors;
 pub mod methods;
+#[cfg(feature = "csharp-demo")]
+pub mod ownership;
 pub mod static_methods;
 pub mod streams;
 pub mod thread_safe;
@@ -17,6 +19,8 @@ pub use borrowed::*;
 pub use constructor_matrix::*;
 pub use constructors::*;
 pub use methods::*;
+#[cfg(feature = "csharp-demo")]
+pub use ownership::*;
 pub use static_methods::*;
 pub use streams::*;
 pub use thread_safe::*;

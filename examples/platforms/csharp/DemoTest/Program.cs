@@ -52,6 +52,8 @@ public static class DemoTest
             TestOptionsWithVec();
             TestMultiCrateExports();
             TestClasses();
+            currentDemoCase = null;
+            await ClassOwnershipTests.Run();
             TestResultFunctions();
             TestResultClassMethods();
             TestResultEnumErrors();
