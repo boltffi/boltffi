@@ -101,6 +101,40 @@ fn csharp_generated_helpers_do_not_shadow_exported_parameters() {
 }
 
 #[test]
+fn csharp_single_element_tuples_compile_and_use_item_one() {
+    let bindings = bindings(
+        r#"
+        #[export]
+        pub const ONLY: (u32,) = (1,);
+        #[data]
+        pub struct TupleRecord {
+            pub number: (u32,),
+            pub text: (String,),
+        }
+        #[export]
+        pub fn echo_only(value: (u32,)) -> (u32,) { value }
+        #[export]
+        pub fn echo_nested(value: ((u32,), String)) -> ((u32,), String) { value }
+    "#,
+    );
+    let output = target(CSharpHost::new().native_library("demo_native"))
+        .render(&bindings)
+        .expect("single-element tuples should render");
+    compile_csharp_with_dotnet_when_available(&output, "csharp-single-element-tuples");
+    let module = output
+        .files()
+        .iter()
+        .find(|file| file.path().as_path() == Path::new("Demo.cs"))
+        .map(|file| file.contents())
+        .expect("generated Demo.cs");
+    assert!(
+        module.contains("global::System.ValueTuple<uint>"),
+        "{module}"
+    );
+    assert!(module.contains("value.Item1.Item1"), "{module}");
+}
+
+#[test]
 fn csharp_target_compiles_a_regular_vec_u8_wire_api() {
     let bindings = bindings(
         r#"

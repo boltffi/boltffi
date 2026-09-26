@@ -527,6 +527,7 @@ fn generate_kotlin(config: &Config, options: &GenerateOptions) -> Result<()> {
 
     expansion
         .generation()
+        .coverage_mode(CoverageMode::Partial)
         .kotlin_package(config.android_kotlin_package())
         .kotlin_file(config.android_kotlin_module_name())
         .kotlin_api_style(kotlin_api_style(config.android_kotlin_api_style()))

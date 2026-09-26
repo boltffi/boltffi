@@ -2,6 +2,11 @@ import Demo
 import XCTest
 
 final class ConstantsTests: DemoTestCase {
+    func testSingleElementTupleConstant() {
+        demoCase("case:constants.tuples.should_expose_single_element_value")
+        XCTAssertEqual(demoSingle, 17)
+    }
+
     func testAssociatedConstantsStayOnTheirOwnerTypes() {
         demoCase("case:constants.associated.should_expose_values_on_exported_types")
         XCTAssertEqual(DemoMode.preferred, .safe)

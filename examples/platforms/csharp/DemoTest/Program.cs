@@ -39,6 +39,7 @@ public static class DemoTest
             TestRecordsWithDefaults();
             TestNestedRecords();
             TestAssociatedConstants();
+            TestSingleElementTuple();
             TestCStyleEnums();
             TestDataEnums();
             TestRecordsWithEnumFields();
@@ -3550,6 +3551,13 @@ public static class DemoTest
     private static void DemoCase(string caseId)
     {
         currentDemoCase = caseId;
+    }
+
+    private static void TestSingleElementTuple()
+    {
+        DemoCase("case:constants.tuples.should_expose_single_element_value");
+        ValueTuple<uint> value = DemoSingle;
+        Require(value.Item1 == 17u, "single-element tuple constant");
     }
 
     private static void TestAssociatedConstants()

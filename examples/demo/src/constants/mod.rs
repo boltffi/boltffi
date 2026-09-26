@@ -124,3 +124,16 @@ pub const DEMO_PAIR: (u32, u32) = (3, 5);
 
 #[export]
 pub const DEMO_BUSY: DemoState = DemoState::Busy { jobs: 3 };
+
+#[demo_bench_macros::demo_case(
+    "constants.tuples.should_expose_single_element_value",
+    justification = "Ensure a one-element Rust tuple constant has a valid generated representation.",
+    directions = "Read DEMO_SINGLE through the generated binding and assert its sole element is 17.",
+    exercises = ["constants::DEMO_SINGLE"],
+    exclude(kotlin, reason = ExclusionReason::ImplementationGap,
+        details = "Kotlin bindings represent tuples as Pair or Triple. A one-element Rust tuple needs a generated wrapper or an explicit flattening policy, neither of which is implemented. Tracked in #942."),
+    exclude(java, reason = ExclusionReason::ImplementationGap,
+        details = "Java bindings do not implement Rust tuple types. This constant needs a generated tuple representation and matching codec support before it can be tested.")
+)]
+#[export]
+pub const DEMO_SINGLE: (u32,) = (17,);
