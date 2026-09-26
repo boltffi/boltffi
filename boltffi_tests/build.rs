@@ -10,11 +10,10 @@ use boltffi_backend::bridge::c::{
 };
 use boltffi_backend::core::{BridgeBackend, GeneratedOutput};
 use boltffi_binding::{
-    BINDING_EXPANSION_BUILD_ENV, BINDING_EXPANSION_ROOT_ENV, BINDING_EXPANSION_SOURCE_ENV,
-    BINDING_EXPANSION_SURFACE_ENV, BindingMetadataSurface, Bindings, Decl, EnumDecl,
-    ExportedCallable, HandlePresence, IncomingParam, Native, RecordDecl, lower,
+    Bindings, Decl, EnumDecl, ExportedCallable, HandlePresence, IncomingParam, Native, RecordDecl,
+    lower,
 };
-use boltffi_scan::{ScanInput, scan_package};
+use boltffi_scan::{ScanInput, crate_scoped, scan_package};
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
@@ -22,7 +21,6 @@ fn main() {
     let paths = BuildPaths::from_env();
     println!("cargo:rustc-check-cfg=cfg(boltffi_pending_constants)");
     println!("cargo:rustc-check-cfg=cfg(boltffi_pending_closure_return)");
-    ExperimentalExpansion::new(&paths).emit();
     println!("cargo:rerun-if-changed={}", paths.source.display());
     println!("cargo:rerun-if-changed={}", paths.src.display());
 
@@ -50,10 +48,6 @@ struct BuildPaths {
     source: PathBuf,
     src: PathBuf,
     out: PathBuf,
-}
-
-struct ExperimentalExpansion<'paths> {
-    paths: &'paths BuildPaths,
 }
 
 struct GeneratedContract<'paths> {
@@ -94,26 +88,6 @@ impl BuildPaths {
             src,
             out,
         }
-    }
-}
-
-impl<'paths> ExperimentalExpansion<'paths> {
-    fn new(paths: &'paths BuildPaths) -> Self {
-        Self { paths }
-    }
-
-    fn emit(&self) {
-        self.rustc_env(BINDING_EXPANSION_BUILD_ENV, "1");
-        self.rustc_env(BINDING_EXPANSION_ROOT_ENV, self.paths.manifest.display());
-        self.rustc_env(BINDING_EXPANSION_SOURCE_ENV, self.paths.source.display());
-        self.rustc_env(
-            BINDING_EXPANSION_SURFACE_ENV,
-            BindingMetadataSurface::Native.as_str(),
-        );
-    }
-
-    fn rustc_env(&self, key: &str, value: impl std::fmt::Display) {
-        println!("cargo:rustc-env={key}={value}");
     }
 }
 
@@ -246,7 +220,7 @@ impl<'paths> GeneratedContract<'paths> {
             .ty(function.returns(), SignaturePosition::Output);
         quote! {
             const _: unsafe extern "C" fn(#(#params),*) -> #returns =
-                crate::__boltffi_expansion::#symbol;
+                crate::#symbol;
         }
     }
 }
@@ -571,14 +545,14 @@ static int boltffi_tests_check_i32_vec_buf(FfiBuf_u8 buf, const int32_t *expecte
     fn bytes_harness(&self) -> &'static str {
         r#"static int boltffi_tests_check_bytes(void) {
     const uint8_t data[8] = {4, 0, 0, 0, 1, 2, 3, 4};
-    if (boltffi_function_boltffi_tests_bytes_byte_sum(data, 8) != 10) {
+    if (boltffi_function_boltffi_tests_byte_sum(data, 8) != 10) {
         return 51;
     }
-    if (boltffi_function_boltffi_tests_bytes_borrowed_byte_sum(data, 8) != 10) {
+    if (boltffi_function_boltffi_tests_borrowed_byte_sum(data, 8) != 10) {
         return 52;
     }
     int echoed = boltffi_tests_check_buf(
-        boltffi_function_boltffi_tests_bytes_echo_bytes(data, 8),
+        boltffi_function_boltffi_tests_echo_bytes(data, 8),
         data,
         8,
         53
@@ -593,50 +567,50 @@ static int boltffi_tests_check_i32_vec_buf(FfiBuf_u8 buf, const int32_t *expecte
 
     fn primitives_harness(&self) -> &'static str {
         r#"static int boltffi_tests_check_primitives(void) {
-    if (boltffi_function_boltffi_tests_primitives_add_i8(100, 20) != 120) {
+    if (boltffi_function_boltffi_tests_add_i8(100, 20) != 120) {
         return 101;
     }
-    if (boltffi_function_boltffi_tests_primitives_add_u8(200, 30) != 230) {
+    if (boltffi_function_boltffi_tests_add_u8(200, 30) != 230) {
         return 102;
     }
-    if (boltffi_function_boltffi_tests_primitives_add_i16(2000, 3000) != 5000) {
+    if (boltffi_function_boltffi_tests_add_i16(2000, 3000) != 5000) {
         return 103;
     }
-    if (boltffi_function_boltffi_tests_primitives_add_u16(40000, 2000) != 42000) {
+    if (boltffi_function_boltffi_tests_add_u16(40000, 2000) != 42000) {
         return 104;
     }
-    if (boltffi_function_boltffi_tests_primitives_add_i32(100000, 230000) != 330000) {
+    if (boltffi_function_boltffi_tests_add_i32(100000, 230000) != 330000) {
         return 105;
     }
-    if (boltffi_function_boltffi_tests_primitives_add_u32(3000000000u, 42u) != 3000000042u) {
+    if (boltffi_function_boltffi_tests_add_u32(3000000000u, 42u) != 3000000042u) {
         return 106;
     }
-    if (boltffi_function_boltffi_tests_primitives_add_i64(4000000000ll, 50ll) != 4000000050ll) {
+    if (boltffi_function_boltffi_tests_add_i64(4000000000ll, 50ll) != 4000000050ll) {
         return 107;
     }
-    if (boltffi_function_boltffi_tests_primitives_add_u64(9000000000ull, 12ull) != 9000000012ull) {
+    if (boltffi_function_boltffi_tests_add_u64(9000000000ull, 12ull) != 9000000012ull) {
         return 108;
     }
-    if (boltffi_function_boltffi_tests_primitives_add_isize((intptr_t)50, (intptr_t)7) != (intptr_t)57) {
+    if (boltffi_function_boltffi_tests_add_isize((intptr_t)50, (intptr_t)7) != (intptr_t)57) {
         return 109;
     }
-    if (boltffi_function_boltffi_tests_primitives_add_usize((uintptr_t)70, (uintptr_t)8) != (uintptr_t)78) {
+    if (boltffi_function_boltffi_tests_add_usize((uintptr_t)70, (uintptr_t)8) != (uintptr_t)78) {
         return 110;
     }
-    if (boltffi_function_boltffi_tests_primitives_mix_floats(2.5f, 4.0) != 10.5) {
+    if (boltffi_function_boltffi_tests_mix_floats(2.5f, 4.0) != 10.5) {
         return 111;
     }
-    if (boltffi_function_boltffi_tests_primitives_toggle(true) != false) {
+    if (boltffi_function_boltffi_tests_toggle(true) != false) {
         return 112;
     }
-    if (boltffi_function_boltffi_tests_primitives_read_ref(17) != 17) {
+    if (boltffi_function_boltffi_tests_read_ref(17) != 17) {
         return 113;
     }
-    FfiStatus bump = boltffi_function_boltffi_tests_primitives_bump_in_place(19);
+    FfiStatus bump = boltffi_function_boltffi_tests_bump_in_place(19);
     if (bump.code != FFI_STATUS_OK.code) {
         return 114;
     }
-    boltffi_function_boltffi_tests_primitives_noop();
+    boltffi_function_boltffi_tests_noop();
     return 0;
 }
 "#
@@ -647,17 +621,17 @@ static int boltffi_tests_check_i32_vec_buf(FfiBuf_u8 buf, const int32_t *expecte
 _Static_assert(_Alignof(___FixtureRect) == _Alignof(double), "fixture rect alignment");
 
 static int boltffi_tests_check_direct_records(void) {
-    ___FixtureRect rect = boltffi_function_boltffi_tests_records_direct_make_rect(1.0, 2.0, 3.0, 4.0);
+    ___FixtureRect rect = boltffi_function_boltffi_tests_make_rect(1.0, 2.0, 3.0, 4.0);
     if (rect.x != 1.0 || rect.y != 2.0 || rect.width != 3.0 || rect.height != 4.0) {
         return 201;
     }
-    if (boltffi_function_boltffi_tests_records_direct_rect_area(rect) != 12.0) {
+    if (boltffi_function_boltffi_tests_rect_area(rect) != 12.0) {
         return 202;
     }
-    if (boltffi_function_boltffi_tests_records_direct_rect_x(&rect) != 1.0) {
+    if (boltffi_function_boltffi_tests_rect_x(&rect) != 1.0) {
         return 203;
     }
-    FfiStatus status = boltffi_function_boltffi_tests_records_direct_scale_rect_in_place(&rect, 2.0);
+    FfiStatus status = boltffi_function_boltffi_tests_scale_rect_in_place(&rect, 2.0);
     if (status.code != FFI_STATUS_OK.code) {
         return 204;
     }
@@ -697,21 +671,21 @@ static int boltffi_tests_check_direct_records(void) {
         return 185;
     }
     FfiBuf_u8 owned = boltffi_tests_string_buf("name", 4);
-    FfiBuf_u8 owned_config = boltffi_init_record_boltffi_tests_records_encoded_fixture_string_config_from_owned_name(owned.ptr, owned.len);
+    FfiBuf_u8 owned_config = boltffi_init_record_boltffi_tests_fixture_string_config_from_owned_name(owned.ptr, owned.len);
     boltffi_free_buf(owned);
     if (owned_config.len == 0) {
         return 188;
     }
     boltffi_free_buf(owned_config);
     FfiBuf_u8 borrowed = boltffi_tests_string_buf("name", 4);
-    FfiBuf_u8 borrowed_config = boltffi_init_record_boltffi_tests_records_encoded_fixture_string_config_from_borrowed_name(borrowed.ptr, borrowed.len);
+    FfiBuf_u8 borrowed_config = boltffi_init_record_boltffi_tests_fixture_string_config_from_borrowed_name(borrowed.ptr, borrowed.len);
     boltffi_free_buf(borrowed);
     if (borrowed_config.len == 0) {
         return 189;
     }
     boltffi_free_buf(borrowed_config);
     FfiBuf_u8 string_ref = boltffi_tests_string_buf("name", 4);
-    FfiBuf_u8 string_ref_config = boltffi_init_record_boltffi_tests_records_encoded_fixture_string_config_from_string_ref_name(string_ref.ptr, string_ref.len);
+    FfiBuf_u8 string_ref_config = boltffi_init_record_boltffi_tests_fixture_string_config_from_string_ref_name(string_ref.ptr, string_ref.len);
     boltffi_free_buf(string_ref);
     if (string_ref_config.len == 0) {
         return 190;
@@ -724,16 +698,16 @@ static int boltffi_tests_check_direct_records(void) {
 
     fn enums_harness(&self) -> &'static str {
         r#"static int boltffi_tests_check_enums(void) {
-    if (boltffi_function_boltffi_tests_enums_next_status(FIXTURE_STATUS_PENDING) != FIXTURE_STATUS_ACTIVE) {
+    if (boltffi_function_boltffi_tests_next_status(FIXTURE_STATUS_PENDING) != FIXTURE_STATUS_ACTIVE) {
         return 301;
     }
-    if (boltffi_function_boltffi_tests_enums_next_status(FIXTURE_STATUS_ACTIVE) != FIXTURE_STATUS_COMPLETED) {
+    if (boltffi_function_boltffi_tests_next_status(FIXTURE_STATUS_ACTIVE) != FIXTURE_STATUS_COMPLETED) {
         return 302;
     }
-    if (boltffi_function_boltffi_tests_enums_next_status(FIXTURE_STATUS_COMPLETED) != FIXTURE_STATUS_FAILED) {
+    if (boltffi_function_boltffi_tests_next_status(FIXTURE_STATUS_COMPLETED) != FIXTURE_STATUS_FAILED) {
         return 303;
     }
-    if (boltffi_function_boltffi_tests_enums_next_status(FIXTURE_STATUS_FAILED) != FIXTURE_STATUS_PENDING) {
+    if (boltffi_function_boltffi_tests_next_status(FIXTURE_STATUS_FAILED) != FIXTURE_STATUS_PENDING) {
         return 304;
     }
     return 0;
@@ -748,15 +722,15 @@ static int boltffi_tests_check_direct_records(void) {
         0, 0, 0, 0, 0, 0, 8, 64,
         0, 0, 0, 0, 0, 0, 16, 64
     };
-    if (boltffi_function_boltffi_tests_enums_area(rect, 20) != 12.0) {
+    if (boltffi_function_boltffi_tests_area(rect, 20) != 12.0) {
         return 321;
     }
     const uint8_t line[12] = {
         1, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 20, 64
     };
-    FfiBuf_u8 widened = boltffi_function_boltffi_tests_enums_widen(line, 12, 2.0);
-    double area = boltffi_function_boltffi_tests_enums_area(widened.ptr, widened.len);
+    FfiBuf_u8 widened = boltffi_function_boltffi_tests_widen(line, 12, 2.0);
+    double area = boltffi_function_boltffi_tests_area(widened.ptr, widened.len);
     boltffi_free_buf(widened);
     if (area != 7.0) {
         return 322;
@@ -769,12 +743,12 @@ static int boltffi_tests_check_direct_records(void) {
     fn strings_harness(&self) -> &'static str {
         r#"static int boltffi_tests_check_strings(void) {
     const uint8_t hello[9] = {5, 0, 0, 0, 'h', 'e', 'l', 'l', 'o'};
-    if (boltffi_function_boltffi_tests_strings_borrowed_len(hello, 9) != 5) {
+    if (boltffi_function_boltffi_tests_borrowed_len(hello, 9) != 5) {
         return 401;
     }
     const uint8_t shouted_expected[9] = {5, 0, 0, 0, 'H', 'E', 'L', 'L', 'O'};
     int shouted = boltffi_tests_check_buf(
-        boltffi_function_boltffi_tests_strings_shout(hello, 9),
+        boltffi_function_boltffi_tests_shout(hello, 9),
         shouted_expected,
         9,
         402
@@ -786,7 +760,7 @@ static int boltffi_tests_check_direct_records(void) {
     const uint8_t suffix[6] = {2, 0, 0, 0, ':', 'x'};
     const uint8_t rewritten_expected[10] = {6, 0, 0, 0, 'b', 'a', 's', 'e', ':', 'x'};
     FfiBuf_u8 rewritten = {0};
-    FfiStatus status = boltffi_function_boltffi_tests_strings_rewrite(base, 8, &rewritten, suffix, 6);
+    FfiStatus status = boltffi_function_boltffi_tests_rewrite(base, 8, &rewritten, suffix, 6);
     if (status.code != FFI_STATUS_OK.code) {
         return 405;
     }
@@ -803,12 +777,12 @@ static int boltffi_tests_check_direct_records(void) {
         0, 0, 0, 0, 0, 0, 8, 64,
         2, 0, 0, 0
     };
-    if (boltffi_function_boltffi_tests_records_encoded_peek_label(record, 27) != 3) {
+    if (boltffi_function_boltffi_tests_peek_label(record, 27) != 3) {
         return 451;
     }
     const uint8_t description_expected[21] = {17, 0, 0, 0, 'o', 'l', 'd', ':', '2', ':', '3', ':', 'C', 'o', 'm', 'p', 'l', 'e', 't', 'e', 'd'};
     int description = boltffi_tests_check_buf(
-        boltffi_function_boltffi_tests_records_encoded_describe_message(record, 27),
+        boltffi_function_boltffi_tests_describe_message(record, 27),
         description_expected,
         21,
         452
@@ -818,13 +792,13 @@ static int boltffi_tests_check_direct_records(void) {
     }
     const uint8_t label[7] = {3, 0, 0, 0, 'n', 'e', 'w'};
     FfiBuf_u8 relabeled = {0};
-    FfiStatus status = boltffi_function_boltffi_tests_records_encoded_relabel(record, 27, &relabeled, label, 7);
+    FfiStatus status = boltffi_function_boltffi_tests_relabel(record, 27, &relabeled, label, 7);
     if (status.code != FFI_STATUS_OK.code) {
         return 455;
     }
     const uint8_t relabeled_expected[21] = {17, 0, 0, 0, 'n', 'e', 'w', ':', '2', ':', '3', ':', 'C', 'o', 'm', 'p', 'l', 'e', 't', 'e', 'd'};
     int relabeled_description = boltffi_tests_check_buf(
-        boltffi_function_boltffi_tests_records_encoded_describe_message(relabeled.ptr, relabeled.len),
+        boltffi_function_boltffi_tests_describe_message(relabeled.ptr, relabeled.len),
         relabeled_expected,
         21,
         456
@@ -834,7 +808,7 @@ static int boltffi_tests_check_direct_records(void) {
         return relabeled_description;
     }
     const uint8_t made[8] = {4, 0, 0, 0, 'm', 'a', 'd', 'e'};
-    FfiBuf_u8 message = boltffi_function_boltffi_tests_records_encoded_make_message(made, 8);
+    FfiBuf_u8 message = boltffi_function_boltffi_tests_make_message(made, 8);
     if (message.len < 8 || message.ptr[0] != 4 || message.ptr[4] != 'm' || message.ptr[7] != 'e') {
         boltffi_free_buf(message);
         return 459;
@@ -848,11 +822,11 @@ static int boltffi_tests_check_direct_records(void) {
     fn vectors_harness(&self) -> &'static str {
         r#"static int boltffi_tests_check_vectors(void) {
     uint32_t values[4] = {1, 2, 3, 4};
-    if (boltffi_function_boltffi_tests_vectors_sum_u32(values, 4) != 10) {
+    if (boltffi_function_boltffi_tests_sum_u32(values, 4) != 10) {
         return 501;
     }
     double floats[3] = {2.0, 4.0, 6.0};
-    FfiBuf_u8 halved = boltffi_function_boltffi_tests_vectors_halve_f64(floats, 3);
+    FfiBuf_u8 halved = boltffi_function_boltffi_tests_halve_f64(floats, 3);
     if (halved.len != sizeof(double) * 3) {
         boltffi_free_buf(halved);
         return 502;
@@ -871,14 +845,14 @@ static int boltffi_tests_check_direct_records(void) {
         {1.0, 1.0, 2.0, 2.0},
         {-1.0, 0.0, 1.0, 5.0},
     };
-    ___FixtureRect bounds = boltffi_function_boltffi_tests_vectors_bounding_box((const uint8_t *)rects, sizeof(rects));
+    ___FixtureRect bounds = boltffi_function_boltffi_tests_bounding_box((const uint8_t *)rects, sizeof(rects));
     if (bounds.x != -1.0 || bounds.y != 0.0 || bounds.width != 4.0 || bounds.height != 5.0) {
         return 505;
     }
     const uint8_t labels[14] = {2, 0, 0, 0, 1, 0, 0, 0, 'a', 1, 0, 0, 0, 'b'};
     const uint8_t joined_expected[7] = {3, 0, 0, 0, 'a', '|', 'b'};
     int joined = boltffi_tests_check_buf(
-        boltffi_function_boltffi_tests_vectors_join_labels(labels, 14),
+        boltffi_function_boltffi_tests_join_labels(labels, 14),
         joined_expected,
         7,
         506
@@ -887,10 +861,10 @@ static int boltffi_tests_check_direct_records(void) {
         return joined;
     }
     const uint8_t text[9] = {5, 0, 0, 0, 'a', '|', 'b', '|', 'c'};
-    FfiBuf_u8 split = boltffi_function_boltffi_tests_vectors_split_labels(text, 9);
+    FfiBuf_u8 split = boltffi_function_boltffi_tests_split_labels(text, 9);
     const uint8_t roundtrip_expected[9] = {5, 0, 0, 0, 'a', '|', 'b', '|', 'c'};
     int roundtrip = boltffi_tests_check_buf(
-        boltffi_function_boltffi_tests_vectors_join_labels(split.ptr, split.len),
+        boltffi_function_boltffi_tests_join_labels(split.ptr, split.len),
         roundtrip_expected,
         9,
         509
@@ -899,7 +873,7 @@ static int boltffi_tests_check_direct_records(void) {
     if (roundtrip != 0) {
         return roundtrip;
     }
-    FfiBuf_u8 statuses = boltffi_function_boltffi_tests_vectors_statuses(4);
+    FfiBuf_u8 statuses = boltffi_function_boltffi_tests_statuses(4);
     uintptr_t status_offset = 0;
     if (statuses.len == sizeof(uint32_t) + sizeof(int32_t) * 4) {
         uint32_t count = 0;
@@ -932,11 +906,11 @@ static int boltffi_tests_check_direct_records(void) {
         3, 0, 0, 0, 'o', 'n', 'e', 1, 0, 0, 0,
         3, 0, 0, 0, 't', 'w', 'o', 2, 0, 0, 0
     };
-    if (boltffi_function_boltffi_tests_collections_tally(labels, 26) != 3) {
+    if (boltffi_function_boltffi_tests_tally(labels, 26) != 3) {
         return 551;
     }
-    FfiBuf_u8 inverted = boltffi_function_boltffi_tests_collections_invert(labels, 26);
-    int32_t inverted_total = boltffi_function_boltffi_tests_collections_tally(inverted.ptr, inverted.len);
+    FfiBuf_u8 inverted = boltffi_function_boltffi_tests_invert(labels, 26);
+    int32_t inverted_total = boltffi_function_boltffi_tests_tally(inverted.ptr, inverted.len);
     boltffi_free_buf(inverted);
     if (inverted_total != -3) {
         return 552;
@@ -944,7 +918,7 @@ static int boltffi_tests_check_direct_records(void) {
     const uint8_t label[9] = {5, 0, 0, 0, 'l', 'a', 'b', 'e', 'l'};
     const uint8_t pair_expected[15] = {14, 0, 0, 0, 7, 0, 0, 0, 'l', 'a', 'b', 'e', 'l', ':', '7'};
     int pair = boltffi_tests_check_buf(
-        boltffi_function_boltffi_tests_collections_pair_up(7, label, 9),
+        boltffi_function_boltffi_tests_pair_up(7, label, 9),
         pair_expected,
         15,
         553
@@ -958,7 +932,7 @@ static int boltffi_tests_check_direct_records(void) {
         0,
         1, 3, 0, 0, 0, 'c', 'd', 'e'
     };
-    if (boltffi_function_boltffi_tests_collections_deep(deep, 20) != 5) {
+    if (boltffi_function_boltffi_tests_deep(deep, 20) != 5) {
         return 556;
     }
     return 0;
@@ -970,7 +944,7 @@ static int boltffi_tests_check_direct_records(void) {
         r#"static int boltffi_tests_check_options(void) {
     const uint8_t some_expected[5] = {1, 8, 0, 0, 0};
     int some = boltffi_tests_check_buf(
-        boltffi_function_boltffi_tests_options_simple_maybe_double(4),
+        boltffi_function_boltffi_tests_simple_maybe_double(4),
         some_expected,
         5,
         601
@@ -980,7 +954,7 @@ static int boltffi_tests_check_direct_records(void) {
     }
     const uint8_t none_expected[1] = {0};
     int none = boltffi_tests_check_buf(
-        boltffi_function_boltffi_tests_options_simple_maybe_double(-1),
+        boltffi_function_boltffi_tests_simple_maybe_double(-1),
         none_expected,
         1,
         604
@@ -991,7 +965,7 @@ static int boltffi_tests_check_direct_records(void) {
     const uint8_t encoded_some[5] = {1, 5, 0, 0, 0};
     const uint8_t encoded_some_expected[5] = {1, 10, 0, 0, 0};
     int encoded_some_result = boltffi_tests_check_buf(
-        boltffi_function_boltffi_tests_options_maybe_double(encoded_some, 5),
+        boltffi_function_boltffi_tests_maybe_double(encoded_some, 5),
         encoded_some_expected,
         5,
         607
@@ -1000,13 +974,13 @@ static int boltffi_tests_check_direct_records(void) {
         return encoded_some_result;
     }
     const uint8_t scale_some[9] = {1, 0, 0, 0, 0, 0, 0, 16, 64};
-    FfiBuf_u8 scaled = boltffi_function_boltffi_tests_options_maybe_scale(scale_some, 9);
+    FfiBuf_u8 scaled = boltffi_function_boltffi_tests_maybe_scale(scale_some, 9);
     if (scaled.len != 9 || scaled.ptr[0] != 1) {
         boltffi_free_buf(scaled);
         return 609;
     }
     boltffi_free_buf(scaled);
-    FfiBuf_u8 point = boltffi_function_boltffi_tests_options_maybe_point(true);
+    FfiBuf_u8 point = boltffi_function_boltffi_tests_maybe_point(true);
     if (point.len != 17 || point.ptr[0] != 1) {
         boltffi_free_buf(point);
         return 610;
@@ -1015,14 +989,14 @@ static int boltffi_tests_check_direct_records(void) {
     ___FixtureRect rect = {9.0, 8.0, 7.0, 6.0};
     uint8_t optional_rect[1 + sizeof(___FixtureRect)] = {1};
     memcpy(optional_rect + 1, &rect, sizeof(rect));
-    ___FixtureRect returned = boltffi_function_boltffi_tests_options_point_or_origin(optional_rect, sizeof(optional_rect));
+    ___FixtureRect returned = boltffi_function_boltffi_tests_point_or_origin(optional_rect, sizeof(optional_rect));
     if (returned.x != 9.0 || returned.y != 8.0 || returned.width != 7.0 || returned.height != 6.0) {
         return 611;
     }
     const uint8_t label[8] = {1, 3, 0, 0, 0, 't', 'a', 'g'};
     const uint8_t label_expected[13] = {1, 8, 0, 0, 0, 't', 'a', 'g', ':', 's', 'e', 'e', 'n'};
     return boltffi_tests_check_buf(
-        boltffi_function_boltffi_tests_options_maybe_label(label, 8),
+        boltffi_function_boltffi_tests_maybe_label(label, 8),
         label_expected,
         13,
         612
@@ -1035,7 +1009,7 @@ static int boltffi_tests_check_direct_records(void) {
         r#"static int boltffi_tests_check_customs(void) {
     const uint8_t instant[8] = {232, 3, 0, 0, 0, 0, 0, 0};
     int shifted = boltffi_tests_check_i64_buf(
-        boltffi_function_boltffi_tests_customs_shift_instant(instant, 8, 250),
+        boltffi_function_boltffi_tests_shift_instant(instant, 8, 250),
         1250,
         651
     );
@@ -1044,7 +1018,7 @@ static int boltffi_tests_check_direct_records(void) {
     }
     const uint8_t maybe_expected[9] = {1, 210, 4, 0, 0, 0, 0, 0, 0};
     int maybe = boltffi_tests_check_buf(
-        boltffi_function_boltffi_tests_customs_maybe_instant(true),
+        boltffi_function_boltffi_tests_maybe_instant(true),
         maybe_expected,
         9,
         653
@@ -1059,7 +1033,7 @@ static int boltffi_tests_check_direct_records(void) {
         208, 7, 0, 0, 0, 0, 0, 0
     };
     return boltffi_tests_check_buf(
-        boltffi_function_boltffi_tests_customs_instants(3),
+        boltffi_function_boltffi_tests_instants(3),
         instants_expected,
         28,
         656
@@ -1093,20 +1067,20 @@ typedef struct {
 } BoltffiTestsReturnedU32Closure;
 
 static int boltffi_tests_check_closures(void) {
-    if (boltffi_function_boltffi_tests_closures_apply(boltffi_tests_closure_add_three, 0, boltffi_tests_closure_release, 10) != 23) {
+    if (boltffi_function_boltffi_tests_apply(boltffi_tests_closure_add_three, 0, boltffi_tests_closure_release, 10) != 23) {
         return 681;
     }
-    if (boltffi_function_boltffi_tests_closures_apply_boxed(boltffi_tests_closure_add_three, 0, boltffi_tests_closure_release, 10) != 26) {
+    if (boltffi_function_boltffi_tests_apply_boxed(boltffi_tests_closure_add_three, 0, boltffi_tests_closure_release, 10) != 26) {
         return 682;
     }
-    if (boltffi_function_boltffi_tests_closures_apply_optional(boltffi_tests_closure_add_three, 0, boltffi_tests_closure_release, 10) != 13) {
+    if (boltffi_function_boltffi_tests_apply_optional(boltffi_tests_closure_add_three, 0, boltffi_tests_closure_release, 10) != 13) {
         return 683;
     }
-    if (boltffi_function_boltffi_tests_closures_apply_optional(0, 0, 0, 10) != 10) {
+    if (boltffi_function_boltffi_tests_apply_optional(0, 0, 0, 10) != 10) {
         return 684;
     }
     BoltffiTestsReturnedU32Closure adder = {0};
-    FfiStatus adder_status = boltffi_function_boltffi_tests_closures_make_adder(5, &adder);
+    FfiStatus adder_status = boltffi_function_boltffi_tests_make_adder(5, &adder);
     if (adder_status.code != FFI_STATUS_OK.code || adder.invoke == 0 || adder.release == 0) {
         return 685;
     }
@@ -1116,7 +1090,7 @@ static int boltffi_tests_check_closures(void) {
         return 686;
     }
     BoltffiTestsReturnedU32Closure boxed = {0};
-    FfiStatus boxed_status = boltffi_function_boltffi_tests_closures_make_boxed_adder(6, &boxed);
+    FfiStatus boxed_status = boltffi_function_boltffi_tests_make_boxed_adder(6, &boxed);
     if (boxed_status.code != FFI_STATUS_OK.code || boxed.invoke == 0 || boxed.release == 0) {
         return 687;
     }
@@ -1128,7 +1102,7 @@ static int boltffi_tests_check_closures(void) {
     const uint8_t text[9] = {5, 0, 0, 0, 'h', 'e', 'l', 'l', 'o'};
     const uint8_t expected[12] = {8, 0, 0, 0, 'H', 'E', 'L', 'L', 'O', ':', 'I', 'N'};
     return boltffi_tests_check_buf(
-        boltffi_function_boltffi_tests_closures_map_label(boltffi_tests_closure_uppercase, 0, boltffi_tests_closure_release, text, 9),
+        boltffi_function_boltffi_tests_map_label(boltffi_tests_closure_uppercase, 0, boltffi_tests_closure_release, text, 9),
         expected,
         12,
         689
@@ -1208,7 +1182,7 @@ static void boltffi_tests_async_compute(uint64_t handle, int32_t a, int32_t b, v
 
 static void boltffi_tests_async_make_callback(uint64_t handle, void (*callback)(void *, FfiStatus, BoltFFICallbackHandle), void *context) {
     BoltFFICallbackHandle value_callback =
-        boltffi_create_callback_boltffi_tests_callbacks_sync_value_callback(handle);
+        boltffi_create_callback_boltffi_tests_sync_value_callback(handle);
     callback(context, FFI_STATUS_OK, value_callback);
 }
 
@@ -1272,36 +1246,36 @@ static int boltffi_tests_check_callbacks(void) {
         boltffi_tests_callback_clone,
         boltffi_tests_async_make_callback
     };
-    boltffi_register_callback_boltffi_tests_callbacks_sync_value_callback(&value_vtable);
-    boltffi_register_callback_boltffi_tests_callbacks_sync_data_provider(&provider_vtable);
-    boltffi_register_callback_boltffi_tests_callbacks_sync_vec_callback(&vec_vtable);
-    boltffi_register_callback_boltffi_tests_callbacks_sync_struct_callback(&struct_vtable);
-    boltffi_register_callback_boltffi_tests_callbacks_sync_option_callback(&option_vtable);
-    boltffi_register_callback_boltffi_tests_callbacks_sync_enum_callback(&enum_vtable);
-    boltffi_register_callback_boltffi_tests_callbacks_sync_multi_method_callback(&multi_vtable);
-    boltffi_register_callback_boltffi_tests_callbacks_async_fetcher(&async_fetch_vtable);
-    boltffi_register_callback_boltffi_tests_callbacks_async_option_fetcher(&async_option_vtable);
-    boltffi_register_callback_boltffi_tests_callbacks_async_multi_method(&async_multi_vtable);
-    boltffi_register_callback_boltffi_tests_callbacks_async_callback_factory(&async_factory_vtable);
-    BoltFFICallbackHandle callback = boltffi_create_callback_boltffi_tests_callbacks_sync_value_callback(5);
-    if (boltffi_function_boltffi_tests_callbacks_invoke_sync_impl(callback, 10) != 15) {
+    boltffi_register_callback_boltffi_tests_sync_value_callback(&value_vtable);
+    boltffi_register_callback_boltffi_tests_sync_data_provider(&provider_vtable);
+    boltffi_register_callback_boltffi_tests_sync_vec_callback(&vec_vtable);
+    boltffi_register_callback_boltffi_tests_sync_struct_callback(&struct_vtable);
+    boltffi_register_callback_boltffi_tests_sync_option_callback(&option_vtable);
+    boltffi_register_callback_boltffi_tests_sync_enum_callback(&enum_vtable);
+    boltffi_register_callback_boltffi_tests_sync_multi_method_callback(&multi_vtable);
+    boltffi_register_callback_boltffi_tests_async_fetcher(&async_fetch_vtable);
+    boltffi_register_callback_boltffi_tests_async_option_fetcher(&async_option_vtable);
+    boltffi_register_callback_boltffi_tests_async_multi_method(&async_multi_vtable);
+    boltffi_register_callback_boltffi_tests_async_callback_factory(&async_factory_vtable);
+    BoltFFICallbackHandle callback = boltffi_create_callback_boltffi_tests_sync_value_callback(5);
+    if (boltffi_function_boltffi_tests_invoke_sync_impl(callback, 10) != 15) {
         return 711;
     }
-    if (boltffi_function_boltffi_tests_callbacks_invoke_sync_boxed(callback, 11) != 16) {
+    if (boltffi_function_boltffi_tests_invoke_sync_boxed(callback, 11) != 16) {
         return 712;
     }
-    BoltFFICallbackHandle provider = boltffi_create_callback_boltffi_tests_callbacks_sync_data_provider(2);
-    if (boltffi_function_boltffi_tests_callbacks_sum_provider_impl(provider) != 7.0) {
+    BoltFFICallbackHandle provider = boltffi_create_callback_boltffi_tests_sync_data_provider(2);
+    if (boltffi_function_boltffi_tests_sum_provider_impl(provider) != 7.0) {
         return 713;
     }
-    if (boltffi_function_boltffi_tests_callbacks_sum_provider_boxed(provider) != 7.0) {
+    if (boltffi_function_boltffi_tests_sum_provider_boxed(provider) != 7.0) {
         return 714;
     }
-    BoltFFICallbackHandle vec = boltffi_create_callback_boltffi_tests_callbacks_sync_vec_callback(3);
+    BoltFFICallbackHandle vec = boltffi_create_callback_boltffi_tests_sync_vec_callback(3);
     int32_t values[2] = {10, 20};
     int32_t expected_values[2] = {13, 23};
     int vec_impl = boltffi_tests_check_i32_vec_buf(
-        boltffi_function_boltffi_tests_callbacks_invoke_vec_impl(vec, values, 2),
+        boltffi_function_boltffi_tests_invoke_vec_impl(vec, values, 2),
         expected_values,
         2,
         715
@@ -1310,7 +1284,7 @@ static int boltffi_tests_check_callbacks(void) {
         return vec_impl;
     }
     int vec_boxed = boltffi_tests_check_i32_vec_buf(
-        boltffi_function_boltffi_tests_callbacks_invoke_vec_boxed(vec, values, 2),
+        boltffi_function_boltffi_tests_invoke_vec_boxed(vec, values, 2),
         expected_values,
         2,
         718
@@ -1318,21 +1292,21 @@ static int boltffi_tests_check_callbacks(void) {
     if (vec_boxed != 0) {
         return vec_boxed;
     }
-    BoltFFICallbackHandle struct_callback = boltffi_create_callback_boltffi_tests_callbacks_sync_struct_callback(6);
+    BoltFFICallbackHandle struct_callback = boltffi_create_callback_boltffi_tests_sync_struct_callback(6);
     ___FixturePoint point = { 1.0, 2.0 };
-    ___FixturePoint struct_impl = boltffi_function_boltffi_tests_callbacks_invoke_struct_impl(struct_callback, point);
+    ___FixturePoint struct_impl = boltffi_function_boltffi_tests_invoke_struct_impl(struct_callback, point);
     if (struct_impl.x != 6.0 || struct_impl.y != 7.0) {
         return 721;
     }
     ___FixturePoint point_boxed = { 2.0, 3.0 };
-    ___FixturePoint struct_boxed = boltffi_function_boltffi_tests_callbacks_invoke_struct_boxed(struct_callback, point_boxed);
+    ___FixturePoint struct_boxed = boltffi_function_boltffi_tests_invoke_struct_boxed(struct_callback, point_boxed);
     if (struct_boxed.x != 6.0 || struct_boxed.y != 7.0) {
         return 724;
     }
-    BoltFFICallbackHandle option = boltffi_create_callback_boltffi_tests_callbacks_sync_option_callback(4);
+    BoltFFICallbackHandle option = boltffi_create_callback_boltffi_tests_sync_option_callback(4);
     const uint8_t option_expected[5] = {1, 70, 0, 0, 0};
     int option_impl = boltffi_tests_check_buf(
-        boltffi_function_boltffi_tests_callbacks_invoke_option_impl(option, 7),
+        boltffi_function_boltffi_tests_invoke_option_impl(option, 7),
         option_expected,
         5,
         727
@@ -1342,7 +1316,7 @@ static int boltffi_tests_check_callbacks(void) {
     }
     const uint8_t none_expected[1] = {0};
     int option_boxed = boltffi_tests_check_buf(
-        boltffi_function_boltffi_tests_callbacks_invoke_option_boxed(option, 3),
+        boltffi_function_boltffi_tests_invoke_option_boxed(option, 3),
         none_expected,
         1,
         730
@@ -1350,122 +1324,122 @@ static int boltffi_tests_check_callbacks(void) {
     if (option_boxed != 0) {
         return option_boxed;
     }
-    BoltFFICallbackHandle enum_callback = boltffi_create_callback_boltffi_tests_callbacks_sync_enum_callback(1);
-    if (boltffi_function_boltffi_tests_callbacks_invoke_enum_impl(enum_callback, 2) != FIXTURE_STATUS_FAILED) {
+    BoltFFICallbackHandle enum_callback = boltffi_create_callback_boltffi_tests_sync_enum_callback(1);
+    if (boltffi_function_boltffi_tests_invoke_enum_impl(enum_callback, 2) != FIXTURE_STATUS_FAILED) {
         return 733;
     }
-    if (boltffi_function_boltffi_tests_callbacks_invoke_enum_boxed(enum_callback, 3) != FIXTURE_STATUS_PENDING) {
+    if (boltffi_function_boltffi_tests_invoke_enum_boxed(enum_callback, 3) != FIXTURE_STATUS_PENDING) {
         return 734;
     }
-    BoltFFICallbackHandle multi = boltffi_create_callback_boltffi_tests_callbacks_sync_multi_method_callback(2);
-    if (boltffi_function_boltffi_tests_callbacks_invoke_multi_method_impl(multi, 3, 4) != 23) {
+    BoltFFICallbackHandle multi = boltffi_create_callback_boltffi_tests_sync_multi_method_callback(2);
+    if (boltffi_function_boltffi_tests_invoke_multi_method_impl(multi, 3, 4) != 23) {
         return 735;
     }
-    if (boltffi_function_boltffi_tests_callbacks_invoke_multi_method_boxed(multi, 3, 4) != 23) {
+    if (boltffi_function_boltffi_tests_invoke_multi_method_boxed(multi, 3, 4) != 23) {
         return 736;
     }
-    if (boltffi_function_boltffi_tests_callbacks_invoke_two_sync_impl(callback, callback, 1) != 12) {
+    if (boltffi_function_boltffi_tests_invoke_two_sync_impl(callback, callback, 1) != 12) {
         return 737;
     }
-    if (boltffi_function_boltffi_tests_callbacks_invoke_three_sync_impl(callback, callback, callback, 1) != 18) {
+    if (boltffi_function_boltffi_tests_invoke_three_sync_impl(callback, callback, callback, 1) != 18) {
         return 738;
     }
-    if (boltffi_function_boltffi_tests_callbacks_invoke_mixed_sync(callback, callback, 1) != 36) {
+    if (boltffi_function_boltffi_tests_invoke_mixed_sync(callback, callback, 1) != 36) {
         return 739;
     }
-    if (boltffi_function_boltffi_tests_callbacks_invoke_mixed_three(callback, callback, callback, 1) != 18) {
+    if (boltffi_function_boltffi_tests_invoke_mixed_three(callback, callback, callback, 1) != 18) {
         return 740;
     }
-    BoltFFICallbackHandle returned = boltffi_function_boltffi_tests_callbacks_make_value_callback(7);
-    if (boltffi_function_boltffi_tests_callbacks_invoke_sync_impl(returned, 5) != 12) {
+    BoltFFICallbackHandle returned = boltffi_function_boltffi_tests_make_value_callback(7);
+    if (boltffi_function_boltffi_tests_invoke_sync_impl(returned, 5) != 12) {
         return 741;
     }
-    BoltFFICallbackHandle missing = boltffi_function_boltffi_tests_callbacks_maybe_callback(false);
+    BoltFFICallbackHandle missing = boltffi_function_boltffi_tests_maybe_callback(false);
     if (missing.handle != 0) {
         return 742;
     }
-    BoltFFICallbackHandle present = boltffi_function_boltffi_tests_callbacks_maybe_callback(true);
-    if (boltffi_function_boltffi_tests_callbacks_invoke_sync_impl(present, 1) != 8) {
+    BoltFFICallbackHandle present = boltffi_function_boltffi_tests_maybe_callback(true);
+    if (boltffi_function_boltffi_tests_invoke_sync_impl(present, 1) != 8) {
         return 743;
     }
-    BoltFFICallbackHandle shared = boltffi_function_boltffi_tests_callbacks_shared_callback();
-    if (boltffi_function_boltffi_tests_callbacks_invoke_sync_impl(shared, 4) != 15) {
+    BoltFFICallbackHandle shared = boltffi_function_boltffi_tests_shared_callback();
+    if (boltffi_function_boltffi_tests_invoke_sync_impl(shared, 4) != 15) {
         return 744;
     }
     BoltFFICallbackHandle fallible = {0};
-    FfiBuf_u8 error = boltffi_function_boltffi_tests_callbacks_try_make_callback(false, &fallible);
+    FfiBuf_u8 error = boltffi_function_boltffi_tests_try_make_callback(false, &fallible);
     int empty = boltffi_tests_check_empty_buf(error, 745);
     if (empty != 0) {
         return empty;
     }
-    if (boltffi_function_boltffi_tests_callbacks_invoke_sync_impl(fallible, 1) != 14) {
+    if (boltffi_function_boltffi_tests_invoke_sync_impl(fallible, 1) != 14) {
         return 746;
     }
-    BoltFFICallbackHandle async_fetch = boltffi_create_callback_boltffi_tests_callbacks_async_fetcher(10);
-    RustFutureHandle async_value = boltffi_function_boltffi_tests_callbacks_invoke_async_impl(async_fetch, 5);
-    boltffi_async_function_boltffi_tests_callbacks_invoke_async_impl_poll(async_value, 0, boltffi_tests_async_noop);
+    BoltFFICallbackHandle async_fetch = boltffi_create_callback_boltffi_tests_async_fetcher(10);
+    RustFutureHandle async_value = boltffi_function_boltffi_tests_invoke_async_impl(async_fetch, 5);
+    boltffi_async_function_boltffi_tests_invoke_async_impl_poll(async_value, 0, boltffi_tests_async_noop);
     FfiStatus async_status = FFI_STATUS_INTERNAL_ERROR;
-    uint64_t async_result = boltffi_async_function_boltffi_tests_callbacks_invoke_async_impl_complete(async_value, &async_status);
-    boltffi_async_function_boltffi_tests_callbacks_invoke_async_impl_free(async_value);
+    uint64_t async_result = boltffi_async_function_boltffi_tests_invoke_async_impl_complete(async_value, &async_status);
+    boltffi_async_function_boltffi_tests_invoke_async_impl_free(async_value);
     if (async_status.code != FFI_STATUS_OK.code || async_result != 15) {
         return 747;
     }
-    RustFutureHandle async_two = boltffi_function_boltffi_tests_callbacks_invoke_two_async_impl(async_fetch, async_fetch, 2);
-    boltffi_async_function_boltffi_tests_callbacks_invoke_two_async_impl_poll(async_two, 0, boltffi_tests_async_noop);
+    RustFutureHandle async_two = boltffi_function_boltffi_tests_invoke_two_async_impl(async_fetch, async_fetch, 2);
+    boltffi_async_function_boltffi_tests_invoke_two_async_impl_poll(async_two, 0, boltffi_tests_async_noop);
     FfiStatus async_two_status = FFI_STATUS_INTERNAL_ERROR;
-    uint64_t async_two_result = boltffi_async_function_boltffi_tests_callbacks_invoke_two_async_impl_complete(async_two, &async_two_status);
-    boltffi_async_function_boltffi_tests_callbacks_invoke_two_async_impl_free(async_two);
+    uint64_t async_two_result = boltffi_async_function_boltffi_tests_invoke_two_async_impl_complete(async_two, &async_two_status);
+    boltffi_async_function_boltffi_tests_invoke_two_async_impl_free(async_two);
     if (async_two_status.code != FFI_STATUS_OK.code || async_two_result != 144) {
         return 748;
     }
-    RustFutureHandle async_three = boltffi_function_boltffi_tests_callbacks_invoke_three_async_impl(async_fetch, async_fetch, async_fetch, 1);
-    boltffi_async_function_boltffi_tests_callbacks_invoke_three_async_impl_poll(async_three, 0, boltffi_tests_async_noop);
+    RustFutureHandle async_three = boltffi_function_boltffi_tests_invoke_three_async_impl(async_fetch, async_fetch, async_fetch, 1);
+    boltffi_async_function_boltffi_tests_invoke_three_async_impl_poll(async_three, 0, boltffi_tests_async_noop);
     FfiStatus async_three_status = FFI_STATUS_INTERNAL_ERROR;
-    uint64_t async_three_result = boltffi_async_function_boltffi_tests_callbacks_invoke_three_async_impl_complete(async_three, &async_three_status);
-    boltffi_async_function_boltffi_tests_callbacks_invoke_three_async_impl_free(async_three);
+    uint64_t async_three_result = boltffi_async_function_boltffi_tests_invoke_three_async_impl_complete(async_three, &async_three_status);
+    boltffi_async_function_boltffi_tests_invoke_three_async_impl_free(async_three);
     if (async_three_status.code != FFI_STATUS_OK.code || async_three_result != 33) {
         return 749;
     }
-    BoltFFICallbackHandle async_option = boltffi_create_callback_boltffi_tests_callbacks_async_option_fetcher(9);
-    RustFutureHandle async_option_future = boltffi_function_boltffi_tests_callbacks_invoke_async_option_impl(async_option, 2);
-    boltffi_async_function_boltffi_tests_callbacks_invoke_async_option_impl_poll(async_option_future, 0, boltffi_tests_async_noop);
+    BoltFFICallbackHandle async_option = boltffi_create_callback_boltffi_tests_async_option_fetcher(9);
+    RustFutureHandle async_option_future = boltffi_function_boltffi_tests_invoke_async_option_impl(async_option, 2);
+    boltffi_async_function_boltffi_tests_invoke_async_option_impl_poll(async_option_future, 0, boltffi_tests_async_noop);
     FfiStatus async_option_status = FFI_STATUS_INTERNAL_ERROR;
     const uint8_t async_option_expected[9] = {1, 209, 0, 0, 0, 0, 0, 0, 0};
     int async_option_check = boltffi_tests_check_buf(
-        boltffi_async_function_boltffi_tests_callbacks_invoke_async_option_impl_complete(async_option_future, &async_option_status),
+        boltffi_async_function_boltffi_tests_invoke_async_option_impl_complete(async_option_future, &async_option_status),
         async_option_expected,
         9,
         750
     );
-    boltffi_async_function_boltffi_tests_callbacks_invoke_async_option_impl_free(async_option_future);
+    boltffi_async_function_boltffi_tests_invoke_async_option_impl_free(async_option_future);
     if (async_option_status.code != FFI_STATUS_OK.code || async_option_check != 0) {
         return 753;
     }
-    BoltFFICallbackHandle async_multi = boltffi_create_callback_boltffi_tests_callbacks_async_multi_method(5);
-    RustFutureHandle async_multi_future = boltffi_function_boltffi_tests_callbacks_invoke_async_multi_impl(async_multi, 7, 2, 3);
-    boltffi_async_function_boltffi_tests_callbacks_invoke_async_multi_impl_poll(async_multi_future, 0, boltffi_tests_async_noop);
+    BoltFFICallbackHandle async_multi = boltffi_create_callback_boltffi_tests_async_multi_method(5);
+    RustFutureHandle async_multi_future = boltffi_function_boltffi_tests_invoke_async_multi_impl(async_multi, 7, 2, 3);
+    boltffi_async_function_boltffi_tests_invoke_async_multi_impl_poll(async_multi_future, 0, boltffi_tests_async_noop);
     FfiStatus async_multi_status = FFI_STATUS_INTERNAL_ERROR;
-    int64_t async_multi_result = boltffi_async_function_boltffi_tests_callbacks_invoke_async_multi_impl_complete(async_multi_future, &async_multi_status);
-    boltffi_async_function_boltffi_tests_callbacks_invoke_async_multi_impl_free(async_multi_future);
+    int64_t async_multi_result = boltffi_async_function_boltffi_tests_invoke_async_multi_impl_complete(async_multi_future, &async_multi_status);
+    boltffi_async_function_boltffi_tests_invoke_async_multi_impl_free(async_multi_future);
     if (async_multi_status.code != FFI_STATUS_OK.code || async_multi_result != 23) {
         return 754;
     }
     BoltFFICallbackHandle async_factory =
-        boltffi_create_callback_boltffi_tests_callbacks_async_callback_factory(12);
+        boltffi_create_callback_boltffi_tests_async_callback_factory(12);
     RustFutureHandle async_factory_future =
-        boltffi_function_boltffi_tests_callbacks_invoke_async_factory_impl(async_factory, 5);
-    boltffi_async_function_boltffi_tests_callbacks_invoke_async_factory_impl_poll(
+        boltffi_function_boltffi_tests_invoke_async_factory_impl(async_factory, 5);
+    boltffi_async_function_boltffi_tests_invoke_async_factory_impl_poll(
         async_factory_future,
         0,
         boltffi_tests_async_noop
     );
     FfiStatus async_factory_status = FFI_STATUS_INTERNAL_ERROR;
     int32_t async_factory_result =
-        boltffi_async_function_boltffi_tests_callbacks_invoke_async_factory_impl_complete(
+        boltffi_async_function_boltffi_tests_invoke_async_factory_impl_complete(
             async_factory_future,
             &async_factory_status
         );
-    boltffi_async_function_boltffi_tests_callbacks_invoke_async_factory_impl_free(
+    boltffi_async_function_boltffi_tests_invoke_async_factory_impl_free(
         async_factory_future
     );
     if (async_factory_status.code != FFI_STATUS_OK.code || async_factory_result != 17) {
@@ -1477,67 +1451,67 @@ static int boltffi_tests_check_callbacks(void) {
         0, 0, 0, 0, 0, 0, 8, 64,
         2, 0, 0, 0
     };
-    RustFutureHandle echo = boltffi_function_boltffi_tests_callbacks_async_echo_message_record(record, 27);
-    boltffi_async_function_boltffi_tests_callbacks_async_echo_message_record_poll(echo, 0, boltffi_tests_async_noop);
+    RustFutureHandle echo = boltffi_function_boltffi_tests_async_echo_message_record(record, 27);
+    boltffi_async_function_boltffi_tests_async_echo_message_record_poll(echo, 0, boltffi_tests_async_noop);
     FfiStatus echo_status = FFI_STATUS_INTERNAL_ERROR;
     int echo_check = boltffi_tests_check_buf(
-        boltffi_async_function_boltffi_tests_callbacks_async_echo_message_record_complete(echo, &echo_status),
+        boltffi_async_function_boltffi_tests_async_echo_message_record_complete(echo, &echo_status),
         record,
         27,
         755
     );
-    boltffi_async_function_boltffi_tests_callbacks_async_echo_message_record_free(echo);
+    boltffi_async_function_boltffi_tests_async_echo_message_record_free(echo);
     if (echo_status.code != FFI_STATUS_OK.code || echo_check != 0) {
         return 758;
     }
-    uint64_t sync_processor = boltffi_init_class_boltffi_tests_callbacks_sync_processor_new(3);
-    if (boltffi_method_class_boltffi_tests_callbacks_sync_processor_apply_impl(sync_processor, callback, 4) != 17) {
-        boltffi_release_class_boltffi_tests_callbacks_sync_processor(sync_processor);
+    uint64_t sync_processor = boltffi_init_class_boltffi_tests_sync_processor_new(3);
+    if (boltffi_method_class_boltffi_tests_sync_processor_apply_impl(sync_processor, callback, 4) != 17) {
+        boltffi_release_class_boltffi_tests_sync_processor(sync_processor);
         return 759;
     }
-    if (boltffi_method_class_boltffi_tests_callbacks_sync_processor_apply_boxed(sync_processor, callback, 5) != 20) {
-        boltffi_release_class_boltffi_tests_callbacks_sync_processor(sync_processor);
+    if (boltffi_method_class_boltffi_tests_sync_processor_apply_boxed(sync_processor, callback, 5) != 20) {
+        boltffi_release_class_boltffi_tests_sync_processor(sync_processor);
         return 760;
     }
     ___FixturePoint processor_point = { 1.0, 2.0 };
-    ___FixturePoint processor_point_result = boltffi_method_class_boltffi_tests_callbacks_sync_processor_apply_struct_impl(sync_processor, struct_callback, processor_point);
+    ___FixturePoint processor_point_result = boltffi_method_class_boltffi_tests_sync_processor_apply_struct_impl(sync_processor, struct_callback, processor_point);
     if (processor_point_result.x != 6.0 || processor_point_result.y != 7.0) {
-        boltffi_release_class_boltffi_tests_callbacks_sync_processor(sync_processor);
+        boltffi_release_class_boltffi_tests_sync_processor(sync_processor);
         return 761;
     }
     const uint8_t processor_option_expected[5] = {1, 150, 0, 0, 0};
     int processor_option_check = boltffi_tests_check_buf(
-        boltffi_method_class_boltffi_tests_callbacks_sync_processor_apply_option_impl(sync_processor, option, 5),
+        boltffi_method_class_boltffi_tests_sync_processor_apply_option_impl(sync_processor, option, 5),
         processor_option_expected,
         5,
         764
     );
-    boltffi_release_class_boltffi_tests_callbacks_sync_processor(sync_processor);
+    boltffi_release_class_boltffi_tests_sync_processor(sync_processor);
     if (processor_option_check != 0) {
         return processor_option_check;
     }
-    uint64_t async_processor = boltffi_init_class_boltffi_tests_callbacks_async_processor_new(100);
-    RustFutureHandle fetched = boltffi_method_class_boltffi_tests_callbacks_async_processor_fetch_with_offset(async_processor, async_fetch, 4);
-    boltffi_async_method_class_boltffi_tests_callbacks_async_processor_fetch_with_offset_poll(fetched, 0, boltffi_tests_async_noop);
+    uint64_t async_processor = boltffi_init_class_boltffi_tests_async_processor_new(100);
+    RustFutureHandle fetched = boltffi_method_class_boltffi_tests_async_processor_fetch_with_offset(async_processor, async_fetch, 4);
+    boltffi_async_method_class_boltffi_tests_async_processor_fetch_with_offset_poll(fetched, 0, boltffi_tests_async_noop);
     FfiStatus fetched_status = FFI_STATUS_INTERNAL_ERROR;
-    uint64_t fetched_value = boltffi_async_method_class_boltffi_tests_callbacks_async_processor_fetch_with_offset_complete(fetched, &fetched_status);
-    boltffi_async_method_class_boltffi_tests_callbacks_async_processor_fetch_with_offset_free(fetched);
+    uint64_t fetched_value = boltffi_async_method_class_boltffi_tests_async_processor_fetch_with_offset_complete(fetched, &fetched_status);
+    boltffi_async_method_class_boltffi_tests_async_processor_fetch_with_offset_free(fetched);
     if (fetched_status.code != FFI_STATUS_OK.code || fetched_value != 114) {
-        boltffi_release_class_boltffi_tests_callbacks_async_processor(async_processor);
+        boltffi_release_class_boltffi_tests_async_processor(async_processor);
         return 767;
     }
-    RustFutureHandle found = boltffi_method_class_boltffi_tests_callbacks_async_processor_find_with_offset(async_processor, async_option, 2);
-    boltffi_async_method_class_boltffi_tests_callbacks_async_processor_find_with_offset_poll(found, 0, boltffi_tests_async_noop);
+    RustFutureHandle found = boltffi_method_class_boltffi_tests_async_processor_find_with_offset(async_processor, async_option, 2);
+    boltffi_async_method_class_boltffi_tests_async_processor_find_with_offset_poll(found, 0, boltffi_tests_async_noop);
     FfiStatus found_status = FFI_STATUS_INTERNAL_ERROR;
     const uint8_t found_expected[9] = {1, 53, 1, 0, 0, 0, 0, 0, 0};
     int found_check = boltffi_tests_check_buf(
-        boltffi_async_method_class_boltffi_tests_callbacks_async_processor_find_with_offset_complete(found, &found_status),
+        boltffi_async_method_class_boltffi_tests_async_processor_find_with_offset_complete(found, &found_status),
         found_expected,
         9,
         768
     );
-    boltffi_async_method_class_boltffi_tests_callbacks_async_processor_find_with_offset_free(found);
-    boltffi_release_class_boltffi_tests_callbacks_async_processor(async_processor);
+    boltffi_async_method_class_boltffi_tests_async_processor_find_with_offset_free(found);
+    boltffi_release_class_boltffi_tests_async_processor(async_processor);
     if (found_status.code != FFI_STATUS_OK.code || found_check != 0) {
         return 771;
     }
@@ -1548,251 +1522,251 @@ static int boltffi_tests_check_callbacks(void) {
 
     fn classes_harness(&self) -> &'static str {
         r#"static int boltffi_tests_check_classes(void) {
-    uint64_t counter = boltffi_init_class_boltffi_tests_classes_test_counter_new(40);
+    uint64_t counter = boltffi_init_class_boltffi_tests_test_counter_new(40);
     if (counter == 0) {
         return 731;
     }
-    if (boltffi_method_class_boltffi_tests_classes_test_counter_get(counter) != 40) {
-        boltffi_release_class_boltffi_tests_classes_test_counter(counter);
+    if (boltffi_method_class_boltffi_tests_test_counter_get(counter) != 40) {
+        boltffi_release_class_boltffi_tests_test_counter(counter);
         return 732;
     }
-    FfiStatus counter_set = boltffi_method_class_boltffi_tests_classes_test_counter_set(counter, 41);
-    if (counter_set.code != FFI_STATUS_OK.code || boltffi_method_class_boltffi_tests_classes_test_counter_get(counter) != 41) {
-        boltffi_release_class_boltffi_tests_classes_test_counter(counter);
+    FfiStatus counter_set = boltffi_method_class_boltffi_tests_test_counter_set(counter, 41);
+    if (counter_set.code != FFI_STATUS_OK.code || boltffi_method_class_boltffi_tests_test_counter_get(counter) != 41) {
+        boltffi_release_class_boltffi_tests_test_counter(counter);
         return 733;
     }
-    if (boltffi_method_class_boltffi_tests_classes_test_counter_add(counter, 1) != 42) {
-        boltffi_release_class_boltffi_tests_classes_test_counter(counter);
+    if (boltffi_method_class_boltffi_tests_test_counter_add(counter, 1) != 42) {
+        boltffi_release_class_boltffi_tests_test_counter(counter);
         return 734;
     }
-    RustFutureHandle counter_get = boltffi_method_class_boltffi_tests_classes_test_counter_async_get(counter);
-    boltffi_async_method_class_boltffi_tests_classes_test_counter_async_get_poll(counter_get, 0, boltffi_tests_async_noop);
+    RustFutureHandle counter_get = boltffi_method_class_boltffi_tests_test_counter_async_get(counter);
+    boltffi_async_method_class_boltffi_tests_test_counter_async_get_poll(counter_get, 0, boltffi_tests_async_noop);
     FfiStatus counter_get_status = FFI_STATUS_INTERNAL_ERROR;
-    int32_t counter_async_value = boltffi_async_method_class_boltffi_tests_classes_test_counter_async_get_complete(counter_get, &counter_get_status);
-    boltffi_async_method_class_boltffi_tests_classes_test_counter_async_get_free(counter_get);
+    int32_t counter_async_value = boltffi_async_method_class_boltffi_tests_test_counter_async_get_complete(counter_get, &counter_get_status);
+    boltffi_async_method_class_boltffi_tests_test_counter_async_get_free(counter_get);
     if (counter_get_status.code != FFI_STATUS_OK.code || counter_async_value != 42) {
-        boltffi_release_class_boltffi_tests_classes_test_counter(counter);
+        boltffi_release_class_boltffi_tests_test_counter(counter);
         return 735;
     }
-    RustFutureHandle counter_add = boltffi_method_class_boltffi_tests_classes_test_counter_async_add(counter, 8);
-    boltffi_async_method_class_boltffi_tests_classes_test_counter_async_add_poll(counter_add, 0, boltffi_tests_async_noop);
+    RustFutureHandle counter_add = boltffi_method_class_boltffi_tests_test_counter_async_add(counter, 8);
+    boltffi_async_method_class_boltffi_tests_test_counter_async_add_poll(counter_add, 0, boltffi_tests_async_noop);
     FfiStatus counter_add_status = FFI_STATUS_INTERNAL_ERROR;
-    int32_t counter_add_value = boltffi_async_method_class_boltffi_tests_classes_test_counter_async_add_complete(counter_add, &counter_add_status);
-    boltffi_async_method_class_boltffi_tests_classes_test_counter_async_add_free(counter_add);
+    int32_t counter_add_value = boltffi_async_method_class_boltffi_tests_test_counter_async_add_complete(counter_add, &counter_add_status);
+    boltffi_async_method_class_boltffi_tests_test_counter_async_add_free(counter_add);
     if (counter_add_status.code != FFI_STATUS_OK.code || counter_add_value != 50) {
-        boltffi_release_class_boltffi_tests_classes_test_counter(counter);
+        boltffi_release_class_boltffi_tests_test_counter(counter);
         return 736;
     }
-    boltffi_release_class_boltffi_tests_classes_test_counter(counter);
-    uint64_t thread_safe = boltffi_init_class_boltffi_tests_classes_thread_safe_counter_new(10);
+    boltffi_release_class_boltffi_tests_test_counter(counter);
+    uint64_t thread_safe = boltffi_init_class_boltffi_tests_thread_safe_counter_new(10);
     if (thread_safe == 0) {
         return 737;
     }
-    FfiStatus thread_set = boltffi_method_class_boltffi_tests_classes_thread_safe_counter_set(thread_safe, 20);
+    FfiStatus thread_set = boltffi_method_class_boltffi_tests_thread_safe_counter_set(thread_safe, 20);
     if (thread_set.code != FFI_STATUS_OK.code) {
-        boltffi_release_class_boltffi_tests_classes_thread_safe_counter(thread_safe);
+        boltffi_release_class_boltffi_tests_thread_safe_counter(thread_safe);
         return 738;
     }
-    if (boltffi_method_class_boltffi_tests_classes_thread_safe_counter_get(thread_safe) != 20) {
-        boltffi_release_class_boltffi_tests_classes_thread_safe_counter(thread_safe);
+    if (boltffi_method_class_boltffi_tests_thread_safe_counter_get(thread_safe) != 20) {
+        boltffi_release_class_boltffi_tests_thread_safe_counter(thread_safe);
         return 739;
     }
-    if (boltffi_method_class_boltffi_tests_classes_thread_safe_counter_add(thread_safe, 5) != 25) {
-        boltffi_release_class_boltffi_tests_classes_thread_safe_counter(thread_safe);
+    if (boltffi_method_class_boltffi_tests_thread_safe_counter_add(thread_safe, 5) != 25) {
+        boltffi_release_class_boltffi_tests_thread_safe_counter(thread_safe);
         return 740;
     }
-    if (boltffi_method_class_boltffi_tests_classes_thread_safe_counter_increment(thread_safe) != 26) {
-        boltffi_release_class_boltffi_tests_classes_thread_safe_counter(thread_safe);
+    if (boltffi_method_class_boltffi_tests_thread_safe_counter_increment(thread_safe) != 26) {
+        boltffi_release_class_boltffi_tests_thread_safe_counter(thread_safe);
         return 741;
     }
-    if (boltffi_function_boltffi_tests_classes_shared_counter_snapshot(thread_safe) != 26) {
-        boltffi_release_class_boltffi_tests_classes_thread_safe_counter(thread_safe);
+    if (boltffi_function_boltffi_tests_shared_counter_snapshot(thread_safe) != 26) {
+        boltffi_release_class_boltffi_tests_thread_safe_counter(thread_safe);
         return 819;
     }
-    RustFutureHandle shared_snapshot = boltffi_function_boltffi_tests_classes_async_shared_counter_snapshot(thread_safe);
+    RustFutureHandle shared_snapshot = boltffi_function_boltffi_tests_async_shared_counter_snapshot(thread_safe);
     if (shared_snapshot == 0) {
-        boltffi_release_class_boltffi_tests_classes_thread_safe_counter(thread_safe);
+        boltffi_release_class_boltffi_tests_thread_safe_counter(thread_safe);
         return 820;
     }
     /* The future holds a strong reference, so closing the handle here must not
        free the object while the call is still in flight. */
-    boltffi_release_class_boltffi_tests_classes_thread_safe_counter(thread_safe);
-    boltffi_async_function_boltffi_tests_classes_async_shared_counter_snapshot_poll(shared_snapshot, 0, boltffi_tests_async_noop);
+    boltffi_release_class_boltffi_tests_thread_safe_counter(thread_safe);
+    boltffi_async_function_boltffi_tests_async_shared_counter_snapshot_poll(shared_snapshot, 0, boltffi_tests_async_noop);
     FfiStatus shared_snapshot_status = FFI_STATUS_INTERNAL_ERROR;
-    int32_t shared_snapshot_value = boltffi_async_function_boltffi_tests_classes_async_shared_counter_snapshot_complete(shared_snapshot, &shared_snapshot_status);
-    boltffi_async_function_boltffi_tests_classes_async_shared_counter_snapshot_free(shared_snapshot);
+    int32_t shared_snapshot_value = boltffi_async_function_boltffi_tests_async_shared_counter_snapshot_complete(shared_snapshot, &shared_snapshot_status);
+    boltffi_async_function_boltffi_tests_async_shared_counter_snapshot_free(shared_snapshot);
     if (shared_snapshot_status.code != FFI_STATUS_OK.code || shared_snapshot_value != 26) {
         return 821;
     }
-    uint64_t map = boltffi_init_class_boltffi_tests_classes_fixture_map_new();
+    uint64_t map = boltffi_init_class_boltffi_tests_fixture_map_new();
     if (map == 0) {
         return 739;
     }
     ___FixtureMarkerOptions marker_options = { 44 };
-    uint64_t marker = boltffi_method_class_boltffi_tests_classes_fixture_map_add_marker(map, marker_options);
-    if (marker == 0 || boltffi_method_class_boltffi_tests_classes_fixture_marker_id(marker) != 44) {
-        boltffi_release_class_boltffi_tests_classes_fixture_map(map);
+    uint64_t marker = boltffi_method_class_boltffi_tests_fixture_map_add_marker(map, marker_options);
+    if (marker == 0 || boltffi_method_class_boltffi_tests_fixture_marker_id(marker) != 44) {
+        boltffi_release_class_boltffi_tests_fixture_map(map);
         return 740;
     }
-    boltffi_release_class_boltffi_tests_classes_fixture_marker(marker);
-    uint64_t maybe = boltffi_method_class_boltffi_tests_classes_fixture_map_maybe_marker(map, marker_options, true);
-    if (maybe == 0 || boltffi_method_class_boltffi_tests_classes_fixture_marker_id(maybe) != 44) {
-        boltffi_release_class_boltffi_tests_classes_fixture_map(map);
+    boltffi_release_class_boltffi_tests_fixture_marker(marker);
+    uint64_t maybe = boltffi_method_class_boltffi_tests_fixture_map_maybe_marker(map, marker_options, true);
+    if (maybe == 0 || boltffi_method_class_boltffi_tests_fixture_marker_id(maybe) != 44) {
+        boltffi_release_class_boltffi_tests_fixture_map(map);
         return 741;
     }
-    boltffi_release_class_boltffi_tests_classes_fixture_marker(maybe);
-    uint64_t missing = boltffi_method_class_boltffi_tests_classes_fixture_map_maybe_marker(map, marker_options, false);
+    boltffi_release_class_boltffi_tests_fixture_marker(maybe);
+    uint64_t missing = boltffi_method_class_boltffi_tests_fixture_map_maybe_marker(map, marker_options, false);
     if (missing != 0) {
-        boltffi_release_class_boltffi_tests_classes_fixture_map(map);
+        boltffi_release_class_boltffi_tests_fixture_map(map);
         return 742;
     }
-    uint64_t default_marker = boltffi_method_class_boltffi_tests_classes_fixture_map_default_marker(marker_options);
-    if (default_marker == 0 || boltffi_method_class_boltffi_tests_classes_fixture_marker_id(default_marker) != 44) {
-        boltffi_release_class_boltffi_tests_classes_fixture_map(map);
+    uint64_t default_marker = boltffi_method_class_boltffi_tests_fixture_map_default_marker(marker_options);
+    if (default_marker == 0 || boltffi_method_class_boltffi_tests_fixture_marker_id(default_marker) != 44) {
+        boltffi_release_class_boltffi_tests_fixture_map(map);
         return 743;
     }
-    boltffi_release_class_boltffi_tests_classes_fixture_marker(default_marker);
-    uint64_t cloned_map = boltffi_method_class_boltffi_tests_classes_fixture_map_clone_handle(map);
+    boltffi_release_class_boltffi_tests_fixture_marker(default_marker);
+    uint64_t cloned_map = boltffi_method_class_boltffi_tests_fixture_map_clone_handle(map);
     if (cloned_map == 0) {
-        boltffi_release_class_boltffi_tests_classes_fixture_map(map);
+        boltffi_release_class_boltffi_tests_fixture_map(map);
         return 744;
     }
-    boltffi_release_class_boltffi_tests_classes_fixture_map(cloned_map);
-    boltffi_release_class_boltffi_tests_classes_fixture_map(map);
-    uint64_t fixture = boltffi_init_class_boltffi_tests_classes_class_test_fixture_new_default();
+    boltffi_release_class_boltffi_tests_fixture_map(cloned_map);
+    boltffi_release_class_boltffi_tests_fixture_map(map);
+    uint64_t fixture = boltffi_init_class_boltffi_tests_class_test_fixture_new_default();
     if (fixture == 0) {
         return 745;
     }
-    FfiStatus set_id = boltffi_method_class_boltffi_tests_classes_class_test_fixture_set_id(fixture, 77);
-    if (set_id.code != FFI_STATUS_OK.code || boltffi_method_class_boltffi_tests_classes_class_test_fixture_get_id(fixture) != 77) {
-        boltffi_release_class_boltffi_tests_classes_class_test_fixture(fixture);
+    FfiStatus set_id = boltffi_method_class_boltffi_tests_class_test_fixture_set_id(fixture, 77);
+    if (set_id.code != FFI_STATUS_OK.code || boltffi_method_class_boltffi_tests_class_test_fixture_get_id(fixture) != 77) {
+        boltffi_release_class_boltffi_tests_class_test_fixture(fixture);
         return 746;
     }
     FfiBuf_u8 name = boltffi_tests_string_buf("ali", 3);
-    FfiStatus set_name = boltffi_method_class_boltffi_tests_classes_class_test_fixture_set_name(fixture, name.ptr, name.len);
+    FfiStatus set_name = boltffi_method_class_boltffi_tests_class_test_fixture_set_name(fixture, name.ptr, name.len);
     boltffi_free_buf(name);
     const uint8_t ali_expected[7] = {3, 0, 0, 0, 'a', 'l', 'i'};
     int name_check = boltffi_tests_check_buf(
-        boltffi_method_class_boltffi_tests_classes_class_test_fixture_get_name(fixture),
+        boltffi_method_class_boltffi_tests_class_test_fixture_get_name(fixture),
         ali_expected,
         7,
         747
     );
     if (set_name.code != FFI_STATUS_OK.code || name_check != 0) {
-        boltffi_release_class_boltffi_tests_classes_class_test_fixture(fixture);
+        boltffi_release_class_boltffi_tests_class_test_fixture(fixture);
         return 750;
     }
     ___FixturePoint point = { 3.0, 4.0 };
-    FfiStatus set_point = boltffi_method_class_boltffi_tests_classes_class_test_fixture_set_point(fixture, point);
-    ___FixturePoint fixture_point = boltffi_method_class_boltffi_tests_classes_class_test_fixture_get_point(fixture);
+    FfiStatus set_point = boltffi_method_class_boltffi_tests_class_test_fixture_set_point(fixture, point);
+    ___FixturePoint fixture_point = boltffi_method_class_boltffi_tests_class_test_fixture_get_point(fixture);
     if (set_point.code != FFI_STATUS_OK.code || fixture_point.x != 3.0 || fixture_point.y != 4.0) {
-        boltffi_release_class_boltffi_tests_classes_class_test_fixture(fixture);
+        boltffi_release_class_boltffi_tests_class_test_fixture(fixture);
         return 754;
     }
-    FfiStatus set_status = boltffi_method_class_boltffi_tests_classes_class_test_fixture_set_status(fixture, FIXTURE_STATUS_COMPLETED);
-    if (set_status.code != FFI_STATUS_OK.code || boltffi_method_class_boltffi_tests_classes_class_test_fixture_get_status(fixture) != FIXTURE_STATUS_COMPLETED) {
-        boltffi_release_class_boltffi_tests_classes_class_test_fixture(fixture);
+    FfiStatus set_status = boltffi_method_class_boltffi_tests_class_test_fixture_set_status(fixture, FIXTURE_STATUS_COMPLETED);
+    if (set_status.code != FFI_STATUS_OK.code || boltffi_method_class_boltffi_tests_class_test_fixture_get_status(fixture) != FIXTURE_STATUS_COMPLETED) {
+        boltffi_release_class_boltffi_tests_class_test_fixture(fixture);
         return 755;
     }
-    FfiStatus add_value = boltffi_method_class_boltffi_tests_classes_class_test_fixture_add_value(fixture, 33);
-    if (add_value.code != FFI_STATUS_OK.code || boltffi_method_class_boltffi_tests_classes_class_test_fixture_values_count(fixture) != 1) {
-        boltffi_release_class_boltffi_tests_classes_class_test_fixture(fixture);
+    FfiStatus add_value = boltffi_method_class_boltffi_tests_class_test_fixture_add_value(fixture, 33);
+    if (add_value.code != FFI_STATUS_OK.code || boltffi_method_class_boltffi_tests_class_test_fixture_values_count(fixture) != 1) {
+        boltffi_release_class_boltffi_tests_class_test_fixture(fixture);
         return 756;
     }
-    FfiStatus clear_values = boltffi_method_class_boltffi_tests_classes_class_test_fixture_clear_values(fixture);
-    if (clear_values.code != FFI_STATUS_OK.code || boltffi_method_class_boltffi_tests_classes_class_test_fixture_values_count(fixture) != 0) {
-        boltffi_release_class_boltffi_tests_classes_class_test_fixture(fixture);
+    FfiStatus clear_values = boltffi_method_class_boltffi_tests_class_test_fixture_clear_values(fixture);
+    if (clear_values.code != FFI_STATUS_OK.code || boltffi_method_class_boltffi_tests_class_test_fixture_values_count(fixture) != 0) {
+        boltffi_release_class_boltffi_tests_class_test_fixture(fixture);
         return 757;
     }
     int32_t values[3] = {1, 4, -2};
-    FfiStatus set_values = boltffi_method_class_boltffi_tests_classes_class_test_fixture_set_values(fixture, values, 3);
+    FfiStatus set_values = boltffi_method_class_boltffi_tests_class_test_fixture_set_values(fixture, values, 3);
     int32_t expected_values[3] = {1, 4, -2};
     int values_check = boltffi_tests_check_i32_vec_buf(
-        boltffi_method_class_boltffi_tests_classes_class_test_fixture_get_values(fixture),
+        boltffi_method_class_boltffi_tests_class_test_fixture_get_values(fixture),
         expected_values,
         3,
         756
     );
     if (set_values.code != FFI_STATUS_OK.code || values_check != 0) {
-        boltffi_release_class_boltffi_tests_classes_class_test_fixture(fixture);
+        boltffi_release_class_boltffi_tests_class_test_fixture(fixture);
         return 759;
     }
     FfiBuf_u8 optional = boltffi_tests_option_i32_buf(1, 99);
-    FfiStatus set_optional = boltffi_method_class_boltffi_tests_classes_class_test_fixture_set_optional(fixture, optional.ptr, optional.len);
+    FfiStatus set_optional = boltffi_method_class_boltffi_tests_class_test_fixture_set_optional(fixture, optional.ptr, optional.len);
     boltffi_free_buf(optional);
     const uint8_t optional_expected[5] = {1, 99, 0, 0, 0};
     int optional_check = boltffi_tests_check_buf(
-        boltffi_method_class_boltffi_tests_classes_class_test_fixture_get_optional(fixture),
+        boltffi_method_class_boltffi_tests_class_test_fixture_get_optional(fixture),
         optional_expected,
         5,
         760
     );
     if (set_optional.code != FFI_STATUS_OK.code || optional_check != 0) {
-        boltffi_release_class_boltffi_tests_classes_class_test_fixture(fixture);
+        boltffi_release_class_boltffi_tests_class_test_fixture(fixture);
         return 763;
     }
-    if (boltffi_method_class_boltffi_tests_classes_class_test_fixture_values_count(fixture) != 3) {
-        boltffi_release_class_boltffi_tests_classes_class_test_fixture(fixture);
+    if (boltffi_method_class_boltffi_tests_class_test_fixture_values_count(fixture) != 3) {
+        boltffi_release_class_boltffi_tests_class_test_fixture(fixture);
         return 764;
     }
-    if (boltffi_method_class_boltffi_tests_classes_class_test_fixture_compute_sum(fixture) != 3) {
-        boltffi_release_class_boltffi_tests_classes_class_test_fixture(fixture);
+    if (boltffi_method_class_boltffi_tests_class_test_fixture_compute_sum(fixture) != 3) {
+        boltffi_release_class_boltffi_tests_class_test_fixture(fixture);
         return 765;
     }
     int32_t value_out = 0;
-    FfiBuf_u8 value_error = boltffi_method_class_boltffi_tests_classes_class_test_fixture_try_get_value(fixture, 1, &value_out);
+    FfiBuf_u8 value_error = boltffi_method_class_boltffi_tests_class_test_fixture_try_get_value(fixture, 1, &value_out);
     int value_empty = boltffi_tests_check_empty_buf(value_error, 766);
     if (value_empty != 0 || value_out != 4) {
-        boltffi_release_class_boltffi_tests_classes_class_test_fixture(fixture);
+        boltffi_release_class_boltffi_tests_class_test_fixture(fixture);
         return 767;
     }
     const uint8_t found_expected[5] = {1, 1, 0, 0, 0};
     int found = boltffi_tests_check_buf(
-        boltffi_method_class_boltffi_tests_classes_class_test_fixture_find_value(fixture, 4),
+        boltffi_method_class_boltffi_tests_class_test_fixture_find_value(fixture, 4),
         found_expected,
         5,
         768
     );
     if (found != 0) {
-        boltffi_release_class_boltffi_tests_classes_class_test_fixture(fixture);
+        boltffi_release_class_boltffi_tests_class_test_fixture(fixture);
         return found;
     }
     ___FixturePoint near_point = { 2.0, 1.0 };
     int32_t near_expected[2] = {1, -2};
     int near = boltffi_tests_check_i32_vec_buf(
-        boltffi_method_class_boltffi_tests_classes_class_test_fixture_values_near_point(fixture, near_point),
+        boltffi_method_class_boltffi_tests_class_test_fixture_values_near_point(fixture, near_point),
         near_expected,
         2,
         771
     );
     if (near != 0) {
-        boltffi_release_class_boltffi_tests_classes_class_test_fixture(fixture);
+        boltffi_release_class_boltffi_tests_class_test_fixture(fixture);
         return near;
     }
     const uint8_t echo_data[8] = {4, 0, 0, 0, 1, 2, 3, 4};
     int echo = boltffi_tests_check_buf(
-        boltffi_method_class_boltffi_tests_classes_class_test_fixture_echo_bytes(fixture, echo_data, 8),
+        boltffi_method_class_boltffi_tests_class_test_fixture_echo_bytes(fixture, echo_data, 8),
         echo_data,
         8,
         774
     );
     if (echo != 0) {
-        boltffi_release_class_boltffi_tests_classes_class_test_fixture(fixture);
+        boltffi_release_class_boltffi_tests_class_test_fixture(fixture);
         return echo;
     }
-    if (boltffi_method_class_boltffi_tests_classes_class_test_fixture_with_primitives(fixture, 1, 2, 3, 4, 5, 6, 7.0f, 8.0, true) != 37) {
-        boltffi_release_class_boltffi_tests_classes_class_test_fixture(fixture);
+    if (boltffi_method_class_boltffi_tests_class_test_fixture_with_primitives(fixture, 1, 2, 3, 4, 5, 6, 7.0f, 8.0, true) != 37) {
+        boltffi_release_class_boltffi_tests_class_test_fixture(fixture);
         return 777;
     }
-    if (boltffi_method_class_boltffi_tests_classes_class_test_fixture_static_add(5, 6) != 11) {
-        boltffi_release_class_boltffi_tests_classes_class_test_fixture(fixture);
+    if (boltffi_method_class_boltffi_tests_class_test_fixture_static_add(5, 6) != 11) {
+        boltffi_release_class_boltffi_tests_class_test_fixture(fixture);
         return 778;
     }
     FfiBuf_u8 left = boltffi_tests_string_buf("ab", 2);
     FfiBuf_u8 right = boltffi_tests_string_buf("cd", 2);
     const uint8_t concat_expected[8] = {4, 0, 0, 0, 'a', 'b', 'c', 'd'};
     int concat = boltffi_tests_check_buf(
-        boltffi_method_class_boltffi_tests_classes_class_test_fixture_static_concat(left.ptr, left.len, right.ptr, right.len),
+        boltffi_method_class_boltffi_tests_class_test_fixture_static_concat(left.ptr, left.len, right.ptr, right.len),
         concat_expected,
         8,
         779
@@ -1800,130 +1774,130 @@ static int boltffi_tests_check_callbacks(void) {
     boltffi_free_buf(left);
     boltffi_free_buf(right);
     if (concat != 0) {
-        boltffi_release_class_boltffi_tests_classes_class_test_fixture(fixture);
+        boltffi_release_class_boltffi_tests_class_test_fixture(fixture);
         return concat;
     }
-    ___FixturePoint static_point = boltffi_method_class_boltffi_tests_classes_class_test_fixture_static_make_point(8.0, 9.0);
+    ___FixturePoint static_point = boltffi_method_class_boltffi_tests_class_test_fixture_static_make_point(8.0, 9.0);
     if (static_point.x != 8.0 || static_point.y != 9.0) {
-        boltffi_release_class_boltffi_tests_classes_class_test_fixture(fixture);
+        boltffi_release_class_boltffi_tests_class_test_fixture(fixture);
         return 782;
     }
-    if (boltffi_method_class_boltffi_tests_classes_class_test_fixture_static_identity_status(FIXTURE_STATUS_FAILED) != FIXTURE_STATUS_FAILED) {
-        boltffi_release_class_boltffi_tests_classes_class_test_fixture(fixture);
+    if (boltffi_method_class_boltffi_tests_class_test_fixture_static_identity_status(FIXTURE_STATUS_FAILED) != FIXTURE_STATUS_FAILED) {
+        boltffi_release_class_boltffi_tests_class_test_fixture(fixture);
         return 785;
     }
     FfiBuf_u8 parse_text = boltffi_tests_string_buf("123", 3);
     int32_t parsed = 0;
-    FfiBuf_u8 parse_error = boltffi_method_class_boltffi_tests_classes_class_test_fixture_static_try_parse(parse_text.ptr, parse_text.len, &parsed);
+    FfiBuf_u8 parse_error = boltffi_method_class_boltffi_tests_class_test_fixture_static_try_parse(parse_text.ptr, parse_text.len, &parsed);
     boltffi_free_buf(parse_text);
     int parse_empty = boltffi_tests_check_empty_buf(parse_error, 786);
     if (parse_empty != 0 || parsed != 123) {
-        boltffi_release_class_boltffi_tests_classes_class_test_fixture(fixture);
+        boltffi_release_class_boltffi_tests_class_test_fixture(fixture);
         return 787;
     }
     const uint8_t maybe_expected[5] = {1, 42, 0, 0, 0};
     int maybe_value = boltffi_tests_check_buf(
-        boltffi_method_class_boltffi_tests_classes_class_test_fixture_static_maybe_value(true),
+        boltffi_method_class_boltffi_tests_class_test_fixture_static_maybe_value(true),
         maybe_expected,
         5,
         788
     );
     if (maybe_value != 0) {
-        boltffi_release_class_boltffi_tests_classes_class_test_fixture(fixture);
+        boltffi_release_class_boltffi_tests_class_test_fixture(fixture);
         return maybe_value;
     }
-    RustFutureHandle async_get_id = boltffi_method_class_boltffi_tests_classes_class_test_fixture_async_get_id(fixture);
-    boltffi_async_method_class_boltffi_tests_classes_class_test_fixture_async_get_id_poll(async_get_id, 0, boltffi_tests_async_noop);
+    RustFutureHandle async_get_id = boltffi_method_class_boltffi_tests_class_test_fixture_async_get_id(fixture);
+    boltffi_async_method_class_boltffi_tests_class_test_fixture_async_get_id_poll(async_get_id, 0, boltffi_tests_async_noop);
     FfiStatus async_id_status = FFI_STATUS_INTERNAL_ERROR;
-    int32_t async_id = boltffi_async_method_class_boltffi_tests_classes_class_test_fixture_async_get_id_complete(async_get_id, &async_id_status);
-    boltffi_async_method_class_boltffi_tests_classes_class_test_fixture_async_get_id_free(async_get_id);
+    int32_t async_id = boltffi_async_method_class_boltffi_tests_class_test_fixture_async_get_id_complete(async_get_id, &async_id_status);
+    boltffi_async_method_class_boltffi_tests_class_test_fixture_async_get_id_free(async_get_id);
     if (async_id_status.code != FFI_STATUS_OK.code || async_id != 77) {
-        boltffi_release_class_boltffi_tests_classes_class_test_fixture(fixture);
+        boltffi_release_class_boltffi_tests_class_test_fixture(fixture);
         return 791;
     }
-    RustFutureHandle async_set_id = boltffi_method_class_boltffi_tests_classes_class_test_fixture_async_set_id(fixture, 88);
-    boltffi_async_method_class_boltffi_tests_classes_class_test_fixture_async_set_id_poll(async_set_id, 0, boltffi_tests_async_noop);
+    RustFutureHandle async_set_id = boltffi_method_class_boltffi_tests_class_test_fixture_async_set_id(fixture, 88);
+    boltffi_async_method_class_boltffi_tests_class_test_fixture_async_set_id_poll(async_set_id, 0, boltffi_tests_async_noop);
     FfiStatus async_set_status = FFI_STATUS_INTERNAL_ERROR;
-    boltffi_async_method_class_boltffi_tests_classes_class_test_fixture_async_set_id_complete(async_set_id, &async_set_status);
-    boltffi_async_method_class_boltffi_tests_classes_class_test_fixture_async_set_id_free(async_set_id);
-    if (async_set_status.code != FFI_STATUS_OK.code || boltffi_method_class_boltffi_tests_classes_class_test_fixture_get_id(fixture) != 88) {
-        boltffi_release_class_boltffi_tests_classes_class_test_fixture(fixture);
+    boltffi_async_method_class_boltffi_tests_class_test_fixture_async_set_id_complete(async_set_id, &async_set_status);
+    boltffi_async_method_class_boltffi_tests_class_test_fixture_async_set_id_free(async_set_id);
+    if (async_set_status.code != FFI_STATUS_OK.code || boltffi_method_class_boltffi_tests_class_test_fixture_get_id(fixture) != 88) {
+        boltffi_release_class_boltffi_tests_class_test_fixture(fixture);
         return 792;
     }
-    RustFutureHandle async_get_name = boltffi_method_class_boltffi_tests_classes_class_test_fixture_async_get_name(fixture);
-    boltffi_async_method_class_boltffi_tests_classes_class_test_fixture_async_get_name_poll(async_get_name, 0, boltffi_tests_async_noop);
+    RustFutureHandle async_get_name = boltffi_method_class_boltffi_tests_class_test_fixture_async_get_name(fixture);
+    boltffi_async_method_class_boltffi_tests_class_test_fixture_async_get_name_poll(async_get_name, 0, boltffi_tests_async_noop);
     FfiStatus async_name_status = FFI_STATUS_INTERNAL_ERROR;
     int async_name = boltffi_tests_check_buf(
-        boltffi_async_method_class_boltffi_tests_classes_class_test_fixture_async_get_name_complete(async_get_name, &async_name_status),
+        boltffi_async_method_class_boltffi_tests_class_test_fixture_async_get_name_complete(async_get_name, &async_name_status),
         ali_expected,
         7,
         793
     );
-    boltffi_async_method_class_boltffi_tests_classes_class_test_fixture_async_get_name_free(async_get_name);
+    boltffi_async_method_class_boltffi_tests_class_test_fixture_async_get_name_free(async_get_name);
     if (async_name_status.code != FFI_STATUS_OK.code || async_name != 0) {
-        boltffi_release_class_boltffi_tests_classes_class_test_fixture(fixture);
+        boltffi_release_class_boltffi_tests_class_test_fixture(fixture);
         return 796;
     }
     FfiBuf_u8 zed = boltffi_tests_string_buf("zed", 3);
-    RustFutureHandle async_set_name = boltffi_method_class_boltffi_tests_classes_class_test_fixture_async_set_name(fixture, zed.ptr, zed.len);
+    RustFutureHandle async_set_name = boltffi_method_class_boltffi_tests_class_test_fixture_async_set_name(fixture, zed.ptr, zed.len);
     boltffi_free_buf(zed);
-    boltffi_async_method_class_boltffi_tests_classes_class_test_fixture_async_set_name_poll(async_set_name, 0, boltffi_tests_async_noop);
+    boltffi_async_method_class_boltffi_tests_class_test_fixture_async_set_name_poll(async_set_name, 0, boltffi_tests_async_noop);
     FfiStatus async_set_name_status = FFI_STATUS_INTERNAL_ERROR;
-    boltffi_async_method_class_boltffi_tests_classes_class_test_fixture_async_set_name_complete(async_set_name, &async_set_name_status);
-    boltffi_async_method_class_boltffi_tests_classes_class_test_fixture_async_set_name_free(async_set_name);
+    boltffi_async_method_class_boltffi_tests_class_test_fixture_async_set_name_complete(async_set_name, &async_set_name_status);
+    boltffi_async_method_class_boltffi_tests_class_test_fixture_async_set_name_free(async_set_name);
     const uint8_t zed_expected[7] = {3, 0, 0, 0, 'z', 'e', 'd'};
     int zed_check = boltffi_tests_check_buf(
-        boltffi_method_class_boltffi_tests_classes_class_test_fixture_get_name(fixture),
+        boltffi_method_class_boltffi_tests_class_test_fixture_get_name(fixture),
         zed_expected,
         7,
         797
     );
     if (async_set_name_status.code != FFI_STATUS_OK.code || zed_check != 0) {
-        boltffi_release_class_boltffi_tests_classes_class_test_fixture(fixture);
+        boltffi_release_class_boltffi_tests_class_test_fixture(fixture);
         return 800;
     }
-    RustFutureHandle async_sum = boltffi_method_class_boltffi_tests_classes_class_test_fixture_async_compute_sum(fixture);
-    boltffi_async_method_class_boltffi_tests_classes_class_test_fixture_async_compute_sum_poll(async_sum, 0, boltffi_tests_async_noop);
+    RustFutureHandle async_sum = boltffi_method_class_boltffi_tests_class_test_fixture_async_compute_sum(fixture);
+    boltffi_async_method_class_boltffi_tests_class_test_fixture_async_compute_sum_poll(async_sum, 0, boltffi_tests_async_noop);
     FfiStatus async_sum_status = FFI_STATUS_INTERNAL_ERROR;
-    int32_t async_sum_value = boltffi_async_method_class_boltffi_tests_classes_class_test_fixture_async_compute_sum_complete(async_sum, &async_sum_status);
-    boltffi_async_method_class_boltffi_tests_classes_class_test_fixture_async_compute_sum_free(async_sum);
+    int32_t async_sum_value = boltffi_async_method_class_boltffi_tests_class_test_fixture_async_compute_sum_complete(async_sum, &async_sum_status);
+    boltffi_async_method_class_boltffi_tests_class_test_fixture_async_compute_sum_free(async_sum);
     if (async_sum_status.code != FFI_STATUS_OK.code || async_sum_value != 3) {
-        boltffi_release_class_boltffi_tests_classes_class_test_fixture(fixture);
+        boltffi_release_class_boltffi_tests_class_test_fixture(fixture);
         return 801;
     }
-    RustFutureHandle async_add_value = boltffi_method_class_boltffi_tests_classes_class_test_fixture_async_add_value(fixture, 10);
-    boltffi_async_method_class_boltffi_tests_classes_class_test_fixture_async_add_value_poll(async_add_value, 0, boltffi_tests_async_noop);
+    RustFutureHandle async_add_value = boltffi_method_class_boltffi_tests_class_test_fixture_async_add_value(fixture, 10);
+    boltffi_async_method_class_boltffi_tests_class_test_fixture_async_add_value_poll(async_add_value, 0, boltffi_tests_async_noop);
     FfiStatus async_add_value_status = FFI_STATUS_INTERNAL_ERROR;
-    int32_t async_add_value_count = boltffi_async_method_class_boltffi_tests_classes_class_test_fixture_async_add_value_complete(async_add_value, &async_add_value_status);
-    boltffi_async_method_class_boltffi_tests_classes_class_test_fixture_async_add_value_free(async_add_value);
+    int32_t async_add_value_count = boltffi_async_method_class_boltffi_tests_class_test_fixture_async_add_value_complete(async_add_value, &async_add_value_status);
+    boltffi_async_method_class_boltffi_tests_class_test_fixture_async_add_value_free(async_add_value);
     if (async_add_value_status.code != FFI_STATUS_OK.code || async_add_value_count != 4) {
-        boltffi_release_class_boltffi_tests_classes_class_test_fixture(fixture);
+        boltffi_release_class_boltffi_tests_class_test_fixture(fixture);
         return 802;
     }
-    RustFutureHandle async_find = boltffi_method_class_boltffi_tests_classes_class_test_fixture_async_find(fixture, 10);
-    boltffi_async_method_class_boltffi_tests_classes_class_test_fixture_async_find_poll(async_find, 0, boltffi_tests_async_noop);
+    RustFutureHandle async_find = boltffi_method_class_boltffi_tests_class_test_fixture_async_find(fixture, 10);
+    boltffi_async_method_class_boltffi_tests_class_test_fixture_async_find_poll(async_find, 0, boltffi_tests_async_noop);
     FfiStatus async_find_status = FFI_STATUS_INTERNAL_ERROR;
     const uint8_t async_find_expected[5] = {1, 3, 0, 0, 0};
     int async_find_check = boltffi_tests_check_buf(
-        boltffi_async_method_class_boltffi_tests_classes_class_test_fixture_async_find_complete(async_find, &async_find_status),
+        boltffi_async_method_class_boltffi_tests_class_test_fixture_async_find_complete(async_find, &async_find_status),
         async_find_expected,
         5,
         803
     );
-    boltffi_async_method_class_boltffi_tests_classes_class_test_fixture_async_find_free(async_find);
+    boltffi_async_method_class_boltffi_tests_class_test_fixture_async_find_free(async_find);
     if (async_find_status.code != FFI_STATUS_OK.code || async_find_check != 0) {
-        boltffi_release_class_boltffi_tests_classes_class_test_fixture(fixture);
+        boltffi_release_class_boltffi_tests_class_test_fixture(fixture);
         return 806;
     }
-    RustFutureHandle async_try_get = boltffi_method_class_boltffi_tests_classes_class_test_fixture_async_try_get(fixture, 3);
-    boltffi_async_method_class_boltffi_tests_classes_class_test_fixture_async_try_get_poll(async_try_get, 0, boltffi_tests_async_noop);
+    RustFutureHandle async_try_get = boltffi_method_class_boltffi_tests_class_test_fixture_async_try_get(fixture, 3);
+    boltffi_async_method_class_boltffi_tests_class_test_fixture_async_try_get_poll(async_try_get, 0, boltffi_tests_async_noop);
     FfiStatus async_try_get_status = FFI_STATUS_INTERNAL_ERROR;
     int32_t async_try_get_value = 0;
-    FfiBuf_u8 async_try_get_error = boltffi_async_method_class_boltffi_tests_classes_class_test_fixture_async_try_get_complete(async_try_get, &async_try_get_status, &async_try_get_value);
+    FfiBuf_u8 async_try_get_error = boltffi_async_method_class_boltffi_tests_class_test_fixture_async_try_get_complete(async_try_get, &async_try_get_status, &async_try_get_value);
     int async_try_get_empty = boltffi_tests_check_empty_buf(async_try_get_error, 807);
-    boltffi_async_method_class_boltffi_tests_classes_class_test_fixture_async_try_get_free(async_try_get);
+    boltffi_async_method_class_boltffi_tests_class_test_fixture_async_try_get_free(async_try_get);
     if (async_try_get_status.code != FFI_STATUS_OK.code || async_try_get_empty != 0 || async_try_get_value != 10) {
-        boltffi_release_class_boltffi_tests_classes_class_test_fixture(fixture);
+        boltffi_release_class_boltffi_tests_class_test_fixture(fixture);
         return 808;
     }
     const uint8_t record[27] = {
@@ -1932,59 +1906,59 @@ static int boltffi_tests_check_callbacks(void) {
         0, 0, 0, 0, 0, 0, 8, 64,
         2, 0, 0, 0
     };
-    RustFutureHandle async_record = boltffi_method_class_boltffi_tests_classes_class_test_fixture_async_echo_message_record(fixture, record, 27);
-    boltffi_async_method_class_boltffi_tests_classes_class_test_fixture_async_echo_message_record_poll(async_record, 0, boltffi_tests_async_noop);
+    RustFutureHandle async_record = boltffi_method_class_boltffi_tests_class_test_fixture_async_echo_message_record(fixture, record, 27);
+    boltffi_async_method_class_boltffi_tests_class_test_fixture_async_echo_message_record_poll(async_record, 0, boltffi_tests_async_noop);
     FfiStatus async_record_status = FFI_STATUS_INTERNAL_ERROR;
     int async_record_check = boltffi_tests_check_buf(
-        boltffi_async_method_class_boltffi_tests_classes_class_test_fixture_async_echo_message_record_complete(async_record, &async_record_status),
+        boltffi_async_method_class_boltffi_tests_class_test_fixture_async_echo_message_record_complete(async_record, &async_record_status),
         record,
         27,
         809
     );
-    boltffi_async_method_class_boltffi_tests_classes_class_test_fixture_async_echo_message_record_free(async_record);
+    boltffi_async_method_class_boltffi_tests_class_test_fixture_async_echo_message_record_free(async_record);
     if (async_record_status.code != FFI_STATUS_OK.code || async_record_check != 0) {
-        boltffi_release_class_boltffi_tests_classes_class_test_fixture(fixture);
+        boltffi_release_class_boltffi_tests_class_test_fixture(fixture);
         return 812;
     }
-    boltffi_release_class_boltffi_tests_classes_class_test_fixture(fixture);
-    uint64_t with_id = boltffi_init_class_boltffi_tests_classes_class_test_fixture_new_with_id(123);
-    if (with_id == 0 || boltffi_method_class_boltffi_tests_classes_class_test_fixture_get_id(with_id) != 123) {
+    boltffi_release_class_boltffi_tests_class_test_fixture(fixture);
+    uint64_t with_id = boltffi_init_class_boltffi_tests_class_test_fixture_new_with_id(123);
+    if (with_id == 0 || boltffi_method_class_boltffi_tests_class_test_fixture_get_id(with_id) != 123) {
         return 813;
     }
-    boltffi_release_class_boltffi_tests_classes_class_test_fixture(with_id);
-    uint64_t named = boltffi_init_class_boltffi_tests_classes_class_test_fixture_new_with_name(ali_expected, 7);
+    boltffi_release_class_boltffi_tests_class_test_fixture(with_id);
+    uint64_t named = boltffi_init_class_boltffi_tests_class_test_fixture_new_with_name(ali_expected, 7);
     if (named == 0) {
         return 794;
     }
-    boltffi_release_class_boltffi_tests_classes_class_test_fixture(named);
+    boltffi_release_class_boltffi_tests_class_test_fixture(named);
     ___FixturePoint constructor_point = { 6.0, 7.0 };
-    uint64_t with_point = boltffi_init_class_boltffi_tests_classes_class_test_fixture_new_with_point(constructor_point);
+    uint64_t with_point = boltffi_init_class_boltffi_tests_class_test_fixture_new_with_point(constructor_point);
     if (with_point == 0) {
         return 814;
     }
-    ___FixturePoint with_point_value = boltffi_method_class_boltffi_tests_classes_class_test_fixture_get_point(with_point);
+    ___FixturePoint with_point_value = boltffi_method_class_boltffi_tests_class_test_fixture_get_point(with_point);
     if (with_point_value.x != 6.0 || with_point_value.y != 7.0) {
         return 817;
     }
-    boltffi_release_class_boltffi_tests_classes_class_test_fixture(with_point);
-    uint64_t with_status = boltffi_init_class_boltffi_tests_classes_class_test_fixture_new_with_status(FIXTURE_STATUS_ACTIVE);
-    if (with_status == 0 || boltffi_method_class_boltffi_tests_classes_class_test_fixture_get_status(with_status) != FIXTURE_STATUS_ACTIVE) {
+    boltffi_release_class_boltffi_tests_class_test_fixture(with_point);
+    uint64_t with_status = boltffi_init_class_boltffi_tests_class_test_fixture_new_with_status(FIXTURE_STATUS_ACTIVE);
+    if (with_status == 0 || boltffi_method_class_boltffi_tests_class_test_fixture_get_status(with_status) != FIXTURE_STATUS_ACTIVE) {
         return 795;
     }
-    boltffi_release_class_boltffi_tests_classes_class_test_fixture(with_status);
+    boltffi_release_class_boltffi_tests_class_test_fixture(with_status);
     ___FixturePoint full_point = { 1.0, 2.0 };
-    uint64_t full = boltffi_init_class_boltffi_tests_classes_class_test_fixture_new_full(321, zed_expected, 7, full_point, FIXTURE_STATUS_FAILED);
-    if (full == 0 || boltffi_method_class_boltffi_tests_classes_class_test_fixture_get_id(full) != 321 || boltffi_method_class_boltffi_tests_classes_class_test_fixture_get_status(full) != FIXTURE_STATUS_FAILED) {
+    uint64_t full = boltffi_init_class_boltffi_tests_class_test_fixture_new_full(321, zed_expected, 7, full_point, FIXTURE_STATUS_FAILED);
+    if (full == 0 || boltffi_method_class_boltffi_tests_class_test_fixture_get_id(full) != 321 || boltffi_method_class_boltffi_tests_class_test_fixture_get_status(full) != FIXTURE_STATUS_FAILED) {
         return 818;
     }
-    boltffi_release_class_boltffi_tests_classes_class_test_fixture(full);
+    boltffi_release_class_boltffi_tests_class_test_fixture(full);
     uint64_t created = 0;
-    FfiBuf_u8 create_error = boltffi_init_class_boltffi_tests_classes_class_test_fixture_try_new(9, &created);
+    FfiBuf_u8 create_error = boltffi_init_class_boltffi_tests_class_test_fixture_try_new(9, &created);
     int create_empty = boltffi_tests_check_empty_buf(create_error, 796);
     if (create_empty != 0 || created == 0) {
         return 797;
     }
-    boltffi_release_class_boltffi_tests_classes_class_test_fixture(created);
+    boltffi_release_class_boltffi_tests_class_test_fixture(created);
     return 0;
 }
 "#
@@ -1999,154 +1973,154 @@ static void boltffi_tests_stream_capture(uint64_t data, StreamPollResult result)
 }
 
 static int boltffi_tests_check_streams(void) {
-    uint64_t stream = boltffi_init_class_boltffi_tests_streams_counter_stream_new();
+    uint64_t stream = boltffi_init_class_boltffi_tests_counter_stream_new();
     if (stream == 0) {
         return 751;
     }
-    uint64_t subscription = boltffi_stream_boltffi_tests_streams_counter_stream_subscribe_subscribe(stream);
+    uint64_t subscription = boltffi_stream_boltffi_tests_counter_stream_subscribe_subscribe(stream);
     if (subscription == 0) {
-        boltffi_release_class_boltffi_tests_streams_counter_stream(stream);
+        boltffi_release_class_boltffi_tests_counter_stream(stream);
         return 752;
     }
-    FfiStatus first = boltffi_method_class_boltffi_tests_streams_counter_stream_emit(stream, 10);
-    FfiStatus second = boltffi_method_class_boltffi_tests_streams_counter_stream_emit(stream, 20);
+    FfiStatus first = boltffi_method_class_boltffi_tests_counter_stream_emit(stream, 10);
+    FfiStatus second = boltffi_method_class_boltffi_tests_counter_stream_emit(stream, 20);
     if (first.code != FFI_STATUS_OK.code || second.code != FFI_STATUS_OK.code) {
-        boltffi_stream_boltffi_tests_streams_counter_stream_subscribe_free(subscription);
-        boltffi_release_class_boltffi_tests_streams_counter_stream(stream);
+        boltffi_stream_boltffi_tests_counter_stream_subscribe_free(subscription);
+        boltffi_release_class_boltffi_tests_counter_stream(stream);
         return 753;
     }
-    if (boltffi_stream_boltffi_tests_streams_counter_stream_subscribe_wait(subscription, 0) != 1) {
-        boltffi_stream_boltffi_tests_streams_counter_stream_subscribe_free(subscription);
-        boltffi_release_class_boltffi_tests_streams_counter_stream(stream);
+    if (boltffi_stream_boltffi_tests_counter_stream_subscribe_wait(subscription, 0) != 1) {
+        boltffi_stream_boltffi_tests_counter_stream_subscribe_free(subscription);
+        boltffi_release_class_boltffi_tests_counter_stream(stream);
         return 754;
     }
     boltffi_tests_stream_poll_result = -1;
-    boltffi_stream_boltffi_tests_streams_counter_stream_subscribe_poll(subscription, 0, boltffi_tests_stream_capture);
+    boltffi_stream_boltffi_tests_counter_stream_subscribe_poll(subscription, 0, boltffi_tests_stream_capture);
     if (boltffi_tests_stream_poll_result != 0) {
-        boltffi_stream_boltffi_tests_streams_counter_stream_subscribe_free(subscription);
-        boltffi_release_class_boltffi_tests_streams_counter_stream(stream);
+        boltffi_stream_boltffi_tests_counter_stream_subscribe_free(subscription);
+        boltffi_release_class_boltffi_tests_counter_stream(stream);
         return 755;
     }
     int32_t values[2] = {0, 0};
-    uintptr_t count = boltffi_stream_boltffi_tests_streams_counter_stream_subscribe_pop_batch(subscription, values, 2);
+    uintptr_t count = boltffi_stream_boltffi_tests_counter_stream_subscribe_pop_batch(subscription, values, 2);
     if (count != 2 || values[0] != 10 || values[1] != 20) {
-        boltffi_stream_boltffi_tests_streams_counter_stream_subscribe_free(subscription);
-        boltffi_release_class_boltffi_tests_streams_counter_stream(stream);
+        boltffi_stream_boltffi_tests_counter_stream_subscribe_free(subscription);
+        boltffi_release_class_boltffi_tests_counter_stream(stream);
         return 756;
     }
     int32_t batch_values[3] = {30, 40, 50};
-    if (boltffi_method_class_boltffi_tests_streams_counter_stream_emit_batch(stream, batch_values, 3) != 3) {
-        boltffi_stream_boltffi_tests_streams_counter_stream_subscribe_free(subscription);
-        boltffi_release_class_boltffi_tests_streams_counter_stream(stream);
+    if (boltffi_method_class_boltffi_tests_counter_stream_emit_batch(stream, batch_values, 3) != 3) {
+        boltffi_stream_boltffi_tests_counter_stream_subscribe_free(subscription);
+        boltffi_release_class_boltffi_tests_counter_stream(stream);
         return 757;
     }
-    boltffi_stream_boltffi_tests_streams_counter_stream_subscribe_unsubscribe(subscription);
-    if (boltffi_stream_boltffi_tests_streams_counter_stream_subscribe_wait(subscription, 0) != -1) {
-        boltffi_stream_boltffi_tests_streams_counter_stream_subscribe_free(subscription);
-        boltffi_release_class_boltffi_tests_streams_counter_stream(stream);
+    boltffi_stream_boltffi_tests_counter_stream_subscribe_unsubscribe(subscription);
+    if (boltffi_stream_boltffi_tests_counter_stream_subscribe_wait(subscription, 0) != -1) {
+        boltffi_stream_boltffi_tests_counter_stream_subscribe_free(subscription);
+        boltffi_release_class_boltffi_tests_counter_stream(stream);
         return 758;
     }
-    boltffi_stream_boltffi_tests_streams_counter_stream_subscribe_free(subscription);
-    boltffi_release_class_boltffi_tests_streams_counter_stream(stream);
-    uint64_t point_stream = boltffi_init_class_boltffi_tests_streams_point_stream_new();
+    boltffi_stream_boltffi_tests_counter_stream_subscribe_free(subscription);
+    boltffi_release_class_boltffi_tests_counter_stream(stream);
+    uint64_t point_stream = boltffi_init_class_boltffi_tests_point_stream_new();
     if (point_stream == 0) {
         return 759;
     }
-    uint64_t point_subscription = boltffi_stream_boltffi_tests_streams_point_stream_subscribe_subscribe(point_stream);
+    uint64_t point_subscription = boltffi_stream_boltffi_tests_point_stream_subscribe_subscribe(point_stream);
     if (point_subscription == 0) {
-        boltffi_release_class_boltffi_tests_streams_point_stream(point_stream);
+        boltffi_release_class_boltffi_tests_point_stream(point_stream);
         return 760;
     }
     ___FixturePoint point = { 1.5, 2.5 };
-    FfiStatus point_emit = boltffi_method_class_boltffi_tests_streams_point_stream_emit(point_stream, point);
+    FfiStatus point_emit = boltffi_method_class_boltffi_tests_point_stream_emit(point_stream, point);
     if (point_emit.code != FFI_STATUS_OK.code) {
-        boltffi_stream_boltffi_tests_streams_point_stream_subscribe_free(point_subscription);
-        boltffi_release_class_boltffi_tests_streams_point_stream(point_stream);
+        boltffi_stream_boltffi_tests_point_stream_subscribe_free(point_subscription);
+        boltffi_release_class_boltffi_tests_point_stream(point_stream);
         return 761;
     }
     ___FixturePoint point_batch[1] = {0};
-    uintptr_t point_batch_count = boltffi_stream_boltffi_tests_streams_point_stream_subscribe_pop_batch(point_subscription, point_batch, 1);
+    uintptr_t point_batch_count = boltffi_stream_boltffi_tests_point_stream_subscribe_pop_batch(point_subscription, point_batch, 1);
     if (point_batch_count != 1 || point_batch[0].x != 1.5 || point_batch[0].y != 2.5) {
-        boltffi_stream_boltffi_tests_streams_point_stream_subscribe_free(point_subscription);
-        boltffi_release_class_boltffi_tests_streams_point_stream(point_stream);
+        boltffi_stream_boltffi_tests_point_stream_subscribe_free(point_subscription);
+        boltffi_release_class_boltffi_tests_point_stream(point_stream);
         return 762;
     }
     ___FixturePoint point_again = { 3.5, 4.5 };
-    FfiStatus point_again_emit = boltffi_method_class_boltffi_tests_streams_point_stream_emit(point_stream, point_again);
+    FfiStatus point_again_emit = boltffi_method_class_boltffi_tests_point_stream_emit(point_stream, point_again);
     if (point_again_emit.code != FFI_STATUS_OK.code) {
-        boltffi_stream_boltffi_tests_streams_point_stream_subscribe_free(point_subscription);
-        boltffi_release_class_boltffi_tests_streams_point_stream(point_stream);
+        boltffi_stream_boltffi_tests_point_stream_subscribe_free(point_subscription);
+        boltffi_release_class_boltffi_tests_point_stream(point_stream);
         return 765;
     }
     boltffi_tests_stream_poll_result = -1;
-    boltffi_stream_boltffi_tests_streams_point_stream_subscribe_poll(point_subscription, 0, boltffi_tests_stream_capture);
+    boltffi_stream_boltffi_tests_point_stream_subscribe_poll(point_subscription, 0, boltffi_tests_stream_capture);
     if (boltffi_tests_stream_poll_result != 0) {
-        boltffi_stream_boltffi_tests_streams_point_stream_subscribe_free(point_subscription);
-        boltffi_release_class_boltffi_tests_streams_point_stream(point_stream);
+        boltffi_stream_boltffi_tests_point_stream_subscribe_free(point_subscription);
+        boltffi_release_class_boltffi_tests_point_stream(point_stream);
         return 766;
     }
-    boltffi_stream_boltffi_tests_streams_point_stream_subscribe_unsubscribe(point_subscription);
-    if (boltffi_stream_boltffi_tests_streams_point_stream_subscribe_wait(point_subscription, 0) != -1) {
-        boltffi_stream_boltffi_tests_streams_point_stream_subscribe_free(point_subscription);
-        boltffi_release_class_boltffi_tests_streams_point_stream(point_stream);
+    boltffi_stream_boltffi_tests_point_stream_subscribe_unsubscribe(point_subscription);
+    if (boltffi_stream_boltffi_tests_point_stream_subscribe_wait(point_subscription, 0) != -1) {
+        boltffi_stream_boltffi_tests_point_stream_subscribe_free(point_subscription);
+        boltffi_release_class_boltffi_tests_point_stream(point_stream);
         return 767;
     }
-    boltffi_stream_boltffi_tests_streams_point_stream_subscribe_free(point_subscription);
-    boltffi_release_class_boltffi_tests_streams_point_stream(point_stream);
-    uint64_t label_stream = boltffi_init_class_boltffi_tests_streams_label_stream_new();
+    boltffi_stream_boltffi_tests_point_stream_subscribe_free(point_subscription);
+    boltffi_release_class_boltffi_tests_point_stream(point_stream);
+    uint64_t label_stream = boltffi_init_class_boltffi_tests_label_stream_new();
     if (label_stream == 0) {
         return 768;
     }
-    uint64_t label_subscription = boltffi_stream_boltffi_tests_streams_label_stream_subscribe_subscribe(label_stream);
+    uint64_t label_subscription = boltffi_stream_boltffi_tests_label_stream_subscribe_subscribe(label_stream);
     if (label_subscription == 0) {
-        boltffi_release_class_boltffi_tests_streams_label_stream(label_stream);
+        boltffi_release_class_boltffi_tests_label_stream(label_stream);
         return 769;
     }
     FfiBuf_u8 label = boltffi_tests_string_buf("one", 3);
-    FfiStatus label_emit = boltffi_method_class_boltffi_tests_streams_label_stream_emit(label_stream, label.ptr, label.len);
+    FfiStatus label_emit = boltffi_method_class_boltffi_tests_label_stream_emit(label_stream, label.ptr, label.len);
     boltffi_free_buf(label);
     if (label_emit.code != FFI_STATUS_OK.code) {
-        boltffi_stream_boltffi_tests_streams_label_stream_subscribe_free(label_subscription);
-        boltffi_release_class_boltffi_tests_streams_label_stream(label_stream);
+        boltffi_stream_boltffi_tests_label_stream_subscribe_free(label_subscription);
+        boltffi_release_class_boltffi_tests_label_stream(label_stream);
         return 770;
     }
-    FfiBuf_u8 labels = boltffi_stream_boltffi_tests_streams_label_stream_subscribe_pop_batch(label_subscription, 1);
+    FfiBuf_u8 labels = boltffi_stream_boltffi_tests_label_stream_subscribe_pop_batch(label_subscription, 1);
     const uint8_t joined_expected[7] = {3, 0, 0, 0, 'o', 'n', 'e'};
     int joined = boltffi_tests_check_buf(
-        boltffi_function_boltffi_tests_vectors_join_labels(labels.ptr, labels.len),
+        boltffi_function_boltffi_tests_join_labels(labels.ptr, labels.len),
         joined_expected,
         7,
         771
     );
     boltffi_free_buf(labels);
     if (joined != 0) {
-        boltffi_stream_boltffi_tests_streams_label_stream_subscribe_free(label_subscription);
-        boltffi_release_class_boltffi_tests_streams_label_stream(label_stream);
+        boltffi_stream_boltffi_tests_label_stream_subscribe_free(label_subscription);
+        boltffi_release_class_boltffi_tests_label_stream(label_stream);
         return joined;
     }
     FfiBuf_u8 label_again = boltffi_tests_string_buf("two", 3);
-    FfiStatus label_again_emit = boltffi_method_class_boltffi_tests_streams_label_stream_emit(label_stream, label_again.ptr, label_again.len);
+    FfiStatus label_again_emit = boltffi_method_class_boltffi_tests_label_stream_emit(label_stream, label_again.ptr, label_again.len);
     boltffi_free_buf(label_again);
     if (label_again_emit.code != FFI_STATUS_OK.code) {
-        boltffi_stream_boltffi_tests_streams_label_stream_subscribe_free(label_subscription);
-        boltffi_release_class_boltffi_tests_streams_label_stream(label_stream);
+        boltffi_stream_boltffi_tests_label_stream_subscribe_free(label_subscription);
+        boltffi_release_class_boltffi_tests_label_stream(label_stream);
         return 774;
     }
     boltffi_tests_stream_poll_result = -1;
-    boltffi_stream_boltffi_tests_streams_label_stream_subscribe_poll(label_subscription, 0, boltffi_tests_stream_capture);
+    boltffi_stream_boltffi_tests_label_stream_subscribe_poll(label_subscription, 0, boltffi_tests_stream_capture);
     if (boltffi_tests_stream_poll_result != 0) {
-        boltffi_stream_boltffi_tests_streams_label_stream_subscribe_free(label_subscription);
-        boltffi_release_class_boltffi_tests_streams_label_stream(label_stream);
+        boltffi_stream_boltffi_tests_label_stream_subscribe_free(label_subscription);
+        boltffi_release_class_boltffi_tests_label_stream(label_stream);
         return 775;
     }
-    boltffi_stream_boltffi_tests_streams_label_stream_subscribe_unsubscribe(label_subscription);
-    if (boltffi_stream_boltffi_tests_streams_label_stream_subscribe_wait(label_subscription, 0) != -1) {
-        boltffi_stream_boltffi_tests_streams_label_stream_subscribe_free(label_subscription);
-        boltffi_release_class_boltffi_tests_streams_label_stream(label_stream);
+    boltffi_stream_boltffi_tests_label_stream_subscribe_unsubscribe(label_subscription);
+    if (boltffi_stream_boltffi_tests_label_stream_subscribe_wait(label_subscription, 0) != -1) {
+        boltffi_stream_boltffi_tests_label_stream_subscribe_free(label_subscription);
+        boltffi_release_class_boltffi_tests_label_stream(label_stream);
         return 776;
     }
-    boltffi_stream_boltffi_tests_streams_label_stream_subscribe_free(label_subscription);
-    boltffi_release_class_boltffi_tests_streams_label_stream(label_stream);
+    boltffi_stream_boltffi_tests_label_stream_subscribe_free(label_subscription);
+    boltffi_release_class_boltffi_tests_label_stream(label_stream);
     return 0;
 }
 "#
@@ -2155,13 +2129,13 @@ static int boltffi_tests_check_streams(void) {
     fn results_harness(&self) -> &'static str {
         r#"static int boltffi_tests_check_results(void) {
     int32_t fixture_error_value = 0;
-    FfiBuf_u8 fixture_error = boltffi_function_boltffi_tests_results_fallible_divide(12, 3, &fixture_error_value);
+    FfiBuf_u8 fixture_error = boltffi_function_boltffi_tests_fallible_divide(12, 3, &fixture_error_value);
     int fixture_error_empty = boltffi_tests_check_empty_buf(fixture_error, 690);
     if (fixture_error_empty != 0 || fixture_error_value != 4) {
         return 691;
     }
     FfiBuf_u8 lookup = {0};
-    FfiBuf_u8 lookup_error = boltffi_function_boltffi_tests_results_fallible_lookup(2, &lookup);
+    FfiBuf_u8 lookup_error = boltffi_function_boltffi_tests_fallible_lookup(2, &lookup);
     int lookup_empty = boltffi_tests_check_empty_buf(lookup_error, 692);
     if (lookup_empty != 0) {
         return lookup_empty;
@@ -2172,13 +2146,13 @@ static int boltffi_tests_check_streams(void) {
         return lookup_check;
     }
     int32_t simple_value = 0;
-    FfiBuf_u8 simple_error = boltffi_function_boltffi_tests_results_simple_try_divide(9, 3, &simple_value);
+    FfiBuf_u8 simple_error = boltffi_function_boltffi_tests_simple_try_divide(9, 3, &simple_value);
     int simple_empty = boltffi_tests_check_empty_buf(simple_error, 696);
     if (simple_empty != 0 || simple_value != 3) {
         return 697;
     }
     int32_t value = 0;
-    FfiBuf_u8 ok_error = boltffi_function_boltffi_tests_results_try_divide(12, 3, &value);
+    FfiBuf_u8 ok_error = boltffi_function_boltffi_tests_try_divide(12, 3, &value);
     if (ok_error.len != 0) {
         boltffi_free_buf(ok_error);
         return 701;
@@ -2186,13 +2160,13 @@ static int boltffi_tests_check_streams(void) {
     if (value != 4) {
         return 702;
     }
-    FfiBuf_u8 ping = boltffi_function_boltffi_tests_results_try_ping(false);
+    FfiBuf_u8 ping = boltffi_function_boltffi_tests_try_ping(false);
     int ping_empty = boltffi_tests_check_empty_buf(ping, 703);
     if (ping_empty != 0) {
         return ping_empty;
     }
     FfiBuf_u8 greeting = {0};
-    FfiBuf_u8 greeting_error = boltffi_function_boltffi_tests_results_try_greet(false, &greeting);
+    FfiBuf_u8 greeting_error = boltffi_function_boltffi_tests_try_greet(false, &greeting);
     int greeting_empty = boltffi_tests_check_empty_buf(greeting_error, 704);
     if (greeting_empty != 0) {
         return greeting_empty;
@@ -2203,7 +2177,7 @@ static int boltffi_tests_check_streams(void) {
         return greeting_check;
     }
     ___FixtureRect rect = {0};
-    FfiBuf_u8 rect_error = boltffi_function_boltffi_tests_results_try_rect(false, &rect);
+    FfiBuf_u8 rect_error = boltffi_function_boltffi_tests_try_rect(false, &rect);
     int rect_empty = boltffi_tests_check_empty_buf(rect_error, 708);
     if (rect_empty != 0) {
         return rect_empty;
@@ -2212,7 +2186,7 @@ static int boltffi_tests_check_streams(void) {
         return 709;
     }
     FfiBuf_u8 message = {0};
-    FfiBuf_u8 message_error = boltffi_function_boltffi_tests_results_try_message(false, &message);
+    FfiBuf_u8 message_error = boltffi_function_boltffi_tests_try_message(false, &message);
     int message_empty = boltffi_tests_check_empty_buf(message_error, 710);
     if (message_empty != 0) {
         return message_empty;
@@ -2225,7 +2199,7 @@ static int boltffi_tests_check_streams(void) {
     int32_t failed_value = 0;
     const uint8_t error_expected[18] = {14, 0, 0, 0, 'd', 'i', 'v', 'i', 'd', 'e', ' ', 'b', 'y', ' ', 'z', 'e', 'r', 'o'};
     int divide_error = boltffi_tests_check_buf(
-        boltffi_function_boltffi_tests_results_try_divide(12, 0, &failed_value),
+        boltffi_function_boltffi_tests_try_divide(12, 0, &failed_value),
         error_expected,
         18,
         712
@@ -2235,7 +2209,7 @@ static int boltffi_tests_check_streams(void) {
     }
     int32_t status_return = 0;
     int status_error = boltffi_tests_check_i32_buf(
-        boltffi_function_boltffi_tests_results_try_status_err(-1, &status_return),
+        boltffi_function_boltffi_tests_try_status_err(-1, &status_return),
         FIXTURE_STATUS_FAILED,
         715
     );
@@ -2243,119 +2217,119 @@ static int boltffi_tests_check_streams(void) {
         return status_error;
     }
     int32_t shape_return = 0;
-    FfiBuf_u8 shape_error = boltffi_function_boltffi_tests_results_try_shape_err(-5, &shape_return);
+    FfiBuf_u8 shape_error = boltffi_function_boltffi_tests_try_shape_err(-5, &shape_return);
     if (shape_error.len == 0) {
         return 718;
     }
     boltffi_free_buf(shape_error);
-    RustFutureHandle fetch = boltffi_function_boltffi_tests_results_async_fallible_fetch(8);
-    boltffi_async_function_boltffi_tests_results_async_fallible_fetch_poll(fetch, 0, boltffi_tests_async_noop);
+    RustFutureHandle fetch = boltffi_function_boltffi_tests_async_fallible_fetch(8);
+    boltffi_async_function_boltffi_tests_async_fallible_fetch_poll(fetch, 0, boltffi_tests_async_noop);
     FfiStatus fetch_status = FFI_STATUS_INTERNAL_ERROR;
     FfiBuf_u8 fetch_value = {0};
-    FfiBuf_u8 fetch_error = boltffi_async_function_boltffi_tests_results_async_fallible_fetch_complete(fetch, &fetch_status, &fetch_value);
+    FfiBuf_u8 fetch_error = boltffi_async_function_boltffi_tests_async_fallible_fetch_complete(fetch, &fetch_status, &fetch_value);
     int fetch_empty = boltffi_tests_check_empty_buf(fetch_error, 719);
     if (fetch_status.code != FFI_STATUS_OK.code || fetch_empty != 0) {
-        boltffi_async_function_boltffi_tests_results_async_fallible_fetch_free(fetch);
+        boltffi_async_function_boltffi_tests_async_fallible_fetch_free(fetch);
         return 720;
     }
     const uint8_t fetch_expected[11] = {7, 0, 0, 0, 'v', 'a', 'l', 'u', 'e', '_', '8'};
     int fetch_check = boltffi_tests_check_buf(fetch_value, fetch_expected, 11, 721);
-    boltffi_async_function_boltffi_tests_results_async_fallible_fetch_free(fetch);
+    boltffi_async_function_boltffi_tests_async_fallible_fetch_free(fetch);
     if (fetch_check != 0) {
         return fetch_check;
     }
-    uint64_t service = boltffi_init_class_boltffi_tests_results_fallible_service_new();
+    uint64_t service = boltffi_init_class_boltffi_tests_fallible_service_new();
     if (service == 0) {
         return 724;
     }
-    FfiStatus service_mode = boltffi_method_class_boltffi_tests_results_fallible_service_set_failure_mode(service, 0);
+    FfiStatus service_mode = boltffi_method_class_boltffi_tests_fallible_service_set_failure_mode(service, 0);
     int32_t service_value = 0;
-    FfiBuf_u8 service_error = boltffi_method_class_boltffi_tests_results_fallible_service_get_value(service, 9, &service_value);
+    FfiBuf_u8 service_error = boltffi_method_class_boltffi_tests_fallible_service_get_value(service, 9, &service_value);
     int service_empty = boltffi_tests_check_empty_buf(service_error, 725);
     if (service_mode.code != FFI_STATUS_OK.code || service_empty != 0 || service_value != 18) {
-        boltffi_release_class_boltffi_tests_results_fallible_service(service);
+        boltffi_release_class_boltffi_tests_fallible_service(service);
         return 726;
     }
     const uint8_t service_option_expected[5] = {1, 15, 0, 0, 0};
     int service_option = boltffi_tests_check_buf(
-        boltffi_method_class_boltffi_tests_results_fallible_service_get_optional(service, 5),
+        boltffi_method_class_boltffi_tests_fallible_service_get_optional(service, 5),
         service_option_expected,
         5,
         727
     );
     if (service_option != 0) {
-        boltffi_release_class_boltffi_tests_results_fallible_service(service);
+        boltffi_release_class_boltffi_tests_fallible_service(service);
         return service_option;
     }
     FfiBuf_u8 nested_value = {0};
-    FfiBuf_u8 nested_error = boltffi_method_class_boltffi_tests_results_fallible_service_get_nested_result(service, 3, &nested_value);
+    FfiBuf_u8 nested_error = boltffi_method_class_boltffi_tests_fallible_service_get_nested_result(service, 3, &nested_value);
     int nested_empty = boltffi_tests_check_empty_buf(nested_error, 730);
     const uint8_t nested_expected[5] = {1, 12, 0, 0, 0};
     int nested_check = boltffi_tests_check_buf(nested_value, nested_expected, 5, 731);
     if (nested_empty != 0 || nested_check != 0) {
-        boltffi_release_class_boltffi_tests_results_fallible_service(service);
+        boltffi_release_class_boltffi_tests_fallible_service(service);
         return 734;
     }
     uint64_t counter_handle = 0;
-    FfiBuf_u8 counter_error = boltffi_method_class_boltffi_tests_results_fallible_service_try_make_counter(service, 7, &counter_handle);
+    FfiBuf_u8 counter_error = boltffi_method_class_boltffi_tests_fallible_service_try_make_counter(service, 7, &counter_handle);
     int counter_err_empty = boltffi_tests_check_empty_buf(counter_error, 738);
     if (counter_err_empty != 0 || counter_handle == 0) {
-        boltffi_release_class_boltffi_tests_results_fallible_service(service);
+        boltffi_release_class_boltffi_tests_fallible_service(service);
         return 740;
     }
-    boltffi_release_class_boltffi_tests_classes_test_counter(counter_handle);
-    RustFutureHandle async_service = boltffi_method_class_boltffi_tests_results_fallible_service_async_get_value(service, 4);
-    boltffi_async_method_class_boltffi_tests_results_fallible_service_async_get_value_poll(async_service, 0, boltffi_tests_async_noop);
+    boltffi_release_class_boltffi_tests_test_counter(counter_handle);
+    RustFutureHandle async_service = boltffi_method_class_boltffi_tests_fallible_service_async_get_value(service, 4);
+    boltffi_async_method_class_boltffi_tests_fallible_service_async_get_value_poll(async_service, 0, boltffi_tests_async_noop);
     FfiStatus async_service_status = FFI_STATUS_INTERNAL_ERROR;
     int32_t async_service_value = 0;
-    FfiBuf_u8 async_service_error = boltffi_async_method_class_boltffi_tests_results_fallible_service_async_get_value_complete(async_service, &async_service_status, &async_service_value);
+    FfiBuf_u8 async_service_error = boltffi_async_method_class_boltffi_tests_fallible_service_async_get_value_complete(async_service, &async_service_status, &async_service_value);
     int async_service_empty = boltffi_tests_check_empty_buf(async_service_error, 735);
-    boltffi_async_method_class_boltffi_tests_results_fallible_service_async_get_value_free(async_service);
+    boltffi_async_method_class_boltffi_tests_fallible_service_async_get_value_free(async_service);
     if (async_service_status.code != FFI_STATUS_OK.code || async_service_empty != 0 || async_service_value != 8) {
-        boltffi_release_class_boltffi_tests_results_fallible_service(service);
+        boltffi_release_class_boltffi_tests_fallible_service(service);
         return 736;
     }
-    boltffi_release_class_boltffi_tests_results_fallible_service(service);
-    uint64_t task = boltffi_init_class_boltffi_tests_results_cancellable_task_new();
+    boltffi_release_class_boltffi_tests_fallible_service(service);
+    uint64_t task = boltffi_init_class_boltffi_tests_cancellable_task_new();
     if (task == 0) {
         return 737;
     }
-    if (boltffi_method_class_boltffi_tests_results_cancellable_task_was_started(task)) {
-        boltffi_release_class_boltffi_tests_results_cancellable_task(task);
+    if (boltffi_method_class_boltffi_tests_cancellable_task_was_started(task)) {
+        boltffi_release_class_boltffi_tests_cancellable_task(task);
         return 738;
     }
-    RustFutureHandle instant = boltffi_method_class_boltffi_tests_results_cancellable_task_instant_task(task);
-    boltffi_async_method_class_boltffi_tests_results_cancellable_task_instant_task_poll(instant, 0, boltffi_tests_async_noop);
+    RustFutureHandle instant = boltffi_method_class_boltffi_tests_cancellable_task_instant_task(task);
+    boltffi_async_method_class_boltffi_tests_cancellable_task_instant_task_poll(instant, 0, boltffi_tests_async_noop);
     FfiStatus instant_status = FFI_STATUS_INTERNAL_ERROR;
-    int32_t instant_value = boltffi_async_method_class_boltffi_tests_results_cancellable_task_instant_task_complete(instant, &instant_status);
-    boltffi_async_method_class_boltffi_tests_results_cancellable_task_instant_task_free(instant);
+    int32_t instant_value = boltffi_async_method_class_boltffi_tests_cancellable_task_instant_task_complete(instant, &instant_status);
+    boltffi_async_method_class_boltffi_tests_cancellable_task_instant_task_free(instant);
     if (instant_status.code != FFI_STATUS_OK.code || instant_value != 99) {
-        boltffi_release_class_boltffi_tests_results_cancellable_task(task);
+        boltffi_release_class_boltffi_tests_cancellable_task(task);
         return 739;
     }
-    if (!boltffi_method_class_boltffi_tests_results_cancellable_task_was_started(task) || !boltffi_method_class_boltffi_tests_results_cancellable_task_was_completed(task)) {
-        boltffi_release_class_boltffi_tests_results_cancellable_task(task);
+    if (!boltffi_method_class_boltffi_tests_cancellable_task_was_started(task) || !boltffi_method_class_boltffi_tests_cancellable_task_was_completed(task)) {
+        boltffi_release_class_boltffi_tests_cancellable_task(task);
         return 740;
     }
-    if (boltffi_method_class_boltffi_tests_results_cancellable_task_iteration_count(task) != 0) {
-        boltffi_release_class_boltffi_tests_results_cancellable_task(task);
+    if (boltffi_method_class_boltffi_tests_cancellable_task_iteration_count(task) != 0) {
+        boltffi_release_class_boltffi_tests_cancellable_task(task);
         return 741;
     }
-    boltffi_release_class_boltffi_tests_results_cancellable_task(task);
-    uint64_t cancel_task = boltffi_init_class_boltffi_tests_results_cancellable_task_new();
+    boltffi_release_class_boltffi_tests_cancellable_task(task);
+    uint64_t cancel_task = boltffi_init_class_boltffi_tests_cancellable_task_new();
     if (cancel_task == 0) {
         return 742;
     }
-    RustFutureHandle long_running = boltffi_method_class_boltffi_tests_results_cancellable_task_long_running_task(cancel_task);
-    boltffi_async_method_class_boltffi_tests_results_cancellable_task_long_running_task_poll(long_running, 0, boltffi_tests_async_noop);
-    if (!boltffi_method_class_boltffi_tests_results_cancellable_task_was_started(cancel_task) || boltffi_method_class_boltffi_tests_results_cancellable_task_was_completed(cancel_task)) {
-        boltffi_async_method_class_boltffi_tests_results_cancellable_task_long_running_task_free(long_running);
-        boltffi_release_class_boltffi_tests_results_cancellable_task(cancel_task);
+    RustFutureHandle long_running = boltffi_method_class_boltffi_tests_cancellable_task_long_running_task(cancel_task);
+    boltffi_async_method_class_boltffi_tests_cancellable_task_long_running_task_poll(long_running, 0, boltffi_tests_async_noop);
+    if (!boltffi_method_class_boltffi_tests_cancellable_task_was_started(cancel_task) || boltffi_method_class_boltffi_tests_cancellable_task_was_completed(cancel_task)) {
+        boltffi_async_method_class_boltffi_tests_cancellable_task_long_running_task_free(long_running);
+        boltffi_release_class_boltffi_tests_cancellable_task(cancel_task);
         return 743;
     }
-    boltffi_async_method_class_boltffi_tests_results_cancellable_task_long_running_task_cancel(long_running);
-    boltffi_async_method_class_boltffi_tests_results_cancellable_task_long_running_task_free(long_running);
-    boltffi_release_class_boltffi_tests_results_cancellable_task(cancel_task);
+    boltffi_async_method_class_boltffi_tests_cancellable_task_long_running_task_cancel(long_running);
+    boltffi_async_method_class_boltffi_tests_cancellable_task_long_running_task_free(long_running);
+    boltffi_release_class_boltffi_tests_cancellable_task(cancel_task);
     return 0;
 }
 "#
@@ -2363,32 +2337,32 @@ static int boltffi_tests_check_streams(void) {
 
     fn asynchronous_harness(&self) -> &'static str {
         r#"static int boltffi_tests_check_asynchronous(void) {
-    RustFutureHandle future = boltffi_function_boltffi_tests_asynchronous_async_add(20, 22);
+    RustFutureHandle future = boltffi_function_boltffi_tests_async_add(20, 22);
     if (future == 0) {
         return 801;
     }
-    boltffi_async_function_boltffi_tests_asynchronous_async_add_poll(
+    boltffi_async_function_boltffi_tests_async_add_poll(
         future,
         0,
         boltffi_tests_async_noop
     );
     FfiStatus status = FFI_STATUS_INTERNAL_ERROR;
-    int32_t value = boltffi_async_function_boltffi_tests_asynchronous_async_add_complete(future, &status);
+    int32_t value = boltffi_async_function_boltffi_tests_async_add_complete(future, &status);
     if (status.code != FFI_STATUS_OK.code) {
-        boltffi_async_function_boltffi_tests_asynchronous_async_add_free(future);
+        boltffi_async_function_boltffi_tests_async_add_free(future);
         return 802;
     }
     if (value != 42) {
-        boltffi_async_function_boltffi_tests_asynchronous_async_add_free(future);
+        boltffi_async_function_boltffi_tests_async_add_free(future);
         return 803;
     }
-    boltffi_async_function_boltffi_tests_asynchronous_async_add_free(future);
+    boltffi_async_function_boltffi_tests_async_add_free(future);
     const uint8_t ali[7] = {3, 0, 0, 0, 'A', 'l', 'i'};
-    RustFutureHandle greet = boltffi_function_boltffi_tests_asynchronous_async_greet(ali, 7);
+    RustFutureHandle greet = boltffi_function_boltffi_tests_async_greet(ali, 7);
     if (greet == 0) {
         return 804;
     }
-    boltffi_async_function_boltffi_tests_asynchronous_async_greet_poll(
+    boltffi_async_function_boltffi_tests_async_greet_poll(
         greet,
         0,
         boltffi_tests_async_noop
@@ -2396,48 +2370,48 @@ static int boltffi_tests_check_streams(void) {
     FfiStatus greet_status = FFI_STATUS_INTERNAL_ERROR;
     const uint8_t greet_expected[13] = {9, 0, 0, 0, 'h', 'e', 'l', 'l', 'o', ' ', 'A', 'l', 'i'};
     int greet_check = boltffi_tests_check_buf(
-        boltffi_async_function_boltffi_tests_asynchronous_async_greet_complete(greet, &greet_status),
+        boltffi_async_function_boltffi_tests_async_greet_complete(greet, &greet_status),
         greet_expected,
         13,
         805
     );
-    boltffi_async_function_boltffi_tests_asynchronous_async_greet_free(greet);
+    boltffi_async_function_boltffi_tests_async_greet_free(greet);
     if (greet_status.code != FFI_STATUS_OK.code) {
         return 808;
     }
     if (greet_check != 0) {
         return greet_check;
     }
-    RustFutureHandle rect_future = boltffi_function_boltffi_tests_asynchronous_async_make_rect(2.0, -3.0);
+    RustFutureHandle rect_future = boltffi_function_boltffi_tests_async_make_rect(2.0, -3.0);
     if (rect_future == 0) {
         return 809;
     }
-    boltffi_async_function_boltffi_tests_asynchronous_async_make_rect_poll(
+    boltffi_async_function_boltffi_tests_async_make_rect_poll(
         rect_future,
         0,
         boltffi_tests_async_noop
     );
     FfiStatus rect_status = FFI_STATUS_INTERNAL_ERROR;
-    ___FixtureRect rect = boltffi_async_function_boltffi_tests_asynchronous_async_make_rect_complete(rect_future, &rect_status);
-    boltffi_async_function_boltffi_tests_asynchronous_async_make_rect_free(rect_future);
+    ___FixtureRect rect = boltffi_async_function_boltffi_tests_async_make_rect_complete(rect_future, &rect_status);
+    boltffi_async_function_boltffi_tests_async_make_rect_free(rect_future);
     if (rect_status.code != FFI_STATUS_OK.code) {
         return 810;
     }
     if (rect.x != 2.0 || rect.y != -3.0 || rect.width != 3.0 || rect.height != 4.0) {
         return 811;
     }
-    RustFutureHandle ping = boltffi_function_boltffi_tests_asynchronous_async_ping();
+    RustFutureHandle ping = boltffi_function_boltffi_tests_async_ping();
     if (ping == 0) {
         return 812;
     }
-    boltffi_async_function_boltffi_tests_asynchronous_async_ping_poll(
+    boltffi_async_function_boltffi_tests_async_ping_poll(
         ping,
         0,
         boltffi_tests_async_noop
     );
     FfiStatus ping_status = FFI_STATUS_INTERNAL_ERROR;
-    boltffi_async_function_boltffi_tests_asynchronous_async_ping_complete(ping, &ping_status);
-    boltffi_async_function_boltffi_tests_asynchronous_async_ping_free(ping);
+    boltffi_async_function_boltffi_tests_async_ping_complete(ping, &ping_status);
+    boltffi_async_function_boltffi_tests_async_ping_free(ping);
     if (ping_status.code != FFI_STATUS_OK.code) {
         return 813;
     }
@@ -2865,7 +2839,7 @@ impl FillBytesHarness {
         let function = contract
             .functions()
             .iter()
-            .find(|function| function.name() == "boltffi_function_boltffi_tests_bytes_fill_bytes")
+            .find(|function| function.name() == "boltffi_function_boltffi_tests_fill_bytes")
             .expect("fill_bytes C function");
         match (function.params(), function.returns()) {
             ([first, second, third], Type::Uint32)
@@ -2893,7 +2867,7 @@ impl std::fmt::Display for FillBytesHarness {
                 r#"static int boltffi_tests_check_fill_bytes(void) {
     uint8_t input[10] = {6, 0, 0, 0, 0, 0, 0, 0, 0, 0};
     FfiBuf_u8 out = {0};
-    uint32_t written = boltffi_function_boltffi_tests_bytes_fill_bytes(input, 10, &out);
+    uint32_t written = boltffi_function_boltffi_tests_fill_bytes(input, 10, &out);
     if (written != 6) {
         return 41;
     }
@@ -2922,7 +2896,7 @@ impl std::fmt::Display for FillBytesHarness {
             Self::MutableBytes => {
                 r#"static int boltffi_tests_check_fill_bytes(void) {
     uint8_t buffer[6] = {0, 0, 0, 0, 0, 0};
-    uint32_t written = boltffi_function_boltffi_tests_bytes_fill_bytes(buffer, 6);
+    uint32_t written = boltffi_function_boltffi_tests_fill_bytes(buffer, 6);
     if (written != 6) {
         return 44;
     }
@@ -2947,9 +2921,11 @@ fn source_contract(paths: &BuildPaths) -> SourceContract {
         env::var("CARGO_PKG_NAME").expect("package name"),
         env::var("CARGO_PKG_VERSION").ok(),
     );
-    scan_package(&ScanInput::new(&paths.source, package).with_manifest_dir(&paths.manifest))
-        .expect("scan test package")
-        .root_with_support()
+    crate_scoped(
+        scan_package(&ScanInput::new(&paths.source, package).with_manifest_dir(&paths.manifest))
+            .expect("scan test package")
+            .root_with_support(),
+    )
 }
 
 fn rust_type_name(name: &boltffi_binding::CanonicalName) -> String {

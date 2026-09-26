@@ -21,18 +21,18 @@ pub fn instant_try_from_ffi(value: i64) -> Result<Duration, CustomTypeConversion
 }
 
 #[export]
-pub fn shift_instant(when: Duration, by: i64) -> Duration {
+pub fn shift_instant(when: FixtureInstant, by: i64) -> FixtureInstant {
     let millis = instant_into_ffi(&when).saturating_add(by).max(0);
     instant_try_from_ffi(millis).unwrap_or_default()
 }
 
 #[export]
-pub fn maybe_instant(present: bool) -> Option<Duration> {
+pub fn maybe_instant(present: bool) -> Option<FixtureInstant> {
     present.then(|| Duration::from_millis(1234))
 }
 
 #[export]
-pub fn instants(count: u32) -> Vec<Duration> {
+pub fn instants(count: u32) -> Vec<FixtureInstant> {
     (0..count)
         .map(|index| Duration::from_millis(u64::from(index) * 1000))
         .collect()

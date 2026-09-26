@@ -57,44 +57,38 @@ mod primitives {
 
     #[test]
     fn scalar_widths_cross_directly() {
+        assert_eq!(unsafe { boltffi_function_boltffi_tests_add_i8(3, 4) }, 7);
+        assert_eq!(unsafe { boltffi_function_boltffi_tests_add_u8(3, 4) }, 7);
         assert_eq!(
-            unsafe { boltffi_function_boltffi_tests_primitives_add_i8(3, 4) },
-            7
-        );
-        assert_eq!(
-            unsafe { boltffi_function_boltffi_tests_primitives_add_u8(3, 4) },
-            7
-        );
-        assert_eq!(
-            unsafe { boltffi_function_boltffi_tests_primitives_add_i16(30, 40) },
+            unsafe { boltffi_function_boltffi_tests_add_i16(30, 40) },
             70
         );
         assert_eq!(
-            unsafe { boltffi_function_boltffi_tests_primitives_add_u16(30, 40) },
+            unsafe { boltffi_function_boltffi_tests_add_u16(30, 40) },
             70
         );
         assert_eq!(
-            unsafe { boltffi_function_boltffi_tests_primitives_add_i32(300, 400) },
+            unsafe { boltffi_function_boltffi_tests_add_i32(300, 400) },
             700
         );
         assert_eq!(
-            unsafe { boltffi_function_boltffi_tests_primitives_add_u32(300, 400) },
+            unsafe { boltffi_function_boltffi_tests_add_u32(300, 400) },
             700
         );
         assert_eq!(
-            unsafe { boltffi_function_boltffi_tests_primitives_add_i64(3000, 4000) },
+            unsafe { boltffi_function_boltffi_tests_add_i64(3000, 4000) },
             7000
         );
         assert_eq!(
-            unsafe { boltffi_function_boltffi_tests_primitives_add_u64(3000, 4000) },
+            unsafe { boltffi_function_boltffi_tests_add_u64(3000, 4000) },
             7000
         );
         assert_eq!(
-            unsafe { boltffi_function_boltffi_tests_primitives_add_isize(5, 6) },
+            unsafe { boltffi_function_boltffi_tests_add_isize(5, 6) },
             11
         );
         assert_eq!(
-            unsafe { boltffi_function_boltffi_tests_primitives_add_usize(5, 6) },
+            unsafe { boltffi_function_boltffi_tests_add_usize(5, 6) },
             11
         );
     }
@@ -102,16 +96,13 @@ mod primitives {
     #[test]
     fn direct_ref_mut_and_void_crossings_run() {
         assert_eq!(
-            unsafe { boltffi_function_boltffi_tests_primitives_mix_floats(2.0, 3.5) },
+            unsafe { boltffi_function_boltffi_tests_mix_floats(2.0, 3.5) },
             9.0
         );
-        assert!(unsafe { boltffi_function_boltffi_tests_primitives_toggle(false) });
-        assert_eq!(
-            unsafe { boltffi_function_boltffi_tests_primitives_read_ref(42) },
-            42
-        );
-        assert_ok(unsafe { boltffi_function_boltffi_tests_primitives_bump_in_place(9) });
-        boltffi_function_boltffi_tests_primitives_noop();
+        assert!(unsafe { boltffi_function_boltffi_tests_toggle(false) });
+        assert_eq!(unsafe { boltffi_function_boltffi_tests_read_ref(42) }, 42);
+        assert_ok(unsafe { boltffi_function_boltffi_tests_bump_in_place(9) });
+        boltffi_function_boltffi_tests_noop();
     }
 }
 
@@ -123,18 +114,18 @@ mod bytes {
         let data = vec![1u8, 2, 3, 4];
         assert_eq!(
             with_encoded(&data, |ptr, len| unsafe {
-                boltffi_function_boltffi_tests_bytes_byte_sum(ptr, len)
+                boltffi_function_boltffi_tests_byte_sum(ptr, len)
             }),
             10
         );
         assert_eq!(
             with_encoded(&data, |ptr, len| unsafe {
-                boltffi_function_boltffi_tests_bytes_borrowed_byte_sum(ptr, len)
+                boltffi_function_boltffi_tests_borrowed_byte_sum(ptr, len)
             }),
             10
         );
         let echoed = with_encoded(&data, |ptr, len| unsafe {
-            boltffi_function_boltffi_tests_bytes_echo_bytes(ptr, len)
+            boltffi_function_boltffi_tests_echo_bytes(ptr, len)
         });
         assert_eq!(decode_buf::<Vec<u8>>(echoed), data);
     }
@@ -142,9 +133,8 @@ mod bytes {
     #[test]
     fn mutable_byte_slice_writes_into_current_buffer() {
         let mut input = vec![0u8; 6];
-        let written = unsafe {
-            boltffi_function_boltffi_tests_bytes_fill_bytes(input.as_mut_ptr(), input.len())
-        };
+        let written =
+            unsafe { boltffi_function_boltffi_tests_fill_bytes(input.as_mut_ptr(), input.len()) };
         assert_eq!(written, 6);
         assert_eq!(input, vec![1, 4, 7, 10, 13, 16]);
     }
@@ -156,12 +146,12 @@ mod strings {
     #[test]
     fn string_value_ref_and_mut_crossings_use_wire_bytes() {
         let shouted = with_encoded(&"hello".to_string(), |ptr, len| unsafe {
-            boltffi_function_boltffi_tests_strings_shout(ptr, len)
+            boltffi_function_boltffi_tests_shout(ptr, len)
         });
         assert_eq!(decode_buf::<String>(shouted), "HELLO");
 
         let borrowed_len = with_encoded(&"hello".to_string(), |ptr, len| unsafe {
-            boltffi_function_boltffi_tests_strings_borrowed_len(ptr, len)
+            boltffi_function_boltffi_tests_borrowed_len(ptr, len)
         });
         assert_eq!(borrowed_len, 5);
 
@@ -171,7 +161,7 @@ mod strings {
             &":suffix".to_string(),
             |text_ptr, text_len, suffix_ptr, suffix_len| {
                 assert_ok(unsafe {
-                    boltffi_function_boltffi_tests_strings_rewrite(
+                    boltffi_function_boltffi_tests_rewrite(
                         text_ptr as *mut u8,
                         text_len,
                         &mut out,
@@ -190,8 +180,7 @@ mod records {
 
     #[test]
     fn direct_record_functions_keep_c_layout_values() {
-        let mut rect =
-            unsafe { boltffi_function_boltffi_tests_records_direct_make_rect(1.0, 2.0, 3.0, 4.0) };
+        let mut rect = unsafe { boltffi_function_boltffi_tests_make_rect(1.0, 2.0, 3.0, 4.0) };
         assert_eq!(
             rect,
             FixtureRect {
@@ -202,16 +191,11 @@ mod records {
             }
         );
         assert_eq!(
-            unsafe { boltffi_function_boltffi_tests_records_direct_rect_area(rect) },
+            unsafe { boltffi_function_boltffi_tests_rect_area(rect) },
             12.0
         );
-        assert_eq!(
-            unsafe { boltffi_function_boltffi_tests_records_direct_rect_x(&rect) },
-            1.0
-        );
-        assert_ok(unsafe {
-            boltffi_function_boltffi_tests_records_direct_scale_rect_in_place(&mut rect, 2.0)
-        });
+        assert_eq!(unsafe { boltffi_function_boltffi_tests_rect_x(&rect) }, 1.0);
+        assert_ok(unsafe { boltffi_function_boltffi_tests_scale_rect_in_place(&mut rect, 2.0) });
         assert_eq!(rect.width, 6.0);
         assert_eq!(rect.height, 8.0);
     }
@@ -224,12 +208,12 @@ mod records {
             status: FixtureStatus::Completed,
         };
         let description = with_encoded(&record, |ptr, len| unsafe {
-            boltffi_function_boltffi_tests_records_encoded_describe_message(ptr, len)
+            boltffi_function_boltffi_tests_describe_message(ptr, len)
         });
         assert_eq!(decode_buf::<String>(description), "old:2:3:Completed");
 
         let label_len = with_encoded(&record, |ptr, len| unsafe {
-            boltffi_function_boltffi_tests_records_encoded_peek_label(ptr, len)
+            boltffi_function_boltffi_tests_peek_label(ptr, len)
         });
         assert_eq!(label_len, 3);
 
@@ -239,7 +223,7 @@ mod records {
             &"new".to_string(),
             |record_ptr, record_len, label_ptr, label_len| {
                 assert_ok(unsafe {
-                    boltffi_function_boltffi_tests_records_encoded_relabel(
+                    boltffi_function_boltffi_tests_relabel(
                         record_ptr as *mut u8,
                         record_len,
                         &mut out,
@@ -262,7 +246,7 @@ mod records {
     #[test]
     fn encoded_record_constructor_returns_expected_record() {
         let message = with_encoded(&"made".to_string(), |ptr, len| unsafe {
-            boltffi_function_boltffi_tests_records_encoded_make_message(ptr, len)
+            boltffi_function_boltffi_tests_make_message(ptr, len)
         });
         assert_eq!(
             decode_buf::<FixtureMessageRecord>(message),
@@ -281,9 +265,7 @@ mod enums_and_options {
     #[test]
     fn c_style_enum_crosses_as_its_repr() {
         assert_eq!(
-            unsafe {
-                boltffi_function_boltffi_tests_enums_next_status(FixtureStatus::Pending as i32)
-            },
+            unsafe { boltffi_function_boltffi_tests_next_status(FixtureStatus::Pending as i32) },
             FixtureStatus::Active as i32
         );
     }
@@ -295,12 +277,12 @@ mod enums_and_options {
             height: 4.0,
         };
         let area = with_encoded(&shape, |ptr, len| unsafe {
-            boltffi_function_boltffi_tests_enums_area(ptr, len)
+            boltffi_function_boltffi_tests_area(ptr, len)
         });
         assert_eq!(area, 12.0);
 
         let widened = with_encoded(&FixtureShape::Line(5.0), |ptr, len| unsafe {
-            boltffi_function_boltffi_tests_enums_widen(ptr, len, 2.0)
+            boltffi_function_boltffi_tests_widen(ptr, len, 2.0)
         });
         assert_eq!(decode_buf::<FixtureShape>(widened), FixtureShape::Line(7.0));
     }
@@ -309,23 +291,23 @@ mod enums_and_options {
     fn options_cover_scalar_encoded_and_direct_record_shapes() {
         assert_eq!(
             decode_buf::<Option<i32>>(unsafe {
-                boltffi_function_boltffi_tests_options_simple_maybe_double(4)
+                boltffi_function_boltffi_tests_simple_maybe_double(4)
             }),
             Some(8)
         );
         let doubled = with_encoded(&Some(5), |ptr, len| unsafe {
-            boltffi_function_boltffi_tests_options_maybe_double(ptr, len)
+            boltffi_function_boltffi_tests_maybe_double(ptr, len)
         });
         assert_eq!(decode_buf::<Option<i32>>(doubled), Some(10));
 
         let scaled = with_encoded(&Some(4.0), |ptr, len| unsafe {
-            boltffi_function_boltffi_tests_options_maybe_scale(ptr, len)
+            boltffi_function_boltffi_tests_maybe_scale(ptr, len)
         });
         assert_eq!(decode_buf::<Option<f64>>(scaled), Some(6.0));
 
         assert_eq!(
             decode_buf::<Option<FixturePoint>>(unsafe {
-                boltffi_function_boltffi_tests_options_maybe_point(true)
+                boltffi_function_boltffi_tests_maybe_point(true)
             }),
             Some(FixturePoint { x: 2.0, y: 3.0 })
         );
@@ -337,12 +319,12 @@ mod enums_and_options {
             height: 6.0,
         };
         let direct = with_encoded(&Some(rect), |ptr, len| unsafe {
-            boltffi_function_boltffi_tests_options_point_or_origin(ptr, len)
+            boltffi_function_boltffi_tests_point_or_origin(ptr, len)
         });
         assert_eq!(direct, rect);
 
         let label = with_encoded(&Some("tag".to_string()), |ptr, len| unsafe {
-            boltffi_function_boltffi_tests_options_maybe_label(ptr, len)
+            boltffi_function_boltffi_tests_maybe_label(ptr, len)
         });
         assert_eq!(
             decode_buf::<Option<String>>(label),
@@ -358,16 +340,13 @@ mod vectors_and_collections {
     fn direct_and_encoded_vectors_cross_correctly() {
         let values = [1u32, 2, 3, 4];
         assert_eq!(
-            unsafe {
-                boltffi_function_boltffi_tests_vectors_sum_u32(values.as_ptr(), values.len())
-            },
+            unsafe { boltffi_function_boltffi_tests_sum_u32(values.as_ptr(), values.len()) },
             10
         );
 
         let floats = [2.0f64, 4.0, 6.0];
-        let halved = unsafe {
-            boltffi_function_boltffi_tests_vectors_halve_f64(floats.as_ptr(), floats.len())
-        };
+        let halved =
+            unsafe { boltffi_function_boltffi_tests_halve_f64(floats.as_ptr(), floats.len()) };
         assert_eq!(
             decode_direct_or_wire_vec::<f64>(halved),
             vec![1.0, 2.0, 3.0]
@@ -388,7 +367,7 @@ mod vectors_and_collections {
             },
         ];
         let bounds = unsafe {
-            boltffi_function_boltffi_tests_vectors_bounding_box(
+            boltffi_function_boltffi_tests_bounding_box(
                 rects.as_ptr().cast::<u8>(),
                 core::mem::size_of_val(&rects),
             )
@@ -404,19 +383,19 @@ mod vectors_and_collections {
         );
 
         let joined = with_encoded(&vec!["a".to_string(), "b".to_string()], |ptr, len| unsafe {
-            boltffi_function_boltffi_tests_vectors_join_labels(ptr, len)
+            boltffi_function_boltffi_tests_join_labels(ptr, len)
         });
         assert_eq!(decode_buf::<String>(joined), "a|b");
 
         let split = with_encoded(&"a|b|c".to_string(), |ptr, len| unsafe {
-            boltffi_function_boltffi_tests_vectors_split_labels(ptr, len)
+            boltffi_function_boltffi_tests_split_labels(ptr, len)
         });
         assert_eq!(
             decode_buf::<Vec<String>>(split),
             vec!["a".to_string(), "b".to_string(), "c".to_string()]
         );
 
-        let statuses = unsafe { boltffi_function_boltffi_tests_vectors_statuses(4) };
+        let statuses = unsafe { boltffi_function_boltffi_tests_statuses(4) };
         assert_eq!(
             decode_direct_or_wire_vec::<i32>(statuses),
             vec![
@@ -432,12 +411,12 @@ mod vectors_and_collections {
     fn maps_tuples_and_nested_options_cross_through_wire() {
         let labels = HashMap::from([("one".to_string(), 1), ("two".to_string(), 2)]);
         let total = with_encoded(&labels, |ptr, len| unsafe {
-            boltffi_function_boltffi_tests_collections_tally(ptr, len)
+            boltffi_function_boltffi_tests_tally(ptr, len)
         });
         assert_eq!(total, 3);
 
         let inverted = with_encoded(&labels, |ptr, len| unsafe {
-            boltffi_function_boltffi_tests_collections_invert(ptr, len)
+            boltffi_function_boltffi_tests_invert(ptr, len)
         });
         assert_eq!(
             decode_buf::<HashMap<String, i32>>(inverted),
@@ -445,7 +424,7 @@ mod vectors_and_collections {
         );
 
         let pair = with_encoded(&"label".to_string(), |ptr, len| unsafe {
-            boltffi_function_boltffi_tests_collections_pair_up(7, ptr, len)
+            boltffi_function_boltffi_tests_pair_up(7, ptr, len)
         });
         assert_eq!(
             decode_buf::<(i32, String)>(pair),
@@ -454,7 +433,7 @@ mod vectors_and_collections {
 
         let nested = vec![Some("ab".to_string()), None, Some("cde".to_string())];
         let length = with_encoded(&nested, |ptr, len| unsafe {
-            boltffi_function_boltffi_tests_collections_deep(ptr, len)
+            boltffi_function_boltffi_tests_deep(ptr, len)
         });
         assert_eq!(length, 5);
     }
@@ -466,19 +445,19 @@ mod custom_types {
     #[test]
     fn custom_type_values_options_and_vectors_use_the_declared_repr() {
         let shifted = with_encoded(&1000_i64, |ptr, len| unsafe {
-            boltffi_function_boltffi_tests_customs_shift_instant(ptr, len, 250)
+            boltffi_function_boltffi_tests_shift_instant(ptr, len, 250)
         });
         assert_eq!(decode_buf::<i64>(shifted), 1250);
 
         assert_eq!(
             decode_buf::<Option<i64>>(unsafe {
-                boltffi_function_boltffi_tests_customs_maybe_instant(true)
+                boltffi_function_boltffi_tests_maybe_instant(true)
             }),
             Some(1234)
         );
 
         assert_eq!(
-            decode_buf::<Vec<i64>>(unsafe { boltffi_function_boltffi_tests_customs_instants(3) }),
+            decode_buf::<Vec<i64>>(unsafe { boltffi_function_boltffi_tests_instants(3) }),
             vec![0, 1000, 2000]
         );
     }
@@ -491,55 +470,38 @@ mod asynchronous {
 
     #[test]
     fn async_direct_completion_returns_value() {
-        let future = unsafe { boltffi_function_boltffi_tests_asynchronous_async_add(20, 22) };
-        unsafe {
-            boltffi_async_function_boltffi_tests_asynchronous_async_add_poll(future, 0, noop)
-        };
+        let future = unsafe { boltffi_function_boltffi_tests_async_add(20, 22) };
+        unsafe { boltffi_async_function_boltffi_tests_async_add_poll(future, 0, noop) };
         let mut status = FfiStatus::OK;
-        let value = unsafe {
-            boltffi_async_function_boltffi_tests_asynchronous_async_add_complete(
-                future,
-                &mut status,
-            )
-        };
+        let value =
+            unsafe { boltffi_async_function_boltffi_tests_async_add_complete(future, &mut status) };
         assert_ok(status);
         assert_eq!(value, 42);
-        unsafe { boltffi_async_function_boltffi_tests_asynchronous_async_add_free(future) };
+        unsafe { boltffi_async_function_boltffi_tests_async_add_free(future) };
     }
 
     #[test]
     fn async_encoded_completion_returns_value() {
         let future = with_encoded(&"Ali".to_string(), |ptr, len| unsafe {
-            boltffi_function_boltffi_tests_asynchronous_async_greet(ptr, len)
+            boltffi_function_boltffi_tests_async_greet(ptr, len)
         });
-        unsafe {
-            boltffi_async_function_boltffi_tests_asynchronous_async_greet_poll(future, 0, noop)
-        };
+        unsafe { boltffi_async_function_boltffi_tests_async_greet_poll(future, 0, noop) };
         let mut status = FfiStatus::OK;
         let value = unsafe {
-            boltffi_async_function_boltffi_tests_asynchronous_async_greet_complete(
-                future,
-                &mut status,
-            )
+            boltffi_async_function_boltffi_tests_async_greet_complete(future, &mut status)
         };
         assert_ok(status);
         assert_eq!(decode_buf::<String>(value), "hello Ali");
-        unsafe { boltffi_async_function_boltffi_tests_asynchronous_async_greet_free(future) };
+        unsafe { boltffi_async_function_boltffi_tests_async_greet_free(future) };
     }
 
     #[test]
     fn async_direct_record_completion_returns_value() {
-        let future =
-            unsafe { boltffi_function_boltffi_tests_asynchronous_async_make_rect(2.0, -3.0) };
-        unsafe {
-            boltffi_async_function_boltffi_tests_asynchronous_async_make_rect_poll(future, 0, noop)
-        };
+        let future = unsafe { boltffi_function_boltffi_tests_async_make_rect(2.0, -3.0) };
+        unsafe { boltffi_async_function_boltffi_tests_async_make_rect_poll(future, 0, noop) };
         let mut status = FfiStatus::OK;
         let rect = unsafe {
-            boltffi_async_function_boltffi_tests_asynchronous_async_make_rect_complete(
-                future,
-                &mut status,
-            )
+            boltffi_async_function_boltffi_tests_async_make_rect_complete(future, &mut status)
         };
         assert_ok(status);
         assert_eq!(
@@ -551,24 +513,17 @@ mod asynchronous {
                 height: 4.0,
             }
         );
-        unsafe { boltffi_async_function_boltffi_tests_asynchronous_async_make_rect_free(future) };
+        unsafe { boltffi_async_function_boltffi_tests_async_make_rect_free(future) };
     }
 
     #[test]
     fn async_void_completion_sets_ok_status() {
-        let future = boltffi_function_boltffi_tests_asynchronous_async_ping();
-        unsafe {
-            boltffi_async_function_boltffi_tests_asynchronous_async_ping_poll(future, 0, noop)
-        };
+        let future = boltffi_function_boltffi_tests_async_ping();
+        unsafe { boltffi_async_function_boltffi_tests_async_ping_poll(future, 0, noop) };
         let mut status = FfiStatus::INTERNAL_ERROR;
-        unsafe {
-            boltffi_async_function_boltffi_tests_asynchronous_async_ping_complete(
-                future,
-                &mut status,
-            )
-        };
+        unsafe { boltffi_async_function_boltffi_tests_async_ping_complete(future, &mut status) };
         assert_ok(status);
-        unsafe { boltffi_async_function_boltffi_tests_asynchronous_async_ping_free(future) };
+        unsafe { boltffi_async_function_boltffi_tests_async_ping_free(future) };
     }
 }
 
@@ -591,29 +546,19 @@ mod closures {
     fn closure_parameters_call_back_into_foreign_functions() {
         assert_eq!(
             unsafe {
-                boltffi_function_boltffi_tests_closures_apply(
-                    add_three,
-                    ptr::null_mut(),
-                    release,
-                    10,
-                )
+                boltffi_function_boltffi_tests_apply(add_three, ptr::null_mut(), release, 10)
             },
             23
         );
         assert_eq!(
             unsafe {
-                boltffi_function_boltffi_tests_closures_apply_boxed(
-                    add_three,
-                    ptr::null_mut(),
-                    release,
-                    10,
-                )
+                boltffi_function_boltffi_tests_apply_boxed(add_three, ptr::null_mut(), release, 10)
             },
             26
         );
         assert_eq!(
             unsafe {
-                boltffi_function_boltffi_tests_closures_apply_optional(
+                boltffi_function_boltffi_tests_apply_optional(
                     Some(add_three),
                     ptr::null_mut(),
                     Some(release),
@@ -624,12 +569,7 @@ mod closures {
         );
         assert_eq!(
             unsafe {
-                boltffi_function_boltffi_tests_closures_apply_optional(
-                    None,
-                    ptr::null_mut(),
-                    None,
-                    10,
-                )
+                boltffi_function_boltffi_tests_apply_optional(None, ptr::null_mut(), None, 10)
             },
             10
         );
@@ -638,13 +578,7 @@ mod closures {
     #[test]
     fn encoded_closure_parameters_move_wire_values_both_directions() {
         let result = with_encoded(&"hello".to_string(), |ptr, len| unsafe {
-            boltffi_function_boltffi_tests_closures_map_label(
-                uppercase,
-                ptr::null_mut(),
-                release,
-                ptr,
-                len,
-            )
+            boltffi_function_boltffi_tests_map_label(uppercase, ptr::null_mut(), release, ptr, len)
         });
         assert_eq!(decode_buf::<String>(result), "HELLO:IN");
     }
@@ -657,12 +591,11 @@ mod results {
     fn fallible_direct_and_encoded_success_values_use_out_pointers() {
         let mut divided = 0;
         let divide_error =
-            unsafe { boltffi_function_boltffi_tests_results_try_divide(12, 3, &mut divided) };
+            unsafe { boltffi_function_boltffi_tests_try_divide(12, 3, &mut divided) };
         assert_eq!(decode_result::<_, String>(divide_error, divided), Ok(4));
 
         let mut rect = FixtureRect::default();
-        let rect_error =
-            unsafe { boltffi_function_boltffi_tests_results_try_rect(false, &mut rect) };
+        let rect_error = unsafe { boltffi_function_boltffi_tests_try_rect(false, &mut rect) };
         assert_eq!(
             decode_result::<_, String>(rect_error, rect),
             Ok(FixtureRect {
@@ -675,7 +608,7 @@ mod results {
 
         let mut message = FfiBuf::empty();
         let message_error =
-            unsafe { boltffi_function_boltffi_tests_results_try_message(false, &mut message) };
+            unsafe { boltffi_function_boltffi_tests_try_message(false, &mut message) };
         assert_eq!(
             decode_result::<_, String>(message_error, decode_buf::<FixtureMessageRecord>(message)),
             Ok(FixtureMessageRecord {
@@ -689,8 +622,7 @@ mod results {
     #[test]
     fn fallible_errors_return_encoded_error_buffers() {
         let mut direct = 0;
-        let divide_error =
-            unsafe { boltffi_function_boltffi_tests_results_try_divide(12, 0, &mut direct) };
+        let divide_error = unsafe { boltffi_function_boltffi_tests_try_divide(12, 0, &mut direct) };
         assert_eq!(
             decode_result::<_, String>(divide_error, direct),
             Err("divide by zero".to_string())
@@ -698,7 +630,7 @@ mod results {
 
         let mut status_value = 0;
         let status_error =
-            unsafe { boltffi_function_boltffi_tests_results_try_status_err(-1, &mut status_value) };
+            unsafe { boltffi_function_boltffi_tests_try_status_err(-1, &mut status_value) };
         assert_eq!(
             decode_result::<_, FixtureStatus>(status_error, status_value),
             Err(FixtureStatus::Failed)
@@ -706,7 +638,7 @@ mod results {
 
         let mut shape_value = 0;
         let shape_error =
-            unsafe { boltffi_function_boltffi_tests_results_try_shape_err(-5, &mut shape_value) };
+            unsafe { boltffi_function_boltffi_tests_try_shape_err(-5, &mut shape_value) };
         assert_eq!(
             decode_result::<_, FixtureShape>(shape_error, shape_value),
             Err(FixtureShape::Line(5.0))

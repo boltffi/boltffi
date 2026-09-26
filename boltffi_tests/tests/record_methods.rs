@@ -4,9 +4,9 @@ use boltffi_tests::{
     FixturePoint, FixtureStringConfig, boltffi_init_record_boltffi_tests_fixture_point_midpoint_to,
     boltffi_init_record_boltffi_tests_fixture_point_new_at,
     boltffi_init_record_boltffi_tests_fixture_point_origin,
-    boltffi_init_record_boltffi_tests_records_encoded_fixture_string_config_from_borrowed_name,
-    boltffi_init_record_boltffi_tests_records_encoded_fixture_string_config_from_owned_name,
-    boltffi_init_record_boltffi_tests_records_encoded_fixture_string_config_from_string_ref_name,
+    boltffi_init_record_boltffi_tests_fixture_string_config_from_borrowed_name,
+    boltffi_init_record_boltffi_tests_fixture_string_config_from_owned_name,
+    boltffi_init_record_boltffi_tests_fixture_string_config_from_string_ref_name,
     boltffi_method_record_boltffi_tests_fixture_point_distance_to_origin,
     boltffi_method_record_boltffi_tests_fixture_point_scale,
 };
@@ -49,7 +49,7 @@ mod constructors {
         let name = "owned config";
         let name_buf = encode_buf(&name.to_string());
         let buf = unsafe {
-            boltffi_init_record_boltffi_tests_records_encoded_fixture_string_config_from_owned_name(
+            boltffi_init_record_boltffi_tests_fixture_string_config_from_owned_name(
                 name_buf.as_ptr(),
                 name_buf.len(),
             )
@@ -69,7 +69,7 @@ mod constructors {
         let name = "borrowed config";
         let name_buf = encode_buf(&name.to_string());
         let buf = unsafe {
-            boltffi_init_record_boltffi_tests_records_encoded_fixture_string_config_from_borrowed_name(
+            boltffi_init_record_boltffi_tests_fixture_string_config_from_borrowed_name(
                 name_buf.as_ptr(),
                 name_buf.len(),
             )
@@ -89,7 +89,7 @@ mod constructors {
         let name = "string ref config";
         let name_buf = encode_buf(&name.to_string());
         let buf = unsafe {
-            boltffi_init_record_boltffi_tests_records_encoded_fixture_string_config_from_string_ref_name(
+            boltffi_init_record_boltffi_tests_fixture_string_config_from_string_ref_name(
                 name_buf.as_ptr(),
                 name_buf.len(),
             )
