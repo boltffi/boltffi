@@ -198,25 +198,23 @@ impl CodecRead for Reader<'_, '_> {
 
     fn tuple(&mut self, elements: Vec<Self::Expr>) -> Self::Expr {
         let elements = elements.into_iter().collect::<Result<Vec<_>>>()?;
-        let ty = TypeFragment::new(format!(
-            "({})",
-            elements
+        let ty = type_name::tuple_type(
+            &elements
                 .iter()
                 .map(|element| element.ty.to_string())
-                .collect::<Vec<_>>()
-                .join(", ")
-        ));
-        Ok(ReadExpression::new(
-            Expression::new(format!(
-                "({})",
-                elements
-                    .iter()
-                    .map(|element| element.expression.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            )),
-            ty,
-        ))
+                .collect::<Vec<_>>(),
+        );
+        let values = elements
+            .iter()
+            .map(|element| element.expression.to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let expression = if elements.len() == 1 {
+            format!("new {ty}({values})")
+        } else {
+            format!("({values})")
+        };
+        Ok(ReadExpression::new(Expression::new(expression), ty))
     }
 
     fn result(&mut self, ok: Self::Expr, err: Self::Expr) -> Self::Expr {

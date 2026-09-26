@@ -124,3 +124,16 @@ pub const DEMO_PAIR: (u32, u32) = (3, 5);
 
 #[export]
 pub const DEMO_BUSY: DemoState = DemoState::Busy { jobs: 3 };
+
+#[demo_bench_macros::demo_case(
+    "constants.tuples.should_expose_single_element_value",
+    justification = "Ensure a one-element Rust tuple constant has a valid generated representation.",
+    directions = "Read DEMO_SINGLE through the generated binding and assert its sole element is 17.",
+    exercises = ["constants::DEMO_SINGLE"],
+    exclude(kotlin, reason = ExclusionReason::ImplementationGap,
+        details = "The Kotlin target supports only Pair and Triple tuple arities."),
+    exclude(java, reason = ExclusionReason::ImplementationGap,
+        details = "The Java target does not support tuple types.")
+)]
+#[export]
+pub const DEMO_SINGLE: (u32,) = (17,);

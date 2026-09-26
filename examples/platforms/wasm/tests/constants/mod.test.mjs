@@ -1,6 +1,8 @@
 import { assert, demo } from "../support/index.mjs";
 
 export async function run() {
+  assert.deepEqual(demo.demoSingle, [17]);
+  globalThis.demoCase("case:constants.tuples.should_expose_single_element_value");
   assert.equal(demo.demoEnabled, true);
   assert.equal(demo.demoAnswer, 42);
   assert.equal(demo.demoLarge, 9_007_199_254_740_993n);
