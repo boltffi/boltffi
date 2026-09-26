@@ -15,7 +15,10 @@ mod ownership;
 #[cfg(target_arch = "wasm32")]
 mod wasm;
 
-pub use foreign::CallbackForeignType;
+pub use foreign::{
+    CallbackForeignType, CallbackLocalHandle, CallbackMarker, ClassHandle, callback_arc,
+    callback_box,
+};
 pub use handle::CallbackHandle;
 pub use native::NativeCallbackOwner;
 pub use ownership::{ArcFromCallbackHandle, BoxFromCallbackHandle};

@@ -1,8 +1,7 @@
 use boltffi_ast::{ClassDef, MethodDef};
 use boltffi_binding::{
-    ClassDecl, ClassId, ClassThreadSafety, Decl, ExecutionDecl, ExportedCallable, HandleTarget,
-    IncomingParam, IntoRust, Native, NativeSymbol, OutOfRust, ParamPlan, Receive, ReturnPlan,
-    Wasm32, native, wasm32,
+    ClassDecl, ClassThreadSafety, ExecutionDecl, Native, NativeSymbol, Receive, Wasm32, native,
+    wasm32,
 };
 use proc_macro2::TokenStream;
 use quote::{quote, quote_spanned};
@@ -26,16 +25,6 @@ struct ClassOwner<'lowered, C> {
     class: TokenStream,
     handle_type: Ident,
     handle: C,
-}
-
-#[derive(Clone, Copy, Default)]
-struct ClassHandleOperations {
-    new: bool,
-    take: bool,
-    shared: bool,
-    mutable: bool,
-    retained_shared: bool,
-    retained_mutable: bool,
 }
 
 impl<'expansion, 'lowered, S: boltffi_binding::SurfaceLower> Class<'expansion, 'lowered, S> {
@@ -66,8 +55,7 @@ impl<'expansion, 'lowered> Class<'expansion, 'lowered, Native> {
         let class_names = names::Class::new(&class);
         let handle_type = class_names.handle();
         let retained_handle_type = class_names.retained_handle();
-        let operations = ClassHandleOperations::new(binding, self.expansion);
-        let handle = self.handle(&class_type, &handle_type, &retained_handle_type, operations);
+        let handle = self.handle(&class_type, &handle_type, &retained_handle_type);
         let thread_safety = self.thread_safety(binding, &class, &class_type);
         let release = self.release(binding.release(), binding.handle(), &handle_type)?;
         let exports = associated_fn::AssociatedFunctions::new(
@@ -125,8 +113,7 @@ impl<'expansion, 'lowered> Class<'expansion, 'lowered, Wasm32> {
         let class_names = names::Class::new(&class);
         let handle_type = class_names.handle();
         let retained_handle_type = class_names.retained_handle();
-        let operations = ClassHandleOperations::new(binding, self.expansion);
-        let handle = self.handle(&class_type, &handle_type, &retained_handle_type, operations);
+        let handle = self.handle(&class_type, &handle_type, &retained_handle_type);
         let thread_safety = self.thread_safety(binding, &class, &class_type);
         let release = self.release(binding.release(), binding.handle(), &handle_type)?;
         let exports = associated_fn::AssociatedFunctions::new(
@@ -180,11 +167,10 @@ impl<'expansion, 'lowered, S: boltffi_binding::SurfaceLower> Class<'expansion, '
         class: &TokenStream,
         handle_type: &Ident,
         retained_handle_type: &Ident,
-        operations: ClassHandleOperations,
     ) -> TokenStream {
-        let new = operations.new.then(|| {
+        let new = Some({
             quote! {
-                fn new(value: #class) -> *mut Self {
+                pub fn new(value: #class) -> *mut Self {
                     Box::into_raw(Box::new(Self {
                         value: ::core::cell::UnsafeCell::new(value),
                         references: ::std::sync::atomic::AtomicUsize::new(1),
@@ -193,9 +179,9 @@ impl<'expansion, 'lowered, S: boltffi_binding::SurfaceLower> Class<'expansion, '
                 }
             }
         });
-        let take = operations.take.then(|| {
+        let take = Some({
             quote! {
-                unsafe fn take(handle: *mut Self) -> Option<#class> {
+                pub unsafe fn take(handle: *mut Self) -> Option<#class> {
                     let state = unsafe { handle.as_ref()? };
                     state
                         .released
@@ -217,25 +203,25 @@ impl<'expansion, 'lowered, S: boltffi_binding::SurfaceLower> Class<'expansion, '
                 }
             }
         });
-        let shared = operations.shared().then(|| {
+        let shared = Some({
             quote! {
                 #[inline(always)]
-                unsafe fn shared<'class>(handle: *mut Self) -> &'class #class {
+                pub unsafe fn shared<'class>(handle: *mut Self) -> &'class #class {
                     unsafe { &*(*handle).value.get() }
                 }
             }
         });
-        let mutable = operations.mutable().then(|| {
+        let mutable = Some({
             quote! {
                 #[inline(always)]
-                unsafe fn mutable<'class>(handle: *mut Self) -> &'class mut #class {
+                pub unsafe fn mutable<'class>(handle: *mut Self) -> &'class mut #class {
                     unsafe { &mut *(*handle).value.get() }
                 }
             }
         });
-        let retain = operations.retained().then(|| {
+        let retain = Some({
             quote! {
-                unsafe fn retain(handle: *mut Self) -> Option<#retained_handle_type> {
+                pub unsafe fn retain(handle: *mut Self) -> Option<#retained_handle_type> {
                     let state = unsafe { handle.as_ref()? };
                     if state.released.load(::std::sync::atomic::Ordering::Acquire) {
                         return None;
@@ -266,28 +252,30 @@ impl<'expansion, 'lowered, S: boltffi_binding::SurfaceLower> Class<'expansion, '
                 }
             }
         });
-        let retained_shared = operations.retained_shared.then(|| {
+        let retained_shared = Some({
             quote! {
-                fn shared(&self) -> &#class {
+                pub fn shared(&self) -> &#class {
                     unsafe { #handle_type::shared(self.handle.as_ptr()) }
                 }
             }
         });
-        let retained_mutable = operations.retained_mutable.then(|| {
+        let retained_mutable = Some({
             quote! {
-                fn mutable(&mut self) -> &mut #class {
+                pub fn mutable(&mut self) -> &mut #class {
                     unsafe { #handle_type::mutable(self.handle.as_ptr()) }
                 }
             }
         });
-        let retained_handle = operations.retained().then(|| {
+        let retained_handle = Some({
             quote! {
-                struct #retained_handle_type {
+                #[doc(hidden)]
+                pub struct #retained_handle_type {
                     handle: ::core::ptr::NonNull<#handle_type>,
                 }
 
                 unsafe impl Send for #retained_handle_type {}
 
+                #[allow(dead_code, clippy::missing_safety_doc)]
                 impl #retained_handle_type {
                     #retained_shared
                     #retained_mutable
@@ -303,7 +291,8 @@ impl<'expansion, 'lowered, S: boltffi_binding::SurfaceLower> Class<'expansion, '
             }
         });
         quote! {
-            struct #handle_type {
+            #[doc(hidden)]
+            pub struct #handle_type {
                 value: ::core::cell::UnsafeCell<#class>,
                 references: ::std::sync::atomic::AtomicUsize,
                 released: ::std::sync::atomic::AtomicBool,
@@ -312,8 +301,13 @@ impl<'expansion, 'lowered, S: boltffi_binding::SurfaceLower> Class<'expansion, '
             unsafe impl Send for #handle_type {}
             unsafe impl Sync for #handle_type {}
 
+            impl ::boltffi::__private::ClassHandle for #class {
+                type Handle = #handle_type;
+            }
+
+            #[allow(dead_code, clippy::missing_safety_doc)]
             impl #handle_type {
-                unsafe fn release(handle: *mut Self) {
+                pub unsafe fn release(handle: *mut Self) {
                     let Some(state) = (unsafe { handle.as_ref() }) else {
                         return;
                     };
@@ -331,7 +325,7 @@ impl<'expansion, 'lowered, S: boltffi_binding::SurfaceLower> Class<'expansion, '
                 #shared
                 #mutable
 
-                unsafe fn release_reference(handle: *mut Self) {
+                pub unsafe fn release_reference(handle: *mut Self) {
                     let state = unsafe { handle.as_ref().expect("BoltFFI class handle is null") };
                     if state
                         .references
@@ -362,7 +356,7 @@ impl<'expansion, 'lowered, S: boltffi_binding::SurfaceLower> Class<'expansion, '
         }
 
         quote_spanned! {class.span()=>
-            #[allow(dead_code)]
+            #[allow(dead_code, clippy::missing_safety_doc)]
             const _: () = {
                 #[diagnostic::on_unimplemented(
                     message = "BoltFFI: `{Self}` must be thread-safe (Send + Sync)",
@@ -445,128 +439,6 @@ where
                 export.failure(),
             ),
         }
-    }
-}
-
-impl ClassHandleOperations {
-    fn new<'lowered, S: boltffi_binding::SurfaceLower>(
-        class: &ClassDecl<S>,
-        expansion: &Expansion<'lowered, S>,
-    ) -> Self {
-        expansion
-            .bindings()
-            .decls()
-            .iter()
-            .flat_map(|declaration| declaration.exported_callables())
-            .fold(Self::default(), |operations, callable| {
-                operations.with_callable(class.id(), callable)
-            })
-            .with_class_receivers(class)
-            .with_class_streams(class, expansion)
-    }
-
-    const fn shared(self) -> bool {
-        self.shared || self.retained_shared
-    }
-
-    const fn mutable(self) -> bool {
-        self.mutable || self.retained_mutable
-    }
-
-    const fn retained(self) -> bool {
-        self.retained_shared || self.retained_mutable
-    }
-
-    fn with_callable<S: boltffi_binding::SurfaceLower>(
-        self,
-        class_id: ClassId,
-        callable: &ExportedCallable<S>,
-    ) -> Self {
-        let asynchronous = matches!(callable.execution(), ExecutionDecl::Asynchronous(_));
-        callable.params().iter().fold(
-            self.with_return(class_id, callable.returns().plan()),
-            |operations, param| match param.payload() {
-                IncomingParam::Value(plan) => operations.with_param(class_id, plan, asynchronous),
-                IncomingParam::Closure(_) => operations,
-            },
-        )
-    }
-
-    fn with_class_receivers<S: boltffi_binding::SurfaceLower>(self, class: &ClassDecl<S>) -> Self {
-        class.methods().iter().fold(self, |operations, method| {
-            operations.with_receiver(method.callable())
-        })
-    }
-
-    fn with_class_streams<'lowered, S: boltffi_binding::SurfaceLower>(
-        mut self,
-        class: &ClassDecl<S>,
-        expansion: &Expansion<'lowered, S>,
-    ) -> Self {
-        if expansion.bindings().decls().iter().any(|declaration| {
-            matches!(declaration, Decl::Stream(stream) if stream.owner() == Some(class.id()))
-        }) {
-            self.shared = true;
-        }
-        self
-    }
-
-    fn with_receiver<S: boltffi_binding::SurfaceLower>(
-        mut self,
-        callable: &ExportedCallable<S>,
-    ) -> Self {
-        match (callable.execution(), callable.receiver()) {
-            (ExecutionDecl::Synchronous(_), Some(Receive::ByRef)) => self.shared = true,
-            (ExecutionDecl::Synchronous(_), Some(Receive::ByMutRef)) => self.mutable = true,
-            (ExecutionDecl::Asynchronous(_), Some(Receive::ByRef)) => self.retained_shared = true,
-            (ExecutionDecl::Asynchronous(_), Some(Receive::ByMutRef)) => {
-                self.retained_mutable = true
-            }
-            _ => {}
-        }
-        self
-    }
-
-    fn with_param<S: boltffi_binding::SurfaceLower>(
-        mut self,
-        class_id: ClassId,
-        plan: &ParamPlan<S, IntoRust>,
-        asynchronous: bool,
-    ) -> Self {
-        let ParamPlan::Handle {
-            target, receive, ..
-        } = plan
-        else {
-            return self;
-        };
-        if !matches!(target, HandleTarget::Class(id) if *id == class_id) {
-            return self;
-        }
-        match receive {
-            Receive::ByValue => self.take = true,
-            Receive::ByRef if asynchronous => self.retained_shared = true,
-            Receive::ByRef => self.shared = true,
-            Receive::ByMutRef => self.mutable = true,
-            _ => {}
-        }
-        self
-    }
-
-    fn with_return<S: boltffi_binding::SurfaceLower>(
-        mut self,
-        class_id: ClassId,
-        plan: &ReturnPlan<S, OutOfRust>,
-    ) -> Self {
-        match plan {
-            ReturnPlan::HandleViaReturnSlot { target, .. }
-            | ReturnPlan::HandleViaOutPointer { target, .. }
-                if matches!(target, HandleTarget::Class(id) if *id == class_id) =>
-            {
-                self.new = true;
-            }
-            _ => {}
-        }
-        self
     }
 }
 

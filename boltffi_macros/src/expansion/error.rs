@@ -1,13 +1,11 @@
 use std::{error, fmt};
 
 use boltffi_ast::DeclarationId as SourceDeclarationId;
-use boltffi_binding::{BindingMetadataError, DeclarationId, LowerError};
+use boltffi_binding::{DeclarationId, LowerError};
 
 #[derive(Debug)]
 pub enum Error {
     Lower(LowerError),
-
-    Metadata(BindingMetadataError),
 
     MissingBinding(SourceDeclarationId),
 
@@ -26,17 +24,10 @@ impl From<LowerError> for Error {
     }
 }
 
-impl From<BindingMetadataError> for Error {
-    fn from(error: BindingMetadataError) -> Self {
-        Self::Metadata(error)
-    }
-}
-
 impl fmt::Display for Error {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Lower(error) => error.fmt(formatter),
-            Self::Metadata(error) => error.fmt(formatter),
             Self::MissingBinding(id) => write!(formatter, "missing binding declaration for {id:?}"),
             Self::MissingDeclaration(id) => {
                 write!(formatter, "missing lowered declaration for {id:?}")

@@ -65,12 +65,13 @@ pub mod __private {
     pub use boltffi_core::capture;
     pub use boltffi_core::{
         ArcFromCallbackHandle, AsyncCallback, AsyncCallbackString, AsyncCallbackVoid,
-        BoxFromCallbackHandle, CallbackForeignType, CallbackHandle, EventSubscription, FfiBuf,
-        FfiSpan, FfiStatus, ForeignCall, InternedString, InternedStringPool, InternedStringRepr,
-        NativeCallbackOwner, Passable, RustFutureContinuationCallback, RustFutureHandle,
-        StreamContinuationCallback, StreamPollResult, SubscriptionHandle,
-        UnexpectedFfiCallbackError, UnexpectedFfiCallbackPayload, VecTransport, WaitResult,
-        WirePassable, rustfuture, set_last_error, set_last_error_debug, set_last_error_display,
+        BoxFromCallbackHandle, CallbackForeignType, CallbackHandle, CallbackLocalHandle,
+        CallbackMarker, ClassHandle, CustomType, EventSubscription, FfiBuf, FfiSpan, FfiStatus,
+        ForeignCall, InternedString, InternedStringPool, InternedStringRepr, NativeCallbackOwner,
+        Passable, RustFutureContinuationCallback, RustFutureHandle, StreamContinuationCallback,
+        StreamPollResult, SubscriptionHandle, UnexpectedFfiCallbackError,
+        UnexpectedFfiCallbackPayload, VecTransport, WaitResult, WirePassable, callback_arc,
+        callback_box, rustfuture, set_last_error, set_last_error_debug, set_last_error_display,
         set_last_error_len, take_last_error, wire,
     };
     #[cfg(target_arch = "wasm32")]
@@ -81,6 +82,7 @@ pub mod __private {
         rust_future_poll_sync, take_packed_bytes, take_packed_utf8_string, take_return_slot_vec,
         write_option_f64_presence, write_return_slot,
     };
+    pub use boltffi_core::{CfgEval, lane_resume};
 }
 
 #[cfg(test)]

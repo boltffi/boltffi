@@ -556,7 +556,7 @@ impl DeclaredKind {
     }
 
     const fn is_source_type(self) -> bool {
-        !matches!(self, Self::Custom)
+        true
     }
 }
 
