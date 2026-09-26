@@ -3,13 +3,18 @@
   "type": "module",
   "scripts": {
     "build:ts": "tsc",
-    "test": "node test.mjs"
+    "build:browser": "vite build",
+    "test": "node test.mjs",
+    "test:browser": "playwright test",
+    "test:package": "node test-package.mjs"
   },
   "dependencies": {
-    "@boltffi/runtime": "file:../../../runtime/typescript",
-    "@boltffi/demo": "file:./dist"
+    "@boltffi/runtime": "file:../../../runtime/typescript"
   },
   "devDependencies": {
-    "typescript": "^5.0.0"
+    "@playwright/test": "^1.58.2",
+    "@types/node": "^24.19.0",
+    "typescript": "^5.0.0",
+    "vite": "^8.3.1"
   }
 }

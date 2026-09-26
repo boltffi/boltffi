@@ -1,10 +1,20 @@
+mod bindgen;
+mod error;
+mod javascript;
+mod module;
 mod npm;
+mod package;
 mod sections;
 
+pub use error::Error;
+
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use boltffi_backend::target::typescript::TypeScriptHost;
 use boltffi_binding::BindingMetadataSurface;
+use walkdir::WalkDir;
 
 use crate::build::{
     BindingExpansion, BuildOptions, BuildSelection, Builder, OutputCallback, all_successful,
@@ -13,7 +23,7 @@ use crate::build::{
 use crate::cli::{CliError, Result};
 use crate::commands::generate::{GenerateOptions, GenerateTarget, run_generate_with_output};
 use crate::commands::pack::PackWasmOptions;
-use crate::config::{Config, WasmOptimizeLevel, WasmOptimizeOnMissing, WasmProfile};
+use crate::config::{Config, WasmNpmTarget, WasmOptimizeLevel, WasmOptimizeOnMissing, WasmProfile};
 use crate::pack::PackError;
 use crate::reporter::Reporter;
 
@@ -23,6 +33,7 @@ use self::npm::{
     generate_wasm_loader_entrypoints, generate_wasm_package_json, generate_wasm_readme,
 };
 use self::sections::strip_wasm_sections;
+use self::{bindgen::Bindgen, module::Module, package::Package};
 
 pub(crate) fn pack_wasm(
     config: &Config,
@@ -84,9 +95,37 @@ pub(crate) fn pack_wasm(
         return Err(CliError::FileNotFound(wasm_artifact_path));
     }
 
+    let npm_output = config.wasm_npm_output();
+    let package = Package::new(&npm_output)?;
+    let staging = package.path();
+    let module_name = config.wasm_typescript_module_name();
+    let enabled_targets = config.wasm_npm_targets();
+    let runtime_imports = TypeScriptHost::new(&module_name)
+        .map(|host| host.runtime_package(config.wasm_runtime_package()))
+        .and_then(|host| host.runtime_imports())
+        .map_err(|error| CliError::CommandFailed {
+            command: error.to_string(),
+            status: None,
+        })?;
+    let original_bytes = fs::read(&wasm_artifact_path).map_err(|source| CliError::ReadFailed {
+        path: wasm_artifact_path.clone(),
+        source,
+    })?;
+    let original = Module::parse(&original_bytes)?;
+    let packaged_wasm_path = staging.join(format!("{module_name}_bg.wasm"));
+    if let Some(version) = &original.bindgen_version {
+        original.validate_bindgen()?;
+        let step = reporter.step("Processing wasm-bindgen imports");
+        let bindgen = Bindgen::resolve(config, version)?;
+        bindgen.process(&wasm_artifact_path, &staging, &module_name)?;
+        step.finish_success();
+    } else {
+        package.copy(&wasm_artifact_path, format!("{module_name}_bg.wasm"))?;
+    }
+
     let strip_debug = should_strip_debug(config, wasm_artifact_profile);
     let step = reporter.step("Stripping WASM sections");
-    let stripped_bytes = strip_wasm_sections(&wasm_artifact_path, strip_debug)?;
+    let stripped_bytes = strip_wasm_sections(&packaged_wasm_path, strip_debug)?;
     if stripped_bytes == 0 {
         step.finish_success();
     } else {
@@ -97,7 +136,7 @@ pub(crate) fn pack_wasm(
         let step = reporter.step("Optimizing WASM binary");
         optimize_wasm_binary(
             config,
-            &wasm_artifact_path,
+            &packaged_wasm_path,
             wasm_artifact_profile,
             &build_cargo_args,
         )?;
@@ -110,71 +149,102 @@ pub(crate) fn pack_wasm(
             config,
             GenerateOptions {
                 target: GenerateTarget::Typescript,
-                output: Some(config.wasm_typescript_output()),
+                output: Some(staging.clone()),
                 experimental: false,
                 cargo_args: build_cargo_args.clone(),
                 deny_skipped: options.execution.deny_skipped,
             },
         )?;
         step.finish_success();
+    } else {
+        let sources = config.wasm_typescript_output();
+        if original.bindgen_version.is_some()
+            && !sources.join(format!("{module_name}_imports.ts")).is_file()
+        {
+            return Err(Error::Unsupported("these TypeScript bindings predate wasm-bindgen integration; pack again with --regenerate true".to_owned()).into());
+        }
+        let node_source = format!("{module_name}_node.ts");
+        std::iter::once(format!("{module_name}.ts"))
+            .chain(sources.join(&node_source).is_file().then_some(node_source))
+            .try_for_each(|name| package.copy(&sources.join(&name), name))?;
     }
 
-    let npm_output = config.wasm_npm_output();
-    std::fs::create_dir_all(&npm_output).map_err(|source| CliError::CreateDirectoryFailed {
-        path: npm_output.clone(),
+    let processed_bytes = fs::read(&packaged_wasm_path).map_err(|source| CliError::ReadFailed {
+        path: packaged_wasm_path.clone(),
         source,
     })?;
-
-    let module_name = config.wasm_typescript_module_name();
-    let packaged_wasm_path = npm_output.join(format!("{}_bg.wasm", module_name));
-    std::fs::copy(&wasm_artifact_path, &packaged_wasm_path).map_err(|source| {
-        CliError::CopyFailed {
-            from: wasm_artifact_path.clone(),
-            to: packaged_wasm_path.clone(),
-            source,
-        }
-    })?;
-
-    let generated_typescript_source = config
-        .wasm_typescript_output()
-        .join(format!("{}.ts", module_name));
-    if !generated_typescript_source.exists() {
-        return Err(CliError::FileNotFound(generated_typescript_source));
+    let processed = Module::parse(&processed_bytes)?;
+    original.validate_interface(&processed)?;
+    if original.bindgen_version.is_some() {
+        processed.validate_bindgen()?;
+        Bindgen::write_imports(
+            &processed,
+            &staging,
+            &module_name,
+            &config.wasm_runtime_package(),
+        )?;
+    } else {
+        let path = staging.join(runtime_imports.path().as_path());
+        fs::write(&path, runtime_imports.contents())
+            .map_err(|source| CliError::WriteFailed { path, source })?;
     }
 
+    let source_files = package.files()?;
     let step = reporter.step("Transpiling TypeScript bindings");
-    transpile_typescript_bundle(config, &generated_typescript_source, &npm_output)?;
+    transpile_typescript_bundle(config, &staging)?;
     step.finish_success();
 
-    let generated_node_typescript_source = config
-        .wasm_typescript_output()
-        .join(format!("{}_node.ts", module_name));
-    if generated_node_typescript_source.exists() {
-        let step = reporter.step("Transpiling Node.js bindings");
-        transpile_typescript_bundle(config, &generated_node_typescript_source, &npm_output)?;
-        step.finish_success();
-    }
-
-    let enabled_targets = config.wasm_npm_targets();
     let step = reporter.step("Generating WASM loader entrypoints");
-    generate_wasm_loader_entrypoints(&module_name, &enabled_targets, &npm_output)?;
+    generate_wasm_loader_entrypoints(&module_name, &enabled_targets, &staging)?;
     step.finish_success();
 
     if config.wasm_npm_generate_package_json() {
         let step = reporter.step("Generating package.json");
-        let package_json_path =
-            generate_wasm_package_json(config, &module_name, &enabled_targets, &npm_output)?;
-        step.finish_success_with(&format!("{}", package_json_path.display()));
+        generate_wasm_package_json(config, &module_name, &enabled_targets, &staging)?;
+        step.finish_success_with(&format!("{}", npm_output.join("package.json").display()));
+    } else if npm_output.join("package.json").is_file() {
+        package.copy(&npm_output.join("package.json"), "package.json")?;
     }
 
     if config.wasm_npm_generate_readme() {
         let step = reporter.step("Generating README.md");
-        let readme_path =
-            generate_wasm_readme(config, &module_name, &enabled_targets, &npm_output)?;
-        step.finish_success_with(&format!("{}", readme_path.display()));
+        generate_wasm_readme(config, &module_name, &enabled_targets, &staging)?;
+        step.finish_success_with(&format!("{}", npm_output.join("README.md").display()));
+    } else if npm_output.join("README.md").is_file() {
+        package.copy(&npm_output.join("README.md"), "README.md")?;
     }
 
-    Ok(())
+    if config
+        .wasm_typescript_output()
+        .canonicalize()
+        .ok()
+        .as_deref()
+        != Some(package.output())
+    {
+        let sources = Package::new(&config.wasm_typescript_output())?;
+        source_files.iter().try_for_each(|relative| {
+            let path = staging.join(relative);
+            sources.copy(&path, relative)?;
+            if relative
+                .extension()
+                .is_some_and(|extension| extension == "js")
+            {
+                let declaration = relative.with_extension("d.ts");
+                if staging.join(&declaration).is_file() {
+                    sources.copy(&staging.join(&declaration), declaration)?;
+                }
+            }
+            if relative
+                .extension()
+                .is_some_and(|extension| extension == "ts")
+            {
+                fs::remove_file(&path).map_err(|source| CliError::WriteFailed { path, source })?;
+            }
+            Ok::<_, CliError>(())
+        })?;
+        sources.publish()?;
+    }
+    package.publish()
 }
 
 /// Whether the pack should drop debug sections.
@@ -411,11 +481,23 @@ fn optimize_wasm_binary(
     })
 }
 
-fn transpile_typescript_bundle(
-    config: &Config,
-    source_file: &Path,
-    output_dir: &Path,
-) -> Result<()> {
+fn transpile_typescript_bundle(config: &Config, output_dir: &Path) -> Result<()> {
+    let module_name = config.wasm_typescript_module_name();
+    let browser_source = output_dir.join(format!("{module_name}.ts"));
+    let node_source = output_dir.join(format!("{module_name}_node.ts"));
+    if !browser_source.is_file() {
+        return Err(CliError::FileNotFound(browser_source));
+    }
+    if config.wasm_npm_targets().contains(&WasmNpmTarget::Nodejs) && !node_source.is_file() {
+        return Err(CliError::FileNotFound(node_source));
+    }
+    let compiled = tempfile::Builder::new()
+        .prefix(".typescript-")
+        .tempdir_in(output_dir)
+        .map_err(|source| CliError::CreateDirectoryFailed {
+            path: output_dir.to_owned(),
+            source,
+        })?;
     let mut command = if cfg!(windows) {
         let mut command = Command::new("cmd");
         command.args(["/C", "npx", "tsc"]);
@@ -424,42 +506,82 @@ fn transpile_typescript_bundle(
         Command::new("tsc")
     };
     command
-        .arg(source_file)
+        .arg(browser_source)
+        .args(node_source.is_file().then_some(&node_source))
         .arg("--target")
         .arg("ES2020")
+        .arg("--lib")
+        .arg("ES2021,DOM")
         .arg("--module")
         .arg("ES2020")
         .arg("--moduleResolution")
         .arg("bundler")
         .arg("--declaration")
-        .arg("--sourceMap")
-        .arg(if config.wasm_source_map_enabled() {
-            "true"
-        } else {
-            "false"
-        })
+        .arg("--allowJs")
+        .arg("--rootDir")
+        .arg(output_dir)
         .arg("--skipLibCheck")
+        .arg("--strictBindCallApply")
+        .arg("--noImplicitAny")
         .arg("--noEmitOnError")
-        .arg("false")
+        .arg("true")
         .arg("--outDir")
-        .arg(output_dir);
+        .arg(compiled.path());
+    if config.wasm_source_map_enabled() {
+        command.args(["--sourceMap", "--inlineSources", "--sourceRoot", "./"]);
+    }
 
     let output = command.output().map_err(|_| CliError::CommandFailed {
         command: "tsc".to_string(),
         status: None,
     })?;
 
-    let module_name = config.wasm_typescript_module_name();
-    let javascript_path = output_dir.join(format!("{}.js", module_name));
-    let declarations_path = output_dir.join(format!("{}.d.ts", module_name));
-    let emitted_outputs_exist = javascript_path.exists() && declarations_path.exists();
-
-    if output.status.success() || emitted_outputs_exist {
-        return Ok(());
+    if output.status.success() {
+        return WalkDir::new(compiled.path())
+            .into_iter()
+            .try_for_each(|entry| {
+                let entry = entry.map_err(|error| CliError::CommandFailed {
+                    command: format!("read compiled TypeScript: {error}"),
+                    status: None,
+                })?;
+                if !entry.file_type().is_file() {
+                    return Ok(());
+                }
+                let relative = entry
+                    .path()
+                    .strip_prefix(compiled.path())
+                    .expect("compiled file");
+                let destination = output_dir.join(relative);
+                if destination
+                    .extension()
+                    .is_some_and(|extension| extension == "js")
+                    && destination.exists()
+                {
+                    return Ok(());
+                }
+                if destination
+                    .extension()
+                    .is_some_and(|extension| extension == "map")
+                    && !destination
+                        .with_extension("")
+                        .with_extension("ts")
+                        .is_file()
+                {
+                    return Ok(());
+                }
+                fs::rename(entry.path(), &destination).map_err(|source| CliError::WriteFailed {
+                    path: destination,
+                    source,
+                })
+            });
     }
 
     Err(CliError::CommandFailed {
-        command: format!("tsc failed: {}", String::from_utf8_lossy(&output.stderr)),
+        command: format!(
+            "tsc failed: {}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        ),
         status: output.status.code(),
     })
 }

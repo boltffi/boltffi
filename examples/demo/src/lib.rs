@@ -17,6 +17,8 @@ pub mod records;
 pub mod results;
 #[cfg(feature = "wasm-bench")]
 pub mod wasm_bench;
+#[cfg(feature = "wasm-interop")]
+pub mod wasm_interop;
 
 pub use async_fns::*;
 pub use builtins::*;
@@ -32,3 +34,5 @@ pub use options::*;
 pub use primitives::*;
 pub use records::*;
 pub use results::*;
+#[cfg(feature = "wasm-interop")]
+pub use wasm_interop::*;

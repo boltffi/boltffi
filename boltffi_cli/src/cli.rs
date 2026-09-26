@@ -1807,6 +1807,9 @@ pub enum CliError {
     Pack(#[from] PackError),
 
     #[error(transparent)]
+    Wasm(#[from] crate::pack::wasm::Error),
+
+    #[error(transparent)]
     AndroidToolchain(#[from] AndroidToolchainError),
 }
 
